@@ -32,10 +32,10 @@ impl ConfigAliases for EnvironmentContext {
             let kval = nested_get(config, key_head, &key_vec[1..]);
             let aval = nested_get(config, alias_head, &alias_vec[1..]);
             if kval.is_some() || aval.is_some() {
-                return Some((ConfigValue(kval.cloned()), ConfigValue(aval.cloned())));
+                return Some((ConfigValue::from(kval.cloned()), ConfigValue::from(aval.cloned())));
             }
         }
-        Some((ConfigValue(None), ConfigValue(None)))
+        Some((ConfigValue::from(None), ConfigValue::from(None)))
     }
 }
 

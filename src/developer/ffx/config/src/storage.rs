@@ -7,7 +7,7 @@ use crate::api::query::SelectMode;
 use crate::api::value::merge_map;
 use crate::environment::Environment;
 use crate::nested::{nested_get, nested_remove, nested_set};
-use crate::{ConfigLevel, EnvironmentContext};
+use crate::{ConfigLevel, ConfigSource, EnvironmentContext};
 
 use config_macros::include_default;
 use fuchsia_lockfile::{LockContext, Lockfile};
@@ -503,6 +503,20 @@ impl Config {
         }
     }
 
+    pub fn get_file_path(&self, level: ConfigLevel) -> Option<&Path> {
+        match level {
+            ConfigLevel::User => self.user.as_ref().and_then(|file| file.path.as_deref()),
+            ConfigLevel::Build => self.build.as_ref().and_then(|file| file.path.as_deref()),
+            ConfigLevel::Global => self.global.as_ref().and_then(|file| file.path.as_deref()),
+            _ => None,
+        }
+    }
+
+    pub fn source_for_level(&self, level: ConfigLevel) -> ConfigSource {
+        let file_path = self.get_file_path(level).map(|p| p.to_path_buf());
+        ConfigSource::new(level).with_file_path(file_path)
+    }
+
     pub fn get_in_level(&self, key: &str, level: ConfigLevel) -> Option<Value> {
         let key_vec: Vec<&str> = key.split('.').collect();
         nested_get(self.get_level(level), key_vec.get(0)?, &key_vec[1..]).cloned()
@@ -522,6 +536,38 @@ impl Config {
         }
 
         Value::Object(omap)
+    }
+
+    pub fn get_with_level(
+        &self,
+        key: &str,
+        select: SelectMode,
+    ) -> Option<(Option<ConfigLevel>, Value)> {
+        let key_vec: Vec<&str> = key.split('.').collect();
+        match select {
+            SelectMode::First => {
+                let mut iterator = self.iter();
+                while let Some(c) = iterator.next() {
+                    let level = iterator.curr.unwrap();
+                    if let Some(val) = nested_get(c, *key_vec.get(0)?, &key_vec[1..]) {
+                        let res = val.clone();
+                        if let Value::Object(omap) = res {
+                            return Some((Some(level), self.merge_object(omap, key)));
+                        }
+                        return Some((Some(level), res));
+                    }
+                }
+                None
+            }
+            SelectMode::All => {
+                let result: Vec<Value> = self
+                    .iter()
+                    .filter_map(|c| nested_get(c, *key_vec.get(0)?, &key_vec[1..]))
+                    .cloned()
+                    .collect();
+                if result.is_empty() { None } else { Some((None, Value::Array(result))) }
+            }
+        }
     }
 
     pub fn get(&self, key: &str, select: SelectMode) -> Option<Value> {

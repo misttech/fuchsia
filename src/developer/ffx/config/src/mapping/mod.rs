@@ -101,17 +101,18 @@ fn to_utf8_path(path: Option<PathBuf>) -> Result<Option<String>, MappingError> {
 ///
 /// Substituted variable values are appended directly to the output buffer without being
 /// rescanned, preventing second-order macro injection.
-fn expand_string(
+fn expand_string_with_source(
     ctx: &EnvironmentContext,
     s: &str,
     strict: bool,
-) -> Result<Option<String>, MappingError> {
+) -> Result<Option<(String, Option<String>)>, MappingError> {
     static MACRO_REGEX: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"\$\$|\$([A-Z][A-Z0-9_]*)").unwrap());
 
     let mut result = String::with_capacity(s.len());
     let mut last_end = 0;
     let mut unresolvable = false;
+    let mut expanded_var = None;
 
     for caps in MACRO_REGEX.captures_iter(s) {
         let m = caps.get(0).unwrap();
@@ -137,7 +138,12 @@ fn expand_string(
                 Some(m) if m.is_strict_allowed() => {
                     if !unresolvable {
                         match m.resolve(ctx)? {
-                            Some(val) => result.push_str(&val),
+                            Some(val) => {
+                                if expanded_var.is_none() {
+                                    expanded_var = Some(var_name.to_string());
+                                }
+                                result.push_str(&val);
+                            }
                             None => unresolvable = true,
                         }
                     }
@@ -153,7 +159,12 @@ fn expand_string(
             };
 
             match expanded {
-                Some(val) => result.push_str(&val),
+                Some(val) => {
+                    if expanded_var.is_none() {
+                        expanded_var = Some(var_name.to_string());
+                    }
+                    result.push_str(&val);
+                }
                 None => return Ok(None),
             }
         }
@@ -164,33 +175,60 @@ fn expand_string(
     }
 
     result.push_str(&s[last_end..]);
-    Ok(Some(result))
+    Ok(Some((result, expanded_var)))
 }
 
-pub(crate) fn expand_macros(
+pub(crate) fn expand_macros_with_recorder<F: FnMut(&str)>(
     ctx: &EnvironmentContext,
     value: Value,
+    mut on_var_expanded: F,
 ) -> Result<Option<Value>, MappingError> {
     match value {
-        Value::String(s) => match expand_string(ctx, &s, false)? {
-            Some(expanded) => Ok(Some(Value::String(expanded))),
+        Value::String(s) => match expand_string_with_source(ctx, &s, false)? {
+            Some((expanded, var)) => {
+                if let Some(v) = var {
+                    on_var_expanded(&v);
+                }
+                Ok(Some(Value::String(expanded)))
+            }
             None => Ok(None),
         },
         other => Ok(Some(other)),
     }
+}
+
+pub(crate) fn expand_macros_strict_with_recorder<F: FnMut(&str)>(
+    ctx: &EnvironmentContext,
+    value: Value,
+    mut on_var_expanded: F,
+) -> Result<Option<Value>, MappingError> {
+    match value {
+        Value::String(s) => match expand_string_with_source(ctx, &s, true)? {
+            Some((expanded, var)) => {
+                if let Some(v) = var {
+                    on_var_expanded(&v);
+                }
+                Ok(Some(Value::String(expanded)))
+            }
+            None => Ok(None),
+        },
+        other => Ok(Some(other)),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn expand_macros(
+    ctx: &EnvironmentContext,
+    value: Value,
+) -> Result<Option<Value>, MappingError> {
+    expand_macros_with_recorder(ctx, value, |_| {})
 }
 
 pub(crate) fn expand_macros_strict(
     ctx: &EnvironmentContext,
     value: Value,
 ) -> Result<Option<Value>, MappingError> {
-    match value {
-        Value::String(s) => match expand_string(ctx, &s, true)? {
-            Some(expanded) => Ok(Some(Value::String(expanded))),
-            None => Ok(None),
-        },
-        other => Ok(Some(other)),
-    }
+    expand_macros_strict_with_recorder(ctx, value, |_| {})
 }
 
 #[cfg(test)]

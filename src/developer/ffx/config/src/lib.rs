@@ -107,6 +107,36 @@ pub enum ConfigLevel {
     /// Runtime configuration is set by the user when invoking ffx, and can't be 'set' by any other means.
     Runtime,
 }
+
+/// Describes the source and provenance of a configuration value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfigSource {
+    /// The configuration level where the value was found.
+    pub level: ConfigLevel,
+    /// The file path of the configuration file, if the value came from a file-backed level.
+    pub file_path: Option<PathBuf>,
+    /// The name of the environment variable or macro expanded to produce this value, if any.
+    ///
+    /// When multiple variables are expanded in a single string (e.g. "$FOO/$BAR"),
+    /// this records the first expanded variable.
+    pub expanded_var: Option<String>,
+}
+
+impl ConfigSource {
+    pub fn new(level: ConfigLevel) -> Self {
+        Self { level, file_path: None, expanded_var: None }
+    }
+
+    pub fn with_file_path(mut self, path: Option<PathBuf>) -> Self {
+        self.file_path = path;
+        self
+    }
+
+    pub fn with_expanded_var(mut self, var: Option<String>) -> Self {
+        self.expanded_var = var;
+        self
+    }
+}
 impl ConfigLevel {
     /// The number of elements in the above enum, used for tests.
     const _COUNT: usize = 5;
@@ -333,7 +363,7 @@ mod test {
 
     #[test]
     fn test_converting_array() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let c = |val: Value| -> ConfigValue { ConfigValue(Some(val)) };
+        let c = |val: Value| -> ConfigValue { ConfigValue::from(Some(val)) };
         let conv_elem: Vec<String> = <_>::try_convert(c(json!("test")))?;
         assert_eq!(1, conv_elem.len());
         let conv_string: Vec<String> = <_>::try_convert(c(json!(["test", "test2"])))?;
@@ -355,7 +385,7 @@ mod test {
 
     #[test]
     fn test_validating_types() {
-        let c = |val: Value| -> ConfigValue { ConfigValue(Some(val)) };
+        let c = |val: Value| -> ConfigValue { ConfigValue::from(Some(val)) };
         assert!(<String>::try_convert(c(json!("test"))).is_ok());
         assert!(<String>::try_convert(c(json!(1))).is_err());
         assert!(<String>::try_convert(c(json!(false))).is_err());
@@ -393,7 +423,7 @@ mod test {
         let badv_str = |from: &'static str, to: &'static str| {
             format!("Conversion to {to} not possible for value: {from}")
         };
-        let no_val = ConfigValue(None);
+        let no_val = ConfigValue::from(None);
         let err = <String>::try_convert(no_val.clone()).unwrap_err();
         assert_eq!(err.to_string(), nv_str("String"));
 
@@ -406,35 +436,35 @@ mod test {
         let err = <PathBuf>::try_convert(no_val.clone()).unwrap_err();
         assert_eq!(err.to_string(), nv_str("PathBuf"));
 
-        let wrong_val = ConfigValue(Some(json!(123)));
+        let wrong_val = ConfigValue::from(Some(json!(123)));
         let err = <String>::try_convert(wrong_val).unwrap_err();
         assert_eq!(err.to_string(), badv_str("123", "String"));
 
-        let wrong_val = ConfigValue(Some(json!(true)));
+        let wrong_val = ConfigValue::from(Some(json!(true)));
         let err = <u64>::try_convert(wrong_val).unwrap_err();
         assert_eq!(err.to_string(), badv_str("true", "u64"));
 
-        let wrong_val = ConfigValue(Some(json!(123)));
+        let wrong_val = ConfigValue::from(Some(json!(123)));
         let err = <bool>::try_convert(wrong_val).unwrap_err();
         assert_eq!(err.to_string(), badv_str("123", "bool"));
 
-        let wrong_val = ConfigValue(Some(json!(false)));
+        let wrong_val = ConfigValue::from(Some(json!(false)));
         let err = <PathBuf>::try_convert(wrong_val).unwrap_err();
         assert_eq!(err.to_string(), badv_str("false", "PathBuf"));
 
-        let wrong_val = ConfigValue(Some(json!("frog")));
+        let wrong_val = ConfigValue::from(Some(json!("frog")));
         let err = <usize>::try_convert(wrong_val).unwrap_err();
         assert_eq!(err.to_string(), badv_str("\"frog\"", "usize"));
 
-        let wrong_val = ConfigValue(Some(json!("frog")));
+        let wrong_val = ConfigValue::from(Some(json!("frog")));
         let err = <i64>::try_convert(wrong_val).unwrap_err();
         assert_eq!(err.to_string(), badv_str("\"frog\"", "i64"));
 
-        let wrong_val = ConfigValue(Some(json!("frog")));
+        let wrong_val = ConfigValue::from(Some(json!("frog")));
         let err = <u16>::try_convert(wrong_val).unwrap_err();
         assert_eq!(err.to_string(), badv_str("\"frog\"", "u16"));
 
-        let wrong_val = ConfigValue(Some(json!("frog")));
+        let wrong_val = ConfigValue::from(Some(json!("frog")));
         let err = <f64>::try_convert(wrong_val).unwrap_err();
         assert_eq!(err.to_string(), badv_str("\"frog\"", "f64"));
     }
@@ -443,27 +473,27 @@ mod test {
     fn test_string_fallback_conversion() {
         // This doesn't attempt to handle things like underflow/overflow, just plain
         // string conversions.
-        let val = ConfigValue(Some(json!("2.0")));
+        let val = ConfigValue::from(Some(json!("2.0")));
         let res = <f64>::try_convert(val).unwrap();
         assert_eq!(res, 2.0);
 
-        let val = ConfigValue(Some(json!("20")));
+        let val = ConfigValue::from(Some(json!("20")));
         let res = <u64>::try_convert(val).unwrap();
         assert_eq!(res, 20);
 
-        let val = ConfigValue(Some(json!("20")));
+        let val = ConfigValue::from(Some(json!("20")));
         let res = <u16>::try_convert(val).unwrap();
         assert_eq!(res, 20);
 
-        let val = ConfigValue(Some(json!("20")));
+        let val = ConfigValue::from(Some(json!("20")));
         let res = <i64>::try_convert(val).unwrap();
         assert_eq!(res, 20);
 
-        let val = ConfigValue(Some(json!("20")));
+        let val = ConfigValue::from(Some(json!("20")));
         let res = <usize>::try_convert(val).unwrap();
         assert_eq!(res, 20);
 
-        let val = ConfigValue(Some(json!("true")));
+        let val = ConfigValue::from(Some(json!("true")));
         let res = <bool>::try_convert(val).unwrap();
         assert_eq!(res, true);
     }
@@ -827,5 +857,189 @@ mod test {
         // Setting sdk.overrides.allow-build-host-tools in build_config itself must be ignored
         let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
         assert_eq!(result, expected_sdk_tool);
+    }
+
+    #[fuchsia::test]
+    fn test_config_source_runtime() {
+        let env = ffx_config::test_env()
+            .runtime_config("test.source.runtime", "runtime_val")
+            .build()
+            .expect("create test config");
+
+        let (val, source): (String, ConfigSource) =
+            env.context.get_with_source("test.source.runtime").expect("get_with_source");
+        assert_eq!(val, "runtime_val");
+        assert_eq!(source, ConfigSource::new(ConfigLevel::Runtime));
+    }
+
+    #[fuchsia::test]
+    fn test_config_source_user() {
+        let env = ffx_config::test_env()
+            .user_config("test.source.user", "user_val")
+            .build()
+            .expect("create test config");
+
+        let (val, source): (String, ConfigSource) =
+            env.context.get_with_source("test.source.user").expect("get_with_source");
+        assert_eq!(val, "user_val");
+        assert_eq!(
+            source,
+            ConfigSource::new(ConfigLevel::User)
+                .with_file_path(Some(env.user_file.path().to_path_buf()))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_config_source_build() {
+        let mut builder = ffx_config::test_env();
+        let build_dir = builder.isolate_root().join("build");
+        fs::create_dir_all(&build_dir).expect("build dir created");
+
+        let env = builder
+            .in_tree(&build_dir)
+            .build_config("test.source.build", "build_val")
+            .build()
+            .expect("create test config");
+
+        let (val, source): (String, ConfigSource) =
+            env.context.get_with_source("test.source.build").expect("get_with_source");
+        assert_eq!(val, "build_val");
+        assert_eq!(
+            source,
+            ConfigSource::new(ConfigLevel::Build)
+                .with_file_path(Some(env.build_file.as_ref().unwrap().path().to_path_buf()))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_config_source_global() {
+        let env = ffx_config::test_env()
+            .global_config("test.source.global", "global_val")
+            .build()
+            .expect("create test config");
+
+        let (val, source): (String, ConfigSource) =
+            env.context.get_with_source("test.source.global").expect("get_with_source");
+        assert_eq!(val, "global_val");
+        assert_eq!(
+            source,
+            ConfigSource::new(ConfigLevel::Global)
+                .with_file_path(Some(env.global_file.path().to_path_buf()))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_config_source_default_level() {
+        let env = ffx_config::test_env().build().expect("create test config");
+
+        // "log.level" has default "info"
+        let (val, source): (String, ConfigSource) =
+            env.context.get_with_source("log.level").expect("get_with_source");
+        assert_eq!(val, "info");
+        assert_eq!(source, ConfigSource::new(ConfigLevel::Default));
+    }
+
+    #[fuchsia::test]
+    fn test_config_source_env_var_expansion() {
+        let env = ffx_config::test_env()
+            .env_var("TEST_FOO_VAR", "expanded_foo_val")
+            .user_config("test.source.macro", "$TEST_FOO_VAR")
+            .build()
+            .expect("create test config");
+
+        let (val, source): (String, ConfigSource) =
+            env.context.get_with_source("test.source.macro").expect("get_with_source");
+        assert_eq!(val, "expanded_foo_val");
+        assert_eq!(
+            source,
+            ConfigSource::new(ConfigLevel::User)
+                .with_file_path(Some(env.user_file.path().to_path_buf()))
+                .with_expanded_var(Some("TEST_FOO_VAR".to_string()))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_config_source_array_env_var_fallback() {
+        let env = ffx_config::test_env()
+            .env_var("TEST_SECOND_VAR", "chosen_second_val")
+            .user_config("test.source.fallback", vec!["$TEST_FIRST_UNSET_VAR", "$TEST_SECOND_VAR"])
+            .build()
+            .expect("create test config");
+
+        let (val, source): (String, ConfigSource) =
+            env.context.get_with_source("test.source.fallback").expect("get_with_source");
+        assert_eq!(val, "chosen_second_val");
+        assert_eq!(
+            source,
+            ConfigSource::new(ConfigLevel::User)
+                .with_file_path(Some(env.user_file.path().to_path_buf()))
+                .with_expanded_var(Some("TEST_SECOND_VAR".to_string()))
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_config_source_get_optional_with_source() {
+        let env = ffx_config::test_env()
+            .user_config("test.source.opt_set", "found_val")
+            .build()
+            .expect("create test config");
+
+        let (val, source): (Option<String>, Option<ConfigSource>) = env
+            .context
+            .get_optional_with_source("test.source.opt_set")
+            .expect("get_optional_with_source");
+        assert_eq!(val, Some("found_val".to_string()));
+        assert_eq!(
+            source,
+            Some(
+                ConfigSource::new(ConfigLevel::User)
+                    .with_file_path(Some(env.user_file.path().to_path_buf()))
+            )
+        );
+
+        let (val, source): (Option<String>, Option<ConfigSource>) = env
+            .context
+            .get_optional_with_source("test.source.nonexistent")
+            .expect("get_optional_with_source");
+        assert_eq!(val, None);
+        assert_eq!(source, None);
+
+        // Query with explicit level when key is missing at that level
+        let (val, source): (Option<String>, Option<ConfigSource>) = env
+            .context
+            .query("test.source.opt_set")
+            .level(Some(ConfigLevel::Build))
+            .build()
+            .get_optional_with_source(&env.context)
+            .expect("get_optional_with_source");
+        assert_eq!(val, None);
+        assert_eq!(source, None);
+    }
+
+    #[fuchsia::test]
+    fn test_config_source_select_all_has_no_single_source() {
+        let env = ffx_config::test_env()
+            .user_config("test.source.all_key", "user_val")
+            .global_config("test.source.all_key", "global_val")
+            .build()
+            .expect("create test config");
+
+        let (val, source): (Vec<String>, Option<ConfigSource>) = env
+            .context
+            .query("test.source.all_key")
+            .select(SelectMode::All)
+            .build()
+            .get_optional_with_source(&env.context)
+            .expect("get_optional_with_source");
+        assert_eq!(val, vec!["user_val".to_string(), "global_val".to_string()]);
+        assert_eq!(source, None);
+
+        let res: Result<(Vec<String>, ConfigSource), ConfigError> = env
+            .context
+            .query("test.source.all_key")
+            .select(SelectMode::All)
+            .build()
+            .get_with_source(&env.context);
+        assert!(matches!(res, Err(ConfigError::NoSingleSource)));
     }
 }

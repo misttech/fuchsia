@@ -6,7 +6,7 @@ use super::ConfigValue;
 use super::value::TryConvert;
 use crate::api::ConfigResult;
 use crate::nested::RecursiveMap;
-use crate::{ConfigError, ConfigLevel, EnvironmentContext, ValueStrategy};
+use crate::{ConfigError, ConfigLevel, ConfigSource, EnvironmentContext, ValueStrategy};
 
 use serde_json::Value;
 use std::default::Default;
@@ -70,11 +70,22 @@ impl<'a> ConfigQueryBuilder<'a> {
 impl<'a> ConfigQuery<'a> {
     fn get_config(&self, context: &EnvironmentContext) -> ConfigResult {
         let config = &context.config;
-        let result = match self {
-            Self { name: Some(name), level: None, select, .. } => config.get(*name, *select),
-            Self { name: Some(name), level: Some(level), .. } => config.get_in_level(*name, *level),
+        let (result, level) = match self {
+            Self { name: Some(name), level: None, select, .. } => {
+                match config.get_with_level(*name, *select) {
+                    Some((lvl, val)) => (Some(val), lvl),
+                    None => (None, None),
+                }
+            }
+            Self { name: Some(name), level: Some(level), .. } => {
+                let res = config.get_in_level(*name, *level);
+                let lvl = res.as_ref().map(|_| *level);
+                (res, lvl)
+            }
             Self { name: None, level: Some(level), .. } => {
-                config.get_level(*level).cloned().map(Value::Object)
+                let res = config.get_level(*level).cloned().map(Value::Object);
+                let lvl = res.as_ref().map(|_| *level);
+                (res, lvl)
             }
             _ => {
                 let err_string = format!("Invalid query: {self}");
@@ -83,8 +94,101 @@ impl<'a> ConfigQuery<'a> {
             }
         };
         log::debug!("`{self}` => `{result:?}`");
-        Ok(result.into())
+        let source = level.map(|lvl| context.config.source_for_level(lvl));
+        Ok(ConfigValue::new(result, source))
     }
+
+    /// Evaluates a raw configuration value by resolving environment variables and applying value strategies.
+    ///
+    /// 1. Retrieves the raw `ConfigValue` from the configuration hierarchy using `get_config`.
+    /// 2. Recursively expands macro and environment variable substitutions (e.g., `$VAR`) in string values,
+    ///    recording the first expanded variable name in the `ConfigSource` for provenance tracking.
+    ///    In strict mode, variable expansions not permitted under strict rules are ignored or error out.
+    /// 3. Applies type-specific array transformations via `T::handle_arrays` (such as flattening).
+    fn eval_config_value<T: ValueStrategy>(
+        &self,
+        ctx: &EnvironmentContext,
+    ) -> Result<ConfigValue, ConfigError> {
+        let cv = self.get_config(ctx)?;
+        if cv.value().is_none() {
+            return Ok(cv);
+        }
+
+        let (mapped, recorded_var) = if ctx.is_strict() {
+            self.eval_strict::<T>(ctx, cv)?
+        } else {
+            self.eval_non_strict::<T>(ctx, cv)?
+        };
+
+        let source = match (mapped.source, recorded_var) {
+            (Some(src), Some(var)) => Some(src.with_expanded_var(Some(var))),
+            (src, _) => src,
+        };
+
+        Ok(ConfigValue::new(mapped.value, source))
+    }
+
+    fn eval_strict<T: ValueStrategy>(
+        &self,
+        ctx: &EnvironmentContext,
+        cv: ConfigValue,
+    ) -> Result<(ConfigValue, Option<String>), ConfigError> {
+        use crate::mapping::*;
+
+        // `try_recursive_map` requires an immutable closure (`Fn`), so interior mutability
+        // via `RefCell` is used to record the expanded variable name during traversal.
+        let recorded_var = std::cell::RefCell::new(None);
+        let raw_val = cv.value.clone();
+        // `try_recursive_map` requires an immutable closure (`Fn`), so interior mutability
+        // via `Cell` is used to record whether a strict variable was ignored during traversal.
+        let had_strict_ignored = std::cell::Cell::new(false);
+        let mapped =
+            cv.try_recursive_map(&|val| match expand_macros_strict_with_recorder(ctx, val, |v| {
+                let mut recorded = recorded_var.borrow_mut();
+                if recorded.is_none() {
+                    *recorded = Some(v.to_string());
+                }
+            }) {
+                Ok(v) => Ok(v),
+                Err(MappingError::StrictVariableIgnored(_)) => {
+                    had_strict_ignored.set(true);
+                    Ok(None)
+                }
+                Err(e) => Err(e.into()),
+            })?;
+        if had_strict_ignored.get() && mapped.value.is_none() {
+            return Err(ConfigError::BadValue {
+                value: raw_val.unwrap_or(Value::Null),
+                reason: format!(
+                    "The value for {} contains a variable mapping, which is ignored in strict mode",
+                    self.name.unwrap_or("<unnamed>"),
+                ),
+            });
+        }
+        Ok((mapped.recursive_map(&T::handle_arrays), recorded_var.into_inner()))
+    }
+
+    fn eval_non_strict<T: ValueStrategy>(
+        &self,
+        ctx: &EnvironmentContext,
+        cv: ConfigValue,
+    ) -> Result<(ConfigValue, Option<String>), ConfigError> {
+        use crate::mapping::*;
+
+        // `try_recursive_map` requires an immutable closure (`Fn`), so interior mutability
+        // via `RefCell` is used to record the expanded variable name during traversal.
+        let recorded_var = std::cell::RefCell::new(None);
+        let mapped = cv.try_recursive_map(&|val| {
+            Ok(expand_macros_with_recorder(ctx, val, |v| {
+                let mut recorded = recorded_var.borrow_mut();
+                if recorded.is_none() {
+                    *recorded = Some(v.to_string());
+                }
+            })?)
+        })?;
+        Ok((mapped.recursive_map(&T::handle_arrays), recorded_var.into_inner()))
+    }
+
     /// Get a value with as little processing as possible
     pub fn get_raw<T>(&self, context: &EnvironmentContext) -> Result<T, ConfigError>
     where
@@ -104,11 +208,34 @@ impl<'a> ConfigQuery<'a> {
     {
         self.get(context).or_else(|e| {
             if matches!(e, ConfigError::BadValue { .. }) {
-                T::try_convert(ConfigValue(None))
+                T::try_convert(ConfigValue::from(None))
             } else {
                 Err(e)
             }
         })
+    }
+
+    /// Get an optional value along with its source information, if present.
+    pub fn get_optional_with_source<T>(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<(T, Option<ConfigSource>), ConfigError>
+    where
+        T: TryConvert + ValueStrategy,
+    {
+        T::validate_query(self)?;
+        match self.eval_config_value::<T>(context) {
+            Ok(cv) => {
+                let source = cv.source.clone();
+                let val = T::try_convert(cv)?;
+                Ok((val, source))
+            }
+            Err(ConfigError::BadValue { .. }) => {
+                let empty_val = T::try_convert(ConfigValue::from(None))?;
+                Ok((empty_val, None))
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Get a value with the normal processing of substitution strings
@@ -116,45 +243,35 @@ impl<'a> ConfigQuery<'a> {
     where
         T: TryConvert + ValueStrategy,
     {
-        use crate::mapping::*;
-
-        let ctx = context;
         T::validate_query(self)?;
+        let cv = self.eval_config_value::<T>(context)?;
+        T::try_convert(cv)
+    }
 
-        // The use of `is_strict()` here is not ideal, because we'd like to have strict-specific
-        // library inside the subtool boundary. But when we change to read-only config, this code
-        // will all change: we'll build a single ConfigMap before invoking the subtool, rather than
-        // doing substitutions and layers at query time.
-        if ctx.is_strict() {
-            let cv = self.get_config(ctx)?;
-            let raw_val = cv.0.clone();
-            let had_strict_ignored = std::cell::Cell::new(false);
-            let cv = cv.try_recursive_map(&|val| match expand_macros_strict(ctx, val) {
-                Ok(v) => Ok(v),
-                Err(MappingError::StrictVariableIgnored(_)) => {
-                    had_strict_ignored.set(true);
-                    Ok(None)
-                }
-                Err(e) => Err(e.into()),
-            })?;
-            if had_strict_ignored.get() && cv.0.is_none() {
-                return Err(ConfigError::BadValue {
-                    value: raw_val.unwrap_or(Value::Null),
-                    reason: format!(
-                        "The value for {} contains a variable mapping, which is ignored in strict mode",
-                        self.name.unwrap_or("<unnamed>"),
-                    ),
-                });
+    /// Get a value along with its source information.
+    ///
+    /// Note: If querying with `SelectMode::All` (which aggregates values across
+    /// multiple config levels), there is no single source level and this method
+    /// will return `Err(ConfigError::NoSingleSource)`. For aggregated queries,
+    /// use [`ConfigQuery::get_optional_with_source`] instead.
+    pub fn get_with_source<T>(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<(T, ConfigSource), ConfigError>
+    where
+        T: TryConvert + ValueStrategy,
+    {
+        T::validate_query(self)?;
+        let cv = self.eval_config_value::<T>(context)?;
+        let source = cv.source.clone().ok_or_else(|| {
+            if self.select == SelectMode::All {
+                ConfigError::NoSingleSource
+            } else {
+                ConfigError::KeyNotFound
             }
-            let cv = cv.recursive_map(&T::handle_arrays);
-            T::try_convert(cv)
-        } else {
-            let cv = self
-                .get_config(ctx)?
-                .try_recursive_map(&|val| Ok(expand_macros(ctx, val)?))?
-                .recursive_map(&T::handle_arrays);
-            T::try_convert(cv)
-        }
+        })?;
+        let val = T::try_convert(cv)?;
+        Ok((val, source))
     }
 
     /// Get a value with normal processing, but verifying that it's a file that exists.
@@ -165,38 +282,33 @@ impl<'a> ConfigQuery<'a> {
         use crate::mapping::*;
 
         T::validate_query(self)?;
-        // See comments re strict checking in get() above
-        if ctx.is_strict() {
-            let cv = self.get_config(ctx)?;
-            let raw_val = cv.0.clone();
-            let had_strict_ignored = std::cell::Cell::new(false);
-            let cv = cv.try_recursive_map(&|val| match expand_macros_strict(ctx, val) {
-                Ok(v) => Ok(v),
-                Err(MappingError::StrictVariableIgnored(_)) => {
-                    had_strict_ignored.set(true);
-                    Ok(None)
-                }
-                Err(e) => Err(e.into()),
-            })?;
-            if had_strict_ignored.get() && cv.0.is_none() {
-                return Err(ConfigError::BadValue {
-                    value: raw_val.unwrap_or(Value::Null),
-                    reason: format!(
-                        "The value for {} contains a variable mapping, which is ignored in strict mode",
-                        self.name.unwrap_or("<unnamed>"),
-                    ),
-                });
+        let cv = self.eval_config_value::<T>(ctx)?.recursive_map(&file_check);
+        T::try_convert(cv)
+    }
+
+    /// Get a file value along with its source information.
+    ///
+    /// See [`ConfigQuery::get_with_source`] for details on source resolution.
+    pub fn get_file_with_source<T>(
+        &self,
+        ctx: &EnvironmentContext,
+    ) -> Result<(T, ConfigSource), ConfigError>
+    where
+        T: TryConvert + ValueStrategy,
+    {
+        use crate::mapping::*;
+
+        T::validate_query(self)?;
+        let cv = self.eval_config_value::<T>(ctx)?.recursive_map(&file_check);
+        let source = cv.source.clone().ok_or_else(|| {
+            if self.select == SelectMode::All {
+                ConfigError::NoSingleSource
+            } else {
+                ConfigError::KeyNotFound
             }
-            let cv = cv.recursive_map(&T::handle_arrays).recursive_map(&file_check);
-            T::try_convert(cv)
-        } else {
-            let cv = self
-                .get_config(ctx)?
-                .try_recursive_map(&|val| Ok(expand_macros(ctx, val)?))?
-                .recursive_map(&T::handle_arrays)
-                .recursive_map(&file_check);
-            T::try_convert(cv)
-        }
+        })?;
+        let val = T::try_convert(cv)?;
+        Ok((val, source))
     }
 
     pub fn validate_write_query(&self) -> std::result::Result<(&str, ConfigLevel), ConfigError> {

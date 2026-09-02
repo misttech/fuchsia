@@ -9,6 +9,7 @@ pub mod query;
 pub mod value;
 
 pub type ConfigResult = Result<ConfigValue, ConfigError>;
+pub use crate::ConfigSource;
 pub use query::ConfigQuery;
 pub use value::ConfigValue;
 
@@ -53,6 +54,9 @@ pub enum ConfigError {
 
     #[error("Additive mode can only be used with an array or Value return type.")]
     AdditiveModeInvalid,
+
+    #[error("No single source available for aggregated query")]
+    NoSingleSource,
 
     #[error("Conversion to {to} not possible for value: {value}")]
     ConversionFailed { to: &'static str, value: Value },

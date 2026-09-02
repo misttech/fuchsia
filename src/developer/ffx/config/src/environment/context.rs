@@ -500,6 +500,30 @@ impl EnvironmentContext {
         self.query(with).build().get_optional(self)
     }
 
+    /// A shorthand for querying a value and its source information.
+    pub fn get_with_source<'a, T, U>(
+        &'a self,
+        with: U,
+    ) -> Result<(T, crate::ConfigSource), ConfigError>
+    where
+        T: TryConvert + ValueStrategy,
+        U: Into<ConfigQueryBuilder<'a>>,
+    {
+        self.query(with).build().get_with_source(self)
+    }
+
+    /// A shorthand for querying an optional value and its source information.
+    pub fn get_optional_with_source<'a, T, U>(
+        &'a self,
+        with: U,
+    ) -> Result<(T, Option<crate::ConfigSource>), ConfigError>
+    where
+        T: TryConvert + ValueStrategy,
+        U: Into<ConfigQueryBuilder<'a>>,
+    {
+        self.query(with).build().get_optional_with_source(self)
+    }
+
     /// Find the appropriate sdk root for this invocation of ffx, looking at configuration
     /// values and the current environment context to determine the correct place to find it.
     pub fn get_sdk_root(&self) -> Result<SdkRoot, ContextError> {
