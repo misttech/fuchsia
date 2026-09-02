@@ -21,7 +21,7 @@ pub mod test_transport;
 
 pub use crate::command::MAX_COMMAND_LENGTH;
 
-pub const BUFFER_SIZE: usize = 50 * 1024 * 1024; // 50 MB
+pub const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
 const MAX_PACKET_SIZE: usize = 64;
 const DEFAULT_READ_TIMEOUT_SECS: i64 = 30;
@@ -276,7 +276,8 @@ pub async fn upload_with_read_timeout<T: AsyncRead + AsyncWrite + Unpin, R: Read
             listener.on_started(size.try_into().unwrap()).await?;
             log::debug!("fastboot: writing {} bytes", size);
 
-            let mut bytes = vec![0; BUFFER_SIZE];
+            let chunk_size = std::cmp::min(size as usize, BUFFER_SIZE);
+            let mut bytes = vec![0; chunk_size];
             loop {
                 match buf.read(&mut bytes) {
                     Ok(n) => {
