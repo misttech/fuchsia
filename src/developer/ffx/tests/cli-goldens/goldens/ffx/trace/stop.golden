@@ -74,18 +74,6 @@
     {
       "kind": {
         "Option": {
-          "arg_name": "reupload"
-        }
-      },
-      "optionality": "optional",
-      "long": "--reupload",
-      "short": null,
-      "description": "upload an existing trace file to GCS and display the Perfetto Trace Viewer URL.",
-      "hidden": false
-    },
-    {
-      "kind": {
-        "Option": {
           "arg_name": "bucket"
         }
       },

@@ -42,6 +42,7 @@ pub enum TraceSubCommand {
     Stop(Stop),
     Status(Status),
     Symbolize(Symbolize),
+    Upload(Upload),
     // More commands including `record` and `convert` to follow.
 }
 
@@ -138,9 +139,18 @@ pub struct Stop {
     #[argh(switch)]
     pub upload: bool,
 
-    /// upload an existing trace file to GCS and display the Perfetto Trace Viewer URL.
+    /// GCS bucket to upload the trace file to.
     #[argh(option)]
-    pub reupload: Option<String>,
+    pub bucket: Option<String>,
+}
+
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug, Default)]
+/// Upload a trace file to GCS and display the Perfetto Trace Viewer URL.
+#[argh(subcommand, name = "upload")]
+pub struct Upload {
+    /// path to trace file (.fxt) to upload. Defaults to "trace.fxt".
+    #[argh(positional)]
+    pub trace_file: Option<String>,
 
     /// GCS bucket to upload the trace file to.
     #[argh(option)]
@@ -453,9 +463,29 @@ mod tests {
     }
 
     #[test]
-    fn test_stop_args_reupload() {
-        let stop = Stop::from_args(&["stop"], &["--reupload", "some/path/trace.fxt"]).unwrap();
-        assert_eq!(stop.reupload.as_deref(), Some("some/path/trace.fxt"));
+    fn test_upload_args() {
+        let default_upload = Upload::from_args(&["upload"], &[]).unwrap();
+        assert_eq!(default_upload.trace_file, None);
+        assert_eq!(default_upload.bucket, None);
+
+        let upload_with_file = Upload::from_args(&["upload"], &["some/path/trace.fxt"]).unwrap();
+        assert_eq!(upload_with_file.trace_file.as_deref(), Some("some/path/trace.fxt"));
+        assert_eq!(upload_with_file.bucket, None);
+
+        let upload_with_bucket =
+            Upload::from_args(&["upload"], &["--bucket", "test-bucket"]).unwrap();
+        assert_eq!(upload_with_bucket.trace_file, None);
+        assert_eq!(upload_with_bucket.bucket.as_deref(), Some("test-bucket"));
+
+        let upload_full =
+            Upload::from_args(&["upload"], &["trace.fxt", "--bucket", "test-bucket"]).unwrap();
+        assert_eq!(upload_full.trace_file.as_deref(), Some("trace.fxt"));
+        assert_eq!(upload_full.bucket.as_deref(), Some("test-bucket"));
+
+        let upload_full_reversed =
+            Upload::from_args(&["upload"], &["--bucket", "test-bucket", "trace.fxt"]).unwrap();
+        assert_eq!(upload_full_reversed.trace_file.as_deref(), Some("trace.fxt"));
+        assert_eq!(upload_full_reversed.bucket.as_deref(), Some("test-bucket"));
     }
 
     #[test]

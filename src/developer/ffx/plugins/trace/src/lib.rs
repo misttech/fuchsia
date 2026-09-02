@@ -11,7 +11,7 @@ use fdomain_fuchsia_tracing_controller::{
 };
 use ffx_config::EnvironmentContext;
 use ffx_target::get_target_specifier;
-use ffx_trace_args::{Start, Stop, Symbolize, TraceCommand, TraceSubCommand};
+use ffx_trace_args::{Start, Stop, Symbolize, TraceCommand, TraceSubCommand, Upload};
 use ffx_tracing::{self as ffx_trace, FidlLibraries};
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{Deferred, FfxMain, FfxTool, bug, deferred};
@@ -304,6 +304,7 @@ impl FfxMain for TraceTool {
             TraceSubCommand::Start(ref opts) => self.trace_start(opts, writer).await,
             TraceSubCommand::Stop(ref opts) => self.trace_stop(opts, writer).await,
             TraceSubCommand::Status(_) => self.trace_status(writer).await,
+            TraceSubCommand::Upload(ref opts) => self.trace_upload(opts, writer).await,
         }
     }
 }
@@ -566,7 +567,6 @@ impl TraceTool {
 
         match (
             opts.abort,
-            opts.reupload.is_some(),
             opts.upload,
             opts.output.is_some(),
             opts.bucket.is_some(),
@@ -574,53 +574,30 @@ impl TraceTool {
             opts.no_verify_trace,
             opts.retain_raw_fidl,
         ) {
-            (true, _, true, _, _, _, _, _) => {
+            (true, true, _, _, _, _, _) => {
                 ffx_bail!("The switch '--upload' cannot be used with '--abort'.");
             }
-            (true, true, _, _, _, _, _, _) => {
-                ffx_bail!("The option '--reupload' cannot be used with '--abort'.");
-            }
-            (true, _, _, true, _, _, _, _) => {
+            (true, _, true, _, _, _, _) => {
                 ffx_bail!("The option '--output' cannot be used with '--abort'.");
             }
-            (true, _, _, _, true, _, _, _) => {
+            (true, _, _, true, _, _, _) => {
                 ffx_bail!("The option '--bucket' cannot be used with '--abort'.");
             }
-            (true, _, _, _, _, true, _, _) => {
+            (true, _, _, _, true, _, _) => {
                 ffx_bail!("The switch '--no-symbolize' cannot be used with '--abort'.");
             }
-            (true, _, _, _, _, _, true, _) => {
+            (true, _, _, _, _, true, _) => {
                 ffx_bail!("The switch '--no-verify-trace' cannot be used with '--abort'.");
             }
-            (true, _, _, _, _, _, _, true) => {
+            (true, _, _, _, _, _, true) => {
                 ffx_bail!("The switch '--retain-raw-fidl' cannot be used with '--abort'.");
             }
-            (_, true, true, _, _, _, _, _) => {
-                ffx_bail!("The switch '--upload' cannot be used with '--reupload'.");
-            }
-            (_, true, _, true, _, _, _, _) => {
-                ffx_bail!("The option '--output' cannot be used with '--reupload'.");
-            }
-            (_, true, _, _, _, true, _, _) => {
-                ffx_bail!("The switch '--no-symbolize' cannot be used with '--reupload'.");
-            }
-            (_, true, _, _, _, _, true, _) => {
-                ffx_bail!("The switch '--no-verify-trace' cannot be used with '--reupload'.");
-            }
-            (_, true, _, _, _, _, _, true) => {
-                ffx_bail!("The switch '--retain-raw-fidl' cannot be used with '--reupload'.");
-            }
-            (_, false, false, _, true, _, _, _) => {
-                ffx_bail!(
-                    "The option '--bucket' can only be used with '--upload' or '--reupload'."
-                );
+            (_, false, _, true, _, _, _) => {
+                ffx_bail!("The option '--bucket' can only be used with '--upload'.");
             }
             _ => {}
         }
 
-        if let Some(ref fxt_path) = opts.reupload {
-            return reupload_trace(&self.context, fxt_path, opts, writer).await.map_err(Into::into);
-        }
         let trace_proxy = self.get_trace_proxy().await?;
         let output = canonical_path(opts.output.clone().unwrap_or_else(|| "trace.fxt".to_owned()))?;
 
@@ -642,6 +619,21 @@ impl TraceTool {
         };
 
         finalize_trace(&context, trace_data, opts, writer).await.map_err(Into::into)
+    }
+
+    async fn trace_upload(self, opts: &Upload, writer: Writer) -> fho::Result<()> {
+        let trace_file = opts.trace_file.as_deref().unwrap_or("trace.fxt");
+        trace_upload_impl(
+            &self.context,
+            trace_file,
+            opts.bucket.as_deref(),
+            writer,
+            |path, bucket, viewer| async move {
+                upload::upload_trace(&path, &bucket, &viewer).await
+            },
+        )
+        .await
+        .map_err(Into::into)
     }
 
     async fn trace_status(self, mut writer: Writer) -> fho::Result<()> {
@@ -803,22 +795,10 @@ where
     Ok(())
 }
 
-async fn reupload_trace(
+async fn trace_upload_impl<F, Fut>(
     context: &EnvironmentContext,
     fxt_path: &str,
-    opts: &Stop,
-    writer: Writer,
-) -> Result<()> {
-    reupload_trace_impl(context, fxt_path, opts, writer, |path, bucket, viewer| async move {
-        upload::upload_trace(&path, &bucket, &viewer).await
-    })
-    .await
-}
-
-async fn reupload_trace_impl<F, Fut>(
-    context: &EnvironmentContext,
-    fxt_path: &str,
-    opts: &Stop,
+    cli_bucket: Option<&str>,
     mut writer: Writer,
     uploader: F,
 ) -> Result<()>
@@ -826,8 +806,25 @@ where
     F: FnOnce(PathBuf, String, String) -> Fut,
     Fut: Future<Output = Result<String>>,
 {
-    upload_and_print(context, Path::new(fxt_path), opts.bucket.as_deref(), &mut writer, uploader)
-        .await
+    let path = Path::new(fxt_path);
+    if !path.exists() {
+        ffx_bail!("Trace file does not exist: {}", fxt_path);
+    }
+    let bucket = upload::resolve_bucket(cli_bucket, context);
+    let viewer_base = upload::resolve_viewer_url(context);
+    writer.line(format!("Uploading trace to gs://{}...", bucket))?;
+    match uploader(path.to_path_buf(), bucket, viewer_base).await {
+        Ok(url) => {
+            writer.line("Trace uploaded successfully!")?;
+            writer.line("")?;
+            writer.line("View in Perfetto Trace Viewer:")?;
+            writer.line(format!("  {}", url))?;
+            Ok(())
+        }
+        Err(e) => {
+            ffx_bail!("Failed to upload trace to GCS: {e:#}");
+        }
+    }
 }
 
 /// Do some quick verification that the trace file
@@ -1854,26 +1851,25 @@ Triggers:
     }
 
     #[fuchsia::test]
-    async fn test_reupload_trace_success() {
+    async fn test_upload_trace_success() {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
 
-        let stop_opts = Stop {
-            reupload: Some("existing_trace.fxt".to_string()),
-            bucket: Some("reupload-bucket".to_string()),
-            ..Default::default()
-        };
+        let temp_dir = tempfile::tempdir().unwrap();
+        let trace_path = temp_dir.path().join("existing_trace.fxt");
+        std::fs::write(&trace_path, b"placeholder trace data").unwrap();
 
         let expected_url = "https://fuchsia-trace-viewer.corp.goog/trace/abcdef12";
-        reupload_trace_impl(
+        let trace_path_str = trace_path.to_str().unwrap().to_string();
+        trace_upload_impl(
             &env.context,
-            "existing_trace.fxt",
-            &stop_opts,
+            &trace_path_str,
+            Some("custom-bucket"),
             writer,
             |path, bucket, _viewer| async move {
-                assert_eq!(path, PathBuf::from("existing_trace.fxt"));
-                assert_eq!(bucket, "reupload-bucket");
+                assert_eq!(path, trace_path);
+                assert_eq!(bucket, "custom-bucket");
                 Ok(expected_url.to_string())
             },
         )
@@ -1882,37 +1878,88 @@ Triggers:
 
         let output = test_buffers.into_stdout_str();
         let expected_output = format!(
-            "Uploading trace to gs://reupload-bucket...\nTrace uploaded successfully!\n\nView in Perfetto Trace Viewer:\n  {}\n",
+            "Uploading trace to gs://custom-bucket...\nTrace uploaded successfully!\n\nView in Perfetto Trace Viewer:\n  {}\n",
             expected_url
         );
         assert_eq!(output, expected_output);
     }
 
     #[fuchsia::test]
-    async fn test_reupload_trace_failure_non_blocking() {
+    async fn test_upload_trace_failure_error() {
         let env = ffx_config::test_init().unwrap();
         let test_buffers = TestBuffers::default();
         let writer = Writer::new_test(None, &test_buffers);
 
-        let stop_opts = Stop {
-            reupload: Some("existing_trace.fxt".to_string()),
-            bucket: Some("reupload-bucket".to_string()),
-            ..Default::default()
-        };
+        let temp_dir = tempfile::tempdir().unwrap();
+        let trace_path = temp_dir.path().join("existing_trace.fxt");
+        std::fs::write(&trace_path, b"placeholder trace data").unwrap();
 
-        let res = reupload_trace_impl(
+        let res = trace_upload_impl(
             &env.context,
-            "existing_trace.fxt",
-            &stop_opts,
+            trace_path.to_str().unwrap(),
+            Some("custom-bucket"),
             writer,
-            |_path, _bucket, _viewer| async { Err(anyhow!("simulated reupload failure")) },
+            |_path, _bucket, _viewer| async { Err(anyhow!("simulated upload failure")) },
         )
         .await;
 
-        assert!(res.is_ok());
-        let output = test_buffers.into_stdout_str();
-        let expected_output = "Uploading trace to gs://reupload-bucket...\nWarning: Failed to upload trace to GCS: simulated reupload failure\n";
-        assert_eq!(output, expected_output);
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Failed to upload trace to GCS: simulated upload failure"),
+            "unexpected error message: {err_msg}"
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_upload_trace_missing_file_error() {
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let res = trace_upload_impl(
+            &env.context,
+            "non_existent_trace.fxt",
+            None,
+            writer,
+            |_path, _bucket, _viewer| async { Ok("https://example.com".to_string()) },
+        )
+        .await;
+
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Trace file does not exist: non_existent_trace.fxt"),
+            "unexpected error message: {err_msg}"
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_upload_trace_tool_dispatch() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let trace_path = temp_dir.path().join("trace.fxt");
+        std::fs::write(&trace_path, b"placeholder trace data").unwrap();
+
+        let upload_opts = Upload {
+            trace_file: Some(trace_path.to_str().unwrap().to_string()),
+            bucket: Some("my-bucket".to_string()),
+        };
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(client),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Upload(upload_opts) },
+        };
+
+        let res = tool.main(writer).await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("Failed to upload trace to GCS"), "unexpected error: {err_msg}");
     }
 
     #[fuchsia::test]
@@ -2315,10 +2362,6 @@ Triggers:
                 "The switch '--upload' cannot be used with '--abort'",
             ),
             (
-                Stop { abort: true, reupload: Some("trace.fxt".to_string()), ..Default::default() },
-                "The option '--reupload' cannot be used with '--abort'",
-            ),
-            (
                 Stop { abort: true, output: Some("trace.fxt".to_string()), ..Default::default() },
                 "The option '--output' cannot be used with '--abort'",
             ),
@@ -2362,75 +2405,6 @@ Triggers:
     }
 
     #[fuchsia::test]
-    async fn test_stop_reupload_exclusive_options() {
-        let client = fdomain_local::local_client_empty();
-        let env = ffx_config::test_init().unwrap();
-
-        let cases = vec![
-            (
-                Stop {
-                    reupload: Some("trace.fxt".to_string()),
-                    upload: true,
-                    ..Default::default()
-                },
-                "The switch '--upload' cannot be used with '--reupload'",
-            ),
-            (
-                Stop {
-                    reupload: Some("trace.fxt".to_string()),
-                    output: Some("trace.fxt".to_string()),
-                    ..Default::default()
-                },
-                "The option '--output' cannot be used with '--reupload'",
-            ),
-            (
-                Stop {
-                    reupload: Some("trace.fxt".to_string()),
-                    no_symbolize: true,
-                    ..Default::default()
-                },
-                "The switch '--no-symbolize' cannot be used with '--reupload'",
-            ),
-            (
-                Stop {
-                    reupload: Some("trace.fxt".to_string()),
-                    no_verify_trace: true,
-                    ..Default::default()
-                },
-                "The switch '--no-verify-trace' cannot be used with '--reupload'",
-            ),
-            (
-                Stop {
-                    reupload: Some("trace.fxt".to_string()),
-                    retain_raw_fidl: true,
-                    ..Default::default()
-                },
-                "The switch '--retain-raw-fidl' cannot be used with '--reupload'",
-            ),
-        ];
-
-        for (opts, expected_err) in cases {
-            let test_buffers = TestBuffers::default();
-            let writer = Writer::new_test(None, &test_buffers);
-            let tool = TraceTool {
-                provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
-                session_manager: setup_fake_session_manager(client.clone()),
-                context: env.context.clone(),
-                cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(opts.clone()) },
-            };
-            let res = tool.trace_stop(&opts, writer).await;
-            assert!(res.is_err(), "Expected error for opts: {:?}", opts);
-            let err_msg = res.unwrap_err().to_string();
-            assert!(
-                err_msg.contains(expected_err),
-                "Error \"{}\" did not contain \"{}\"",
-                err_msg,
-                expected_err
-            );
-        }
-    }
-
-    #[fuchsia::test]
     async fn test_stop_bucket_exclusive_options() {
         let client = fdomain_local::local_client_empty();
         let env = ffx_config::test_init().unwrap();
@@ -2448,7 +2422,7 @@ Triggers:
         assert!(
             res.unwrap_err()
                 .to_string()
-                .contains("The option '--bucket' can only be used with '--upload' or '--reupload'")
+                .contains("The option '--bucket' can only be used with '--upload'")
         );
     }
 

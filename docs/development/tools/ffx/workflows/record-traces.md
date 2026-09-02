@@ -271,16 +271,18 @@ ffx trace stop --upload
 ### Upload an existing trace file {:#upload-an-existing-trace-file}
 
 If you have already recorded a `.fxt` trace file on your host machine, you can
-upload it using the `--reupload` option on `ffx trace stop`:
+upload it using `ffx trace upload`:
 
 ```posix-terminal
-ffx trace stop --reupload <FILE_PATH>
+ffx trace upload [FILE_PATH] [--bucket BUCKET_NAME]
 ```
+
+If `FILE_PATH` is omitted, it defaults to `trace.fxt`.
 
 For example:
 
 ```none {:.devsite-disable-click-to-copy}
-$ ffx trace stop --reupload /Users/alice/trace.fxt
+$ ffx trace upload /Users/alice/trace.fxt
 Uploading trace to gs://fuchsia-trace-viewer-traces...
 Trace uploaded successfully!
 
@@ -297,10 +299,10 @@ You can specify a different bucket using the `--bucket` option:
 ffx trace start --upload --bucket <BUCKET_NAME>
 ```
 
-Or when reuploading:
+Or when uploading an existing trace:
 
 ```posix-terminal
-ffx trace stop --reupload <FILE_PATH> --bucket <BUCKET_NAME>
+ffx trace upload [FILE_PATH] --bucket <BUCKET_NAME>
 ```
 
 ### GCS authentication and configuration {:#gcs-authentication-and-configuration}
@@ -335,7 +337,7 @@ Once a trace is finished and a `.fxt` file is created, you can visualize the
 trace in one of two ways:
 
 * **Open via URL**: If the trace was uploaded to GCS (using `--upload` or
-  `--reupload`), navigate to the generated Perfetto Trace Viewer URL printed in
+  `ffx trace upload`), navigate to the generated Perfetto Trace Viewer URL printed in
   the command output.
 * **Open local file**:
   1. Visit the [Perfetto viewer][perfetto-viewer]{:.external} site in a web browser.

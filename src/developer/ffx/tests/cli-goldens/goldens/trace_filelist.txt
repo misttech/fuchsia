@@ -6,3 +6,4 @@ ffx/trace/start.golden
 ffx/trace/status.golden
 ffx/trace/stop.golden
 ffx/trace/symbolize.golden
+ffx/trace/upload.golden
