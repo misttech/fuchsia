@@ -23,6 +23,7 @@ pub(crate) struct State<'a, R: Read, W: Write> {
     pub(crate) history_index: usize,
     pub(crate) draft_line: Option<BString>,
     pub(crate) editor: &'a mut Editor,
+    pub(crate) render_buf: Vec<u8>,
 }
 
 impl<'a, R: Read, W: Write> State<'a, R, W> {
@@ -31,7 +32,7 @@ impl<'a, R: Read, W: Write> State<'a, R, W> {
     }
 
     pub(crate) fn refresh_singleline(&mut self) {
-        let mut ab = Vec::new();
+        self.render_buf.clear();
         let prompt_len = self.prompt_length;
         let mut buf_str = self.buffer.as_bstr();
         let mut pos = self.cursor_position;
@@ -46,20 +47,22 @@ impl<'a, R: Read, W: Write> State<'a, R, W> {
             buf_str = &buf_str[..buf_str.len() - 1];
         }
 
-        let _ = control::write_bytes(&mut ab, b"\r");
-        let _ = control::write_bytes(&mut ab, self.prompt.as_bytes());
-        let _ = control::write_bytes(&mut ab, buf_str.as_bytes());
-        self.show_refresh_hints(&mut ab);
-        let _ = control::write_clear_to_eol(&mut ab);
-        let _ = control::write_move_cursor_column(&mut ab, pos + prompt_len);
+        let _ = control::write_bytes(&mut self.render_buf, b"\r");
+        let _ = control::write_bytes(&mut self.render_buf, self.prompt.as_bytes());
+        let _ = control::write_bytes(&mut self.render_buf, buf_str.as_bytes());
+        self.show_refresh_hints();
+        let _ = control::write_clear_to_eol(&mut self.render_buf);
+        let _ = control::write_move_cursor_column(&mut self.render_buf, pos + prompt_len);
 
-        let _ = self.writer.write_all(&ab);
+        let _ = self.writer.write_all(&self.render_buf);
         let _ = self.writer.flush();
     }
 
     pub(crate) fn refresh_multiline(&mut self) {
-        let mut ab = Vec::new();
-        let rows = (self.prompt_length + self.buffer.len() + self.column_count) / self.column_count;
+        self.render_buf.clear();
+        let mut rows = ((self.prompt_length + self.buffer.len() + self.column_count - 1)
+            / self.column_count)
+            .max(1);
         let rpos = (self.prompt_length + self.previous_cursor_position + self.column_count)
             / self.column_count;
         let rpos2 =
@@ -72,35 +75,40 @@ impl<'a, R: Read, W: Write> State<'a, R, W> {
 
         if old_rows > 0 {
             if rpos < old_rows {
-                let _ = control::write_move_cursor_down(&mut ab, old_rows - rpos);
+                let _ = control::write_move_cursor_down(&mut self.render_buf, old_rows - rpos);
             }
             for _ in 0..(old_rows - 1) {
-                let _ = control::write_clear_line_and_move_up(&mut ab);
+                let _ = control::write_clear_line_and_move_up(&mut self.render_buf);
             }
-            let _ = control::write_bytes(&mut ab, b"\r");
-            let _ = control::write_clear_to_eol(&mut ab);
+            let _ = control::write_bytes(&mut self.render_buf, b"\r");
+            let _ = control::write_clear_to_eol(&mut self.render_buf);
         }
 
-        let _ = control::write_bytes(&mut ab, self.prompt.as_bytes());
-        let _ = control::write_bytes(&mut ab, self.buffer.as_bytes());
-        self.show_refresh_hints(&mut ab);
+        let _ = control::write_bytes(&mut self.render_buf, self.prompt.as_bytes());
+        let _ = control::write_bytes(&mut self.render_buf, self.buffer.as_bytes());
+        self.show_refresh_hints();
 
-        if self.cursor_position == self.buffer.len()
+        if self.cursor_position > 0
+            && self.cursor_position == self.buffer.len()
             && (self.prompt_length + self.buffer.len()) % self.column_count == 0
         {
-            let _ = control::write_bytes(&mut ab, b"\n\r");
-            let _ = control::write_clear_to_eol(&mut ab);
+            let _ = control::write_bytes(&mut self.render_buf, b"\n\r");
+            let _ = control::write_clear_to_eol(&mut self.render_buf);
+            rows += 1;
+            if rows > self.max_rows {
+                self.max_rows = rows;
+            }
         }
 
         if rows > rpos2 {
-            let _ = control::write_move_cursor_up(&mut ab, rows - rpos2);
+            let _ = control::write_move_cursor_up(&mut self.render_buf, rows - rpos2);
         }
 
         let col = (self.prompt_length + self.cursor_position) % self.column_count;
-        let _ = control::write_move_cursor_column(&mut ab, col);
+        let _ = control::write_move_cursor_column(&mut self.render_buf, col);
 
         self.previous_cursor_position = self.cursor_position;
-        let _ = self.writer.write_all(&ab);
+        let _ = self.writer.write_all(&self.render_buf);
         let _ = self.writer.flush();
     }
 
@@ -112,7 +120,7 @@ impl<'a, R: Read, W: Write> State<'a, R, W> {
         }
     }
 
-    fn show_refresh_hints(&mut self, ab: &mut Vec<u8>) {
+    fn show_refresh_hints(&mut self) {
         if self.prompt_length + self.buffer.len() < self.column_count {
             if let Some(ref handler) = self.editor.hint_handler {
                 if let Some(hint) = handler(self.buffer.as_bstr()) {
@@ -132,11 +140,15 @@ impl<'a, R: Read, W: Write> State<'a, R, W> {
                     };
 
                     if effective_color.is_some() || hint.bold {
-                        let _ = control::write_sgr_formatting(ab, hint.bold, effective_color);
+                        let _ = control::write_sgr_formatting(
+                            &mut self.render_buf,
+                            hint.bold,
+                            effective_color,
+                        );
                     }
-                    let _ = control::write_bytes(ab, text);
+                    let _ = control::write_bytes(&mut self.render_buf, text);
                     if effective_color.is_some() || hint.bold {
-                        let _ = control::write_reset_sgr(ab);
+                        let _ = control::write_reset_sgr(&mut self.render_buf);
                     }
                 }
             }
@@ -276,9 +288,8 @@ impl<'a, R: Read, W: Write> State<'a, R, W> {
         }
 
         let mut i = 0;
-        let mut stop = false;
 
-        while !stop {
+        loop {
             if i < completions.len() {
                 let saved_buffer = self.buffer.clone();
                 let saved_pos = self.cursor_position;
@@ -309,7 +320,18 @@ impl<'a, R: Read, W: Write> State<'a, R, W> {
                     if i < completions.len() {
                         self.refresh_line();
                     }
-                    stop = true;
+                    let Some(b1) = control::read_byte(self.reader).ok().flatten() else {
+                        return 0;
+                    };
+                    if b1 == b'[' || b1 == b'O' {
+                        let Some(b2) = control::read_byte(self.reader).ok().flatten() else {
+                            return 0;
+                        };
+                        self.handle_escape_sequence(b1, b2);
+                        return 0;
+                    } else {
+                        return b1;
+                    }
                 }
                 _ => {
                     if i < completions.len() {
@@ -320,6 +342,31 @@ impl<'a, R: Read, W: Write> State<'a, R, W> {
                 }
             }
         }
-        0
+    }
+
+    pub(crate) fn handle_escape_sequence(&mut self, b1: u8, b2: u8) {
+        if b1 == b'[' {
+            if (b'0'..=b'9').contains(&b2) {
+                if control::read_byte(self.reader).ok().flatten() == Some(b'~') && b2 == b'3' {
+                    self.delete();
+                }
+            } else {
+                match b2 {
+                    control::CMD_CURSOR_UP => self.history_next(HistoryDir::Prev),
+                    control::CMD_CURSOR_DOWN => self.history_next(HistoryDir::Next),
+                    control::CMD_CURSOR_RIGHT => self.edit_move_right(),
+                    control::CMD_CURSOR_LEFT => self.edit_move_left(),
+                    control::CMD_CURSOR_HOME => self.edit_move_home(),
+                    control::CMD_CURSOR_END => self.edit_move_end(),
+                    _ => {}
+                }
+            }
+        } else if b1 == b'O' {
+            match b2 {
+                control::CMD_CURSOR_HOME => self.edit_move_home(),
+                control::CMD_CURSOR_END => self.edit_move_end(),
+                _ => {}
+            }
+        }
     }
 }

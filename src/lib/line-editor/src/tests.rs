@@ -326,6 +326,36 @@ fn test_ctrl_c_and_ctrl_d() {
         let res = handle.join().unwrap();
         assert!(matches!(res, Err(ReadlineError::Eof)));
     }
+
+    // Test stream EOF on empty line
+    {
+        let (mut r_in, w_in) = create_pipe();
+        let (mut r_out, mut w_out) = create_pipe();
+
+        let handle = std::thread::spawn(move || {
+            let mut editor = test_editor();
+            editor.readline_from(
+                &mut r_in,
+                &mut w_out,
+                OperatingMode::Interactive,
+                b"prompt> ".as_bstr(),
+            )
+        });
+
+        let mut buf = [0u8; 32];
+        let _ = r_out.read(&mut buf[..4]);
+        let mut w_in = w_in;
+        let _ = w_in.write_all(b"\x1b[10;80R");
+        let _ = r_out.read(&mut buf[..6]);
+        let _ = r_out.read(&mut buf[..4]);
+        let _ = w_in.write_all(b"\x1b[10;80R");
+
+        // Close write end of pipe without writing any keys
+        drop(w_in);
+
+        let res = handle.join().unwrap();
+        assert!(matches!(res, Err(ReadlineError::Eof)));
+    }
 }
 
 #[test]
@@ -784,4 +814,159 @@ fn test_control_write_helpers() {
     buf.clear();
     control::write_erase_previous_char_uart(&mut buf).unwrap();
     assert_eq!(buf, b"\x08 \x08");
+}
+
+#[test]
+fn test_completion_escape_sequence_navigation() {
+    let (mut r_in, mut w_in) = create_pipe();
+    let (mut r_out, mut w_out) = create_pipe();
+
+    let handle = std::thread::spawn(move || {
+        let mut editor = test_editor();
+        editor.history.add("previous_cmd");
+        editor.set_completion_handler(|line: &BStr| {
+            if line.starts_with(b"h") {
+                vec![BString::from("hello"), BString::from("help")]
+            } else {
+                vec![]
+            }
+        });
+        editor.readline_from(
+            &mut r_in,
+            &mut w_out,
+            OperatingMode::Interactive,
+            b"prompt> ".as_bstr(),
+        )
+    });
+
+    let mut buf = [0u8; 32];
+    let _ = r_out.read(&mut buf[..4]);
+    let _ = w_in.write_all(b"\x1b[10;80R");
+    let _ = r_out.read(&mut buf[..6]);
+    let _ = r_out.read(&mut buf[..4]);
+    let _ = w_in.write_all(b"\x1b[10;80R");
+
+    // Type 'h', TAB (9) to trigger completion, then Up Arrow (\x1b[A), then Enter (10)
+    let _ = w_in.write_all(&[b'h', 9]);
+    let _ = w_in.write_all(b"\x1b[A\n");
+
+    let res = handle.join().unwrap();
+    assert_eq!(res.ok(), Some(BString::from("previous_cmd")));
+}
+
+#[test]
+fn test_multiline_boundary_row_calculation() {
+    let (mut r_in, _w_in) = create_pipe();
+    let (_r_out, mut w_out) = create_pipe();
+
+    let mut editor = Editor::with_config(
+        Config { multiline_mode: true, ..Config::default() }
+            .with_terminal_mode(TerminalMode::Tty)
+            .with_column_width(ColumnWidth::Fixed(80)),
+    );
+
+    let prompt = b"1234567890".as_bstr(); // len 10
+    let mut state = state::State {
+        reader: &mut r_in,
+        writer: &mut w_out,
+        buffer: BString::from("A".repeat(70)), // total 80 chars
+        prompt,
+        prompt_length: prompt.len(),
+        cursor_position: 70,
+        previous_cursor_position: 0,
+        column_count: 80,
+        max_rows: 0,
+        history_index: 0,
+        draft_line: None,
+        editor: &mut editor,
+        render_buf: Vec::with_capacity(512),
+    };
+
+    // Total 79 chars with 80 cols is 1 row, cursor is not at margin
+    state.buffer = BString::from("A".repeat(69));
+    state.cursor_position = 69;
+    state.refresh_multiline();
+    assert_eq!(state.max_rows, 1);
+
+    // Total 80 chars with cursor at column 80 wraps to row 2 at the margin
+    state.buffer.push(b'A');
+    state.cursor_position = 70;
+    state.refresh_multiline();
+    assert_eq!(state.max_rows, 2);
+
+    // Total 80 chars with cursor at start (column 10) does not wrap at margin
+    state.cursor_position = 0;
+    state.max_rows = 0;
+    state.refresh_multiline();
+    assert_eq!(state.max_rows, 1);
+
+    // At 81 chars, it transitions to 2 rows regardless of cursor position
+    state.buffer.push(b'A');
+    state.cursor_position = 0;
+    state.refresh_multiline();
+    assert_eq!(state.max_rows, 2);
+
+    // Empty prompt and empty buffer should not emit newline at margin
+    state.buffer.clear();
+    state.cursor_position = 0;
+    state.prompt = b"".as_bstr();
+    state.prompt_length = 0;
+    state.render_buf.clear();
+    state.refresh_multiline();
+    assert!(!state.render_buf.windows(2).any(|w| w == b"\n\r"));
+}
+
+#[test]
+fn test_nontty_unbounded_line_length() {
+    let (mut r_in, mut w_in) = create_pipe();
+    let (_r_out, mut w_out) = create_pipe();
+
+    let mut long_line = vec![b'x'; 6000];
+    long_line.push(b'\n');
+
+    let writer_handle = std::thread::spawn(move || {
+        w_in.write_all(&long_line).unwrap();
+    });
+
+    let mut editor =
+        Editor::with_config(Config::default().with_terminal_mode(TerminalMode::NonTty));
+
+    let res = editor.readline_from(&mut r_in, &mut w_out, OperatingMode::NonTty, b"".as_bstr());
+
+    writer_handle.join().unwrap();
+    let line = res.expect("readline should succeed");
+    assert_eq!(line.len(), 6000);
+    assert_eq!(line, BString::from("x".repeat(6000)));
+}
+
+#[test]
+fn test_render_buf_capacity_retention() {
+    let (mut r_in, _w_in) = create_pipe();
+    let (_r_out, mut w_out) = create_pipe();
+
+    let mut editor = Editor::default();
+    let prompt = b"> ".as_bstr();
+    let mut state = state::State {
+        reader: &mut r_in,
+        writer: &mut w_out,
+        buffer: BString::from("test command"),
+        prompt,
+        prompt_length: prompt.len(),
+        cursor_position: 12,
+        previous_cursor_position: 0,
+        column_count: 80,
+        max_rows: 0,
+        history_index: 0,
+        draft_line: None,
+        editor: &mut editor,
+        render_buf: Vec::with_capacity(512),
+    };
+
+    state.refresh_singleline();
+    let cap1 = state.render_buf.capacity();
+    assert!(cap1 >= 512);
+
+    state.edit_insert(b'!');
+    let cap2 = state.render_buf.capacity();
+    assert_eq!(cap1, cap2, "render_buf capacity should be retained without reallocation");
 }

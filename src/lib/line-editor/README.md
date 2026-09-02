@@ -138,3 +138,15 @@ Run unit tests with `fx`:
 fx test line-editor-tests
 ```
 
+## Future Work
+
+- **ANSI Escape Codes in Prompt Strings**: Prompts currently compute column width
+  using raw byte length (`prompt.len()`). Escape sequences for terminal colors or
+  formatting (e.g., `\x1b[32m$ \x1b[0m`) occupy bytes but not visual columns, which
+  can misalign cursor positioning calculations. Stripping non-printable escape
+  sequences when computing visual prompt length will support styled prompts.
+- **UTF-8 Character Navigation**: Line editing currently operates on raw byte
+  slices. Multi-byte Unicode code points and grapheme clusters should be handled
+  cohesively during cursor movement (Left/Right), backspace/delete operations, and
+  display column width calculations (e.g., double-width characters).
+

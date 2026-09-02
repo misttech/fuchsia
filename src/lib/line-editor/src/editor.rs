@@ -94,6 +94,7 @@ impl Editor {
             history_index: 0,
             draft_line: None,
             editor: self,
+            render_buf: Vec::with_capacity(512),
         };
 
         if state.write_all(prompt.as_bytes()).is_err() {
@@ -102,7 +103,11 @@ impl Editor {
 
         loop {
             let Some(mut c) = control::read_byte(state.reader)? else {
-                return Ok(state.buffer);
+                if state.buffer.is_empty() {
+                    return Err(ReadlineError::Eof);
+                } else {
+                    return Ok(state.buffer);
+                }
             };
 
             let has_completion = state.editor.completion_handler.is_some();
@@ -161,31 +166,7 @@ impl Editor {
                 }
                 KEY_ESC => {
                     if let Some((b1, b2)) = control::read_bytes_2(state.reader)? {
-                        if b1 == b'[' {
-                            if (b'0'..=b'9').contains(&b2) {
-                                if control::read_byte(state.reader)? == Some(b'~') && b2 == b'3' {
-                                    state.delete();
-                                }
-                            } else {
-                                match b2 {
-                                    control::CMD_CURSOR_UP => state.history_next(HistoryDir::Prev),
-                                    control::CMD_CURSOR_DOWN => {
-                                        state.history_next(HistoryDir::Next)
-                                    }
-                                    control::CMD_CURSOR_RIGHT => state.edit_move_right(),
-                                    control::CMD_CURSOR_LEFT => state.edit_move_left(),
-                                    control::CMD_CURSOR_HOME => state.edit_move_home(),
-                                    control::CMD_CURSOR_END => state.edit_move_end(),
-                                    _ => {}
-                                }
-                            }
-                        } else if b1 == b'O' {
-                            match b2 {
-                                control::CMD_CURSOR_HOME => state.edit_move_home(),
-                                control::CMD_CURSOR_END => state.edit_move_end(),
-                                _ => {}
-                            }
-                        }
+                        state.handle_escape_sequence(b1, b2);
                     }
                 }
                 KEY_CTRL_U => {
@@ -235,8 +216,9 @@ impl Editor {
 
         let mut buf = BString::default();
         let mut hit_newline = false;
+        let is_nontty = mode == OperatingMode::NonTty;
 
-        while buf.len() < self.config.max_line_len - 1 {
+        while is_nontty || buf.len() < self.config.max_line_len - 1 {
             let Some(mut ch) = control::read_byte(&mut reader)? else {
                 break;
             };
