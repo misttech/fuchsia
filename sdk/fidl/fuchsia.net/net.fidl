@@ -31,6 +31,7 @@ type IpVersion = strict enum {
 /// ("127" in the address "127.0.0.1") will be at index 0.
 type Ipv4Address = struct {
     // TODO(https://fxbug.dev/42094982): rename to octets.
+    @sensitive
     addr array<uint8, 4>;
 };
 
@@ -38,6 +39,7 @@ type Ipv4Address = struct {
 /// ("ff" in the address "ff02::1") will be at index 0.
 type Ipv6Address = struct {
     // TODO(https://fxbug.dev/42094982): rename to octets.
+    @sensitive
     addr array<uint8, 16>;
 };
 
@@ -83,6 +85,7 @@ type Ipv6AddressWithPrefix = struct {
 
 /// A MAC address used to identify a network interface on the data link layer within the network.
 type MacAddress = struct {
+    @sensitive
     octets array<uint8, 6>;
 };
 
