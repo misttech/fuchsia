@@ -24,7 +24,7 @@ use ieee80211::OuiFmt;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use strum_macros::{Display, EnumIter};
+use strum_macros::{Display, EnumCount};
 use windowed_stats::experimental::inspect::{InspectSender, InspectedTimeMatrix};
 use windowed_stats::experimental::series::interpolation::{ConstantSample, LastSample};
 use windowed_stats::experimental::series::metadata::{BitsetMap, BitsetNode};
@@ -45,7 +45,7 @@ const SUCCESSIVE_CONNECT_ATTEMPT_FAILURES_TIMEOUT: zx::BootDuration =
     zx::BootDuration::from_minutes(2);
 const DAILY_METRICS_LOG_INTERVAL: zx::BootDuration = zx::BootDuration::from_hours(24);
 
-#[derive(Clone, Debug, Display, EnumIter)]
+#[derive(Clone, Debug, Display, EnumCount)]
 enum ConnectionState {
     Idle(IdleState),
     Connected(ConnectedState),
@@ -72,25 +72,28 @@ impl IdEnum for ConnectionState {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct IdleState {}
 
-#[derive(Clone, Debug, Default)]
-struct ConnectedState {}
+#[derive(Clone, Debug, PartialEq)]
+struct ConnectedState {
+    bss: Box<BssDescription>,
+    is_owe_transition: bool,
+}
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct DisconnectedState {}
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct ConnectFailedState {}
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct FailedToStartState {}
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct FailedToStopState {}
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct PnoScanFailedIdleState {}
 
 #[derive(Derivative, Unit)]
@@ -270,7 +273,10 @@ impl ConnectDisconnectLogger {
         let mut flushed_successive_failures = None;
         let mut downtime_duration = None;
         if result == fidl_ieee80211::StatusCode::Success {
-            self.update_connection_state(ConnectionState::Connected(ConnectedState {}));
+            self.update_connection_state(ConnectionState::Connected(ConnectedState {
+                bss: Box::new(bss.clone()),
+                is_owe_transition,
+            }));
             flushed_successive_failures =
                 Some(self.successive_connect_attempt_failures.swap(0, Ordering::SeqCst));
             downtime_duration =
@@ -388,91 +394,17 @@ impl ConnectDisconnectLogger {
         is_owe_transition: bool,
     ) {
         let mut metric_events = vec![];
-        metric_events.push(MetricEvent {
-            metric_id: metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID,
-            event_codes: vec![],
-            payload: MetricEventPayload::Count(1),
-        });
-
-        let security_type_dim = convert_security_type(&bss.protection());
-        metric_events.push(MetricEvent {
-            metric_id: metrics::CONNECTED_NETWORK_SECURITY_TYPE_METRIC_ID,
-            event_codes: vec![security_type_dim as u32],
-            payload: MetricEventPayload::Count(1),
-        });
-
-        if bss.supports_uapsd() {
-            metric_events.push(MetricEvent {
-                metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_APSD_METRIC_ID,
-                event_codes: vec![],
-                payload: MetricEventPayload::Count(1),
-            });
-        }
-
-        if let Some(rm_enabled_cap) = bss.rm_enabled_cap() {
-            if rm_enabled_cap.link_measurement_enabled() {
-                metric_events.push(MetricEvent {
-                    metric_id:
-                        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_LINK_MEASUREMENT_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
-            if rm_enabled_cap.neighbor_report_enabled() {
-                metric_events.push(MetricEvent {
-                    metric_id:
-                        metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_NEIGHBOR_REPORT_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-            }
-        }
-
-        if bss.supports_ft() {
-            metric_events.push(MetricEvent {
-                metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_FT_METRIC_ID,
-                event_codes: vec![],
-                payload: MetricEventPayload::Count(1),
-            });
-        }
-
-        if let Some(cap) = bss.ext_cap().and_then(|cap| cap.ext_caps_octet_3)
-            && cap.bss_transition()
-        {
-            metric_events.push(MetricEvent {
-                    metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_BSS_TRANSITION_MANAGEMENT_METRIC_ID,
-                    event_codes: vec![],
-                    payload: MetricEventPayload::Count(1),
-                });
-        }
-
-        append_device_connected_channel_cobalt_metrics(&mut metric_events, bss.channel);
-
-        let oui_string = bss.bssid.to_oui_uppercase("");
-        metric_events.push(MetricEvent {
-            metric_id: metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID,
-            event_codes: vec![],
-            payload: MetricEventPayload::StringValue(oui_string),
-        });
-
-        let is_owe_transition_dim = convert_is_owe_transition(is_owe_transition);
-        metric_events.push(MetricEvent {
-            metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_IS_OWE_TRANSITION_METRIC_ID,
-            event_codes: vec![is_owe_transition_dim as u32],
-            payload: MetricEventPayload::Count(1),
-        });
-
+        append_device_connected_cobalt_metrics(&mut metric_events, bss, is_owe_transition);
         log_cobalt_batch!(self.cobalt_proxy, &metric_events, "log_device_connected_cobalt_metrics");
     }
 
     pub async fn handle_channel_switched(&self, channel: Channel) {
+        if let ConnectionState::Connected(ref mut state) = *self.connection_state.lock() {
+            state.bss.channel = channel;
+        }
         let mut metric_events = vec![];
         append_device_connected_channel_cobalt_metrics(&mut metric_events, channel);
-        log_cobalt_batch!(
-            self.cobalt_proxy,
-            &metric_events,
-            "log_device_connected_channel_cobalt_metrics"
-        );
+        log_cobalt_batch!(self.cobalt_proxy, &metric_events, "handle_channel_switched");
     }
 
     pub async fn log_disconnect(&self, info: &DisconnectInfo) {
@@ -573,6 +505,14 @@ impl ConnectDisconnectLogger {
         {
             let mut daily_stats = self.daily_connect_stats.lock();
             if now - daily_stats.last_log_time >= DAILY_METRICS_LOG_INTERVAL {
+                if let ConnectionState::Connected(ref state) = *self.connection_state.lock() {
+                    append_device_connected_cobalt_metrics(
+                        &mut metric_events,
+                        &state.bss,
+                        state.is_owe_transition,
+                    );
+                }
+
                 for (security_type, counter) in daily_stats.connect_per_security_type.drain() {
                     if counter.total > 0 {
                         let success_rate = counter.success as f64 / counter.total as f64;
@@ -975,6 +915,85 @@ fn float_to_ten_thousandth(value: f64) -> i64 {
     (value * 10000f64) as i64
 }
 
+fn append_device_connected_cobalt_metrics(
+    metric_events: &mut Vec<MetricEvent>,
+    bss: &BssDescription,
+    is_owe_transition: bool,
+) {
+    metric_events.push(MetricEvent {
+        metric_id: metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID,
+        event_codes: vec![],
+        payload: MetricEventPayload::Count(1),
+    });
+
+    let security_type_dim = convert_security_type(&bss.protection());
+    metric_events.push(MetricEvent {
+        metric_id: metrics::CONNECTED_NETWORK_SECURITY_TYPE_METRIC_ID,
+        event_codes: vec![security_type_dim as u32],
+        payload: MetricEventPayload::Count(1),
+    });
+
+    if bss.supports_uapsd() {
+        metric_events.push(MetricEvent {
+            metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_APSD_METRIC_ID,
+            event_codes: vec![],
+            payload: MetricEventPayload::Count(1),
+        });
+    }
+
+    if let Some(rm_enabled_cap) = bss.rm_enabled_cap() {
+        if rm_enabled_cap.link_measurement_enabled() {
+            metric_events.push(MetricEvent {
+                metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_LINK_MEASUREMENT_METRIC_ID,
+                event_codes: vec![],
+                payload: MetricEventPayload::Count(1),
+            });
+        }
+        if rm_enabled_cap.neighbor_report_enabled() {
+            metric_events.push(MetricEvent {
+                metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_NEIGHBOR_REPORT_METRIC_ID,
+                event_codes: vec![],
+                payload: MetricEventPayload::Count(1),
+            });
+        }
+    }
+
+    if bss.supports_ft() {
+        metric_events.push(MetricEvent {
+            metric_id: metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_FT_METRIC_ID,
+            event_codes: vec![],
+            payload: MetricEventPayload::Count(1),
+        });
+    }
+
+    if let Some(cap) = bss.ext_cap().and_then(|cap| cap.ext_caps_octet_3)
+        && cap.bss_transition()
+    {
+        metric_events.push(MetricEvent {
+            metric_id:
+                metrics::DEVICE_CONNECTED_TO_AP_THAT_SUPPORTS_BSS_TRANSITION_MANAGEMENT_METRIC_ID,
+            event_codes: vec![],
+            payload: MetricEventPayload::Count(1),
+        });
+    }
+
+    append_device_connected_channel_cobalt_metrics(metric_events, bss.channel);
+
+    let oui_string = bss.bssid.to_oui_uppercase("");
+    metric_events.push(MetricEvent {
+        metric_id: metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID,
+        event_codes: vec![],
+        payload: MetricEventPayload::StringValue(oui_string),
+    });
+
+    let is_owe_transition_dim = convert_is_owe_transition(is_owe_transition);
+    metric_events.push(MetricEvent {
+        metric_id: metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_IS_OWE_TRANSITION_METRIC_ID,
+        event_codes: vec![is_owe_transition_dim as u32],
+        payload: MetricEventPayload::Count(1),
+    });
+}
+
 fn append_device_connected_channel_cobalt_metrics(
     metric_events: &mut Vec<MetricEvent>,
     channel: Channel,
@@ -1005,7 +1024,7 @@ mod tests {
     use ieee80211_testutils::{BSSID_REGEX, SSID_REGEX};
     use rand::Rng;
     use std::pin::pin;
-    use strum::IntoEnumIterator;
+    use strum::EnumCount;
     use test_case::test_case;
     use windowed_stats::experimental::clock::Timed;
     use windowed_stats::experimental::inspect::TimeMatrixClient;
@@ -1662,6 +1681,171 @@ mod tests {
             ]
         );
         assert_eq!(daily_owe_metrics[0].payload, MetricEventPayload::IntegerValue(5000));
+    }
+
+    #[fuchsia::test]
+    fn test_log_device_connected_cobalt_metrics_periodically() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
+        );
+
+        let mut bss = random_bss_description!(Wpa2,
+            bssid: [0x00, 0xf6, 0x20, 0x03, 0x04, 0x05],
+        );
+        bss.channel = Channel::new(6, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz);
+
+        // Connect
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss,
+            false,
+            false
+        ));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let connected_metrics =
+            test_helper.get_logged_metrics(metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID);
+        assert_eq!(connected_metrics.len(), 1);
+
+        // Before 24 hours pass, no periodic device connected metrics should be logged
+        test_helper.clear_cobalt_events();
+        test_helper
+            .exec
+            .set_fake_time(fasync::MonotonicInstant::from_nanos(24 * 3600 * 1_000_000_000 - 1));
+        let mut test_fut = pin!(logger.handle_periodic_telemetry());
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID)
+                .is_empty()
+        );
+
+        // After 24 hours pass, device connected metrics should be logged again
+        test_helper
+            .exec
+            .set_fake_time(fasync::MonotonicInstant::from_nanos(24 * 3600 * 1_000_000_000));
+        let mut test_fut = pin!(logger.handle_periodic_telemetry());
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let connected_metrics =
+            test_helper.get_logged_metrics(metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID);
+        assert_eq!(connected_metrics.len(), 1);
+        assert_eq!(connected_metrics[0].payload, MetricEventPayload::Count(1));
+
+        let security_metrics =
+            test_helper.get_logged_metrics(metrics::CONNECTED_NETWORK_SECURITY_TYPE_METRIC_ID);
+        assert_eq!(security_metrics.len(), 1);
+
+        let channel_metrics = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
+        );
+        assert_eq!(channel_metrics.len(), 1);
+        assert_eq!(channel_metrics[0].event_codes, vec![6]);
+
+        let oui_metrics =
+            test_helper.get_logged_metrics(metrics::DEVICE_CONNECTED_TO_AP_OUI_2_METRIC_ID);
+        assert_eq!(oui_metrics.len(), 1);
+        assert_eq!(oui_metrics[0].payload, MetricEventPayload::StringValue("00F620".to_string()));
+    }
+
+    #[fuchsia::test]
+    fn test_log_device_connected_cobalt_metrics_periodically_channel_switched() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
+        );
+
+        let mut bss = random_bss_description!(Wpa2);
+        bss.channel = Channel::new(6, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::TwoGhz);
+
+        // Connect on channel 6
+        let mut test_fut = pin!(logger.handle_connect_attempt(
+            fidl_ieee80211::StatusCode::Success,
+            &bss,
+            false,
+            false
+        ));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        // Switch channel to 36
+        let new_channel = Channel::new(36, Bandwidth::Cbw20, fidl_ieee80211::WlanBand::FiveGhz);
+        let mut test_fut = pin!(logger.handle_channel_switched(new_channel));
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        test_helper.clear_cobalt_events();
+
+        // After 24 hours pass, daily device connected metrics should reflect the switched channel
+        test_helper
+            .exec
+            .set_fake_time(fasync::MonotonicInstant::from_nanos(24 * 3600 * 1_000_000_000));
+        let mut test_fut = pin!(logger.handle_periodic_telemetry());
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        let channel_metrics = test_helper.get_logged_metrics(
+            metrics::DEVICE_CONNECTED_TO_AP_BREAKDOWN_BY_PRIMARY_CHANNEL_METRIC_ID,
+        );
+        assert_eq!(channel_metrics.len(), 1);
+        assert_eq!(channel_metrics[0].event_codes, vec![36]);
+    }
+
+    #[fuchsia::test]
+    fn test_log_device_connected_cobalt_metrics_periodically_not_connected() {
+        let mut test_helper = setup_test();
+        let logger = ConnectDisconnectLogger::new(
+            test_helper.filtered_cobalt_logger(),
+            &test_helper.inspect_node,
+            &test_helper.inspect_metadata_node,
+            &test_helper.inspect_metadata_path,
+            &test_helper.mock_time_matrix_client,
+            DeviceMobility::Mobile,
+        );
+
+        test_helper.clear_cobalt_events();
+
+        // After 24 hours pass, since device is not connected, no device connected metrics are logged
+        test_helper
+            .exec
+            .set_fake_time(fasync::MonotonicInstant::from_nanos(24 * 3600 * 1_000_000_000));
+        let mut test_fut = pin!(logger.handle_periodic_telemetry());
+        assert_eq!(
+            test_helper.run_until_stalled_drain_cobalt_events(&mut test_fut),
+            Poll::Ready(())
+        );
+
+        assert!(
+            test_helper
+                .get_logged_metrics(metrics::NUMBER_OF_CONNECTED_DEVICES_METRIC_ID)
+                .is_empty()
+        );
     }
 
     #[fuchsia::test]
@@ -2348,7 +2532,10 @@ mod tests {
         assert_matches!(*logger.connection_state.lock(), ConnectionState::PnoScanFailedIdle(_));
     }
 
-    #[test_case(ConnectionState::Connected(ConnectedState {}))]
+    #[test_case(ConnectionState::Connected(ConnectedState {
+        bss: Box::new(fake_bss_description!(Wpa2)),
+        is_owe_transition: false,
+    }))]
     #[test_case(ConnectionState::FailedToStart(FailedToStartState {}))]
     #[test_case(ConnectionState::FailedToStop(FailedToStopState {}))]
     fn test_no_connectivity_state_transition_on_pno_scan_failure(initial_state: ConnectionState) {
@@ -2384,7 +2571,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_wlan_connectivity_states_bitset_map_size() {
-        let enum_variant_count = ConnectionState::iter().count();
+        let enum_variant_count = ConnectionState::COUNT;
         let bitset_map_size =
             ConnectDisconnectTimeSeries::wlan_connectivity_states_bitset_map().len();
         assert_eq!(enum_variant_count, bitset_map_size);
