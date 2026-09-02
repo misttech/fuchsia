@@ -801,25 +801,26 @@ class AsyncMain:
             return 1
 
         if flags.updateifinbase and self._has_tests_in_base(selections):
-            status_suffix = (
-                "\nStatus output suspended." if termout.is_init() else ""
-            )
-            recorder.emit_info_message(
-                f"\nBuilding update package.{status_suffix}"
-            )
+            recorder.emit_info_message(f"\nBuilding update package.")
             recorder.emit_instruction_message(
                 "Use --no-updateifinbase to skip updating base packages."
             )
-            output = await run_build_with_suspended_output(
+            build_id = recorder.emit_build_start(
+                targets=["//build/images/updates"]
+            )
+            output = await run_build(
                 exec_env,
                 ["//build/images/updates"],
                 recorder=recorder,
+                parent=build_id,
                 abort_signal=self._end_execution_request_event,
             )
             if output is None or output.return_code != 0:
                 error = _emit_build_failure(recorder, output)
+                recorder.emit_end(error, id=build_id)
                 await end_execution(f"Failed to build update package: {error}")
                 return 1
+            recorder.emit_end(id=build_id)
             recorder.emit_info_message(
                 "\nRunning an OTA before executing tests"
             )
@@ -1345,7 +1346,7 @@ class AsyncMain:
                 return False
 
         # First build a command line to build GN targets, if needed.
-        build_command_line = []
+        build_command_line: list[str] = []
         for key, vals in sorted(list(build_gn_targets_by_toolchain.items())):
             if "fuchsia:" in key:
                 # Use --default instead of fuchsia toolchains, otherwise some
@@ -1414,8 +1415,7 @@ class AsyncMain:
         build_id = recorder.emit_build_start(targets=build_command_line)
         recorder.emit_instruction_message("Use --no-build to skip building")
 
-        status_suffix = " Status output suspended." if termout.is_init() else ""
-        recorder.emit_info_message(f"\nExecuting build.{status_suffix}")
+        recorder.emit_info_message("\nExecuting build.")
 
         await asyncio.sleep(0.1)
 
@@ -1425,7 +1425,7 @@ class AsyncMain:
         )
 
         if build_command_line:
-            build_output = await run_build_with_suspended_output(
+            build_output = await run_build(
                 exec_env,
                 build_command_line,
                 recorder=self._recorder,
@@ -1462,7 +1462,7 @@ class AsyncMain:
 
         # Second, launch another command line to build and export Bazel host tests
         if build_bazel_targets:
-            build_output = await run_build_with_suspended_output(
+            build_output = await run_build(
                 exec_env,
                 ["--host", "--quiet"] + build_bazel_targets,
                 recorder=self._recorder,
@@ -2743,18 +2743,20 @@ def _emit_build_failure(
     return f"Build returned non-zero exit code {rc}"
 
 
-async def run_build_with_suspended_output(
+async def run_build(
     exec_env: environment.ExecutionEnvironment,
     build_command_line: list[str],
     recorder: event.EventRecorder | None = None,
     parent: event.Id | None = None,
     abort_signal: asyncio.Event | None = None,
+    print_verbatim: bool = False,
 ) -> command.CommandOutput | None:
     return await execution.run_command(
         *exec_env.fx_cmd_line("build", *build_command_line),
         recorder=recorder,
         parent=parent,
         abort_signal=abort_signal,
+        print_verbatim=print_verbatim,
         quiet_mode=True,
     )
 

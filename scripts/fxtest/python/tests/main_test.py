@@ -2001,7 +2001,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(await app._do_build(empty_selections))
 
-    @mock.patch("main.run_build_with_suspended_output")
+    @mock.patch("main.run_build")
     async def test_do_build_missing_packages_includes_updates_target(
         self, mock_build: mock.AsyncMock
     ) -> None:
@@ -2617,10 +2617,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-    @mock.patch(
-        "main.run_build_with_suspended_output",
-        side_effect=[mock.MagicMock(return_code=0)],
-    )
+    @mock.patch("main.run_build", side_effect=[mock.MagicMock(return_code=0)])
     async def test_updateifinbase(self, _build_mock: mock.AsyncMock) -> None:
         """Test that we appropriately update tests in base"""
 
@@ -3541,10 +3538,8 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch("execution.run_command")
-    async def test_run_build_with_suspended_output(
-        self, mock_run_command: mock.AsyncMock
-    ) -> None:
-        """Test run_build_with_suspended_output executes asynchronously with expected args."""
+    async def test_run_build(self, mock_run_command: mock.AsyncMock) -> None:
+        """Test run_build executes asynchronously with expected args."""
         mock_run_command.return_value = mock.MagicMock(return_code=0)
         exec_env = environment.ExecutionEnvironment.initialize_from_args(
             args.parse_args(["--simple"])
@@ -3553,7 +3548,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         parent_id = event.Id(1)
         abort_signal = asyncio.Event()
 
-        res = await main.run_build_with_suspended_output(
+        res = await main.run_build(
             exec_env,
             ["//src:foo"],
             recorder=recorder,
@@ -3567,10 +3562,46 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             recorder=recorder,
             parent=parent_id,
             abort_signal=abort_signal,
+            print_verbatim=False,
             quiet_mode=True,
         )
 
-    @mock.patch("main.run_build_with_suspended_output")
+    @mock.patch("main.run_build")
+    async def test_do_build_passes_build_id(
+        self, mock_build: mock.AsyncMock
+    ) -> None:
+        """Test that _do_build passes build_id as parent to run_build."""
+        mock_build.return_value = mock.MagicMock(return_code=0)
+
+        mock_test = test_list_file.Test(
+            build=tests_json_file.TestEntry(
+                test=tests_json_file.TestSection(
+                    name="my_host_test",
+                    label="//src:my_host_test(//build/toolchain:host_x64)",
+                    os="linux",
+                )
+            )
+        )
+        selections = selection_types.TestSelections(
+            selected=[mock_test],
+            selected_but_not_run=[],
+            best_score={},
+            group_matches=[],
+            fuzzy_distance_threshold=0,
+        )
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._recorder = event.EventRecorder()
+        app._flags = args.parse_args(["--simple"])
+        app._exec_env = environment.ExecutionEnvironment.initialize_from_args(
+            app._flags
+        )
+        app._end_execution_request_event = asyncio.Event()
+        self.assertTrue(await app._do_build(selections))
+        mock_build.assert_called_once()
+        self.assertIsNotNone(mock_build.call_args.kwargs.get("parent"))
+
+    @mock.patch("main.run_build")
     async def test_do_build_failure_outputs_compiler_error(
         self, mock_build: mock.AsyncMock
     ) -> None:
@@ -3617,7 +3648,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             "Build returned non-zero exit code 1", id=mock.ANY
         )
 
-    @mock.patch("main.run_build_with_suspended_output")
+    @mock.patch("main.run_build")
     async def test_do_build_failure_outputs_stdout_and_stderr(
         self, mock_build: mock.AsyncMock
     ) -> None:
@@ -3664,7 +3695,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             "Build returned non-zero exit code 1", id=mock.ANY
         )
 
-    @mock.patch("main.run_build_with_suspended_output")
+    @mock.patch("main.run_build")
     async def test_do_build_aborted(self, mock_build: mock.AsyncMock) -> None:
         """Test that _do_build handles build abort (None return value)."""
         mock_build.return_value = None

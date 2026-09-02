@@ -195,6 +195,10 @@ class TestArgs(unittest.TestCase):
             self.assertEqual(flags.simple, False)
             self.assertEqual(flags.agent_output, False)
 
+            flags = args.parse_args(["--quiet"])
+            flags.validate()
+            self.assertEqual(flags.quiet, True)
+
         # Test with each agent env var
         for var in [
             "ANTIGRAVITY_AGENT",

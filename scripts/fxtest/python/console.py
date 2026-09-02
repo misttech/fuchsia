@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import datetime
 from itertools import chain
 import os
+import re
 import time
 import typing
 
@@ -551,6 +552,10 @@ async def _console_event_loop(
     # Keep track of task IDs that are nested under a test suite.
     # This is needed to map buffered program output to the correct test suite.
     event_id_to_test_suite: dict[event.Id, event.Id] = dict()
+
+    # Keep track of active build IDs and programs that are part of a build.
+    active_build_ids: set[event.Id] = set()
+    event_id_to_build: dict[event.Id, event.Id] = dict()
     next_event: event.Event
     async for next_event in recorder.iter():
         lines_to_print: list[str] = []
@@ -559,6 +564,11 @@ async def _console_event_loop(
         verbose_suffix: str = ""
 
         old_duration: DurationInfo | None = None
+        if next_event.ending and next_event.id is not None:
+            active_build_ids.discard(next_event.id)
+            if next_event.id in event_id_to_build:
+                del event_id_to_build[next_event.id]
+
         if (
             next_event.ending
             and next_event.id is not None
@@ -606,15 +616,38 @@ async def _console_event_loop(
                         parent=next_event.parent,
                     )
                 elif next_event.payload.program_execution is not None:
-                    styled_name = statusinfo.highlight(
-                        "running", style=flags.style
+                    is_build = (
+                        next_event.parent is not None
+                        and next_event.parent in active_build_ids
+                    ) or (
+                        bool(next_event.payload.program_execution.flags)
+                        and "build"
+                        in next_event.payload.program_execution.flags
                     )
-                    state.active_durations[next_event.id] = DurationInfo(
-                        f"{styled_name} {next_event.payload.program_execution.to_formatted_command_line()}",
-                        next_event.timestamp,
-                        parent=next_event.parent,
-                        hide_from_display=next_event.payload.program_execution.quiet_mode,
-                    )
+                    if is_build:
+                        if next_event.id is not None:
+                            event_id_to_build[next_event.id] = (
+                                next_event.parent or next_event.id
+                            )
+                        styled_name = statusinfo.highlight(
+                            "Building...", style=flags.style
+                        )
+                        state.active_durations[next_event.id] = DurationInfo(
+                            styled_name,
+                            next_event.timestamp,
+                            parent=next_event.parent,
+                            hide_from_display=False,
+                        )
+                    else:
+                        styled_name = statusinfo.highlight(
+                            "running", style=flags.style
+                        )
+                        state.active_durations[next_event.id] = DurationInfo(
+                            f"{styled_name} {next_event.payload.program_execution.to_formatted_command_line()}",
+                            next_event.timestamp,
+                            parent=next_event.parent,
+                            hide_from_display=next_event.payload.program_execution.quiet_mode,
+                        )
                 elif (
                     next_event.payload.event_group is not None
                     or next_event.payload.test_group is not None
@@ -631,6 +664,8 @@ async def _console_event_loop(
                         hide_children=group.hide_children,
                     )
                 elif next_event.payload.build_targets:
+                    if next_event.starting and next_event.id is not None:
+                        active_build_ids.add(next_event.id)
                     styled_name = statusinfo.highlight(
                         f"Refreshing {len(next_event.payload.build_targets)} targets",
                         style=flags.style,
@@ -703,7 +738,23 @@ async def _console_event_loop(
                 else:
                     data = output.data
 
-                if output.print_verbatim:
+                if (
+                    next_event.id is not None
+                    and next_event.id in event_id_to_build
+                ):
+                    if next_event.id in state.active_durations:
+                        lines = [
+                            line.strip()
+                            for line in re.split(r"[\r\n]+", output.data)
+                            if line.strip()
+                        ]
+                        if lines:
+                            state.active_durations[next_event.id].name = lines[
+                                -1
+                            ]
+                            if print_queue.empty():
+                                await print_queue.put([])
+                elif output.print_verbatim:
                     # If a program execution requests verbatim output,
                     # print to console.
                     lines_to_print.append(data)

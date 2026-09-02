@@ -170,3 +170,60 @@ class TestConsole(unittest.IsolatedAsyncioTestCase):
                 not_expected in output.getvalue(),
                 f"Expected to not find '{not_expected}' in output",
             )
+
+    @mock.patch("console.termout.is_valid", return_value=True)
+    @mock.patch(
+        "console.statusinfo.shutil.get_terminal_size",
+        return_value=mock.MagicMock(columns=80),
+    )
+    async def test_build_output_status_line(
+        self,
+        _terminal_size_mock: mock.Mock,
+        _is_valid_mock: mock.Mock,
+    ) -> None:
+        """Test that build output is shown as a status line and not printed verbatim."""
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            recorder = event.EventRecorder()
+            default_flags = args.parse_args(["--status"])
+            status_event = asyncio.Event()
+            printer_task = asyncio.create_task(
+                console.ConsoleOutput().console_printer(
+                    recorder, default_flags, status_event
+                )
+            )
+            status_event.set()
+
+            recorder.emit_init()
+            build_id = recorder.emit_build_start(["//src:foo"])
+            pid = recorder.emit_program_start(
+                "fx", ["build", "//src:foo"], parent=build_id, quiet_mode=True
+            )
+
+            # Emit some build output
+            recorder.emit_program_output(
+                pid,
+                "[1/10] Compiling foo.cc\n[2/10] Compiling bar.cc\n",
+                stream=event.ProgramOutputStream.STDOUT,
+            )
+
+            # Wait for output to refresh
+            await asyncio.sleep(0.1)
+
+            # Check that the last line of build output appeared in the status output
+            self.assertIn("[2/10] Compiling bar.cc", output.getvalue())
+
+            # Emit another update
+            recorder.emit_program_output(
+                pid,
+                "[3/10] Linking foo\n",
+                stream=event.ProgramOutputStream.STDOUT,
+            )
+
+            await asyncio.sleep(0.1)
+            self.assertIn("[3/10] Linking foo", output.getvalue())
+
+            recorder.emit_program_termination(pid, return_code=0)
+            recorder.emit_end(id=build_id)
+            recorder.emit_end()
+            await printer_task
