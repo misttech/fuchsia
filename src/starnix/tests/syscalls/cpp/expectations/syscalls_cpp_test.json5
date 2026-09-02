@@ -188,6 +188,47 @@
                 // Starnix does not currently support this feature (see https://fxbug.dev/322874526)
                 // If it ever does, implementing `security::mmap_addr` will be necessary.
                 "MmapTest.MmapMinAddr",
+
+                // TODO(https://fxbug.dev/521344735): Allow non-root processes with CAP_NET_ADMIN to
+                // read/write /proc/sys/net.
+                "SysctlTest/SysctlNodeTest.NonRootWithCapNetAdminCanWriteProcSysNet/net_*",
+
+                // Starnix improperly ignores that DAC overrides should be natively rejected within /proc/sys.
+                "SysctlTest/SysctlNodeTest.NonRootWithCapDacOverrideCannotWrite/*",
+
+                // Starnix write handlers for these nodes currently either lack Linux's bounds/format
+                // validation or improperly succeed on writes that should be natively rejected.
+                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_pid_max",
+                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_pid_max",
+                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_printk",
+                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_printk",
+
+                // Starnix erroneously allows opening this 0444 file for write by honoring DAC override.
+                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_random_boot_id",
+                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_random_boot_id",
+
+                // disable_ipv6 incorrectly lacks the proper CAP_NET_ADMIN gating in its node handler.
+                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/net_ipv6_conf_all_disable_ipv6",
+                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/net_ipv6_conf_all_disable_ipv6",
+
+                // These nodes currently utilize BytesFile implementations which emit ENOSYS on write.
+                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_core_pattern",
+                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_core_pattern",
+                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_overflowgid",
+                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_overflowgid",
+                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_overflowuid",
+                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_overflowuid",
+
+                // modules_disabled is a StubBytesFile instead of a strict security toggle and therefore
+                // quietly succeeds on writes instead of issuing EINVAL.
+                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_modules_disabled",
+                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_modules_disabled",
+
+                // drop_caches in Starnix currently has 0644 permissions instead of Linux's 0200
+                // write-only permissions (https://fxbug.dev/322874299).
+                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/vm_drop_caches",
+                "SysctlTest/SysctlNodeTest.NonRootWithCapNetAdminCanWriteProcSysNet/vm_drop_caches",
+                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/vm_drop_caches",
             ],
         },
     ],

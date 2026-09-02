@@ -8,8 +8,11 @@
 #include <netinet/in.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/prctl.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <filesystem>
 #include <format>
@@ -24,6 +27,7 @@
 #include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -287,4 +291,300 @@ INSTANTIATE_TEST_SUITE_P(
       std::ranges::replace(value, '\t', '_');
       return std::format("{}_{}_{}", version, name, value);
     });
+
+struct SysctlNodeParam {
+  const char *path;
+  bool readable = true;
+  bool writable_by_root = true;
+  bool writable = true;
+};
+
+class SysctlNodeTest : public testing::TestWithParam<SysctlNodeParam> {
+ protected:
+  std::string GetSysctlPath() const { return std::format("/proc/sys/{}", GetParam().path); }
+};
+
+TEST_P(SysctlNodeTest, NonRootWithCapNetAdminCanWriteProcSysNet) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Need CAP_SYS_ADMIN to run this test";
+  }
+  const std::string sysctl_path = GetSysctlPath();
+
+  if (access(sysctl_path.c_str(), F_OK) != 0) {
+    if (!test_helper::IsStarnix()) {
+      GTEST_SKIP() << sysctl_path << " does not exist on Linux host environment";
+    } else {
+      FAIL() << sysctl_path << " should exist";
+    }
+  }
+
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([&]() {
+    std::string current_val;
+    if (GetParam().readable) {
+      ASSERT_TRUE(files::ReadFileToString(sysctl_path, &current_val));
+    } else {
+      ASSERT_FALSE(files::ReadFileToString(sysctl_path, &current_val));
+      current_val = "1\n";
+    }
+
+    ASSERT_THAT(prctl(PR_SET_KEEPCAPS, 1), SyscallSucceeds());
+    ASSERT_THAT(setresuid(99, 99, 99), SyscallSucceeds());
+    ASSERT_EQ(getuid(), 99u);
+
+    // Give the user CAP_NET_ADMIN. For /proc/sys/net, this overrides DAC checks.
+    test_helper::SetCapabilityEffective(CAP_NET_ADMIN);
+    ASSERT_TRUE(test_helper::HasCapabilityEffective(CAP_NET_ADMIN));
+    ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_DAC_OVERRIDE));
+
+    bool is_net = sysctl_path.starts_with("/proc/sys/net/");
+    if (is_net) {
+      int fd_num = open(sysctl_path.c_str(), O_WRONLY);
+      if (fd_num < 0) {
+        EXPECT_THAT(fd_num, SyscallSucceeds());
+        return;
+      }
+      fbl::unique_fd fd(fd_num);
+      // Since we have CAP_NET_ADMIN, write should succeed regardless of whether the handler
+      // requires it.
+      EXPECT_THAT(write(fd.get(), current_val.data(), current_val.size()), SyscallSucceeds());
+    } else {
+      EXPECT_THAT(open(sysctl_path.c_str(), O_WRONLY), SyscallFailsWithErrno(EACCES));
+    }
+  });
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+}
+
+TEST_P(SysctlNodeTest, NonRootWithCapDacOverrideCannotWrite) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Need CAP_SYS_ADMIN to run this test";
+  }
+  const std::string sysctl_path = GetSysctlPath();
+
+  if (access(sysctl_path.c_str(), F_OK) != 0) {
+    if (!test_helper::IsStarnix()) {
+      GTEST_SKIP() << sysctl_path << " does not exist on Linux host environment";
+    } else {
+      FAIL() << sysctl_path << " should exist";
+    }
+  }
+
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([&]() {
+    // 1. Keep capabilities across setuid.
+    ASSERT_THAT(prctl(PR_SET_KEEPCAPS, 1), SyscallSucceeds());
+
+    // 2. Change UID to non-root (99 is nobody).
+    ASSERT_THAT(setresuid(99, 99, 99), SyscallSucceeds());
+    ASSERT_EQ(getuid(), 99u);
+
+    // 3. Enable CAP_DAC_OVERRIDE but ensure CAP_NET_ADMIN is disabled.
+    test_helper::SetCapabilityEffective(CAP_DAC_OVERRIDE);
+    ASSERT_TRUE(test_helper::HasCapabilityEffective(CAP_DAC_OVERRIDE));
+    ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_NET_ADMIN));
+
+    // 4. Open for writing should fail, because CAP_DAC_OVERRIDE is ignored for /proc/sys.
+    EXPECT_THAT(open(sysctl_path.c_str(), O_WRONLY), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+}
+
+TEST_P(SysctlNodeTest, CapDacOverrideHasNoEffectOnRootWrite) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Need CAP_SYS_ADMIN to run this test";
+  }
+  const std::string sysctl_path = GetSysctlPath();
+
+  if (access(sysctl_path.c_str(), F_OK) != 0) {
+    if (!test_helper::IsStarnix()) {
+      GTEST_SKIP() << sysctl_path << " does not exist on Linux host environment";
+    } else {
+      FAIL() << sysctl_path << " should exist";
+    }
+  }
+
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([&]() {
+    test_helper::SetCapabilityEffective(CAP_DAC_OVERRIDE);
+    ASSERT_TRUE(test_helper::HasCapabilityEffective(CAP_DAC_OVERRIDE));
+    test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+    ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_NET_ADMIN));
+
+    // First read the current value
+    std::string current_val;
+    if (GetParam().readable) {
+      ASSERT_TRUE(files::ReadFileToString(sysctl_path, &current_val));
+    } else {
+      ASSERT_FALSE(files::ReadFileToString(sysctl_path, &current_val));
+      current_val = "1\n";
+    }
+
+    if (!GetParam().writable_by_root) {
+      EXPECT_THAT(open(sysctl_path.c_str(), O_WRONLY), SyscallFailsWithErrno(EACCES));
+      return;
+    }
+
+    // Root can open because they are the owner, bypassing the DAC override limitation.
+    fbl::unique_fd fd(open(sysctl_path.c_str(), O_WRONLY));
+    ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+
+    if (!GetParam().writable) {
+      EXPECT_THAT(write(fd.get(), current_val.data(), current_val.size()),
+                  SyscallFailsWithErrno(EINVAL));
+    } else {
+      EXPECT_THAT(write(fd.get(), current_val.data(), current_val.size()), SyscallSucceeds());
+    }
+  });
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+}
+
+TEST_P(SysctlNodeTest, RootCanWriteWithoutCapDacOverrideAndNetAdmin) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Need CAP_SYS_ADMIN to run this test";
+  }
+  const std::string sysctl_path = GetSysctlPath();
+
+  if (access(sysctl_path.c_str(), F_OK) != 0) {
+    if (!test_helper::IsStarnix()) {
+      GTEST_SKIP() << sysctl_path << " does not exist on Linux host environment";
+    } else {
+      FAIL() << sysctl_path << " should exist";
+    }
+  }
+
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([&]() {
+    test_helper::UnsetCapabilityEffective(CAP_DAC_OVERRIDE);
+    ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_DAC_OVERRIDE));
+    test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
+    ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_NET_ADMIN));
+
+    // First read the current value
+    std::string current_val;
+    if (GetParam().readable) {
+      ASSERT_TRUE(files::ReadFileToString(sysctl_path, &current_val));
+    } else {
+      ASSERT_FALSE(files::ReadFileToString(sysctl_path, &current_val));
+      current_val = "1\n";
+    }
+
+    if (!GetParam().writable_by_root) {
+      EXPECT_THAT(open(sysctl_path.c_str(), O_WRONLY), SyscallFailsWithErrno(EACCES));
+      return;
+    }
+
+    // Root can open because they are the owner.
+    fbl::unique_fd fd(open(sysctl_path.c_str(), O_WRONLY));
+    ASSERT_TRUE(fd.is_valid()) << strerror(errno);
+
+    if (!GetParam().writable) {
+      EXPECT_THAT(write(fd.get(), current_val.data(), current_val.size()),
+                  SyscallFailsWithErrno(EINVAL));
+    } else {
+      EXPECT_THAT(write(fd.get(), current_val.data(), current_val.size()), SyscallSucceeds());
+    }
+  });
+  ASSERT_TRUE(fork_helper.WaitForChildren());
+}
+
+const SysctlNodeParam kSysctlNodePaths[] = {
+    {"debug/exception-trace"},
+    {"fs/inotify/max_queued_events"},
+    {"fs/inotify/max_user_instances"},
+    {"fs/inotify/max_user_watches"},
+    {"fs/pipe-max-size"},
+    {"fs/protected_hardlinks"},
+    {"fs/protected_symlinks"},
+    {"fs/suid_dumpable"},
+    {"kernel/core_pattern"},
+    {"kernel/core_pipe_limit"},
+    {"kernel/dmesg_restrict"},
+    {"kernel/domainname"},
+    {"kernel/hostname"},
+    {"kernel/hung_task_check_count"},
+    {"kernel/hung_task_panic"},
+    {"kernel/hung_task_timeout_secs"},
+    {"kernel/hung_task_warnings"},
+    {"kernel/io_uring_disabled"},
+    {"kernel/io_uring_group"},
+    {"kernel/kptr_restrict"},
+    {"kernel/modprobe"},
+
+    // `writable` is false for modules_disabled because modules_disabled natively rejects any writes
+    // with EINVAL if it is 0 (since it only accepts a transition to 1) and also rejects writes with
+    // EINVAL if it is already 1 (since it is a strict one-way security toggle that locks the
+    // kernel).
+    {.path = "kernel/modules_disabled", .writable = false},
+    {"kernel/overflowgid"},
+    {"kernel/overflowuid"},
+    {"kernel/panic_on_oops"},
+    {"kernel/perf_cpu_time_max_percent"},
+    {"kernel/perf_event_max_sample_rate"},
+    {"kernel/perf_event_mlock_kb"},
+    {"kernel/perf_event_paranoid"},
+    {"kernel/pid_max"},
+    {"kernel/printk"},
+
+    // boot_id has 0444 permissions, so Root (owner) doesn't have write permission since DAC
+    // override is ignored for /proc/sys.
+    {.path = "kernel/random/boot_id", .writable_by_root = false},
+    {"kernel/randomize_va_space"},
+    {"kernel/sched_child_runs_first"},
+    {"kernel/sched_latency_ns"},
+    {"kernel/sched_lib_mask"},
+    {"kernel/sched_lib_name"},
+    {"kernel/sched_rt_period_us"},
+    {"kernel/sched_rt_runtime_us"},
+    {"kernel/sched_schedstats"},
+    {"kernel/sched_tunable_scaling"},
+    {"kernel/sched_wakeup_granularity_ns"},
+    {"kernel/seccomp/actions_logged"},
+    {"kernel/sysrq"},
+    {"kernel/tainted"},
+    {"kernel/unprivileged_bpf_disabled"},
+    {"kernel/yama/ptrace_scope"},
+    {"lsm/image_init"},
+    {"net/core/rmem_max"},
+    {"net/core/wmem_max"},
+    {"net/ipv4/conf/all/accept_redirects"},
+    {"net/ipv4/neigh/default/base_reachable_time_ms"},
+    {"net/ipv4/neigh/default/mcast_resolicit"},
+    {"net/ipv4/neigh/default/retrans_time_ms"},
+    {"net/ipv4/neigh/default/ucast_solicit"},
+    {"net/ipv4/ping_group_range"},
+    {"net/ipv4/tcp_rmem"},
+    {"net/ipv6/conf/all/accept_ra_rt_table"},
+    {"net/ipv6/conf/all/disable_ipv6"},
+    {"net/ipv6/conf/default/accept_ra_defrtr"},
+    {"net/ipv6/conf/default/accept_ra_info_min_plen"},
+    {"net/ipv6/conf/default/accept_ra_rt_table"},
+    {"net/ipv6/conf/default/dad_transmits"},
+    {"net/ipv6/conf/default/disable_ipv6"},
+    {"net/ipv6/conf/default/use_tempaddr"},
+    {"net/ipv6/neigh/default/base_reachable_time_ms"},
+    {"net/ipv6/neigh/default/mcast_resolicit"},
+    {"net/ipv6/neigh/default/retrans_time_ms"},
+    {"net/ipv6/neigh/default/ucast_solicit"},
+    {"user/max_user_namespaces"},
+    {"vm/dirty_background_ratio"},
+    {"vm/dirty_expire_centisecs"},
+    {.path = "vm/drop_caches", .readable = false},
+    {"vm/extra_free_kbytes"},
+    {"vm/max_map_count"},
+    {"vm/mmap_min_addr"},
+    {"vm/mmap_rnd_bits"},
+    {"vm/mmap_rnd_compat_bits"},
+    {"vm/overcommit_memory"},
+    {"vm/page-cluster"},
+    {"vm/watermark_scale_factor"},
+};
+
+INSTANTIATE_TEST_SUITE_P(SysctlTest, SysctlNodeTest, testing::ValuesIn(kSysctlNodePaths),
+                         [](const testing::TestParamInfo<SysctlNodeParam> &info) {
+                           std::string name = info.param.path;
+                           std::ranges::replace_if(
+                               name, [](char c) { return c == '/' || c == '-'; }, '_');
+                           return name;
+                         });
+
 }  // namespace
