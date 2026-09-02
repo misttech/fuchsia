@@ -28,6 +28,7 @@ use fidl_fuchsia_recovery_policy::DeviceRequestStream;
 use fidl_fuchsia_recovery_ui::FactoryResetCountdownRequestStream;
 use fidl_fuchsia_settings as fsettings;
 use fidl_fuchsia_ui_brightness::ControlProxy as BrightnessControlProxy;
+use fidl_fuchsia_ui_input as fuiinput;
 use fidl_fuchsia_ui_pointerinjector_configuration::SetupProxy;
 use fidl_fuchsia_ui_policy::{DeviceListenerRegistryRequest, DeviceListenerRegistryRequestStream};
 use focus_chain_provider::FocusChainProviderPublisher;
@@ -70,6 +71,9 @@ pub async fn handle_input(
     >,
     media_buttons_listener_registry_request_stream_receiver: futures::channel::mpsc::UnboundedReceiver<
         DeviceListenerRegistryRequestStream,
+    >,
+    input_device_listener_registry_request_stream_receiver: futures::channel::mpsc::UnboundedReceiver<
+        fuiinput::DeviceListenerRegistryRequestStream,
     >,
     factory_reset_countdown_request_stream_receiver: futures::channel::mpsc::UnboundedReceiver<
         FactoryResetCountdownRequestStream,
@@ -205,6 +209,7 @@ pub async fn handle_input(
         injected_devices_node,
         input_pipeline.feature_flags.clone(),
         metrics_logger.clone(),
+        input_pipeline.device_listener_registry().clone(),
     );
     tasks.push(InputTask::Fasync(fasync::Task::local(input_device_registry_fut)));
 
@@ -226,6 +231,12 @@ pub async fn handle_input(
         touch_injector_handler.clone(),
     );
     tasks.push(InputTask::Fasync(fasync::Task::local(media_buttons_listener_registry_fut)));
+
+    let input_device_listener_registry_fut = handle_input_device_listener_registry_request_streams(
+        input_device_listener_registry_request_stream_receiver,
+        input_pipeline.device_listener_registry().clone(),
+    );
+    tasks.push(InputTask::Fasync(fasync::Task::local(input_device_listener_registry_fut)));
 
     Ok((input_pipeline, tasks))
 }
@@ -588,6 +599,36 @@ pub async fn handle_device_listener_registry_request_stream(
     while let Some(_) = tasks.next().await {}
 }
 
+pub async fn handle_input_device_listener_registry_request_streams(
+    stream_receiver: futures::channel::mpsc::UnboundedReceiver<
+        fuiinput::DeviceListenerRegistryRequestStream,
+    >,
+    registry: crate::lib::device_listener_registry::DeviceListenerRegistry,
+) {
+    let mut stream_receiver = stream_receiver.fuse();
+    let mut tasks = FuturesUnordered::new();
+    loop {
+        futures::select! {
+            stream = stream_receiver.next() => {
+                if let Some(stream) = stream {
+                    let registry = registry.clone();
+                    tasks.push(fasync::Task::local(async move {
+                        if let Err(e) = crate::lib::device_listener_registry::handle_device_listener_registry_request_stream_legacy(
+                            stream, registry,
+                        ).await {
+                            log::error!("Error handling device listener registry request stream: {:?}", e);
+                        }
+                    }));
+                } else {
+                    break;
+                }
+            }
+            _ = tasks.select_next_some() => {}
+        }
+    }
+    while let Some(_) = tasks.next().await {}
+}
+
 pub async fn handle_factory_reset_countdown_request_stream(
     mut stream_receiver: futures::channel::mpsc::UnboundedReceiver<
         FactoryResetCountdownRequestStream,
@@ -685,8 +726,11 @@ pub async fn handle_input_device_registry_request_streams(
     injected_devices_node: inspect::Node,
     feature_flags: crate::lib::input_device::InputPipelineFeatureFlags,
     metrics_logger: metrics::MetricsLogger,
+    device_listener_registry: crate::lib::device_listener_registry::DeviceListenerRegistry,
 ) {
-    let mut tasks = FuturesUnordered::new();
+    let mut registry_tasks = FuturesUnordered::new();
+    let mut watch_tasks = FuturesUnordered::new();
+    let (task_sender, mut task_receiver) = futures::channel::mpsc::unbounded();
     loop {
         futures::select! {
             stream = stream_receiver.next() => {
@@ -697,7 +741,9 @@ pub async fn handle_input_device_registry_request_streams(
                     let feature_flags_clone = feature_flags.clone();
                     let metrics_logger_clone = metrics_logger.clone();
                     let node_clone = injected_devices_node.clone_weak();
-                    tasks.push(Dispatcher::spawn_local(async move {
+                    let device_listener_registry_clone = device_listener_registry.clone();
+                    let task_sender_clone = task_sender.clone();
+                    registry_tasks.push(Dispatcher::spawn_local(async move {
                         match InputPipeline::handle_input_device_registry_request_stream(
                             stream,
                             &input_device_types_clone,
@@ -706,6 +752,8 @@ pub async fn handle_input_device_registry_request_streams(
                             &node_clone,
                             feature_flags_clone,
                             metrics_logger_clone,
+                            device_listener_registry_clone,
+                            task_sender_clone,
                         )
                         .await
                         {
@@ -723,10 +771,16 @@ pub async fn handle_input_device_registry_request_streams(
                     break;
                 }
             }
-            _ = tasks.select_next_some() => {}
+            task = task_receiver.next() => {
+                if let Some(task) = task {
+                    watch_tasks.push(task);
+                }
+            }
+            _ = registry_tasks.select_next_some() => {}
+            _ = watch_tasks.select_next_some() => {}
         }
     }
-    while let Some(_) = tasks.next().await {}
+    while let Some(_) = registry_tasks.next().await {}
 }
 
 #[cfg(test)]

@@ -86,6 +86,7 @@
                 "fuchsia.ui.brightness.ColorAdjustment",
                 "fuchsia.ui.brightness.ColorAdjustmentHandler",
                 "fuchsia.ui.input.config.Features",
+                "fuchsia.ui.input.DeviceListenerRegistry",
                 "fuchsia.ui.policy.DeviceListenerRegistry",
                 "fuchsia.ui.policy.DisplayBacklight",
             ],

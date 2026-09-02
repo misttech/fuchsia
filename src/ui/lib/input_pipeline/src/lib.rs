@@ -9,6 +9,7 @@ mod observe_fake_events_input_handler;
 mod utils;
 
 pub mod consumer_controls_binding;
+pub mod device_listener_registry;
 pub mod input_device;
 pub mod keyboard_binding;
 pub mod mouse_binding;

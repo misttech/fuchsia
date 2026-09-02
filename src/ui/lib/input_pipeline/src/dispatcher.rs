@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use core::task::Context;
-use fidl_next::ClientEnd;
+use fidl_next::{ClientEnd, ServerEnd};
 use futures::prelude::*;
 use futures::task::Poll;
 use pin_project_lite::pin_project;
@@ -167,6 +167,12 @@ mod dso {
         ) -> ClientEnd<P, Transport> {
             libasync_fidl::AsyncChannel::<Dispatcher>::client_from_zx_channel(client_end)
         }
+
+        pub fn server_from_zx_channel<P>(
+            server_end: ServerEnd<P, zx::Channel>,
+        ) -> ServerEnd<P, Transport> {
+            libasync_fidl::AsyncChannel::<Dispatcher>::server_from_zx_channel(server_end)
+        }
     }
 
     impl fdf::GetAsyncDispatcher for Dispatcher {
@@ -229,6 +235,12 @@ mod elf {
             client_end: fidl_next::ClientEnd<P, zx::Channel>,
         ) -> ClientEnd<P, Transport> {
             client_end
+        }
+
+        pub fn server_from_zx_channel<P>(
+            server_end: ServerEnd<P, zx::Channel>,
+        ) -> ServerEnd<P, Transport> {
+            server_end
         }
     }
 }

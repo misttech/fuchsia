@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::device_listener_registry::DeviceListenerRegistry;
 use crate::display_ownership::DisplayOwnership;
 use crate::focus_listener::FocusListener;
 use crate::input_device::{InputEventType, InputPipelineFeatureFlags};
@@ -268,6 +269,9 @@ pub struct InputPipeline {
 
     /// The runner future.
     runner_fut: Option<LocalBoxFuture<'static, ()>>,
+
+    /// The registry for device listeners.
+    pub device_listener_registry: DeviceListenerRegistry,
 }
 
 impl InputPipeline {
@@ -324,6 +328,7 @@ impl InputPipeline {
         let (device_event_sender, device_event_receiver) = futures::channel::mpsc::unbounded();
         let input_device_bindings: InputDeviceBindingMap =
             Arc::new(Mutex::new(SortedVecMap::new()));
+        let device_listener_registry = DeviceListenerRegistry::new();
         InputPipeline {
             pipeline_sender,
             device_event_sender,
@@ -337,6 +342,7 @@ impl InputPipeline {
             focus_listener_fut,
             watcher_fut: None,
             runner_fut,
+            device_listener_registry,
         }
     }
 
@@ -381,6 +387,7 @@ impl InputPipeline {
         let input_device_types = input_pipeline.input_device_types.clone();
         let input_event_sender = input_pipeline.device_event_sender.clone();
         let input_device_bindings = input_pipeline.input_device_bindings.clone();
+        let device_listener_registry = input_pipeline.device_listener_registry.clone();
         let devices_node = input_pipeline.inspect_node.create_child("input_devices");
         let devices_node_weak = devices_node.clone_weak();
         input_pipeline.inspect_node.record(devices_node);
@@ -406,6 +413,7 @@ impl InputPipeline {
                     false, /* break_on_idle */
                     feature_flags,
                     metrics_logger.clone(),
+                    device_listener_registry,
                 )
                 .await
                 .context("failed to watch for devices")
@@ -450,6 +458,11 @@ impl InputPipeline {
         &self.input_device_types
     }
 
+    /// Gets the device listener registry.
+    pub fn device_listener_registry(&self) -> &DeviceListenerRegistry {
+        &self.device_listener_registry
+    }
+
     /// Forwards all input events into the input pipeline.
     pub async fn handle_input_events(self) {
         let metrics_logger_clone = self.metrics_logger.clone();
@@ -492,6 +505,7 @@ impl InputPipeline {
         devices_connected: &fuchsia_inspect::UintProperty,
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
+        device_listener_registry: DeviceListenerRegistry,
     ) {
         let filename = instance.instance_name().to_string();
         log::info!("found input device {}", filename);
@@ -508,21 +522,43 @@ impl InputPipeline {
                 fidl_next_fuchsia_input_report::InputDevice,
                 zx::Channel,
             >::from_untyped(channel);
-            let device_client = Dispatcher::client_from_zx_channel(device_client).spawn();
-            add_device_bindings(
+            let device_client = Dispatcher::client_from_zx_channel(device_client);
+            let (device_client, join_handle) = device_client.spawn_full();
+            let device_id = get_next_device_id();
+            if let Some(descriptor) = add_device_bindings(
                 device_types,
                 &filename,
                 device_client,
                 input_event_sender,
                 bindings,
-                get_next_device_id(),
+                device_id,
                 input_devices_node,
                 Some(devices_connected),
                 feature_flags,
                 metrics_logger,
                 false,
             )
-            .await;
+            .await
+            {
+                device_listener_registry.notify_device_changed(
+                    fidl_next_fuchsia_ui_input::Action::Added,
+                    device_id,
+                    descriptor.clone(),
+                );
+                let device_listener_registry_clone = device_listener_registry.clone();
+                let bindings_clone = bindings.clone();
+                let watch_task = Dispatcher::spawn_local(async move {
+                    let _ = join_handle.await;
+                    log::info!("Device {} disconnected", device_id);
+                    device_listener_registry_clone.notify_device_changed(
+                        fidl_next_fuchsia_ui_input::Action::Removed,
+                        device_id,
+                        descriptor,
+                    );
+                    bindings_clone.lock().remove(&device_id);
+                });
+                watch_task.detach();
+            }
             Ok::<(), Error>(())
         }
         .await;
@@ -560,6 +596,7 @@ impl InputPipeline {
         break_on_idle: bool,
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
+        device_listener_registry: DeviceListenerRegistry,
     ) -> Result<(), Error> {
         if break_on_idle {
             let instances = service.enumerate().await?;
@@ -574,6 +611,7 @@ impl InputPipeline {
                     devices_connected,
                     feature_flags.clone(),
                     metrics_logger.clone(),
+                    device_listener_registry.clone(),
                 )
                 .await;
             }
@@ -597,6 +635,7 @@ impl InputPipeline {
                     devices_connected,
                     feature_flags.clone(),
                     metrics_logger.clone(),
+                    device_listener_registry.clone(),
                 )
                 .await;
             }
@@ -627,6 +666,8 @@ impl InputPipeline {
         input_devices_node: &fuchsia_inspect::Node,
         feature_flags: input_device::InputPipelineFeatureFlags,
         metrics_logger: metrics::MetricsLogger,
+        device_listener_registry: DeviceListenerRegistry,
+        task_sender: UnboundedSender<crate::dispatcher::TaskHandle<()>>,
     ) -> Result<(), Error> {
         while let Some(request) = stream
             .try_next()
@@ -644,10 +685,10 @@ impl InputPipeline {
                         zx::Channel,
                     >::from_untyped(device.into_channel());
                     let device = Dispatcher::client_from_zx_channel(device);
-                    let device = device.spawn();
+                    let (device, join_handle) = device.spawn_full();
                     let device_id = get_next_device_id();
 
-                    add_device_bindings(
+                    if let Some(descriptor) = add_device_bindings(
                         device_types,
                         &format!("input-device-registry-{}", device_id),
                         device,
@@ -660,7 +701,28 @@ impl InputPipeline {
                         metrics_logger.clone(),
                         true,
                     )
-                    .await;
+                    .await
+                    {
+                        device_listener_registry.notify_device_changed(
+                            fidl_next_fuchsia_ui_input::Action::Added,
+                            device_id,
+                            descriptor.clone(),
+                        );
+
+                        let device_listener_registry_clone = device_listener_registry.clone();
+                        let bindings_clone = bindings.clone();
+                        let watch_task = Dispatcher::spawn_local(async move {
+                            let _ = join_handle.await;
+                            log::info!("Injected device {} disconnected", device_id);
+                            device_listener_registry_clone.notify_device_changed(
+                                fidl_next_fuchsia_ui_input::Action::Removed,
+                                device_id,
+                                descriptor,
+                            );
+                            bindings_clone.lock().remove(&device_id);
+                        });
+                        let _ = task_sender.unbounded_send(watch_task);
+                    }
                 }
                 fidl_fuchsia_input_injection::InputDeviceRegistryRequest::RegisterAndGetDeviceInfo {
                     device,
@@ -672,10 +734,10 @@ impl InputPipeline {
                         zx::Channel,
                     >::from_untyped(device.into_channel());
                     let device = Dispatcher::client_from_zx_channel(device);
-                    let device = device.spawn();
+                    let (device, join_handle) = device.spawn_full();
                     let device_id = get_next_device_id();
 
-                    add_device_bindings(
+                    let descriptor_opt = add_device_bindings(
                         device_types,
                         &format!("input-device-registry-{}", device_id),
                         device,
@@ -689,6 +751,28 @@ impl InputPipeline {
                         true,
                     )
                     .await;
+
+                    if let Some(descriptor) = descriptor_opt {
+                        device_listener_registry.notify_device_changed(
+                            fidl_next_fuchsia_ui_input::Action::Added,
+                            device_id,
+                            descriptor.clone(),
+                        );
+
+                        let device_listener_registry_clone = device_listener_registry.clone();
+                        let bindings_clone = bindings.clone();
+                        let watch_task = Dispatcher::spawn_local(async move {
+                            let _ = join_handle.await;
+                            log::info!("Injected device {} disconnected", device_id);
+                            device_listener_registry_clone.notify_device_changed(
+                                fidl_next_fuchsia_ui_input::Action::Removed,
+                                device_id,
+                                descriptor.clone(),
+                            );
+                            bindings_clone.lock().remove(&device_id);
+                        });
+                        let _ = task_sender.unbounded_send(watch_task);
+                    }
 
                     responder.send(fidl_fuchsia_input_injection::InputDeviceRegistryRegisterAndGetDeviceInfoResponse{
                         device_id: Some(device_id),
@@ -816,41 +900,45 @@ async fn add_device_bindings(
     feature_flags: InputPipelineFeatureFlags,
     metrics_logger: metrics::MetricsLogger,
     is_injected: bool,
-) {
+) -> Option<fidl_next_fuchsia_input_report::DeviceDescriptor> {
     let mut matched_device_types = vec![];
-    if let Ok(res) = device_proxy.get_descriptor().await {
-        for device_type in device_types {
-            if input_device::is_device_type(&res.descriptor, *device_type).await {
-                matched_device_types.push(device_type);
-                match devices_connected {
-                    Some(dev_connected) => {
-                        let _ = dev_connected.add(1);
-                    }
-                    None => (),
-                };
+    let descriptor = match device_proxy.get_descriptor().await {
+        Ok(res) => {
+            for device_type in device_types {
+                if input_device::is_device_type(&res.descriptor, *device_type).await {
+                    matched_device_types.push(device_type);
+                    match devices_connected {
+                        Some(dev_connected) => {
+                            let _ = dev_connected.add(1);
+                        }
+                        None => (),
+                    };
+                }
             }
+            if matched_device_types.is_empty() {
+                log::info!(
+                    "device {} did not match any supported device types: {:?}",
+                    instance_name,
+                    device_types
+                );
+                let device_node =
+                    input_devices_node.create_child(format!("{}_Unsupported", instance_name));
+                let mut health = fuchsia_inspect::health::Node::new(&device_node);
+                health.set_unhealthy("Unsupported device type.");
+                device_node.record(health);
+                input_devices_node.record(device_node);
+                return None;
+            }
+            res.descriptor
         }
-        if matched_device_types.is_empty() {
-            log::info!(
-                "device {} did not match any supported device types: {:?}",
-                instance_name,
-                device_types
+        Err(_) => {
+            metrics_logger.clone().log_error(
+                InputPipelineErrorMetricDimensionEvent::InputPipelineNoDeviceDescriptor,
+                std::format!("cannot bind device {} without a device descriptor", instance_name),
             );
-            let device_node =
-                input_devices_node.create_child(format!("{}_Unsupported", instance_name));
-            let mut health = fuchsia_inspect::health::Node::new(&device_node);
-            health.set_unhealthy("Unsupported device type.");
-            device_node.record(health);
-            input_devices_node.record(device_node);
-            return;
+            return None;
         }
-    } else {
-        metrics_logger.clone().log_error(
-            InputPipelineErrorMetricDimensionEvent::InputPipelineNoDeviceDescriptor,
-            std::format!("cannot bind device {} without a device descriptor", instance_name),
-        );
-        return;
-    }
+    };
 
     log::info!(
         "binding {} to device types: {}",
@@ -915,12 +1003,35 @@ async fn add_device_bindings(
         } else {
             bindings.insert(device_id, new_bindings);
         }
+        Some(descriptor)
+    } else {
+        None
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dispatcher::Transport;
+    use fidl_next::Request;
+
+    struct MockDeviceListener {
+        event_sender:
+            futures::channel::mpsc::UnboundedSender<fidl_next_fuchsia_ui_input::DeviceEvent>,
+    }
+
+    impl fidl_next_fuchsia_ui_input::DeviceListenerServerHandler<Transport> for MockDeviceListener {
+        async fn on_device_changed(
+            &mut self,
+            request: Request<
+                fidl_next_fuchsia_ui_input::device_listener::OnDeviceChanged,
+                Transport,
+            >,
+        ) {
+            let event = request.payload().event.clone();
+            let _ = self.event_sender.unbounded_send(event);
+        }
+    }
     use crate::input_device::{InputDeviceBinding, InputEventType};
     use crate::utils::Position;
     use crate::{fake_input_device_binding, mouse_binding, observe_fake_events_input_handler};
@@ -929,7 +1040,7 @@ mod tests {
     use fidl::endpoints::{create_proxy_and_stream, create_request_stream};
     use fidl_fuchsia_io as fio;
     use fuchsia_async as fasync;
-    use futures::FutureExt;
+    use futures::{FutureExt, StreamExt};
     use pretty_assertions::assert_eq;
     use rand::Rng;
     use sorted_vec_map::SortedVecSet;
@@ -1054,6 +1165,7 @@ mod tests {
             focus_listener_fut: None,
             watcher_fut: None,
             runner_fut,
+            device_listener_registry: DeviceListenerRegistry::new(),
         };
 
         // Send an input event from each device.
@@ -1116,6 +1228,7 @@ mod tests {
             focus_listener_fut: None,
             watcher_fut: None,
             runner_fut,
+            device_listener_registry: DeviceListenerRegistry::new(),
         };
 
         // Send an input event.
@@ -1136,21 +1249,16 @@ mod tests {
     /// input report service directory.
     #[fuchsia::test]
     async fn watch_devices_one_match_exists() {
-        // Create a pseudo directory representing a service instance for an input device.
-        let mut count: i8 = 0;
         let dir = pseudo_directory! {
             "fuchsia.input.report.Service" => pseudo_directory! {
                 "instance_0" => pseudo_directory! {
                     "input_device" => pseudo_fs_service::host(
                         move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
                             async move {
-                                while count < 3 {
-                                    if let Some(input_device_request) =
-                                        request_stream.try_next().await.unwrap()
-                                    {
-                                        handle_input_device_request(input_device_request);
-                                        count += 1;
-                                    }
+                                while let Some(input_device_request) =
+                                    request_stream.try_next().await.unwrap()
+                                {
+                                    handle_input_device_request(input_device_request);
                                 }
 
                             }.boxed()
@@ -1209,6 +1317,7 @@ mod tests {
             true, /* break_on_idle */
             InputPipelineFeatureFlags { enable_merge_touch_events: false },
             metrics::MetricsLogger::default(),
+            DeviceListenerRegistry::new(),
         )
         .await;
 
@@ -1261,21 +1370,16 @@ mod tests {
     /// but only a mouse exists.
     #[fuchsia::test]
     async fn watch_devices_no_matches_exist() {
-        // Create a pseudo directory representing a service instance for an input device.
-        let mut count: i8 = 0;
         let dir = pseudo_directory! {
             "fuchsia.input.report.Service" => pseudo_directory! {
                 "instance_0" => pseudo_directory! {
                     "input_device" => pseudo_fs_service::host(
                         move |mut request_stream: fidl_fuchsia_input_report::InputDeviceRequestStream| {
                             async move {
-                                while count < 1 {
-                                    if let Some(input_device_request) =
-                                        request_stream.try_next().await.unwrap()
-                                    {
-                                        handle_input_device_request(input_device_request);
-                                        count += 1;
-                                    }
+                                while let Some(input_device_request) =
+                                    request_stream.try_next().await.unwrap()
+                                {
+                                    handle_input_device_request(input_device_request);
                                 }
 
                             }.boxed()
@@ -1334,6 +1438,7 @@ mod tests {
             true, /* break_on_idle */
             InputPipelineFeatureFlags { enable_merge_touch_events: false },
             metrics::MetricsLogger::default(),
+            DeviceListenerRegistry::new(),
         )
         .await;
 
@@ -1375,18 +1480,29 @@ mod tests {
         let (input_event_sender, _input_event_receiver) = futures::channel::mpsc::unbounded();
         let bindings: InputDeviceBindingMap = Arc::new(Mutex::new(SortedVecMap::new()));
 
+        let device_listener_registry = DeviceListenerRegistry::new();
+        let (listener_client, listener_server) =
+            fidl_next::fuchsia::create_channel::<fidl_next_fuchsia_ui_input::DeviceListener>();
+        let listener_client = listener_client.spawn();
+        let _existing_devices = device_listener_registry.add_listener(listener_client);
+
+        let (event_sender, mut event_receiver) = futures::channel::mpsc::unbounded();
+        let _server_task = listener_server.spawn(MockDeviceListener { event_sender });
+
         // Handle input device requests.
-        let mut count: i8 = 0;
         let _task = fasync::Task::local(async move {
             // Register a device.
             let _ = input_device_registry_proxy.register(input_device_client_end);
 
-            while count < 3 {
+            let mut count = 0;
+            while count < 2 {
                 if let Some(input_device_request) =
                     input_device_request_stream.try_next().await.unwrap()
                 {
                     handle_input_device_request(input_device_request);
                     count += 1;
+                } else {
+                    break;
                 }
             }
 
@@ -1399,7 +1515,10 @@ mod tests {
 
         // Start listening for InputDeviceRegistryRequests.
         let bindings_clone = bindings.clone();
-        let _ = InputPipeline::handle_input_device_registry_request_stream(
+        let device_listener_registry_clone = device_listener_registry.clone();
+        let (task_sender, mut task_receiver) = futures::channel::mpsc::unbounded();
+        let mut tasks = futures::stream::FuturesUnordered::new();
+        let registry_fut = InputPipeline::handle_input_device_registry_request_stream(
             input_device_registry_request_stream,
             &device_types,
             &input_event_sender,
@@ -1407,12 +1526,154 @@ mod tests {
             &test_node,
             InputPipelineFeatureFlags { enable_merge_touch_events: false },
             metrics::MetricsLogger::default(),
+            device_listener_registry_clone,
+            task_sender,
         )
-        .await;
+        .fuse();
+
+        let mut registry_fut = std::pin::pin!(registry_fut);
+        loop {
+            futures::select! {
+                res = registry_fut => {
+                    res.unwrap();
+                    break;
+                }
+                task = task_receiver.next() => {
+                    if let Some(task) = task {
+                        tasks.push(task);
+                    }
+                }
+                _ = tasks.select_next_some() => {}
+            }
+        }
 
         // Assert that a device was registered.
-        let bindings = bindings.lock();
-        assert_eq!(bindings.len(), 1);
+        let device_id = {
+            let bindings = bindings.lock();
+            assert_eq!(bindings.len(), 1);
+            *bindings.keys().next().unwrap()
+        };
+
+        // Assert that device listener was notified.
+        if let Some(event) = event_receiver.next().await {
+            assert_eq!(event.action, Some(fidl_next_fuchsia_ui_input::Action::Added));
+            assert_eq!(event.device_id, Some(device_id));
+        } else {
+            panic!("Expected a request on listener stream");
+        }
+    }
+
+    /// Tests that an injected device is removed and listeners are notified with Action::Removed
+    /// when the injected device channel is closed.
+    #[fasync::run_singlethreaded(test)]
+    async fn handle_input_device_registry_disconnection() {
+        let (input_device_registry_proxy, input_device_registry_request_stream) =
+            create_proxy_and_stream::<fidl_fuchsia_input_injection::InputDeviceRegistryMarker>();
+        let (input_device_client_end, mut input_device_request_stream) =
+            create_request_stream::<fidl_fuchsia_input_report::InputDeviceMarker>();
+
+        let device_types = vec![input_device::InputDeviceType::Mouse];
+        let (input_event_sender, _input_event_receiver) = futures::channel::mpsc::unbounded();
+        let bindings: InputDeviceBindingMap = Arc::new(Mutex::new(SortedVecMap::new()));
+
+        let device_listener_registry = DeviceListenerRegistry::new();
+        let (listener_client, listener_server) =
+            fidl_next::fuchsia::create_channel::<fidl_next_fuchsia_ui_input::DeviceListener>();
+        let listener_client = listener_client.spawn();
+        let _existing_devices = device_listener_registry.add_listener(listener_client);
+
+        let (event_sender, mut event_receiver) = futures::channel::mpsc::unbounded();
+        let _server_task = listener_server.spawn(MockDeviceListener { event_sender });
+
+        // Handle input device requests.
+        let _task = fasync::Task::local(async move {
+            // Register a device.
+            let _ = input_device_registry_proxy.register(input_device_client_end);
+
+            let mut count = 0;
+            while count < 2 {
+                if let Some(input_device_request) =
+                    input_device_request_stream.try_next().await.unwrap()
+                {
+                    handle_input_device_request(input_device_request);
+                    count += 1;
+                } else {
+                    break;
+                }
+            }
+
+            // Close the device channel by dropping the request stream.
+            std::mem::drop(input_device_request_stream);
+
+            // Wait a bit to let the local task run.
+            fasync::Timer::new(fasync::MonotonicInstant::after(
+                zx::MonotonicDuration::from_millis(100),
+            ))
+            .await;
+
+            // End handle_input_device_registry_request_stream() by taking the event stream.
+            input_device_registry_proxy.take_event_stream();
+        });
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let test_node = inspector.root().create_child("input_pipeline");
+
+        // Start listening for InputDeviceRegistryRequests.
+        let bindings_clone = bindings.clone();
+        let device_listener_registry_clone = device_listener_registry.clone();
+        let (task_sender, mut task_receiver) = futures::channel::mpsc::unbounded();
+        let mut tasks = futures::stream::FuturesUnordered::new();
+        let registry_fut = InputPipeline::handle_input_device_registry_request_stream(
+            input_device_registry_request_stream,
+            &device_types,
+            &input_event_sender,
+            &bindings_clone,
+            &test_node,
+            InputPipelineFeatureFlags { enable_merge_touch_events: false },
+            metrics::MetricsLogger::default(),
+            device_listener_registry_clone,
+            task_sender,
+        )
+        .fuse();
+
+        let mut registry_fut = std::pin::pin!(registry_fut);
+        loop {
+            futures::select! {
+                res = registry_fut => {
+                    res.unwrap();
+                    break;
+                }
+                task = task_receiver.next() => {
+                    if let Some(task) = task {
+                        tasks.push(task);
+                    }
+                }
+                _ = tasks.select_next_some() => {}
+            }
+        }
+        while let Some(_) = tasks.next().await {}
+
+        // Assert that the device was registered and then removed.
+        {
+            let bindings = bindings.lock();
+            assert_eq!(bindings.len(), 0);
+        }
+
+        // Assert that device listener was notified of Addition.
+        let event_added = if let Some(event) = event_receiver.next().await {
+            event
+        } else {
+            panic!("Expected Added event");
+        };
+        assert_eq!(event_added.action, Some(fidl_next_fuchsia_ui_input::Action::Added));
+
+        // Assert that device listener was notified of Removal.
+        let event_removed = if let Some(event) = event_receiver.next().await {
+            event
+        } else {
+            panic!("Expected Removed event");
+        };
+        assert_eq!(event_removed.action, Some(fidl_next_fuchsia_ui_input::Action::Removed));
     }
 
     // Tests that correct properties are added to inspect node when InputPipeline is created.

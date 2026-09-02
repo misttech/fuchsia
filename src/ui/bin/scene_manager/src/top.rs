@@ -30,6 +30,7 @@ use fidl_fuchsia_ui_composition_internal as fcomp;
 use fidl_fuchsia_ui_display_color as color;
 use fidl_fuchsia_ui_display_singleton as singleton_display;
 use fidl_fuchsia_ui_focus::FocusChainProviderRequestStream;
+use fidl_fuchsia_ui_input::DeviceListenerRegistryRequestStream;
 use fidl_fuchsia_ui_policy::{
     DeviceListenerRegistryRequestStream as MediaButtonsListenerRegistryRequestStream,
     DisplayBacklightRequestStream,
@@ -51,6 +52,7 @@ use zx;
 enum ExposedServices {
     ColorAdjustment(ColorAdjustmentRequestStream),
     ColorAdjustmentHandler(ColorAdjustmentHandlerRequestStream),
+    DeviceListenerRegistry(DeviceListenerRegistryRequestStream),
     MediaButtonsListenerRegistry(MediaButtonsListenerRegistryRequestStream),
     DisplayBacklight(DisplayBacklightRequestStream),
     FactoryResetCountdown(FactoryResetCountdownRequestStream),
@@ -112,6 +114,7 @@ pub async fn start(
     fs.dir("svc")
         .add_fidl_service(ExposedServices::ColorAdjustmentHandler)
         .add_fidl_service(ExposedServices::ColorAdjustment)
+        .add_fidl_service(ExposedServices::DeviceListenerRegistry)
         .add_fidl_service(ExposedServices::MediaButtonsListenerRegistry)
         .add_fidl_service(ExposedServices::DisplayBacklight)
         .add_fidl_service(ExposedServices::FactoryResetCountdown)
@@ -147,6 +150,9 @@ pub async fn start(
 
     let (input_device_registry_server, input_device_registry_request_stream_receiver) =
         crate::input_device_registry_server::make_server_and_receiver();
+
+    let (device_listener_registry_server, device_listener_registry_request_stream_receiver) =
+        crate::device_listener_registry_server::make_server_and_receiver();
 
     let (
         media_buttons_listener_registry_server,
@@ -270,6 +276,7 @@ pub async fn start(
         input_device_registry_request_stream_receiver,
         light_sensor_request_stream_receiver,
         media_buttons_listener_registry_request_stream_receiver,
+        device_listener_registry_request_stream_receiver,
         factory_reset_countdown_request_stream_receiver,
         factory_reset_device_request_stream_receiver,
         inspect_node,
@@ -387,6 +394,17 @@ pub async fn start(
                                         "failed to forward light sensor request via LightSensorRequestStream: {e:?}"
                                     );
                                 }
+                            }
+                        }
+                    }
+                    ExposedServices::DeviceListenerRegistry(request_stream) => {
+                        match &device_listener_registry_server.handle_request(request_stream).await {
+                            Ok(()) => (),
+                            Err(e) => {
+                                warn!(
+                                    "failed to forward device listener request via DeviceListenerRegistryRequestStream: {:?}",
+                                    e
+                                )
                             }
                         }
                     }

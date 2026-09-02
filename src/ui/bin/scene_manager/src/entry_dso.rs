@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
 mod color_transform_manager;
+mod device_listener_registry_server;
 mod factory_reset_countdown_server;
 mod factory_reset_device_server;
 mod input_device_registry_server;

@@ -31,6 +31,7 @@ _scene_manager = {
     "//sdk/fidl/fuchsia.ui.display.color:fuchsia.ui.display.color_rust",
     "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_rust",
     "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_rust",
+    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_rust",
     "//sdk/fidl/fuchsia.ui.pointerinjector.configuration:fuchsia.ui.pointerinjector.configuration_rust",
     "//sdk/fidl/fuchsia.ui.policy:fuchsia.ui.policy_rust",
     "//sdk/lib/scheduler/rust",
@@ -59,6 +60,7 @@ _scene_manager = {
 
   sources = [
     "src/color_transform_manager.rs",
+    "src/device_listener_registry_server.rs",
     "src/factory_reset_countdown_server.rs",
     "src/factory_reset_device_server.rs",
     "src/input_device_registry_server.rs",
