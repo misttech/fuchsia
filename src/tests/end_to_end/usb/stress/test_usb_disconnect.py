@@ -99,8 +99,8 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
             self._usb_power_hub.power_on(port=self._usb_port)
             _LOGGER.info("Waiting for the device to go online...")
             await self.dut.wait_for_online()
-            await self.dut.on_device_boot()
             _LOGGER.info("Device is successfully back online.")
+            self.dut.health_check()
 
         _LOGGER.info(
             "Successfully ended the Usb Disconnect test iteration# %s",
@@ -257,6 +257,7 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
                     self.dut.fastboot.boot_to_fuchsia_mode(),
                     timeout=fuchsia_reboot_timeout,
                 )
+                return
         except Exception as e:
             _LOGGER.warning("fastboot reboot to Fuchsia command error (%s).", e)
 
@@ -265,12 +266,12 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
             await asyncio.wait_for(
                 self.dut.wait_for_online(), timeout=fuchsia_reboot_timeout
             )
+            _LOGGER.info("Device is successfully back online in Fuchsia.")
         except asyncio.TimeoutError as e:
             raise errors.FuchsiaDeviceError(
                 f"Timed out waiting for device to come online in Fuchsia after {fuchsia_reboot_timeout}s"
             ) from e
         await self.dut.on_device_boot()
-        _LOGGER.info("Device is successfully back online in Fuchsia.")
 
     async def _test_fastboot_loop_logic(self) -> None:
         """Test logic that loops disconnects entirely within Fastboot mode."""
