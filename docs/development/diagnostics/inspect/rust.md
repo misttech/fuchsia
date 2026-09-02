@@ -28,10 +28,22 @@ to add the Inspect `client.shard.cml`.
 
 ### [`fuchsia-inspect-contrib`][fuchsia_inspect_contrib]
 
-This library is intended for contributions to the Inspect library from clients.
-These are patterns that clients identify in their usage of Inspect that they can
-generalize and share. It’s intended to be at a higher level than
-`fuchsia-inspect`.
+This library provides higher-level patterns and utilities contributed by Inspect
+clients to simplify common logging and data structures:
+
+* **Bounded event logging**: [`BoundedListNode`][bounded-list-node] manages
+  fixed-capacity FIFO lists of child nodes, automatically evicting older
+  entries when full.
+
+* **Timestamped event logging**: The [`inspect_log!`][inspect-log-macro] macro
+  records structured events to a `BoundedListNode` with automatic `@time` boot
+  timestamp injection.
+
+* **Time properties**: [`NodeTimeExt`][node-time-ext] provides convenience
+  methods to record and manage boot and monotonic timestamps on Inspect nodes.
+
+* **Diagnostics caching**: `LruCacheNode` and `DedupeLogNode` assist with
+  caching and deduplicating diagnostics data.
 
 ### [`fuchsia-inspect-derive`][fuchsia_inspect_derive]
 
@@ -80,3 +92,6 @@ This library provides an API for reading and writing the blocks of the
 [diagnostics_hierarchy]: https://fuchsia-docs.firebaseapp.com/rust/diagnostics_hierarchy/index.html
 [diagnostics_reader]: https://fuchsia-docs.firebaseapp.com/rust/diagnostics_reader/index.html
 [diagnostics_testing]: https://fuchsia-docs.firebaseapp.com/rust/diagnostics_testing/index.html
+[bounded-list-node]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect_contrib/nodes/struct.BoundedListNode.html
+[inspect-log-macro]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect_contrib/macro.inspect_log.html
+[node-time-ext]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect_contrib/nodes/trait.NodeTimeExt.html

@@ -99,6 +99,9 @@ their primary or root tree as `out/diagnostics/root.inspect`.
   The [health][cpp-5] feature supports exposing structured health information
   in a format known by health checking tools.
 
+  The [bounded list][cpp-7] feature supports recording rolling event histories
+  in fixed-capacity FIFO node buffers.
+
   The [test matchers][cpp-6] library provides GMock matchers for verifying
   data that is read out of an Inspect hierarchy in tests.
 
@@ -170,6 +173,9 @@ their primary or root tree as `out/diagnostics/root.inspect`.
 
   The [health][rust-5] module supports exposing structured health information
   in a format known by health checking tools.
+
+  The [contrib][rust-7] crate provides `BoundedListNode`, `inspect_log!`, and
+  time utilities for timestamped event logging.
 
   The [testing][rust-6] module supports the `assert_data_tree!` macro to
   match Inspect data for testing.
@@ -299,6 +305,7 @@ and produces the data.
 [cpp-4]: /sdk/lib/inspect/component/cpp
 [cpp-5]: /zircon/system/ulib/inspect/include/lib/inspect/cpp/health.h
 [cpp-6]: /sdk/lib/inspect/testing
+[cpp-7]: /zircon/system/ulib/inspect/include/lib/inspect/cpp/bounded_list_node.h
 [cpp-reading-1]: /zircon/system/ulib/inspect/include/lib/inspect/cpp/reader.h
 [cpp-reading-2]: /zircon/system/ulib/inspect/include/lib/inspect/cpp/hierarchy.h
 [rust-1]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect/struct.Inspector.html
@@ -307,6 +314,7 @@ and produces the data.
 [rust-4]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect/component/index.html
 [rust-5]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect/health/index.html
 [rust-6]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect/testing/index.html
+[rust-7]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect_contrib/index.html
 [Inspect File Format]: /docs/reference/platform-spec/diagnostics/inspect-vmo-format.md
 [Validator Architecture]: /docs/reference/diagnostics/inspect/validator/README.md
 [Health checks]: /docs/development/diagnostics/inspect/health.md

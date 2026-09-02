@@ -457,6 +457,159 @@ a value. The callback function is invoked when the property value is read.
   This saves 16 bytes for each child node, and has a cost of 32 bytes
   for the shared data. The net result is a savings of 1568 bytes.
 
+### Event logging and timestamps {#event-logging-and-timestamps}
+
+While Inspect properties typically represent instantaneous component state,
+components often need to record historical events (such as connection attempts,
+state transitions, or errors).
+
+To record rolling event logs and timestamps effectively:
+
+* Follow the [`@time` naming convention](#timestamp-conventions) so timestamps
+  are clearly identified by developers and can be parsed by Fuchsia Snapshot
+  Viewer (FSV).
+
+* Use [bounded list nodes](#bounded-list-nodes) to maintain a fixed-capacity
+  FIFO buffer of events without unbounded memory growth.
+
+#### Timestamp property conventions {#timestamp-conventions}
+
+Note: All of these conventions are weakly held. Inspect is largely free-form
+data, and you can choose to depart from these conventions at any time.
+
+Inspect does not have a dedicated timestamp primitive type. Instead, timestamps
+are recorded as 64-bit integer properties (`IntProperty` or `UintProperty`),
+typically representing nanoseconds or seconds. Fuchsia Snapshot Viewer (FSV)
+makes no assumptions about the timeline; users must know from context how to
+interpret the timestamp.
+
+FSV parses property keys named `@time` or ending in `@time`
+(`<prefix>@time`) to render human-readable dates and calculate elapsed
+durations:
+
+* **Event timestamp (`@time`)**: Use the exact property key `@time` for the
+  primary timestamp of an event or state change.
+
+* **Interval timestamps (`start@time`, `end@time`)**: Use the `@time` suffix on
+  property keys (such as `start@time`, `end@time`, `created@time`, or
+  `last_seen@time`) when tracking timestamps and durations across time ranges.
+
+Note: Recording timestamps on the boot timeline is specific to
+Diagnostics-provided libraries (such as the `inspect_log!` macro in
+`fuchsia-inspect-contrib`). The boot timeline (`zx::BootInstant` in Rust,
+`zx::clock::get_boot()` in C++) continues incrementing while the device is in
+low-power or suspend states.
+
+#### Bounded list nodes {#bounded-list-nodes}
+
+A bounded list node maintains a circular FIFO buffer of child nodes under a
+parent node. Each new event is added as a child node named with an
+auto-incrementing index (`"0"`, `"1"`, `"2"`, ...). When the list reaches its
+maximum capacity, creating a new entry automatically evicts the oldest entry.
+
+* {Rust}
+
+  In Rust, use `BoundedListNode` from the
+  [`fuchsia-inspect-contrib`][fuchsia-inspect-contrib] crate. Combine it with
+  the `inspect_log!` macro to record timestamped events with automatic `@time`
+  property injection:
+
+  ```rust
+  use fuchsia_inspect_contrib::inspect_log;
+  use fuchsia_inspect_contrib::nodes::BoundedListNode;
+
+  // Create a bounded list with a capacity of 10 entries under "events".
+  let mut events = BoundedListNode::new(root.create_child("events"), 10);
+
+  // Log an event using key-value syntax. An "@time" property is recorded
+  // automatically.
+  inspect_log!(events, state: "connected", address: 42u64);
+
+  // Log an event using block syntax with multiple fields.
+  inspect_log!(events, {
+      state: "disconnected",
+      reason: "timeout",
+      retry_count: 3u32,
+  });
+
+  // Log optional fields and nested structures.
+  let peer_id: Option<u64> = Some(1234);
+  inspect_log!(events, {
+      event: "peer_discovered",
+      peer_id?: peer_id,
+      details: {
+          rssi: -45i16,
+          channel: 6u8,
+      },
+  });
+  ```
+
+  To record timestamps manually on any node (such as start and end times), use
+  the `NodeTimeExt` extension trait:
+
+  ```rust
+  use fuchsia_inspect_contrib::nodes::{BootTimeline, NodeTimeExt};
+
+  // Record an "@time" property with the current boot timestamp.
+  NodeTimeExt::<BootTimeline>::record_time(&node, "@time");
+
+  // Record interval timestamps on a node.
+  node.record_int("start@time", start_instant.into_nanos());
+  node.record_int("end@time", end_instant.into_nanos());
+  ```
+
+  Note: `BoundedListNode` methods take `&mut self`. If your bounded list is
+  shared across threads or asynchronous tasks, wrap it in a `Mutex`.
+
+* {C++}
+
+  In C++, use `inspect::BoundedListNode` by including
+  `<lib/inspect/cpp/bounded_list_node.h>`:
+
+  ```cpp
+  #include <lib/inspect/cpp/bounded_list_node.h>
+  #include <lib/zx/clock.h>
+
+  // Create a bounded list with a capacity of 10 entries under "events".
+  inspect::BoundedListNode events(root.CreateChild("events"), 10);
+
+  // Record a timestamped entry using CreateEntry.
+  events.CreateEntry([](inspect::Node& entry) {
+    entry.RecordInt("@time", zx::clock::get_boot().get());
+    entry.RecordString("state", "connected");
+    entry.RecordUint("address", 42);
+  });
+
+  // Record interval timestamps when measuring operations.
+  events.CreateEntry([&](inspect::Node& entry) {
+    entry.RecordInt("start@time", start_time.get());
+    entry.RecordInt("end@time", zx::clock::get_boot().get());
+    entry.RecordString("status", "success");
+  });
+  ```
+
+  Note: In C++, `inspect::BoundedListNode` is internally synchronized with a
+  mutex and is safe for concurrent access across multiple threads.
+
+#### Output hierarchy
+
+When inspected using [`ffx inspect`][ffx-inspect], the resulting bounded event
+log appears in the hierarchy as indexed child nodes:
+
+```none {:.devsite-disable-click-to-copy}
+root:
+  events:
+    "0":
+      "@time" = 123456789012
+      address = 42
+      state = "connected"
+    "1":
+      "@time" = 123457890123
+      reason = "timeout"
+      retry_count = 3
+      state = "disconnected"
+```
+
 ## Viewing Inspect Data {#view-inspect-data}
 
 You can use the [`ffx inspect`][ffx-inspect] command to view the Inspect data
@@ -624,3 +777,4 @@ use diagnostics_assertions::JsonGetter;
 [overview]: /docs/development/diagnostics/inspect/README.md
 [moniker]: /docs/reference/components/moniker.md
 [selectors]: /docs/reference/diagnostics/selectors.md
+[fuchsia-inspect-contrib]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_inspect_contrib/index.html
