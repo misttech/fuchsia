@@ -360,12 +360,44 @@ zx_status_t AmlTSensor::Create(zx_device_t* parent,
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
-  zx::result device_info_result = pdev.GetDeviceInfo();
-  if (device_info_result.is_error()) {
-    zxlogf(ERROR, "Failed to get device info: %s", device_info_result.status_string());
-    return device_info_result.status_value();
+  uint32_t pid = 0;
+  zx::result board_info_result = pdev.GetBoardInfo();
+  if (board_info_result.is_ok() && board_info_result->pid != PDEV_PID_GENERIC) {
+    const auto& board_info = board_info_result.value();
+    if (board_info.vid == PDEV_VID_AMLOGIC) {
+      pid = board_info.pid;
+    } else if (board_info.vid == PDEV_VID_GOOGLE) {
+      switch (board_info.pid) {
+        case PDEV_PID_ASTRO:
+          pid = PDEV_PID_AMLOGIC_S905D2;
+          break;
+        case PDEV_PID_SHERLOCK:
+          pid = PDEV_PID_AMLOGIC_T931;
+          break;
+        default:
+          zxlogf(ERROR, "Unsupported PID 0x%x for VID 0x%x", board_info.pid, board_info.vid);
+          return ZX_ERR_INVALID_ARGS;
+      }
+    } else if (board_info.vid == PDEV_VID_KHADAS) {
+      switch (board_info.pid) {
+        case PDEV_PID_VIM3:
+          pid = PDEV_PID_AMLOGIC_A311D;
+          break;
+        default:
+          zxlogf(ERROR, "Unsupported PID 0x%x for VID 0x%x", board_info.pid, board_info.vid);
+          return ZX_ERR_INVALID_ARGS;
+      }
+    } else {
+      pid = board_info.pid;
+    }
+  } else {
+    zx::result device_info_result = pdev.GetDeviceInfo();
+    if (device_info_result.is_error()) {
+      zxlogf(ERROR, "Failed to get device info: %s", device_info_result.status_string());
+      return device_info_result.status_value();
+    }
+    pid = device_info_result.value().pid;
   }
-  fdf::PDev::DeviceInfo device_info = std::move(device_info_result.value());
 
   // Map amlogic temperature sensor peripheral control registers.
   zx::result sensor_base_mmio = pdev.MapMmio(kSensorMmio);
@@ -397,7 +429,7 @@ zx_status_t AmlTSensor::Create(zx_device_t* parent,
   }
   tsensor_irq_ = std::move(irq.value());
 
-  return InitSensor(std::move(thermal_config), device_info.pid);
+  return InitSensor(std::move(thermal_config), pid);
 }
 
 zx_status_t AmlTSensor::InitSensor(fuchsia_hardware_thermal::ThermalDeviceInfo thermal_config,
