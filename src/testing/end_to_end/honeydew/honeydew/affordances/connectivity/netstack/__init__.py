@@ -314,13 +314,13 @@ class Netstack:
     async def wait_for_ipv4_addr(
         self,
         interface_id: int,
-        timeout: int = 30,
+        timeout: timedelta = timedelta(seconds=30),
     ) -> IPv4Address:
         """Waits for an interface with the specified ID to have an IPv4 address.
 
         Args:
             interface_id: Interface ID to wait for.
-            timeout: Max time in seconds to wait.
+            timeout: Max time to wait.
 
         Returns:
             The first assigned IPv4Address on the interface.
@@ -328,7 +328,7 @@ class Netstack:
         Raises:
             HoneydewNetstackError: If timeout occurs before an address is assigned.
         """
-        end_time = time.time() + timeout
+        end_time = time.time() + timeout.total_seconds()
         while time.time() < end_time:
             interfaces = await self.list_interfaces()
             for iface in interfaces:
@@ -336,20 +336,20 @@ class Netstack:
                     return iface.ipv4_addresses[0]
             await asyncio.sleep(1)
         raise HoneydewNetstackError(
-            f"Timed out after {timeout} seconds waiting for an IPv4 address"
+            f"Timed out after {timeout.total_seconds():.0f} seconds waiting for an IPv4 address"
             f" on interface ID {interface_id}"
         )
 
     async def wait_for_ipv6_addr(
         self,
         interface_id: int,
-        timeout: int = 30,
+        timeout: timedelta = timedelta(seconds=30),
     ) -> IPv6Address:
         """Waits for an interface with the specified ID to have an IPv6 address.
 
         Args:
             interface_id: Interface ID to wait for.
-            timeout: Max time in seconds to wait.
+            timeout: Max time to wait.
 
         Returns:
             The first assigned IPv6Address on the interface.
@@ -357,7 +357,7 @@ class Netstack:
         Raises:
             HoneydewNetstackError: If timeout occurs before an address is assigned.
         """
-        end_time = time.time() + timeout
+        end_time = time.time() + timeout.total_seconds()
         while time.time() < end_time:
             interfaces = await self.list_interfaces()
             for iface in interfaces:
@@ -365,20 +365,20 @@ class Netstack:
                     return iface.ipv6_addresses[0]
             await asyncio.sleep(1)
         raise HoneydewNetstackError(
-            f"Timed out after {timeout} seconds waiting for an IPv6 address"
+            f"Timed out after {timeout.total_seconds():.0f} seconds waiting for an IPv6 address"
             f" on interface ID {interface_id}"
         )
 
     async def wait_for_interface(
         self,
         port_class: PortClass,
-        timeout: int = 30,
+        timeout: timedelta = timedelta(seconds=30),
     ) -> InterfaceProperties:
         """Waits for an interface with the specified port class to become available.
 
         Args:
             port_class: Port class to wait for.
-            timeout: Max time in seconds to wait.
+            timeout: Max time to wait.
 
         Returns:
             Interface properties of the matching interface.
@@ -386,7 +386,7 @@ class Netstack:
         Raises:
             HoneydewNetstackError: If timeout occurs before interface is found.
         """
-        end_time = time.time() + timeout
+        end_time = time.time() + timeout.total_seconds()
         while time.time() < end_time:
             interfaces = await self.list_interfaces()
             for interface in interfaces:
@@ -394,5 +394,5 @@ class Netstack:
                     return interface
             await asyncio.sleep(1)
         raise HoneydewNetstackError(
-            f"Timed out after {timeout} seconds waiting for a {port_class.name} interface"
+            f"Timed out after {timeout.total_seconds():.0f} seconds waiting for a {port_class.name} interface"
         )

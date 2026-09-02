@@ -265,7 +265,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
         )
 
         addr_v4 = await self.netstack_obj.wait_for_ipv4_addr(
-            interface_id=_TEST_INTERFACE_ID, timeout=5
+            interface_id=_TEST_INTERFACE_ID
         )
         self.assertEqual(addr_v4, IPv4Address("192.168.1.1"))
 
@@ -330,7 +330,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
         )
 
         addr_v6 = await self.netstack_obj.wait_for_ipv6_addr(
-            interface_id=_TEST_INTERFACE_ID, timeout=5
+            interface_id=_TEST_INTERFACE_ID
         )
         self.assertEqual(addr_v6, IPv6Address("fe80::2"))
 
@@ -382,7 +382,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(HoneydewNetstackError) as context:
             await self.netstack_obj.wait_for_ipv4_addr(
-                interface_id=_TEST_INTERFACE_ID, timeout=2
+                interface_id=_TEST_INTERFACE_ID, timeout=timedelta(seconds=2)
             )
 
         self.assertIn("Timed out", str(context.exception))
@@ -431,7 +431,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
         )
 
         iface = await self.netstack_obj.wait_for_interface(
-            port_class=PortClass.WLAN_CLIENT, timeout=5
+            port_class=PortClass.WLAN_CLIENT
         )
         self.assertEqual(iface.id_, _TEST_INTERFACE_ID)
         self.assertEqual(iface.name, "wlan1")
@@ -485,7 +485,7 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(HoneydewNetstackError) as context:
             await self.netstack_obj.wait_for_interface(
-                port_class=PortClass.WLAN_CLIENT, timeout=2
+                port_class=PortClass.WLAN_CLIENT, timeout=timedelta(seconds=2)
             )
 
         self.assertIn("Timed out", str(context.exception))

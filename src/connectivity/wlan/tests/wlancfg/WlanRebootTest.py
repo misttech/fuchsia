@@ -15,20 +15,27 @@ from datetime import timedelta
 from enum import Enum, StrEnum, auto, unique
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
-import fuchsia_async_extension
+import fuchsia_wlan_base_test
 from antlion import utils
+from antlion.controllers import pdu
 from antlion.controllers.ap_lib.hostapd_ap_preset import create_ap_preset
 from antlion.controllers.ap_lib.hostapd_constants import AP_SSID_LENGTH_2G
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
 from antlion.controllers.ap_lib.radvd_config import RadvdConfig
-from antlion.controllers.fuchsia_device import FuchsiaDevice
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
+from honeydew.affordances.connectivity.netstack.errors import (
+    HoneydewNetstackError,
+)
+from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
-from mobly import asserts, signals, test_runner
+from honeydew.affordances.connectivity.wlan.utils.types import (
+    KNOWN_COUNTRY_CODES,
+)
+from honeydew.auxiliary_devices.power_switch import power_switch
+from mobly import signals, test_runner
 from openwrt_access_point import AddrType as OpenWrtAddrType
 from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
 from openwrt_access_point.lib.access_point_config import (
@@ -104,7 +111,7 @@ class TestParams:
     ip_version: IpVersionType
 
 
-class WlanRebootTest(base_test.WifiBaseTest):
+class WlanRebootTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Tests wlan reconnects in different reboot scenarios.
 
     Testbed Requirement:
@@ -113,7 +120,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
     * One PduDevice
     """
 
-    def pre_run(self) -> None:
+    async def pre_run(self) -> None:
         test_params: list[tuple[TestParams]] = []
         securities: list[Security] = [
             SecurityOpen(),
@@ -153,19 +160,19 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 )
             )
 
-        def generate_test_name(t: TestParams) -> str:
+        def generate_test_name(params: TestParams) -> str:
             # Map OpenWrt security to hostapd security string to match legacy test name format
-            security = ConfigMapper.to_hostapd_security(t.security)
+            security = ConfigMapper.to_hostapd_security(params.security)
             test_name = (
                 "test"
-                f"_{t.reboot_type}_reboot"
-                f"_{t.reboot_device}"
-                f"_{t.band.lower()}"
+                f"_{params.reboot_type}_reboot"
+                f"_{params.reboot_device}"
+                f"_{params.band.lower()}"
                 f"_{security}"
             )
-            if t.ip_version.ipv4():
+            if params.ip_version.ipv4():
                 test_name += "_ipv4"
-            if t.ip_version.ipv6():
+            if params.ip_version.ipv6():
                 test_name += "_ipv6"
             return test_name
 
@@ -175,29 +182,32 @@ class WlanRebootTest(base_test.WifiBaseTest):
             arg_sets=test_params,
         )
 
-    def setup_class(self) -> None:
-        super().setup_class()
+    async def setup_class(self) -> None:
+        await super().setup_class()
         self.log = logging.getLogger()
+        self._power_switch: power_switch.PowerSwitch | None = None
+        self._outlet: int | None = None
+        await self.dut.wlan_policy.set_country_code(
+            KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
+        )
 
-        if self.openwrt_aps:
-            self.openwrt_ap = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point = self.access_points[0]
-            self.access_point.stop_all_aps()
-        else:
+        self.pdu_devices = await self.register_controller(
+            pdu,
+            required=False,
+        )
+
+        if not self.openwrt_ap and not self.access_point:
             raise signals.TestAbortClass("Requires at least one access point")
 
-        self.fuchsia_device, self.dut = self.get_dut_type(FuchsiaDevice)
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_policy.ensure_clean_state()
 
-    def setup_test(self) -> None:
-        super().setup_test()
+    async def teardown_test(self) -> None:
         if self.access_point:
             self.access_point.stop_all_aps()
-
-    def teardown_test(self) -> None:
-        if self.access_point:
-            self.access_point.stop_all_aps()
-        super().teardown_test()
+        await self.dut.wlan_policy.ensure_clean_state()
+        await super().teardown_test()
 
     def setup_ap(
         self,
@@ -258,7 +268,10 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 radvd_config=RadvdConfig() if ip_version.ipv6() else None,
             )
 
-        if not ip_version.ipv4():
+        if ip_version.ipv4():
+            if self.openwrt_ap:
+                self.openwrt_ap.dhcp.start_dhcp()
+        else:
             if self.openwrt_ap:
                 self.openwrt_ap.dhcp.stop_dhcp()
             elif self.access_point:
@@ -266,7 +279,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
 
         self.log.info(f"Network (SSID: {ssid}) is up.")
 
-    def ping_dut_to_ap(
+    async def ping_dut_to_ap(
         self,
         band: Band,
         ip_version: IpVersionType,
@@ -307,20 +320,21 @@ class WlanRebootTest(base_test.WifiBaseTest):
 
         if ap_address:
             if ip_version == IpVersionType.IPV4:
-                ping_result = self.dut.ping(ap_address)
+                ping_result = await self.dut.netstack.ping(ap_address)
             else:
-                ap_address = (
-                    f"{ap_address}%{self.dut.get_default_wlan_test_interface()}"
+                wlan_interface = await self.dut.netstack.wait_for_interface(
+                    PortClass.WLAN_CLIENT
                 )
-                ping_result = self.dut.ping(ap_address)
-            if ping_result.success:
+                ap_address = f"{ap_address}%{wlan_interface.name}"
+                ping_result = await self.dut.netstack.ping(ap_address)
+            if ping_result.any_pings_received:
                 self.log.info("Ping was successful.")
             else:
                 raise signals.TestFailure(
-                    f"Ping was unsuccessful: {ping_result}"
+                    f"Ping was unsuccessful: {ping_result.raw_output}"
                 )
         else:
-            raise ConnectionError("Failed to retrieve APs ping address.")
+            raise ConnectionError("Failed to retrieve AP's ping address.")
 
     def write_csv_time_to_reconnect(
         self,
@@ -375,7 +389,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 f"{self.current_test_info.name}", True, time_to_reconnect
             )
 
-    def run_reboot_test(self, settings: TestParams) -> None:
+    async def run_reboot_test(self, params: TestParams) -> None:
         """Runs a reboot test based on a given config.
             1. Setups up a network, associates the dut, and saves the network.
             2. Verifies the dut receives ip address(es).
@@ -389,35 +403,24 @@ class WlanRebootTest(base_test.WifiBaseTest):
             7. Logs time to reconnect (or failure to reconnect)
 
         Args:
-            settings: TestParams dataclass containing the following values:
+            params: TestParams dataclass containing the following values:
                 reboot_device: the device to reboot either DUT or AP.
                 reboot_type: how to reboot the reboot_device either hard or soft.
                 band: band to setup either 2g or 5g
-                security_mode: security mode to set up either OPEN, WPA2, or WPA3.
+                security: security mode to set up either OPEN, WPA2, or WPA3.
                 ip_version: the ip version (ipv4 or ipv6)
         """
         assert self.openwrt_ap is not None or self.access_point is not None
-        # TODO(b/286443517): Properly support WLAN on android devices.
-        assert (
-            self.fuchsia_device is not None
-        ), "Fuchsia device not found, test currently does not support android devices."
 
-        ssid = utils.rand_ascii_str(AP_SSID_LENGTH_2G)
-        reboot_device: DeviceType = settings.reboot_device
-        reboot_type: RebootType = settings.reboot_type
-        band: Band = settings.band
-        ip_version: IpVersionType = settings.ip_version
-        security: Security = settings.security
-        legacy_security_mode = ConfigMapper.to_hostapd_security(security)
+        ssid = AccessPointConfig.random_string(AP_SSID_LENGTH_2G)
+        reboot_device: DeviceType = params.reboot_device
+        reboot_type: RebootType = params.reboot_type
+        band: Band = params.band
+        ip_version: IpVersionType = params.ip_version
+        security: Security = params.security
         password: str | None = None
         if not isinstance(security, SecurityOpen):
             password = AccessPointConfig.random_string()
-
-        # Skip hard reboots if no PDU present
-        asserts.skip_if(
-            reboot_type == RebootType.HARD and len(self.pdu_devices) == 0,
-            "Hard reboots require a PDU device.",
-        )
 
         self.setup_ap(
             ssid,
@@ -427,21 +430,25 @@ class WlanRebootTest(base_test.WifiBaseTest):
             password,
         )
 
-        if not self.dut.associate(
-            ssid,
-            target_security=legacy_security_mode,
-            target_pwd=password,
-        ):
-            raise EnvironmentError("Initial network connection failed.")
+        security_type = security.to_fidl_wlan_policy()
+        await self.dut.wlan_policy.save_network(ssid, security_type, password)
+        await self.dut.wlan_policy.connect(ssid, security_type)
 
-        test_interface = self.dut.get_default_wlan_test_interface()
-
+        wlan_interface = await self.dut.netstack.wait_for_interface(
+            PortClass.WLAN_CLIENT
+        )
         if ip_version.ipv4():
-            self.fuchsia_device.wait_for_ipv4_addr(test_interface)
-            self.ping_dut_to_ap(band, IpVersionType.IPV4)
+            await self.dut.netstack.wait_for_ipv4_addr(
+                wlan_interface.id_,
+                timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
+            )
+            await self.ping_dut_to_ap(band, IpVersionType.IPV4)
         if ip_version.ipv6():
-            self.fuchsia_device.wait_for_ipv6_addr(test_interface)
-            self.ping_dut_to_ap(band, IpVersionType.IPV6)
+            await self.dut.netstack.wait_for_ipv6_addr(
+                wlan_interface.id_,
+                timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
+            )
+            await self.ping_dut_to_ap(band, IpVersionType.IPV6)
 
         # DUT reboots
         if reboot_device == DeviceType.DUT:
@@ -449,11 +456,15 @@ class WlanRebootTest(base_test.WifiBaseTest):
             # because the persistence component does not make the inspect logs
             # available for 120 seconds. This helps for debugging issues where
             # we need previous state.
-            self.dut.take_bug_report(self.current_test_info.record)
+            await self.dut.snapshot(directory=self.test_case_path)
             if reboot_type == RebootType.SOFT:
-                self.fuchsia_device.reboot()
+                await self.dut.reboot()
             elif reboot_type == RebootType.HARD:
-                self.dut.hard_power_cycle(self.pdu_devices)
+                power_switch, outlet = self._lookup_power_switch(self.dut)
+                await self.dut.power_cycle(
+                    power_switch=power_switch,
+                    outlet=outlet,
+                )
 
         # AP reboots
         elif reboot_device == DeviceType.AP:
@@ -465,18 +476,18 @@ class WlanRebootTest(base_test.WifiBaseTest):
                     self.access_point.stop_all_aps()
             elif reboot_type == RebootType.HARD:
                 if self.openwrt_ap:
-                    # TODO(b/520236968): Add support for OpenWrt AP hard power cycle
-                    pass
+                    # TODO(b/520236968): Implement power cycling for OpenWrt AP.
+                    raise NotImplementedError(
+                        "OpenWrt AP power cycling is not supported. (b/520236968)"
+                    )
                 elif self.access_point:
                     self.access_point.hard_power_cycle(self.pdu_devices)
             self.log.info(
                 f"Waiting for DUT to disconnect from {ssid} after AP reboot. Will retry for "
                 f"{DUT_NETWORK_CONNECTION_TIMEOUT.total_seconds():.0f} seconds."
             )
-            fuchsia_async_extension.get_loop().run_until_complete(
-                self.fuchsia_device.honeydew_fd.wlan_policy.wait_for_no_connections(
-                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
-                )
+            await self.dut.wlan_policy.wait_for_no_connections(
+                timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
             )
             self.setup_ap(ssid, band, ip_version, security, password)
 
@@ -487,12 +498,10 @@ class WlanRebootTest(base_test.WifiBaseTest):
                     f"Checking if DUT is connected to {ssid} network. Will retry for "
                     f"{DUT_NETWORK_CONNECTION_TIMEOUT.total_seconds():.0f} seconds."
                 )
-                fuchsia_async_extension.get_loop().run_until_complete(
-                    self.fuchsia_device.honeydew_fd.wlan_policy.wait_for_network_state(
-                        ssid,
-                        f_wlan_policy.ConnectionState.CONNECTED,
-                        timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
-                    )
+                await self.dut.wlan_policy.wait_for_network_state(
+                    ssid,
+                    f_wlan_policy.ConnectionState.CONNECTED,
+                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
                 )
             except HoneydewWlanError as e:
                 if reboot_device == DeviceType.DUT and isinstance(
@@ -506,18 +515,32 @@ class WlanRebootTest(base_test.WifiBaseTest):
                 raise e
             time_to_reconnect = time.time() - uptime
 
+            wlan_interface = await self.dut.netstack.wait_for_interface(
+                PortClass.WLAN_CLIENT
+            )
             if ip_version.ipv4():
-                self.fuchsia_device.wait_for_ipv4_addr(test_interface)
-                self.ping_dut_to_ap(band, IpVersionType.IPV4)
+                await self.dut.netstack.wait_for_ipv4_addr(
+                    wlan_interface.id_,
+                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
+                )
+                await self.ping_dut_to_ap(band, IpVersionType.IPV4)
             if ip_version.ipv6():
-                self.fuchsia_device.wait_for_ipv6_addr(test_interface)
-                self.ping_dut_to_ap(band, IpVersionType.IPV6)
+                await self.dut.netstack.wait_for_ipv6_addr(
+                    wlan_interface.id_,
+                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
+                )
+                await self.ping_dut_to_ap(band, IpVersionType.IPV6)
 
-        except ConnectionError as err:
+        except (
+            ConnectionError,
+            HoneydewNetstackError,
+            HoneydewWlanError,
+            signals.TestFailure,
+        ) as err:
             self.log_and_continue(ssid, error=err)
             raise signals.TestFailure(
                 f"Failed to reconnect to {ssid} after reboot."
-            )
+            ) from err
         else:
             self.log_and_continue(ssid, time_to_reconnect=time_to_reconnect)
 

@@ -5,6 +5,7 @@
 import logging
 import re
 from dataclasses import dataclass
+from datetime import timedelta
 from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
 
@@ -159,7 +160,7 @@ class DhcpHelper:
 
     async def get_device_ipv4_addr(
         self,
-        timeout_sec: float = 30.0,
+        timeout: timedelta = timedelta(seconds=30),
     ) -> IPv4Address:
         """Checks if device has an ipv4 address on the WLAN client interface.
 
@@ -172,7 +173,7 @@ class DhcpHelper:
         try:
             wlan_iface = await self.dut.netstack.wait_for_interface(
                 port_class=PortClass.WLAN_CLIENT,
-                timeout=int(timeout_sec),
+                timeout=timeout,
             )
             _LOGGER.info(
                 "Acquired WLAN client interface ID %s. Waiting for IPv4 address...",
@@ -180,7 +181,7 @@ class DhcpHelper:
             )
             ip = await self.dut.netstack.wait_for_ipv4_addr(
                 interface_id=wlan_iface.id_,
-                timeout=int(timeout_sec),
+                timeout=timeout,
             )
             _LOGGER.info("DUT has an ipv4 address: %s", ip)
             return ip
