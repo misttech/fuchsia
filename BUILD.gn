@@ -2387,7 +2387,7 @@ group("host") {
     # Static analysis tools used by shac should always be built so that
     # `fx format-code` and other static analysis entrypoints can be run on any
     # build configuration.
-    "//bundles/tools/shac:shac_tools",
+    "//bundles/tools/shac($host_toolchain)",
 
     # Host tests for //build/api/client
     "//build/api:tests",
