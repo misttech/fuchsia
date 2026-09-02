@@ -13,6 +13,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use pulldown_cmark::Tag;
 use regex::Regex;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -27,13 +28,15 @@ cfg_if::cfg_if! {
 }
 
 static INCLUDE_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<<\s?(.+?\.md)\s?>>").unwrap());
+    LazyLock::new(|| Regex::new(r"<<\s*(.+?\.md)\s*>>").unwrap());
 
-static JINJA_INCLUDE_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\{%\s*include\s*["']([^"']+\.md)["']\s*%\}"#).unwrap());
+static JINJA_INCLUDE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\{%-?\s*include\s*["']([^"']+\.md)["']\s*([^%]*?)-?%\}"#).unwrap()
+});
 
-static JINJA_IMPORT_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\{%\s*import\s*["']([^"']+\.md)["']\s*%\}"#).unwrap());
+static JINJA_IMPORT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\{%-?\s*import\s*["']([^"']+\.md)["']\s*([^%]*?)-?%\}"#).unwrap()
+});
 
 const FUCHSIA_SRC_PREFIX: &str = "fuchsia-src/";
 
@@ -46,11 +49,12 @@ pub(crate) struct IncludeChecker {
     full_docs_dir: PathBuf,
     /// The name of the documents directory as a String (e.g. "docs").
     docs_dir_name: String,
+    /// Cached prefix for docs folder includes (e.g. "docs/").
+    docs_prefix: String,
     /// Shared graph representing file reachability via includes.
     reachability_graph: ReachabilityGraph,
     /// Maps included files to the list of files and lines that include them, deferred for post-check validation.
-    pending_existence_checks:
-        std::sync::Mutex<std::collections::HashMap<PathBuf, Vec<(PathBuf, usize)>>>,
+    pending_existence_checks: std::collections::HashMap<PathBuf, Vec<(PathBuf, usize)>>,
 }
 
 impl IncludeChecker {
@@ -71,11 +75,13 @@ impl IncludeChecker {
             .ok_or_else(|| anyhow::anyhow!("docs_dir must have a valid directory name"))?
             .to_string_lossy()
             .into_owned();
+        let docs_prefix = format!("{}/", docs_dir.to_string_lossy());
         Ok(Self {
             root_dir,
             docs_dir,
             full_docs_dir,
             docs_dir_name,
+            docs_prefix,
             reachability_graph,
             pending_existence_checks: Default::default(),
         })
@@ -90,12 +96,11 @@ impl IncludeChecker {
     /// against its enclosing `docs/` folder. If no ancestor matching `self.docs_dir_name` is
     /// found, it falls back to `self.full_docs_dir`.
     fn find_doc_root(&self, path: &Path) -> PathBuf {
-        let mut p = path.to_path_buf();
-        while let Some(parent) = p.parent() {
-            if parent.file_name() == Some(std::ffi::OsStr::new(&self.docs_dir_name)) {
+        let docs_dir_name = OsStr::new(&self.docs_dir_name);
+        for parent in path.ancestors() {
+            if parent.file_name() == Some(docs_dir_name) {
                 return parent.to_path_buf();
             }
-            p = parent.to_path_buf();
         }
         self.full_docs_dir.clone()
     }
@@ -114,19 +119,14 @@ impl IncludeChecker {
     fn resolve_include_path(
         &self,
         path_str: &str,
-        current_file_path: &Path,
+        current_file_dir: &Path,
+        doc_root: &Path,
     ) -> anyhow::Result<PathBuf> {
         if path_str.starts_with('/') {
             anyhow::bail!("Included markdown file {:?} must be a relative path.", path_str);
         }
 
-        let current_file_dir = current_file_path.parent().ok_or_else(|| {
-            anyhow::anyhow!("File {:?} has no parent directory", current_file_path)
-        })?;
-        let doc_root = self.find_doc_root(current_file_path);
-
-        let docs_prefix = format!("{}/", self.docs_dir.to_string_lossy());
-        if path_str.starts_with(&docs_prefix) {
+        if path_str.starts_with(&self.docs_prefix) {
             // Include path explicitly starts with docs folder prefix (e.g. "docs/path/to/file.md").
             // Resolve directly against the repository root.
             Ok(self.root_dir.join(path_str))
@@ -156,12 +156,14 @@ impl IncludeChecker {
     }
 
     fn process_include(
-        &self,
+        &mut self,
         path_str: &str,
         line_num: usize,
         referencing_file: &Path,
+        current_file_dir: &Path,
+        doc_root: &Path,
     ) -> Option<DocCheckError> {
-        match self.resolve_include_path(path_str, referencing_file) {
+        match self.resolve_include_path(path_str, current_file_dir, doc_root) {
             Ok(target_file) => match normalize_and_validate_path(&target_file, &self.root_dir) {
                 Ok(normalized) => {
                     self.reachability_graph
@@ -171,8 +173,7 @@ impl IncludeChecker {
                         .or_default()
                         .insert(normalized.clone());
 
-                    let mut pending = self.pending_existence_checks.lock().unwrap();
-                    pending
+                    self.pending_existence_checks
                         .entry(normalized)
                         .or_default()
                         .push((referencing_file.to_path_buf(), line_num));
@@ -194,7 +195,7 @@ impl IncludeChecker {
 
     /// Walks the element tree to find include directives.
     fn find_includes<'el>(
-        &self,
+        &mut self,
         element: &'el Element<'_>,
         buffer: &mut String,
         current_line: &mut Option<&'el DocLine>,
@@ -243,11 +244,17 @@ impl IncludeChecker {
     }
 
     fn check_text(
-        &self,
+        &mut self,
         text: &str,
         doc_line: &DocLine,
         errors: &mut Vec<DocCheckError>,
     ) -> Result<()> {
+        let current_file_path = &doc_line.file_name;
+        let current_file_dir = current_file_path.parent().ok_or_else(|| {
+            anyhow::anyhow!("File {:?} has no parent directory", current_file_path)
+        })?;
+        let doc_root = self.find_doc_root(current_file_path);
+
         for (line_offset, line) in text.lines().enumerate() {
             let trimmed = line.trim();
             if trimmed.contains("doc-checker: ignore-missing") {
@@ -269,9 +276,13 @@ impl IncludeChecker {
                     .map(|m| m.as_str());
 
                 for path_str in standard_includes.chain(jinja_includes).chain(jinja_imports) {
-                    if let Some(err) =
-                        self.process_include(path_str, match_line_num, &doc_line.file_name)
-                    {
+                    if let Some(err) = self.process_include(
+                        path_str,
+                        match_line_num,
+                        current_file_path,
+                        current_file_dir,
+                        &doc_root,
+                    ) {
                         errors.push(err);
                     }
                 }
@@ -303,8 +314,7 @@ impl DocCheck for IncludeChecker {
 
     async fn post_check(&self) -> Result<Option<Vec<DocCheckError>>> {
         let mut errors = vec![];
-        let pending = self.pending_existence_checks.lock().unwrap();
-        for (target_file, references) in pending.iter() {
+        for (target_file, references) in &self.pending_existence_checks {
             if !path_helper::exists(target_file) {
                 for (referencing_file, line_num) in references {
                     errors.push(DocCheckError::new_error(
@@ -447,7 +457,7 @@ mod tests {
         Ok(())
     }
 
-    #[fuchsia::test]
+    #[test]
     fn test_reachability_graph_and_prefixes() -> Result<()> {
         let reachability_graph = ReachabilityGraph::default();
         let mut checker = IncludeChecker::new(
@@ -461,7 +471,13 @@ mod tests {
         let file = PathBuf::from("/docs/sub/README.md");
         let input = "include with prefix {% include \"docs/sub/file.md\" %}\n\
                      include with fuchsia-src {% include \"fuchsia-src/sub/fuchsia_file.md\" %}\n\
-                     relative include <<_common/relative_file.md>>";
+                     relative include <<_common/relative_file.md>>\n\
+                     import with alias {% import \"docs/sub/_macros.md\" as macros %}\n\
+                     whitespace trimmed {%- import \"docs/sub/_macros2.md\" as macros2 -%}\n\
+                     trimmed include {%- include \"docs/sub/_trimmed.md\" -%}\n\
+                     spaced relative <<   _common/spaced.md   >>\n\
+                     single quoted import {% import 'docs/sub/_single.md' as sq %}\n\
+                     multiple on line {% import \"docs/sub/_first.md\" as f %} and {% include \"docs/sub/_second.md\" %}";
         let callback = &mut |broken_link: pulldown_cmark::BrokenLink<'_>| {
             DocContext::handle_broken_link(broken_link, input)
         };
@@ -481,6 +497,13 @@ mod tests {
         assert!(targets.contains(&PathBuf::from("/docs/sub/file.md")));
         assert!(targets.contains(&PathBuf::from("/docs/sub/fuchsia_file.md")));
         assert!(targets.contains(&PathBuf::from("/docs/sub/_common/relative_file.md")));
+        assert!(targets.contains(&PathBuf::from("/docs/sub/_macros.md")));
+        assert!(targets.contains(&PathBuf::from("/docs/sub/_macros2.md")));
+        assert!(targets.contains(&PathBuf::from("/docs/sub/_trimmed.md")));
+        assert!(targets.contains(&PathBuf::from("/docs/sub/_common/spaced.md")));
+        assert!(targets.contains(&PathBuf::from("/docs/sub/_single.md")));
+        assert!(targets.contains(&PathBuf::from("/docs/sub/_first.md")));
+        assert!(targets.contains(&PathBuf::from("/docs/sub/_second.md")));
         Ok(())
     }
 }

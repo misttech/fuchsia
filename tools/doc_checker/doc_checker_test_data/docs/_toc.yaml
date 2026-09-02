@@ -15,4 +15,6 @@ toc:
     path: /docs/include_here.md
   - title: missing toc test
     include: /docs/missing/_toc.yaml
+  - title: Hidden file
+    path: /docs/_hidden_in_toc.md
 

@@ -6,7 +6,7 @@
 //! the Fuchsia project.
 
 pub(crate) use crate::checker::{
-    DocCheck, DocCheckError, DocLine, DocYamlCheck, ErrorLevel, ReachabilityGraph,
+    DocCheck, DocCheckError, DocLine, DocYamlCheck, ErrorLevel, ExemptionSet, ReachabilityGraph,
 };
 pub(crate) use crate::md_element::DocContext;
 pub(crate) use crate::path_ext::DocPathExt;
@@ -26,14 +26,20 @@ mod parser;
 pub(crate) mod path_ext;
 mod yaml;
 
+static EXEMPT_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?i)<!-+\s*doc[-_]checker\s*:\s*ignore[-_]unused(?:\s*[:\s-][^>]*)?-+>")
+        .unwrap()
+});
+
 // path_helper includes methods to check path attributes
 // so that these methods can be mocked for unit tests.
 pub mod path_helper_module {
-
     use std::path::Path;
+
     pub fn exists(path: &Path) -> bool {
         path.exists()
     }
+
     pub fn is_dir(path: &Path) -> bool {
         path.is_dir()
     }
@@ -51,34 +57,31 @@ pub mod path_helper_module {
 #[cfg(test)]
 pub(crate) mod mock_path_helper_module {
     use std::path::Path;
+
     pub fn exists(path: &Path) -> bool {
         let path_str = path.to_string_lossy();
 
         // If the path actually exists, return true. This allows for
         // staging test data.
-        path.exists() ||
-
-        // if is_dir returns true, the directory needs to exist as well.
-        (is_dir(path) &&!path_str.ends_with("no-extension")) ||
-
-        // markdown files exist with a couple exceptions.
-        path_str.ends_with(".md") &&
-        (!path_str.ends_with("no_readme/README.md") &&
-        !path_str.ends_with("unused/README.md") &&
-        !path_str.ends_with("missing.md" ) &&
-        !path_str.ends_with("no-extension") )   ||
-
-        // OWNERS file exists.
-        path.ends_with("OWNERS")
+        path.exists()
+            // if is_dir returns true, the directory needs to exist as well.
+            || (is_dir(path) && !path_str.ends_with("no-extension"))
+            // markdown files exist with a couple exceptions.
+            || (path_str.ends_with(".md")
+                && (!path_str.ends_with("no_readme/README.md")
+                    && !path_str.ends_with("unused/README.md")
+                    && !path_str.ends_with("missing.md")
+                    && !path_str.ends_with("no-extension")))
+            // OWNERS file exists.
+            || path.ends_with("OWNERS")
     }
 
     pub fn is_dir(path: &Path) -> bool {
         // If the path is actually a directory, return true. This allows for
         // staged test data.
-        path.is_dir() ||
-
-        // Paths with no extension are directories, except OWNERS.
-        ( path.extension().is_none() && !path.ends_with("OWNERS"))
+        path.is_dir()
+            // Paths with no extension are directories, except OWNERS.
+            || (path.extension().is_none() && !path.ends_with("OWNERS"))
     }
 }
 
@@ -119,6 +122,10 @@ pub struct DocCheckerArgs {
     /// do not check links between docs,
     #[argh(switch)]
     pub skip_link_check: bool,
+
+    /// allow unreferenced hidden files (files starting with _) from being published.
+    #[argh(switch)]
+    pub allow_unreferenced_hidden: bool,
 }
 
 #[fuchsia::main]
@@ -130,11 +137,11 @@ async fn main() -> Result<()> {
     opt.root =
         opt.root.canonicalize().context(format!("invalid root dir for source: {:?} ", opt.root))?;
     if let Some(reference_root) = opt.reference_docs_root {
-        opt.reference_docs_root = Some(
-            reference_root
-                .canonicalize()
-                .context("could not get canonical reference root for {reference_root:?}")?,
-        );
+        opt.reference_docs_root =
+            Some(reference_root.canonicalize().context(format!(
+                "could not get canonical reference root for {:?}",
+                reference_root
+            ))?);
     }
 
     if let Some(mut errors) = do_main(&opt).await? {
@@ -172,12 +179,10 @@ async fn main() -> Result<()> {
                 )
             }
         }
+    } else if opt.json {
+        println!("[]");
     } else {
-        if opt.json {
-            println!("[]");
-        } else {
-            println!("No errors found");
-        }
+        println!("No errors found");
     }
     Ok(())
 }
@@ -233,26 +238,19 @@ async fn do_main(opt: &DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
     let mut errors: Vec<DocCheckError> = vec![];
 
     let reachability_graph: ReachabilityGraph = Default::default();
+    let exemption_set: ExemptionSet = Default::default();
 
-    let mut checks = link_checker::register_markdown_checks(&opt, reachability_graph.clone())?;
-    for c in checks {
-        markdown_checks.push(c);
-    }
+    markdown_checks
+        .extend(link_checker::register_markdown_checks(opt, reachability_graph.clone())?);
+    markdown_checks
+        .extend(include_checker::register_markdown_checks(opt, reachability_graph.clone())?);
+    markdown_checks.extend(mermaid_checker::register_markdown_checks(opt)?);
 
-    checks = include_checker::register_markdown_checks(&opt, reachability_graph.clone())?;
-    for c in checks {
-        markdown_checks.push(c);
-    }
-
-    checks = mermaid_checker::register_markdown_checks(&opt)?;
-    for c in checks {
-        markdown_checks.push(c);
-    }
-
-    let mut yaml_checks = yaml::register_yaml_checks(&opt)?;
+    let mut yaml_checks =
+        yaml::register_yaml_checks(opt, reachability_graph.clone(), exemption_set.clone())?;
 
     let markdown_errors: Vec<DocCheckError> =
-        check_markdown(&markdown_files, &mut markdown_checks)?;
+        check_markdown(&markdown_files, &mut markdown_checks, exemption_set.clone())?;
     errors.extend(markdown_errors);
 
     let yaml_errors = check_yaml(&yaml_files, &mut yaml_checks)?;
@@ -290,12 +288,16 @@ async fn do_main(opt: &DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
 pub fn check_markdown<'a>(
     files: &[PathBuf],
     checks: &'a mut [Box<dyn DocCheck + 'static>],
+    exemption_set: ExemptionSet,
 ) -> Result<Vec<DocCheckError>> {
     let mut errors: Vec<DocCheckError> = vec![];
 
     for mdfile in files {
         let mdcontent = fs::read_to_string(mdfile).expect("Unable to read file");
-        let mut callback = &mut |broken_link: pulldown_cmark::BrokenLink<'_>| {
+        if EXEMPT_REGEX.is_match(&mdcontent) {
+            exemption_set.lock().unwrap().insert(mdfile.clone());
+        }
+        let mut callback = |broken_link: pulldown_cmark::BrokenLink<'_>| {
             DocContext::handle_broken_link(broken_link, &mdcontent)
         };
 
@@ -348,7 +350,6 @@ fn check_yaml<'a>(
 
 #[cfg(test)]
 mod test {
-
     use super::*;
     use std::env;
 
@@ -363,6 +364,7 @@ mod test {
             allow_fuchsia_src_links: false,
             reference_docs_root: None,
             skip_link_check: false,
+            allow_unreferenced_hidden: false,
         };
 
         // Set the current directory to the executable dir so the relative test paths WAI.
@@ -478,6 +480,26 @@ mod test {
                 0,
                 PathBuf::from("doc_checker_test_data/docs/unused/_toc.yaml"),
                 "File not reachable via _toc include references.",
+            ),
+            DocCheckError::new_error(
+                0,
+                PathBuf::from("doc_checker_test_data/docs/_hidden_dir/unreachable.md"),
+                "Unused hidden file. If this file is only referenced by external repositories, append '<!-- doc-checker: ignore-unused -->' to the file to exempt it.",
+            ),
+            DocCheckError::new_error(
+                0,
+                PathBuf::from("doc_checker_test_data/docs/_unreachable_hidden.md"),
+                "Unused hidden file. If this file is only referenced by external repositories, append '<!-- doc-checker: ignore-unused -->' to the file to exempt it.",
+            ),
+            DocCheckError::new_warning(
+                0,
+                PathBuf::from("doc_checker_test_data/docs/README.md"),
+                "Redundant exemption comment. File is reachable locally; remove '<!-- doc-checker: ignore-unused -->' to clean up.",
+            ),
+            DocCheckError::new_error(
+                0,
+                PathBuf::from("doc_checker_test_data/docs/_toc.yaml"),
+                "Cannot reference hidden file /docs/_hidden_in_toc.md in _toc.yaml. Hidden files are not published by Devsite.",
             ),
         ];
 

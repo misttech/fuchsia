@@ -7,7 +7,7 @@
 
 use crate::md_element::{CowStr, Element, LinkType};
 use crate::path_ext::normalize_path;
-use crate::{DocCheck, DocCheckError, DocCheckerArgs, DocLine, ReachabilityGraph};
+use crate::{DocCheck, DocCheckError, DocCheckerArgs, DocLine, DocPathExt, ReachabilityGraph};
 use anyhow::{Result, bail};
 use async_trait::async_trait;
 use fuchsia_hyper::{HttpsClient, TcpOptions, new_https_client_from_tcp_options};
@@ -96,6 +96,7 @@ struct LinkChecker {
     pub allow_fuchsia_src_links: bool,
     links: Vec<LinkReference>,
     reachability_graph: ReachabilityGraph,
+    reference_docs_root: Option<PathBuf>,
 }
 
 impl LinkChecker {
@@ -355,7 +356,21 @@ impl DocCheck for LinkChecker {
                                     .unwrap()
                                     .entry(current_file)
                                     .or_default()
-                                    .insert(target_file);
+                                    .insert(target_file.clone());
+
+                                if target_file.is_hidden_doc(
+                                    &self.root_dir,
+                                    self.reference_docs_root.as_deref(),
+                                ) {
+                                    errors.push(DocCheckError::new_warning(
+                                        element.doc_line().line_num,
+                                        element.doc_line().file_name.clone(),
+                                        &format!(
+                                            "Do not link directly to hidden file {}. Hidden files are only meant for inclusion.",
+                                            link_to_check
+                                        ),
+                                    ));
+                                }
                             }
                             Err(link_error) => {
                                 errors.push(link_error);
@@ -572,7 +587,7 @@ pub(crate) fn is_intree_link(
         let (mut filepath, _) = link_to_check.split_once('#').unwrap_or((link_to_check, ""));
         (filepath, _) = filepath.split_once('?').unwrap_or((filepath, ""));
 
-        return match normalize_intree_path(filepath) {
+        return match normalize_path(Path::new(filepath)) {
             Ok(normalized) => Ok(Some(normalized)),
             Err(e) => Err(e),
         };
@@ -747,41 +762,6 @@ fn on_gerrit_master(uri: &Uri) -> bool {
     }
 }
 
-fn normalize_intree_path(filepath: &str) -> Result<PathBuf> {
-    let orig = PathBuf::from(filepath);
-    let mut normalized = PathBuf::new();
-    let segments = orig.components();
-
-    for part in segments {
-        match part {
-            std::path::Component::Prefix(p) => {
-                // Prefix is used on Windows systems and is
-                // part of the path that is not part of normalizing
-                // the path.
-                // For Non-windows, it should not appear.
-                eprintln!("Unexpected path component {:?}", p);
-            }
-            std::path::Component::RootDir => {
-                //RootDir is the beginning of the Path, after
-                // any Prefix.
-                normalized.push("/");
-            }
-            std::path::Component::CurDir => {
-                //CurDir is the current directory, "."
-                // it is ignored.
-            }
-            std::path::Component::ParentDir => {
-                // ParentDir is the parent of the current item, ".."
-                if !normalized.pop() {
-                    bail!("Cannot normalize {}, references parent beyond root.", filepath);
-                }
-            }
-            std::path::Component::Normal(p) => normalized.push(p),
-        }
-    }
-    Ok(normalized)
-}
-
 pub async fn check_external_links(links: &Vec<LinkReference>) -> Option<Vec<DocCheckError>> {
     // sort the links to take advantage of keep alive
     // HashMap is <authority, set<links>.
@@ -898,6 +878,7 @@ pub(crate) fn register_markdown_checks(
         links: vec![],
         allow_fuchsia_src_links: opt.allow_fuchsia_src_links,
         reachability_graph,
+        reference_docs_root: opt.reference_docs_root.clone(),
     };
     Ok(vec![Box::new(checker)])
 }
@@ -917,6 +898,7 @@ mod tests {
             links: vec![],
             allow_fuchsia_src_links: false,
             reachability_graph: Default::default(),
+            reference_docs_root: None,
         };
         let filename = PathBuf::from("/my/root/fuchsia/docs/index.md");
 
@@ -945,24 +927,6 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_intree_path() -> Result<()> {
-        let test_data = [
-            ("/docs", PathBuf::from("/docs")),
-            ("/docs/../docs", PathBuf::from("/docs")),
-            ("/docs/sub/location.md", PathBuf::from("/docs/sub/location.md")),
-            ("/docs/sub/two/../location.md", PathBuf::from("/docs/sub/location.md")),
-            ("/docs/sub/./location.md", PathBuf::from("/docs/sub/location.md")),
-        ];
-
-        for (data, expected) in test_data {
-            let actual = normalize_intree_path(data)?;
-            assert_eq!(actual, expected);
-        }
-
-        Ok(())
-    }
-
-    #[test]
     fn test_happy_path() -> Result<()> {
         let opt = DocCheckerArgs {
             root: PathBuf::from("/path/to/fuchsia"),
@@ -973,6 +937,7 @@ mod tests {
             allow_fuchsia_src_links: false,
             reference_docs_root: None,
             skip_link_check: false,
+            allow_unreferenced_hidden: false,
         };
 
         let mut checks = register_markdown_checks(&opt, Default::default())?;
@@ -1049,6 +1014,7 @@ mod tests {
             allow_fuchsia_src_links: false,
             reference_docs_root: None,
             skip_link_check: false,
+            allow_unreferenced_hidden: false,
         };
 
         let mut checks = register_markdown_checks(&opt, Default::default())?;
@@ -1223,6 +1189,7 @@ mod tests {
             allow_fuchsia_src_links: false,
             reference_docs_root: None,
             skip_link_check: false,
+            allow_unreferenced_hidden: false,
         };
 
         let mut checks = register_markdown_checks(&opt, Default::default())?;
@@ -1316,6 +1283,7 @@ mod tests {
             allow_fuchsia_src_links: true,
             reference_docs_root: None,
             skip_link_check: false,
+            allow_unreferenced_hidden: false,
         };
 
         let mut checks = register_markdown_checks(&opt, Default::default())?;

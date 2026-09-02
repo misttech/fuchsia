@@ -10,8 +10,10 @@ use crate::link_checker::{
     LinkReference, PUBLISHED_DOCS_HOST, check_external_links, do_check_link, do_in_tree_check,
     is_intree_link,
 };
-use crate::path_ext::DocPathExt;
-use crate::{DocCheckError, DocCheckerArgs, DocLine, DocYamlCheck};
+use crate::path_ext::{DocPathExt, normalize_path};
+use crate::{
+    DocCheckError, DocCheckerArgs, DocLine, DocYamlCheck, ExemptionSet, ReachabilityGraph,
+};
 use anyhow::Result;
 use async_trait::async_trait;
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag};
@@ -221,6 +223,83 @@ pub(crate) struct YamlChecker {
     problems: Vec<(PathBuf, ProblemEntry)>,
     tools: HashSet<String>,
     tools_entries: Vec<(PathBuf, ToolsEntry)>,
+    reachability_graph: ReachabilityGraph,
+    exemption_set: ExemptionSet,
+    allow_unreferenced_hidden: bool,
+}
+
+impl YamlChecker {
+    fn collect_reachability_roots(
+        &self,
+        visited: &HashMap<PathBuf, IncludedYaml>,
+        markdown_files: &[PathBuf],
+    ) -> HashSet<PathBuf> {
+        let mut reachable: HashSet<PathBuf> = visited
+            .keys()
+            .filter(|path| path.extension().map_or(false, |ext| ext == "md"))
+            .cloned()
+            .collect();
+        reachable.insert(self.root_dir.join("CODE_OF_CONDUCT.md"));
+        reachable.insert(self.root_dir.join("CONTRIBUTING.md"));
+        for f in markdown_files {
+            if f.is_navbar_doc() || f.is_ignored_doc() || f.ends_with("gen/build_arguments.md") {
+                reachable.insert(f.clone());
+            }
+        }
+        reachable
+    }
+
+    fn traverse_reachability_graph(&self, reachable: &mut HashSet<PathBuf>) {
+        let mut queue: Vec<PathBuf> = reachable.iter().cloned().collect();
+        let graph = self.reachability_graph.lock().unwrap();
+        while let Some(current) = queue.pop() {
+            if let Some(neighbors) = graph.get(&current) {
+                for neighbor in neighbors {
+                    if reachable.insert(neighbor.clone()) {
+                        queue.push(neighbor.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    fn check_file_reachability(
+        &self,
+        markdown_files: &[PathBuf],
+        reachable: &HashSet<PathBuf>,
+        errors: &mut Vec<DocCheckError>,
+    ) {
+        let exemptions = self.exemption_set.lock().unwrap();
+        for f in markdown_files {
+            if reachable.contains(f) {
+                if exemptions.contains(f) {
+                    errors.push(DocCheckError::new_warning(
+                        0,
+                        f.clone(),
+                        "Redundant exemption comment. File is reachable locally; remove '<!-- doc-checker: ignore-unused -->' to clean up.",
+                    ));
+                }
+            } else {
+                let is_hidden =
+                    f.is_hidden_doc(&self.root_dir, self.reference_docs_root.as_deref());
+                if is_hidden {
+                    if !self.allow_unreferenced_hidden && !exemptions.contains(f) {
+                        errors.push(DocCheckError::new_error(
+                            0,
+                            f.clone(),
+                            "Unused hidden file. If this file is only referenced by external repositories, append '<!-- doc-checker: ignore-unused -->' to the file to exempt it.",
+                        ));
+                    }
+                } else {
+                    errors.push(DocCheckError::new_error(
+                        0,
+                        f.clone(),
+                        "File not referenced in any _toc.yaml files.",
+                    ));
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -327,12 +406,12 @@ impl DocYamlCheck for YamlChecker {
 
     async fn post_check(
         &self,
-        _markdown_files: &[PathBuf],
-        _yaml_files: &[PathBuf],
+        markdown_files: &[PathBuf],
+        yaml_files: &[PathBuf],
     ) -> Result<Option<Vec<DocCheckError>>> {
-        let mut yaml_file_set: HashSet<&PathBuf> = HashSet::from_iter(_yaml_files.iter());
+        let mut yaml_file_set: HashSet<&PathBuf> = HashSet::from_iter(yaml_files.iter());
         let mut visited: HashMap<PathBuf, IncludedYaml> = HashMap::new();
-        let mut markdown_file_set: HashSet<&PathBuf> = HashSet::from_iter(_markdown_files.iter());
+        let mut markdown_file_set: HashSet<&PathBuf> = HashSet::from_iter(markdown_files.iter());
         let mut errors = vec![];
         let mut external_links = self.external_links.clone();
 
@@ -363,8 +442,7 @@ impl DocYamlCheck for YamlChecker {
                                     if path_helper::is_dir(&file_path) {
                                         file_path.push("README.md");
                                     }
-                                    let file_path = crate::path_ext::normalize_path(&file_path)
-                                        .unwrap_or(file_path);
+                                    let file_path = normalize_path(&file_path).unwrap_or(file_path);
 
                                     if file_path.is_hidden_doc(
                                         &self.root_dir,
@@ -424,8 +502,7 @@ impl DocYamlCheck for YamlChecker {
                             if path_helper::is_dir(&file_path) {
                                 file_path.push("README.md");
                             }
-                            let file_path =
-                                crate::path_ext::normalize_path(&file_path).unwrap_or(file_path);
+                            let file_path = normalize_path(&file_path).unwrap_or(file_path);
 
                             if file_path
                                 .is_hidden_doc(&self.root_dir, self.reference_docs_root.as_deref())
@@ -518,21 +595,9 @@ impl DocYamlCheck for YamlChecker {
             }
         }
 
-        markdown_file_set
-            .iter()
-            .filter(|f| **f != &code_of_conduct_md && **f != &contrib_md)
-            .filter(|p| !p.is_navbar_doc())
-            .filter(|p| !p.is_hidden_doc(&self.root_dir, self.reference_docs_root.as_deref()))
-            .filter(|p| !p.is_ignored_doc())
-            .filter(|p| !p.ends_with("gen/build_arguments.md"))
-            .copied()
-            .for_each(|f| {
-                errors.push(DocCheckError::new_error(
-                    0,
-                    f.clone(),
-                    "File not referenced in any _toc.yaml files.",
-                ));
-            });
+        let mut reachable = self.collect_reachability_roots(&visited, markdown_files);
+        self.traverse_reachability_graph(&mut reachable);
+        self.check_file_reachability(markdown_files, &reachable, &mut errors);
 
         yaml_file_set.iter().filter(|f| f.ends_with("_toc.yaml")).for_each(|&f| {
             errors.push(DocCheckError::new_error(
@@ -1912,7 +1977,11 @@ fn parse_entries<T: DeserializeOwned>(
 }
 
 /// Called from main to register all the checks to preform which are implemented in this module.
-pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlCheck>>> {
+pub fn register_yaml_checks(
+    opt: &DocCheckerArgs,
+    reachability_graph: ReachabilityGraph,
+    exemption_set: ExemptionSet,
+) -> Result<Vec<Box<dyn DocYamlCheck>>> {
     let reference_prefix = PathBuf::from("/reference");
     let checker = YamlChecker {
         root_dir: opt.root.clone(),
@@ -1926,6 +1995,9 @@ pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlC
         problems: vec![],
         tools: HashSet::new(),
         tools_entries: vec![],
+        reachability_graph,
+        exemption_set,
+        allow_unreferenced_hidden: opt.allow_unreferenced_hidden,
     };
 
     Ok(vec![Box::new(checker)])
@@ -1933,8 +2005,8 @@ pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlC
 
 #[cfg(test)]
 mod test {
-
     use super::*;
+    use crate::ErrorLevel;
 
     #[test]
     fn test_check_rfc_areas() -> Result<()> {
@@ -2031,6 +2103,9 @@ mod test {
             problems: vec![],
             tools: HashSet::new(),
             tools_entries: vec![],
+            reachability_graph: Default::default(),
+            exemption_set: Default::default(),
+            allow_unreferenced_hidden: false,
         };
 
         let test_data: [(&str, Option<DocCheckError>); 7] = [
@@ -2239,6 +2314,9 @@ redirects:
             problems: vec![],
             tools: HashSet::new(),
             tools_entries: vec![],
+            reachability_graph: Default::default(),
+            exemption_set: Default::default(),
+            allow_unreferenced_hidden: false,
         };
         let filename = PathBuf::from("_deprecated-docs.yaml");
 
@@ -2801,6 +2879,9 @@ guides:
             problems: vec![],
             tools: HashSet::new(),
             tools_entries: vec![],
+            reachability_graph: Default::default(),
+            exemption_set: Default::default(),
+            allow_unreferenced_hidden: false,
         };
 
         let result = checker.check(&filename, &yaml_value)?;
@@ -2843,6 +2924,9 @@ guides:
             problems: vec![],
             tools: HashSet::new(),
             tools_entries: vec![],
+            reachability_graph: Default::default(),
+            exemption_set: Default::default(),
+            allow_unreferenced_hidden: false,
         };
 
         let tools_yaml = serde_yaml::from_str(
@@ -2910,6 +2994,9 @@ guides:
             problems: vec![],
             tools: HashSet::new(),
             tools_entries: vec![],
+            reachability_graph: Default::default(),
+            exemption_set: Default::default(),
+            allow_unreferenced_hidden: false,
         };
 
         // Test empty fields
@@ -2959,6 +3046,9 @@ guides:
             problems: vec![],
             tools: HashSet::new(),
             tools_entries: vec![],
+            reachability_graph: Default::default(),
+            exemption_set: Default::default(),
+            allow_unreferenced_hidden: false,
         };
         let errs = checker.check(&problems_file, &dup_self_yaml)?;
         assert!(errs.is_none());
@@ -2993,6 +3083,9 @@ guides:
             problems: vec![],
             tools: HashSet::new(),
             tools_entries: vec![],
+            reachability_graph: Default::default(),
+            exemption_set: Default::default(),
+            allow_unreferenced_hidden: false,
         };
 
         let tools_yaml = serde_yaml::from_str(
@@ -3058,5 +3151,209 @@ guides:
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_check_file_reachability() {
+        let exemption_set: ExemptionSet = Default::default();
+        let mut checker = YamlChecker {
+            root_dir: PathBuf::from("/workspace"),
+            docs_folder: PathBuf::from("docs"),
+            project: "fuchsia".to_string(),
+            check_external_links: false,
+            allow_fuchsia_src_links: false,
+            reference_docs_root: None,
+            reference_prefix: PathBuf::from("/reference"),
+            external_links: vec![],
+            problems: vec![],
+            tools: HashSet::new(),
+            tools_entries: vec![],
+            reachability_graph: Default::default(),
+            exemption_set: exemption_set.clone(),
+            allow_unreferenced_hidden: false,
+        };
+
+        let normal_doc = PathBuf::from("/workspace/docs/normal.md");
+        let hidden_doc = PathBuf::from("/workspace/docs/_common/_macro.md");
+
+        // 1. Unreachable non-hidden doc -> missing from _toc.yaml error
+        let mut errors = vec![];
+        checker.check_file_reachability(&[normal_doc.clone()], &HashSet::new(), &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].message, "File not referenced in any _toc.yaml files.");
+
+        // 2. Unreachable hidden doc without exemption -> unused hidden file error
+        errors.clear();
+        checker.check_file_reachability(&[hidden_doc.clone()], &HashSet::new(), &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message.starts_with("Unused hidden file."));
+
+        // 3. Unreachable hidden doc WITH exemption -> no error
+        exemption_set.lock().unwrap().insert(hidden_doc.clone());
+        errors.clear();
+        checker.check_file_reachability(&[hidden_doc.clone()], &HashSet::new(), &mut errors);
+        assert!(errors.is_empty());
+
+        // 4. Unreachable hidden doc without exemption when allow_unreferenced_hidden is true -> no error
+        exemption_set.lock().unwrap().clear();
+        checker.allow_unreferenced_hidden = true;
+        errors.clear();
+        checker.check_file_reachability(&[hidden_doc.clone()], &HashSet::new(), &mut errors);
+        assert!(errors.is_empty());
+
+        // 5. Reachable hidden doc WITH exemption -> redundant exemption warning
+        exemption_set.lock().unwrap().insert(hidden_doc.clone());
+        checker.allow_unreferenced_hidden = false;
+        let mut reachable = HashSet::new();
+        reachable.insert(hidden_doc.clone());
+        errors.clear();
+        checker.check_file_reachability(&[hidden_doc.clone()], &reachable, &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].level, ErrorLevel::Warning);
+        assert!(errors[0].message.starts_with("Redundant exemption comment."));
+
+        // 6. Unreachable non-hidden doc WITH exemption -> STILL missing from _toc.yaml error
+        exemption_set.lock().unwrap().clear();
+        exemption_set.lock().unwrap().insert(normal_doc.clone());
+        errors.clear();
+        checker.check_file_reachability(&[normal_doc.clone()], &HashSet::new(), &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].message, "File not referenced in any _toc.yaml files.");
+
+        // 7. Unreachable non-hidden doc when allow_unreferenced_hidden is true -> STILL missing from _toc.yaml error
+        exemption_set.lock().unwrap().clear();
+        checker.allow_unreferenced_hidden = true;
+        errors.clear();
+        checker.check_file_reachability(&[normal_doc.clone()], &HashSet::new(), &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].message, "File not referenced in any _toc.yaml files.");
+
+        // 8. Reachable non-hidden doc WITH exemption -> redundant exemption warning
+        exemption_set.lock().unwrap().insert(normal_doc.clone());
+        checker.allow_unreferenced_hidden = false;
+        let mut reachable_normal = HashSet::new();
+        reachable_normal.insert(normal_doc.clone());
+        errors.clear();
+        checker.check_file_reachability(&[normal_doc], &reachable_normal, &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].level, ErrorLevel::Warning);
+        assert!(errors[0].message.starts_with("Redundant exemption comment."));
+
+        // 9. Hidden doc under reference_docs_root
+        let ref_root = PathBuf::from("/reference_workspace");
+        checker.reference_docs_root = Some(ref_root.clone());
+        let ref_hidden = ref_root.join("_ref_macro.md");
+        exemption_set.lock().unwrap().clear();
+        errors.clear();
+        checker.check_file_reachability(&[ref_hidden.clone()], &HashSet::new(), &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message.starts_with("Unused hidden file."));
+
+        // With exemption -> no error
+        exemption_set.lock().unwrap().insert(ref_hidden.clone());
+        errors.clear();
+        checker.check_file_reachability(&[ref_hidden.clone()], &HashSet::new(), &mut errors);
+        assert!(errors.is_empty());
+
+        // 10. Reachable hidden doc WITHOUT exemption -> no error, no warning (properly referenced)
+        exemption_set.lock().unwrap().clear();
+        let mut reachable_hidden = HashSet::new();
+        reachable_hidden.insert(hidden_doc.clone());
+        errors.clear();
+        checker.check_file_reachability(&[hidden_doc.clone()], &reachable_hidden, &mut errors);
+        assert!(errors.is_empty());
+
+        // 11. Relative hidden doc path without exemption -> unused hidden file error
+        let rel_hidden_doc = PathBuf::from("docs/_common/_macro.md");
+        errors.clear();
+        checker.check_file_reachability(&[rel_hidden_doc.clone()], &HashSet::new(), &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message.starts_with("Unused hidden file."));
+
+        // 12. Reachable hidden doc under reference_docs_root WITH exemption -> redundant exemption warning
+        exemption_set.lock().unwrap().clear();
+        exemption_set.lock().unwrap().insert(ref_hidden.clone());
+        let mut reachable_ref = HashSet::new();
+        reachable_ref.insert(ref_hidden.clone());
+        errors.clear();
+        checker.check_file_reachability(&[ref_hidden.clone()], &reachable_ref, &mut errors);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].level, ErrorLevel::Warning);
+        assert!(errors[0].message.starts_with("Redundant exemption comment."));
+
+        // 13. Reachable hidden doc under reference_docs_root WITHOUT exemption -> no error, no warning
+        exemption_set.lock().unwrap().clear();
+        errors.clear();
+        checker.check_file_reachability(&[ref_hidden], &reachable_ref, &mut errors);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_traverse_reachability_graph() {
+        let graph: ReachabilityGraph = Default::default();
+        let checker = YamlChecker {
+            root_dir: PathBuf::from("/workspace"),
+            docs_folder: PathBuf::from("docs"),
+            project: "fuchsia".to_string(),
+            check_external_links: false,
+            allow_fuchsia_src_links: false,
+            reference_docs_root: None,
+            reference_prefix: PathBuf::from("/reference"),
+            external_links: vec![],
+            problems: vec![],
+            tools: HashSet::new(),
+            tools_entries: vec![],
+            reachability_graph: graph.clone(),
+            exemption_set: Default::default(),
+            allow_unreferenced_hidden: false,
+        };
+
+        let doc_a = PathBuf::from("/workspace/docs/a.md");
+        let doc_b = PathBuf::from("/workspace/docs/b.md");
+        let doc_c = PathBuf::from("/workspace/docs/c.md");
+        let doc_d = PathBuf::from("/workspace/docs/d.md");
+        let doc_e = PathBuf::from("/workspace/docs/_common/_e.md");
+        let doc_f = PathBuf::from("/workspace/docs/f.md");
+        let root_2 = PathBuf::from("/workspace/docs/root2.md");
+        let isolated_1 = PathBuf::from("/workspace/docs/iso1.md");
+        let isolated_2 = PathBuf::from("/workspace/docs/iso2.md");
+
+        // Construct dependency graph:
+        // A -> B -> C -> A (cycle)
+        // B -> B (self loop)
+        // B -> D (multi-hop branch)
+        // C -> D (diamond convergence)
+        // D -> _E (multi-hop to hidden doc)
+        // root_2 -> F -> _E (second root converging on hidden doc)
+        // isolated_1 -> isolated_2 (disconnected subgraph)
+        {
+            let mut g = graph.lock().unwrap();
+            g.entry(doc_a.clone()).or_default().insert(doc_b.clone());
+            g.entry(doc_b.clone()).or_default().insert(doc_b.clone());
+            g.entry(doc_b.clone()).or_default().insert(doc_c.clone());
+            g.entry(doc_b.clone()).or_default().insert(doc_d.clone());
+            g.entry(doc_c.clone()).or_default().insert(doc_a.clone());
+            g.entry(doc_c.clone()).or_default().insert(doc_d.clone());
+            g.entry(doc_d.clone()).or_default().insert(doc_e.clone());
+            g.entry(root_2.clone()).or_default().insert(doc_f.clone());
+            g.entry(doc_f.clone()).or_default().insert(doc_e.clone());
+            g.entry(isolated_1.clone()).or_default().insert(isolated_2.clone());
+        }
+
+        let mut reachable = HashSet::new();
+        reachable.insert(doc_a.clone());
+        reachable.insert(root_2.clone());
+
+        checker.traverse_reachability_graph(&mut reachable);
+
+        assert!(reachable.contains(&doc_a));
+        assert!(reachable.contains(&doc_b));
+        assert!(reachable.contains(&doc_c));
+        assert!(reachable.contains(&doc_d));
+        assert!(reachable.contains(&doc_e));
+        assert!(reachable.contains(&root_2));
+        assert!(reachable.contains(&doc_f));
+        assert!(!reachable.contains(&isolated_1));
+        assert!(!reachable.contains(&isolated_2));
     }
 }

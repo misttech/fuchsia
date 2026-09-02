@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub type ReachabilityGraph = Arc<Mutex<HashMap<PathBuf, HashSet<PathBuf>>>>;
+pub type ExemptionSet = Arc<Mutex<HashSet<PathBuf>>>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub enum ErrorLevel {
@@ -129,8 +130,8 @@ impl fmt::Display for DocCheckError {
 /// A line within a file.
 #[derive(Debug, Deserialize, Clone, Eq, Hash, Ord, PartialOrd, PartialEq, Serialize)]
 pub struct DocLine {
-    pub line_num: usize,
     pub file_name: PathBuf,
+    pub line_num: usize,
 }
 
 impl Display for DocLine {

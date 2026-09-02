@@ -28,3 +28,5 @@ mail to [someone](mailto:someone@google.com)
 
 This is a link to [path](/docs/no-extension) without the .md extension, which should
 give a helpful error to add the extension.
+
+<!-- doc-checker: ignore-unused -->
