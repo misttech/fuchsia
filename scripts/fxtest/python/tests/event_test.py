@@ -75,6 +75,18 @@ class TestEvents(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(events), 2)
 
+    async def test_iter_queue_cleanup(self) -> None:
+        """Test that iterating over EventRecorder cleans up its queue from _queues on completion."""
+        recorder = event.EventRecorder()
+        recorder.emit_init()
+        self.assertEqual(len(recorder._queues), 0)
+
+        async for _ in recorder.iter():
+            self.assertEqual(len(recorder._queues), 1)
+            recorder.emit_end()
+
+        self.assertEqual(len(recorder._queues), 0)
+
     async def test_full_example(self) -> None:
         """Run through a representative example of events for fx test"""
 
