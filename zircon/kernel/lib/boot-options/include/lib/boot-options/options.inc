@@ -914,6 +914,12 @@ containing initial handles holding all the privileged and essential
 capabilities for the initial process itself and for the system.
 )""")
 
+DEFINE_OPTION("kernel.power.boot-boost", bool, power_boot_boost, {true}, R"""(
+When enabled, platforms with energy models register initial boot performance limits
+(e.g. locking to maximum rate or setting boot performance OPPs) to ensure responsive
+performance during system boot until userspace updates limits.
+)""")
+
 DEFINE_OPTION("kernel.scheduler.prefer-little-cpus", bool, scheduler_prefer_little_cpus, {false},
               R"""(
 When searching for a CPU on which to place a task, prefer little cores over big cores.  Enabling

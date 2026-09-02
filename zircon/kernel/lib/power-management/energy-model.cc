@@ -184,6 +184,7 @@ const PowerLevel* EnergyModel::FindActivePowerLevelForRate(ProcessingRate proces
 
 #ifdef _KERNEL
 #include <debug.h>
+#include <lib/boot-options/boot-options.h>
 #include <lib/power-management/pdev-power-level-controller.h>
 
 #include <fbl/array.h>
@@ -290,6 +291,11 @@ extern "C" zx_status_t cpp_power_management_set_rate_limits(uint64_t cpu_mask_in
   Scheduler::UpdateProcessingLimits(ktl::span{limits.data(), limits.size()});
   return ZX_OK;
 }
+
+extern "C" bool cpp_power_management_boot_boost_enabled() {
+  const BootOptions* boot_options = BootOptions::Get();
+  return boot_options ? boot_options->power_boot_boost : true;
+}
 #else
 extern "C" zx_status_t cpp_power_management_register_domains(const power_domain_config_ffi* domains,
                                                              size_t domain_count) {
@@ -300,4 +306,6 @@ extern "C" zx_status_t cpp_power_management_set_rate_limits(uint64_t cpu_mask, u
                                                             uint64_t max_rate) {
   return ZX_ERR_NOT_SUPPORTED;
 }
+
+extern "C" bool cpp_power_management_boot_boost_enabled() { return true; }
 #endif

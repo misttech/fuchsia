@@ -137,6 +137,7 @@ unsafe extern "C" {
         min_rate: u64,
         max_rate: u64,
     ) -> Result<(), Status>;
+    fn cpp_power_management_boot_boost_enabled() -> bool;
 }
 
 /// Registers the provided power domain configurations and energy models with the kernel scheduler.
@@ -160,6 +161,12 @@ pub fn power_management_set_rate_limits(
 ) -> Result<(), Status> {
     // SAFETY: Foreign FFI call to C++ kernel scheduler helper.
     unsafe { cpp_power_management_set_rate_limits(cpu_mask, min_rate, max_rate) }
+}
+
+/// Returns whether early boot performance boosting is enabled via kernel boot options.
+pub fn power_management_boot_boost_enabled() -> bool {
+    // SAFETY: Foreign FFI call to C++ boot options query.
+    unsafe { cpp_power_management_boot_boost_enabled() }
 }
 
 static DEFAULT_OPS: PdevPowerOps = PdevPowerOps {
@@ -551,5 +558,11 @@ mod tests {
     fn test_power_management_set_rate_limits_empty_mask() {
         let status = power_management_set_rate_limits(0, 0, 1000);
         assert_ok!(status);
+    }
+
+    /// Tests querying the boot boost enabled configuration.
+    #[test]
+    fn test_power_management_boot_boost_enabled() {
+        let _ = super::power_management_boot_boost_enabled();
     }
 }

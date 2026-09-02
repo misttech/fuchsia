@@ -15,7 +15,8 @@ use crate::pdev_power::{
     CONTROL_INTERFACE_ARM_WFI, CONTROL_INTERFACE_CPU_DRIVER,
     K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT, PdevPowerOps, PowerCpuState, PowerDomainConfigFfi,
     PowerRebootFlags, ProcessorPowerLevelFfi, pdev_register_power,
-    power_management_register_domains,
+    power_management_boot_boost_enabled, power_management_register_domains,
+    power_management_set_rate_limits,
 };
 use core::sync::atomic::{AtomicPtr, Ordering};
 use debug::dprintf;
@@ -281,8 +282,22 @@ pub extern "C" fn moonflower_power_init() {
             "POWER: Failed to register moonflower power domain: {}\n",
             status.into_raw()
         );
-    } else {
-        dprintf!(INFO, "POWER: Registered moonflower power domain\n");
+        return;
+    }
+
+    dprintf!(INFO, "POWER: Registered moonflower power domain\n");
+
+    // When boot boosting is enabled, set default boot performance limits matching boot OPP (Turbo,
+    // 1000 rate) to ensure responsive boot performance and prevent the system from dropping to
+    // lower OPPs until boot completes and userspace enables the full range of OPPs.
+    if power_management_boot_boost_enabled()
+        && let Err(status) = power_management_set_rate_limits(domain_config[0].cpu_mask, 1000, 1000)
+    {
+        dprintf!(
+            CRITICAL,
+            "POWER: Failed to set moonflower boot performance limits: {}\n",
+            status.into_raw()
+        );
     }
 }
 

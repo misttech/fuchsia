@@ -202,13 +202,20 @@ group("tests") {
   deps = core_test_packages
 }
 
+kernel_cmdline("core-tests-default.args") {
+  args = [ "kernel.power.boot-boost=false" ]
+}
+
 template("core_tests") {
   kernel_zbi_test(target_name) {
     assert_no_deps = [
       "//zircon/system/core/*",
       "//zircon/system/dev/*",
     ]
-    deps = [ ":core-tests-standalone" ]
+    deps = [
+      ":core-tests-default.args",
+      ":core-tests-standalone",
+    ]
     forward_variables_from(invoker,
                            [
                              "args",
