@@ -54,6 +54,9 @@ func TestRecordingOfOutputs(t *testing.T) {
 	if err := writeFiles(outDir, origOutputs); err != nil {
 		t.Errorf("failed to write output files: %s", err)
 	}
+	setupSucceeded := true
+	teardownSucceeded := false
+	exitCode := 1
 	results := []runtests.TestDetails{
 		{
 			Name:      "fuchsia-pkg://foo#test_a",
@@ -120,8 +123,11 @@ func TestRecordingOfOutputs(t *testing.T) {
 					},
 				},
 				// Test having the OutputFile be a directory name.
-				OutputFiles: []string{suiteOutputDir},
-				OutputDir:   filepath.Join(outDir, testAOutDir),
+				OutputFiles:       []string{suiteOutputDir},
+				OutputDir:         filepath.Join(outDir, testAOutDir),
+				SetupSucceeded:    &setupSucceeded,
+				TeardownSucceeded: &teardownSucceeded,
+				ExitCode:          &exitCode,
 			},
 			Stdio: []byte("STDOUT_A"),
 		},
@@ -196,6 +202,9 @@ func TestRecordingOfOutputs(t *testing.T) {
 						Format:      "FTF",
 					},
 				},
+				SetupSucceeded:    &setupSucceeded,
+				TeardownSucceeded: &teardownSucceeded,
+				ExitCode:          &exitCode,
 			},
 			StartTime:      start,
 			DurationMillis: 5,

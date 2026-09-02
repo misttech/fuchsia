@@ -46,6 +46,7 @@ test_suite(
         "//tools/staticanalysis/rfcmeta:rfcmeta_tests",
         "//tools/testing/runtests:runtests_tests",
         "//tools/testing/tefmocheck:tefmocheck_lib_tests",
+        "//tools/testing/testrunner:testrunner_lib_tests",
         "//tools/whereiscl:host_tests",
     ],
 )
