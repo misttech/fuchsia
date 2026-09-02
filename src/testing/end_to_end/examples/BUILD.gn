@@ -11,6 +11,7 @@ group("examples") {
     "async_test_cases_example",
     "data_resource_access_test",
     "exoneration_failing_test",
+    "fidl_hello_world_test",
     "hello_world_test",
     "multi_device_test_sl4f",
     "openwrt_ap_test",
@@ -34,6 +35,7 @@ group("emulator_tests") {
   public_deps = [
     "async_test_cases_example",
     "data_resource_access_test",
+    "fidl_hello_world_test",
     "hello_world_test",
     "test_cases_example",
   ]

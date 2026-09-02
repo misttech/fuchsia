@@ -32,6 +32,19 @@ $ fx set core.x64 --with //src/testing/end_to_end/examples
 $ fx test //src/testing/end_to_end/examples/hello_world_test --e2e --output
 ```
 
+### FIDL Hello World Test
+
+FIDL Hello World test demonstrates direct FIDL protocol communication via
+Fuchsia Controller.
+
+Use below commands to run this test locally:
+
+```shell
+$ fx set core.x64 --with //src/testing/end_to_end/examples
+
+$ fx test //src/testing/end_to_end/examples/fidl_hello_world_test --e2e --output
+```
+
 ### Data resource access Test
 
 DataResourceAccess Lacewing test demonstrates accessing custom input data as
