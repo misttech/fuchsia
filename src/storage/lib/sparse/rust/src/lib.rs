@@ -684,6 +684,22 @@ pub fn resparse_sparse_img<R: Read + std::io::Seek>(
     Ok(ret)
 }
 
+/// Returns the fill value if the entire slice consists of a single repeated 32-bit integer.
+/// Returns None if the slice is empty, not a multiple of 4 bytes, or contains varying values.
+#[inline]
+pub(crate) fn find_fill_value(buf: &[u8]) -> Option<u32> {
+    if buf.len() < 4 || buf.len() % 4 != 0 {
+        return None;
+    }
+    let first = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+    for chunk in buf[4..].chunks_exact(4) {
+        if u32::from_le_bytes(chunk.try_into().unwrap()) != first {
+            return None;
+        }
+    }
+    Some(first)
+}
+
 /// Takes the given `file_to_upload` for the `named` partition and creates a
 /// set of temporary files in the given `dir` in Sparse Image Format. With the
 /// provided `max_download_size` constraining file size.
@@ -717,21 +733,13 @@ pub fn build_sparse_files(
         if read == 0 {
             break;
         }
+        if read < buf.len() {
+            buf[read..].fill(0);
+        }
 
-        let is_fill = buf.chunks(4).collect::<Vec<&[u8]>>().array_windows().all(|[a, b]| a == b);
-
-        if is_fill {
+        if let Some(value) = find_fill_value(&buf) {
             // The Android Sparse Image Format specifies that a fill block
-            // is a four-byte u32 repeated to fill BLK_SIZE. Here we use
-            // bincode::deserialize to get the repeated four byte pattern from
-            // the buffer so that it can be serialized later when we write
-            // the sparse file with bincode::serialize.
-            let value: u32 =
-                bincode::deserialize(&buf[0..4]).map_err(|e| SparseError::Deserialize {
-                    ty: SparseDataType::FillValue,
-                    source: DeserializeError::Bincode(e),
-                })?;
-            // Add a fill chunk
+            // is a four-byte u32 repeated to fill BLK_SIZE.
             let fill = Chunk::Fill {
                 start: total_read as u64,
                 size: buf.len().try_into().unwrap(),
@@ -1295,5 +1303,37 @@ mod test {
         let mut stderr = String::new();
         simg2img_stderr.read_to_string(&mut stderr).expect("Reading simg2img stderr");
         assert_eq!(stderr, "");
+    }
+
+    #[test]
+    fn test_find_fill_value() {
+        assert_eq!(super::find_fill_value(&[]), None);
+        assert_eq!(super::find_fill_value(&[1, 2, 3]), None);
+        assert_eq!(super::find_fill_value(&[1, 2, 3, 4, 5]), None);
+
+        let mut buf = [0u8; 4096];
+        assert_eq!(super::find_fill_value(&buf), Some(0));
+
+        buf.fill(0xaa);
+        assert_eq!(super::find_fill_value(&buf), Some(0xaaaa_aaaa));
+
+        for chunk in buf.chunks_exact_mut(4) {
+            chunk.copy_from_slice(&0x1234_5678u32.to_le_bytes());
+        }
+        assert_eq!(super::find_fill_value(&buf), Some(0x1234_5678));
+
+        // Mismatch at start
+        buf[0] = 0x00;
+        assert_eq!(super::find_fill_value(&buf), None);
+
+        // Restore and mismatch in middle
+        buf[0] = 0x78;
+        buf[2048] = 0x00;
+        assert_eq!(super::find_fill_value(&buf), None);
+
+        // Restore and mismatch at end
+        buf[2048] = 0x78;
+        buf[4095] = 0x00;
+        assert_eq!(super::find_fill_value(&buf), None);
     }
 }
