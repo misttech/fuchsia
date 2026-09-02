@@ -45,6 +45,7 @@ constexpr i2c_channel_t i2c_ao_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
+        .name = "als",
         // binds as composite device
     },
 };
@@ -56,6 +57,7 @@ constexpr i2c_channel_t i2c_2_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
+        .name = "focaltech",
         // binds as composite device
     },
     // Goodix touch screen
@@ -64,6 +66,7 @@ constexpr i2c_channel_t i2c_2_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
+        .name = "goodix",
         // binds as composite device
     },
 };
@@ -75,6 +78,7 @@ constexpr i2c_channel_t i2c_3_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
+        .name = "backlight",
     },
     // Audio output
     {
@@ -82,6 +86,7 @@ constexpr i2c_channel_t i2c_3_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
+        .name = "audio_codec",
         // binds as composite device
     },
 };

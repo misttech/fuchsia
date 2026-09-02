@@ -34,6 +34,8 @@ type I2CChannel = table {
     /// Friendly name for this bus. Will default to the empty string if not
     /// specified.
     9: name string:fuchsia.hardware.i2c.MAX_I2C_NAME_LEN;
+    /// Unique identifier for the I2C channel.
+    10: global_id uint32;
 };
 
 /// Provided by the i2c platform device as metadata.

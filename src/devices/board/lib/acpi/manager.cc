@@ -80,6 +80,13 @@ acpi::status<> Manager::ConfigureDiscoveredDevices() {
             return -1;
           }
           b->SetBusType(type);
+          if (std::holds_alternative<fuchsia_hardware_i2c_businfo::I2CChannel>(child)) {
+            std::get<fuchsia_hardware_i2c_businfo::I2CChannel>(child).global_id() =
+                next_i2c_global_id_++;
+          } else if (std::holds_alternative<fuchsia_hardware_spi_businfo::SpiChannel>(child)) {
+            std::get<fuchsia_hardware_spi_businfo::SpiChannel>(child).global_id() =
+                next_spi_global_id_++;
+          }
           size_t child_index = b->AddBusChild(child);
           if (b->HasBusId()) {
             return child_index;

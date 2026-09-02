@@ -15,7 +15,6 @@
 #include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/i2c/cpp/bind.h>
 #include <bind/fuchsia/ti/platform/cpp/bind.h>
 #include <soc/aml-common/aml-audio.h>
 #include <soc/aml-meson/g12a-clk.h>
@@ -103,17 +102,11 @@ const std::vector<fuchsia_driver_framework::NodeProperty2> kCodecProps{
 
 const std::vector<fuchsia_driver_framework::BindRule2> kI2cRules{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, static_cast<uint32_t>(ASTRO_I2C_3)),
-    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
-                            bind_fuchsia_i2c::BIND_I2C_ADDRESS_AUDIO_CODEC),
+    fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "audio_codec"),
 };
 const std::vector<fuchsia_driver_framework::NodeProperty2> kI2cProps{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, bind_fuchsia_i2c::BIND_I2C_ADDRESS_AUDIO_CODEC),
-    fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
-                       bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI),
-    fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
-                       bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_TAS2770),
+    fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
 };
 
 const std::vector<fuchsia_driver_framework::BindRule2> kFaultGpioRules{

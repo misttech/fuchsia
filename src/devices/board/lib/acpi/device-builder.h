@@ -157,20 +157,22 @@ class DeviceBuilder {
 
   uint32_t device_id() const { return device_id_; }
 
+  // Get the bus's child metadata for consumption by the bus driver.
+  zx::result<BusMetadata> GetMetadata();
+
+  // Get bind rules and node properties for the |child_index|th child of this bus.
+  std::pair<std::vector<ddk::BindRule>, std::vector<device_bind_prop_t>>
+  GetFragmentBindRulesAndPropertiesForChild(size_t child_index);
+
  private:
   // Special HID/CID value for using a device tree "compatible" property. See
   // https://www.kernel.org/doc/html/latest/firmware-guide/acpi/enumeration.html#device-tree-namespace-link-device-id
   constexpr static const char* kDeviceTreeLinkID = "PRP0001";
-  // Get the bus's child metadata for consumption by the bus driver.
-  zx::result<BusMetadata> GetMetadata();
   // Build a composite node spec for this device that binds to all of its parents. For instance, if
   // a device had an i2c and spi resource, this would generate a composite node spec that binds to
   // the i2c device, the spi device, and the acpi device.
   zx::result<> BuildComposite(acpi::Manager* acpi, std::vector<zx_device_str_prop_t>& str_props,
                               async_dispatcher_t* device_dispatcher);
-  // Get bind rules and node properties for the |child_index|th child of this bus.
-  std::pair<std::vector<ddk::BindRule>, std::vector<device_bind_prop_t>>
-  GetFragmentBindRulesAndPropertiesForChild(size_t child_index);
   // Get bind rules and node properties for this device.
   std::pair<std::vector<ddk::BindRule>, std::vector<device_bind_prop_t>>
   GetFragmentBindRulesAndPropertiesForSelf();

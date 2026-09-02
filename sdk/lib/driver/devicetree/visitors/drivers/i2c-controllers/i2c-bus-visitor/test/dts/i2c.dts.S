@@ -36,5 +36,11 @@
 			compatible = "fuchsia,test";
 			reg = <I2C_ADDRESS3 I2C_ADDRESS4>;
 		};
+
+		child-names@30 {
+			compatible = "fuchsia,test";
+			reg = <I2C_ADDRESS5 I2C_ADDRESS6>;
+			reg-names = "control", "data";
+		};
 	};
 };

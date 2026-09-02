@@ -17,7 +17,7 @@ primary parent "pdev" {
 
 parent "i2c" {
   fuchsia.Service == "fuchsia.hardware.i2c.Service";
-  fuchsia.BIND_I2C_ADDRESS == fuchsia.goodix.platform.BIND_I2C_ADDRESS.TOUCH;
+  fuchsia.NAME == "i2c";
 }
 
 parent "gpio-int" {
