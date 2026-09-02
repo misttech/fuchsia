@@ -12,7 +12,6 @@
 
 #include <bind/fuchsia/amlogic/platform/s905d3/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/gpio/cpp/bind.h>
 #include <ddk/metadata/display.h>
 #include <soc/aml-s905d3/s905d3-hw.h>
 
@@ -127,7 +126,7 @@ zx::result<> PostInit::InitDisplay() {
   // Composite binding rules for display driver.
   std::vector<fuchsia_driver_framework::BindRule2> gpio_bind_rules{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::ID,
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_13),
   };
 

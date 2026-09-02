@@ -16,7 +16,6 @@
 #include <optional>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/gpio/cpp/bind.h>
 #include <gtest/gtest.h>
 #include <sdk/lib/driver/testing/cpp/driver_runtime.h>
 #include <src/lib/testing/predicates/status.h>
@@ -817,16 +816,15 @@ TEST_F(GpioTest, ControllerId) {
 
       ASSERT_EQ(properties.size(), 3ul);
 
-      EXPECT_EQ(properties[0].key(), bind_fuchsia::ID);
+      EXPECT_EQ(properties[0].key(), bind_fuchsia::GPIO_PIN);
 
       ASSERT_TRUE(properties[0].value().int_value().has_value());
       EXPECT_EQ(properties[0].value().int_value().value(), pin.pin().value());
 
-      EXPECT_EQ(properties[1].key(), bind_fuchsia::NAME);
+      EXPECT_EQ(properties[1].key(), bind_fuchsia::GPIO_CONTROLLER);
 
-      ASSERT_TRUE(properties[1].value().string_value().has_value());
-      EXPECT_EQ(properties[1].value().string_value().value(),
-                std::string{"gpio-"} + pin.name().value());
+      ASSERT_TRUE(properties[1].value().int_value().has_value());
+      EXPECT_EQ(properties[1].value().int_value().value(), kController);
 
       EXPECT_EQ(properties[2].key(), bind_fuchsia::SERVICE);
       ASSERT_TRUE(properties[2].value().string_value().has_value());
@@ -840,13 +838,12 @@ TEST_F(GpioTest, ControllerId) {
               .GetProperties();
 
       ASSERT_EQ(pin_properties.size(), 3ul);
-      EXPECT_EQ(pin_properties[0].key(), bind_fuchsia::ID);
+      EXPECT_EQ(pin_properties[0].key(), bind_fuchsia::GPIO_PIN);
       ASSERT_TRUE(pin_properties[0].value().int_value().has_value());
       EXPECT_EQ(pin_properties[0].value().int_value().value(), pin.pin().value());
-      EXPECT_EQ(pin_properties[1].key(), bind_fuchsia::NAME);
-      ASSERT_TRUE(pin_properties[1].value().string_value().has_value());
-      EXPECT_EQ(pin_properties[1].value().string_value().value(),
-                std::string{"gpio-"} + pin.name().value());
+      EXPECT_EQ(pin_properties[1].key(), bind_fuchsia::GPIO_CONTROLLER);
+      ASSERT_TRUE(pin_properties[1].value().int_value().has_value());
+      EXPECT_EQ(pin_properties[1].value().int_value().value(), kController);
       EXPECT_EQ(pin_properties[2].key(), bind_fuchsia::SERVICE);
       ASSERT_TRUE(pin_properties[2].value().string_value().has_value());
       EXPECT_EQ(pin_properties[2].value().string_value().value(),

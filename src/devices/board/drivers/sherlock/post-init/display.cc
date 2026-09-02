@@ -12,7 +12,6 @@
 
 #include <bind/fuchsia/amlogic/platform/t931/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/gpio/cpp/bind.h>
 #include <ddk/metadata/display.h>
 #include <soc/aml-t931/t931-gpio.h>
 #include <soc/aml-t931/t931-hw.h>
@@ -124,7 +123,7 @@ zx::result<> PostInit::InitDisplay() {
 
   std::vector<fuchsia_driver_framework::BindRule2> gpio_bind_rules{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::ID,
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_t931::GPIOH_PIN_ID_PIN_6),
   };
 

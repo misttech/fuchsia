@@ -62,7 +62,7 @@ const std::vector kI2cProperties = {
 
 const std::vector kInterruptRules = {
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::ID,
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                             bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_4),
 };
 
@@ -73,7 +73,7 @@ const std::vector kInterruptProperties = {
 
 const std::vector kResetRules = {
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::ID,
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                             bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_9),
 };
 

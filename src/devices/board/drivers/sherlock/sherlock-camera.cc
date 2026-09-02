@@ -280,7 +280,7 @@ zx_status_t Sherlock::CameraInit() {
       .bind_rules =
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-              fdf::MakeAcceptBindRule(bind_fuchsia::ID,
+              fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                                       bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_0),
           },
       .properties =
@@ -294,7 +294,7 @@ zx_status_t Sherlock::CameraInit() {
       .bind_rules =
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-              fdf::MakeAcceptBindRule(bind_fuchsia::ID,
+              fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                                       bind_fuchsia_amlogic_platform_t931::GPIOA_PIN_ID_PIN_6),
           },
       .properties =
@@ -308,7 +308,7 @@ zx_status_t Sherlock::CameraInit() {
       .bind_rules =
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-              fdf::MakeAcceptBindRule(bind_fuchsia::ID,
+              fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                                       bind_fuchsia_amlogic_platform_t931::GPIOZ_PIN_ID_PIN_12),
           },
       .properties =

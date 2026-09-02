@@ -67,7 +67,7 @@ static const std::vector<fpbus::BootMetadata> emmc_boot_metadata{
 
 const std::vector<fuchsia_driver_framework::BindRule2> kGpioResetRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(SOC_EMMC_RST_L)),
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(SOC_EMMC_RST_L)),
 };
 
 const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioResetProperties = std::vector{

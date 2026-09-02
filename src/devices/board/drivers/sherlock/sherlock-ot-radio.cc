@@ -83,7 +83,7 @@ zx_status_t Sherlock::OtRadioInit() {
   for (auto& [gpio_pin, function] : kGpioPinFunctionMap) {
     auto rules = std::vector{
         fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-        fdf::MakeAcceptBindRule(bind_fuchsia::ID, gpio_pin),
+        fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, gpio_pin),
     };
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),

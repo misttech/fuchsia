@@ -101,7 +101,7 @@ const std::vector<fuchsia_driver_framework::NodeProperty2> kPwmProperties = std:
 
 const std::vector<fuchsia_driver_framework::BindRule2> kGpioResetRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(T931_WIFI_REG_ON)),
+    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(T931_WIFI_REG_ON)),
 };
 
 const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioResetProperties = std::vector{
@@ -146,7 +146,7 @@ zx::result<> AddWifiNode(fdf::WireSyncClient<fpbus::PlatformBus>& pbus) {
 
   static const std::vector<fuchsia_driver_framework::BindRule2> kGpioWifiHostRules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(T931_WIFI_HOST_WAKE)),
+      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(T931_WIFI_HOST_WAKE)),
   };
 
   static const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioWifiHostProperties =
