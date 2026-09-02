@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #[cfg(test)]
-mod tests {
+mod device_mapper_test {
     use linux_uapi::{
         DM_ACTIVE_PRESENT_FLAG, DM_BUFFER_FULL_FLAG, DM_DEV_CREATE, DM_DEV_REMOVE, DM_DEV_STATUS,
         DM_DEV_SUSPEND, DM_INACTIVE_PRESENT_FLAG, DM_LIST_DEVICES, DM_LIST_VERSIONS,

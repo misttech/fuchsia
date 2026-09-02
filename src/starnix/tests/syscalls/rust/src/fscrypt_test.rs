@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #[cfg(test)]
-mod tests {
+mod fscrypt_test {
     use fscrypt_shared::{
         FscryptOutput, fscrypt_add_key_arg, fscrypt_key_specifier, fscrypt_remove_key_arg,
     };

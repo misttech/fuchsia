@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #[cfg(test)]
-mod tests {
+mod ebpf_test {
     use ebpf_loader::{MapDefinition, ProgramDefinition};
     use libc;
     use linux_uapi::{bpf_attr, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE};
