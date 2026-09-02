@@ -52,3 +52,37 @@ class TestSelectionAction(unittest.TestCase):
                 "four",
             ],
         )
+
+    def test_selection_action_with_equals(self) -> None:
+        """Test that --package=val and --component=val are parsed properly without crashing."""
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "-p",
+            "--package",
+            action=selection_action.InvalidAction,
+            dest="option",
+        )
+        parser.add_argument(
+            "-c",
+            "--component",
+            action=selection_action.InvalidAction,
+            dest="option",
+        )
+        parser.add_argument(
+            "option", action=selection_action.SelectionAction, nargs="*"
+        )
+
+        args = parser.parse_intermixed_args(
+            selection_action.SelectionAction.preprocess_args(
+                ["--package=one", "--component=two"]
+            )
+        )
+        self.assertListEqual(
+            args.option,
+            [
+                "--package",
+                "one",
+                "--component",
+                "two",
+            ],
+        )

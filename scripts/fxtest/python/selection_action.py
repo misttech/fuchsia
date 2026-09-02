@@ -115,15 +115,18 @@ class SelectionAction(argparse.Action):
             "-a": cls._AND_REPLACE,
             "--and": cls._AND_REPLACE,
         }
-        for i in range(len(arg_list)):
-            if arg_list[i] == "--":
-                # Do not affect args meant to be passed to underlying programs.
+        processed_args: list[str] = []
+        for i, arg in enumerate(arg_list):
+            if arg == "--":
+                processed_args.extend(arg_list[i:])
                 break
-            elif arg_list[i] in replace_mapping:
-                # Replace args with new names that will show as
-                # interleaved positional args.
-                arg_list[i] = replace_mapping[arg_list[i]]
-        return arg_list
+            if "=" in arg:
+                flag, val = arg.split("=", 1)
+                if flag in replace_mapping:
+                    processed_args.extend([replace_mapping[flag], val])
+                    continue
+            processed_args.append(replace_mapping.get(arg, arg))
+        return processed_args
 
 
 class InvalidAction(argparse.Action):
