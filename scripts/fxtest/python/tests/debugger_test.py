@@ -502,3 +502,22 @@ class TestDebuggerTest(unittest.IsolatedAsyncioTestCase):
             port=1234, connect_to_existing=True
         )
         mock_manager_instance.start.assert_called_once()
+
+    async def test_spawn_non_tty_stdin_does_not_crash(self) -> None:
+        """Test that debugger.spawn succeeds and does not raise OSError when stdin is not a tty or tcsetpgrp fails."""
+        self.tcsetpgrp_mock_.side_effect = OSError(
+            25, "Inappropriate ioctl for device"
+        )
+
+        async def callback() -> None:
+            pass
+
+        package_name = "fuchsia-pkg://fuchsia.com/foo_test#meta/foo_test.cm"
+        test = Test(
+            build=tests_json_file.TestEntry(
+                test=tests_json_file.TestSection(package_name, "", ""),
+            ),
+        )
+
+        # Should not raise OSError
+        debugger.spawn([test], callback, None, True, False, None, [])

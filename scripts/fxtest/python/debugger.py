@@ -170,7 +170,11 @@ def spawn(
     # the shell and could leave a job suspended while waiting on an unnecessary SIGTTOU. This has no
     # effect when running in debug_adapter mode since zxdb will not make use of terminal features in
     # this mode.
-    os.tcsetpgrp(sys.stdin.fileno(), debugger_process.pid)
+    try:
+        if hasattr(sys.stdin, "fileno") and os.isatty(sys.stdin.fileno()):
+            os.tcsetpgrp(sys.stdin.fileno(), debugger_process.pid)
+    except (OSError, Exception):
+        pass
 
     daemon_manager: DaemonManager | None = None
 
@@ -205,7 +209,10 @@ def spawn(
         # Close stdout. This may have already been done at the end of all the tests in main.py, but
         # we do it again here to catch the ctrl+c case and still try to cleanly restore the terminal
         # and clean up the socket to DebugAgent.
-        sys.stdout.close()
+        try:
+            sys.stdout.close()
+        except Exception:
+            pass
         sys.stdout = open(os.devnull, "w")
 
         try:
