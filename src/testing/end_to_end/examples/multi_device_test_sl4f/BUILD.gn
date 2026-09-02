@@ -7,6 +7,9 @@ import("//build/testing/environments.gni")
 
 assert(is_host, "Python E2E tests are host-only")
 
+# Demonstrates coordinating multiple Fuchsia devices in a single Mobly testbed.
+# Requires at least two Fuchsia devices configured in the testbed and SL4F
+# packages on the target devices.
 python_mobly_test("multi_device_test_sl4f") {
   main_source = "multi_device_test_sl4f.py"
 

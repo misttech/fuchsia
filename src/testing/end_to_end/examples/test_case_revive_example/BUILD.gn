@@ -7,6 +7,7 @@ import("//build/testing/environments.gni")
 
 assert(is_host, "Python E2E tests are host-only")
 
+# Runs the TestCaseRevive test class once without reviving any test cases.
 python_mobly_test("run_wo_test_case_revive") {
   main_source = "test_case_revive_example.py"
   libraries = [
@@ -25,6 +26,8 @@ python_mobly_test("run_wo_test_case_revive") {
   ]
 }
 
+# Runs the TestCaseRevive test class and revives tagged test cases using
+# Soft-Reboot.
 python_mobly_test("test_case_revive_with_soft_reboot") {
   main_source = "test_case_revive_example.py"
   libraries = [
@@ -44,6 +47,9 @@ python_mobly_test("test_case_revive_with_soft_reboot") {
   ]
 }
 
+# Runs the TestCaseRevive test class and revives tagged test cases using
+# Hard-Reboot. Requires a hardware testbed with auxiliary power switch
+# (DMC/PDU).
 python_mobly_test("test_case_revive_with_hard_reboot") {
   main_source = "test_case_revive_example.py"
   libraries = [

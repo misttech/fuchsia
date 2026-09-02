@@ -7,6 +7,8 @@ import("//build/testing/environments.gni")
 
 assert(is_host, "Python E2E tests are host-only")
 
+# An intentionally failing test case used exclusively by Continuous Integration
+# infrastructure to validate test failure exoneration and flake detection.
 python_mobly_test("exoneration_failing_test") {
   main_source = "exoneration_failing_test.py"
   libraries = [

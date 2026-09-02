@@ -7,6 +7,9 @@ import("//build/testing/environments.gni")
 
 assert(is_host, "Python E2E tests are host-only")
 
+# Demonstrates controlling an OpenWrt Access Point auxiliary device in a
+# Lacewing testbed. Requires an OpenWrt AP device and a custom Mobly config
+# YAML.
 python_mobly_test("openwrt_ap_test") {
   main_source = "openwrt_ap_test.py"
   libraries = [

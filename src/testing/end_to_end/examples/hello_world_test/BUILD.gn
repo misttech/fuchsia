@@ -7,6 +7,8 @@ import("//build/testing/environments.gni")
 
 assert(is_host, "Python E2E tests are host-only")
 
+# Demonstrates basic Lacewing test structure, DUT connection, and health checks
+# on any standard target or emulator.
 python_mobly_test("hello_world_test") {
   main_source = "hello_world_test.py"
   libraries = [

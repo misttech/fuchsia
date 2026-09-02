@@ -7,6 +7,8 @@ import("//build/testing/environments.gni")
 
 assert(is_host, "Python E2E tests are host-only")
 
+# Demonstrates combining FuchsiaTestCases with TestCaseRevive via the @tag_test
+# decorator, reviving test cases across device lifecycle operations.
 python_mobly_test("test_cases_revive_example") {
   main_source = "test_cases_revive_example.py"
   libraries = [

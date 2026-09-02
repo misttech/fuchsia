@@ -7,6 +7,8 @@ import("//build/testing/environments.gni")
 
 assert(is_host, "Python E2E tests are host-only")
 
+# Demonstrates hard power cycling via auxiliary hardware (DMC or PDU). Requires
+# a hardware testbed with a power switch and a custom Mobly config YAML.
 python_mobly_test("power_cycle_test") {
   main_source = "power_cycle_test.py"
   libraries = [
