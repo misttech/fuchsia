@@ -210,6 +210,21 @@ class TestTestsFileMatcher(unittest.TestCase):
                 ["//src/sys:my_component"],
             )
 
+    def test_remote_empty_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as dir:
+            path = self._write_names(
+                dir,
+                [
+                    "fuchsia-pkg://fuchsia.com/my-package#meta/my-component.cm",
+                ],
+            )
+            # is_remote=True with tests.json having no labels field
+            tests_matcher = search_tests.TestsFileMatcher(path, True)
+            matcher = search_tests.Matcher(threshold=1)
+            matches = tests_matcher.find_matches("my_component", matcher)
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(matches[0].matched_name, "my-component")
+
 
 TEST_PACKAGE = (
     lambda x: f"""

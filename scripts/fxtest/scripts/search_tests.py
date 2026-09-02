@@ -755,10 +755,14 @@ class TestsFileMatcher:
             (max_score, max_option) = max(scores) if scores else (None, None)
             if self.is_remote:
                 command = "add-host-test" if "linux" in labels else "add-test"
-                message = f"fx {command} {labels[0]}"
+                target_label = (
+                    labels[0] if labels else (options[0] if options else name)
+                )
+                message = f"fx {command} {target_label}"
                 is_host_val = "linux" in labels
             else:
-                message = f"Build includes: {options[0]}"
+                target_label = options[0] if options else name
+                message = f"Build includes: {target_label}"
                 is_host_val = "fuchsia" not in labels and (
                     "linux" in labels or "mac" in labels
                 )
