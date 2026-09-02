@@ -246,6 +246,51 @@ diagnostic information, which includes inspect:
 ffx target snapshot
 ```
 
+## Best practices {:#best-practices}
+
+### Avoid nesting metrics from other components {:#avoid-nesting-metrics-from-other-components}
+
+When you design component diagnostics, keep each component's Inspect hierarchy
+scoped strictly to the data produced by that component. Avoid forwarding or
+nesting Inspect metrics from client or subordinate components under an
+intermediary component's Inspect tree.
+
+Note: This guidance targets forwarding and nesting subordinate component
+metrics. It does not apply to platform-level aggregation of system metrics about
+components (for example, `component_manager` collecting and publishing CPU
+metrics across all components).
+
+Forwarding or nesting Inspect metrics under a foreign component creates several
+problems for tooling, debugging, and privacy compliance:
+
+* **Developer experience and tooling attribution**: Inspect data is attributed
+  by component moniker. Diagnostic tools such as
+  [`ffx inspect show`][ffx-inspect-show] and automated snapshot triage query
+  Inspect hierarchies using component monikers (for example,
+  `core/network/netstack`). When you nest metrics from multiple components
+  inside a single intermediary service, querying the producer component's
+  moniker returns no data, while querying the intermediary returns an
+  unmanageable aggregated hierarchy.
+
+* **Privacy reviews and allowlist enforcement**: Fuchsia diagnostic pipelines
+  and snapshot exporters enforce privacy controls using moniker-based
+  [selectors][selectors]. Placing metrics from multiple producers under a
+  foreign moniker obscures data origin, prevents granular data redaction, and
+  complicates privacy review verification.
+
+* **Lifecycle and failure isolation**: An intermediary component holding
+  metrics on behalf of other components can outlive or terminate independently
+  of the actual metric producers. This creates stale diagnostics or causes data
+  loss if the intermediary crashes.
+
+#### Recommended patterns {:#recommended-patterns}
+
+Each component should publish its own Inspect tree directly under its own
+moniker.
+
+Important: Keep all Inspect metrics scoped to the component moniker that owns
+and produces the data.
+
 <!-- Reference links -->
 
 [cpp-1]: /zircon/system/ulib/inspect/include/lib/inspect/cpp/inspect.h
