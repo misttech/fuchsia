@@ -14,7 +14,7 @@ use crate::path_ext::DocPathExt;
 use crate::{DocCheckError, DocCheckerArgs, DocLine, DocYamlCheck};
 use anyhow::Result;
 use async_trait::async_trait;
-use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, LinkType, Options, Parser, Tag};
 use regex::Regex;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -208,14 +208,6 @@ pub(crate) struct IncludedYaml {
     pub(crate) included_file: PathBuf,
 }
 
-#[derive(Debug, Clone)]
-struct ProblemLink {
-    location: DocLine,
-    link_type: LinkType,
-    dest: String,
-    text: String,
-}
-
 #[derive(Debug)]
 pub(crate) struct YamlChecker {
     root_dir: PathBuf,
@@ -226,9 +218,9 @@ pub(crate) struct YamlChecker {
     reference_docs_root: Option<PathBuf>,
     reference_prefix: PathBuf,
     external_links: Vec<LinkReference>,
-    defined_tools: HashSet<String>,
-    referenced_tools: Vec<(DocLine, String)>,
-    problem_links: Vec<ProblemLink>,
+    problems: Vec<(PathBuf, ProblemEntry)>,
+    tools: HashSet<String>,
+    tools_entries: Vec<(PathBuf, ToolsEntry)>,
 }
 
 #[async_trait]
@@ -268,12 +260,14 @@ impl DocYamlCheck for YamlChecker {
                     self.allow_fuchsia_src_links,
                     &mut self.external_links,
                 ),
-                Some("_problems.yaml") => check_problems(
-                    filename,
-                    yaml_value,
-                    &mut self.referenced_tools,
-                    &mut self.problem_links,
-                ),
+                Some("_problems.yaml") => {
+                    let (entries, errors) = check_problems(filename, yaml_value);
+                    if let Some(entries) = entries {
+                        self.problems
+                            .extend(entries.into_iter().map(|e| (filename.to_path_buf(), e)));
+                    }
+                    errors
+                }
                 Some("_redirects.yaml") => check_redirects(
                     &self.root_dir,
                     &self.docs_folder,
@@ -311,13 +305,17 @@ impl DocYamlCheck for YamlChecker {
                     self.allow_fuchsia_src_links,
                     &self.reference_prefix,
                 ),
-                Some("_tools.yaml") => check_tools(
-                    &self.root_dir,
-                    filename,
-                    yaml_value,
-                    &mut self.external_links,
-                    &mut self.defined_tools,
-                ),
+                Some("_tools.yaml") => {
+                    let (entries, errors) =
+                        check_tools(&self.root_dir, filename, yaml_value, &mut self.external_links);
+                    if let Some(entries) = entries {
+                        for entry in entries {
+                            self.tools.insert(entry.name.clone());
+                            self.tools_entries.push((filename.to_path_buf(), entry));
+                        }
+                    }
+                    errors
+                }
                 Some(name) => todo!("Need to handle {} ({:?})", name, filename),
                 _ => panic!("No str avail for {:?}", filename),
             };
@@ -346,8 +344,8 @@ impl DocYamlCheck for YamlChecker {
 
         // Start with //docs/_toc.yaml
         let mut toc_stack: Vec<IncludedYaml> = vec![IncludedYaml {
-            container: self.root_dir.join("docs/_toc.yaml").into(),
-            included_file: self.root_dir.join("docs/_toc.yaml").into(),
+            container: self.root_dir.join(&self.docs_folder).join("_toc.yaml"),
+            included_file: self.root_dir.join(&self.docs_folder).join("_toc.yaml"),
         }];
         while let Some(current_yaml) = toc_stack.pop() {
             if let Some(yaml_doc) = yaml_file_set.take(&current_yaml.included_file) {
@@ -364,6 +362,19 @@ impl DocYamlCheck for YamlChecker {
                                     let mut file_path = reference_root.join(rel_path);
                                     if path_helper::is_dir(&file_path) {
                                         file_path.push("README.md");
+                                    }
+                                    let file_path = crate::path_ext::normalize_path(&file_path)
+                                        .unwrap_or(file_path);
+
+                                    if file_path.is_hidden_doc(
+                                        &self.root_dir,
+                                        self.reference_docs_root.as_deref(),
+                                    ) {
+                                        errors.push(DocCheckError::new_error(
+                                            0,
+                                            yaml_doc.clone(),
+                                            &format!("Cannot reference hidden file {} in _toc.yaml. Hidden files are not published by Devsite.", p),
+                                        ));
                                     }
 
                                     if markdown_file_set.take(&file_path).is_none()
@@ -412,6 +423,18 @@ impl DocYamlCheck for YamlChecker {
                             let mut file_path = self.root_dir.join(rel_path);
                             if path_helper::is_dir(&file_path) {
                                 file_path.push("README.md");
+                            }
+                            let file_path =
+                                crate::path_ext::normalize_path(&file_path).unwrap_or(file_path);
+
+                            if file_path
+                                .is_hidden_doc(&self.root_dir, self.reference_docs_root.as_deref())
+                            {
+                                errors.push(DocCheckError::new_error(
+                                    0,
+                                    yaml_doc.clone(),
+                                    &format!("Cannot reference hidden file {} in _toc.yaml. Hidden files are not published by Devsite.", p),
+                                ));
                             }
 
                             if markdown_file_set.take(&file_path).is_none()
@@ -519,67 +542,33 @@ impl DocYamlCheck for YamlChecker {
             ))
         });
 
-        // Check referenced tools in problems exist
-        for (loc, tool) in &self.referenced_tools {
-            if !self.defined_tools.contains(tool) {
-                errors.push(DocCheckError::new_error(
-                    loc.line_num,
-                    loc.file_name.clone(),
-                    &format!("Tool {} referenced in problems is not defined in _tools.yaml", tool),
-                ));
-            }
-        }
+        // Collect all problem keys as Strings for O(1) lookups and link validation
+        let problem_keys: HashSet<String> =
+            self.problems.iter().map(|(_, p)| p.key.clone()).collect();
 
-        // Check links in problem descriptions
-        for link in &self.problem_links {
-            match link.link_type {
-                LinkType::ShortcutUnknown | LinkType::ReferenceUnknown => {
-                    // Check if it's a tool
-                    if !self.defined_tools.contains(&link.dest) {
-                        errors.push(DocCheckError::new_error_helpful(
-                            link.location.line_num,
-                            link.location.file_name.clone(),
-                            &format!("Unknown reference link to [{}][{}]", link.text, link.dest),
-                            &format!(
-                                "make sure you added a matching [{}]: YOUR_LINK_HERE below this reference.",
-                                link.dest
-                            ),
-                        ));
-                    }
-                }
-                LinkType::Inline
-                | LinkType::Reference
-                | LinkType::Collapsed
-                | LinkType::Autolink => {
-                    if is_external_path(&link.dest) {
-                        if self.check_external_links {
-                            external_links.push(LinkReference {
-                                link: normalize_external_link(&link.dest),
-                                location: link.location.clone(),
-                            });
-                        }
-                    } else if let Some(err) = check_path(
-                        &link.location,
-                        &self.root_dir,
-                        &self.docs_folder,
-                        &self.project,
-                        &link.dest,
-                        self.allow_fuchsia_src_links,
-                        &self.reference_prefix,
-                    ) {
-                        errors.push(err);
-                    }
-                }
-                LinkType::Email => {}
-                _ => {
-                    errors.push(DocCheckError::new_warning(
-                        link.location.line_num,
-                        link.location.file_name.clone(),
-                        &format!("Unhandled link type {:?} in problem description", link.link_type),
-                    ));
-                }
-            }
-        }
+        validate_problems(
+            &self.problems,
+            &self.tools,
+            &self.root_dir,
+            &self.docs_folder,
+            &self.project,
+            self.allow_fuchsia_src_links,
+            &self.reference_prefix,
+            &problem_keys,
+            &mut errors,
+        );
+
+        validate_tools(
+            &self.tools_entries,
+            &self.tools,
+            &self.root_dir,
+            &self.docs_folder,
+            &self.project,
+            self.allow_fuchsia_src_links,
+            &self.reference_prefix,
+            &problem_keys,
+            &mut errors,
+        );
 
         if self.check_external_links {
             if let Some(link_errors) = check_external_links(&external_links).await {
@@ -1230,60 +1219,36 @@ fn check_metadata(
 fn check_problems(
     filename: &Path,
     yaml_value: &Value,
-    referenced_tools: &mut Vec<(DocLine, String)>,
-    problem_links: &mut Vec<ProblemLink>,
-) -> Option<Vec<DocCheckError>> {
+) -> (Option<Vec<ProblemEntry>>, Option<Vec<DocCheckError>>) {
     let (items, errors) = parse_entries::<ProblemEntry>(filename, yaml_value);
-    if let Some(problems) = items {
+    let mut errs = errors.unwrap_or_default();
+    if let Some(ref problems) = items {
         for problem in problems {
-            let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
-            for tool in problem.tools {
-                referenced_tools.push((doc_line.clone(), tool));
+            if problem.key.trim().is_empty() {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    "problem key cannot be empty",
+                ));
             }
-            let mut callback = |broken_link: pulldown_cmark::BrokenLink<'_>| {
-                let reference = broken_link.reference.to_string();
-                Some((pulldown_cmark::CowStr::Boxed(reference.into()), "".into()))
-            };
-            let parser = Parser::new_with_broken_link_callback(
-                &problem.description,
-                Options::empty(),
-                Some(&mut callback),
-            );
-            let mut current_link: Option<(LinkType, String, String)> = None;
-            for event in parser {
-                match event {
-                    Event::Start(Tag::Link { link_type, dest_url, .. }) => {
-                        current_link = Some((link_type, dest_url.to_string(), String::new()));
-                    }
-                    Event::Text(t)
-                    | Event::Code(t)
-                    | Event::InlineMath(t)
-                    | Event::DisplayMath(t) => {
-                        if let Some((_, _, ref mut link_text)) = current_link {
-                            link_text.push_str(&t);
-                        }
-                    }
-                    Event::SoftBreak | Event::HardBreak => {
-                        if let Some((_, _, ref mut link_text)) = current_link {
-                            link_text.push_str(" ");
-                        }
-                    }
-                    Event::End(TagEnd::Link) => {
-                        if let Some((saved_type, saved_dest, link_text)) = current_link.take() {
-                            problem_links.push(ProblemLink {
-                                location: doc_line.clone(),
-                                link_type: saved_type,
-                                dest: saved_dest,
-                                text: link_text,
-                            });
-                        }
-                    }
-                    _ => {}
-                }
+            if problem.use_case.trim().is_empty() {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!("use_case for problem '{}' cannot be empty", problem.key),
+                ));
+            }
+            if problem.description.trim().is_empty() {
+                errs.push(DocCheckError::new_error(
+                    1,
+                    filename.to_path_buf(),
+                    &format!("description for problem '{}' cannot be empty", problem.key),
+                ));
             }
         }
     }
-    errors
+    let ret_errors = if errs.is_empty() { None } else { Some(errs) };
+    (items, ret_errors)
 }
 
 fn check_rfcs(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>> {
@@ -1372,7 +1337,7 @@ fn check_rfcs(filename: &Path, yaml_value: &Value) -> Option<Vec<DocCheckError>>
                     if d.len() != 10
                         || d.chars().nth(4) != Some('-')
                         || d.chars().nth(7) != Some('-')
-                        || !d.chars().filter(|c| c.is_ascii_digit()).count() == 8
+                        || d.chars().filter(|c| c.is_ascii_digit()).count() != 8
                     {
                         errs.push(DocCheckError::new_error(
                             1,
@@ -1616,14 +1581,13 @@ fn check_tools(
     filename: &Path,
     yaml_value: &Value,
     external_links: &mut Vec<LinkReference>,
-    defined_tools: &mut HashSet<String>,
-) -> Option<Vec<DocCheckError>> {
+) -> (Option<Vec<ToolsEntry>>, Option<Vec<DocCheckError>>) {
     let (items, errors) = parse_entries::<ToolsEntry>(filename, yaml_value);
     let mut errs = errors.unwrap_or_default();
-    if let Some(entries) = items {
-        for entry in entries {
-            defined_tools.insert(entry.name.clone());
-            for (key, value) in entry.links {
+    let mut entries = vec![];
+    if let Some(entries_list) = items {
+        for entry in entries_list {
+            for (key, value) in &entry.links {
                 if let (Some(key_str), Some(link_str)) = (key.as_str(), value.as_str()) {
                     if link_str.starts_with("/docs/") {
                         let path = root_dir.join(&link_str[1..]);
@@ -1654,9 +1618,242 @@ fn check_tools(
                     }
                 }
             }
+            entries.push(entry);
         }
     }
-    if errs.is_empty() { None } else { Some(errs) }
+    let ret_entries = if entries.is_empty() { None } else { Some(entries) };
+    let ret_errors = if errs.is_empty() { None } else { Some(errs) };
+    (ret_entries, ret_errors)
+}
+
+fn validate_problems(
+    problems: &[(PathBuf, ProblemEntry)],
+    tools: &HashSet<String>,
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    allow_fuchsia_src_links: bool,
+    reference_prefix: &Path,
+    problem_keys: &HashSet<String>,
+    errors: &mut Vec<DocCheckError>,
+) {
+    let mut seen_problems = HashSet::new();
+
+    // Check for duplicates
+    let duplicate_errors = problems
+        .iter()
+        .filter(|(_, entry)| !seen_problems.insert(entry.key.as_str()))
+        .map(|(file_name, entry)| {
+            DocCheckError::new_error(
+                1,
+                file_name.clone(),
+                &format!("Duplicate problem key: {}", entry.key),
+            )
+        });
+    errors.extend(duplicate_errors);
+
+    // Validate that tools referenced in problems exist
+    let tool_errors = problems.iter().flat_map(|(file_name, problem)| {
+        problem.tools.iter().filter(|tool| !tools.contains(*tool)).map(move |tool| {
+            DocCheckError::new_error(
+                1,
+                file_name.clone(),
+                &format!(
+                    "Tool '{}' referenced in problem '{}' does not exist in _tools.yaml",
+                    tool, problem.key
+                ),
+            )
+        })
+    });
+    errors.extend(tool_errors);
+
+    // Validate related problems
+    let related_errors = problems.iter().flat_map(|(file_name, problem)| {
+        problem.related_problems.iter().filter_map(move |related| {
+            if related == &problem.key {
+                Some(DocCheckError::new_error(
+                    1,
+                    file_name.clone(),
+                    &format!(
+                        "Problem '{}' cannot reference itself as a related problem",
+                        problem.key
+                    ),
+                ))
+            } else if !problem_keys.contains(related) {
+                Some(DocCheckError::new_error(
+                    1,
+                    file_name.clone(),
+                    &format!(
+                        "Related problem '{}' referenced in problem '{}' does not exist",
+                        related, problem.key
+                    ),
+                ))
+            } else {
+                None
+            }
+        })
+    });
+    errors.extend(related_errors);
+
+    // Check markdown links in use_case and description
+    let markdown_errors = problems.iter().flat_map(|(file_name, problem)| {
+        let use_case_errors = check_markdown_links(
+            file_name,
+            &problem.use_case,
+            root_dir,
+            docs_folder,
+            project,
+            allow_fuchsia_src_links,
+            reference_prefix,
+            tools,
+            problem_keys,
+        );
+        let desc_errors = check_markdown_links(
+            file_name,
+            &problem.description,
+            root_dir,
+            docs_folder,
+            project,
+            allow_fuchsia_src_links,
+            reference_prefix,
+            tools,
+            problem_keys,
+        );
+        use_case_errors.into_iter().chain(desc_errors)
+    });
+    errors.extend(markdown_errors);
+}
+
+fn validate_tools(
+    tools_entries: &[(PathBuf, ToolsEntry)],
+    tools: &HashSet<String>,
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    allow_fuchsia_src_links: bool,
+    reference_prefix: &Path,
+    problem_keys: &HashSet<String>,
+    errors: &mut Vec<DocCheckError>,
+) {
+    let mut seen_tools = HashSet::new();
+    let duplicate_tool_errors = tools_entries
+        .iter()
+        .filter(|(_, entry)| !seen_tools.insert(entry.name.as_str()))
+        .map(|(file_name, entry)| {
+            DocCheckError::new_error(
+                1,
+                file_name.clone(),
+                &format!("Duplicate tool name: {}", entry.name),
+            )
+        });
+    errors.extend(duplicate_tool_errors);
+
+    let tool_related_errors = tools_entries.iter().flat_map(|(file_name, tool_entry)| {
+        tool_entry.related.iter().flatten().filter(|related| !tools.contains(*related)).map(
+            move |related| {
+                DocCheckError::new_error(
+                    1,
+                    file_name.clone(),
+                    &format!(
+                        "Related tool '{}' referenced in tool '{}' does not exist",
+                        related, tool_entry.name
+                    ),
+                )
+            },
+        )
+    });
+    errors.extend(tool_related_errors);
+
+    let tool_markdown_errors = tools_entries.iter().flat_map(|(file_name, tool_entry)| {
+        check_markdown_links(
+            file_name,
+            &tool_entry.description,
+            root_dir,
+            docs_folder,
+            project,
+            allow_fuchsia_src_links,
+            reference_prefix,
+            tools,
+            problem_keys,
+        )
+    });
+    errors.extend(tool_markdown_errors);
+}
+
+// Helper to parse and check markdown links inside YAML text fields.
+// It uses pulldown_cmark to find links (inline, reference, collapsed, shortcut, anchor).
+// Reference links are validated against the known set of tools and problems.
+fn check_markdown_links(
+    filename: &Path,
+    text: &str,
+    root_dir: &Path,
+    docs_folder: &Path,
+    project: &str,
+    allow_fuchsia_src_links: bool,
+    reference_prefix: &Path,
+    tools: &HashSet<String>,
+    problems: &HashSet<String>,
+) -> Vec<DocCheckError> {
+    let mut errors = vec![];
+    let mut callback_errors = vec![];
+    let doc_line = DocLine { line_num: 1, file_name: filename.to_path_buf() };
+
+    {
+        let mut callback = |broken_link: pulldown_cmark::BrokenLink<'_>| {
+            let ref_label = broken_link.reference.as_ref();
+            if !tools.contains(ref_label) && !problems.contains(ref_label) {
+                callback_errors.push(DocCheckError::new_error(
+                    doc_line.line_num,
+                    doc_line.file_name.clone(),
+                    &format!("Unknown reference link: [{}]", ref_label),
+                ));
+            }
+            None
+        };
+
+        let parser =
+            Parser::new_with_broken_link_callback(text, Options::empty(), Some(&mut callback));
+
+        for event in parser {
+            match event {
+                Event::Start(Tag::Link { link_type, dest_url, .. })
+                | Event::Start(Tag::Image { link_type, dest_url, .. }) => match link_type {
+                    LinkType::Autolink
+                    | LinkType::Collapsed
+                    | LinkType::Inline
+                    | LinkType::Reference
+                    | LinkType::Shortcut
+                    | LinkType::WikiLink { .. } => {
+                        if dest_url.starts_with("#") {
+                            let anchor = &dest_url[1..];
+                            if !tools.contains(anchor) && !problems.contains(anchor) {
+                                errors.push(DocCheckError::new_error(
+                                    doc_line.line_num,
+                                    doc_line.file_name.clone(),
+                                    &format!("Invalid anchor link: {} (does not match any tool or problem)", dest_url),
+                                ));
+                            }
+                        } else if let Some(err) = check_path(
+                            &doc_line,
+                            root_dir,
+                            docs_folder,
+                            project,
+                            &dest_url,
+                            allow_fuchsia_src_links,
+                            reference_prefix,
+                        ) {
+                            errors.push(err);
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+
+    errors.extend(callback_errors);
+    errors
 }
 
 /// parses the yaml_value into a list of T elements.
@@ -1717,7 +1914,6 @@ fn parse_entries<T: DeserializeOwned>(
 /// Called from main to register all the checks to preform which are implemented in this module.
 pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlCheck>>> {
     let reference_prefix = PathBuf::from("/reference");
-
     let checker = YamlChecker {
         root_dir: opt.root.clone(),
         docs_folder: opt.docs_folder.clone(),
@@ -1727,9 +1923,9 @@ pub fn register_yaml_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocYamlC
         reference_docs_root: opt.reference_docs_root.clone(),
         reference_prefix,
         external_links: vec![],
-        defined_tools: HashSet::new(),
-        referenced_tools: vec![],
-        problem_links: vec![],
+        problems: vec![],
+        tools: HashSet::new(),
+        tools_entries: vec![],
     };
 
     Ok(vec![Box::new(checker)])
@@ -1832,9 +2028,9 @@ mod test {
             reference_docs_root: None,
             reference_prefix: PathBuf::from("/reference"),
             external_links: vec![],
-            defined_tools: HashSet::new(),
-            referenced_tools: vec![],
-            problem_links: vec![],
+            problems: vec![],
+            tools: HashSet::new(),
+            tools_entries: vec![],
         };
 
         let test_data: [(&str, Option<DocCheckError>); 7] = [
@@ -2040,9 +2236,9 @@ redirects:
             reference_docs_root: None,
             reference_prefix: PathBuf::from("/reference"),
             external_links: vec![],
-            defined_tools: HashSet::new(),
-            referenced_tools: vec![],
-            problem_links: vec![],
+            problems: vec![],
+            tools: HashSet::new(),
+            tools_entries: vec![],
         };
         let filename = PathBuf::from("_deprecated-docs.yaml");
 
@@ -2280,11 +2476,10 @@ included:
         )?;
 
         let root_dir = PathBuf::from(".");
-        let result =
-            check_tools(&root_dir, &filename, &yaml_value, &mut vec![], &mut HashSet::new());
+        let (_tools, errors) = check_tools(&root_dir, &filename, &yaml_value, &mut vec![]);
 
-        assert!(result.is_some());
-        let errors = result.unwrap();
+        assert!(errors.is_some());
+        let errors = errors.unwrap();
         assert_eq!(errors.len(), 2);
         assert_eq!(
             errors[0].message,
@@ -2305,14 +2500,9 @@ included:
             "#,
         )?;
         let mut external_links = vec![];
-        let result = check_tools(
-            &root_dir,
-            &filename,
-            &external_link_yaml,
-            &mut external_links,
-            &mut HashSet::new(),
-        );
-        assert!(result.is_none());
+        let (_tools, errors) =
+            check_tools(&root_dir, &filename, &external_link_yaml, &mut external_links);
+        assert!(errors.is_none());
         assert_eq!(external_links.len(), 1);
         assert_eq!(external_links[0].link, "https://external.com/tool");
 
@@ -2599,27 +2789,7 @@ guides:
             "#,
         )?;
 
-        let mut referenced_tools = vec![];
-        let mut problem_links = vec![];
-        let result =
-            check_problems(&filename, &yaml_value, &mut referenced_tools, &mut problem_links);
-        assert!(result.is_none());
-
-        assert_eq!(referenced_tools.len(), 2);
-        assert_eq!(referenced_tools[0].1, "Test Tool");
-        assert_eq!(referenced_tools[1].1, "Missing Tool");
-
-        assert_eq!(problem_links.len(), 4);
-        assert_eq!(problem_links[0].dest, "Test Tool");
-        assert_eq!(problem_links[0].text, "Test Tool");
-        assert_eq!(problem_links[1].dest, "https://external.com");
-        assert_eq!(problem_links[1].text, "another link with code");
-
-        // Now run post_check
-        let mut defined_tools = HashSet::new();
-        defined_tools.insert("Test Tool".to_string());
-
-        let checker = YamlChecker {
+        let mut checker = YamlChecker {
             root_dir: PathBuf::from("."),
             docs_folder: PathBuf::from("docs"),
             project: "fuchsia".to_string(),
@@ -2628,32 +2798,264 @@ guides:
             reference_docs_root: None,
             reference_prefix: PathBuf::from("/reference"),
             external_links: vec![],
-            defined_tools,
-            referenced_tools,
-            problem_links,
+            problems: vec![],
+            tools: HashSet::new(),
+            tools_entries: vec![],
         };
+
+        let result = checker.check(&filename, &yaml_value)?;
+        assert!(result.is_none());
+
+        assert_eq!(checker.problems.len(), 1);
+        assert_eq!(checker.problems[0].1.key, "Test Problem");
+
+        // Now run post_check with defined tools
+        checker.tools.insert("Test Tool".to_string());
 
         let post_result = checker.post_check(&[], &[]).await?;
         assert!(post_result.is_some());
         let errors = post_result.unwrap();
 
-        for e in &errors {
-            eprintln!("POST_CHECK ERROR: {}", e.message);
-        }
-        assert_eq!(errors.len(), 4);
+        let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+
+        // 1. Missing Tool referenced in problems is not defined in _tools.yaml
+        assert!(error_messages.contains(&"Tool 'Missing Tool' referenced in problem 'Test Problem' does not exist in _tools.yaml".to_string()));
+        // 2. Unknown reference link: [Missing Tool]
+        assert!(error_messages.contains(&"Unknown reference link: [Missing Tool]".to_string()));
+        // 3. Unknown reference link: [Unknown]
+        assert!(error_messages.contains(&"Unknown reference link: [Unknown]".to_string()));
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_problems_and_tools_markdown_validation() -> Result<()> {
+        let root_dir = PathBuf::from(".");
+        let mut checker = YamlChecker {
+            root_dir: root_dir.clone(),
+            docs_folder: PathBuf::from("docs"),
+            project: "fuchsia".to_string(),
+            check_external_links: false,
+            allow_fuchsia_src_links: false,
+            reference_docs_root: None,
+            reference_prefix: PathBuf::from("/reference"),
+            external_links: vec![],
+            problems: vec![],
+            tools: HashSet::new(),
+            tools_entries: vec![],
+        };
+
+        let tools_yaml = serde_yaml::from_str(
+            r#"
+- name: ToolA
+  team: Diagnostics
+  links: {}
+  description: 'Referencing [ToolB] and inline link [Doc](/docs/missing.md)'
+  related:
+    - ToolC
+- name: ToolB
+  team: Diagnostics
+  links: {}
+  description: 'Tool B description'
+            "#,
+        )?;
+        let problems_yaml = serde_yaml::from_str(
+            r#"
+- key: Problem1
+  use_case: 'I want to link to [ToolA]'
+  tools:
+    - ToolA
+  description: 'Problem description with a broken [nonexistent_ref] and valid [ToolB]'
+  related-problems: []
+            "#,
+        )?;
+
+        let tools_file = PathBuf::from("docs/reference/troubleshooting/_tools.yaml");
+        let problems_file = PathBuf::from("docs/reference/troubleshooting/_problems.yaml");
+
+        checker.check(&tools_file, &tools_yaml)?;
+        checker.check(&problems_file, &problems_yaml)?;
+
+        let post_errs = checker.post_check(&[], &[]).await?;
+        assert!(post_errs.is_some());
+        let errors = post_errs.unwrap();
+        let errors: Vec<DocCheckError> =
+            errors.into_iter().filter(|e| !e.message.contains("_toc.yaml")).collect();
+
+        let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+        // 1. ToolC does not exist in tools:
+        assert!(error_messages.contains(
+            &"Related tool 'ToolC' referenced in tool 'ToolA' does not exist".to_string()
+        ));
+        // 2. /docs/nonexistent.md does not exist:
+        assert!(error_messages.iter().any(|m| m.contains("could not be found at")));
+        // 3. nonexistent_ref is not a valid tool or problem:
+        assert!(error_messages.contains(&"Unknown reference link: [nonexistent_ref]".to_string()));
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_problems_validation_extended() -> Result<()> {
+        let root_dir = PathBuf::from(".");
+        let mut checker = YamlChecker {
+            root_dir: root_dir.clone(),
+            docs_folder: PathBuf::from("docs"),
+            project: "fuchsia".to_string(),
+            check_external_links: false,
+            allow_fuchsia_src_links: false,
+            reference_docs_root: None,
+            reference_prefix: PathBuf::from("/reference"),
+            external_links: vec![],
+            problems: vec![],
+            tools: HashSet::new(),
+            tools_entries: vec![],
+        };
+
+        // Test empty fields
+        let invalid_fields_yaml = serde_yaml::from_str(
+            r#"
+- key: ''
+  use_case: ''
+  tools: []
+  description: ''
+  related-problems: []
+            "#,
+        )?;
+        let problems_file = PathBuf::from("docs/reference/troubleshooting/_problems.yaml");
+        let errs = checker.check(&problems_file, &invalid_fields_yaml)?;
+        assert!(errs.is_some());
+        let errors = errs.unwrap();
+        assert_eq!(errors.len(), 3);
+        assert_eq!(errors[0].message, "problem key cannot be empty");
+        assert_eq!(errors[1].message, "use_case for problem '' cannot be empty");
+        assert_eq!(errors[2].message, "description for problem '' cannot be empty");
+
+        // Test duplicate keys and self reference
+        let dup_self_yaml = serde_yaml::from_str(
+            r#"
+- key: ProblemDup
+  use_case: 'Use case'
+  tools: []
+  description: 'Description'
+  related-problems:
+    - ProblemDup
+- key: ProblemDup
+  use_case: 'Use case'
+  tools: []
+  description: 'Description'
+  related-problems: []
+            "#,
+        )?;
+        let mut checker = YamlChecker {
+            root_dir: root_dir.clone(),
+            docs_folder: PathBuf::from("docs"),
+            project: "fuchsia".to_string(),
+            check_external_links: false,
+            allow_fuchsia_src_links: false,
+            reference_docs_root: None,
+            reference_prefix: PathBuf::from("/reference"),
+            external_links: vec![],
+            problems: vec![],
+            tools: HashSet::new(),
+            tools_entries: vec![],
+        };
+        let errs = checker.check(&problems_file, &dup_self_yaml)?;
+        assert!(errs.is_none());
+
+        let post_errs = checker.post_check(&[], &[]).await?;
+        assert!(post_errs.is_some());
+        let errors = post_errs.unwrap();
+        let errors: Vec<DocCheckError> =
+            errors.into_iter().filter(|e| !e.message.contains("_toc.yaml")).collect();
+        assert_eq!(errors.len(), 2);
+        let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+        assert!(error_messages.contains(&"Duplicate problem key: ProblemDup".to_string()));
+        assert!(error_messages.contains(
+            &"Problem 'ProblemDup' cannot reference itself as a related problem".to_string()
+        ));
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_problems_validation() -> Result<()> {
+        let root_dir = PathBuf::from(".");
+        let mut checker = YamlChecker {
+            root_dir: root_dir.clone(),
+            docs_folder: PathBuf::from("docs"),
+            project: "fuchsia".to_string(),
+            check_external_links: false,
+            allow_fuchsia_src_links: false,
+            reference_docs_root: None,
+            reference_prefix: PathBuf::from("/reference"),
+            external_links: vec![],
+            problems: vec![],
+            tools: HashSet::new(),
+            tools_entries: vec![],
+        };
+
+        let tools_yaml = serde_yaml::from_str(
+            r#"
+- name: ToolA
+  team: Diagnostics
+  links: {}
+  description: 'Tool A'
+- name: ToolB
+  team: Diagnostics
+  links: {}
+  description: 'Tool B'
+            "#,
+        )?;
+        let problems_yaml = serde_yaml::from_str(
+            r#"
+- key: Problem1
+  use_case: 'Use case 1'
+  tools:
+    - ToolA
+    - ToolC
+  description: 'Problem 1'
+  related-problems:
+    - Problem3
+- key: Problem2
+  use_case: 'Use case 2'
+  tools:
+    - ToolB
+  description: 'Problem 2'
+  related-problems:
+    - Problem1
+            "#,
+        )?;
+
+        let tools_file = PathBuf::from("docs/reference/troubleshooting/_tools.yaml");
+        let problems_file = PathBuf::from("docs/reference/troubleshooting/_problems.yaml");
+
+        let errs1 = checker.check(&tools_file, &tools_yaml)?;
+        assert!(errs1.is_none());
+
+        let errs2 = checker.check(&problems_file, &problems_yaml)?;
+        assert!(errs2.is_none());
+
+        let post_errs = checker.post_check(&[], &[]).await?;
+        assert!(post_errs.is_some());
+        let errors = post_errs.unwrap();
+        let errors: Vec<DocCheckError> =
+            errors.into_iter().filter(|e| !e.message.contains("_toc.yaml")).collect();
+        assert_eq!(errors.len(), 2);
+
+        let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
         assert!(
-            errors.iter().any(|e| e.message.contains(
-                "Tool Missing Tool referenced in problems is not defined in _tools.yaml"
-            ))
+            error_messages.contains(
+                &"Tool 'ToolC' referenced in problem 'Problem1' does not exist in _tools.yaml"
+                    .to_string()
+            )
         );
         assert!(
-            errors.iter().any(|e| e
-                .message
-                .contains("Unknown reference link to [broken link][Missing Tool]"))
+            error_messages.contains(
+                &"Related problem 'Problem3' referenced in problem 'Problem1' does not exist"
+                    .to_string()
+            )
         );
-        assert!(errors.iter().any(|e| {
-            e.message.contains("Unknown reference link to [really broken link][Unknown]")
-        }));
 
         Ok(())
     }
