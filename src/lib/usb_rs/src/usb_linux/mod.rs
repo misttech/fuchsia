@@ -108,11 +108,15 @@ impl DeviceHandleInner {
         DeviceHandleInner { hdl, serial: std::sync::OnceLock::new() }
     }
 
+    pub fn sysfs_path(&self) -> Option<std::path::PathBuf> {
+        let devid = DeviceId::from_path(&self.hdl).ok()?;
+        find_sysfs_path(&devid)
+    }
+
     pub fn serial(&self) -> Option<String> {
         self.serial
             .get_or_init(|| {
-                let devid = DeviceId::from_path(&self.hdl).ok()?;
-                let sysfs_path = find_sysfs_path(&devid)?;
+                let sysfs_path = self.sysfs_path()?;
                 get_serial_from_sysfs(&sysfs_path)
             })
             .clone()

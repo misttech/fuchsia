@@ -57,6 +57,11 @@ impl DeviceHandle {
         self.0.serial()
     }
 
+    /// Returns the sysfs path for this device if available on the platform.
+    pub fn sysfs_path(&self) -> Option<std::path::PathBuf> {
+        self.0.sysfs_path()
+    }
+
     /// Given a path to a USB device, scan each interface available on the device. Each interface's
     /// descriptor is passed to the given callback, and the first descriptor for which the callback
     /// returns `true` will be opened and returned.

@@ -5,6 +5,7 @@
 use fuchsia_async::{Task, TimeoutExt, Timer, unblock};
 use std::collections::BTreeSet;
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use thiserror::Error;
 pub use usb_rs::bulk_interface::BulkInterface as Interface;
@@ -233,6 +234,90 @@ fn device_is_fastboot(
     subclass_match && protocol_match
 }
 
+#[derive(PartialEq, Debug)]
+struct InterfaceHelper {
+    class: u8,
+    subclass: u8,
+    protocol: u8,
+}
+
+impl TryFrom<&Path> for InterfaceHelper {
+    type Error = ();
+
+    fn try_from(path: &Path) -> Result<Self, Self::Error> {
+        let class_path = path.join("bInterfaceClass");
+        let subclass_path = path.join("bInterfaceSubClass");
+        let protocol_path = path.join("bInterfaceProtocol");
+
+        fn read_val(path: &Path) -> Option<u8> {
+            let val = std::fs::read_to_string(path).ok()?;
+            u8::from_str_radix(val.trim(), 16).ok()
+        }
+
+        let class = read_val(&class_path).ok_or(())?;
+        let subclass = read_val(&subclass_path).ok_or(())?;
+        let protocol = read_val(&protocol_path).ok_or(())?;
+        Ok(Self { class, subclass, protocol })
+    }
+}
+
+impl TryFrom<PathBuf> for InterfaceHelper {
+    type Error = ();
+
+    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
+        Self::try_from(path.as_path())
+    }
+}
+
+/// Inspects sysfs device attributes without opening device nodes or issuing ioctls.
+/// Returns Some(true) if the device matches Fastboot vendor and interface descriptors in sysfs,
+/// Some(false) if it is known not to match, or None if sysfs is unavailable on the platform.
+pub fn is_fastboot_sysfs_match(device: &usb_rs::DeviceHandle) -> Option<bool> {
+    let sysfs_path = device.sysfs_path()?;
+    let vendor_path = sysfs_path.join("idVendor");
+    let Ok(vendor_str) = std::fs::read_to_string(vendor_path) else {
+        return Some(false);
+    };
+    let Ok(vendor_id) = u16::from_str_radix(vendor_str.trim(), 16) else {
+        return Some(false);
+    };
+    if vendor_id != USB_DEV_VENDOR {
+        return Some(false);
+    }
+
+    let Ok(entries) = std::fs::read_dir(&sysfs_path) else {
+        return Some(false);
+    };
+
+    Some(
+        entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .filter_map(|p| InterfaceHelper::try_from(p).ok())
+            .any(|i| {
+                i == InterfaceHelper {
+                    class: FASTBOOT_USB_INTERFACE_CLASS,
+                    subclass: FASTBOOT_USB_INTERFACE_SUBCLASS,
+                    protocol: FASTBOOT_USB_INTERFACE_PROTOCOL,
+                }
+            }),
+    )
+}
+
+/// Checks whether a USB device is a Fastboot target, trying sysfs first and falling
+/// back to interface descriptor scanning if sysfs is unavailable.
+pub fn is_fastboot_device(device: &usb_rs::DeviceHandle) -> bool {
+    if let Some(matched) = is_fastboot_sysfs_match(device) {
+        return matched;
+    }
+    device
+        .scan_interfaces(URB_POOL_SIZE, |usb_device, interface| {
+            device_is_fastboot(device, usb_device, interface)
+        })
+        .is_ok()
+}
+
 /// How many URBs to allocate for each device we communicate with.
 const URB_POOL_SIZE: usize = 32;
 
@@ -255,6 +340,16 @@ async fn find_serial_numbers() -> Vec<String> {
             async move {
                 // Spawn the blocking USB I/O operations on a helper thread.
                 let check_fut = unblock(move || {
+                    // Fast path: inspect sysfs metadata without opening device node or calling ioctls
+                    if let Some(is_match) = is_fastboot_sysfs_match(&device) {
+                        if is_match {
+                            return device.serial();
+                        } else {
+                            return None;
+                        }
+                    }
+
+                    // Fallback (e.g. unit tests with fake USB environment):
                     // Retrieve the serial number (lazily loaded from sysfs on first call).
                     let serial = device.serial()?;
                     // Scan the interfaces to determine if this is a fastboot match.
