@@ -20,7 +20,6 @@
 #include <thread>
 #include <utility>
 
-#include <fbl/algorithm.h>
 #include <zxtest/zxtest.h>
 
 namespace fake_object::test {
