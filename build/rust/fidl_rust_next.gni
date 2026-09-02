@@ -26,6 +26,7 @@ fidl_rust_next_allowlist = [
   "//src/lib/fidl/rust_next/*",
   "//src/lib/fuchsia-component/*",
   "//src/tests/fidl/conformance_suite/*",
+  "//src/ui/input/*",
   "//src/ui/lib/input_pipeline/*",
   "//src/ui/tools/print-input-report-new/*",
   "//tools/fidl/*",
