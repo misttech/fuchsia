@@ -64,7 +64,7 @@ where
 
 /// Join `relative` onto `base` with light path normalization.
 /// Errors out if the final path is not within `base`.
-fn safe_join(base: &Path, relative: &Path) -> Result<PathBuf, crate::PbmsError> {
+pub(crate) fn safe_join(base: &Path, relative: &Path) -> Result<PathBuf, crate::PbmsError> {
     let mut normalized_relative = PathBuf::new();
     for part in relative.components() {
         match part {
@@ -280,6 +280,17 @@ mod tests {
         assert_cannot_join!("/absolute/path", "..");
         assert_cannot_join!("/absolute/path", "/../path");
         assert_cannot_join!("/absolute/path", "a_dir/../..");
+
+        #[cfg(target_os = "windows")]
+        {
+            assert_joined!(r"C:\absolute", "C:evil.txt", r"C:\absolute\evil.txt");
+            assert_joined!(r"C:\absolute", r"C:\evil.txt", r"C:\absolute\evil.txt");
+            assert_cannot_join!(r"C:\absolute", "C:");
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert_joined!("/absolute", "C:evil.txt", "/absolute/C:evil.txt");
+        }
 
         Ok(())
     }

@@ -6,6 +6,7 @@
 
 use crate::AuthFlowChoice;
 use crate::gcs::fetch_from_gcs;
+use crate::transfer_manifest::safe_join;
 use ::gcs::client::{
     Client, DirectoryProgress, FileProgress, ProgressResponse, ProgressResult, Throttle,
 };
@@ -80,6 +81,8 @@ where
         return Err(crate::PbmsError::WebDirNotSupported);
     }
 
+    let path = safe_join(local_dir, Path::new(name))?;
+
     let res = fuchsia_hyper::new_client()
         .get(hyper::Uri::from_maybe_shared(product_uri.to_string())?)
         .await?;
@@ -110,9 +113,12 @@ where
         0
     };
 
-    std::fs::create_dir_all(local_dir)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    } else {
+        std::fs::create_dir_all(local_dir)?;
+    }
 
-    let path = local_dir.join(name);
     let mut file = File::create(&path).await?;
 
     let mut stream = std::pin::pin!(http_body_util::BodyStream::new(res.into_body()).filter_map(
@@ -202,5 +208,38 @@ mod tests {
         assert!(
             matches!(result.unwrap_err(), crate::PbmsError::UnexpectedScheme(s) if s == "fake")
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_fetch_from_url_web_unsafe_path() {
+        let ui = structured_ui::MockUi::new();
+        let client = Client::initial().expect("creating client");
+
+        let url = url::Url::parse("http://example.com/").expect("url");
+        let result = fetch_from_url(
+            &url,
+            Path::new("unused").to_path_buf(),
+            &AuthFlowChoice::Default,
+            &|_d, _f| Ok(ProgressResponse::Continue),
+            &ui,
+            &client,
+        )
+        .await;
+        assert!(matches!(result.unwrap_err(), crate::PbmsError::WebDirNotSupported));
+
+        #[cfg(target_os = "windows")]
+        {
+            let url = url::Url::parse("http://example.com/C:").expect("url");
+            let result = fetch_from_url(
+                &url,
+                Path::new("unused").to_path_buf(),
+                &AuthFlowChoice::Default,
+                &|_d, _f| Ok(ProgressResponse::Continue),
+                &ui,
+                &client,
+            )
+            .await;
+            assert!(matches!(result.unwrap_err(), crate::PbmsError::UnsafeConcat(..)));
+        }
     }
 }
