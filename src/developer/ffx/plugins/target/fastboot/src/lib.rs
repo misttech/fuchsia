@@ -96,7 +96,8 @@ where
                     cmd.file.to_str().unwrap(),
                     interface,
                     flash_min_timeout_seconds,
-                    flash_timeout_rate_mb_per_second
+                    flash_timeout_rate_mb_per_second,
+                    cmd.max_download_size,
                 )
                 .map_err(anyhow::Error::from),
                 sink(server)

@@ -205,6 +205,7 @@ pub async fn flash_partition<F: FileResolver + Sync, T: FastbootInterface>(
         fastboot_interface,
         min_timeout_secs,
         flash_timeout_rate_mb_per_second,
+        None,
     )
     .await
 }
@@ -216,6 +217,7 @@ async fn flash_basic_impl<T: FastbootInterface>(
     fastboot_interface: &mut T,
     min_timeout_secs: u64,
     flash_timeout_rate_mb_per_second: f64,
+    override_max_download_size: Option<NonZeroU64>,
 ) -> Result<()> {
     // If the given file to flash is bigger than what the device can download
     // at once, we need to make a sparse image out of the given file
@@ -244,7 +246,13 @@ async fn flash_basic_impl<T: FastbootInterface>(
     let max_download_size: u64 =
         get_hex_int::<u32>(MAX_DOWNLOAD_SIZE_VAR, fastboot_interface).await?.into();
     log::trace!("Device Max Download Size: {}", max_download_size);
+    log::trace!("Override Max Download Size: {:?}", override_max_download_size);
     log::trace!("File size: {}", file_size);
+
+    let max_download_size: u64 = match override_max_download_size {
+        Some(omds) => omds.into(),
+        None => max_download_size,
+    };
 
     let start_time = Utc::now();
 
@@ -477,6 +485,7 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
     fb_intf: &mut T,
     min_timeout_secs: u64,
     flash_timeout_rate_mb_per_second: f64,
+    override_max_download_size: Option<NonZeroU64>,
 ) -> Result<()> {
     fn parameterized_var(base: &str, parameter: &str) -> String {
         format!("{}:{}", base, parameter)
@@ -517,6 +526,7 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
         fb_intf,
         min_timeout_secs,
         flash_timeout_rate_mb_per_second,
+        override_max_download_size,
     )
     .await
 }

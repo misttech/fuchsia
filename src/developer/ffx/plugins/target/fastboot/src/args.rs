@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use core::num::NonZeroU64;
 use ffx_core::ffx_command;
 use std::path::PathBuf;
 
@@ -45,6 +46,10 @@ pub struct FlashSubcommand {
     #[argh(positional)]
     /// what file to flash
     pub file: PathBuf,
+
+    #[argh(option, short = 'S')]
+    /// overriding the maximum download size
+    pub max_download_size: Option<NonZeroU64>,
 }
 
 #[derive(ArgsInfo, FromArgs, Eq, PartialEq, Clone, Debug)]

@@ -10,6 +10,18 @@
       "short": null,
       "description": "display usage information",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "max-download-size"
+        }
+      },
+      "optionality": "optional",
+      "long": "--max-download-size",
+      "short": "S",
+      "description": "overriding the maximum download size",
+      "hidden": false
     }
   ],
   "notes": [],
