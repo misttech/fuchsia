@@ -375,7 +375,7 @@ TEST_P(GcTestWithLargeSec, SegmentDirtyInfo) TA_NO_THREAD_SAFETY_ANALYSIS {
   uint32_t last_victim =
       fs_->GetSegmentManager().GetLastVictim(static_cast<int>(GcMode::kGcGreedy));
   auto victim_seg_or = fs_->GetSegmentManager().GetVictimByDefault(
-      GcType::kFgGc, CursegType::kNoCheckType, AllocMode::kLFS);
+      GcType::kFgGc, CursegType::kNoCheckType, AllocType::kLFS);
   ASSERT_FALSE(victim_seg_or.is_error());
   uint32_t victim_seg = victim_seg_or.value();
   fs_->GetSegmentManager().SetLastVictim(static_cast<int>(GcMode::kGcGreedy), last_victim);
@@ -421,7 +421,7 @@ TEST_P(GcTestWithLargeSec, SegmentFreeInfo) TA_NO_THREAD_SAFETY_ANALYSIS {
   uint32_t last_victim =
       fs_->GetSegmentManager().GetLastVictim(static_cast<int>(GcMode::kGcGreedy));
   auto victim_seg_or = fs_->GetSegmentManager().GetVictimByDefault(
-      GcType::kFgGc, CursegType::kNoCheckType, AllocMode::kLFS);
+      GcType::kFgGc, CursegType::kNoCheckType, AllocType::kLFS);
   ASSERT_FALSE(victim_seg_or.is_error());
   uint32_t victim_seg = victim_seg_or.value();
   fs_->GetSegmentManager().SetLastVictim(static_cast<int>(GcMode::kGcGreedy), last_victim);

@@ -156,19 +156,19 @@ TEST_F(SegmentManagerTest, InvalidateBlocksExceptionCase) {
 
 TEST_F(SegmentManagerTest, GetVictimSelPolicy) TA_NO_THREAD_SAFETY_ANALYSIS {
   VictimSelPolicy policy = fs_->GetSegmentManager().GetVictimSelPolicy(
-      GcType::kFgGc, CursegType::kCursegHotNode, AllocMode::kSSR);
+      GcType::kFgGc, CursegType::kCursegHotNode, AllocType::kSSR);
   ASSERT_EQ(policy.gc_mode, GcMode::kGcGreedy);
   ASSERT_EQ(policy.ofs_unit, 1U);
 
   policy = fs_->GetSegmentManager().GetVictimSelPolicy(GcType::kFgGc, CursegType::kNoCheckType,
-                                                       AllocMode::kLFS);
+                                                       AllocType::kLFS);
   ASSERT_EQ(policy.gc_mode, GcMode::kGcGreedy);
   ASSERT_EQ(policy.ofs_unit, fs_->GetSuperblockInfo().GetSegsPerSec());
   ASSERT_EQ(policy.offset,
             fs_->GetSegmentManager().GetLastVictim(static_cast<int>(GcMode::kGcGreedy)));
 
   policy = fs_->GetSegmentManager().GetVictimSelPolicy(GcType::kBgGc, CursegType::kNoCheckType,
-                                                       AllocMode::kLFS);
+                                                       AllocType::kLFS);
   ASSERT_EQ(policy.gc_mode, GcMode::kGcCb);
   ASSERT_EQ(policy.ofs_unit, fs_->GetSuperblockInfo().GetSegsPerSec());
   ASSERT_EQ(policy.offset, fs_->GetSegmentManager().GetLastVictim(static_cast<int>(GcMode::kGcCb)));
@@ -176,26 +176,26 @@ TEST_F(SegmentManagerTest, GetVictimSelPolicy) TA_NO_THREAD_SAFETY_ANALYSIS {
   DirtySeglistInfo *dirty_info = &fs_->GetSegmentManager().GetDirtySegmentInfo();
   dirty_info->nr_dirty[static_cast<int>(DirtyType::kDirty)] = kMaxSearchLimit + 2;
   policy = fs_->GetSegmentManager().GetVictimSelPolicy(GcType::kBgGc, CursegType::kNoCheckType,
-                                                       AllocMode::kLFS);
+                                                       AllocType::kLFS);
   ASSERT_EQ(policy.max_search, kMaxSearchLimit);
 }
 
 TEST_F(SegmentManagerTest, GetMaxCost) TA_NO_THREAD_SAFETY_ANALYSIS {
   VictimSelPolicy policy = fs_->GetSegmentManager().GetVictimSelPolicy(
-      GcType::kFgGc, CursegType::kCursegHotNode, AllocMode::kSSR);
+      GcType::kFgGc, CursegType::kCursegHotNode, AllocType::kSSR);
   policy.min_cost = fs_->GetSegmentManager().GetMaxCost(policy);
   ASSERT_EQ(policy.min_cost,
             static_cast<uint32_t>(1 << fs_->GetSuperblockInfo().GetLogBlocksPerSeg()));
 
   policy = fs_->GetSegmentManager().GetVictimSelPolicy(GcType::kFgGc, CursegType::kNoCheckType,
-                                                       AllocMode::kLFS);
+                                                       AllocType::kLFS);
   policy.min_cost = fs_->GetSegmentManager().GetMaxCost(policy);
   ASSERT_EQ(policy.min_cost,
             static_cast<uint32_t>(2 * (1 << fs_->GetSuperblockInfo().GetLogBlocksPerSeg()) *
                                   policy.ofs_unit));
 
   policy = fs_->GetSegmentManager().GetVictimSelPolicy(GcType::kBgGc, CursegType::kNoCheckType,
-                                                       AllocMode::kLFS);
+                                                       AllocType::kLFS);
   policy.min_cost = fs_->GetSegmentManager().GetMaxCost(policy);
   ASSERT_EQ(policy.min_cost, std::numeric_limits<uint32_t>::max());
 }
@@ -221,7 +221,7 @@ TEST_F(SegmentManagerTest, GetVictimByDefault) TA_NO_THREAD_SAFETY_ANALYSIS {
   }
 
   auto victim_or = fs_->GetSegmentManager().GetVictimByDefault(
-      GcType::kBgGc, CursegType::kCursegHotNode, AllocMode::kSSR);
+      GcType::kBgGc, CursegType::kCursegHotNode, AllocType::kSSR);
   ASSERT_FALSE(victim_or.is_error());
   uint32_t get_victim = victim_or.value();
   ASSERT_EQ(get_victim, target_segno);
@@ -234,7 +234,7 @@ TEST_F(SegmentManagerTest, GetVictimByDefault) TA_NO_THREAD_SAFETY_ANALYSIS {
   }
 
   victim_or = fs_->GetSegmentManager().GetVictimByDefault(GcType::kFgGc, CursegType::kNoCheckType,
-                                                          AllocMode::kLFS);
+                                                          AllocType::kLFS);
   ASSERT_FALSE(victim_or.is_error());
   get_victim = victim_or.value();
   ASSERT_EQ(get_victim, target_segno);
@@ -246,7 +246,7 @@ TEST_F(SegmentManagerTest, GetVictimByDefault) TA_NO_THREAD_SAFETY_ANALYSIS {
       dirty_info->dirty_segmap[static_cast<int>(DirtyType::kDirtyHotNode)].GetOne(target_segno));
   ASSERT_EQ(dirty_info->nr_dirty[static_cast<int>(DirtyType::kDirtyHotNode)], 1);
   victim_or = fs_->GetSegmentManager().GetVictimByDefault(GcType::kBgGc, CursegType::kCursegHotNode,
-                                                          AllocMode::kSSR);
+                                                          AllocType::kSSR);
   ASSERT_TRUE(victim_or.is_error());
 
   // 4. Skip if victim_secmap is set (kBgGc)
@@ -256,7 +256,7 @@ TEST_F(SegmentManagerTest, GetVictimByDefault) TA_NO_THREAD_SAFETY_ANALYSIS {
   ASSERT_EQ(dirty_info->nr_dirty[static_cast<int>(DirtyType::kDirty)], 1);
   dirty_info->victim_secmap.SetOne(fs_->GetSegmentManager().GetSecNo(target_segno));
   victim_or = fs_->GetSegmentManager().GetVictimByDefault(GcType::kBgGc, CursegType::kCursegHotNode,
-                                                          AllocMode::kLFS);
+                                                          AllocType::kLFS);
   ASSERT_TRUE(victim_or.is_error());
 }
 
@@ -303,7 +303,7 @@ TEST_F(SegmentManagerTest, SelectBGVictims) TA_NO_THREAD_SAFETY_ANALYSIS {
 
   // GcType::kFgGc should select a victim according to valid blocks
   auto victim_seg_or = fs_->GetSegmentManager().GetVictimByDefault(
-      GcType::kFgGc, CursegType::kNoCheckType, AllocMode::kLFS);
+      GcType::kFgGc, CursegType::kNoCheckType, AllocType::kLFS);
   ASSERT_TRUE(victim_seg_or.is_ok());
   ASSERT_EQ(fs_->GetSegmentManager().GetValidBlocks(*victim_seg_or, true), valid_blocks_97);
   ASSERT_EQ(expected_by_fg, *victim_seg_or);
@@ -311,7 +311,7 @@ TEST_F(SegmentManagerTest, SelectBGVictims) TA_NO_THREAD_SAFETY_ANALYSIS {
 
   // GcType::kBgGc should select a victim according to the segment age and valid blocks
   victim_seg_or = fs_->GetSegmentManager().GetVictimByDefault(
-      GcType::kBgGc, CursegType::kNoCheckType, AllocMode::kLFS);
+      GcType::kBgGc, CursegType::kNoCheckType, AllocType::kLFS);
   ASSERT_TRUE(victim_seg_or.is_ok());
   ASSERT_EQ(fs_->GetSegmentManager().GetValidBlocks(*victim_seg_or, true), valid_blocks_98);
   ASSERT_EQ(expected_by_bg, *victim_seg_or);
@@ -319,7 +319,7 @@ TEST_F(SegmentManagerTest, SelectBGVictims) TA_NO_THREAD_SAFETY_ANALYSIS {
   // When a victim that GcType::kBgGc chooses is not handled yet, GcType::kFgGc should select the
   // victim
   victim_seg_or = fs_->GetSegmentManager().GetVictimByDefault(
-      GcType::kFgGc, CursegType::kNoCheckType, AllocMode::kLFS);
+      GcType::kFgGc, CursegType::kNoCheckType, AllocType::kLFS);
   ASSERT_TRUE(victim_seg_or.is_ok());
   ASSERT_EQ(fs_->GetSegmentManager().GetValidBlocks(*victim_seg_or, true), valid_blocks_98);
   fs_->GetSegmentManager().SetCurVictimSec(kNullSecNo);
@@ -327,14 +327,14 @@ TEST_F(SegmentManagerTest, SelectBGVictims) TA_NO_THREAD_SAFETY_ANALYSIS {
   // Even after system time is modified, it can select a victim correctly.
   fs_->GetSegmentManager().GetSitInfo().min_mtime = LLONG_MAX;
   victim_seg_or = fs_->GetSegmentManager().GetVictimByDefault(
-      GcType::kBgGc, CursegType::kNoCheckType, AllocMode::kLFS);
+      GcType::kBgGc, CursegType::kNoCheckType, AllocType::kLFS);
   ASSERT_TRUE(victim_seg_or.is_ok());
   ASSERT_EQ(fs_->GetSegmentManager().GetValidBlocks(*victim_seg_or, true), valid_blocks_98);
 
   fs_->GetSegmentManager().GetSitInfo().max_mtime = 0;
   dirty_info->victim_secmap.ClearOne(*victim_seg_or / fs_->GetSuperblockInfo().GetSegsPerSec());
   victim_seg_or = fs_->GetSegmentManager().GetVictimByDefault(
-      GcType::kBgGc, CursegType::kNoCheckType, AllocMode::kLFS);
+      GcType::kBgGc, CursegType::kNoCheckType, AllocType::kLFS);
   ASSERT_TRUE(victim_seg_or.is_ok());
   ASSERT_EQ(fs_->GetSegmentManager().GetValidBlocks(*victim_seg_or, true), valid_blocks_98);
 }
@@ -348,12 +348,11 @@ TEST_F(SegmentManagerTest, AllocateNewSegments) TA_NO_THREAD_SAFETY_ANALYSIS {
 
   superblock_info.ClearOpt(MountOption::kDisableRollForward);
   temp_free_segment = fs_->GetSegmentManager().FreeSegments();
-  for (int i = static_cast<int>(CursegType::kCursegHotNode);
-       i <= static_cast<int>(CursegType::kCursegColdNode); ++i) {
-    fs_->GetSegmentManager().AllocateSegmentByDefault(static_cast<CursegType>(i), true);
+  for (CursegType curseg_type :
+       {CursegType::kCursegHotNode, CursegType::kCursegWarmNode, CursegType::kCursegColdNode}) {
+    fs_->GetSegmentManager().AllocateSegmentByDefault(curseg_type, true);
   }
-  uint8_t type =
-      superblock_info.GetCheckpoint().alloc_type[static_cast<int>(CursegType::kCursegHotNode)];
+  AllocType type = fs_->GetSegmentManager().CursegAllocType(CursegType::kCursegHotNode);
   ASSERT_EQ(superblock_info.GetSegmentCount(type), 6UL);
   ASSERT_EQ(temp_free_segment - 3, fs_->GetSegmentManager().FreeSegments());
 }

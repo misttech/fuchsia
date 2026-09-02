@@ -1129,7 +1129,7 @@ TEST_F(CheckpointTest, InvalidAllocType) {
   SuperblockInfo &sb_info = fs_->GetSuperblockInfo();
   for (size_t i = 0; i < kNrCursegType; ++i) {
     BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
-    ckpt_block->alloc_type[i] = static_cast<uint8_t>(AllocMode::kSSR) + 1;
+    ckpt_block->alloc_type[i] = static_cast<uint8_t>(AllocType::kSSR) + 1;
     ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
   }
 }

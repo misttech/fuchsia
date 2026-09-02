@@ -742,7 +742,7 @@ zx_status_t FsckWorker::VerifyCursegOffset(CursegType segtype) {
     return ZX_ERR_INTERNAL;
   }
 
-  if (curseg->alloc_type == static_cast<uint8_t>(AllocMode::kLFS)) {
+  if (curseg->alloc_type == AllocType::kLFS) {
     for (block_t offset = curseg->next_blkoff + 1; offset < kSitVBlockMapSize; ++offset) {
       block_t logical_offset = segment_manager_->GetMainAreaStartBlock() +
                                curseg->segno * superblock_info_->GetBlocksPerSeg() + offset;
@@ -1060,7 +1060,7 @@ zx_status_t FsckWorker::RepairCheckpoint() {
         ckpt_block->cur_node_blkoff[segtype - static_cast<uint32_t>(CursegType::kCursegHotNode)] =
             offset;
       }
-      ckpt_block->alloc_type[segtype] = static_cast<uint8_t>(AllocMode::kSSR);
+      ckpt_block->alloc_type[segtype] = static_cast<uint8_t>(AllocType::kSSR);
       need_update_checkpoint = true;
     }
   }
@@ -1517,10 +1517,10 @@ zx_status_t FsckWorker::ReadCompactedSummaries() {
     }
     curseg->next_segno = segno;
     ResetCurseg(static_cast<CursegType>(i), 0);
-    curseg->alloc_type = ckpt.alloc_type[i];
+    curseg->alloc_type = static_cast<AllocType>(ckpt.alloc_type[i]);
     curseg->next_blkoff = blk_off;
 
-    if (curseg->alloc_type == static_cast<uint8_t>(AllocMode::kSSR)) {
+    if (curseg->alloc_type == AllocType::kSSR) {
       blk_off = safemath::checked_cast<unsigned short>(superblock_info_->GetBlocksPerSeg());
     }
 
@@ -1619,7 +1619,7 @@ zx_status_t FsckWorker::ReadNormalSummaries(CursegType type) {
 
   curseg->next_segno = segno;
   ResetCurseg(type, 0);
-  curseg->alloc_type = ckpt.alloc_type[static_cast<int>(type)];
+  curseg->alloc_type = static_cast<AllocType>(ckpt.alloc_type[static_cast<int>(type)]);
   curseg->next_blkoff = blk_off;
 
   return ZX_OK;

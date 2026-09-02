@@ -276,7 +276,7 @@ bool SegmentManager::NeedSSR() { return !superblock_info_.TestOpt(MountOption::k
 
 zx::result<> SegmentManager::GetSsrSegment(CursegType type) {
   CursegInfo *curseg = CURSEG_I(type);
-  if (zx::result segno = GetVictimByDefault(GcType::kBgGc, type, AllocMode::kSSR); segno.is_ok()) {
+  if (zx::result segno = GetVictimByDefault(GcType::kBgGc, type, AllocType::kSSR); segno.is_ok()) {
     curseg->next_segno = segno.value();
     return zx::ok();
   }
@@ -310,7 +310,7 @@ zx::result<> SegmentManager::GetSsrSegment(CursegType type) {
     if (current == type) {
       continue;
     }
-    if (zx::result segno = GetVictimByDefault(GcType::kBgGc, current, AllocMode::kSSR);
+    if (zx::result segno = GetVictimByDefault(GcType::kBgGc, current, AllocType::kSSR);
         segno.is_ok()) {
       curseg->next_segno = segno.value();
       return zx::ok();
@@ -331,21 +331,6 @@ bool SegmentManager::NeedInplaceUpdate(bool is_dir) {
     return false;
   }
   return NeedSSR() && Utilization() > kMinIpuUtil;
-}
-
-uint32_t SegmentManager::CursegSegno(int type) {
-  CursegInfo *curseg = CURSEG_I(static_cast<CursegType>(type));
-  return curseg->segno;
-}
-
-uint8_t SegmentManager::CursegAllocType(int type) {
-  CursegInfo *curseg = CURSEG_I(static_cast<CursegType>(type));
-  return curseg->alloc_type;
-}
-
-uint16_t SegmentManager::CursegBlkoff(int type) {
-  CursegInfo *curseg = CURSEG_I(static_cast<CursegType>(type));
-  return curseg->next_blkoff;
 }
 
 #if 0  // porting needed
@@ -750,12 +735,12 @@ int SegmentManager::NpagesForSummaryFlush() {
   uint32_t total_size_bytes = 0;
   uint32_t valid_sum_count = 0;
 
-  for (int i = static_cast<int>(CursegType::kCursegHotData);
-       i <= static_cast<int>(CursegType::kCursegColdData); ++i) {
-    if (superblock_info_.GetCheckpoint().alloc_type[i] == static_cast<uint8_t>(AllocMode::kSSR)) {
+  for (CursegType type :
+       {CursegType::kCursegHotData, CursegType::kCursegWarmData, CursegType::kCursegColdData}) {
+    if (CursegAllocType(type) == AllocType::kSSR) {
       valid_sum_count += superblock_info_.GetBlocksPerSeg();
     } else {
-      valid_sum_count += CursegBlkoff(i);
+      valid_sum_count += CursegBlkoff(type);
     }
   }
 
@@ -881,7 +866,7 @@ void SegmentManager::NewCurseg(CursegType type, bool new_sec) {
   GetNewSegment(&segno, new_sec);
   curseg->next_segno = segno;
   ResetCurseg(type, 1);
-  curseg->alloc_type = static_cast<uint8_t>(AllocMode::kLFS);
+  curseg->alloc_type = AllocType::kLFS;
 }
 
 void SegmentManager::NextFreeBlkoff(CursegInfo *seg, block_t start) {
@@ -899,7 +884,7 @@ void SegmentManager::NextFreeBlkoff(CursegInfo *seg, block_t start) {
 // by increasing the current block offset. However, if a segment is written by
 // SSR manner, next block offset obtained by calling __next_free_blkoff
 void SegmentManager::RefreshNextBlkoff(CursegInfo *seg) {
-  if (seg->alloc_type == static_cast<uint8_t>(AllocMode::kSSR)) {
+  if (seg->alloc_type == AllocType::kSSR) {
     NextFreeBlkoff(seg, seg->next_blkoff + 1);
   } else {
     ++seg->next_blkoff;
@@ -922,7 +907,7 @@ void SegmentManager::ChangeCurseg(CursegType type, bool reuse) {
   }
 
   ResetCurseg(type, 1);
-  curseg->alloc_type = static_cast<uint8_t>(AllocMode::kSSR);
+  curseg->alloc_type = AllocType::kSSR;
   NextFreeBlkoff(curseg, 0);
 
   if (reuse) {
@@ -1098,10 +1083,10 @@ zx_status_t SegmentManager::ReadCompactedSummaries() {
     }
     seg_i->next_segno = segno;
     ResetCurseg(static_cast<CursegType>(i), 0);
-    seg_i->alloc_type = ckpt.alloc_type[i];
+    seg_i->alloc_type = static_cast<AllocType>(ckpt.alloc_type[i]);
     seg_i->next_blkoff = blk_off;
 
-    if (seg_i->alloc_type == static_cast<uint8_t>(AllocMode::kSSR))
+    if (seg_i->alloc_type == AllocType::kSSR)
       blk_off = static_cast<uint16_t>(superblock_info_.GetBlocksPerSeg());
 
     for (int j = 0; j < blk_off; ++j) {
@@ -1190,7 +1175,7 @@ zx_status_t SegmentManager::ReadNormalSummaries(int type) {
 
     curseg->next_segno = segno;
     ResetCurseg(static_cast<CursegType>(type), 0);
-    curseg->alloc_type = ckpt.alloc_type[type];
+    curseg->alloc_type = static_cast<AllocType>(ckpt.alloc_type[type]);
     curseg->next_blkoff = blk_off;
   }
   return ZX_OK;
@@ -1250,14 +1235,14 @@ void SegmentManager::WriteCompactedSummaries(block_t blkaddr) {
   page.SetDirty();
 
   // Step 3: write summary entries
-  for (int i = static_cast<int>(CursegType::kCursegHotData);
-       i <= static_cast<int>(CursegType::kCursegColdData); ++i) {
+  for (CursegType type :
+       {CursegType::kCursegHotData, CursegType::kCursegWarmData, CursegType::kCursegColdData}) {
     size_t blkoff;
-    seg_i = CURSEG_I(static_cast<CursegType>(i));
-    if (superblock_info_.GetCheckpoint().alloc_type[i] == static_cast<uint8_t>(AllocMode::kSSR)) {
+    seg_i = CURSEG_I(type);
+    if (seg_i->alloc_type == AllocType::kSSR) {
       blkoff = superblock_info_.GetBlocksPerSeg();
     } else {
-      blkoff = CursegBlkoff(i);
+      blkoff = seg_i->next_blkoff;
     }
 
     for (size_t j = 0; j < blkoff; ++j) {

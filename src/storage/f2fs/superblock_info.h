@@ -223,17 +223,20 @@ class SuperblockInfo {
     return false;
   }
 
-  void IncSegmentCount(uint8_t alloc_type) {
-    ZX_ASSERT(alloc_type < std::size(segment_count_));
-    ++segment_count_[alloc_type];
+  void IncSegmentCount(AllocType alloc_type) {
+    const auto index = static_cast<size_t>(alloc_type);
+    ZX_ASSERT(index < std::size(segment_count_));
+    ++segment_count_[index];
   }
-  uint64_t GetSegmentCount(uint8_t alloc_type) const {
-    ZX_ASSERT(alloc_type < std::size(segment_count_));
-    return segment_count_[alloc_type];
+  uint64_t GetSegmentCount(AllocType alloc_type) const {
+    const auto index = static_cast<size_t>(alloc_type);
+    ZX_ASSERT(index < std::size(segment_count_));
+    return segment_count_[index];
   }
-  void IncBlockCount(uint8_t alloc_type) {
-    ZX_ASSERT(alloc_type < std::size(block_count_));
-    ++block_count_[alloc_type];
+  void IncBlockCount(AllocType alloc_type) {
+    const auto index = static_cast<size_t>(alloc_type);
+    ZX_ASSERT(index < std::size(block_count_));
+    ++block_count_[index];
   }
 
   void IncreasePageCount(CountType count_type) {
@@ -337,14 +340,14 @@ class SuperblockInfo {
     std::lock_guard lock(mutex_);
     valid_node_count_ = LeToCpu(checkpoint_block_->valid_node_count);
     valid_inode_count_ = LeToCpu(checkpoint_block_->valid_inode_count);
-    total_block_count_ = static_cast<block_t>(checkpoint_block_->user_block_count);
+    total_block_count_ = static_cast<block_t>(LeToCpu(checkpoint_block_->user_block_count));
     last_valid_block_count_ = valid_block_count_ =
         static_cast<block_t>(LeToCpu(checkpoint_block_->valid_block_count));
     alloc_block_count_ = 0;
     checkpoint_ver_ = LeToCpu(checkpoint_block_->checkpoint_ver);
   }
 
-  zx_status_t CheckCheckpoint(const Checkpoint &ckpt) const {
+  [[nodiscard]] zx_status_t CheckCheckpoint(const Checkpoint &ckpt) const {
     size_t total = LeToCpu(sb_->segment_count);
     auto checked_fsmeta = safemath::CheckAdd<size_t>(
         LeToCpu(sb_->segment_count_ckpt), LeToCpu(sb_->segment_count_sit),
@@ -369,7 +372,7 @@ class SuperblockInfo {
     }
 
     for (size_t i = 0; i < kNrCursegType; ++i) {
-      if (ckpt.alloc_type[i] > static_cast<uint8_t>(AllocMode::kSSR)) {
+      if (ckpt.alloc_type[i] > static_cast<uint8_t>(AllocType::kSSR)) {
         return ZX_ERR_BAD_STATE;
       }
     }

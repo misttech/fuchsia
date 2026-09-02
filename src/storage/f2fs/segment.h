@@ -33,7 +33,7 @@ enum class GcType { kBgGc = 0, kFgGc };
 
 // for a function parameter to select a victim segment
 struct VictimSelPolicy {
-  AllocMode alloc_mode = AllocMode::kLFS;  // LFS or SSR
+  AllocType alloc_type = AllocType::kLFS;  // LFS or SSR
   GcMode gc_mode = GcMode::kGcCb;          // cost effective or greedy
   RawBitmap *dirty_segmap = nullptr;       // dirty segment bitmap
   size_t max_search = kMaxSearchLimit;     // maximum # of segments to search
@@ -104,12 +104,12 @@ struct DirtySeglistInfo {
 // for active log information
 struct CursegInfo {
   BlockBuffer<SummaryBlock> sum_blk;
-  uint32_t segno = 0;              // current segment number
-  uint32_t zone = 0;               // current zone number
-  uint32_t next_segno = 0;         // preallocated segment
-  std::shared_mutex curseg_mutex;  // lock for consistency
-  uint16_t next_blkoff = 0;        // next block offset to write
-  uint8_t alloc_type = 0;          // current allocation type
+  uint32_t segno = 0;                      // current segment number
+  uint32_t zone = 0;                       // current zone number
+  uint32_t next_segno = 0;                 // preallocated segment
+  std::shared_mutex curseg_mutex;          // lock for consistency
+  uint16_t next_blkoff = 0;                // next block offset to write
+  AllocType alloc_type = AllocType::kLFS;  // current allocation type
 };
 
 using SummaryCallback = fit::function<zx_status_t(SummaryBlock &sum)>;
@@ -161,9 +161,6 @@ class SegmentManager {
   // adding |needed_blocks| of dirty data pages.
   zx::result<> HasEnoughSsrBlocks(size_t needed_blocks = 0) __TA_EXCLUDES(sentry_lock_);
   uint32_t Utilization();
-  uint32_t CursegSegno(int type);
-  uint8_t CursegAllocType(int type);
-  uint16_t CursegBlkoff(int type);
   bool IsValidSegmentNumber(uint32_t segment_number) const {
     return segment_number < main_segments_;
   }
@@ -254,6 +251,9 @@ class SegmentManager {
     ZX_ASSERT(IsValidSegmentType(type));
     return &curseg_array_[static_cast<int>(type)];
   }
+  uint32_t CursegSegno(CursegType type) const { return CURSEG_I(type)->segno; }
+  AllocType CursegAllocType(CursegType type) const { return CURSEG_I(type)->alloc_type; }
+  uint16_t CursegBlkoff(CursegType type) const { return CURSEG_I(type)->next_blkoff; }
   size_t GetAvailableBlockCountOnCurseg(CursegType type) const __TA_REQUIRES_SHARED(sentry_lock_) {
     return sit_info_->sentries[CURSEG_I(type)->segno].ckpt_invalid_blocks;
   }
@@ -320,7 +320,7 @@ class SegmentManager {
   // among the same type of dirty segments as that of the current segment.
   // If it succeeds in finding an eligible victim, it returns the segment number of the selected
   // victim. If it fails, it returns ZX_ERR_UNAVAILABLE.
-  zx::result<uint32_t> GetVictimByDefault(GcType gc_type, CursegType type, AllocMode alloc_mode)
+  zx::result<uint32_t> GetVictimByDefault(GcType gc_type, CursegType type, AllocType alloc_type)
       __TA_EXCLUDES(seglist_lock_) __TA_REQUIRES_SHARED(sentry_lock_);
 
   zx::result<uint32_t> GetGcVictim(GcType gc_type, CursegType type) __TA_EXCLUDES(sentry_lock_);
@@ -330,7 +330,7 @@ class SegmentManager {
   size_t GetMaxCost(const VictimSelPolicy &policy) const;
 
   // This method determines GcMode for GetVictimByDefault
-  VictimSelPolicy GetVictimSelPolicy(GcType gc_type, CursegType type, AllocMode alloc_mode) const
+  VictimSelPolicy GetVictimSelPolicy(GcType gc_type, CursegType type, AllocType alloc_type) const
       __TA_REQUIRES(seglist_lock_);
 
   uint32_t GetBackgroundVictim() const __TA_REQUIRES_SHARED(seglist_lock_);

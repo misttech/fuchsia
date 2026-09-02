@@ -359,21 +359,23 @@ zx_status_t F2fs::DoCheckpoint(bool is_umount) {
   ckpt_block->elapsed_time = CpuToLe(GetSegmentManager().GetMtime());
   ckpt_block->valid_block_count = CpuToLe(superblock_info.GetValidBlockCount());
   ckpt_block->free_segment_count = CpuToLe(GetSegmentManager().FreeSegments());
-  for (int i = 0; i < 3; ++i) {
-    ckpt_block->cur_node_segno[i] =
-        CpuToLe(GetSegmentManager().CursegSegno(i + static_cast<int>(CursegType::kCursegHotNode)));
-    ckpt_block->cur_node_blkoff[i] =
-        CpuToLe(GetSegmentManager().CursegBlkoff(i + static_cast<int>(CursegType::kCursegHotNode)));
-    ckpt_block->alloc_type[i + static_cast<int>(CursegType::kCursegHotNode)] =
-        GetSegmentManager().CursegAllocType(i + static_cast<int>(CursegType::kCursegHotNode));
+  constexpr CursegType kNodeLogs[] = {CursegType::kCursegHotNode, CursegType::kCursegWarmNode,
+                                      CursegType::kCursegColdNode};
+  for (size_t i = 0; i < std::size(kNodeLogs); ++i) {
+    CursegType type = kNodeLogs[i];
+    ckpt_block->cur_node_segno[i] = CpuToLe(GetSegmentManager().CursegSegno(type));
+    ckpt_block->cur_node_blkoff[i] = CpuToLe(GetSegmentManager().CursegBlkoff(type));
+    ckpt_block->alloc_type[static_cast<size_t>(type)] =
+        static_cast<uint8_t>(GetSegmentManager().CursegAllocType(type));
   }
-  for (int i = 0; i < 3; ++i) {
-    ckpt_block->cur_data_segno[i] =
-        CpuToLe(GetSegmentManager().CursegSegno(i + static_cast<int>(CursegType::kCursegHotData)));
-    ckpt_block->cur_data_blkoff[i] =
-        CpuToLe(GetSegmentManager().CursegBlkoff(i + static_cast<int>(CursegType::kCursegHotData)));
-    ckpt_block->alloc_type[i + static_cast<int>(CursegType::kCursegHotData)] =
-        GetSegmentManager().CursegAllocType(i + static_cast<int>(CursegType::kCursegHotData));
+  constexpr CursegType kDataLogs[] = {CursegType::kCursegHotData, CursegType::kCursegWarmData,
+                                      CursegType::kCursegColdData};
+  for (size_t i = 0; i < std::size(kDataLogs); ++i) {
+    CursegType type = kDataLogs[i];
+    ckpt_block->cur_data_segno[i] = CpuToLe(GetSegmentManager().CursegSegno(type));
+    ckpt_block->cur_data_blkoff[i] = CpuToLe(GetSegmentManager().CursegBlkoff(type));
+    ckpt_block->alloc_type[static_cast<size_t>(type)] =
+        static_cast<uint8_t>(GetSegmentManager().CursegAllocType(type));
   }
 
   ckpt_block->valid_node_count = CpuToLe(superblock_info.GetValidNodeCount());

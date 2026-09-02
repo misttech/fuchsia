@@ -14,7 +14,7 @@
 
 namespace f2fs {
 size_t SegmentManager::GetGcCost(uint32_t segno, const VictimSelPolicy &policy) const {
-  if (policy.alloc_mode == AllocMode::kSSR) {
+  if (policy.alloc_type == AllocType::kSSR) {
     return sit_info_->sentries[segno].ckpt_valid_blocks;
   }
 
@@ -53,10 +53,10 @@ size_t SegmentManager::GetCostBenefitRatio(uint32_t segno) const {
 }
 
 VictimSelPolicy SegmentManager::GetVictimSelPolicy(GcType gc_type, CursegType type,
-                                                   AllocMode alloc_mode) const {
+                                                   AllocType alloc_type) const {
   VictimSelPolicy policy;
-  policy.alloc_mode = alloc_mode;
-  if (policy.alloc_mode == AllocMode::kSSR) {
+  policy.alloc_type = alloc_type;
+  if (policy.alloc_type == AllocType::kSSR) {
     policy.gc_mode = GcMode::kGcGreedy;
     policy.dirty_segmap = &dirty_info_->dirty_segmap[static_cast<int>(type)];
     policy.max_search = dirty_info_->nr_dirty[static_cast<int>(type)];
@@ -77,7 +77,7 @@ VictimSelPolicy SegmentManager::GetVictimSelPolicy(GcType gc_type, CursegType ty
 }
 
 size_t SegmentManager::GetMaxCost(const VictimSelPolicy &policy) const {
-  if (policy.alloc_mode == AllocMode::kSSR)
+  if (policy.alloc_type == AllocType::kSSR)
     return 1 << superblock_info_.GetLogBlocksPerSeg();
   if (policy.gc_mode == GcMode::kGcGreedy)
     return 2 * (1 << superblock_info_.GetLogBlocksPerSeg()) * policy.ofs_unit;
@@ -103,9 +103,9 @@ uint32_t SegmentManager::GetBackgroundVictim() const {
 }
 
 zx::result<uint32_t> SegmentManager::GetVictimByDefault(GcType gc_type, CursegType type,
-                                                        AllocMode alloc_mode) {
+                                                        AllocType alloc_type) {
   std::lock_guard lock(seglist_lock_);
-  VictimSelPolicy policy = GetVictimSelPolicy(gc_type, type, alloc_mode);
+  VictimSelPolicy policy = GetVictimSelPolicy(gc_type, type, alloc_type);
 
   policy.min_segno = kNullSegNo;
   policy.min_cost = GetMaxCost(policy);
@@ -116,7 +116,7 @@ zx::result<uint32_t> SegmentManager::GetVictimByDefault(GcType gc_type, CursegTy
     return zx::error(ZX_ERR_UNAVAILABLE);
   }
 
-  if (policy.alloc_mode == AllocMode::kLFS && gc_type == GcType::kFgGc) {
+  if (policy.alloc_type == AllocType::kLFS && gc_type == GcType::kFgGc) {
     uint32_t secno = GetBackgroundVictim();
     if (secno != kNullSegNo) {
       dirty_info_->victim_secmap.ClearOne(secno);
@@ -179,7 +179,7 @@ zx::result<uint32_t> SegmentManager::GetVictimByDefault(GcType gc_type, CursegTy
   }
 
   if (policy.min_segno != kNullSegNo) {
-    if (policy.alloc_mode == AllocMode::kLFS) {
+    if (policy.alloc_type == AllocType::kLFS) {
       uint32_t secno = GetSecNo(policy.min_segno);
       if (gc_type == GcType::kFgGc) {
         cur_victim_sec_ = secno;
@@ -196,7 +196,7 @@ zx::result<uint32_t> SegmentManager::GetVictimByDefault(GcType gc_type, CursegTy
 
 zx::result<uint32_t> SegmentManager::GetGcVictim(GcType gc_type, CursegType type) {
   fs::SharedLock sentry_lock(sentry_lock_);
-  return GetVictimByDefault(gc_type, type, AllocMode::kLFS);
+  return GetVictimByDefault(gc_type, type, AllocType::kLFS);
 }
 
 bool SegmentManager::IsValidBlock(uint32_t segno, uint64_t offset) {
