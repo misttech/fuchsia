@@ -90,12 +90,14 @@ class LogSource:
 
     def read_log(self) -> Iterator[LogIterElement]:
         stream = self._stream
+        close_stream = False
 
         try:
             if stream is None and self._exec_env is not None:
                 log_path = self._exec_env.get_most_recent_log()
                 yield LogIterElement(log_path=log_path)
                 stream = gzip.open(log_path, "rt")
+                close_stream = True
 
             assert stream is not None
 
@@ -122,6 +124,9 @@ class LogSource:
             yield LogIterElement(
                 warning=f"File may be corrupt, skipping the rest and proceeding. ({e})",
             )
+        finally:
+            if close_stream and stream is not None:
+                stream.close()
 
 
 def pretty_print(
@@ -137,8 +142,10 @@ def pretty_print(
     time_base: float | None = None
 
     def format_time(e: event.Event) -> str:
-        assert time_base
-        ts = e.timestamp - time_base
+        nonlocal time_base
+        if time_base is None:
+            time_base = e.timestamp
+        ts = max(0.0, e.timestamp - time_base)
         seconds = math.floor(ts)
         millis = int(ts * 1e3 % 1e3)
         return f"{seconds:04}.{millis:03}"
@@ -302,11 +309,8 @@ def compute_stats(log_source: LogSource) -> ExecutionStats:
         if count == 0:
             continue
         total_duration = sum(durations)
-        mean = 0.0
-        std = 0.0
-        if count > 1:
-            mean = statistics.mean(durations)
-            std = statistics.stdev(durations)
+        mean = statistics.mean(durations)
+        std = statistics.stdev(durations) if count > 1 else 0.0
 
         summary_dict[category] = CategoryStats(
             sum=total_duration, count=count, mean=mean, std=std

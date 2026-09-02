@@ -59,6 +59,24 @@ class TestLogOutput(unittest.IsolatedAsyncioTestCase):
             log.pretty_print(log.LogSource.from_stream(output))
         self.assertEqual(stdout.getvalue(), "0 tests were run\n")
 
+    async def test_pretty_print_without_root_event(self) -> None:
+        """Test pretty_print when root event 0 is missing."""
+        output = io.StringIO()
+        recorder = event.EventRecorder()
+        log_task = asyncio.create_task(log.writer(recorder, output))
+        suite_id = recorder.emit_test_suite_started("my_suite", False)
+        recorder.emit_test_suite_ended(
+            suite_id, event.TestSuiteStatus.PASSED, None
+        )
+        recorder.emit_end()
+        await log_task
+
+        output.seek(0)
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            log.pretty_print(log.LogSource.from_stream(output))
+        self.assertIn("1 tests were run", stdout.getvalue())
+
 
 class TestPreviousStats(unittest.IsolatedAsyncioTestCase):
     async def _write_test_logs(self) -> io.StringIO:
@@ -142,6 +160,7 @@ class TestPreviousStats(unittest.IsolatedAsyncioTestCase):
         summary = stats.summary
         self.assertIn(event.EventStatCategory.BUILDING, summary)
         self.assertEqual(summary[event.EventStatCategory.BUILDING].count, 1)
+        self.assertEqual(summary[event.EventStatCategory.BUILDING].mean, 4.0)
         self.assertIn(event.EventStatCategory.TESTING, summary)
         self.assertEqual(summary[event.EventStatCategory.TESTING].count, 2)
         self.assertIn(event.EventStatCategory.SEARCHING, summary)
