@@ -340,35 +340,35 @@ fn create_time_series_for_gauge<S: InspectSender>(
 ) -> Option<InspectedTimeMatrix<i64>> {
     match statistic {
         fidl_stats::GaugeStatistic::Min => Some(time_matrix_client.inspect_time_matrix(
-            format!("{gauge_name}.min"),
+            format!("{gauge_name}__min"),
             TimeMatrix::<Min<i64>, ConstantSample>::new(
                 SamplingProfile::balanced(),
                 ConstantSample::default(),
             ),
         )),
         fidl_stats::GaugeStatistic::Max => Some(time_matrix_client.inspect_time_matrix(
-            format!("{gauge_name}.max"),
+            format!("{gauge_name}__max"),
             TimeMatrix::<Max<i64>, ConstantSample>::new(
                 SamplingProfile::balanced(),
                 ConstantSample::default(),
             ),
         )),
         fidl_stats::GaugeStatistic::Sum => Some(time_matrix_client.inspect_time_matrix(
-            format!("{gauge_name}.sum"),
+            format!("{gauge_name}__sum"),
             TimeMatrix::<Sum<i64>, ConstantSample>::new(
                 SamplingProfile::balanced(),
                 ConstantSample::default(),
             ),
         )),
         fidl_stats::GaugeStatistic::Last => Some(time_matrix_client.inspect_time_matrix(
-            format!("{gauge_name}.last"),
+            format!("{gauge_name}__last"),
             TimeMatrix::<Last<i64>, ConstantSample>::new(
                 SamplingProfile::balanced(),
                 ConstantSample::default(),
             ),
         )),
         fidl_stats::GaugeStatistic::Mean => Some(time_matrix_client.inspect_time_matrix(
-            format!("{gauge_name}.mean"),
+            format!("{gauge_name}__mean"),
             TimeMatrix::<ArithmeticMean<i64>, ConstantSample>::new(
                 SamplingProfile::balanced(),
                 ConstantSample::default(),
@@ -1027,23 +1027,23 @@ mod tests {
 
         let mut driver_gauges_matrix_calls = driver_gauges_mock_matrix_client.drain_calls();
         assert_eq!(
-            &driver_gauges_matrix_calls.drain::<i64>("foo_gauge.mean")[..],
+            &driver_gauges_matrix_calls.drain::<i64>("foo_gauge__mean")[..],
             &[TimeMatrixCall::Fold(Timed::now(50))]
         );
         assert_eq!(
-            &driver_gauges_matrix_calls.drain::<i64>("foo_gauge.last")[..],
+            &driver_gauges_matrix_calls.drain::<i64>("foo_gauge__last")[..],
             &[TimeMatrixCall::Fold(Timed::now(50))]
         );
         assert_eq!(
-            &driver_gauges_matrix_calls.drain::<i64>("bar_gauge.min")[..],
+            &driver_gauges_matrix_calls.drain::<i64>("bar_gauge__min")[..],
             &[TimeMatrixCall::Fold(Timed::now(100))]
         );
         assert_eq!(
-            &driver_gauges_matrix_calls.drain::<i64>("bar_gauge.sum")[..],
+            &driver_gauges_matrix_calls.drain::<i64>("bar_gauge__sum")[..],
             &[TimeMatrixCall::Fold(Timed::now(100))]
         );
         assert_eq!(
-            &driver_gauges_matrix_calls.drain::<i64>("baz_gauge.max")[..],
+            &driver_gauges_matrix_calls.drain::<i64>("baz_gauge__max")[..],
             &[TimeMatrixCall::Fold(Timed::now(150))]
         );
     }
