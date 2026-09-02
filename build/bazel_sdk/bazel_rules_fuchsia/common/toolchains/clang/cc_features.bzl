@@ -219,10 +219,8 @@ _flag_configs = struct(
             "-Wno-unused-parameter",
             "-Wnonportable-system-include-path",
 
-            # TODO(https://fxbug.dev/330769701): Disable
-            # "-Wcast-function-type-mismatch"  which enforces an exact type match
-            # between a function pointer and the target function.
-            "-Wno-cast-function-type-mismatch",
+            # This is still needed for -Wmaybe-uninitialized which is added as a pragma in source code.
+            # Clang hasn't implemented this yet.
             "-Wno-unknown-warning-option",
             "-Wno-missing-field-initializers",
 

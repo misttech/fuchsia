@@ -742,10 +742,8 @@ config("default_warnings") {
   # These -W... switches only exist in Clang, so are disabled only there.
   if (!is_gcc) {
     cflags += [
-      # TODO(https://fxbug.dev/330769701): Disable
-      # "-Wcast-function-type-mismatch"  which enforces an exact type match
-      # between a function pointer and the target function.
-      "-Wno-cast-function-type-mismatch",
+      # This is still needed for -Wmaybe-uninitialized which is added as a
+      # pragma in source code. Clang hasn't implemented this yet.
       "-Wno-unknown-warning-option",
     ]
   }
