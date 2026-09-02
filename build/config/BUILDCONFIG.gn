@@ -305,6 +305,7 @@ declare_args() {
       tags = [
         "coverage",
         "coverage_clang",
+        "coverage_rust",
         "debugdata",
         "instrumented",
         "llvm-profdata",
