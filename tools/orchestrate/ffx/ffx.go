@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	utils "go.fuchsia.dev/fuchsia/tools/orchestrate/utils"
@@ -53,10 +54,11 @@ var XDG_ENV_VARS = [...]string{
 // Ffx defines settings for ffx commands.
 type Ffx struct {
 	// Dir is the working directory for ffx, and where it writes files.
-	Dir           string
-	bin           string
-	sslCertPath   string
-	defaultTarget *string
+	Dir             string
+	bin             string
+	sslCertPath     string
+	defaultTarget   *string
+	configOverrides map[string]string
 }
 
 // Option for creating Ffx.
@@ -109,14 +111,18 @@ type Option struct {
 	// initializing an empty isolate directory. Otherwise, the existing config in
 	// IsolateDir is used.
 	EnableCSO bool
+
+	// FfxConfig is a map of configuration key-values to pass via "--config key=value".
+	FfxConfig map[string]string
 }
 
 // New sets up a config and filepaths for local or Forge use.
 func New(ctx context.Context, opt *Option) (*Ffx, error) {
 	f := &Ffx{
-		bin:         opt.ExePath,
-		sslCertPath: opt.SSLCertPath,
-		Dir:         opt.IsolateDir,
+		bin:             opt.ExePath,
+		sslCertPath:     opt.SSLCertPath,
+		Dir:             opt.IsolateDir,
+		configOverrides: opt.FfxConfig,
 	}
 	var err error
 	if f.Dir == "" {
@@ -164,7 +170,19 @@ func (f *Ffx) setupDefaultConfig(ctx context.Context, configPath string, opt Opt
 
 // CmdContext returns a generic exec.Cmd configured to execute ffx with context.
 func (f *Ffx) CmdContext(ctx context.Context, args ...string) (*exec.Cmd, error) {
-	cmd := exec.CommandContext(ctx, f.bin, args...)
+	var cmdArgs []string
+	if len(f.configOverrides) > 0 {
+		keys := make([]string, 0, len(f.configOverrides))
+		for k := range f.configOverrides {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			cmdArgs = append(cmdArgs, "--config", fmt.Sprintf("%s=%s", k, f.configOverrides[k]))
+		}
+	}
+	cmdArgs = append(cmdArgs, args...)
+	cmd := exec.CommandContext(ctx, f.bin, cmdArgs...)
 	env, err := f.ApplyEnv(cmd.Environ())
 	if err != nil {
 		return nil, fmt.Errorf("Applying ffx env: %v", err)
@@ -375,8 +393,8 @@ func (f *Ffx) ProductDownload(ctx context.Context, transferURL, outDir, authPath
 }
 
 // EmuStart starts the emulator.
-func (f *Ffx) EmuStart(ctx context.Context, productDir, name string) error {
-	_, err := f.RunCmdSync(ctx,
+func (f *Ffx) EmuStart(ctx context.Context, productDir, name, engine, device string) error {
+	args := []string{
 		"emu",
 		"start",
 		productDir,
@@ -384,7 +402,14 @@ func (f *Ffx) EmuStart(ctx context.Context, productDir, name string) error {
 		"--headless",
 		"--startup-timeout", "300",
 		"--name", name,
-	)
+	}
+	if engine != "" {
+		args = append(args, "--engine", engine)
+	}
+	if device != "" {
+		args = append(args, "--device", device)
+	}
+	_, err := f.RunCmdSync(ctx, args...)
 	return err
 }
 

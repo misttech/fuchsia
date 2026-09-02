@@ -47,13 +47,13 @@ func TestFFXStrictClient_Isolation(t *testing.T) {
 	fakeFfx2 := createFakeFfx(t, tmpDir2, "#!/bin/bash\nexit 0")
 
 	ctx := context.Background()
-	client1, err := NewFFXStrictClient(ctx, fakeFfx1, tmpDir1, "repo-1")
+	client1, err := NewFFXStrictClient(ctx, fakeFfx1, tmpDir1, "repo-1", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient 1 failed: %v", err)
 	}
 	defer client1.Close()
 
-	client2, err := NewFFXStrictClient(ctx, fakeFfx2, tmpDir2, "repo-2")
+	client2, err := NewFFXStrictClient(ctx, fakeFfx2, tmpDir2, "repo-2", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient 2 failed: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestFFXStrictClient_ApplyEnv(t *testing.T) {
 	fakeFfx := createFakeFfx(t, tmpDir, "#!/bin/bash\nexit 0")
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestFFXStrictClient_SetDefaultTarget(t *testing.T) {
 	fakeFfx := createFakeFfx(t, tmpDir, "#!/bin/bash\nexit 0")
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestFFXStrictClient_RepositoryServer_Restart(t *testing.T) {
 	fakeFfx := createSmartFakeFfx(t, tmpDir)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestFFXStrictClient_IsPackageServerRunning_CacheError(t *testing.T) {
 	fakeFfx := createSmartFakeFfx(t, tmpDir)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "fail-later-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "fail-later-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestFFXStrictClient_RepositoryServer_Restart_ExplicitPort(t *testing.T) {
 	fakeFfx := createSmartFakeFfx(t, tmpDir)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestFFXStrictClient_RepositoryServer_Timeout(t *testing.T) {
 	fakeFfx := createSmartFakeFfx(t, tmpDir)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "timeout-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "timeout-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -401,7 +401,7 @@ func TestFFXStrictClient_RepositoryServer_StaleServer(t *testing.T) {
 	fakeFfx := createSmartFakeFfx(t, tmpDir)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "stale-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "stale-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestFFXStrictClient_RepositoryServer_BadJson(t *testing.T) {
 	fakeFfx := createSmartFakeFfx(t, tmpDir)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "bad-json-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "bad-json-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -575,7 +575,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -615,13 +615,13 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
 	defer client.Close()
 
-	err = client.EmuStart(ctx, "path/to/emu/product", "my-emu-name")
+	err = client.EmuStart(ctx, "path/to/emu/product", "my-emu-name", "", "")
 	if err != nil {
 		t.Fatalf("EmuStart failed: %v", err)
 	}
@@ -646,6 +646,74 @@ exit 0
 	}
 }
 
+func TestFFXStrictClient_EmuStart_WithEngine(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	err = client.EmuStart(ctx, "path/to/emu/product", "my-emu-name", "qemu", "")
+	if err != nil {
+		t.Fatalf("EmuStart failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "--engine qemu") {
+		t.Errorf("Expected '--engine qemu' in args, got: %s", args)
+	}
+}
+
+func TestFFXStrictClient_EmuStart_WithDevice(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	err = client.EmuStart(ctx, "path/to/emu/product", "my-emu-name", "", "x64-emu-large")
+	if err != nil {
+		t.Fatalf("EmuStart failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "--device x64-emu-large") {
+		t.Errorf("Expected '--device x64-emu-large' in args, got: %s", args)
+	}
+}
+
 func TestFFXStrictClient_EmuStop(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
@@ -658,7 +726,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -692,7 +760,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -729,7 +797,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -766,7 +834,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -800,7 +868,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -837,7 +905,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -877,7 +945,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -923,7 +991,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -966,7 +1034,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -1001,7 +1069,7 @@ exit 0
 	fakeFfx := createFakeFfx(t, tmpDir, script)
 
 	ctx := context.Background()
-	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
 	if err != nil {
 		t.Fatalf("NewFFXStrictClient failed: %v", err)
 	}
@@ -1041,5 +1109,41 @@ exit 0
 	}
 	if !strings.Contains(args, "--port 8083") {
 		t.Errorf("Expected '--port 8083' in args, got: %s", args)
+	}
+}
+
+func TestFFXStrictClient_FfxConfigOverrides(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	ffxConfigs := map[string]string{
+		"sdk.overrides.qemu_internal": "/path/to/custom_qemu",
+	}
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", ffxConfigs)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	if err := client.TargetAdd(ctx, "192.168.1.1:8022"); err != nil {
+		t.Fatalf("TargetAdd failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "-c sdk.overrides.qemu_internal=/path/to/custom_qemu") {
+		t.Errorf("Expected '-c sdk.overrides.qemu_internal=/path/to/custom_qemu' in args, got: %s", args)
 	}
 }

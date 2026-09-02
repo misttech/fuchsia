@@ -45,7 +45,7 @@ type FFXStrictClient struct {
 }
 
 // NewFFXStrictClient creates a new FFXStrictClient.
-func NewFFXStrictClient(ctx context.Context, ffxPath, outputsDir, repoName string) (*FFXStrictClient, error) {
+func NewFFXStrictClient(ctx context.Context, ffxPath, outputsDir, repoName string, ffxConfigs map[string]string) (*FFXStrictClient, error) {
 	if ffxPath == "" {
 		return nil, fmt.Errorf("ffxPath must not be empty")
 	}
@@ -99,6 +99,9 @@ func NewFFXStrictClient(ctx context.Context, ffxPath, outputsDir, repoName strin
 			"connectivity.direct":             true,
 		},
 	}
+	for k, v := range ffxConfigs {
+		extraConfigs.Settings[k] = v
+	}
 
 	ffxInst, err := ffxutil.NewFFXInstance(
 		ctx,
@@ -123,6 +126,7 @@ func NewFFXStrictClient(ctx context.Context, ffxPath, outputsDir, repoName strin
 		ExePath:    ffxPath,
 		LogDir:     outputsDir,
 		IsolateDir: ffxStrictDir,
+		FfxConfig:  ffxConfigs,
 	}
 	legacyFfx, err := ffx.New(ctx, ffxOpt)
 	if err != nil {
@@ -200,13 +204,19 @@ func (c *FFXStrictClient) Flash(ctx context.Context, fastbootSerial, productDir,
 	return nil
 }
 
-func (c *FFXStrictClient) EmuStart(ctx context.Context, productDir, name string) error {
+func (c *FFXStrictClient) EmuStart(ctx context.Context, productDir, name, engine, device string) error {
 	args := []string{
 		"emu", "start", productDir,
 		"--net", "user",
 		"--headless",
 		"--startup-timeout", "300",
 		"--name", name,
+	}
+	if engine != "" {
+		args = append(args, "--engine", engine)
+	}
+	if device != "" {
+		args = append(args, "--device", device)
 	}
 	if err := c.ffxInst.Run(ctx, args...); err != nil {
 		return fmt.Errorf("emu start failed: %w", err)

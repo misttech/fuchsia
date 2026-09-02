@@ -92,6 +92,23 @@ func TestReadRunInput(t *testing.T) {
 			},
 		},
 		{
+			name:     "Success With FfxConfig, Engine, and Device",
+			jsonData: "{\"emulator\": {\"ffx_path\":\"foo\",\"local_pb\":\"pb/dir\",\"ffx_config\":{\"sdk.overrides.qemu_internal\":\"/path/to/qemu\"},\"engine\":\"qemu\",\"device\":\"x64-emu-large\"}}",
+			wantResult: &RunInput{
+				Emulator: EmulatorRunInput{
+					TargetRunInput: TargetRunInput{
+						FfxPath: "foo",
+						LocalPB: "pb/dir",
+						FfxConfig: map[string]string{
+							"sdk.overrides.qemu_internal": "/path/to/qemu",
+						},
+					},
+					Engine: "qemu",
+					Device: "x64-emu-large",
+				},
+			},
+		},
+		{
 			name:     "PB Mutually Exclusive",
 			jsonData: "{\"hardware\": {\"ffx_path\":\"foo\",\"transfer_url\":\"gs://foo/bar.json\",\"local_pb\":\"foo/bar\"}}",
 			wantErr:  true,

@@ -106,3 +106,33 @@ func TestWriteConfigFile_ConnectivityDirect(t *testing.T) {
 		t.Errorf("Expected connectivity.direct to be true, got %v", config.Connectivity.Direct)
 	}
 }
+
+func TestFfxConfigOverridesInCmdContext(t *testing.T) {
+	ffx := &Ffx{
+		Dir:         "/foo/bar",
+		bin:         "foo/bar/ffx",
+		sslCertPath: "/this/or/something",
+		configOverrides: map[string]string{
+			"sdk.overrides.qemu_internal": "/path/to/qemu",
+			"emu.start.timeout":           "300",
+		},
+	}
+	cmd, err := ffx.CmdContext(context.Background(), "emu", "start", "product/bundle")
+	if err != nil {
+		t.Fatalf("CmdContext failed: %v", err)
+	}
+	expectedArgs := []string{
+		"foo/bar/ffx",
+		"--config", "emu.start.timeout=300",
+		"--config", "sdk.overrides.qemu_internal=/path/to/qemu",
+		"emu", "start", "product/bundle",
+	}
+	if len(cmd.Args) != len(expectedArgs) {
+		t.Fatalf("Got args %v, want %v", cmd.Args, expectedArgs)
+	}
+	for i, arg := range cmd.Args {
+		if arg != expectedArgs[i] {
+			t.Errorf("Arg %d: got %s, want %s", i, arg, expectedArgs[i])
+		}
+	}
+}

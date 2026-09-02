@@ -128,8 +128,8 @@ func (m *mockFFXClient) ProductDownload(ctx context.Context, transferURL, outDir
 	return call.retErr
 }
 
-func (m *mockFFXClient) EmuStart(ctx context.Context, productDir, name string) error {
-	call := m.recordCall("EmuStart", productDir, name)
+func (m *mockFFXClient) EmuStart(ctx context.Context, productDir, name, engine, device string) error {
+	call := m.recordCall("EmuStart", productDir, name, engine, device)
 	return call.retErr
 }
 
@@ -328,7 +328,7 @@ func runOrchestratorScenario(t *testing.T, isEmulator bool, runInput *RunInput, 
 
 	if isEmulator {
 		// Emulator-specific expectations
-		mockFfx.expectCall("EmuStart", productBundleDir, emuName)
+		mockFfx.expectCall("EmuStart", productBundleDir, emuName, runInput.Emulator.Engine, runInput.Emulator.Device)
 		mockFfx.expectCall("SetDefaultTarget", emuName) // Pass emuName as actual string, mock will check pointer value.
 	} else {
 		// Hardware-specific expectations
@@ -452,9 +452,11 @@ func TestOrchestrator_Run_Unit(t *testing.T) {
 
 func TestOrchestrator_Run_EmulatorUnit(t *testing.T) {
 	runInput := &RunInput{
-		Emulator: TargetRunInput{
-			TransferURL: "gs://bucket/product.json",
-			BuildIds:    []string{"abc1234"},
+		Emulator: EmulatorRunInput{
+			TargetRunInput: TargetRunInput{
+				TransferURL: "gs://bucket/product.json",
+				BuildIds:    []string{"abc1234"},
+			},
 		},
 	}
 	runOrchestratorScenario(t, true, runInput, nil)
@@ -462,9 +464,11 @@ func TestOrchestrator_Run_EmulatorUnit(t *testing.T) {
 
 func TestOrchestrator_Run_EmulatorLocalPB(t *testing.T) {
 	runInput := &RunInput{
-		Emulator: TargetRunInput{
-			LocalPB:  "relative/path/to/pb",
-			BuildIds: []string{"abc1234"},
+		Emulator: EmulatorRunInput{
+			TargetRunInput: TargetRunInput{
+				LocalPB:  "relative/path/to/pb",
+				BuildIds: []string{"abc1234"},
+			},
 		},
 	}
 	runOrchestratorScenario(t, true, runInput, nil)
@@ -548,8 +552,10 @@ func TestInstantiateFfx_PathResolution(t *testing.T) {
 			// Instantiate orchestrator without any pre-injected mock FFX client
 			orchestrator := NewTestOrchestrator(nil)
 			runInput := &RunInput{
-				Emulator: TargetRunInput{
-					FfxPath: tc.inputFfxPath,
+				Emulator: EmulatorRunInput{
+					TargetRunInput: TargetRunInput{
+						FfxPath: tc.inputFfxPath,
+					},
 				},
 			}
 

@@ -36,10 +36,12 @@ func TestRunInputJSONMerge(t *testing.T) {
 	}
 
 	want := &orchestrate.RunInput{
-		Emulator: orchestrate.TargetRunInput{
-			FfxPath:         "base_path",
-			PackageArchives: []string{"override.far"},                                    // Replaced
-			Cipd:            map[string]string{"path1": "version1", "path2": "version2"}, // Merged
+		Emulator: orchestrate.EmulatorRunInput{
+			TargetRunInput: orchestrate.TargetRunInput{
+				FfxPath:         "base_path",
+				PackageArchives: []string{"override.far"},                                    // Replaced
+				Cipd:            map[string]string{"path1": "version1", "path2": "version2"}, // Merged
+			},
 		},
 	}
 

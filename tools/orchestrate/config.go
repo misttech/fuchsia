@@ -65,6 +65,17 @@ type TargetRunInput struct {
 	Cipd map[string]string `json:"cipd"`
 	// Path to ffxluciauth for downloading internal product bundles.
 	FfxluciauthPath string `json:"ffxluciauth_path"`
+	// Key-value map of ffx configuration overrides passed via "--config key=value".
+	FfxConfig map[string]string `json:"ffx_config"`
+}
+
+// EmulatorRunInput is the struct that defines emulator-specific configurations.
+type EmulatorRunInput struct {
+	TargetRunInput
+	// Emulator engine to use (e.g. "qemu" or "crosvm").
+	Engine string `json:"engine"`
+	// Virtual device spec to use for emulator (passed as "--device <spec>").
+	Device string `json:"device"`
 }
 
 // HostRunInput is the struct that defines how to run a test without device provisioning.
@@ -80,7 +91,7 @@ type RunInput struct {
 	// Configs specific for hardware.
 	Hardware TargetRunInput `json:"hardware"`
 	// Configs specific for emulator.
-	Emulator TargetRunInput `json:"emulator"`
+	Emulator EmulatorRunInput `json:"emulator"`
 	// Configs specific for host.
 	Host HostRunInput `json:"host"`
 }
@@ -105,12 +116,12 @@ func (ri *RunInput) IsHost() bool {
 	return !ri.IsTarget()
 }
 
-// Returns RunInput.Hardware if RunInput.IsHardware, otherwise RunInput.Emulator.
+// Returns RunInput.Hardware if RunInput.IsHardware, otherwise RunInput.Emulator.TargetRunInput.
 func (ri *RunInput) Target() TargetRunInput {
 	if ri.IsHardware() {
 		return ri.Hardware
 	} else {
-		return ri.Emulator
+		return ri.Emulator.TargetRunInput
 	}
 }
 
