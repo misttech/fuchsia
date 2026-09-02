@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <initializer_list>
 #include <latch>
 #include <thread>
 
@@ -195,6 +196,44 @@ struct ptrace_syscall_info {
 using ptrace_syscall_info = __ptrace_syscall_info;
 #endif
 
+constexpr int kMaxSyscallSteps = 20;
+
+// Steps the tracee with PTRACE_SYSCALL until it stops at a syscall-enter stop matching
+// one of the syscall numbers in `target_syscalls`.
+//
+// Standard libraries and runtime instrumentation can execute hidden intermediate syscalls
+// (e.g. during raise(), signal masking, or thread setup), so this skips past uninteresting
+// syscall stops until the expected syscall entry is reached.
+//
+// Assumes the tracee is already stopped and PTRACE_O_TRACESYSGOOD is enabled.
+void StepToSyscallEntry(pid_t tracee_pid, std::initializer_list<uint64_t> target_syscalls) {
+  for (int i = 0; i < kMaxSyscallSteps; ++i) {
+    // Continue the tracee until the next syscall entry or exit.
+    ASSERT_THAT(ptrace(PTRACE_SYSCALL, tracee_pid, 0, 0), SyscallSucceeds());
+    int status;
+    ASSERT_EQ(tracee_pid, waitpid(tracee_pid, &status, 0));
+    ASSERT_TRUE(WIFSTOPPED(status))
+        << "Tracee exited unexpectedly (status: " << status << ") before reaching target syscall.";
+    ASSERT_EQ(WSTOPSIG(status), SIGTRAP | 0x80)
+        << "Expected syscall stop (SIGTRAP | 0x80), got signal: " << WSTOPSIG(status);
+
+    ptrace_syscall_info info;
+    ASSERT_GT(ptrace(static_cast<enum __ptrace_request>(PTRACE_GET_SYSCALL_INFO), tracee_pid,
+                     sizeof(info), &info),
+              0)
+        << strerror(errno);
+
+    if (info.op == PTRACE_SYSCALL_INFO_ENTRY) {
+      for (uint64_t target : target_syscalls) {
+        if (info.entry.nr == target) {
+          return;
+        }
+      }
+    }
+  }
+  FAIL() << "Did not reach any target syscall within " << kMaxSyscallSteps << " steps.";
+}
+
 TEST(PtraceTest, TraceSyscall) {
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();
@@ -225,50 +264,28 @@ TEST(PtraceTest, TraceSyscall) {
             kExpectedNoneSize);
   ASSERT_EQ(info.op, PTRACE_SYSCALL_INFO_NONE);
 
-  bool found = false;
-  // We want to make sure we hit the "nanosleep" syscall.  There can be various
-  // "hidden" syscalls in the tracee, depending on the implementation of "raise"
-  // and "nanosleep".  So, we just keep trying until we hit nanosleep or exit.
-  for (int i = 0; i < 10; i++) {
-    ASSERT_EQ(ptrace(PTRACE_SYSCALL, child_pid, 0, 0), 0);
-    ASSERT_EQ(child_pid, waitpid(child_pid, &status, 0));
-    if (!WIFSTOPPED(status) || WSTOPSIG(status) != (SIGTRAP | 0x80)) {
-      break;
-    }
+  ASSERT_NO_FATAL_FAILURE(StepToSyscallEntry(child_pid, {__NR_clock_nanosleep, __NR_nanosleep}));
 
-    // We are now at a syscall entry
-    ASSERT_EQ(ptrace(static_cast<enum __ptrace_request>(PTRACE_GET_SYSCALL_INFO), child_pid,
-                     sizeof(ptrace_syscall_info), &info),
-              kExpectedEntrySize);
+  // We are now at a syscall entry
+  ASSERT_EQ(ptrace(static_cast<enum __ptrace_request>(PTRACE_GET_SYSCALL_INFO), child_pid,
+                   sizeof(ptrace_syscall_info), &info),
+            kExpectedEntrySize);
+  ASSERT_EQ(info.op, PTRACE_SYSCALL_INFO_ENTRY);
 
-    ASSERT_EQ(info.op, PTRACE_SYSCALL_INFO_ENTRY);
-    switch (info.entry.nr) {
-      case __NR_clock_nanosleep:
-      case __NR_nanosleep:
-        found = true;
-        break;
-      case __NR_exit:
-      case __NR_exit_group:
-        goto exit_loop;
-    }
+  // Step to syscall exit
+  ASSERT_EQ(ptrace(PTRACE_SYSCALL, child_pid, 0, 0), 0);
+  ASSERT_EQ(child_pid, waitpid(child_pid, &status, 0));
+  ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == (SIGTRAP | 0x80))
+      << "WIFSTOPPED(status) " << WIFSTOPPED(status) << " WSTOPSIG(status) " << WSTOPSIG(status);
 
-    ASSERT_EQ(ptrace(PTRACE_SYSCALL, child_pid, 0, 0), 0);
-    ASSERT_EQ(child_pid, waitpid(child_pid, &status, 0));
-    ASSERT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == (SIGTRAP | 0x80))
-        << "WIFSTOPPED(status) " << WIFSTOPPED(status) << " WSTOPSIG(status) " << WSTOPSIG(status);
+  // We are now at a syscall exit
+  ASSERT_EQ(ptrace(static_cast<enum __ptrace_request>(PTRACE_GET_SYSCALL_INFO), child_pid,
+                   sizeof(ptrace_syscall_info), &info),
+            kExpectedExitSize);
+  ASSERT_EQ(info.op, PTRACE_SYSCALL_INFO_EXIT);
+  ASSERT_EQ(info.exit.rval, 0);
+  ASSERT_EQ(info.exit.is_error, 0);
 
-    // We are now at a syscall exit
-    ASSERT_EQ(ptrace(static_cast<enum __ptrace_request>(PTRACE_GET_SYSCALL_INFO), child_pid,
-                     sizeof(ptrace_syscall_info), &info),
-              kExpectedExitSize);
-
-    ASSERT_EQ(info.op, PTRACE_SYSCALL_INFO_EXIT);
-    ASSERT_EQ(info.exit.rval, 0);
-    ASSERT_EQ(info.exit.is_error, 0);
-  }
-exit_loop:
-
-  ASSERT_EQ(found, true) << "Never found nanosleep call";
   ASSERT_EQ(ptrace(PTRACE_CONT, child_pid, 0, 0), 0);
 }
 
@@ -2601,6 +2618,64 @@ TEST(PtraceTest, SigcontDoesNotWakePtraceEventStop) {
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 42);
 
   helper.ExpectExitValue(42);
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
+TEST(PtraceTest, SyscallExecutesSideEffectBeforeSigstop) {
+  test_helper::ForkHelper helper;
+  pid_t tracee_pid = helper.RunInForkedProcess([]() {
+    ASSERT_THAT(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr), SyscallSucceeds());
+    SAFE_SYSCALL(raise(SIGSTOP));
+
+    // Execute setpgid syscall with an observable side effect.
+    SAFE_SYSCALL(syscall(__NR_setpgid, 0, 0));
+    _exit(0);
+  });
+
+  // Wait for initial raise(SIGSTOP).
+  int status;
+  SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
+  ASSERT_TRUE(WIFSTOPPED(status));
+  ASSERT_EQ(WSTOPSIG(status), SIGSTOP);
+
+  // Enable PTRACE_O_TRACESYSGOOD to distinguish syscall stops.
+  ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, tracee_pid, nullptr, PTRACE_O_TRACESYSGOOD),
+              SyscallSucceeds());
+
+  // Step tracee to the syscall-enter stop for __NR_setpgid.
+  ASSERT_NO_FATAL_FAILURE(StepToSyscallEntry(tracee_pid, {__NR_setpgid}));
+
+  // At syscall-enter stop, the setpgid syscall has not executed yet.
+  // The tracee's PGID should still be the parent's PGID.
+  pid_t parent_pgid = SAFE_SYSCALL(getpgid(0));
+  EXPECT_EQ(SAFE_SYSCALL(getpgid(tracee_pid)), parent_pgid);
+  EXPECT_NE(parent_pgid, tracee_pid);
+
+  // Send SIGSTOP to the tracee while it is stopped in syscall-enter-stop.
+  SAFE_SYSCALL(kill(tracee_pid, SIGSTOP));
+
+  // Resume the tracee with PTRACE_CONT.
+  ASSERT_THAT(ptrace(PTRACE_CONT, tracee_pid, nullptr, 0), SyscallSucceeds());
+
+  // In Linux, the tracee executes the syscall body (changing its PGID to its own PID),
+  // then reaches syscall exit where the pending SIGSTOP is intercepted in a signal-delivery-stop.
+  SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
+  ASSERT_TRUE(WIFSTOPPED(status));
+  EXPECT_EQ(WSTOPSIG(status), SIGSTOP);
+
+  // Verify that the syscall's side effect DID happen: PGID is now tracee_pid.
+  EXPECT_EQ(SAFE_SYSCALL(getpgid(tracee_pid)), tracee_pid);
+
+  // Resume tracee from signal-delivery-stop, delivering the SIGSTOP so it enters group-stop.
+  ASSERT_THAT(ptrace(PTRACE_CONT, tracee_pid, nullptr, SIGSTOP), SyscallSucceeds());
+  SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
+  ASSERT_TRUE(WIFSTOPPED(status));
+  EXPECT_EQ(WSTOPSIG(status), SIGSTOP);
+
+  // Detach tracee and wake it from group-stop with SIGCONT so it exits cleanly.
+  ASSERT_THAT(ptrace(PTRACE_DETACH, tracee_pid, nullptr, 0), SyscallSucceeds());
+  SAFE_SYSCALL(kill(tracee_pid, SIGCONT));
+
   EXPECT_TRUE(helper.WaitForChildren());
 }
 
