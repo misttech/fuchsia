@@ -71,16 +71,23 @@ then you may consider increasing the `fx test` timeout as a workaround.
 The test suites are the same as the vanilla syscalls, but prefixed with
 `linux_`. Here are some examples of common target inclusion:
 
--   **Run all syscall test suites:**
+-   **Run all C++ syscall test suites:**
 
     ```posix-terminal
     fx test linux_syscalls_cpp_tests
+    ```
+
+-   **Run all Rust syscall test suites:**
+
+    ```posix-terminal
+    fx test linux_syscalls_rust_tests
     ```
 
 -   **Run individual suites:**
 
     ```posix-terminal
     fx test linux_fcntl_test
+    fx test linux_device_mapper_test
     ```
 
 -   **Run on both Starnix and Linux:** Specify the base name of the target,
@@ -89,16 +96,17 @@ The test suites are the same as the vanilla syscalls, but prefixed with
 
     ```posix-terminal
     fx test mount_test
+    fx test fscrypt_test
     ```
 
 ## Debugging a failing Machina-based syscall test {#debugging-failing-tests}
 
 ### Understanding Logs {#understanding-logs}
 
-The syscall tests are gTest suites, and output is piped through the test
-framework. This means that the output from the gTest invocation appears in
-stdout on failing tests. You can view all gTest logs, regardless of outcome,
-using the `--output` arg in your `fx test` invocation.
+Syscall tests are either GoogleTest suites (for C++) or Rust test suites (using
+`libtest`), and output is piped through the test framework. This means that test
+output appears in stdout on failing tests. You can view all test logs,
+regardless of outcome, using the `--output` arg in your `fx test` invocation.
 
 Logs related to the Machina runtime are output to the system log (`ffx log`),
 and typically associated with an identifying tag. Currently, there is one
@@ -131,8 +139,9 @@ The following documents the system logs associated with a typical flow.
 1.  **Pushing test dependencies and binaries:**
 
     Once the guest is bootstrapped, preliminary data begins to be pushed to the
-    guest. These are the required dependencies for syscall tests, followed by
-    the test binary itself:
+    guest. These are the required dependencies for syscall tests (pushed from
+    the package's `/pkg/data` to `/data/` on the guest), followed by the test
+    binary itself:
 
     ```none {:.devsite-disable-click-to-copy}
     [00439.934416][starnix_test_runner.cm][linux_guest,starnix_test_runner] INFO: Pushing data to guest (destination: /data/tests/deps/simple_ext4.img)
@@ -144,11 +153,8 @@ The following documents the system logs associated with a typical flow.
 1.  **Test execution and processing:**
 
     Once the environmental setup steps are done, you should see the execution
-    command issued. This is executing the gTest binary on the guest. Once again,
-    the output of this binary execution is piped into stdout on your terminal,
-    as you would expect from any other `fx test` invocation for a gTest suite.
-    When execution completes, the results file is copied back over to the host
-    for processing:
+    command issued. For C++ (gTest) suites, this executes the test binary on the
+    guest and copies the results file back to the host for processing:
 
     ```none {:.devsite-disable-click-to-copy}
     [00448.653126][starnix_test_runner.cm][linux_guest,starnix_test_runner] INFO: Executing command on guest: /starnix_linux_fuse_test_fuse_test_bin --gtest_output=json:/test_result-ccde95ca-acb3-4b84-af4d-f371b9582d20.json)
@@ -157,21 +163,43 @@ The following documents the system logs associated with a typical flow.
     [00448.849066][starnix_test_runner.cm][linux_guest,starnix_test_runner] INFO: Fetching file from guest (remote_path: /test_result-ccde95ca-acb3-4b84-af4d-f371b9582d20.json)
     ```
 
+    For Rust (libtest) suites, the test runner executes each test case
+    individually on the guest (passing `--exact --nocapture`), streaming stdout
+    and stderr directly back to the test framework via sockets. In both cases,
+    test output is piped into stdout on your terminal as you would expect from
+    any other `fx test` invocation.
+
 ### Understanding the Runtime {#understanding-runtime}
 
 The Starnix test runner is responsible for orchestrating the tests, and can be
 thought of as the glue between the Fuchsia test framework and the Machina
-runtime. There are two key things to understand related to the runtime:
+runtime. Key things to understand related to the runtime:
 
-1.  Syscall tests are identified in their CML by the `test_type: "syscall"`
-    program tag in the `[syscalls_cpp_test.cml][syscalls-cml]`.
-1.  The Starnix test runner looks for this tag when handling suite requests, and
+#### C++ Syscall Tests (`syscall_gtest`)
+
+*   C++ syscall tests are identified in their CML by the `test_type: "syscall_gtest"`
+    program tag in `[syscalls_gtest.cml][syscalls-gtest-cml]`.
+*   The Starnix test runner looks for this tag when handling suite requests, and
     branches the logic accordingly to handle these tests. The core handling
-    logic can be found in `[syscalls.rs][syscalls-rs]`, the main entry point
-    being `run_syscall_tests`.
+    logic can be found in `[syscalls_gtest.rs][syscalls-gtest-rs]`, the main entry point
+    being `run_syscall_gtests`.
 
-While there is much more to the runtime than just these two points, maintaining
-it all as documentation would be arduous. Hopefully these two core pieces of the
+#### Rust Syscall Tests (`syscall_libtest`)
+
+*   Rust syscall tests are identified in their CML by the `test_type: "syscall_libtest"`
+    program tag in `[syscalls_libtest.shard.cml][syscalls-libtest-shard-cml]`.
+*   The Starnix test runner looks for this tag when handling suite requests, and
+    branches the logic accordingly to handle these tests. The core handling
+    logic can be found in `[syscalls_libtest.rs][syscalls-libtest-rs]`, the main entry point
+    being `run_syscall_libtests`.
+*   Tests are defined using the `rust_syscall_test` GN template in
+    `[rust_syscall_test.gni][rust-syscall-test-gni]` within
+    `[//src/starnix/tests/syscalls/rust/BUILD.gn][rust-syscalls-build-gn]` to generate
+    both Starnix and Linux VM test components.
+
+
+While there is much more to the runtime than just these core points, maintaining
+it all as documentation would be arduous. Hopefully these core pieces of the
 system will provide solid anchor points for your own investigation and
 debugging.
 
@@ -278,7 +306,11 @@ per the [Debian guest README][debian-guest-readme].
 
 [enable-vm-acceleration]: /docs/get-started/set_up_femu.md#enable-vm-acceleration
 [set-up-femu]: /docs/get-started/set_up_femu.md
-[syscalls-cml]: /src/starnix/tests/syscalls/cpp/meta/syscalls_cpp_test.cml
-[syscalls-rs]: /src/sys/test_runners/starnix/src/syscalls.rs
+[syscalls-libtest-shard-cml]: /src/starnix/tests/syscalls/rust/meta/syscalls_libtest.shard.cml
+[rust-syscall-test-gni]: /src/starnix/tests/syscalls/rust/rust_syscall_test.gni
+[rust-syscalls-build-gn]: /src/starnix/tests/syscalls/rust/BUILD.gn
+[syscalls-gtest-rs]: /src/sys/test_runners/starnix/src/syscalls_gtest.rs
+[syscalls-libtest-rs]: /src/sys/test_runners/starnix/src/syscalls_libtest.rs
+[syscalls-gtest-cml]: /src/starnix/tests/syscalls/cpp/meta/syscalls_gtest.cml
 [virtualization-get-started]: /docs/development/virtualization/get_started.md
 [debian-guest-readme]: /src/virtualization/packages/debian_guest/debos/README.md
