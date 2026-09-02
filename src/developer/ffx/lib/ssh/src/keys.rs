@@ -131,9 +131,7 @@ pub async fn find_matching_ssh_keys(
     addr: std::net::SocketAddr,
 ) -> fho::Result<MatchingKeysInfo> {
     let http_port: u16 = ctx
-        .query(AUTHORIZED_KEYS_HTTP_PORT_QUERY)
-        .build()
-        .get(ctx)
+        .get(AUTHORIZED_KEYS_HTTP_PORT_QUERY)
         .user_message("Unable to load authorized_keys port from config")?;
     let local_ssh_dirs = local_ssh_key_dirs(ctx)?;
     let (local_keys, io_errors) = get_ssh_public_keys(&local_ssh_dirs)?;
@@ -258,15 +256,11 @@ fn local_ssh_key_dirs(ctx: &EnvironmentContext) -> fho::Result<Vec<PathBuf>> {
         dirs.insert(fuchsia_dir);
     }
     let mut configured_dirs = ctx
-        .query(SSH_PUB_KEY)
-        .build()
-        .get::<Vec<PathBuf>>(ctx)
+        .get::<Vec<PathBuf>, _>(SSH_PUB_KEY)
         .user_message("Could not load ssh.pub file from config")?;
     // For certain setups no public key will be set, only the private key location.
     configured_dirs.extend(
-        ctx.query(SSH_PRIVATE_KEY)
-            .build()
-            .get::<Vec<PathBuf>>(ctx)
+        ctx.get::<Vec<PathBuf>, _>(SSH_PRIVATE_KEY)
             .user_message("Could not load ssh.priv file from config")?,
     );
     // Look for the directory for each entry, not the file.
@@ -659,7 +653,7 @@ impl SshKeyFiles {
     pub fn load(ctx: &EnvironmentContext) -> Result<Self, SshKeyError> {
         // initialize to the first path in the list, then iterate through the list to select
         // the first file that exists.
-        let authorized_keys_files: Vec<PathBuf> = ctx.query(SSH_PUB_KEY).build().get(ctx)?;
+        let authorized_keys_files: Vec<PathBuf> = ctx.get(SSH_PUB_KEY)?;
         if authorized_keys_files.is_empty() {
             return Err(SshKeyError {
                 kind: SshKeyErrorKind::BadConfiguration,
@@ -674,7 +668,7 @@ impl SshKeyFiles {
             }
         }
 
-        let key_files: Vec<PathBuf> = ctx.query(SSH_PRIVATE_KEY).build().get(ctx)?;
+        let key_files: Vec<PathBuf> = ctx.get(SSH_PRIVATE_KEY)?;
         if key_files.is_empty() {
             return Err(SshKeyError {
                 kind: SshKeyErrorKind::BadConfiguration,

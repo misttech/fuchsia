@@ -196,8 +196,7 @@ async fn implementation(
     }
 
     if !found_config
-        && let Ok(p) =
-            ctx.query(usb_driver_api::CONFIG_USB_SOCKET_PATH).build().get::<PathBuf>(&ctx)
+        && let Ok(p) = ctx.get::<PathBuf, _>(usb_driver_api::CONFIG_USB_SOCKET_PATH)
         && p != socket_path
     {
         return Err(fho::Error::User(anyhow::anyhow!(

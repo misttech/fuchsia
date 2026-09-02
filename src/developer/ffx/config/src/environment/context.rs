@@ -507,7 +507,7 @@ impl EnvironmentContext {
         // build directory.
         // Out of tree, we will always want to pull the config from the normal config path, which
         // we can defer to the SdkRoot's mechanisms for.
-        let runtime_root: Option<PathBuf> = self.query("sdk.root").build().get(self).ok();
+        let runtime_root: Option<PathBuf> = self.get("sdk.root").ok();
         match (&self.kind, runtime_root) {
             (EnvironmentKind::InTree { build_dir: Some(build_dir), .. }, None) => {
                 let host_arch = match std::env::consts::ARCH {

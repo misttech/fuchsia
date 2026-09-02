@@ -358,24 +358,16 @@ async fn build_ssh_command_with_ssh_config_and_env(
     }
 
     let keys = get_ssh_key_paths_from_env(env)?;
-    if let Some(keepalive_timeout) =
-        env.query(KEEPALIVE_TIMEOUT_CONFIG).build().get::<Option<u64>>(env)?
-    {
+    if let Some(keepalive_timeout) = env.get::<Option<u64>, _>(KEEPALIVE_TIMEOUT_CONFIG)? {
         config.set_server_alive_count_max(keepalive_timeout as u16)?;
     }
-    if let Some(connect_timeout) =
-        env.query(CONNECT_TIMEOUT_CONFIG).build().get::<Option<u64>>(env)?
-    {
+    if let Some(connect_timeout) = env.get::<Option<u64>, _>(CONNECT_TIMEOUT_CONFIG)? {
         config.set("ConnectTimeout", connect_timeout.to_string())?;
     }
-    if let Some(connection_attempts) =
-        env.query(CONNECTION_ATTEMPTS_CONFIG).build().get::<Option<u64>>(env)?
-    {
+    if let Some(connection_attempts) = env.get::<Option<u64>, _>(CONNECTION_ATTEMPTS_CONFIG)? {
         config.set("ConnectionAttempts", connection_attempts.to_string())?;
     }
-    if let Some(identities_only) =
-        env.query(IDENTITIES_ONLY_CONFIG).build().get::<Option<bool>>(env)?
-    {
+    if let Some(identities_only) = env.get::<Option<bool>, _>(IDENTITIES_ONLY_CONFIG)? {
         let val = if identities_only { "yes" } else { "no" };
         config.set("IdentitiesOnly", val.to_string())?;
     }

@@ -12,7 +12,6 @@ use fho::{Error, FfxMain, FfxTool, Result, bug, return_user_error, user_error};
 use product_bundle::ProductBundle;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use utf8_path::path_relative_from;
 
 mod args;
@@ -49,17 +48,10 @@ impl FfxMain for PbGetImagePathTool {
     async fn main(mut self, mut writer: Self::Writer) -> fho::Result<()> {
         // Set the product bundle path from config if it was not passed in.
         if self.cmd.product_bundle.is_none() {
-            if let Some(default_path) = self
-                .env
-                .query("product.path")
-                .build()
-                .get(&self.env)
-                .map(|p: PathBuf| p.into())
-                .map_err(|e| bug!(e))?
+            if let Some(default_path) =
+                self.env.get::<Option<String>, _>("product.path").map_err(|e| bug!(e))?
             {
-                let pb_path: Utf8PathBuf =
-                    Utf8PathBuf::try_from(default_path).map_err(|e| bug!(e))?;
-                self.cmd.product_bundle = Some(pb_path);
+                self.cmd.product_bundle = Some(default_path.into());
             } else {
                 let message = String::from("no product bundle specified nor configured.");
                 writer

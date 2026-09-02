@@ -6,12 +6,10 @@
 
 use anyhow::{Result, anyhow};
 use assembly_partitions_config::Slot;
-use camino::Utf8PathBuf;
 use ffx_config::EnvironmentContext;
 use fho::{FfxMain, FfxTool, Result as FhoResult, return_user_error};
 use product_bundle::ProductBundle;
 use std::io::Write;
-use std::path::PathBuf;
 
 mod args;
 pub use args::ExtractBlobsCommand;
@@ -31,17 +29,10 @@ impl FfxMain for PbExtractBlobsTool {
     async fn main(mut self, mut writer: Self::Writer) -> FhoResult<()> {
         // Set the product bundle path from config if it was not passed in.
         if self.cmd.product_bundle.is_none() {
-            if let Some(default_path) = self
-                .env
-                .query("product.path")
-                .build()
-                .get(&self.env)
-                .map(|p: PathBuf| p.into())
-                .map_err(|e| anyhow!(e))?
+            if let Some(default_path) =
+                self.env.get::<Option<String>, _>("product.path").map_err(|e| anyhow!(e))?
             {
-                let pb_path: Utf8PathBuf =
-                    Utf8PathBuf::try_from(default_path).map_err(|e| anyhow!(e))?;
-                self.cmd.product_bundle = Some(pb_path);
+                self.cmd.product_bundle = Some(default_path.into());
             } else {
                 return_user_error!("No product bundle specified nor configured.");
             }
