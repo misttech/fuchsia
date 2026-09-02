@@ -74,7 +74,6 @@ pub enum SagEvent {
 // Threshold duration for continuous holding boundaries, averaging of pulsing activity, and
 // truncation due to inactivity, as described by WakeLeaseSampler.
 const SAMPLING_THRESHOLD_NS: i64 = zx::BootDuration::from_minutes(1).into_nanos();
-
 /// `WakeLeaseSampler` aggregates wake lease activity into consolidated sample entries to minimize
 /// Inspect log traffic.
 ///
@@ -82,6 +81,7 @@ const SAMPLING_THRESHOLD_NS: i64 = zx::BootDuration::from_minutes(1).into_nanos(
 ///    A sample ends and a new sample begins upon any of the following boundaries:
 ///    - Pulsing Activity Duration Cap: Regular pulsing activity (acquire/drop cycles) continuing
 ///      past 60 seconds is chunked in 60-second intervals.
+///    - External Triggers: Inspect snapshot collection flushes in-flight samples.
 ///
 /// 2. Inspect Output Format:
 ///    Each consolidated sample entry records:
@@ -93,7 +93,6 @@ const SAMPLING_THRESHOLD_NS: i64 = zx::BootDuration::from_minutes(1).into_nanos(
 ///      active. (range [0.0, 1.0]).
 #[derive(Clone, Debug, Default)]
 struct WakeLeaseSampler {
-    // TODO(https://fxbug.dev/554025327): Implement eviction logic before this feature is used.
     samples: BTreeMap<u64, InFlightSample>,
 }
 
@@ -192,6 +191,65 @@ impl WakeLeaseSampler {
             }
         }
     }
+
+    fn on_snapshot_collection(&mut self, now: i64, buffer: &mut SagEventBuffer) {
+        // For each sample, perform propagation and flushing in the usual way. Then flush any
+        // remaining in-flight activity into a sample for the snapshot, and purge any entries
+        // with inactive leases.
+        self.samples.retain(|&id, sample| {
+            Self::propagate_previous_status_and_flush_complete_samples(id, sample, now, buffer);
+            Self::end_sample_at_boundary_event(
+                id,
+                sample,
+                now,
+                SampleBoundaryEvent::SnapshotCollection,
+                buffer,
+            ) == SampleAction::Keep
+        });
+    }
+
+    /// Finalizes and closes an in-flight sample when a boundary event occurs.
+    fn end_sample_at_boundary_event(
+        id: u64,
+        sample: &mut InFlightSample,
+        end_ns: i64,
+        // TODO(https://fxbug.dev/554025327): Use this parameter once truncation on long silence
+        // is supported.
+        _end_reason: SampleBoundaryEvent,
+        buffer: &mut SagEventBuffer,
+    ) -> SampleAction {
+        let start_ns = sample.sample_start_ns;
+        let mut total_active_ns = sample.active_duration_ns;
+        if let SampleStatus::LeaseActive { active_since_ns, .. } = sample.status {
+            total_active_ns += end_ns.saturating_sub(active_since_ns);
+        }
+
+        let duration_ns = end_ns.saturating_sub(start_ns);
+
+        if duration_ns > 0 {
+            let active_fraction = (total_active_ns as f64 / duration_ns as f64).clamp(0.0, 1.0);
+
+            buffer.push(
+                end_ns,
+                SagEvent::WakeLeaseSample {
+                    name: sample.name.clone(),
+                    id,
+                    sample_end_ns: end_ns,
+                    active_fraction,
+                    sample_duration_ns: duration_ns,
+                },
+            );
+        }
+
+        if let SampleStatus::LeaseActive { active_count, .. } = sample.status {
+            sample.sample_start_ns = end_ns;
+            sample.active_duration_ns = 0;
+            sample.status = SampleStatus::LeaseActive { active_count, active_since_ns: end_ns };
+            SampleAction::Keep
+        } else {
+            SampleAction::Eject
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -220,6 +278,21 @@ impl InFlightSample {
 enum SampleStatus {
     LeaseActive { active_count: std::num::NonZeroUsize, active_since_ns: i64 },
     LeaseInactive { inactive_since_ns: i64 },
+}
+
+/// The action to take on an in-flight sample entry within [`WakeLeaseSampler`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SampleAction {
+    /// Keep the sample entry in the tracking map to continue monitoring an active lease.
+    Keep,
+    /// Eject and remove the sample entry from the map because the sample has been
+    /// finalized and the lease is inactive.
+    Eject,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum SampleBoundaryEvent {
+    SnapshotCollection,
 }
 
 /// The state of the system with respect to suspend.
@@ -305,6 +378,7 @@ impl SagEventLogger {
         let sampler = Arc::new(Mutex::new(WakeLeaseSampler::new()));
 
         let weak_event_buffer = Arc::downgrade(&event_buffer);
+        let weak_sampler = Arc::downgrade(&sampler);
 
         // Create inspect node for logging suspend events. Events are stored in an internal ring
         // buffer and lazily converted/logged to Inspect to reduce Inspect memory usage.
@@ -312,6 +386,7 @@ impl SagEventLogger {
         let internal_event_log_stats =
             node.create_lazy_child(fobs::SUSPEND_EVENTS_NODE, move || {
                 let weak_buffer = value.clone();
+                let weak_sampler = weak_sampler.clone();
 
                 async move {
                     let lazy_inspect_config = fuchsia_inspect::InspectorConfig::default()
@@ -321,8 +396,12 @@ impl SagEventLogger {
                     inspector.record_lazy_stats();
 
                     // Convert internally-logged events into Inspect nodes
-                    if let Some(event_buffer) = weak_buffer.upgrade() {
-                        let buffer = event_buffer.lock();
+                    if let (Some(event_buffer), Some(sampler)) =
+                        (weak_buffer.upgrade(), weak_sampler.upgrade())
+                    {
+                        let mut buffer = event_buffer.lock();
+                        let now = zx::BootInstant::get().into_nanos();
+                        sampler.lock().on_snapshot_collection(now, &mut buffer);
 
                         for internal_event in buffer.events.iter() {
                             let time = internal_event.event_log_time;
@@ -585,17 +664,39 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_sampler_snapshot_ends_sample() {
+        let mut sampler = WakeLeaseSampler::new();
+        let mut buffer = SagEventBuffer::new(100);
+
+        // Lease acquired at T=0
+        sampler.on_lease_acquired(1, "test_lease", 0, &mut buffer);
+        // Lease dropped at T=30s
+        sampler.on_lease_dropped(1, "test_lease", 30_000_000_000, &mut buffer);
+
+        // Snapshot collection at T=40s flushes active sample
+        sampler.on_snapshot_collection(40_000_000_000, &mut buffer);
+
+        assert_eq!(buffer.events.len(), 1);
+        assert_wake_lease_sample!(
+            &buffer.events[0].event_info,
+            name: "test_lease",
+            id: 1,
+            end_ns: 40_000_000_000,
+            duration_ns: 40_000_000_000,
+            active_fraction: 0.75,
+        );
+    }
+
+    #[fuchsia::test]
     fn test_sampler_pulsing_chunked_to_60s_intervals() {
         let mut sampler = WakeLeaseSampler::new();
         let mut buffer = SagEventBuffer::new(100);
 
-        // Simulate 100 Hz high-rate lease activity for 240 seconds.
+        // Simulate 100 Hz high-rate lease activity for 270 seconds (27,000 cycles).
         // Each cycle is 10 ms (10_000_000 ns): 5 ms active, 5 ms inactive.
         let cycle_period_ns = 10_000_000i64; // 10 ms
         let active_duration_ns = 5_000_000i64; // 5 ms
-        // 24,000 full cycles end at t=239.995s; we run 24,001 cycles so the event at t=240.0s triggers
-        // the lazy flush of the 4th 60s sample interval [180s, 240s].
-        let total_cycles = 24_001;
+        let total_cycles = 27_000; // 270s
 
         for i in 0..total_cycles {
             let acquire_time = i * cycle_period_ns;
@@ -611,15 +712,22 @@ mod tests {
             }
         }
 
-        // During 240s of 100 Hz pulsing (24,000 cycles), 4 full 60s samples were emitted at t=60s,
+        // During 270s of 100 Hz pulsing (27,000 cycles), 4 full 60s samples were emitted at t=60s,
         // 120s, 180s, 240s.
         assert_eq!(buffer.events.len(), 4);
+
+        // Snapshot collection at T=270s flushes the final 30s sample.
+        sampler.on_snapshot_collection(270_000_000_000, &mut buffer);
+
+        // Expect 5 sample events with durations: [60s, 60s, 60s, 60s, 30s]
+        assert_eq!(buffer.events.len(), 5);
 
         let expected_samples = [
             (60_000_000_000i64, 60_000_000_000i64, 0.50f64),
             (120_000_000_000i64, 60_000_000_000i64, 0.50f64),
             (180_000_000_000i64, 60_000_000_000i64, 0.50f64),
             (240_000_000_000i64, 60_000_000_000i64, 0.50f64),
+            (270_000_000_000i64, 30_000_000_000i64, 0.50f64),
         ];
 
         for (i, (end, duration, fraction)) in expected_samples.iter().enumerate() {
@@ -632,6 +740,97 @@ mod tests {
                 active_fraction: *fraction,
             );
         }
+    }
+
+    #[fuchsia::test]
+    fn test_sampler_acquire_after_snapshot_collection() {
+        let mut sampler = WakeLeaseSampler::new();
+        let mut buffer = SagEventBuffer::new(100);
+
+        // Lease acquired at T=0, dropped at T=10s
+        sampler.on_lease_acquired(1, "test_lease", 0, &mut buffer);
+        sampler.on_lease_dropped(1, "test_lease", 10_000_000_000, &mut buffer);
+
+        // Snapshot collection at T=20s closes active sample (truncated to 10s)
+        sampler.on_snapshot_collection(20_000_000_000, &mut buffer);
+        assert_eq!(buffer.events.len(), 1);
+
+        // New lease acquired at T=30s (< 60s since drop at 10s).
+        sampler.on_lease_acquired(1, "test_lease", 30_000_000_000, &mut buffer);
+        sampler.on_lease_dropped(1, "test_lease", 40_000_000_000, &mut buffer);
+
+        // Second snapshot collection at T=40s flushes second sample
+        sampler.on_snapshot_collection(40_000_000_000, &mut buffer);
+        assert_eq!(buffer.events.len(), 2);
+        assert_wake_lease_sample!(
+            &buffer.events[1].event_info,
+            name: "test_lease",
+            id: 1,
+            end_ns: 40_000_000_000,
+            duration_ns: 10_000_000_000,
+            active_fraction: 1.0,
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_sampler_nested_overlapping_acquisitions() {
+        let mut sampler = WakeLeaseSampler::new();
+        let mut buffer = SagEventBuffer::new(100);
+
+        // Acquire #1 at T=0
+        sampler.on_lease_acquired(1, "nested_lease", 0, &mut buffer);
+        // Acquire #2 at T=10s (active_count = 2)
+        sampler.on_lease_acquired(1, "nested_lease", 10_000_000_000, &mut buffer);
+        // Drop #1 at T=20s (active_count = 1, still active)
+        sampler.on_lease_dropped(1, "nested_lease", 20_000_000_000, &mut buffer);
+        // Drop #2 at T=30s (active_count = 0, inactive)
+        sampler.on_lease_dropped(1, "nested_lease", 30_000_000_000, &mut buffer);
+
+        sampler.on_snapshot_collection(30_000_000_000, &mut buffer);
+
+        // The overlapping leases are grouped into a single sample with active_fraction 1.0.
+        assert_eq!(buffer.events.len(), 1);
+        assert_wake_lease_sample!(
+            &buffer.events[0].event_info,
+            name: "nested_lease",
+            id: 1,
+            end_ns: 30_000_000_000,
+            duration_ns: 30_000_000_000,
+            active_fraction: 1.0,
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_sampler_multiple_distinct_leases() {
+        let mut sampler = WakeLeaseSampler::new();
+        let mut buffer = SagEventBuffer::new(100);
+
+        sampler.on_lease_acquired(1, "lease_a", 0, &mut buffer);
+        sampler.on_lease_acquired(2, "lease_b", 0, &mut buffer);
+
+        sampler.on_lease_dropped(1, "lease_a", 20_000_000_000, &mut buffer);
+        sampler.on_lease_dropped(2, "lease_b", 30_000_000_000, &mut buffer);
+
+        // Snapshot at T=40s
+        sampler.on_snapshot_collection(40_000_000_000, &mut buffer);
+
+        assert_eq!(buffer.events.len(), 2);
+        assert_wake_lease_sample!(
+            &buffer.events[0].event_info,
+            name: "lease_a",
+            id: 1,
+            end_ns: 40_000_000_000,
+            duration_ns: 40_000_000_000,
+            active_fraction: 0.5,
+        );
+        assert_wake_lease_sample!(
+            &buffer.events[1].event_info,
+            name: "lease_b",
+            id: 2,
+            end_ns: 40_000_000_000,
+            duration_ns: 40_000_000_000,
+            active_fraction: 0.75,
+        );
     }
 
     #[fuchsia::test]
@@ -659,6 +858,20 @@ mod tests {
             duration_ns: 60_000_000_000,
             active_fraction: 0.5,
         );
+
+        // 3. Snapshot collection at T=80s flushes the remaining interval [60s, 80s].
+        // Active time in second chunk: 10s (60-70s) -> active_fraction = 10s / 20s = 0.5.
+        sampler.on_snapshot_collection(80_000_000_000, &mut buffer);
+
+        assert_eq!(buffer.events.len(), 2);
+        assert_wake_lease_sample!(
+            &buffer.events[1].event_info,
+            name: "span_lease",
+            id: 1,
+            end_ns: 80_000_000_000,
+            duration_ns: 20_000_000_000,
+            active_fraction: 0.5,
+        );
     }
 
     #[fuchsia::test]
@@ -675,5 +888,47 @@ mod tests {
 
         // In-flight sample should remain open with no events emitted yet.
         assert!(buffer.events.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_sampler_reacquire_pulsing_spans_60s_boundary() {
+        let mut sampler = WakeLeaseSampler::new();
+        let mut buffer = SagEventBuffer::new(100);
+
+        // t=0: Acquire
+        sampler.on_lease_acquired(1, "test_lease", 0, &mut buffer);
+        // t=40s: Drop
+        sampler.on_lease_dropped(1, "test_lease", 40_000_000_000, &mut buffer);
+        assert!(buffer.events.is_empty());
+
+        // t=50s: Acquire (< 60s silence)
+        sampler.on_lease_acquired(1, "test_lease", 50_000_000_000, &mut buffer);
+        assert!(buffer.events.is_empty());
+
+        // t=70s: Drop (crosses 60s boundary while active)
+        sampler.on_lease_dropped(1, "test_lease", 70_000_000_000, &mut buffer);
+
+        // Expect 60s chunk [0s, 60s] emitted with active time: 40s (0-40s) + 10s (50-60s) = 50s.
+        assert_eq!(buffer.events.len(), 1);
+        assert_wake_lease_sample!(
+            &buffer.events[0].event_info,
+            name: "test_lease",
+            id: 1,
+            end_ns: 60_000_000_000,
+            duration_ns: 60_000_000_000,
+            active_fraction: 50.0 / 60.0,
+        );
+
+        // Snapshot at t=80s flushes remaining [60s, 80s] sample (10s active in 60s-70s).
+        sampler.on_snapshot_collection(80_000_000_000, &mut buffer);
+        assert_eq!(buffer.events.len(), 2);
+        assert_wake_lease_sample!(
+            &buffer.events[1].event_info,
+            name: "test_lease",
+            id: 1,
+            end_ns: 80_000_000_000,
+            duration_ns: 20_000_000_000,
+            active_fraction: 10.0 / 20.0,
+        );
     }
 }
