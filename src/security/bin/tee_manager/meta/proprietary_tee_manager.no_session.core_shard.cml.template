@@ -44,10 +44,5 @@
             subdir: "tee_userdata",
             availability: "same_as_target",
         },
-        {
-            storage: "data",
-            from: "self",
-            to: "#tee_manager",
-        },
     ],
 }

@@ -45,11 +45,6 @@
             availability: "same_as_target",
         },
         {
-            storage: "data",
-            from: "self",
-            to: "#tee_manager",
-        },
-        {
             dictionary: "tee_session",
             from: "#tee_manager",
             to: "#session-manager",
