@@ -46,6 +46,7 @@ zx_status_t cpp_thread_current_sleep_etc(const Deadline* deadline, Interruptible
 zx_status_t cpp_thread_current_soft_fault(vaddr_t va, uint flags);
 zx_status_t cpp_restricted_enter(uintptr_t vector_table_ptr, uintptr_t context);
 
+void* cpp_thread_get_arch(Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS;
 vaddr_t cpp_thread_get_stack_top(Thread* thread);
 vaddr_t cpp_thread_get_shadow_call_base(Thread* thread);
 void cpp_thread_dump_current_stack();
@@ -141,6 +142,12 @@ FFI_ALWAYS_INLINE zx_status_t cpp_thread_current_soft_fault(vaddr_t va, uint fla
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE vaddr_t cpp_thread_get_stack_top(Thread* thread) { return thread->stack().top(); }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotation once cross-language
+// inlining works.  This one matters: it is on the context switch path.
+FFI_ALWAYS_INLINE void* cpp_thread_get_arch(Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return &thread->arch();
+}
 
 vaddr_t cpp_thread_get_shadow_call_base(Thread* thread) {
 #if __has_feature(shadow_call_stack)

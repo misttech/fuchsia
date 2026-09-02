@@ -27,6 +27,7 @@ struct UserEntryState {
 
 void PrintFrame(const iframe_t&, FILE* = stdout);
 
+extern "C" {
 // Early platform initialization, before UART, MMU, kernel command line args, etc.
 void arch_early_init();
 
@@ -39,17 +40,20 @@ void arch_init();
 // Perform any per-CPU set up required.
 void arch_late_init_percpu();
 
-// Return the iframe_t that should be passed to arch_enter_uspace() on the
-// current thread.  Initialize it and other user-visible hardware state first.
-// The rest of the current thread's state must already have been appropriately
-// initialized (as viewable from a debugger at the ZX_EXCP_THREAD_STARTING
-// exception).  This can be called with interrupts still enabled.  It's just
-// preparatory to calling arch_enter_uspace().
-iframe_t arch_prepare_uspace(const UserEntryState& state);
+// Fill in *|out| with the iframe_t that should be passed to arch_enter_uspace()
+// on the current thread.  Initialize it and other user-visible hardware state
+// first.  The rest of the current thread's state must already have been
+// appropriately initialized (as viewable from a debugger at the
+// ZX_EXCP_THREAD_STARTING exception).  This can be called with interrupts still
+// enabled.  It's just preparatory to calling arch_enter_uspace().
+//
+// |out| need not be initialized on entry; every field is written.
+void arch_prepare_uspace(const UserEntryState* state, iframe_t* out);
 
 // Enter userspace, after initialization with arch_prepare_uspace().
 // Must be called with interrupts disabled.
 [[noreturn]] void arch_enter_uspace(const iframe_t* iframe);
+}  // extern "C"
 
 // On x86, user mode general registers are stored in one of two structures depending on how the
 // thread entered the kernel.  If via interrupt/exception, they are stored in an iframe_t.  If via

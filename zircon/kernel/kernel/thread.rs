@@ -46,6 +46,7 @@ unsafe extern "C" {
         now: zx_instant_mono_t,
     ) -> zx_status_t;
     fn cpp_thread_current_soft_fault(va: usize, flags: u32) -> zx_status_t;
+    fn cpp_thread_get_arch(thread: *mut Thread) -> *mut c_void;
     fn cpp_thread_get_stack_top(thread: *mut Thread) -> usize;
     fn cpp_thread_get_shadow_call_base(thread: *mut Thread) -> usize;
     fn cpp_thread_dump_current_stack();
@@ -407,6 +408,18 @@ pub fn dump_current_stack() {
 pub unsafe fn process_pending_signals(frame: *mut c_void) {
     // SAFETY: Forwarded to C++ Thread::Current::ProcessPendingSignals with caller-verified frame.
     unsafe { cpp_thread_process_pending_signals(frame) }
+}
+
+/// Returns a pointer to the architecture-specific state (`arch_thread`) of `thread`.
+///
+/// The returned pointer is derived by offset only, so this is safe to call before
+/// `thread` is fully constructed; dereferencing the result is the caller's problem.
+///
+/// # Safety
+/// Caller must ensure `thread` points to a C++ `Thread` instance.
+pub unsafe fn get_arch(thread: *mut Thread) -> *mut c_void {
+    // SAFETY: Forwarded to C++ Thread::arch() with caller-verified pointer.
+    unsafe { cpp_thread_get_arch(thread) }
 }
 
 /// Returns the top of the stack for `thread`.

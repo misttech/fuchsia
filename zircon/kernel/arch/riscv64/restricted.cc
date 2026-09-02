@@ -21,8 +21,6 @@ extern "C" {
 bool cpp_riscv64_ints_disabled();
 uint64_t cpp_riscv64_get_sstatus_fp_v();
 [[noreturn]] void cpp_riscv64_enter_uspace(const iframe_t* iframe);
-zx_status_t cpp_riscv64_get_general_regs(zx_thread_state_general_regs_t* regs);
-zx_status_t cpp_riscv64_set_general_regs(const zx_thread_state_general_regs_t* regs);
 
 bool cpp_riscv64_ints_disabled() { return arch_ints_disabled(); }
 
@@ -34,13 +32,5 @@ uint64_t cpp_riscv64_get_sstatus_fp_v() {
 [[noreturn]] void cpp_riscv64_enter_uspace(const iframe_t* iframe) {
   arch_enter_uspace(iframe);
   __UNREACHABLE;
-}
-
-zx_status_t cpp_riscv64_get_general_regs(zx_thread_state_general_regs_t* regs) {
-  return arch_get_general_regs(Thread::Current::Get(), regs);
-}
-
-zx_status_t cpp_riscv64_set_general_regs(const zx_thread_state_general_regs_t* regs) {
-  return arch_set_general_regs(Thread::Current::Get(), regs);
 }
 }

@@ -224,12 +224,15 @@ extern void riscv64_software_exception();
 
 extern "C" void platform_irq(iframe_t* frame);
 
-void riscv64_init_percpu();
+extern "C" void riscv64_init_percpu();
 
 // Runs the boot cpu init routine with the boot hart id. This will do basic
 // initialization of the cpu such as initializing the main control registers
 // and loading the exception vector table and per cpu register.
-void riscv64_boot_cpu_init(const ArchPhysHandoff& arch_handoff);
+extern "C" void riscv64_boot_cpu_init(const ArchPhysHandoff* arch_handoff);
+inline void riscv64_boot_cpu_init(const ArchPhysHandoff& arch_handoff) {
+  riscv64_boot_cpu_init(&arch_handoff);
+}
 
 #define __wfi() __asm__ volatile("wfi" ::: "memory")
 

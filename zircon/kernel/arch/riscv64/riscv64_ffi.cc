@@ -1,22 +1,89 @@
-// Copyright 2026 The Fuchsia Authors
+// Copyright 2023 The Fuchsia Authors
 //
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <lib/boot-options/boot-options.h>
+#include <platform.h>
+#include <sys/types.h>
+#include <zircon/types.h>
+
+#include <arch/arch_ops.h>
+#include <arch/arch_thread.h>
+#include <arch/debugger.h>
+#include <arch/interrupt.h>
 #include <arch/mp.h>
+#include <arch/ops.h>
+#include <arch/regs.h>
+#include <arch/riscv64.h>
+#include <arch/riscv64/feature.h>
+#include <arch/riscv64/fpu.h>
+#include <arch/riscv64/mmu.h>
 #include <arch/riscv64/mp.h>
+#include <arch/riscv64/riscv64_ffi.h>
+#include <arch/riscv64/sbi.h>
+#include <arch/riscv64/vector.h>
+#include <arch/vm.h>
 #include <dev/interrupt.h>
 #include <kernel/ffi.h>
 #include <kernel/interrupt.h>
+#include <kernel/mp.h>
+#include <kernel/restricted_state.h>
+#include <kernel/thread.h>
+#include <vm/handoff-end.h>
+#include <vm/page.h>
+#include <vm/pmm.h>
 
 extern "C" {
 
-uint32_t cpp_riscv64_curr_hart_id();
-uint32_t cpp_riscv64_boot_hart_id();
+void cpp_riscv64_feature_early_init() { riscv64_feature_early_init(); }
+bool cpp_boot_options_riscv64_enable_asid() { return BootOptions::Get()->riscv64_enable_asid; }
 
-FFI_ALWAYS_INLINE uint32_t cpp_riscv64_curr_hart_id() { return riscv64_curr_hart_id(); }
-FFI_ALWAYS_INLINE uint32_t cpp_riscv64_boot_hart_id() { return riscv64_boot_hart_id(); }
+uint32_t cpp_riscv64_curr_hart_id() { return riscv64_curr_hart_id(); }
+uint32_t cpp_riscv64_boot_hart_id() { return riscv64_boot_hart_id(); }
+
+void cpp_riscv64_fpu_zero() { riscv64_fpu_zero(); }
+void cpp_riscv64_vector_zero() { riscv64_vector_zero(); }
+void cpp_riscv64_mp_early_init_percpu(uint32_t hart_id, uint32_t cpu_num) {
+  riscv64_mp_early_init_percpu(hart_id, cpu_num);
+}
+void cpp_riscv64_sbi_early_init() { riscv64_sbi_early_init(); }
+void cpp_riscv64_mmu_early_init() { riscv64_mmu_early_init(); }
+void cpp_riscv64_mmu_prevm_init() { riscv64_mmu_prevm_init(); }
+void cpp_riscv64_feature_init() { riscv64_feature_init(); }
+void cpp_riscv64_sbi_init() { riscv64_sbi_init(); }
+void cpp_riscv64_mmu_init() { riscv64_mmu_init(); }
+bool cpp_riscv64_feature_has_vector() { return gRiscvFeatures[arch::RiscvFeature::kVector]; }
+bool cpp_riscv64_feature_has_zicbom() { return gRiscvFeatures[arch::RiscvFeature::kZicbom]; }
+bool cpp_riscv64_feature_has_zicboz() { return gRiscvFeatures[arch::RiscvFeature::kZicboz]; }
+
+void cpp_riscv64_thread_fpu_save(void* thread, uint32_t status) {
+  riscv64_thread_fpu_save(static_cast<Thread*>(thread), static_cast<Riscv64FpuStatus>(status));
+}
+void cpp_riscv64_thread_fpu_restore(const void* thread, uint32_t status) {
+  riscv64_thread_fpu_restore(static_cast<const Thread*>(thread),
+                             static_cast<Riscv64FpuStatus>(status));
+}
+void cpp_riscv64_thread_vector_save(void* thread, uint32_t status) {
+  riscv64_thread_vector_save(static_cast<Thread*>(thread),
+                             static_cast<Riscv64VectorStatus>(status));
+}
+void cpp_riscv64_thread_vector_restore(const void* thread, uint32_t status) {
+  riscv64_thread_vector_restore(static_cast<const Thread*>(thread),
+                                static_cast<Riscv64VectorStatus>(status));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove when FFI inlining is resolved.
+FFI_ALWAYS_INLINE zx_status_t cpp_riscv64_get_general_regs(zx_thread_state_general_regs_t* regs) {
+  return arch_get_general_regs(Thread::Current::Get(), regs);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove when FFI inlining is resolved.
+FFI_ALWAYS_INLINE zx_status_t
+cpp_riscv64_set_general_regs(const zx_thread_state_general_regs_t* regs) {
+  return arch_set_general_regs(Thread::Current::Get(), regs);
+}
 
 zx_status_t cpp_interrupt_send_ipi(cpu_mask_t cpu_mask, uint8_t ipi);
 void cpp_interrupt_init_percpu();
@@ -37,4 +104,11 @@ FFI_ALWAYS_INLINE uint32_t cpp_int_handler_finish(uint64_t* state) {
   return int_handler_finish(reinterpret_cast<int_handler_saved_state_t*>(state)) ? 1 : 0;
 }
 
+void cpp_print_current_thread_backtrace() {
+  Backtrace bt;
+  Thread::Current::GetBacktrace(bt);
+  bt.Print();
+}
 }  // extern "C"
+
+void ArchIdlePowerThread::EnterIdleState() { arch_enter_idle_state(); }

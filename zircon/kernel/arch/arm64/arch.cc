@@ -426,9 +426,9 @@ void ArchIdlePowerThread::EnterIdleState() {
   __asm__ volatile("wfi");
 }
 
-iframe_t arch_prepare_uspace(const UserEntryState& state) {
+void arch_prepare_uspace(const UserEntryState* state, iframe_t* out) {
   iframe_t iframe = {
-      .elr = state.pc,
+      .elr = state->pc,
 
       // Set up a default spsr to get into 64bit user space:
       //  - Zeroed NZCV.
@@ -437,18 +437,18 @@ iframe_t arch_prepare_uspace(const UserEntryState& state) {
       //  - Mode 0: EL0t.
       .spsr = 0,
 
-      .usp = state.sp,
+      .usp = state->sp,
   };
 
-  iframe.r[0] = state.arg1;
-  iframe.r[1] = state.arg2;
-  iframe.r[18] = state.abi_reg;
+  iframe.r[0] = state->arg1;
+  iframe.r[1] = state->arg2;
+  iframe.r[18] = state->abi_reg;
 
   // The thread pointer isn't in the iframe.  It's directly in the TPIDR_EL0
   // system register for the current thread.
-  __arm_wsr64("tpidr_el0", state.tp);
+  __arm_wsr64("tpidr_el0", state->tp);
 
-  return iframe;
+  *out = iframe;
 }
 
 // Switch to user mode, set the user stack pointer to user_stack_top, put the svc stack pointer to

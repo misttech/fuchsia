@@ -26,7 +26,7 @@ class VmObject;
 void PostHandoffBootstrap(PhysHandoff* handoff);
 
 // The arch-specific post-handoff bootstrap subroutine.
-void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff);
+extern "C" void ArchPostHandoffBootstrap(const ArchPhysHandoff* arch_handoff);
 
 // Valid to call only after PostHandoffBootstrap().
 paddr_t KernelPhysicalLoadAddress();

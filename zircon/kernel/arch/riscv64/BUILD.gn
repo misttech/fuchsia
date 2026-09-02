@@ -6,8 +6,11 @@
 
 import("//build/config/compiler_config.gni")
 import("//build/config/riscv64/riscv64.gni")
+import("//build/cpp/library_headers.gni")
 import("//build/toolchain/toolchain_environment.gni")
+import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
+import("//zircon/kernel/params.gni")
 
 if (toolchain_base_environment == "kernel") {
   # These set the ABI contract between C++ and assembly code.
@@ -67,9 +70,29 @@ if (toolchain_base_environment == "kernel") {
     include_dirs = [ "include" ]
   }
 
+  config("defines") {
+    defines = [ "SMP_MAX_CPUS=$smp_max_cpus" ]
+  }
+
+  library_headers("headers") {
+    headers = []
+    public_configs = [
+      ":defines",
+      "//zircon/kernel/switch:headers",
+    ]
+    public_deps = [
+      "//sdk/lib/zbi-format",
+      "//zircon/kernel/lib/arch:headers",
+      "//zircon/kernel/lib/ktl:headers",
+      "//zircon/kernel/lib/libc:headers",
+      "//zircon/kernel/lib/page:headers",
+      "//zircon/kernel/vm:headers",
+    ]
+  }
+
   source_set("riscv64") {
+    public_deps = [ ":headers" ]
     sources = [
-      "arch.cc",
       "asid_allocator.cc",
       "asm.S",
       "cache.cc",
@@ -88,7 +111,6 @@ if (toolchain_base_environment == "kernel") {
       "sbi.cc",
       "spinlock.cc",
       "stvec.S",
-      "thread.cc",
       "timer.cc",
       "user_copy_c.cc",
       "vector.cc",
@@ -120,16 +142,87 @@ if (toolchain_base_environment == "kernel") {
     ]
   }
 
+  kernel_bindgen_crate("riscv64-regs-bindings") {
+    headers = [ "include/arch/regs.h" ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    deps = [ "//sdk/rust/zx-types" ]
+    notice_year = 2026
+    raw_lines = [
+      "#![no_std]",
+      "pub type zx_riscv64_thread_state_general_regs_t = zx_types::zx_thread_state_general_regs_t;",
+    ]
+    type_blocklist = [ "zx_.*" ]
+    type_allowlist = [
+      "iframe_t",
+      "arch_exception_context",
+      "syscall_regs_t",
+    ]
+    var_allowlist = [ "RISCV64_IFRAME_.*" ]
+    explicit_padding = false
+    std_derives = [
+      "default",
+      "eq",
+      "partialeq",
+    ]
+    expect_lints = [ "non_camel_case_types" ]
+  }
+
+  kernel_bindgen_crate("riscv64-thread-bindings") {
+    headers = [
+      "include/arch/arch_thread.h",
+      "include/arch/riscv64/fpu.h",
+      "include/arch/riscv64/vector.h",
+    ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    deps = [
+      ":riscv64-regs-bindings",
+      "//sdk/rust/zx-types",
+    ]
+    notice_year = 2026
+    raw_lines = [
+      "#![no_std]",
+      "pub type iframe_t = riscv64_regs_bindings::iframe_t;",
+      "pub type zx_riscv64_thread_state_general_regs_t = zx_types::zx_thread_state_general_regs_t;",
+    ]
+    type_blocklist = [
+      "zx_.*_general_regs_t.*",
+      "iframe_t.*",
+      "arch_exception_context.*",
+      "syscall_regs_t.*",
+    ]
+    type_allowlist = [
+      "arch_thread.*",
+      "riscv64_fpu_state",
+      "riscv64_vector_state",
+    ]
+    explicit_padding = false
+    std_derives = [
+      "default",
+      "eq",
+      "partialeq",
+    ]
+    expect_lints = [ "non_camel_case_types" ]
+  }
+
   kernel_rust_mod("arch-riscv64-rs") {
     output_name = "arch_riscv64"
     source_root = "src/mod.rs"
-    sources = [ "src/mod.rs" ]
+    sources = [
+      "src/arch.rs",
+      "src/mod.rs",
+      "src/thread.rs",
+    ]
     deps = [
+      ":riscv64-regs-bindings",
+      ":riscv64-thread-bindings",
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//zircon/kernel/arch:arch-types-bindings",
       "//zircon/kernel/lib/debug",
     ]
+    test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
   }
 
   group("kernel-tests") {

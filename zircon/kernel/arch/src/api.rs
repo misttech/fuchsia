@@ -18,7 +18,7 @@ pub type ArchInitFn = extern "C" fn();
 pub type ArchLateInitPercpuFn = extern "C" fn();
 pub type ArchEnterIdleStateFn = extern "C" fn();
 
-pub type ArchPrepareUspaceFn<Iframe> = extern "C" fn(&UserEntryState) -> Iframe;
+pub type ArchPrepareUspaceFn<Iframe> = unsafe extern "C" fn(&UserEntryState, *mut Iframe);
 pub type ArchEnterUspaceFn<Iframe> = unsafe extern "C" fn(*const Iframe) -> !;
 
 pub type ArchThreadInitializeFn = unsafe extern "C" fn(*mut core::ffi::c_void, usize);

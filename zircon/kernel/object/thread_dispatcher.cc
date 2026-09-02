@@ -462,7 +462,8 @@ int ThreadDispatcher::StartRoutine(void* arg) {
   // thread is at the first instruction). For architectural exceptions the
   // general regs are left in the iframe for speed and simplicity. To keep
   // things simple we use the same scheme.
-  iframe_t iframe = arch_prepare_uspace(t->user_entry_);
+  iframe_t iframe;
+  arch_prepare_uspace(&t->user_entry_, &iframe);
 
   arch_exception_context_t context = {.frame = &iframe};
 

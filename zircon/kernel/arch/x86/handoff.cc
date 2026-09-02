@@ -13,7 +13,7 @@
 #include <phys/handoff.h>
 #include <vm/handoff-end.h>
 
-__NO_SAFESTACK void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff) {
+__NO_SAFESTACK void ArchPostHandoffBootstrap(const ArchPhysHandoff* arch_handoff) {
   // Best to do this early. See docstring for more details.
   load_startup_gdt();
 

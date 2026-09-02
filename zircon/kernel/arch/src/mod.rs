@@ -23,6 +23,9 @@ pub mod api;
 
 pub mod ops;
 
+#[cfg(target_arch = "riscv64")]
+assert_arch_signatures!(riscv64);
+
 use zx_status::Status;
 
 unsafe extern "C" {

@@ -17,6 +17,7 @@
 
 struct Thread;
 
+extern "C" {
 void arch_thread_initialize(Thread* thread, vaddr_t entry_point) TA_REQ(thread->get_lock());
 void arch_context_switch(Thread* oldthread, Thread* newthread)
     TA_REQ(oldthread->get_lock(), newthread->get_lock());
@@ -27,5 +28,6 @@ vaddr_t arch_thread_get_blocked_fp(Thread*);
 
 void arch_set_suspended_general_regs(Thread* thread, GeneralRegsSource source, void* gregs);
 void arch_reset_suspended_general_regs(Thread* thread);
+}
 
 #endif  // ZIRCON_KERNEL_INCLUDE_ARCH_THREAD_H_

@@ -124,24 +124,24 @@ void arch_late_init_percpu(void) {
   x86_cpu_feature_late_init_percpu();
 }
 
-iframe_t arch_prepare_uspace(const UserEntryState& state) {
+void arch_prepare_uspace(const UserEntryState* state, iframe_t* out) {
   // The %fs.base (thread pointer) isn't in the iframe.  It's directly in the
   // CPU's register for the current thread.  It's always accessible via MSR,
   // and accessible directly with wrfsbase only on newer CPUs.
-  write_msr(X86_MSR_IA32_FS_BASE, state.tp);
+  write_msr(X86_MSR_IA32_FS_BASE, state->tp);
 
-  return {
-      .rdi = state.arg1,
-      .rsi = state.arg2,
-      .r15 = state.abi_reg,
+  *out = {
+      .rdi = state->arg1,
+      .rsi = state->arg2,
+      .r15 = state->abi_reg,
 
-      .ip = state.pc,
+      .ip = state->pc,
       .cs = USER_CODE_64_SELECTOR,
 
       // Default user space flags: IOPL 0; interrupts enabled.
       .flags = (0 << X86_FLAGS_IOPL_SHIFT) | X86_FLAGS_IF,
 
-      .user_sp = state.sp,
+      .user_sp = state->sp,
       .user_ss = USER_DATA_SELECTOR,
   };
 }

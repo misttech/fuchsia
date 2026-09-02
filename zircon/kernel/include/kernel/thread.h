@@ -1523,7 +1523,7 @@ struct Thread : public ChainLockable {
 #include <arch/current_thread.h>
 Thread* Thread::Current::Get() { return arch_get_current_thread(); }
 
-void arch_dump_thread(const Thread* t) TA_REQ_SHARED(t->get_lock());
+extern "C" void arch_dump_thread(const Thread* t) TA_REQ_SHARED(t->get_lock());
 
 class ThreadDumper {
  public:

@@ -4,6 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+pub mod arch;
+pub mod thread;
+
 /// Architecture-specific saved normal mode state for riscv64.
 ///
 /// Currently riscv64 does not need to save any normal mode state across restricted entry.
@@ -15,9 +18,6 @@ pub struct ArchSavedNormalState {
 
 zr::static_assert!(core::mem::size_of::<ArchSavedNormalState>() == 1);
 zr::static_assert!(core::mem::align_of::<ArchSavedNormalState>() == 1);
-
-#[allow(unused_imports)]
-pub use arch_types_bindings::{GeneralRegsSource, UserEntryState};
 
 use debug::ltracef;
 use zx_status::Status;
@@ -352,3 +352,18 @@ mod tests {
         assert_eq!(validate_state_pre_restricted_entry(&state), Err(Status::BAD_STATE));
     }
 }
+
+// Names the rest of the kernel resolves directly under `arch::riscv64`: the
+// arch API contract checked by `assert_arch_signatures!` in
+// //zircon/kernel/arch/src/api.rs, plus the few names other subsystems import
+// by that path. Everything else stays behind its module, matching
+// //zircon/kernel/arch/x86/src/mod.rs.
+pub use arch::{
+    arch_early_init, arch_enter_idle_state, arch_init, arch_late_init_percpu, arch_prevm_init,
+};
+pub use thread::{
+    arch_context_switch, arch_dump_thread, arch_enter_uspace, arch_prepare_uspace,
+    arch_reset_suspended_general_regs, arch_restore_user_state, arch_save_user_state,
+    arch_set_suspended_general_regs, arch_thread_construct_first, arch_thread_get_blocked_fp,
+    arch_thread_initialize,
+};

@@ -263,7 +263,7 @@ void PostHandoffBootstrap(PhysHandoff* handoff) {
   gPhysmapBase = gPhysHandoff->physmap_base;
   gPhysmapSize = gPhysHandoff->physmap_size;
 
-  ArchPostHandoffBootstrap(handoff->arch_handoff);
+  ArchPostHandoffBootstrap(&handoff->arch_handoff);
 
   // This serves as a verification that code-patching was performed before
   // the kernel was booted; if unpatched, we would trap here and halt.

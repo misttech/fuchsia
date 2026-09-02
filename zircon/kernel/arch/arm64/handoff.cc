@@ -13,7 +13,7 @@
 #include <phys/handoff.h>
 #include <vm/handoff-end.h>
 
-void ArchPostHandoffBootstrap(const ArchPhysHandoff& arch_handoff) {
+void ArchPostHandoffBootstrap(const ArchPhysHandoff* arch_handoff) {
   // Clear any phys exception handlers.
   arch::ArmVbarEl1::Write(uintptr_t{0});
 
