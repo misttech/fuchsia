@@ -93,10 +93,8 @@ pub struct ArchPhysHandoff {
 unsafe extern "C" {
     pub fn cpp_riscv64_handoff_boot_hart_id(handoff: *const ArchPhysHandoff) -> u64;
     fn cpp_riscv64_mp_early_init_percpu(hart_id: u32, cpu_num: u32);
-    fn cpp_riscv64_sbi_early_init();
     fn cpp_riscv64_mmu_early_init();
     fn cpp_riscv64_mmu_prevm_init();
-    fn cpp_riscv64_sbi_init();
     fn cpp_riscv64_mmu_init();
     fn cpp_mp_set_curr_cpu_online(online: bool);
     fn Riscv64ExceptionEntry();
@@ -263,9 +261,9 @@ pub unsafe extern "C" fn ArchPostHandoffBootstrap(arch_handoff: *const ArchPhysH
 /// Architecture early initialization before MMU/heap.
 #[unsafe(no_mangle)]
 pub extern "C" fn arch_early_init() {
-    // SAFETY: Calls early init routines for SBI and MMU, then marks boot CPU online.
+    super::sbi::riscv64_sbi_early_init();
+    // SAFETY: Calls early init routines for MMU, then marks boot CPU online.
     unsafe {
-        cpp_riscv64_sbi_early_init();
         cpp_riscv64_mmu_early_init();
 
         // mark the boot cpu online
@@ -290,10 +288,10 @@ pub extern "C" fn arch_init() {
     dprintf!(INFO, "RISCV: Supervisor mode\n");
 
     super::feature::riscv64_feature_init();
+    super::sbi::riscv64_sbi_init();
 
-    // SAFETY: Calls SBI and MMU initialization.
+    // SAFETY: Calls MMU initialization.
     unsafe {
-        cpp_riscv64_sbi_init();
         cpp_riscv64_mmu_init();
     }
 }

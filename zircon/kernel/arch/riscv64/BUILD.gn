@@ -138,6 +138,37 @@ if (toolchain_base_environment == "kernel") {
     ]
   }
 
+  kernel_bindgen_crate("riscv-sbi-bindings") {
+    headers = [ "//zircon/kernel/lib/arch/include/lib/arch/riscv64/sbi.h" ]
+    cpp = true
+    non_rust_deps = [ "//zircon/kernel/lib/arch:headers" ]
+    notice_year = 2026
+    raw_lines = [ "#![no_std]" ]
+    type_allowlist = [
+      "arch::.*",
+      "RiscvSbi.*",
+      "Hart.*",
+    ]
+    rustified_enum = [ ".*" ]
+    explicit_padding = false
+    replacements = [
+      [
+        "\\barch_([A-Za-z0-9_]+)",
+        "\\1",
+      ],
+      [
+        "\\bk([A-Z0-9])",
+        "\\1",
+      ],
+    ]
+    std_derives = [
+      "default",
+      "eq",
+      "partialeq",
+    ]
+    expect_lints = []
+  }
+
   kernel_bindgen_crate("riscv64-regs-bindings") {
     headers = [ "include/arch/regs.h" ]
     cpp = true
@@ -211,11 +242,13 @@ if (toolchain_base_environment == "kernel") {
       "src/feature.rs",
       "src/fpu.rs",
       "src/mod.rs",
+      "src/sbi.rs",
       "src/spinlock.rs",
       "src/thread.rs",
       "src/vector.rs",
     ]
     deps = [
+      ":riscv-sbi-bindings",
       ":riscv64-regs-bindings",
       ":riscv64-thread-bindings",
       "//sdk/rust/zx-status",

@@ -45,10 +45,8 @@ uint32_t cpp_riscv64_boot_hart_id() { return riscv64_boot_hart_id(); }
 void cpp_riscv64_mp_early_init_percpu(uint32_t hart_id, uint32_t cpu_num) {
   riscv64_mp_early_init_percpu(hart_id, cpu_num);
 }
-void cpp_riscv64_sbi_early_init() { riscv64_sbi_early_init(); }
 void cpp_riscv64_mmu_early_init() { riscv64_mmu_early_init(); }
 void cpp_riscv64_mmu_prevm_init() { riscv64_mmu_prevm_init(); }
-void cpp_riscv64_sbi_init() { riscv64_sbi_init(); }
 void cpp_riscv64_mmu_init() { riscv64_mmu_init(); }
 
 // TODO(https://fxbug.dev/537458631): Remove when FFI inlining is resolved.
@@ -85,6 +83,11 @@ FFI_ALWAYS_INLINE void cpp_int_handler_start(uint64_t* state) {
 
 FFI_ALWAYS_INLINE uint32_t cpp_int_handler_finish(uint64_t* state) {
   return int_handler_finish(reinterpret_cast<int_handler_saved_state_t*>(state)) ? 1 : 0;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint64_t cpp_riscv64_cpu_mask_to_hart_mask(uint32_t cmask) {
+  return riscv64_cpu_mask_to_hart_mask(cmask);
 }
 
 void cpp_print_current_thread_backtrace() {

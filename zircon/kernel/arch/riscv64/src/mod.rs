@@ -8,6 +8,7 @@ pub mod arch;
 pub mod cache;
 pub mod feature;
 pub mod fpu;
+pub mod sbi;
 pub mod spinlock;
 pub mod thread;
 pub mod vector;
