@@ -282,3 +282,22 @@ class TestExecutionEnvironment(unittest.TestCase):
         )
         with mock.patch.dict(os.environ, env_dict, clear=True):
             self.assertEqual(env.fx_cmd_line(*input_args), expected)
+
+    def test_get_most_recent_log_stdout_option(self) -> None:
+        """When log_file is '-' (stdout option), get_most_recent_log should search out_dir or raise EnvironmentError."""
+        with tempfile.TemporaryDirectory() as tmp:
+            env = environment.ExecutionEnvironment(
+                fuchsia_dir=tmp,
+                out_dir=tmp,
+                test_json_file=os.path.join(tmp, "tests.json"),
+                disabled_ctf_tests_file="",
+                log_file=args.LOG_TO_STDOUT_OPTION,
+            )
+            self.assertRaises(
+                environment.EnvironmentError,
+                lambda: env.get_most_recent_log(),
+            )
+            log_path = os.path.join(tmp, "fxtest-2026-01-01T00:00:00.json.gz")
+            with open(log_path, "w") as f:
+                f.write("test")
+            self.assertEqual(env.get_most_recent_log(), log_path)

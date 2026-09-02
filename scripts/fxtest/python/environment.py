@@ -214,7 +214,7 @@ class ExecutionEnvironment:
         Returns:
             str: Path to the most recent log file.
         """
-        if self.log_file:
+        if self.log_file and not self.log_to_stdout():
             return self.log_file
 
         matching = [
