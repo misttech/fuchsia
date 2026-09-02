@@ -10,7 +10,9 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 import contextlib
+import termios
 import unittest
+import unittest.mock as mock
 from typing import IO, cast
 
 import termout
@@ -102,3 +104,20 @@ class TestTermout(unittest.TestCase):
                     "Hello 2",
                 ],
             )
+
+    def test_init_when_stdin_not_atty(self) -> None:
+        """Test that init() succeeds and suspends echo safely when stdin is not a TTY."""
+        with mock.patch(
+            "os.isatty", side_effect=lambda fd: fd == sys.stdout.fileno()
+        ):
+            with mock.patch.dict("os.environ", {"TERM": "xterm"}):
+                with mock.patch(
+                    "termios.tcgetattr",
+                    side_effect=termios.error(
+                        25, "Inappropriate ioctl for device"
+                    ),
+                ):
+                    with mock.patch("colorama.init"):
+                        with mock.patch.object(termout.termout, "_init", False):
+                            # Should not raise termios.error
+                            termout.init()

@@ -58,17 +58,25 @@ def _suspend_echo() -> None:
     Automatically installs a routine to run at process exit to
     restore echoing and cursor visibility.
     """
-    fd = sys.stdin.fileno()
-    orig_flags = termios.tcgetattr(fd)
-    new_flags = termios.tcgetattr(fd)
-    new_flags[3] = new_flags[3] & ~termios.ECHO
-    termios.tcsetattr(fd, termios.TCSANOW, new_flags)
+    try:
+        fd = sys.stdin.fileno()
+        if not os.isatty(fd):
+            return
+        orig_flags = termios.tcgetattr(fd)
+        new_flags = termios.tcgetattr(fd)
+        new_flags[3] = new_flags[3] & ~termios.ECHO
+        termios.tcsetattr(fd, termios.TCSANOW, new_flags)
 
-    def cleanup() -> None:
-        print("\r")
-        termios.tcsetattr(fd, termios.TCSANOW, orig_flags)
+        def cleanup() -> None:
+            print("\r")
+            try:
+                termios.tcsetattr(fd, termios.TCSANOW, orig_flags)
+            except (termios.error, OSError):
+                pass
 
-    atexit.register(cleanup)
+        atexit.register(cleanup)
+    except (termios.error, OSError):
+        pass
 
 
 _init: bool = False
