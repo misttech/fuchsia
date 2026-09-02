@@ -57,6 +57,16 @@ _CANONICAL_FUCHSIA_SDK_REPO_NAME = "rules_fuchsia++fuchsia_sdk_ext+fuchsia_sdk"
 _CANONICAL_IN_TREE_IDK_REPO_NAME = "fuchsia_in_tree_idk+"
 _CANONICAL_RULES_FUCHSIA_REPO_NAME = "rules_fuchsia+"
 
+# LINT.IfChange(bazel_vendor_dir)
+_DEFAULT_BAZEL_VENDOR_DIR = "third_party/bazel_vendor"
+# LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_vendor_dir)
+
+# LINT.IfChange(bazel_registry_dir)
+_DEFAULT_BAZEL_REGISTRY_DIR = (
+    "third_party/bazel_vendor/_registries/bcr.bazel.build"
+)
+# LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_registry_dir)
+
 # Maps from apparent repo names to canonical repo names.
 _APPARENT_REPO_NAME_TO_CANONICAL = {
     "fuchsia_sdk": _CANONICAL_FUCHSIA_SDK_REPO_NAME,
@@ -332,7 +342,7 @@ class BazelRepositoryMap(object):
 
         self._overrides[_CANONICAL_RULES_FUCHSIA_REPO_NAME] = rules_fuchsia_dir
 
-        _bazel_vendor_dir = fuchsia_source_dir / "third_party" / "bazel_vendor"
+        _bazel_vendor_dir = fuchsia_source_dir / _DEFAULT_BAZEL_VENDOR_DIR
 
         # These repository overrides are used when converting Bazel labels to actual paths.
         # NOTE: Mapping labels to repository inputs is considerably simpler than
@@ -766,10 +776,7 @@ def main() -> int:
         fuchsia_source_dir / "build/bazel/config/no_downloads_allowed.config"
     )
     bazel_vendor_dir = fuchsia_source_dir / "third_party/bazel_vendor"
-    bazel_registry = (
-        fuchsia_source_dir
-        / "third_party/bazel_vendor/_registries/bcr.bazel.build"
-    )
+    bazel_registry = fuchsia_source_dir / _DEFAULT_BAZEL_REGISTRY_DIR
 
     # If there's a //vendor dir in the fuchsia source dir, we need to symlink to it
     # from the tests directory, so that any hlcpp visibility rules referencing

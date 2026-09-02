@@ -34,11 +34,6 @@ common:exec_log --remote_build_event_upload=minimal
 common:exec_log --experimental_execution_graph_log_dep_type=all
 common:exec_log --experimental_enable_execution_graph_log
 
-# Prevent repository downloads with custom downloader config file.
-common --downloader_config=build/bazel/config/no_downloads_allowed.config
-common --vendor_dir=third_party/bazel_vendor
-common --registry=file://%workspace%/third_party/bazel_vendor/_registries/bcr.bazel.build
-
 # Disable verbose Bazel output with --config=quiet
 # Note that --show_result=0 is not supported by `bazel query`.
 common:quiet --noshow_loading_progress

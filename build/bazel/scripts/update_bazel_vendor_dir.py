@@ -33,6 +33,12 @@ def main() -> int:
         help="Bazel vendor directory to write to",
     )
     parser.add_argument(
+        "--bazel-registry-dir",
+        type=Path,
+        required=True,
+        help="Bazel registry directory to write to",
+    )
+    parser.add_argument(
         "--repo",
         action="append",
         required=True,
@@ -56,10 +62,6 @@ def main() -> int:
             args.bazel,
             "vendor",
             f"--vendor_dir={temp_dir}",
-            # Overwrite local-only settings from bazelrc. Allow network access and
-            # enable Bazel Central repository when updating vendor repositories.
-            "--downloader_config=/dev/null",
-            "--registry=https://bcr.bazel.build/",
         ]
         cmd += [f"--repo={repo}" for repo in args.repo]
 
@@ -67,7 +69,7 @@ def main() -> int:
 
         # Remove the existing local Bazel registry to force `bazel vendor` to update
         # and create a new one.
-        shutil.rmtree(args.bazel_vendor_dir / "_registries", ignore_errors=True)
+        shutil.rmtree(args.bazel_registry_dir, ignore_errors=True)
         subprocess.check_call(
             cmd,
             cwd=args.workspace,

@@ -76,6 +76,7 @@ readonly _REMOTE_SERVICES_BAZELRC="${_NINJA_BUILD_DIR}/regenerator_outputs/remot
 
 readonly _GENERATE_INVOCATION_BAZELRC="${_SRCDIR}/scripts/generate_invocation_bazelrc.py"
 readonly _INVOCATION_BAZELRC="${_BAZEL_WORKSPACE}/invocation.bazelrc"
+readonly _VENDORING_BAZELRC="${_SRCDIR}/enable_vendor_mode.bazelrc"
 
 # Exported explicitly to be used by repository rules to reference the
 # Ninja output directory and binary.
@@ -154,7 +155,7 @@ _BAZEL_DIRECT_ARGS=(
 # Bazel command requires analysis / build configurations.
 bazel_command_does_configuration=
 case "${_BAZEL_COMMAND}" in
-  cquery | aquery | build | run | test)
+  cquery | aquery | build | run | test | vendor)
       bazel_command_does_configuration=true
       ;;
 esac
@@ -305,6 +306,15 @@ _BAZEL_PRE_COMMAND_ARGS+=(
   # For ephemeral configuration that amends remote_services.bazelrc:
   --bazelrc="${_INVOCATION_BAZELRC}"
 )
+
+# Except when running the 'vendor' command itself, include
+# .bazelrc arguments to enable the use of our custom
+# Bazel registry and vendor directory.
+if [[ "${_BAZEL_COMMAND}" != "vendor" ]]; then
+  _BAZEL_PRE_COMMAND_ARGS+=(
+    --bazelrc="${_VENDORING_BAZELRC}"
+  )
+fi
 
 # Use a shared disk cache if FUCHSIA_BAZEL_DISK_CACHE is set. Bazel
 # documentation states that --disk_cache is compatible with remote caching.

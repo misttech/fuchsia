@@ -48,10 +48,19 @@ fi
 source "${FUCHSIA_DIR}/tools/devshell/lib/bazel_utils.sh" || exit $?
 fx-update-bazel-workspace
 
+# LINT.IfChange(bazel_vendor_dir)
+readonly BAZEL_VENDOR_DIR="${FUCHSIA_DIR}/third_party/bazel_vendor"
+# LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_vendor_dir)
+
+# LINT.IfChange(bazel_registry_dir)
+readonly BAZEL_REGISTRY_DIR="${FUCHSIA_DIR}/third_party/bazel_registry"
+# LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_registry_dir)
+
 "${PREBUILT_PYTHON3}" "${FUCHSIA_DIR}"/build/bazel/scripts/update_bazel_vendor_dir.py \
     --workspace="$(fx-get-bazel-workspace)" \
     --bazel="$(fx-get-bazel)" \
-    --bazel-vendor-dir="${FUCHSIA_DIR}/third_party/bazel_vendor" \
+    --bazel-vendor-dir="${BAZEL_VENDOR_DIR}" \
+    --bazel-registry-dir="${BAZEL_REGISTRY_DIR}" \
     --repo='@@bazel_features+' \
     --repo='@@bazel_skylib+' \
     --repo='@@boringssl+' \
