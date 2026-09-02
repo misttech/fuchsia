@@ -261,7 +261,10 @@ pub fn generate_parent_spec_generic(
     }
 
     if !bind_rules.iter().any(|r| r.key == "fuchsia.ID") {
-        if let Some(id) = crate::get_int64(constraint, "id") {
+        // TODO(https://fxbug.dev/555962083): Remove this hack
+        let id_opt =
+            crate::get_int64(constraint, "node_id").or_else(|| crate::get_int64(constraint, "id"));
+        if let Some(id) = id_opt {
             bind_rules.push(make_accept_bind_rule("fuchsia.ID", property_int(id as u32)));
         }
     }
