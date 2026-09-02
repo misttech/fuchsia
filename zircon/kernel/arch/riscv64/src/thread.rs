@@ -113,7 +113,6 @@ unsafe extern "C" {
     pub fn cpp_riscv64_thread_fpu_restore(thread: *const core::ffi::c_void, fpu_status: u32);
     pub fn cpp_riscv64_thread_vector_save(thread: *mut core::ffi::c_void, vector_status: u32);
     pub fn cpp_riscv64_thread_vector_restore(thread: *const core::ffi::c_void, vector_status: u32);
-    pub fn cpp_riscv64_feature_has_vector() -> bool;
 }
 
 /// Returns a pointer to the RISC-V 64 architectural state embedded in `thread`.
@@ -256,8 +255,7 @@ pub unsafe extern "C" fn arch_prepare_uspace(state: &UserEntryState, out: *mut I
     // bits set to zero, default options.
     let mut status =
         RISCV64_CSR_SSTATUS_SPIE | RISCV64_CSR_SSTATUS_UXL_64BIT | RISCV64_CSR_SSTATUS_FS_INITIAL;
-    // SAFETY: Queries a boot-time-initialized feature bit; no preconditions.
-    let has_vec = unsafe { cpp_riscv64_feature_has_vector() };
+    let has_vec = super::feature::has_vector();
     if has_vec {
         status |= RISCV64_CSR_SSTATUS_VS_INITIAL;
     }
@@ -393,7 +391,7 @@ pub unsafe extern "C" fn arch_context_switch(
             // whether the fpu or vector hardware is currently in the initial state.
             debug_assert_eq!(old_thread, crate::kernel::thread::current_get().cast());
             cpp_riscv64_thread_fpu_save(old_thread, current_fpu_status);
-            if cpp_riscv64_feature_has_vector() {
+            if super::feature::has_vector() {
                 cpp_riscv64_thread_vector_save(old_thread, current_vector_status);
             }
         }
@@ -404,7 +402,7 @@ pub unsafe extern "C" fn arch_context_switch(
         // avoids potential issues with state getting out of sync if the kernel
         // panicked or the higher layer forgot to restore.
         cpp_riscv64_thread_fpu_restore(new_thread, current_fpu_status);
-        if cpp_riscv64_feature_has_vector() {
+        if super::feature::has_vector() {
             cpp_riscv64_thread_vector_restore(new_thread, current_vector_status);
         }
 
@@ -469,7 +467,7 @@ pub unsafe extern "C" fn arch_save_user_state(thread: *mut core::ffi::c_void) {
     // SAFETY: Saves FPU and vector state for the thread.
     unsafe {
         cpp_riscv64_thread_fpu_save(thread, riscv64_fpu_status());
-        if cpp_riscv64_feature_has_vector() {
+        if super::feature::has_vector() {
             cpp_riscv64_thread_vector_save(thread, riscv64_vector_status());
         }
         // Not saving debug state because there isn't any.
@@ -485,7 +483,7 @@ pub unsafe extern "C" fn arch_restore_user_state(thread: *mut core::ffi::c_void)
     // SAFETY: Restores FPU and vector state for the thread.
     unsafe {
         cpp_riscv64_thread_fpu_restore(thread, riscv64_fpu_status());
-        if cpp_riscv64_feature_has_vector() {
+        if super::feature::has_vector() {
             cpp_riscv64_thread_vector_restore(thread, riscv64_vector_status());
         }
     }

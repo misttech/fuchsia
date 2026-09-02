@@ -100,7 +100,6 @@ if (toolchain_base_environment == "kernel") {
       "debugger.cc",
       "exceptions.S",
       "exceptions_c.cc",
-      "feature.cc",
       "fpu.cc",
       "fpu_asm.S",
       "handoff.cc",
@@ -211,6 +210,7 @@ if (toolchain_base_environment == "kernel") {
     source_root = "src/mod.rs"
     sources = [
       "src/arch.rs",
+      "src/feature.rs",
       "src/mod.rs",
       "src/thread.rs",
     ]
@@ -220,6 +220,7 @@ if (toolchain_base_environment == "kernel") {
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//zircon/kernel/arch:arch-types-bindings",
+      "//zircon/kernel/lib/arch:arch-rs",
       "//zircon/kernel/lib/debug",
     ]
     test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]

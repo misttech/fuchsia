@@ -96,16 +96,11 @@ unsafe extern "C" {
     fn cpp_riscv64_vector_zero();
     fn cpp_riscv64_mp_early_init_percpu(hart_id: u32, cpu_num: u32);
     fn cpp_riscv64_sbi_early_init();
-    fn cpp_riscv64_feature_early_init();
     fn cpp_riscv64_mmu_early_init();
     fn cpp_riscv64_mmu_prevm_init();
-    fn cpp_riscv64_feature_init();
     fn cpp_riscv64_sbi_init();
     fn cpp_riscv64_mmu_init();
     fn cpp_mp_set_curr_cpu_online(online: bool);
-    fn cpp_riscv64_feature_has_vector() -> bool;
-    fn cpp_riscv64_feature_has_zicbom() -> bool;
-    fn cpp_riscv64_feature_has_zicboz() -> bool;
     fn Riscv64ExceptionEntry();
 }
 
@@ -255,6 +250,8 @@ pub unsafe extern "C" fn riscv64_boot_cpu_init(arch_handoff: *const ArchPhysHand
     unsafe {
         cpp_riscv64_mp_early_init_percpu(hart_id, 0);
     }
+    // SAFETY: Caller guarantees `arch_handoff` is non-null and valid.
+    unsafe { super::feature::riscv64_feature_early_init(arch_handoff) };
 }
 
 /// # Safety
@@ -268,10 +265,9 @@ pub unsafe extern "C" fn ArchPostHandoffBootstrap(arch_handoff: *const ArchPhysH
 /// Architecture early initialization before MMU/heap.
 #[unsafe(no_mangle)]
 pub extern "C" fn arch_early_init() {
-    // SAFETY: Calls early init routines for SBI, CPU features, and MMU, then marks boot CPU online.
+    // SAFETY: Calls early init routines for SBI and MMU, then marks boot CPU online.
     unsafe {
         cpp_riscv64_sbi_early_init();
-        cpp_riscv64_feature_early_init();
         cpp_riscv64_mmu_early_init();
 
         // mark the boot cpu online
@@ -295,9 +291,10 @@ pub extern "C" fn arch_init() {
     dprintf!(INFO, "RISCV: Boot HART ID {}\n", super::boot_hart_id());
     dprintf!(INFO, "RISCV: Supervisor mode\n");
 
-    // SAFETY: Calls feature, SBI, and MMU initialization.
+    super::feature::riscv64_feature_init();
+
+    // SAFETY: Calls SBI and MMU initialization.
     unsafe {
-        cpp_riscv64_feature_init();
         cpp_riscv64_sbi_init();
         cpp_riscv64_mmu_init();
     }
@@ -312,17 +309,17 @@ pub extern "C" fn arch_late_init_percpu() {
         // While it would be nicer to zero out vector state - and set it to initial -
         // earlier and next to the call to do so for FPU state, that is too early for
         // vector feature bit to have been set.
-        if cpp_riscv64_feature_has_vector() {
+        if super::feature::has_vector() {
             cpp_riscv64_vector_zero();
         }
 
-        if cpp_riscv64_feature_has_zicbom() {
+        if super::feature::has_zicbom() {
             // allow userspace to perform FLUSH and CLEAN operations, but forbid INVAL
             riscv64_csr_set::<RISCV64_CSR_SENVCFG>(RISCV64_CSR_SENVCFG_CBCFE);
             riscv64_csr_clear::<RISCV64_CSR_SENVCFG>(RISCV64_CSR_SENVCFG_CBIE_MASK);
             riscv64_csr_set::<RISCV64_CSR_SENVCFG>(RISCV64_CSR_SENVCFG_CBIE_ILLEGAL);
         }
-        if cpp_riscv64_feature_has_zicboz() {
+        if super::feature::has_zicboz() {
             // Allow user space to perform zeroing
             riscv64_csr_set::<RISCV64_CSR_SENVCFG>(RISCV64_CSR_SENVCFG_CBZE);
         }

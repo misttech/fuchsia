@@ -17,7 +17,7 @@
 // Save the current on-cpu vector state to the thread. Takes as an argument
 // the current HW status in the sstatus register.
 void riscv64_thread_vector_save(Thread* thread, Riscv64VectorStatus status) {
-  DEBUG_ASSERT(gRiscvFeatures[arch::RiscvFeature::kVector]);
+  DEBUG_ASSERT(riscv64_feature_has_vector());
 
   switch (status) {
     case Riscv64VectorStatus::DIRTY:
@@ -51,7 +51,7 @@ void riscv64_thread_vector_save(Thread* thread, Riscv64VectorStatus status) {
 // should hold whether or not the sstatus.fs bits are currently RISCV64_CSR_SSTATUS_VS_INITIAL,
 // as an optimization to avoid re-reading sstatus any more than necessary.
 void riscv64_thread_vector_restore(const Thread* t, Riscv64VectorStatus status) {
-  DEBUG_ASSERT(gRiscvFeatures[arch::RiscvFeature::kVector]);
+  DEBUG_ASSERT(riscv64_feature_has_vector());
 
   // Restore the state from the new thread
   if (t->arch().vector_dirty) {
@@ -77,7 +77,7 @@ void riscv64_thread_vector_restore(const Thread* t, Riscv64VectorStatus status) 
 }
 
 ktl::optional<uint64_t> riscv64_vlmax(uint64_t vtype) {
-  uint64_t value = 8 * riscv_vlenb;  // VLEN
+  uint64_t value = 8 * riscv_vlenb();  // VLEN
 
   // This computes VLEN / SEW
   const uint64_t vsew = (vtype & RISCV64_CSR_VTYPE_VSEW_MASK) >> RISCV64_CSR_VTYPE_VSEW_SHIFT;

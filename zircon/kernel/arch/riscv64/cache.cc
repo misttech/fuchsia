@@ -24,8 +24,8 @@ inline void cache_op(vaddr_t start, size_t len, void (*cbofunc)(vaddr_t)) {
   // If the Zicbom feature is enabled, use the cbo* instructions.
   // If there is no zicbom feature, the cpu is assumed to be coherent with
   // external DMA and not need any sort of cache flushing.
-  if (gRiscvFeatures[arch::RiscvFeature::kZicbom]) {
-    const size_t stride = riscv_cbom_size;
+  if (riscv64_feature_has_zicbom()) {
+    const size_t stride = riscv_cbom_size();
     const vaddr_t end = start + len;
 
     // Align the address. (stride must be a power of 2).

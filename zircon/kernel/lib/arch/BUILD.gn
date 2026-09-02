@@ -147,6 +147,7 @@ rustc_library("arch-rs") {
     "src/arm64/mod.rs",
     "src/arm64/system.rs",
     "src/lib.rs",
+    "src/riscv64/feature.rs",
     "src/riscv64/mod.rs",
     "src/riscv64/paging.rs",
     "src/riscv64/system.rs",

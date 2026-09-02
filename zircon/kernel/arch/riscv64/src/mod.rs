@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 pub mod arch;
+pub mod feature;
 pub mod thread;
 
 /// Architecture-specific saved normal mode state for riscv64.

@@ -48,7 +48,7 @@ zx_status_t riscv_sbi_set_oneshot_timer(zx_ticks_t deadline) {
 
   // If sstc feature is present, directly set the compare register instead of
   // making a call to SBI.
-  if (gRiscvFeatures[arch::RiscvFeature::kSstc]) {
+  if (riscv64_feature_has_sstc()) {
     riscv64_csr_write(RISCV64_CSR_STIMECMP, deadline);
   } else {
     sbi_set_timer(deadline);

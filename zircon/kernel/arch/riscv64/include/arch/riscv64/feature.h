@@ -7,21 +7,39 @@
 #ifndef ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_FEATURE_H_
 #define ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_FEATURE_H_
 
-#include <lib/arch/riscv64/feature.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <zircon/compiler.h>
 
-// RISC-V feature bitset.
-extern arch::RiscvFeatures gRiscvFeatures;
+#include <kernel/ffi.h>
 
-extern uint32_t riscv_cboz_size;
-extern uint32_t riscv_cbom_size;
+__BEGIN_CDECLS
 
-// The length of the vector registers in bytes. A value of 0 corresponds to the
-// hardware not supporting vectors.
-extern uint64_t riscv_vlenb;
+bool rust_riscv64_feature_has_vector();
+bool rust_riscv64_feature_has_zicbom();
+bool rust_riscv64_feature_has_zicboz();
+bool rust_riscv64_feature_has_svpbmt();
+bool rust_riscv64_feature_has_zicntr();
+bool rust_riscv64_feature_has_sstc();
+uint32_t rust_riscv64_feature_cbom_size();
+uint32_t rust_riscv64_feature_cboz_size();
+uint64_t rust_riscv64_feature_vlenb();
 
-void riscv64_feature_early_init();
-void riscv64_feature_init();
+__END_CDECLS
+
+#ifdef __cplusplus
+#include <lib/arch/riscv64/feature.h>
+
+inline bool riscv64_feature_has_vector() { return rust_riscv64_feature_has_vector(); }
+inline bool riscv64_feature_has_zicbom() { return rust_riscv64_feature_has_zicbom(); }
+inline bool riscv64_feature_has_zicboz() { return rust_riscv64_feature_has_zicboz(); }
+inline bool riscv64_feature_has_svpbmt() { return rust_riscv64_feature_has_svpbmt(); }
+inline bool riscv64_feature_has_zicntr() { return rust_riscv64_feature_has_zicntr(); }
+inline bool riscv64_feature_has_sstc() { return rust_riscv64_feature_has_sstc(); }
+inline uint32_t riscv_cbom_size() { return rust_riscv64_feature_cbom_size(); }
+inline uint32_t riscv_cboz_size() { return rust_riscv64_feature_cboz_size(); }
+inline uint64_t riscv_vlenb() { return rust_riscv64_feature_vlenb(); }
+
+#endif  // __cplusplus
 
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_FEATURE_H_

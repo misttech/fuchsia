@@ -37,7 +37,6 @@
 
 extern "C" {
 
-void cpp_riscv64_feature_early_init() { riscv64_feature_early_init(); }
 bool cpp_boot_options_riscv64_enable_asid() { return BootOptions::Get()->riscv64_enable_asid; }
 
 uint32_t cpp_riscv64_curr_hart_id() { return riscv64_curr_hart_id(); }
@@ -51,12 +50,8 @@ void cpp_riscv64_mp_early_init_percpu(uint32_t hart_id, uint32_t cpu_num) {
 void cpp_riscv64_sbi_early_init() { riscv64_sbi_early_init(); }
 void cpp_riscv64_mmu_early_init() { riscv64_mmu_early_init(); }
 void cpp_riscv64_mmu_prevm_init() { riscv64_mmu_prevm_init(); }
-void cpp_riscv64_feature_init() { riscv64_feature_init(); }
 void cpp_riscv64_sbi_init() { riscv64_sbi_init(); }
 void cpp_riscv64_mmu_init() { riscv64_mmu_init(); }
-bool cpp_riscv64_feature_has_vector() { return gRiscvFeatures[arch::RiscvFeature::kVector]; }
-bool cpp_riscv64_feature_has_zicbom() { return gRiscvFeatures[arch::RiscvFeature::kZicbom]; }
-bool cpp_riscv64_feature_has_zicboz() { return gRiscvFeatures[arch::RiscvFeature::kZicboz]; }
 
 void cpp_riscv64_thread_fpu_save(void* thread, uint32_t status) {
   riscv64_thread_fpu_save(static_cast<Thread*>(thread), static_cast<Riscv64FpuStatus>(status));

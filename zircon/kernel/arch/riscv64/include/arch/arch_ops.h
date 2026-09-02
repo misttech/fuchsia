@@ -18,7 +18,7 @@
 
 inline uint32_t arch_cpu_features() { return 0; }
 
-inline uint32_t arch_dcache_line_size() { return riscv_cbom_size; }
+inline uint32_t arch_dcache_line_size() { return riscv_cbom_size(); }
 
 constexpr uint32_t arch_icache_line_size() { return 64; }
 

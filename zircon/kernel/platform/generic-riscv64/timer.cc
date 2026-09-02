@@ -72,7 +72,7 @@ zx_status_t platform_resume_timer_curr_cpu() { return ZX_ERR_NOT_SUPPORTED; }
 bool platform_usermode_can_access_tick_registers() {
   // If the cpu claims to have Zicntr support, then it's relatively cheap for user
   // space to access the time CSR via rdtime instruction.
-  return gRiscvFeatures[arch::RiscvFeature::kZicntr];
+  return riscv64_feature_has_zicntr();
 }
 
 // Explicit instantiation of all of the forms of synchronized tick access.

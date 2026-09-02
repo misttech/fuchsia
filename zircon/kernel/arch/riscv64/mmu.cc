@@ -145,7 +145,7 @@ pte_t mmu_flags_to_pte_attr(arch_mmu_flags_t flags, bool global) {
   attr |= (global) ? RISCV64_PTE_G : 0;
 
   // Svpbmt support
-  if (gRiscvFeatures[arch::RiscvFeature::kSvpbmt]) {
+  if (riscv64_feature_has_svpbmt()) {
     switch (flags & ARCH_MMU_FLAG_CACHE_MASK) {
       case ARCH_MMU_FLAG_CACHED:
         attr |= RISCV64_PTE_PBMT_PMA;
@@ -172,7 +172,7 @@ arch_mmu_flags_t mmu_flags_from_pte(pte_t pte) {
   mmu_flags |= (pte & RISCV64_PTE_X) ? ARCH_MMU_FLAG_PERM_EXECUTE : 0;
 
   // Svpbmt feature
-  if (gRiscvFeatures[arch::RiscvFeature::kSvpbmt]) {
+  if (riscv64_feature_has_svpbmt()) {
     switch (pte & RISCV64_PTE_PBMT_MASK) {
       case RISCV64_PTE_PBMT_PMA:
         // PMA state basically means default cache paramaters, as determined by physical address.
@@ -1829,7 +1829,7 @@ uint32_t arch_address_tagging_features() { return 0; }
 void arch_zero_page(void* _ptr) {
   const uintptr_t end_address = reinterpret_cast<uintptr_t>(_ptr) + kPageSize;
 
-  if (gRiscvFeatures[arch::RiscvFeature::kZicboz]) {
+  if (riscv64_feature_has_zicboz()) {
     __asm__ volatile(
         R"""(
       .balign 4
@@ -1839,7 +1839,7 @@ void arch_zero_page(void* _ptr) {
         bne  %0,%1,0b
         )"""
         : "+r"(_ptr)
-        : "r"(end_address), "r"(riscv_cboz_size)
+        : "r"(end_address), "r"(riscv_cboz_size())
         : "memory");
 
   } else {
