@@ -39,6 +39,16 @@ impl<T: RcuDroppable + Sync> RcuOptionBox<T> {
         self.ptr.read(scope).as_ref()
     }
 
+    /// Returns `true` if the RCU wrapper currently contains a value.
+    pub fn is_some(&self, scope: &RcuReadScope) -> bool {
+        self.as_ref(scope).is_some()
+    }
+
+    /// Returns `true` if the RCU wrapper does not contain a value.
+    pub fn is_none(&self, scope: &RcuReadScope) -> bool {
+        self.as_ref(scope).is_none()
+    }
+
     /// Write a new value to the RCU wrapper.
     ///
     /// Concurrent readers may continue to see the old value until the RCU state machine has
@@ -108,11 +118,16 @@ mod tests {
 
     #[test]
     fn test_rcu_option_cell() {
+        let scope = RcuReadScope::new();
         let value = RcuOptionBox::new(Some(42));
         assert_eq!(value.read().unwrap().deref(), &42);
+        assert!(value.is_some(&scope));
+        assert!(!value.is_none(&scope));
 
         let value = RcuOptionBox::<i32>::new(None);
         assert!(value.read().is_none());
+        assert!(value.is_none(&scope));
+        assert!(!value.is_some(&scope));
     }
 
     #[test]
