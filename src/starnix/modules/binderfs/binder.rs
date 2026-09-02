@@ -81,6 +81,7 @@ use starnix_uapi::{
 };
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -400,6 +401,11 @@ pub struct BinderDriver {
     /// The context manager, the object represented by the zero handle.
     pub context_manager: LockDepMutex<Option<Arc<BinderObject>>, BinderContextManagerLevel>,
 
+    /// euid of the first process that successfully registered as context manager.
+    /// Matches Linux `binder_context_mgr_uid`: once set, only the same euid may
+    /// re-register after the previous manager exits. `u32::MAX` means unset.
+    pub context_manager_uid: AtomicU32,
+
     /// Manages the internal state of each process interacting with the binder driver.
     ///
     /// The Driver owns the BinderProcess. There can be at most one connection to the binder driver
@@ -427,6 +433,7 @@ impl Default for BinderDriver {
     fn default() -> Self {
         Self {
             context_manager: Default::default(),
+            context_manager_uid: AtomicU32::new(u32::MAX),
             procs: Default::default(),
             next_identifier: Default::default(),
         }
@@ -715,6 +722,9 @@ impl BinderDriver {
                 }
                 uapi::BINDER_SET_CONTEXT_MGR | uapi::BINDER_SET_CONTEXT_MGR_EXT => {
                     // A process is registering itself as the context manager.
+                    // Match Linux binder_ioctl_set_ctx_mgr: reject if a live manager is
+                    // already set (EBUSY), and lock the manager role to the first setter's
+                    // euid (EPERM on mismatch).
                     security::binder_set_context_mgr(current_task)?;
                     let flags = if request == uapi::BINDER_SET_CONTEXT_MGR_EXT {
                         if user_arg.is_null() {
@@ -731,7 +741,29 @@ impl BinderDriver {
 
                     log_trace!("binder setting context manager with flags {:x}", flags);
 
-                    *self.context_manager.lock() =
+                    let euid = current_task.current_creds().euid as u32;
+                    // Lock the manager uid to the first successful setter (Linux behavior).
+                    match self.context_manager_uid.compare_exchange(
+                        u32::MAX,
+                        euid,
+                        Ordering::AcqRel,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => {}
+                        Err(existing) if existing == euid => {}
+                        Err(_) => return error!(EPERM),
+                    }
+
+                    let mut context_manager = self.context_manager.lock();
+                    if let Some(existing) = context_manager.as_ref() {
+                        if existing.owner.upgrade().is_some() {
+                            return error!(EBUSY);
+                        }
+                        // Drop a dead manager marker so a same-euid process can re-register.
+                        *context_manager = None;
+                    }
+
+                    *context_manager =
                         Some(BinderObject::new_context_manager_marker(binder_proc, flags));
                     Ok(SUCCESS)
                 }

@@ -269,6 +269,71 @@ pub mod tests {
     }
 
     #[fuchsia::test]
+    async fn set_context_mgr_enforces_ebusy_and_euid_lock() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let manager = BinderProcessFixture::new_current(current_task, &device);
+            let security_state = security::binder_connection_alloc(current_task);
+
+            device
+                .ioctl(
+                    current_task,
+                    &security_state,
+                    &manager.proc,
+                    None,
+                    uapi::BINDER_SET_CONTEXT_MGR,
+                    UserAddress::NULL.into(),
+                    Vec::new(),
+                )
+                .expect("first BINDER_SET_CONTEXT_MGR");
+
+            match device.ioctl(
+                current_task,
+                &security_state,
+                &manager.proc,
+                None,
+                uapi::BINDER_SET_CONTEXT_MGR,
+                UserAddress::NULL.into(),
+                Vec::new(),
+            ) {
+                Err(err) => assert_eq!(err, errno!(EBUSY)),
+                Ok(_) => panic!("second SET_CONTEXT_MGR with a live manager succeeded"),
+            }
+
+            let other = BinderProcessFixture::new(current_task, &device);
+            other.task().set_creds(Credentials::with_ids(1, 1));
+            match device.ioctl(
+                other.task(),
+                &other.connection_security_state,
+                &other.proc,
+                None,
+                uapi::BINDER_SET_CONTEXT_MGR,
+                UserAddress::NULL.into(),
+                Vec::new(),
+            ) {
+                Err(err) => assert_eq!(err, errno!(EPERM)),
+                Ok(_) => panic!("SET_CONTEXT_MGR from a different euid succeeded"),
+            }
+
+            // Same euid may re-register after the previous manager process exits.
+            drop(manager);
+            let successor = BinderProcessFixture::new_current(current_task, &device);
+            device
+                .ioctl(
+                    current_task,
+                    &security::binder_connection_alloc(current_task),
+                    &successor.proc,
+                    None,
+                    uapi::BINDER_SET_CONTEXT_MGR,
+                    UserAddress::NULL.into(),
+                    Vec::new(),
+                )
+                .expect("same euid can re-register after manager exits");
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
     async fn fail_to_retrieve_non_existing_handle() {
         spawn_kernel_and_run(async |current_task| {
             let device = BinderDevice::default();
