@@ -144,11 +144,11 @@ static bool root_resource_filter_default() {
   // meaningful concept of "range" associated with this.  Unless explicitly
   // disallowed, all requests should default to OK.
   ktl::array kResourceKinds = {ZX_RSRC_KIND_MMIO, ZX_RSRC_KIND_IRQ, ZX_RSRC_KIND_IOPORT,
-                               ZX_RSRC_KIND_ROOT, ZX_RSRC_KIND_SMC, ZX_RSRC_KIND_SYSTEM};
+                               ZX_RSRC_KIND_SMC, ZX_RSRC_KIND_SYSTEM};
 
   // make sure that if someone adds new resource type, that someone comes back
   // here and adds it to this test.
-  static_assert(kResourceKinds.size() == ZX_RSRC_KIND_COUNT,
+  static_assert(kResourceKinds.size() == ZX_RSRC_KIND_COUNT - 1,
                 "The set of resource kinds has changed and this test needs to be updated.");
 
   for (const auto kind : kResourceKinds) {
@@ -279,10 +279,10 @@ static bool create_root_ranged() {
   zx_rights_t rights;
   ASSERT_EQ(ResourceDispatcher::InitializeAllocator(ZX_RSRC_KIND_MMIO, 0, UINT32_MAX - 1, &storage),
             ZX_OK);
-  // Creating a root resource should fail.
-  EXPECT_EQ(ResourceDispatcher::CreateRangedRoot(&handle, &rights, ZX_RSRC_KIND_ROOT, "crr-disp1",
+  // Creating an invalid kind (out of bounds) should fail.
+  EXPECT_EQ(ResourceDispatcher::CreateRangedRoot(&handle, &rights, ZX_RSRC_KIND_COUNT, "crr-disp1",
                                                  &storage),
-            ZX_ERR_WRONG_TYPE, "Creating a root resource succeeded.");
+            ZX_ERR_INVALID_ARGS, "Creating an invalid resource kind succeeded.");
   // Creating the shared resource will succeed.
   EXPECT_EQ(ResourceDispatcher::CreateRangedRoot(&handle, &rights, ZX_RSRC_KIND_MMIO, "crr-disp2",
                                                  &storage),

@@ -22,7 +22,7 @@
 // TODO(https://fxbug.dev/42107339): Take another look at validation and consider returning
 // dispatchers or move validation into the parent dispatcher itself.
 
-// Check if the resource referenced by |handle| is of kind |kind|, or ZX_RSRC_KIND_ROOT.
+// Check if the resource referenced by |handle| is of kind |kind|.
 //
 // Possible errors:
 // ++ ZX_ERR_ACCESS_DENIED: |handle| is not the right |kind| of handle.
@@ -36,15 +36,14 @@ zx_status_t validate_resource(zx_handle_t handle, zx_rsrc_kind_t kind) {
   }
 
   auto res_kind = resource->get_kind();
-  if (res_kind == kind || res_kind == ZX_RSRC_KIND_ROOT) {
+  if (res_kind == kind) {
     return ZX_OK;
   }
 
   return ZX_ERR_WRONG_TYPE;
 }
 
-// Check if the resource referenced by |handle| is of kind |kind| AND base |base|,
-// OR ZX_RSRC_KIND_ROOT.
+// Check if the resource referenced by |handle| is of kind |kind| AND base |base|.
 //
 // Possible errors:
 // ++ ZX_ERR_ACCESS_DENIED: |handle| is not the right |kind| of handle.
@@ -61,7 +60,7 @@ zx_status_t validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
   auto res_kind = resource->get_kind();
   auto res_base = resource->get_base();
 
-  if ((res_kind == kind && res_base == base) || res_kind == ZX_RSRC_KIND_ROOT) {
+  if (res_kind == kind && res_base == base) {
     return ZX_OK;
   }
 
@@ -71,8 +70,8 @@ zx_status_t validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
 zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, zx_rsrc_kind_t kind,
                                      uintptr_t base, size_t size,
                                      StrictMmioRangeValidation strict_validation) {
-  // Root gets access to almost everything, but there are still resource ranges
-  // it is not permitted to mint. For example:
+  // Resources get access to almost everything, but there are still resource ranges
+  // they are not permitted to mint. For example:
   //
   // 1) All of physical RAM is off limits (with limited platform specific
   //    exceptions). It exists on the CPU accessible physical bus (so, the
@@ -85,8 +84,8 @@ zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, z
   // Enforce that policy here by disallowing resource minting for any request
   // which touches any disallowed ranges.
   //
-  if (resource->get_kind() == ZX_RSRC_KIND_ROOT || resource->IsRangedRoot(kind)) {
-    // If we are creating an MMIO resource from one of the root resources, make
+  if (resource->IsRangedRoot(kind)) {
+    // If we are creating an MMIO resource from one of the base resources, make
     // sure that range being requested does not share a page with any of the
     // kernel reserved regions.
     //
@@ -123,8 +122,8 @@ zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, z
   LTRACEF("req [base %#lx size %#lx] and resource [base %#lx size %#lx]\n", base, size, rbase,
           rsize);
 
-  // All resources need to track their lineage back to the root resource,
-  // and the root resource is specifically prohibited from producing ranges
+  // All resources need to track their lineage back to the initial resource,
+  // which is specifically prohibited from producing ranges
   // which intersect anything in the deny list. Since all resource ranges
   // need to be a subset of their parent, it should be impossible for a
   // resource object to exist with a range which intersects anything in the
@@ -146,7 +145,7 @@ zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, z
   return ZX_OK;
 }
 
-// Check if the resource referenced by |handle| is of kind |kind|, or ZX_RSRC_KIND_ROOT. If
+// Check if the resource referenced by |handle| is of kind |kind|. If
 // |kind| matches the resource's kind, then range validation between |base| and |size| will
 // be made against the resource's backing address space allocation.
 //

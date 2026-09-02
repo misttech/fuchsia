@@ -30,6 +30,8 @@
 
 #include <zxtest/zxtest.h>
 
+constexpr zx_rsrc_kind_t kDeprecatedRootKind = 3;
+
 static const size_t mmio_test_size = (zx_system_get_page_size() * 4);
 static uint64_t mmio_test_base;
 
@@ -112,12 +114,13 @@ TEST(Resource, InvalidArgs) {
   EXPECT_EQ(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
                                  NULL, 0, &temp),
             ZX_OK);
-  EXPECT_EQ(zx::resource::create(temp, ZX_RSRC_KIND_ROOT, 0, 0, NULL, 0, &fail_hnd),
-            ZX_ERR_ACCESS_DENIED);
   EXPECT_EQ(zx::resource::create(temp, ZX_RSRC_KIND_IRQ, 0, 0, NULL, 0, &fail_hnd),
             ZX_ERR_ACCESS_DENIED);
 
   // test invalid kind
+  EXPECT_EQ(zx::resource::create(*get_mmio(), kDeprecatedRootKind, mmio_test_base, mmio_test_size,
+                                 NULL, 0, &temp),
+            ZX_ERR_INVALID_ARGS);
   EXPECT_EQ(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_COUNT, mmio_test_base, mmio_test_size,
                                  NULL, 0, &temp),
             ZX_ERR_INVALID_ARGS);
@@ -254,10 +257,6 @@ TEST(Resource, CreateResourceSlice) {
     zx::resource mmio, smaller_mmio;
     ASSERT_EQ(ZX_OK, zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base,
                                           zx_system_get_page_size(), NULL, 0, &mmio));
-    // A new resource shouldn't be able to create ROOT.
-    EXPECT_EQ(ZX_ERR_ACCESS_DENIED,
-              zx::resource::create(mmio, ZX_RSRC_KIND_ROOT, mmio_test_base,
-                                   zx_system_get_page_size(), NULL, 0, &smaller_mmio));
     // Creating an identically sized resource with the wrong kind should fail.
     EXPECT_EQ(ZX_ERR_ACCESS_DENIED,
               zx::resource::create(mmio, ZX_RSRC_KIND_IRQ, mmio_test_base,
@@ -864,12 +863,12 @@ TEST(Resource, GetInfoResourceValidation) {
 }
 
 TEST(Resource, CreateFromRangedRootKinds) {
-  // MMIO ranged root can create MMIO child.
+  // MMIO resource can create MMIO child.
   zx::resource mmio_child;
   EXPECT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
                                  nullptr, 0, &mmio_child));
 
-  // IRQ ranged root can create IRQ child.
+  // IRQ resource can create IRQ child.
   zx::unowned_resource irq_root = standalone::GetIrqResource();
   if (irq_root->is_valid()) {
     zx::resource irq_child;
@@ -883,7 +882,7 @@ TEST(Resource, CreateFromRangedRootKinds) {
     EXPECT_TRUE(irq_child.is_valid());
   }
 
-  // SYSTEM ranged root can create SYSTEM child.
+  // SYSTEM resource can create SYSTEM child.
   zx::unowned_resource sys_root = get_system();
   if (sys_root->is_valid()) {
     zx::resource sys_child;
@@ -891,18 +890,19 @@ TEST(Resource, CreateFromRangedRootKinds) {
                                    nullptr, 0, &sys_child));
   }
 
-  // Cross-kind creation from ranged roots is denied.
+  // Cross-kind creation from resources is denied.
   zx::resource fail_child;
   EXPECT_STATUS(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_IRQ, 0, 1, nullptr, 0, &fail_child),
                 ZX_ERR_ACCESS_DENIED);
   EXPECT_STATUS(
       zx::resource::create(*get_mmio(), ZX_RSRC_KIND_SYSTEM, 0, 1, nullptr, 0, &fail_child),
       ZX_ERR_ACCESS_DENIED);
-  EXPECT_STATUS(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_ROOT, 0, 0, nullptr, 0, &fail_child),
-                ZX_ERR_ACCESS_DENIED);
-  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_ROOT, 100, 10, nullptr, 0,
+  EXPECT_STATUS(
+      zx::resource::create(*get_mmio(), kDeprecatedRootKind, 0, 0, nullptr, 0, &fail_child),
+      ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), kDeprecatedRootKind, 100, 10, nullptr, 0,
                                    fail_child.reset_and_get_address()),
-                ZX_ERR_ACCESS_DENIED);
+                ZX_ERR_INVALID_ARGS);
 }
 
 TEST(Resource, HierarchySlicingBoundaries) {

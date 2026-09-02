@@ -2050,10 +2050,9 @@ closed protocol Object {
     ///
     /// The resource kind is one of
     ///
-    /// *   `ZX_RSRC_KIND_ROOT`
     /// *   `ZX_RSRC_KIND_MMIO`
-    /// *   `ZX_RSRC_KIND_IOPORT`
     /// *   `ZX_RSRC_KIND_IRQ`
+    /// *   `ZX_RSRC_KIND_IOPORT`
     /// *   `ZX_RSRC_KIND_SMC`
     /// *   `ZX_RSRC_KIND_SYSTEM`
     ///

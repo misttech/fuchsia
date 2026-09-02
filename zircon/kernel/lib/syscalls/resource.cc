@@ -28,9 +28,9 @@
 // The range low:high is inclusive on both ends, high must be
 // greater than or equal low.
 //
-// |parent_rsrc| must be a resource of the same kind as |kind|, or
-// ZX_RSRC_KIND_ROOT. |base| and |size| represent an inclusive range
-// from |base| to |base| + |size| for the child resource.
+// |parent_rsrc| must be a resource of the same kind as |kind|. |base|
+// and |size| represent an inclusive range from |base| to |base| + |size|
+// for the child resource.
 // zx_status_t zx_resource_create
 zx_status_t sys_resource_create(zx_handle_t parent_rsrc, uint32_t options, uint64_t base,
                                 size_t size, user_in_ptr<const char> user_name, size_t name_size,
@@ -53,7 +53,7 @@ zx_status_t sys_resource_create(zx_handle_t parent_rsrc, uint32_t options, uint6
 
   uint32_t kind = ZX_RSRC_EXTRACT_KIND(options);
   uint32_t flags = ZX_RSRC_EXTRACT_FLAGS(options);
-  if ((kind >= ZX_RSRC_KIND_COUNT) || (flags & ~ZX_RSRC_FLAGS_MASK)) {
+  if (!ResourceDispatcher::IsValidKind(kind) || (flags & ~ZX_RSRC_FLAGS_MASK)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -65,9 +65,8 @@ zx_status_t sys_resource_create(zx_handle_t parent_rsrc, uint32_t options, uint6
 
   // If the resource is a slice of a larger resource then neither
   // the new resource nor its parent are permitted to be exclusive
-  // resources. In this case, its |kind| will be something other
-  // than ROOT and |parent_rsrc| will not be the ranged root resource for |kind|.
-  if (parent->get_kind() != ZX_RSRC_KIND_ROOT && !parent->IsRangedRoot(kind) &&
+  // resources. In this case, |parent_rsrc| will not be the root
+  if (!parent->IsRangedRoot(kind) &&
       (parent->get_flags() & ZX_RSRC_FLAG_EXCLUSIVE || flags & ZX_RSRC_FLAG_EXCLUSIVE)) {
     return ZX_ERR_INVALID_ARGS;
   }

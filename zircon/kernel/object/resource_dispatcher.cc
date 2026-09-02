@@ -22,7 +22,6 @@ using pretty::FormattedBytes;
 
 #define LOCAL_TRACE 0
 
-KCOUNTER(root_resource_created, "resource.root.created")
 KCOUNTER(mmio_resource_created, "resource.mmio.created")
 KCOUNTER(irq_resource_created, "resource.irq.created")
 KCOUNTER(ioport_resource_created, "resource.ioport.created")
@@ -43,7 +42,7 @@ static void flags_to_string(uint32_t flags, char str[kFlagLen]) {
 }
 
 const char* kKindLabels[ZX_RSRC_KIND_COUNT] = {
-    "mmio", "irq", "ioport", "root", "smc", "system",
+    "mmio", "irq", "ioport", "deprecated", "smc", "system",
 };
 
 static const char* kind_to_string(zx_rsrc_kind_t kind) {
@@ -65,7 +64,7 @@ zx_status_t ResourceDispatcher::Create(KernelHandle<ResourceDispatcher>* handle,
                                        size_t size, uint32_t flags,
                                        const char name[ZX_MAX_NAME_LEN], ResourceStorage* storage) {
   Guard<Mutex> guard{ResourcesLock::Get()};
-  if (kind >= ZX_RSRC_KIND_COUNT || (flags & ZX_RSRC_FLAGS_MASK) != flags) {
+  if (!IsValidKind(kind) || (flags & ~ZX_RSRC_FLAGS_MASK)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -88,27 +87,17 @@ zx_status_t ResourceDispatcher::Create(KernelHandle<ResourceDispatcher>* handle,
   }
 
   RegionAllocator::Region::UPtr region_uptr = nullptr;
-  switch (kind) {
-    case ZX_RSRC_KIND_ROOT:
-      // It does not make sense for an abstract resource type to have a base/size tuple
-      if (base || size) {
-        return ZX_ERR_INVALID_ARGS;
-      }
-      break;
-    default:
-      // If we have not assigned a region pool to our allocator yet, then we are not
-      // yet initialized and should return ZX_ERR_BAD_STATE.
-      if (!storage->rallocs[kind].HasRegionPool()) {
-        return ZX_ERR_BAD_STATE;
-      }
+  // If we have not assigned a region pool to our allocator yet, then we are not
+  // yet initialized and should return ZX_ERR_BAD_STATE.
+  if (!storage->rallocs[kind].HasRegionPool()) {
+    return ZX_ERR_BAD_STATE;
+  }
 
-      zx_status_t status =
-          storage->rallocs[kind].GetRegion({.base = base, .size = size}, region_uptr);
-      if (status != ZX_OK) {
-        LTRACEF("%s couldn't pull the resource [%#lx, %#lx) out of %s: %d\n", kLogTag, base,
-                base + size, kind_to_string(kind), status);
-        return status;
-      }
+  zx_status_t status = storage->rallocs[kind].GetRegion({.base = base, .size = size}, region_uptr);
+  if (status != ZX_OK) {
+    LTRACEF("%s couldn't pull the resource [%#lx, %#lx) out of %s: %d\n", kLogTag, base,
+            base + size, kind_to_string(kind), status);
+    return status;
   }
 
   // If the allocation is exclusive then a check needs to be made to ensure
@@ -128,7 +117,7 @@ zx_status_t ResourceDispatcher::Create(KernelHandle<ResourceDispatcher>* handle,
 
       return ZX_OK;
     };
-    zx_status_t status = ResourceDispatcher::ForEachResourceLocked(callback, storage);
+    status = ResourceDispatcher::ForEachResourceLocked(callback, storage);
     if (status != ZX_OK) {
       return status;
     }
@@ -145,8 +134,9 @@ zx_status_t ResourceDispatcher::Create(KernelHandle<ResourceDispatcher>* handle,
   }
 
   if (name != nullptr) {
-    [[maybe_unused]] zx_status_t status = new_handle.dispatcher()->set_name(name, ZX_MAX_NAME_LEN);
-    DEBUG_ASSERT(status == ZX_OK);
+    [[maybe_unused]] zx_status_t name_status =
+        new_handle.dispatcher()->set_name(name, ZX_MAX_NAME_LEN);
+    DEBUG_ASSERT(name_status == ZX_OK);
   }
 
   *rights = default_rights();
@@ -166,7 +156,7 @@ zx_status_t ResourceDispatcher::CreateRangedRoot(KernelHandle<ResourceDispatcher
                                                  const char name[ZX_MAX_NAME_LEN],
                                                  ResourceStorage* storage) {
   Guard<Mutex> guard{ResourcesLock::Get()};
-  if (kind >= ZX_RSRC_KIND_COUNT) {
+  if (!IsValidKind(kind)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -175,19 +165,10 @@ zx_status_t ResourceDispatcher::CreateRangedRoot(KernelHandle<ResourceDispatcher
     storage = &static_storage_;
   }
 
-  // Abstract resource types have no size. Ranged resource types are given infinite size to
-  // indicate that they represent all valid ranges.
-  switch (kind) {
-    // TODO(smpham): remove this when root resource is removed.
-    case ZX_RSRC_KIND_ROOT:
-      // The Create() method should be used for making these resource kinds.
-      return ZX_ERR_WRONG_TYPE;
-    default:
-      // If we have not assigned a region pool to our allocator yet, then we are not
-      // yet initialized and should return ZX_ERR_BAD_STATE.
-      if (!storage->rallocs[kind].HasRegionPool()) {
-        return ZX_ERR_BAD_STATE;
-      }
+  // If we have not assigned a region pool to our allocator yet, then we are not
+  // yet initialized and should return ZX_ERR_BAD_STATE.
+  if (!storage->rallocs[kind].HasRegionPool()) {
+    return ZX_ERR_BAD_STATE;
   }
 
   // We've passed the first hurdle, so it's time to construct the dispatcher
@@ -208,7 +189,7 @@ zx_status_t ResourceDispatcher::CreateRangedRoot(KernelHandle<ResourceDispatcher
   *rights = default_rights();
   *handle = ktl::move(new_handle);
 
-  LTRACEF("%s [%u] ranged root resource created.\n", kLogTag, kind);
+  LTRACEF("%s [%u] resource created.\n", kLogTag, kind);
   return ZX_OK;
 }
 
@@ -227,9 +208,6 @@ ResourceDispatcher::ResourceDispatcher(zx_rsrc_kind_t kind, uint64_t base, uint6
   }
 
   switch (kind_) {
-    case ZX_RSRC_KIND_ROOT:
-      kcounter_add(root_resource_created, 1);
-      break;
     case ZX_RSRC_KIND_MMIO:
       kcounter_add(mmio_resource_created, 1);
       break;
@@ -263,7 +241,6 @@ ResourceDispatcher::~ResourceDispatcher() {
 
 zx_status_t ResourceDispatcher::InitializeAllocator(zx_rsrc_kind_t kind, uint64_t base, size_t size,
                                                     ResourceStorage* storage) {
-  DEBUG_ASSERT(kind < ZX_RSRC_KIND_COUNT);
   DEBUG_ASSERT(size > 0);
 
   // Static methods need to check for mocks manually.
@@ -275,7 +252,7 @@ zx_status_t ResourceDispatcher::InitializeAllocator(zx_rsrc_kind_t kind, uint64_
   zx_status_t status;
 
   // This method should only be called for resource kinds with bookkeeping.
-  if (kind >= ZX_RSRC_KIND_COUNT) {
+  if (!IsValidKind(kind)) {
     return ZX_ERR_INVALID_ARGS;
   }
 
@@ -333,7 +310,7 @@ void ResourceDispatcher::DumpResources() {
     printf("%8s  ", flag_str);
     printf("\t%-#10lx  ", r.get_koid());
 
-    if (r.get_size() && r.get_kind() != ZX_RSRC_KIND_ROOT && r.get_kind() != ZX_RSRC_KIND_SYSTEM) {
+    if (r.get_size() && r.get_kind() != ZX_RSRC_KIND_SYSTEM) {
       // Only MMIO should be printed as bytes.
       if (r.get_kind() == ZX_RSRC_KIND_MMIO) {
         printf("\t%8s  ", FormattedBytes(r.get_size()).c_str());

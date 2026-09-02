@@ -46,12 +46,10 @@ enum class StrictMmioRangeValidation { No, Yes };
 // in system/public/zircon/syscalls/resource.h
 
 // Determines if this handle is to a resource of the specified
-// kind *or* to the root resource, which can stand in for any kind.
-// Used to provide access to privileged syscalls.
+// kind. Used to provide access to privileged syscalls.
 zx_status_t validate_resource(zx_handle_t handle, zx_rsrc_kind_t kind);
 
-// Determines if this handle is to a resource of the specified base and kind
-// or to the root resource.
+// Determines if this handle is to a resource of the specified base and kind.
 zx_status_t validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
                                         zx_rsrc_system_base_t base);
 

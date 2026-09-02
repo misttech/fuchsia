@@ -246,7 +246,6 @@ bitflags! {
        const MMIO       = sys::ZX_RSRC_KIND_MMIO;
        const IRQ        = sys::ZX_RSRC_KIND_IRQ;
        const IOPORT     = sys::ZX_RSRC_KIND_IOPORT;
-       const ROOT       = sys::ZX_RSRC_KIND_ROOT;
        const SMC        = sys::ZX_RSRC_KIND_SMC;
        const SYSTEM     = sys::ZX_RSRC_KIND_SYSTEM;
     }

@@ -31,6 +31,15 @@ class ResourceDispatcher final
  public:
   static constexpr size_t kMaxRegionPoolSize = 64 << 10;
 
+  // Returns true if |kind| is a valid resource kind.
+  //
+  // Note: ZX_RSRC_KIND_ROOT (3) was previously used to represent the root resource, but was
+  // deprecated and removed from the kernel. The numeric value 3 remains reserved to avoid shifting
+  // the values of ZX_RSRC_KIND_SMC (4) and ZX_RSRC_KIND_SYSTEM (5).
+  static constexpr bool IsValidKind(zx_rsrc_kind_t kind) {
+    return kind < ZX_RSRC_KIND_COUNT && kind != /* ZX_RSRC_KIND_ROOT */ 3;
+  }
+
   using ResourceList = fbl::DoublyLinkedList<ResourceDispatcher*>;
   using RefPtr = fbl::RefPtr<ResourceDispatcher>;
 
@@ -40,8 +49,7 @@ class ResourceDispatcher final
   };
 
   // Creates ResourceDispatcher object representing access rights to a
-  // given region of address space from a particular address space allocator, or a root resource
-  // granted full access permissions. Only one instance of the root resource is created at boot.
+  // given region of address space from a particular address space allocator.
   static zx_status_t Create(KernelHandle<ResourceDispatcher>* handle, zx_rights_t* rights,
                             zx_rsrc_kind_t kind, uint64_t base, size_t size, uint32_t flags,
                             const char name[ZX_MAX_NAME_LEN], ResourceStorage* = nullptr);
@@ -64,10 +72,6 @@ class ResourceDispatcher final
   }
 
   bool IsRangedRoot(zx_rsrc_kind_t kind) const {
-    switch (kind_) {
-      case ZX_RSRC_KIND_ROOT:
-        return false;
-    }
     return (kind_ == kind && base_ == 0 && size_ == 0);
   }
 

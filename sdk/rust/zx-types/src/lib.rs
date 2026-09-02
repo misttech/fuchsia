@@ -704,7 +704,6 @@ multiconst!(zx_rsrc_kind_t, [
     ZX_RSRC_KIND_MMIO       = 0;
     ZX_RSRC_KIND_IRQ        = 1;
     ZX_RSRC_KIND_IOPORT     = 2;
-    ZX_RSRC_KIND_ROOT       = 3;
     ZX_RSRC_KIND_SMC        = 4;
     ZX_RSRC_KIND_SYSTEM     = 5;
 ]);
