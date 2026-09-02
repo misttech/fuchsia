@@ -58,7 +58,10 @@ struct SharedIrqListTag {};
 // is fulfill the PCI protocol for the driver downstream operating the PCI
 // device this corresponds to.
 class Device;
-class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
+using DeviceType = ddk::Device<pci::Device, ddk::Unbindable>;
+class Device : public DeviceType,
+               public fidl::WireServer<fuchsia_hardware_pci::Device>,
+               public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
                public fbl::ContainableBaseClasses<
                    fbl::TaggedDoublyLinkedListable<Device*, DownstreamListTag>,
                    fbl::TaggedDoublyLinkedListable<Device*, SharedIrqListTag>> {
@@ -246,6 +249,41 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
 
   zx::result<PowerManagementCapability::PowerState> GetPowerState() __TA_EXCLUDES(dev_lock_);
 
+  // DDK device lifecycle methods
+  void DdkRelease();
+  void DdkUnbind(ddk::UnbindTxn txn);
+
+  void Bind(fidl::ServerEnd<fuchsia_hardware_pci::Device> request);
+
+  // fidl::WireServer<fuchsia_hardware_pci::Device> implementations
+  void GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) override;
+  void GetBar(GetBarRequestView request, GetBarCompleter::Sync& completer) override;
+  void SetBusMastering(SetBusMasteringRequestView request,
+                       SetBusMasteringCompleter::Sync& completer) override;
+  void ResetDevice(ResetDeviceCompleter::Sync& completer) override;
+  void AckInterrupt(AckInterruptCompleter::Sync& completer) override;
+  void MapInterrupt(MapInterruptRequestView request,
+                    MapInterruptCompleter::Sync& completer) override;
+  void SetInterruptMode(SetInterruptModeRequestView request,
+                        SetInterruptModeCompleter::Sync& completer) override;
+  void GetInterruptModes(GetInterruptModesCompleter::Sync& completer) override;
+  void ReadConfig8(ReadConfig8RequestView request, ReadConfig8Completer::Sync& completer) override;
+  void ReadConfig16(ReadConfig16RequestView request,
+                    ReadConfig16Completer::Sync& completer) override;
+  void ReadConfig32(ReadConfig32RequestView request,
+                    ReadConfig32Completer::Sync& completer) override;
+  void WriteConfig8(WriteConfig8RequestView request,
+                    WriteConfig8Completer::Sync& completer) override;
+  void WriteConfig16(WriteConfig16RequestView request,
+                     WriteConfig16Completer::Sync& completer) override;
+  void WriteConfig32(WriteConfig32RequestView request,
+                     WriteConfig32Completer::Sync& completer) override;
+  void GetCapabilities(GetCapabilitiesRequestView request,
+                       GetCapabilitiesCompleter::Sync& completer) override;
+  void GetExtendedCapabilities(GetExtendedCapabilitiesRequestView request,
+                               GetExtendedCapabilitiesCompleter::Sync& completer) override;
+  void GetBti(GetBtiRequestView request, GetBtiCompleter::Sync& completer) override;
+
   // Provide Irq information to the Bus for handling situations with no ack.
   Irqs& irqs() __TA_REQUIRES(dev_lock_) { return irqs_; }
   // Info about the BARs computed and cached during the initial setup/probe,
@@ -349,59 +387,8 @@ class Device : public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
   Capabilities caps_ __TA_GUARDED(dev_lock_){};
   Irqs irqs_ __TA_GUARDED(dev_lock_){.mode = fuchsia_hardware_pci::InterruptMode::kDisabled};
 
-  zx_device_t* parent_;
-};
-
-class FidlDevice;
-using FidlDeviceType = ddk::Device<pci::FidlDevice, ddk::Unbindable>;
-class FidlDevice : public FidlDeviceType, public fidl::WireServer<fuchsia_hardware_pci::Device> {
- public:
-  void Bind(fidl::ServerEnd<fuchsia_hardware_pci::Device> request);
-  static zx::result<> Create(zx_device_t* parent, pci::Device* device);
-
-  // fidl::WireServer<fuchsia_hardware_pci::Pci> implementations.
-  void GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) override;
-  void GetBar(GetBarRequestView request, GetBarCompleter::Sync& completer) override;
-  void SetBusMastering(SetBusMasteringRequestView request,
-                       SetBusMasteringCompleter::Sync& completer) override;
-  void ResetDevice(ResetDeviceCompleter::Sync& completer) override;
-  void AckInterrupt(AckInterruptCompleter::Sync& completer) override;
-  void MapInterrupt(MapInterruptRequestView request,
-                    MapInterruptCompleter::Sync& completer) override;
-  void SetInterruptMode(SetInterruptModeRequestView request,
-                        SetInterruptModeCompleter::Sync& completer) override;
-  void GetInterruptModes(GetInterruptModesCompleter::Sync& completer) override;
-  void ReadConfig8(ReadConfig8RequestView request, ReadConfig8Completer::Sync& completer) override;
-  void ReadConfig16(ReadConfig16RequestView request,
-                    ReadConfig16Completer::Sync& completer) override;
-  void ReadConfig32(ReadConfig32RequestView request,
-                    ReadConfig32Completer::Sync& completer) override;
-  void WriteConfig8(WriteConfig8RequestView request,
-                    WriteConfig8Completer::Sync& completer) override;
-  void WriteConfig16(WriteConfig16RequestView request,
-                     WriteConfig16Completer::Sync& completer) override;
-  void WriteConfig32(WriteConfig32RequestView request,
-                     WriteConfig32Completer::Sync& completer) override;
-  void GetCapabilities(GetCapabilitiesRequestView request,
-                       GetCapabilitiesCompleter::Sync& completer) override;
-  void GetExtendedCapabilities(GetExtendedCapabilitiesRequestView request,
-                               GetExtendedCapabilitiesCompleter::Sync& completer) override;
-  void GetBti(GetBtiRequestView request, GetBtiCompleter::Sync& completer) override;
-  pci::Device* device() { return device_; }
-  component::OutgoingDirectory& outgoing_dir() { return outgoing_dir_; }
-
-  void DdkRelease() { delete this; }
-  void DdkUnbind(ddk::UnbindTxn txn) { txn.Reply(); }
-
- private:
-  FidlDevice(zx_device_t* parent, pci::Device* device)
-      : FidlDeviceType(parent),
-        device_(device),
-        outgoing_dir_(fdf::Dispatcher::GetCurrent()->async_dispatcher()) {}
-
-  pci::Device* device_;
+  std::optional<component::OutgoingDirectory> outgoing_dir_;
   fidl::ServerBindingGroup<fuchsia_hardware_pci::Device> bindings_;
-  component::OutgoingDirectory outgoing_dir_;
 };
 
 }  // namespace pci

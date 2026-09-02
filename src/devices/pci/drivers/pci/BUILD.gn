@@ -30,7 +30,6 @@ source_set("user_pci") {
     "device_caps.cc",
     "device_irqs.cc",
     "device_service.cc",
-    "fidl.cc",
     "upstream_node.cc",
   ]
 

@@ -6,9 +6,12 @@
 
 #include <assert.h>
 #include <err.h>
+#include <fidl/fuchsia.hardware.pci/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <inttypes.h>
 #include <lib/ddk/binding_driver.h>
+#include <lib/ddk/debug.h>
+#include <lib/ddk/driver.h>
 #include <lib/fit/defer.h>
 #include <lib/pci/constants.h>
 #include <lib/pci/hw.h>
@@ -24,6 +27,7 @@
 #include <optional>
 #include <vector>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
@@ -34,8 +38,26 @@
 #include "src/devices/pci/drivers/pci/capabilities/msi.h"
 #include "src/devices/pci/drivers/pci/capabilities/msix.h"
 #include "src/devices/pci/drivers/pci/capabilities/power_management.h"
+#include "src/devices/pci/drivers/pci/composite.h"
 #include "src/devices/pci/drivers/pci/ref_counted.h"
 #include "src/devices/pci/drivers/pci/upstream_node.h"
+
+#define RETURN_STATUS(level, status, format, ...)                                   \
+  do {                                                                              \
+    zx_status_t _status = (status);                                                 \
+    zxlogf(level, "[%s] %s(" format ") = %s", config()->addr(),                     \
+           __FUNCTION__ __VA_OPT__(, ) __VA_ARGS__, zx_status_get_string(_status)); \
+    return;                                                                         \
+  } while (0)
+
+#define RETURN_DEBUG(status, ...) RETURN_STATUS(DEBUG, status, __VA_ARGS__)
+#define RETURN_TRACE(status, ...) RETURN_STATUS(TRACE, status, __VA_ARGS__)
+
+namespace fpci = ::fuchsia_hardware_pci;
+
+namespace fdf {
+using namespace fuchsia_driver_framework;
+}
 
 namespace pci {
 
@@ -67,7 +89,7 @@ zx_status_t DeviceImpl::Create(zx_device_t* parent, std::unique_ptr<Config>&& cf
   auto raw_dev =
       new (&ac) DeviceImpl(parent, std::move(cfg), upstream, bdi, has_acpi, has_devicetree);
   if (!ac.check()) {
-    zxlogf(ERROR, "[%s] Out of memory attemping to create PCIe device.", cfg->addr());
+    zxlogf(ERROR, "[%s] Out of memory attempting to create PCIe device.", cfg->addr());
     return ZX_ERR_NO_MEMORY;
   }
 
@@ -87,16 +109,14 @@ zx_status_t DeviceImpl::Create(zx_device_t* parent, std::unique_ptr<Config>&& cf
 
 Device::Device(zx_device_t* parent, std::unique_ptr<Config>&& config, UpstreamNode* upstream,
                BusDeviceInterface* bdi, bool is_bridge, bool has_acpi, bool has_devicetree)
-    : cfg_(std::move(config)),
+    : DeviceType(parent),
+      cfg_(std::move(config)),
       upstream_(upstream),
       bdi_(bdi),
       bar_count_(is_bridge ? kBarRegsPerBridge : kMaxBarCount),
       is_bridge_(is_bridge),
       has_acpi_(has_acpi),
-      has_devicetree_(has_devicetree),
-      parent_(parent)
-
-{}
+      has_devicetree_(has_devicetree) {}
 
 Device::~Device() {
   // We should already be unlinked from the bus's device tree.
@@ -212,9 +232,97 @@ zx_status_t Device::InitLocked() {
     }
   }
 
-  zx::result result = FidlDevice::Create(parent_, this);
+  auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
+  if (endpoints.is_error()) {
+    return endpoints.status_value();
+  }
+
+  auto pci_bind_topo = static_cast<uint32_t>(BIND_PCI_TOPO_PACK(bus_id(), dev_id(), func_id()));
+
+  zx_device_str_prop_t pci_device_props[] = {
+      ddk::MakeStrProperty(bind_fuchsia::PCI_VID, static_cast<uint32_t>(vendor_id())),
+      ddk::MakeStrProperty(bind_fuchsia::PCI_DID, static_cast<uint32_t>(device_id())),
+      ddk::MakeStrProperty(bind_fuchsia::PCI_CLASS, static_cast<uint32_t>(class_id())),
+      ddk::MakeStrProperty(bind_fuchsia::PCI_SUBCLASS, static_cast<uint32_t>(subclass())),
+      ddk::MakeStrProperty(bind_fuchsia::PCI_INTERFACE, static_cast<uint32_t>(prog_if())),
+      ddk::MakeStrProperty(bind_fuchsia::PCI_REVISION, static_cast<uint32_t>(rev_id())),
+      ddk::MakeStrProperty(bind_fuchsia::PCI_TOPO, pci_bind_topo),
+  };
+  std::array offers = {
+      fpci::Service::Name,
+  };
+
+  auto bus_info = std::make_unique<fdf::BusInfo>(fdf::BusInfo{{
+      .bus = fdf::BusType::kPci,
+      .address = fdf::DeviceAddress::WithArrayIntValue({bus_id(), dev_id(), func_id()}),
+      // TODO(surajmalhotra): Determine if device is soldered on or removable. For now we only
+      // really run on devices with where everything on the pci bus is pretty much permanent.
+      .address_stability = fdf::DeviceAddressStability::kStable,
+  }});
+
+  outgoing_dir_.emplace(fdf::Dispatcher::GetCurrent()->async_dispatcher());
+  zx::result result = outgoing_dir_->AddService<fuchsia_hardware_pci::Service>(
+      fuchsia_hardware_pci::Service::InstanceHandler({
+          .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
+                                            fidl::kIgnoreBindingClosure),
+      }));
   if (result.is_error()) {
+    zxlogf(ERROR, "Failed to add Service to the outgoing directory: %s", result.status_string());
     return result.status_value();
+  }
+
+  result = outgoing_dir_->Serve(std::move(endpoints->server));
+  if (result.is_error()) {
+    zxlogf(ERROR, "Failed to service the outgoing directory: %s", result.status_string());
+    return result.status_value();
+  }
+
+  const auto name = std::string(config()->addr());
+  zx_status_t status = DdkAdd(ddk::DeviceAddArgs(name.c_str())
+                                  .set_str_props(pci_device_props)
+                                  .set_bus_info(std::move(bus_info))
+                                  .set_flags(DEVICE_ADD_MUST_ISOLATE)
+                                  .set_outgoing_dir(endpoints->client.TakeChannel())
+                                  .set_fidl_service_offers(offers));
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "Failed to create pci device %s: %s", config()->addr(),
+           zx_status_get_string(status));
+    return status;
+  }
+
+  // In DFv1, the DDK manages device lifecycle without RefPtr. Increment our
+  // reference count to account for DDK ownership until DdkRelease is called.
+  this->AddRef();
+
+  // Devices described by the devicetree get their composite from the devicetree
+  // (pci-child-visitor), which already aggregates this fragment with the
+  // device's sideband resources. Publishing a composite here too would race the
+  // devicetree's composite for the same device, so we stop at the fragment.
+  if (has_devicetree()) {
+    disable.cancel();
+    return ZX_OK;
+  }
+
+  auto pci_info = CompositeInfo{
+      .vendor_id = vendor_id(),
+      .device_id = device_id(),
+      .class_id = class_id(),
+      .subclass = subclass(),
+      .program_interface = prog_if(),
+      .revision_id = rev_id(),
+      .bus_id = bus_id(),
+      .dev_id = dev_id(),
+      .func_id = func_id(),
+      .has_acpi = has_acpi(),
+  };
+
+  char spec_name[8];
+  snprintf(spec_name, sizeof(spec_name), "%02x_%02x_%01x", bus_id(), dev_id(), func_id());
+  status = DdkAddCompositeNodeSpec(spec_name, CreateCompositeNodeSpec(pci_info));
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "[%s] Failed to add pci composite spec: %s", config()->addr(),
+           zx_status_get_string(status));
+    return status;
   }
 
   disable.cancel();
@@ -539,6 +647,255 @@ void Device::Unplug() {
   bdi_->UnlinkDevice(this);
   plugged_in_ = false;
   zxlogf(TRACE, "device [%s] unplugged", cfg_->addr());
+}
+
+void Device::DdkUnbind(ddk::UnbindTxn txn) { txn.Reply(); }
+
+void Device::DdkRelease() {
+  bindings_.CloseAll(ZX_OK);
+  outgoing_dir_.reset();
+  // Release the reference held for DDK ownership and destroy the device if no
+  // other references remain.
+  if (Release()) {
+    delete this;
+  }
+}
+
+void Device::Bind(fidl::ServerEnd<fuchsia_hardware_pci::Device> request) {
+  fidl::BindServer(fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(request), this);
+}
+
+void Device::GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) {
+  completer.Reply({.vendor_id = vendor_id(),
+                   .device_id = device_id(),
+                   .base_class = class_id(),
+                   .sub_class = subclass(),
+                   .program_interface = prog_if(),
+                   .revision_id = rev_id(),
+                   .bus_id = bus_id(),
+                   .dev_id = dev_id(),
+                   .func_id = func_id()});
+  RETURN_DEBUG(ZX_OK, "");
+}
+
+void Device::GetBar(GetBarRequestView request, GetBarCompleter::Sync& completer) {
+  if (request->bar_id >= pci::kMaxBarCount) {
+    completer.ReplyError(ZX_ERR_INVALID_ARGS);
+    RETURN_DEBUG(ZX_ERR_INVALID_ARGS, "%u", request->bar_id);
+  }
+
+  fbl::AutoLock dev_lock(&dev_lock_);
+  auto& bar = bars_[request->bar_id];
+  if (!bar) {
+    completer.ReplyError(ZX_ERR_NOT_FOUND);
+    RETURN_DEBUG(ZX_ERR_NOT_FOUND, "%u", request->bar_id);
+  }
+
+  size_t bar_size = bar->size;
+
+  ZX_DEBUG_ASSERT(bar->allocation);
+  switch (bar->allocation->type()) {
+    case PCI_ADDRESS_SPACE_MEMORY: {
+      zx::result<zx::vmo> result = bar->allocation->CreateVmo();
+      if (result.is_ok()) {
+        completer.ReplySuccess(
+            {.bar_id = request->bar_id,
+             .size = bar_size,
+             .result = fpci::wire::BarResult::WithVmo(std::move(result.value()))});
+        RETURN_DEBUG(ZX_OK, "%u", request->bar_id);
+      }
+    } break;
+    case PCI_ADDRESS_SPACE_IO: {
+      zx::result<zx::resource> result = bar->allocation->CreateResource();
+      if (result.is_ok()) {
+        fidl::Arena arena;
+        completer.ReplySuccess(
+            {.bar_id = request->bar_id,
+             .size = bar_size,
+             .result = fpci::wire::BarResult::WithIo(
+                 arena, fuchsia_hardware_pci::wire::IoBar{.address = bar->address,
+                                                          .resource = std::move(result.value())})});
+        RETURN_DEBUG(ZX_OK, "%u", request->bar_id);
+      }
+    } break;
+  }
+
+  completer.ReplyError(ZX_ERR_BAD_STATE);
+  RETURN_DEBUG(ZX_ERR_BAD_STATE, "%u", request->bar_id);
+}
+
+void Device::SetBusMastering(SetBusMasteringRequestView request,
+                             SetBusMasteringCompleter::Sync& completer) {
+  fbl::AutoLock dev_lock(&dev_lock_);
+  zx_status_t status = SetBusMastering(request->enabled);
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+    RETURN_DEBUG(status, "");
+  }
+
+  completer.ReplySuccess();
+  RETURN_DEBUG(status, "");
+}
+
+void Device::ResetDevice(ResetDeviceCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+  RETURN_DEBUG(ZX_ERR_NOT_SUPPORTED, "");
+}
+
+void Device::AckInterrupt(AckInterruptCompleter::Sync& completer) {
+  fbl::AutoLock dev_lock(&dev_lock_);
+  zx_status_t status = AckLegacyIrq();
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+    return;
+  }
+  completer.ReplySuccess();
+}
+
+void Device::MapInterrupt(MapInterruptRequestView request, MapInterruptCompleter::Sync& completer) {
+  zx::result<zx::interrupt> result = MapInterrupt(request->which_irq);
+  if (result.is_error()) {
+    completer.ReplyError(result.status_value());
+    RETURN_DEBUG(result.status_value(), "%#x", request->which_irq);
+  }
+
+  completer.ReplySuccess(std::move(result.value()));
+  RETURN_DEBUG(result.status_value(), "%#x", request->which_irq);
+}
+
+void Device::SetInterruptMode(SetInterruptModeRequestView request,
+                              SetInterruptModeCompleter::Sync& completer) {
+  zx_status_t status = SetIrqMode(request->mode, request->requested_irq_count);
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+    RETURN_DEBUG(status, "%u, %#x", static_cast<uint8_t>(request->mode),
+                 request->requested_irq_count);
+  }
+
+  completer.ReplySuccess();
+  RETURN_DEBUG(status, "%u, %#x", static_cast<uint8_t>(request->mode),
+               request->requested_irq_count);
+}
+
+void Device::GetInterruptModes(GetInterruptModesCompleter::Sync& completer) {
+  pci_interrupt_modes_t modes = GetInterruptModes();
+  completer.Reply({.has_legacy = modes.has_legacy,
+                   .msi_count = modes.msi_count,
+                   .msix_count = modes.msix_count});
+  RETURN_DEBUG(ZX_OK, "");
+}
+
+void Device::ReadConfig8(ReadConfig8RequestView request, ReadConfig8Completer::Sync& completer) {
+  auto result = ReadConfig<uint8_t, PciReg8>(request->offset);
+  if (result.is_error()) {
+    completer.ReplyError(result.status_value());
+    RETURN_DEBUG(result.status_value(), "%#x", request->offset);
+  }
+
+  completer.ReplySuccess(result.value());
+  RETURN_TRACE(result.status_value(), "%#x", request->offset);
+}
+
+void Device::ReadConfig16(ReadConfig16RequestView request, ReadConfig16Completer::Sync& completer) {
+  auto result = ReadConfig<uint16_t, PciReg16>(request->offset);
+  if (result.is_error()) {
+    completer.ReplyError(result.status_value());
+    RETURN_DEBUG(result.status_value(), "%#x", request->offset);
+  }
+
+  completer.ReplySuccess(result.value());
+  RETURN_TRACE(result.status_value(), "%#x", request->offset);
+}
+
+void Device::ReadConfig32(ReadConfig32RequestView request, ReadConfig32Completer::Sync& completer) {
+  auto result = ReadConfig<uint32_t, PciReg32>(request->offset);
+  if (result.is_error()) {
+    completer.ReplyError(result.status_value());
+    RETURN_DEBUG(result.status_value(), "%#x", request->offset);
+  }
+
+  completer.ReplySuccess(result.value());
+  RETURN_TRACE(result.status_value(), "%#x", request->offset);
+}
+
+void Device::WriteConfig8(WriteConfig8RequestView request, WriteConfig8Completer::Sync& completer) {
+  zx_status_t status = WriteConfig<uint8_t, PciReg8>(request->offset, request->value);
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+    RETURN_DEBUG(status, "%#x, %#x", request->offset, request->value);
+  }
+
+  completer.ReplySuccess();
+  RETURN_TRACE(status, "%#x, %#x", request->offset, request->value);
+}
+
+void Device::WriteConfig16(WriteConfig16RequestView request,
+                           WriteConfig16Completer::Sync& completer) {
+  zx_status_t status = WriteConfig<uint16_t, PciReg16>(request->offset, request->value);
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+    RETURN_DEBUG(status, "%#x, %#x", request->offset, request->value);
+  }
+
+  completer.ReplySuccess();
+  RETURN_TRACE(status, "%#x, %#x", request->offset, request->value);
+}
+
+void Device::WriteConfig32(WriteConfig32RequestView request,
+                           WriteConfig32Completer::Sync& completer) {
+  zx_status_t status = WriteConfig<uint32_t, PciReg32>(request->offset, request->value);
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+    RETURN_DEBUG(status, "%#x, %#x", request->offset, request->value);
+  }
+
+  completer.ReplySuccess();
+  RETURN_TRACE(status, "%#x, %#x", request->offset, request->value);
+}
+
+void Device::GetCapabilities(GetCapabilitiesRequestView request,
+                             GetCapabilitiesCompleter::Sync& completer) {
+  std::vector<uint8_t> capabilities;
+  {
+    fbl::AutoLock dev_lock(&dev_lock_);
+    for (auto& capability : caps_.list) {
+      if (capability.id() == static_cast<uint8_t>(request->id)) {
+        capabilities.push_back(capability.base());
+      }
+    }
+  }
+
+  completer.Reply(::fidl::VectorView<uint8_t>::FromExternal(capabilities));
+  RETURN_DEBUG(ZX_OK, "%#x", static_cast<uint8_t>(request->id));
+}
+
+void Device::GetExtendedCapabilities(GetExtendedCapabilitiesRequestView request,
+                                     GetExtendedCapabilitiesCompleter::Sync& completer) {
+  std::vector<uint16_t> ext_capabilities;
+  {
+    fbl::AutoLock dev_lock(&dev_lock_);
+    for (auto& ext_capability : caps_.ext_list) {
+      if (ext_capability.id() == static_cast<uint16_t>(request->id)) {
+        ext_capabilities.push_back(ext_capability.base());
+      }
+    }
+  }
+
+  completer.Reply(::fidl::VectorView<uint16_t>::FromExternal(ext_capabilities));
+  RETURN_DEBUG(ZX_OK, "%#x", static_cast<uint16_t>(request->id));
+}
+
+void Device::GetBti(GetBtiRequestView request, GetBtiCompleter::Sync& completer) {
+  fbl::AutoLock dev_lock(&dev_lock_);
+  zx::bti bti;
+  zx_status_t status = bdi_->GetBti(this, request->index, &bti);
+  if (status != ZX_OK) {
+    completer.ReplyError(status);
+    RETURN_DEBUG(status, "%u", request->index);
+  }
+
+  completer.ReplySuccess(std::move(bti));
+  RETURN_DEBUG(status, "%u", request->index);
 }
 
 }  // namespace pci

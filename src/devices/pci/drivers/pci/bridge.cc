@@ -39,15 +39,15 @@ zx_status_t Bridge::Create(zx_device_t* parent, std::unique_ptr<Config>&& config
     return ZX_ERR_NO_MEMORY;
   }
 
-  zx_status_t status = raw_bridge->Init();
+  fbl::RefPtr<pci::Bridge> bridge = fbl::AdoptRef(raw_bridge);
+  zx_status_t status = bridge->Init();
   if (status != ZX_OK) {
-    delete raw_bridge;
     return status;
   }
 
-  fbl::RefPtr<pci::Device> dev = fbl::AdoptRef(raw_bridge);
+  fbl::RefPtr<pci::Device> dev = bridge;
   bdi->LinkDevice(dev);
-  *out_bridge = fbl::RefPtr<Bridge>::Downcast(dev);
+  *out_bridge = std::move(bridge);
   return ZX_OK;
 }
 
