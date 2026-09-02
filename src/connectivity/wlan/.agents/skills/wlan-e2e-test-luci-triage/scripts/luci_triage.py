@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 
 def check_prerequisites() -> None:
     missing = []
-    for cmd in ("bb", "rdb", "prpc"):
+    for cmd in ("bb", "rdb"):
         if shutil.which(cmd) is None:
             missing.append(cmd)
     if missing:

@@ -46,7 +46,7 @@ Always include `-nopage` when running `bb ls` in terminal/agent environments to 
     bb ls turquoise/global.ci/fuchsia_internal.arm64-release-fyi -n 50 -json -nopage
     ```
 
-*(Note: If complex filtering predicates are required, `bb ls` also supports the `-predicate '<JSON>'` flag, or you can fall back to `prpc call cr-buildbucket.appspot.com buildbucket.v2.Builds.SearchBuilds`.)*
+*(Note: If complex filtering predicates are required, `bb ls` also supports the `-predicate '<JSON>'` flag (preferred), or you can fall back to `prpc call cr-buildbucket.appspot.com buildbucket.v2.Builds.SearchBuilds`.)*
 
 ### Step 2: Query ResultDB for WLAN Test Results & Bot IDs
 Find specific WLAN tests that failed within those builds using `rdb query`. ResultDB handles pagination automatically and provides a simpler interface than raw PRPC.
@@ -70,6 +70,12 @@ Find specific WLAN tests that failed within those builds using `rdb query`. Resu
     ```bash
     rdb query -json -u -tr-fields testId,status,name,failureReason,summaryHtml,tags -test ".*<TEST_SUITE_OR_REGEX>.*" "build-<BUILD_ID>"
     ```
+*   **Extract all failed sub-test cases and failure reasons directly**:
+    All sub-test results and error messages are already structured in ResultDB. You do not need to download or parse `test_summary.yaml` to discover which test cases failed or why:
+    ```bash
+    rdb query -json -u -tr-fields testId,status,failureReason "build-<BUILD_ID>" \
+      | jq -r '.testResult | select(.failureReason != null) | "\(.testId) => \(.failureReason.primaryErrorMessage)"'
+    ```
 *   **Pipe failed build IDs directly from `bb ls`**:
     ```bash
     bb ls turquoise/global.ci/fuchsia_internal.arm64-release-fyi -status failure -n 10 -id -nopage | sed 's/^/build-/' | rdb query -json -u -tr-fields testId,status,name,failureReason,summaryHtml,tags
@@ -91,83 +97,55 @@ To root cause WLAN test failures, understand where artifacts are located in Resu
 
 | Level | Resource Name Format | What It Contains | How to Query |
 | :--- | :--- | :--- | :--- |
-| **Suite-Level Test Result** | `invocations/<SWARMING_INV>/tests/<SUITE>/results/<ID>` | `Snapshot_*.zip`, `test_log.INFO`, AP logs, `ffx.log` | `ListArtifacts` with suite result as `parent` |
+| **Suite-Level Test Result** | `invocations/<SWARMING_INV>/tests/<SUITE>/results/<ID>` | `Snapshot_*.zip`, `test_log.INFO`, AP logs, `ffx.log` | `luci test-result artifact list` |
 | **Sub-Test Case Level** | `.../tests/<SUITE>/<Class>:<test_case>/results/<ID>` | Pass/fail status & error messages only | *(No file artifacts attached)* |
-| **Swarming Invocation** | `invocations/<SWARMING_INV>` | `syslog.txt`, `serial_log.txt`, infra logs | `ListArtifacts` with swarming invocation as `parent` |
+| **Swarming Invocation** | `invocations/<SWARMING_INV>` | `syslog.txt`, `serial_log.txt`, infra logs | `bb log` |
 
-#### 1. Discover Artifacts with `rdb rpc`
+#### 1. Discover Artifacts with `luci`
 
-*   **List all artifacts for the test suite (`ListArtifacts`)**:
-    Use the `name` of the **top-level test suite** result from Step 2 (e.g. `invocations/<SWARMING_INV>/tests/<URL_ENCODED_SUITE_ID>/results/<RESULT_ID>`):
+*   **List all artifacts for the test suite (`luci test-result artifact list`)**:
+    Use the IDs of the **top-level test suite** result from Step 2:
     ```bash
-    echo '{
-      "parent": "<suite_test_result_name>",
-      "pageSize": 100
-    }' | rdb rpc luci.resultdb.v1.ResultDB ListArtifacts
+    /google/bin/releases/luci-cli/luci test-result artifact list -legacy -invocationid <SWARMING_INV> -testid <TEST_ID> -resultid <RESULT_ID>
     ```
-
-*   **List shard-level logs (`ListArtifacts`)**:
-    Use the swarming invocation resource name (`invocations/<SWARMING_INV>` from the prefix of the test result `name`):
-    ```bash
-    echo '{
-      "parent": "invocations/<SWARMING_INV>",
-      "pageSize": 100
-    }' | rdb rpc luci.resultdb.v1.ResultDB ListArtifacts
-    ```
+    *(Tip: Run `/google/bin/releases/luci-cli/luci ids "<suite_test_result_name>"` to extract `-invocationid`, `-testid`, and `-resultid` automatically from the test result name).*
 
 *   **Search artifacts across the build (`QueryArtifacts`)**:
-    When searching across all runs in a build without knowing the individual test result names, you MUST supply a `predicate` to avoid fetching thousands of unrelated artifacts:
+    When searching across all runs in a build without knowing the individual test result names, you can query ResultDB with a `predicate` to find specific artifacts:
     ```bash
-    echo '{
-      "invocations": ["invocations/build-<BUILD_ID>"],
-      "pageSize": 100,
-      "predicate": {
-        "testResultPredicate": {
-          "testIdRegexp": ".*<TEST_SUITE_OR_NAME>.*"
-        },
-        "artifactIdRegexp": ".*(Snapshot|test_log).*"
-      }
-    }' | rdb rpc luci.resultdb.v1.ResultDB QueryArtifacts
+    echo '{"invocations": ["invocations/build-<BUILD_ID>"], "pageSize": 100, "predicate": {"testResultPredicate": {"testIdRegexp": ".*<TEST_SUITE_OR_NAME>.*"}, "artifactIdRegexp": ".*(Snapshot|test_log).*"}}' | rdb rpc luci.resultdb.v1.ResultDB QueryArtifacts
     ```
     *For root invocation-level logs (e.g., `serial_log.txt` or `syslog.txt` across shards)*:
     ```bash
-    echo '{
-      "invocations": ["invocations/build-<BUILD_ID>"],
-      "pageSize": 100,
-      "predicate": {
-        "followEdges": {
-          "includedInvocations": true
-        },
-        "artifactIdRegexp": ".*(serial_log|syslog).*"
-      }
-    }' | rdb rpc luci.resultdb.v1.ResultDB QueryArtifacts
+    echo '{"invocations": ["invocations/build-<BUILD_ID>"], "pageSize": 100, "predicate": {"followEdges": {"includedInvocations": true}, "artifactIdRegexp": ".*(serial_log|syslog).*"}}' | rdb rpc luci.resultdb.v1.ResultDB QueryArtifacts
     ```
-    *Parameters*:
-    * `invocations`: Invocation resource names (MUST include the `invocations/` prefix, e.g. `["invocations/build-<BUILD_ID>"]`).
-    * `predicate.testResultPredicate.testIdRegexp`: Regex to filter artifacts by test ID.
-    * `predicate.artifactIdRegexp`: Regex to filter by artifact file name.
-    * `predicate.followEdges.includedInvocations`: Set to `true` to follow shard inclusions for root-level logs.
-    * `pageSize`: Max number of artifacts to return (e.g. `100`).
 
-#### 2. Read Artifact and Step Logs
+#### 2. Fetch and Read Artifact Logs
 
-*   **View test and infra step logs directly via `bb log`**:
-    Use `bb log` to print build and test logs directly to stdout without downloading files:
+Use `/google/bin/releases/luci-cli/luci test-result artifact get` for all test artifacts (prefer this over `curl`, which is not usually in the agent allowlist):
+
+*   **Stream text logs to stdout (e.g. `test_log.INFO`, `test_summary.yaml`, `stdout-and-stderr.txt`)**:
+    Print or pipe artifact content directly without downloading files or dealing with base64 decoding:
+    ```bash
+    /google/bin/releases/luci-cli/luci test-result artifact get -legacy -invocationid <SWARMING_INV> -testid <TEST_ID> -resultid <RESULT_ID> -artifactid "<ARTIFACT_ID>"
+    ```
+    *(Can be piped directly to `grep`, `head`, `tail`, etc.)*
+
+*   **Download binary files (e.g. `Snapshot_*.zip`)**:
+    Save to a local file using `-o`:
+    ```bash
+    /google/bin/releases/luci-cli/luci test-result artifact get -legacy -invocationid <SWARMING_INV> -testid <TEST_ID> -resultid <RESULT_ID> -artifactid "<SNAPSHOT_ARTIFACT_ID>" -o /tmp/snapshot.zip
+
+    # Extract the device syslog from the snapshot:
+    unzip -p /tmp/snapshot.zip log.system.txt > /tmp/log.system.txt
+    ```
+
+*   **View build step and infra logs via `bb log`**:
+    For harness-level crashes or build infrastructure logs:
     ```bash
     bb log <BUILD_ID> "<STEP_NAME>" "<LOG_NAME>"
     ```
     *(Tip: Run `bb get <BUILD_ID> -steps` to discover the exact step name for a failed test, e.g. `failures|<SHARD>|attempt 0 (fail)|failed: <TEST_ID>`, which contains logs like `stdout-and-stderr.txt`, `infra_and_test_std_and_klog.txt`, and `syslog.txt`).*
-
-*   **Read text artifact lines directly via `rdb rpc ListArtifactLines`**:
-    To inspect text log artifacts (e.g., `test_log.INFO`, `test_summary.yaml`, `syslog.txt`) directly via ResultDB without downloading files, query the lines using `rdb rpc`:
-    ```bash
-    echo '{
-      "parent": "<artifact_name>",
-      "pageSize": 1000
-    }' | rdb rpc luci.resultdb.v1.ResultDB ListArtifactLines | jq -r '.lines[].content | @base64d'
-    ```
-    *(Or fallback via prpc: `echo '{"parent": "<artifact_name>"}' | prpc call results.api.luci.app luci.resultdb.v1.ResultDB.ListArtifactLines | jq -r '.lines[].content | @base64d'`)*
-    Where `<artifact_name>` is the full artifact resource name returned in the `name` field from `ListArtifacts` (e.g., `invocations/.../tests/.../results/.../artifacts/<ARTIFACT_ID>`).
 
 #### 3. Key Artifacts Reference
 Most issues can be triaged using a combination of the test logs and Fuchsia device logs (syslog/snapshots), but AP logs and metadata are sometimes helpful to confirm root causes.
@@ -184,7 +162,8 @@ Most issues can be triaged using a combination of the test logs and Fuchsia devi
 *   **Ancillary Logs**:
     *   `InfraTestbed/.../wifi_log.txt`: Wi-Fi logs retrieved via ADB (only present if the test uses ADB).
     *   `InfraTestbed/.../ffx/ffx.log`: Logs from the `ffx` tool, which are helpful if the test failed due to a host-device communication issue.
-    *   `InfraTestbed/.../test_summary.yaml` and `triage_output`: Test metadata.
+    *   `InfraTestbed/.../test_summary.yaml`: Test framework execution summary (failures are directly readable at the bottom of the file with `tail` or `grep`, no parsing needed).
+    *   `InfraTestbed/.../triage_output`: Test metadata.
 *   **Parent Invocation Logs**:
     *   You may see `syslog.txt` or `serial_log.txt` at the root of the parent invocation. These logs contain output from your test along with other tests, so they can be noisy. Rely on the snapshot syslogs unless debugging a hardware lockup.
 
@@ -226,6 +205,6 @@ When the user asks you to triage a test suite like `e2e_connection_test_using_ad
 
 **Scenario 2: Root Causing AP Rejections on Suspend/Resume**
 *   **Observation**: The `with_suspend_resume` variants of the test were occasionally failing because the connection dropped.
-*   **Action**: We checked `test_log.INFO` and saw the test failing at an assertion waiting for the connection. We downloaded the `Snapshot_*.zip`, extracted `log.system.txt`, and isolated the logs to the exact test boundaries.
+*   **Action**: We checked `test_log.INFO` and saw the test failing at an assertion waiting for the connection. We downloaded the `Snapshot_*.zip` using `luci test-result artifact get`, extracted `log.system.txt`, and isolated the logs to the exact test boundaries.
 *   **Result**: By filtering for `wlan` tags, we found an `AP Rejection status: 2` followed immediately by `wlanif: interface destroyed`, occurring the exact moment the device logged a `resume` from sleep.
 *   **Conclusion**: We proved the test wasn't flaky; the AP was intentionally de-authenticating the device while it slept, requiring the test code to be refactored to expect this rejection and wait longer for a reconnection.
