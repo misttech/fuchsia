@@ -7,6 +7,13 @@ use component_events::events::{Destroyed, Event, EventStream, Started};
 use component_events::matcher::EventMatcher;
 use component_events::sequence::*;
 use fidl::endpoints::{ServiceMarker, ServiceProxy, create_proxy};
+use fidl_fidl_test_components as ftest;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_examples as fecho;
+use fidl_fuchsia_examples_services as fexamples;
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys2;
 use fuchsia_component::client;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Ref, Route, ScopedInstance,
@@ -24,12 +31,6 @@ use vfs::directory::helper::DirectlyMutable;
 use vfs::directory::simple::Simple;
 use vfs::execution_scope::ExecutionScope;
 use vfs::pseudo_directory;
-use {
-    fidl_fidl_test_components as ftest, fidl_fuchsia_component as fcomponent,
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_examples as fecho,
-    fidl_fuchsia_examples_services as fexamples, fidl_fuchsia_io as fio,
-    fidl_fuchsia_sys2 as fsys2,
-};
 
 const BRANCHES_COLLECTION: &str = "branches";
 const BRANCH_ONECOLL_COMPONENT_URL: &str = "#meta/service-routing-branch-onecoll.cm";
@@ -94,7 +95,7 @@ async fn list_instances_test(test_type: TestType) {
     let service_dir = fuchsia_fs::directory::open_directory(
         branch.get_exposed_dir(),
         fexamples::BankAccountMarker::SERVICE_NAME,
-        fio::Flags::empty(),
+        fio::PERM_READABLE,
     )
     .await
     .expect("failed to open service dir");
@@ -178,7 +179,7 @@ async fn create_destroy_instance_test(test_type: TestType) {
     let service_dir = fuchsia_fs::directory::open_directory(
         branch.get_exposed_dir(),
         fexamples::BankAccountMarker::SERVICE_NAME,
-        fio::Flags::empty(),
+        fio::PERM_READABLE,
     )
     .await
     .expect("failed to open service dir");

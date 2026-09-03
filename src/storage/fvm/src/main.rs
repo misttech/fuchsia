@@ -3062,7 +3062,7 @@ mod tests {
 
         let expected = HashSet::from(["bar".to_string(), "blobfs".to_string(), "data".to_string()]);
         let volumes_dir =
-            open_directory(&fixture.outgoing_dir, "volumes", fio::Flags::empty()).await.unwrap();
+            open_directory(&fixture.outgoing_dir, "volumes", fio::PERM_READABLE).await.unwrap();
         assert_eq!(
             &readdir(&volumes_dir)
                 .await
@@ -3076,7 +3076,7 @@ mod tests {
         // Check again after a remount.
         let fixture = Fixture::from_fake_server(fixture.take_fake_server()).await;
         let volumes_dir =
-            open_directory(&fixture.outgoing_dir, "volumes", fio::Flags::empty()).await.unwrap();
+            open_directory(&fixture.outgoing_dir, "volumes", fio::PERM_READABLE).await.unwrap();
         assert_eq!(
             &readdir(&volumes_dir)
                 .await
@@ -3118,7 +3118,7 @@ mod tests {
 
         let expected = HashSet::from(["blobfs".to_string(), "data".to_string()]);
         let volumes_dir =
-            open_directory(&fixture.outgoing_dir, "volumes", fio::Flags::empty()).await.unwrap();
+            open_directory(&fixture.outgoing_dir, "volumes", fio::PERM_READABLE).await.unwrap();
         assert_eq!(
             &readdir(&volumes_dir)
                 .await
@@ -3132,7 +3132,7 @@ mod tests {
         // Check again after a remount.
         let fixture = Fixture::from_fake_server(fixture.take_fake_server()).await;
         let volumes_dir =
-            open_directory(&fixture.outgoing_dir, "volumes", fio::Flags::empty()).await.unwrap();
+            open_directory(&fixture.outgoing_dir, "volumes", fio::PERM_READABLE).await.unwrap();
         assert_eq!(
             &readdir(&volumes_dir)
                 .await
@@ -3946,9 +3946,8 @@ mod tests {
             };
 
             let expected = HashSet::from(["blobfs".to_string(), "data".to_string()]);
-            let volumes_dir = open_directory(&fixture.outgoing_dir, "volumes", fio::Flags::empty())
-                .await
-                .unwrap();
+            let volumes_dir =
+                open_directory(&fixture.outgoing_dir, "volumes", fio::PERM_READABLE).await.unwrap();
             assert_eq!(
                 &readdir(&volumes_dir)
                     .await
