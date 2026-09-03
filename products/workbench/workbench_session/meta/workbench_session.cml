@@ -45,6 +45,7 @@
                 "fuchsia.tracing.provider.Registry",
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.composition.internal.ScreenCapture",
                 "fuchsia.ui.composition.ScreenCapture",
                 "fuchsia.ui.display.singleton.Info",
@@ -126,6 +127,7 @@
             protocol: [
                 "fuchsia.session.scene.Manager",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
             ],
             from: "parent",
             to: "#tiling_wm",

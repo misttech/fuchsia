@@ -62,6 +62,7 @@
             protocol: [
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.display.singleton.Info",
             ],
             from: "parent",

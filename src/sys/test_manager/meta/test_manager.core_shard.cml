@@ -201,6 +201,7 @@
             protocol: [
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
             ],
             from: "#ui",
             to: "#test_manager",

@@ -420,6 +420,7 @@
                 "fuchsia.memory.debug.MemoryPressure",
                 "fuchsia.memorypressure.Provider",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
             ],
             from: "parent",
             to: [ "#system-tests" ],

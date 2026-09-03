@@ -774,6 +774,7 @@
                 "fuchsia.factory.WeaveFactoryStoreProvider",
                 "fuchsia.power.cpu.manager.Boost",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
             ],
             from: "parent",
             to: [ "#system-tests" ],

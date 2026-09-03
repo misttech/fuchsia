@@ -107,6 +107,7 @@
                 "fuchsia.stash.SecureStore",
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.input3.Keyboard",
             ],
             from: "parent",

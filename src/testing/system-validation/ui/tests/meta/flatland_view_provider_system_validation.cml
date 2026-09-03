@@ -30,6 +30,7 @@
                 "fuchsia.tracing.provider.Registry",
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
             ],
             from: "parent",
             to: [ "#sample-app" ],

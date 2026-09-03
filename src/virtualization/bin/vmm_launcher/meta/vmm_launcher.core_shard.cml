@@ -61,6 +61,7 @@
                 "fuchsia.input.wayland.Keymap",
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.input.ImeService",
                 "fuchsia.ui.input3.Keyboard",
             ],

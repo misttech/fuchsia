@@ -197,6 +197,7 @@
                 "fuchsia.session.scene.Manager",
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.composition.Screenshot",
             ],
             from: "#ui",

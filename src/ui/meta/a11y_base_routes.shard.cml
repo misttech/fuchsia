@@ -31,6 +31,7 @@
             protocol: [
                 "fuchsia.ui.annotation.Registry",
                 "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.focus.FocusChainListenerRegistry",
                 "fuchsia.ui.input.accessibility.PointerEventRegistry",
                 "fuchsia.ui.observation.scope.Registry",

@@ -44,6 +44,7 @@
                 "fuchsia.ui.composition.Allocator",
                 "fuchsia.ui.composition.Flatland",
                 "fuchsia.ui.composition.FlatlandDisplay",
+                "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.composition.internal.DisplayOwnership",
                 "fuchsia.ui.display.color.Converter",
                 "fuchsia.ui.display.singleton.Info",
