@@ -44,6 +44,17 @@ namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 #define ETH_MTU 1514
 #define ETH_MAC_SIZE 6
 
+// UsbCdcFunction implements the USB CDC (Ethernet Control Model) peripheral function driver.
+//
+// Threading & Dispatcher Architecture:
+// All protocol servers (fuchsia.hardware.usb.function/UsbFunctionInterface,
+// fuchsia.hardware.network.driver/NetworkDeviceImpl), endpoint event callbacks,
+// and asynchronous teardown/reconfiguration tasks run on the driver's default
+// synchronized dispatcher (`dispatcher()`).
+//
+// Internal driver state (e.g. `online_`, `configured_`, buffer queues, and endpoint
+// clients) is managed exclusively within this single dispatch loop, guaranteeing
+// serialized execution without requiring explicit mutex locking.
 class UsbCdcFunction : public fdf::DriverBase2,
                        public fdf::WireServer<fnetdev::NetworkDeviceImpl>,
                        public fdf::WireServer<fnetdev::NetworkPort>,
@@ -128,6 +139,7 @@ class UsbCdcFunction : public fdf::DriverBase2,
   // test helpers.
   bool HasPendingRxCompletions();
   bool online() const { return online_; }
+  bool configured() const { return configured_; }
   bool IntrEpRequestsFull() { return intr_ep_.RequestsFull(); }
   const std::array<uint8_t, ETH_MAC_SIZE> &mac_addr() const { return mac_addr_; }
   size_t GetInFlightInterruptCountForTesting() { return intr_ep_.GetInFlightCount(); }
@@ -140,10 +152,11 @@ class UsbCdcFunction : public fdf::DriverBase2,
   usb_inspect::ThroughputTracker &GetThroughputTrackerForTesting() { return *throughput_tracker_; }
 
  private:
+  struct SetConfiguredSharedState;
   zx_status_t AddNetworkDevice();
   fuchsia_hardware_network::PortStatus ReadStatus() const;
   void UpdatePortStatus();
-  void DisableAllEndpoints();
+  void DisableAllEndpoints(fit::callback<void(zx_status_t)> callback);
 
   struct EndpointInfo {
     uint8_t address;
@@ -171,6 +184,7 @@ class UsbCdcFunction : public fdf::DriverBase2,
   }
 
   fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunction> function_;
+  fidl::Client<fuchsia_hardware_usb_function::UsbFunction> async_function_;
   std::string mac_addr_string_;
   fdf::WireClient<fuchsia_hardware_network_driver::NetworkDeviceIfc> netdevice_ifc_;
 
@@ -205,9 +219,17 @@ class UsbCdcFunction : public fdf::DriverBase2,
   std::vector<fuchsia_hardware_usb_endpoint::Completion> rx_completion_queue_;
   void DiscardPendingTxBuffers(zx_status_t status);
   void ReturnPendingRxSpace();
-  void ContinueStop();
+  void DrainRxCompletionQueue();
+  void CheckStopComplete();
+  void CheckSetConfiguredDone();
 
   std::atomic_bool unbound_ = false;  // set to true when device is going away.
+  bool deconfigure_called_ = false;
+  bool deconfigure_completed_ = false;
+  bool intr_cancelled_ = false;
+  bool bulk_in_cancelled_ = false;
+  bool bulk_out_cancelled_ = false;
+  std::shared_ptr<SetConfiguredSharedState> set_configured_state_;
 
   // Device attributes
   std::array<uint8_t, ETH_MAC_SIZE> mac_addr_;

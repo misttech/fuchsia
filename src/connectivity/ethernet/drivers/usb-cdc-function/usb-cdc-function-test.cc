@@ -869,15 +869,15 @@ TEST_F(UsbCdcTest, TeardownWithPendingRxCompletion) {
 // Validates the strict asynchronous teardown ordering: requests are cancelled on all active
 // endpoints and returned before deconfiguring the USB function or disabling endpoints. Requires
 // asynchronous SetConfigured(false) and Stop() teardown coordinator in the driver.
-TEST_F(UsbCdcTest, DISABLED_VerifySafeTeardownSequence) {
+TEST_F(UsbCdcTest, VerifySafeTeardownSequence) {
   // 1. Bring the network device online and configure alternate settings to queue requests on
   // endpoints.
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
   // 2. Configure mock bulk and interrupt endpoints to hold CancelAll completions!
-  // Note: kBulkInEp is not held because it starts with zero queued requests, so
-  // the driver optimizes by skipping CancelAll and immediately completing cancellation.
+  // Note: kBulkInEp is not held because it starts with zero queued requests;
+  // allowing its CancelAll call to complete immediately in the mock avoids blocking.
   driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
     env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).set_hold_cancel(true);
     env.fake_usb_fidl_.fake_endpoint(kIntrEp).set_hold_cancel(true);
@@ -998,7 +998,7 @@ TEST_F(UsbCdcTest, DISABLED_VerifySafeTeardownSequence) {
 // Validates that transitioning to alternate setting 0 (deconfigured/idle) returns all queued RX
 // space buffers to the network device. Requires driver support to drain rx_space_buffers_ on
 // unconfigure.
-TEST_F(UsbCdcTest, DISABLED_UnconfigureReturnsRxSpace) {
+TEST_F(UsbCdcTest, UnconfigureReturnsRxSpace) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1022,7 +1022,7 @@ TEST_F(UsbCdcTest, DISABLED_UnconfigureReturnsRxSpace) {
                 .status());
 
   // Synchronize with the driver runtime to ensure QueueRxSpace has been fully processed.
-  driver_test_.runtime().RunUntilIdle();
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
 
   auto rx_completed = std::make_shared<libsync::Completion>();
   driver_test_.RunInEnvironmentTypeContext([rx_completed](Environment& env) {
@@ -1056,7 +1056,7 @@ TEST_F(UsbCdcTest, DISABLED_UnconfigureReturnsRxSpace) {
 // Validates that reconfiguring the device re-enables and configures the Interrupt IN endpoint
 // across configuration sessions. Requires driver to reset completed endpoint tracking on
 // re-configuration.
-TEST_F(UsbCdcTest, DISABLED_ReconfigurationReenablesInterruptEndpoint) {
+TEST_F(UsbCdcTest, ReconfigurationReenablesInterruptEndpoint) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1079,10 +1079,67 @@ TEST_F(UsbCdcTest, DISABLED_ReconfigurationReenablesInterruptEndpoint) {
   driver_test_.RunInDriverContext([](UsbCdcFunction& driver) { EXPECT_TRUE(driver.online()); });
 }
 
+// Validates that a host-initiated soft reset (SetConfigured(true) when already configured) safely
+// drains previous session state and reconfigures endpoints without error.
+TEST_F(UsbCdcTest, SoftResetReconfiguresEndpoints) {
+  StartNetworkDevice();
+  ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
+
+  // Host sends SetConfigured(true) while already configured (soft reset).
+  ASSERT_TRUE(function_client_.is_valid());
+  fidl::Result result = function_client_->SetConfigured({{
+      .configured = true,
+      .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+  }});
+  ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+
+  // Driver should remain configured.
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) { EXPECT_TRUE(driver.configured()); });
+}
+
+// Validates that rapidly toggling SetConfigured(true) followed immediately by
+// SetConfigured(false) leaves the driver in the unconfigured state as requested.
+TEST_F(UsbCdcTest, RapidToggleConfigured) {
+  StartNetworkDevice();
+  ASSERT_TRUE(function_client_.is_valid());
+
+  // Dispatch SetConfigured(true) followed immediately by SetConfigured(false).
+  auto client_end = function_client_.TakeClientEnd();
+  auto toggle_complete = std::make_shared<libsync::Completion>();
+  std::shared_ptr<fidl::Client<fuchsia_hardware_usb_function::UsbFunctionInterface>>
+      async_function_client;
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    async_function_client =
+        std::make_shared<fidl::Client<fuchsia_hardware_usb_function::UsbFunctionInterface>>(
+            std::move(client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+    (*async_function_client)
+        ->SetConfigured({{
+            .configured = true,
+            .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+        }})
+        .Then([](auto& result) {});
+    (*async_function_client)
+        ->SetConfigured({{
+            .configured = false,
+            .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined,
+        }})
+        .Then([toggle_complete](auto& result) {
+          EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+          toggle_complete->Signal();
+        });
+  });
+
+  ASSERT_OK(toggle_complete->Wait(zx::deadline_after(zx::sec(5))));
+  driver_test_.RunInDriverContext(
+      [](UsbCdcFunction& driver) { EXPECT_FALSE(driver.configured()); });
+  driver_test_.RunInEnvironmentTypeContext(
+      [&](Environment& env) { async_function_client.reset(); });
+}
+
 // Validates that endpoints are not prematurely disabled while asynchronous cancellation is still in
 // flight during driver Stop. Requires driver Stop() to await CancelAll completion before calling
 // DisableEndpoint.
-TEST_F(UsbCdcTest, DISABLED_TrapPrematureDisableOnStop) {
+TEST_F(UsbCdcTest, TrapPrematureDisableOnStop) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1150,7 +1207,7 @@ TEST_F(UsbCdcTest, DISABLED_TrapPrematureDisableOnStop) {
 // Validates that all active endpoints receive CancelAll during deconfiguration before releasing
 // interface resources. Requires SetConfigured(false) to trigger CancelAll across all active
 // endpoints.
-TEST_F(UsbCdcTest, DISABLED_TrapMissingCancelOnDeconfigure) {
+TEST_F(UsbCdcTest, TrapMissingCancelOnDeconfigure) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1758,7 +1815,7 @@ TEST_F(UsbCdcTest, DISABLED_SetInterfaceAltSettingZeroWithBufferedRxCompletions)
 
 // Validates that expected peer closed errors (ZX_ERR_PEER_CLOSED) during endpoint disabling are
 // cleanly handled. Requires DisableAllEndpoints to recognize expected transport disconnect errors.
-TEST_F(UsbCdcTest, DISABLED_DisableAllEndpointsExpectedDisconnect) {
+TEST_F(UsbCdcTest, DisableAllEndpointsExpectedDisconnect) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1776,7 +1833,7 @@ TEST_F(UsbCdcTest, DISABLED_DisableAllEndpointsExpectedDisconnect) {
 
 // Validates that framework/transport-level channel closures during driver teardown do not trigger
 // panics. Requires DisableAllEndpoints to handle framework transport errors safely.
-TEST_F(UsbCdcTest, DISABLED_DisableAllEndpointsFrameworkError) {
+TEST_F(UsbCdcTest, DisableAllEndpointsFrameworkError) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1796,7 +1853,7 @@ TEST_F(UsbCdcTest, DISABLED_DisableAllEndpointsFrameworkError) {
 // Validates that physical unplug disconnects (ZX_ERR_IO_NOT_PRESENT) during endpoint disabling
 // succeed cleanly. Requires DisableAllEndpoints to recognize ZX_ERR_IO_NOT_PRESENT as a safe
 // disconnect error.
-TEST_F(UsbCdcTest, DISABLED_DisableAllEndpointsIoNotPresent) {
+TEST_F(UsbCdcTest, DisableAllEndpointsIoNotPresent) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
