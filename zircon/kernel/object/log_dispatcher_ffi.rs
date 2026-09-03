@@ -42,19 +42,19 @@ pub unsafe extern "C" fn rust_log_dispatcher_notify(cookie: *mut core::ffi::c_vo
 ///
 /// # Safety
 ///
-/// `rights_out` and `handle_out` must be valid writable pointers.
+/// `handle_out` and `rights_out` must be valid writable pointers.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_log_dispatcher_create(
     flags: u32,
-    rights_out: *mut zx_rights_t,
     handle_out: *mut MaybeUninit<KernelHandle<LogDispatcher>>,
+    rights_out: *mut zx_rights_t,
 ) -> zx_status_t {
-    // SAFETY: `rights_out` and `handle_out` are valid non-null writable pointers.
+    // SAFETY: `handle_out` and `rights_out` are valid non-null writable pointers.
     unsafe {
         match LogDispatcher::create(flags) {
             Ok((handle, rights)) => {
-                rights_out.write(rights);
                 (*handle_out).write(handle);
+                rights_out.write(rights);
                 zx_types::ZX_OK
             }
             Err(status) => status.into_raw(),

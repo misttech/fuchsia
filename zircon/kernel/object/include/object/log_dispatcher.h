@@ -28,8 +28,8 @@ zx_status_t cpp_log_dispatcher_create(uint32_t flags, zx_rights_t rights,
 // (log_dispatcher_ffi.rs) and called by LogDispatcher::Create. It orchestrates
 // the creation by calling Rust's LogDispatcher::create, which in turn calls
 // cpp_log_dispatcher_create.
-zx_status_t rust_log_dispatcher_create(uint32_t flags, zx_rights_t* rights_out,
-                                       KernelHandle<LogDispatcher>* handle_out);
+zx_status_t rust_log_dispatcher_create(uint32_t flags, KernelHandle<LogDispatcher>* handle_out,
+                                       zx_rights_t* rights_out);
 }
 
 class LogDispatcher final : public Dispatcher {
@@ -37,7 +37,7 @@ class LogDispatcher final : public Dispatcher {
   // Helper for internal kernel callers (such as userboot.cc) to create a LogDispatcher.
   static zx_status_t Create(uint32_t flags, KernelHandle<LogDispatcher>* handle,
                             zx_rights_t* rights) {
-    return rust_log_dispatcher_create(flags, rights, handle);
+    return rust_log_dispatcher_create(flags, handle, rights);
   }
 
   ~LogDispatcher() final;

@@ -19,7 +19,7 @@ unsafe extern "C" {
         vmo: &RefPtr<VmObject>,
         cap_offset: usize,
         options: u32,
-        rights_out: *mut MaybeUninit<zx_rights_t>,
         handle_out: *mut MaybeUninit<KernelHandle<MsiInterruptDispatcher>>,
+        rights_out: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
 }

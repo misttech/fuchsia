@@ -33,8 +33,9 @@ class MsiInterruptDispatcher;
 extern "C" {
 zx_status_t cpp_msi_interrupt_dispatcher_create(
     const fbl::RefPtr<MsiAllocation>* alloc, uint32_t msi_id, const fbl::RefPtr<VmObject>* vmo,
-    size_t cap_offset, uint32_t options, ffi::Uninitialized<zx_rights_t>* rights_out,
-    ffi::Uninitialized<KernelHandle<MsiInterruptDispatcher>>* handle_out);
+    size_t cap_offset, uint32_t options,
+    ffi::Uninitialized<KernelHandle<MsiInterruptDispatcher>>* handle_out,
+    ffi::Uninitialized<zx_rights_t>* rights_out);
 }
 
 // The common interface for all MSI related interrupt handling. This encompasses MSI and MSI-X.

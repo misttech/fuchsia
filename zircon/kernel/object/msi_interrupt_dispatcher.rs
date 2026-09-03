@@ -32,7 +32,7 @@ impl MsiInterruptDispatcher {
         unsafe {
             KernelHandle::create_with_rights(|handle_out, rights_out| {
                 cpp_msi_interrupt_dispatcher_create(
-                    alloc, msi_id, vmo, cap_offset, options, rights_out, handle_out,
+                    alloc, msi_id, vmo, cap_offset, options, handle_out, rights_out,
                 )
             })
         }
