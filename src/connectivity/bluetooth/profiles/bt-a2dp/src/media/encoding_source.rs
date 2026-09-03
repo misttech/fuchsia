@@ -9,6 +9,7 @@ use bt_avdtp::MediaStream;
 use fidl_fuchsia_bluetooth_bredr::AudioOffloadExtProxy;
 use fidl_fuchsia_media::{AudioChannelId, AudioPcmMode, PcmFormat};
 use fuchsia_async as fasync;
+use fuchsia_audio_device::AudioStreamItem;
 use fuchsia_bluetooth::inspect::DataStreamInspect;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect::Node;
@@ -35,7 +36,7 @@ pub trait AudioSourceStreamBuilder: Send + Sync {
         pcm_format: PcmFormat,
         external_delay: std::time::Duration,
         inspect_parent: &mut Node,
-    ) -> Result<BoxStream<'static, fuchsia_audio_device::Result<Vec<u8>>>, Error>;
+    ) -> Result<BoxStream<'static, fuchsia_audio_device::Result<AudioStreamItem>>, Error>;
 }
 
 /// Builder is a MediaTaskBuilder will build `ConfiguredTask`s when configured.
@@ -323,7 +324,8 @@ impl RunningTask {
         loop {
             let encoded = match encoded_stream.try_next().await? {
                 None => continue,
-                Some(encoded) => encoded,
+                Some(AudioStreamItem::Data(encoded)) => encoded,
+                Some(AudioStreamItem::AudioDisabled) => continue,
             };
             let packets = match packet_builder.add_frame(encoded, frames_per_encoded) {
                 Err(e) => {

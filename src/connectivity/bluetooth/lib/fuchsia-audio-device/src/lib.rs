@@ -17,7 +17,7 @@
 
 #![recursion_limit = "256"]
 
-pub use crate::types::{Error, Result};
+pub use crate::types::{AudioStreamItem, Error, Result};
 
 /// Generic types
 #[macro_use]

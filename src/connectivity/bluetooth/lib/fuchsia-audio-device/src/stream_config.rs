@@ -10,10 +10,11 @@ use fidl_fuchsia_hardware_audio::*;
 use fuchsia_inspect_derive::{IValue, Inspect};
 use fuchsia_sync::Mutex;
 
+use fuchsia_async as fasync;
+use fuchsia_inspect as inspect;
 use futures::{StreamExt, select};
 use log::{info, warn};
 use std::sync::Arc;
-use {fuchsia_async as fasync, fuchsia_inspect as inspect};
 
 use crate::audio_frame_sink::AudioFrameSink;
 use crate::audio_frame_stream::AudioFrameStream;
@@ -86,9 +87,6 @@ pub struct SoftStreamConfig {
     /// The size of a frame.
     /// Used to report the driver transfer size.
     frame_bytes: usize,
-
-    /// The currently set format, in frames per second, audio sample format, and channels.
-    current_format: Option<(u32, AudioSampleFormat, u16)>,
 
     /// The request stream for the ringbuffer.
     ring_buffer_stream: MaybeStream<RingBufferRequestStream>,
@@ -227,7 +225,6 @@ impl SoftStreamConfig {
             supported_formats,
             packet_frames,
             frame_bytes: (pcm_format.bits_per_sample / 8) as usize,
-            current_format: None,
             ring_buffer_stream: Default::default(),
             frame_vmo: Arc::new(Mutex::new(frame_vmo::FrameVmo::new()?)),
             external_delay: initial_external_delay,
@@ -343,10 +340,17 @@ impl SoftStreamConfig {
             }
             StreamConfigRequest::CreateRingBuffer { format, ring_buffer, control_handle: _ } => {
                 let pcm = format.pcm_format.ok_or_else(|| format_err!("No pcm_format included"))?;
-                self.ring_buffer_stream.set(ring_buffer.into_stream());
+                // If the ring buffer was previously active, we must shut it down.
+                let _ = self.frame_vmo.lock().stop();
+                drop(MaybeStream::take(&mut self.ring_buffer_stream));
                 let current = (pcm.frame_rate, pcm.into(), pcm.number_of_channels.into());
                 self.inspect.record_current_format(&current);
-                self.current_format = Some(current);
+                if let Err(e) = self.frame_vmo.lock().set_format(current.0, current.1, current.2) {
+                    info!("Error creating ring buffer: {e:?}");
+                    let _ = ring_buffer.close_with_epitaph(zx::Status::INVALID_ARGS);
+                    return Ok(());
+                }
+                self.ring_buffer_stream.set(ring_buffer.into_stream());
                 self.delay_info_replied = false;
             }
             StreamConfigRequest::WatchGainState { responder } => {
@@ -415,27 +419,16 @@ impl SoftStreamConfig {
                 clock_recovery_notifications_per_ring,
                 responder,
             } => {
-                let (fps, format, channels) = match &self.current_format {
-                    None => {
-                        if let Err(e) = responder.send(Err(GetVmoError::InternalError)) {
-                            warn!("Error on get vmo error send: {:?}", e);
-                        }
-                        return Ok(());
-                    }
-                    Some(x) => x.clone(),
-                };
                 // Require a minimum amount of frames for three packets.
                 let min_frames_from_duration = 3 * self.packet_frames as u32;
                 let ring_buffer_frames =
                     (min_frames + self.packet_frames as u32).max(min_frames_from_duration);
                 self.inspect.record_vmo_status("gotten");
-                match self.frame_vmo.lock().set_format(
-                    fps,
-                    format,
-                    channels,
-                    ring_buffer_frames as usize,
-                    clock_recovery_notifications_per_ring,
-                ) {
+                match self
+                    .frame_vmo
+                    .lock()
+                    .get_vmo(ring_buffer_frames as usize, clock_recovery_notifications_per_ring)
+                {
                     Err(e) => {
                         warn!(e:?; "Error on vmo set format");
                         responder.send(Err(GetVmoError::InternalError))?;
@@ -475,8 +468,11 @@ impl SoftStreamConfig {
             RingBufferRequest::WatchClockRecoveryPositionInfo { responder } => {
                 self.frame_vmo.lock().set_position_responder(responder);
             }
-            RingBufferRequest::SetActiveChannels { active_channels_bitmask: _, responder } => {
-                responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+            RingBufferRequest::SetActiveChannels { active_channels_bitmask, responder } => {
+                match self.frame_vmo.lock().set_active_channels(active_channels_bitmask) {
+                    Ok(time) => responder.send(Ok(time.into_nanos()))?,
+                    Err(e) => responder.send(Err(Into::<zx::Status>::into(e).into_raw()))?,
+                }
             }
             RingBufferRequest::WatchDelayInfo { responder } => {
                 if self.delay_info_replied {
@@ -653,7 +649,7 @@ pub(crate) mod tests {
             exec.run_until_stalled(&mut ring_buffer.set_active_channels(some_active_channels_mask));
         assert!(result.is_ready());
         let _ = match result {
-            Poll::Ready(Ok(Err(e))) => assert_eq!(e, zx::Status::NOT_SUPPORTED.into_raw()),
+            Poll::Ready(Ok(Err(e))) => assert_eq!(e, zx::Status::INVALID_ARGS.into_raw()),
             x => panic!("Expected error reply to set_active_channels, got {:?}", x),
         };
 

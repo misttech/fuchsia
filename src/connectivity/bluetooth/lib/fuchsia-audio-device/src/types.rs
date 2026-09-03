@@ -10,6 +10,21 @@ use thiserror::Error;
 /// Result type alias for brevity.
 pub type Result<T> = result::Result<T, Error>;
 
+/// Item yielded by an AudioFrameStream.
+#[derive(Debug, PartialEq, Clone)]
+pub enum AudioStreamItem {
+    /// Audio data received from the buffer.
+    Data(Vec<u8>),
+    /// Active channels were set to 0, indicating audio has been disabled.
+    AudioDisabled,
+}
+
+impl From<Vec<u8>> for AudioStreamItem {
+    fn from(data: Vec<u8>) -> Self {
+        Self::Data(data)
+    }
+}
+
 /// The Error type of the fuchsia-audio-device
 #[derive(Error, Debug)]
 pub enum Error {
@@ -49,14 +64,6 @@ pub enum Error {
     #[error("Tried to do an action in an invalid state")]
     InvalidState,
 
-    /// Responder doesn't have a channel
-    #[error("No channel found for reply")]
-    NoChannel,
-
-    /// When a message hasn't been implemented yet, the parser will return this.
-    #[error("Message has not been implemented yet")]
-    UnimplementedMessage,
-
     /// An argument is invalid.
     #[error("Invalid argument")]
     InvalidArgs,
@@ -64,6 +71,19 @@ pub enum Error {
     #[doc(hidden)]
     #[error("__Nonexhaustive error should never be created.")]
     __Nonexhaustive,
+}
+
+impl From<Error> for zx::Status {
+    fn from(value: Error) -> Self {
+        match value {
+            Error::OutOfRange => zx::Status::OUT_OF_RANGE,
+            Error::PeerRead(s) | Error::PeerWrite(s) | Error::IOError(s) => s,
+            Error::RequestStreamError(_) => zx::Status::IO,
+            Error::InvalidState => zx::Status::BAD_STATE,
+            Error::InvalidArgs => zx::Status::INVALID_ARGS,
+            _ => zx::Status::INTERNAL,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]

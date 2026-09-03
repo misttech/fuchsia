@@ -4,14 +4,19 @@
 
 use anyhow::Error;
 use fidl_fuchsia_media::PcmFormat;
+use fuchsia_async as fasync;
+use fuchsia_audio_device::AudioStreamItem;
 use fuchsia_bluetooth::types::PeerId;
+use fuchsia_inspect as inspect;
+use fuchsia_inspect::Node;
 use fuchsia_inspect_derive::Inspect;
 use futures::FutureExt;
-use futures::stream::FusedStream;
+use futures::stream::{BoxStream, FusedStream};
 use futures::task::{Context, Poll};
 use std::pin::Pin;
-use {fuchsia_async as fasync, fuchsia_inspect as inspect, zx};
+use zx;
 
+use super::AudioSourceStreamBuilder;
 use crate::PcmAudio;
 
 pub struct SawWaveStream {
@@ -37,7 +42,7 @@ impl Inspect for &mut SawWaveStream {
 }
 
 impl futures::Stream for SawWaveStream {
-    type Item = fuchsia_audio_device::Result<Vec<u8>>;
+    type Item = fuchsia_audio_device::Result<AudioStreamItem>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let now = zx::MonotonicInstant::get();
@@ -62,7 +67,7 @@ impl futures::Stream for SawWaveStream {
         );
         self.frequency_hops.push(next_freq);
         self.last_frame_time = Some(last_time + zx::Duration::from_seconds(1));
-        Poll::Ready(Some(Ok(audio.buffer)))
+        Poll::Ready(Some(Ok(audio.buffer.into())))
     }
 }
 
@@ -89,10 +94,6 @@ impl SawWaveStream {
     }
 }
 
-use super::AudioSourceStreamBuilder;
-use fuchsia_inspect::Node;
-use futures::stream::BoxStream;
-
 #[derive(Default)]
 pub(crate) struct BigBenStream {}
 
@@ -103,7 +104,7 @@ impl AudioSourceStreamBuilder for BigBenStream {
         pcm_format: PcmFormat,
         _external_delay: std::time::Duration,
         inspect_parent: &mut Node,
-    ) -> Result<BoxStream<'static, fuchsia_audio_device::Result<Vec<u8>>>, Error> {
+    ) -> Result<BoxStream<'static, fuchsia_audio_device::Result<AudioStreamItem>>, Error> {
         let mut stream = SawWaveStream::new_big_ben(pcm_format);
         let _ = stream.iattach(inspect_parent, "audio_source");
         Ok(Box::pin(stream))

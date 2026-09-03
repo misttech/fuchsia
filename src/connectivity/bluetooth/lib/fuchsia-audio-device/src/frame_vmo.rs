@@ -6,11 +6,15 @@ use fidl_fuchsia_hardware_audio::*;
 use fuchsia_async as fasync;
 use futures::FutureExt;
 use futures::task::{Context, Poll, Waker};
-use log::debug;
 use std::pin::Pin;
 
 use crate::stream_config::frames_from_duration;
 use crate::types::{AudioSampleFormat, Error, Result};
+
+pub(crate) enum FrameReadResult {
+    Frames { next_frame: usize, missed: usize },
+    AudioDisabled,
+}
 
 /// A FrameVmo wraps a VMO with time tracking.  When a FrameVmo is started, it
 /// assumes that audio frame data is being written to the VMO at the rate specific
@@ -19,7 +23,7 @@ use crate::types::{AudioSampleFormat, Error, Result};
 pub(crate) struct FrameVmo {
     /// Ring Buffer VMO. Size zero until the ringbuffer is established.  Shared with
     /// the AudioFrameStream given back to the client.
-    vmo: zx::Vmo,
+    vmo: Option<zx::Vmo>,
 
     /// Cached size of the ringbuffer, in bytes.  Used to avoid zx_get_size() syscalls.
     size: usize,
@@ -29,9 +33,26 @@ pub(crate) struct FrameVmo {
     /// None if the stream is not started.
     start_time: Option<fasync::MonotonicInstant>,
 
-    /// A waker to wake if we have been polled before enough frames are available, or
-    /// before we have been started.
-    waker: Option<Waker>,
+    /// A waker to wake when enough frames are available after start, or after output is resumed.
+    audio_waker: Option<Waker>,
+
+    /// The channels that are currently active.
+    /// If no channels are active, the cursor continues but we will not wake until channels are
+    /// made active again.
+    active_channels_mask: u64,
+
+    /// The time that the active channels set was last changed.
+    /// INFINITE_PAST if the channels have never been changed.
+    active_channels_activity: fasync::MonotonicInstant,
+
+    /// A waker to wake tasks waiting on active channels state changes.
+    active_wakers: Vec<Waker>,
+
+    /// The last notified state of active channels (true = active, false = inactive).
+    active_channels_notified: Option<bool>,
+
+    /// Whether AudioDisabled event has been notified to poll_read callers.
+    stream_disabled_notified: bool,
 
     /// A timer which will fire when there are enough frames to return min_duration frames.
     timer: Option<Pin<Box<fasync::Timer>>>,
@@ -41,6 +62,9 @@ pub(crate) struct FrameVmo {
 
     /// The audio format of the frames.
     format: Option<AudioSampleFormat>,
+
+    /// The number of channels.
+    channels: Option<u16>,
 
     /// Number of bytes per frame, 0 if format is not set.
     bytes_per_frame: usize,
@@ -61,12 +85,18 @@ pub(crate) struct FrameVmo {
 impl FrameVmo {
     pub(crate) fn new() -> Result<FrameVmo> {
         Ok(FrameVmo {
-            vmo: zx::Vmo::create(0).map_err(|e| Error::IOError(e))?,
+            vmo: None,
             size: 0,
             start_time: None,
-            waker: None,
+            audio_waker: None,
             frames_per_second: 0,
+            active_channels_mask: u64::MAX, // by default all channels are active
+            active_channels_activity: fasync::MonotonicInstant::INFINITE_PAST,
+            active_wakers: Vec::with_capacity(1), // we expect only one interest in activity
+            active_channels_notified: None,
+            stream_disabled_notified: false,
             format: None,
+            channels: None,
             timer: None,
             bytes_per_frame: 0,
             frames_between_notifications: 0,
@@ -75,33 +105,54 @@ impl FrameVmo {
         })
     }
 
-    /// Set the format of this buffer.   Returns a handle representing the VMO.
-    /// `frames` is the number of frames the VMO should be able to hold.
+    /// Set the format of this buffer.
+    /// Can not be set if the buffer is already started.
     pub(crate) fn set_format(
         &mut self,
         frames_per_second: u32,
         format: AudioSampleFormat,
         channels: u16,
+    ) -> Result<()> {
+        if self.start_time.is_some() {
+            return Err(Error::InvalidState);
+        }
+        self.channels = Some(channels);
+        self.format = Some(format);
+        self.frames_per_second = frames_per_second;
+        Ok(())
+    }
+
+    /// Allocate the VMO, based on a minumum number of frames and the number
+    /// of notifications per rotation of the buffer.
+    /// Returns a handle representing the VMO.
+    pub(crate) fn get_vmo(
+        &mut self,
         frames: usize,
         notifications_per_ring: u32,
     ) -> Result<zx::Vmo> {
         if self.start_time.is_some() {
             return Err(Error::InvalidState);
         }
+        let (Some(format), Some(channels)) = (self.format.as_ref(), self.channels) else {
+            return Err(Error::InvalidState);
+        };
         let bytes_per_frame = format.compute_frame_size(channels as usize)?;
         let new_size = bytes_per_frame * frames;
-        self.vmo = zx::Vmo::create(new_size as u64).map_err(|e| Error::IOError(e))?;
+        let vmo = zx::Vmo::create(new_size as u64).map_err(|e| Error::IOError(e))?;
+        self.vmo =
+            Some(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(|e| Error::IOError(e))?);
         self.bytes_per_frame = bytes_per_frame;
         self.size = new_size;
-        self.format = Some(format);
-        self.frames_per_second = frames_per_second;
+        if channels > 64 {
+            return Err(Error::InvalidArgs);
+        }
         if notifications_per_ring > 0 {
             // TODO(https://fxbug.dev/42174677) : consider rounding this up to avoid delivering an extra
             // notification sometimes.
             // (and always align the frames notified to the beginning of the buffer)
             self.frames_between_notifications = frames / notifications_per_ring as usize;
         }
-        Ok(self.vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(|e| Error::IOError(e))?)
+        Ok(vmo)
     }
 
     pub(crate) fn set_position_responder(
@@ -114,28 +165,63 @@ impl FrameVmo {
     /// Start the audio clock for the buffer at `time`
     /// Can't start if the format has not been set.
     pub(crate) fn start(&mut self, time: fasync::MonotonicInstant) -> Result<()> {
-        if self.start_time.is_some() || self.format.is_none() {
+        if self.start_time.is_some() || self.vmo.is_none() {
             return Err(Error::InvalidState);
         }
         self.start_time = Some(time);
         if self.frames_between_notifications > 0 {
             self.next_notify_frame = 0;
         }
-        if let Some(w) = self.waker.take() {
-            debug!("ringing the waker to start");
-            w.wake();
-        }
+        let _ = self.audio_waker.take().map(Waker::wake);
         Ok(())
     }
 
     /// Stop the audio clock in the buffer.
     /// returns true if the streaming was stopped.
     pub(crate) fn stop(&mut self) -> Result<bool> {
-        if self.format.is_none() {
+        if self.vmo.is_none() {
             return Err(Error::InvalidState);
         }
         let start_time = self.start_time.take();
         Ok(start_time.is_some())
+    }
+
+    pub(crate) fn set_active_channels(
+        &mut self,
+        channel_mask: u64,
+    ) -> Result<fasync::MonotonicInstant> {
+        let Some(channels) = self.channels else {
+            return Err(Error::InvalidState);
+        };
+        if channels > 64 {
+            return Err(Error::InvalidState);
+        }
+        if (channel_mask >> channels) != 0 {
+            return Err(Error::InvalidArgs);
+        }
+        // If there is no active channels change we return the last time
+        // active channels has been changed, based on policy of
+        // RingBuffer::SetActiveChannels
+        if channel_mask == self.active_channels_mask {
+            return Ok(self.active_channels_activity);
+        }
+        self.active_channels_mask = channel_mask;
+        self.active_channels_activity = fasync::MonotonicInstant::now();
+        self.stream_disabled_notified = false;
+        let _ = self.audio_waker.take().map(Waker::wake);
+        self.active_wakers.drain(..).for_each(Waker::wake);
+        Ok(self.active_channels_activity)
+    }
+
+    pub(crate) fn poll_active_channels(&mut self, cx: &mut Context<'_>) -> Poll<bool> {
+        let is_active = self.active_channels_mask != 0;
+        if self.active_channels_notified != Some(is_active) {
+            self.active_channels_notified = Some(is_active);
+            Poll::Ready(is_active)
+        } else {
+            self.active_wakers.push(cx.waker().clone());
+            Poll::Pending
+        }
     }
 
     /// Set the next-available-frame timer to fire `count` frames in the future from now.
@@ -164,7 +250,7 @@ impl FrameVmo {
     fn poll_start(&mut self, cx: &mut Context<'_>) -> Poll<fasync::MonotonicInstant> {
         match self.start_time.as_ref() {
             None => {
-                self.waker = Some(cx.waker().clone());
+                self.audio_waker = Some(cx.waker().clone());
                 Poll::Pending
             }
             Some(time) => Poll::Ready(*time),
@@ -283,21 +369,23 @@ impl FrameVmo {
         let frame_until_idx = self.frame_idx(frame_until);
         let mut ndx = 0;
 
+        let Some(vmo) = self.vmo.as_mut() else {
+            return Poll::Ready(Err(Error::InvalidState));
+        };
+
         // If we wrap around, write to the end of the VMO, then set up to write the rest.
         if frame_from_idx >= frame_until_idx {
             let frames_to_write = total_vmo_frames - frame_from_idx;
             let bytes_to_write = frames_to_write * self.bytes_per_frame;
             let byte_start = frame_from_idx * self.bytes_per_frame;
-            self.vmo
-                .write(&buf[0..bytes_to_write], byte_start as u64)
-                .map_err(|e| Error::IOError(e))?;
+            vmo.write(&buf[0..bytes_to_write], byte_start as u64).map_err(|e| Error::IOError(e))?;
             frame_from_idx = 0;
             ndx = bytes_to_write;
         }
 
         let byte_start = frame_from_idx * self.bytes_per_frame;
 
-        self.vmo.write(&buf[ndx..], byte_start as u64).map_err(|e| Error::IOError(e))?;
+        vmo.write(&buf[ndx..], byte_start as u64).map_err(|e| Error::IOError(e))?;
 
         // We're writing frames from just after the `next_frame` up to `frame_until`
         // Notify if we have a position responder on the first write past the clock notification time.
@@ -319,13 +407,22 @@ impl FrameVmo {
     /// See `bytecount_frames` to calculate buffer sizes for a count of frames.
     ///
     /// Calling poll_read with buffers of varying size is not expected, but should be supported.
+    /// Calling poll_write and poll_read on the same FrameVmo is not expected to work correctly.
     pub(crate) fn poll_read(
         &mut self,
         mut next_frame: usize,
         buf: &mut [u8],
         cx: &mut Context<'_>,
-    ) -> Poll<Result<(usize, usize)>> {
+    ) -> Poll<Result<FrameReadResult>> {
         let _start_time = futures::ready!(self.poll_start(cx));
+        if self.active_channels_mask == 0 {
+            if !self.stream_disabled_notified {
+                self.stream_disabled_notified = true;
+                return Poll::Ready(Ok(FrameReadResult::AudioDisabled));
+            }
+            self.audio_waker = Some(cx.waker().clone());
+            return Poll::Pending;
+        }
         let count = self.len_in_frames(buf)?;
         let total_vmo_frames = self.frames();
         if count > total_vmo_frames || count == 0 {
@@ -355,13 +452,16 @@ impl FrameVmo {
         let frame_until_idx = self.frame_idx(frame_until);
         let mut ndx = 0;
 
+        let Some(vmo) = self.vmo.as_mut() else {
+            return Poll::Ready(Err(Error::InvalidState));
+        };
+
         // If we wrap around, read to the end into the buffer, then set up to read the rest.
         if frame_from_idx >= frame_until_idx {
             let frames_to_read = total_vmo_frames - frame_from_idx;
             let bytes_to_read = frames_to_read * self.bytes_per_frame;
             let byte_start = frame_from_idx * self.bytes_per_frame;
-            self.vmo
-                .read(&mut buf[0..bytes_to_read], byte_start as u64)
+            vmo.read(&mut buf[0..bytes_to_read], byte_start as u64)
                 .map_err(|e| Error::IOError(e))?;
             frame_from_idx = 0;
             ndx = bytes_to_read;
@@ -369,12 +469,12 @@ impl FrameVmo {
 
         let byte_start = frame_from_idx * self.bytes_per_frame;
 
-        self.vmo.read(&mut buf[ndx..], byte_start as u64).map_err(|e| Error::IOError(e))?;
+        vmo.read(&mut buf[ndx..], byte_start as u64).map_err(|e| Error::IOError(e))?;
 
         // We're returning frames from just after the `next_frame` up to `frame_until`
         // Notify if we have a position responder and we read past the clock notification time.
         self.notify_position_responder(frame_until);
-        Poll::Ready(Ok((frame_until, missing_frames)))
+        Poll::Ready(Ok(FrameReadResult::Frames { next_frame: frame_until, missed: missing_frames }))
     }
 
     /// Count of the number of frames that have ended before `time`.
@@ -429,7 +529,8 @@ mod tests {
 
     fn get_test_vmo(frames: usize) -> FrameVmo {
         let mut vmo = FrameVmo::new().expect("can't make a framevmo");
-        let _handle = vmo.set_format(TEST_FPS, TEST_FORMAT, TEST_CHANNELS, frames, 0).unwrap();
+        let _ = vmo.set_format(TEST_FPS, TEST_FORMAT, TEST_CHANNELS).unwrap();
+        let _handle = vmo.get_vmo(frames, 0).unwrap();
         vmo
     }
 
@@ -503,7 +604,8 @@ mod tests {
         // Stopping before set_format is an error.
         assert!(vmo.stop().is_err());
 
-        let _handle = vmo.set_format(TEST_FPS, TEST_FORMAT, TEST_CHANNELS, TEST_FRAMES, 0).unwrap();
+        let _ = vmo.set_format(TEST_FPS, TEST_FORMAT, TEST_CHANNELS).unwrap();
+        let _handle = vmo.get_vmo(TEST_FRAMES, 0).unwrap();
 
         let start_time = fasync::MonotonicInstant::now();
         vmo.start(start_time).unwrap();
@@ -600,7 +702,11 @@ mod tests {
         let mut no_wake_cx = Context::from_waker(futures_test::task::panic_waker_ref());
 
         let res = vmo.poll_read(0, &mut quart_frames_buf, &mut no_wake_cx);
-        let (frame_idx, missed) = res.expect("frames should be ready").expect("no error");
+        let FrameReadResult::Frames { next_frame: frame_idx, missed } =
+            res.expect("frames should be ready").expect("no error")
+        else {
+            panic!("expected Frames");
+        };
 
         assert_eq!(0, missed);
         // index returned should be equal to the number of frames returned minus 1 - zero is the
@@ -612,7 +718,11 @@ mod tests {
 
         let mut full_buf = [0; TEST_FRAMES];
         let res = vmo.poll_read(0, &mut full_buf, &mut no_wake_cx);
-        let (frame_idx, missed) = res.expect("frames should be ready").expect("no error");
+        let FrameReadResult::Frames { next_frame: frame_idx, missed } =
+            res.expect("frames should be ready").expect("no error")
+        else {
+            panic!("expected Frames");
+        };
 
         assert_eq!(0, missed);
         // index returned should be equal to the number of frames returned minus 1 (zero indexing)
@@ -627,7 +737,11 @@ mod tests {
         // buffer (from index 12000 to index 11999).  This should be 24000 frames.
         // TODO(https://fxbug.dev/42171752): should mark the buffer somehow to confirm that the data is correct
         let res = vmo.poll_read(TEST_FRAMES / 2, &mut full_buf, &mut no_wake_cx);
-        let (frame_idx, missed) = res.expect("frames should be ready").expect("no error");
+        let FrameReadResult::Frames { next_frame: frame_idx, missed } =
+            res.expect("frames should be ready").expect("no error")
+        else {
+            panic!("expected Frames");
+        };
 
         assert_eq!(0, missed);
         assert_eq!(frame_idx, TEST_FRAMES + TEST_FRAMES / 2);
@@ -637,7 +751,11 @@ mod tests {
         // This should be from about a quarter in to halfway in (now)
         // Should be able to get exactly the min_duration amount of frames.
         let res = vmo.poll_read(frame_idx - QUART_FRAMES, &mut quart_frames_buf, &mut no_wake_cx);
-        let (frame_idx, missed) = res.expect("frames should be ready").expect("no error");
+        let FrameReadResult::Frames { next_frame: frame_idx, missed } =
+            res.expect("frames should be ready").expect("no error")
+        else {
+            panic!("expected Frames");
+        };
 
         assert_eq!(0, missed);
         assert_eq!(frame_idx, TEST_FRAMES + TEST_FRAMES / 2);
@@ -681,7 +799,11 @@ mod tests {
 
         // Should be ready now, with half the duration in frames available.
         let res = vmo.poll_read(0, &mut quart_frames_buf[..], &mut counting_wake_cx);
-        let (frame_idx, missed) = res.expect("frames should be ready").expect("no error");
+        let FrameReadResult::Frames { next_frame: frame_idx, missed } =
+            res.expect("frames should be ready").expect("no error")
+        else {
+            panic!("expected Frames");
+        };
         assert_eq!(0, missed);
         assert_eq!(frame_idx, QUART_FRAMES);
 
@@ -705,7 +827,8 @@ mod tests {
         // No byte count can be determined before the format is set.
         assert!(vmo.bytecount_frames(10).is_none());
 
-        let _handle = vmo.set_format(TEST_FPS, format, 2, frames, 0).unwrap();
+        let _ = vmo.set_format(TEST_FPS, format, 2).unwrap();
+        let _handle = vmo.get_vmo(frames, 0).unwrap();
 
         let half_dur = zx::MonotonicDuration::from_millis(250);
 
@@ -719,7 +842,11 @@ mod tests {
 
         let mut no_wake_cx = Context::from_waker(futures_test::task::panic_waker_ref());
         let res = vmo.poll_read(0, half_frames_buf.as_mut_slice(), &mut no_wake_cx);
-        let (idx, missed) = res.expect("frames should be ready").expect("no error");
+        let FrameReadResult::Frames { next_frame: idx, missed } =
+            res.expect("frames should be ready").expect("no error")
+        else {
+            panic!("expected Frames");
+        };
 
         assert_eq!(0, missed);
         // Still frames are in frame counts, not byte counts.
@@ -748,7 +875,11 @@ mod tests {
         // Exactly when the frame finishes, should be able to get the frame.
         exec.set_fake_time(start_time + zx::MonotonicDuration::from_nanos(THREE_FRAME_NANOS));
         let res = vmo.poll_read(2, &mut one_frame_buf, &mut no_wake_cx);
-        let (idx, missed) = res.expect("third frame should be ready").expect("no error");
+        let FrameReadResult::Frames { next_frame: idx, missed } =
+            res.expect("third frame should be ready").expect("no error")
+        else {
+            panic!("expected Frames");
+        };
 
         assert_eq!(0, missed);
         // index is the index of the next frame to write, which should be the frame index we requested + 1
@@ -759,7 +890,11 @@ mod tests {
         let next_frame_idx = 3998 * 3 + 2;
         exec.set_fake_time(start_time + zx::MonotonicDuration::from_nanos(much_later_ns));
         let res = vmo.poll_read(next_frame_idx, &mut one_frame_buf, &mut no_wake_cx);
-        let (idx, missed) = res.expect("frame should be ready").expect("no error");
+        let FrameReadResult::Frames { next_frame: idx, missed } =
+            res.expect("frame should be ready").expect("no error")
+        else {
+            panic!("expected Frames");
+        };
         assert_eq!(0, missed);
         // index is the index of the next frame
         assert_eq!(next_frame_idx + 1, idx);
@@ -784,7 +919,10 @@ mod tests {
             else {
                 continue;
             };
-            let (last_idx, missed) = res.expect("no error");
+            let FrameReadResult::Frames { next_frame: last_idx, missed } = res.expect("no error")
+            else {
+                panic!("expected Frames");
+            };
             assert_eq!(0, missed);
             all_frames_len += ten_frames_buf.len();
             assert_eq!(
@@ -926,5 +1064,70 @@ mod tests {
         res.expect_pending("should be pending because not enough space");
 
         assert_eq!(count, 2);
+    }
+
+    #[fixture(with_test_vmo)]
+    #[fuchsia::test]
+    fn active_channels_poll_read_and_watch(mut vmo: FrameVmo) {
+        let exec = fasync::TestExecutor::new_with_fake_time();
+        let start_time = fasync::MonotonicInstant::now();
+        vmo.start(start_time).unwrap();
+
+        let (active_waker, active_waker_count) = futures_test::task::new_count_waker();
+        let mut active_cx = Context::from_waker(&active_waker);
+
+        // Initial poll_active_channels returns Ready(true) because channels are active by default.
+        let res = vmo.poll_active_channels(&mut active_cx);
+        assert_eq!(res, Poll::Ready(true));
+
+        // Polling again without changes returns Pending.
+        let res = vmo.poll_active_channels(&mut active_cx);
+        assert_eq!(res, Poll::Pending);
+
+        let (read_waker, read_waker_count) = futures_test::task::new_count_waker();
+        let mut read_cx = Context::from_waker(&read_waker);
+
+        // Advance time so frames are available.
+        exec.set_fake_time(fasync::MonotonicInstant::after(TEST_VMO_DURATION / 2));
+        let mut buf = [0; TEST_FRAMES / 4];
+        let res = vmo.poll_read(0, &mut buf, &mut read_cx);
+        assert!(res.is_ready());
+
+        // Disable active channels.
+        assert_eq!(active_waker_count, 0);
+        assert_eq!(read_waker_count, 0);
+        let _ = vmo.set_active_channels(0).unwrap();
+
+        // Active waker should be woken. Read waker was not registered (poll_read was ready).
+        assert_eq!(active_waker_count, 1);
+        assert_eq!(read_waker_count, 0);
+
+        // poll_active_channels should now return Ready(false).
+        let res = vmo.poll_active_channels(&mut active_cx);
+        assert_eq!(res, Poll::Ready(false));
+        // Next poll returns Pending.
+        assert_eq!(vmo.poll_active_channels(&mut active_cx), Poll::Pending);
+
+        // poll_read should now return Ready with AudioDisabled event.
+        let res = vmo.poll_read(0, &mut buf, &mut read_cx);
+        assert!(matches!(res, Poll::Ready(Ok(FrameReadResult::AudioDisabled))));
+
+        // Subsequent poll_read should return Pending because channels are disabled and event was consumed.
+        let res = vmo.poll_read(0, &mut buf, &mut read_cx);
+        res.expect_pending("should be pending because channels are disabled");
+
+        // Enable active channels (test format has 1 channel).
+        let _ = vmo.set_active_channels(1).unwrap();
+        // Both active waker and read waker should be woken.
+        assert_eq!(active_waker_count, 2);
+        assert_eq!(read_waker_count, 1);
+
+        // poll_active_channels returns Ready(true).
+        let res = vmo.poll_active_channels(&mut active_cx);
+        assert_eq!(res, Poll::Ready(true));
+
+        // poll_read should now succeed with Frames.
+        let res = vmo.poll_read(0, &mut buf, &mut read_cx);
+        assert!(matches!(res, Poll::Ready(Ok(FrameReadResult::Frames { .. }))));
     }
 }

@@ -12,9 +12,9 @@ use log::info;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::frame_vmo;
+use crate::frame_vmo::{self, FrameReadResult};
 use crate::stream_config::{SoftStreamConfig, StreamConfigOrTask};
-use crate::types::{Error, Result};
+use crate::types::{AudioStreamItem, Error, Result};
 
 /// A stream that produces audio frames.
 /// Frames are of constant length.
@@ -58,10 +58,22 @@ impl AudioFrameStream {
         self.stream_task.start();
         self.poll_task(cx)
     }
+
+    /// Poll for changes to active channels. Returns Ready(true) when channels become active,
+    /// and Ready(false) when channels become inactive.
+    pub fn poll_active_channels(&self, cx: &mut Context<'_>) -> Poll<bool> {
+        self.frame_vmo.lock().poll_active_channels(cx)
+    }
+
+    /// Watch for active channel state changes. Resolves on active <-> inactive transitions.
+    pub fn watch_active_channels(&self) -> impl Future<Output = bool> + 'static {
+        let frame_vmo = self.frame_vmo.clone();
+        async move { futures::future::poll_fn(|cx| frame_vmo.lock().poll_active_channels(cx)).await }
+    }
 }
 
 impl Stream for AudioFrameStream {
-    type Item = Result<Vec<u8>>;
+    type Item = Result<AudioStreamItem>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if let Poll::Ready(r) = self.poll_task(cx) {
@@ -83,15 +95,20 @@ impl Stream for AudioFrameStream {
         };
 
         match result {
-            Ok((next_frame, missed)) => {
-                if missed > 0 {
+            Ok(FrameReadResult::Frames { next_frame, missed }) => {
+                if missed > 0 && self.next_frame != 0 {
                     info!("Missed {missed} frames due to slow polling");
                 }
                 self.next_frame = next_frame;
                 let vec_mut = self.next_packet.get_mut();
                 let bytes = vec_mut.len();
                 let frames = std::mem::replace(vec_mut, vec![0; bytes]);
-                Poll::Ready(Some(Ok(frames)))
+                Poll::Ready(Some(Ok(AudioStreamItem::Data(frames))))
+            }
+            Ok(FrameReadResult::AudioDisabled) => {
+                // Don't worry about missing frames when we restart
+                self.next_frame = 0;
+                Poll::Ready(Some(Ok(AudioStreamItem::AudioDisabled)))
             }
             Err(e) => Poll::Ready(Some(Err(e))),
         }
@@ -242,7 +259,7 @@ mod tests {
         let result = exec.run_until_stalled(&mut frame_fut);
         assert!(result.is_ready());
         let audio_recv = match result {
-            Poll::Ready(Some(Ok(v))) => v,
+            Poll::Ready(Some(Ok(AudioStreamItem::Data(v)))) => v,
             x => panic!("expected Ready Ok from frame stream, got {:?}", x),
         };
 
@@ -254,7 +271,7 @@ mod tests {
         let result = exec.run_until_stalled(&mut frame_fut);
         assert!(result.is_ready());
         let audio_recv = match result {
-            Poll::Ready(Some(Ok(v))) => v,
+            Poll::Ready(Some(Ok(AudioStreamItem::Data(v)))) => v,
             x => panic!("expected Ready Ok from frame stream, got {:?}", x),
         };
 
@@ -278,5 +295,98 @@ mod tests {
         assert!(result.is_ready());
         let result = exec.run_until_stalled(&mut stream_config.watch_plug_state());
         assert!(!result.is_ready());
+    }
+
+    #[fixture(with_audio_frame_stream)]
+    #[fuchsia::test]
+    fn soft_audio_out_active_channels(
+        mut exec: fasync::TestExecutor,
+        stream_config: StreamConfigProxy,
+        mut frame_stream: AudioFrameStream,
+    ) {
+        let (ring_buffer, server) = fidl::endpoints::create_proxy::<RingBufferMarker>();
+        let format = Format {
+            pcm_format: Some(fidl_fuchsia_hardware_audio::PcmFormat {
+                number_of_channels: 2u8,
+                sample_format: SampleFormat::PcmSigned,
+                bytes_per_sample: 2u8,
+                valid_bits_per_sample: 16u8,
+                frame_rate: 44100,
+            }),
+            ..Default::default()
+        };
+
+        // Poll the frame stream, which should start the processing of proxy requests.
+        exec.run_until_stalled(&mut frame_stream.next()).expect_pending("no frames yet");
+
+        stream_config.create_ring_buffer(&format, server).expect("ring buffer error");
+
+        // watch_active_channels should resolve to true
+        let mut active_fut = Box::pin(frame_stream.watch_active_channels());
+        let res = exec.run_until_stalled(&mut active_fut);
+        assert_eq!(res, Poll::Ready(true));
+
+        let mut active_fut = Box::pin(frame_stream.watch_active_channels());
+        let res = exec.run_until_stalled(&mut active_fut);
+        assert_eq!(res, Poll::Pending);
+
+        // Disable channels via RingBuffer - this should be possible before starting
+        // the VMO.
+        let res = exec.run_until_stalled(&mut ring_buffer.set_active_channels(0));
+        assert!(res.is_ready());
+
+        // watch_active_channels should resolve to false
+        let res = exec.run_until_stalled(&mut active_fut);
+        assert_eq!(res, Poll::Ready(false));
+
+        assert!(res.is_ready());
+        let result = exec.run_until_stalled(&mut ring_buffer.get_vmo(88200, 0));
+        assert!(result.is_ready());
+        let reply = match result {
+            Poll::Ready(Ok(Ok(v))) => v,
+            x => panic!("ring buffer get vmo error: {x:?}"),
+        };
+        let audio_vmo = reply.1;
+
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(42));
+        let _ = exec.wake_expired_timers();
+        let start_time = exec.run_until_stalled(&mut ring_buffer.start());
+        assert!(start_time.is_ready());
+
+        // Create active watcher future and frame future
+        let mut active_fut = Box::pin(frame_stream.watch_active_channels());
+        let res = exec.run_until_stalled(&mut active_fut);
+        assert_eq!(res, Poll::Pending);
+
+        // Polling frames when channels are disabled yields AudioDisabled event
+        let mut frame_fut = frame_stream.next();
+        let res = exec.run_until_stalled(&mut frame_fut);
+        assert!(matches!(res, Poll::Ready(Some(Ok(AudioStreamItem::AudioDisabled)))));
+
+        // Polling frames again while still disabled returns Pending
+        let mut frame_fut = frame_stream.next();
+        exec.set_fake_time(fasync::MonotonicInstant::after(zx::MonotonicDuration::from_millis(
+            500,
+        )));
+        let _ = exec.wake_expired_timers();
+        let res = exec.run_until_stalled(&mut frame_fut);
+        assert!(res.is_pending());
+
+        // Put audio in buffer
+        let bytes_per_second: usize = 44100 * 2 * 2;
+        let sent_audio = vec![0x12; bytes_per_second];
+        assert_eq!(Ok(()), audio_vmo.write(&sent_audio, 0));
+
+        // Re-enable channels (bitmask 0b11 = 3 for 2 channels)
+        let res = exec.run_until_stalled(&mut ring_buffer.set_active_channels(3));
+        assert!(res.is_ready());
+
+        // watch_active_channels should resolve to true
+        let res = exec.run_until_stalled(&mut active_fut);
+        assert_eq!(res, Poll::Ready(true));
+
+        // frame_fut should now resolve with audio data
+        let res = exec.run_until_stalled(&mut frame_fut);
+        assert!(matches!(res, Poll::Ready(Some(Ok(AudioStreamItem::Data(_))))));
     }
 }

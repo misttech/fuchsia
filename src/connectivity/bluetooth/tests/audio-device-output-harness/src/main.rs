@@ -16,7 +16,7 @@ async fn main() -> Result<(), anyhow::Error> {
         pcm_mode: AudioPcmMode::Linear,
         bits_per_sample: 16,
         frames_per_second: 48000,
-        channel_map: vec![AudioChannelId::Lf],
+        channel_map: vec![AudioChannelId::Lf, AudioChannelId::Rf],
     };
 
     let id = [2; 16];

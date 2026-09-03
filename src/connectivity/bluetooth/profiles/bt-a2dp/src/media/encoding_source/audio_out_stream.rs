@@ -13,6 +13,7 @@ pub struct AudioOutStream {}
 const LOCAL_MONOTONIC_CLOCK_DOMAIN: u32 = 0;
 
 use super::AudioSourceStreamBuilder;
+use fuchsia_audio_device::AudioStreamItem;
 use fuchsia_inspect::Node;
 use fuchsia_inspect_derive::Inspect;
 use futures::stream::BoxStream;
@@ -24,7 +25,7 @@ impl AudioSourceStreamBuilder for AudioOutStream {
         pcm_format: PcmFormat,
         external_delay: std::time::Duration,
         inspect_parent: &mut Node,
-    ) -> Result<BoxStream<'static, fuchsia_audio_device::Result<Vec<u8>>>, Error> {
+    ) -> Result<BoxStream<'static, fuchsia_audio_device::Result<AudioStreamItem>>, Error> {
         let mut stream = AudioOutStream::new(peer_id, pcm_format, external_delay.into())?;
         let _ = stream.iattach(inspect_parent, "audio_source");
         Ok(Box::pin(stream))

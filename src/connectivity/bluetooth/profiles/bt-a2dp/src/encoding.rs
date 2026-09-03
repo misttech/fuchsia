@@ -3,10 +3,13 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Error};
+use bt_a2dp as a2dp;
 use bt_a2dp::media_task::MediaTaskError;
 use fidl_fuchsia_media::{AudioFormat, AudioUncompressedFormat, DomainFormat, PcmFormat};
+use fuchsia_async as fasync;
 use fuchsia_audio_codec::StreamProcessor;
-
+use fuchsia_audio_device::AudioStreamItem;
+use fuchsia_trace as trace;
 use futures::io::AsyncWrite;
 use futures::stream::BoxStream;
 use futures::task::{Context, Poll};
@@ -14,11 +17,10 @@ use futures::{FutureExt, Stream, StreamExt};
 use log::info;
 use std::collections::VecDeque;
 use std::pin::Pin;
-use {bt_a2dp as a2dp, fuchsia_async as fasync, fuchsia_trace as trace};
 
 pub struct EncodedStream {
     /// The input media stream
-    source: BoxStream<'static, fuchsia_audio_device::Result<Vec<u8>>>,
+    source: BoxStream<'static, fuchsia_audio_device::Result<AudioStreamItem>>,
     /// The encoder input.
     encoder: Box<dyn AsyncWrite + Unpin + Send>,
     /// The underlying encoder stream
@@ -41,7 +43,7 @@ impl EncodedStream {
     /// recommended to confirm that the system can encode using `EncodedStream::test()` first.
     pub fn build(
         input_format: PcmFormat,
-        source: BoxStream<'static, fuchsia_audio_device::Result<Vec<u8>>>,
+        source: BoxStream<'static, fuchsia_audio_device::Result<AudioStreamItem>>,
         config: &a2dp::codec::MediaCodecConfig,
     ) -> Result<Self, Error> {
         let encoder_settings = config.encoder_settings()?;
@@ -82,7 +84,7 @@ impl EncodedStream {
     /// given in the constructor.
     #[cfg(test)]
     fn build_test(
-        source: BoxStream<'static, fuchsia_audio_device::Result<Vec<u8>>>,
+        source: BoxStream<'static, fuchsia_audio_device::Result<AudioStreamItem>>,
         encoder: Box<dyn AsyncWrite + Unpin + Send>,
         encoded_stream: BoxStream<'static, Result<Vec<u8>, Error>>,
         pcm_bytes_per_encoded_packet: usize,
@@ -108,18 +110,18 @@ impl EncodedStream {
             .context("Building encoder")
             .map_err(|e| MediaTaskError::Other(e.to_string()))?;
         match encoder.next().await {
-            Some(Ok(encoded_frame)) if encoded_frame.is_empty() => {
+            Some(Ok(AudioStreamItem::Data(encoded_frame))) if encoded_frame.is_empty() => {
                 Err(MediaTaskError::NotSupported)
             }
+            Some(Ok(AudioStreamItem::Data(_))) => Ok(()),
             Some(Err(e)) => Err(MediaTaskError::Other(e.to_string())),
-            None => Err(MediaTaskError::NotSupported),
-            _ => Ok(()),
+            _ => Err(MediaTaskError::NotSupported),
         }
     }
 }
 
 impl Stream for EncodedStream {
-    type Item = Result<Vec<u8>, Error>;
+    type Item = Result<AudioStreamItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         // Read audio out.
@@ -130,7 +132,10 @@ impl Stream for EncodedStream {
                     return Poll::Ready(None);
                 }
                 Some(Err(e)) => return Poll::Ready(Some(Err(e.into()))),
-                Some(Ok(bytes)) => {
+                Some(Ok(AudioStreamItem::AudioDisabled)) => {
+                    return Poll::Ready(Some(Ok(AudioStreamItem::AudioDisabled)));
+                }
+                Some(Ok(AudioStreamItem::Data(bytes))) => {
                     trace::instant!( "bt-a2dp-source", "Media:PacketReceived",
                         trace::Scope::Thread, "bytes" => bytes.len() as u64);
                     self.encoder_input_buffers.push_back(bytes)
@@ -167,7 +172,12 @@ impl Stream for EncodedStream {
             }
         }
         // Finally, read data out of the encoder if it's ready.
-        self.encoded_stream.poll_next_unpin(cx)
+        match self.encoded_stream.poll_next_unpin(cx) {
+            Poll::Ready(Some(Ok(bytes))) => Poll::Ready(Some(Ok(AudioStreamItem::Data(bytes)))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -181,7 +191,7 @@ struct SilenceStream {
 }
 
 impl futures::Stream for SilenceStream {
-    type Item = fuchsia_audio_device::Result<Vec<u8>>;
+    type Item = fuchsia_audio_device::Result<AudioStreamItem>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let now = fasync::MonotonicInstant::now();
@@ -202,7 +212,7 @@ impl futures::Stream for SilenceStream {
         let pcm_frame_size = self.pcm_format.channel_map.len() * PCM_SAMPLE_SIZE;
         let buffer = vec![0; self.pcm_format.frames_per_second as usize * pcm_frame_size];
         self.last_frame_time = Some(last_time + zx::MonotonicDuration::from_seconds(1));
-        Poll::Ready(Some(Ok(buffer)))
+        Poll::Ready(Some(Ok(AudioStreamItem::Data(buffer))))
     }
 }
 
@@ -246,7 +256,7 @@ mod tests {
     }
 
     impl futures::Stream for CountingStream {
-        type Item = fuchsia_audio_device::Result<Vec<u8>>;
+        type Item = fuchsia_audio_device::Result<AudioStreamItem>;
 
         fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             let s = Pin::into_inner(self);
@@ -261,7 +271,7 @@ mod tests {
             }
             locked.next = locked.next.wrapping_add(len);
             locked.ready_bytes = 0;
-            Poll::Ready(Some(Ok(vec)))
+            Poll::Ready(Some(Ok(AudioStreamItem::Data(vec))))
         }
     }
 
@@ -356,7 +366,7 @@ mod tests {
         // Polling for the next thing should run a whole cycle without an issue.
         input_stream.set_bytes_ready(2);
         match stream.poll_next_unpin(&mut noop_cx) {
-            Poll::Ready(Some(Ok(data))) => assert_eq!(vec![0, 0], data),
+            Poll::Ready(Some(Ok(AudioStreamItem::Data(data)))) => assert_eq!(vec![0, 0], data),
             x => panic!("Expected ready poll, got {:?}", x),
         };
 
@@ -375,15 +385,15 @@ mod tests {
         // Next time we poll, we didn't skip any packets.
         input_stream.set_bytes_ready(2);
         match stream.poll_next_unpin(&mut noop_cx) {
-            Poll::Ready(Some(Ok(data))) => assert_eq!(vec![0, 1], data),
+            Poll::Ready(Some(Ok(AudioStreamItem::Data(data)))) => assert_eq!(vec![0, 1], data),
             x => panic!("Expected ready poll, got {:?}", x),
         };
         match stream.poll_next_unpin(&mut noop_cx) {
-            Poll::Ready(Some(Ok(data))) => assert_eq!(vec![0, 2], data),
+            Poll::Ready(Some(Ok(AudioStreamItem::Data(data)))) => assert_eq!(vec![0, 2], data),
             x => panic!("Expected ready poll, got {:?}", x),
         };
         match stream.poll_next_unpin(&mut noop_cx) {
-            Poll::Ready(Some(Ok(data))) => assert_eq!(vec![0, 3], data),
+            Poll::Ready(Some(Ok(AudioStreamItem::Data(data)))) => assert_eq!(vec![0, 3], data),
             x => panic!("Expected ready poll, got {:?}", x),
         };
     }
@@ -410,6 +420,29 @@ mod tests {
             if let Poll::Ready(_) = exec.run_until_stalled(&mut silence_stream.next()) {
                 break;
             }
+        }
+    }
+
+    #[test]
+    fn test_audio_disabled_event() {
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
+        let passthrough = PassthroughEncoder::default();
+        let passthrough_input = passthrough.clone();
+        let passthrough_output = passthrough.clone();
+        let mut stream = EncodedStream::build_test(
+            receiver.boxed(),
+            Box::new(passthrough_input),
+            passthrough_output.boxed(),
+            500,
+        );
+
+        let mut noop_cx = Context::from_waker(futures_test::task::panic_waker_ref());
+
+        sender.unbounded_send(Ok(AudioStreamItem::AudioDisabled)).unwrap();
+
+        match stream.poll_next_unpin(&mut noop_cx) {
+            Poll::Ready(Some(Ok(AudioStreamItem::AudioDisabled))) => {}
+            x => panic!("Expected Ready Ok(AudioDisabled), got {:?}", x),
         }
     }
 }

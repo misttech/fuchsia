@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use crate::codec::MediaCodecConfig;
 
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Error, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum MediaTaskError {
     #[error("Operation or configuration not supported")]

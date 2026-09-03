@@ -3,9 +3,12 @@
 // found in the LICENSE file.
 
 use anyhow::format_err;
+use fidl_fuchsia_bluetooth_bredr as bredr;
+use fidl_fuchsia_media as media;
+use fuchsia_async as fasync;
 use fuchsia_audio_codec::{StreamProcessor, StreamProcessorOutputStream};
 use fuchsia_audio_device::stream_config::SoftStreamConfig;
-use fuchsia_audio_device::{AudioFrameSink, AudioFrameStream};
+use fuchsia_audio_device::{AudioFrameSink, AudioFrameStream, AudioStreamItem};
 use fuchsia_bluetooth::types::{PeerId, peer_audio_stream_id};
 use fuchsia_sync::Mutex;
 use futures::stream::BoxStream;
@@ -14,7 +17,6 @@ use futures::{AsyncWriteExt, FutureExt, StreamExt};
 use log::{error, info, warn};
 use media::AudioDeviceEnumeratorProxy;
 use std::pin::pin;
-use {fidl_fuchsia_bluetooth_bredr as bredr, fidl_fuchsia_media as media, fuchsia_async as fasync};
 
 use crate::audio::{Control, ControlEvent, Error, HF_INPUT_UUID, HF_OUTPUT_UUID};
 use crate::codec_id::CodecId;
@@ -131,7 +133,7 @@ impl AudioSession {
     async fn pcm_to_encoder(mut encoder: StreamProcessor, mut stream: AudioFrameStream) -> Error {
         loop {
             match stream.next().await {
-                Some(Ok(pcm)) => {
+                Some(Ok(AudioStreamItem::Data(pcm))) => {
                     if let Err(e) = encoder.write_all(pcm.as_slice()).await {
                         return Error::audio_core(format_err!("write to encoder: {e:?}"));
                     }
@@ -139,6 +141,9 @@ impl AudioSession {
                     if let Err(e) = encoder.flush().await {
                         return Error::audio_core(format_err!("flush encoder: {e:?}"));
                     }
+                }
+                Some(Ok(AudioStreamItem::AudioDisabled)) => {
+                    continue;
                 }
                 Some(Err(e)) => {
                     warn!("Audio output error: {e:?}");
