@@ -587,6 +587,7 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   const LayerStackData* GetLayerStackDataForTest(TransformHandle handle);
   void ReleaseTransformForTest(TransformHandle handle);
   void SetPriorityChildForTest(TransformId parent, TransformHandle child);
+  LayerHandle GetLayerHandleForTest(LayerId layer_id);
 
  private:
   // TODO(https://fxbug.dev/523371761): after transition to Flatland2 UberStruct schema is complete,

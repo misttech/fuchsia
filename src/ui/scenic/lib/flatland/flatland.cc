@@ -2627,9 +2627,6 @@ void Flatland::CreateLayer(CreateLayerRequestView request, CreateLayerCompleter:
   CreateLayer(LayerId(request->layer_id.value));
 }
 
-// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
-// is that it captures "illegal usage".  We don't know what this will look like yet, e.g. this will
-// probably need a transform from `transform_graph_`, similar to what CreateImage() does.
 void Flatland::CreateLayer(LayerId layer_id) {
   if (!config_.use_flatland2) {
     error_reporter_->ERROR() << "CreateLayer called, but Flatland2 not enabled";
@@ -2660,8 +2657,6 @@ void Flatland::ReleaseLayer(ReleaseLayerRequestView request,
   ReleaseLayer(LayerId(request->layer_id.value));
 }
 
-// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
-// is that it captures "illegal usage".  See TODO in CreateLayer.
 void Flatland::ReleaseLayer(LayerId layer_id) {
   if (!config_.use_flatland2) {
     error_reporter_->ERROR() << "ReleaseLayer called, but Flatland2 not enabled";
@@ -2678,10 +2673,7 @@ void Flatland::ReleaseLayer(LayerId layer_id) {
   const LayerHandle handle = it->second;
   layer_handles_.erase(it);
 
-  // TODO(https://fxbug.dev/474444799): if an image was attached to the layer, and the layer was
-  // deleted, need to do something with it.
-  allocation::GlobalImageId image_id = ReleaseLayerObject(handle);
-  FX_CHECK(image_id == allocation::kInvalidImageId) << "image cleanup is not yet implemented";
+  ReleaseLayerObject(handle);
 }
 
 void Flatland::CreateLayerStack(CreateLayerStackRequestView request,
@@ -3127,7 +3119,7 @@ allocation::GlobalImageId Flatland::ReleaseLayerObject(LayerHandle handle) {
   // Release the image associated with the layer, if any, regardless of the current mode.
   // Layers that never bound an image yield kInvalidImageId, which callers ignore.
   //
-  // TODO(https://fxbug.dev/523371761): this works for the Flatland1 facade, where the
+  // TODO(https://fxbug.dev/543944546): this works for the Flatland1 facade, where the
   // FIDL client "image" corresponds 1-1 to:
   //   - a layer stack
   //   - a layer in the layer stack
@@ -3236,6 +3228,14 @@ void Flatland::SetPriorityChildForTest(TransformId parent, TransformHandle child
   if (it != transforms_.end()) {
     transform_graph_.SetPriorityChild(it->second, child);
   }
+}
+
+LayerHandle Flatland::GetLayerHandleForTest(LayerId layer_id) {
+  auto it = layer_handles_.find(layer_id);
+  if (it == layer_handles_.end()) {
+    return LayerHandle();
+  }
+  return it->second;
 }
 
 }  // namespace flatland

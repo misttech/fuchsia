@@ -84,6 +84,7 @@ using flatland::LinkSystem;
 using flatland::MockFlatlandPresenter;
 using flatland::NoViewProtocols;
 using flatland::PresentArgs;
+using flatland::TestErrorReporter;
 using flatland::TransformGraph;
 using flatland::TransformHandle;
 using flatland::TransformId;
@@ -595,25 +596,12 @@ TEST_F(FlatlandTest, SetHitRegionsErrorTest) {
   }
 }
 
-class TestErrorReporter : public scenic_impl::ErrorReporter {
- public:
-  TestErrorReporter(std::optional<std::string>* last_error_log) : reported_error(last_error_log) {}
-
-  std::optional<std::string>* reported_error = nullptr;
-
- private:
-  // |scenic_impl::ErrorReporter|
-  void ReportError(fuchsia_logging::LogSeverity severity, std::string error_string) override {
-    *reported_error = error_string;
-  }
-};
-
 TEST_F(FlatlandTest, SetDebugNameAddsPrefixToLogs) {
   // No prefix in errors by default.
   {
     std::optional<std::string> error_log;
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log));
+    flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
     flatland->CreateTransform(kInvalidTransformId);
     Present(flatland, false);
     ASSERT_TRUE(error_log.has_value());
@@ -624,7 +612,7 @@ TEST_F(FlatlandTest, SetDebugNameAddsPrefixToLogs) {
   {
     std::optional<std::string> error_log;
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log));
+    flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
     flatland->SetDebugName("test_client");
     flatland->CreateTransform(kInvalidTransformId);
     Present(flatland, false);
@@ -641,8 +629,8 @@ TEST_F(FlatlandTest, SetDebugNameAddsPrefixToLogs) {
     std::shared_ptr<Flatland> flatland_a = CreateFlatland();
     std::shared_ptr<Flatland> flatland_b = CreateFlatland();
 
-    flatland_a->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log_a));
-    flatland_b->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log_b));
+    flatland_a->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log_a));
+    flatland_b->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log_b));
 
     flatland_a->SetDebugName("test_client");
     flatland_b->SetDebugName("test_client1");
@@ -5646,6 +5634,9 @@ TEST_F(FlatlandDisplayTest, SimpleSetContent) {
   ConnectChildViewToDisplayThenValidate(display, child, kWidth, kHeight);
 }
 
+// TODO(https://fxbug.dev/42156567): other FlatlandDisplayTests that should be written:
+// - version of SimpleSetContent where the child presents before SetDisplayContent() is called.
+
 TEST_F(FlatlandTest, ReleaseImageImmediatelyUntrusted) {
   // Default CreateFlatland() creates an untrusted session.
   std::shared_ptr<Flatland> flatland = CreateFlatland();
@@ -5699,7 +5690,7 @@ TEST_F(FlatlandTest, SetTransformContentRejectsZeroId) {
   {
     std::optional<std::string> error_log;
     std::shared_ptr<Flatland> flatland = CreateFlatland(FlatlandConfig{.use_flatland2 = true});
-    flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log));
+    flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
     flatland->CreateTransform(kId);
     fidl::Arena arena;
     auto content = fuchsia_ui_composition::wire::TransformContent::WithLayerStack(
@@ -5714,7 +5705,7 @@ TEST_F(FlatlandTest, SetTransformContentRejectsZeroId) {
   {
     std::optional<std::string> error_log;
     std::shared_ptr<Flatland> flatland = CreateFlatland(FlatlandConfig{.use_flatland2 = true});
-    flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log));
+    flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
     flatland->CreateTransform(kId);
     fidl::Arena arena;
     auto content = fuchsia_ui_composition::wire::TransformContent::WithViewport(
@@ -5729,7 +5720,7 @@ TEST_F(FlatlandTest, SetTransformContentRejectsZeroId) {
 TEST_F(FlatlandTest, SetStackLayersRejectsTooManyLayers) {
   std::optional<std::string> error_log;
   std::shared_ptr<Flatland> flatland = CreateFlatland(FlatlandConfig{.use_flatland2 = true});
-  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log));
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
   const std::vector<LayerId> layers(fuchsia_ui_composition::kMaxStackLayers + 1, LayerId(1));
   flatland->SetStackLayers(LayerStackId(1), layers);
   Present(flatland, false);
@@ -6047,8 +6038,141 @@ TEST_F(Flatland2Test, SetLayersOnDeadStackResultsInError) {
   EXPECT_DEATH(flatland->SetLayerStackData(dead_stack_handle, {layer}), "");
 }
 
-// TODO(https://fxbug.dev/42156567): other FlatlandDisplayTests that should be written:
-// - version of SimpleSetContent where the child presents before SetDisplayContent() is called.
+TEST_F(Flatland2Test, CreateReleaseRecreateSameId) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kId(1);
+  flatland->CreateLayer(kId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->ReleaseLayer(kId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->CreateLayer(kId);
+  EXPECT_FALSE(error_log.has_value());
+}
+
+TEST_F(Flatland2Test, CreateLayerDuplicateIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kId(1);
+  flatland->CreateLayer(kId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->CreateLayer(kId);
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, CreateLayerZeroIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kZeroId(0);
+  flatland->CreateLayer(kZeroId);
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseLayerUnknownIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kId(1);
+  flatland->ReleaseLayer(kId);
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseLayerDoubleReleaseFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kId(1);
+  flatland->CreateLayer(kId);
+  flatland->ReleaseLayer(kId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->ReleaseLayer(kId);
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ClientRefKeepsLayerAlive) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kId(1);
+  flatland->CreateLayer(kId);
+  EXPECT_FALSE(error_log.has_value());
+
+  LayerHandle handle = flatland->GetLayerHandleForTest(kId);
+  ASSERT_NE(handle, LayerHandle());
+
+  LayerObject* obj = flatland->GetLayerObjectForTest(handle);
+  ASSERT_NE(obj, nullptr);
+  EXPECT_EQ(obj->ref_count, 1);
+
+  // Verify LayerObject survives session garbage collection.
+  Present(flatland, true);
+
+  obj = flatland->GetLayerObjectForTest(handle);
+  ASSERT_NE(obj, nullptr);
+  EXPECT_EQ(obj->ref_count, 1);
+
+  flatland->ReleaseLayer(kId);
+  EXPECT_FALSE(error_log.has_value());
+
+  obj = flatland->GetLayerObjectForTest(handle);
+  EXPECT_EQ(obj, nullptr);
+}
+
+TEST_F(Flatland2Test, LayerSurvivesReleaseWhileStacked) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kId(1);
+  flatland->CreateLayer(kId);
+  EXPECT_FALSE(error_log.has_value());
+
+  LayerHandle handle = flatland->GetLayerHandleForTest(kId);
+  ASSERT_NE(handle, LayerHandle());
+
+  TransformHandle stack_handle = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack_handle, {handle});
+
+  LayerObject* obj = flatland->GetLayerObjectForTest(handle);
+  ASSERT_NE(obj, nullptr);
+  EXPECT_EQ(obj->ref_count, 2);
+
+  flatland->ReleaseLayer(kId);
+  EXPECT_FALSE(error_log.has_value());
+
+  // Object should still be alive because the stack holds a reference.
+  obj = flatland->GetLayerObjectForTest(handle);
+  ASSERT_NE(obj, nullptr);
+  EXPECT_EQ(obj->ref_count, 1);
+
+  // Removing from the stack drops the last ref and destroys the object.
+  flatland->SetLayerStackData(stack_handle, {});
+  obj = flatland->GetLayerObjectForTest(handle);
+  EXPECT_EQ(obj, nullptr);
+}
+
+TEST_F(Flatland2Test, CreateLayerFailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+  const LayerId kId(1);
+  flatland->CreateLayer(kId);
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseLayerFailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+  const LayerId kId(1);
+  flatland->ReleaseLayer(kId);
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
 
 // These tests exercise the legacy bridging logic where Flatland1 mutator calls
 // are converted into Flatland2 UberStructLayer properties. They will be removed

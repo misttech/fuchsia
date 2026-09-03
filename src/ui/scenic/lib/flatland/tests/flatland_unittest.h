@@ -186,6 +186,20 @@ class EventHandler : public fidl::AsyncEventHandler<fuchsia_ui_composition::Flat
       flatland_errors_;
 };
 
+class TestErrorReporter : public scenic_impl::ErrorReporter {
+ public:
+  explicit TestErrorReporter(std::optional<std::string>& last_error_log)
+      : reported_error_(last_error_log) {}
+
+ private:
+  // |scenic_impl::ErrorReporter|
+  void ReportError(fuchsia_logging::LogSeverity severity, std::string error_string) override {
+    reported_error_ = error_string;
+  }
+
+  std::optional<std::string>& reported_error_;
+};
+
 class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
  public:
   FlatlandTest()
@@ -757,9 +771,13 @@ class Flatland2Test : public FlatlandTest {
     return nullptr;
   }
 
-  std::shared_ptr<Flatland> CreateFlatland2() {
+  std::shared_ptr<Flatland> CreateFlatland2(std::optional<std::string>* error_log = nullptr) {
     FlatlandConfig config{.use_flatland2 = true};
-    return FlatlandTest::CreateFlatland(config);
+    auto flatland = FlatlandTest::CreateFlatland(config);
+    if (error_log) {
+      flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(*error_log));
+    }
+    return flatland;
   }
 };
 
