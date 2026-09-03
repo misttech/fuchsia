@@ -71,11 +71,11 @@ impl FileOps for SignalFd {
                 match &signal.detail {
                     SignalDetail::None => {}
                     SignalDetail::Kill { pid, uid } => {
-                        siginfo.ssi_pid = *pid as u32;
+                        siginfo.ssi_pid = pid.id as u32;
                         siginfo.ssi_uid = *uid;
                     }
                     SignalDetail::SIGCHLD { pid, uid, status } => {
-                        siginfo.ssi_pid = *pid as u32;
+                        siginfo.ssi_pid = pid.id as u32;
                         siginfo.ssi_uid = *uid;
                         siginfo.ssi_status = *status;
                     }

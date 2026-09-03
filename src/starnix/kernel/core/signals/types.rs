@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::mm::{MemoryAccessor, MemoryAccessorExt};
-use crate::task::{CurrentTask, Task, ThreadGroupReadGuard, WaitQueue, Waiter};
+use crate::task::{CurrentTask, Pid, Task, ThreadGroupReadGuard, WaitQueue, Waiter};
 use crate::time::IntervalTimerHandle;
 use fuchsia_trace::{TraceCategoryContext, trace_site_t};
 
@@ -15,8 +15,8 @@ use starnix_uapi::union::struct_with_union_into_bytes;
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef, UserAddress};
 use starnix_uapi::{
     SI_KERNEL, SI_MAX_SIZE, SIG_IGN, SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD, SIGEV_THREAD_ID,
-    c_int, c_uint, errno, error, pid_t, sigaction_t, sigaltstack, sigevent, sigval_t, tid_t, uaddr,
-    uapi, uid_t,
+    c_int, c_uint, errno, error, sigaction_t, sigaltstack, sigevent, sigval_t, tid_t, uaddr, uapi,
+    uid_t,
 };
 use static_assertions::const_assert;
 use std::cmp::Ordering;
@@ -532,18 +532,18 @@ macro_rules! signal_info_as_siginfo_bytes {
         use $ns as uapi_path;
         match $self.detail {
             SignalDetail::None => make_siginfo!($self),
-            SignalDetail::Kill { pid, uid } => {
+            SignalDetail::Kill { ref pid, uid } => {
                 make_siginfo!(
                     $self,
                     _kill,
-                    uapi_path::__sifields__bindgen_ty_1 { _pid: pid, _uid: uid }
+                    uapi_path::__sifields__bindgen_ty_1 { _pid: pid.id, _uid: uid }
                 )
             }
-            SignalDetail::SIGCHLD { pid, uid, status } => make_siginfo!(
+            SignalDetail::SIGCHLD { ref pid, uid, status } => make_siginfo!(
                 $self,
                 _sigchld,
                 uapi_path::__sifields__bindgen_ty_4 {
-                    _pid: pid,
+                    _pid: pid.id,
                     _uid: uid,
                     _status: status,
                     ..Default::default()
@@ -708,11 +708,11 @@ impl SignalInfo {
 pub enum SignalDetail {
     None,
     Kill {
-        pid: pid_t,
+        pid: Pid,
         uid: uid_t,
     },
     SIGCHLD {
-        pid: pid_t,
+        pid: Pid,
         uid: uid_t,
         status: i32,
     },
@@ -894,6 +894,7 @@ impl SignalSource {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::task::PidEntry;
     use starnix_uapi::CLD_EXITED;
     use starnix_uapi::signals::{SIGCHLD, SIGPWR};
 
@@ -923,7 +924,7 @@ mod test {
             &SignalInfo::with_detail(
                 SIGCHLD,
                 CLD_EXITED as i32,
-                SignalDetail::SIGCHLD { pid: 123, uid: 456, status: 2 }
+                SignalDetail::SIGCHLD { pid: PidEntry::new_for_test(123), uid: 456, status: 2 }
             )
             .as_siginfo64_bytes()
             .expect("as_siginfo_bytes"),

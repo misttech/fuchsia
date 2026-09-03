@@ -427,7 +427,7 @@ fn send_unchecked_signal(
             signal,
             si_code,
             SignalDetail::Kill {
-                pid: current_task.thread_group().leader.id,
+                pid: current_task.thread_group().leader.clone(),
                 uid: current_task.current_creds().uid,
             },
             Some(current_task.weak_self.clone()),
@@ -1031,7 +1031,7 @@ pub fn sys_wait4(
             current_task.write_object(user_wstatus, &status)?;
         }
 
-        Ok(waitable_process.pid)
+        Ok(waitable_process.pid.id)
     } else {
         Ok(0)
     }
@@ -1990,7 +1990,7 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             let child = current_task.clone_task_for_test(0, Some(SIGCHLD));
             let expected_result = WaitResult {
-                pid: child.tid.id,
+                pid: child.tid.clone(),
                 uid: 0,
                 exit_info: ProcessExitInfo {
                     status: ExitStatus::Exit(1),
@@ -2039,7 +2039,7 @@ mod tests {
                         std::thread::sleep(std::time::Duration::from_millis(10));
                     }
                     child.thread_group().kill(ExitStatus::Exit(0), None);
-                    child.tid.id
+                    child.tid.clone()
                 }
             });
 
@@ -2272,7 +2272,7 @@ mod tests {
                 SIGIO,
                 SI_QUEUE,
                 SignalDetail::Kill {
-                    pid: current_task.thread_group().leader.id,
+                    pid: current_task.thread_group().leader.clone(),
                     uid: current_task.current_creds().uid,
                 },
             );

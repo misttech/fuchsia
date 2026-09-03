@@ -482,7 +482,7 @@ enum ThreadGroupRunState {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WaitResult {
-    pub pid: pid_t,
+    pub pid: Pid,
     pub uid: uid_t,
 
     pub exit_info: ProcessExitInfo,
@@ -498,7 +498,7 @@ impl WaitResult {
             SIGCHLD,
             self.exit_info.status.signal_info_code(),
             SignalDetail::SIGCHLD {
-                pid: self.pid,
+                pid: self.pid.clone(),
                 uid: self.uid,
                 status: self.exit_info.status.signal_info_status(),
             },
@@ -509,6 +509,7 @@ impl WaitResult {
 #[derive(Debug)]
 pub struct ZombieProcess {
     pub thread_group_key: ThreadGroupKey,
+    pub pid: Pid,
     pub pgid: pid_t,
     pub uid: uid_t,
 
@@ -526,6 +527,7 @@ impl PartialEq for ZombieProcess {
     fn eq(&self, other: &Self) -> bool {
         // We assume only one set of ZombieProcess data per process, so this should cover it.
         self.thread_group_key == other.thread_group_key
+            && self.pid == other.pid
             && self.pgid == other.pgid
             && self.uid == other.uid
             && self.is_canonical == other.is_canonical
@@ -555,6 +557,7 @@ impl ZombieProcess {
         let time_stats = thread_group.base.time_stats() + thread_group.children_time_stats;
         OwnedRef::new(ZombieProcess {
             thread_group_key: thread_group.base.into(),
+            pid: thread_group.base.leader.clone(),
             pgid: thread_group.process_group.leader,
             uid: credentials.uid,
             exit_info,
@@ -564,12 +567,12 @@ impl ZombieProcess {
     }
 
     pub fn pid(&self) -> pid_t {
-        self.thread_group_key.pid()
+        self.pid.id
     }
 
     pub fn to_wait_result(&self) -> WaitResult {
         WaitResult {
-            pid: self.pid(),
+            pid: self.pid.clone(),
             uid: self.uid,
             exit_info: self.exit_info.clone(),
             time_stats: self.time_stats,
@@ -579,6 +582,7 @@ impl ZombieProcess {
     pub fn as_artificial(&self) -> Self {
         ZombieProcess {
             thread_group_key: self.thread_group_key.clone(),
+            pid: self.pid.clone(),
             pgid: self.pgid,
             uid: self.uid,
             exit_info: self.exit_info.clone(),
@@ -1714,7 +1718,6 @@ impl ThreadGroup {
                 // thread's information (if we are in a different stop).
 
                 // The shared information:
-                let mut pid: i32 = 0;
                 let info = process_state.tasks.values().next().unwrap().info().clone();
                 let uid = info.real_creds().uid;
                 let mut exit_status = None;
@@ -1769,9 +1772,18 @@ impl ThreadGroup {
                                 fn_type = ExitType::Kill;
                             }
                             exit_status = match fn_type {
-                                ExitType::Stop => Some(ExitStatus::Stop(siginfo, event)),
-                                ExitType::Cont => Some(ExitStatus::Continue(siginfo, event)),
-                                ExitType::Kill => Some(ExitStatus::Kill(siginfo)),
+                                ExitType::Stop => Some((
+                                    ExitStatus::Stop(siginfo, event),
+                                    process_state.base.leader.clone(),
+                                )),
+                                ExitType::Cont => Some((
+                                    ExitStatus::Continue(siginfo, event),
+                                    process_state.base.leader.clone(),
+                                )),
+                                ExitType::Kill => Some((
+                                    ExitStatus::Kill(siginfo),
+                                    process_state.base.leader.clone(),
+                                )),
                                 _ => None,
                             };
                         }
@@ -1781,9 +1793,8 @@ impl ThreadGroup {
                             .as_mut()
                             .map(|ptrace| ptrace.get_last_signal(options.keep_waitable_state));
                     }
-                    pid = process_state.base.leader.id;
                 }
-                if exit_status == None {
+                if exit_status.is_none() {
                     if let Some(ptrace) = task_state.ptrace.as_mut() {
                         // The information for the task, if we were in a non-group stop.
                         let mut fn_type = ExitType::None;
@@ -1807,17 +1818,24 @@ impl ThreadGroup {
                                     fn_type = ExitType::Kill;
                                 }
                                 exit_status = match fn_type {
-                                    ExitType::Stop => Some(ExitStatus::Stop(siginfo, event)),
-                                    ExitType::Cont => Some(ExitStatus::Continue(siginfo, event)),
-                                    ExitType::Kill => Some(ExitStatus::Kill(siginfo)),
+                                    ExitType::Stop => Some((
+                                        ExitStatus::Stop(siginfo, event),
+                                        task_ref.tid.clone(),
+                                    )),
+                                    ExitType::Cont => Some((
+                                        ExitStatus::Continue(siginfo, event),
+                                        task_ref.tid.clone(),
+                                    )),
+                                    ExitType::Kill => {
+                                        Some((ExitStatus::Kill(siginfo), task_ref.tid.clone()))
+                                    }
                                     _ => None,
                                 };
                             }
                         }
-                        pid = task_ref.get_tid();
                     }
                 }
-                if let Some(exit_status) = exit_status {
+                if let Some((exit_status, pid)) = exit_status {
                     return Some(WaitResult {
                         pid,
                         uid,
@@ -1849,7 +1867,7 @@ impl ThreadGroup {
                 signal,
                 SI_USER as i32,
                 SignalDetail::Kill {
-                    pid: current_task.thread_group().leader.id,
+                    pid: current_task.thread_group().leader.clone(),
                     uid: current_task.current_creds().uid,
                 },
             );
@@ -1874,7 +1892,7 @@ impl ThreadGroup {
             signal,
             SI_USER as i32,
             SignalDetail::Kill {
-                pid: current_task.thread_group().leader.id,
+                pid: current_task.thread_group().leader.clone(),
                 uid: current_task.current_creds().uid,
             },
         );
@@ -2270,7 +2288,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                     let info = child.tasks.values().next().unwrap().info();
                     let uid = info.real_creds().uid;
                     WaitResult {
-                        pid: child.base.leader.id,
+                        pid: child.base.leader.clone(),
                         uid,
                         exit_info: ProcessExitInfo {
                             status: exit_status,

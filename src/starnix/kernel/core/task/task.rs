@@ -537,7 +537,7 @@ impl TaskMutableState<Base = Task> {
                     SIGCHLD,
                     CLD_TRAPPED as i32,
                     SignalDetail::SIGCHLD {
-                        pid: self.base.tid.id,
+                        pid: self.base.tid.clone(),
                         uid: self.base.real_creds().uid,
                         status: last_signal.signal.number() as i32,
                     },
@@ -1029,6 +1029,7 @@ impl Task {
                 let exit_info = ProcessExitInfo { status: exit_status, exit_signal };
                 let zombie = ZombieProcess {
                     thread_group_key: self.thread_group_key.clone(),
+                    pid: self.thread_group.leader.clone(),
                     pgid,
                     uid,
                     exit_info: exit_info,

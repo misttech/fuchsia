@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![recursion_limit = "256"]
+
 use anyhow::{Error, format_err};
 use extended_pstate::ExtendedPstatePointer;
 use starnix_core::arch::execution::new_syscall;

@@ -67,6 +67,12 @@ impl PidEntry {
     pub fn get_process_group(&self) -> Option<Arc<ProcessGroup>> {
         self.process_group.upgrade()
     }
+
+    #[cfg(test)]
+    pub fn new_for_test(id: pid_t) -> Pid {
+        Arc::new(Self::new(id))
+    }
+
     fn new(id: pid_t) -> Self {
         Self {
             id,
