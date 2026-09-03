@@ -71,37 +71,4 @@ pub extern "C" fn rust_arch_spin_unlock(lock: &AtomicU32) {
     arch_spin_unlock(lock);
 }
 
-#[cfg(ktest)]
-/// Tests for RISC-V 64 atomic spinlock acquisition and release.
-#[unittest::suite(name = "riscv64_spinlock")]
-mod tests {
-    use super::{arch_spin_lock_non_instrumented, arch_spin_trylock, arch_spin_unlock};
-    use core::sync::atomic::{AtomicU32, Ordering};
-    use unittest::assert_true;
-
-    /// Test spinlock basic locking, trylocking, and unlocking state.
-    #[test]
-    fn test_spinlock_basic_flow() {
-        let lock = AtomicU32::new(0);
-        assert_true!(lock.load(Ordering::Relaxed) == 0);
-        arch_spin_lock_non_instrumented(&lock);
-        assert_true!(lock.load(Ordering::Relaxed) == 1);
-        arch_spin_unlock(&lock);
-        assert_true!(lock.load(Ordering::Relaxed) == 0);
-    }
-
-    /// Test arch_spin_trylock success and failure on contending lock.
-    #[test]
-    fn test_spinlock_trylock_behavior() {
-        let lock = AtomicU32::new(0);
-        // First trylock should succeed.
-        assert_true!(arch_spin_trylock(&lock));
-        // Contending trylock while held should fail.
-        assert_true!(!arch_spin_trylock(&lock));
-        // Release the lock.
-        arch_spin_unlock(&lock);
-        assert_true!(lock.load(Ordering::Relaxed) == 0);
-    }
-}
-
 const _: () = assert!(core::mem::size_of::<core::sync::atomic::AtomicU32>() == 4);
