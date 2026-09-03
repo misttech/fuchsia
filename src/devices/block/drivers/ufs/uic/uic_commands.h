@@ -186,7 +186,6 @@ class DmeLinkStartUpUicCommand : public UicCommand {
  public:
   explicit DmeLinkStartUpUicCommand(Ufs &ufs)
       : UicCommand(ufs, UicCommandOpcode::kDmeLinkStartUp) {}
-  zx::result<> UicPreProcess() override;
   zx::result<> UicPostProcess() override;
 };
 

@@ -16,6 +16,14 @@
 
 namespace ufs {
 
+namespace {
+
+constexpr uint64_t kOperationalBandwidthBps = 1'000'000'000;  // 1 GB/s
+constexpr uint64_t kInactiveBandwidthBps = 0;
+constexpr uint32_t kInterconnectTagUfs = 'UFS ';
+
+}  // namespace
+
 zx::result<> UfsPdev::InitResources() {
   auto pdev = driver_incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (!pdev.is_ok()) {
@@ -70,22 +78,28 @@ zx::result<> UfsPdev::InitResources() {
   auto interconnect_result =
       driver_incoming()->Connect<fuchsia_hardware_interconnect::PathService::Path>(
           "ufs-interconnect");
-  if (interconnect_result.is_ok()) {
-    interconnect_client_.Bind(std::move(interconnect_result.value()));
+  if (interconnect_result.is_error()) {
+    fdf::error("Failed to connect to interconnect: {}", interconnect_result);
+    return interconnect_result.take_error();
+  }
 
-    fidl::Arena arena;
-    auto request = fuchsia_hardware_interconnect::wire::BandwidthRequest::Builder(arena)
-                       .average_bandwidth_bps(1'000'000'000)
-                       .peak_bandwidth_bps(1'000'000'000)
-                       .tag('UFS ')
-                       .Build();
-    auto result = interconnect_client_->SetBandwidth(request);
-    if (!result.ok()) {
-      fdf::error("SetBandwidth failed on interconnect: {}", zx_status_get_string(result.status()));
-    } else if (result->is_error()) {
-      fdf::error("SetBandwidth failed on interconnect: {}",
-                 zx_status_get_string(result->error_value()));
-    }
+  interconnect_client_.Bind(std::move(interconnect_result.value()));
+
+  fidl::Arena arena;
+  auto request = fuchsia_hardware_interconnect::wire::BandwidthRequest::Builder(arena)
+                     .average_bandwidth_bps(kOperationalBandwidthBps)
+                     .peak_bandwidth_bps(kOperationalBandwidthBps)
+                     .tag(kInterconnectTagUfs)
+                     .Build();
+  auto result = interconnect_client_->SetBandwidth(request);
+  if (!result.ok()) {
+    fdf::error("SetBandwidth failed on interconnect: {}", zx_status_get_string(result.status()));
+    return zx::error(result.status());
+  }
+  if (result->is_error()) {
+    fdf::error("SetBandwidth failed on interconnect: {}",
+               zx_status_get_string(result->error_value()));
+    return zx::error(result->error_value());
   }
 
   SetHostControllerCallback(
@@ -95,6 +109,22 @@ zx::result<> UfsPdev::InitResources() {
 }
 
 zx_status_t UfsPdev::StopResources() {
+  ZX_ASSERT(interconnect_client_.is_valid());
+
+  fidl::Arena arena;
+  auto request = fuchsia_hardware_interconnect::wire::BandwidthRequest::Builder(arena)
+                     .average_bandwidth_bps(kInactiveBandwidthBps)
+                     .peak_bandwidth_bps(kInactiveBandwidthBps)
+                     .tag(kInterconnectTagUfs)
+                     .Build();
+  auto result = interconnect_client_->SetBandwidth(request);
+  if (!result.ok()) {
+    fdf::error("SetBandwidth failed on interconnect: {}", zx_status_get_string(result.status()));
+  } else if (result->is_error()) {
+    fdf::error("SetBandwidth failed on interconnect: {}",
+               zx_status_get_string(result->error_value()));
+  }
+
   StopUfshciServer();
   return ZX_OK;
 }
@@ -105,9 +135,32 @@ zx::result<> UfsPdev::PdevNotifyEventCallback(NotifyEvent event, uint64_t data) 
   switch (event) {
     case NotifyEvent::kPreLinkStartup:
       return PreLinkStartup();
+    case NotifyEvent::kPrePowerModeChange:
+      return PrePowerModeChange();
     default:
       return Ufs::NotifyEventCallback(event, data);
   }
+}
+
+// Triggers dynamic PHY calibration prior to UIC power mode / gear change
+// (https://fxbug.dev/505006874).
+zx::result<> UfsPdev::PrePowerModeChange() {
+  if (!ufs_phy_.is_valid()) {
+    return zx::ok();
+  }
+
+  auto res = ufs_phy_->PrePowerModeChange();
+  if (!res.ok()) {
+    fdf::error("Failed to call PrePowerModeChange: {}", res.status_string());
+    return zx::error(res.status());
+  }
+  if (res->is_error()) {
+    fdf::error("PrePowerModeChange returned error status: {}",
+               zx_status_get_string(res->error_value()));
+    return zx::error(res->error_value());
+  }
+
+  return zx::ok();
 }
 
 zx::result<> UfsPdev::PreLinkStartup() {
@@ -115,14 +168,14 @@ zx::result<> UfsPdev::PreLinkStartup() {
     return zx::ok();
   }
 
+  ZX_ASSERT(!ufshci_dispatcher_.get());
+
   auto client_end = StartUfshciServer();
   if (client_end.is_error()) {
     return client_end.take_error();
   }
 
   auto res = ufs_phy_->Init(std::move(client_end.value()));
-  StopUfshciServer();
-
   if (!res.ok()) {
     fdf::error("Failed to call Init: {}", res.status_string());
     return zx::error(res.status());
@@ -136,24 +189,24 @@ zx::result<> UfsPdev::PreLinkStartup() {
 }
 
 zx::result<fidl::ClientEnd<fuchsia_hardware_ufs_phy::Ufshci>> UfsPdev::StartUfshciServer() {
+  ZX_ASSERT(!ufshci_dispatcher_.get());
+
   zx::result endpoints = fidl::CreateEndpoints<fuchsia_hardware_ufs_phy::Ufshci>();
   if (endpoints.is_error()) {
     fdf::error("Failed to create endpoints: {}", endpoints);
     return endpoints.take_error();
   }
 
-  if (!ufshci_dispatcher_.get()) {
-    ufshci_dispatcher_shutdown_completion_.Reset();
-    auto dispatcher = fdf::SynchronizedDispatcher::Create(
-        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufshci-worker",
-        [this](fdf_dispatcher_t*) { ufshci_dispatcher_shutdown_completion_.Signal(); });
-    if (dispatcher.is_error()) {
-      fdf::error("Failed to create Ufshci dispatcher: {}",
-                 zx_status_get_string(dispatcher.status_value()));
-      return zx::error(dispatcher.status_value());
-    }
-    ufshci_dispatcher_ = *std::move(dispatcher);
+  ufshci_dispatcher_shutdown_completion_.Reset();
+  auto dispatcher = fdf::SynchronizedDispatcher::Create(
+      fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufshci-worker",
+      [this](fdf_dispatcher_t*) { ufshci_dispatcher_shutdown_completion_.Signal(); });
+  if (dispatcher.is_error()) {
+    fdf::error("Failed to create Ufshci dispatcher: {}",
+               zx_status_get_string(dispatcher.status_value()));
+    return zx::error(dispatcher.status_value());
   }
+  ufshci_dispatcher_ = *std::move(dispatcher);
 
   // Wait for bind completion, because calls to ufs_phy_ depends on the UFSHCI server working.
   libsync::Completion bind_completion;

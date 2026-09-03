@@ -35,6 +35,9 @@ open protocol UfsPhy {
     flexible Init(resource struct {
         ufs_hci client_end:Ufshci;
     }) -> () error zx.Status;
+
+    /// Perform PHY calibration and configuration prior to power mode / gear change.
+    flexible PrePowerModeChange() -> () error zx.Status;
 };
 
 service Service {

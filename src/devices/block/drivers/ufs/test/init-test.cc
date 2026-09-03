@@ -21,6 +21,49 @@ class InitTest : public UfsTest {
 
 TEST_F(InitTest, Basic) { ASSERT_NO_FATAL_FAILURE(StartDriver()); }
 
+TEST_F(InitTest, DeviceNotFound) {
+  // Override kDmeLinkStartUp handler to complete without setting device_present.
+  mock_device_.GetUicCmdProcessor().SetHook(
+      UicCommandOpcode::kDmeLinkStartUp,
+      [](ufs_mock_device::UfsMockDevice&, uint32_t, uint32_t, uint32_t) {});
+
+  driver_test().RunInEnvironmentTypeContext(
+      [&](Environment& env) { env.pci_server().SetMockDevice(&mock_device_); });
+  TestUfs::SetMockDevice(&mock_device_);
+
+  zx::result result = driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
+    ufs_config::Config fake_config;
+    fake_config.enable_suspend() = false;
+    args.config(fake_config.ToVmo());
+  });
+  ASSERT_TRUE(result.is_error());
+  ASSERT_EQ(result.status_value(), ZX_ERR_NOT_FOUND);
+}
+
+TEST_F(InitTest, LinkStartupFailure) {
+  // Override kDmeLinkStartUp handler to always fail.
+  mock_device_.GetUicCmdProcessor().SetHook(
+      UicCommandOpcode::kDmeLinkStartUp,
+      [](ufs_mock_device::UfsMockDevice& mock_device, uint32_t, uint32_t, uint32_t) {
+        UicCommandArgument2Reg::Get()
+            .ReadFrom(mock_device.GetRegisters())
+            .set_result_code(UicCommandArgument2Reg::GenericErrorCode::kFailure)
+            .WriteTo(mock_device.GetRegisters());
+      });
+
+  driver_test().RunInEnvironmentTypeContext(
+      [&](Environment& env) { env.pci_server().SetMockDevice(&mock_device_); });
+  TestUfs::SetMockDevice(&mock_device_);
+
+  zx::result result = driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
+    ufs_config::Config fake_config;
+    fake_config.enable_suspend() = false;
+    args.config(fake_config.ToVmo());
+  });
+  ASSERT_TRUE(result.is_error());
+  ASSERT_EQ(result.status_value(), ZX_ERR_INTERNAL);
+}
+
 TEST_F(InitTest, GetControllerDescriptor) {
   ASSERT_NO_FATAL_FAILURE(StartDriver());
 

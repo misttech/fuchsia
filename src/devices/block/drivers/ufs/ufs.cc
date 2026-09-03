@@ -846,7 +846,22 @@ zx::result<> Ufs::InitController() {
 zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
   const fdf::MmioBuffer& mmio = mmio_.value();
 
-  // Enable error and UIC/UTP related interrupts.
+  // Send Link Startup UIC command to start the link startup procedure.
+  if (zx::result<> result = device_manager_->SendLinkStartUp(); result.is_error()) {
+    fdf::error("Failed to send Link Startup UIC command {}", result);
+    return result.take_error();
+  }
+
+  // The |device_present| bit becomes true if the host controller has successfully received a Link
+  // Startup UIC command response and the UFS device has found a physical link to the controller.
+  if (!HostControllerStatusReg::Get().ReadFrom(&mmio).device_present()) {
+    fdf::error("UFS device not found");
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+  fdf::info("UFS device found");
+
+  // Clear any residual UIC error flags from link startup and configure operational interrupts.
+  InterruptStatusReg::Get().FromValue(0).set_uic_error(true).WriteTo(&mmio);
   InterruptEnableReg::Get()
       .FromValue(0)
       .set_crypto_engine_fatal_error_enable(true)
@@ -866,25 +881,6 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
       .set_uic_dme_endpointreset(true)
       .set_utp_transfer_request_completion_enable(true)
       .WriteTo(&mmio);
-
-  if (!HostControllerStatusReg::Get().ReadFrom(&mmio).uic_command_ready()) {
-    fdf::error("UIC command is not ready\n");
-    return zx::error(ZX_ERR_INTERNAL);
-  }
-
-  // Send Link Startup UIC command to start the link startup procedure.
-  if (zx::result<> result = device_manager_->SendLinkStartUp(); result.is_error()) {
-    fdf::error("Failed to send Link Startup UIC command {}", result);
-    return result.take_error();
-  }
-
-  // The |device_present| bit becomes true if the host controller has successfully received a Link
-  // Startup UIC command response and the UFS device has found a physical link to the controller.
-  if (!HostControllerStatusReg::Get().ReadFrom(&mmio).device_present()) {
-    fdf::error("UFS device not found");
-    return zx::error(ZX_ERR_NOT_FOUND);
-  }
-  fdf::info("UFS device found");
 
   if (zx::result<> result = task_management_request_processor_->Init(); result.is_error()) {
     fdf::error("Failed to initialize task management request processor {}", result);

@@ -26,6 +26,7 @@ class UfsPdev final : public Ufs, public fidl::Server<fuchsia_hardware_ufs_phy::
 
   zx::result<> PdevNotifyEventCallback(NotifyEvent event, uint64_t data);
   zx::result<> PreLinkStartup();
+  zx::result<> PrePowerModeChange();
 
   zx::result<fidl::ClientEnd<fuchsia_hardware_ufs_phy::Ufshci>> StartUfshciServer();
   void StopUfshciServer();

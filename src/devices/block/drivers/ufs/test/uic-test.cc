@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/devices/block/drivers/ufs/device_manager.h"
 #include "src/devices/block/drivers/ufs/registers.h"
 #include "src/devices/block/drivers/ufs/uic/uic_commands.h"
 #include "unit-lib.h"
@@ -55,6 +56,43 @@ TEST_F(UicTest, DmeLinkStartUp) {
   EXPECT_TRUE(HostControllerStatusReg::Get()
                   .ReadFrom(mock_device_.GetRegisters())
                   .utp_task_management_request_list_ready());
+}
+
+TEST_F(UicTest, SendLinkStartUpRetrySuccess) {
+  size_t attempts = 0;
+  mock_device_.GetUicCmdProcessor().SetHook(
+      UicCommandOpcode::kDmeLinkStartUp, [&attempts](ufs_mock_device::UfsMockDevice& mock_device,
+                                                     uint32_t arg1, uint32_t arg2, uint32_t arg3) {
+        ++attempts;
+        if (attempts < 2) {
+          UicCommandArgument2Reg::Get()
+              .ReadFrom(mock_device.GetRegisters())
+              .set_result_code(UicCommandArgument2Reg::GenericErrorCode::kFailure)
+              .WriteTo(mock_device.GetRegisters());
+        } else {
+          ufs_mock_device::UicCmdProcessor::DefaultDmeLinkStartUpHandler(mock_device, arg1, arg2,
+                                                                         arg3);
+        }
+      });
+
+  ASSERT_OK(dut_->GetDeviceManager().SendLinkStartUp().status_value());
+  ASSERT_EQ(attempts, 2u);
+}
+
+TEST_F(UicTest, SendLinkStartUpExhaustedRetries) {
+  size_t attempts = 0;
+  mock_device_.GetUicCmdProcessor().SetHook(
+      UicCommandOpcode::kDmeLinkStartUp,
+      [&attempts](ufs_mock_device::UfsMockDevice& mock_device, uint32_t, uint32_t, uint32_t) {
+        ++attempts;
+        UicCommandArgument2Reg::Get()
+            .ReadFrom(mock_device.GetRegisters())
+            .set_result_code(UicCommandArgument2Reg::GenericErrorCode::kFailure)
+            .WriteTo(mock_device.GetRegisters());
+      });
+
+  ASSERT_EQ(dut_->GetDeviceManager().SendLinkStartUp().status_value(), ZX_ERR_INTERNAL);
+  ASSERT_EQ(attempts, 3u);
 }
 
 TEST_F(UicTest, DmeHibernate) {

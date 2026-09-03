@@ -139,10 +139,6 @@ std::tuple<uint32_t, uint32_t, uint32_t> DmePeerSetUicCommand::Arguments() const
       value_);
 }
 
-zx::result<> DmeLinkStartUpUicCommand::UicPreProcess() {
-  return GetController().Notify(NotifyEvent::kPreLinkStartup, 0);
-}
-
 zx::result<> DmeLinkStartUpUicCommand::UicPostProcess() {
   if (auto result = UicCommand::UicPostProcess(); result.is_error()) {
     return result.take_error();

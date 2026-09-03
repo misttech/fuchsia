@@ -30,17 +30,30 @@ zx::result<std::unique_ptr<DeviceManager>> DeviceManager::Create(
 }
 
 zx::result<> DeviceManager::SendLinkStartUp() {
-  DmeLinkStartUpUicCommand link_startup_command(controller_);
-  if (zx::result<std::optional<uint32_t>> result = link_startup_command.SendCommand();
+  if (zx::result<> result = controller_.Notify(NotifyEvent::kPreLinkStartup, 0);
       result.is_error()) {
-    fdf::error("Failed to startup UFS link: {}", result);
+    fdf::error("PreLinkStartup callback failed: {}", result);
     return result.take_error();
   }
 
-  std::lock_guard<std::mutex> lock(power_lock_);
-  current_link_state_ = LinkState::kActive;
+  constexpr size_t kMaxLinkStartUpAttempts = 3;
+  for (size_t attempt = 1; attempt <= kMaxLinkStartUpAttempts; ++attempt) {
+    DmeLinkStartUpUicCommand link_startup_command(controller_);
+    auto result = link_startup_command.SendCommand();
+    if (result.is_ok()) {
+      std::lock_guard<std::mutex> lock(power_lock_);
+      current_link_state_ = LinkState::kActive;
+      return zx::ok();
+    }
+    fdf::warn("UFS link startup attempt {}/{} failed: {}", attempt, kMaxLinkStartUpAttempts,
+              result.status_string());
+    if (attempt < kMaxLinkStartUpAttempts) {
+      zx::nanosleep(zx::deadline_after(zx::msec(10)));
+    }
+  }
 
-  return zx::ok();
+  fdf::error("Failed to startup UFS link after {} attempts", kMaxLinkStartUpAttempts);
+  return zx::error(ZX_ERR_INTERNAL);
 }
 
 zx::result<> DeviceManager::DeviceInit() {
