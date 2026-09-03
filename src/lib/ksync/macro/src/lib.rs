@@ -24,6 +24,8 @@ struct GuardedField {
     ty: Type,
     vis: syn::Visibility,
     project_as_pin: bool,
+    is_konce_cell: bool,
+    konce_cell_inner_ty: Option<Type>,
 }
 
 struct FieldAttrAnalysis {
@@ -257,7 +259,10 @@ struct FieldCode {
     write_fields_init: proc_macro2::TokenStream,
 }
 
-fn generate_field_code(guarded_fields: &[&GuardedField]) -> FieldCode {
+fn generate_field_code(
+    guarded_fields: &[&GuardedField],
+    class_type: &proc_macro2::TokenStream,
+) -> FieldCode {
     let mut code = FieldCode::default();
 
     for f in guarded_fields {
@@ -265,36 +270,124 @@ fn generate_field_code(guarded_fields: &[&GuardedField]) -> FieldCode {
         let f_ty = &f.ty;
         let f_vis = &f.vis;
         let f_mut_ident = format_ident!("{}_mut", f_ident);
+        let f_cell_ident = format_ident!("{}_cell", f_ident);
 
         // Read accessors and fields
-        code.read_token_guard_accessors.extend(quote! {
-            #[inline]
-            #f_vis fn #f_ident(&self) -> &#f_ty {
-                // SAFETY: The lock token proves that the lock protecting this cell is held.
-                unsafe { self.parent.#f_ident.get(self.token) }
-            }
-        });
+        if f.is_konce_cell {
+            let inner_ty = f.konce_cell_inner_ty.as_ref().unwrap();
 
-        code.read_guard_accessors.extend(quote! {
-            #[inline]
-            #f_vis fn #f_ident(&self) -> &#f_ty {
-                // SAFETY: The lock token proves that the lock protecting this cell is held.
-                unsafe { self.parent.#f_ident.get(self.inner.token()) }
-            }
-        });
+            code.read_token_guard_accessors.extend(quote! {
+                #[inline]
+                #f_vis fn #f_ident(&self) -> ::core::option::Option<&#inner_ty> {
+                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    unsafe { self.parent.#f_ident.get(self.token) }
+                }
+            });
 
-        code.read_fields_decl.extend(quote! {
-            #[allow(dead_code)]
-            #f_vis #f_ident: &'b #f_ty,
-        });
+            code.read_guard_accessors.extend(quote! {
+                #[inline]
+                #f_vis fn #f_ident(&self) -> ::core::option::Option<&#inner_ty> {
+                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    unsafe { self.parent.#f_ident.get(self.inner.token()) }
+                }
+            });
 
-        code.read_fields_init.extend(quote! {
-            // SAFETY: The guard token proves shared access to the cell.
-            #f_ident: unsafe { me.parent.#f_ident.get(token) },
-        });
+            code.read_fields_decl.extend(quote! {
+                #[allow(dead_code)]
+                #f_vis #f_ident: ::core::option::Option<&'b #inner_ty>,
+            });
+
+            code.read_fields_init.extend(quote! {
+                // SAFETY: The guard token proves shared access to the cell.
+                #f_ident: unsafe { me.parent.#f_ident.get(token) },
+            });
+        } else {
+            code.read_token_guard_accessors.extend(quote! {
+                #[inline]
+                #f_vis fn #f_ident(&self) -> &#f_ty {
+                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    unsafe { self.parent.#f_ident.get(self.token) }
+                }
+            });
+
+            code.read_guard_accessors.extend(quote! {
+                #[inline]
+                #f_vis fn #f_ident(&self) -> &#f_ty {
+                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    unsafe { self.parent.#f_ident.get(self.inner.token()) }
+                }
+            });
+
+            code.read_fields_decl.extend(quote! {
+                #[allow(dead_code)]
+                #f_vis #f_ident: &'b #f_ty,
+            });
+
+            code.read_fields_init.extend(quote! {
+                // SAFETY: The guard token proves shared access to the cell.
+                #f_ident: unsafe { me.parent.#f_ident.get(token) },
+            });
+        }
 
         // Write accessors and fields
-        if f.project_as_pin {
+        if f.is_konce_cell {
+            let inner_ty = f.konce_cell_inner_ty.as_ref().unwrap();
+
+            code.write_token_guard_accessors.extend(quote! {
+                #[inline]
+                #f_vis fn #f_ident(&self) -> ::core::option::Option<&#inner_ty> {
+                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    unsafe { self.parent.#f_ident.get(&*self.token) }
+                }
+
+                #[inline]
+                #f_vis fn #f_mut_ident(&mut self) -> ::core::option::Option<&mut #inner_ty> {
+                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    unsafe { self.parent.#f_ident.get_mut(&mut *self.token) }
+                }
+
+                #[inline]
+                #f_vis fn #f_cell_ident(&mut self) -> ::ksync::KOnceCellGuard<'_, #inner_ty, #class_type> {
+                    // SAFETY: We hold an exclusive mutable reference to the guard token.
+                    unsafe { self.parent.#f_ident.guard(&mut *self.token) }
+                }
+            });
+
+            code.write_guard_accessors.extend(quote! {
+                #[inline]
+                #f_vis fn #f_ident(&self) -> ::core::option::Option<&#inner_ty> {
+                    // SAFETY: The lock token proves that the lock protecting this cell is held.
+                    unsafe { self.parent.#f_ident.get(self.inner.token()) }
+                }
+
+                #[inline]
+                #f_vis fn #f_mut_ident(self: ::core::pin::Pin<&mut Self>) -> ::core::option::Option<&mut #inner_ty> {
+                    let me = unsafe { self.get_unchecked_mut() };
+                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                    // SAFETY: We hold an exclusive mutable reference to the guard token.
+                    unsafe { me.parent.#f_ident.get_mut(inner_pin.token_mut()) }
+                }
+
+                #[inline]
+                #f_vis fn #f_cell_ident(self: ::core::pin::Pin<&mut Self>) -> ::ksync::KOnceCellGuard<'_, #inner_ty, #class_type> {
+                    let me = unsafe { self.get_unchecked_mut() };
+                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                    // SAFETY: We hold an exclusive mutable reference to the guard token.
+                    unsafe { me.parent.#f_ident.guard(inner_pin.token_mut()) }
+                }
+            });
+
+            code.write_fields_decl.extend(quote! {
+                #[allow(dead_code)]
+                #f_vis #f_ident: ::core::option::Option<&'b mut #inner_ty>,
+            });
+
+            code.write_fields_init.extend(quote! {
+                // SAFETY: We hold exclusive access to the guard token and each field cell
+                // is disjoint.
+                #f_ident: unsafe { me.parent.#f_ident.get_mut_unchecked() },
+            });
+        } else if f.project_as_pin {
             code.write_token_guard_accessors.extend(quote! {
                 #[inline]
                 #f_vis fn #f_ident(&self) -> &#f_ty {
@@ -616,12 +709,37 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 field.attrs.push(syn::parse_quote!(#[pin]));
                 brwlock_fields.push((field.clone(), analysis.custom_flags));
             } else if let Some(mutex_ident) = analysis.guarded_by {
+                let konce_cell_inner_ty = if is_konce_cell_type(&field.ty) {
+                    match extract_konce_cell_inner_type(&field.ty) {
+                        Some(ty) => Some(ty),
+                        None => {
+                            errors.push(syn::Error::new(
+                                field.ty.span(),
+                                "KOnceCell field must specify its value type, e.g., KOnceCell<T>",
+                            ));
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+                let is_konce_cell = konce_cell_inner_ty.is_some();
+
+                if is_konce_cell && analysis.is_pinned {
+                    errors.push(syn::Error::new(
+                        field.ident.as_ref().unwrap().span(),
+                        "KOnceCell fields cannot be structurally pinned with #[pin]",
+                    ));
+                }
+
                 guarded_fields.push(GuardedField {
                     ident: field.ident.clone().unwrap(),
                     mutex_ident,
                     ty: field.ty.clone(),
                     vis: field.vis.clone(),
                     project_as_pin: analysis.is_pinned && !analysis.is_unpinned,
+                    is_konce_cell,
+                    konce_cell_inner_ty,
                 });
             }
         }
@@ -807,9 +925,17 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     .map(|m| &m.class_type);
 
                 if let Some(class_type) = class_type_opt {
-                    let original_ty = &field.ty;
-                    field.ty =
-                        syn::parse2(quote! { ::ksync::KCell<#original_ty, #class_type> }).unwrap();
+                    if guarded_field.is_konce_cell {
+                        let inner_ty = guarded_field.konce_cell_inner_ty.as_ref().unwrap();
+                        field.ty =
+                            syn::parse2(quote! { ::ksync::KOnceCell<#inner_ty, #class_type> })
+                                .unwrap();
+                    } else {
+                        let original_ty = &field.ty;
+                        field.ty =
+                            syn::parse2(quote! { ::ksync::KCell<#original_ty, #class_type> })
+                                .unwrap();
+                    }
                     field.attrs.push(syn::parse_quote!(#[allow(dead_code)]));
                 } else {
                     errors.push(syn::Error::new(
@@ -910,7 +1036,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let this_guarded_fields: Vec<&GuardedField> =
             guarded_fields.iter().filter(|f| f.mutex_ident == *mu_ident).collect();
 
-        let field_code = generate_field_code(&this_guarded_fields);
+        let field_code = generate_field_code(&this_guarded_fields, class_type);
 
         let fields_struct = generate_fields_struct(
             struct_vis,
@@ -1225,7 +1351,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         let this_guarded_fields: Vec<&GuardedField> =
             guarded_fields.iter().filter(|f| f.mutex_ident == *lock_ident).collect();
 
-        let field_code = generate_field_code(&this_guarded_fields);
+        let field_code = generate_field_code(&this_guarded_fields, class_type);
 
         let read_fields_struct = generate_fields_struct(
             struct_vis,
@@ -1483,6 +1609,18 @@ fn is_kmutex_type(ty: &Type) -> bool {
 
 fn is_brwlock_type(ty: &Type) -> bool {
     is_type_named(ty, "BrwLockPi")
+}
+
+fn is_konce_cell_type(ty: &Type) -> bool {
+    is_type_named(ty, "KOnceCell")
+}
+
+fn extract_konce_cell_inner_type(ty: &Type) -> Option<Type> {
+    let Type::Path(TypePath { path, .. }) = ty else { return None };
+    let seg = path.segments.iter().find(|s| s.ident == "KOnceCell")?;
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else { return None };
+    let syn::GenericArgument::Type(inner_ty) = args.args.first()? else { return None };
+    Some(inner_ty.clone())
 }
 
 fn is_phantom_mutex_type(ty: &Type) -> bool {

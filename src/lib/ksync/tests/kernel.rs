@@ -54,6 +54,14 @@ mod ksync_tests {
     }
 
     #[ksync::guarded]
+    struct GuardedOnceObj {
+        #[mutex]
+        mu: ksync::KMutex,
+        #[guarded_by(mu)]
+        once_val: ksync::KOnceCell<u32>,
+    }
+
+    #[ksync::guarded]
     struct GuardedPhantomObj {
         #[mutex(GuardedMutexObjMuClass)]
         mu: ksync::KMutex<ksync::PhantomMutex>,
@@ -458,6 +466,69 @@ mod ksync_tests {
 
         {
             ksync::lock!(let _guard = TestKernelSingletonCriticalMutex::Get().lock());
+        }
+    }
+
+    /// test KOnceCell lazy initialization and access
+    #[test]
+    fn konce_cell_test() {
+        static TEST_CELL: ksync::KOnceCell<u64, TestKernelSingletonMutex> = ksync::KOnceCell::new();
+        ksync::lock!(let mut guard = TestKernelSingletonMutex::lock());
+        unsafe {
+            let token = guard.token();
+            expect_true!(!TEST_CELL.is_initialized(token));
+            expect_true!(TEST_CELL.get(token).is_none());
+
+            let token_mut = guard.as_mut().token_mut();
+            let val = TEST_CELL.get_or_init(|| 12345u64, token_mut);
+            expect_true!(*val == 12345);
+
+            let token = guard.token();
+            expect_true!(TEST_CELL.is_initialized(token));
+            expect_true!(TEST_CELL.get(token) == Some(&12345));
+
+            let unchk = TEST_CELL.get_unchecked();
+            expect_true!(unchk == Some(&12345));
+        }
+    }
+
+    /// test KOnceCell integration with #[ksync::guarded]
+    #[test]
+    fn guarded_konce_cell_test() {
+        stack_pin_init!(let obj = pin_init!(GuardedOnceObj {
+            mu <- ksync::KMutex::init(),
+            once_val: ksync::KOnceCell::new(),
+        }));
+
+        // Before init: read accessor returns None
+        {
+            ksync::lock!(let guard = obj.lock_mu());
+            expect_true!(guard.once_val().is_none());
+        }
+
+        // Initialize through mutable guard
+        {
+            ksync::lock!(let mut guard = obj.lock_mu());
+            let mut once_cell = guard.as_mut().once_val_cell();
+            let val = once_cell.get_or_init(|| 42);
+            expect_true!(*val == 42);
+
+            // Read after init
+            expect_true!(guard.once_val() == Some(&42));
+            expect_true!(guard.as_mut().once_val_mut() == Some(&mut 42));
+
+            // Attempting to set fails because it's already initialized
+            expect_true!(guard.as_mut().once_val_cell().set(99) == Err(99));
+
+            // Test proxy cell access
+            expect_true!(guard.as_mut().once_val_cell().get() == Some(&42));
+
+            // Disjoint fields access
+            let fields = guard.fields();
+            expect_true!(fields.once_val == Some(&42));
+
+            let fields_mut = guard.as_mut().fields_mut();
+            expect_true!(fields_mut.once_val == Some(&mut 42));
         }
     }
 }

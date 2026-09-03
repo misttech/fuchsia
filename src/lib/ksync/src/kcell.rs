@@ -30,15 +30,12 @@ impl<T, Class> KCell<T, Class> {
     ///
     /// # Safety
     ///
-    /// The caller must guarantee that:
-    /// 1. The provided `LockToken` belongs to the specific lock instance that guards this `KCell`
-    ///    (rather than a different lock of the same lock class `Class`).
-    /// 2. The lock is held continuously for the lifetime of the returned reference `'b`.
+    /// The caller must guarantee that the provided `LockToken` belongs to the specific lock instance
+    /// that guards this `KCell` (rather than a different lock of the same lock class `Class`).
     #[inline]
     pub unsafe fn get<'b>(&self, _token: &'b LockToken<'_, Class>) -> &'b T {
-        // SAFETY: The caller guarantees that the correct lock instance is held continuously
-        // for the duration of the reference lifetime `'b`, ensuring safe immutable access to
-        // the inner value without data races.
+        // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
+        // instance that guards this cell.
         unsafe { &*self.value.get() }
     }
 
@@ -46,17 +43,13 @@ impl<T, Class> KCell<T, Class> {
     ///
     /// # Safety
     ///
-    /// The caller must guarantee that:
-    /// 1. The provided `LockToken` belongs to the specific lock instance that guards this `KCell`
-    ///    (rather than a different lock of the same lock class `Class`).
-    /// 2. The lock is held continuously for the lifetime of the returned reference `'b`.
+    /// The caller must guarantee that the provided `LockToken` belongs to the specific lock instance
+    /// that guards this `KCell` (rather than a different lock of the same lock class `Class`).
     #[inline]
     pub unsafe fn get_mut<'b>(&self, _token: &'b mut LockToken<'_, Class>) -> &'b mut T {
-        // SAFETY: The caller guarantees that the correct lock instance is held continuously for the
-        // duration of the reference lifetime `'b`, and the exclusive mutable borrow of the
-        // `LockToken` ensures that no other active borrows of the same cell can co-exist,
-        // permitting safe mutable projection from the inner `UnsafeCell` without aliasing or data
-        // races.
+        // SAFETY: The caller guarantees that the provided LockToken belongs to the specific lock
+        // instance that guards this cell, and the exclusive mutable borrow of the `LockToken`
+        // ensures that no other active borrows of the same cell can co-exist.
         unsafe { &mut *self.value.get() }
     }
 

@@ -40,6 +40,7 @@ macro_rules! lock {
 
 mod kcell;
 mod kmutex;
+mod konce_cell;
 mod lock_token;
 mod phantom_mutex;
 mod raw_lock;
@@ -54,6 +55,7 @@ mod raw_kernel_mutex;
 mod raw_spin_lock;
 
 pub use kcell::{KCell, KCellInit, kcell_init};
+pub use konce_cell::{KOnceCell, KOnceCellGuard};
 #[cfg(any(feature = "kernel", test))]
 mod brwlock;
 
