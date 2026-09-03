@@ -117,9 +117,13 @@ impl Boot for FlashManifest {
             .collect();
         let zbi =
             partitions.iter().find(|p| p.name().contains("zircon")).map(|p| p.file().to_string());
+        let boot_img = partitions
+            .iter()
+            .find(|p| p.name() == format!("boot_{}", slot))
+            .map(|p| p.file().to_string());
         let vbmeta =
             partitions.iter().find(|p| p.name().contains("vbmeta")).map(|p| p.file().to_string());
-        match zbi {
+        match zbi.or(boot_img) {
             Some(z) => {
                 let (up_client, mut up_server) = mpsc::channel(100);
                 try_join!(boot(up_client, file_resolver, z, vbmeta, fastboot_interface), async {
