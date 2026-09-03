@@ -469,8 +469,9 @@ open protocol Directory {
     /// }
     /// ```
     ///
-    /// This method does not require any rights, since one could always probe for
-    /// directory contents by triggering name conflicts during file creation.
+    /// This method requires the following rights:
+    ///
+    /// * [`Rights.ENUMERATE`]
     @selector("fuchsia.io1/Directory.ReadDirents")
     strict ReadDirents(struct {
         max_bytes uint64;
@@ -481,7 +482,9 @@ open protocol Directory {
 
     /// Resets the directory seek offset.
     ///
-    /// This method does not require any rights, similar to ReadDirents.
+    /// This method requires the following rights:
+    ///
+    /// * [`Rights.ENUMERATE`]
     @selector("fuchsia.io1/Directory.Rewind")
     strict Rewind() -> (struct {
         s zx.Status;
@@ -643,7 +646,9 @@ open protocol Directory {
     ///
     /// Options must be zero; it is reserved.
     ///
-    /// This method does not require any rights, similar to ReadDirents.
+    /// This method requires the following rights:
+    ///
+    /// * [`Rights.ENUMERATE`]
     @selector("fuchsia.io1/Directory.Watch")
     strict Watch(resource struct {
         mask WatchMask;

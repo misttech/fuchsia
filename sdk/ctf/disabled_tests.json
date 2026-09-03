@@ -83,6 +83,11 @@
                 "name": "node::get_attributes",
                 "disabled": true,
                 "bug": "517452382"
+            },
+            {
+                "name": "directory::clone",
+                "disabled": true,
+                "bug": "517721967"
             }
         ],
         "compact_name": "fx/pkgdir-tests_ctf27#meta/test-root.cm"
@@ -94,6 +99,11 @@
                 "name": "node::get_attributes",
                 "disabled": true,
                 "bug": "517452382"
+            },
+            {
+                "name": "directory::clone",
+                "disabled": true,
+                "bug": "517721967"
             }
         ],
         "compact_name": "fx/pkgdir-tests_ctf28#meta/test-root.cm"
@@ -105,6 +115,11 @@
                 "name": "node::get_attributes",
                 "disabled": true,
                 "bug": "517452382"
+            },
+            {
+                "name": "directory::clone",
+                "disabled": true,
+                "bug": "517721967"
             }
         ],
         "compact_name": "fx/pkgdir-tests_ctf29#meta/test-root.cm"
@@ -116,6 +131,11 @@
                 "name": "node::get_attributes",
                 "disabled": true,
                 "bug": "517452382"
+            },
+            {
+                "name": "directory::clone",
+                "disabled": true,
+                "bug": "517721967"
             }
         ],
         "compact_name": "fx/pkgdir-tests_ctf30#meta/test-root.cm"
@@ -127,6 +147,11 @@
                 "name": "node::get_attributes",
                 "disabled": true,
                 "bug": "517452382"
+            },
+            {
+                "name": "directory::clone",
+                "disabled": true,
+                "bug": "517721967"
             }
         ],
         "compact_name": "fx/pkgdir-tests_ctf31#meta/test-root.cm"

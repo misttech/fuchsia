@@ -37,6 +37,7 @@
 
 #include "src/storage/lib/vfs/cpp/connection/advisory_lock.h"
 #include "src/storage/lib/vfs/cpp/connection/connection.h"
+#include "src/storage/lib/vfs/cpp/connection/directory_connection.h"
 #include "src/storage/lib/vfs/cpp/debug.h"
 #include "src/storage/lib/vfs/cpp/vfs_types.h"
 #include "src/storage/lib/vfs/cpp/vnode.h"
@@ -393,7 +394,10 @@ void DirectoryConnection::Unlink(UnlinkRequestView request, UnlinkCompleter::Syn
 void DirectoryConnection::ReadDirents(ReadDirentsRequestView request,
                                       ReadDirentsCompleter::Sync& completer) {
   FS_PRETTY_TRACE_DEBUG("[DirectoryReadDirents] our rights: ", rights());
-  // TODO(https://fxbug.dev/346585458): This operation should require the ENUMERATE right.
+  if (!(rights() & fuchsia_io::Rights::kEnumerate)) {
+    completer.Reply(ZX_ERR_ACCESS_DENIED, fidl::VectorView<uint8_t>());
+    return;
+  }
   if (request->max_bytes > fio::wire::kMaxBuf) {
     completer.Reply(ZX_ERR_BAD_HANDLE, fidl::VectorView<uint8_t>());
     return;
@@ -409,7 +413,10 @@ void DirectoryConnection::ReadDirents(ReadDirentsRequestView request,
 
 void DirectoryConnection::Rewind(RewindCompleter::Sync& completer) {
   FS_PRETTY_TRACE_DEBUG("[DirectoryRewind] our rights: ", rights());
-  // TODO(https://fxbug.dev/346585458): This operation should require the ENUMERATE right.
+  if (!(rights() & fuchsia_io::Rights::kEnumerate)) {
+    completer.Reply(ZX_ERR_ACCESS_DENIED);
+    return;
+  }
   dircookie_ = VdirCookie();
   completer.Reply(ZX_OK);
 }
@@ -480,7 +487,10 @@ void DirectoryConnection::Link(LinkRequestView request, LinkCompleter::Sync& com
 
 void DirectoryConnection::Watch(WatchRequestView request, WatchCompleter::Sync& completer) {
   FS_PRETTY_TRACE_DEBUG("[DirectoryWatch] our rights: ", rights());
-  // TODO(https://fxbug.dev/346585458): This operation should require the ENUMERATE right.
+  if (!(rights() & fuchsia_io::Rights::kEnumerate)) {
+    completer.Reply(ZX_ERR_ACCESS_DENIED);
+    return;
+  }
   auto fs = vfs();
   zx_status_t status =
       fs ? vnode()->WatchDir(fs.get(), request->mask, request->options, std::move(request->watcher))

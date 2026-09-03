@@ -194,3 +194,15 @@ async fn watch_dir_rename() {
         WatchMessage { event: WatchEvent::REMOVE_FILE, filename: PathBuf::from("bar") },
     );
 }
+
+#[fuchsia::test]
+async fn watch_requires_enumerate_right() {
+    let harness = TestHarness::new().await;
+    for dir_flags in harness.dir_rights.combinations_without(fio::Operations::ENUMERATE) {
+        let dir = harness.get_directory(vec![], dir_flags);
+
+        let (_client, server) = fidl::endpoints::create_endpoints();
+        let status = dir.watch(fio::WatchMask::empty(), 0, server).await.expect("FIDL call failed");
+        assert_eq!(zx::Status::err_from_raw(status), zx::Status::ACCESS_DENIED);
+    }
+}

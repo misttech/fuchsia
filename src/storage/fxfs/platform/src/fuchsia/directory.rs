@@ -2302,7 +2302,7 @@ mod tests {
             open_dir_checked(
                 parent.as_ref(),
                 &encrypted_name.as_ref().unwrap(),
-                fio::Flags::PROTOCOL_DIRECTORY,
+                fio::Flags::PROTOCOL_DIRECTORY | fio::Flags::PERM_ENUMERATE,
                 Default::default(),
             )
             .await,
@@ -2515,7 +2515,7 @@ mod tests {
             open_dir_checked(
                 parent.as_ref(),
                 &encrypted_name,
-                fio::Flags::PROTOCOL_DIRECTORY,
+                fio::Flags::PROTOCOL_DIRECTORY | fio::Flags::PERM_ENUMERATE,
                 Default::default(),
             )
             .await,

@@ -234,8 +234,13 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             }
             fio::DirectoryRequest::Rewind { responder } => {
                 trace::duration!("storage", "Directory::Rewind");
-                self.seek = Default::default();
-                responder.send(zx_status::sys::ZX_OK)?;
+                let status = if !self.options.rights.intersects(fio::Operations::ENUMERATE) {
+                    Status::ACCESS_DENIED.into_raw()
+                } else {
+                    self.seek = Default::default();
+                    zx_status::sys::ZX_OK
+                };
+                responder.send(status)?;
             }
             fio::DirectoryRequest::Link { src, dst_parent_token, dst, responder } => {
                 async move {
@@ -456,6 +461,9 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
     }
 
     async fn handle_read_dirents(&mut self, max_bytes: u64) -> (Result<(), Status>, Vec<u8>) {
+        if !self.options.rights.intersects(fio::Operations::ENUMERATE) {
+            return (Err(Status::ACCESS_DENIED), Vec::new());
+        }
         let (new_pos, sealed) =
             match self.directory.read_dirents(&self.seek, read_dirents::Sink::new(max_bytes)).await
             {
@@ -513,6 +521,9 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
         mask: fio::WatchMask,
         watcher: DirectoryWatcher,
     ) -> Result<(), Status> {
+        if !self.options.rights.intersects(fio::Operations::ENUMERATE) {
+            return Err(Status::ACCESS_DENIED);
+        }
         let directory = self.directory.clone();
         directory.register_watcher(self.scope.clone(), mask, watcher)
     }

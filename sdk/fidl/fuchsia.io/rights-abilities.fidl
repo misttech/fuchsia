@@ -28,13 +28,18 @@ type Operations = flexible bits : uint64 {
     /// Reading the list of nodes in a directory.
     ENUMERATE = 0x40;
 
-    /// Opening a node from a directory. Must be specified with [`Rights.ENUMERATE`], as directory
-    /// contents can be probed by opening children.
+    /// Opening a node from a directory.
+    ///
+    /// Note: It is recommended to pair this with [`Rights.ENUMERATE`] (directory contents can be
+    /// probed by opening children), e.g. by using [`PERM_READABLE`]. If strict isolation
+    /// is required, consider routing discrete capabilities instead.
     TRAVERSE = 0x80;
 
     /// Modifying the list of nodes in a directory, e.g. creating, renaming, link/unlink, etc...
-    /// Must be specified with [`Rights.ENUMERATE`], as directory contents can be probed via name
-    /// conflicts during node creation.
+    ///
+    /// Note: It is recommended to pair this with [`Rights.ENUMERATE`] (directory contents can be
+    /// probed via name conflicts during node creation), e.g. by using [`PERM_WRITABLE`]. If
+    /// strict isolation is required, consider routing discrete capabilities instead.
     MODIFY_DIRECTORY = 0x100;
 };
 

@@ -121,3 +121,25 @@ async fn zero_buffer_after_all_entries_is_ok() {
     // so the call should still succeed.
     read_dirents(&dir, 0).await.expect("read_dirents should succeed");
 }
+
+#[fuchsia::test]
+async fn read_dirents_requires_enumerate_right() {
+    let harness = TestHarness::new().await;
+    for dir_flags in harness.dir_rights.combinations_without(fio::Operations::ENUMERATE) {
+        let dir = harness.get_directory(vec![], dir_flags);
+
+        let (status, _buf) = dir.read_dirents(4096).await.expect("FIDL call failed");
+        assert_eq!(zx::Status::err_from_raw(status), zx::Status::ACCESS_DENIED);
+    }
+}
+
+#[fuchsia::test]
+async fn rewind_requires_enumerate_right() {
+    let harness = TestHarness::new().await;
+    for dir_flags in harness.dir_rights.combinations_without(fio::Operations::ENUMERATE) {
+        let dir = harness.get_directory(vec![], dir_flags);
+
+        let status = dir.rewind().await.expect("FIDL call failed");
+        assert_eq!(zx::Status::err_from_raw(status), zx::Status::ACCESS_DENIED);
+    }
+}
