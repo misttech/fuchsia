@@ -144,8 +144,10 @@ zx::interrupt PciBusTests::AddLegacyIrqToBus(uint8_t vector) {
   zx::interrupt interrupt;
   ZX_ASSERT(zx::interrupt::create(*zx::unowned_resource(ZX_HANDLE_INVALID), vector,
                                   ZX_INTERRUPT_VIRTUAL, &interrupt) == ZX_OK);
+  zx::interrupt bus_interrupt;
+  ZX_ASSERT(interrupt.duplicate(ZX_RIGHT_SAME_RIGHTS, &bus_interrupt) == ZX_OK);
   pciroot().legacy_irqs().push_back(
-      pci_legacy_irq_t{.interrupt = interrupt.get(), .vector = vector});
+      pci_legacy_irq_t{.interrupt = bus_interrupt.release(), .vector = vector});
 
   return interrupt;
 }
@@ -170,6 +172,8 @@ class TestBus : public pci::Bus {
           std::optional<fdf::MmioBuffer> ecam)
       : pci::Bus(parent, pciroot, info, std::move(ecam)) {}
   virtual ~TestBus() = default;
+
+  using pci::Bus::HandleLegacyIrq;
 
   pci::DeviceTree& Devices() { return devices(); }
 
@@ -369,6 +373,9 @@ TEST_F(PciBusTests, LegacyIrqSignalTest) {
   pciroot().ecam().get_device({0, 0, 1})->set_status(kStatusInterrupt);
   ASSERT_OK(interrupt.trigger(0, trigger_time));
 
+  // Process the interrupt event on the DFv1 async dispatcher.
+  mock_ddk::GetDriverRuntime()->RunUntilIdle();
+
   // Only the device at 00:00.1 should trigger because 00:00.0 does not have the interrupt status
   // bit set in its config space. The interrupt time the driver receives must match the time the
   // interrupt dispatcher logged.
@@ -411,19 +418,18 @@ TEST_F(PciBusTests, LegacyIrqMaskOnDeliverTest) {
   ASSERT_TRUE(result.is_ok());
   zx::interrupt dev_interrupt = std::move(result.value());
 
-  // Reads legacy_disabled under the device lock. The IRQ worker holds the same
-  // lock across both the signal and the mask, so once we acquire it (after the
-  // device interrupt below has fired) we are guaranteed to observe the masked
-  // state rather than racing the worker thread.
+  // Reads legacy_disabled under the device lock.
   auto disabled = [&bus_device]() {
     fbl::AutoLock _(bus_device->dev_lock());
     return bus_device->irqs().legacy_disabled;
   };
   ASSERT_FALSE(disabled());
 
-  // Fire the hardware vector. The worker thread signals the device's virtual
-  // interrupt (waking our wait below) and then masks the device.
+  // Fire the hardware vector. The async IRQ handler signals the device's virtual
+  // interrupt and then masks the device.
   ASSERT_OK(bus_interrupt.trigger(0, zx::clock::get_boot()));
+  mock_ddk::GetDriverRuntime()->RunUntilIdle();
+
   zx::time_boot receive_time;
   ASSERT_OK(dev_interrupt.wait(&receive_time));
   ASSERT_TRUE(disabled());
@@ -435,6 +441,53 @@ TEST_F(PciBusTests, LegacyIrqMaskOnDeliverTest) {
     ASSERT_OK(bus_device->AckLegacyIrq());
   }
   ASSERT_FALSE(disabled());
+}
+
+TEST_F(PciBusTests, LegacyIrqHandlerErrorAndEdgeCases) {
+  pci_bdf_t device_bdf = {0, 0, 0};
+  pciroot()
+      .ecam()
+      .get_device(device_bdf)
+      ->set_vendor_id(0x8086)
+      .set_device_id(0x8086)
+      .set_interrupt_pin(0x1)
+      .set_status(kStatusInterrupt);
+  constexpr uint8_t kVector = 0x10;
+  zx::interrupt bus_interrupt = AddLegacyIrqToBus(kVector);
+  AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
+                       /*a=*/kVector, /*b=*/0, /*c=*/0, /*d=*/0);
+
+  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
+                                             pciroot().ecam().mmio());
+  ASSERT_OK(owned_bus->Initialize());
+  auto* bus = owned_bus.release();
+  auto* bus_device = bus->GetDevice(device_bdf);
+  ASSERT_OK(bus_device->SetIrqMode(fuchsia_hardware_pci::InterruptMode::kLegacy, 1));
+
+  // HandleLegacyIrq with ZX_ERR_CANCELED returns early.
+  bus->HandleLegacyIrq(nullptr, nullptr, ZX_ERR_CANCELED, nullptr, kVector);
+
+  // HandleLegacyIrq with non-OK status logs error and returns early.
+  bus->HandleLegacyIrq(nullptr, nullptr, ZX_ERR_INTERNAL, nullptr, kVector);
+
+  // HandleLegacyIrq with null interrupt packet logs error and returns early.
+  bus->HandleLegacyIrq(nullptr, nullptr, ZX_OK, nullptr, kVector);
+
+  // HandleLegacyIrq with untracked vector logs error and returns early.
+  zx_packet_interrupt_t packet = {};
+  bus->HandleLegacyIrq(nullptr, nullptr, ZX_OK, &packet, 0x99);
+
+  // Invalidate the device's virtual interrupt handle so SignalLegacyIrq fails.
+  {
+    fbl::AutoLock _(bus_device->dev_lock());
+    bus_device->irqs().legacy.reset();
+  }
+  packet.timestamp = zx::clock::get_boot().get();
+  bus->HandleLegacyIrq(nullptr, nullptr, ZX_OK, &packet, kVector);
+  {
+    fbl::AutoLock _(bus_device->dev_lock());
+    EXPECT_TRUE(bus_device->irqs().legacy_disabled);
+  }
 }
 
 TEST_F(PciBusTests, ObeysHeaderTypeMultiFn) {

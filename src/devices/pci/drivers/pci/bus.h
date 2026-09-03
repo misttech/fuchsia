@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.pci/cpp/wire.h>
 #include <fuchsia/hardware/pciroot/c/banjo.h>
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
+#include <lib/async/cpp/irq.h>
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/ddk/device.h>
 #include <lib/driver/mmio/cpp/mmio.h>
@@ -22,7 +23,6 @@
 #include <list>
 #include <map>
 #include <memory>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -50,6 +50,7 @@ struct BusScanEntry {
 using SharedIrqList = std::vector<pci::Device*>;
 struct SharedVector {
   zx::interrupt interrupt;
+  async::Irq irq_handler;
   SharedIrqList list;
 };
 
@@ -108,6 +109,8 @@ class Bus : public PciBusType,
   SharedIrqMap& shared_irqs() { return shared_irqs_; }
   LegacyIrqs& legacy_irqs() { return legacy_irqs_; }
   const PciFidl::BoardConfiguration& board_config() { return board_config_; }
+  void HandleLegacyIrq(async_dispatcher_t* dispatcher, async::Irq* irq, zx_status_t status,
+                       const zx_packet_interrupt_t* interrupt, uint32_t vector);
 
  private:
   // Map an ecam VMO for Bus and Config use.
@@ -132,14 +135,8 @@ class Bus : public PciBusType,
 
   // Creates interrupts corresponding to legacy IRQ vectors and configures devices accordingly.
   zx_status_t ConfigureLegacyIrqs() __TA_EXCLUDES(devices_lock_);
-  // Creates and binds interrupts to the irq port and sets up Shared IRQ handler lists.
+  // Creates and binds interrupts to the async dispatcher and sets up Shared IRQ handler lists.
   zx_status_t SetUpLegacyIrqHandlers() __TA_REQUIRES(devices_lock_);
-  static void LegacyIrqWorker(const zx::port& port, fbl::Mutex* lock, SharedIrqMap* shared_irq_map,
-                              const PciFidl::BoardConfiguration* board_config);
-  // Creates and starts the legacy IRQ worker thread.
-  void StartIrqWorker();
-  // Queues a packet informing the IRQ worker that it should exit.
-  zx_status_t StopIrqWorker();
 
   // members
   ddk::PcirootProtocolClient pciroot_;
@@ -154,9 +151,7 @@ class Bus : public PciBusType,
   // All devices hang off of this Bus's root port.
   std::unique_ptr<PciRoot> root_;
   fbl::Mutex devices_lock_;
-  // A port all legacy IRQs are bound to.
-  zx::port legacy_irq_port_;
-  std::optional<std::thread> irq_thread_;
+  async_dispatcher_t* dispatcher_{nullptr};
 
   // All devices downstream of this bus are held here. Devices are keyed by
   // BDF so they will not experience any collisions.
