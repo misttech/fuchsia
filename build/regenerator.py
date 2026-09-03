@@ -9,6 +9,7 @@ import argparse
 import filecmp
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -61,6 +62,127 @@ def interpret_gn_path(gn_path: str, fuchsia_dir: Path, build_dir: Path) -> Path:
     if gn_path.startswith("/"):
         return Path(gn_path)  # absolute path
     return build_dir / gn_path  # build-dir relative path.
+
+
+_GN_NON_TARGET_KEYWORDS = frozenset(
+    {
+        "assert",
+        "config",
+        "declare_args",
+        "defined",
+        "exec_script",
+        "for",
+        "forward_variables_from",
+        "get_label_info",
+        "get_path_info",
+        "get_target_outputs",
+        "getenv",
+        "if",
+        "import",
+        "print",
+        "read_file",
+        "rebase_path",
+        "set_default_toolchain",
+        "set_defaults",
+        "split_list",
+        "string_join",
+        "string_replace",
+        "string_split",
+        "template",
+        "write_file",
+    }
+)
+
+
+def check_gn_unresolved_package_dependencies(
+    gn_output: str, fuchsia_dir: Path
+) -> list[str]:
+    """Check GN error output for unresolved dependencies matching hyphenated targets in BUILD.gn.
+
+    When users include a target or directory via `fx set ... --with //path/to/dir`, GN
+    resolves the label to `//path/to/dir:dir`. If `//path/to/dir/BUILD.gn` defines targets
+    with hyphens (e.g., `dir-name`) instead of underscores, GN reports an unresolved
+    dependency on `:dir`. This function detects that pattern and returns helpful hints.
+
+    Args:
+        gn_output: The combined stdout/stderr output from `gn gen`.
+        fuchsia_dir: The path to the Fuchsia source root directory.
+
+    Returns:
+        A list of hint strings explaining how to resolve the mismatch.
+    """
+    hints: list[str] = []
+    seen: set[str] = set()
+
+    for match in re.finditer(r"needs\s+(//[^\s:]+):([^\s:(]+)", gn_output):
+        gn_dir_path = match.group(1)
+        target_name = match.group(2)
+
+        rel_dir = gn_dir_path.lstrip("/")
+        dir_name = Path(rel_dir).name
+
+        build_gn = fuchsia_dir / rel_dir / "BUILD.gn"
+        if not build_gn.is_file():
+            continue
+
+        try:
+            build_gn_content = build_gn.read_text(
+                encoding="utf-8", errors="replace"
+            )
+        except OSError:
+            continue
+
+        # Strip comments
+        lines = [line.split("#")[0] for line in build_gn_content.splitlines()]
+        clean_content = "\n".join(lines)
+
+        # Find all target declarations: target_type("name")
+        targets = re.findall(
+            r'([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*["\']([^"\']+)["\']',
+            clean_content,
+        )
+
+        for target_type, target in targets:
+            if target_type in _GN_NON_TARGET_KEYWORDS:
+                continue
+
+            if (
+                target != target_name
+                and target.replace("-", "_") == target_name
+            ):
+                is_dir_label = target_name == dir_name
+                if target_type == "fuchsia_package":
+                    if is_dir_label:
+                        hint = (
+                            f'Hint: Found fuchsia_package("{target}"). In GN, '
+                            f"directory labels resolve to ':{target_name}'. "
+                            f'Consider defining fuchsia_package("{target_name}") '
+                            f'{{ package_name = "{target}" }}'
+                        )
+                    else:
+                        hint = (
+                            f'Hint: Found fuchsia_package("{target}"). '
+                            f'Consider defining fuchsia_package("{target_name}") '
+                            f'{{ package_name = "{target}" }}'
+                        )
+                else:
+                    if is_dir_label:
+                        hint = (
+                            f'Hint: Found {target_type}("{target}"). In GN, '
+                            f"directory labels resolve to ':{target_name}'. "
+                            f'Consider defining {target_type}("{target_name}")'
+                        )
+                    else:
+                        hint = (
+                            f'Hint: Found {target_type}("{target}"). '
+                            f'Consider defining {target_type}("{target_name}")'
+                        )
+
+                if hint not in seen:
+                    seen.add(hint)
+                    hints.append(hint)
+
+    return hints
 
 
 def generate_bazel_content_hash_files(
@@ -353,8 +475,22 @@ def main() -> int:
             "gn gen", "Running gn gen to rebuild Ninja manifest..."
         )
 
-        ret = run_cmd(gn_cmd_args, cwd=args.fuchsia_dir)
+        ret = run_cmd(gn_cmd_args, cwd=args.fuchsia_dir, capture_output=True)
+        if ret.stdout:
+            sys.stdout.write(ret.stdout)
+            sys.stdout.flush()
+        if ret.stderr:
+            sys.stderr.write(ret.stderr)
+            sys.stderr.flush()
+
         if ret.returncode != 0:
+            gn_output = (ret.stderr or "") + "\n" + (ret.stdout or "")
+            hints = check_gn_unresolved_package_dependencies(
+                gn_output, fuchsia_dir
+            )
+            for hint in hints:
+                print(hint, file=sys.stderr)
+
             # Print something if GN was stopped by a signal,
             # otherwise assume it already wrote something to the user.
             if ret.returncode == 245:

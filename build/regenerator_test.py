@@ -188,5 +188,180 @@ class ContentHashTest(unittest.TestCase):
             )
 
 
+class GnDiagnosticsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory()
+        self.fuchsia_dir = Path(self._td.name)
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_unresolved_package_hyphen_mismatch(self) -> None:
+        pkg_dir = self.fuchsia_dir / "examples" / "components" / "eval_test"
+        pkg_dir.mkdir(parents=True)
+        build_gn = pkg_dir / "BUILD.gn"
+        build_gn.write_text(
+            'fuchsia_package("eval-test") {\n  deps = [ ":component" ]\n}\n'
+        )
+
+        gn_output = (
+            "ERROR Unresolved dependencies.\n"
+            "//:developer_universe_packages(//build/toolchain/fuchsia:x64)\n"
+            "  needs //examples/components/eval_test:eval_test(//build/toolchain/fuchsia:x64)\n"
+        )
+
+        hints = regenerator.check_gn_unresolved_package_dependencies(
+            gn_output, self.fuchsia_dir
+        )
+        self.assertEqual(
+            hints,
+            [
+                'Hint: Found fuchsia_package("eval-test"). In GN, directory labels '
+                "resolve to ':eval_test'. Consider defining "
+                'fuchsia_package("eval_test") { package_name = "eval-test" }'
+            ],
+        )
+
+    def test_unresolved_package_ignores_comments(self) -> None:
+        pkg_dir = self.fuchsia_dir / "examples" / "components" / "eval_test"
+        pkg_dir.mkdir(parents=True)
+        build_gn = pkg_dir / "BUILD.gn"
+        build_gn.write_text(
+            '# fuchsia_package("eval-test")\n'
+            "# fuchsia_package('eval-test')\n"
+        )
+
+        gn_output = (
+            "ERROR Unresolved dependencies.\n"
+            "//:developer_universe_packages\n"
+            "  needs //examples/components/eval_test:eval_test\n"
+        )
+
+        hints = regenerator.check_gn_unresolved_package_dependencies(
+            gn_output, self.fuchsia_dir
+        )
+        self.assertEqual(hints, [])
+
+    def test_unresolved_package_no_mismatch(self) -> None:
+        pkg_dir = self.fuchsia_dir / "examples" / "components" / "eval_test"
+        pkg_dir.mkdir(parents=True)
+        build_gn = pkg_dir / "BUILD.gn"
+        build_gn.write_text(
+            'fuchsia_package("eval_test") {\n  package_name = "eval-test"\n}\n'
+        )
+
+        gn_output = (
+            "ERROR Unresolved dependencies.\n"
+            "//:developer_universe_packages\n"
+            "  needs //examples/components/eval_test:eval_test\n"
+        )
+
+        hints = regenerator.check_gn_unresolved_package_dependencies(
+            gn_output, self.fuchsia_dir
+        )
+        self.assertEqual(hints, [])
+
+    def test_unresolved_package_non_directory_target(self) -> None:
+        pkg_dir = self.fuchsia_dir / "examples" / "components" / "eval_test"
+        pkg_dir.mkdir(parents=True)
+        build_gn = pkg_dir / "BUILD.gn"
+        build_gn.write_text('fuchsia_package("eval-test") {}\n')
+
+        gn_output = (
+            "ERROR Unresolved dependencies.\n"
+            "//:developer_universe_packages\n"
+            "  needs //examples/components/eval_test:other_target\n"
+        )
+
+        hints = regenerator.check_gn_unresolved_package_dependencies(
+            gn_output, self.fuchsia_dir
+        )
+        self.assertEqual(hints, [])
+
+    def test_unresolved_package_deduplicates_hints(self) -> None:
+        pkg_dir = self.fuchsia_dir / "examples" / "components" / "eval_test"
+        pkg_dir.mkdir(parents=True)
+        build_gn = pkg_dir / "BUILD.gn"
+        build_gn.write_text('fuchsia_package("eval-test") {}\n')
+
+        gn_output = (
+            "ERROR Unresolved dependencies.\n"
+            "//:target_a\n"
+            "  needs //examples/components/eval_test:eval_test(//build/toolchain:x64)\n"
+            "//:target_b\n"
+            "  needs //examples/components/eval_test:eval_test(//build/toolchain:x64)\n"
+        )
+
+        hints = regenerator.check_gn_unresolved_package_dependencies(
+            gn_output, self.fuchsia_dir
+        )
+        self.assertEqual(len(hints), 1)
+
+    def test_unresolved_group_target(self) -> None:
+        pkg_dir = self.fuchsia_dir / "examples" / "components" / "eval_test"
+        pkg_dir.mkdir(parents=True)
+        build_gn = pkg_dir / "BUILD.gn"
+        build_gn.write_text('group("eval-test") {}\n')
+
+        gn_output = (
+            "ERROR Unresolved dependencies.\n"
+            "//:developer_universe_packages\n"
+            "  needs //examples/components/eval_test:eval_test\n"
+        )
+
+        hints = regenerator.check_gn_unresolved_package_dependencies(
+            gn_output, self.fuchsia_dir
+        )
+        self.assertEqual(
+            hints,
+            [
+                'Hint: Found group("eval-test"). In GN, directory labels '
+                "resolve to ':eval_test'. Consider defining group(\"eval_test\")"
+            ],
+        )
+
+    def test_unresolved_explicit_target_label(self) -> None:
+        pkg_dir = self.fuchsia_dir / "examples" / "components" / "eval_test"
+        pkg_dir.mkdir(parents=True)
+        build_gn = pkg_dir / "BUILD.gn"
+        build_gn.write_text('group("sub-target") {}\n')
+
+        gn_output = (
+            "ERROR Unresolved dependencies.\n"
+            "//:developer_universe_packages\n"
+            "  needs //examples/components/eval_test:sub_target\n"
+        )
+
+        hints = regenerator.check_gn_unresolved_package_dependencies(
+            gn_output, self.fuchsia_dir
+        )
+        self.assertEqual(
+            hints,
+            [
+                'Hint: Found group("sub-target"). Consider defining '
+                'group("sub_target")'
+            ],
+        )
+
+    def test_unresolved_target_ignores_non_target_keywords(self) -> None:
+        pkg_dir = self.fuchsia_dir / "examples" / "components" / "eval_test"
+        pkg_dir.mkdir(parents=True)
+        build_gn = pkg_dir / "BUILD.gn"
+        build_gn.write_text(
+            'import("//examples/components/eval_test/eval-test.gni")\n'
+        )
+
+        gn_output = (
+            "ERROR Unresolved dependencies.\n"
+            "//:developer_universe_packages\n"
+            "  needs //examples/components/eval_test:eval_test\n"
+        )
+
+        hints = regenerator.check_gn_unresolved_package_dependencies(
+            gn_output, self.fuchsia_dir
+        )
+        self.assertEqual(hints, [])
+
+
 if __name__ == "__main__":
     unittest.main()
