@@ -77,6 +77,7 @@ impl FakeArchiveAccessor {
                 control_handle: _,
             } => (stream_parameters, result_stream),
             diagnostics::ArchiveAccessorRequest::WaitForReady { .. }
+            | diagnostics::ArchiveAccessorRequest::StreamDiagnosticsToSocket { .. }
             | diagnostics::ArchiveAccessorRequest::_UnknownMethod { .. } => {
                 unreachable!("Unexpected method call");
             }

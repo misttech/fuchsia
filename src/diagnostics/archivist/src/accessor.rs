@@ -358,6 +358,9 @@ pub trait ArchiveAccessorWriter {
         results: Vec<FormattedContent>,
     ) -> impl Future<Output = Result<(), IteratorError>> + Send;
 
+    /// Converts the writer into either a socket or the original writer.
+    /// Returns `Left(socket)` if the writer can be converted to a socket,
+    /// or `Right(writer)` if it cannot.
     fn into_socket_or_channel(self) -> Either<fuchsia_async::Socket, Self>
     where
         Self: Sized,
@@ -442,6 +445,65 @@ pub enum IteratorError {
         #[from]
         source: zx::Status,
     },
+}
+
+impl<T: ArchiveAccessorWriter, Y: ArchiveAccessorWriter> ArchiveAccessorWriter for Either<T, Y> {
+    fn write(
+        &mut self,
+        results: Vec<FormattedContent>,
+    ) -> impl Future<Output = Result<(), IteratorError>> + Send {
+        match self {
+            Either::Left(value) => Either::Left(value.write(results)),
+            Either::Right(value) => Either::Right(value.write(results)),
+        }
+    }
+
+    /// Converts the writer into either a socket or the original writer.
+    /// Returns `Left(socket)` if the writer can be converted to a socket,
+    /// or `Right(writer)` if it cannot.
+    fn into_socket_or_channel(self) -> Either<fuchsia_async::Socket, Self>
+    where
+        Self: Sized,
+    {
+        match self {
+            Either::Left(value) => match value.into_socket_or_channel() {
+                Either::Left(socket) => Either::Left(socket),
+                Either::Right(original) => Either::Right(Either::Left(original)),
+            },
+            Either::Right(value) => match value.into_socket_or_channel() {
+                Either::Left(socket) => Either::Left(socket),
+                Either::Right(original) => Either::Right(Either::Right(original)),
+            },
+        }
+    }
+
+    fn wait_for_buffer(&mut self) -> impl Future<Output = anyhow::Result<()>> + Send {
+        match self {
+            Either::Left(value) => Either::Left(value.wait_for_buffer()),
+            Either::Right(value) => Either::Right(value.wait_for_buffer()),
+        }
+    }
+
+    fn get_control_handle(&self) -> Option<BatchIteratorControlHandle> {
+        match self {
+            Either::Left(value) => value.get_control_handle(),
+            Either::Right(value) => value.get_control_handle(),
+        }
+    }
+
+    fn maybe_respond_ready(&mut self) -> impl Future<Output = Result<(), AccessorError>> + Send {
+        match self {
+            Either::Left(value) => Either::Left(value.maybe_respond_ready()),
+            Either::Right(value) => Either::Right(value.maybe_respond_ready()),
+        }
+    }
+
+    fn wait_for_close(&mut self) -> impl Future<Output = ()> + Send {
+        match self {
+            Either::Left(value) => Either::Left(value.wait_for_close()),
+            Either::Right(value) => Either::Right(value.wait_for_close()),
+        }
+    }
 }
 
 impl ArchiveAccessorWriter for Peekable<BatchIteratorRequestStream> {
@@ -537,7 +599,8 @@ impl ArchiveAccessorTranslator for fhost::ArchiveAccessorRequestStream {
 }
 
 impl ArchiveAccessorTranslator for ArchiveAccessorRequestStream {
-    type InnerDataRequestChannel = Peekable<BatchIteratorRequestStream>;
+    type InnerDataRequestChannel =
+        Either<Peekable<BatchIteratorRequestStream>, fuchsia_async::Socket>;
 
     async fn next(&mut self) -> Option<ArchiveIteratorRequest<Self::InnerDataRequestChannel>> {
         loop {
@@ -548,7 +611,22 @@ impl ArchiveAccessorTranslator for ArchiveAccessorRequestStream {
                     stream_parameters,
                 })) => {
                     return Some(ArchiveIteratorRequest {
-                        iterator: result_stream.into_stream().peekable(),
+                        iterator: Either::Left(result_stream.into_stream().peekable()),
+                        parameters: stream_parameters,
+                    });
+                }
+                Some(Ok(ArchiveAccessorRequest::StreamDiagnosticsToSocket {
+                    stream,
+                    stream_parameters,
+                    responder,
+                })) => {
+                    // It's fine for the client to send us a socket
+                    // and discard the channel without waiting for a response.
+                    // Future communication takes place over the socket so
+                    // the client may opt to use this as an optimization.
+                    let _ = responder.send();
+                    return Some(ArchiveIteratorRequest {
+                        iterator: Either::Right(fuchsia_async::Socket::from_socket(stream)),
                         parameters: stream_parameters,
                     });
                 }

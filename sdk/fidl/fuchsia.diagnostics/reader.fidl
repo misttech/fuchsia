@@ -187,6 +187,14 @@ closed(removed=18) open(added=18) protocol ArchiveAccessor {
         result_stream server_end:BatchIterator;
     });
 
+    /// Stream diagnostics data directly to a socket.
+    /// This is intended for host tools or components that prefer socket-based streaming.
+    @available(added=HEAD)
+    flexible StreamDiagnosticsToSocket(resource struct {
+        stream_parameters StreamParameters;
+        stream zx.Handle:<SOCKET, zx.Rights.WRITE | zx.Rights.WAIT>;
+    }) -> ();
+
     /// Ensures that the connection with the server was established to prevent
     /// races when using other pipelined methods of this protocol.
     @available(added=HEAD)

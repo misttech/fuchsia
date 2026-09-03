@@ -6,7 +6,6 @@ use anyhow::{Context, Error, Result};
 use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_diagnostics::{self as fdiagnostics, LogSettingsSetComponentInterestRequest};
-use fidl_fuchsia_diagnostics_host as fdiagnostics_host;
 use fidl_fuchsia_diagnostics_types::{Interest, Severity};
 use realm_proxy_client::RealmProxyClient;
 use selectors::{VerboseError, parse_component_selector};
@@ -35,17 +34,6 @@ pub(crate) async fn connect_accessor(
 ) -> fdiagnostics::ArchiveAccessorProxy {
     connect_accessor_protocol::<fdiagnostics::ArchiveAccessorMarker>(realm_proxy, pipeline_name)
         .await
-}
-
-pub(crate) async fn connect_host_accessor(
-    realm_proxy: &RealmProxyClient,
-    pipeline_name: &str,
-) -> fdiagnostics_host::ArchiveAccessorProxy {
-    connect_accessor_protocol::<fdiagnostics_host::ArchiveAccessorMarker>(
-        realm_proxy,
-        pipeline_name,
-    )
-    .await
 }
 
 async fn connect_accessor_protocol<P: DiscoverableProtocolMarker>(

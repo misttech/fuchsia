@@ -59,7 +59,9 @@ pub trait LogReader {
 // The FFI interface, which uses the FXT format, is currently only available at HEAD,
 // so our tests, for now, only run at HEAD.
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
-mod ffi_format {
+pub mod ffi_format {
+
+    use crate::logs::common::rust_format::data_logs_to_test_logs;
 
     use super::*;
     use diagnostics_data::{LogsField, Severity};
@@ -188,6 +190,109 @@ mod ffi_format {
         pub reader: HostArchiveAccessor,
     }
 
+    pub struct StreamArchiveAccessorFxt(pub StreamArchiveAccessor);
+
+    #[async_trait::async_trait]
+    impl LogReader for StreamArchiveAccessorFxt {
+        async fn get_test_snapshot(&self) -> Vec<TestLogMessage> {
+            let (local, remote) = zx::Socket::create_stream();
+            let reader = fuchsia_async::Socket::from_socket(local);
+            self.0
+                .0
+                .stream_diagnostics_to_socket(
+                    &StreamParameters {
+                        data_type: Some(DataType::Logs),
+                        stream_mode: Some(StreamMode::Snapshot),
+                        format: Some(Format::Fxt),
+                        client_selector_configuration: Some(
+                            ClientSelectorConfiguration::SelectAll(true),
+                        ),
+                        ..Default::default()
+                    },
+                    remote,
+                )
+                .await
+                .unwrap();
+            FxtStreamer::new(reader)
+                .stream()
+                .map(|value| data_logs_to_test_logs(value.unwrap()))
+                .collect::<Vec<_>>()
+                .await
+        }
+
+        async fn get_test_snapshot_then_subscribe(&self) -> BoxStream<'static, TestLogMessage> {
+            let (local, remote) = zx::Socket::create_stream();
+            let reader = fuchsia_async::Socket::from_socket(local);
+            self.0
+                .0
+                .stream_diagnostics_to_socket(
+                    &StreamParameters {
+                        data_type: Some(DataType::Logs),
+                        stream_mode: Some(StreamMode::SnapshotThenSubscribe),
+                        format: Some(Format::Fxt),
+                        client_selector_configuration: Some(
+                            ClientSelectorConfiguration::SelectAll(true),
+                        ),
+                        ..Default::default()
+                    },
+                    remote,
+                )
+                .await
+                .unwrap();
+            FxtStreamer::new(reader)
+                .stream()
+                .map(|value| data_logs_to_test_logs(value.unwrap()))
+                .boxed()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl LogReader for StreamArchiveAccessor {
+        async fn get_test_snapshot(&self) -> Vec<TestLogMessage> {
+            let reader =
+                initialize_socket_accessor(&self.0, Format::Json, StreamMode::Snapshot).await;
+            LogsDataStream::new(reader)
+                .map(|value| data_logs_to_test_logs(value.unwrap()))
+                .collect::<Vec<_>>()
+                .await
+        }
+
+        async fn get_test_snapshot_then_subscribe(&self) -> BoxStream<'static, TestLogMessage> {
+            let reader = initialize_socket_accessor(
+                &self.0,
+                Format::Json,
+                StreamMode::SnapshotThenSubscribe,
+            )
+            .await;
+            LogsDataStream::new(reader).map(|value| data_logs_to_test_logs(value.unwrap())).boxed()
+        }
+    }
+
+    async fn initialize_socket_accessor(
+        proxy: &ArchiveAccessorProxy,
+        format: Format,
+        mode: StreamMode,
+    ) -> fuchsia_async::Socket {
+        let (local, remote) = zx::Socket::create_stream();
+        let reader = fuchsia_async::Socket::from_socket(local);
+        proxy
+            .stream_diagnostics_to_socket(
+                &StreamParameters {
+                    data_type: Some(DataType::Logs),
+                    stream_mode: Some(mode),
+                    format: Some(format),
+                    client_selector_configuration: Some(ClientSelectorConfiguration::SelectAll(
+                        true,
+                    )),
+                    ..Default::default()
+                },
+                remote,
+            )
+            .await
+            .unwrap();
+        reader
+    }
+
     #[async_trait::async_trait]
     impl LogReader for HostReaderFxt {
         async fn get_test_snapshot(&self) -> Vec<TestLogMessage> {
@@ -286,6 +391,20 @@ mod ffi_format {
             stream_messages(iterator, MessageParser::default())
         }
     }
+
+    pub struct StreamArchiveAccessor(pub ArchiveAccessorProxy);
+
+    impl LogProtocol for StreamArchiveAccessor {
+        fn build(self, format: LogFormat) -> Box<dyn LogReader> {
+            match format {
+                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                LogFormat::Rust(Format::Fxt) => Box::new(new_host_fxt_stream(self)),
+                #[cfg(fuchsia_api_level_at_least = "HEAD")]
+                LogFormat::Rust(Format::Json) => Box::new(new_host_reader_stream(self)),
+                _ => unreachable!("Only FXT and JSON formats are supported for host"),
+            }
+        }
+    }
 }
 
 mod rust_format {
@@ -372,6 +491,18 @@ fn new_host_reader(reader: HostArchiveAccessor) -> impl LogReader {
 #[cfg(fuchsia_api_level_at_least = "HEAD")]
 fn new_host_fxt(reader: HostArchiveAccessor) -> impl LogReader {
     ffi_format::HostReaderFxt { reader }
+}
+
+/// Creates a new log reader that uses the ffx host reader
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+fn new_host_reader_stream(reader: ffi_format::StreamArchiveAccessor) -> impl LogReader {
+    reader
+}
+
+/// Creates a new log reader that uses the ffx host reader
+#[cfg(fuchsia_api_level_at_least = "HEAD")]
+fn new_host_fxt_stream(reader: ffi_format::StreamArchiveAccessor) -> impl LogReader {
+    ffi_format::StreamArchiveAccessorFxt(reader)
 }
 
 impl LogProtocol for HostArchiveAccessor {

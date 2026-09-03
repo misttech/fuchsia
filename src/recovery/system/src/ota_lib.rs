@@ -7,7 +7,7 @@ pub mod ota;
 pub mod setup;
 pub mod storage;
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use async_trait::async_trait;
 use diagnostics_data::logs_legacy::{filter_by_tags, format_log_message};
 use diagnostics_reader::{ArchiveReader, Data, Logs};
@@ -223,15 +223,15 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use diagnostics_data::{BuilderArgs, LogsDataBuilder};
-    use fidl::endpoints::{create_proxy_and_stream, ServerEnd};
+    use fidl::endpoints::{ServerEnd, create_proxy_and_stream};
     use fidl_fuchsia_component::{Error, RealmRequest};
     use fidl_fuchsia_diagnostics::{
         ArchiveAccessorRequest, BatchIteratorMarker, BatchIteratorRequest, FormattedContent,
     };
     use fuchsia_async as fasync;
     use futures::{StreamExt, TryStreamExt};
-    use std::sync::atomic::{AtomicU8, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU8, Ordering};
 
     fn create_child_launcher(call_count: Arc<AtomicU8>) -> ChildLauncherFn {
         Box::new(move || {
@@ -498,7 +498,8 @@ mod tests {
                     ArchiveAccessorRequest::WaitForReady { responder, .. } => {
                         let _ = responder.send();
                     }
-                    ArchiveAccessorRequest::_UnknownMethod { .. } => {
+                    ArchiveAccessorRequest::_UnknownMethod { .. }
+                    | ArchiveAccessorRequest::StreamDiagnosticsToSocket { .. } => {
                         unreachable!("Unexpected method call");
                     }
                 }

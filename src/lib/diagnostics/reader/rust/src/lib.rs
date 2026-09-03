@@ -1096,6 +1096,9 @@ mod tests {
                     fdiagnostics::ArchiveAccessorRequest::_UnknownMethod { .. } => {
                         unreachable!("Unexpected method call");
                     }
+                    fidl_fuchsia_diagnostics::ArchiveAccessorRequest::StreamDiagnosticsToSocket { .. } => {
+                        unreachable!("Unexpected method call");
+                    },
                 }
             }
         })
