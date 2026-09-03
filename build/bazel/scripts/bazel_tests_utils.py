@@ -49,6 +49,19 @@ def generate_tests_json(
     bazel_test_suites_file = (
         bazel_paths.ninja_build_dir / "bazel_test_suites.txt"
     )
+
+    # LINT.IfChange(bazel_host_tests_debug_symbols_json)
+    bazel_host_tests_debug_manifest = (
+        bazel_paths.ninja_build_dir / "bazel_host_tests.debug_symbols.json"
+    )
+    # LINT.ThenChange(//build/api/build_api_filter.py:bazel_host_tests_debug_symbols_json)
+
+    # We must guarantee this file exists on disk even if no Bazel tests are discovered.
+    # GN's metadata phase unconditionally outputs a pointer to this file in debug_symbols.json,
+    # and LastBuildApiFilter propagates it. Initializing it with an empty structure prevents
+    # FileNotFoundError in downstream infra scripts.
+    bazel_host_tests_debug_manifest.write_text("[]\n")
+
     if not bazel_test_suites_file.exists():
         return [], {starlark_input}
     suites = bazel_test_suites_file.read_text().splitlines()
@@ -196,9 +209,6 @@ def generate_tests_json(
 
     # Write out the top-level debug_symbols.json manifest for all Bazel host tests
     # so GN debug_symbol_manifests metadata on //:bazel_test_suites can reference it.
-    bazel_host_tests_debug_manifest = (
-        bazel_paths.ninja_build_dir / "bazel_host_tests.debug_symbols.json"
-    )
     bazel_host_tests_debug_manifest.write_text(
         json.dumps(host_test_debug_manifests, indent=2) + "\n"
     )

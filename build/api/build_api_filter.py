@@ -84,9 +84,20 @@ class BuildApiFilter(object):
             return self._filter_json_scopes(json_content, "debug")
 
         if api_module == "debug_symbols":
-            return self._filter_json_scopes_with_multiple_keys(
+            # LINT.IfChange(bazel_host_tests_debug_symbols_json)
+            # bazel_host_tests.debug_symbols.json is generated out-of-band by
+            # regenerator.py (and not built by Ninja). Because it never enters
+            # `self._ninja_all`, `_filter_json_scopes_with_multiple_keys` will
+            # silently drop its metadata pointer. We explicitly exempt it here.
+            res = [
+                s
+                for s in json_content
+                if s.get("manifest") == "bazel_host_tests.debug_symbols.json"
+            ] + self._filter_json_scopes_with_multiple_keys(
                 json_content, ("debug", "manifest")
             )
+            # LINT.ThenChange(//build/bazel/scripts/bazel_tests_utils.py:bazel_host_tests_debug_symbols_json)
+            return res
 
         if api_module == "boards":
             return self._filter_json_scopes(json_content, "outdir")
