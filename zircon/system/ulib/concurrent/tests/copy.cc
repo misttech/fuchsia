@@ -309,7 +309,7 @@ struct NonTrivialCopy {
   NonTrivialCopy() = default;
   ~NonTrivialCopy() = default;
 
-  NonTrivialCopy(const NonTrivialCopy& other) { memcpy(this, &other, sizeof(*this)); }
+  NonTrivialCopy(const NonTrivialCopy& other) : val(other.val) {}
 
   uint32_t val{0};
 };
@@ -319,7 +319,7 @@ struct NonTrivialAssign {
   ~NonTrivialAssign() = default;
 
   NonTrivialAssign& operator=(const NonTrivialAssign& other) {
-    memcpy(this, &other, sizeof(*this));
+    val = other.val;
     return *this;
   }
 
