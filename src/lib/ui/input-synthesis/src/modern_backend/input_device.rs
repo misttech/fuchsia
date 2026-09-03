@@ -15,13 +15,18 @@ use fidl_fuchsia_input::Key;
 use fidl_fuchsia_input_report::{
     ConsumerControlButton, ConsumerControlInputReport, ContactInputReport, DeviceDescriptor,
     FeatureReport, InputDeviceRequest, InputDeviceRequestStream, InputReport,
-    InputReportsReaderMarker, KeyboardInputReport, MouseInputReport, TOUCH_MAX_CONTACTS,
-    TouchInputReport,
+    InputReportsReaderMarker, InputReportsReaderV2Marker, KeyboardInputReport, MouseInputReport,
+    TOUCH_MAX_CONTACTS, TouchInputReport,
 };
 use fidl_fuchsia_ui_input::{KeyboardReport, Touch};
 use fuchsia_async as fasync;
 use futures::{StreamExt, TryFutureExt, future, pin_mut};
 use std::convert::TryFrom as _;
+
+enum ReaderServerEnd {
+    V1(ServerEnd<InputReportsReaderMarker>),
+    V2(ServerEnd<InputReportsReaderV2Marker>, u16),
+}
 
 /// Implements the `synthesizer::InputDevice` trait, and the server side of the
 /// `fuchsia.input.report.InputDevice` FIDL protocol. Used by
@@ -203,8 +208,25 @@ impl InputDevice {
                 .await
                 .ok_or_else(|| format_err!("stream ended without a call to GetInputReportsReader"))?
                 .context("handling InputDeviceRequest")?;
-            InputReportsReader { request_stream: reader_server_end.into_stream(), report_receiver }
-                .into_future()
+            match reader_server_end {
+                ReaderServerEnd::V1(server_end) => InputReportsReader::V1(
+                    crate::modern_backend::input_reports_reader::InputReportsReaderV1 {
+                        request_stream: server_end.into_stream(),
+                        report_receiver,
+                    },
+                )
+                .into_future(),
+                ReaderServerEnd::V2(server_end, max_unacknowledged_reports) => {
+                    InputReportsReader::V2(
+                        crate::modern_backend::input_reports_reader::InputReportsReaderV2 {
+                            request_stream: server_end.into_stream(),
+                            report_receiver,
+                            max_unacknowledged_reports,
+                        },
+                    )
+                    .into_future()
+                }
+            }
         };
         pin_mut!(input_reports_reader_fut);
 
@@ -277,18 +299,29 @@ impl InputDevice {
     /// Processes a single request from an `InputDeviceRequestStream`
     ///
     /// # Returns
-    /// * Some(Ok(ServerEnd<InputReportsReaderMarker>)) if the request yielded an
-    ///   `InputReportsReader`. `InputDevice` should route its `InputReports` to the yielded
-    ///   `InputReportsReader`.
+    /// * Some(Ok(ReaderServerEnd)) if the request yielded an `InputReportsReader` or `InputReportsReaderV2`.
     /// * Some(Err) if the request yielded an `Error`
     /// * None if the request was fully processed by `handle_device_request()`
     fn handle_device_request(
         request: Result<InputDeviceRequest, FidlError>,
         descriptor: &DeviceDescriptor,
-    ) -> Option<Result<ServerEnd<InputReportsReaderMarker>, Error>> {
+    ) -> Option<Result<ReaderServerEnd, Error>> {
         match request {
             Ok(InputDeviceRequest::GetInputReportsReader { reader: reader_server_end, .. }) => {
-                Some(Ok(reader_server_end))
+                Some(Ok(ReaderServerEnd::V1(reader_server_end)))
+            }
+            Ok(InputDeviceRequest::GetInputReportsReaderV2 {
+                reader: reader_server_end,
+                max_unacknowledged_reports_limit,
+                responder,
+            }) => {
+                let max_unacknowledged_reports = max_unacknowledged_reports_limit.max(1);
+                if let Err(e) = responder.send(max_unacknowledged_reports) {
+                    return Some(Err(
+                        anyhow::Error::from(e).context("sending GetInputReportsReaderV2 response")
+                    ));
+                }
+                Some(Ok(ReaderServerEnd::V2(reader_server_end, max_unacknowledged_reports)))
             }
             Ok(InputDeviceRequest::GetDescriptor { responder }) => {
                 match responder.send(&descriptor) {

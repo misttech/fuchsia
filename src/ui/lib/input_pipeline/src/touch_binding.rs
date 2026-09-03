@@ -1293,6 +1293,9 @@ mod tests {
                     }
                     fidl_fuchsia_input_report::InputDeviceRequest::GetInputReportsReader {
                         ..
+                    }
+                    | fidl_fuchsia_input_report::InputDeviceRequest::GetInputReportsReaderV2 {
+                        ..
                     } => {
                         // Do not panic as `initialize_report_stream()` will call this protocol.
                     }

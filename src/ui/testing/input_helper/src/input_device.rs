@@ -9,13 +9,18 @@ use fidl::Error as FidlError;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_input_report::{
     DeviceDescriptor, FeatureReport, InputDeviceRequest, InputDeviceRequestStream, InputReport,
-    InputReportsReaderMarker,
+    InputReportsReaderMarker, InputReportsReaderV2Marker,
 };
 use fuchsia_async as fasync;
 use futures::channel::mpsc;
 use futures::{StreamExt, TryFutureExt, future, pin_mut};
 
 pub type DeviceId = u32;
+
+pub(super) enum ReaderServerEnd {
+    V1(ServerEnd<InputReportsReaderMarker>),
+    V2(ServerEnd<InputReportsReaderV2Marker>, u16),
+}
 
 /// Implements the server side of the
 /// `fuchsia.input.report.InputDevice` FIDL protocol. This struct also enables users to inject
@@ -140,8 +145,23 @@ impl InputDevice {
                 .next()
                 .await
                 .unwrap_or_else(|| panic!("stream ended without a call to GetInputReportsReader"));
-            InputReportsReader { request_stream: reader_server_end.into_stream(), report_receiver }
-                .into_future()
+            match reader_server_end {
+                ReaderServerEnd::V1(server_end) => {
+                    InputReportsReader::V1(crate::input_reports_reader::InputReportsReaderV1 {
+                        request_stream: server_end.into_stream(),
+                        report_receiver,
+                    })
+                    .into_future()
+                }
+                ReaderServerEnd::V2(server_end, max_unacknowledged_reports) => {
+                    InputReportsReader::V2(crate::input_reports_reader::InputReportsReaderV2 {
+                        request_stream: server_end.into_stream(),
+                        report_receiver,
+                        max_unacknowledged_reports,
+                    })
+                    .into_future()
+                }
+            }
         };
         pin_mut!(input_reports_reader_fut);
 
@@ -178,9 +198,7 @@ impl InputDevice {
     /// Processes a single request from an `InputDeviceRequestStream`
     ///
     /// # Returns
-    /// * Some(ServerEnd<InputReportsReaderMarker>) if the request yielded an
-    ///   `InputReportsReader`. `InputDevice` should route its `InputReports` to the yielded
-    ///   `InputReportsReader`.
+    /// * Some(ReaderServerEnd) if the request yielded an `InputReportsReader` or `InputReportsReaderV2`.
     /// * None if the request was fully processed by `handle_device_request()`
     ///
     /// # Note
@@ -189,14 +207,26 @@ impl InputDevice {
         request: Result<InputDeviceRequest, FidlError>,
         descriptor: &DeviceDescriptor,
         got_input_reports_reader: AsyncEvent,
-    ) -> Option<ServerEnd<InputReportsReaderMarker>> {
+    ) -> Option<ReaderServerEnd> {
         match request {
             Ok(InputDeviceRequest::GetInputReportsReader { reader: reader_server_end, .. }) => {
                 let _ = got_input_reports_reader.signal();
-                Some(reader_server_end)
+                Some(ReaderServerEnd::V1(reader_server_end))
+            }
+            Ok(InputDeviceRequest::GetInputReportsReaderV2 {
+                reader: reader_server_end,
+                max_unacknowledged_reports_limit,
+                responder,
+            }) => {
+                let _ = got_input_reports_reader.signal();
+                let max_unacknowledged_reports = max_unacknowledged_reports_limit.max(1);
+                if let Err(e) = responder.send(max_unacknowledged_reports) {
+                    panic!("failed to send GetInputReportsReaderV2 response: {e}");
+                }
+                Some(ReaderServerEnd::V2(reader_server_end, max_unacknowledged_reports))
             }
             Ok(InputDeviceRequest::GetDescriptor { responder }) => {
-                match responder.send(&descriptor) {
+                match responder.send(descriptor) {
                     Ok(()) => None,
                     Err(e) => panic!("failed to send GetDescriptor response: {e}"),
                 }

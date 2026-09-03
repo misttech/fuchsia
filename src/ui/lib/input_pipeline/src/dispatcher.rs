@@ -111,24 +111,37 @@ mod dso {
     pub type DriverTransport = fdf_fidl::DriverChannel<fdf::CurrentDispatcher>;
 
     #[derive(Debug)]
+    enum TaskHandleInner<T> {
+        Join(::libasync::JoinHandle<T>),
+        Local(::libasync::JoinHandle<()>, std::rc::Rc<std::cell::RefCell<Option<T>>>),
+    }
+
+    #[derive(Debug)]
     pub struct TaskHandle<T> {
-        handle: Option<::libasync::JoinHandle<T>>,
+        inner: Option<TaskHandleInner<T>>,
         detached: bool,
     }
 
     impl<T> Drop for TaskHandle<T> {
         fn drop(&mut self) {
             if !self.detached {
-                self.handle.as_mut().take().map(|h| {
-                    _ = h.abort();
-                });
+                if let Some(inner) = self.inner.as_mut() {
+                    match inner {
+                        TaskHandleInner::Join(h) => {
+                            _ = h.abort();
+                        }
+                        TaskHandleInner::Local(h, _) => {
+                            _ = h.abort();
+                        }
+                    }
+                }
             }
         }
     }
 
     impl TaskHandle<()> {
         pub fn detach(mut self) {
-            self.detached = true
+            self.detached = true;
         }
     }
 
@@ -136,10 +149,23 @@ mod dso {
         type Output = T;
 
         fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            match self.handle.as_mut().unwrap().poll_unpin(cx) {
-                Poll::Pending => Poll::Pending,
-                Poll::Ready(Ok(t)) => Poll::Ready(t),
-                Poll::Ready(Err(e)) => panic!("TaskHandle: polled unexpected error {e:?}"),
+            match self.inner.as_mut().unwrap() {
+                TaskHandleInner::Join(h) => match h.poll_unpin(cx) {
+                    Poll::Pending => Poll::Pending,
+                    Poll::Ready(Ok(t)) => Poll::Ready(t),
+                    Poll::Ready(Err(e)) => panic!("TaskHandle: polled unexpected error {e:?}"),
+                },
+                TaskHandleInner::Local(h, result) => match h.poll_unpin(cx) {
+                    Poll::Pending => Poll::Pending,
+                    Poll::Ready(Ok(())) => {
+                        let res = result
+                            .borrow_mut()
+                            .take()
+                            .expect("TaskHandle completed but result missing");
+                        Poll::Ready(res)
+                    }
+                    Poll::Ready(Err(e)) => panic!("TaskHandle: polled unexpected error {e:?}"),
+                },
             }
         }
     }
@@ -151,7 +177,10 @@ mod dso {
             Self: 'static,
         {
             // This should never panic if the dispatcher is valid.
-            TaskHandle { handle: Some(fdf::CurrentDispatcher.spawn_local(future)), detached: false }
+            TaskHandle {
+                inner: Some(TaskHandleInner::Join(fdf::CurrentDispatcher.spawn_local(future))),
+                detached: false,
+            }
         }
 
         pub fn after_deadline(deadline: MonotonicInstant) -> impl Future<Output = ()> + 'static {
@@ -167,13 +196,51 @@ mod dso {
         ) -> ClientEnd<P, Transport> {
             libasync_fidl::AsyncChannel::<Dispatcher>::client_from_zx_channel(client_end)
         }
-
         pub fn server_from_zx_channel<P>(
             server_end: ServerEnd<P, zx::Channel>,
         ) -> ServerEnd<P, Transport> {
             libasync_fidl::AsyncChannel::<Dispatcher>::server_from_zx_channel(server_end)
         }
     }
+
+    #[derive(Clone, Copy, Default, Debug)]
+    pub struct LocalDriverExecutor;
+
+    impl fidl_next::Executor for LocalDriverExecutor {
+        type JoinHandle<T: 'static> = TaskHandle<T>;
+
+        fn spawn<F>(&self, future: F) -> Self::JoinHandle<F::Output>
+        where
+            F: Future + Send + 'static,
+            F::Output: Send + 'static,
+        {
+            use fdf::OnDispatcher;
+            TaskHandle {
+                inner: Some(TaskHandleInner::Join(
+                    fdf::CurrentDispatcher.compute(future).detach_on_drop(),
+                )),
+                detached: false,
+            }
+        }
+    }
+
+    impl fidl_next::LocalExecutor for LocalDriverExecutor {
+        fn spawn_local<F>(&self, future: F) -> Self::JoinHandle<F::Output>
+        where
+            F: Future + 'static,
+            F::Output: 'static,
+        {
+            use fdf::OnDriverDispatcher;
+            let result = std::rc::Rc::new(std::cell::RefCell::new(None));
+            let result_clone = result.clone();
+            let handle = fdf::CurrentDispatcher.spawn_local(async move {
+                *result_clone.borrow_mut() = Some(future.await);
+            });
+            TaskHandle { inner: Some(TaskHandleInner::Local(handle, result)), detached: false }
+        }
+    }
+
+    impl fidl_next::RunsTransport<Transport> for LocalDriverExecutor {}
 
     impl fdf::GetAsyncDispatcher for Dispatcher {
         fn try_get_async_dispatcher(&self) -> Option<AsyncDispatcher> {
@@ -236,11 +303,38 @@ mod elf {
         ) -> ClientEnd<P, Transport> {
             client_end
         }
-
         pub fn server_from_zx_channel<P>(
             server_end: ServerEnd<P, zx::Channel>,
         ) -> ServerEnd<P, Transport> {
             server_end
         }
     }
+
+    #[derive(Clone, Copy, Default, Debug)]
+    pub struct LocalDriverExecutor;
+
+    impl fidl_next::Executor for LocalDriverExecutor {
+        type JoinHandle<T: 'static> = TaskHandle<T>;
+
+        fn spawn<F>(&self, future: F) -> Self::JoinHandle<F::Output>
+        where
+            F: Future + Send + 'static,
+            F::Output: Send + 'static,
+        {
+            use fidl_next::LocalExecutor;
+            self.spawn_local(future)
+        }
+    }
+
+    impl fidl_next::LocalExecutor for LocalDriverExecutor {
+        fn spawn_local<F>(&self, future: F) -> Self::JoinHandle<F::Output>
+        where
+            F: Future + 'static,
+            F::Output: 'static,
+        {
+            TaskHandle(fuchsia_async::Task::local(future))
+        }
+    }
+
+    impl fidl_next::RunsTransport<Transport> for LocalDriverExecutor {}
 }

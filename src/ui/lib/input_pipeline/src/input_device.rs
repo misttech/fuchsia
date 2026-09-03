@@ -368,14 +368,93 @@ pub trait InputDeviceBinding: Send {
 ///                      The [`InputReport`] returned by `process_reports` must have no
 ///                      `wake_lease`.
 ///
+const MAX_UNACKNOWLEDGED_REPORTS_LIMIT: u16 = 120;
+
+struct LocalReaderV2Handler<InputDeviceProcessReportsFn> {
+    client: fidl_next::Client<
+        fidl_next_fuchsia_input_report::InputReportsReaderV2,
+        fidl_next::fuchsia::zx::Channel,
+    >,
+    previous_state: Option<PreviousDeviceState>,
+    device_descriptor: InputDeviceDescriptor,
+    event_sender: UnboundedSender<Vec<InputEvent>>,
+    inspect_status: std::rc::Rc<InputDeviceStatus>,
+    metrics_logger: metrics::MetricsLogger,
+    feature_flags: InputPipelineFeatureFlags,
+    process_reports: InputDeviceProcessReportsFn,
+    ack_threshold: u64,
+    last_acknowledged_stamp: u64,
+}
+
+impl<InputDeviceProcessReportsFn>
+    fidl_next_fuchsia_input_report::InputReportsReaderV2LocalClientHandler<
+        fidl_next::fuchsia::zx::Channel,
+    > for LocalReaderV2Handler<InputDeviceProcessReportsFn>
+where
+    InputDeviceProcessReportsFn:
+        for<'de> FnMut(
+            &[fidl_next_fuchsia_input_report::wire::InputReport<'_>],
+            Option<PreviousDeviceState>,
+            &InputDeviceDescriptor,
+            &mut UnboundedSender<Vec<InputEvent>>,
+            &InputDeviceStatus,
+            &metrics::MetricsLogger,
+            &InputPipelineFeatureFlags,
+        )
+            -> (Option<PreviousDeviceState>, Option<UnboundedReceiver<InputEvent>>),
+{
+    async fn on_input_reports(
+        &mut self,
+        request: fidl_next::Request<
+            fidl_next_fuchsia_input_report::input_reports_reader_v2::OnInputReports,
+            fidl_next::fuchsia::zx::Channel,
+        >,
+    ) {
+        fuchsia_trace::duration!("input", "input-device-process-reports");
+        let payload = request.wire_payload();
+        // TODO: b/513602239 - use InputEvent instead of InputReport for previous
+        // report. To avoid wire to natural type conversion.
+        let (prev_state, inspect_receiver) = (self.process_reports)(
+            payload.reports.as_slice(),
+            self.previous_state.take(),
+            &self.device_descriptor,
+            &mut self.event_sender,
+            &self.inspect_status,
+            &self.metrics_logger,
+            &self.feature_flags,
+        );
+        self.previous_state = prev_state;
+
+        let reports_stamp = *payload.last_report_stamp;
+        if reports_stamp.saturating_sub(self.last_acknowledged_stamp) >= self.ack_threshold {
+            if let Err(e) = self.client.acknowledge_reports(reports_stamp).await {
+                log::warn!("failed to send acknowledge_reports: {:?}", e);
+            }
+            self.last_acknowledged_stamp = reports_stamp;
+        }
+
+        // If a report generates multiple events asynchronously, we send them over a mpsc channel
+        // to inspect_receiver. We update the event count on inspect_status here since we cannot
+        // pass a reference to inspect_status to an async task in process_reports().
+        if let Some(mut receiver) = inspect_receiver {
+            let inspect_status = self.inspect_status.clone();
+            let _task = Dispatcher::spawn_local(async move {
+                while let Some(event) = receiver.next().await {
+                    inspect_status.count_generated_event(event);
+                }
+            });
+        }
+    }
+}
+
 pub fn initialize_report_stream<InputDeviceProcessReportsFn>(
     device_proxy: fidl_next::Client<InputDevice, Transport>,
     device_descriptor: InputDeviceDescriptor,
-    mut event_sender: UnboundedSender<Vec<InputEvent>>,
+    event_sender: UnboundedSender<Vec<InputEvent>>,
     inspect_status: InputDeviceStatus,
     metrics_logger: metrics::MetricsLogger,
     feature_flags: InputPipelineFeatureFlags,
-    mut process_reports: InputDeviceProcessReportsFn,
+    process_reports: InputDeviceProcessReportsFn,
 ) -> crate::dispatcher::TaskHandle<()>
 where
     InputDeviceProcessReportsFn: 'static
@@ -392,57 +471,42 @@ where
             -> (Option<PreviousDeviceState>, Option<UnboundedReceiver<InputEvent>>),
 {
     Dispatcher::spawn_local(async move {
-        let mut previous_state: Option<PreviousDeviceState> = None;
-        let (report_reader, server_end) = fidl_next::fuchsia::create_channel();
-        let report_reader = Dispatcher::client_from_zx_channel(report_reader);
-        let result = device_proxy.get_input_reports_reader(server_end).await;
-        if result.is_err() {
-            metrics_logger.log_error(
-                InputPipelineErrorMetricDimensionEvent::InputDeviceGetInputReportsReaderError,
-                std::format!("error on GetInputReportsReader: {:?}", result),
-            );
-            return; // TODO(https://fxbug.dev/42131965): signal error
-        }
-        let report_reader = report_reader.spawn();
-        loop {
-            let read_result = {
-                fuchsia_trace::duration!("input", "read_input_reports");
-                report_reader.read_input_reports().wire().await
-            };
-            match read_result {
-                Err(_fidl_error) => break,
-                Ok(decoded) => match decoded.as_ref() {
-                    Err(_service_error) => break,
-                    Ok(response) => {
-                        fuchsia_trace::duration!("input", "input-device-process-reports");
-                        // TODO: b/513602239 - use InputEvent instead of InputReport for previous
-                        // report. To avoid wire to natural type conversion.
-                        let (prev_state, inspect_receiver) = process_reports(
-                            response.reports.as_slice(),
-                            previous_state,
-                            &device_descriptor,
-                            &mut event_sender,
-                            &inspect_status,
-                            &metrics_logger,
-                            &feature_flags,
-                        );
-                        previous_state = prev_state;
-
-                        // If a report generates multiple events asynchronously, we send them over a mpsc channel
-                        // to inspect_receiver. We update the event count on inspect_status here since we cannot
-                        // pass a reference to inspect_status to an async task in process_reports().
-                        match inspect_receiver {
-                            Some(mut receiver) => {
-                                while let Some(event) = receiver.next().await {
-                                    inspect_status.count_generated_event(event);
-                                }
-                            }
-                            None => (),
-                        };
-                    }
-                },
+        let inspect_status = std::rc::Rc::new(inspect_status);
+        let (client_end, server_end) = fidl_next::fuchsia::create_channel();
+        let max_unacknowledged_reports = match device_proxy
+            .get_input_reports_reader_v2(server_end, MAX_UNACKNOWLEDGED_REPORTS_LIMIT)
+            .await
+        {
+            Ok(response) => {
+                response.max_unacknowledged_reports.min(MAX_UNACKNOWLEDGED_REPORTS_LIMIT)
             }
-        }
+            Err(e) => {
+                metrics_logger.log_error(
+                    InputPipelineErrorMetricDimensionEvent::InputDeviceGetInputReportsReaderError,
+                    std::format!("error on GetInputReportsReaderV2: {:?}", e),
+                );
+                return; // TODO(https://fxbug.dev/42131965): signal error
+            }
+        };
+
+        let ack_threshold = ((max_unacknowledged_reports / 2).max(1)) as u64;
+        let (_client, join_handle) = client_end.spawn_local_handler_full_on_with(
+            |client| LocalReaderV2Handler {
+                client,
+                previous_state: None,
+                device_descriptor,
+                event_sender,
+                inspect_status,
+                metrics_logger,
+                feature_flags,
+                process_reports,
+                ack_threshold,
+                last_acknowledged_stamp: 0,
+            },
+            &crate::dispatcher::LocalDriverExecutor::default(),
+        );
+
+        let _ = join_handle.await;
         // TODO(https://fxbug.dev/42131965): Add signaling for when this loop exits, since it means the device
         // binding is no longer functional.
         log::warn!("initialize_report_stream exited - device binding no longer works");
@@ -1195,5 +1259,72 @@ mod tests {
             trace_id: None,
         };
         pretty_assertions::assert_eq!(event.into_handled().handled, Handled::Yes);
+    }
+
+    #[fuchsia::test]
+    async fn initialize_report_stream_acknowledges_reports() {
+        let (ack_sender, mut ack_receiver) = futures::channel::mpsc::unbounded::<u64>();
+
+        let (input_device_proxy, _task) = spawn_input_stream_handler(move |input_device_request| {
+            let ack_sender = ack_sender.clone();
+            async move {
+                match input_device_request {
+                    fidl_input_report::InputDeviceRequest::GetInputReportsReaderV2 {
+                        reader,
+                        max_unacknowledged_reports_limit: _,
+                        responder,
+                    } => {
+                        // Report max_unacknowledged_reports = 2, so ack_threshold is (2/2).max(1) = 1.
+                        responder.send(2).unwrap();
+                        let (mut request_stream, control_handle) =
+                            reader.into_stream_and_control_handle();
+                        fuchsia_async::Task::local(async move {
+                                // Send report batch with stamp 1.
+                                control_handle
+                                    .send_on_input_reports(
+                                        vec![fidl_input_report::InputReport::default()],
+                                        1,
+                                    )
+                                    .unwrap();
+
+                                while let Some(Ok(req)) = request_stream.next().await {
+                                    match req {
+                                        fidl_input_report::InputReportsReaderV2Request::AcknowledgeReports {
+                                            last_acknowledged_report_stamp,
+                                            ..
+                                        } => {
+                                            ack_sender
+                                                .unbounded_send(last_acknowledged_report_stamp)
+                                                .unwrap();
+                                            break;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            })
+                            .detach();
+                    }
+                    _ => panic!("unexpected request: {:?}", input_device_request),
+                }
+            }
+        });
+
+        let inspector = fuchsia_inspect::Inspector::default();
+        let device_node = inspector.root().create_child("test_device");
+        let inspect_status = InputDeviceStatus::new(device_node);
+        let (event_sender, _event_receiver) = futures::channel::mpsc::unbounded();
+
+        let _stream_task = initialize_report_stream(
+            input_device_proxy,
+            InputDeviceDescriptor::Fake,
+            event_sender,
+            inspect_status,
+            metrics::MetricsLogger::default(),
+            InputPipelineFeatureFlags::default(),
+            |_reports, prev, _desc, _sender, _status, _logger, _flags| (prev, None),
+        );
+
+        let acked_stamp = ack_receiver.next().await;
+        assert_eq!(acked_stamp, Some(1));
     }
 }
