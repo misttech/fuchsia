@@ -172,7 +172,7 @@ closed protocol Vmo {
     ///
     /// `ZX_ERR_WRONG_TYPE`  *handle* is not a VMO handle.
     ///
-    /// `ZX_ERR_ACCESS_DENIED`  *handle* does not have the `ZX_RIGHT_READ` right or
+    /// `ZX_ERR_ACCESS_DENIED`  *handle* does not have the `ZX_RIGHT_READ` right
     ///                           or [*buffer*, *buffer* + *buffer_size*) is
     ///                           not writable.
     ///
