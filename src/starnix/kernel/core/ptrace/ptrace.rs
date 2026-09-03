@@ -1433,7 +1433,7 @@ mod tests {
             assert_eq!(
                 ptrace_attach(
                     &mut tracer,
-                    tracee.as_ref().task.tid,
+                    tracee.as_ref().task.tid.id,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 ),
@@ -1457,7 +1457,7 @@ mod tests {
             assert_eq!(
                 ptrace_attach(
                     &mut not_tracer,
-                    tracee.as_ref().task.tid,
+                    tracee.as_ref().task.tid.id,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 ),
@@ -1467,7 +1467,7 @@ mod tests {
             assert!(
                 ptrace_attach(
                     &mut tracer,
-                    tracee.as_ref().task.tid,
+                    tracee.as_ref().task.tid.id,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 )
@@ -1494,7 +1494,7 @@ mod tests {
             assert_eq!(
                 ptrace_attach(
                     &mut tracer,
-                    tracee.as_ref().task.tid,
+                    tracee.as_ref().task.tid.id,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 ),
@@ -1506,7 +1506,7 @@ mod tests {
             assert!(
                 ptrace_attach(
                     &mut tracer,
-                    tracee.as_ref().task.tid,
+                    tracee.as_ref().task.tid.id,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 )
@@ -1526,7 +1526,7 @@ mod tests {
             assert!(
                 ptrace_attach(
                     &mut tracer,
-                    tracee.as_ref().task.tid,
+                    tracee.as_ref().task.tid.id,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 )

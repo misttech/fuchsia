@@ -121,7 +121,7 @@ pub fn do_clone(current_task: &mut CurrentTask, args: &clone_args) -> Result<pid
         new_task.thread_state.registers.set_thread_pointer_register(args.tls);
     }
 
-    let tid = new_task.task.tid;
+    let tid = new_task.task.tid.id;
     let task_ref = Arc::downgrade(&new_task.task);
     execute_task(new_task, |_| Ok(()), |_| {}, ptrace_state)?;
 
@@ -987,7 +987,7 @@ pub fn sys_prctl(
             let addr = UserAddress::from(arg2);
             let name = TaskCommand::new(&current_task.read_memory_to_array::<16>(addr)?);
             current_task.set_command_name(name);
-            if current_task.tid == current_task.thread_group.leader {
+            if current_task.tid.id == current_task.thread_group.leader {
                 current_task.thread_group.sync_syscall_log_level();
             }
             Ok(0.into())
@@ -1419,7 +1419,7 @@ pub fn sys_capset(
         current_task.write_object(user_header, &header)?;
         return error!(EINVAL);
     }
-    if header.pid != 0 && header.pid != current_task.tid {
+    if header.pid != 0 && header.pid != current_task.tid.id {
         return error!(EPERM);
     }
 

@@ -6,7 +6,7 @@ use crate::mm::MemoryManager;
 use crate::security;
 use crate::signals::SignalActions;
 use crate::task::{
-    CurrentTask, Kernel, PidTable, ProcessGroup, RobustListHeadPtr, SeccompFilterContainer,
+    CurrentTask, Kernel, Pid, PidTable, ProcessGroup, RobustListHeadPtr, SeccompFilterContainer,
     SeccompState, Task, TaskBuilder, ThreadGroup, ThreadGroupParent, ThreadGroupWriteGuard,
 };
 use crate::vfs::{FsContext, SharedFdTable};
@@ -180,7 +180,7 @@ pub fn create_init_child_process(
         let mut new_process_writer = task.thread_group().write();
         new_process_writer.parent =
             Some(ThreadGroupParent::new(Arc::downgrade(&init_task.thread_group())));
-        init_writer.children.insert(task.tid, Arc::downgrade(task.thread_group()));
+        init_writer.children.insert(task.tid.id, Arc::downgrade(task.thread_group()));
     }
     // A child process created via fork(2) inherits its parent's
     // resource limits.  Resource limits are preserved across execve(2).
@@ -209,12 +209,12 @@ pub fn create_init_child_process(
 /// the pid for the process.
 pub fn create_init_process(
     kernel: &Arc<Kernel>,
-    pid: pid_t,
+    pid: Pid,
     initial_name: TaskCommand,
     fs: Arc<FsContext>,
     rlimits: &[(Resource, u64)],
 ) -> Result<TaskBuilder, Errno> {
-    assert_eq!(pid, 1);
+    assert_eq!(pid.id, 1);
     let pids = kernel.pids.write();
     let builder = create_task_with_pid(
         kernel,
@@ -283,7 +283,7 @@ where
 fn create_task_with_pid<F>(
     kernel: &Kernel,
     mut pids: RwLockWriteGuard<'_, PidTable>,
-    pid: pid_t,
+    pid: Pid,
     initial_name: TaskCommand,
     root_fs: Arc<FsContext>,
     task_info_factory: F,
@@ -293,12 +293,13 @@ fn create_task_with_pid<F>(
 where
     F: FnOnce(i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
 {
-    debug_assert!(pids.get_task(pid).is_err());
+    debug_assert!(pids.get_task(pid.id).is_err());
 
-    let process_group = ProcessGroup::new(pid, None);
+    let process_group = ProcessGroup::new(pid.id, None);
     pids.add_process_group(&process_group);
 
-    let TaskInfo { thread_group, memory_manager } = task_info_factory(pid, process_group.clone())?;
+    let TaskInfo { thread_group, memory_manager } =
+        task_info_factory(pid.id, process_group.clone())?;
 
     process_group.insert(&thread_group);
 

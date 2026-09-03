@@ -32,17 +32,44 @@ impl ProcessEntry {
 
 /// Entities identified by a pid.
 #[derive(Debug)]
-struct PidEntry {
-    pub pid: pid_t,
+pub struct PidEntry {
+    pub id: pid_t,
     task: RcuWeak<Task>,
     process: RcuOptionBox<ProcessEntry>,
     process_group: RcuWeak<ProcessGroup>,
 }
 
 impl PidEntry {
-    fn new(pid: pid_t) -> Self {
+    pub fn get_task(&self) -> Result<Arc<Task>, Errno> {
+        self.task.upgrade().ok_or_else(|| errno!(ESRCH))
+    }
+
+    pub fn get_process(&self) -> Option<ProcessEntryRef> {
+        let process = self.process.read()?;
+        match &*process {
+            ProcessEntry::ThreadGroup(thread_group) => {
+                let thread_group = thread_group
+                    .upgrade()
+                    .expect("ThreadGroup was released, but not removed from PidTable");
+                Some(ProcessEntryRef::Process(thread_group))
+            }
+            ProcessEntry::Zombie => Some(ProcessEntryRef::Zombie),
+        }
+    }
+
+    pub fn get_thread_group(&self) -> Option<Arc<ThreadGroup>> {
+        match self.get_process() {
+            Some(ProcessEntryRef::Process(tg)) => Some(tg),
+            _ => None,
+        }
+    }
+
+    pub fn get_process_group(&self) -> Option<Arc<ProcessGroup>> {
+        self.process_group.upgrade()
+    }
+    fn new(id: pid_t) -> Self {
         Self {
-            pid,
+            id,
             task: Default::default(),
             process: Default::default(),
             process_group: Default::default(),
@@ -56,10 +83,18 @@ impl PidEntry {
     }
 }
 
+impl std::fmt::Display for PidEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.id)
+    }
+}
+
 pub enum ProcessEntryRef {
     Process(Arc<ThreadGroup>),
     Zombie,
 }
+
+pub type Pid = Arc<PidEntry>;
 
 #[derive(Default, Debug)]
 pub struct PidTable {
@@ -67,14 +102,14 @@ pub struct PidTable {
     last_pid: pid_t,
 
     /// The tasks in this table, organized by pid_t.
-    table: HashMap<pid_t, Arc<PidEntry>>,
+    table: HashMap<pid_t, Pid>,
 
     /// Used to notify thread group changes.
     thread_group_notifier: RcuOptionBox<std::sync::mpsc::Sender<MemoryAttributionLifecycleEvent>>,
 }
 
 impl PidTable {
-    fn get_entry(&self, pid: pid_t) -> Option<&Arc<PidEntry>> {
+    pub fn get_entry(&self, pid: pid_t) -> Option<&Pid> {
         self.table.get(&pid)
     }
 
@@ -103,7 +138,7 @@ impl PidTable {
         self.thread_group_notifier.update(Some(notifier));
     }
 
-    pub fn allocate_pid(&mut self) -> pid_t {
+    pub fn allocate_pid(&mut self) -> Pid {
         let scope = RcuReadScope::new();
         loop {
             self.last_pid = {
@@ -124,16 +159,17 @@ impl PidTable {
             }
             break;
         }
-        self.table.insert(self.last_pid, Arc::new(PidEntry::new(self.last_pid)));
-        self.last_pid
+        let pid = Arc::new(PidEntry::new(self.last_pid));
+        self.table.insert(self.last_pid, pid.clone());
+        pid
     }
 
     pub fn get_task(&self, tid: tid_t) -> Result<Arc<Task>, Errno> {
-        self.get_entry(tid).and_then(|entry| entry.task.upgrade()).ok_or_else(|| errno!(ESRCH))
+        self.get_entry(tid).ok_or_else(|| errno!(ESRCH))?.get_task()
     }
 
     pub fn add_task(&mut self, task: Arc<Task>) {
-        let entry = self.get_or_create_entry(task.tid);
+        let entry = self.get_or_create_entry(task.tid.id);
         let scope = RcuReadScope::new();
         assert_eq!(entry.task.strong_count(&scope), 0);
         entry.task.update(Arc::downgrade(&task));
@@ -148,7 +184,7 @@ impl PidTable {
             // Notify thread group changes.
             if let Some(notifier) = self.thread_group_notifier.cloned() {
                 let mut tg_state = task.thread_group.write();
-                let _ = notifier.send(MemoryAttributionLifecycleEvent::creation(task.tid));
+                let _ = notifier.send(MemoryAttributionLifecycleEvent::creation(task.tid.id));
                 tg_state.notifier = Some(notifier);
             }
         }
@@ -163,24 +199,11 @@ impl PidTable {
     }
 
     pub fn get_process(&self, pid: pid_t) -> Option<ProcessEntryRef> {
-        let entry = self.get_entry(pid)?;
-        let process = entry.process.read()?;
-        match &*process {
-            ProcessEntry::ThreadGroup(thread_group) => {
-                let thread_group = thread_group
-                    .upgrade()
-                    .expect("ThreadGroup was released, but not removed from PidTable");
-                Some(ProcessEntryRef::Process(thread_group))
-            }
-            ProcessEntry::Zombie => Some(ProcessEntryRef::Zombie),
-        }
+        self.get_entry(pid)?.get_process()
     }
 
     pub fn get_thread_group(&self, pid: pid_t) -> Option<Arc<ThreadGroup>> {
-        match self.get_process(pid) {
-            Some(ProcessEntryRef::Process(tg)) => Some(tg),
-            _ => None,
-        }
+        self.get_entry(pid)?.get_thread_group()
     }
 
     pub fn get_thread_groups(&self) -> Vec<Arc<ThreadGroup>> {
@@ -224,7 +247,7 @@ impl PidTable {
     }
 
     pub fn get_process_group(&self, pid: pid_t) -> Option<Arc<ProcessGroup>> {
-        self.get_entry(pid).and_then(|entry| entry.process_group.upgrade())
+        self.get_entry(pid)?.get_process_group()
     }
 
     pub fn add_process_group(&self, process_group: &Arc<ProcessGroup>) {
@@ -248,7 +271,7 @@ impl PidTable {
         let scope = RcuReadScope::new();
         self.table
             .iter()
-            .flat_map(|(_, entry)| entry.process.is_some(&scope).then_some(entry.pid))
+            .flat_map(|(_, entry)| entry.process.is_some(&scope).then_some(entry.id))
             .collect()
     }
 
@@ -257,7 +280,7 @@ impl PidTable {
         let scope = RcuReadScope::new();
         self.table
             .iter()
-            .flat_map(|(_, entry)| (entry.task.strong_count(&scope) > 0).then_some(entry.pid))
+            .flat_map(|(_, entry)| (entry.task.strong_count(&scope) > 0).then_some(entry.id))
             .collect()
     }
 

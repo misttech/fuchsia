@@ -1373,7 +1373,7 @@ mod tests {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             // In this testing context, `current_task` is the initial task.
             // Set its rlimits to some known values.
-            assert_eq!(current_task.tid, 1);
+            assert_eq!(current_task.tid.id, 1);
             {
                 let mut initial_limits = current_task.thread_group().limits.lock();
                 (Resource::ALL).iter().for_each(|resource| {

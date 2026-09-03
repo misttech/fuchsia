@@ -13,7 +13,7 @@ use crate::task::run_state::RunState;
 use crate::task::tracing::KoidPair;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentCreds, CurrentTask,
-    EventHandler, Kernel, NormalPriority, ProcessExitInfo, RealtimePriority, SchedulerState,
+    EventHandler, Kernel, NormalPriority, Pid, ProcessExitInfo, RealtimePriority, SchedulerState,
     SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue, TaskRunningState,
     ThreadGroup, ThreadGroupKey, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter,
     ZombieProcess,
@@ -537,7 +537,7 @@ impl TaskMutableState<Base = Task> {
                     SIGCHLD,
                     CLD_TRAPPED as i32,
                     SignalDetail::SIGCHLD {
-                        pid: self.base.tid,
+                        pid: self.base.tid.id,
                         uid: self.base.real_creds().uid,
                         status: last_signal.signal.number() as i32,
                     },
@@ -911,7 +911,7 @@ pub struct Task {
     /// This value can be read in userspace using `gettid(2)`. In general, this value
     /// is different from the value return by `getpid(2)`, which returns the `id` of the leader
     /// of the `thread_group`.
-    pub tid: tid_t,
+    pub tid: Pid,
 
     /// The process key of this task.
     pub thread_group_key: ThreadGroupKey,
@@ -1037,7 +1037,7 @@ impl Task {
                     is_canonical: false,
                 };
 
-                tracer_state.zombie_ptracees.add(pids, self.tid, zombie);
+                tracer_state.zombie_ptracees.add(pids, self.tid.id, zombie);
             };
         }
     }
@@ -1053,7 +1053,7 @@ impl Task {
             .map(|p| p.core_state.thread_group.clone())
             .and_then(|tg| tg.upgrade());
         if let Some(tg) = tracer_tg {
-            tg.ptracees.lock().remove(&self.tid);
+            tg.ptracees.lock().remove(&self.tid.id);
         }
     }
 
@@ -1082,7 +1082,7 @@ impl Task {
     /// passed as parameters.
     #[allow(clippy::let_and_return)]
     pub fn new(
-        tid: tid_t,
+        tid: Pid,
         command: TaskCommand,
         thread_group: Arc<ThreadGroup>,
         files: SharedFdTable,
@@ -1105,6 +1105,7 @@ impl Task {
         timerslack_ns: u64,
     ) -> Arc<Self> {
         let thread_group_key = ThreadGroupKey::from(&thread_group);
+        let tid_id = tid.id;
         Arc::new_cyclic(|weak_self| {
             let task = Task {
                 weak_self: weak_self.clone(),
@@ -1146,7 +1147,7 @@ impl Task {
                 }
                 .into(),
                 persistent_info: TaskPersistentInfoState::new(
-                    tid,
+                    tid_id,
                     thread_group_key,
                     command,
                     creds,
@@ -1366,7 +1367,7 @@ impl Task {
     }
 
     pub fn get_tid(&self) -> tid_t {
-        self.tid
+        self.tid.id
     }
 
     pub fn is_leader(&self) -> bool {
@@ -1499,7 +1500,7 @@ impl Task {
 
         if self.is_leader() {
             if let Some(notifier) = &self.thread_group().read().notifier {
-                let _ = notifier.send(MemoryAttributionLifecycleEvent::name_change(self.tid));
+                let _ = notifier.send(MemoryAttributionLifecycleEvent::name_change(self.tid.id));
             }
         }
 
@@ -1569,7 +1570,7 @@ impl Task {
 
         let pkoid = self.thread_group().get_process_koid().ok();
         let tkoid = running_state.thread.get().map(|t| t.koid);
-        mapping_table.write().insert(self.tid, KoidPair { process: pkoid, thread: tkoid });
+        mapping_table.write().insert(self.tid.id, KoidPair { process: pkoid, thread: tkoid });
     }
 }
 

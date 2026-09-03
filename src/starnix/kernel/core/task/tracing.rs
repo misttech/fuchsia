@@ -190,7 +190,7 @@ mod tests {
         let (sender, receiver) = oneshot::channel();
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
-            let pid = current_task.task.tid;
+            let pid = current_task.task.tid.id;
             let tkoid = current_task.running_state().thread.get().map(|t| t.koid);
             let pkoid = current_task.thread_group().get_process_koid().ok();
 

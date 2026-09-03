@@ -179,7 +179,7 @@ impl FileOps for TraceRawFile {
             self.queue.async_id_read,
             CATEGORY_TRACE_META,
             self.queue.read_track_name(),
-            "tid" => current_task.tid
+            "tid" => current_task.tid.id
         );
         self.queue.read(data)
     }

@@ -520,7 +520,7 @@ impl SeccompState {
                         cookie = notifier.next_cookie();
                         let msg = seccomp_notif {
                             id: cookie,
-                            pid: current_task.tid as u32,
+                            pid: current_task.tid.id as u32,
                             flags: 0,
                             data: make_seccomp_data(
                                 current_task,

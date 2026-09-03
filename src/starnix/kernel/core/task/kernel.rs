@@ -1024,7 +1024,7 @@ impl Kernel {
                         });
                     }
                 };
-                if task.tid == thread_group.leader {
+                if task.tid.id == thread_group.leader {
                     let mut argv = task.read_argv(256).unwrap_or_default();
 
                     // Any runtime that overwrites argv is likely to leave a lot of trailing

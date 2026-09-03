@@ -260,7 +260,7 @@ fn create_test_mm(task: &Task) -> Result<Arc<MemoryManager>, Errno> {
 
 fn create_test_init_task(kernel: &Kernel, fs: Arc<FsContext>) -> TaskBuilder {
     let init_pid = kernel.pids.write().allocate_pid();
-    assert_eq!(init_pid, 1);
+    assert_eq!(init_pid.id, 1);
     let init_task = create_init_process(
         &kernel.weak_self.upgrade().unwrap(),
         init_pid,

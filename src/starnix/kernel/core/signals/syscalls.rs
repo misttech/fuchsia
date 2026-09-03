@@ -1676,7 +1676,7 @@ mod tests {
     #[::fuchsia::test]
     async fn test_kill_same_task() {
         spawn_kernel_and_run(async |current_task| {
-            assert_eq!(sys_kill(&current_task, current_task.tid, SIGINT.into()), Ok(()));
+            assert_eq!(sys_kill(&current_task, current_task.tid.id, SIGINT.into()), Ok(()));
         })
         .await;
     }
@@ -1705,7 +1705,7 @@ mod tests {
             task1.thread_group().setsid().expect("setsid");
             let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
 
-            assert_eq!(sys_kill(&task1, -task1.tid, SIGINT.into()), Ok(()));
+            assert_eq!(sys_kill(&task1, -task1.tid.id, SIGINT.into()), Ok(()));
             assert_eq!(task1.read().queued_signal_count(SIGINT), 1);
             assert_eq!(task2.read().queued_signal_count(SIGINT), 1);
             assert_eq!(init_task.read().queued_signal_count(SIGINT), 0);
@@ -1748,7 +1748,7 @@ mod tests {
             task2.set_creds(Credentials::with_ids(2, 2));
 
             assert!(task1.can_signal(&task2, SIGINT.into()).is_err());
-            assert_eq!(sys_kill(&task2, task1.tid, SIGINT.into()), error!(EPERM));
+            assert_eq!(sys_kill(&task2, task1.tid.id, SIGINT.into()), error!(EPERM));
             assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
         })
         .await;
@@ -1765,7 +1765,7 @@ mod tests {
             task2.set_creds(Credentials::with_ids(2, 2));
 
             assert!(task2.can_signal(&task1, SIGINT.into()).is_err());
-            assert_eq!(sys_kill(&task2, -task1.tid, SIGINT.into()), error!(EPERM));
+            assert_eq!(sys_kill(&task2, -task1.tid.id, SIGINT.into()), error!(EPERM));
             assert_eq!(task1.read().queued_signal_count(SIGINT), 0);
         })
         .await;
@@ -1776,7 +1776,7 @@ mod tests {
     async fn test_kill_invalid_signal() {
         spawn_kernel_and_run(async |current_task| {
             assert_eq!(
-                sys_kill(&current_task, current_task.tid, UncheckedSignal::from(75)),
+                sys_kill(&current_task, current_task.tid.id, UncheckedSignal::from(75)),
                 error!(EINVAL)
             );
         })
@@ -1806,11 +1806,11 @@ mod tests {
                 ),
                 Ok(())
             );
-            assert_eq!(sys_kill(&current_task, current_task.tid, SIGIO.into()), Ok(()));
+            assert_eq!(sys_kill(&current_task, current_task.tid.id, SIGIO.into()), Ok(()));
             assert_eq!(current_task.read().queued_signal_count(SIGIO), 1);
 
             // A second signal should not increment the number of pending signals.
-            assert_eq!(sys_kill(&current_task, current_task.tid, SIGIO.into()), Ok(()));
+            assert_eq!(sys_kill(&current_task, current_task.tid.id, SIGIO.into()), Ok(()));
             assert_eq!(current_task.read().queued_signal_count(SIGIO), 1);
         })
         .await;
@@ -1839,11 +1839,11 @@ mod tests {
                 ),
                 Ok(())
             );
-            assert_eq!(sys_kill(&current_task, current_task.tid, SIGRTMIN.into()), Ok(()));
+            assert_eq!(sys_kill(&current_task, current_task.tid.id, SIGRTMIN.into()), Ok(()));
             assert_eq!(current_task.read().queued_signal_count(starnix_uapi::signals::SIGRTMIN), 1);
 
             // A second signal should increment the number of pending signals.
-            assert_eq!(sys_kill(&current_task, current_task.tid, SIGRTMIN.into()), Ok(()));
+            assert_eq!(sys_kill(&current_task, current_task.tid.id, SIGRTMIN.into()), Ok(()));
             assert_eq!(current_task.read().queued_signal_count(starnix_uapi::signals::SIGRTMIN), 2);
         })
         .await;
@@ -1866,7 +1866,8 @@ mod tests {
                 }
 
                 // Signal the suspended task with a signal that is not blocked (only SIGHUP in this test).
-                let _ = sys_kill(current_task, init_task_temp.tid, UncheckedSignal::from(SIGHUP));
+                let _ =
+                    sys_kill(current_task, init_task_temp.tid.id, UncheckedSignal::from(SIGHUP));
 
                 // Wait for the sigsuspend to complete.
                 rx.recv().expect("receive");
@@ -1989,7 +1990,7 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             let child = current_task.clone_task_for_test(0, Some(SIGCHLD));
             let expected_result = WaitResult {
-                pid: child.tid,
+                pid: child.tid.id,
                 uid: 0,
                 exit_info: ProcessExitInfo {
                     status: ExitStatus::Exit(1),
@@ -2038,7 +2039,7 @@ mod tests {
                         std::thread::sleep(std::time::Duration::from_millis(10));
                     }
                     child.thread_group().kill(ExitStatus::Exit(0), None);
-                    child.tid
+                    child.tid.id
                 }
             });
 
@@ -2150,12 +2151,12 @@ mod tests {
     async fn test_wait4_by_pgid() {
         spawn_kernel_and_run(async |current_task| {
             let child1 = current_task.clone_task_for_test(0, Some(SIGCHLD));
-            let child1_pid = child1.tid;
+            let child1_pid = child1.tid.id;
             child1.thread_group().kill(ExitStatus::Exit(42), None);
             std::mem::drop(child1);
             let child2 = current_task.clone_task_for_test(0, Some(SIGCHLD));
             child2.thread_group().setsid().expect("setsid");
-            let child2_pid = child2.tid;
+            let child2_pid = child2.tid.id;
             child2.thread_group().kill(ExitStatus::Exit(42), None);
             std::mem::drop(child2);
 
@@ -2181,12 +2182,12 @@ mod tests {
     async fn test_waitid_by_pgid() {
         spawn_kernel_and_run(async |current_task| {
             let child1 = current_task.clone_task_for_test(0, Some(SIGCHLD));
-            let child1_pid = child1.tid;
+            let child1_pid = child1.tid.id;
             child1.thread_group().kill(ExitStatus::Exit(42), None);
             std::mem::drop(child1);
             let child2 = current_task.clone_task_for_test(0, Some(SIGCHLD));
             child2.thread_group().setsid().expect("setsid");
-            let child2_pid = child2.tid;
+            let child2_pid = child2.tid.id;
             child2.thread_group().kill(ExitStatus::Exit(42), None);
             std::mem::drop(child2);
 

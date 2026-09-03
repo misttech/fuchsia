@@ -1096,7 +1096,7 @@ impl CurrentTask {
             return Err(err);
         }
 
-        self.ptrace_event(PtraceOptions::TRACEEXEC, self.task.tid as u64);
+        self.ptrace_event(PtraceOptions::TRACEEXEC, self.task.tid.id as u64);
         self.signal_vfork();
         self.task.thread_group.sync_syscall_log_level();
 
@@ -1223,7 +1223,7 @@ impl CurrentTask {
             new_name,
             leader_command,
             self.thread_group().leader,
-            self.tid,
+            self.tid.id,
         );
     }
 
@@ -1266,19 +1266,19 @@ impl CurrentTask {
             // strict mode.
             let tasks = state.tasks();
             for task in &tasks {
-                if task.tid == self.tid {
+                if task.tid.id == self.tid.id {
                     continue;
                 }
                 let other_task_state = task.read();
 
                 // Target threads cannot be in SECCOMP_MODE_STRICT
                 if task.seccomp_filter_state.get() == SeccompStateValue::Strict {
-                    return Self::seccomp_tsync_error(task.tid, flags);
+                    return Self::seccomp_tsync_error(task.tid.id, flags);
                 }
 
                 // Target threads' filters must be a subsequence of this thread's
                 if !other_task_state.seccomp_filters.can_sync_to(&filters) {
-                    return Self::seccomp_tsync_error(task.tid, flags);
+                    return Self::seccomp_tsync_error(task.tid.id, flags);
                 }
             }
 
@@ -1381,7 +1381,7 @@ impl CurrentTask {
                 return;
             };
 
-            if (futex & FUTEX_TID_MASK) as i32 == self.tid {
+            if (futex & FUTEX_TID_MASK) as i32 == self.tid.id {
                 let owner_died = FUTEX_OWNER_DIED | futex;
                 if mm.atomic_store_u32_relaxed(futex_addr, owner_died).is_err() {
                     return;
@@ -1672,7 +1672,7 @@ impl CurrentTask {
                     create_zircon_process(
                         kernel,
                         Some(thread_group_state),
-                        pid,
+                        pid.id,
                         child_exit_signal,
                         process_group,
                         signal_actions,
@@ -1785,7 +1785,7 @@ impl CurrentTask {
             }
 
             if clone_parent_settid {
-                self.write_object(user_parent_tid, &child.tid)?;
+                self.write_object(user_parent_tid, &child.tid.id)?;
             }
 
             if clone_child_cleartid {
@@ -1793,7 +1793,7 @@ impl CurrentTask {
             }
 
             if clone_child_settid {
-                child.write_object(user_child_tid, &child.tid)?;
+                child.write_object(user_child_tid, &child.tid.id)?;
             }
 
             if clone_pidfd {

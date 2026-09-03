@@ -753,14 +753,15 @@ async fn create_container(
         create_fs_context(&kernel, &features, start_info, &pkg_dir_proxy)
             .source_context("creating FsContext")?;
     let init_pid = kernel.pids.write().allocate_pid();
+    let init_tid = init_pid.id;
     // Lots of software assumes that the pid for the init process is 1.
-    debug_assert_eq!(init_pid, 1);
+    debug_assert_eq!(init_tid, 1);
 
     let system_task = create_system_task(&kernel, Arc::clone(&fs_context))
         .source_context("create system task")?;
     // The system task gives pid 2. This value is less critical than giving
     // pid 1 to init, but this value matches what is supposed to happen.
-    debug_assert_eq!(system_task.tid, 2);
+    debug_assert_eq!(system_task.tid.id, 2);
 
     feature_mounts(&system_task).source_context("mounting feature filesystems")?;
 
@@ -869,7 +870,7 @@ async fn create_container(
     )?;
 
     if !start_info.program.startup_file_path.is_empty() {
-        wait_for_init_file(&start_info.program.startup_file_path, &system_task, init_pid).await?;
+        wait_for_init_file(&start_info.program.startup_file_path, &system_task, init_tid).await?;
     };
 
     let memory_attribution_manager = ContainerMemoryAttributionManager::new(

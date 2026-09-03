@@ -79,7 +79,7 @@ fn get_clock_gettime(current_task: &CurrentTask, which_clock: i32) -> Result<tim
                 zx::MonotonicInstant::get().into_nanos()
             }
             CLOCK_BOOTTIME => zx::BootInstant::get().into_nanos(),
-            CLOCK_THREAD_CPUTIME_ID => get_thread_cpu_time(current_task, current_task.tid)?,
+            CLOCK_THREAD_CPUTIME_ID => get_thread_cpu_time(current_task, current_task.get_tid())?,
             CLOCK_PROCESS_CPUTIME_ID => get_process_cpu_time(current_task, current_task.get_pid())?,
             _ => return error!(EINVAL),
         }
