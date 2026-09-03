@@ -9,7 +9,7 @@ use crate::object_store::transaction::{LockKey, Mutation, Options, lock_keys};
 use crate::object_store::{
     ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectProperty,
 };
-use anyhow::Error;
+use anyhow::{Error, anyhow};
 use fprint::TypeFingerprint;
 use fxfs_macros::SerializeKey;
 use serde::{Deserialize, Serialize};
@@ -88,7 +88,7 @@ impl ObjectStore {
 
         let object_key = ObjectKey::object(node_id);
         let (kind, mut attributes) =
-            match self.tree().find(&object_key).await?.ok_or(FxfsError::NotFound)?.value {
+            match self.tree().find_value(&object_key).await?.ok_or(FxfsError::NotFound)? {
                 ObjectValue::Object { kind, attributes } => (kind, attributes),
                 _ => return Err(FxfsError::Inconsistent.into()),
             };
@@ -138,13 +138,15 @@ impl ObjectStore {
 
     /// Return the project_id associated with the given `node_id`.
     pub async fn get_project_for_node(&self, node_id: u64) -> Result<Option<ProjectId>, Error> {
-        match self.tree().find(&ObjectKey::object(node_id)).await?.ok_or(FxfsError::NotFound)?.value
-        {
-            ObjectValue::Object { attributes, .. } => match attributes.project_id {
-                id => Ok(id),
-            },
-            _ => return Err(FxfsError::Inconsistent.into()),
-        }
+        let project_id = self
+            .tree()
+            .find_map(&ObjectKey::object(node_id), |item| match item.value {
+                ObjectValue::Object { attributes, .. } => Ok(attributes.project_id),
+                _ => Err(anyhow!(FxfsError::Inconsistent)),
+            })
+            .await?
+            .ok_or(FxfsError::NotFound)??;
+        Ok(project_id)
     }
 
     /// Remove the project id for a given `node_id`. The call will do nothing and return success
@@ -160,7 +162,7 @@ impl ObjectStore {
 
         let object_key = ObjectKey::object(node_id);
         let (kind, mut attributes) =
-            match self.tree().find(&object_key).await?.ok_or(FxfsError::NotFound)?.value {
+            match self.tree().find_value(&object_key).await?.ok_or(FxfsError::NotFound)? {
                 ObjectValue::Object { kind, attributes } => (kind, attributes),
                 _ => return Err(FxfsError::Inconsistent.into()),
             };

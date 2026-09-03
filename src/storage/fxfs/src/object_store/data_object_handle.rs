@@ -632,13 +632,12 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         if self
             .store()
             .tree()
-            .find(&ObjectKey::graveyard_attribute_entry(
+            .exists(&ObjectKey::graveyard_attribute_entry(
                 self.store().graveyard_directory_object_id(),
                 self.object_id(),
                 AttributeId::FSVERITY_MERKLE,
             ))
             .await?
-            .is_some()
         {
             self.store().filesystem().graveyard().flush().await;
         }
@@ -1737,13 +1736,13 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         // We don't take a read guard here since the object properties are contained in a single
         // object, which cannot be inconsistent with itself. The LSM tree does not return
         // intermediate states for a single object.
-        let item = self
+        let value = self
             .store()
             .tree
-            .find(&ObjectKey::object(self.object_id()))
+            .find_value(&ObjectKey::object(self.object_id()))
             .await?
             .expect("Unable to find object record");
-        match item.value {
+        match value {
             ObjectValue::Object {
                 kind: ObjectKind::File { refs, .. },
                 attributes:

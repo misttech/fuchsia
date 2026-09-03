@@ -1166,16 +1166,16 @@ impl ObjectStore {
 
     /// Returns the file size for the object without opening the object.
     async fn get_file_size(&self, object_id: u64) -> Result<u64, Error> {
-        let item = self
-            .tree
-            .find(&ObjectKey::attribute(object_id, AttributeId::DATA, AttributeKey::Attribute))
+        self.tree
+            .find_map(
+                &ObjectKey::attribute(object_id, AttributeId::DATA, AttributeKey::Attribute),
+                |item| match item.value {
+                    ObjectValue::Attribute { size, .. } => Ok(*size),
+                    _ => Err(anyhow!(FxfsError::NotFile)),
+                },
+            )
             .await?
-            .ok_or(FxfsError::NotFound)?;
-        if let ObjectValue::Attribute { size, .. } = item.value {
-            Ok(size)
-        } else {
-            bail!(FxfsError::NotFile);
-        }
+            .ok_or(FxfsError::NotFound)?
     }
 
     #[cfg(feature = "migration")]
@@ -1209,13 +1209,13 @@ impl ObjectStore {
         let store = owner.as_ref().as_ref();
         let mut fsverity_descriptor = None;
         let mut overwrite_ranges = Vec::new();
-        let item = store
+        let value = store
             .tree
-            .find(&ObjectKey::attribute(obj_id, AttributeId::DATA, AttributeKey::Attribute))
+            .find_value(&ObjectKey::attribute(obj_id, AttributeId::DATA, AttributeKey::Attribute))
             .await?
             .ok_or(FxfsError::NotFound)?;
 
-        let (size, track_overwrite_extents) = match item.value {
+        let (size, track_overwrite_extents) = match value {
             ObjectValue::Attribute { size, has_overwrite_extents } => (size, has_overwrite_extents),
             ObjectValue::VerifiedAttribute { size, fsverity_metadata } => {
                 if !options.skip_fsverity {
@@ -1505,14 +1505,16 @@ impl ObjectStore {
         txn_options: Options<'_>,
     ) -> Result<(), Error> {
         debug_assert!(
-            self.tree.find(&ObjectKey::object(object_id)).await?.is_some(),
+            self.tree.exists(&ObjectKey::object(object_id)).await?,
             "Tombstoning missing object"
         );
         debug_assert!(
             self.tree
-                .find(&ObjectKey::graveyard_entry(self.graveyard_directory_object_id(), object_id))
-                .await?
-                .is_some(),
+                .exists(&ObjectKey::graveyard_entry(
+                    self.graveyard_directory_object_id(),
+                    object_id
+                ))
+                .await?,
             "Tombstoning object not in graveyard"
         );
         self.key_manager.remove(object_id).await;
@@ -1579,12 +1581,12 @@ impl ObjectStore {
                     if for_tombstone
                         || matches!(
                             self.tree
-                                .find(&ObjectKey::graveyard_entry(
+                                .find_value(&ObjectKey::graveyard_entry(
                                     self.graveyard_directory_object_id(),
                                     object_id,
                                 ))
                                 .await?,
-                            Some(Item { value: ObjectValue::Trim, .. })
+                            Some(ObjectValue::Trim)
                         )
                     {
                         self.remove_from_graveyard(&mut transaction, object_id);
@@ -1630,20 +1632,18 @@ impl ObjectStore {
         // Ensure that we don't double-delete things, it should still exist and be in the graveyard.
         debug_assert!(
             self.tree
-                .find(&ObjectKey::attribute(object_id, attribute_id, AttributeKey::Attribute))
-                .await?
-                .is_some(),
+                .exists(&ObjectKey::attribute(object_id, attribute_id, AttributeKey::Attribute))
+                .await?,
             "Tombstoning missing attribute"
         );
         debug_assert!(
             self.tree
-                .find(&ObjectKey::graveyard_attribute_entry(
+                .exists(&ObjectKey::graveyard_attribute_entry(
                     self.graveyard_directory_object_id(),
                     object_id,
                     attribute_id
                 ))
-                .await?
-                .is_some(),
+                .await?,
             "Tombstoning attribute not in graveyard"
         );
         let mut trim_result = TrimResult::Incomplete;
@@ -2728,18 +2728,16 @@ impl ObjectStore {
 
     /// Returns the link of a symlink object.
     pub async fn read_symlink(&self, object_id: u64) -> Result<Vec<u8>, Error> {
-        match self.tree.find(&ObjectKey::object(object_id)).await? {
+        match self.tree.find_value(&ObjectKey::object(object_id)).await? {
             None => bail!(FxfsError::NotFound),
-            Some(Item {
-                value: ObjectValue::Object { kind: ObjectKind::EncryptedSymlink { link, .. }, .. },
-                ..
+            Some(ObjectValue::Object {
+                kind: ObjectKind::EncryptedSymlink { link, .. }, ..
             }) => self.read_encrypted_symlink(object_id, link.into_vec()).await,
-            Some(Item {
-                value: ObjectValue::Object { kind: ObjectKind::Symlink { link, .. }, .. },
-                ..
-            }) => Ok(link.to_vec()),
-            Some(item) => Err(anyhow!(FxfsError::Inconsistent)
-                .context(format!("Unexpected item in lookup: {item:?}"))),
+            Some(ObjectValue::Object { kind: ObjectKind::Symlink { link, .. }, .. }) => {
+                Ok(link.into_vec())
+            }
+            Some(value) => Err(anyhow!(FxfsError::Inconsistent)
+                .context(format!("Unexpected value in symlink lookup: {value:?}"))),
         }
     }
 
@@ -2764,13 +2762,16 @@ impl ObjectStore {
     /// Retrieves the wrapped keys for the given object.  The keys *should* be known to exist and it
     /// will be considered an inconsistency if they don't.
     pub async fn get_keys(&self, object_id: u64) -> Result<EncryptionKeys, Error> {
-        match self.tree.find(&ObjectKey::keys(object_id)).await?.ok_or(FxfsError::Inconsistent)? {
-            Item { value: ObjectValue::Keys(keys), .. } => {
-                self.fail_on_illegal_keys(&keys)?;
-                Ok(keys)
-            }
-            _ => Err(anyhow!(FxfsError::Inconsistent).context("open_object: Expected keys")),
-        }
+        self.tree
+            .find_map(&ObjectKey::keys(object_id), |item| match item.value {
+                ObjectValue::Keys(keys) => {
+                    self.fail_on_illegal_keys(keys)?;
+                    Ok(keys.clone())
+                }
+                _ => Err(anyhow!(FxfsError::Inconsistent).context("open_object: Expected keys")),
+            })
+            .await?
+            .ok_or(FxfsError::Inconsistent)?
     }
 
     pub async fn update_attributes<'a>(
@@ -2919,16 +2920,18 @@ impl ObjectStore {
         object_id: u64,
         attribute_id: AttributeId,
     ) -> Result<u64, Error> {
-        let item = self
+        let size = self
             .tree
-            .find(&ObjectKey::attribute(object_id, attribute_id, AttributeKey::Attribute))
+            .find_map(
+                &ObjectKey::attribute(object_id, attribute_id, AttributeKey::Attribute),
+                |item| match item.value {
+                    ObjectValue::Attribute { size, .. }
+                    | ObjectValue::VerifiedAttribute { size, .. } => Ok(*size),
+                    _ => Err(anyhow!(FxfsError::Inconsistent)),
+                },
+            )
             .await?
-            .ok_or(FxfsError::NotFound)?;
-        let size = match item.value {
-            ObjectValue::Attribute { size, .. } => size,
-            ObjectValue::VerifiedAttribute { size, .. } => size,
-            _ => bail!(FxfsError::Inconsistent),
-        };
+            .ok_or(FxfsError::NotFound)??;
         Ok(size)
     }
 }
@@ -3464,14 +3467,11 @@ mod tests {
             );
             let obj = store
                 .tree()
-                .find(&ObjectKey::object(dir_id))
+                .find_value(&ObjectKey::object(dir_id))
                 .await
                 .expect("Searching tree for dir")
                 .unwrap();
-            assert_matches!(
-                obj.value,
-                ObjectValue::Object { kind: ObjectKind::Directory { .. }, .. }
-            );
+            assert_matches!(obj, ObjectValue::Object { kind: ObjectKind::Directory { .. }, .. });
         }
         fs.close().await.expect("Close failed");
     }
@@ -3505,14 +3505,11 @@ mod tests {
             );
             let obj = store
                 .tree()
-                .find(&ObjectKey::object(dir_id))
+                .find_value(&ObjectKey::object(dir_id))
                 .await
                 .expect("Searching tree for dir")
                 .unwrap();
-            assert_matches!(
-                obj.value,
-                ObjectValue::Object { kind: ObjectKind::Directory { .. }, .. }
-            );
+            assert_matches!(obj, ObjectValue::Object { kind: ObjectKind::Directory { .. }, .. });
         }
         fs.close().await.expect("Close failed");
     }

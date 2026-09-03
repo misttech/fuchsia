@@ -4513,8 +4513,9 @@ async fn test_bad_casefold_hash() {
         transaction.commit().await.expect("commit failed");
 
         // Verify object exists in tree
-        let _tree_res =
-            store.tree().find(&ObjectKey::object(dir.object_id())).await.expect("find failed");
+        assert!(
+            store.tree().exists(&ObjectKey::object(dir.object_id())).await.expect("find failed")
+        );
         let dir = Directory::open(&store, dir.object_id()).await.expect("open dir failed");
 
         dir.set_casefold(true).await.expect("set_casefold failed");

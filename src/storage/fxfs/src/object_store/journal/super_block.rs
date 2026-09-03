@@ -1352,9 +1352,12 @@ mod tests {
 
         // The root parent store should have been compacted, so we shouldn't be able to find any
         // record referring to the object we tombstoned.
-        assert_eq!(
-            store.tree().find(&ObjectKey::object(handle.object_id())).await.expect("find failed"),
-            None
+        assert!(
+            !store
+                .tree()
+                .exists(&ObjectKey::object(handle.object_id()))
+                .await
+                .expect("exists failed")
         );
     }
 

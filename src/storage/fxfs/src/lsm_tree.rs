@@ -38,11 +38,12 @@ use fuchsia_sync::RwLock;
 use persistent_layer::{PersistentLayer, PersistentLayerWriter};
 use skip_list_layer::SkipListLayer;
 use std::fmt;
+use std::ops::Bound;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use types::{
-    Existence, Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter, MergeableKey,
-    OrdLowerBound, Value,
+    Existence, Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter, MaybeContainsKey,
+    MergeType, MergeableKey, OrdLowerBound, Value,
 };
 
 pub use merge::Query;
@@ -373,39 +374,79 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         self.cache.invalidate(key, None);
     }
 
-    /// Searches for an exact match for the given key. If the value is equal to
-    /// `Value::DELETED_MARKER` the item is considered missing and will not be returned.
-    pub async fn find(&self, search_key: &K) -> Result<Option<Item<K, V>>, Error>
+    /// Searches for an exact match for the given key, applying `f` to the found [`ItemRef`].
+    /// If the item does not exist or has a value equal to [`Value::DELETED_MARKER`], returns
+    /// `Ok(None)`.
+    ///
+    /// Range keys (`FuzzyHash::is_range_key`) are not supported.
+    pub async fn find_map<R, F>(&self, search_key: &K, f: F) -> Result<Option<R>, Error>
     where
         K: Eq,
+        F: FnOnce(ItemRef<'_, K, V>) -> R,
     {
         let _measure = DurationMeasureScope::new(&crate::metrics::lsm_tree_metrics().find);
         // It is important that the cache lookup is done prior to fetching the layer set as the
         // placeholder returned acts as a sort of lock for the validity of the item that may be
         // inserted later via that placeholder.
-        let token = match self.cache.lookup_or_reserve(search_key) {
+        let mut token = match self.cache.lookup_or_reserve(search_key) {
             ObjectCacheResult::Value(value) => {
                 if value == V::DELETED_MARKER {
                     return Ok(None);
                 } else {
-                    return Ok(Some(Item::new(search_key.clone(), value)));
+                    return Ok(Some(f(ItemRef { key: search_key, value: &value })));
                 }
             }
             ObjectCacheResult::Placeholder(token) => Some(token),
             ObjectCacheResult::NoCache => None,
         };
         let layer_set = self.layer_set();
-        let mut merger = layer_set.merger();
-
-        Ok(match merger.query(Query::Point(search_key)).await?.get() {
-            Some(ItemRef { key, value }) if key == search_key && *value != V::DELETED_MARKER => {
-                if let Some(token) = token {
-                    token.complete(Some(value));
+        let result = layer_set
+            .find_map(search_key, |item_ref| {
+                if let Some(token) = token.take() {
+                    token.complete(Some(item_ref.value));
                 }
-                Some(Item { key: key.clone(), value: value.clone() })
-            }
-            _ => None,
-        })
+                f(item_ref)
+            })
+            .await?;
+        Ok(result)
+    }
+
+    /// Searches for an exact match for the given key. If the item does not exist or has a value
+    /// equal to [`Value::DELETED_MARKER`], returns `Ok(None)`.
+    ///
+    /// Range keys (`FuzzyHash::is_range_key`) are not supported.
+    pub fn find(
+        &self,
+        search_key: &K,
+    ) -> impl Future<Output = Result<Option<Item<K, V>>, Error>> + Send
+    where
+        K: Eq,
+    {
+        self.find_map(search_key, |item| Item { key: item.key.clone(), value: item.value.clone() })
+    }
+
+    /// Searches for an exact match for the given key, returning only the value. If the item does
+    /// not exist or has a value equal to [`Value::DELETED_MARKER`], returns `Ok(None)`.
+    ///
+    /// Range keys (`FuzzyHash::is_range_key`) are not supported.
+    pub fn find_value(
+        &self,
+        search_key: &K,
+    ) -> impl Future<Output = Result<Option<V>, Error>> + Send
+    where
+        K: Eq,
+    {
+        self.find_map(search_key, |item| item.value.clone())
+    }
+
+    /// Returns true if an exact match exists for the given key and is not deleted.
+    ///
+    /// Range keys (`FuzzyHash::is_range_key`) are not supported.
+    pub async fn exists(&self, search_key: &K) -> Result<bool, Error>
+    where
+        K: Eq,
+    {
+        Ok(self.find_map(search_key, |_| ()).await?.is_some())
     }
 
     pub fn mutable_layer(&self) -> Arc<SkipListLayer<K, V>> {
@@ -550,6 +591,49 @@ impl<K: Key + LayerKey + OrdLowerBound, V: Value> LayerSet<K, V> {
         )
     }
 
+    /// Searches for an exact match for the given key, applying `f` to the found [`ItemRef`].
+    /// If the item does not exist or has a value equal to [`Value::DELETED_MARKER`], returns
+    /// `Ok(None)`.
+    ///
+    /// Range keys (`FuzzyHash::is_range_key`) are not supported.
+    pub async fn find_map<R, F>(&self, search_key: &K, f: F) -> Result<Option<R>, Error>
+    where
+        K: Eq,
+        F: FnOnce(ItemRef<'_, K, V>) -> R,
+    {
+        if search_key.merge_type() == MergeType::OptimizedMerge {
+            self.counters.num_seeks.fetch_add(1, Ordering::Relaxed);
+            for layer in &self.layers {
+                self.counters.layer_files_total.fetch_add(1, Ordering::Relaxed);
+                if layer.maybe_contains_key(search_key) == MaybeContainsKey::False {
+                    self.counters.layer_files_skipped.fetch_add(1, Ordering::Relaxed);
+                    continue;
+                }
+                let iter = layer.seek(Bound::Included(search_key)).await?;
+                if let Some(item_ref) = iter.get() {
+                    if item_ref.key == search_key {
+                        if *item_ref.value == V::DELETED_MARKER {
+                            return Ok(None);
+                        } else {
+                            return Ok(Some(f(item_ref)));
+                        }
+                    }
+                }
+            }
+            return Ok(None);
+        }
+
+        let mut merger = self.merger();
+        Ok(match merger.query(Query::Point(search_key)).await?.get() {
+            Some(item_ref)
+                if item_ref.key == search_key && *item_ref.value != V::DELETED_MARKER =>
+            {
+                Some(f(item_ref))
+            }
+            _ => None,
+        })
+    }
+
     /// See `Layer::key_exists`.
     pub async fn key_exists(&self, key: &K) -> Result<Existence, Error> {
         for l in &self.layers {
@@ -588,9 +672,10 @@ mod tests {
     use crate::lsm_tree::cache::{
         NullCache, ObjectCache, ObjectCachePlaceholder, ObjectCacheResult,
     };
-    use crate::lsm_tree::merge::{MergeLayerIterator, MergeResult};
+    use crate::lsm_tree::merge::{ItemOp, MergeLayerIterator, MergeResult};
     use crate::lsm_tree::types::{
-        BoxedLayerIterator, Existence, Item, ItemRef, Key, Layer, LayerIterator, Value,
+        BoxedLayerIterator, Existence, Item, ItemRef, Key, Layer, LayerIterator, MaybeContainsKey,
+        Value,
     };
     use crate::lsm_tree::{Query, layers_from_handles};
     use crate::object_handle::ObjectHandle;
@@ -606,6 +691,7 @@ mod tests {
     use rand::seq::SliceRandom;
 
     use std::sync::Arc;
+    use std::sync::atomic::Ordering;
 
     use super::testing::TestKey;
 
@@ -614,6 +700,30 @@ mod tests {
         _right: &MergeLayerIterator<'_, TestKey, u64>,
     ) -> MergeResult<TestKey, u64> {
         MergeResult::EmitLeft
+    }
+
+    fn emit_left_i32_merge_fn(
+        _left: &MergeLayerIterator<'_, i32, u64>,
+        _right: &MergeLayerIterator<'_, i32, u64>,
+    ) -> MergeResult<i32, u64> {
+        MergeResult::EmitLeft
+    }
+
+    fn merge_sum_i32(
+        left: &MergeLayerIterator<'_, i32, u64>,
+        right: &MergeLayerIterator<'_, i32, u64>,
+    ) -> MergeResult<i32, u64> {
+        if left.key() == right.key() {
+            MergeResult::Other {
+                emit: None,
+                left: ItemOp::Discard,
+                right: ItemOp::Replace(
+                    Item::new(*left.key(), *left.value() + *right.value()).boxed(),
+                ),
+            }
+        } else {
+            MergeResult::EmitLeft
+        }
     }
 
     impl Value for u64 {
@@ -709,6 +819,23 @@ mod tests {
         let item = tree.find(&items[1].key).await.expect("find failed").expect("not found");
         assert_eq!(item, items[1]);
         assert!(tree.find(&TestKey(100..100)).await.expect("find failed").is_none());
+
+        assert_eq!(tree.find_value(&items[2].key).await.expect("find_value failed"), Some(3));
+        assert_eq!(tree.find_value(&TestKey(100..100)).await.expect("find_value failed"), None);
+
+        assert!(tree.exists(&items[0].key).await.expect("exists failed"));
+        assert!(!tree.exists(&TestKey(100..100)).await.expect("exists failed"));
+
+        assert_eq!(
+            tree.find_map(&items[3].key, |item| item.value * 10).await.expect("find_map failed"),
+            Some(40)
+        );
+        assert_eq!(
+            tree.find_map(&TestKey(100..100), |item| item.value * 10)
+                .await
+                .expect("find_map failed"),
+            None
+        );
     }
 
     #[fuchsia::test]
@@ -720,7 +847,201 @@ mod tests {
 
         let item = tree.find(&items[0].key).await.expect("find failed").expect("not found");
         assert_eq!(item, items[0]);
+        assert_eq!(tree.find_value(&items[0].key).await.expect("find_value failed"), Some(1));
+        assert_eq!(
+            tree.find_map(&items[0].key, |item| *item.value).await.expect("find_map failed"),
+            Some(1)
+        );
+        assert!(tree.exists(&items[0].key).await.expect("exists failed"));
+
         assert!(tree.find(&items[1].key).await.expect("find failed").is_none());
+        assert!(tree.find_value(&items[1].key).await.expect("find_value failed").is_none());
+        assert!(tree.find_map(&items[1].key, |_| ()).await.expect("find_map failed").is_none());
+        assert!(!tree.exists(&items[1].key).await.expect("exists failed"));
+    }
+
+    #[fuchsia::test]
+    async fn test_find_full_merge() {
+        let tree = LSMTree::new(emit_left_i32_merge_fn, Box::new(NullCache {}));
+        let items = [
+            Item::new(1, 10),
+            Item::new(2, 20),
+            Item::new(3, 30),
+            Item::new(4, u64::DELETED_MARKER),
+        ];
+        for item in &items {
+            tree.insert(item.clone()).expect("insert error");
+        }
+
+        assert_eq!(tree.find(&1).await.expect("find failed"), Some(items[0].clone()));
+        assert_eq!(tree.find_value(&2).await.expect("find_value failed"), Some(20));
+        assert!(tree.exists(&3).await.expect("exists failed"));
+        assert_eq!(
+            tree.find_map(&3, |item| *item.value * 2).await.expect("find_map failed"),
+            Some(60)
+        );
+
+        // Missing key
+        assert_eq!(tree.find(&99).await.expect("find failed"), None);
+        assert_eq!(tree.find_value(&99).await.expect("find_value failed"), None);
+        assert!(!tree.exists(&99).await.expect("exists failed"));
+        assert_eq!(tree.find_map(&99, |_| ()).await.expect("find_map failed"), None);
+
+        // Deleted key
+        assert_eq!(tree.find(&4).await.expect("find failed"), None);
+        assert_eq!(tree.find_value(&4).await.expect("find_value failed"), None);
+        assert!(!tree.exists(&4).await.expect("exists failed"));
+        assert_eq!(tree.find_map(&4, |_| ()).await.expect("find_map failed"), None);
+    }
+
+    #[fuchsia::test]
+    async fn test_find_full_merge_multi_layer() {
+        let tree = LSMTree::new(merge_sum_i32, Box::new(NullCache {}));
+
+        // Base layer:
+        tree.insert(Item::new(1, 100)).expect("insert error");
+        tree.insert(Item::new(2, 200)).expect("insert error");
+        tree.insert(Item::new(3, 300)).expect("insert error");
+
+        tree.seal();
+
+        // Top layer:
+        // Key 1 has an update (+50) that should merge to 150.
+        // Key 4 is new (40).
+        tree.insert(Item::new(1, 50)).expect("insert error");
+        tree.insert(Item::new(4, 40)).expect("insert error");
+
+        // Key 1 should be merged across layers: 50 + 100 = 150.
+        assert_eq!(tree.find_value(&1).await.expect("find_value failed"), Some(150));
+        assert_eq!(tree.find(&1).await.expect("find failed"), Some(Item::new(1, 150)));
+        assert!(tree.exists(&1).await.expect("exists failed"));
+        assert_eq!(
+            tree.find_map(&1, |item| *item.value * 2).await.expect("find_map failed"),
+            Some(300)
+        );
+
+        // Key 2 only exists in the base layer: 200.
+        assert_eq!(tree.find_value(&2).await.expect("find_value failed"), Some(200));
+        assert!(tree.exists(&2).await.expect("exists failed"));
+
+        // Key 3 only exists in the base layer: 300.
+        assert_eq!(tree.find_value(&3).await.expect("find_value failed"), Some(300));
+        assert!(tree.exists(&3).await.expect("exists failed"));
+
+        // Key 4 only exists in the top layer: 40.
+        assert_eq!(tree.find_value(&4).await.expect("find_value failed"), Some(40));
+        assert!(tree.exists(&4).await.expect("exists failed"));
+
+        // Key 5 is missing entirely.
+        assert_eq!(tree.find_value(&5).await.expect("find_value failed"), None);
+        assert!(!tree.exists(&5).await.expect("exists failed"));
+    }
+
+    #[fuchsia::test]
+    async fn test_find_optimized_merge_multi_layer() {
+        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+
+        // Insert items in base layer (older).
+        tree.insert(Item::new(TestKey(1..1), 10)).expect("insert error");
+        tree.insert(Item::new(TestKey(2..2), 20)).expect("insert error");
+        tree.insert(Item::new(TestKey(3..3), 30)).expect("insert error");
+
+        tree.seal();
+
+        // In the newer layer:
+        // - Update key 2 to 25
+        // - Tombstone key 3
+        // - Insert new key 4
+        tree.insert(Item::new(TestKey(2..2), 25)).expect("insert error");
+        tree.insert(Item::new(TestKey(3..3), u64::DELETED_MARKER)).expect("insert error");
+        tree.insert(Item::new(TestKey(4..4), 40)).expect("insert error");
+
+        // Key 1: only in older layer.
+        assert_eq!(tree.find_value(&TestKey(1..1)).await.expect("find_value failed"), Some(10));
+        assert!(tree.exists(&TestKey(1..1)).await.expect("exists failed"));
+
+        // Key 2: updated in newer layer (shadows older layer).
+        assert_eq!(tree.find_value(&TestKey(2..2)).await.expect("find_value failed"), Some(25));
+        assert!(tree.exists(&TestKey(2..2)).await.expect("exists failed"));
+
+        // Key 3: deleted in newer layer (shadows older layer).
+        assert_eq!(tree.find(&TestKey(3..3)).await.expect("find failed"), None);
+        assert_eq!(tree.find_value(&TestKey(3..3)).await.expect("find_value failed"), None);
+        assert!(!tree.exists(&TestKey(3..3)).await.expect("exists failed"));
+        assert_eq!(tree.find_map(&TestKey(3..3), |_| ()).await.expect("find_map failed"), None);
+
+        // Key 4: only in newer layer.
+        assert_eq!(tree.find_value(&TestKey(4..4)).await.expect("find_value failed"), Some(40));
+        assert!(tree.exists(&TestKey(4..4)).await.expect("exists failed"));
+
+        // Key 5: missing in all layers.
+        assert_eq!(tree.find_value(&TestKey(5..5)).await.expect("find_value failed"), None);
+        assert!(!tree.exists(&TestKey(5..5)).await.expect("exists failed"));
+    }
+
+    #[fuchsia::test]
+    async fn test_find_bloom_filter_rejection() {
+        struct BloomFilterMockLayer {
+            drop_event: Mutex<Option<Arc<DropEvent>>>,
+        }
+
+        impl BloomFilterMockLayer {
+            fn new() -> Self {
+                Self { drop_event: Mutex::new(Some(Arc::new(DropEvent::new()))) }
+            }
+        }
+
+        #[async_trait]
+        impl<K: Key, V: Value> Layer<K, V> for BloomFilterMockLayer {
+            async fn seek(
+                &self,
+                _bound: std::ops::Bound<&K>,
+            ) -> Result<BoxedLayerIterator<'_, K, V>, Error> {
+                panic!("seek should not be called on layer skipped by bloom filter");
+            }
+
+            fn lock(&self) -> Option<Arc<DropEvent>> {
+                self.drop_event.lock().clone()
+            }
+
+            fn len(&self) -> usize {
+                0
+            }
+
+            async fn close(&self) {}
+
+            fn get_version(&self) -> Version {
+                LATEST_VERSION
+            }
+
+            fn maybe_contains_key(&self, _key: &K) -> MaybeContainsKey {
+                MaybeContainsKey::False
+            }
+
+            async fn key_exists(&self, _key: &K) -> Result<Existence, Error> {
+                unimplemented!()
+            }
+        }
+
+        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let layer: Arc<dyn Layer<TestKey, u64>> = Arc::new(BloomFilterMockLayer::new());
+        tree.set_layers(vec![layer]);
+
+        let skipped_before = tree.counters.layer_files_skipped.load(Ordering::Relaxed);
+        let total_before = tree.counters.layer_files_total.load(Ordering::Relaxed);
+
+        // Searching for any key: the bloom filter on the immutable layer reports False,
+        // so seek() is never called (which would panic) and the layer is skipped.
+        assert_eq!(tree.find_value(&TestKey(1..1)).await.expect("find failed"), None);
+        assert!(!tree.exists(&TestKey(1..1)).await.expect("exists failed"));
+
+        let skipped_after = tree.counters.layer_files_skipped.load(Ordering::Relaxed);
+        let total_after = tree.counters.layer_files_total.load(Ordering::Relaxed);
+
+        // 2 queries (find_value and exists); each inspects mutable layer + 1 immutable mock layer.
+        // The mock layer is skipped by the bloom filter on both queries.
+        assert_eq!(skipped_after - skipped_before, 2);
+        assert_eq!(total_after - total_before, 4);
     }
 
     #[fuchsia::test]
@@ -748,7 +1069,7 @@ mod tests {
         tree.set_layers(layers_from_handles([handle]).await.expect("layers_from_handles failed"));
         let found_item = tree.find(&item.key).await.expect("find failed").expect("not found");
         assert_eq!(found_item, item);
-        assert!(tree.find(&TestKey(2..2)).await.expect("find failed").is_none());
+        assert!(!tree.exists(&TestKey(2..2)).await.expect("find failed"));
     }
 
     #[fuchsia::test]
@@ -904,7 +1225,7 @@ mod tests {
         assert_eq!(inner.lock().stats(), (0, 0, 0, 0));
 
         // Look for an item, but don't find it. So no insertion. It is dropped.
-        assert!(a.find(&item.key).await.expect("Failed find").is_none());
+        assert!(!a.exists(&item.key).await.expect("Failed find"));
         assert_eq!(inner.lock().stats(), (1, 0, 0, 1));
 
         // Insert attempts to invalidate.
@@ -918,9 +1239,30 @@ mod tests {
         );
         assert_eq!(inner.lock().stats(), (2, 1, 1, 1));
 
+        // find_value on item2 also inserts into cache
+        let item2 = Item::new(TestKey(2..2), 2);
+        let _ = a.insert(item2.clone());
+        assert_eq!(a.find_value(&item2.key).await.expect("Failed find_value"), Some(item2.value));
+        assert_eq!(inner.lock().stats(), (3, 2, 2, 1));
+
+        // exists on item3 also inserts into cache
+        let item3 = Item::new(TestKey(3..3), 3);
+        let _ = a.insert(item3.clone());
+        assert!(a.exists(&item3.key).await.expect("Failed exists"));
+        assert_eq!(inner.lock().stats(), (4, 3, 3, 1));
+
+        // find_map on item4 also inserts into cache
+        let item4 = Item::new(TestKey(4..4), 4);
+        let _ = a.insert(item4.clone());
+        assert_eq!(
+            a.find_map(&item4.key, |item| item.value * 2).await.expect("Failed find_map"),
+            Some(8)
+        );
+        assert_eq!(inner.lock().stats(), (5, 4, 4, 1));
+
         // Insert or replace attempts to invalidate as well.
         a.replace_or_insert(item.clone());
-        assert_eq!(inner.lock().stats(), (2, 1, 2, 1));
+        assert_eq!(inner.lock().stats(), (5, 4, 5, 1));
     }
 
     #[fuchsia::test]
@@ -942,10 +1284,47 @@ mod tests {
 
         // Look for item, find it in cache, so no insert.
         assert_eq!(
-            a.find(&item.key).await.expect("Failed find").expect("Item should be found.").value,
+            a.find_value(&item.key).await.expect("Failed find").expect("Item should be found."),
             item.value
         );
         assert_eq!(inner.lock().stats(), (1, 0, 1, 0));
+    }
+
+    #[fuchsia::test]
+    async fn test_cache_hit_deleted_marker() {
+        let item = Item::new(TestKey(1..1), 1);
+        let cache = Box::new(AuditCache::new());
+        let inner = cache.inner.clone();
+        let a = LSMTree::new(emit_left_merge_fn, cache);
+
+        // Zero counters.
+        assert_eq!(inner.lock().stats(), (0, 0, 0, 0));
+
+        // Insert attempts to invalidate.
+        let _ = a.insert(item.clone());
+        assert_eq!(inner.lock().stats(), (0, 0, 1, 0));
+
+        // Set up the cache to return DELETED_MARKER.
+        inner.lock().result = Some(ObjectCacheResult::Value(u64::DELETED_MARKER));
+
+        // find_value should hit the cache, see DELETED_MARKER, and return None.
+        assert_eq!(a.find_value(&item.key).await.expect("Failed find_value"), None);
+        assert_eq!(inner.lock().stats(), (1, 0, 1, 0));
+
+        // exists should also return false on cache hit DELETED_MARKER.
+        inner.lock().result = Some(ObjectCacheResult::Value(u64::DELETED_MARKER));
+        assert!(!a.exists(&item.key).await.expect("Failed exists"));
+        assert_eq!(inner.lock().stats(), (2, 0, 1, 0));
+
+        // find should also return None on cache hit DELETED_MARKER.
+        inner.lock().result = Some(ObjectCacheResult::Value(u64::DELETED_MARKER));
+        assert!(a.find(&item.key).await.expect("Failed find").is_none());
+        assert_eq!(inner.lock().stats(), (3, 0, 1, 0));
+
+        // find_map should also return None on cache hit DELETED_MARKER.
+        inner.lock().result = Some(ObjectCacheResult::Value(u64::DELETED_MARKER));
+        assert!(a.find_map(&item.key, |_| ()).await.expect("Failed find_map").is_none());
+        assert_eq!(inner.lock().stats(), (4, 0, 1, 0));
     }
 
     #[fuchsia::test]
@@ -964,7 +1343,7 @@ mod tests {
 
         // Look for item, it is uncacheable, so no insert.
         assert_eq!(
-            a.find(&item.key).await.expect("Failed find").expect("Should find item").value,
+            a.find_value(&item.key).await.expect("Failed find").expect("Should find item"),
             item.value
         );
         assert_eq!(inner.lock().stats(), (1, 0, 1, 0));

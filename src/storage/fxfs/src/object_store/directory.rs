@@ -4,11 +4,11 @@
 use crate::errors::FxfsError;
 use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::{Merger, MergerIterator};
-use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
+use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ObjectProperties};
 use crate::object_store::object_record::{
     ChildValue, DirType, EncryptedCasefoldChild, EncryptedChild, ObjectAttributes,
-    ObjectDescriptor, ObjectItem, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue, Timestamp,
+    ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectValue, Timestamp,
 };
 use crate::object_store::transaction::{
     LockKey, LockKeys, Mutation, Options, Transaction, lock_keys,
@@ -330,17 +330,17 @@ impl<S: HandleOwner> Directory<S> {
             transaction.add(store.store_object_id(), Mutation::ObjectStore(mutation));
 
             let keys_key = ObjectKey::keys(object_id);
-            let item = if let Some(mutation) =
+            let value = if let Some(mutation) =
                 transaction.get_object_mutation(store.store_object_id(), keys_key.clone())
             {
-                Some(mutation.item.clone())
+                Some(mutation.item.value.clone())
             } else {
-                store.tree.find(&keys_key).await?
+                store.tree.find_value(&keys_key).await?
             };
 
             let cipher = key_to_cipher(&key, &unwrapped_key)?;
-            match item {
-                None | Some(Item { value: ObjectValue::None, .. }) => {
+            match value {
+                None | Some(ObjectValue::None) => {
                     transaction.add(
                         store.store_object_id(),
                         Mutation::insert_object(
@@ -349,7 +349,7 @@ impl<S: HandleOwner> Directory<S> {
                         ),
                     );
                 }
-                Some(Item { value: ObjectValue::Keys(mut keys), .. }) => {
+                Some(ObjectValue::Keys(mut keys)) => {
                     keys.insert(FSCRYPT_KEY_ID, key.into());
                     transaction.add(
                         store.store_object_id(),
@@ -359,7 +359,7 @@ impl<S: HandleOwner> Directory<S> {
                         ),
                     );
                 }
-                Some(item) => bail!("Unexpected item in lookup: {item:?}"),
+                Some(value) => bail!("Unexpected value in lookup: {value:?}"),
             }
             Ok(cipher)
         } else {
@@ -370,13 +370,17 @@ impl<S: HandleOwner> Directory<S> {
     #[trace]
     pub async fn open(owner: &Arc<S>, object_id: u64) -> Result<Directory<S>, Error> {
         let store = owner.as_ref().as_ref();
-        match store.tree.find(&ObjectKey::object(object_id)).await?.ok_or(FxfsError::NotFound)? {
-            ObjectItem {
-                value: ObjectValue::Object { kind: ObjectKind::Directory { dir_type, .. }, .. },
-                ..
-            } => Ok(Directory::new(owner.clone(), object_id, dir_type)),
-            _ => bail!(FxfsError::NotDir),
-        }
+        let dir_type = store
+            .tree
+            .find_map(&ObjectKey::object(object_id), |item| match item.value {
+                ObjectValue::Object { kind: ObjectKind::Directory { dir_type, .. }, .. } => {
+                    Ok(*dir_type)
+                }
+                _ => bail!(FxfsError::NotDir),
+            })
+            .await?
+            .ok_or(FxfsError::NotFound)??;
+        Ok(Directory::new(owner.clone(), object_id, dir_type))
     }
 
     /// Opens a directory. The caller is responsible for ensuring that the object exists and is a
@@ -651,22 +655,22 @@ impl<S: HandleOwner> Directory<S> {
                     .context(format!("Unexpected item in lookup: {item:?}"))),
             }
         } else {
-            let item = self.store().tree().find(&key).await?;
-            match item {
-                None => Ok(None),
-                Some(ObjectItem {
-                    key: found_key,
-                    value: ObjectValue::Child(ChildValue { object_id, object_descriptor }),
-                    ..
-                }) => Ok(Some(LookupEntry {
-                    object_id,
-                    descriptor: object_descriptor,
-                    key: found_key,
-                    locked: false,
-                })),
-                _ => Err(anyhow!(FxfsError::Inconsistent)
-                    .context(format!("Unexpected item in lookup: {item:?}",))),
-            }
+            self.store()
+                .tree()
+                .find_map(&key, |item| match item.value {
+                    ObjectValue::Child(ChildValue { object_id, object_descriptor }) => {
+                        Ok(LookupEntry {
+                            object_id: *object_id,
+                            descriptor: *object_descriptor,
+                            key: item.key.clone(),
+                            locked: false,
+                        })
+                    }
+                    _ => Err(anyhow!(FxfsError::Inconsistent)
+                        .context(format!("Unexpected item in lookup: {item:?}",))),
+                })
+                .await?
+                .transpose()
         }
     }
 
@@ -1226,13 +1230,13 @@ impl<S: HandleOwner> Directory<S> {
             });
         }
 
-        let item = self
+        let value = self
             .store()
             .tree()
-            .find(&ObjectKey::object(self.object_id()))
+            .find_value(&ObjectKey::object(self.object_id()))
             .await?
             .ok_or(FxfsError::NotFound)?;
-        match item.value {
+        match value {
             ObjectValue::Object {
                 kind: ObjectKind::Directory { sub_dirs, dir_type },
                 attributes:
@@ -2059,15 +2063,15 @@ mod tests {
             .await
             .expect("volume failed");
 
-        let item = store
+        let value = store
             .tree()
-            .find(&ObjectKey::object(symlink_object_id))
+            .find_value(&ObjectKey::object(symlink_object_id))
             .await
             .expect("find failed")
             .expect("found record");
-        let raw_link = match item.value {
+        let raw_link = match value {
             ObjectValue::Object { kind: ObjectKind::EncryptedSymlink { link, .. }, .. } => link,
-            _ => panic!("Unexpected item {item:?}"),
+            _ => panic!("Unexpected value {value:?}"),
         };
         let symlink_target = store.read_symlink(symlink_object_id).await?;
         // Locked symlinks always have hash_code of zero.

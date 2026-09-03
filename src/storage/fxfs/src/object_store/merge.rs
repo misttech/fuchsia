@@ -1377,7 +1377,7 @@ mod tests {
         tree.seal();
 
         assert_eq!(
-            tree.find(&key).await.expect("Find").unwrap().value,
+            tree.find_value(&key).await.expect("Find").unwrap(),
             ObjectValue::BytesAndNodes { bytes: 104, nodes: 1008 }
         );
 
@@ -1388,7 +1388,7 @@ mod tests {
         tree.seal();
 
         assert_eq!(
-            tree.find(&key).await.expect("Find").unwrap().value,
+            tree.find_value(&key).await.expect("Find").unwrap(),
             ObjectValue::BytesAndNodes { bytes: 104, nodes: 1008 }
         );
 
@@ -1412,7 +1412,7 @@ mod tests {
         assert!(iter.get().is_none());
 
         assert_eq!(
-            tree.find(&key).await.expect("Find").unwrap().value,
+            tree.find_value(&key).await.expect("Find").unwrap(),
             ObjectValue::BytesAndNodes { bytes: 120, nodes: 1040 }
         );
     }

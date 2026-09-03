@@ -30,7 +30,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// ObjectDescriptor is the set of possible records in the object store.
 pub type ObjectDescriptor = ObjectDescriptorV32;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, TypeFingerprint)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub enum ObjectDescriptorV32 {
     /// A file (in the generic sense; i.e. an object with some attributes).

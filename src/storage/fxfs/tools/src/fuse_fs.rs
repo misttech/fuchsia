@@ -310,23 +310,19 @@ impl FuseFs {
             }
         }
 
-        match self
-            .default_store
+        self.default_store
             .tree()
-            .find(&ObjectKey::object(object_id))
+            .find_map(&ObjectKey::object(object_id), |item| match item.value {
+                ObjectValue::Object { kind, .. } => match kind {
+                    ObjectKind::Directory { .. } => Ok(ObjectDescriptor::Directory),
+                    ObjectKind::File { .. } => Ok(ObjectDescriptor::File),
+                    ObjectKind::Symlink { .. } => Ok(ObjectDescriptor::Symlink),
+                    _ => Err(FxfsError::Inconsistent.into()),
+                },
+                _ => Err(FxfsError::Inconsistent.into()),
+            })
             .await?
             .ok_or(FxfsError::NotFound)?
-            .value
-        {
-            ObjectValue::Object { kind, .. } => Ok(match kind {
-                ObjectKind::Directory { .. } => ObjectDescriptor::Directory,
-                ObjectKind::File { .. } => ObjectDescriptor::File,
-                ObjectKind::Symlink { .. } => ObjectDescriptor::Symlink,
-                _ => Err(FxfsError::Inconsistent)?,
-            }),
-            ObjectValue::None => Err(FxfsError::NotFound.into()),
-            _ => Err(FxfsError::Inconsistent.into()),
-        }
     }
 
     /// Create the FUSE-style attribute for an object based on its type.

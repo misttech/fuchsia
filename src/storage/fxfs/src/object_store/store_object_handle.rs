@@ -7,13 +7,13 @@ use crate::errors::FxfsError;
 use crate::log::*;
 use crate::lsm_tree::Query;
 use crate::lsm_tree::merge::{Merger, MergerIterator};
-use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
+use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::object_handle::ObjectHandle;
 use crate::object_store::extent_record::{ExtentMode, ExtentValue};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::object_record::{
-    AttributeKey, ExtendedAttributeValue, ObjectAttributes, ObjectItem, ObjectKey, ObjectKeyData,
-    ObjectValue, Timestamp,
+    AttributeKey, ExtendedAttributeValue, ObjectAttributes, ObjectKey, ObjectKeyData, ObjectValue,
+    Timestamp,
 };
 use crate::object_store::transaction::{
     AssocObj, AssociatedObject, LockKey, Mutation, ObjectStoreMutation, Options, ReadGuard,
@@ -710,24 +710,22 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             // Add the object to the graveyard in case the following transactions don't get
             // replayed.
             let graveyard_id = store.graveyard_directory_object_id();
-            match store
+            // Check if the object is already in the graveyard.
+            let in_graveyard = store
                 .tree
-                .find(&ObjectKey::graveyard_entry(graveyard_id, self.object_id()))
+                .find_map(&ObjectKey::graveyard_entry(graveyard_id, self.object_id()), |item| {
+                    matches!(item.value, ObjectValue::Some | ObjectValue::Trim)
+                })
                 .await?
-            {
-                Some(ObjectItem { value: ObjectValue::Some, .. })
-                | Some(ObjectItem { value: ObjectValue::Trim, .. }) => {
-                    // This object is already in the graveyard so we don't need to do anything.
-                }
-                _ => {
-                    transaction.add(
-                        store.store_object_id,
-                        Mutation::replace_or_insert_object(
-                            ObjectKey::graveyard_entry(graveyard_id, self.object_id()),
-                            ObjectValue::Trim,
-                        ),
-                    );
-                }
+                .unwrap_or(false);
+            if !in_graveyard {
+                transaction.add(
+                    store.store_object_id,
+                    Mutation::replace_or_insert_object(
+                        ObjectKey::graveyard_entry(graveyard_id, self.object_id()),
+                        ObjectValue::Trim,
+                    ),
+                );
             }
         }
         Ok(NeedsTrim(needs_trim))
@@ -922,10 +920,10 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let crypt = store.crypt().ok_or_else(|| anyhow!("No crypt!"))?;
 
         // Next, see if the keys are already created.
-        let (mut encryption_keys, mut cipher_set) = if let Some(item) =
-            store.tree.find(&ObjectKey::keys(self.object_id)).await.context("find failed")?
+        let (mut encryption_keys, mut cipher_set) = if let Some(value) =
+            store.tree.find_value(&ObjectKey::keys(self.object_id)).await.context("find failed")?
         {
-            if let ObjectValue::Keys(encryption_keys) = item.value {
+            if let ObjectValue::Keys(encryption_keys) = value {
                 let cipher_set = store
                     .key_manager
                     .get_keys(
@@ -1015,14 +1013,16 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             .await;
 
         let key = ObjectKey::attribute(self.object_id(), attribute_id, AttributeKey::Attribute);
-        let item = self.store().tree().find(&key).await?;
-        let size = match item {
-            Some(item) if item.key == key => match item.value {
-                ObjectValue::Attribute { size, .. } => size,
-                _ => bail!(FxfsError::Inconsistent),
-            },
-            _ => return Ok(0),
-        };
+        let size = self
+            .store()
+            .tree()
+            .find_map(&key, |item| match item.value {
+                ObjectValue::Attribute { size, .. } => Ok(*size),
+                _ => Err(anyhow!(FxfsError::Inconsistent)),
+            })
+            .await?
+            .transpose()?
+            .unwrap_or(0);
         if offset >= size {
             return Ok(0);
         }
@@ -1887,23 +1887,21 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let rounded_len = round_up(data.len() as u64, self.block_size()).unwrap();
         let store = self.store();
         let tree = store.tree();
-        let should_trim = if let Some(item) = tree
-            .find(&ObjectKey::attribute(self.object_id(), attribute_id, AttributeKey::Attribute))
+        let should_trim = tree
+            .find_map(
+                &ObjectKey::attribute(self.object_id(), attribute_id, AttributeKey::Attribute),
+                |item| match item.value {
+                    ObjectValue::Attribute { size: _, has_overwrite_extents: true } => {
+                        Err(anyhow!(FxfsError::Inconsistent)
+                            .context("write_attr on an attribute with overwrite extents"))
+                    }
+                    ObjectValue::Attribute { size, .. } => Ok((data.len() as u64) < *size),
+                    _ => Err(FxfsError::Inconsistent.into()),
+                },
+            )
             .await?
-        {
-            match item.value {
-                ObjectValue::Attribute { size: _, has_overwrite_extents: true } => {
-                    bail!(
-                        anyhow!(FxfsError::Inconsistent)
-                            .context("write_attr on an attribute with overwrite extents")
-                    )
-                }
-                ObjectValue::Attribute { size, .. } => (data.len() as u64) < size,
-                _ => bail!(FxfsError::Inconsistent),
-            }
-        } else {
-            false
-        };
+            .transpose()?
+            .unwrap_or(false);
         let mut buffer = self.store().device.allocate_buffer(rounded_len as usize).await;
         let mut slice = buffer.as_mut_ptr_slice();
         slice.subslice_mut(0..data.len()).copy_from_slice(data);
@@ -1966,42 +1964,34 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         // This optimization is only useful as long as the attribute is smaller than inline sizes.
         // Avoid reading the data out of the attributes.
         const_assert!(fio::MAX_SELINUX_CONTEXT_ATTRIBUTE_LEN as usize <= MAX_INLINE_XATTR_SIZE);
-        let item = match self
-            .store()
+        self.store()
             .tree()
-            .find(&ObjectKey::extended_attribute(
-                self.object_id(),
-                fio::SELINUX_CONTEXT_NAME.into(),
-            ))
+            .find_map(
+                &ObjectKey::extended_attribute(self.object_id(), fio::SELINUX_CONTEXT_NAME.into()),
+                |item| match item.value {
+                    ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(value)) => {
+                        Ok(fio::SelinuxContext::Data(value.clone()))
+                    }
+                    ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(_)) => {
+                        Ok(fio::SelinuxContext::UseExtendedAttributes(fio::EmptyStruct {}))
+                    }
+                    _ => Err(anyhow!(FxfsError::Inconsistent).context(
+                        "get_inline_extended_attribute: Expected ExtendedAttribute value",
+                    )),
+                },
+            )
             .await?
-        {
-            Some(item) => item,
-            None => return Ok(None),
-        };
-        match item.value {
-            ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(value)) => {
-                Ok(Some(fio::SelinuxContext::Data(value)))
-            }
-            ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(_)) => {
-                Ok(Some(fio::SelinuxContext::UseExtendedAttributes(fio::EmptyStruct {})))
-            }
-            _ => {
-                bail!(
-                    anyhow!(FxfsError::Inconsistent)
-                        .context("get_inline_extended_attribute: Expected ExtendedAttribute value")
-                )
-            }
-        }
+            .transpose()
     }
 
     pub async fn get_extended_attribute(&self, name: Vec<u8>) -> Result<Vec<u8>, Error> {
-        let item = self
+        let value = self
             .store()
             .tree()
-            .find(&ObjectKey::extended_attribute(self.object_id(), name))
+            .find_value(&ObjectKey::extended_attribute(self.object_id(), name))
             .await?
             .ok_or(FxfsError::NotFound)?;
-        match item.value {
+        match value {
             ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(value)) => Ok(value),
             ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => {
                 Ok(self.read_attr(id).await?.ok_or(FxfsError::Inconsistent)?.into_vec())
@@ -2044,21 +2034,19 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let object_key = ObjectKey::extended_attribute(self.object_id(), name);
 
         let existing_attribute_id = {
-            let (found, existing_attribute_id) = match tree.find(&object_key).await? {
+            let find_result = tree
+                .find_map(&object_key, |item| match item.value {
+                    ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(..)) => Ok(None),
+                    ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => {
+                        Ok(Some(*id))
+                    }
+                    _ => Err(anyhow!(FxfsError::Inconsistent)
+                        .context("expected extended attribute value")),
+                })
+                .await?;
+            let (found, existing_attribute_id) = match find_result {
+                Some(id) => (true, id?),
                 None => (false, None),
-                Some(Item { value, .. }) => (
-                    true,
-                    match value {
-                        ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(..)) => None,
-                        ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => {
-                            Some(id)
-                        }
-                        _ => bail!(
-                            anyhow!(FxfsError::Inconsistent)
-                                .context("expected extended attribute value")
-                        ),
-                    },
-                ),
             };
             match mode {
                 SetExtendedAttributeMode::Create if found => {
@@ -2161,17 +2149,17 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let keys = lock_keys![LockKey::object(store.store_object_id(), self.object_id())];
         let mut transaction = store.new_transaction(keys, Options::default()).await?;
 
-        let attribute_to_delete =
-            match tree.find(&object_key).await?.ok_or(FxfsError::NotFound)?.value {
-                ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => Some(id),
-                ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(..)) => None,
-                _ => {
-                    bail!(
-                        anyhow!(FxfsError::Inconsistent)
-                            .context("remove_extended_attribute: Expected ExtendedAttribute value")
-                    )
+        let attribute_to_delete = tree
+            .find_map(&object_key, |item| match item.value {
+                ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => {
+                    Ok(Some(*id))
                 }
-            };
+                ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(..)) => Ok(None),
+                _ => Err(anyhow!(FxfsError::Inconsistent)
+                    .context("remove_extended_attribute: Expected ExtendedAttribute value")),
+            })
+            .await?
+            .ok_or(FxfsError::NotFound)??;
 
         transaction.add(
             store.store_object_id(),
