@@ -1492,7 +1492,7 @@ pub fn check_task_setscheduler_access(source: &CurrentTask, target: &Task) -> Re
 /// Checks if setting nice value is allowed.
 /// Corresponds to the `task_setnice()` LSM hook.
 pub fn check_task_setnice_access(source: &CurrentTask, target: &Task) -> Result<(), Errno> {
-    track_hook_duration!("security.hooks.task_setnice");
+    track_hook_duration!("security.hooks.check_task_setnice_access");
     if_selinux_else_default_ok(source, |security_server| {
         selinux_hooks::task::check_setsched_access(
             &selinux_hooks::build_permission_check(source, security_server),
