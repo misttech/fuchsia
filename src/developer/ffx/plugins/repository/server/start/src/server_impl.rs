@@ -184,6 +184,10 @@ pub enum ServerValidationErrorKind {
     ProductBundleDoesNotExist(Utf8PathBuf),
 
     #[user]
+    #[error("product bundle {0:?} does not contain any repositories")]
+    ProductBundleHasNoRepositories(Utf8PathBuf),
+
+    #[user]
     #[error("repo-path {0:?} does not exist")]
     RepositoryDoesNotExist(Utf8PathBuf),
 
@@ -333,9 +337,15 @@ pub async fn serve_impl_validate_args(
                     format!("getting repositories from product bundle {product_bundle}")
                 })
                 .map_err(ServerValidationErrorKind::Unexpected)?;
+            if repositories.is_empty() {
+                return Err(ServerValidationErrorKind::ProductBundleHasNoRepositories(
+                    product_bundle,
+                )
+                .into());
+            }
             let mut pb_repo_name_paths = vec![];
             for r in repositories {
-                if let Some(first_alias) = r.aliases().clone().first() {
+                if let Some(first_alias) = r.aliases().first() {
                     pb_repo_name_paths
                         .push((format!("{repo_base_name}.{first_alias}"), product_bundle.clone()));
                 } else {
@@ -463,7 +473,7 @@ pub async fn serve_impl(
     context: EnvironmentContext,
     mode: ServerMode,
     tx: &mut mpsc::UnboundedSender<crate::target::ConnectEvent>,
-    repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
+    repo_url_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 ) -> std::result::Result<ServeStarted, ServeError> {
     // Validate the cmd args before processing. This allows good error messages to be presented
     // to the user when running in Background mode. If the server is already running, this returns
@@ -675,7 +685,7 @@ pub async fn serve_impl(
         auto_publisher.detach();
     }
 
-    let result = if cmd.no_device && repo_host_tx.is_none() {
+    let result = if cmd.no_device && repo_url_tx.is_none() {
         if let Err(e) = tx
             .send(crate::target::ConnectEvent::StartServe {
                 repo_path: repo_path.to_string(),
@@ -710,7 +720,7 @@ pub async fn serve_impl(
             host_address,
             tunnel_addr,
             connection_sink,
-            repo_host_tx,
+            repo_url_tx,
         ))
         .await;
         if r.is_err() {
@@ -2099,7 +2109,7 @@ mod test {
         };
 
         let (mut tx, _rx) = futures::channel::mpsc::unbounded();
-        let (repo_host_tx, mut repo_host_rx) = futures::channel::mpsc::unbounded();
+        let (repo_url_tx, mut repo_url_rx) = futures::channel::mpsc::unbounded();
 
         // Run main in background
         let _task = fasync::Task::local(async move {
@@ -2130,7 +2140,7 @@ mod test {
                 test_env.context.clone(),
                 ServerMode::Foreground,
                 &mut tx,
-                Some(repo_host_tx),
+                Some(repo_url_tx),
             ))
             .await
             .unwrap()
@@ -2152,7 +2162,10 @@ mod test {
         let target_repo_port =
             if direct_target_connection { dynamic_repo_port } else { DEVICE_PORT };
 
-        assert_eq!(repo_host_rx.next().await.unwrap(), format!("{repo_host}:{target_repo_port}"));
+        assert_eq!(
+            repo_url_rx.next().await.unwrap(),
+            format!("http://{repo_host}:{target_repo_port}/{repo_base_name}.example.com")
+        );
         assert_eq!(
             fake_repo.take_events(),
             ["example.com", "fuchsia.com"].map(|repo_name| RepositoryManagerEvent::Add {

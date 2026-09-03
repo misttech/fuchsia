@@ -127,7 +127,7 @@ async fn inner_connect_loop(
     host_address: Option<String>,
     tunnel_addr: core::net::SocketAddr,
     connection_sink: &mut mpsc::UnboundedSender<anyhow::Result<ConnectionStream>>,
-    repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
+    repo_url_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 ) -> Result<()> {
     let mut target_spec_from_rcs_proxy: Option<String> = None;
     let rcs_proxy = timeout(
@@ -175,9 +175,11 @@ async fn inner_connect_loop(
     .with_context(|| format!("connect to target {target_spec:?}"));
     match connection {
         Ok((repo_host, proxy_stream)) => {
-            if let Some(tx) = repo_host_tx {
-                if let Err(e) = tx.unbounded_send(repo_host) {
-                    log::warn!("Error sending repo host message: {}", e);
+            if let Some(tx) = repo_url_tx {
+                let (repo_name, _repo_client) = repo_manager.repositories().next().unwrap();
+                let url = format!("http://{repo_host}/{repo_name}");
+                if let Err(e) = tx.unbounded_send(url) {
+                    log::warn!("Error sending repo url message: {e}");
                 }
             }
 
@@ -284,7 +286,7 @@ pub(crate) async fn main_connect_loop(
     host_address: Option<String>,
     tunnel_addr: core::net::SocketAddr,
     mut connection_sink: mpsc::UnboundedSender<anyhow::Result<ConnectionStream>>,
-    repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
+    repo_url_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 ) -> Result<()> {
     let mut attempts = 0;
 
@@ -312,7 +314,7 @@ pub(crate) async fn main_connect_loop(
             host_address.clone(),
             tunnel_addr,
             &mut connection_sink,
-            repo_host_tx.clone(),
+            repo_url_tx.clone(),
         )
         .fuse();
 

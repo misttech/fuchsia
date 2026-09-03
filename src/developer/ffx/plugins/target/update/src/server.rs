@@ -50,7 +50,7 @@ impl std::io::Write for LogWriter {
 
 pub(crate) struct PackageServerTask {
     pub(crate) repo_name: String,
-    pub(crate) repo_host_rx: futures::channel::mpsc::UnboundedReceiver<String>,
+    pub(crate) repo_url_rx: futures::channel::mpsc::UnboundedReceiver<String>,
     pub(crate) task: Task<Result<()>>,
 }
 
@@ -106,7 +106,7 @@ pub(crate) async fn package_server_task(
         )
     }
 
-    let (repo_host_tx, repo_host_rx) = futures::channel::mpsc::unbounded();
+    let (repo_url_tx, repo_url_rx) = futures::channel::mpsc::unbounded();
 
     let task = fuchsia_async::Task::local(async move {
         let stdout = LogWriter::new("repo_server stdout");
@@ -122,7 +122,7 @@ pub(crate) async fn package_server_task(
             host_address,
             server_writer,
             pkg::ServerMode::Foreground,
-            Some(repo_host_tx),
+            Some(repo_url_tx),
         ))
         .await;
 
@@ -130,7 +130,7 @@ pub(crate) async fn package_server_task(
         server_result.map_err(Into::into)
     });
 
-    Ok(PackageServerTask { repo_name, repo_host_rx, task })
+    Ok(PackageServerTask { repo_name, repo_url_rx, task })
 }
 
 pub(crate) async fn wait_for_device_task(

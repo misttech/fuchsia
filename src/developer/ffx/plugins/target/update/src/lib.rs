@@ -25,7 +25,6 @@ use fidl::Signals;
 use fidl_fuchsia_update_ext::State;
 use fidl_fuchsia_update_installer_ext as installer;
 use fuchsia_async::Timer;
-use fuchsia_repo::repository::RepoProvider as _;
 use futures::future::{FusedFuture as _, FutureExt as _};
 use futures::{StreamExt as _, TryStreamExt as _, pin_mut, select};
 use pkg::PkgServerInstanceInfo as _;
@@ -274,7 +273,7 @@ impl UpdateTool {
         if let Some(server_task) = package_server_task {
             // Use select! to run the package server at the same time as the others. This is preferable
             // to using detach(), since we can get error result from the package server.
-            let server::PackageServerTask { repo_name, repo_host_rx: _, task } = server_task;
+            let server::PackageServerTask { repo_name, repo_url_rx: _, task } = server_task;
             let rcs_proxy_connector = self.rcs_proxy_connector.clone();
 
             // wait for the server to be registered before running the check.
@@ -394,41 +393,18 @@ impl UpdateTool {
             url.parse::<http::Uri>().map_err(|e| UpdateError::Fho(bug!(e)))?
         } else if cmd.packageless {
             if let Some(server_task) = &mut package_server_task {
-                // Need to get the repo host address from the package server task, because it might
+                // Need to get the repo url from the package server task, because it might
                 // be a tunneled connection.
-                let mut repo_host =
-                    timeout::timeout(Duration::from_secs(30), server_task.repo_host_rx.next())
+                let mut repo_url =
+                    timeout::timeout(Duration::from_secs(30), server_task.repo_url_rx.next())
                         .await
                         .map_err(|e| UpdateError::Fho(bug!(e)))?
-                        .ok_or_else(|| {
-                            UpdateError::Fho(bug!("Failed to get the repo host address"))
-                        })?;
+                        .ok_or_else(|| UpdateError::Fho(bug!("Failed to get the repo url")))?;
                 // If package_server_task enters connection loop, we want to get the latest address.
-                while let Ok(Some(host)) = server_task.repo_host_rx.try_next() {
-                    repo_host = host;
+                while let Ok(Some(url)) = server_task.repo_url_rx.try_next() {
+                    repo_url = url;
                 }
-                let first_alias = (|| -> Result<String, anyhow::Error> {
-                    let product_path =
-                        Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
-                    let repos = product_bundle::get_repositories(product_path)?;
-                    let repo =
-                        repos.first().ok_or_else(|| anyhow::anyhow!("No repositories found"))?;
-                    let alias = repo
-                        .aliases()
-                        .first()
-                        .ok_or_else(|| anyhow::anyhow!("No aliases found"))?;
-                    Ok(alias.to_owned())
-                })()
-                .unwrap_or_else(|e| {
-                    log::warn!(
-                        "Could not determine the first alias for the product bundle: {e}, defaulting to 'fuchsia.com'"
-                    );
-                    "fuchsia.com".to_string()
-                });
-                let url = format!(
-                    "http://{}/{}.{}/ota_manifest",
-                    repo_host, server_task.repo_name, first_alias
-                );
+                let url = format!("{repo_url}/ota_manifest");
                 url.parse::<http::Uri>().map_err(|e| UpdateError::Fho(bug!(e)))?
             } else {
                 let instance_root =
@@ -468,7 +444,7 @@ impl UpdateTool {
         if let Some(server_task) = package_server_task {
             // Use select! to run the package server at the same time as the others. This is preferable
             // to using detach(), since we can get error result from the package server.
-            let server::PackageServerTask { repo_name, repo_host_rx: _, task } = server_task;
+            let server::PackageServerTask { repo_name, repo_url_rx: _, task } = server_task;
             let rcs_proxy_connector = self.rcs_proxy_connector.clone();
 
             // wait for the server to be registered before running the check.

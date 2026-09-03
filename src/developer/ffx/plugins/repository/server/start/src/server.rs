@@ -89,7 +89,7 @@ pub enum ForegroundServerError {
 /// Runs the repository server in the foreground.
 ///
 /// # Arguments
-/// * `repo_host_tx` - Channel on which the server will send the repo host when the server starts
+/// * `repo_url_tx` - Channel on which the server will send the repo url when the server starts
 ///   and any time it changes.
 pub async fn run_foreground_server(
     start_cmd: StartCommand,
@@ -99,7 +99,7 @@ pub async fn run_foreground_server(
     host_addr: Deferred<HostAddrHolder>,
     mut w: VerifiedMachineWriter<CommandStatus>,
     mode: ServerMode,
-    repo_host_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
+    repo_url_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 ) -> std::result::Result<(), ForegroundServerError> {
     let (mut tx, mut rx) = futures::channel::mpsc::unbounded();
     let drain_task = async {
@@ -118,7 +118,7 @@ pub async fn run_foreground_server(
             context,
             mode,
             &mut tx,
-            repo_host_tx,
+            repo_url_tx,
         )
         .await
     };
