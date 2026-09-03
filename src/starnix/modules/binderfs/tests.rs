@@ -854,6 +854,170 @@ pub mod tests {
     }
 
     #[fuchsia::test]
+    fn shared_memory_best_fit_and_coalescing() {
+        let memory = MemoryObject::from(zx::Vmo::create(1024).expect("failed to create VMO"));
+        let mut shared_memory =
+            SharedMemory::map(&memory, BASE_ADDR, 1024).expect("failed to map shared memory");
+
+        // Allocate 4 chunks of 256 bytes each (A: 0..256, B: 256..512, C: 512..768, D: 768..1024)
+        let addr_a = (BASE_ADDR
+            + shared_memory.allocate_buffers(256, 0, 0, 0).unwrap().data_buffer.offset)
+            .unwrap();
+        let addr_b = (BASE_ADDR
+            + shared_memory.allocate_buffers(256, 0, 0, 0).unwrap().data_buffer.offset)
+            .unwrap();
+        let addr_c = (BASE_ADDR
+            + shared_memory.allocate_buffers(256, 0, 0, 0).unwrap().data_buffer.offset)
+            .unwrap();
+        let addr_d = (BASE_ADDR
+            + shared_memory.allocate_buffers(256, 0, 0, 0).unwrap().data_buffer.offset)
+            .unwrap();
+
+        // Memory is full.
+        shared_memory.allocate_buffers(8, 0, 0, 0).expect_err("memory should be full");
+
+        // Free B (hole 256..512) and D (hole 768..1024)
+        shared_memory.free_buffer(addr_b).expect("free B");
+        shared_memory.free_buffer(addr_d).expect("free D");
+
+        // Best-fit test: allocating 128 bytes should pick the smallest fitting hole (e.g. B at 256)
+        let (small_offset, small_addr) = {
+            let alloc_small = shared_memory.allocate_buffers(128, 0, 0, 0).expect("allocate small");
+            (alloc_small.data_buffer.offset, (BASE_ADDR + alloc_small.data_buffer.offset).unwrap())
+        };
+        assert_eq!(small_offset, 256);
+
+        // Free A (0..256), coalescing with remaining free space in slot B (384..512) when small is freed.
+        shared_memory.free_buffer(addr_a).expect("free A");
+        shared_memory.free_buffer(small_addr).expect("free small");
+
+        // Now 0..512 is completely coalesced into a single 512-byte free chunk!
+        let (large_offset, large_addr) = {
+            let alloc_large =
+                shared_memory.allocate_buffers(512, 0, 0, 0).expect("allocate 512 bytes");
+            (alloc_large.data_buffer.offset, (BASE_ADDR + alloc_large.data_buffer.offset).unwrap())
+        };
+        assert_eq!(large_offset, 0);
+
+        // Free C (512..768) and large (0..512). Since D was already freed, all 1024 bytes are coalesced!
+        shared_memory.free_buffer(addr_c).expect("free C");
+        shared_memory.free_buffer(large_addr).expect("free large");
+
+        // Can allocate the entire 1024-byte buffer in one chunk!
+        let alloc_full = shared_memory.allocate_buffers(1024, 0, 0, 0).expect("allocate full");
+        assert_eq!(alloc_full.data_buffer.offset, 0);
+    }
+
+    #[fuchsia::test]
+    fn shared_memory_invalid_and_double_free() {
+        let memory = MemoryObject::from(zx::Vmo::create(1024).expect("failed to create VMO"));
+        let mut shared_memory =
+            SharedMemory::map(&memory, BASE_ADDR, 1024).expect("failed to map shared memory");
+
+        let addr = {
+            let alloc = shared_memory.allocate_buffers(256, 0, 0, 0).expect("allocate 256");
+            (BASE_ADDR + alloc.data_buffer.offset).unwrap()
+        };
+
+        // Valid free
+        shared_memory.free_buffer(addr).expect("valid free");
+
+        // Double free must fail with EINVAL
+        assert_eq!(shared_memory.free_buffer(addr), Err(errno!(EINVAL)));
+
+        // Freeing unmapped address must fail with EINVAL
+        assert_eq!(shared_memory.free_buffer(UserAddress::from(0xdeadbeef)), Err(errno!(EINVAL)));
+        assert_eq!(
+            shared_memory.free_buffer((BASE_ADDR + 5000usize).unwrap()),
+            Err(errno!(EINVAL))
+        );
+    }
+
+    #[fuchsia::test]
+    fn shared_memory_exact_fit_allocation() {
+        let memory = MemoryObject::from(zx::Vmo::create(1024).expect("failed to create VMO"));
+        let mut shared_memory =
+            SharedMemory::map(&memory, BASE_ADDR, 1024).expect("failed to map shared memory");
+
+        // Allocate three 256-byte chunks: A (0..256), B (256..512), C (512..768)
+        let addr_a = (BASE_ADDR
+            + shared_memory.allocate_buffers(256, 0, 0, 0).unwrap().data_buffer.offset)
+            .unwrap();
+        let addr_b = (BASE_ADDR
+            + shared_memory.allocate_buffers(256, 0, 0, 0).unwrap().data_buffer.offset)
+            .unwrap();
+        let addr_c = (BASE_ADDR
+            + shared_memory.allocate_buffers(256, 0, 0, 0).unwrap().data_buffer.offset)
+            .unwrap();
+
+        // Free middle chunk B (hole of exactly 256 bytes)
+        shared_memory.free_buffer(addr_b).expect("free B");
+
+        // Allocate exact-fit chunk of 256 bytes (remainder_size == 0)
+        let exact_addr = {
+            let exact_alloc =
+                shared_memory.allocate_buffers(256, 0, 0, 0).expect("exact-fit allocate");
+            assert_eq!(exact_alloc.data_buffer.offset, 256);
+            (BASE_ADDR + exact_alloc.data_buffer.offset).unwrap()
+        };
+
+        // Free all chunks and ensure full coalescing back to 1024 bytes
+        shared_memory.free_buffer(addr_a).expect("free A");
+        shared_memory.free_buffer(addr_c).expect("free C");
+        shared_memory.free_buffer(exact_addr).expect("free exact alloc");
+
+        let full_alloc =
+            shared_memory.allocate_buffers(1024, 0, 0, 0).expect("full buffer allocate");
+        assert_eq!(full_alloc.data_buffer.offset, 0);
+    }
+
+    #[fuchsia::test]
+    fn shared_memory_zero_length_mapping() {
+        let memory = MemoryObject::from(zx::Vmo::create(1024).expect("failed to create VMO"));
+        assert_eq!(SharedMemory::map(&memory, BASE_ADDR, 0).unwrap_err(), errno!(EINVAL));
+    }
+
+    #[fuchsia::test]
+    fn shared_memory_churn_coalescing() {
+        let memory = MemoryObject::from(zx::Vmo::create(2048).expect("failed to create VMO"));
+        let mut shared_memory =
+            SharedMemory::map(&memory, BASE_ADDR, 2048).expect("failed to map shared memory");
+
+        // Allocate chunks of varying sizes: [64, 128, 256, 512, 128, 64, 256] (sum = 1408)
+        let sizes = [64, 128, 256, 512, 128, 64, 256];
+        let mut addrs = Vec::new();
+        for &sz in &sizes {
+            let addr = {
+                let alloc = shared_memory.allocate_buffers(sz, 0, 0, 0).unwrap();
+                (BASE_ADDR + alloc.data_buffer.offset).unwrap()
+            };
+            addrs.push(addr);
+        }
+
+        // Free odd indices first: [1 (128), 3 (512), 5 (64)]
+        shared_memory.free_buffer(addrs[1]).expect("free 1");
+        shared_memory.free_buffer(addrs[3]).expect("free 3");
+        shared_memory.free_buffer(addrs[5]).expect("free 5");
+
+        // Allocate into freed holes (e.g. 512-byte hole at index 3)
+        let addr_hole = {
+            let alloc_hole = shared_memory.allocate_buffers(512, 0, 0, 0).unwrap();
+            (BASE_ADDR + alloc_hole.data_buffer.offset).unwrap()
+        };
+
+        // Free remaining original allocations and the hole allocation
+        shared_memory.free_buffer(addrs[0]).expect("free 0");
+        shared_memory.free_buffer(addrs[2]).expect("free 2");
+        shared_memory.free_buffer(addrs[4]).expect("free 4");
+        shared_memory.free_buffer(addrs[6]).expect("free 6");
+        shared_memory.free_buffer(addr_hole).expect("free hole");
+
+        // Everything is coalesced back into a single 2048-byte region
+        let full = shared_memory.allocate_buffers(2048, 0, 0, 0).unwrap();
+        assert_eq!(full.data_buffer.offset, 0);
+    }
+
+    #[fuchsia::test]
     async fn binder_object_enqueues_release_command_when_dropped() {
         spawn_kernel_and_run(async |current_task| {
             let device = BinderDevice::default();

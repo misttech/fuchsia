@@ -10,9 +10,25 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{binder_uintptr_t, errno, error};
-use std::collections::BTreeMap;
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, HashMap};
 use zerocopy::IntoBytes;
 use zx;
+
+/// A tracked memory buffer segment within [`SharedMemory`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BinderBufferNode {
+    /// Offset from the start of the shared memory region.
+    pub offset: usize,
+    /// Total size in bytes of this buffer segment.
+    pub size: usize,
+    /// Whether this segment is currently allocated to an active transaction.
+    pub is_free: bool,
+    /// Offset of the preceding adjacent buffer in address space, if any.
+    pub prev_offset: Option<usize>,
+    /// Offset of the succeeding adjacent buffer in address space, if any.
+    pub next_offset: Option<usize>,
+}
 
 /// The mapped VMO shared between userspace and the binder driver.
 ///
@@ -30,14 +46,13 @@ pub struct SharedMemory {
     pub user_address: UserAddress,
     /// The length of the shared memory mapping in bytes.
     pub length: usize,
-    /// The map from offset to size of all the currently active allocations, ordered in ascending
-    /// order.
-    ///
-    /// This is used by the allocator to find new allocations.
-    ///
-    /// TODO(qsr): This should evolved into a better allocator for performance reason. Currently,
-    /// each new allocation is done in O(n) where n is the number of currently active allocations.
-    allocations: BTreeMap<usize, usize>,
+    /// Hash map of all buffer segments indexed by starting offset.
+    /// Combined with `prev_offset` and `next_offset` in [`BinderBufferNode`], forms an intrusive
+    /// doubly-linked list with O(1) predecessor and successor lookup during coalescing.
+    buffers_by_offset: HashMap<usize, BinderBufferNode>,
+    /// Index of all free buffer segments ordered by (size, offset).
+    /// Used for O(log K) Best-Fit search during allocate.
+    free_buffers_by_size: BTreeSet<(usize, usize)>,
 }
 
 /// The user buffers containing the data to send to the recipient of a binder transaction.
@@ -97,6 +112,10 @@ impl SharedMemory {
         user_address: UserAddress,
         length: usize,
     ) -> Result<Self, Errno> {
+        if length == 0 {
+            return error!(EINVAL);
+        }
+
         // Map the VMO into the kernel's address space.
         let kernel_root_vmar = fuchsia_runtime::vmar_root_self();
         let kernel_address = memory
@@ -111,34 +130,82 @@ impl SharedMemory {
                 log_error!("failed to map shared binder region in kernel: {:?}", status);
                 errno!(ENOMEM)
             })?;
+
+        let mut buffers_by_offset = HashMap::new();
+        let mut free_buffers_by_size = BTreeSet::new();
+
+        buffers_by_offset.insert(
+            0,
+            BinderBufferNode {
+                offset: 0,
+                size: length,
+                is_free: true,
+                prev_offset: None,
+                next_offset: None,
+            },
+        );
+        free_buffers_by_size.insert((length, 0));
+
         Ok(Self {
             kernel_address: kernel_address as *mut u8,
             user_address,
             length,
-            allocations: Default::default(),
+            buffers_by_offset,
+            free_buffers_by_size,
         })
     }
 
-    /// Allocate a buffer of size `length` from this memory block.
+    /// Allocate a buffer of size `length` from this memory block using a Best-Fit strategy.
     fn allocate(&mut self, length: usize) -> Result<usize, TransactionError> {
-        // The current candidate for an allocation.
-        let mut candidate = 0;
-        for (&ptr, &size) in &self.allocations {
-            // If there is enough room at the current candidate location, stop looking.
-            if ptr - candidate >= length {
-                break;
-            }
-            // Otherwise, check after the current allocation.
-            candidate = ptr + size;
-        }
-        // At this point, either `candidate` is correct, or the only remaining position is at the
-        // end of the buffer. In both case, the allocation succeed if there is enough room between
-        // the candidate and the end of the buffer.
-        if self.length - candidate < length {
+        if length == 0 || length > self.length {
             return Err(TransactionError::Failure);
         }
-        self.allocations.insert(candidate, length);
-        Ok(candidate)
+
+        // Find the best-fit free chunk: smallest free chunk with size >= length.
+        let &(chunk_size, chunk_offset) = self
+            .free_buffers_by_size
+            .range((length, 0)..)
+            .next()
+            .ok_or(TransactionError::Failure)?;
+
+        self.free_buffers_by_size.remove(&(chunk_size, chunk_offset));
+
+        let node = self.buffers_by_offset.get_mut(&chunk_offset).expect("buffer node must exist");
+        let remainder_size = chunk_size - length;
+
+        if remainder_size > 0 {
+            let remainder_offset = chunk_offset + length;
+            let old_next = node.next_offset;
+
+            // Update allocated chunk at chunk_offset
+            node.size = length;
+            node.is_free = false;
+            node.next_offset = Some(remainder_offset);
+
+            // Insert new free chunk for remainder
+            self.buffers_by_offset.insert(
+                remainder_offset,
+                BinderBufferNode {
+                    offset: remainder_offset,
+                    size: remainder_size,
+                    is_free: true,
+                    prev_offset: Some(chunk_offset),
+                    next_offset: old_next,
+                },
+            );
+            self.free_buffers_by_size.insert((remainder_size, remainder_offset));
+
+            // Update next node's prev pointer
+            if let Some(next_offset) = old_next {
+                if let Some(next_node) = self.buffers_by_offset.get_mut(&next_offset) {
+                    next_node.prev_offset = Some(remainder_offset);
+                }
+            }
+        } else {
+            node.is_free = false;
+        }
+
+        Ok(chunk_offset)
     }
 
     /// Allocates three buffers large enough to hold the requested data, offsets, and scatter-gather
@@ -149,9 +216,6 @@ impl SharedMemory {
     /// This is because clients expect their buffer addresses to be uniquely associated with a
     /// transaction. Returning the same address for different transactions will break oneway
     /// transactions that have no payload.
-    //
-    // This is a temporary implementation of an allocator and should be replaced by something
-    // more sophisticated. It currently implements a bump allocator strategy.
     pub fn allocate_buffers(
         &mut self,
         data_length: usize,
@@ -201,14 +265,60 @@ impl SharedMemory {
         })
     }
 
-    // Reclaim the buffer so that it can be reused.
+    // Reclaim the buffer so that it can be reused, coalescing adjacent free neighbors in O(1).
     pub fn free_buffer(&mut self, buffer: UserAddress) -> Result<(), Errno> {
         // Sanity check that the buffer being freed came from this memory region.
         if buffer < self.user_address || buffer >= (self.user_address + self.length)? {
             return error!(EINVAL);
         }
         let offset = buffer - self.user_address;
-        self.allocations.remove(&offset);
+
+        let mut node = match self.buffers_by_offset.remove(&offset) {
+            Some(node) if !node.is_free => node,
+            Some(node) => {
+                self.buffers_by_offset.insert(offset, node);
+                return error!(EINVAL);
+            }
+            None => return error!(EINVAL),
+        };
+        node.is_free = true;
+
+        // 1. Check predecessor
+        if let Some(prev_offset) = node.prev_offset {
+            if let Entry::Occupied(prev_entry) = self.buffers_by_offset.entry(prev_offset) {
+                if prev_entry.get().is_free {
+                    let prev_node = prev_entry.remove();
+                    self.free_buffers_by_size.remove(&(prev_node.size, prev_offset));
+                    node.offset = prev_offset;
+                    node.size += prev_node.size;
+                    node.prev_offset = prev_node.prev_offset;
+                }
+            }
+        }
+
+        // 2. Check successor
+        if let Some(next_offset) = node.next_offset {
+            if let Entry::Occupied(next_entry) = self.buffers_by_offset.entry(next_offset) {
+                if next_entry.get().is_free {
+                    let next_node = next_entry.remove();
+                    self.free_buffers_by_size.remove(&(next_node.size, next_offset));
+                    node.size += next_node.size;
+                    node.next_offset = next_node.next_offset;
+                }
+            }
+        }
+
+        // 3. Update the successor's prev_offset pointer if one exists.
+        if let Some(next_offset) = node.next_offset {
+            if let Some(next_node) = self.buffers_by_offset.get_mut(&next_offset) {
+                next_node.prev_offset = Some(node.offset);
+            }
+        }
+
+        // 4. Insert the merged free node back into both indices.
+        self.free_buffers_by_size.insert((node.size, node.offset));
+        self.buffers_by_offset.insert(node.offset, node);
+
         Ok(())
     }
 }
