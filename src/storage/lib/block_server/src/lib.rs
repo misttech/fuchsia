@@ -3,14 +3,11 @@
 // found in the LICENSE file.
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse};
-use event_listener::Event;
-pub use event_listener::EventListener;
 use fblock::{BlockIoFlag, BlockOpcode, MAX_TRANSFER_UNBOUNDED};
 use fidl_fuchsia_storage_block as fblock;
 use fuchsia_async as fasync;
 use fuchsia_async::epoch::{Epoch, EpochGuard};
 use fuchsia_sync::{MappedMutexGuard, Mutex, MutexGuard};
-use futures::future::Fuse;
 use futures::{Future, FutureExt as _, TryStreamExt as _};
 use slab::Slab;
 use std::borrow::{Borrow, Cow};
@@ -314,83 +311,11 @@ impl<S> ActiveRequestsInner<S> {
     }
 }
 
-struct DropEvent(Event);
-
-impl Drop for DropEvent {
-    fn drop(&mut self) {
-        self.0.notify(usize::MAX);
-    }
-}
-
-impl DropEvent {
-    fn new() -> Self {
-        Self(Event::new())
-    }
-
-    fn listen(&self) -> EventListener {
-        self.0.listen()
-    }
-}
-
-pub struct ShutdownSequencer(Mutex<ShutdownSequencerInner>);
-
-struct ShutdownSequencerInner {
-    signal: Event,
-    guard: Option<Arc<DropEvent>>,
-}
-
-impl ShutdownSequencer {
-    fn new() -> Self {
-        Self(Mutex::new(ShutdownSequencerInner {
-            signal: Event::new(),
-            guard: Some(Arc::new(DropEvent::new())),
-        }))
-    }
-
-    /// If None returns, shutdown has run. Quit immediately. If Some, then it contains a tuple of an
-    /// event to listen to for when to begin shutdown, and a guard to drop when shutdown is
-    /// complete.
-    fn register(&self) -> Option<(Fuse<EventListener>, Arc<DropEvent>)> {
-        let this = self.0.lock();
-        if let Some(guard) = this.guard.as_ref() {
-            Some((this.signal.listen().fuse(), guard.clone()))
-        } else {
-            None
-        }
-    }
-
-    /// Returns an event listener for shutdown without taking a guard. Sessions spawned by
-    /// `handle_requests` use this listener to drain and exit early. Sessions do not need to
-    /// hold a `DropEvent` guard because `handle_requests` (and `handle_mapper_requests`) holds
-    /// its guard across `scope.await`, ensuring `shutdown().await` will wait for all spawned
-    /// session futures to complete before resolving.
-    pub fn listener(&self) -> Option<EventListener> {
-        let this = self.0.lock();
-        if this.guard.is_some() { Some(this.signal.listen()) } else { None }
-    }
-
-    pub async fn shutdown(&self) {
-        let shutdown_complete;
-        {
-            let mut this = self.0.lock();
-            let guard = std::mem::take(&mut this.guard).expect("Called shutdown twice!");
-            shutdown_complete = guard.listen();
-            // Drop our own current guard, and signal the others to do thate same. Important that
-            // this is after the shutdown completion listener is created, in case it is the last
-            // ref.
-            std::mem::drop(guard);
-            this.signal.notify(usize::MAX);
-        }
-        shutdown_complete.await;
-    }
-}
-
 /// BlockServer is an implementation of fuchsia.hardware.block.partition.Partition.
 /// cbindgen:no-export
 pub struct BlockServer<SM: SessionManager> {
     block_size: u32,
     orchestrator: Arc<SM::Orchestrator>,
-    shutdown_sequencer: Arc<ShutdownSequencer>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -570,11 +495,7 @@ pub trait SessionManager: 'static {
     /// Creates a new session to handle `stream`.
     ///
     /// The returned future should run until the session completes, for example when the client end
-    /// closes or `shutdown_listener` is signaled.
-    ///
-    /// Note: `shutdown_listener` does not include a `DropEvent` guard because the outer
-    /// `handle_requests` caller holds the guard across `scope.await`, ensuring the server waits
-    /// for all spawned sessions to drain and finish before shutdown completes.
+    /// closes.
     ///
     /// `offset_map` is an optional client-provided map to adjust the offset/length of FIFO
     /// requests.  If the implementation supports mapping requests, it must forward this back to
@@ -584,7 +505,6 @@ pub trait SessionManager: 'static {
         stream: fblock::SessionRequestStream,
         offset_map: OffsetMap,
         block_size: u32,
-        shutdown_listener: Option<EventListener>,
     ) -> impl Future<Output = Result<(), Error>> + Send;
 
     /// Called to get block/partition information for Block::GetInfo, Partition::GetTypeGuid, etc.
@@ -651,15 +571,7 @@ pub trait IntoOrchestrator {
 
 impl<SM: SessionManager> BlockServer<SM> {
     pub fn new(block_size: u32, orchestrator: impl IntoOrchestrator<SM = SM>) -> Self {
-        Self {
-            block_size,
-            orchestrator: orchestrator.into_orchestrator(),
-            shutdown_sequencer: Arc::new(ShutdownSequencer::new()),
-        }
-    }
-
-    pub fn shutdown_sequencer(&self) -> &Arc<ShutdownSequencer> {
-        &self.shutdown_sequencer
+        Self { block_size, orchestrator: orchestrator.into_orchestrator() }
     }
 
     pub fn session_manager(&self) -> &SM {
@@ -671,32 +583,16 @@ impl<SM: SessionManager> BlockServer<SM> {
         &self,
         mut requests: fblock::BlockRequestStream,
     ) -> Result<(), Error> {
-        let Some((mut shutdown_listener, _guard)) = self.shutdown_sequencer.register() else {
-            // Already shutdown.
-            return Ok(());
-        };
         let scope = fasync::Scope::new();
-        let mut next_request = requests.try_next().fuse();
         loop {
-            futures::select! {
-                request = next_request => {
-                    match request {
-                        Ok(Some(request)) => {
-                            if let Some(session) = self.handle_request(request).await? {
-                                scope.spawn(session.map(|_| ()));
-                            }
-                        }
-                        Ok(None) => break,
-                        Err(error) => {
-                            log::warn!(error:?; "Invalid request");
-                            break;
-                        }
+            match requests.try_next().await {
+                Ok(Some(request)) => {
+                    if let Some(session) = self.handle_request(request).await? {
+                        scope.spawn(session.map(|_| ()));
                     }
-                    next_request = requests.try_next().fuse();
                 }
-                _ = shutdown_listener => {
-                    break;
-                }
+                Ok(None) => break,
+                Err(error) => log::warn!(error:?; "Invalid request"),
             }
         }
         scope.await;
@@ -708,36 +604,20 @@ impl<SM: SessionManager> BlockServer<SM> {
         &self,
         mut requests: fblock::MapperRequestStream,
     ) -> Result<(), Error> {
-        let Some((mut shutdown_listener, _guard)) = self.shutdown_sequencer.register() else {
-            // Already shutdown.
-            return Ok(());
-        };
         let scope = fasync::Scope::new();
-        let mut next_request = requests.try_next().fuse();
         loop {
-            futures::select! {
-                request = next_request => {
-                    match request {
-                        Ok(Some(request)) => {
-                            if let Some(session) = self.handle_mapper_request(request).await? {
-                                scope.spawn(async move {
-                                    if let Err(error) = session.await {
-                                        log::warn!(error:?; "Mapper session failed");
-                                    }
-                                });
+            match requests.try_next().await {
+                Ok(Some(request)) => {
+                    if let Some(session) = self.handle_mapper_request(request).await? {
+                        scope.spawn(async move {
+                            if let Err(error) = session.await {
+                                log::warn!(error:?; "Mapper session failed");
                             }
-                        }
-                        Ok(None) => break,
-                        Err(error) => {
-                            log::warn!(error:?; "Invalid mapper request");
-                            break;
-                        }
+                        });
                     }
-                    next_request = requests.try_next().fuse();
                 }
-                _ = shutdown_listener => {
-                    break;
-                }
+                Ok(None) => break,
+                Err(error) => log::warn!(error:?; "Invalid mapper request"),
             }
         }
         scope.await;
@@ -768,17 +648,7 @@ impl<SM: SessionManager> BlockServer<SM> {
                 ) {
                     Ok(fut) => {
                         responder.send(Ok(()))?;
-                        let shutdown_listener = self.shutdown_sequencer.listener();
-                        return Ok(Some(async move {
-                            if let Some(listener) = shutdown_listener {
-                                futures::select! {
-                                    res = fut.fuse() => res,
-                                    _ = listener.fuse() => Ok(()),
-                                }
-                            } else {
-                                fut.await
-                            }
-                        }));
+                        return Ok(Some(fut));
                     }
                     Err(status) => {
                         responder.send(Err(status.into_raw()))?;
@@ -825,16 +695,12 @@ impl<SM: SessionManager> BlockServer<SM> {
                     flags,
                 }))?;
             }
-            // Note: Sessions receive a shutdown listener so they know to drain and exit early,
-            // but do not need their own guard because this function's caller (handle_requests)
-            // holds the guard across `scope.await`.
             fblock::BlockRequest::OpenSession { session, control_handle: _ } => {
                 return Ok(Some(SM::open_session(
                     self.orchestrator.clone(),
                     session.into_stream(),
                     OffsetMap::empty(),
                     self.block_size,
-                    self.shutdown_sequencer.listener(),
                 )));
             }
             fblock::BlockRequest::OpenSessionWithOptions {
@@ -864,7 +730,6 @@ impl<SM: SessionManager> BlockServer<SM> {
                     session.into_stream(),
                     offset_map,
                     self.block_size,
-                    self.shutdown_sequencer.listener(),
                 )));
             }
             fblock::BlockRequest::GetTypeGuid { responder } => {

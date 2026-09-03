@@ -9,11 +9,10 @@ use crate::{
 };
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse};
-use event_listener::EventListener;
 use fidl_fuchsia_storage_block as fblock;
 use fuchsia_sync::{Condvar, Mutex};
+use futures::TryStreamExt as _;
 use futures::stream::{AbortHandle, Abortable};
-use futures::{FutureExt as _, TryStreamExt as _};
 use mapping::reader::BlockService;
 use std::borrow::{Borrow, Cow};
 use std::collections::{HashMap, VecDeque};
@@ -143,7 +142,6 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
         mut stream: fblock::SessionRequestStream,
         offset_map: OffsetMap,
         block_size: u32,
-        shutdown_listener: Option<EventListener>,
     ) -> Result<(), Error> {
         let sm: &SessionManager<I> = orchestrator.as_ref().borrow();
         let max_blocks = sm.get_info().max_transfer_blocks();
@@ -165,7 +163,7 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
 
         sm.interface.spawn_session(session.clone());
 
-        let serve_future = Abortable::new(
+        let result = Abortable::new(
             async {
                 while let Some(request) = stream.try_next().await? {
                     match session.helper.handle_request(request).await? {
@@ -179,19 +177,9 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
                 Ok(())
             },
             registration,
-        );
-
-        let result = if let Some(listener) = shutdown_listener {
-            futures::select! {
-                res = serve_future.fuse() => res.unwrap_or_else(|e| Err(e.into())),
-                _ = listener.fuse() => {
-                    session.abort_handle.abort();
-                    Ok(())
-                }
-            }
-        } else {
-            serve_future.await.unwrap_or_else(|e| Err(e.into()))
-        };
+        )
+        .await
+        .unwrap_or_else(|e| Err(e.into()));
 
         let _ = session.fifo.signal(zx::Signals::empty(), SHUTDOWN_SIGNAL);
 

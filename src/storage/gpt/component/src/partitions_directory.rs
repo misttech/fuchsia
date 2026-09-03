@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::gpt::GptManager;
-use block_server::{BlockServer, SessionManager, ShutdownSequencer};
+use block_server::{BlockServer, SessionManager};
 use fidl::endpoints::RequestStream as _;
 use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_partitions as fpartitions;
@@ -34,14 +34,7 @@ impl PartitionsDirectory {
     pub async fn clear(&self) {
         self.node.remove_all_entries();
         let entries = std::mem::take(&mut *self.entries.lock());
-        let mut cancel_futures = Vec::new();
-        for entry in entries.into_values() {
-            if let Some(sequencer) = entry.shutdown_sequencer.upgrade() {
-                sequencer.shutdown().await;
-            }
-            cancel_futures.push(entry.scope.cancel());
-        }
-        join_all(cancel_futures).await;
+        join_all(entries.into_values().map(|entry| entry.scope.cancel())).await;
     }
 
     /// Adds an entry for a GPT partition.  Serves the "volume" and "partition" protocols.
@@ -75,7 +68,6 @@ impl PartitionsDirectory {
 pub struct PartitionsDirectoryEntry {
     scope: fasync::Scope,
     node: Arc<vfs::directory::immutable::Simple>,
-    shutdown_sequencer: Weak<ShutdownSequencer>,
 }
 
 impl std::fmt::Debug for PartitionsDirectoryEntry {
@@ -133,7 +125,7 @@ impl PartitionsDirectoryEntry {
         )
         .unwrap();
         if has_mapper {
-            let mapper_server = block_server.clone();
+            let mapper_server = block_server;
             node.add_entry(
                 "mapper",
                 vfs::service::endpoint({
@@ -154,11 +146,7 @@ impl PartitionsDirectoryEntry {
             .unwrap();
         }
 
-        let shutdown_sequencer = block_server
-            .upgrade()
-            .map(|s| Arc::downgrade(s.shutdown_sequencer()))
-            .unwrap_or_default();
-        Self { scope, node, shutdown_sequencer }
+        Self { scope, node }
     }
 
     fn new_composite<SM: SessionManager + Send + Sync + 'static>(
@@ -212,7 +200,7 @@ impl PartitionsDirectoryEntry {
         )
         .unwrap();
         if has_mapper {
-            let mapper_server = block_server.clone();
+            let mapper_server = block_server;
             node.add_entry(
                 "mapper",
                 vfs::service::endpoint({
@@ -233,10 +221,6 @@ impl PartitionsDirectoryEntry {
             .unwrap();
         }
 
-        let shutdown_sequencer = block_server
-            .upgrade()
-            .map(|s| Arc::downgrade(s.shutdown_sequencer()))
-            .unwrap_or_default();
-        Self { scope, node, shutdown_sequencer }
+        Self { scope, node }
     }
 }
