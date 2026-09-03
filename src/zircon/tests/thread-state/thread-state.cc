@@ -563,13 +563,13 @@ TEST(ThreadStateTests, wait_many_test) {
   zx_handle_t thread;
   ASSERT_NO_FATAL_FAILURE(get_child_thread(channel, &thread));
 
-  uint32_t num_handles = NUM_WAIT_MANY_HANDLES;
-  zx_handle_t h[2][num_handles];
-  for (uint32_t i = 0; i < num_handles; ++i) {
+  constexpr uint32_t kNumHandles = NUM_WAIT_MANY_HANDLES;
+  zx_handle_t h[2][kNumHandles];
+  for (uint32_t i = 0; i < kNumHandles; ++i) {
     ASSERT_EQ(zx_eventpair_create(0, &h[0][i], &h[1][i]), ZX_OK);
   }
 
-  send_msg_with_handles(channel, MSG_WAIT_MANY_TEST, &h[1][0], num_handles);
+  send_msg_with_handles(channel, MSG_WAIT_MANY_TEST, &h[1][0], kNumHandles);
 
   // Don't continue until we see MSG_PROCEED, that tells us the child has
   // received the message and isn't in a wait_one/wait_many syscall.
@@ -578,7 +578,7 @@ TEST(ThreadStateTests, wait_many_test) {
   wait_thread_blocked(thread, ZX_THREAD_STATE_BLOCKED_WAIT_MANY);
 
   // Wake the child up.
-  for (uint32_t i = 0; i < num_handles; ++i) {
+  for (uint32_t i = 0; i < kNumHandles; ++i) {
     zx_handle_close(h[0][i]);
   }
 
