@@ -5,16 +5,16 @@
 #include "src/ui/scenic/bin/app.h"
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
-#include <fidl/fuchsia.ui.display.singleton/cpp/hlcpp_conversion.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.display.singleton/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer.augment/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
-#include <fuchsia/vulkan/loader/cpp/fidl.h>
+#include <fidl/fuchsia.vulkan.loader/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
-#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <cstdint>
@@ -239,10 +239,20 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
   fpromise::bridge<escher::EscherUniquePtr> escher_bridge;
   fpromise::bridge<std::shared_ptr<display::Display>> display_bridge;
 
-  auto vulkan_loader = app_context_->svc()->Connect<fuchsia::vulkan::loader::Loader>();
   auto [dir, dir_server] = *fidl::CreateEndpoints<fuchsia_io::Directory>();
-  vulkan_loader->ConnectToManifestFs(fuchsia::vulkan::loader::ConnectToManifestOptions{},
-                                     dir_server.TakeChannel());
+  auto vulkan_loader = component::Connect<fuchsia_vulkan_loader::Loader>();
+  if (vulkan_loader.is_ok()) {
+    fidl::SyncClient sync_loader(std::move(*vulkan_loader));
+    auto result =
+        sync_loader->ConnectToManifestFs({{.options = {}, .channel = dir_server.TakeChannel()}});
+    if (result.is_error()) {
+      FX_LOGS(ERROR) << "Failed to connect to Vulkan manifest FS: "
+                     << result.error_value().FormatDescription();
+    }
+  } else {
+    FX_LOGS(ERROR) << "Failed to connect to fuchsia.vulkan.loader.Loader: "
+                   << vulkan_loader.status_string();
+  }
 
   // Log a warning if Scenic is waiting for the Vulkan to load.
   //
@@ -257,8 +267,7 @@ App::App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_disp
     FX_DCHECK(!device_watcher_);
     device_watcher_ = fsl::DeviceWatcher::CreateWithIdleCallback(
         std::move(dir),
-        [this, vulkan_loader = std::move(vulkan_loader),
-         completer = std::move(escher_bridge.completer),
+        [this, completer = std::move(escher_bridge.completer),
          vulkan_wait_log = std::move(vulkan_wait_log)](
             const fidl::ClientEnd<fuchsia_io::Directory>& dir,
             const std::string& filename) mutable {
@@ -493,12 +502,11 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
     // TODO(https://fxbug.dev/42146099): these should be moved into FlatlandManager.
     {
       // Note: can't use `fit::bind_member()` here, because `CreateFlatland()` returns non-void.
-      fit::function<void(fidl::InterfaceRequest<fuchsia::ui::composition::Flatland>)> handler =
-          [flatland_manager = flatland_manager_.get()](
-              fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request) {
-            flatland_manager->CreateFlatland(fidl::HLCPPToNatural(std::move(request)));
-          };
-      FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
+      FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_composition::Flatland>(
+                   [flatland_manager = flatland_manager_.get()](
+                       fidl::ServerEnd<fuchsia_ui_composition::Flatland> request) {
+                     flatland_manager->CreateFlatland(std::move(request));
+                   }) == ZX_OK);
     }
     {
       FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_composition::FlatlandDisplay>(
@@ -657,13 +665,10 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
   {
     TRACE_DURATION("gfx", "App::InitializeServices[vsync_source_manager_]");
     vsync_source_manager_.emplace(display_manager_.value());
-    fit::function<void(fidl::InterfaceRequest<fuchsia::ui::display::singleton::VsyncSource>)>
-        handler =
-            [this](fidl::InterfaceRequest<fuchsia::ui::display::singleton::VsyncSource> request) {
-              auto server_end = fidl::HLCPPToNatural(std::move(request));
-              vsync_source_manager_->CreateBinding(std::move(server_end));
-            };
-    FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
+    FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_display_singleton::VsyncSource>(
+                 [this](fidl::ServerEnd<fuchsia_ui_display_singleton::VsyncSource> request) {
+                   vsync_source_manager_->CreateBinding(std::move(request));
+                 }) == ZX_OK);
   }
 }
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/io/cpp/fidl.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
@@ -68,7 +68,7 @@ int main(int argc, const char** argv) {
   zx::channel pkg_dir, pkg_server;
   zx::channel::create(0, &pkg_dir, &pkg_server);
   const zx_status_t pkg_status = fdio_open3(
-      "/pkg", static_cast<uint64_t>(fuchsia::io::PERM_READABLE | fuchsia::io::PERM_EXECUTABLE),
+      "/pkg", static_cast<uint64_t>(fuchsia_io::kPermReadable | fuchsia_io::kPermExecutable),
       pkg_server.release());
   FX_CHECK(pkg_status == ZX_OK) << "Failed to open /pkg: " << zx_status_get_string(pkg_status);
   const zx_handle_t directory_request_handle = zx_take_startup_handle(PA_DIRECTORY_REQUEST);
