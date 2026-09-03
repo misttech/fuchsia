@@ -13,7 +13,6 @@ use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt};
 use log::{error, info, warn};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use zx::Status;
 
 // USB Standard Constants
@@ -43,6 +42,7 @@ const USB_SETUP_REQ_GET_STATUS: u8 = 0x00;
 const USB_SETUP_REQ_CLEAR_FEATURE: u8 = 0x01;
 const USB_SETUP_REQ_SET_FEATURE: u8 = 0x03;
 const USB_SETUP_REQ_GET_INTERFACE: u8 = 0x0a;
+const USB_SETUP_REQ_SET_INTERFACE: u8 = 0x0b;
 
 const USB_MAX_PACKET_SIZE_FULL_SPEED: u16 = 64;
 const USB_MAX_PACKET_SIZE_HIGH_SPEED: u16 = 512;
@@ -71,24 +71,25 @@ enum VendorRequest {
     WritePayload = 0x56,
     ReadPayload = 0x57,
     SetTestMode = 0x58,
-    ControlLoopbackOut = 0x5b,
-    ControlLoopbackIn = 0x5c,
+    GetTestMode = 0x59,
+    ControlLoopbackOut = 0x5c,
+    ControlLoopbackIn = 0x5b,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum ControlRequest {
     Vendor(VendorRequest),
     Standard(u8),
-    Unsupported,
 }
 
 impl ControlRequest {
-    fn parse(bm_request_type: u8, b_request: u8) -> Self {
+    fn parse(bm_request_type: u8, b_request: u8) -> Result<Self, Status> {
         match bm_request_type & USB_TYPE_MASK {
-            USB_TYPE_STANDARD => ControlRequest::Standard(b_request),
-            USB_TYPE_VENDOR => VendorRequest::n(b_request)
-                .map_or(ControlRequest::Unsupported, ControlRequest::Vendor),
-            _ => ControlRequest::Unsupported,
+            USB_TYPE_STANDARD => Ok(ControlRequest::Standard(b_request)),
+            USB_TYPE_VENDOR => {
+                VendorRequest::n(b_request).map(ControlRequest::Vendor).ok_or(Status::NOT_SUPPORTED)
+            }
+            _ => Err(Status::NOT_SUPPORTED),
         }
     }
 }
@@ -123,13 +124,13 @@ struct UsbZeroFunctionDevice {
     ep_out: fusb_endpoint::EndpointProxy,
     ep_out_addr: u8,
     interface_num: u8,
-    #[allow(dead_code)]
-    is_configured: Arc<AtomicBool>,
+    is_configured: bool,
     vmos_registered: bool,
     endpoint_tasks: Option<(fasync::Task<()>, fasync::Task<()>)>,
     mode: TestMode,
     speed: Option<fusb_descriptor::UsbSpeed>,
     stalled_endpoints: Vec<u8>,
+    control_loopback_buf: Vec<u8>,
 }
 
 const BIND_USB_PROTOCOL_KEY: &str = "fuchsia.BIND_USB_PROTOCOL";
@@ -159,6 +160,14 @@ impl Driver for UsbZeroFunction {
             2 => TestMode::Loopback,
             _ => TestMode::SourceSink,
         };
+        let mode_string = match initial_mode {
+            TestMode::SourceSink => "source and sink data",
+            TestMode::Loopback => "loop input to output",
+        };
+        info!(
+            "UsbZeroFunctionDriver starting with initial mode {:?} ({})",
+            initial_mode, mode_string
+        );
 
         let function_client = context
             .incoming
@@ -197,7 +206,7 @@ impl Driver for UsbZeroFunction {
         ];
 
         let alloc_result = function_client
-            .alloc_resources(USB_ZERO_NUM_INTERFACES, endpoints, &[])
+            .alloc_resources(USB_ZERO_NUM_INTERFACES, endpoints, &[mode_string.to_string()])
             .await
             .map_err(|e| {
                 warn!("FIDL error: {:?}", e);
@@ -205,7 +214,7 @@ impl Driver for UsbZeroFunction {
             })?
             .map_err(Status::err_from_raw)?;
 
-        let (interfaces, endpoints, _) = alloc_result;
+        let (interfaces, endpoints, string_indices) = alloc_result;
         let &[interface_num] = interfaces.as_slice() else {
             error!("Invalid interfaces length from AllocResources");
             return Err(Status::NO_RESOURCES.into());
@@ -214,16 +223,16 @@ impl Driver for UsbZeroFunction {
             error!("Invalid endpoints length from AllocResources");
             return Err(Status::NO_RESOURCES.into());
         };
+        let interface_str_idx = string_indices.first().copied().unwrap_or(0);
 
         if (ep_in_addr & USB_ENDPOINT_DIR_MASK) == 0 || (ep_out_addr & USB_ENDPOINT_DIR_MASK) != 0 {
             error!("Invalid endpoint direction bits assigned");
             return Err(Status::NO_RESOURCES.into());
         }
 
-        // Construct descriptors
         let default_max_packet_size_bytes = USB_ZERO_DEFAULT_MAX_PACKET_SIZE.to_le_bytes();
-        let mut desc = vec![
-            // Interface Descriptor
+        let desc = vec![
+            // Interface Descriptor (AltSetting 0)
             USB_INTERFACE_DESC_SIZE, // bLength
             USB_DESC_TYPE_INTERFACE, // bDescriptorType (Interface)
             interface_num,           // bInterfaceNumber
@@ -232,7 +241,7 @@ impl Driver for UsbZeroFunction {
             USB_CLASS_VENDOR,        // bInterfaceClass (Vendor Specific)
             0,                       // bInterfaceSubClass
             protocol as u8,          // bInterfaceProtocol
-            0,                       // iInterface
+            interface_str_idx,       // iInterface
             // Endpoint Descriptor (IN)
             USB_ENDPOINT_DESC_SIZE,                               // bLength
             USB_DESC_TYPE_ENDPOINT,                               // bDescriptorType (Endpoint)
@@ -250,21 +259,6 @@ impl Driver for UsbZeroFunction {
             default_max_packet_size_bytes[1], // wMaxPacketSize (little endian)
             0,                                // bInterval
         ];
-        // Alternate Setting 1 (Loopback) Interface and Endpoint Descriptors
-        let ep_desc_start = USB_INTERFACE_DESC_SIZE as usize;
-        let ep_desc_end = desc.len();
-        desc.extend_from_slice(&[
-            USB_INTERFACE_DESC_SIZE,
-            USB_DESC_TYPE_INTERFACE,
-            interface_num,
-            0x01,
-            USB_ZERO_NUM_ENDPOINTS,
-            USB_CLASS_VENDOR,
-            0,
-            protocol as u8,
-            0,
-        ]);
-        desc.extend_from_within(ep_desc_start..ep_desc_end);
 
         let (iface_client, iface_server) =
             fidl::endpoints::create_endpoints::<fusb_function::UsbFunctionInterfaceMarker>();
@@ -345,13 +339,36 @@ impl UsbZeroFunctionDevice {
             ep_out,
             ep_out_addr,
             interface_num,
-            is_configured: Arc::new(AtomicBool::new(false)),
+            is_configured: false,
             vmos_registered: false,
             endpoint_tasks: None,
             mode,
             speed: None,
             stalled_endpoints: Vec::new(),
+            control_loopback_buf: Vec::new(),
         }
+    }
+
+    /// Resets the halt state and data toggle for all endpoints associated with this interface,
+    /// per USB 2.0 Specification §9.4.10.
+    async fn reset_interface_endpoints(&mut self) {
+        for ep_addr in [self.ep_in_addr, self.ep_out_addr] {
+            if let Err(e) = self.clear_endpoint_stall(ep_addr).await {
+                warn!("Failed to clear endpoint stall for {}: {:?}", ep_addr, e);
+            }
+        }
+    }
+
+    /// Handles USB Chapter 9 SetInterface requests (both control and FIDL).
+    /// Each usb-zero-function instance operates in a fixed mode (SourceSink or Loopback)
+    /// under alternate setting 0. Setting alternate setting 0 resets endpoint halts and
+    /// data toggles per USB 2.0 §9.4.10. Alternate settings != 0 are rejected.
+    async fn handle_set_interface(&mut self, interface: u8, alt_setting: u8) -> Result<(), Status> {
+        if interface != self.interface_num || alt_setting != 0 {
+            return Err(Status::NOT_SUPPORTED);
+        }
+        self.reset_interface_endpoints().await;
+        Ok(())
     }
 
     async fn cleanup_endpoints(&mut self) {
@@ -361,11 +378,12 @@ impl UsbZeroFunctionDevice {
             let _ = self.ep_out.unregister_vmos(&[USB_ZERO_OUT_VMO_ID]).await;
             self.vmos_registered = false;
         }
-        self.is_configured.store(false, Ordering::Relaxed);
+        self.is_configured = false;
         for ep_addr in [self.ep_in_addr, self.ep_out_addr] {
             let _ = self.function_client.disable_endpoint(ep_addr).await;
         }
         self.stalled_endpoints.clear();
+        self.control_loopback_buf.clear();
     }
 
     async fn set_endpoint_stall(&mut self, ep_addr: u8) -> Result<(), Status> {
@@ -506,12 +524,15 @@ impl UsbZeroFunctionDevice {
             }
             VendorRequest::ConfigureEndpoint => {
                 let ep_addr = validate_vendor_out_request(setup, write)?;
+                let speed = self.speed.unwrap_or(fusb_descriptor::UsbSpeed::High);
+                let w_max_packet_size = Self::max_packet_size_for_speed(speed);
                 let ep_config = fusb_function::EndpointConfiguration {
                     descriptor: Some(fusb_function::EndpointDescriptor {
                         bm_attributes: fusb_descriptor::EndpointType::Bulk.into_primitive(),
-                        w_max_packet_size: USB_MAX_PACKET_SIZE_HIGH_SPEED,
+                        w_max_packet_size,
                         b_interval: 0,
                     }),
+                    super_speed_companion: None,
                     ..Default::default()
                 };
                 configure_ep(&self.function_client, ep_addr, &ep_config).await?;
@@ -550,7 +571,7 @@ impl UsbZeroFunctionDevice {
                 }
                 self.endpoint_tasks = None;
                 self.cleanup_endpoints().await;
-                self.is_configured.store(false, Ordering::Relaxed);
+                self.is_configured = false;
                 self.function_client
                     .deconfigure()
                     .await
@@ -580,12 +601,32 @@ impl UsbZeroFunctionDevice {
                 Ok(USB_ZERO_READ_PAYLOAD.to_vec())
             }
             VendorRequest::SetTestMode => {
-                let mode_val = validate_vendor_out_request(setup, write)?;
-                self.mode = mode_val.try_into()?;
+                // Dynamic mode switching is not supported; mode is fixed per configuration.
+                Err(Status::NOT_SUPPORTED)
+            }
+            VendorRequest::GetTestMode => {
+                if (setup.bm_request_type & 0x80) == 0
+                    || setup.w_value != 0
+                    || setup.w_length != 1
+                    || !write.is_empty()
+                {
+                    return Err(Status::INVALID_ARGS);
+                }
+                Ok(vec![self.mode as u8])
+            }
+            VendorRequest::ControlLoopbackOut => {
+                if (setup.bm_request_type & 0x80) != 0 || setup.w_length != write.len() as u16 {
+                    return Err(Status::INVALID_ARGS);
+                }
+                self.control_loopback_buf = write.to_vec();
                 Ok(Vec::new())
             }
-            VendorRequest::ControlLoopbackOut | VendorRequest::ControlLoopbackIn => {
-                Err(Status::NOT_SUPPORTED)
+            VendorRequest::ControlLoopbackIn => {
+                if (setup.bm_request_type & 0x80) == 0 || !write.is_empty() {
+                    return Err(Status::INVALID_ARGS);
+                }
+                let len = std::cmp::min(setup.w_length as usize, self.control_loopback_buf.len());
+                Ok(self.control_loopback_buf[..len].to_vec())
             }
         }
     }
@@ -618,7 +659,7 @@ impl UsbZeroFunctionDevice {
     ) -> Result<Vec<u8>, Status> {
         let recipient = setup.bm_request_type & USB_RECIP_MASK;
         let is_in = (setup.bm_request_type & 0x80) != 0;
-        match ControlRequest::parse(setup.bm_request_type, setup.b_request) {
+        match ControlRequest::parse(setup.bm_request_type, setup.b_request)? {
             ControlRequest::Vendor(vendor_req) => {
                 self.handle_vendor_request(vendor_req, setup, write).await
             }
@@ -665,16 +706,32 @@ impl UsbZeroFunctionDevice {
                         && setup.w_length == 1
                         && write.is_empty()
                     {
-                        Ok(vec![self.mode as u8])
+                        Ok(vec![0x00])
+                    } else {
+                        Err(Status::NOT_SUPPORTED)
+                    }
+                }
+                USB_SETUP_REQ_SET_INTERFACE => {
+                    if !is_in
+                        && recipient == USB_RECIP_INTERFACE
+                        && setup.w_length == 0
+                        && write.is_empty()
+                    {
+                        let interface =
+                            u8::try_from(setup.w_index).map_err(|_| Status::NOT_SUPPORTED)?;
+                        let alt_setting =
+                            u8::try_from(setup.w_value).map_err(|_| Status::NOT_SUPPORTED)?;
+                        self.handle_set_interface(interface, alt_setting).await?;
+                        Ok(Vec::new())
                     } else {
                         Err(Status::NOT_SUPPORTED)
                     }
                 }
                 _ => Err(Status::NOT_SUPPORTED),
             },
-            ControlRequest::Unsupported => Err(Status::NOT_SUPPORTED),
         }
     }
+
     /// Processes incoming FIDL requests on the `UsbFunctionInterface` request stream,
     /// handling control transfers and configuration changes for the USB device.
     async fn handle_requests(
@@ -702,11 +759,11 @@ impl UsbZeroFunctionDevice {
                     match status {
                         Ok(tasks) => {
                             self.endpoint_tasks = tasks;
-                            self.is_configured.store(configured, Ordering::Relaxed);
+                            self.is_configured = configured;
                             let _ = responder.send(Ok(()));
                         }
                         Err(e) => {
-                            self.is_configured.store(false, Ordering::Relaxed);
+                            self.is_configured = false;
                             let _ = responder.send(Err(e.into_raw()));
                         }
                     }
@@ -716,41 +773,15 @@ impl UsbZeroFunctionDevice {
                     alt_setting,
                     responder,
                 } => {
-                    let response = if interface == self.interface_num && alt_setting <= 1 {
-                        let new_mode = if alt_setting == 0 {
-                            TestMode::SourceSink
-                        } else {
-                            TestMode::Loopback
-                        };
-                        if self.is_configured.load(Ordering::Relaxed) {
-                            self.endpoint_tasks = None;
-                            self.mode = new_mode;
-                            let speed = self.speed.unwrap_or(fusb_descriptor::UsbSpeed::High);
-                            match self.handle_set_configured(true, speed).await {
-                                Ok(tasks) => {
-                                    self.endpoint_tasks = tasks;
-                                    Ok(())
-                                }
-                                Err(e) => {
-                                    self.is_configured.store(false, Ordering::Relaxed);
-                                    Err(e.into_raw())
-                                }
-                            }
-                        } else {
-                            self.mode = new_mode;
-                            Ok(())
-                        }
-                    } else {
-                        Err(Status::NOT_SUPPORTED.into_raw())
-                    };
-                    let _ = responder.send(response);
+                    let status = self.handle_set_interface(interface, alt_setting).await;
+                    let _ = responder.send(status.map_err(|s| s.into_raw()));
                 }
                 _ => {
                     info!("Received unknown request");
                 }
             }
         }
-        if self.is_configured.load(Ordering::Relaxed) {
+        if self.is_configured {
             self.endpoint_tasks = None;
             self.cleanup_endpoints().await;
         }
@@ -836,6 +867,9 @@ async fn handle_read_completion(
         *recycled_buf = Some(buf_back);
         queue_request(ep_out_clone, USB_ZERO_OUT_VMO_ID, vmo_size);
     } else {
+        if c.status == Some(Status::CANCELED.into_raw()) {
+            return false;
+        }
         warn!("Read error status: {:?}", c.status);
         fasync::Timer::new(std::time::Duration::from_millis(10)).await;
         queue_request(ep_out_clone, USB_ZERO_OUT_VMO_ID, vmo_size);
@@ -872,10 +906,14 @@ fn spawn_endpoint_pump(
         while let Ok(Some(event)) = event_stream.try_next().await {
             match event {
                 fusb_endpoint::EndpointEvent::OnCompletion { completion } => {
-                    let ok =
-                        completion.iter().all(|c| c.status.is_some_and(|s| Status::ok(s).is_ok()));
-                    if !ok {
-                        warn!("Endpoint transfer completed with non-OK status");
+                    for c in completion {
+                        match c.status.and_then(Status::try_from_raw) {
+                            Some(Status::CANCELED) => return,
+                            Some(err) => {
+                                warn!("Endpoint transfer completed with non-OK status: {:?}", err);
+                            }
+                            None => {}
+                        }
                     }
                     queue_request(&ep, vmo_id, transfer_size);
                 }

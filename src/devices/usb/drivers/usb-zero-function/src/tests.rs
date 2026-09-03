@@ -386,7 +386,7 @@ async fn test_vendor_requests() {
     let res_read_nonempty = proxy.control(&setup_read, &[0x01]).await.unwrap();
     assert_eq!(res_read_nonempty, Err(Status::INVALID_ARGS.into_raw()));
 
-    // Test VendorRequest::SetTestMode (0x58 - set Loopback mode)
+    // Test VendorRequest::SetTestMode (0x58 - rejected for now, mode is fixed per configuration)
     let setup_set_mode_loopback = fusb_descriptor::UsbSetup {
         bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::SetTestMode as u8,
@@ -395,50 +395,40 @@ async fn test_vendor_requests() {
         w_length: 0,
     };
     let res_set_mode = proxy.control(&setup_set_mode_loopback, &[]).await.unwrap();
-    assert_eq!(res_set_mode, Ok(vec![]));
+    assert_eq!(res_set_mode, Err(Status::NOT_SUPPORTED.into_raw()));
 
-    // Test VendorRequest::SetTestMode (0x58 - set SourceSink mode)
-    let setup_set_mode_ss = fusb_descriptor::UsbSetup {
-        bm_request_type: USB_TYPE_VENDOR_OUT,
-        b_request: VendorRequest::SetTestMode as u8,
-        w_value: TestMode::SourceSink as u16,
-        w_index: 0,
-        w_length: 0,
-    };
-    let res_set_mode_ss = proxy.control(&setup_set_mode_ss, &[]).await.unwrap();
-    assert_eq!(res_set_mode_ss, Ok(vec![]));
-
-    // Test VendorRequest::SetTestMode (0x58 - invalid mode 99)
-    let setup_set_mode_invalid = fusb_descriptor::UsbSetup {
-        bm_request_type: USB_TYPE_VENDOR_OUT,
-        b_request: VendorRequest::SetTestMode as u8,
-        w_value: 99,
-        w_index: 0,
-        w_length: 0,
-    };
-    let res_mode_invalid = proxy.control(&setup_set_mode_invalid, &[]).await.unwrap();
-    assert_eq!(res_mode_invalid, Err(Status::INVALID_ARGS.into_raw()));
-
-    // Test VendorRequest::ControlLoopbackOut (0x5b) and ControlLoopbackIn (0x5c)
+    // Test VendorRequest::ControlLoopbackOut (0x5c) and ControlLoopbackIn (0x5b)
+    let payload = vec![1, 2, 3, 4, 5];
     let setup_control_loopback_out = fusb_descriptor::UsbSetup {
         bm_request_type: USB_TYPE_VENDOR_OUT,
         b_request: VendorRequest::ControlLoopbackOut as u8,
         w_value: 0,
         w_index: 0,
-        w_length: 0,
+        w_length: payload.len() as u16,
     };
-    let res_cl_out = proxy.control(&setup_control_loopback_out, &[]).await.unwrap();
-    assert_eq!(res_cl_out, Err(Status::NOT_SUPPORTED.into_raw()));
+    let res_cl_out = proxy.control(&setup_control_loopback_out, &payload).await.unwrap();
+    assert_eq!(res_cl_out, Ok(vec![]));
 
     let setup_control_loopback_in = fusb_descriptor::UsbSetup {
         bm_request_type: USB_TYPE_VENDOR_IN,
         b_request: VendorRequest::ControlLoopbackIn as u8,
         w_value: 0,
         w_index: 0,
-        w_length: 0,
+        w_length: payload.len() as u16,
     };
     let res_cl_in = proxy.control(&setup_control_loopback_in, &[]).await.unwrap();
-    assert_eq!(res_cl_in, Err(Status::NOT_SUPPORTED.into_raw()));
+    assert_eq!(res_cl_in, Ok(payload));
+
+    // Test VendorRequest::GetTestMode (0x59)
+    let setup_get_test_mode = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_IN,
+        b_request: VendorRequest::GetTestMode as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 1,
+    };
+    let res_get_mode = proxy.control(&setup_get_test_mode, &[]).await.unwrap();
+    assert_eq!(res_get_mode, Ok(vec![TestMode::default() as u8]));
 
     // Test invalid vendor request (opcode 0x00 with bm_request_type = 0x40)
     let setup_invalid_vendor = fusb_descriptor::UsbSetup {
@@ -454,7 +444,7 @@ async fn test_vendor_requests() {
     // Test unsupported request
     let setup_unsupported = fusb_descriptor::UsbSetup {
         bm_request_type: USB_TYPE_VENDOR_OUT,
-        b_request: VendorRequest::SetTestMode as u8 + 1,
+        b_request: 0xff,
         w_value: 0,
         w_index: 0,
         w_length: 0,
@@ -612,13 +602,20 @@ async fn test_set_and_get_interface() {
         w_length: 1,
     };
 
-    assert_eq!(proxy.set_interface(0, 1).await.unwrap(), Ok(()));
-    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x01]));
+    // GetInterface initially returns alt 0
+    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x00]));
+
+    // Alternate setting 0 succeeds and resets endpoints
+    assert_eq!(proxy.set_interface(0, 0).await.unwrap(), Ok(()));
+    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x00]));
+
+    // Configure device, alternate setting 0 still succeeds
     assert_eq!(proxy.set_configured(true, fusb_descriptor::UsbSpeed::High).await.unwrap(), Ok(()));
     assert_eq!(proxy.set_interface(0, 0).await.unwrap(), Ok(()));
     assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x00]));
-    assert_eq!(proxy.set_interface(0, 1).await.unwrap(), Ok(()));
-    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x01]));
+
+    // Alternate settings > 0 are rejected.
+    assert_eq!(proxy.set_interface(0, 1).await.unwrap(), Err(Status::NOT_SUPPORTED.into_raw()));
     assert_eq!(proxy.set_interface(0, 2).await.unwrap(), Err(Status::NOT_SUPPORTED.into_raw()));
     assert_eq!(proxy.set_interface(1, 0).await.unwrap(), Err(Status::NOT_SUPPORTED.into_raw()));
 }
@@ -674,107 +671,6 @@ async fn test_endpoint_stall_state() {
     // Clear OUT endpoint stall
     device.clear_endpoint_stall(TEST_EP_OUT_ADDR).await.unwrap();
     assert!(device.stalled_endpoints.is_empty());
-}
-
-#[fuchsia::test]
-async fn test_standard_chapter_9_halt_requests() {
-    let (func_client, func_server) = create_endpoints::<fusb_function::UsbFunctionMarker>();
-    let (ep_in_client, _ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
-    let (ep_out_client, _ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
-    let scope = Arc::new(fasync::Scope::new_with_name("test_standard_halt"));
-    scope.spawn_local(run_mock_function(func_server.into_stream()));
-
-    let mut device = UsbZeroFunctionDevice::new(
-        func_client.into_proxy(),
-        ep_in_client.into_proxy(),
-        TEST_EP_IN_ADDR,
-        ep_out_client.into_proxy(),
-        TEST_EP_OUT_ADDR,
-        0, // interface_num
-        TestMode::SourceSink,
-    );
-
-    // Test GET_STATUS (Device) -> should succeed and return 0
-    let setup = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x80, // IN, Standard, Device
-        b_request: USB_SETUP_REQ_GET_STATUS,
-        w_value: 0,
-        w_index: 0,
-        w_length: 2,
-    };
-    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x00, 0x00]);
-
-    // Test GET_STATUS (Interface) with correct interface index -> should succeed and return 0
-    let setup = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x81, // IN, Standard, Interface
-        b_request: USB_SETUP_REQ_GET_STATUS,
-        w_value: 0,
-        w_index: 0, // interface_num is 0
-        w_length: 2,
-    };
-    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x00, 0x00]);
-
-    // Test GET_STATUS (Interface) with incorrect interface index -> should fail
-    let setup = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x81, // IN, Standard, Interface
-        b_request: USB_SETUP_REQ_GET_STATUS,
-        w_value: 0,
-        w_index: 1, // incorrect
-        w_length: 2,
-    };
-    assert_eq!(device.handle_control_request(&setup, &[]).await, Err(Status::NOT_SUPPORTED));
-
-    // Test GET_STATUS (Endpoint) IN endpoint (not stalled)
-    let setup = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x82, // IN, Standard, Endpoint
-        b_request: USB_SETUP_REQ_GET_STATUS,
-        w_value: 0,
-        w_index: TEST_EP_IN_ADDR as u16,
-        w_length: 2,
-    };
-    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x00, 0x00]);
-
-    // Test SET_FEATURE (ENDPOINT_HALT) on IN endpoint
-    let setup = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x02, // OUT, Standard, Endpoint
-        b_request: USB_SETUP_REQ_SET_FEATURE,
-        w_value: USB_FEATURE_ENDPOINT_HALT,
-        w_index: TEST_EP_IN_ADDR as u16,
-        w_length: 0,
-    };
-    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), Vec::<u8>::new());
-    assert!(device.stalled_endpoints.contains(&TEST_EP_IN_ADDR));
-
-    // Test GET_STATUS (Endpoint) IN endpoint (now stalled)
-    let setup = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x82, // IN, Standard, Endpoint
-        b_request: USB_SETUP_REQ_GET_STATUS,
-        w_value: 0,
-        w_index: TEST_EP_IN_ADDR as u16,
-        w_length: 2,
-    };
-    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x01, 0x00]);
-
-    // Test CLEAR_FEATURE (ENDPOINT_HALT) on IN endpoint
-    let setup = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x02, // OUT, Standard, Endpoint
-        b_request: USB_SETUP_REQ_CLEAR_FEATURE,
-        w_value: USB_FEATURE_ENDPOINT_HALT,
-        w_index: TEST_EP_IN_ADDR as u16,
-        w_length: 0,
-    };
-    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), Vec::<u8>::new());
-    assert!(!device.stalled_endpoints.contains(&TEST_EP_IN_ADDR));
-
-    // Test GET_STATUS (Endpoint) IN endpoint (now cleared)
-    let setup = fusb_descriptor::UsbSetup {
-        bm_request_type: 0x82, // IN, Standard, Endpoint
-        b_request: USB_SETUP_REQ_GET_STATUS,
-        w_value: 0,
-        w_index: TEST_EP_IN_ADDR as u16,
-        w_length: 2,
-    };
-    assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x00, 0x00]);
 }
 
 #[fuchsia::test]
@@ -838,6 +734,10 @@ async fn test_standard_endpoint_halt() {
     // GET_STATUS on device (0), interface (0), and unhalted endpoint (0)
     assert_eq!(control!(get_status(USB_REQ_STANDARD_DEVICE_IN, 0)), Ok(vec![0, 0]));
     assert_eq!(control!(get_status(USB_REQ_STANDARD_INTERFACE_IN, 0)), Ok(vec![0, 0]));
+    assert_eq!(
+        control!(get_status(USB_REQ_STANDARD_INTERFACE_IN, 1)),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
     assert_eq!(control!(get_status(USB_REQ_STANDARD_ENDPOINT_IN, in_ep)), Ok(vec![0, 0]));
 
     // SET_FEATURE(ENDPOINT_HALT) -> GET_STATUS (1)
@@ -903,4 +803,201 @@ fn test_get_usb_protocol_parsing() {
 
     let start_args_empty = fdf::DriverStartArgs::default();
     assert_eq!(get_usb_protocol(&start_args_empty), None);
+}
+
+#[fuchsia::test]
+async fn test_loopback_mode_and_set_interface() {
+    let (iface_c, iface_s) = create_endpoints::<fusb_function::UsbFunctionInterfaceMarker>();
+    let (func_c, func_s) = create_endpoints::<fusb_function::UsbFunctionMarker>();
+    let (ep_in_c, ep_in_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_c, ep_out_s) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+    let scope = Arc::new(fasync::Scope::new_with_name("test_loopback_mode"));
+    scope.spawn_local(run_mock_function(func_s.into_stream()));
+    scope.spawn_local(run_mock_endpoint(
+        ep_in_s.into_stream(),
+        Default::default(),
+        mpsc::unbounded().1,
+        mpsc::unbounded().0,
+        scope.clone(),
+    ));
+    scope.spawn_local(run_mock_endpoint(
+        ep_out_s.into_stream(),
+        Default::default(),
+        mpsc::unbounded().1,
+        mpsc::unbounded().0,
+        scope.clone(),
+    ));
+
+    let (f_p, ep_i, ep_o) = (func_c.into_proxy(), ep_in_c.into_proxy(), ep_out_c.into_proxy());
+    scope.spawn_local(async move {
+        UsbZeroFunctionDevice::new(
+            f_p,
+            ep_i,
+            TEST_EP_IN_ADDR,
+            ep_o,
+            TEST_EP_OUT_ADDR,
+            0,
+            TestMode::Loopback,
+        )
+        .handle_requests(iface_s.into_stream())
+        .await;
+    });
+
+    let proxy = iface_c.into_proxy();
+    let setup = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x81,
+        b_request: USB_SETUP_REQ_GET_INTERFACE,
+        w_value: 0,
+        w_index: 0,
+        w_length: 1,
+    };
+
+    // GetInterface returns alt 0
+    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x00]));
+
+    // FIDL SetInterface(0, 0) succeeds
+    assert_eq!(proxy.set_interface(0, 0).await.unwrap(), Ok(()));
+    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x00]));
+
+    // FIDL SetInterface(0, 1) fails (only alt 0 is supported)
+    assert_eq!(proxy.set_interface(0, 1).await.unwrap(), Err(Status::NOT_SUPPORTED.into_raw()));
+
+    // Configure device
+    assert_eq!(proxy.set_configured(true, fusb_descriptor::UsbSpeed::High).await.unwrap(), Ok(()));
+    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x00]));
+
+    // SetInterface(0, 0) while configured succeeds and resets endpoints
+    assert_eq!(proxy.set_interface(0, 0).await.unwrap(), Ok(()));
+    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x00]));
+
+    // SetInterface(0, 1) while configured fails
+    assert_eq!(proxy.set_interface(0, 1).await.unwrap(), Err(Status::NOT_SUPPORTED.into_raw()));
+
+    // Test Chapter 9 SET_INTERFACE control request (alt 0 succeeds)
+    let setup_set_interface_0 = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x01,
+        b_request: USB_SETUP_REQ_SET_INTERFACE,
+        w_value: 0,
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(proxy.control(&setup_set_interface_0, &[]).await.unwrap(), Ok(vec![]));
+    assert_eq!(proxy.control(&setup, &[]).await.unwrap(), Ok(vec![0x00]));
+
+    // USB 2.0 §9.4.10: SET_INTERFACE resets halt state on all interface endpoints
+    let set_halt = |ep_addr: u8| fusb_descriptor::UsbSetup {
+        bm_request_type: 0x02, // OUT, Standard, Endpoint
+        b_request: USB_SETUP_REQ_SET_FEATURE,
+        w_value: USB_FEATURE_ENDPOINT_HALT,
+        w_index: ep_addr as u16,
+        w_length: 0,
+    };
+    let get_ep_status = |ep_addr: u8| fusb_descriptor::UsbSetup {
+        bm_request_type: 0x82, // IN, Standard, Endpoint
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: ep_addr as u16,
+        w_length: 2,
+    };
+
+    // Stall endpoints and verify stalled
+    assert_eq!(proxy.control(&set_halt(TEST_EP_IN_ADDR), &[]).await.unwrap(), Ok(vec![]));
+    assert_eq!(proxy.control(&set_halt(TEST_EP_OUT_ADDR), &[]).await.unwrap(), Ok(vec![]));
+    assert_eq!(
+        proxy.control(&get_ep_status(TEST_EP_IN_ADDR), &[]).await.unwrap(),
+        Ok(vec![0x01, 0x00])
+    );
+    assert_eq!(
+        proxy.control(&get_ep_status(TEST_EP_OUT_ADDR), &[]).await.unwrap(),
+        Ok(vec![0x01, 0x00])
+    );
+
+    // Chapter 9 SET_INTERFACE(0, 0) resets halt state on all interface endpoints
+    assert_eq!(proxy.control(&setup_set_interface_0, &[]).await.unwrap(), Ok(vec![]));
+    assert_eq!(
+        proxy.control(&get_ep_status(TEST_EP_IN_ADDR), &[]).await.unwrap(),
+        Ok(vec![0x00, 0x00])
+    );
+    assert_eq!(
+        proxy.control(&get_ep_status(TEST_EP_OUT_ADDR), &[]).await.unwrap(),
+        Ok(vec![0x00, 0x00])
+    );
+
+    // Re-stall and verify FIDL SetInterface(0, 0) also resets halt state
+    assert_eq!(proxy.control(&set_halt(TEST_EP_IN_ADDR), &[]).await.unwrap(), Ok(vec![]));
+    assert_eq!(proxy.control(&set_halt(TEST_EP_OUT_ADDR), &[]).await.unwrap(), Ok(vec![]));
+    assert_eq!(proxy.set_interface(0, 0).await.unwrap(), Ok(()));
+    assert_eq!(
+        proxy.control(&get_ep_status(TEST_EP_IN_ADDR), &[]).await.unwrap(),
+        Ok(vec![0x00, 0x00])
+    );
+    assert_eq!(
+        proxy.control(&get_ep_status(TEST_EP_OUT_ADDR), &[]).await.unwrap(),
+        Ok(vec![0x00, 0x00])
+    );
+
+    // Test Chapter 9 SET_INTERFACE control request (alt 1 fails)
+    let setup_set_interface_1 = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x01,
+        b_request: USB_SETUP_REQ_SET_INTERFACE,
+        w_value: 1,
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(
+        proxy.control(&setup_set_interface_1, &[]).await.unwrap(),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+
+    // Verify integer truncation protection (> 255 does not truncate to 0)
+    let setup_trunc_val = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x01,
+        b_request: USB_SETUP_REQ_SET_INTERFACE,
+        w_value: 0x0100, // 256
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(
+        proxy.control(&setup_trunc_val, &[]).await.unwrap(),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+
+    let setup_trunc_idx = fusb_descriptor::UsbSetup {
+        bm_request_type: 0x01,
+        b_request: USB_SETUP_REQ_SET_INTERFACE,
+        w_value: 0,
+        w_index: 0x0100, // 256
+        w_length: 0,
+    };
+    assert_eq!(
+        proxy.control(&setup_trunc_idx, &[]).await.unwrap(),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+
+    // Test VendorRequest::SetTestMode is rejected
+    let setup_set_mode = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_OUT,
+        b_request: VendorRequest::SetTestMode as u8,
+        w_value: TestMode::SourceSink as u16,
+        w_index: 0,
+        w_length: 0,
+    };
+    assert_eq!(
+        proxy.control(&setup_set_mode, &[]).await.unwrap(),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+
+    // Test VendorRequest::GetTestMode returns Loopback
+    let setup_get_mode = fusb_descriptor::UsbSetup {
+        bm_request_type: USB_TYPE_VENDOR_IN,
+        b_request: VendorRequest::GetTestMode as u8,
+        w_value: 0,
+        w_index: 0,
+        w_length: 1,
+    };
+    assert_eq!(
+        proxy.control(&setup_get_mode, &[]).await.unwrap(),
+        Ok(vec![TestMode::Loopback as u8])
+    );
 }
