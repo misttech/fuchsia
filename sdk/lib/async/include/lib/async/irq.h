@@ -31,9 +31,12 @@ struct async_irq {
 
 /// Begins asynchronously waiting on an IRQ specified in |irq|.
 /// Invokes the handler when the wait completes.
-/// The wait's handler will be invoked exactly once unless the wait is canceled.
-/// When the dispatcher is shutting down (being destroyed), the handlers of
-/// all remaining waits will be invoked with a status of |ZX_ERR_CANCELED|.
+/// The irq's handler will be invoked once for each interrupt packet received,
+/// until the irq object is unbound with |async_unbind_irq| or the dispatcher is
+/// shut down.
+/// When the dispatcher is shutting down (being destroyed), if the irq has not
+/// been unbound, the handlers of all remaining irqs will be invoked with a
+/// status of |ZX_ERR_CANCELED|.
 ///
 /// Returns |ZX_OK| if the wait was successfully begun.
 /// Returns |ZX_ERR_BAD_STATE| if the dispatcher is shutting down.
@@ -44,9 +47,11 @@ zx_status_t async_bind_irq(async_dispatcher_t* dispatcher, async_irq_t* irq);
 
 /// Unbinds the IRQ associated with |irq|.
 ///
-/// If successful, the IRQ will be unbound from the async loop.
+/// If successful, the IRQ will be unbound from the async loop and no further
+/// handler callbacks will be called.
 ///
 /// Returns |ZX_OK| if the IRQ has been successfully unbound.
+/// Returns |ZX_ERR_BAD_STATE| if the dispatcher is shutting down.
 /// Returns |ZX_ERR_NOT_SUPPORTED| if not supported by the dispatcher.
 ///
 /// This operation is thread-safe.
