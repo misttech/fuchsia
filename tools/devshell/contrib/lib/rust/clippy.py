@@ -17,8 +17,7 @@ from pathlib import Path
 
 from rust import (
     FUCHSIA_BUILD_DIR,
-    HOST_PLATFORM,
-    PREBUILT_THIRD_PARTY_DIR,
+    ROOT_PATH,
     GnTarget,
 )
 
@@ -241,32 +240,48 @@ def fix_paths(lint):
 
 
 def build_targets(clippy_outputs, build_dir, args):
-    prebuilt = PREBUILT_THIRD_PARTY_DIR
-    if args.fuchsia_dir:
-        prebuilt = Path(args.fuchsia_dir) / "prebuilt" / "third_party"
-    ninja = [
-        prebuilt / "ninja" / HOST_PLATFORM / "ninja",
-        "-C",
-        build_dir,
+    fuchsia_dir = Path(args.fuchsia_dir) if args.fuchsia_dir else ROOT_PATH
+    if not fuchsia_dir or not fuchsia_dir.is_dir():
+        fuchsia_dir = Path(__file__).resolve().parents[5]
+
+    main_build_script = fuchsia_dir / "build" / "scripts" / "main_build.py"
+
+    cmd = [
+        sys.executable,
+        str(main_build_script),
+        "--build-dir",
+        str(build_dir),
     ]
+    if args.verbose:
+        cmd.append("--verbose")
+    if args.quiet or args.raw:
+        cmd.append("--no-status")
+
+    cmd.append("ninja")
+
     if args.stop_on_first_error:
-        ninja += ["-k", "1"]
+        cmd += ["-k", "1"]
     else:
-        ninja += ["-k", "0"]
+        cmd += ["-k", "0"]
     if args.jobs is not None:
-        ninja += ["-j", str(args.jobs)]
+        cmd += ["-j", str(args.jobs)]
 
     if args.verbose:
-        ninja += ["--verbose"]
+        cmd += ["--verbose"]
     if args.quiet:
-        ninja += ["--quiet"]
-    ninja += clippy_outputs
+        cmd += ["--quiet"]
+    cmd += clippy_outputs
+
     output = sys.stderr if args.raw else None
-    env = os.environ
+    env = dict(os.environ)
+    env["FUCHSIA_DIR"] = str(fuchsia_dir)
     env.setdefault("NINJA_PERSISTENT_MODE", "1")
+    if args.raw:
+        env.pop("FX_BUILD_RBE_STATS", None)
+
     if args.verbose:
-        print(" ".join([str(arg) for arg in ninja]))
-    return subprocess.run(ninja, stdout=output, env=env)
+        print(" ".join([str(arg) for arg in cmd]))
+    return subprocess.run(cmd, stdout=output, env=env)
 
 
 def parse_args():

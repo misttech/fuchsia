@@ -143,14 +143,6 @@ readonly date
 
 readonly jq="$PREBUILT_JQ"
 
-# TODO: Replace RBE_WRAPPER uses with $main_build_script (or similar).
-# This is still used by 'fx clippy' and other scripts that need a
-# lightweight RBE wrapper without the full overhead of main_build.py.
-RBE_WRAPPER=( "$FUCHSIA_DIR"/build/rbe/fuchsia-reproxy-wrap.sh )
-# Propagate tracing option from `fx -x build` to the wrapper script.
-if [[ -o xtrace ]]; then
-  RBE_WRAPPER=(/bin/bash -x "${RBE_WRAPPER[@]}" )
-fi
 
 # fx-command-stdout-to-array runs a command and stores its standard output
 # into an array (expecting one item per line, preserving spaces).
@@ -248,7 +240,7 @@ function fx-wait-ignoring-signals {
   return "$status"
 }
 
-# Use this to conditionally prefix a command with "${RBE_WRAPPER[@]}".
+# Returns 0 if RBE is enabled for this build.
 # NOTE: this function depends on FUCHSIA_BUILD_DIR which is set only after
 # initialization.
 # The cached version of this function is 'fx-rbe-enabled', below.
