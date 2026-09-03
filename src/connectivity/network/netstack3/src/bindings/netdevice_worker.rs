@@ -244,13 +244,14 @@ impl NetdeviceWorker {
             // batch rather than once per buffer. This should not present a
             // significant problem since ports are seldom added or removed.
             let state = state.lock().await;
-            let mut gro = gro_storage.coalesce(rx_buffers.map(build_gro_input));
+            let mut rx_buffers = ShortCircuit::new(rx_buffers.map(build_gro_input));
+            let mut gro = gro_storage.coalesce(&mut rx_buffers);
             while let Some(item) = gro.next() {
                 let GroOutputItem {
                     target: GroPortTarget { port, frame_type },
                     checksum_offload,
                     mut buffers,
-                } = item?;
+                } = item;
                 let slice = buffers.slice_mut();
 
                 let Some(id) = state.get(&port) else {
@@ -277,6 +278,8 @@ impl NetdeviceWorker {
                 let buf = packet::Buf::new(slice, ..);
                 receive_frame(&mut ctx, id, frame_type, parsing_context, buf)?;
             }
+            std::mem::drop(gro);
+            rx_buffers.check_error()?;
         }
     }
 }
@@ -293,6 +296,42 @@ impl GroBufferDestination for GroPortTarget {
             FrameType::Ethernet => GroFrameType::Ethernet,
             FrameType::Ipv4 => GroFrameType::PureIp(IpVersion::V4),
             FrameType::Ipv6 => GroFrameType::PureIp(IpVersion::V6),
+        }
+    }
+}
+
+struct ShortCircuit<I, E> {
+    iter: I,
+    error: Option<E>,
+}
+
+impl<I, E> ShortCircuit<I, E> {
+    fn new(iter: I) -> Self {
+        Self { iter, error: None }
+    }
+
+    fn check_error(&mut self) -> Result<(), E> {
+        match self.error.take() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+}
+
+impl<I, R, E> Iterator for ShortCircuit<I, E>
+where
+    I: Iterator<Item = Result<R, E>>,
+{
+    type Item = R;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next() {
+            Some(Ok(r)) => Some(r),
+            Some(Err(e)) => {
+                self.error = Some(e);
+                None
+            }
+            None => None,
         }
     }
 }
@@ -1115,7 +1154,7 @@ mod tests {
         ChecksumOffloadSpec::none();
         "multiple frame types, no unanimous generic support"
     )]
-    fn test_tx_offload_spec_from_port_info(
+    fn build_tx_offload_spec_from_port_info(
         tx_types: Vec<fhardware_network::FrameTypeSupport>,
         expected: ChecksumOffloadSpec,
     ) {
@@ -1125,5 +1164,22 @@ mod tests {
             tx_types,
         };
         assert_eq!(tx_offload_spec_from_port_info(&info), expected);
+    }
+
+    #[test]
+    fn short_circuit_on_error() {
+        let items: Vec<Result<i32, ()>> = vec![Ok(1), Err(()), Ok(2)];
+        let mut iter = ShortCircuit::new(items.into_iter());
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.check_error(), Err(()));
+    }
+
+    #[test]
+    fn short_circuit_empty_ok() {
+        let items: Vec<Result<(), ()>> = vec![];
+        let mut iter = ShortCircuit::new(items.into_iter());
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.check_error(), Ok(()));
     }
 }

@@ -420,9 +420,9 @@ impl<B> GroBufferStorage<B> {
     }
 
     /// Adapts the provided iterator of packet buffers into a GRO iterator.
-    pub fn coalesce<I, T, E>(&mut self, iter: I) -> GroIter<'_, I, B, T>
+    pub fn coalesce<I, T>(&mut self, iter: I) -> GroIter<'_, I, B, T>
     where
-        I: Iterator<Item = Result<GroInputItem<B, T>, E>>,
+        I: Iterator<Item = GroInputItem<B, T>>,
         T: GroBufferDestination,
     {
         // TODO(https://fxbug.dev/452980285): Create a setting to control whether
@@ -457,23 +457,21 @@ impl<'a, I, B, T> Drop for GroIter<'a, I, B, T> {
     }
 }
 
-enum ProcessingResult<'a, B, T, O, E> {
+enum ProcessingResult<'a, B, T, O> {
     // TODO(https://fxbug.dev/452980285): Remove once used.
     #[expect(dead_code)]
     Continue,
-    Return(Result<GroOutputItem<'a, B, T, O>, E>),
+    Return(GroOutputItem<'a, B, T, O>),
 }
 
-impl<'a, I, B, T, E> GroIter<'a, I, B, T>
+impl<'a, I, B, T> GroIter<'a, I, B, T>
 where
     B: MaybeContiguousBuffer,
     T: GroBufferDestination,
-    I: Iterator<Item = Result<GroInputItem<B, T>, E>>,
+    I: Iterator<Item = GroInputItem<B, T>>,
 {
     /// Advances the iterator and returns the next GRO output item.
-    pub fn next<'b>(
-        &'b mut self,
-    ) -> Option<Result<GroOutputItem<'b, B, T, alloc::vec::Drain<'b, B>>, E>> {
+    pub fn next<'b>(&'b mut self) -> Option<GroOutputItem<'b, B, T, alloc::vec::Drain<'b, B>>> {
         loop {
             if let Some(i) = self.iter.next() {
                 match self.process_input(i) {
@@ -489,15 +487,10 @@ where
     /// result of the processing.
     fn process_input<'b>(
         &'b mut self,
-        item: Result<GroInputItem<B, T>, E>,
-    ) -> ProcessingResult<'b, B, T, alloc::vec::Drain<'b, B>, E> {
+        item: GroInputItem<B, T>,
+    ) -> ProcessingResult<'b, B, T, alloc::vec::Drain<'b, B>> {
         let Self { storage, enable_tcp_gro, .. } = self;
-        let GroInputItem { mut buffer, target, checksum_offload } = match item {
-            Ok(item) => item,
-            Err(e) => {
-                return ProcessingResult::Return(Err(e));
-            }
-        };
+        let GroInputItem { mut buffer, target, checksum_offload } = item;
 
         storage.linearization_vec.clear();
         let buffer_slice = buffer.linearized(&mut storage.linearization_vec);
@@ -515,11 +508,11 @@ where
                         GroOutputBuffers::Linearized { buffer, slice }
                     }
                 };
-                return ProcessingResult::Return(Ok(GroOutputItem {
+                return ProcessingResult::Return(GroOutputItem {
                     target,
                     checksum_offload,
                     buffers,
-                }));
+                });
             }};
         }
 
@@ -593,24 +586,23 @@ mod tests {
 
     #[test]
     fn process_gro_handles_fragmented() {
-        let items: Vec<Result<GroInputItem<TestBuffer, GroFrameType>, ()>> = vec![
-            Ok(GroInputItem {
+        let items: Vec<GroInputItem<TestBuffer, GroFrameType>> = vec![
+            GroInputItem {
                 buffer: TestBuffer { buf: vec![1, 2, 3], contiguous: true },
                 target: GroFrameType::Ethernet,
                 checksum_offload: ChecksumRxOffloading::FullyOffloaded,
-            }),
-            Ok(GroInputItem {
+            },
+            GroInputItem {
                 buffer: TestBuffer { buf: vec![4, 5, 6], contiguous: false },
                 target: GroFrameType::Ethernet,
                 checksum_offload: ChecksumRxOffloading::FullyOffloaded,
-            }),
+            },
         ];
 
         let mut storage = GroBufferStorage::new();
         let mut output = Vec::new();
         let mut gro = storage.coalesce(items.into_iter());
-        while let Some(item) = gro.next() {
-            let mut item = item.unwrap();
+        while let Some(mut item) = gro.next() {
             output.push(item.buffers.slice_mut().to_vec());
         }
 
@@ -651,8 +643,8 @@ mod tests {
         let dropped1 = Arc::new(AtomicBool::new(false));
         let dropped2 = Arc::new(AtomicBool::new(false));
 
-        let items: Vec<Result<GroInputItem<TrackedBuffer, GroFrameType>, ()>> = vec![
-            Ok(GroInputItem {
+        let items: Vec<GroInputItem<TrackedBuffer, GroFrameType>> = vec![
+            GroInputItem {
                 buffer: TrackedBuffer {
                     buf: vec![1, 2, 3],
                     contiguous: true,
@@ -660,8 +652,8 @@ mod tests {
                 },
                 target: GroFrameType::Ethernet,
                 checksum_offload: ChecksumRxOffloading::FullyOffloaded,
-            }),
-            Ok(GroInputItem {
+            },
+            GroInputItem {
                 buffer: TrackedBuffer {
                     buf: vec![4, 5, 6],
                     contiguous: false,
@@ -669,13 +661,13 @@ mod tests {
                 },
                 target: GroFrameType::Ethernet,
                 checksum_offload: ChecksumRxOffloading::FullyOffloaded,
-            }),
+            },
         ];
 
         let mut storage = GroBufferStorage::new();
         let mut gro = storage.coalesce(items.into_iter());
 
-        let mut item1 = gro.next().unwrap().unwrap();
+        let mut item1 = gro.next().unwrap();
         assert_eq!(item1.buffers.slice_mut(), &[1, 2, 3]);
         assert!(!dropped1.load(Ordering::SeqCst));
         assert!(!dropped2.load(Ordering::SeqCst));
@@ -683,7 +675,7 @@ mod tests {
         assert!(dropped1.load(Ordering::SeqCst));
         assert!(!dropped2.load(Ordering::SeqCst));
 
-        let mut item2 = gro.next().unwrap().unwrap();
+        let mut item2 = gro.next().unwrap();
         assert_eq!(item2.buffers.slice_mut(), &[4, 5, 6]);
         assert!(dropped1.load(Ordering::SeqCst));
         assert!(!dropped2.load(Ordering::SeqCst));
