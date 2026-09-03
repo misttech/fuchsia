@@ -152,8 +152,8 @@ pub fn power_management_register_domains(domains: &[PowerDomainConfigFfi]) -> Re
 /// # Arguments
 ///
 /// * `cpu_mask` - Bitmask of logical CPU cores to update.
-/// * `min_rate` - Minimum processing rate (scaled to `PowerLevel::kUserProcessingRateScale` = 1000).
-/// * `max_rate` - Maximum processing rate.
+/// * `min_rate` - Minimum processing rate on the `[0, 1000]` user processing rate scale.
+/// * `max_rate` - Maximum processing rate on the `[0, 1000]` user processing rate scale.
 pub fn power_management_set_rate_limits(
     cpu_mask: u64,
     min_rate: u64,

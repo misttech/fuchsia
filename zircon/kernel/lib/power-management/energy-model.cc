@@ -28,7 +28,7 @@ namespace power_management {
 
 zx::result<EnergyModel> EnergyModel::Create(
     std::span<const ProcessorPowerLevel> levels,
-    std::span<const ProcessorPowerLevelTransition> transitions) {
+    std::span<const ProcessorPowerLevelTransition> transitions, uint64_t max_processing_rate) {
   // Allocations below would be UB.
   if (levels.size() < 1) {
     return zx::error(ZX_ERR_INVALID_ARGS);
@@ -46,6 +46,15 @@ zx::result<EnergyModel> EnergyModel::Create(
 
     if (transition.to >= levels.size()) {
       return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+  }
+
+  if (max_processing_rate == 0) {
+    for (const auto& level : levels) {
+      max_processing_rate = std::max(max_processing_rate, level.processing_rate);
+    }
+    if (max_processing_rate == 0) {
+      max_processing_rate = 1;
     }
   }
 
@@ -77,7 +86,8 @@ zx::result<EnergyModel> EnergyModel::Create(
   size_t idle_levels = 0;
   // We assert below, because all the space required for these operation has been preallocated.
   for (size_t i = 0; i < levels.size(); ++i) {
-    power_levels.push_back(PowerLevel(static_cast<uint8_t>(i), levels[i]), &ac);
+    power_levels.push_back(PowerLevel(static_cast<uint8_t>(i), levels[i], max_processing_rate),
+                           &ac);
     // These were preallocated above.
     ZX_ASSERT(ac.check());
     power_levels_lookup.push_back(i, &ac);
@@ -140,7 +150,7 @@ zx::result<EnergyModel> EnergyModel::Create(
             });
 
   return zx::ok(EnergyModel{std::move(power_levels), std::move(power_level_transitions),
-                            std::move(power_levels_lookup), idle_levels});
+                            std::move(power_levels_lookup), idle_levels, max_processing_rate});
 }
 
 std::optional<uint8_t> EnergyModel::FindPowerLevel(ControlInterface interface_id,
@@ -190,26 +200,46 @@ const PowerLevel* EnergyModel::FindActivePowerLevelForRate(ProcessingRate proces
 #include <fbl/array.h>
 #include <kernel/scheduler.h>
 
-extern "C" zx_status_t cpp_power_management_register_domains(const power_domain_config_ffi* domains,
-                                                             size_t domain_count) {
-  if (!domains && domain_count > 0) {
-    return ZX_ERR_INVALID_ARGS;
+namespace power_management {
+
+zx::result<PowerDomainSet> PowerDomainSet::Create(
+    std::span<const power_domain_config_ffi> domain_configs) {
+  if (domain_configs.empty()) {
+    return zx::ok(PowerDomainSet{});
+  }
+  if (domain_configs.size() > kMaxPowerDomains) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
-  power_management::PowerDomainSet domain_set;
-
-  for (size_t i = 0; i < domain_count; ++i) {
-    const auto& config = domains[i];
+  // Validate configs and find system-wide max processing rate across all domains.
+  uint64_t max_system_processing_rate = 0;
+  for (const auto& config : domain_configs) {
     if (!config.levels && config.level_count > 0) {
-      return ZX_ERR_INVALID_ARGS;
+      return zx::error(ZX_ERR_INVALID_ARGS);
     }
+    if (config.cpu_mask == 0) {
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+    for (size_t j = 0; j < config.level_count; ++j) {
+      max_system_processing_rate =
+          std::max(max_system_processing_rate, config.levels[j].processing_rate);
+    }
+  }
+  if (max_system_processing_rate == 0) {
+    max_system_processing_rate = 1;
+  }
+
+  std::array<fbl::RefPtr<PowerDomain>, kMaxPowerDomains> domain_array;
+
+  for (size_t i = 0; i < domain_configs.size(); ++i) {
+    const auto& config = domain_configs[i];
 
     fbl::AllocChecker ac;
-    auto levels = fbl::MakeArray<power_management::ProcessorPowerLevel>(&ac, config.level_count);
+    auto levels = fbl::MakeArray<ProcessorPowerLevel>(&ac, config.level_count);
     if (!ac.check()) {
       dprintf(CRITICAL, "POWER: Failed to allocate power levels array for domain %u\n",
               config.domain_id);
-      return ZX_ERR_NO_MEMORY;
+      return zx::error(ZX_ERR_NO_MEMORY);
     }
 
     for (size_t j = 0; j < config.level_count; ++j) {
@@ -218,46 +248,61 @@ extern "C" zx_status_t cpp_power_management_register_domains(const power_domain_
           .options = ffi_level.options,
           .processing_rate = ffi_level.processing_rate,
           .power_coefficient_nw = ffi_level.power_coefficient_nw,
-          .control_interface = (ffi_level.control_interface == 0)
-                                   ? power_management::ControlInterface::kArmWfi
-                                   : power_management::ControlInterface::kCpuDriver,
+          .control_interface = (ffi_level.control_interface == 0) ? ControlInterface::kArmWfi
+                                                                  : ControlInterface::kCpuDriver,
           .control_argument = ffi_level.control_argument,
           .diagnostic_name = ffi_level.diagnostic_name ? ffi_level.diagnostic_name : "",
       };
     }
 
-    auto energy_model_result = power_management::EnergyModel::Create(
-        ktl::span<const power_management::ProcessorPowerLevel>(levels.data(), levels.size()), {});
+    auto energy_model_result =
+        EnergyModel::Create(ktl::span<const ProcessorPowerLevel>(levels.data(), levels.size()), {},
+                            max_system_processing_rate);
     if (energy_model_result.is_error()) {
       dprintf(CRITICAL, "POWER: Failed to create energy model for domain %u: %d\n",
               config.domain_id, energy_model_result.status_value());
-      return energy_model_result.status_value();
+      return energy_model_result.take_error();
     }
 
-    auto controller_result = power_management::PDevPowerLevelController::Get(config.domain_id);
+    auto controller_result = PDevPowerLevelController::Get(config.domain_id);
     if (controller_result.is_error()) {
       dprintf(CRITICAL, "POWER: Failed to get PDevPowerLevelController for domain %u: %d\n",
               config.domain_id, controller_result.status_value());
-      return controller_result.status_value();
+      return controller_result.take_error();
     }
 
-    auto domain = fbl::MakeRefCountedChecked<power_management::PowerDomain>(
+    auto domain = fbl::MakeRefCountedChecked<PowerDomain>(
         &ac, config.domain_id, static_cast<cpu_mask_t>(config.cpu_mask),
         std::move(energy_model_result).value(), std::move(controller_result).value());
     if (!ac.check()) {
       dprintf(CRITICAL, "POWER: Failed to allocate PowerDomain for domain %u\n", config.domain_id);
-      return ZX_ERR_NO_MEMORY;
+      return zx::error(ZX_ERR_NO_MEMORY);
     }
 
-    auto register_result = domain_set.Add(std::move(domain));
-    if (register_result.is_error()) {
-      dprintf(CRITICAL, "POWER: Failed to add power domain %u to set: %d\n", config.domain_id,
-              register_result.status_value());
-      return register_result.status_value();
-    }
+    domain_array[i] = std::move(domain);
   }
 
-  Scheduler::SetPowerDomainSet(std::move(domain_set));
+  return Create(
+      std::span<const fbl::RefPtr<PowerDomain>>{domain_array.data(), domain_configs.size()});
+}
+
+}  // namespace power_management
+
+extern "C" zx_status_t cpp_power_management_register_domains(const power_domain_config_ffi* domains,
+                                                             size_t domain_count) {
+  if (!domains && domain_count > 0) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  auto domain_set_result = power_management::PowerDomainSet::Create(
+      ktl::span<const power_domain_config_ffi>{domains, domain_count});
+  if (domain_set_result.is_error()) {
+    dprintf(CRITICAL, "POWER: Failed to create PowerDomainSet: %d\n",
+            domain_set_result.status_value());
+    return domain_set_result.status_value();
+  }
+
+  Scheduler::SetPowerDomainSet(std::move(domain_set_result).value());
   dprintf(INFO, "POWER: Registered power domains in scheduler\n");
   return ZX_OK;
 }
@@ -297,6 +342,13 @@ extern "C" bool cpp_power_management_boot_boost_enabled() {
   return boot_options ? boot_options->power_boot_boost : true;
 }
 #else
+namespace power_management {
+zx::result<PowerDomainSet> PowerDomainSet::Create(
+    std::span<const power_domain_config_ffi> domain_configs) {
+  return zx::error(ZX_ERR_NOT_SUPPORTED);
+}
+}  // namespace power_management
+
 extern "C" zx_status_t cpp_power_management_register_domains(const power_domain_config_ffi* domains,
                                                              size_t domain_count) {
   return ZX_ERR_NOT_SUPPORTED;

@@ -3494,8 +3494,12 @@ void Scheduler::UpdateProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
         Scheduler* scheduler = Scheduler::Get(entry.logical_cpu_number);
         Guard<MonitoredSpinLock, NoIrqSave> guard{&scheduler->queue_lock_, SOURCE_TAG};
 
-        const SchedProcessingRate min = power_management::PowerLevel::ToProcessingRate(entry.min);
-        const SchedProcessingRate max = power_management::PowerLevel::ToProcessingRate(entry.max);
+        using power_management::PowerLevel;
+
+        const SchedProcessingRate min =
+            PowerLevel::ToProcessingRate(entry.min, PowerLevel::kUserProcessingRateScale);
+        const SchedProcessingRate max =
+            PowerLevel::ToProcessingRate(entry.max, PowerLevel::kUserProcessingRateScale);
         scheduler->power_level_control_.UserSetProcessingRateLimits(min, max);
 
         // A rate change only needs to be evaluated for one active CPU in each domain.
@@ -3536,10 +3540,14 @@ void Scheduler::GetProcessingLimits(ktl::span<zx_cpu_perf_limit_t> limits) {
     limits[i].logical_cpu_number = i;
     limits[i].limit_type = ZX_CPU_PERF_LIMIT_TYPE_RATE;
 
-    limits[i].min = power_management::PowerLevel::FromProcessingRate(
-        scheduler->power_level_control_.processing_rate_limit_min());
-    limits[i].max = power_management::PowerLevel::FromProcessingRate(
-        scheduler->power_level_control_.processing_rate_limit_max());
+    using power_management::PowerLevel;
+
+    limits[i].min =
+        PowerLevel::FromProcessingRate(scheduler->power_level_control_.processing_rate_limit_min(),
+                                       PowerLevel::kUserProcessingRateScale);
+    limits[i].max =
+        PowerLevel::FromProcessingRate(scheduler->power_level_control_.processing_rate_limit_max(),
+                                       PowerLevel::kUserProcessingRateScale);
   }
 }
 

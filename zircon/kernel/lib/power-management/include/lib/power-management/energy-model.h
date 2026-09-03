@@ -38,6 +38,32 @@ constexpr cpu_mask_t cpu_num_to_mask(uint64_t num) { return cpu_mask_t{1} << num
 #include <fbl/ref_ptr.h>
 #include <fbl/vector.h>
 
+__BEGIN_CDECLS
+
+struct processor_power_level_ffi {
+  uint32_t options;
+  uint64_t processing_rate;
+  uint64_t power_coefficient_nw;
+  uint32_t control_interface;  // 0 = kArmWfi, 1 = kCpuDriver
+  uint64_t control_argument;
+  const char* diagnostic_name;
+};
+
+struct power_domain_config_ffi {
+  uint32_t domain_id;
+  uint64_t cpu_mask;
+  const processor_power_level_ffi* levels;
+  size_t level_count;
+};
+
+static_assert(sizeof(processor_power_level_ffi) == 48, "processor_power_level_ffi size mismatch");
+static_assert(alignof(processor_power_level_ffi) == 8, "processor_power_level_ffi align mismatch");
+
+static_assert(sizeof(power_domain_config_ffi) == 32, "power_domain_config_ffi size mismatch");
+static_assert(alignof(power_domain_config_ffi) == 8, "power_domain_config_ffi align mismatch");
+
+__END_CDECLS
+
 namespace power_management {
 
 // forward declaration.
@@ -73,30 +99,39 @@ class PowerLevel {
     kActive,
   };
 
-  // Scale for processing rates communicated to/from userspace. This should be
-  // replaced with either a fixed point format or a scaling relative to the max
-  // userspace rate provided in the energy model.
+  // Scale for processing rates communicated to/from the userspace limits interface.
   static constexpr uint64_t kUserProcessingRateScale = 1000u;
 
-  // TODO(eieio): Normalize relative to the max processing rate of all power levels.
-  static constexpr ProcessingRate ToProcessingRate(uint64_t processing_rate) {
-    return ffl::FromRatio<uint64_t>(processing_rate, kUserProcessingRateScale);
+  // Normalizes an integer processing rate relative to the maximum rate.
+  static constexpr ProcessingRate ToProcessingRate(uint64_t processing_rate,
+                                                   uint64_t max_processing_rate) {
+    if (max_processing_rate == 0) {
+      return ProcessingRate{0};
+    }
+    return ffl::FromRatio<uint64_t>(processing_rate, max_processing_rate);
   }
-  static constexpr uint64_t FromProcessingRate(ProcessingRate processing_rate) {
-    return ffl::Round<uint64_t>(processing_rate * kUserProcessingRateScale);
+  static constexpr uint64_t FromProcessingRate(ProcessingRate processing_rate,
+                                               uint64_t max_processing_rate) {
+    return ffl::Round<uint64_t>(processing_rate * max_processing_rate);
   }
 
   constexpr PowerLevel() = default;
-  explicit PowerLevel(uint8_t level_index, const ProcessorPowerLevel& level)
+  explicit PowerLevel(uint8_t level_index, const ProcessorPowerLevel& level,
+                      uint64_t max_processing_rate = 0)
       : options_(level.options),
         control_(level.control_interface),
         control_argument_(level.control_argument),
-        processing_rate_(ToProcessingRate(level.processing_rate)),
+        processing_rate_(ToProcessingRate(
+            level.processing_rate, max_processing_rate > 0
+                                       ? max_processing_rate
+                                       : (level.processing_rate > 0 ? level.processing_rate : 1))),
         power_coefficient_nw_(level.power_coefficient_nw),
-        power_cost_nw_per_rate_(level.processing_rate > 0
-                                    ? level.power_coefficient_nw * kUserProcessingRateScale /
-                                          level.processing_rate
-                                    : 0),
+        power_cost_nw_per_rate_(
+            level.processing_rate > 0
+                ? (level.power_coefficient_nw *
+                   (max_processing_rate > 0 ? max_processing_rate : level.processing_rate)) /
+                      level.processing_rate
+                : 0),
         level_(level_index) {
     if (level.diagnostic_name) {
       size_t i = 0;
@@ -263,11 +298,21 @@ struct TransitionMatrix {
 class EnergyModel {
  public:
   static zx::result<EnergyModel> Create(std::span<const ProcessorPowerLevel> levels,
-                                        std::span<const ProcessorPowerLevelTransition> transitions);
+                                        std::span<const ProcessorPowerLevelTransition> transitions,
+                                        uint64_t max_processing_rate = 0);
 
   EnergyModel() = default;
   EnergyModel(const EnergyModel&) = delete;
   EnergyModel(EnergyModel&&) = default;
+
+  // Scale used to normalize raw integer rates into fixed-point ProcessingRate.
+  constexpr uint64_t max_processing_rate_scale() const { return max_processing_rate_scale_; }
+  constexpr ProcessingRate ToProcessingRate(uint64_t processing_rate) const {
+    return PowerLevel::ToProcessingRate(processing_rate, max_processing_rate_scale_);
+  }
+  constexpr uint64_t FromProcessingRate(ProcessingRate processing_rate) const {
+    return PowerLevel::FromProcessingRate(processing_rate, max_processing_rate_scale_);
+  }
 
   // All power levels described in the model, sorted by processing power and energy consumption.
   //
@@ -338,16 +383,19 @@ class EnergyModel {
 
  private:
   EnergyModel(fbl::Vector<PowerLevel> levels, fbl::Vector<PowerLevelTransition> transitions,
-              fbl::Vector<size_t> control_lookup, size_t idle_levels)
+              fbl::Vector<size_t> control_lookup, size_t idle_levels,
+              uint64_t max_processing_rate_scale)
       : power_levels_(std::move(levels)),
         transitions_(std::move(transitions)),
         control_lookup_(std::move(control_lookup)),
-        idle_power_levels_(idle_levels) {}
+        idle_power_levels_(idle_levels),
+        max_processing_rate_scale_(max_processing_rate_scale) {}
 
   fbl::Vector<PowerLevel> power_levels_;
   fbl::Vector<PowerLevelTransition> transitions_;
   fbl::Vector<size_t> control_lookup_;
   size_t idle_power_levels_ = 0;
+  uint64_t max_processing_rate_scale_ = 1;
 };
 
 // PowerDomain establishes the relationship between a set of CPUs, the energy
@@ -435,6 +483,43 @@ class PowerDomainSet {
   PowerDomainSet(PowerDomainSet&&) = default;
   PowerDomainSet& operator=(PowerDomainSet&&) = default;
   ~PowerDomainSet() = default;
+
+  // Creates a PowerDomainSet from a span of PowerDomain references.
+  // Validates that domain count is <= kMaxPowerDomains, all pointers are non-null,
+  // each domain has a non-zero CPU mask, and no two domains share a domain ID or
+  // have intersecting CPU masks.
+  static zx::result<PowerDomainSet> Create(std::span<const fbl::RefPtr<PowerDomain>> domains) {
+    if (domains.size() > kMaxPowerDomains) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
+    }
+
+    ArrayType array{};
+    for (size_t i = 0; i < domains.size(); ++i) {
+      const auto& domain = domains[i];
+      if (!domain || domain->cpus() == 0) {
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      for (size_t j = 0; j < i; ++j) {
+        if (array[j]->id() == domain->id() || (array[j]->cpus() & domain->cpus()) != 0) {
+          return zx::error(ZX_ERR_INVALID_ARGS);
+        }
+      }
+      array[i] = domain;
+    }
+
+    return zx::ok(PowerDomainSet{std::move(array)});
+  }
+
+  static zx::result<PowerDomainSet> Create(
+      std::initializer_list<fbl::RefPtr<PowerDomain>> domains) {
+    return Create(std::span<const fbl::RefPtr<PowerDomain>>{domains.begin(), domains.size()});
+  }
+
+  // Creates a PowerDomainSet from a span of FFI domain configurations.
+  // Validates domain configs, determines system-wide peak rate normalization,
+  // creates an EnergyModel for each domain, binds to the corresponding
+  // PDevPowerLevelController, and constructs the PowerDomain instances.
+  static zx::result<PowerDomainSet> Create(std::span<const power_domain_config_ffi> domain_configs);
 
   // Creates a PowerDomainSet with the given PowerDomain as its only entry for testing.
   static PowerDomainSet CreateForTest(const fbl::RefPtr<PowerDomain>& domain) {
@@ -534,31 +619,6 @@ class PowerDomainSet {
   // Returns true if all of the array elements are empty.
   constexpr bool is_empty() const { return count() == 0u; }
 
-  zx::result<> Add(fbl::RefPtr<PowerDomain> power_domain) {
-    // A power domain consists of a domain id, a CPU mask, and a list of power
-    // level descriptions. Each power domain in a power domain set must have a
-    // domain id that is unique among the power domains in the set and a CPU
-    // mask that does not intersect with the CPU mask of any other power domains
-    // in the set.
-    fbl::RefPtr<PowerDomain>* first_empty_element = nullptr;
-    for (auto& element : domains_) {
-      if (element) {
-        if (element->id() == power_domain->id() || (element->cpus() & power_domain->cpus()) != 0) {
-          return zx::error(ZX_ERR_INVALID_ARGS);
-        }
-      } else if (first_empty_element == nullptr) {
-        first_empty_element = &element;
-      }
-    }
-
-    if (first_empty_element) {
-      *first_empty_element = std::move(power_domain);
-      return zx::ok();
-    }
-
-    return zx::error(ZX_ERR_NO_SPACE);
-  }
-
  private:
   // Private constructor used by the testing named constructors.
   explicit PowerDomainSet(ArrayType domains) : domains_{std::move(domains)} {}
@@ -569,28 +629,6 @@ class PowerDomainSet {
 }  // namespace power_management
 
 __BEGIN_CDECLS
-
-struct processor_power_level_ffi {
-  uint32_t options;
-  uint64_t processing_rate;
-  uint64_t power_coefficient_nw;
-  uint32_t control_interface;  // 0 = kArmWfi, 1 = kCpuDriver
-  uint64_t control_argument;
-  const char* diagnostic_name;
-};
-
-struct power_domain_config_ffi {
-  uint32_t domain_id;
-  uint64_t cpu_mask;
-  const processor_power_level_ffi* levels;
-  size_t level_count;
-};
-
-static_assert(sizeof(processor_power_level_ffi) == 48, "processor_power_level_ffi size mismatch");
-static_assert(alignof(processor_power_level_ffi) == 8, "processor_power_level_ffi align mismatch");
-
-static_assert(sizeof(power_domain_config_ffi) == 32, "power_domain_config_ffi size mismatch");
-static_assert(alignof(power_domain_config_ffi) == 8, "power_domain_config_ffi align mismatch");
 
 zx_status_t cpp_power_management_register_domains(const power_domain_config_ffi* domains,
                                                   size_t domain_count);

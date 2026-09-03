@@ -44,13 +44,13 @@ bool InRange(const Ranged& ranged, const Element& element) {
 TEST(PowerLevelTest, ToFromRate) {
   const ProcessingRate min_rate{0};
   const ProcessingRate max_rate{1};
-  const uint64_t min_user_rate{0};
-  const uint64_t max_user_rate{PowerLevel::kUserProcessingRateScale};
+  const uint64_t min_raw_rate{0};
+  const uint64_t max_raw_rate{1024};
 
-  EXPECT_EQ(min_rate, PowerLevel::ToProcessingRate(min_user_rate));
-  EXPECT_EQ(max_rate, PowerLevel::ToProcessingRate(max_user_rate));
-  EXPECT_EQ(min_user_rate, PowerLevel::FromProcessingRate(min_rate));
-  EXPECT_EQ(max_user_rate, PowerLevel::FromProcessingRate(max_rate));
+  EXPECT_EQ(min_rate, PowerLevel::ToProcessingRate(min_raw_rate, max_raw_rate));
+  EXPECT_EQ(max_rate, PowerLevel::ToProcessingRate(max_raw_rate, max_raw_rate));
+  EXPECT_EQ(min_raw_rate, PowerLevel::FromProcessingRate(min_rate, max_raw_rate));
+  EXPECT_EQ(max_raw_rate, PowerLevel::FromProcessingRate(max_rate, max_raw_rate));
 }
 
 TEST(PowerLevelTest, Ctor) {
@@ -63,10 +63,12 @@ TEST(PowerLevelTest, Ctor) {
       .diagnostic_name = "foobar one two three",
   };
 
-  PowerLevel level(0, kLevel);
+  PowerLevel level(0, kLevel, PowerLevel::kUserProcessingRateScale);
 
   EXPECT_EQ(level.level(), 0);
-  EXPECT_EQ(level.processing_rate(), PowerLevel::ToProcessingRate(kLevel.processing_rate));
+  EXPECT_EQ(
+      level.processing_rate(),
+      PowerLevel::ToProcessingRate(kLevel.processing_rate, PowerLevel::kUserProcessingRateScale));
   EXPECT_EQ(level.power_coefficient_nw(), kLevel.power_coefficient_nw);
   EXPECT_EQ(level.control(), kLevel.control_interface);
   EXPECT_EQ(level.control_argument(), kLevel.control_argument);
@@ -86,10 +88,12 @@ TEST(PowerLevelTest, Ctor2) {
       .diagnostic_name = "foobar one two three",
   };
 
-  PowerLevel level(123, kLevel);
+  PowerLevel level(123, kLevel, PowerLevel::kUserProcessingRateScale);
 
   EXPECT_EQ(level.level(), 123);
-  EXPECT_EQ(level.processing_rate(), PowerLevel::ToProcessingRate(kLevel.processing_rate));
+  EXPECT_EQ(
+      level.processing_rate(),
+      PowerLevel::ToProcessingRate(kLevel.processing_rate, PowerLevel::kUserProcessingRateScale));
   EXPECT_EQ(level.power_coefficient_nw(), kLevel.power_coefficient_nw);
   EXPECT_EQ(level.control(), kLevel.control_interface);
   EXPECT_EQ(level.control_argument(), kLevel.control_argument);
@@ -380,6 +384,99 @@ TEST(PowerModelTest, CreateWithEmptyTransitionsIsOk) {
   EXPECT_FALSE(energy_model->FindPowerLevel(static_cast<ControlInterface>(495), 0));
 }
 
+TEST(EnergyModelTest, HeterogeneousMultiDomainScaling) {
+  // Domain 0: Little cores, max raw processing rate = 150.
+  static constexpr auto kLittleLevels = std::to_array<ProcessorPowerLevel>({
+      {
+          .options = 0,
+          .processing_rate = 0,
+          .power_coefficient_nw = 10,
+          .control_interface = ControlInterface::kArmWfi,
+          .control_argument = 0,
+          .diagnostic_name = "wfi",
+      },
+      {
+          .options = 0,
+          .processing_rate = 50,
+          .power_coefficient_nw = 100,
+          .control_interface = ControlInterface::kCpuDriver,
+          .control_argument = 0,
+          .diagnostic_name = "opp0",
+      },
+      {
+          .options = 0,
+          .processing_rate = 150,
+          .power_coefficient_nw = 300,
+          .control_interface = ControlInterface::kCpuDriver,
+          .control_argument = 1,
+          .diagnostic_name = "opp1",
+      },
+  });
+
+  // Domain 1: Big cores, max raw processing rate = 1000.
+  static constexpr auto kBigLevels = std::to_array<ProcessorPowerLevel>({
+      {
+          .options = 0,
+          .processing_rate = 0,
+          .power_coefficient_nw = 50,
+          .control_interface = ControlInterface::kArmWfi,
+          .control_argument = 0,
+          .diagnostic_name = "wfi",
+      },
+      {
+          .options = 0,
+          .processing_rate = 500,
+          .power_coefficient_nw = 1000,
+          .control_interface = ControlInterface::kCpuDriver,
+          .control_argument = 0,
+          .diagnostic_name = "opp0",
+      },
+      {
+          .options = 0,
+          .processing_rate = 1000,
+          .power_coefficient_nw = 2500,
+          .control_interface = ControlInterface::kCpuDriver,
+          .control_argument = 1,
+          .diagnostic_name = "opp1",
+      },
+  });
+
+  constexpr uint64_t kSystemMaxProcessingRate = 1000;
+
+  // Create Domain 0 EnergyModel normalized to system peak rate (1000).
+  auto little_model = EnergyModel::Create(kLittleLevels, {}, kSystemMaxProcessingRate);
+  ASSERT_TRUE(little_model.is_ok());
+  EXPECT_EQ(little_model->max_processing_rate_scale(), kSystemMaxProcessingRate);
+
+  // Domain 0 levels should be normalized against 1000 rather than local max (150).
+  const auto little_levels = little_model->levels();
+  ASSERT_EQ(little_levels.size(), 3u);
+  EXPECT_EQ(little_levels[0].processing_rate(), ProcessingRate{0});
+  EXPECT_EQ(little_levels[1].processing_rate(),
+            PowerLevel::ToProcessingRate(50, kSystemMaxProcessingRate));
+  EXPECT_EQ(little_levels[2].processing_rate(),
+            PowerLevel::ToProcessingRate(150, kSystemMaxProcessingRate));
+
+  // ToProcessingRate / FromProcessingRate on little model must use denominator 1000.
+  EXPECT_EQ(little_model->ToProcessingRate(150),
+            PowerLevel::ToProcessingRate(150, kSystemMaxProcessingRate));
+  EXPECT_EQ(little_model->FromProcessingRate(little_levels[2].processing_rate()), 150u);
+
+  // Create Domain 1 EnergyModel normalized to system peak rate (1000).
+  auto big_model = EnergyModel::Create(kBigLevels, {}, kSystemMaxProcessingRate);
+  ASSERT_TRUE(big_model.is_ok());
+  EXPECT_EQ(big_model->max_processing_rate_scale(), kSystemMaxProcessingRate);
+
+  const auto big_levels = big_model->levels();
+  ASSERT_EQ(big_levels.size(), 3u);
+  EXPECT_EQ(big_levels[0].processing_rate(), ProcessingRate{0});
+  EXPECT_EQ(big_levels[1].processing_rate(),
+            PowerLevel::ToProcessingRate(500, kSystemMaxProcessingRate));
+  EXPECT_EQ(big_levels[2].processing_rate(),
+            PowerLevel::ToProcessingRate(1000, kSystemMaxProcessingRate));
+  EXPECT_EQ(big_levels[2].processing_rate(), ProcessingRate{1});
+}
+
 TEST(PowerDomainSetTest, FindDomain) {
   std::array domains_to_register{
       MakePowerDomainHelper(0, 1, 2, 3),
@@ -392,10 +489,9 @@ TEST(PowerDomainSetTest, FindDomain) {
     raw_domains[i] = domains_to_register[i].get();
   }
 
-  PowerDomainSet domain_set;
-  for (auto& domain : domains_to_register) {
-    ASSERT_TRUE(domain_set.Add(std::move(domain)).is_ok());
-  }
+  auto domain_set_result = PowerDomainSet::Create(domains_to_register);
+  ASSERT_TRUE(domain_set_result.is_ok());
+  const auto& domain_set = domain_set_result.value();
 
   for (const auto* domain : raw_domains) {
     EXPECT_EQ(domain_set.FindByDomainId(domain->id()), domain);
@@ -404,45 +500,51 @@ TEST(PowerDomainSetTest, FindDomain) {
   EXPECT_EQ(domain_set.FindByDomainId(112345567), nullptr);
 }
 
-TEST(PowerDomainSetTest, RegisterConflictingPowerDomains) {
-  std::array unique_domains_to_register = {
+TEST(PowerDomainSetTest, CreateValidation) {
+  std::array valid_domains = {
       MakePowerDomainHelper(0, 0, 1, 2),
       MakePowerDomainHelper(1, 4, 5, 6),
       MakePowerDomainHelper(2, 8, 9, 10),
   };
 
-  std::array conflicting_domains_to_register = {
-      MakePowerDomainHelper(3, 12, 13, 14, 0),
-      MakePowerDomainHelper(4, 16, 17, 18, 1),
-      MakePowerDomainHelper(5, 20, 21, 22, 2),
-      MakePowerDomainHelper(0, 24, 25, 26, 27),
-  };
-
-  std::array<PowerDomain*, 3> raw_unique_domains;
-  for (size_t i = 0; i < unique_domains_to_register.size(); ++i) {
-    raw_unique_domains[i] = unique_domains_to_register[i].get();
+  std::array<PowerDomain*, 3> raw_valid_domains;
+  for (size_t i = 0; i < valid_domains.size(); ++i) {
+    raw_valid_domains[i] = valid_domains[i].get();
   }
 
-  PowerDomainSet domain_set;
-  for (auto& domain : unique_domains_to_register) {
-    EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
-    ASSERT_TRUE(domain_set.Add(std::move(domain)).is_ok());
-  }
+  auto domain_set_result = PowerDomainSet::Create(valid_domains);
+  ASSERT_TRUE(domain_set_result.is_ok());
+  const auto& domain_set = domain_set_result.value();
 
-  // All of the domains registered so far should be present in the set.
-  EXPECT_EQ(domain_set.count(), unique_domains_to_register.size());
+  EXPECT_EQ(domain_set.count(), valid_domains.size());
   domain_set.Visit([&](const fbl::RefPtr<PowerDomain>& domain) {
-    EXPECT_TRUE(InRange(raw_unique_domains, domain.get()));
+    EXPECT_TRUE(InRange(raw_valid_domains, domain.get()));
   });
 
-  // Attempt and fail to register conflicting domains.
-  for (auto& domain : conflicting_domains_to_register) {
-    EXPECT_EQ(domain->total_normalized_utilization(), Utilization{0});
-    ASSERT_FALSE(domain_set.Add(std::move(domain)).is_ok());
-  }
+  // Duplicate domain ID.
+  std::array duplicate_id_domains = {
+      MakePowerDomainHelper(0, 0, 1),
+      MakePowerDomainHelper(0, 2, 3),
+  };
+  EXPECT_EQ(PowerDomainSet::Create(duplicate_id_domains).status_value(), ZX_ERR_INVALID_ARGS);
 
-  // The domain set should remain unchanged.
-  EXPECT_EQ(domain_set.count(), unique_domains_to_register.size());
+  // Overlapping CPU mask.
+  std::array overlapping_cpu_domains = {
+      MakePowerDomainHelper(0, 0, 1),
+      MakePowerDomainHelper(1, 1, 2),
+  };
+  EXPECT_EQ(PowerDomainSet::Create(overlapping_cpu_domains).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Null domain reference.
+  fbl::RefPtr<PowerDomain> null_domain = nullptr;
+  EXPECT_EQ(PowerDomainSet::Create({null_domain}).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Exceeding kMaxPowerDomains (limit 4).
+  std::array too_many_domains = {
+      MakePowerDomainHelper(0, 0), MakePowerDomainHelper(1, 1), MakePowerDomainHelper(2, 2),
+      MakePowerDomainHelper(3, 3), MakePowerDomainHelper(4, 4),
+  };
+  EXPECT_EQ(PowerDomainSet::Create(too_many_domains).status_value(), ZX_ERR_OUT_OF_RANGE);
 }
 
 }  // namespace
