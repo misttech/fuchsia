@@ -13,6 +13,11 @@ void ScenicCtfTest::SetFlatlandDisplayContent(fuchsia_ui_views::ViewportCreation
       std::move(token));
 }
 
+void ScenicCtfTest::SetFlatlandDisplayDevicePixelRatio(fuchsia_math::VecF dpr) {
+  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->SetFlatlandDisplayDevicePixelRatio(
+      std::move(dpr));
+}
+
 const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfTest::LocalServiceDirectory() const {
   return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->LocalServiceDirectory();
 }

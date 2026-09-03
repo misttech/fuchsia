@@ -57,6 +57,13 @@ ui_testing::Screenshot TakeScreenshot(
     int display_rotation = 0);
 
 ui_testing::Screenshot TakeFileScreenshot(
+    const fidl::SyncClient<fuchsia_ui_composition::Screenshot>& screenshotter, uint64_t width,
+    uint64_t height,
+    fuchsia_ui_composition::ScreenshotFormat format =
+        fuchsia_ui_composition::ScreenshotFormat::kBgraRaw,
+    int display_rotation = 0);
+
+ui_testing::Screenshot TakeFileScreenshot(
     const fuchsia::ui::composition::ScreenshotSyncPtr& screenshotter, uint64_t width,
     uint64_t height,
     fuchsia::ui::composition::ScreenshotFormat format =

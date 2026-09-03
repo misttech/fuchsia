@@ -51,6 +51,7 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
 
   // Delegates to the global test environment.
   void SetFlatlandDisplayContent(fuchsia_ui_views::ViewportCreationToken token);
+  void SetFlatlandDisplayDevicePixelRatio(fuchsia_math::VecF dpr);
 
   const std::shared_ptr<sys::ServiceDirectory>& LocalServiceDirectory() const;
 

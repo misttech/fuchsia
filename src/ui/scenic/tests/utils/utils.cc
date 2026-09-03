@@ -4,6 +4,7 @@
 
 #include "src/ui/scenic/tests/utils/utils.h"
 
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
@@ -193,6 +194,44 @@ ui_testing::Screenshot TakeScreenshot(
     return Screenshot(vmo);
   }
   return Screenshot(vmo, width, height, display_rotation, fidl::NaturalToHLCPP(format));
+}
+
+ui_testing::Screenshot TakeFileScreenshot(
+    const fidl::SyncClient<fuchsia_ui_composition::Screenshot>& screenshotter, uint64_t width,
+    uint64_t height, fuchsia_ui_composition::ScreenshotFormat format, int display_rotation) {
+  fuchsia_ui_composition::ScreenshotTakeFileRequest request;
+  request.format() = format;
+
+  auto result = screenshotter->TakeFile(std::move(request));
+  if (result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to take screenshot: " << result.error_value().FormatDescription();
+    return Screenshot();
+  }
+  FX_CHECK(result.value().file().has_value());
+  fidl::SyncClient<fuchsia_io::File> file(std::move(result.value().file().value()));
+
+  auto attr_result = file->GetAttributes(fuchsia_io::NodeAttributesQuery::kContentSize);
+  FX_CHECK(attr_result.is_ok()) << attr_result.error_value().FormatDescription();
+  FX_CHECK(attr_result->immutable_attributes().content_size().has_value());
+  auto screenshot_size = *attr_result->immutable_attributes().content_size();
+
+  zx::vmo vmo_from_file;
+  FX_CHECK(zx::vmo::create(screenshot_size, 0, &vmo_from_file) == ZX_OK);
+  uint64_t offset = 0;
+  uint64_t read_response_size = fuchsia_io::kMaxBuf;
+  do {
+    auto read_result = file->Read(fuchsia_io::kMaxBuf);
+    FX_CHECK(read_result.is_ok()) << read_result.error_value().FormatDescription();
+    const auto& response_data = read_result->data();
+    read_response_size = response_data.size();
+    vmo_from_file.write(response_data.data(), offset, read_response_size);
+    offset += read_response_size;
+  } while (read_response_size == fuchsia_io::kMaxBuf);
+
+  if (format == fuchsia_ui_composition::ScreenshotFormat::kPng) {
+    return Screenshot(vmo_from_file);
+  }
+  return Screenshot(vmo_from_file, width, height, display_rotation, fidl::NaturalToHLCPP(format));
 }
 
 ui_testing::Screenshot TakeFileScreenshot(
