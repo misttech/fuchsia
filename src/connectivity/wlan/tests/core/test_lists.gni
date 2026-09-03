@@ -59,4 +59,5 @@ core_tests_for_fyi_iperf =
 # Tests longer than ~20 minutes consume significant resources and significantly
 # lengthen the cadence of the test runs. Split these tests out so we can run
 # them at reduced frequency.
-core_tests_for_fyi_long = []
+core_tests_for_fyi_long =
+    [ "//src/connectivity/wlan/tests/core:phy_compliance_ac_test" ]
