@@ -373,6 +373,12 @@ impl Gpt {
         &self.client
     }
 
+    /// Replaces the underlying block client. Note that this drops the existing client and so will
+    /// cause cancelled futures if any requests are already in-flight.
+    pub fn set_client(&mut self, client: Arc<RemoteBlockClient>) {
+        self.client = client;
+    }
+
     #[cfg(test)]
     fn take_client(self) -> Arc<RemoteBlockClient> {
         self.client

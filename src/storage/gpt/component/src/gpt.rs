@@ -842,6 +842,17 @@ impl GptManager {
         inner.composite_partitions.clear();
         inner.partitions_dir.clear().await;
 
+        // If in-flight I/O on any cleared partition was cancelled, the shared block client's FIFO
+        // will have been terminated to prevent DMA memory corruption. Re-establish a fresh block
+        // client so we can commit the new partition table metadata and share it with the new
+        // partitions.
+        let client =
+            Arc::new(RemoteBlockClient::new(self.block_proxy.clone()).await.map_err(|e| {
+                log::error!(e:?; "Failed to re-establish block client");
+                zx::Status::IO
+            })?);
+        inner.gpt.set_client(client);
+
         log::info!("Resetting gpt.  Expect data loss!!!");
         let mut transaction = inner.gpt.create_transaction().unwrap();
         transaction.partitions = partitions;
@@ -2334,6 +2345,120 @@ mod tests {
             .write_at(BufferSlice::Memory(&buf[..]), 0)
             .await
             .expect_err("write_at on stale client should fail");
+
+        runner.shutdown().await;
+    }
+
+    #[fuchsia::test(threads = 2)]
+    async fn reset_partition_table_with_in_flight_io_succeeds() {
+        const PART_TYPE_GUID: [u8; 16] = [2u8; 16];
+        const PART_1_INSTANCE_GUID: [u8; 16] = [2u8; 16];
+        const PART_1_NAME: &str = "part";
+
+        struct PauseObserver {
+            started_tx: std::sync::mpsc::Sender<()>,
+            resume_rx: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+        }
+
+        impl Observer for PauseObserver {
+            fn read(
+                &self,
+                device_block_offset: u64,
+                _block_count: u32,
+                _vmo: &Arc<zx::Vmo>,
+                _vmo_offset: u64,
+            ) {
+                // Only pause partition reads (LBA 4 is the start of the partition).
+                if device_block_offset >= 4 {
+                    let _ = self.started_tx.send(());
+                    let _ = self.resume_rx.lock().unwrap().recv();
+                }
+            }
+        }
+
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+
+        let (block_device, partitions_dir) = setup_with_options(
+            VmoBackedServerOptions {
+                initial_contents: InitialContents::FromCapacity(1048576 / 512),
+                block_size: 512,
+                observer: Some(Box::new(PauseObserver {
+                    started_tx,
+                    resume_rx: std::sync::Mutex::new(resume_rx),
+                })),
+                ..Default::default()
+            },
+            vec![PartitionInfo {
+                label: PART_1_NAME.to_string(),
+                type_guid: Guid::from_bytes(PART_TYPE_GUID),
+                instance_guid: Guid::from_bytes(PART_1_INSTANCE_GUID),
+                start_block: 4,
+                num_blocks: 10,
+                flags: 0,
+            }],
+        )
+        .await;
+
+        let runner = GptManager::new(block_device.connect(), partitions_dir.clone())
+            .await
+            .expect("load should succeed");
+
+        let part_0_dir = vfs::serve_directory(
+            partitions_dir.clone(),
+            vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
+
+        let part_0_block =
+            connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_0_dir, "volume")
+                .expect("Failed to open Volume service");
+
+        let client =
+            RemoteBlockClient::new(part_0_block).await.expect("Failed to create block client");
+
+        // Spawn a background read task that will pause in PauseObserver at the disk level.
+        let mut buf = vec![0u8; 512];
+        let read_task = fasync::Task::spawn(async move {
+            client.read_at(MutableBufferSlice::Memory(&mut buf[..]), 0).await
+        });
+
+        // Deterministically wait for the read to arrive at the underlying disk.
+        started_rx.recv().expect("Failed to receive read start notification");
+
+        let nil_entry = PartitionInfo {
+            label: "".to_string(),
+            type_guid: Guid::from_bytes([0u8; 16]),
+            instance_guid: Guid::from_bytes([0u8; 16]),
+            start_block: 0,
+            num_blocks: 0,
+            flags: 0,
+        };
+        let mut new_partitions = vec![nil_entry; 128];
+        new_partitions[0] = PartitionInfo {
+            label: "part_new".to_string(),
+            type_guid: Guid::from_bytes(PART_TYPE_GUID),
+            instance_guid: Guid::from_bytes([1u8; 16]),
+            start_block: 64,
+            num_blocks: 2,
+            flags: 0,
+        };
+
+        // Reset partition table while the read is guaranteed to be in-flight at the disk level.
+        // Once reset_partition_table severs the partition connections, resume the observer so
+        // the mock disk unblocks.
+        let reset_fut = runner.reset_partition_table(new_partitions);
+        let resume_task = fasync::Task::spawn(async move {
+            fasync::Timer::new(std::time::Duration::from_millis(50)).await;
+            let _ = resume_tx.send(());
+        });
+
+        reset_fut.await.expect("reset_partition_table failed");
+        resume_task.await;
+
+        // The in-flight read should fail because its connection was severed by table reset.
+        read_task.await.expect_err("in-flight read should fail");
 
         runner.shutdown().await;
     }

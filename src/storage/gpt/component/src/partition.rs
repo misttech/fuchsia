@@ -40,7 +40,16 @@ impl Drop for VmoIdWrapper {
         if let Some(partition) = self.partition.upgrade() {
             fasync::Task::spawn(async move {
                 if let Err(e) = partition.detach_vmo(VmoId::new(vmo_id)).await {
-                    log::error!("detach_vmo failed: {:?}", e);
+                    // When a partition connection is cancelled (e.g. during a table reset),
+                    // the block client terminates its FIFO to avoid DMA corruption, so any
+                    // subsequent `detach_vmo` will fail with CANCELED or PEER_CLOSED.
+                    // This is normal and expected, downgrade this to debug logging to avoid
+                    // failing tests on log severity.
+                    if e == zx::Status::CANCELED || e == zx::Status::PEER_CLOSED {
+                        log::debug!("detach_vmo failed during shutdown: {:?}", e);
+                    } else {
+                        log::error!("detach_vmo failed: {:?}", e);
+                    }
                 }
             })
             .detach();
