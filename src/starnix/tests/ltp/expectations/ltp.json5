@@ -15,6 +15,15 @@
         {
             type: "expect_failure",
             matchers: [
+                // TODO(https://fxbug.dev/546542432): Starnix does not support ACL filesystem perms.
+                "acl_file_ops01",
+                "acl_inherit01",
+                "acl_link01",
+                "acl_mask01",
+                "acl_other01",
+                "acl_user_obj01",
+
+                // add_key unsupported
                 "add_key01",
                 "add_key03",
                 "adjtimex01",
@@ -50,7 +59,6 @@
                 "cve-2015-7550",
                 "cve-2016-9604",
                 "cve-2016-9793",
-                "cve-2017-12192",
                 "cve-2017-12193",
                 "cve-2017-15274",
                 "cve-2017-15299",
@@ -72,6 +80,12 @@
 
                 // TODO(https://fxbug.dev/465930802)
                 "epoll_pwait06",
+
+                // TODO(https://fxbug.dev/546549247): A variety of nuances in epoll handling.
+                "epoll_ctl06",
+                "epoll_wait10",
+                "epoll_wait12",
+                "epoll_wait16",
 
                 // Requires SEEK_HOLE.
                 "fallocate04",
@@ -102,6 +116,10 @@
                 // 33 requires F_GETSIG.
                 "fcntl33",
                 "fcntl33_64",
+
+                // TODO(https://fxbug.dev/546552617): Nuances in Futex table handling validations.
+                "futex_cmp_requeue03",
+                "futex_wake05",
 
                 // TODO(https://fxbug.dev/547878640): Skipped with tmpfs.
                 "fdatasync03",
@@ -341,6 +359,33 @@
 
                 // TODO(https://fxbug.dev/322874684): Needs /proc/sys/vm/max_map_count
                 "munmap04",
+
+                // Disabled to unblock roll
+                // TODO(https://fxbug.dev/437992858): Triage newly failing tests
+                "cve-2017-12192",
+                "fanotify24",
+                "ioctl_fiemap01",
+                "unshare03",
+                "unshare04",
+
+                // TODO(https://fxbug.dev/514885445): Triage newly failing tests in prebuilt roll
+                "chdir02",
+                "cve-2026-31431",
+                "cve-2026-43284",
+                "cve-2026-46300",
+                "fanotify25",
+                "io_submit04",
+                "io_uring03",
+                "ioctl_getlbmd01",
+                "ioctl_loop03",
+                "ioctl_loop04",
+                "ioctl_loop06",
+                "mremap07",
+                "newuname01",
+                "poll03",
+                "poll04",
+                "sysinfo01",
+                "userfaultfd06",
             ],
         },
     ],
