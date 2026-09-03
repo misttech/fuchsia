@@ -976,7 +976,8 @@ impl BinderDriver {
                 context.binder_proc.handle_request_freeze_notification(handle, cookie)
             }
             binder_driver_command_protocol_BC_FREEZE_NOTIFICATION_DONE => {
-                let _cookie = cursor.read_object::<binder_uintptr_t>()?;
+                let cookie = cursor.read_object::<binder_uintptr_t>()?;
+                context.binder_proc.handle_freeze_notification_done(cookie);
                 Ok(())
             }
             binder_driver_command_protocol_BC_CLEAR_FREEZE_NOTIFICATION => {
@@ -1414,6 +1415,10 @@ impl BinderDriver {
                         );
                         !proc_state.command_queue.is_empty()
                     }
+                    Command::FrozenBinder(info) => {
+                        proc_state.in_flight_freeze_notifications.insert(info.cookie);
+                        false
+                    }
                     Command::TransactionComplete
                     | Command::OnewayTransaction(..)
                     | Command::OnewayTransactionComplete
@@ -1429,7 +1434,6 @@ impl BinderDriver {
                     | Command::PendingFrozen
                     | Command::ClearDeathNotificationDone(..)
                     | Command::SpawnLooper
-                    | Command::FrozenBinder(..)
                     | Command::ClearFreezeNotificationDone(..) => false,
                 };
 

@@ -66,6 +66,13 @@ impl CommandQueueWithWaitQueue {
         self.waiters.notify_fd_events_count(FdEvents::POLLIN, 1);
     }
 
+    pub fn retain<F>(&mut self, f: F)
+    where
+        F: FnMut(&(Command, fuchsia_trace::Id)) -> bool,
+    {
+        self.commands.retain(f);
+    }
+
     pub fn has_waiters(&self) -> bool {
         !self.waiters.is_empty()
     }

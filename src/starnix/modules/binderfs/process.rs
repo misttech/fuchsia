@@ -37,7 +37,7 @@ use starnix_uapi::{
     binder_driver_command_protocol_BC_RELEASE, binder_frozen_state_info, binder_uintptr_t, errno,
     error, pid_t,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -70,7 +70,14 @@ pub struct BinderProcessState {
     /// error.
     pub interrupted: bool,
     /// Pending commands.
-    pub command_queue: std::collections::VecDeque<(Command, fuchsia_trace::Id)>,
+    pub command_queue: VecDeque<(Command, fuchsia_trace::Id)>,
+    /// Freeze notifications that have been dispatched to userspace (via BR_FROZEN_BINDER)
+    /// but not yet acknowledged via BC_FREEZE_NOTIFICATION_DONE.
+    pub in_flight_freeze_notifications: BTreeSet<binder_uintptr_t>,
+    /// Clear freeze notification requests that arrived while a BR_FROZEN_BINDER for the
+    /// same cookie was in-flight, waiting for BC_FREEZE_NOTIFICATION_DONE before sending
+    /// BR_CLEAR_FREEZE_NOTIFICATION_DONE.
+    pub pending_clear_freeze_notifications: BTreeSet<binder_uintptr_t>,
 }
 
 #[derive(Debug, Default)]
@@ -758,17 +765,13 @@ impl BinderProcess {
                     TODO("https://fxbug.dev/402191387"),
                     "binder clear freeze notification for service manager"
                 );
-                self.enqueue_command(
-                    Command::ClearFreezeNotificationDone(cookie),
-                    fuchsia_trace::Id::new(),
-                );
-                return Ok(());
+                None
             }
             Handle::Object { index } => {
-                self.lock().handles.get_owner(index).ok_or_else(|| errno!(ENOENT))?
+                Some(self.lock().handles.get_owner(index).ok_or_else(|| errno!(ENOENT))?)
             }
         };
-        if let Some(owner) = owner.upgrade() {
+        if let Some(owner) = owner.as_ref().and_then(|o| o.upgrade()) {
             let mut owner_freeze_state = owner.freeze_state.lock();
             if let Some((idx, _)) =
                 owner_freeze_state.freeze_subscribers.iter().enumerate().find(
@@ -778,11 +781,44 @@ impl BinderProcess {
                 owner_freeze_state.freeze_subscribers.swap_remove(idx);
             }
         }
+
+        let mut state = self.lock();
+        // Purge any pending FrozenBinder commands matching this cookie from the command queues.
+        state.command_queue.retain(
+            |(cmd, _)| !matches!(cmd, Command::FrozenBinder(info) if info.cookie == cookie),
+        );
+        for thread in state.thread_pool.threads.values() {
+            thread.lock().command_queue.retain(
+                |(cmd, _)| !matches!(cmd, Command::FrozenBinder(info) if info.cookie == cookie),
+            );
+        }
+
+        // If the notification is currently in flight to userspace, hold off sending
+        // ClearFreezeNotificationDone until BC_FREEZE_NOTIFICATION_DONE arrives.
+        if state.in_flight_freeze_notifications.contains(&cookie) {
+            state.pending_clear_freeze_notifications.insert(cookie);
+            return Ok(());
+        }
+        drop(state);
+
         self.enqueue_command(
             Command::ClearFreezeNotificationDone(cookie),
             fuchsia_trace::Id::new(),
         );
         Ok(())
+    }
+
+    /// Acknowledge that userspace finished processing a freeze notification.
+    pub fn handle_freeze_notification_done(&self, cookie: binder_uintptr_t) {
+        let mut state = self.lock();
+        state.in_flight_freeze_notifications.remove(&cookie);
+        if state.pending_clear_freeze_notifications.remove(&cookie) {
+            drop(state);
+            self.enqueue_command(
+                Command::ClearFreezeNotificationDone(cookie),
+                fuchsia_trace::Id::new(),
+            );
+        }
     }
 
     /// Map the external vmo into the driver address space, recording the userspace address.

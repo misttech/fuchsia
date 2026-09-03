@@ -4529,14 +4529,10 @@ pub mod tests {
                 .handle_clear_freeze_notification(handle, FREEZE_NOTIFICATION_COOKIE)
                 .expect("clear freeze notification");
 
-            // Check that the client received two acknowledgements.
+            // Check that the pending FrozenBinder was cancelled, leaving only ClearFreezeNotificationDone.
             {
                 let queue = &mut client.proc.lock().command_queue;
-                assert_eq!(queue.len(), 2);
-                assert!(matches!(
-                    queue.pop_front(),
-                    Some((Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }), _))
-                ));
+                assert_eq!(queue.len(), 1);
                 assert!(matches!(
                     queue.pop_front(),
                     Some((Command::ClearFreezeNotificationDone(FREEZE_NOTIFICATION_COOKIE), _))
@@ -4610,6 +4606,66 @@ pub mod tests {
                 .expect("clear freeze notification on dead process should succeed");
 
             // Check that the client received the ClearFreezeNotificationDone acknowledgement.
+            assert_matches!(
+                client.proc.lock().command_queue.pop_front(),
+                Some((Command::ClearFreezeNotificationDone(FREEZE_NOTIFICATION_COOKIE), _))
+            );
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn freeze_notification_cleared_while_in_flight_holds_until_done() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let owner = BinderProcessFixture::new(current_task, &device);
+            let client = BinderProcessFixture::new(current_task, &device);
+
+            let guard = owner.proc.lock().find_or_register_object(
+                &owner.thread,
+                LocalBinderObject {
+                    weak_ref_addr: UserAddress::from(0x0000000000000001),
+                    strong_ref_addr: UserAddress::from(0x0000000000000002),
+                },
+                BinderObjectFlags::empty(),
+            );
+
+            let handle = client
+                .proc
+                .lock()
+                .handles
+                .insert_for_transaction(guard, &mut RefCountActions::default_released());
+
+            const FREEZE_NOTIFICATION_COOKIE: binder_uintptr_t = 0xBBBBBBBB;
+
+            // Register a freeze notification handler.
+            client
+                .proc
+                .handle_request_freeze_notification(handle, FREEZE_NOTIFICATION_COOKIE)
+                .expect("request freeze notification");
+
+            // Dequeue the notification, simulating it being dispatched to userspace.
+            assert_matches!(
+                client.proc.lock().command_queue.pop_front(),
+                Some((Command::FrozenBinder(binder_frozen_state_info { is_frozen: 0, .. }), _))
+            );
+
+            // Mark this notification as in-flight.
+            client.proc.lock().in_flight_freeze_notifications.insert(FREEZE_NOTIFICATION_COOKIE);
+
+            // Clear the freeze notification while it is in flight.
+            client
+                .proc
+                .handle_clear_freeze_notification(handle, FREEZE_NOTIFICATION_COOKIE)
+                .expect("clear freeze notification while in flight");
+
+            // The ClearFreezeNotificationDone command should NOT be enqueued yet.
+            assert!(client.proc.lock().command_queue.is_empty());
+
+            // Acknowledge the freeze notification.
+            client.proc.handle_freeze_notification_done(FREEZE_NOTIFICATION_COOKIE);
+
+            // Now the ClearFreezeNotificationDone command should be in the queue.
             assert_matches!(
                 client.proc.lock().command_queue.pop_front(),
                 Some((Command::ClearFreezeNotificationDone(FREEZE_NOTIFICATION_COOKIE), _))
