@@ -81,7 +81,7 @@ It will be set below and passed to other toolchains through toolchain_args
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:775
+From //build/config/BUILDCONFIG.gn:776
 
 ### allowed_test_device_types
 
@@ -4428,7 +4428,7 @@ This is just added to [`known_variants`](#known_variants).
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:533
+From //build/config/BUILDCONFIG.gn:534
 
 ### fat_lto_objects
 
@@ -5456,7 +5456,7 @@ Each element of the list is one variant, which is a scope defining:
   name = "novariant"
 }, {
   configs = ["//build/config/profile:coverage"]
-  tags = ["coverage", "coverage_clang", "debugdata", "instrumented", "llvm-profdata", "needs-writable-globals"]
+  tags = ["coverage", "coverage_clang", "coverage_rust", "debugdata", "instrumented", "llvm-profdata", "needs-writable-globals"]
 }, {
   configs = ["//build/config/profile:coverage-rust"]
   tags = ["coverage", "coverage_rust", "debugdata", "instrumented", "needs-writable-globals"]
@@ -9199,7 +9199,7 @@ is satisfied if any of the strings matches against the candidate string.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:765
+From //build/config/BUILDCONFIG.gn:766
 
 ### select_variant_canonical
 
@@ -9209,7 +9209,7 @@ See //build/toolchain/clang_toolchain.gni for details.
 
 **Current value (from the default):** `[]`
 
-From //build/config/BUILDCONFIG.gn:770
+From //build/config/BUILDCONFIG.gn:771
 
 ### select_variant_shortcuts
 
@@ -9286,7 +9286,7 @@ a list that can be spliced into [`select_variant`](#select_variant).
 }]
 ```
 
-From //build/config/BUILDCONFIG.gn:540
+From //build/config/BUILDCONFIG.gn:541
 
 ### skip_buildtools_check
 
@@ -9627,7 +9627,7 @@ for details and documentation for each field.
 }
 ```
 
-From //build/config/BUILDCONFIG.gn:952
+From //build/config/BUILDCONFIG.gn:953
 
 ### truncate_build_info_commit_date
 
@@ -10135,7 +10135,7 @@ This allows testing for a Zircon-specific toolchain with:
 
 **Current value (from the default):** `false`
 
-From //build/config/BUILDCONFIG.gn:969
+From //build/config/BUILDCONFIG.gn:970
 
 ### zircon_tracelog
 
