@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/ui/composition/internal/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition.internal/cpp/fidl.h>
 
 #include <zxtest/zxtest.h>
 
@@ -11,28 +11,26 @@
 
 namespace integration_tests {
 
-using fuci_DisplayOwnership = fuchsia::ui::composition::internal::DisplayOwnership;
+using fuci_DisplayOwnership = fuchsia_ui_composition_internal::DisplayOwnership;
 
-// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
-// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
-class DisplayOwnershipIntegrationTest : public ScenicCtfHlcppTest {
+class DisplayOwnershipIntegrationTest : public ScenicCtfTest {
  protected:
   DisplayOwnershipIntegrationTest() = default;
 
   void SetUp() override {
-    ScenicCtfHlcppTest::SetUp();
+    ScenicCtfTest::SetUp();
     ownership_ = ConnectSyncIntoRealm<fuci_DisplayOwnership>();
   }
 
-  fuchsia::ui::composition::internal::DisplayOwnershipSyncPtr ownership_;
+  fidl::SyncClient<fuci_DisplayOwnership> ownership_;
 };
 
 TEST_F(DisplayOwnershipIntegrationTest, GetEvent) {
-  zx::event event;
-  ASSERT_EQ(ZX_OK, ownership_->GetEvent(&event));
+  auto result = ownership_->GetEvent();
+  ASSERT_TRUE(result.is_ok());
 
-  EXPECT_TRUE(
-      utils::IsEventSignalled(event, fuchsia::ui::composition::internal::SIGNAL_DISPLAY_OWNED));
+  EXPECT_TRUE(utils::IsEventSignalled(result->ownership_event(),
+                                      fuchsia_ui_composition_internal::kSignalDisplayOwned));
 }
 
 }  // namespace integration_tests

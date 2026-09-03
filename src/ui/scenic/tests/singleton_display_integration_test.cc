@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/testing/harness/cpp/fidl.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
-#include <fuchsia/ui/display/singleton/cpp/fidl.h>
-#include <fuchsia/ui/test/context/cpp/fidl.h>
+#include <fidl/fuchsia.testing.harness/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.display.singleton/cpp/fidl.h>
+#include <fidl/fuchsia.ui.test.context/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/channel.h>
 
@@ -18,19 +19,17 @@ namespace integration_tests {
 
 namespace {
 
-using fth_RealmProxySyncPtr = fuchsia::testing::harness::RealmProxySyncPtr;
-using fuc_FlatlandDisplay = fuchsia::ui::composition::FlatlandDisplay;
-using fuds_Metrics = fuchsia::ui::display::singleton::Metrics;
-using fuds_Info = fuchsia::ui::display::singleton::Info;
-using fuds_InfoSyncPtr = fuchsia::ui::display::singleton::InfoSyncPtr;
-using futc_ScenicRealmFactorySyncPtr = fuchsia::ui::test::context::ScenicRealmFactorySyncPtr;
+using fuc_FlatlandDisplay = fuchsia_ui_composition::FlatlandDisplay;
+using fuds_Metrics = fuchsia_ui_display_singleton::Metrics;
+using fuds_Info = fuchsia_ui_display_singleton::Info;
 
 // Max timeout in failure cases.
 // Set this as low as you can that still works across all test platforms.
 constexpr zx::duration kTimeout = zx::min(5);
 
 struct DisplayConfig {
-  fuchsia::math::SizeU dimensions;
+  uint32_t width;
+  uint32_t height;
   uint32_t refresh_rate_millihertz;
 };
 
@@ -40,27 +39,31 @@ class SingletonDisplayIntegrationTest : public zxtest::Test,
  public:
   SingletonDisplayIntegrationTest() = default;
 
-  void SetUp() {
+  void SetUp() override {
     zxtest::Test::SetUp();
     {
-      context_ = sys::ComponentContext::Create();
-      ASSERT_EQ(context_->svc()->Connect(realm_factory_.NewRequest()), ZX_OK);
+      auto client_end = component::Connect<fuchsia_ui_test_context::ScenicRealmFactory>();
+      ASSERT_TRUE(client_end.is_ok());
+      realm_factory_ = fidl::SyncClient(std::move(client_end.value()));
 
-      fuchsia::ui::test::context::ScenicRealmFactoryCreateRealmRequest req;
-      fuchsia::ui::test::context::ScenicRealmFactory_CreateRealm_Result res;
+      auto [realm_proxy_client_end, realm_proxy_server_end] =
+          fidl::CreateEndpoints<fuchsia_testing_harness::RealmProxy>().value();
 
-      req.set_realm_server(realm_proxy_.NewRequest());
-      req.set_display_rotation(0);
-      req.set_renderer(fuchsia::ui::test::context::RendererType::NULL_);
-      req.set_display_composition(true);
-      if (GetDisplayDimensions().height != 0 && GetDisplayDimensions().width != 0) {
-        req.set_display_dimensions(GetDisplayDimensions());
+      fuchsia_ui_test_context::ScenicRealmFactoryCreateRealmRequest req;
+      req.realm_server(std::move(realm_proxy_server_end));
+      req.display_rotation(0);
+      req.renderer(fuchsia_ui_test_context::RendererType::kNull);
+      req.display_composition(true);
+      if (GetDisplayDimensions().height() != 0 && GetDisplayDimensions().width() != 0) {
+        req.display_dimensions(GetDisplayDimensions());
       }
       if (GetDisplayRefreshRateMillihertz() != 0) {
-        req.set_display_refresh_rate_millihertz(GetDisplayRefreshRateMillihertz());
+        req.display_refresh_rate_millihertz(GetDisplayRefreshRateMillihertz());
       }
 
-      ASSERT_EQ(realm_factory_->CreateRealm(std::move(req), &res), ZX_OK);
+      auto res = realm_factory_->CreateRealm(std::move(req));
+      ASSERT_TRUE(res.is_ok());
+      realm_proxy_ = fidl::SyncClient(std::move(realm_proxy_client_end));
     }
 
     // Post a "just in case" quit task, if the test hangs.
@@ -72,77 +75,87 @@ class SingletonDisplayIntegrationTest : public zxtest::Test,
     singleton_display_ = ConnectSyncIntoRealm<fuds_Info>();
   }
 
-  fuchsia::math::SizeU GetDisplayDimensions() const { return GetParam().dimensions; }
+  fuchsia_math::SizeU GetDisplayDimensions() const {
+    return {{.width = GetParam().width, .height = GetParam().height}};
+  }
   uint32_t GetDisplayRefreshRateMillihertz() const { return GetParam().refresh_rate_millihertz; }
 
   /// Connect to the FIDL protocol which served from the realm proxy use default served path if no
   /// name passed in.
-  template <typename Interface>
-  fidl::SynchronousInterfacePtr<Interface> ConnectSyncIntoRealm(
-      const std::string& service_path = Interface::Name_) {
-    fidl::SynchronousInterfacePtr<Interface> ptr;
-
-    fuchsia::testing::harness::RealmProxy_ConnectToNamedProtocol_Result result;
-    if (realm_proxy_->ConnectToNamedProtocol(service_path, ptr.NewRequest().TakeChannel(),
-                                             &result) != ZX_OK) {
-      std::cerr << "ConnectToNamedProtocol(" << service_path << ", " << Interface::Name_
+  template <typename Protocol>
+  fidl::SyncClient<Protocol> ConnectSyncIntoRealm(
+      const std::string& service_path = Protocol::kDiscoverableName) {
+    auto [client_end, server_end] = fidl::CreateEndpoints<Protocol>().value();
+    auto result = realm_proxy_->ConnectToNamedProtocol(
+        fuchsia_testing_harness::RealmProxyConnectToNamedProtocolRequest(service_path,
+                                                                         server_end.TakeChannel()));
+    if (result.is_error()) {
+      std::cerr << "ConnectToNamedProtocol(" << service_path << ", " << Protocol::kDiscoverableName
                 << ") failed." << std::endl;
       std::abort();
     }
-    return std::move(ptr);
+    return fidl::SyncClient<Protocol>(std::move(client_end));
   }
 
  protected:
-  fuds_InfoSyncPtr singleton_display_;
-  futc_ScenicRealmFactorySyncPtr realm_factory_;
-  fth_RealmProxySyncPtr realm_proxy_;
-  std::unique_ptr<sys::ComponentContext> context_;
+  fidl::SyncClient<fuds_Info> singleton_display_;
+  fidl::SyncClient<fuchsia_ui_test_context::ScenicRealmFactory> realm_factory_;
+  fidl::SyncClient<fuchsia_testing_harness::RealmProxy> realm_proxy_;
 };
 
 TEST_P(SingletonDisplayIntegrationTest, GetMetrics) {
-  fuds_Metrics metrics;
-  ASSERT_EQ(ZX_OK, singleton_display_->GetMetrics(&metrics));
+  auto result = singleton_display_->GetMetrics();
+  ASSERT_TRUE(result.is_ok());
+  const auto& metrics = result->info();
 
-  ASSERT_TRUE(metrics.has_extent_in_px());
-  ASSERT_TRUE(metrics.has_extent_in_mm());
-  ASSERT_TRUE(metrics.has_recommended_device_pixel_ratio());
+  ASSERT_TRUE(metrics.extent_in_px().has_value());
+  ASSERT_TRUE(metrics.extent_in_mm().has_value());
+  ASSERT_TRUE(metrics.recommended_device_pixel_ratio().has_value());
 
-  EXPECT_EQ(GetDisplayDimensions().width, metrics.extent_in_px().width);
-  EXPECT_EQ(GetDisplayDimensions().height, metrics.extent_in_px().height);
-  EXPECT_EQ(160, metrics.extent_in_mm().width);
-  EXPECT_EQ(90, metrics.extent_in_mm().height);
-  EXPECT_EQ(1.f, metrics.recommended_device_pixel_ratio().x);
-  EXPECT_EQ(1.f, metrics.recommended_device_pixel_ratio().y);
+  EXPECT_EQ(GetDisplayDimensions().width(), metrics.extent_in_px()->width());
+  EXPECT_EQ(GetDisplayDimensions().height(), metrics.extent_in_px()->height());
+  EXPECT_EQ(160, metrics.extent_in_mm()->width());
+  EXPECT_EQ(90, metrics.extent_in_mm()->height());
+  EXPECT_EQ(1.f, metrics.recommended_device_pixel_ratio()->x());
+  EXPECT_EQ(1.f, metrics.recommended_device_pixel_ratio()->y());
   EXPECT_EQ(GetDisplayRefreshRateMillihertz(), metrics.maximum_refresh_rate_in_millihertz());
 }
 
 TEST_P(SingletonDisplayIntegrationTest, DevicePixelRatioChange) {
-  auto flatland_display = ConnectSyncIntoRealm<fuc_FlatlandDisplay>();
+  fidl::SyncClient flatland_display = ConnectSyncIntoRealm<fuc_FlatlandDisplay>();
   const float kDPRx = 1.25f;
   const float kDPRy = 1.25f;
-  flatland_display->SetDevicePixelRatio({kDPRx, kDPRy});
+  auto result =
+      flatland_display->SetDevicePixelRatio({{.device_pixel_ratio = {{.x = kDPRx, .y = kDPRy}}}});
+  ASSERT_TRUE(result.is_ok());
 
   // FlatlandDisplay lives on a Flatland thread and SingletonDisplay lives on the main thread, so
   // the update may not be sequential.
   RunLoopUntil([this, kDPRx, kDPRy] {
-    fuds_Metrics metrics;
-    EXPECT_EQ(ZX_OK, singleton_display_->GetMetrics(&metrics));
-    return metrics.has_recommended_device_pixel_ratio() &&
-           kDPRx == metrics.recommended_device_pixel_ratio().x &&
-           kDPRy == metrics.recommended_device_pixel_ratio().y;
+    auto res = singleton_display_->GetMetrics();
+    EXPECT_TRUE(res.is_ok());
+    if (!res.is_ok())
+      return false;
+    const auto& metrics = res->info();
+    return metrics.recommended_device_pixel_ratio().has_value() &&
+           kDPRx == metrics.recommended_device_pixel_ratio()->x() &&
+           kDPRy == metrics.recommended_device_pixel_ratio()->y();
   });
 }
 
 constexpr DisplayConfig kSherlockDisplayConfig = {
-    .dimensions = {.width = 1280, .height = 800},
+    .width = 1280,
+    .height = 800,
     .refresh_rate_millihertz = 60000,
 };
 constexpr DisplayConfig kAstroDisplayConfig = {
-    .dimensions = {.width = 1024, .height = 600},
+    .width = 1024,
+    .height = 600,
     .refresh_rate_millihertz = 60000,
 };
 constexpr DisplayConfig kAstroLowRefreshRateDisplayConfig = {
-    .dimensions = {.width = 1024, .height = 600},
+    .width = 1024,
+    .height = 600,
     .refresh_rate_millihertz = 30000,
 };
 

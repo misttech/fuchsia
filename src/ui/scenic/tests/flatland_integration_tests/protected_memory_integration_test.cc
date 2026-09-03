@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/sysmem/cpp/fidl.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
 #include <lib/ui/scenic/cpp/view_creation_tokens.h>
@@ -18,130 +19,138 @@
 
 namespace integration_tests {
 
-using fuchsia::ui::composition::ContentId;
-using fuchsia::ui::composition::FlatlandPtr;
-using fuchsia::ui::composition::ParentViewportWatcher;
-using fuchsia::ui::composition::TransformId;
+namespace fuc = fuchsia_ui_composition;
 
-// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
-// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
-class ProtectedMemoryIntegrationTest : public ScenicCtfHlcppTest {
+class ProtectedMemoryIntegrationTest : public ScenicCtfTest {
  public:
   void SetUp() override {
-    ScenicCtfHlcppTest::SetUp();
+    ScenicCtfTest::SetUp();
 
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
-    LocalServiceDirectory()->Connect("fuchsia.sysmem2.Allocator", server_end.TakeChannel());
+    ASSERT_EQ(ZX_OK, LocalServiceDirectory()->Connect(fuchsia_sysmem2::Allocator::kDiscoverableName,
+                                                      server_end.TakeChannel()));
     sysmem_allocator_.Bind(std::move(client_end), dispatcher());
 
-    flatland_allocator_ = ConnectSyncIntoRealm<fuchsia::ui::composition::Allocator>();
+    flatland_allocator_ = ConnectSyncIntoRealm<fuc::Allocator>();
 
-    root_flatland_ = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
-    root_flatland_.set_error_handler([](zx_status_t status) {
-      FX_LOGS(INFO) << "Lost connection to Scenic: " << zx_status_get_string(status);
-    });
+    root_flatland_ = std::make_unique<FlatlandClientWithEventHandler>(
+        ConnectIntoRealm<fuc::Flatland>(), dispatcher());
 
     // Attach |root_flatland_| as the only Flatland under the environment's FlatlandDisplay.
-    auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
+    auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
     SetFlatlandDisplayContent(std::move(parent_token));
-    fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
-    root_flatland_->CreateView2(std::move(child_token), scenic::NewViewIdentityOnCreation(), {},
-                                parent_viewport_watcher.NewRequest());
+    auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+        fidl::CreateEndpoints<fuc::ParentViewportWatcher>().value();
+    ASSERT_TRUE((*root_flatland_)
+                    ->CreateView2({{.token = std::move(child_token),
+                                    .view_identity = scenic::cpp::NewViewIdentityOnCreation(),
+                                    .protocols = {},
+                                    .parent_viewport_watcher =
+                                        std::move(parent_viewport_watcher_server_end)}})
+                    .is_ok());
+
+    fidl::Client<fuc::ParentViewportWatcher> parent_viewport_watcher(
+        std::move(parent_viewport_watcher_client_end), dispatcher());
 
     // Get the display's width and height. Since there is no Present in FlatlandDisplay, receiving
     // this callback ensures that all the FlatlandDisplay calls are processed.
-    std::optional<fuchsia::ui::composition::LayoutInfo> info;
-    parent_viewport_watcher->GetLayout([&info](auto result) { info = std::move(result); });
+    std::optional<fuc::LayoutInfo> info;
+    parent_viewport_watcher->GetLayout().Then(
+        [&info](fidl::Result<fuc::ParentViewportWatcher::GetLayout>& result) {
+          if (result.is_ok()) {
+            info = std::move(result.value().info());
+          }
+        });
     RunLoopUntil([&info] { return info.has_value(); });
-    display_width_ = info->logical_size().width;
-    display_height_ = info->logical_size().height;
+    display_width_ = info->logical_size()->width();
+    display_height_ = info->logical_size()->height();
 
-    screenshotter_ = ConnectSyncIntoRealm<fuchsia::ui::composition::Screenshot>();
+    screenshotter_ = ConnectSyncIntoRealm<fuc::Screenshot>();
   }
 
  protected:
   zx_status_t SetConstraintsAndAllocateBuffer(
       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, bool use_protected_memory) {
-    fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
+    auto [buffer_collection_client_end, buffer_collection_server_end] =
+        fidl::CreateEndpoints<fuchsia_sysmem2::BufferCollection>().value();
+    fidl::SyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection(
+        std::move(buffer_collection_client_end));
     fidl::Arena arena;
     fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
         fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
             .token(std::move(token))
-            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-                buffer_collection.NewRequest().TakeChannel()))
+            .buffer_collection_request(std::move(buffer_collection_server_end))
             .Build());
     if (!result.ok()) {
       return result.status();
     }
 
-    fuchsia::sysmem2::NodeSetNameRequest set_name_request;
-    set_name_request.set_priority(100u);
-    set_name_request.set_name("ProtectedMemoryIntegrationTest");
-    buffer_collection->SetName(std::move(set_name_request));
+    fuchsia_sysmem2::NodeSetNameRequest set_name_request;
+    set_name_request.priority(100u);
+    set_name_request.name("ProtectedMemoryIntegrationTest");
+    auto name_res = buffer_collection->SetName(std::move(set_name_request));
+    if (name_res.is_error()) {
+      return name_res.error_value().status();
+    }
 
-    fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
-    auto& constraints = *set_constraints_request.mutable_constraints();
+    fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+    auto& constraints = set_constraints_request.constraints().emplace();
     if (use_protected_memory) {
-      auto& bmc = *constraints.mutable_buffer_memory_constraints();
-      bmc.set_secure_required(true);
-      bmc.set_inaccessible_domain_supported(true);
-      bmc.set_cpu_domain_supported(false);
-      bmc.set_ram_domain_supported(false);
+      auto& bmc = constraints.buffer_memory_constraints().emplace();
+      bmc.secure_required(true);
+      bmc.inaccessible_domain_supported(true);
+      bmc.cpu_domain_supported(false);
+      bmc.ram_domain_supported(false);
     }
-    constraints.mutable_usage()->set_none(fuchsia::sysmem2::NONE_USAGE);
-    constraints.set_min_buffer_count(1);
-    uint32_t constraints_min_buffer_count = constraints.min_buffer_count();
-    auto& image_constraints = constraints.mutable_image_format_constraints()->emplace_back();
-    image_constraints.set_pixel_format(fuchsia::images2::PixelFormat::B8G8R8A8);
-    image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::SRGB);
-    image_constraints.set_required_min_size(
-        fuchsia::math::SizeU{.width = display_width_, .height = display_height_});
-    image_constraints.set_required_max_size(
-        fuchsia::math::SizeU{.width = display_width_, .height = display_height_});
-    zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
-    if (status != ZX_OK) {
-      return status;
+    constraints.usage().emplace().none(fuchsia_sysmem2::kNoneUsage);
+    constraints.min_buffer_count(1);
+    auto& image_constraints = constraints.image_format_constraints().emplace().emplace_back();
+    image_constraints.pixel_format(fuchsia_images2::PixelFormat::kB8G8R8A8);
+    image_constraints.color_spaces().emplace().emplace_back(fuchsia_images2::ColorSpace::kSrgb);
+    image_constraints.required_min_size(
+        fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
+    image_constraints.required_max_size(
+        fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
+
+    auto set_res = buffer_collection->SetConstraints(std::move(set_constraints_request));
+    if (set_res.is_error()) {
+      return set_res.error_value().status();
     }
 
-    fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-    status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-    if (status != ZX_OK) {
-      return status;
+    auto wait_result = buffer_collection->WaitForAllBuffersAllocated();
+    if (wait_result.is_error()) {
+      if (wait_result.error_value().is_framework_error()) {
+        return wait_result.error_value().framework_error().status();
+      }
+      return ZX_ERR_INTERNAL;
     }
 
-    EXPECT_TRUE(!wait_result.is_framework_err());
-    EXPECT_TRUE(!wait_result.is_err());
-    EXPECT_TRUE(wait_result.is_response());
-    auto buffer_collection_info =
-        std::move(*wait_result.response().mutable_buffer_collection_info());
-    EXPECT_EQ(constraints_min_buffer_count, buffer_collection_info.buffers().size());
-    EXPECT_EQ(ZX_OK, buffer_collection->Release());
+    auto& buffer_collection_info = wait_result.value().buffer_collection_info().value();
+    EXPECT_EQ(1u, buffer_collection_info.buffers().value().size());
+    EXPECT_TRUE(buffer_collection->Release().is_ok());
     return ZX_OK;
   }
 
-  const TransformId kRootTransform{.value = 1};
+  const fuc::TransformId kRootTransform{{.value = 1}};
   uint32_t display_width_ = 0;
   uint32_t display_height_ = 0;
 
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
-  fuchsia::ui::composition::AllocatorSyncPtr flatland_allocator_;
-  FlatlandPtr root_flatland_;
-  fuchsia::ui::composition::ScreenshotSyncPtr screenshotter_;
+  fidl::SyncClient<fuc::Allocator> flatland_allocator_;
+  std::unique_ptr<FlatlandClientWithEventHandler> root_flatland_;
+  fidl::SyncClient<fuc::Screenshot> screenshotter_;
 };
 
 TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {
   auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
-  allocation::BufferCollectionImportExportTokens bc_tokens =
-      allocation::BufferCollectionImportExportTokens::New();
-  fuchsia::ui::composition::RegisterBufferCollectionArgs rbc_args = {};
-  rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(
-      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
-  fuchsia::ui::composition::Allocator_RegisterBufferCollection_Result result;
-  flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result);
-  ASSERT_FALSE(result.is_err());
+  allocation::cpp::BufferCollectionImportExportTokens bc_tokens =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
+  fuchsia_ui_composition::RegisterBufferCollectionArgs rbc_args = {};
+  rbc_args.export_token() = std::move(bc_tokens.export_token);
+  rbc_args.buffer_collection_token2() = std::move(scenic_token);
+  ASSERT_TRUE(flatland_allocator_->RegisterBufferCollection(std::move(rbc_args)).is_ok());
 
   // Use the local token to allocate a protected buffer.
   zx_status_t status =
@@ -154,18 +163,24 @@ TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {
   }
 
   // Create the image in the Flatland instance.
-  fuchsia::ui::composition::ImageProperties image_properties = {};
-  image_properties.set_size({display_width_, display_height_});
-  const ContentId kImageContentId{.value = 1};
-  root_flatland_->CreateImage(kImageContentId, std::move(bc_tokens.import_token),
-                              /*buffer_collection_index=*/0, std::move(image_properties));
-  BlockingPresent(this, root_flatland_);
+  fuchsia_ui_composition::ImageProperties image_properties = {};
+  image_properties.size(fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
+  const fuc::ContentId kImageContentId{{.value = 1}};
+  ASSERT_TRUE((*root_flatland_)
+                  ->CreateImage({{.image_id = kImageContentId,
+                                  .import_token = std::move(bc_tokens.import_token),
+                                  .vmo_index = 0,
+                                  .properties = std::move(image_properties)}})
+                  .is_ok());
+  BlockingPresent(this, *root_flatland_);
 
   // Present the created Image.
-  root_flatland_->CreateTransform(kRootTransform);
-  root_flatland_->SetRootTransform(kRootTransform);
-  root_flatland_->SetContent(kRootTransform, kImageContentId);
-  BlockingPresent(this, root_flatland_);
+  ASSERT_TRUE((*root_flatland_)->CreateTransform(kRootTransform).is_ok());
+  ASSERT_TRUE((*root_flatland_)->SetRootTransform(kRootTransform).is_ok());
+  ASSERT_TRUE((*root_flatland_)
+                  ->SetContent({{.transform_id = kRootTransform, .content_id = kImageContentId}})
+                  .is_ok());
+  BlockingPresent(this, *root_flatland_);
 
   // Verify that render happened without any errors.
 }
@@ -174,15 +189,12 @@ TEST_F(ProtectedMemoryIntegrationTest, ScreenshotReplacesProtectedImage) {
   auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
-  allocation::BufferCollectionImportExportTokens bc_tokens =
-      allocation::BufferCollectionImportExportTokens::New();
-  fuchsia::ui::composition::RegisterBufferCollectionArgs rbc_args = {};
-  rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(
-      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
-  fuchsia::ui::composition::Allocator_RegisterBufferCollection_Result result;
-  flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result);
-  ASSERT_FALSE(result.is_err());
+  allocation::cpp::BufferCollectionImportExportTokens bc_tokens =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
+  fuchsia_ui_composition::RegisterBufferCollectionArgs rbc_args = {};
+  rbc_args.export_token() = std::move(bc_tokens.export_token);
+  rbc_args.buffer_collection_token2() = std::move(scenic_token);
+  ASSERT_TRUE(flatland_allocator_->RegisterBufferCollection(std::move(rbc_args)).is_ok());
 
   // Use the local token to allocate a protected buffer.
   zx_status_t status =
@@ -195,18 +207,24 @@ TEST_F(ProtectedMemoryIntegrationTest, ScreenshotReplacesProtectedImage) {
   }
 
   // Create the image in the Flatland instance.
-  fuchsia::ui::composition::ImageProperties image_properties = {};
-  image_properties.set_size({display_width_, display_height_});
-  const ContentId kImageContentId{.value = 1};
-  root_flatland_->CreateImage(kImageContentId, std::move(bc_tokens.import_token),
-                              /*buffer_collection_index=*/0, std::move(image_properties));
-  BlockingPresent(this, root_flatland_);
+  fuchsia_ui_composition::ImageProperties image_properties = {};
+  image_properties.size(fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
+  const fuc::ContentId kImageContentId{{.value = 1}};
+  ASSERT_TRUE((*root_flatland_)
+                  ->CreateImage({{.image_id = kImageContentId,
+                                  .import_token = std::move(bc_tokens.import_token),
+                                  .vmo_index = 0,
+                                  .properties = std::move(image_properties)}})
+                  .is_ok());
+  BlockingPresent(this, *root_flatland_);
 
   // Present the created Image.
-  root_flatland_->CreateTransform(kRootTransform);
-  root_flatland_->SetRootTransform(kRootTransform);
-  root_flatland_->SetContent(kRootTransform, kImageContentId);
-  BlockingPresent(this, root_flatland_);
+  ASSERT_TRUE((*root_flatland_)->CreateTransform(kRootTransform).is_ok());
+  ASSERT_TRUE((*root_flatland_)->SetRootTransform(kRootTransform).is_ok());
+  ASSERT_TRUE((*root_flatland_)
+                  ->SetContent({{.transform_id = kRootTransform, .content_id = kImageContentId}})
+                  .is_ok());
+  BlockingPresent(this, *root_flatland_);
 
   // Verify that screenshot works and replaced the content with black.
   auto screenshot = TakeScreenshot(screenshotter_, display_width_, display_height_);

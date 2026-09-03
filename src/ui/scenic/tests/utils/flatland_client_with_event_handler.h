@@ -35,13 +35,15 @@ class FlatlandClientWithEventHandler
         flatland_(std::move(client_end), dispatcher,
                   static_cast<fidl::AsyncEventHandler<fuchsia_ui_composition::Flatland>*>(this)) {
     FX_CHECK(dispatcher_);
-    FX_CHECK(dispatcher_ == async_get_default_dispatcher());
   }
 
-  ~FlatlandClientWithEventHandler() { FX_CHECK(dispatcher_ == async_get_default_dispatcher()); }
+  ~FlatlandClientWithEventHandler() = default;
 
   // Allow conveniently calling though to Flatland methods.
   fidl::Client<fuchsia_ui_composition::Flatland>& operator->() { return flatland_; }
+  fidl::Client<fuchsia_ui_composition::Flatland>& client() { return flatland_; }
+  const fidl::Client<fuchsia_ui_composition::Flatland>& client() const { return flatland_; }
+  bool is_valid() const { return flatland_.is_valid(); }
 
   // Configure handling of Flatland::OnFramePresented event.
   void set_on_frame_presented(OnFramePresentedHandler handler) {

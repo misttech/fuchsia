@@ -215,7 +215,10 @@ executable("flatland-allocation-test-validator-bin") {
   output_name = "flatland-allocation-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp",
+    "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_cpp",
     "//src/ui/scenic/lib/utils",
     "//zircon/system/ulib/fbl",
   ]
@@ -330,8 +333,9 @@ executable("flatland-view-integration-test-validator-bin") {
   output_name = "flatland-view-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
-    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_cpp",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_cpp",
   ]
 }
 
@@ -344,8 +348,9 @@ executable("null-renderer-integration-test-validator-bin") {
   output_name = "null-renderer-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp",
+    "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
     "//src/ui/scenic/lib/utils",
   ]
 }
@@ -391,7 +396,9 @@ executable("flatland-protected-memory-integration-test-validator-bin") {
   output_name = "flatland-protected-memory-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.images2:fuchsia.images2_cpp",
+    "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
     "//src/ui/scenic/lib/utils",
     "//zircon/system/ulib/fbl",
   ]
@@ -442,7 +449,7 @@ executable("display-ownership-integration-test-validator-bin") {
   output_name = "display-ownership-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition.internal:fuchsia.ui.composition.internal_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition.internal:fuchsia.ui.composition.internal_cpp",
     "//src/ui/scenic/lib/utils",
     "//zircon/system/ulib/fbl",
   ]
@@ -454,8 +461,9 @@ executable("singleton-display-integration-test-validator-bin") {
   output_name = "singleton-display-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//src/ui/scenic/lib/utils",
     "//zircon/system/ulib/fbl",
   ]
@@ -485,7 +493,7 @@ executable("trusted-flatland-factory-integration-test-validator-bin") {
   output_name = "trusted-flatland-factory-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
   ]
 }
 
