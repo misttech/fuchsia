@@ -856,6 +856,27 @@ mod test {
                 })
             );
         }
+        {
+            let addr_info: ffx::TargetAddrInfo = addr.into();
+            let info = ffx::TargetInfo {
+                nodename: Some("foo".to_string()),
+                addresses: Some(vec![addr_info]),
+                serial_number: Some("EM-9876".to_string()),
+                ..Default::default()
+            };
+            let emulator_event = emulator_instance::EmulatorTargetAction::Add(info);
+            assert_eq!(
+                TargetEvent::try_from(emulator_event)?,
+                TargetEvent::Added(TargetHandle {
+                    node_name: Some("foo".to_string()),
+                    state: TargetState::Product {
+                        addrs: vec![addr],
+                        serial: Some("EM-9876".to_string()),
+                    },
+                    manual: false,
+                })
+            );
+        }
         Ok(())
     }
 

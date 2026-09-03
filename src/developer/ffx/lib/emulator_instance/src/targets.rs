@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 use crate::{
     EmulatorInstanceData, EmulatorInstanceError, EmulatorInstanceInfo, EmulatorInstances,
-    EngineOption, NetworkingMode, Result,
+    EngineOption, NetworkingMode, Result, SerialMode,
 };
 use ffx::{TargetAddrInfo, TargetVSockCtx};
 use fidl_fuchsia_developer_ffx::{self as ffx, TargetVSockNamespace};
@@ -326,9 +326,15 @@ impl EmulatorWatcher {
             Some(ffx::TargetIpAddrInfo::IpPort(loopback))
         };
 
+        let serial_number = match &instance.emulator_configuration.runtime.serial_number {
+            SerialMode::Enabled(serial) => Some(serial.clone()),
+            _ => None,
+        };
+
         Some(ffx::TargetInfo {
             nodename: Some(nodename),
             addresses: Some(addresses),
+            serial_number,
             ssh_address,
             ..Default::default()
         })
@@ -562,6 +568,9 @@ mod tests {
         let mut tap_instance_data = instance_data.clone();
         config = tap_instance_data.get_emulator_configuration_mut();
         config.host.networking = crate::NetworkingMode::Tap;
+        let mut serial_instance_data = instance_data.clone();
+        serial_instance_data.get_emulator_configuration_mut().runtime.serial_number =
+            SerialMode::Enabled("EM-123456789".to_string());
         let ip = IpAddress::Ipv4(Ipv4Address { addr: [127, 0, 0, 1] });
         let loopback =
             ffx::TargetAddrInfo::IpPort(ffx::TargetIpPort { ip, scope_id: 0, port: 3322 });
@@ -583,8 +592,18 @@ mod tests {
                 EmulatorInstanceEvent::Data(Box::new(instance_data.clone())),
                 Some(EmulatorTargetAction::Add(ffx::TargetInfo {
                     nodename: Some(instance_data.get_name().to_string()),
+                    addresses: Some(vec![loopback.clone()]),
+                    ssh_address: ssh_address.clone(),
+                    ..Default::default()
+                })),
+            ),
+            (
+                EmulatorInstanceEvent::Data(Box::new(serial_instance_data.clone())),
+                Some(EmulatorTargetAction::Add(ffx::TargetInfo {
+                    nodename: Some(serial_instance_data.get_name().to_string()),
                     addresses: Some(vec![loopback]),
                     ssh_address,
+                    serial_number: Some("EM-123456789".to_string()),
                     ..Default::default()
                 })),
             ),
@@ -638,6 +657,7 @@ mod tests {
         instance_data.set_pid(std::process::id());
         let config = instance_data.get_emulator_configuration_mut();
         config.host.networking = crate::NetworkingMode::User;
+        config.runtime.serial_number = SerialMode::Enabled("EM-123456789".to_string());
         config
             .host
             .port_map
@@ -646,7 +666,8 @@ mod tests {
         file1.write_all(emu_config.as_bytes())?;
 
         let targets = get_all_targets(&emulator_instances)?;
-        assert_eq!(targets.first().unwrap().nodename, Some(String::from("emu-data-instance")));
+        assert_eq!(targets.first().unwrap().nodename, Some("emu-data-instance".to_string()));
+        assert_eq!(targets.first().unwrap().serial_number, Some("EM-123456789".to_string()));
 
         Ok(())
     }
