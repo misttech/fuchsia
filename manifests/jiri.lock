@@ -585,6 +585,26 @@
         "instance_id": "go4qfwROMthoOfAh-G1240ysyEx07kIuWBqqkXENA7AC"
     },
     {
+        "package": "fuchsia/third_party/ruff/linux-amd64",
+        "version": "version:2@0.9.4.1",
+        "instance_id": "ukUcSTOQkPhiF_Aq19P304CbJOmBjE8GiOuhz0JBgJwC"
+    },
+    {
+        "package": "fuchsia/third_party/ruff/linux-arm64",
+        "version": "version:2@0.9.4.1",
+        "instance_id": "JSXeJDEWBv02mCauVsDjzZorlrinQL7Af5byP4_1XqAC"
+    },
+    {
+        "package": "fuchsia/third_party/ruff/mac-amd64",
+        "version": "version:2@0.9.4.1",
+        "instance_id": "gpwLGlizXjrFyW1btbIaev-cudr8nnAmfFBj-zpPPm0C"
+    },
+    {
+        "package": "fuchsia/third_party/ruff/mac-arm64",
+        "version": "version:2@0.9.4.1",
+        "instance_id": "sqBGHO0z6KEXn9pLiIUy0NSSU8PXm59q6B8OZjkYgVEC"
+    },
+    {
         "package": "fuchsia/third_party/rust-analyzer/linux-amd64",
         "version": "git_revision:69d0e262cc12e4cac32a23b127c1537c71ad9beb",
         "instance_id": "IwHu0gRGHog5V8UDuodIwrAz7VB8ewcRGJZricsjOGQC"
