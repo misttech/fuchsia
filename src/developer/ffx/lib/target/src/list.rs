@@ -116,8 +116,11 @@ async fn handles_to_infos(
 ) -> Result<Vec<TargetInfo>> {
     let default = TargetInfoQuery::try_from(crate::get_target_specifier(ctx)?)?;
 
-    let info_futures = stream.then(|t| handle_to_info(ctx, t, connect, default.clone()));
-    let infos: Vec<Result<TargetInfo>> = info_futures.collect().await;
+    let infos: Vec<Result<TargetInfo>> = stream
+        .map(|t| handle_to_info(ctx, t, connect, default.clone()))
+        .buffered(16)
+        .collect()
+        .await;
     let targets = infos.into_iter().collect::<Result<Vec<_>>>()?;
     let targets = merge_target_addrs(targets);
     Ok(targets)
@@ -236,6 +239,7 @@ mod test {
     use crate::info::{RemoteControlState, TargetState};
     use addr::TargetAddr;
     use std::collections::HashSet;
+    use std::net::TcpListener;
 
     #[fuchsia::test]
     async fn test_serial_addresses() {
@@ -494,5 +498,47 @@ mod test {
         let query = TargetInfoQuery::First;
         let info = handle_to_info(&env.context, handle, false, query).await.unwrap();
         assert_eq!(info.serial_number, Some("fastboot_serial".to_string()));
+    }
+
+    #[fuchsia::test]
+    async fn test_handles_to_infos_concurrency() {
+        let env = ffx_config::test_init().unwrap();
+        let mut config = ffx_config::Config::from_env(&env.load()).unwrap();
+        config
+            .set(
+                "target.host_pipe_ssh_timeout",
+                ffx_config::ConfigLevel::User,
+                serde_json::json!(50),
+            )
+            .unwrap();
+
+        // Bind a local listener so the connection is accepted and hangs briefly (no Network Unreachable)
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let handle1 = discovery::TargetHandle {
+            node_name: Some("target1-hang".to_string()),
+            state: discovery::TargetState::Product {
+                addrs: vec![addr::TargetAddr::Net(addr)],
+                serial: None,
+            },
+            manual: false,
+        };
+
+        let handle2 = discovery::TargetHandle {
+            node_name: Some("target2-fast".to_string()),
+            state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
+                serial_number: "2222".to_string(),
+                connection_state: discovery::FastbootConnectionState::Usb,
+            }),
+            manual: false,
+        };
+
+        let stream_items = vec![handle1, handle2];
+        let stream = futures::stream::iter(stream_items.into_iter());
+
+        let targets = handles_to_infos(stream, &env.context, true).await.unwrap();
+
+        assert_eq!(targets.len(), 2, "Expected 2 targets");
     }
 }
