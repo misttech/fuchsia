@@ -4,6 +4,8 @@
 
 #include "src/ui/scenic/lib/input/mouse_source.h"
 
+#include <fidl/fuchsia.input.report/cpp/fidl.h>
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -14,7 +16,7 @@
 
 namespace input::test {
 
-using fuchsia::ui::pointer::MouseViewStatus;
+using fuchsia_ui_pointer::MouseViewStatus;
 using scenic_impl::input::Extents;
 using scenic_impl::input::InternalMouseEvent;
 using scenic_impl::input::MouseSource;
@@ -32,24 +34,24 @@ constexpr bool kExitView = true;
 
 namespace {
 
-void ExpectEqual(const fuchsia::ui::pointer::ViewParameters& received_view_parameters,
+void ExpectEqual(const fuchsia_ui_pointer::ViewParameters& received_view_parameters,
                  const Viewport& expected_viewport,
                  const view_tree::BoundingBox expected_view_bounds) {
   EXPECT_THAT(
-      received_view_parameters.viewport.min,
+      received_view_parameters.viewport().min(),
       testing::ElementsAre(expected_viewport.extents.min[0], expected_viewport.extents.min[1]));
   EXPECT_THAT(
-      received_view_parameters.viewport.max,
+      received_view_parameters.viewport().max(),
       testing::ElementsAre(expected_viewport.extents.max[0], expected_viewport.extents.max[1]));
 
-  EXPECT_THAT(received_view_parameters.view.min,
+  EXPECT_THAT(received_view_parameters.view().min(),
               testing::ElementsAreArray(expected_view_bounds.min));
-  EXPECT_THAT(received_view_parameters.view.max,
+  EXPECT_THAT(received_view_parameters.view().max(),
               testing::ElementsAreArray(expected_view_bounds.max));
 
   ASSERT_TRUE(expected_viewport.receiver_from_viewport_transform.has_value());
   EXPECT_THAT(
-      received_view_parameters.viewport_to_view_transform,
+      received_view_parameters.viewport_to_view_transform(),
       testing::ElementsAreArray(expected_viewport.receiver_from_viewport_transform.value()));
 }
 
@@ -67,22 +69,36 @@ InternalMouseEvent IMEventTemplate() {
 class MouseSourceTest : public gtest::TestLoopFixture {
  protected:
   void SetUp() override {
-    client_ptr_.set_error_handler([this](auto) { channel_closed_ = true; });
+    zx::result endpoints = fidl::CreateEndpoints<fuchsia_ui_pointer::MouseSource>();
+    ASSERT_TRUE(endpoints.is_ok());
 
-    mouse_source_.emplace(client_ptr_.NewRequest(),
+    client_ptr_.Bind(std::move(endpoints->client), dispatcher(), &event_handler_);
+
+    mouse_source_.emplace(std::move(endpoints->server),
                           /*error_handler*/ [this] { internal_error_handler_fired_ = true; });
   }
 
+  class EventHandler : public fidl::AsyncEventHandler<fuchsia_ui_pointer::MouseSource> {
+   public:
+    explicit EventHandler(MouseSourceTest* test) : test_(test) {}
+    void on_fidl_error(fidl::UnbindInfo info) override { test_->channel_closed_ = true; }
+
+   private:
+    MouseSourceTest* test_;
+  };
+
+  EventHandler event_handler_{this};
   bool internal_error_handler_fired_ = false;
   bool channel_closed_ = false;
 
-  fuchsia::ui::pointer::MouseSourcePtr client_ptr_;
+  fidl::Client<fuchsia_ui_pointer::MouseSource> client_ptr_;
   std::optional<MouseSource> mouse_source_;
 };
 
 TEST_F(MouseSourceTest, Watch_WithNoPendingMessages_ShouldNeverReturn) {
   bool callback_triggered = false;
-  client_ptr_->Watch([&callback_triggered](auto) { callback_triggered = true; });
+  client_ptr_->Watch().Then(
+      [&callback_triggered](auto& result) { callback_triggered = result.is_ok(); });
 
   RunLoopUntilIdle();
   EXPECT_FALSE(channel_closed_);
@@ -91,21 +107,25 @@ TEST_F(MouseSourceTest, Watch_WithNoPendingMessages_ShouldNeverReturn) {
 
 TEST_F(MouseSourceTest, ErrorHandler_ShouldFire_OnClientDisconnect) {
   EXPECT_FALSE(internal_error_handler_fired_);
-  client_ptr_.Unbind();
+  client_ptr_ = {};
   RunLoopUntilIdle();
   EXPECT_TRUE(internal_error_handler_fired_);
 }
 
 TEST_F(MouseSourceTest, Watch_CallingTwiceWithoutWaiting_ShouldCloseChannel) {
-  client_ptr_->Watch([](auto) { EXPECT_FALSE(true); });
-  client_ptr_->Watch([](auto) { EXPECT_FALSE(true); });
+  client_ptr_->Watch().Then([](auto& result) { EXPECT_FALSE(result.is_ok()); });
+  client_ptr_->Watch().Then([](auto& result) { EXPECT_FALSE(result.is_ok()); });
   RunLoopUntilIdle();
   EXPECT_TRUE(channel_closed_);
 }
 
 TEST_F(MouseSourceTest, Watch_BeforeEvents_ShouldReturnOnFirstEvent) {
   uint64_t num_events = 0;
-  client_ptr_->Watch([&num_events](auto events) { num_events += events.size(); });
+  client_ptr_->Watch().Then(
+      [&num_events](fidl::Result<fuchsia_ui_pointer::MouseSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        num_events += result->events().size();
+      });
 
   RunLoopUntilIdle();
   EXPECT_FALSE(channel_closed_);
@@ -120,7 +140,11 @@ TEST_F(MouseSourceTest, Watch_BeforeEvents_ShouldReturnOnFirstEvent) {
   EXPECT_EQ(num_events, 1u);
 
   // Second event should arrive on next Watch() call.
-  client_ptr_->Watch([&num_events](auto events) { num_events += events.size(); });
+  client_ptr_->Watch().Then(
+      [&num_events](fidl::Result<fuchsia_ui_pointer::MouseSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        num_events += result->events().size();
+      });
   RunLoopUntilIdle();
   EXPECT_FALSE(channel_closed_);
   EXPECT_EQ(num_events, 2u);
@@ -129,16 +153,21 @@ TEST_F(MouseSourceTest, Watch_BeforeEvents_ShouldReturnOnFirstEvent) {
 TEST_F(MouseSourceTest, Watch_ShouldAtMostReturn_MOUSE_MAX_EVENT_Events_PerCall) {
   // Sending fidl message on first event, so expect the second one not to arrive.
   mouse_source_->UpdateStream(kStreamId, IMEventTemplate(), kEmptyBoundingBox, kInsideView);
-  for (size_t i = 0; i < fuchsia::ui::pointer::MOUSE_MAX_EVENT + 3; ++i) {
+  for (size_t i = 0; i < fuchsia_ui_pointer::kMouseMaxEvent + 3; ++i) {
     mouse_source_->UpdateStream(kStreamId, IMEventTemplate(), kEmptyBoundingBox, kInsideView);
   }
 
-  client_ptr_->Watch(
-      [](auto events) { ASSERT_EQ(events.size(), fuchsia::ui::pointer::MOUSE_MAX_EVENT); });
+  client_ptr_->Watch().Then([](fidl::Result<fuchsia_ui_pointer::MouseSource::Watch>& result) {
+    ASSERT_TRUE(result.is_ok());
+    ASSERT_EQ(result->events().size(), fuchsia_ui_pointer::kMouseMaxEvent);
+  });
   RunLoopUntilIdle();
 
   // The 4 events remaining in the queue should be delivered with the next Watch() call.
-  client_ptr_->Watch([](auto events) { EXPECT_EQ(events.size(), 4u); });
+  client_ptr_->Watch().Then([](fidl::Result<fuchsia_ui_pointer::MouseSource::Watch>& result) {
+    ASSERT_TRUE(result.is_ok());
+    EXPECT_EQ(result->events().size(), 4u);
+  });
   RunLoopUntilIdle();
 }
 
@@ -181,24 +210,24 @@ TEST_F(MouseSourceTest, ViewportIsDeliveredCorrectly) {
     mouse_source_->UpdateStream(kStreamId, std::move(event), view_bounds2, kInsideView);
   }
 
-  client_ptr_->Watch([&](auto events) {
+  client_ptr_->Watch().Then([&](fidl::Result<fuchsia_ui_pointer::MouseSource::Watch>& result) {
+    ASSERT_TRUE(result.is_ok());
+    const auto& events = result->events();
     ASSERT_EQ(events.size(), 3u);
-    EXPECT_TRUE(events[0].has_pointer_sample());
-    ASSERT_TRUE(events[0].has_view_parameters());
-    ExpectEqual(events[0].view_parameters(), viewport1, view_bounds1);
+    EXPECT_TRUE(events[0].pointer_sample().has_value());
+    ASSERT_TRUE(events[0].view_parameters().has_value());
+    ExpectEqual(events[0].view_parameters().value(), viewport1, view_bounds1);
 
-    EXPECT_FALSE(events[1].has_view_parameters());
-    EXPECT_TRUE(events[1].has_pointer_sample());
+    EXPECT_FALSE(events[1].view_parameters().has_value());
+    EXPECT_TRUE(events[1].pointer_sample().has_value());
 
-    EXPECT_TRUE(events[2].has_pointer_sample());
-    ASSERT_TRUE(events[2].has_view_parameters());
-    ExpectEqual(events[2].view_parameters(), viewport2, view_bounds2);
+    EXPECT_TRUE(events[2].pointer_sample().has_value());
+    ASSERT_TRUE(events[2].view_parameters().has_value());
+    ExpectEqual(events[2].view_parameters().value(), viewport2, view_bounds2);
   });
 
   RunLoopUntilIdle();
 }
-
-// Struct for tracking
 
 TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
   const uint32_t kDeviceId1 = 11111, kDeviceId2 = 22222;
@@ -234,8 +263,12 @@ TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
   RunLoopUntilIdle();
 
   {  // Only the first instance of each device_id should generate a device_info parameter.
-    std::vector<fuchsia::ui::pointer::MouseEvent> received_events;
-    client_ptr_->Watch([&received_events](auto events) { received_events = std::move(events); });
+    std::vector<fuchsia_ui_pointer::MouseEvent> received_events;
+    client_ptr_->Watch().Then(
+        [&received_events](fidl::Result<fuchsia_ui_pointer::MouseSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok());
+          received_events = std::move(result->events());
+        });
     RunLoopUntilIdle();
 
     ASSERT_EQ(received_events.size(), 3u);
@@ -243,56 +276,59 @@ TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
     {
       const auto& event = received_events[0];
 
-      ASSERT_TRUE(event.has_device_info());
-      const auto& device_info = event.device_info();
-      EXPECT_EQ(device_info.id(), kDeviceId1);
-      ASSERT_TRUE(device_info.has_scroll_v_range());
-      const auto& [range, unit] = device_info.scroll_v_range();
-      EXPECT_EQ(range.min, -98);
-      EXPECT_EQ(range.max, 76);
-      EXPECT_EQ(unit.type, fuchsia::input::UnitType::DEGREES);
-      EXPECT_EQ(unit.exponent, 900);
-      EXPECT_FALSE(device_info.has_scroll_h_range());
-      ASSERT_TRUE(device_info.has_buttons());
-      EXPECT_THAT(device_info.buttons(),
+      ASSERT_TRUE(event.device_info().has_value());
+      const auto& device_info = event.device_info().value();
+      EXPECT_EQ(device_info.id().value(), kDeviceId1);
+      ASSERT_TRUE(device_info.scroll_v_range().has_value());
+      const auto& scroll_v_range = device_info.scroll_v_range().value();
+      const auto& range = scroll_v_range.range();
+      const auto& unit = scroll_v_range.unit();
+      EXPECT_EQ(range.min(), -98);
+      EXPECT_EQ(range.max(), 76);
+      EXPECT_EQ(unit.type(), fuchsia_input_report::UnitType::kDegrees);
+      EXPECT_EQ(unit.exponent(), 900);
+      EXPECT_FALSE(device_info.scroll_h_range().has_value());
+      ASSERT_TRUE(device_info.buttons().has_value());
+      EXPECT_THAT(device_info.buttons().value(),
                   testing::ElementsAre(static_cast<uint8_t>(12), static_cast<uint8_t>(34),
                                        static_cast<uint8_t>(56)));
 
-      ASSERT_TRUE(event.has_pointer_sample());
-      ASSERT_TRUE(event.pointer_sample().has_device_id());
-      EXPECT_EQ(event.pointer_sample().device_id(), kDeviceId1);
+      ASSERT_TRUE(event.pointer_sample().has_value());
+      ASSERT_TRUE(event.pointer_sample()->device_id().has_value());
+      EXPECT_EQ(event.pointer_sample()->device_id().value(), kDeviceId1);
     }
 
     {
       const auto& event = received_events[1];
-      EXPECT_FALSE(event.has_device_info());
-      ASSERT_TRUE(event.has_pointer_sample());
-      const auto& pointer_sample = event.pointer_sample();
-      ASSERT_TRUE(pointer_sample.has_device_id());
-      EXPECT_EQ(pointer_sample.device_id(), kDeviceId1);
-      ASSERT_TRUE(pointer_sample.has_pressed_buttons());
-      EXPECT_THAT(pointer_sample.pressed_buttons(),
+      EXPECT_FALSE(event.device_info().has_value());
+      ASSERT_TRUE(event.pointer_sample().has_value());
+      const auto& pointer_sample = event.pointer_sample().value();
+      ASSERT_TRUE(pointer_sample.device_id().has_value());
+      EXPECT_EQ(pointer_sample.device_id().value(), kDeviceId1);
+      ASSERT_TRUE(pointer_sample.pressed_buttons().has_value());
+      EXPECT_THAT(pointer_sample.pressed_buttons().value(),
                   testing::ElementsAre(static_cast<uint8_t>(12), static_cast<uint8_t>(56)));
     }
 
     {
       const auto& event = received_events[2];
 
-      ASSERT_TRUE(event.has_device_info());
-      const auto& device_info = event.device_info();
-      EXPECT_EQ(device_info.id(), kDeviceId2);
-      EXPECT_FALSE(device_info.has_scroll_v_range());
-      ASSERT_TRUE(device_info.has_scroll_h_range());
-      const auto& [range, unit] = device_info.scroll_h_range();
-      EXPECT_EQ(range.min, 100);
-      EXPECT_EQ(range.max, 200);
-      EXPECT_EQ(unit.type, fuchsia::input::UnitType::METERS);
-      EXPECT_EQ(unit.exponent, -111);
-      EXPECT_FALSE(device_info.has_buttons());
+      ASSERT_TRUE(event.device_info().has_value());
+      const auto& device_info = event.device_info().value();
+      EXPECT_EQ(device_info.id().value(), kDeviceId2);
+      EXPECT_FALSE(device_info.scroll_v_range().has_value());
+      ASSERT_TRUE(device_info.scroll_h_range().has_value());
+      const auto& [range, unit] = std::make_pair(device_info.scroll_h_range()->range(),
+                                                 device_info.scroll_h_range()->unit());
+      EXPECT_EQ(range.min(), 100);
+      EXPECT_EQ(range.max(), 200);
+      EXPECT_EQ(unit.type(), fuchsia_input_report::UnitType::kMeters);
+      EXPECT_EQ(unit.exponent(), -111);
+      EXPECT_FALSE(device_info.buttons().has_value());
 
-      ASSERT_TRUE(event.has_pointer_sample());
-      ASSERT_TRUE(event.pointer_sample().has_device_id());
-      EXPECT_EQ(event.pointer_sample().device_id(), kDeviceId2);
+      ASSERT_TRUE(event.pointer_sample().has_value());
+      ASSERT_TRUE(event.pointer_sample()->device_id().has_value());
+      EXPECT_EQ(event.pointer_sample()->device_id().value(), kDeviceId2);
     }
   }
 }
@@ -306,62 +342,64 @@ TEST_F(MouseSourceTest, FullStreamTest) {
   mouse_source_->UpdateStream(kStreamId, IMEventTemplate(), kEmptyBoundingBox, kInsideView);
   mouse_source_->UpdateStream(kStreamId, IMEventTemplate(), kEmptyBoundingBox, kInsideView);
 
-  client_ptr_->Watch([&](auto events) {
+  client_ptr_->Watch().Then([&](fidl::Result<fuchsia_ui_pointer::MouseSource::Watch>& result) {
+    ASSERT_TRUE(result.is_ok());
+    const auto& events = result->events();
     ASSERT_EQ(events.size(), 5u);
     {
       const auto& event = events[0];
-      EXPECT_TRUE(event.has_timestamp());
-      ASSERT_TRUE(event.has_pointer_sample());
-      EXPECT_TRUE(event.has_view_parameters());
-      EXPECT_TRUE(event.has_device_info());
-      ASSERT_TRUE(event.has_stream_info());
-      EXPECT_TRUE(event.has_trace_flow_id());
+      EXPECT_TRUE(event.timestamp().has_value());
+      ASSERT_TRUE(event.pointer_sample().has_value());
+      EXPECT_TRUE(event.view_parameters().has_value());
+      EXPECT_TRUE(event.device_info().has_value());
+      ASSERT_TRUE(event.stream_info().has_value());
+      EXPECT_TRUE(event.trace_flow_id().has_value());
 
-      EXPECT_EQ(event.stream_info().status, MouseViewStatus::ENTERED);
+      EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kEntered);
     }
 
     {
       const auto& event = events[1];
-      EXPECT_TRUE(event.has_timestamp());
-      ASSERT_TRUE(event.has_pointer_sample());
-      EXPECT_FALSE(event.has_view_parameters());
-      EXPECT_FALSE(event.has_device_info());
-      EXPECT_FALSE(event.has_stream_info());
-      EXPECT_TRUE(event.has_trace_flow_id());
+      EXPECT_TRUE(event.timestamp().has_value());
+      ASSERT_TRUE(event.pointer_sample().has_value());
+      EXPECT_FALSE(event.view_parameters().has_value());
+      EXPECT_FALSE(event.device_info().has_value());
+      EXPECT_FALSE(event.stream_info().has_value());
+      EXPECT_TRUE(event.trace_flow_id().has_value());
     }
 
     {  // Exit view
       const auto& event = events[2];
-      EXPECT_TRUE(event.has_timestamp());
-      EXPECT_FALSE(event.has_pointer_sample());
-      EXPECT_FALSE(event.has_view_parameters());
-      EXPECT_FALSE(event.has_device_info());
-      ASSERT_TRUE(event.has_stream_info());
-      EXPECT_TRUE(event.has_trace_flow_id());
+      EXPECT_TRUE(event.timestamp().has_value());
+      EXPECT_FALSE(event.pointer_sample().has_value());
+      EXPECT_FALSE(event.view_parameters().has_value());
+      EXPECT_FALSE(event.device_info().has_value());
+      ASSERT_TRUE(event.stream_info().has_value());
+      EXPECT_TRUE(event.trace_flow_id().has_value());
 
-      EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+      EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
     }
 
     {  // Re-enter view.
       const auto& event = events[3];
-      EXPECT_TRUE(event.has_timestamp());
-      ASSERT_TRUE(event.has_pointer_sample());
-      EXPECT_FALSE(event.has_view_parameters());
-      EXPECT_FALSE(event.has_device_info());
-      ASSERT_TRUE(event.has_stream_info());
-      EXPECT_TRUE(event.has_trace_flow_id());
+      EXPECT_TRUE(event.timestamp().has_value());
+      ASSERT_TRUE(event.pointer_sample().has_value());
+      EXPECT_FALSE(event.view_parameters().has_value());
+      EXPECT_FALSE(event.device_info().has_value());
+      ASSERT_TRUE(event.stream_info().has_value());
+      EXPECT_TRUE(event.trace_flow_id().has_value());
 
-      EXPECT_EQ(event.stream_info().status, MouseViewStatus::ENTERED);
+      EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kEntered);
     }
 
     {
       const auto& event = events[4];
-      EXPECT_TRUE(event.has_timestamp());
-      ASSERT_TRUE(event.has_pointer_sample());
-      EXPECT_FALSE(event.has_view_parameters());
-      EXPECT_FALSE(event.has_device_info());
-      EXPECT_FALSE(event.has_stream_info());
-      EXPECT_TRUE(event.has_trace_flow_id());
+      EXPECT_TRUE(event.timestamp().has_value());
+      ASSERT_TRUE(event.pointer_sample().has_value());
+      EXPECT_FALSE(event.view_parameters().has_value());
+      EXPECT_FALSE(event.device_info().has_value());
+      EXPECT_FALSE(event.stream_info().has_value());
+      EXPECT_TRUE(event.trace_flow_id().has_value());
     }
   });
 

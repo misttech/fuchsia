@@ -10,68 +10,77 @@
 
 namespace scenic_impl::input {
 
-using fuchsia::ui::pointer::MouseEvent;
+using fuchsia_ui_pointer::MouseEvent;
 
 MouseEvent MouseSourceBase::NewMouseEvent(const InternalMouseEvent& event) {
   MouseEvent new_event;
-  new_event.set_timestamp(event.timestamp);
-  new_event.set_trace_flow_id(TRACE_NONCE());
-  new_event.set_pointer_sample(MouseSourceBase::NewPointerSample(event));
+  new_event.timestamp(event.timestamp);
+  new_event.trace_flow_id(TRACE_NONCE());
+  new_event.pointer_sample(MouseSourceBase::NewPointerSample(event));
   return new_event;
 }
 
 void MouseSourceBase::AddDeviceInfoToEvent(MouseEvent& out_event, const InternalMouseEvent& event) {
-  fuchsia::ui::pointer::MouseDeviceInfo device_info;
-  device_info.set_id(event.device_id);
+  fuchsia_ui_pointer::MouseDeviceInfo device_info;
+  device_info.id(event.device_id);
   if (event.scroll_v.has_value()) {
     const auto& [unit, exponent, range, _] = event.scroll_v.value();
     FX_DCHECK(range[0] < range[1]);
-    device_info.set_scroll_v_range(
-        {.range = {.min = range[0], .max = range[1]},
-         .unit = {.type = fuchsia::input::UnitType(static_cast<uint32_t>(unit)),
-                  .exponent = exponent}});
+    device_info.scroll_v_range(fuchsia_input_report::Axis{{
+        .range = fuchsia_input_report::Range{{.min = range[0], .max = range[1]}},
+        .unit = fuchsia_input_report::Unit{{
+            .type = static_cast<fuchsia_input_report::UnitType>(unit),
+            .exponent = exponent,
+        }},
+    }});
   }
   if (event.scroll_h.has_value()) {
     const auto& [unit, exponent, range, _] = event.scroll_h.value();
     FX_DCHECK(range[0] < range[1]);
-    device_info.set_scroll_h_range(
-        {.range = {.min = range[0], .max = range[1]},
-         .unit = {.type = fuchsia::input::UnitType(static_cast<uint32_t>(unit)),
-                  .exponent = exponent}});
+    device_info.scroll_h_range(fuchsia_input_report::Axis{{
+        .range = fuchsia_input_report::Range{{.min = range[0], .max = range[1]}},
+        .unit = fuchsia_input_report::Unit{{
+            .type = static_cast<fuchsia_input_report::UnitType>(unit),
+            .exponent = exponent,
+        }},
+    }});
   }
   if (!event.buttons.identifiers.empty()) {
-    FX_DCHECK(event.buttons.identifiers.size() <= fuchsia::input::MOUSE_MAX_NUM_BUTTONS);
-    device_info.set_buttons(event.buttons.identifiers);
+    FX_DCHECK(event.buttons.identifiers.size() <= fuchsia_input_report::kMouseMaxNumButtons);
+    device_info.buttons(event.buttons.identifiers);
   }
-  out_event.set_device_info(std::move(device_info));
+  out_event.device_info(std::move(device_info));
 }
 
 void MouseSourceBase::AddStreamInfoToEvent(MouseEvent& out_event, const InternalMouseEvent& event,
                                            bool view_entered) {
-  out_event.set_stream_info({.device_id = event.device_id,
-                             .status = view_entered
-                                           ? fuchsia::ui::pointer::MouseViewStatus::ENTERED
-                                           : fuchsia::ui::pointer::MouseViewStatus::EXITED});
+  out_event.stream_info(fuchsia_ui_pointer::MouseEventStreamInfo{{
+      .device_id = event.device_id,
+      .status = view_entered ? fuchsia_ui_pointer::MouseViewStatus::kEntered
+                             : fuchsia_ui_pointer::MouseViewStatus::kExited,
+  }});
 }
 
 void MouseSourceBase::AddViewParametersToEvent(MouseEvent& out_event, const Viewport& viewport,
                                                const view_tree::BoundingBox& view_bounds) {
-  out_event.set_view_parameters(fuchsia::ui::pointer::ViewParameters{
-      .view = fuchsia::ui::pointer::Rectangle{.min = view_bounds.min, .max = view_bounds.max},
-      .viewport =
-          fuchsia::ui::pointer::Rectangle{
-              .min = {{viewport.extents.min[0], viewport.extents.min[1]}},
-              .max = {{viewport.extents.max[0], viewport.extents.max[1]}}},
+  out_event.view_parameters(fuchsia_ui_pointer::ViewParameters{{
+      .view = fuchsia_ui_pointer::Rectangle{{.min = view_bounds.min, .max = view_bounds.max}},
+      .viewport = fuchsia_ui_pointer::Rectangle{{
+          .min = {viewport.extents.min[0], viewport.extents.min[1]},
+          .max = {viewport.extents.max[0], viewport.extents.max[1]},
+      }},
       .viewport_to_view_transform = viewport.receiver_from_viewport_transform.value(),
-  });
+  }});
 }
 
 MouseEvent MouseSourceBase::NewViewExitEvent(const InternalMouseEvent& event) {
   MouseEvent new_event;
-  new_event.set_timestamp(event.timestamp);
-  new_event.set_trace_flow_id(TRACE_NONCE());
-  new_event.set_stream_info(
-      {.device_id = event.device_id, .status = fuchsia::ui::pointer::MouseViewStatus::EXITED});
+  new_event.timestamp(event.timestamp);
+  new_event.trace_flow_id(TRACE_NONCE());
+  new_event.stream_info(fuchsia_ui_pointer::MouseEventStreamInfo{{
+      .device_id = event.device_id,
+      .status = fuchsia_ui_pointer::MouseViewStatus::kExited,
+  }});
   return new_event;
 }
 
@@ -87,33 +96,34 @@ void MouseSourceBase::WatchBase(fit::function<void(std::vector<MouseEvent>)> cal
   SendPendingIfWaiting();
 }
 
-fuchsia::ui::pointer::MousePointerSample MouseSourceBase::NewPointerSample(
+fuchsia_ui_pointer::MousePointerSample MouseSourceBase::NewPointerSample(
     const InternalMouseEvent& event) {
-  fuchsia::ui::pointer::MousePointerSample pointer;
-  pointer.set_device_id(event.device_id);
+  fuchsia_ui_pointer::MousePointerSample pointer;
+  pointer.device_id(event.device_id);
 
-  pointer.set_position_in_viewport({event.position_in_viewport[0], event.position_in_viewport[1]});
-  pointer.set_relative_motion({event.relative_motion[0], event.relative_motion[1]});
+  pointer.position_in_viewport(
+      std::array<float, 2>{event.position_in_viewport[0], event.position_in_viewport[1]});
+  pointer.relative_motion(std::array<float, 2>{event.relative_motion[0], event.relative_motion[1]});
 
   if (event.scroll_v.has_value() && event.scroll_v->scroll_value.has_value()) {
-    pointer.set_scroll_v(event.scroll_v->scroll_value.value());
+    pointer.scroll_v(event.scroll_v->scroll_value.value());
   }
   if (event.scroll_h.has_value() && event.scroll_h->scroll_value.has_value()) {
-    pointer.set_scroll_h(event.scroll_h->scroll_value.value());
+    pointer.scroll_h(event.scroll_h->scroll_value.value());
   }
   if (event.scroll_v_physical_pixel.has_value()) {
-    pointer.set_scroll_v_physical_pixel(event.scroll_v_physical_pixel.value());
+    pointer.scroll_v_physical_pixel(event.scroll_v_physical_pixel.value());
   }
   if (event.scroll_h_physical_pixel.has_value()) {
-    pointer.set_scroll_h_physical_pixel(event.scroll_h_physical_pixel.value());
+    pointer.scroll_h_physical_pixel(event.scroll_h_physical_pixel.value());
   }
   if (event.is_precision_scroll.has_value()) {
-    pointer.set_is_precision_scroll(event.is_precision_scroll.value());
+    pointer.is_precision_scroll(event.is_precision_scroll.value());
   }
 
-  FX_DCHECK(event.buttons.pressed.size() <= fuchsia::input::MOUSE_MAX_NUM_BUTTONS);
+  FX_DCHECK(event.buttons.pressed.size() <= fuchsia_input_report::kMouseMaxNumButtons);
   if (!event.buttons.pressed.empty()) {
-    pointer.set_pressed_buttons(event.buttons.pressed);
+    pointer.pressed_buttons(event.buttons.pressed);
   }
 
   return pointer;
@@ -125,9 +135,9 @@ void MouseSourceBase::UpdateStream(const StreamId stream_id, InternalMouseEvent 
     const auto erased = tracked_streams_.erase(stream_id);
     FX_DCHECK(erased == 1) << "First event of a stream can't have MouseViewStatus::EXITED";
     if (erased == 1) {
-      fuchsia::ui::pointer::MouseEvent exit_event = NewViewExitEvent(event);
+      fuchsia_ui_pointer::MouseEvent exit_event = NewViewExitEvent(event);
       if (event.wake_lease) {
-        exit_event.set_wake_lease(std::move(event.wake_lease));
+        exit_event.wake_lease(std::move(event.wake_lease));
       }
       PushEvent(std::move(exit_event));
     }
@@ -156,13 +166,13 @@ void MouseSourceBase::UpdateStream(const StreamId stream_id, InternalMouseEvent 
   }
 
   if (event.wake_lease) {
-    out_event.set_wake_lease(std::move(event.wake_lease));
+    out_event.wake_lease(std::move(event.wake_lease));
   }
 
   PushEvent(std::move(out_event));
 }
 
-void MouseSourceBase::PushEvent(fuchsia::ui::pointer::MouseEvent event) {
+void MouseSourceBase::PushEvent(fuchsia_ui_pointer::MouseEvent event) {
   pending_events_.push(std::move(event));
   SendPendingIfWaiting();
 }
@@ -173,15 +183,17 @@ void MouseSourceBase::SendPendingIfWaiting() {
   }
 
   std::vector<MouseEvent> events;
-  for (size_t i = 0; !pending_events_.empty() && i < fuchsia::ui::pointer::MOUSE_MAX_EVENT; ++i) {
+  for (size_t i = 0; !pending_events_.empty() && i < fuchsia_ui_pointer::kMouseMaxEvent; ++i) {
     auto event = std::move(pending_events_.front());
-    TRACE_FLOW_BEGIN("input", "dispatch_event_to_client", event.trace_flow_id());
+    if (event.trace_flow_id().has_value()) {
+      TRACE_FLOW_BEGIN("input", "dispatch_event_to_client", event.trace_flow_id().value());
+    }
 
     pending_events_.pop();
     events.emplace_back(std::move(event));
   }
   FX_DCHECK(!events.empty());
-  FX_DCHECK(events.size() <= fuchsia::ui::pointer::MOUSE_MAX_EVENT);
+  FX_DCHECK(events.size() <= fuchsia_ui_pointer::kMouseMaxEvent);
 
   // Move the callback onto the stack and reset the member variable before calling it.
   // This is to allow the |pending_callback_| member variable to be reset from within the callback.

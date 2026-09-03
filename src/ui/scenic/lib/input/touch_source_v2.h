@@ -6,8 +6,6 @@
 #define SRC_UI_SCENIC_LIB_INPUT_TOUCH_SOURCE_V2_H_
 
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
-#include <fidl/fuchsia.ui.pointer/cpp/hlcpp_conversion.h>
-#include <fuchsia/ui/pointer/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
 #include <zircon/status.h>
 

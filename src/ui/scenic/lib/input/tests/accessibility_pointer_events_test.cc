@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <fuchsia/ui/input/accessibility/cpp/fidl.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 
@@ -25,7 +26,7 @@ using impl_Phase = scenic_impl::input::Phase;
 using fui_Phase = fuchsia::ui::input::PointerEventPhase;
 using scenic_impl::input::StreamId;
 
-using fuchsia::ui::pointer::TouchInteractionStatus;
+using TouchInteractionStatus = fuchsia_ui_pointer::TouchInteractionStatus;
 using scenic_impl::input::InternalTouchEvent;
 
 constexpr float kNdcEpsilon = std::numeric_limits<float>::epsilon();
@@ -120,8 +121,9 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
     OnNewViewTreeSnapshot(NewSnapshot(
         /*hits*/ {kClientKoid}, /*hierarchy*/ {kContextKoid, kClientKoid}));
 
-    client_ptr_.set_error_handler([](auto) { FAIL() << "Client1's channel closed"; });
-    touch_system_.RegisterTouchSource(client_ptr_.NewRequest(), kClientKoid);
+    auto endpoints = fidl::Endpoints<fuchsia_ui_pointer::TouchSource>::Create();
+    client_ptr_.Bind(std::move(endpoints.client), dispatcher());
+    touch_system_.RegisterTouchSource(std::move(endpoints.server), kClientKoid);
     Watch({});
   }
 
@@ -171,22 +173,25 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
 
  private:
   // Collects touch events delivered to |client_ptr_| (ignores other events).
-  void Watch(std::vector<fuchsia::ui::pointer::TouchResponse> responses) {
-    client_ptr_->Watch(
-        std::move(responses), [this](std::vector<fuchsia::ui::pointer::TouchEvent> events) {
-          std::vector<fuchsia::ui::pointer::TouchResponse> responses;
-          for (auto& event : events) {
-            if (event.has_pointer_sample()) {
-              fuchsia::ui::pointer::TouchResponse response;
-              response.set_response_type(fuchsia::ui::pointer::TouchResponseType::YES);
+  void Watch(std::vector<fuchsia_ui_pointer::TouchResponse> responses) {
+    client_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([this](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          if (!result.is_ok()) {
+            return;
+          }
+          std::vector<fuchsia_ui_pointer::TouchResponse> responses;
+          for (auto& event : result->events()) {
+            if (event.pointer_sample().has_value()) {
+              fuchsia_ui_pointer::TouchResponse response;
+              response.response_type(fuchsia_ui_pointer::TouchResponseType::kYes);
               responses.emplace_back(std::move(response));
             } else {
               responses.emplace_back();
             }
 
-            if (event.has_interaction_result()) {
-              client_contests_[event.interaction_result().interaction.interaction_id] =
-                  event.interaction_result().status;
+            if (event.interaction_result().has_value()) {
+              client_contests_[event.interaction_result()->interaction().interaction_id()] =
+                  event.interaction_result()->status();
             }
           }
 
@@ -194,7 +199,7 @@ class AccessibilityPointerEventsTest : public gtest::TestLoopFixture {
         });
   }
 
-  fuchsia::ui::pointer::TouchSourcePtr client_ptr_;
+  fidl::Client<fuchsia_ui_pointer::TouchSource> client_ptr_;
   uint64_t next_sequence_number_ = 1;
 };
 
@@ -259,7 +264,7 @@ TEST_F(AccessibilityPointerEventsTest, ConsumesPointerEvents) {
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
-  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::DENIED);
+  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::kDenied);
   {
     ASSERT_EQ(listener.events().size(), 3u);
     {
@@ -326,7 +331,7 @@ TEST_F(AccessibilityPointerEventsTest, ConsumesPointerEvents) {
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
-  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::DENIED);
+  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::kDenied);
 
   // Verify accessibility's events.
   {
@@ -384,7 +389,7 @@ TEST_F(AccessibilityPointerEventsTest, RejectsPointerEvents) {
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
-  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::GRANTED);
+  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::kGranted);
 
   // Verify accessibility's events. Note that the listener must see two events here, but not later,
   // because it rejects the stream in the second pointer event.
@@ -462,11 +467,11 @@ TEST_F(AccessibilityPointerEventsTest, AlternatingResponses) {
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
-  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::DENIED);
+  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::kDenied);
   ASSERT_NE(client_contests_.count(kStream2Id), 0u) << "Contest should have ended";
-  EXPECT_EQ(client_contests_.at(kStream2Id), TouchInteractionStatus::GRANTED);
+  EXPECT_EQ(client_contests_.at(kStream2Id), TouchInteractionStatus::kGranted);
   ASSERT_NE(client_contests_.count(kStream3Id), 0u) << "Contest should have ended";
-  EXPECT_EQ(client_contests_.at(kStream3Id), TouchInteractionStatus::DENIED);
+  EXPECT_EQ(client_contests_.at(kStream3Id), TouchInteractionStatus::kDenied);
 
   // Verify accessibility's events.
   // The listener should see all events, as it is configured to see the entire stream before
@@ -599,7 +604,7 @@ TEST_F(AccessibilityPointerEventsTest, DiscardActiveStreamOnConnection) {
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
-  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::GRANTED);
+  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::kGranted);
 
   // Now, connect the accessibility listener in the middle of a stream.
   MockAccessibilityPointerEventListener listener(&touch_system_);
@@ -642,7 +647,7 @@ TEST_F(AccessibilityPointerEventsTest, DispatchEventsAfterDisconnection) {
 
   RunLoopUntilIdle();
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
-  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::GRANTED);
+  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::kGranted);
 }
 
 // In this test, there are two views. We inject a pointer event stream onto both. We
@@ -798,7 +803,7 @@ TEST_F(AccessibilityPointerEventsTest, TopHitInjectionByNonRootView_IsNotDeliver
   RunLoopUntilIdle();
 
   ASSERT_NE(client_contests_.count(kStream1Id), 0u) << "Contest should have ended";
-  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::GRANTED);
+  EXPECT_EQ(client_contests_.at(kStream1Id), TouchInteractionStatus::kGranted);
   EXPECT_TRUE(listener.events().empty());
 }
 

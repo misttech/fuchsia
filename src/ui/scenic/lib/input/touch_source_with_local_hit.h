@@ -5,8 +5,8 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_TOUCH_SOURCE_WITH_LOCAL_HIT_H_
 #define SRC_UI_SCENIC_LIB_INPUT_TOUCH_SOURCE_WITH_LOCAL_HIT_H_
 
-#include <fuchsia/ui/pointer/augment/cpp/fidl.h>
-#include <lib/fidl/cpp/binding.h>
+#include <fidl/fuchsia.ui.pointer.augment/cpp/fidl.h>
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <zircon/status.h>
 
 #include "src/lib/fxl/macros.h"
@@ -15,15 +15,16 @@
 
 namespace scenic_impl::input {
 
-// Implementation of the |fuchsia::ui::pointer::augment::TouchSourceWithLocalHit| interface. One
-// instance per channel.
-class TouchSourceWithLocalHit : public TouchSourceBase,
-                                public fuchsia::ui::pointer::augment::TouchSourceWithLocalHit {
+// Implementation of the |fidl::Server<fuchsia_ui_pointer_augment::TouchSourceWithLocalHit>|
+// interface. One instance per channel.
+class TouchSourceWithLocalHit
+    : public TouchSourceBase,
+      public fidl::Server<fuchsia_ui_pointer_augment::TouchSourceWithLocalHit> {
  public:
   // |respond| must not destroy the TouchSourceWithLocalHit object.
   TouchSourceWithLocalHit(
       zx_koid_t view_ref_koid,
-      fidl::InterfaceRequest<fuchsia::ui::pointer::augment::TouchSourceWithLocalHit> request,
+      fidl::ServerEnd<fuchsia_ui_pointer_augment::TouchSourceWithLocalHit> server_end,
       fit::function<void(StreamId, const std::vector<GestureResponse>&)> respond,
       fit::function<void()> error_handler,
       fit::function<std::pair<zx_koid_t, std::array<float, 2>>(const view_tree::Snapshot&,
@@ -33,15 +34,15 @@ class TouchSourceWithLocalHit : public TouchSourceBase,
 
   ~TouchSourceWithLocalHit() override = default;
 
-  // |fuchsia::ui::pointer::augment::TouchSourceWithLocalHit|
-  void Watch(std::vector<fuchsia::ui::pointer::TouchResponse> responses,
-             WatchCallback callback) override;
+  // |fidl::Server<fuchsia_ui_pointer_augment::TouchSourceWithLocalHit>|
+  void Watch(WatchRequest& request, WatchCompleter::Sync& completer) override;
 
-  // |fuchsia::ui::pointer::augment::TouchSourceWithLocalHit|
-  void UpdateResponse(fuchsia::ui::pointer::TouchInteractionId stream,
-                      fuchsia::ui::pointer::TouchResponse response,
-                      UpdateResponseCallback callback) override {
-    TouchSourceBase::UpdateResponseBase(stream, std::move(response), std::move(callback));
+  // |fidl::Server<fuchsia_ui_pointer_augment::TouchSourceWithLocalHit>|
+  void UpdateResponse(UpdateResponseRequest& request,
+                      UpdateResponseCompleter::Sync& completer) override {
+    TouchSourceBase::UpdateResponseBase(
+        request.interaction(), std::move(request.response()),
+        [completer = completer.ToAsync()]() mutable { completer.Reply(); });
   }
 
  protected:
@@ -51,8 +52,7 @@ class TouchSourceWithLocalHit : public TouchSourceBase,
                const InternalTouchEvent&) override;
 
  private:
-  fidl::Binding<fuchsia::ui::pointer::augment::TouchSourceWithLocalHit> binding_;
-  const fit::function<void()> error_handler_;
+  fidl::ServerBinding<fuchsia_ui_pointer_augment::TouchSourceWithLocalHit> binding_;
   const fit::function<std::pair<zx_koid_t, std::array<float, 2>>(const view_tree::Snapshot&,
                                                                  const InternalTouchEvent&)>
       get_local_hit_;

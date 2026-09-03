@@ -31,9 +31,8 @@ class MouseSystem {
   explicit MouseSystem(HitTester& hit_tester, RequestFocusFunc request_focus);
   ~MouseSystem() = default;
 
-  void RegisterMouseSource(
-      fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
-      zx_koid_t client_view_ref_koid);
+  void RegisterMouseSource(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source_server_end,
+                           zx_koid_t client_view_ref_koid);
 
   void RegisterMouseSourceV2(
       fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2> mouse_source_server_end,
@@ -50,11 +49,6 @@ class MouseSystem {
   void CancelMouseStream(StreamId stream_id);
 
  private:
-  // Finds the ViewRef koid registered with the other side of the |original| channel and returns it.
-  // Returns ZX_KOID_INVALID if the related channel isn't found.
-  zx_koid_t FindViewRefKoidOfRelatedChannel(
-      const fidl::InterfaceHandle<fuchsia::ui::pointer::MouseSource>& original) const;
-
   // Locates and sends an event to the MouseSource identified by |receiver|, if one exists.
   void SendEventToMouse(const view_tree::Snapshot& snapshot, zx_koid_t receiver,
                         InternalMouseEvent event, StreamId stream_id, bool view_exit);

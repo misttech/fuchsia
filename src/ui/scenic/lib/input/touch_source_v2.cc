@@ -57,8 +57,7 @@ void TouchSourceV2::PushEvent(StreamId stream_id, AugmentedTouchEvent event) {
   if (is_closed_) {
     return;
   }
-  fuchsia_ui_pointer::TouchEvent natural_event = fidl::HLCPPToNatural(std::move(event.touch_event));
-  QueueEvent(std::move(natural_event));
+  QueueEvent(std::move(event.touch_event));
 }
 
 void TouchSourceV2::AcknowledgeEvents(AcknowledgeEventsRequest& request,

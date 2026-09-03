@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/syslog/cpp/macros.h>
@@ -19,8 +20,8 @@
 
 namespace input::test {
 
-using fup_MouseEvent = fuchsia::ui::pointer::MouseEvent;
-using fuchsia::ui::pointer::MouseViewStatus;
+using fup_MouseEvent = fuchsia_ui_pointer::MouseEvent;
+using MouseViewStatus = fuchsia_ui_pointer::MouseViewStatus;
 
 using scenic_impl::input::InternalMouseEvent;
 using scenic_impl::input::MouseSource;
@@ -70,13 +71,18 @@ class MouseTest : public gtest::TestLoopFixture {
 
   void SetUp() override {
     ::testing::Test::SetUp();
-    client1_ptr_.set_error_handler([](auto) { FAIL() << "Client1's channel closed"; });
-    client2_ptr_.set_error_handler([](auto) { FAIL() << "Client2's channel closed"; });
+    zx::result endpoints1 = fidl::CreateEndpoints<fuchsia_ui_pointer::MouseSource>();
+    ASSERT_TRUE(endpoints1.is_ok());
+    zx::result endpoints2 = fidl::CreateEndpoints<fuchsia_ui_pointer::MouseSource>();
+    ASSERT_TRUE(endpoints2.is_ok());
+
+    client1_ptr_.Bind(std::move(endpoints1->client), dispatcher(), &event_handler1_);
+    client2_ptr_.Bind(std::move(endpoints2->client), dispatcher(), &event_handler2_);
 
     OnNewViewTreeSnapshot(NewSnapshot(
         /*hits*/ {}, /*hierarchy*/ {kContextKoid, kClient1Koid, kClient2Koid}));
-    mouse_system_.RegisterMouseSource(client1_ptr_.NewRequest(), kClient1Koid);
-    mouse_system_.RegisterMouseSource(client2_ptr_.NewRequest(), kClient2Koid);
+    mouse_system_.RegisterMouseSource(std::move(endpoints1->server), kClient1Koid);
+    mouse_system_.RegisterMouseSource(std::move(endpoints2->server), kClient2Koid);
   }
 
   void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
@@ -85,17 +91,17 @@ class MouseTest : public gtest::TestLoopFixture {
 
   // Starts a recursive MouseSource::Watch() loop that collects all received events into
   // |out_events|.
-  void StartWatchLoop(fuchsia::ui::pointer::MouseSourcePtr& mouse_source,
+  void StartWatchLoop(fidl::Client<fuchsia_ui_pointer::MouseSource>& mouse_source,
                       std::vector<fup_MouseEvent>& out_events) {
-    const size_t index = watch_loops_.size();
-    watch_loops_.emplace_back(
-        [this, &mouse_source, &out_events, index](std::vector<fup_MouseEvent> events) {
-          std::move(events.begin(), events.end(), std::back_inserter(out_events));
-          mouse_source->Watch([this, index](std::vector<fup_MouseEvent> events) {
-            watch_loops_.at(index)(std::move(events));
-          });
-        });
-    mouse_source->Watch(watch_loops_.at(index));
+    mouse_source->Watch().Then([this, &mouse_source, &out_events](
+                                   fidl::Result<fuchsia_ui_pointer::MouseSource::Watch>& result) {
+      if (!result.is_ok()) {
+        return;
+      }
+      auto events = std::move(result->events());
+      std::move(events.begin(), events.end(), std::back_inserter(out_events));
+      StartWatchLoop(mouse_source, out_events);
+    });
   }
 
  protected:
@@ -126,6 +132,41 @@ class MouseTest : public gtest::TestLoopFixture {
     return snapshot;
   }
 
+  class EventHandler1 : public fidl::AsyncEventHandler<fuchsia_ui_pointer::MouseSource> {
+   public:
+    explicit EventHandler1(MouseTest* test) : test_(test) {}
+    void on_fidl_error(fidl::UnbindInfo info) override {
+      if (test_->client1_error_handler_) {
+        test_->client1_error_handler_();
+      } else {
+        FAIL() << "Client1's channel closed";
+      }
+    }
+
+   private:
+    MouseTest* test_;
+  };
+
+  class EventHandler2 : public fidl::AsyncEventHandler<fuchsia_ui_pointer::MouseSource> {
+   public:
+    explicit EventHandler2(MouseTest* test) : test_(test) {}
+    void on_fidl_error(fidl::UnbindInfo info) override {
+      if (test_->client2_error_handler_) {
+        test_->client2_error_handler_();
+      } else {
+        FAIL() << "Client2's channel closed";
+      }
+    }
+
+   private:
+    MouseTest* test_;
+  };
+
+  fit::function<void()> client1_error_handler_;
+  fit::function<void()> client2_error_handler_;
+  EventHandler1 event_handler1_{this};
+  EventHandler2 event_handler2_{this};
+
  private:
   utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   // Must be initialized before |mouse_system_|.
@@ -136,18 +177,17 @@ class MouseTest : public gtest::TestLoopFixture {
  protected:
   scenic_impl::input::MouseSystem mouse_system_;
   std::shared_ptr<const view_tree::Snapshot> current_snapshot_;
-  fuchsia::ui::pointer::MouseSourcePtr client1_ptr_;
-  fuchsia::ui::pointer::MouseSourcePtr client2_ptr_;
+  fidl::Client<fuchsia_ui_pointer::MouseSource> client1_ptr_;
+  fidl::Client<fuchsia_ui_pointer::MouseSource> client2_ptr_;
 
  private:
-  // Holds watch loop state alive for the duration of the test.
-  std::vector<std::function<void(std::vector<fup_MouseEvent>)>> watch_loops_;
   uint64_t next_sequence_number_ = 1;
 };
 
 TEST_F(MouseTest, Watch_WithNoInjectedEvents_ShouldNeverReturn) {
   bool callback_triggered = false;
-  client1_ptr_->Watch([&callback_triggered](auto) { callback_triggered = true; });
+  client1_ptr_->Watch().Then(
+      [&callback_triggered](auto& result) { callback_triggered = result.is_ok(); });
 
   RunLoopUntilIdle();
   EXPECT_FALSE(callback_triggered);
@@ -155,12 +195,14 @@ TEST_F(MouseTest, Watch_WithNoInjectedEvents_ShouldNeverReturn) {
 
 TEST_F(MouseTest, IllegalOperation_ShouldCloseChannel) {
   bool channel_closed = false;
-  client1_ptr_.set_error_handler([&channel_closed](auto...) { channel_closed = true; });
+  client1_error_handler_ = [&channel_closed] { channel_closed = true; };
 
   // Illegal operation: calling Watch() twice without getting an event.
   bool callback_triggered = false;
-  client1_ptr_->Watch([&callback_triggered](auto) { callback_triggered = true; });
-  client1_ptr_->Watch([&callback_triggered](auto) { callback_triggered = true; });
+  client1_ptr_->Watch().Then(
+      [&callback_triggered](auto& result) { callback_triggered = result.is_ok(); });
+  client1_ptr_->Watch().Then(
+      [&callback_triggered](auto& result) { callback_triggered = result.is_ok(); });
   RunLoopUntilIdle();
   EXPECT_TRUE(channel_closed);
   EXPECT_FALSE(callback_triggered);
@@ -208,8 +250,8 @@ TEST_F(MouseTest, HitTestedInjection_WithButtonUp_ShouldBeDeliveredOnlyToTopHit)
                                           *current_snapshot_);
   RunLoopUntilIdle();
   ASSERT_EQ(received_events1.size(), 1u);
-  ASSERT_TRUE(received_events1[0].has_stream_info());
-  EXPECT_EQ(received_events1[0].stream_info().status, MouseViewStatus::ENTERED);
+  ASSERT_TRUE(received_events1[0].stream_info().has_value());
+  EXPECT_EQ(received_events1[0].stream_info()->status(), MouseViewStatus::kEntered);
   EXPECT_TRUE(received_events2.empty());
 
   // Client 2 is top hit.
@@ -222,16 +264,16 @@ TEST_F(MouseTest, HitTestedInjection_WithButtonUp_ShouldBeDeliveredOnlyToTopHit)
   {  // Client 1 gets an exit event, but no pointer sample.
     ASSERT_EQ(received_events1.size(), 2u);
     const auto& event = received_events1[1];
-    EXPECT_FALSE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+    EXPECT_FALSE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
   }
   {  // Client 2 gets an enter event and a pointer sample.
     ASSERT_EQ(received_events2.size(), 1u);
     const auto& event = received_events2[0];
-    EXPECT_TRUE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::ENTERED);
+    EXPECT_TRUE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kEntered);
   }
 }
 
@@ -275,16 +317,16 @@ TEST_F(MouseTest, HitTestedInjection_WithButtonDown_ShouldLatchToTopHit_AndOnlyD
   {  // Client 1 gets an exit event, but not a pointer sample.
     ASSERT_EQ(received_events1.size(), 3u);
     const auto& event = received_events1[2];
-    EXPECT_FALSE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+    EXPECT_FALSE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
   }
   {  // Client 2 gets an enter event and a pointer sample.
     ASSERT_EQ(received_events2.size(), 1u);
     const auto& event = received_events2[0];
-    EXPECT_TRUE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::ENTERED);
+    EXPECT_TRUE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kEntered);
   }
 }
 
@@ -324,9 +366,9 @@ TEST_F(MouseTest, LatchedClient_WhenNotInViewTree_ShouldReceiveViewExit) {
   {  // Client 2 gets an exit event but no pointer sample.
     ASSERT_EQ(received_events2.size(), 2u);
     const auto& event = received_events2[1];
-    EXPECT_FALSE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+    EXPECT_FALSE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
   }
 
   // Button up. Client 1 gets its first hover event.
@@ -409,8 +451,8 @@ TEST_F(MouseTest, EmptyHitTest_ShouldDeliverToNoOne) {
   RunLoopUntilIdle();
   // Client 1 receives events.
   ASSERT_EQ(received_events.size(), 1u);
-  ASSERT_TRUE(received_events[0].has_stream_info());
-  EXPECT_EQ(received_events[0].stream_info().status, MouseViewStatus::ENTERED);
+  ASSERT_TRUE(received_events[0].stream_info().has_value());
+  EXPECT_EQ(received_events[0].stream_info()->status(), MouseViewStatus::kEntered);
 
   // Hit test returns empty.
   OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {}, /*hierarchy*/ {kContextKoid, kClient1Koid}));
@@ -421,9 +463,9 @@ TEST_F(MouseTest, EmptyHitTest_ShouldDeliverToNoOne) {
   {  // Client 1 gets an exit event, but no pointer sample.
     ASSERT_EQ(received_events.size(), 2u);
     const auto& event = received_events[1];
-    EXPECT_FALSE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+    EXPECT_FALSE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
   }
   received_events.clear();
 
@@ -490,9 +532,9 @@ TEST_F(MouseTest, CancelMouseStream_ShouldSendEvent_OnlyWhenThereIsOngoingStream
   {
     ASSERT_EQ(received_events1.size(), 2u);
     const auto& event = received_events1[1];
-    EXPECT_FALSE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+    EXPECT_FALSE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
   }
   EXPECT_EQ(received_events2.size(), 1u);
 
@@ -503,9 +545,9 @@ TEST_F(MouseTest, CancelMouseStream_ShouldSendEvent_OnlyWhenThereIsOngoingStream
   {
     ASSERT_EQ(received_events2.size(), 2u);
     const auto& event = received_events2[1];
-    EXPECT_FALSE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+    EXPECT_FALSE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
   }
 
   received_events1.clear();

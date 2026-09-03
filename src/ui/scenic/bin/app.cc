@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.ui.display.singleton/cpp/hlcpp_conversion.h>
+#include <fidl/fuchsia.ui.pointer.augment/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <fuchsia/vulkan/loader/cpp/fidl.h>
@@ -722,10 +723,11 @@ void App::InitializeInput() {
 #endif
 
   // Register LocalHit upgrade registry
-  app_context_->outgoing()->AddPublicService<fuchsia::ui::pointer::augment::LocalHit>(
-      [this](fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request) {
-        input_manager_.AsyncCall(&input::InputManager::BindLocalHit, std::move(request));
-      });
+  FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_pointer_augment::LocalHit>(
+               [this](fidl::ServerEnd<fuchsia_ui_pointer_augment::LocalHit> server_end) {
+                 input_manager_.AsyncCall(&input::InputManager::BindLocalHit,
+                                          std::move(server_end));
+               }) == ZX_OK);
 
   // Register Accessibility PointerEventRegistry
   app_context_->outgoing()

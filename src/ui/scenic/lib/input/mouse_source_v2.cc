@@ -40,11 +40,11 @@ void MouseSourceV2::UpdateStream(const StreamId stream_id, InternalMouseEvent ev
   MouseSourceBase::UpdateStream(stream_id, std::move(event), view_bounds, view_exit);
 }
 
-void MouseSourceV2::PushEvent(fuchsia::ui::pointer::MouseEvent event) {
+void MouseSourceV2::PushEvent(fuchsia_ui_pointer::MouseEvent event) {
   if (is_closed_) {
     return;
   }
-  QueueEvent(fidl::HLCPPToNatural(std::move(event)));
+  QueueEvent(std::move(event));
 }
 
 void MouseSourceV2::AcknowledgeEvents(AcknowledgeEventsRequest& request,

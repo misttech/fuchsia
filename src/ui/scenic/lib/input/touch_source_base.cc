@@ -17,25 +17,25 @@ namespace scenic_impl::input {
 
 namespace {
 
-GestureResponse ConvertToGestureResponse(fuchsia::ui::pointer::TouchResponseType type) {
+GestureResponse ConvertToGestureResponse(fuchsia_ui_pointer::TouchResponseType type) {
   switch (type) {
-    case fuchsia::ui::pointer::TouchResponseType::YES:
+    case fuchsia_ui_pointer::TouchResponseType::kYes:
       return GestureResponse::kYes;
-    case fuchsia::ui::pointer::TouchResponseType::YES_PRIORITIZE:
+    case fuchsia_ui_pointer::TouchResponseType::kYesPrioritize:
       return GestureResponse::kYesPrioritize;
-    case fuchsia::ui::pointer::TouchResponseType::NO:
+    case fuchsia_ui_pointer::TouchResponseType::kNo:
       return GestureResponse::kNo;
-    case fuchsia::ui::pointer::TouchResponseType::MAYBE:
+    case fuchsia_ui_pointer::TouchResponseType::kMaybe:
       return GestureResponse::kMaybe;
-    case fuchsia::ui::pointer::TouchResponseType::MAYBE_PRIORITIZE:
+    case fuchsia_ui_pointer::TouchResponseType::kMaybePrioritize:
       return GestureResponse::kMaybePrioritize;
-    case fuchsia::ui::pointer::TouchResponseType::MAYBE_SUPPRESS:
+    case fuchsia_ui_pointer::TouchResponseType::kMaybeSuppress:
       return GestureResponse::kMaybeSuppress;
-    case fuchsia::ui::pointer::TouchResponseType::MAYBE_PRIORITIZE_SUPPRESS:
+    case fuchsia_ui_pointer::TouchResponseType::kMaybePrioritizeSuppress:
       return GestureResponse::kMaybePrioritizeSuppress;
-    case fuchsia::ui::pointer::TouchResponseType::HOLD:
+    case fuchsia_ui_pointer::TouchResponseType::kHold:
       return GestureResponse::kHold;
-    case fuchsia::ui::pointer::TouchResponseType::HOLD_SUPPRESS:
+    case fuchsia_ui_pointer::TouchResponseType::kHoldSuppress:
       return GestureResponse::kHoldSuppress;
     default:
       return GestureResponse::kUndefined;
@@ -52,10 +52,10 @@ bool IsHold(GestureResponse response) {
   }
 }
 
-bool IsHold(fuchsia::ui::pointer::TouchResponseType response) {
+bool IsHold(fuchsia_ui_pointer::TouchResponseType response) {
   switch (response) {
-    case fuchsia::ui::pointer::TouchResponseType::HOLD:
-    case fuchsia::ui::pointer::TouchResponseType::HOLD_SUPPRESS:
+    case fuchsia_ui_pointer::TouchResponseType::kHold:
+    case fuchsia_ui_pointer::TouchResponseType::kHoldSuppress:
       return true;
     default:
       return false;
@@ -64,88 +64,87 @@ bool IsHold(fuchsia::ui::pointer::TouchResponseType response) {
 
 }  // namespace
 
-fuchsia::ui::pointer::EventPhase TouchSourceBase::ConvertToEventPhase(Phase phase) {
+fuchsia_ui_pointer::EventPhase TouchSourceBase::ConvertToEventPhase(Phase phase) {
   switch (phase) {
     case Phase::kAdd:
-      return fuchsia::ui::pointer::EventPhase::ADD;
+      return fuchsia_ui_pointer::EventPhase::kAdd;
     case Phase::kChange:
-      return fuchsia::ui::pointer::EventPhase::CHANGE;
+      return fuchsia_ui_pointer::EventPhase::kChange;
     case Phase::kRemove:
-      return fuchsia::ui::pointer::EventPhase::REMOVE;
+      return fuchsia_ui_pointer::EventPhase::kRemove;
     case Phase::kCancel:
-      return fuchsia::ui::pointer::EventPhase::CANCEL;
+      return fuchsia_ui_pointer::EventPhase::kCancel;
     default:
       // Never reached.
       FX_CHECK(false) << "Unknown phase: " << static_cast<int>(phase);
-      return fuchsia::ui::pointer::EventPhase::CANCEL;
+      return fuchsia_ui_pointer::EventPhase::kCancel;
   }
 }
 
-fuchsia::ui::pointer::TouchEvent TouchSourceBase::NewTouchEvent(StreamId stream_id,
-                                                                const InternalTouchEvent& event) {
-  fuchsia::ui::pointer::TouchEvent new_event;
-  new_event.set_timestamp(event.timestamp);
+fuchsia_ui_pointer::TouchEvent TouchSourceBase::NewTouchEvent(StreamId stream_id,
+                                                              const InternalTouchEvent& event) {
+  fuchsia_ui_pointer::TouchEvent new_event;
+  new_event.timestamp(event.timestamp);
   if (event.trace_flow_id.has_value()) {
-    new_event.set_trace_flow_id(event.trace_flow_id.value());
+    new_event.trace_flow_id(event.trace_flow_id.value());
   }
 
   {
-    fuchsia::ui::pointer::TouchPointerSample pointer;
+    fuchsia_ui_pointer::TouchPointerSample pointer;
 
-    pointer.set_phase(ConvertToEventPhase(event.phase));
-    pointer.set_position_in_viewport(
-        {event.position_in_viewport[0], event.position_in_viewport[1]});
-    pointer.set_interaction(fuchsia::ui::pointer::TouchInteractionId{
-        .device_id = event.device_id,
-        .pointer_id = event.pointer_id,
-        // The truncation from uint64_t to uint32_t is safe because stream collisions
-        // only affect internal Scenic mapping. Clients only ever observe streams
-        // related to their own views, which practically never exceed 2^32 concurrent touches.
-        .interaction_id = static_cast<uint32_t>(stream_id)});
-    new_event.set_pointer_sample(std::move(pointer));
+    pointer.phase(ConvertToEventPhase(event.phase));
+    pointer.position_in_viewport(
+        std::array<float, 2>{event.position_in_viewport[0], event.position_in_viewport[1]});
+    pointer.interaction(fuchsia_ui_pointer::TouchInteractionId{
+        {.device_id = event.device_id,
+         .pointer_id = event.pointer_id,
+         // The truncation from uint64_t to uint32_t is safe because stream collisions
+         // only affect internal Scenic mapping. Clients only ever observe streams
+         // related to their own views, which practically never exceed 2^32 concurrent touches.
+         .interaction_id = static_cast<uint32_t>(stream_id)}});
+    new_event.pointer_sample(std::move(pointer));
   }
 
   return new_event;
 }
 
-void TouchSourceBase::AddInteractionResultsToEvent(fuchsia::ui::pointer::TouchEvent& event,
+void TouchSourceBase::AddInteractionResultsToEvent(fuchsia_ui_pointer::TouchEvent& event,
                                                    StreamId stream_id, uint32_t device_id,
                                                    uint32_t pointer_id, const bool awarded_win) {
-  event.set_interaction_result(fuchsia::ui::pointer::TouchInteractionResult{
-      .interaction =
-          fuchsia::ui::pointer::TouchInteractionId{
-              .device_id = device_id,
-              .pointer_id = pointer_id,
-              // The truncation from uint64_t to uint32_t is safe because stream collisions
-              // only affect internal Scenic mapping. Clients only ever observe streams
-              // related to their own views, which practically never exceed 2^32 concurrent touches.
-              .interaction_id = static_cast<uint32_t>(stream_id)},
-      .status = awarded_win ? fuchsia::ui::pointer::TouchInteractionStatus::GRANTED
-                            : fuchsia::ui::pointer::TouchInteractionStatus::DENIED});
+  event.interaction_result(fuchsia_ui_pointer::TouchInteractionResult{
+      {.interaction =
+           fuchsia_ui_pointer::TouchInteractionId{
+               {.device_id = device_id,
+                .pointer_id = pointer_id,
+                // The truncation from uint64_t to uint32_t is safe because stream collisions
+                // only affect internal Scenic mapping. Clients only ever observe streams
+                // related to their own views, which practically never exceed 2^32 concurrent
+                // touches.
+                .interaction_id = static_cast<uint32_t>(stream_id)}},
+       .status = awarded_win ? fuchsia_ui_pointer::TouchInteractionStatus::kGranted
+                             : fuchsia_ui_pointer::TouchInteractionStatus::kDenied}});
 }
 
-fuchsia::ui::pointer::TouchEvent TouchSourceBase::NewEndEvent(StreamId stream_id,
-                                                              uint32_t device_id,
-                                                              uint32_t pointer_id,
-                                                              bool awarded_win) {
-  fuchsia::ui::pointer::TouchEvent new_event;
-  new_event.set_timestamp(async::Now(async_get_default_dispatcher()).get());
-  new_event.set_trace_flow_id(TRACE_NONCE());
+fuchsia_ui_pointer::TouchEvent TouchSourceBase::NewEndEvent(StreamId stream_id, uint32_t device_id,
+                                                            uint32_t pointer_id, bool awarded_win) {
+  fuchsia_ui_pointer::TouchEvent new_event;
+  new_event.timestamp(async::Now(async_get_default_dispatcher()).get());
+  new_event.trace_flow_id(TRACE_NONCE());
   AddInteractionResultsToEvent(new_event, stream_id, device_id, pointer_id, awarded_win);
   return new_event;
 }
 
-void TouchSourceBase::AddViewParametersToEvent(fuchsia::ui::pointer::TouchEvent& event,
+void TouchSourceBase::AddViewParametersToEvent(fuchsia_ui_pointer::TouchEvent& event,
                                                const Viewport& viewport,
                                                view_tree::BoundingBox view_bounds) {
   const auto& [extents, _, receiver_from_viewport_transform] = viewport;
   FX_DCHECK(receiver_from_viewport_transform.has_value());
-  event.set_view_parameters(fuchsia::ui::pointer::ViewParameters{
-      .view = fuchsia::ui::pointer::Rectangle{.min = view_bounds.min, .max = view_bounds.max},
-      .viewport = fuchsia::ui::pointer::Rectangle{.min = {{extents.min[0], extents.min[1]}},
-                                                  .max = {{extents.max[0], extents.max[1]}}},
+  event.view_parameters(fuchsia_ui_pointer::ViewParameters{{
+      .view = fuchsia_ui_pointer::Rectangle{{.min = view_bounds.min, .max = view_bounds.max}},
+      .viewport = fuchsia_ui_pointer::Rectangle{{.min = {extents.min[0], extents.min[1]},
+                                                 .max = {extents.max[0], extents.max[1]}}},
       .viewport_to_view_transform = receiver_from_viewport_transform.value(),
-  });
+  }});
 }
 
 TouchSourceBase::TouchSourceBase(
@@ -187,9 +186,9 @@ void TouchSourceBase::UpdateStream(const view_tree::Snapshot& snapshot, StreamId
       if (is_new_stream) {
         // First time we see a device we need to add DeviceInfo to the message.
         if (!seen_devices_.contains(event.device_id)) {
-          fuchsia::ui::pointer::TouchDeviceInfo device_info;
-          device_info.set_id(event.device_id);
-          touch_event.set_device_info(std::move(device_info));
+          fuchsia_ui_pointer::TouchDeviceInfo device_info;
+          device_info.id(event.device_id);
+          touch_event.device_info(std::move(device_info));
 
           seen_devices_.emplace(event.device_id);
         }
@@ -221,7 +220,7 @@ void TouchSourceBase::UpdateStream(const view_tree::Snapshot& snapshot, StreamId
 
     Augment(snapshot, out_event, event);
     if (event.wake_lease) {
-      out_event.touch_event.set_wake_lease(std::move(event.wake_lease));
+      out_event.touch_event.wake_lease(std::move(event.wake_lease));
     }
     PushEvent(stream_id, std::move(out_event));
   }
@@ -272,7 +271,7 @@ void TouchSourceBase::PushEvent(StreamId stream_id, AugmentedTouchEvent event) {
 }
 
 zx_status_t TouchSourceBase::ValidateResponses(
-    const std::vector<fuchsia::ui::pointer::TouchResponse>& responses,
+    const std::vector<fuchsia_ui_pointer::TouchResponse>& responses,
     const std::vector<ReturnTicket>& return_tickets, bool have_pending_callback) {
   if (have_pending_callback) {
     FX_LOGS(ERROR) << "TouchSourceBase: Client called Watch twice without waiting for response.";
@@ -294,12 +293,13 @@ zx_status_t TouchSourceBase::ValidateResponses(
         return ZX_ERR_INVALID_ARGS;
       }
     } else {
-      if (!response.has_response_type()) {
+      if (!response.response_type().has_value()) {
         FX_LOGS(ERROR) << "TouchSourceBase: Response was missing arguments.";
         return ZX_ERR_INVALID_ARGS;
       }
 
-      if (ConvertToGestureResponse(response.response_type()) == GestureResponse::kUndefined) {
+      if (ConvertToGestureResponse(response.response_type().value()) ==
+          GestureResponse::kUndefined) {
         FX_LOGS(ERROR) << "TouchSourceBase: Response " << i << " had unknown response type.";
         return ZX_ERR_INVALID_ARGS;
       }
@@ -309,7 +309,7 @@ zx_status_t TouchSourceBase::ValidateResponses(
   return ZX_OK;
 }
 
-void TouchSourceBase::WatchBase(std::vector<fuchsia::ui::pointer::TouchResponse> responses,
+void TouchSourceBase::WatchBase(std::vector<fuchsia_ui_pointer::TouchResponse> responses,
                                 fit::function<void(std::vector<AugmentedTouchEvent>)> callback) {
   TRACE_DURATION("input", "TouchSourceBase::Watch");
   const zx_status_t error = ValidateResponses(
@@ -328,7 +328,7 @@ void TouchSourceBase::WatchBase(std::vector<fuchsia::ui::pointer::TouchResponse>
       continue;
     }
 
-    const GestureResponse gd_response = ConvertToGestureResponse(response.response_type());
+    const GestureResponse gd_response = ConvertToGestureResponse(response.response_type().value());
     responses_per_stream[stream_id].emplace_back(gd_response);
 
     auto& stream = ongoing_streams_[stream_id];
@@ -346,10 +346,10 @@ void TouchSourceBase::WatchBase(std::vector<fuchsia::ui::pointer::TouchResponse>
 }
 
 zx_status_t TouchSourceBase::ValidateUpdateResponse(
-    const fuchsia::ui::pointer::TouchInteractionId& stream_identifier,
-    const fuchsia::ui::pointer::TouchResponse& response,
+    const fuchsia_ui_pointer::TouchInteractionId& stream_identifier,
+    const fuchsia_ui_pointer::TouchResponse& response,
     const std::unordered_map<StreamId, StreamData>& ongoing_streams) {
-  const StreamId stream_id = stream_identifier.interaction_id;
+  const StreamId stream_id = stream_identifier.interaction_id();
   if (!ongoing_streams.contains(stream_id)) {
     FX_LOGS(ERROR)
         << "TouchSourceBase: Attempted to UpdateResponse for unkown stream. Received stream id: "
@@ -357,18 +357,18 @@ zx_status_t TouchSourceBase::ValidateUpdateResponse(
     return ZX_ERR_BAD_STATE;
   }
 
-  if (!response.has_response_type()) {
+  if (!response.response_type().has_value()) {
     FX_LOGS(ERROR)
         << "TouchSourceBase: Can only UpdateResponse() called without response_type argument.";
     return ZX_ERR_INVALID_ARGS;
   }
 
-  if (ConvertToGestureResponse(response.response_type()) == GestureResponse::kUndefined) {
+  if (ConvertToGestureResponse(response.response_type().value()) == GestureResponse::kUndefined) {
     FX_LOGS(ERROR) << "TouchSourceBase: Response had unknown response type.";
     return ZX_ERR_INVALID_ARGS;
   }
 
-  if (IsHold(response.response_type())) {
+  if (IsHold(response.response_type().value())) {
     FX_LOGS(ERROR) << "TouchSourceBase: Can only UpdateResponse() with non-HOLD response.";
     return ZX_ERR_INVALID_ARGS;
   }
@@ -387,9 +387,9 @@ zx_status_t TouchSourceBase::ValidateUpdateResponse(
   return ZX_OK;
 }
 
-void TouchSourceBase::UpdateResponseBase(fuchsia::ui::pointer::TouchInteractionId stream_identifier,
-                                         fuchsia::ui::pointer::TouchResponse response,
-                                         fit::function<void()> callback) {
+void TouchSourceBase::UpdateResponseBase(
+    const fuchsia_ui_pointer::TouchInteractionId& stream_identifier,
+    fuchsia_ui_pointer::TouchResponse response, fit::function<void()> callback) {
   TRACE_DURATION("input", "TouchSourceBase::UpdateResponse");
   const zx_status_t error = ValidateUpdateResponse(stream_identifier, response, ongoing_streams_);
   if (error != ZX_OK) {
@@ -397,12 +397,13 @@ void TouchSourceBase::UpdateResponseBase(fuchsia::ui::pointer::TouchInteractionI
     return;
   }
 
-  if (response.has_trace_flow_id()) {
-    TRACE_FLOW_END("input", "dispatch_event_to_client", response.trace_flow_id());
+  if (response.trace_flow_id().has_value()) {
+    TRACE_FLOW_END("input", "dispatch_event_to_client", response.trace_flow_id().value());
   }
 
-  const StreamId stream_id = stream_identifier.interaction_id;
-  const GestureResponse converted_response = ConvertToGestureResponse(response.response_type());
+  const StreamId stream_id = stream_identifier.interaction_id();
+  const GestureResponse converted_response =
+      ConvertToGestureResponse(response.response_type().value());
   ongoing_streams_.at(stream_id).last_response = converted_response;
   respond_(stream_id, {converted_response});
 
@@ -417,13 +418,16 @@ void TouchSourceBase::SendPendingIfWaiting() {
   TRACE_DURATION("input", "TouchSourceBase::SendPendingIfWaiting");
 
   std::vector<AugmentedTouchEvent> events;
-  for (size_t i = 0; !pending_events_.empty() && i < fuchsia::ui::pointer::TOUCH_MAX_EVENT; ++i) {
+  for (size_t i = 0; !pending_events_.empty() && i < fuchsia_ui_pointer::kTouchMaxEvent; ++i) {
     auto [stream_id, event] = std::move(pending_events_.front());
-    TRACE_FLOW_STEP("input", "dispatch_event_to_client", event.touch_event.trace_flow_id());
+    if (event.touch_event.trace_flow_id().has_value()) {
+      TRACE_FLOW_STEP("input", "dispatch_event_to_client",
+                      event.touch_event.trace_flow_id().value());
+    }
 
     pending_events_.pop();
-    return_tickets_.push_back(
-        {.stream_id = stream_id, .expects_response = event.touch_event.has_pointer_sample()});
+    return_tickets_.push_back({.stream_id = stream_id,
+                               .expects_response = event.touch_event.pointer_sample().has_value()});
     events.emplace_back(std::move(event));
   }
   FX_DCHECK(!events.empty());

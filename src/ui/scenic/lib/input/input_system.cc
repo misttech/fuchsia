@@ -95,10 +95,9 @@ void InputSystem::BindPointerinjectorRegistry(zx::channel channel) {
 
 #endif
 
-void InputSystem::BindLocalHit(
-    fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request) {
+void InputSystem::BindLocalHit(fidl::ServerEnd<fuchsia_ui_pointer_augment::LocalHit> server_end) {
   utils::CheckIsOnInputThread();
-  touch_system_.Bind(std::move(request));
+  touch_system_.Bind(std::move(server_end));
 }
 
 void InputSystem::BindA11yPointerEventRegistry(
@@ -108,10 +107,10 @@ void InputSystem::BindA11yPointerEventRegistry(
 }
 
 void InputSystem::RegisterTouchSource(
-    fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource> touch_source_request,
+    fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source_server_end,
     zx_koid_t client_view_ref_koid) {
   utils::CheckIsOnInputThread();
-  touch_system_.RegisterTouchSource(std::move(touch_source_request), client_view_ref_koid);
+  touch_system_.RegisterTouchSource(std::move(touch_source_server_end), client_view_ref_koid);
 }
 
 void InputSystem::RegisterTouchSourceV2(
@@ -122,10 +121,10 @@ void InputSystem::RegisterTouchSourceV2(
 }
 
 void InputSystem::RegisterMouseSource(
-    fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
+    fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source_server_end,
     zx_koid_t client_view_ref_koid) {
   utils::CheckIsOnInputThread();
-  mouse_system_.RegisterMouseSource(std::move(mouse_source_request), client_view_ref_koid);
+  mouse_system_.RegisterMouseSource(std::move(mouse_source_server_end), client_view_ref_koid);
 }
 
 void InputSystem::RegisterMouseSourceV2(

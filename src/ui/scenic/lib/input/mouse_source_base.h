@@ -5,7 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_MOUSE_SOURCE_BASE_H_
 #define SRC_UI_SCENIC_LIB_INPUT_MOUSE_SOURCE_BASE_H_
 
-#include <fuchsia/ui/pointer/cpp/fidl.h>
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <lib/fit/function.h>
 
 #include <queue>
@@ -17,7 +17,7 @@
 
 namespace scenic_impl::input {
 
-// The base implementation for the |fuchsia::ui::pointer::MouseSource| interface and its
+// The base implementation for the |fuchsia_ui_pointer::MouseSource| interface and its
 // augmentations.
 class MouseSourceBase {
  public:
@@ -29,25 +29,25 @@ class MouseSourceBase {
   virtual void UpdateStream(StreamId stream_id, InternalMouseEvent event,
                             view_tree::BoundingBox view_bounds, bool view_exit);
 
-  static fuchsia::ui::pointer::MousePointerSample NewPointerSample(const InternalMouseEvent& event);
-  static fuchsia::ui::pointer::MouseEvent NewMouseEvent(const InternalMouseEvent& event);
-  static void AddDeviceInfoToEvent(fuchsia::ui::pointer::MouseEvent& out_event,
+  static fuchsia_ui_pointer::MousePointerSample NewPointerSample(const InternalMouseEvent& event);
+  static fuchsia_ui_pointer::MouseEvent NewMouseEvent(const InternalMouseEvent& event);
+  static void AddDeviceInfoToEvent(fuchsia_ui_pointer::MouseEvent& out_event,
                                    const InternalMouseEvent& event);
-  static void AddStreamInfoToEvent(fuchsia::ui::pointer::MouseEvent& out_event,
+  static void AddStreamInfoToEvent(fuchsia_ui_pointer::MouseEvent& out_event,
                                    const InternalMouseEvent& event, bool view_entered);
-  static void AddViewParametersToEvent(fuchsia::ui::pointer::MouseEvent& out_event,
+  static void AddViewParametersToEvent(fuchsia_ui_pointer::MouseEvent& out_event,
                                        const Viewport& viewport,
                                        const view_tree::BoundingBox& view_bounds);
-  static fuchsia::ui::pointer::MouseEvent NewViewExitEvent(const InternalMouseEvent& event);
+  static fuchsia_ui_pointer::MouseEvent NewViewExitEvent(const InternalMouseEvent& event);
 
   zx_koid_t channel_koid() const { return channel_koid_; }
 
  protected:
-  void WatchBase(fit::function<void(std::vector<fuchsia::ui::pointer::MouseEvent>)> callback);
+  void WatchBase(fit::function<void(std::vector<fuchsia_ui_pointer::MouseEvent>)> callback);
 
   // Pushes an event to be sent to the client. Default implementation queues the event for V1
   // hanging-get Watch() calls. Subclasses can override this to implement other delivery mechanisms.
-  virtual void PushEvent(fuchsia::ui::pointer::MouseEvent event);
+  virtual void PushEvent(fuchsia_ui_pointer::MouseEvent event);
 
   // TODO(https://fxbug.dev/42149398): Add clean up methods for when streams end or devices go away.
   // When we know exactly what that will look like.
@@ -69,9 +69,9 @@ class MouseSourceBase {
   view_tree::BoundingBox current_view_bounds_;
 
   // Events waiting to be sent to client. Sent in batches of up to
-  // fuchsia::ui::pointer::MOUSE_MAX_EVENT events on each call to Watch().
-  std::queue<fuchsia::ui::pointer::MouseEvent> pending_events_;
-  fit::function<void(std::vector<fuchsia::ui::pointer::MouseEvent>)> pending_callback_ = nullptr;
+  // fuchsia_ui_pointer::kMouseMaxEvent events on each call to Watch().
+  std::queue<fuchsia_ui_pointer::MouseEvent> pending_events_;
+  fit::function<void(std::vector<fuchsia_ui_pointer::MouseEvent>)> pending_callback_ = nullptr;
 
   std::unordered_set<StreamId> tracked_streams_;
 

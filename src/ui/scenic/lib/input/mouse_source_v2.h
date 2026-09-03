@@ -6,8 +6,6 @@
 #define SRC_UI_SCENIC_LIB_INPUT_MOUSE_SOURCE_V2_H_
 
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
-#include <fidl/fuchsia.ui.pointer/cpp/hlcpp_conversion.h>
-#include <fuchsia/ui/pointer/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <zircon/status.h>
 
@@ -46,7 +44,7 @@ class MouseSourceV2 : public MouseSourceBase,
 
  protected:
   // |MouseSourceBase|
-  void PushEvent(fuchsia::ui::pointer::MouseEvent event) override;
+  void PushEvent(fuchsia_ui_pointer::MouseEvent event) override;
 
  private:
   struct EventWithStamp {

@@ -6,9 +6,6 @@
 #define SRC_UI_SCENIC_LIB_INPUT_TOUCH_SOURCE_H_
 
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
-#include <fidl/fuchsia.ui.pointer/cpp/hlcpp_conversion.h>
-#include <fuchsia/ui/pointer/cpp/fidl.h>
-#include <lib/fidl/cpp/binding.h>
 #include <zircon/status.h>
 
 #include "src/lib/fxl/macros.h"
@@ -31,26 +28,23 @@ class TouchSource : public TouchSourceBase, public fidl::Server<fuchsia_ui_point
 
   // |fidl::Server<fuchsia_ui_pointer::TouchSource>|
   void Watch(WatchRequest& request, WatchCompleter::Sync& completer) override {
-    std::vector<fuchsia_ui_pointer::TouchResponse>& responses = request.responses();
     TouchSourceBase::WatchBase(
-        fidl::NaturalToHLCPP(std::move(responses)),
+        std::move(request.responses()),
         [completer = completer.ToAsync()](std::vector<AugmentedTouchEvent> events) mutable {
           std::vector<fuchsia_ui_pointer::TouchEvent> out_events;
           out_events.reserve(events.size());
           for (auto& event : events) {
-            out_events.emplace_back(fidl::HLCPPToNatural(std::move(event.touch_event)));
+            out_events.emplace_back(std::move(event.touch_event));
           }
-          completer.Reply(std::move(out_events));
+          completer.Reply({{.events = std::move(out_events)}});
         });
   }
 
   // |fidl::Server<fuchsia_ui_pointer::TouchSource>|
   void UpdateResponse(UpdateResponseRequest& request,
                       UpdateResponseCompleter::Sync& completer) override {
-    fuchsia_ui_pointer::TouchInteractionId& stream = request.interaction();
-    fuchsia_ui_pointer::TouchResponse& response = request.response();
     TouchSourceBase::UpdateResponseBase(
-        fidl::NaturalToHLCPP(stream), fidl::NaturalToHLCPP(std::move(response)),
+        request.interaction(), std::move(request.response()),
         [completer = completer.ToAsync()]() mutable { completer.Reply(); });
   }
 

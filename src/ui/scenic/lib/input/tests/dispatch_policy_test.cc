@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointerinjector/cpp/fidl.h>
-#include <fidl/fuchsia.ui.views/cpp/hlcpp_conversion.h>
-#include <fuchsia/ui/pointer/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/syslog/cpp/macros.h>
@@ -51,29 +50,38 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
 
   void SetUp() override {
     ::testing::Test::SetUp();
-    root_vrp_ = scenic::ViewRefPair::New();
-    client1_vrp_ = scenic::ViewRefPair::New();
-    client2_vrp_ = scenic::ViewRefPair::New();
-    client3_vrp_ = scenic::ViewRefPair::New();
-    client4_vrp_ = scenic::ViewRefPair::New();
+    root_vrp_ = scenic::cpp::ViewRefPair::New();
+    client1_vrp_ = scenic::cpp::ViewRefPair::New();
+    client2_vrp_ = scenic::cpp::ViewRefPair::New();
+    client3_vrp_ = scenic::cpp::ViewRefPair::New();
+    client4_vrp_ = scenic::cpp::ViewRefPair::New();
 
-    client1_ptr_.set_error_handler([](auto) { FAIL() << "Client1's channel closed"; });
-    client2_ptr_.set_error_handler([](auto) { FAIL() << "Client2's channel closed"; });
-    client3_ptr_.set_error_handler([](auto) { FAIL() << "Client3's channel closed"; });
-    client4_ptr_.set_error_handler([](auto) { FAIL() << "Client4's channel closed"; });
+    auto [client1_client_end, client1_server_end] =
+        fidl::Endpoints<fuchsia_ui_pointer::TouchSource>::Create();
+    auto [client2_client_end, client2_server_end] =
+        fidl::Endpoints<fuchsia_ui_pointer::TouchSource>::Create();
+    auto [client3_client_end, client3_server_end] =
+        fidl::Endpoints<fuchsia_ui_pointer::TouchSource>::Create();
+    auto [client4_client_end, client4_server_end] =
+        fidl::Endpoints<fuchsia_ui_pointer::TouchSource>::Create();
 
-    input_system_.RegisterTouchSource(client1_ptr_.NewRequest(), Client1Koid());
-    input_system_.RegisterTouchSource(client2_ptr_.NewRequest(), Client2Koid());
-    input_system_.RegisterTouchSource(client3_ptr_.NewRequest(), Client3Koid());
-    input_system_.RegisterTouchSource(client4_ptr_.NewRequest(), Client4Koid());
+    client1_ptr_.Bind(std::move(client1_client_end), dispatcher(), &client1_event_handler_);
+    client2_ptr_.Bind(std::move(client2_client_end), dispatcher(), &client2_event_handler_);
+    client3_ptr_.Bind(std::move(client3_client_end), dispatcher(), &client3_event_handler_);
+    client4_ptr_.Bind(std::move(client4_client_end), dispatcher(), &client4_event_handler_);
+
+    input_system_.RegisterTouchSource(std::move(client1_server_end), Client1Koid());
+    input_system_.RegisterTouchSource(std::move(client2_server_end), Client2Koid());
+    input_system_.RegisterTouchSource(std::move(client3_server_end), Client3Koid());
+    input_system_.RegisterTouchSource(std::move(client4_server_end), Client4Koid());
 
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Registry>::Create();
     input_system_.BindPointerinjectorRegistry(std::move(server_end));
     registry_client_.Bind(std::move(client_end), dispatcher());
   }
 
-  void RegisterInjector(fuchsia::ui::views::ViewRef context_view_ref,
-                        fuchsia::ui::views::ViewRef target_view_ref,
+  void RegisterInjector(fuchsia_ui_views::ViewRef context_view_ref,
+                        fuchsia_ui_views::ViewRef target_view_ref,
                         fuchsia_ui_pointerinjector::DispatchPolicy dispatch_policy,
                         fuchsia_ui_pointerinjector::DeviceType type) {
     fuchsia_ui_pointerinjector::Config config;
@@ -93,10 +101,8 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
       });
       config.viewport(std::move(viewport));
     }
-    config.context(
-        fuchsia_ui_pointerinjector::Context::WithView(fidl::HLCPPToNatural(context_view_ref)));
-    config.target(
-        fuchsia_ui_pointerinjector::Target::WithView(fidl::HLCPPToNatural(target_view_ref)));
+    config.context(fuchsia_ui_pointerinjector::Context::WithView(std::move(context_view_ref)));
+    config.target(fuchsia_ui_pointerinjector::Target::WithView(std::move(target_view_ref)));
 
     auto [injector_client_end, injector_server_end] =
         fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
@@ -139,11 +145,19 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
     return snapshot;
   }
 
-  fuchsia::ui::views::ViewRef RootViewRef() { return fidl::Clone(root_vrp_.view_ref); }
-  fuchsia::ui::views::ViewRef Client1ViewRef() { return fidl::Clone(client1_vrp_.view_ref); }
-  fuchsia::ui::views::ViewRef Client2ViewRef() { return fidl::Clone(client2_vrp_.view_ref); }
-  fuchsia::ui::views::ViewRef Client3ViewRef() { return fidl::Clone(client3_vrp_.view_ref); }
-  fuchsia::ui::views::ViewRef Client4ViewRef() { return fidl::Clone(client4_vrp_.view_ref); }
+  fuchsia_ui_views::ViewRef RootViewRef() { return scenic::cpp::CloneViewRef(root_vrp_.view_ref); }
+  fuchsia_ui_views::ViewRef Client1ViewRef() {
+    return scenic::cpp::CloneViewRef(client1_vrp_.view_ref);
+  }
+  fuchsia_ui_views::ViewRef Client2ViewRef() {
+    return scenic::cpp::CloneViewRef(client2_vrp_.view_ref);
+  }
+  fuchsia_ui_views::ViewRef Client3ViewRef() {
+    return scenic::cpp::CloneViewRef(client3_vrp_.view_ref);
+  }
+  fuchsia_ui_views::ViewRef Client4ViewRef() {
+    return scenic::cpp::CloneViewRef(client4_vrp_.view_ref);
+  }
 
   zx_koid_t RootKoid() { return utils::ExtractKoid(root_vrp_.view_ref); }
   zx_koid_t Client1Koid() { return utils::ExtractKoid(client1_vrp_.view_ref); }
@@ -166,21 +180,36 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
     void on_fidl_error(fidl::UnbindInfo error) override { error_fired = true; }
   };
 
+  class ClientEventHandler : public fidl::AsyncEventHandler<fuchsia_ui_pointer::TouchSource> {
+   public:
+    explicit ClientEventHandler(std::string name) : name_(std::move(name)) {}
+    void on_fidl_error(fidl::UnbindInfo info) override {
+      FAIL() << name_ << " closed unexpectedly: " << info.FormatDescription();
+    }
+
+   private:
+    std::string name_;
+  };
+
   scenic_impl::input::InputSystem input_system_;
   fidl::Client<fuchsia_ui_pointerinjector::Registry> registry_client_;
   DeviceEventHandler device_event_handler_;
+  ClientEventHandler client1_event_handler_{"Client1"};
+  ClientEventHandler client2_event_handler_{"Client2"};
+  ClientEventHandler client3_event_handler_{"Client3"};
+  ClientEventHandler client4_event_handler_{"Client4"};
   fidl::Client<fuchsia_ui_pointerinjector::Device> injector_;
-  fuchsia::ui::pointer::TouchSourcePtr client1_ptr_;
-  fuchsia::ui::pointer::TouchSourcePtr client2_ptr_;
-  fuchsia::ui::pointer::TouchSourcePtr client3_ptr_;
-  fuchsia::ui::pointer::TouchSourcePtr client4_ptr_;
+  fidl::Client<fuchsia_ui_pointer::TouchSource> client1_ptr_;
+  fidl::Client<fuchsia_ui_pointer::TouchSource> client2_ptr_;
+  fidl::Client<fuchsia_ui_pointer::TouchSource> client3_ptr_;
+  fidl::Client<fuchsia_ui_pointer::TouchSource> client4_ptr_;
 
  private:
-  scenic::ViewRefPair root_vrp_;
-  scenic::ViewRefPair client1_vrp_;
-  scenic::ViewRefPair client2_vrp_;
-  scenic::ViewRefPair client3_vrp_;
-  scenic::ViewRefPair client4_vrp_;
+  scenic::cpp::ViewRefPair root_vrp_;
+  scenic::cpp::ViewRefPair client1_vrp_;
+  scenic::cpp::ViewRefPair client2_vrp_;
+  scenic::cpp::ViewRefPair client3_vrp_;
+  scenic::cpp::ViewRefPair client4_vrp_;
 };
 
 class DispatchPolicyTestP : public DispatchPolicyTest, public testing::WithParamInterface<bool> {
@@ -235,19 +264,29 @@ TEST_P(DispatchPolicyTestP, ExclusiveMode_ShouldDeliverTo_OnlyTarget) {
   }
 
   {
-    std::vector<fuchsia::ui::pointer::TouchEvent> events;
-    client2_ptr_->Watch({}, [&events](auto in_events) { events = std::move(in_events); });
+    std::vector<fuchsia_ui_pointer::TouchEvent> events;
+    client2_ptr_->Watch({{.responses = {}}})
+        .Then([&events](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          events = std::move(result->events());
+        });
     RunLoopUntilIdle();
     EXPECT_EQ(events.size(), 3u);
   }
 
   {
     bool client1_callback_fired = false;
-    client1_ptr_->Watch({}, [&client1_callback_fired](auto) { client1_callback_fired = true; });
+    client1_ptr_->Watch({{.responses = {}}}).Then([&client1_callback_fired](auto&) {
+      client1_callback_fired = true;
+    });
     bool client3_callback_fired = false;
-    client3_ptr_->Watch({}, [&client3_callback_fired](auto) { client3_callback_fired = true; });
+    client3_ptr_->Watch({{.responses = {}}}).Then([&client3_callback_fired](auto&) {
+      client3_callback_fired = true;
+    });
     bool client4_callback_fired = false;
-    client4_ptr_->Watch({}, [&client4_callback_fired](auto) { client4_callback_fired = true; });
+    client4_ptr_->Watch({{.responses = {}}}).Then([&client4_callback_fired](auto&) {
+      client4_callback_fired = true;
+    });
 
     RunLoopUntilIdle();
     EXPECT_FALSE(client1_callback_fired);
@@ -271,19 +310,29 @@ TEST_P(DispatchPolicyTestP, TopHitMode_OnLeafTarget_ShouldDeliverTo_OnlyTarget) 
   }
 
   {  // Target should receive events.
-    std::vector<fuchsia::ui::pointer::TouchEvent> events;
-    client3_ptr_->Watch({}, [&events](auto in_events) { events = std::move(in_events); });
+    std::vector<fuchsia_ui_pointer::TouchEvent> events;
+    client3_ptr_->Watch({{.responses = {}}})
+        .Then([&events](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          events = std::move(result->events());
+        });
     RunLoopUntilIdle();
     EXPECT_EQ(events.size(), 3u);
   }
 
   {  // No other client should receive any events.
     bool client1_callback_fired = false;
-    client1_ptr_->Watch({}, [&client1_callback_fired](auto) { client1_callback_fired = true; });
+    client1_ptr_->Watch({{.responses = {}}}).Then([&client1_callback_fired](auto&) {
+      client1_callback_fired = true;
+    });
     bool client2_callback_fired = false;
-    client2_ptr_->Watch({}, [&client2_callback_fired](auto) { client2_callback_fired = true; });
+    client2_ptr_->Watch({{.responses = {}}}).Then([&client2_callback_fired](auto&) {
+      client2_callback_fired = true;
+    });
     bool client4_callback_fired = false;
-    client4_ptr_->Watch({}, [&client4_callback_fired](auto) { client4_callback_fired = true; });
+    client4_ptr_->Watch({{.responses = {}}}).Then([&client4_callback_fired](auto&) {
+      client4_callback_fired = true;
+    });
 
     RunLoopUntilIdle();
     EXPECT_FALSE(client1_callback_fired);
@@ -308,23 +357,35 @@ TEST_P(DispatchPolicyTestP,
   }
 
   {  // Top hit should receive events.
-    std::vector<fuchsia::ui::pointer::TouchEvent> events;
-    client4_ptr_->Watch({}, [&events](auto in_events) { events = std::move(in_events); });
+    std::vector<fuchsia_ui_pointer::TouchEvent> events;
+    client4_ptr_->Watch({{.responses = {}}})
+        .Then([&events](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          events = std::move(result->events());
+        });
     RunLoopUntilIdle();
     EXPECT_EQ(events.size(), 3u);
   }
   {  // Target should receive events, since it's the only ancestor of top hit.
-    std::vector<fuchsia::ui::pointer::TouchEvent> events;
-    client2_ptr_->Watch({}, [&events](auto in_events) { events = std::move(in_events); });
+    std::vector<fuchsia_ui_pointer::TouchEvent> events;
+    client2_ptr_->Watch({{.responses = {}}})
+        .Then([&events](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          events = std::move(result->events());
+        });
     RunLoopUntilIdle();
     EXPECT_EQ(events.size(), 3u);
   }
 
   {  // No other client should receive any events.
     bool client1_callback_fired = false;
-    client1_ptr_->Watch({}, [&client1_callback_fired](auto) { client1_callback_fired = true; });
+    client1_ptr_->Watch({{.responses = {}}}).Then([&client1_callback_fired](auto&) {
+      client1_callback_fired = true;
+    });
     bool client3_callback_fired = false;
-    client3_ptr_->Watch({}, [&client3_callback_fired](auto) { client3_callback_fired = true; });
+    client3_ptr_->Watch({{.responses = {}}}).Then([&client3_callback_fired](auto&) {
+      client3_callback_fired = true;
+    });
 
     RunLoopUntilIdle();
     EXPECT_FALSE(client1_callback_fired);

@@ -5,9 +5,10 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_TOUCH_SYSTEM_H_
 #define SRC_UI_SCENIC_LIB_INPUT_TOUCH_SYSTEM_H_
 
+#include <fidl/fuchsia.ui.pointer.augment/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
-#include <fuchsia/ui/pointer/augment/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <lib/sys/cpp/component_context.h>
 
 #include <map>
@@ -30,13 +31,13 @@ namespace scenic_impl::input {
 //
 // Thread-unsafe.  All methods are expected to be called from the same thread (the "input thread").
 // The only exception is that `SnapshotHolder` can be updated from the main thread.
-class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
+class TouchSystem : public fidl::Server<fuchsia_ui_pointer_augment::LocalHit> {
  public:
   explicit TouchSystem(async_dispatcher_t* input_dispatcher, HitTester& hit_tester,
                        inspect::Node& parent_node);
   ~TouchSystem() = default;
 
-  void Bind(fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request);
+  void Bind(fidl::ServerEnd<fuchsia_ui_pointer_augment::LocalHit> server_end);
   void BindA11yPointerEventRegistry(
       fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
 
@@ -45,10 +46,6 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
     return a11y_pointer_event_registry_->accessibility_pointer_event_listener();
   }
 
-  void RegisterTouchSource(
-      fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource> touch_source_request,
-      zx_koid_t client_view_ref_koid);
-
   void RegisterTouchSource(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source_server_end,
                            zx_koid_t client_view_ref_koid);
 
@@ -56,9 +53,8 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
       fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2> touch_source_server_end,
       zx_koid_t client_view_ref_koid);
 
-  // |fuchsia::ui::pointer::augment::LocalHit|
-  void Upgrade(fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSource> original,
-               fuchsia::ui::pointer::augment::LocalHit::UpgradeCallback callback) override;
+  // |fidl::Server<fuchsia_ui_pointer_augment::LocalHit>|
+  void Upgrade(UpgradeRequest& request, UpgradeCompleter::Sync& completer) override;
 
   // For tests.
   // TODO(https://fxbug.dev/42152433): Remove when integration tests are properly separated out.
@@ -79,7 +75,7 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
   // Finds the ViewRef koid registered with the other side of the |original| channel and returns it.
   // Returns ZX_KOID_INVALID if the related channel isn't found.
   zx_koid_t FindViewRefKoidOfRelatedChannel(
-      const fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSource>& original) const;
+      const fidl::ClientEnd<fuchsia_ui_pointer::TouchSource>& original) const;
 
   fuchsia::ui::input::accessibility::PointerEvent CreateAccessibilityEvent(
       const view_tree::Snapshot& snapshot, const InternalTouchEvent& event);
@@ -119,7 +115,7 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
 
   /// FIDL server implementations.
   std::optional<A11yPointerEventRegistry> a11y_pointer_event_registry_;
-  fidl::BindingSet<fuchsia::ui::pointer::augment::LocalHit> local_hit_upgrade_registry_;
+  fidl::ServerBindingGroup<fuchsia_ui_pointer_augment::LocalHit> local_hit_upgrade_registry_;
 
   //// Gesture disambiguation state
   // Whenever a new touch event stream is started (by the injection of an ADD event) we create a

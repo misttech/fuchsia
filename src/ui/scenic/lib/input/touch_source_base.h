@@ -5,7 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_TOUCH_SOURCE_BASE_H_
 #define SRC_UI_SCENIC_LIB_INPUT_TOUCH_SOURCE_BASE_H_
 
-#include <fuchsia/ui/pointer/cpp/fidl.h>
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <lib/fit/function.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <zircon/status.h>
@@ -22,7 +22,7 @@
 
 namespace scenic_impl::input {
 
-// Base class for implementations of fuchsia.ui.pointer.TouchSource and its augmentations.
+// Base class for implementations of fuchsia_ui_pointer::TouchSource and its augmentations.
 class TouchSourceBase : public GestureContender {
  public:
   ~TouchSourceBase() override = default;
@@ -39,20 +39,20 @@ class TouchSourceBase : public GestureContender {
 
   zx_koid_t channel_koid() const override { return channel_koid_; }
 
-  static fuchsia::ui::pointer::EventPhase ConvertToEventPhase(Phase phase);
-  static fuchsia::ui::pointer::TouchEvent NewTouchEvent(StreamId stream_id,
-                                                        const InternalTouchEvent& event);
-  static void AddInteractionResultsToEvent(fuchsia::ui::pointer::TouchEvent& event,
+  static fuchsia_ui_pointer::EventPhase ConvertToEventPhase(Phase phase);
+  static fuchsia_ui_pointer::TouchEvent NewTouchEvent(StreamId stream_id,
+                                                      const InternalTouchEvent& event);
+  static void AddInteractionResultsToEvent(fuchsia_ui_pointer::TouchEvent& event,
                                            StreamId stream_id, uint32_t device_id,
                                            uint32_t pointer_id, bool awarded_win);
-  static fuchsia::ui::pointer::TouchEvent NewEndEvent(StreamId stream_id, uint32_t device_id,
-                                                      uint32_t pointer_id, bool awarded_win);
-  static void AddViewParametersToEvent(fuchsia::ui::pointer::TouchEvent& event,
+  static fuchsia_ui_pointer::TouchEvent NewEndEvent(StreamId stream_id, uint32_t device_id,
+                                                    uint32_t pointer_id, bool awarded_win);
+  static void AddViewParametersToEvent(fuchsia_ui_pointer::TouchEvent& event,
                                        const Viewport& viewport,
                                        view_tree::BoundingBox view_bounds);
 
  protected:
-  // Augmentation data for f.u.p.augment.TouchEventWithLocalHit.
+  // Augmentation data for fuchsia_ui_pointer_augment::TouchEventWithLocalHit.
   struct LocalHit {
     zx_koid_t local_viewref_koid;
     std::array<float, 2> local_point;
@@ -61,7 +61,7 @@ class TouchSourceBase : public GestureContender {
   // Struct for holding the touch event and any potential augmentations.
   struct AugmentedTouchEvent {
     // Base event.
-    fuchsia::ui::pointer::TouchEvent touch_event;
+    fuchsia_ui_pointer::TouchEvent touch_event;
 
     // Possible augmentation data.
     std::optional<LocalHit> local_hit;
@@ -72,11 +72,11 @@ class TouchSourceBase : public GestureContender {
                   fit::function<void(StreamId, const std::vector<GestureResponse>&)> respond,
                   GestureContenderInspector& inspector);
 
-  void WatchBase(std::vector<fuchsia::ui::pointer::TouchResponse> responses,
+  void WatchBase(std::vector<fuchsia_ui_pointer::TouchResponse> responses,
                  fit::function<void(std::vector<AugmentedTouchEvent>)> callback);
 
-  void UpdateResponseBase(fuchsia::ui::pointer::TouchInteractionId stream,
-                          fuchsia::ui::pointer::TouchResponse response,
+  void UpdateResponseBase(const fuchsia_ui_pointer::TouchInteractionId& stream,
+                          fuchsia_ui_pointer::TouchResponse response,
                           fit::function<void()> callback);
 
   // Pushes an event to be sent to the client. Default implementation queues the event for V1
@@ -124,11 +124,11 @@ class TouchSourceBase : public GestureContender {
   // Checks that the input is valid for the current state. If not valid it returns the error string
   // to print and the epitaph to send on the channel when closing.
   static zx_status_t ValidateResponses(
-      const std::vector<fuchsia::ui::pointer::TouchResponse>& responses,
+      const std::vector<fuchsia_ui_pointer::TouchResponse>& responses,
       const std::vector<ReturnTicket>& last_messages, bool have_pending_callback);
   static zx_status_t ValidateUpdateResponse(
-      const fuchsia::ui::pointer::TouchInteractionId& stream_identifier,
-      const fuchsia::ui::pointer::TouchResponse& response,
+      const fuchsia_ui_pointer::TouchInteractionId& stream_identifier,
+      const fuchsia_ui_pointer::TouchResponse& response,
       const std::unordered_map<StreamId, StreamData>& ongoing_streams);
 
   bool is_first_event_ = true;
@@ -136,7 +136,7 @@ class TouchSourceBase : public GestureContender {
   view_tree::BoundingBox current_view_bounds_;
 
   // Events waiting to be sent to client. Sent in batches of up to
-  // fuchsia::ui::pointer::TOUCH_MAX_EVENT events on each call to Watch().
+  // fuchsia_ui_pointer::kTouchMaxEvent events on each call to Watch().
   std::queue<PendingEvent> pending_events_;
   // When a vector of events is sent out in response to a Watch() call, the next Watch() call must
   // contain responses matching the previous set of events. |return_tickets_| tracks the expected

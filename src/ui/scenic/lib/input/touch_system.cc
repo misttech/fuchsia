@@ -4,8 +4,8 @@
 
 #include "src/ui/scenic/lib/input/touch_system.h"
 
+#include <fidl/fuchsia.ui.pointer.augment/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
-#include <fidl/fuchsia.ui.pointer/cpp/hlcpp_conversion.h>
 #include <fuchsia/ui/input/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
@@ -131,9 +131,10 @@ TouchSystem::TouchSystem(async_dispatcher_t* input_dispatcher, HitTester& hit_te
       });
 }
 
-void TouchSystem::Bind(fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request) {
+void TouchSystem::Bind(fidl::ServerEnd<fuchsia_ui_pointer_augment::LocalHit> server_end) {
   utils::CheckIsOnInputThread();
-  local_hit_upgrade_registry_.AddBinding(this, std::move(request));
+  local_hit_upgrade_registry_.AddBinding(input_dispatcher_, std::move(server_end), this,
+                                         fidl::kIgnoreBindingClosure);
 }
 
 void TouchSystem::BindA11yPointerEventRegistry(
@@ -143,7 +144,7 @@ void TouchSystem::BindA11yPointerEventRegistry(
 }
 
 zx_koid_t TouchSystem::FindViewRefKoidOfRelatedChannel(
-    const fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSource>& original) const {
+    const fidl::ClientEnd<fuchsia_ui_pointer::TouchSource>& original) const {
   const zx_koid_t related_koid = fsl::GetRelatedKoid(original.channel().get());
   const auto it = std::find_if(
       contenders_.begin(), contenders_.end(),
@@ -151,17 +152,21 @@ zx_koid_t TouchSystem::FindViewRefKoidOfRelatedChannel(
   return it == contenders_.end() ? ZX_KOID_INVALID : it->second->view_ref_koid_;
 }
 
-void TouchSystem::Upgrade(fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSource> original,
-                          fuchsia::ui::pointer::augment::LocalHit::UpgradeCallback callback) {
+void TouchSystem::Upgrade(UpgradeRequest& request, UpgradeCompleter::Sync& completer) {
   // TODO(https://fxbug.dev/42165040): This currently requires the client to wait until the
   // TouchSource has been hooked up before making the Upgrade() call. This is not a great user
   // experience. Change this so we cache the channel if it arrives too early.
+  auto original = std::move(request.original());
+
+  auto reply_error = [&completer](fidl::ClientEnd<fuchsia_ui_pointer::TouchSource> original) {
+    completer.Reply({{.augmented = {},
+                      .error = std::make_unique<fuchsia_ui_pointer_augment::ErrorForLocalHit>(
+                          fuchsia_ui_pointer_augment::ErrorReason::kDenied, std::move(original))}});
+  };
+
   const zx_koid_t view_ref_koid = FindViewRefKoidOfRelatedChannel(original);
   if (view_ref_koid == ZX_KOID_INVALID) {
-    auto error = fuchsia::ui::pointer::augment::ErrorForLocalHit::New();
-    error->error_reason = fuchsia::ui::pointer::augment::ErrorReason::DENIED;
-    error->original = std::move(original);
-    callback({}, std::move(error));
+    reply_error(std::move(original));
     return;
   }
 
@@ -170,12 +175,19 @@ void TouchSystem::Upgrade(fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSourc
 
   // Create the new channel contender.
   const ContenderId contender_id = next_contender_id_++;
-  fidl::InterfaceHandle<fuchsia::ui::pointer::augment::TouchSourceWithLocalHit> handle;
+  zx::result endpoints =
+      fidl::CreateEndpoints<fuchsia_ui_pointer_augment::TouchSourceWithLocalHit>();
+  if (!endpoints.is_ok()) {
+    FX_LOGS(ERROR) << "Failed to create endpoints for TouchSourceWithLocalHit";
+    reply_error(std::move(original));
+    return;
+  }
+
   {
     const auto [_, success] = contenders_.emplace(
         contender_id,
         std::make_unique<TouchSourceWithLocalHit>(
-            view_ref_koid, handle.NewRequest(),
+            view_ref_koid, std::move(endpoints->server),
             /*respond*/
             [this, contender_id](StreamId stream_id,
                                  const std::vector<GestureResponse>& responses) {
@@ -212,7 +224,7 @@ void TouchSystem::Upgrade(fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSourc
   }
 
   // Return the new channel.
-  callback(std::move(handle), nullptr);
+  completer.Reply({{.augmented = std::move(endpoints->client), .error = nullptr}});
 }
 
 fuchsia::ui::input::accessibility::PointerEvent TouchSystem::CreateAccessibilityEvent(
@@ -236,12 +248,6 @@ fuchsia::ui::input::accessibility::PointerEvent TouchSystem::CreateAccessibility
   const glm::vec2 ndc = GetViewportNDCPoint(event);
 
   return BuildAccessibilityPointerEvent(event, ndc, top_hit_view_local, view_ref_koid);
-}
-
-void TouchSystem::RegisterTouchSource(
-    fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource> touch_source_request,
-    zx_koid_t client_view_ref_koid) {
-  RegisterTouchSource(fidl::HLCPPToNatural(std::move(touch_source_request)), client_view_ref_koid);
 }
 
 void TouchSystem::RegisterTouchSource(

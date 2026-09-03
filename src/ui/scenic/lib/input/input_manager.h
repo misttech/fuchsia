@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_INPUT_MANAGER_H_
 #define SRC_UI_SCENIC_LIB_INPUT_INPUT_MANAGER_H_
 
+#include <fidl/fuchsia.ui.pointer.augment/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/zx/channel.h>
@@ -83,7 +84,7 @@ class InputManager {
 #else
   void BindPointerinjectorRegistry(zx::channel channel);
 #endif
-  void BindLocalHit(fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request);
+  void BindLocalHit(fidl::ServerEnd<fuchsia_ui_pointer_augment::LocalHit> server_end);
   void BindA11yPointerEventRegistry(
       fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
 

@@ -4,6 +4,7 @@
 
 #include "src/ui/scenic/lib/input/touch_source_with_local_hit.h"
 
+#include <lib/async/default.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/status.h>
 #include <zircon/types.h>
@@ -14,59 +15,52 @@ namespace scenic_impl::input {
 
 TouchSourceWithLocalHit::TouchSourceWithLocalHit(
     zx_koid_t view_ref_koid,
-    fidl::InterfaceRequest<fuchsia::ui::pointer::augment::TouchSourceWithLocalHit> request,
+    fidl::ServerEnd<fuchsia_ui_pointer_augment::TouchSourceWithLocalHit> server_end,
     fit::function<void(StreamId, const std::vector<GestureResponse>&)> respond,
     fit::function<void()> error_handler,
     fit::function<std::pair<zx_koid_t, std::array<float, 2>>(const view_tree::Snapshot&,
                                                              const InternalTouchEvent&)>
         get_local_hit,
     GestureContenderInspector& inspector)
-    : TouchSourceBase(fsl::GetKoid(request.channel().get()), view_ref_koid, std::move(respond),
+    : TouchSourceBase(fsl::GetKoid(server_end.channel().get()), view_ref_koid, std::move(respond),
                       inspector),
-      binding_(this, std::move(request)),
-      error_handler_(std::move(error_handler)),
-      get_local_hit_(std::move(get_local_hit)) {
-  binding_.set_error_handler([this](zx_status_t status) {
-    if (status != ZX_OK && status != ZX_ERR_PEER_CLOSED) {
-      FX_LOGS(ERROR) << "TouchSourceWithLocalHit fidl channel closed: "
-                     << zx_status_get_string(status);
-    } else {
-      FX_LOGS(INFO) << "TouchSourceWithLocalHit fidl channel closed: "
-                    << zx_status_get_string(status);
-    }
-    error_handler_();
-  });
-}
+      binding_(async_get_default_dispatcher(), std::move(server_end), this,
+               [error_handler = std::move(error_handler)](fidl::UnbindInfo info) {
+                 if (info.status() != ZX_OK && info.status() != ZX_ERR_PEER_CLOSED) {
+                   FX_LOGS(ERROR) << "TouchSourceWithLocalHit fidl channel closed: "
+                                  << info.FormatDescription();
+                 } else {
+                   FX_LOGS(INFO) << "TouchSourceWithLocalHit fidl channel closed: "
+                                 << info.FormatDescription();
+                 }
+                 error_handler();
+               }),
+      get_local_hit_(std::move(get_local_hit)) {}
 
-void TouchSourceWithLocalHit::Watch(std::vector<fuchsia::ui::pointer::TouchResponse> responses,
-                                    WatchCallback callback) {
-  TouchSourceBase::WatchBase(std::move(responses), [callback = std::move(callback)](
-                                                       std::vector<AugmentedTouchEvent> events) {
-    std::vector<fuchsia::ui::pointer::augment::TouchEventWithLocalHit> out_events;
-    out_events.reserve(events.size());
-    for (auto& event : events) {
-      if (!event.local_hit.has_value()) {
-        if (!event.touch_event.has_interaction_result()) {
-          FX_LOGS(WARNING) << "Local hit not set!";  // "impossible" but still happens
+void TouchSourceWithLocalHit::Watch(WatchRequest& request, WatchCompleter::Sync& completer) {
+  TouchSourceBase::WatchBase(
+      std::move(request.responses()),
+      [completer = completer.ToAsync()](std::vector<AugmentedTouchEvent> events) mutable {
+        std::vector<fuchsia_ui_pointer_augment::TouchEventWithLocalHit> out_events;
+        out_events.reserve(events.size());
+        for (auto& event : events) {
+          if (!event.local_hit.has_value()) {
+            if (!event.touch_event.interaction_result().has_value()) {
+              FX_LOGS(WARNING) << "Local hit not set!";  // "impossible" but still happens
+            }
+            event.local_hit = {.local_viewref_koid = ZX_KOID_INVALID, .local_point = {0.f, 0.f}};
+          }
+
+          out_events.emplace_back(std::move(event.touch_event), event.local_hit->local_viewref_koid,
+                                  event.local_hit->local_point);
         }
-        event.local_hit = {.local_viewref_koid = ZX_KOID_INVALID, .local_point = {0.f, 0.f}};
-      }
-
-      out_events.emplace_back(fuchsia::ui::pointer::augment::TouchEventWithLocalHit{
-          .touch_event = std::move(event.touch_event),
-          .local_viewref_koid = event.local_hit->local_viewref_koid,
-          .local_point = event.local_hit->local_point,
+        completer.Reply({{.events = std::move(out_events)}});
       });
-    }
-    callback(std::move(out_events));
-  });
 }
 
 void TouchSourceWithLocalHit::CloseChannel(zx_status_t epitaph) {
   FX_LOGS(WARNING) << "Closing TouchSourceWithLocalHit due to " << zx_status_get_string(epitaph);
   binding_.Close(epitaph);
-  // NOTE: Triggers destruction of this object.
-  error_handler_();
 }
 
 void TouchSourceWithLocalHit::Augment(const view_tree::Snapshot& snapshot,

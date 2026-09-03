@@ -4,9 +4,6 @@
 
 #include "src/ui/scenic/lib/input/input_manager.h"
 
-#include <fidl/fuchsia.ui.pointer/cpp/hlcpp_conversion.h>
-#include <fidl/fuchsia.ui.views/cpp/hlcpp_conversion.h>
-#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/inspect/cpp/inspect.h>
 
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
@@ -54,7 +51,7 @@ void InputManager::RegisterViewRefFocused(fidl::ServerEnd<fuchsia_ui_views::View
 
 void InputManager::RegisterTouchSource(
     fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source, zx_koid_t view_ref_koid) {
-  input_.RegisterTouchSource(fidl::NaturalToHLCPP(std::move(touch_source)), view_ref_koid);
+  input_.RegisterTouchSource(std::move(touch_source), view_ref_koid);
 }
 
 void InputManager::RegisterTouchSourceV2(
@@ -64,7 +61,7 @@ void InputManager::RegisterTouchSourceV2(
 
 void InputManager::RegisterMouseSource(
     fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source, zx_koid_t view_ref_koid) {
-  input_.RegisterMouseSource(fidl::NaturalToHLCPP(std::move(mouse_source)), view_ref_koid);
+  input_.RegisterMouseSource(std::move(mouse_source), view_ref_koid);
 }
 
 void InputManager::RegisterMouseSourceV2(
@@ -117,9 +114,8 @@ void InputManager::BindPointerinjectorRegistry(zx::channel channel) {
 }
 #endif
 
-void InputManager::BindLocalHit(
-    fidl::InterfaceRequest<fuchsia::ui::pointer::augment::LocalHit> request) {
-  input_.BindLocalHit(std::move(request));
+void InputManager::BindLocalHit(fidl::ServerEnd<fuchsia_ui_pointer_augment::LocalHit> server_end) {
+  input_.BindLocalHit(std::move(server_end));
 }
 
 void InputManager::BindA11yPointerEventRegistry(

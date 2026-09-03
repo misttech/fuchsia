@@ -23,13 +23,13 @@ MouseSystem::MouseSystem(HitTester& hit_tester, RequestFocusFunc request_focus)
     : hit_tester_(hit_tester), request_focus_(std::move(request_focus)) {}
 
 void MouseSystem::RegisterMouseSource(
-    fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
+    fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source_server_end,
     zx_koid_t client_view_ref_koid) {
   TRACE_DURATION("input", "MouseSystem::RegisterMouseSource");
   utils::CheckIsOnInputThread();
   const auto [it, success] = mouse_sources_.emplace(
       client_view_ref_koid,
-      std::make_unique<MouseSource>(std::move(mouse_source_request),
+      std::make_unique<MouseSource>(std::move(mouse_source_server_end),
                                     /*error_handler*/ [this, client_view_ref_koid] {
                                       mouse_sources_.erase(client_view_ref_koid);
                                     }));
@@ -48,15 +48,6 @@ void MouseSystem::RegisterMouseSourceV2(
                                         mouse_sources_.erase(client_view_ref_koid);
                                       }));
   FX_DCHECK(success);
-}
-
-zx_koid_t MouseSystem::FindViewRefKoidOfRelatedChannel(
-    const fidl::InterfaceHandle<fuchsia::ui::pointer::MouseSource>& original) const {
-  const zx_koid_t related_koid = fsl::GetRelatedKoid(original.channel().get());
-  const auto it = std::find_if(
-      mouse_sources_.begin(), mouse_sources_.end(),
-      [related_koid](const auto& kv) { return kv.second->channel_koid() == related_koid; });
-  return it == mouse_sources_.end() ? ZX_KOID_INVALID : it->first;
 }
 
 void MouseSystem::SendEventToMouse(const view_tree::Snapshot& snapshot, zx_koid_t receiver,

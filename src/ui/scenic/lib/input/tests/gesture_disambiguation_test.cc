@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/syslog/cpp/macros.h>
@@ -19,11 +20,11 @@
 
 namespace input::test {
 
-using fup_EventPhase = fuchsia::ui::pointer::EventPhase;
-using fup_TouchEvent = fuchsia::ui::pointer::TouchEvent;
-using fup_TouchResponse = fuchsia::ui::pointer::TouchResponse;
-using fup_TouchResponseType = fuchsia::ui::pointer::TouchResponseType;
-using fup_TouchInteractionStatus = fuchsia::ui::pointer::TouchInteractionStatus;
+using fup_EventPhase = fuchsia_ui_pointer::EventPhase;
+using fup_TouchEvent = fuchsia_ui_pointer::TouchEvent;
+using fup_TouchResponse = fuchsia_ui_pointer::TouchResponse;
+using fup_TouchResponseType = fuchsia_ui_pointer::TouchResponseType;
+using fup_TouchInteractionStatus = fuchsia_ui_pointer::TouchInteractionStatus;
 
 using scenic_impl::input::InternalTouchEvent;
 using scenic_impl::input::Phase;
@@ -58,7 +59,7 @@ InternalTouchEvent PointerEventTemplate(zx_koid_t target) {
 
 fup_TouchResponse MakeTouchResponse(fup_TouchResponseType response_type) {
   fup_TouchResponse response;
-  response.set_response_type(response_type);
+  response.response_type(response_type);
   return response;
 }
 
@@ -73,13 +74,16 @@ class GestureDisambiguationTest : public gtest::TestLoopFixture {
 
   void SetUp() override {
     ::testing::Test::SetUp();
-    client1_ptr_.set_error_handler([](auto) { FAIL() << "Client1's channel closed"; });
-    client2_ptr_.set_error_handler([](auto) { FAIL() << "Client2's channel closed"; });
+    auto endpoints1 = fidl::Endpoints<fuchsia_ui_pointer::TouchSource>::Create();
+    auto endpoints2 = fidl::Endpoints<fuchsia_ui_pointer::TouchSource>::Create();
+
+    client1_ptr_.Bind(std::move(endpoints1.client), dispatcher(), &client1_event_handler_);
+    client2_ptr_.Bind(std::move(endpoints2.client), dispatcher(), &client2_event_handler_);
 
     OnNewViewTreeSnapshot(NewSnapshot(
         /*hits*/ {}, /*hierarchy*/ {kContextKoid, kClient1Koid, kClient2Koid}));
-    touch_system_.RegisterTouchSource(client1_ptr_.NewRequest(), kClient1Koid);
-    touch_system_.RegisterTouchSource(client2_ptr_.NewRequest(), kClient2Koid);
+    touch_system_.RegisterTouchSource(std::move(endpoints1.server), kClient1Koid);
+    touch_system_.RegisterTouchSource(std::move(endpoints2.server), kClient2Koid);
   }
 
   void OnNewViewTreeSnapshot(std::shared_ptr<const view_tree::Snapshot> snapshot) {
@@ -122,44 +126,67 @@ class GestureDisambiguationTest : public gtest::TestLoopFixture {
   uint64_t next_sequence_number_ = 1;
 
  protected:
+  class Client1EventHandler : public fidl::AsyncEventHandler<fuchsia_ui_pointer::TouchSource> {
+   public:
+    bool channel_closed = false;
+    void on_fidl_error(fidl::UnbindInfo info) override { channel_closed = true; }
+  };
+  class Client2EventHandler : public fidl::AsyncEventHandler<fuchsia_ui_pointer::TouchSource> {
+   public:
+    bool channel_closed = false;
+    void on_fidl_error(fidl::UnbindInfo info) override { channel_closed = true; }
+  };
+
+  Client1EventHandler client1_event_handler_;
+  Client2EventHandler client2_event_handler_;
+
   inspect::Node inspect_node_;
   std::shared_ptr<const view_tree::Snapshot> current_snapshot_;
   scenic_impl::input::HitTester hit_tester_;
   scenic_impl::input::TouchSystem touch_system_;
-  fuchsia::ui::pointer::TouchSourcePtr client1_ptr_;
-  fuchsia::ui::pointer::TouchSourcePtr client2_ptr_;
+  fidl::Client<fuchsia_ui_pointer::TouchSource> client1_ptr_;
+  fidl::Client<fuchsia_ui_pointer::TouchSource> client2_ptr_;
 };
 
 TEST_F(GestureDisambiguationTest, Watch_WithNoInjectedEvents_ShouldNeverReturn) {
   bool callback_triggered = false;
-  client1_ptr_->Watch({}, [&callback_triggered](auto) { callback_triggered = true; });
+  client1_ptr_->Watch({{.responses = {}}}).Then([&callback_triggered](auto& result) {
+    callback_triggered = result.is_ok();
+  });
 
   RunLoopUntilIdle();
   EXPECT_FALSE(callback_triggered);
 }
 
 TEST_F(GestureDisambiguationTest, IllegalOperation_ShouldCloseChannel) {
-  bool channel_closed = false;
-  client1_ptr_.set_error_handler([&channel_closed](auto...) { channel_closed = true; });
-
   // Illegal operation: calling Watch() twice without getting an event.
   bool callback_triggered = false;
-  client1_ptr_->Watch({}, [&callback_triggered](auto) { callback_triggered = true; });
-  client1_ptr_->Watch({}, [&callback_triggered](auto) { callback_triggered = true; });
+  client1_ptr_->Watch({{.responses = {}}}).Then([&callback_triggered](auto& result) {
+    callback_triggered = result.is_ok();
+  });
+  client1_ptr_->Watch({{.responses = {}}}).Then([&callback_triggered](auto& result) {
+    callback_triggered = result.is_ok();
+  });
   RunLoopUntilIdle();
-  EXPECT_TRUE(channel_closed);
+  EXPECT_TRUE(client1_event_handler_.channel_closed);
   EXPECT_FALSE(callback_triggered);
 }
 
 TEST_F(GestureDisambiguationTest, ExclusiveInjection_ShouldBeDeliveredOnlyToTarget_AndBeGranted) {
   std::vector<fup_TouchEvent> received_events1;
-  client1_ptr_->Watch({}, [&received_events1](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-  });
+  client1_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+      });
   std::vector<fup_TouchEvent> received_events2;
-  client2_ptr_->Watch({}, [&received_events2](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-  });
+  client2_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+      });
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_events1.empty());
@@ -169,8 +196,9 @@ TEST_F(GestureDisambiguationTest, ExclusiveInjection_ShouldBeDeliveredOnlyToTarg
                                           *current_snapshot_);
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 1u);
-  ASSERT_TRUE(received_events1[0].has_interaction_result());
-  EXPECT_EQ(received_events1[0].interaction_result().status, fup_TouchInteractionStatus::GRANTED);
+  ASSERT_TRUE(received_events1[0].interaction_result().has_value());
+  EXPECT_EQ(received_events1[0].interaction_result()->status(),
+            fup_TouchInteractionStatus::kGranted);
   EXPECT_TRUE(received_events2.empty());
 
   received_events1.clear();
@@ -178,21 +206,28 @@ TEST_F(GestureDisambiguationTest, ExclusiveInjection_ShouldBeDeliveredOnlyToTarg
                                           *current_snapshot_);
   RunLoopUntilIdle();
   ASSERT_EQ(received_events2.size(), 1u);
-  ASSERT_TRUE(received_events2[0].has_interaction_result());
-  EXPECT_EQ(received_events2[0].interaction_result().status, fup_TouchInteractionStatus::GRANTED);
+  ASSERT_TRUE(received_events2[0].interaction_result().has_value());
+  EXPECT_EQ(received_events2[0].interaction_result()->status(),
+            fup_TouchInteractionStatus::kGranted);
   EXPECT_TRUE(received_events1.empty());
 }
 
 TEST_F(GestureDisambiguationTest,
        InjectionThatHitsClientWithoutValidAncestors_ShouldBeDeliveredAndBeGranted) {
   std::vector<fup_TouchEvent> received_events1;
-  client1_ptr_->Watch({}, [&received_events1](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-  });
+  client1_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+      });
   std::vector<fup_TouchEvent> received_events2;
-  client2_ptr_->Watch({}, [&received_events2](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-  });
+  client2_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+      });
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_events1.empty());
@@ -205,8 +240,9 @@ TEST_F(GestureDisambiguationTest,
                                           *current_snapshot_);
   RunLoopUntilIdle();
   ASSERT_EQ(received_events1.size(), 1u);
-  ASSERT_TRUE(received_events1[0].has_interaction_result());
-  EXPECT_EQ(received_events1[0].interaction_result().status, fup_TouchInteractionStatus::GRANTED);
+  ASSERT_TRUE(received_events1[0].interaction_result().has_value());
+  EXPECT_EQ(received_events1[0].interaction_result()->status(),
+            fup_TouchInteractionStatus::kGranted);
   EXPECT_TRUE(received_events2.empty());
 
   OnNewViewTreeSnapshot(
@@ -216,20 +252,27 @@ TEST_F(GestureDisambiguationTest,
                                           *current_snapshot_);
   RunLoopUntilIdle();
   ASSERT_EQ(received_events2.size(), 1u);
-  ASSERT_TRUE(received_events2[0].has_interaction_result());
-  EXPECT_EQ(received_events2[0].interaction_result().status, fup_TouchInteractionStatus::GRANTED);
+  ASSERT_TRUE(received_events2[0].interaction_result().has_value());
+  EXPECT_EQ(received_events2[0].interaction_result()->status(),
+            fup_TouchInteractionStatus::kGranted);
 }
 
 TEST_F(GestureDisambiguationTest,
        InjectionThatHitsClientWithValidAncestor_ShouldBeDeliveredToBoth) {
   std::vector<fup_TouchEvent> received_events1;
-  client1_ptr_->Watch({}, [&received_events1](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-  });
+  client1_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+      });
   std::vector<fup_TouchEvent> received_events2;
-  client2_ptr_->Watch({}, [&received_events2](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-  });
+  client2_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+      });
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_events1.empty());
@@ -242,23 +285,29 @@ TEST_F(GestureDisambiguationTest,
 
   RunLoopUntilIdle();
   ASSERT_EQ(received_events1.size(), 1u);
-  EXPECT_FALSE(received_events1.front().has_interaction_result());
+  EXPECT_FALSE(received_events1.front().interaction_result().has_value());
   ASSERT_EQ(received_events2.size(), 1u);
-  EXPECT_FALSE(received_events2.front().has_interaction_result());
+  EXPECT_FALSE(received_events2.front().interaction_result().has_value());
 
   {
     std::vector<fup_TouchResponse> responses;
-    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::MAYBE));
-    client1_ptr_->Watch(std::move(responses), [&received_events1](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-    });
+    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::kMaybe));
+    client1_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+        });
   }
   {
     std::vector<fup_TouchResponse> responses;
-    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::MAYBE));
-    client2_ptr_->Watch(std::move(responses), [&received_events2](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-    });
+    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::kMaybe));
+    client2_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+        });
   }
 
   // No one should be granted the win yet, so expect no more events.
@@ -269,13 +318,19 @@ TEST_F(GestureDisambiguationTest,
 
 TEST_F(GestureDisambiguationTest, Contest_ShouldNotIncludeContext) {
   std::vector<fup_TouchEvent> received_events1;
-  client1_ptr_->Watch({}, [&received_events1](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-  });
+  client1_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+      });
   std::vector<fup_TouchEvent> received_events2;
-  client2_ptr_->Watch({}, [&received_events2](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-  });
+  client2_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+      });
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_events1.empty());
@@ -295,13 +350,19 @@ TEST_F(GestureDisambiguationTest, Contest_ShouldNotIncludeContext) {
 
 TEST_F(GestureDisambiguationTest, EveryoneRespondsYesPrioritize_ShouldResolveToHighestPriority) {
   std::vector<fup_TouchEvent> received_events1;
-  client1_ptr_->Watch({}, [&received_events1](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-  });
+  client1_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+      });
   std::vector<fup_TouchEvent> received_events2;
-  client2_ptr_->Watch({}, [&received_events2](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-  });
+  client2_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+      });
 
   RunLoopUntilIdle();
   EXPECT_TRUE(received_events1.empty());
@@ -314,49 +375,63 @@ TEST_F(GestureDisambiguationTest, EveryoneRespondsYesPrioritize_ShouldResolveToH
 
   RunLoopUntilIdle();
   ASSERT_EQ(received_events1.size(), 1u);
-  EXPECT_FALSE(received_events1.front().has_interaction_result());
+  EXPECT_FALSE(received_events1.front().interaction_result().has_value());
   ASSERT_EQ(received_events2.size(), 1u);
-  EXPECT_FALSE(received_events2.front().has_interaction_result());
+  EXPECT_FALSE(received_events2.front().interaction_result().has_value());
 
   // Both try to claim the stream, but client1 has higher priority and should win.
   {
     std::vector<fup_TouchResponse> responses;
-    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::YES_PRIORITIZE));
-    client1_ptr_->Watch(std::move(responses), [&received_events1](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-    });
+    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::kYesPrioritize));
+    client1_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+        });
   }
   {
     std::vector<fup_TouchResponse> responses;
-    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::YES_PRIORITIZE));
-    client2_ptr_->Watch(std::move(responses), [&received_events2](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-    });
+    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::kYesPrioritize));
+    client2_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+        });
   }
 
   // Both should have received an event with a TouchInteractionStatus.
   RunLoopUntilIdle();
   ASSERT_EQ(received_events1.size(), 2u);
-  ASSERT_TRUE(received_events1[1].has_interaction_result());
-  EXPECT_EQ(received_events1[1].interaction_result().status, fup_TouchInteractionStatus::GRANTED);
+  ASSERT_TRUE(received_events1[1].interaction_result().has_value());
+  EXPECT_EQ(received_events1[1].interaction_result()->status(),
+            fup_TouchInteractionStatus::kGranted);
   ASSERT_EQ(received_events2.size(), 2u);
-  ASSERT_TRUE(received_events2[1].has_interaction_result());
-  EXPECT_EQ(received_events2[1].interaction_result().status, fup_TouchInteractionStatus::DENIED);
+  ASSERT_TRUE(received_events2[1].interaction_result().has_value());
+  EXPECT_EQ(received_events2[1].interaction_result()->status(),
+            fup_TouchInteractionStatus::kDenied);
 
   // Subsequent events should only go to the winner.
   {
     std::vector<fup_TouchResponse> responses;
     responses.emplace_back();
-    client1_ptr_->Watch(std::move(responses), [&received_events1](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-    });
+    client1_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+        });
   }
   {
     std::vector<fup_TouchResponse> responses;
     responses.emplace_back();
-    client2_ptr_->Watch(std::move(responses), [&received_events2](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-    });
+    client2_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+        });
   }
 
   auto event = PointerEventTemplate(kClient1Koid);
@@ -384,13 +459,19 @@ TEST_F(GestureDisambiguationTest, EveryonRespondsMaybe_ShouldResolveAtStreamEnd)
   }
 
   std::vector<fup_TouchEvent> received_events1;
-  client1_ptr_->Watch({}, [&received_events1](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-  });
+  client1_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+      });
   std::vector<fup_TouchEvent> received_events2;
-  client2_ptr_->Watch({}, [&received_events2](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-  });
+  client2_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+      });
 
   RunLoopUntilIdle();
   EXPECT_EQ(received_events1.size(), 3u);
@@ -401,28 +482,34 @@ TEST_F(GestureDisambiguationTest, EveryonRespondsMaybe_ShouldResolveAtStreamEnd)
   {
     std::vector<fup_TouchResponse> responses(received_events1.size());
     std::generate(responses.begin(), responses.end(),
-                  [] { return MakeTouchResponse(fup_TouchResponseType::MAYBE); });
-    client1_ptr_->Watch(std::move(responses), [&received_events1](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-    });
+                  [] { return MakeTouchResponse(fup_TouchResponseType::kMaybe); });
+    client1_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+        });
   }
   {
     std::vector<fup_TouchResponse> responses(received_events2.size());
     std::generate(responses.begin(), responses.end(),
-                  [] { return MakeTouchResponse(fup_TouchResponseType::MAYBE); });
-    client2_ptr_->Watch(std::move(responses), [&received_events2](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-    });
+                  [] { return MakeTouchResponse(fup_TouchResponseType::kMaybe); });
+    client2_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+        });
   }
 
   // Both should have received an event with a TouchInteractionStatus.
   RunLoopUntilIdle();
-  ASSERT_TRUE(received_events1.back().has_interaction_result());
-  EXPECT_EQ(received_events1.back().interaction_result().status,
-            fup_TouchInteractionStatus::DENIED);
-  ASSERT_TRUE(received_events2.back().has_interaction_result());
-  EXPECT_EQ(received_events2.back().interaction_result().status,
-            fup_TouchInteractionStatus::GRANTED);
+  ASSERT_TRUE(received_events1.back().interaction_result().has_value());
+  EXPECT_EQ(received_events1.back().interaction_result()->status(),
+            fup_TouchInteractionStatus::kDenied);
+  ASSERT_TRUE(received_events2.back().interaction_result().has_value());
+  EXPECT_EQ(received_events2.back().interaction_result()->status(),
+            fup_TouchInteractionStatus::kGranted);
 }
 
 TEST_F(GestureDisambiguationTest, MidStreamChannelClose_ShouldGrantStreamToCompetitor) {
@@ -433,45 +520,51 @@ TEST_F(GestureDisambiguationTest, MidStreamChannelClose_ShouldGrantStreamToCompe
 
   {
     std::vector<fup_TouchEvent> received_events;
-    client1_ptr_->Watch({}, [&received_events](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events));
-    });
+    client1_ptr_->Watch({{.responses = {}}})
+        .Then([&received_events](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events));
+        });
 
     RunLoopUntilIdle();
     EXPECT_EQ(received_events.size(), 1u);
   }
   {
     std::vector<fup_TouchEvent> received_events;
-    client2_ptr_->Watch({}, [&received_events](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events));
-    });
+    client2_ptr_->Watch({{.responses = {}}})
+        .Then([&received_events](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events));
+        });
     RunLoopUntilIdle();
     EXPECT_EQ(received_events.size(), 1u);
   }
 
   // Close client1's channel.
-  client1_ptr_.Unbind();
+  client1_ptr_ = {};
 
   {  // Observe client2 winning the contest.
     std::vector<fup_TouchEvent> received_events;
     std::vector<fup_TouchResponse> responses;
-    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::MAYBE));
-    client2_ptr_->Watch(std::move(responses), [&received_events](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events));
-    });
+    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::kMaybe));
+    client2_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([&received_events](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events));
+        });
 
     RunLoopUntilIdle();
     ASSERT_EQ(received_events.size(), 1u);
-    ASSERT_TRUE(received_events.front().has_interaction_result());
-    EXPECT_EQ(received_events.front().interaction_result().status,
-              fup_TouchInteractionStatus::GRANTED);
+    ASSERT_TRUE(received_events.front().interaction_result().has_value());
+    EXPECT_EQ(received_events.front().interaction_result()->status(),
+              fup_TouchInteractionStatus::kGranted);
   }
 }
 
 TEST_F(GestureDisambiguationTest, MidStreamChannelForcedClose_ShouldGrantStreamToCompetitor) {
-  bool channel_closed = false;
-  client1_ptr_.set_error_handler([&channel_closed](auto...) { channel_closed = true; });
-
   OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {kClient2Koid},
                                     /*hierarchy*/ {kContextKoid, kClient1Koid, kClient2Koid}));
   touch_system_.InjectTouchEventHitTested(PointerEventTemplate(kClient1Koid), kStream1Id,
@@ -479,43 +572,54 @@ TEST_F(GestureDisambiguationTest, MidStreamChannelForcedClose_ShouldGrantStreamT
 
   {
     std::vector<fup_TouchEvent> received_events;
-    client1_ptr_->Watch({}, [&received_events](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events));
-    });
+    client1_ptr_->Watch({{.responses = {}}})
+        .Then([&received_events](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events));
+        });
 
     RunLoopUntilIdle();
     EXPECT_EQ(received_events.size(), 1u);
   }
   {
     std::vector<fup_TouchEvent> received_events;
-    client2_ptr_->Watch({}, [&received_events](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events));
-    });
+    client2_ptr_->Watch({{.responses = {}}})
+        .Then([&received_events](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events));
+        });
     RunLoopUntilIdle();
     EXPECT_EQ(received_events.size(), 1u);
   }
 
   {  // Illegal operation: empty response vector after first call. Observe channel close.
-    EXPECT_FALSE(channel_closed);
+    EXPECT_FALSE(client1_event_handler_.channel_closed);
     bool callback_triggered = false;
-    client1_ptr_->Watch({}, [&callback_triggered](auto...) { callback_triggered = false; });
+    client1_ptr_->Watch({{.responses = {}}}).Then([&callback_triggered](auto& result) {
+      callback_triggered = result.is_ok();
+    });
     RunLoopUntilIdle();
-    EXPECT_TRUE(channel_closed);
+    EXPECT_TRUE(client1_event_handler_.channel_closed);
     EXPECT_FALSE(callback_triggered);
   }
 
   {  // Observe client2 winning the contest.
     std::vector<fup_TouchEvent> received_events;
     std::vector<fup_TouchResponse> responses;
-    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::MAYBE));
-    client2_ptr_->Watch(std::move(responses), [&received_events](auto events) {
-      std::move(events.begin(), events.end(), std::back_inserter(received_events));
-    });
+    responses.emplace_back(MakeTouchResponse(fup_TouchResponseType::kMaybe));
+    client2_ptr_->Watch({{.responses = std::move(responses)}})
+        .Then([&received_events](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+          ASSERT_TRUE(result.is_ok()) << result.error_value();
+          auto events = std::move(result->events());
+          std::move(events.begin(), events.end(), std::back_inserter(received_events));
+        });
     RunLoopUntilIdle();
     ASSERT_EQ(received_events.size(), 1u);
-    ASSERT_TRUE(received_events.front().has_interaction_result());
-    EXPECT_EQ(received_events.front().interaction_result().status,
-              fup_TouchInteractionStatus::GRANTED);
+    ASSERT_TRUE(received_events.front().interaction_result().has_value());
+    EXPECT_EQ(received_events.front().interaction_result()->status(),
+              fup_TouchInteractionStatus::kGranted);
   }
 }
 
@@ -533,12 +637,18 @@ TEST_F(GestureDisambiguationTest,
   std::vector<fup_TouchEvent> received_events1;
   std::vector<fup_TouchEvent> received_events2;
 
-  client1_ptr_->Watch({}, [&received_events1](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events1));
-  });
-  client2_ptr_->Watch({}, [&received_events2](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(received_events2));
-  });
+  client1_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+      });
+  client2_ptr_->Watch({{.responses = {}}})
+      .Then([&received_events2](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+      });
   RunLoopUntilIdle();
 
   ASSERT_EQ(received_events1.size(), 2u);
@@ -546,23 +656,26 @@ TEST_F(GestureDisambiguationTest,
 
   // Client 2 unbinds its channel. When contest is resolved for stream 1, Client 2's EndContest
   // will encounter unbind/error and trigger EraseContender, which synchronously resolves stream 2.
-  client2_ptr_.Unbind();
+  client2_ptr_ = {};
 
   std::vector<fup_TouchResponse> responses1;
-  responses1.emplace_back(MakeTouchResponse(fup_TouchResponseType::YES_PRIORITIZE));
-  responses1.emplace_back(MakeTouchResponse(fup_TouchResponseType::YES_PRIORITIZE));
+  responses1.emplace_back(MakeTouchResponse(fup_TouchResponseType::kYesPrioritize));
+  responses1.emplace_back(MakeTouchResponse(fup_TouchResponseType::kYesPrioritize));
 
   std::vector<fup_TouchEvent> win_events1;
-  client1_ptr_->Watch(std::move(responses1), [&win_events1](auto events) {
-    std::move(events.begin(), events.end(), std::back_inserter(win_events1));
-  });
+  client1_ptr_->Watch({{.responses = std::move(responses1)}})
+      .Then([&win_events1](fidl::Result<fuchsia_ui_pointer::TouchSource::Watch>& result) {
+        ASSERT_TRUE(result.is_ok()) << result.error_value();
+        auto events = std::move(result->events());
+        std::move(events.begin(), events.end(), std::back_inserter(win_events1));
+      });
   RunLoopUntilIdle();
 
   ASSERT_EQ(win_events1.size(), 2u);
-  ASSERT_TRUE(win_events1[0].has_interaction_result());
-  EXPECT_EQ(win_events1[0].interaction_result().status, fup_TouchInteractionStatus::GRANTED);
-  ASSERT_TRUE(win_events1[1].has_interaction_result());
-  EXPECT_EQ(win_events1[1].interaction_result().status, fup_TouchInteractionStatus::GRANTED);
+  ASSERT_TRUE(win_events1[0].interaction_result().has_value());
+  EXPECT_EQ(win_events1[0].interaction_result()->status(), fup_TouchInteractionStatus::kGranted);
+  ASSERT_TRUE(win_events1[1].interaction_result().has_value());
+  EXPECT_EQ(win_events1[1].interaction_result()->status(), fup_TouchInteractionStatus::kGranted);
 }
 
 }  // namespace input::test
