@@ -35,7 +35,6 @@ source_set("impl") {
   sources = [
     "channel.cc",
     "clock.cc",
-    "debug_ffi.cc",
     "driver.cc",
     "exceptions.cc",
     "futex.cc",

@@ -5,6 +5,7 @@
 # https://opensource.org/licenses/MIT
 
 import("//build/cpp/library_headers.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 import("params.gni")
 
 library_headers("headers") {
@@ -15,13 +16,23 @@ library_headers("headers") {
 static_library("persistent-debuglog") {
   public_deps = [ ":headers" ]
 
-  sources = [ "persistent-debuglog.cc" ]
+  sources = [
+    "persistent-debuglog.cc",
+    "persistent_debuglog_ffi.cc",
+  ]
   deps = [
+    ":persistent-debuglog-rs",
     "//src/lib/lazy_init",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/ktl",
     "//zircon/system/ulib/fbl",
   ]
+}
+
+kernel_rust_mod("persistent-debuglog-rs") {
+  output_name = "persistent_debuglog_rs"
+  source_root = "persistent_debuglog.rs"
+  sources = [ "persistent_debuglog.rs" ]
 }
 
 config("config") {

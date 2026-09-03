@@ -22,6 +22,7 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
 #include <ktl/atomic.h>
@@ -184,10 +185,10 @@ static_assert(sizeof(KTraceState) == 8);
 
 // Similar to KTRACE_BEGIN_SCOPE_COND, but associates the event with the current CPU instead of the
 // current thread.
-#define KTRACE_CPU_BEGIN_SCOPE_COND(runtime_condition, category, label, ...)                      \
-  FXT_BEGIN_SCOPE(true, runtime_condition, KTrace::CategoryEnabled, KTrace::Timestamp,            \
-                  KTrace::EmitComplete, category, FXT_INTERN_STRING(label), KTrace::Context::Cpu, \
-                  ##__VA_ARGS__)
+#define KTRACE_CPU_BEGIN_SCOPE_COND(runtime_condition, category, label, ...)           \
+  FXT_BEGIN_SCOPE(true, runtime_condition, KTrace::CategoryEnabled, KTrace::Timestamp, \
+                  KTrace::EmitComplete, category, FXT_INTERN_STRING(label),            \
+                  KTrace::Context::Cpu, ##__VA_ARGS__)
 
 // Similar to KTRACE_BEGIN_SCOPE, but checks the given constexpr_condition to determine whether the
 // event is enabled at compile time.
@@ -198,10 +199,10 @@ static_assert(sizeof(KTraceState) == 8);
 
 // Similar to KTRACE_BEGIN_SCOPE_ENABLE, but associates the event with the current CPU instead of
 // the current thread.
-#define KTRACE_CPU_BEGIN_SCOPE_ENABLE(constexpr_enabled, category, label, ...)                    \
-  FXT_BEGIN_SCOPE(constexpr_enabled, true, KTrace::CategoryEnabled, KTrace::Timestamp,            \
-                  KTrace::EmitComplete, category, FXT_INTERN_STRING(label), KTrace::Context::Cpu, \
-                  ##__VA_ARGS__)
+#define KTRACE_CPU_BEGIN_SCOPE_ENABLE(constexpr_enabled, category, label, ...)         \
+  FXT_BEGIN_SCOPE(constexpr_enabled, true, KTrace::CategoryEnabled, KTrace::Timestamp, \
+                  KTrace::EmitComplete, category, FXT_INTERN_STRING(label),            \
+                  KTrace::Context::Cpu, ##__VA_ARGS__)
 
 // Similar to KTRACE_BEGIN_SCOPE, but checks the given constexpr_condition to determine whether the
 // event is enabled at compile time, and checks the given runtime_condition, in addition to the
@@ -216,8 +217,8 @@ static_assert(sizeof(KTraceState) == 8);
 #define KTRACE_CPU_BEGIN_SCOPE_ENABLE_COND(constexpr_enabled, runtime_enabled, category, label,   \
                                            ...)                                                   \
   FXT_BEGIN_SCOPE(constexpr_enabled, runtime_enabled, KTrace::CategoryEnabled, KTrace::Timestamp, \
-                  KTrace::EmitComplete, category, FXT_INTERN_STRING(label), KTrace::Context::Cpu, \
-                  ##__VA_ARGS__)
+                  KTrace::EmitComplete, category, FXT_INTERN_STRING(label),                       \
+                  KTrace::Context::Cpu, ##__VA_ARGS__)
 
 // Creates a delegate to capture the given arguments at the end of an active scope. The returned
 // value should be assigned to the scope to complete with additional arguments.
@@ -328,10 +329,10 @@ static_assert(sizeof(KTraceState) == 8);
                    KTrace::Timestamp(), KTrace::Context::Thread, KTrace::Unused{}, ##__VA_ARGS__)
 
 // Similar to KTRACE_DURATION_BEGIN, but accepts an expression to use for the event timestamp.
-#define KTRACE_DURATION_BEGIN_TIMESTAMP(category, label, timestamp, ...)                           \
-  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitDurationBegin, category,             \
-                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Thread, KTrace::Unused{}, \
-                   ##__VA_ARGS__)
+#define KTRACE_DURATION_BEGIN_TIMESTAMP(category, label, timestamp, ...)               \
+  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitDurationBegin, category, \
+                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Thread,       \
+                   KTrace::Unused{}, ##__VA_ARGS__)
 
 //
 // ## DURATION_END
@@ -378,10 +379,10 @@ static_assert(sizeof(KTraceState) == 8);
                    KTrace::Timestamp(), KTrace::Context::Thread, KTrace::Unused{}, ##__VA_ARGS__)
 
 // Similar to KTRACE_DURATION_END, but accepts an expression to use for the event timestamp.
-#define KTRACE_DURATION_END_TIMESTAMP(category, label, timestamp, ...)                             \
-  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitDurationEnd, category,               \
-                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Thread, KTrace::Unused{}, \
-                   ##__VA_ARGS__)
+#define KTRACE_DURATION_END_TIMESTAMP(category, label, timestamp, ...)               \
+  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitDurationEnd, category, \
+                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Thread,     \
+                   KTrace::Unused{}, ##__VA_ARGS__)
 
 //
 // ## COMPLETE
@@ -463,18 +464,18 @@ static_assert(sizeof(KTraceState) == 8);
                    counter_id, ##__VA_ARGS__)
 
 // Similar to KTRACE_CPU_COUNTER, but accepts an expression to use for the event timestamp.
-#define KTRACE_CPU_COUNTER_TIMESTAMP(category, label, timestamp, counter_id, ...)         \
-  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitCounter, category,          \
-                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Cpu, counter_id, \
-                   ##__VA_ARGS__)
+#define KTRACE_CPU_COUNTER_TIMESTAMP(category, label, timestamp, counter_id, ...) \
+  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitCounter, category,  \
+                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Cpu,     \
+                   counter_id, ##__VA_ARGS__)
 
 // Similar to KTRACE_CPU_COUNTER_TIMESTAMP, but checks the given constexpr_condition to determine
 // whether the event is enabled at compile time.
 #define KTRACE_CPU_COUNTER_TIMESTAMP_ENABLE(constexpr_enabled, category, label, timestamp,    \
                                             counter_id, ...)                                  \
   FXT_EVENT_COMMON(constexpr_enabled, KTrace::CategoryEnabled, KTrace::EmitCounter, category, \
-                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Cpu, counter_id,     \
-                   ##__VA_ARGS__)
+                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Cpu,                 \
+                   counter_id, ##__VA_ARGS__)
 
 //
 // ## FLOW_BEGIN
@@ -495,10 +496,10 @@ static_assert(sizeof(KTraceState) == 8);
 
 // Similar to KTRACE_FLOW_BEGIN, but associates the event with the current CPU instead of the
 // current thread.
-#define KTRACE_CPU_FLOW_BEGIN(category, label, flow_id, ...)                                     \
-  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowBegin, category,               \
-                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu, flow_id, \
-                   ##__VA_ARGS__)
+#define KTRACE_CPU_FLOW_BEGIN(category, label, flow_id, ...)                            \
+  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowBegin, category,      \
+                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu, \
+                   flow_id, ##__VA_ARGS__)
 
 // Similar to KTRACE_FLOW_BEGIN, but checks the given constexpr_condition to determine whether the
 // event is enabled at compile time.
@@ -509,16 +510,16 @@ static_assert(sizeof(KTraceState) == 8);
 
 // Similar to KTRACE_FLOW_BEGIN_ENABLE, but associates the event with the current CPU instead of the
 // current thread.
-#define KTRACE_CPU_FLOW_BEGIN_ENABLE(constexpr_enabled, category, label, flow_id, ...)           \
-  FXT_EVENT_COMMON(constexpr_enabled, KTrace::CategoryEnabled, KTrace::EmitFlowBegin, category,  \
-                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu, flow_id, \
-                   ##__VA_ARGS__)
+#define KTRACE_CPU_FLOW_BEGIN_ENABLE(constexpr_enabled, category, label, flow_id, ...)          \
+  FXT_EVENT_COMMON(constexpr_enabled, KTrace::CategoryEnabled, KTrace::EmitFlowBegin, category, \
+                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu,         \
+                   flow_id, ##__VA_ARGS__)
 
 // Similar to KTRACE_FLOW_BEGIN, but accepts an expression to use for the event timestamp.
-#define KTRACE_FLOW_BEGIN_TIMESTAMP(category, label, timestamp, flow_id, ...)             \
-  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowBegin, category,        \
-                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Thread, flow_id, \
-                   ##__VA_ARGS__)
+#define KTRACE_FLOW_BEGIN_TIMESTAMP(category, label, timestamp, flow_id, ...)      \
+  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowBegin, category, \
+                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Thread,   \
+                   flow_id, ##__VA_ARGS__)
 
 //
 // ## FLOW_STEP
@@ -539,10 +540,10 @@ static_assert(sizeof(KTraceState) == 8);
 
 // Similar to KTRACE_FLOW_STEP, but associates the event with the current CPU instead of the current
 // thread.
-#define KTRACE_CPU_FLOW_STEP(category, label, flow_id, ...)                                      \
-  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowStep, category,                \
-                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu, flow_id, \
-                   ##__VA_ARGS__)
+#define KTRACE_CPU_FLOW_STEP(category, label, flow_id, ...)                             \
+  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowStep, category,       \
+                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu, \
+                   flow_id, ##__VA_ARGS__)
 
 // Similar to KTRACE_FLOW_STEP, but checks the given constexpr_condition to determine whether the
 // event is enabled at compile time.
@@ -553,16 +554,16 @@ static_assert(sizeof(KTraceState) == 8);
 
 // Similar to KTRACE_FLOW_STEP_ENABLE, but associates the event with the current CPU instead of the
 // current thread.
-#define KTRACE_CPU_FLOW_STEP_ENABLE(constexpr_enabled, category, label, flow_id, ...)            \
-  FXT_EVENT_COMMON(constexpr_enabled, KTrace::CategoryEnabled, KTrace::EmitFlowStep, category,   \
-                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu, flow_id, \
-                   ##__VA_ARGS__)
+#define KTRACE_CPU_FLOW_STEP_ENABLE(constexpr_enabled, category, label, flow_id, ...)          \
+  FXT_EVENT_COMMON(constexpr_enabled, KTrace::CategoryEnabled, KTrace::EmitFlowStep, category, \
+                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu,        \
+                   flow_id, ##__VA_ARGS__)
 
 // Similar to KTRACE_FLOW_STEP, but accepts an expression to use for the event timestamp.
-#define KTRACE_FLOW_STEP_TIMESTAMP(category, label, timestamp, flow_id, ...)              \
-  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowStep, category,         \
-                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Thread, flow_id, \
-                   ##__VA_ARGS__)
+#define KTRACE_FLOW_STEP_TIMESTAMP(category, label, timestamp, flow_id, ...)      \
+  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowStep, category, \
+                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Thread,  \
+                   flow_id, ##__VA_ARGS__)
 
 //
 // ## FLOW_END
@@ -583,10 +584,10 @@ static_assert(sizeof(KTraceState) == 8);
 
 // Similar to KTRACE_FLOW_END, but associates the event with the current CPU instead of the current
 // thread.
-#define KTRACE_CPU_FLOW_END(category, label, flow_id, ...)                                       \
-  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowEnd, category,                 \
-                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu, flow_id, \
-                   ##__VA_ARGS__)
+#define KTRACE_CPU_FLOW_END(category, label, flow_id, ...)                              \
+  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowEnd, category,        \
+                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu, \
+                   flow_id, ##__VA_ARGS__)
 
 // Similar to KTRACE_FLOW_END, but checks the given constexpr_condition to determine whether the
 // event is enabled at compile time.
@@ -597,16 +598,16 @@ static_assert(sizeof(KTraceState) == 8);
 
 // Similar to KTRACE_FLOW_END_ENABLE, but associates the event with the current CPU instead of the
 // current thread.
-#define KTRACE_CPU_FLOW_END_ENABLE(constexpr_enabled, category, label, flow_id, ...)             \
-  FXT_EVENT_COMMON(constexpr_enabled, KTrace::CategoryEnabled, KTrace::EmitFlowEnd, category,    \
-                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu, flow_id, \
-                   ##__VA_ARGS__)
+#define KTRACE_CPU_FLOW_END_ENABLE(constexpr_enabled, category, label, flow_id, ...)          \
+  FXT_EVENT_COMMON(constexpr_enabled, KTrace::CategoryEnabled, KTrace::EmitFlowEnd, category, \
+                   FXT_INTERN_STRING(label), KTrace::Timestamp(), KTrace::Context::Cpu,       \
+                   flow_id, ##__VA_ARGS__)
 
 // Similar to KTRACE_FLOW_END, but accepts an expression to use for the event timestamp.
-#define KTRACE_FLOW_END_TIMESTAMP(category, label, timestamp, flow_id, ...)               \
-  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowEnd, category,          \
-                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Thread, flow_id, \
-                   ##__VA_ARGS__)
+#define KTRACE_FLOW_END_TIMESTAMP(category, label, timestamp, flow_id, ...)      \
+  FXT_EVENT_COMMON(true, KTrace::CategoryEnabled, KTrace::EmitFlowEnd, category, \
+                   FXT_INTERN_STRING(label), timestamp, KTrace::Context::Thread, \
+                   flow_id, ##__VA_ARGS__)
 
 //
 // ## CONTEXT_SWITCH
@@ -1067,5 +1068,15 @@ class KTrace {
   // Lock used to serialize non-write operations.
   DECLARE_MUTEX(KTrace) lock_;
 };
+
+__BEGIN_CDECLS
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_ktrace_read_user(user_out_ptr<void> ptr, uint32_t offset,
+                                                   size_t len, size_t* out_actual);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_ktrace_control(uint32_t action, uint32_t options);
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_INCLUDE_LIB_KTRACE_H_

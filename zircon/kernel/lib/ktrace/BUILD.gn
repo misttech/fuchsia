@@ -9,7 +9,10 @@ import("//zircon/kernel/kernel_rust_mod.gni")
 source_set("ktrace") {
   public_deps = [ "//src/performance/lib/fxt:headers" ]
 
-  sources = [ "ktrace.cc" ]
+  sources = [
+    "ktrace.cc",
+    "ktrace_ffi.cc",
+  ]
   deps = [
     ":ktrace-rs",
     "//zircon/kernel/hypervisor:headers",
@@ -30,6 +33,7 @@ kernel_rust_mod("ktrace-rs") {
   deps = [
     "macro:ktrace-macro",
     "//sdk/rust/zx-status",
+    "//sdk/rust/zx-types",
     "//src/lib/kalloc",
     "//src/lib/kstring",
     "//src/performance/lib/fxt/rust:fxt-layout",

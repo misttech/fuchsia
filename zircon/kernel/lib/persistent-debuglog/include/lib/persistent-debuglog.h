@@ -8,7 +8,9 @@
 #define ZIRCON_KERNEL_LIB_PERSISTENT_DEBUGLOG_INCLUDE_LIB_PERSISTENT_DEBUGLOG_H_
 
 #include <stdint.h>
+#include <zircon/compiler.h>
 
+#include <kernel/ffi.h>
 #include <kernel/persistent_ram.h>
 #include <ktl/limits.h>
 #include <ktl/string_view.h>
@@ -43,5 +45,12 @@ void persistent_dlog_invalidate();
 // Fetch a string view which references the recovered crashlog (if any).
 // size written.
 ktl::string_view persistent_dlog_get_recovered_log();
+
+__BEGIN_CDECLS
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_persistent_dlog_write(const char* ptr, size_t len);
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_LIB_PERSISTENT_DEBUGLOG_INCLUDE_LIB_PERSISTENT_DEBUGLOG_H_

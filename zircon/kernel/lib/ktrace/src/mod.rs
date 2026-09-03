@@ -24,6 +24,19 @@ use kstring::interned_category::InternedCategory;
 pub use kstring::interned_string::InternedString;
 use spsc_buffer::{Buffer, NoOpAllocator, Reservation};
 use zx_status::Status;
+use zx_types::zx_status_t;
+
+use crate::user_copy::UserOutPtr;
+
+unsafe extern "C" {
+    fn cpp_ktrace_read_user(
+        ptr: UserOutPtr<u8>,
+        offset: u32,
+        len: usize,
+        out_actual: *mut usize,
+    ) -> zx_status_t;
+    fn cpp_ktrace_control(action: u32, options: u32) -> zx_status_t;
+}
 
 // Re-export the ktrace macros from the sub-crate.
 #[allow(unused_imports)]
@@ -660,6 +673,25 @@ impl KTrace {
         }
         let bitmask = self.categories_bitmask();
         (bitmask & (1 << category_index)) != 0
+    }
+
+    /// Reads up to `len` bytes from the ktrace buffer starting at `offset` into `ptr`.
+    ///
+    /// Returns the number of bytes actually read.
+    pub fn read_user(&self, ptr: UserOutPtr<u8>, offset: u32, len: usize) -> Result<usize, Status> {
+        let mut actual = 0usize;
+        // SAFETY: `cpp_ktrace_read_user` reads trace data from the global ktrace buffer into the
+        // user buffer represented by `ptr` and writes the actual count into `actual`.
+        let status = unsafe { cpp_ktrace_read_user(ptr, offset, len, &mut actual) };
+        Status::ok(status)?;
+        Ok(actual)
+    }
+
+    /// Performs a control operation on the ktrace subsystem.
+    pub fn control(&self, action: u32, options: u32) -> Result<(), Status> {
+        // SAFETY: `cpp_ktrace_control` starts, stops, or rewinds tracing using validated action/options.
+        let status = unsafe { cpp_ktrace_control(action, options) };
+        Status::ok(status)
     }
 
     /// Low-level helper to write an FXT kernel object record.

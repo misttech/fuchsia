@@ -10,8 +10,9 @@ use boot_options::BootOptions;
 use debug::ltracef;
 use syscalls_macro::syscall;
 use zx_status::Status;
-use zx_types::{ZX_RSRC_SYSTEM_DEBUG_BASE, ZX_RSRC_SYSTEM_TRACING_BASE, zx_status_t};
+use zx_types::{ZX_RSRC_SYSTEM_DEBUG_BASE, ZX_RSRC_SYSTEM_TRACING_BASE};
 
+use crate::ktrace_rs::KTrace;
 use crate::object::{HandleValue, validate_system_resource};
 use crate::platform_rs::debug::platform_dgetc;
 use crate::user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
@@ -21,19 +22,6 @@ const LOCAL_TRACE: u32 = 0;
 /// Maximum number of bytes that can be written in a single `zx_debug_write`
 /// or `zx_debug_send_command` syscall.
 pub const MAX_DEBUG_WRITE_SIZE: usize = 256;
-
-unsafe extern "C" {
-    fn cpp_persistent_dlog_write(ptr: *const c_char, len: usize);
-    fn cpp_dlog_serial_write(ptr: *const c_char, len: usize);
-    fn cpp_console_run_script(str: *const c_char) -> zx_status_t;
-    fn cpp_ktrace_read_user(
-        ptr: UserOutPtr<u8>,
-        offset: u32,
-        len: usize,
-        out_actual: *mut usize,
-    ) -> zx_status_t;
-    fn cpp_ktrace_control(action: u32, options: u32) -> zx_status_t;
-}
 
 #[syscall]
 pub fn sys_debug_read(
@@ -98,18 +86,12 @@ pub fn sys_debug_write(ptr: UserInPtr<u8>, mut len: usize) -> Result<(), Status>
     let slice = ptr.copy_slice_from_user(&mut buf[..len]).map_err(|_| Status::INVALID_ARGS)?;
 
     // Dump what we can into the persistent dlog, if we have one.
-    // SAFETY: `slice.as_ptr()` points to `len` initialized bytes in kernel stack memory.
-    unsafe {
-        cpp_persistent_dlog_write(slice.as_ptr().cast::<c_char>(), len);
-    }
+    crate::persistent_debuglog_rs::persistent_dlog_write(slice);
 
     // This path to serial out arbitrates with the debug log
     // drainer and/or kernel ll debug path to minimize interleaving
     // of serial output between various sources.
-    // SAFETY: `slice.as_ptr()` points to `len` initialized bytes in kernel stack memory.
-    unsafe {
-        cpp_dlog_serial_write(slice.as_ptr().cast::<c_char>(), len);
-    }
+    crate::debuglog_rs::dlog_serial_write(slice);
 
     Ok(())
 }
@@ -132,14 +114,11 @@ pub fn sys_debug_send_command(
         return Err(Status::INVALID_ARGS);
     }
 
-    let mut buf = [core::mem::MaybeUninit::<u8>::uninit(); MAX_DEBUG_WRITE_SIZE + 2];
-    ptr.copy_slice_from_user(&mut buf[..len]).map_err(|_| Status::INVALID_ARGS)?;
-    buf[len].write(b'\n');
-    buf[len + 1].write(0);
+    let mut buf = [core::mem::MaybeUninit::<u8>::uninit(); MAX_DEBUG_WRITE_SIZE];
+    let slice = ptr.copy_slice_from_user(&mut buf[..len]).map_err(|_| Status::INVALID_ARGS)?;
+    let cmd_str = core::str::from_utf8(slice).map_err(|_| Status::INVALID_ARGS)?;
 
-    // SAFETY: `buf[..len + 2]` has been fully initialized with the user command followed by
-    // a newline and null terminator, making `buf.as_ptr()` a valid null-terminated C string.
-    let status = unsafe { cpp_console_run_script(buf.as_ptr().cast::<c_char>()) };
+    let status = crate::console_rust::console::console_run_script(cmd_str);
     Status::ok(status)?;
     Ok(())
 }
@@ -154,11 +133,7 @@ pub fn sys_ktrace_read(
 ) -> Result<(), Status> {
     validate_system_resource(handle, ZX_RSRC_SYSTEM_TRACING_BASE)?;
 
-    let mut actual: usize = 0;
-    // SAFETY: Calling C++ helper to read ktrace data into the user buffer and output actual count.
-    let status = unsafe { cpp_ktrace_read_user(data, offset, len, &mut actual) };
-    Status::ok(status)?;
-
+    let actual = KTrace::get_instance().read_user(data, offset, len)?;
     out_actual.copy_to_user(&actual)?;
     Ok(())
 }
@@ -172,8 +147,5 @@ pub fn sys_ktrace_control(
 ) -> Result<(), Status> {
     validate_system_resource(handle, ZX_RSRC_SYSTEM_TRACING_BASE)?;
 
-    // SAFETY: Calling C++ helper to perform ktrace control operation.
-    let status = unsafe { cpp_ktrace_control(action, options) };
-    Status::ok(status)?;
-    Ok(())
+    KTrace::get_instance().control(action, options)
 }

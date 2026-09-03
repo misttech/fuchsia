@@ -1310,3 +1310,15 @@ pub mod console {
         panic_shell_start();
     }
 }
+
+#[cfg(not(console_enabled))]
+pub mod console {
+    pub fn console_run_script(_script: &str) -> i32 {
+        0
+    }
+    pub fn console_run_script_locked(_script: &str) -> i32 {
+        0
+    }
+    pub fn panic_shell_start() {}
+    pub fn kernel_shell_init() {}
+}
