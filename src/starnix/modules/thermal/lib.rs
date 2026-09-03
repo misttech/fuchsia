@@ -199,7 +199,7 @@ pub fn thermal_device_init(kernel: &Kernel) -> Result<(), Error> {
             continue;
         }
 
-        registry.add_numberless_device(thermal_zone.clone().as_str().into(),
+        registry.add_numberless_device(thermal_zone.as_str().into(),
             virtual_thermal_class.clone(),
             move |device, dir|{
                 match fuchsia_component::client::connect_to_protocol_sync::<fthermal::SensorManagerMarker>() {

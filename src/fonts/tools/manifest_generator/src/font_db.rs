@@ -149,7 +149,7 @@ impl FontDb {
                             typeface_key.clone(),
                             TypefaceMetatada {
                                 code_points: font_info.char_set,
-                                postscript_name: postscript_name.clone(),
+                                postscript_name: postscript_name,
                                 full_name: font_info.full_name.clone(),
                             },
                         );

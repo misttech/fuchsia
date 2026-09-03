@@ -500,7 +500,7 @@ pub fn build_storage_admin_dictionary(
             source_capability: ComponentCapability::Storage(storage_decl.clone()),
             moniker: component.moniker.clone(),
         });
-        let storage_decl = storage_decl.clone();
+        let storage_decl = storage_decl;
         let weak_component = WeakComponentInstance::new(component);
         storage_admin_dictionary.insert(
             storage_decl.name.clone(),

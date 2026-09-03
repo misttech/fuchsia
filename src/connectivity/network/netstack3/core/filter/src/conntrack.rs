@@ -1979,7 +1979,7 @@ mod tests {
 
             if establishment_lifecycle >= EstablishmentLifecycle::SeenReply {
                 let (conn, _dir) = table
-                    .get_connection_for_packet_and_update(&bindings_ctx, reply_packet.clone())
+                    .get_connection_for_packet_and_update(&bindings_ctx, reply_packet)
                     .expect("packet should be valid")
                     .expect("packet should be trackable");
                 assert_matches!(

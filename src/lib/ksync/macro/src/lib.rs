@@ -829,7 +829,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     }
 
     for (field, custom_flags) in brwlock_fields {
-        let field_ident = field.ident.clone().unwrap();
+        let field_ident = field.ident.unwrap();
         let mu_camel = to_camel_case(&field_ident.to_string());
 
         let class_name = format!("{struct_ident}{mu_camel}Class");

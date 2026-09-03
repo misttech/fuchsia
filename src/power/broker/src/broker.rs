@@ -1422,7 +1422,7 @@ impl Catalog {
             } else {
                 observed_pairs.insert(element_pair, claim.requires().clone());
             }
-            essential_claims.push(claim.clone());
+            essential_claims.push(claim);
         }
         essential_claims
     }

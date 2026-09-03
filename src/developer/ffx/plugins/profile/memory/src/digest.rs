@@ -411,7 +411,7 @@ pub mod processed {
                 if let raw::Process::Data(raw::ProcessData { name, vmos, .. }) = process {
                     let p = Process {
                         koid: ProcessKoid::new(koid),
-                        name: name.to_string(),
+                        name: name,
                         memory: RetainedMemory::default(),
                         name_to_vmo_memory: HashMap::new(),
                         vmos: HashSet::from_iter(vmos.into_iter().map(VmoKoid::new)),

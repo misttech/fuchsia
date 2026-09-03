@@ -991,7 +991,7 @@ impl ThreadGroup {
                                 child_state.exit_signal = Some(SIGCHLD);
                                 child_state.parent =
                                     Some(ThreadGroupParent::new(Arc::downgrade(&reaper)));
-                                reaper_state.children.insert(child.leader.id, weak_child.clone());
+                                reaper_state.children.insert(child.leader.id, weak_child);
                             }
                         }
                         reaper_state.zombie_children.append(&mut state.zombie_children);

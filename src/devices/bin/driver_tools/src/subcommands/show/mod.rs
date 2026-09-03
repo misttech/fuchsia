@@ -47,7 +47,7 @@ pub async fn show(
         let device_name = device.moniker.as_ref();
         if let (Some(driver), Some(device_name)) = (driver, device_name) {
             driver_to_devices
-                .entry(driver.to_string())
+                .entry(driver)
                 .and_modify(|v| v.push(device_name.to_string()))
                 .or_insert_with(|| vec![device_name.to_string()]);
         }

@@ -289,11 +289,7 @@ pub async fn serve_starnix_manager(
                 };
                 suspend_context.wake_sources.lock().insert(
                     handle.koid().unwrap(),
-                    WakeSource::from_handle(
-                        handle,
-                        name.clone(),
-                        zx::Signals::from_bits_truncate(signals),
-                    ),
+                    WakeSource::from_handle(handle, name, zx::Signals::from_bits_truncate(signals)),
                 );
             }
             fstarnixrunner::ManagerRequest::RemoveWakeSource { payload, .. } => {

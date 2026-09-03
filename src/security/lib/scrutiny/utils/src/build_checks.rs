@@ -349,8 +349,7 @@ pub fn validate_build_checks(
                 }
             }
             PackageSource::BootfsPackages(_) => unimplemented!(),
-        }
-        .to_string();
+        };
 
         // Run the validations specified by the policy.
         // Specification of the concrete PackageFileValidator impl should remain internal to build_checks.

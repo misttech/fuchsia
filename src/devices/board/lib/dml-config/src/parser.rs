@@ -368,7 +368,7 @@ pub async fn publish_dml_devices(
                 mmio_list.push(fpbus::Mmio {
                     base: Some(mmio.base),
                     length: Some(mmio.length),
-                    name: mmio.name.clone(),
+                    name: mmio.name,
                     ..Default::default()
                 });
             }
@@ -393,7 +393,7 @@ pub async fn publish_dml_devices(
                     service_call_num_base: Some(smc.service_call_num_base),
                     count: Some(smc.count),
                     exclusive: Some(smc.exclusive),
-                    name: smc.name.clone(),
+                    name: smc.name,
                     ..Default::default()
                 });
             }

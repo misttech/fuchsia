@@ -384,7 +384,7 @@ fn bss_to_network_map(
             // Log a space-efficient version of the IEs.
             let readable_ie =
                 scan_result.bss_description.ies().iter().map(|n| n.to_string()).join(",");
-            debug!("Encountered unknown protection, ies: [{:?}]", readable_ie.clone());
+            debug!("Encountered unknown protection, ies: [{:?}]", readable_ie);
             scan_event_inspect_data.unknown_protection_ies.push(readable_ie);
         };
         let entry = bss_by_network

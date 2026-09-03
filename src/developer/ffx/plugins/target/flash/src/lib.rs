@@ -800,13 +800,13 @@ async fn handle_event_machine(
                 }
                 Event::FlashPartition { partition_name } => {
                     let output = FlashMessage::Progress(FlashProgress::FlashPartitionStarted {
-                        partition_name: partition_name.clone(),
+                        partition_name: partition_name,
                     });
                     writer.machine(&output)?;
                 }
                 Event::FlashPartitionFinished { partition_name, duration: _ } => {
                     let output = FlashMessage::Progress(FlashProgress::FlashPartitionFinished {
-                        partition_name: partition_name.clone(),
+                        partition_name: partition_name,
                     });
                     writer.machine(&output)?;
                 }
@@ -833,7 +833,7 @@ async fn handle_event_machine(
                 }
                 Event::Oem { oem_command } => {
                     let output = FlashMessage::Progress(FlashProgress::OemCommand {
-                        oem_command: oem_command.clone(),
+                        oem_command: oem_command,
                     });
                     writer.machine(&output)?;
                 }

@@ -62,7 +62,7 @@ where
 {
     for (name, pkg) in set {
         let pkg_dest = dest.join(name);
-        found(&mut pkg.manifest, pkg_dest.clone(), FileType::PackageManifest)?;
+        found(&mut pkg.manifest, pkg_dest, FileType::PackageManifest)?;
     }
     Ok(())
 }

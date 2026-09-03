@@ -331,7 +331,7 @@ impl Into<fidl_fuchsia_hwinfo::ProductInfo> for ProductInfo {
     fn into(self) -> fidl_fuchsia_hwinfo::ProductInfo {
         let mut locale_list: Vec<LocaleId> = Vec::new();
         for locale in self.locales {
-            locale_list.push(LocaleId { id: locale.to_owned() });
+            locale_list.push(LocaleId { id: locale });
         }
         fidl_fuchsia_hwinfo::ProductInfo {
             sku: self.sku,

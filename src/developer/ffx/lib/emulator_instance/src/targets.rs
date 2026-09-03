@@ -155,7 +155,7 @@ impl notify::EventHandler for EmulatorWatcherHandler {
                             let _ = self
                                 .emu_instance_tx
                                 .try_send(EmulatorInstanceEvent::Name(
-                                    instance_name.clone(),
+                                    instance_name,
                                     Create(CreateKind::Any),
                                 ))
                                 .map_err(|e| {
@@ -175,7 +175,7 @@ impl notify::EventHandler for EmulatorWatcherHandler {
                         let _ = self
                             .emu_instance_tx
                             .try_send(EmulatorInstanceEvent::Name(
-                                instance_name.clone(),
+                                instance_name,
                                 Remove(RemoveKind::Folder),
                             ))
                             .map_err(|e| {

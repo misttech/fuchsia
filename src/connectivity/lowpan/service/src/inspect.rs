@@ -239,7 +239,7 @@ pub async fn watch_device_changes<
                         msg: format!("{}:available", available_device)
                     );
                     let future = monitor_device(
-                        available_device.clone().to_string(),
+                        available_device.clone(),
                         inspect_tree.create_iface_child(available_device.clone()),
                     )
                     .map(|x| match x {
@@ -686,7 +686,7 @@ async fn monitor_device(name: String, iface_tree: Arc<IfaceTreeHolder>) -> Resul
                     Ok(neighbor_table) => {
                         let mut index = -1;
                         for neighbor_info in neighbor_table {
-                            let neighbor_info_c = neighbor_info.clone();
+                            let neighbor_info_c = neighbor_info;
                             index += 1;
                             inspector.root().record_lazy_child(format!("{}", index), move || {
                                 let neighbor_info_clone = neighbor_info_c.clone();

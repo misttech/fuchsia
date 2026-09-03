@@ -356,7 +356,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
         } else {
             environment = sandbox.component_input.environment();
         }
-        let input = ComponentInput::new(environment.clone());
+        let input = ComponentInput::new(environment);
         let name = Name::new(child.name.as_str()).expect("child is static so name is not long");
         let _ = sandbox.child_inputs.insert(name, input);
     }
@@ -374,7 +374,7 @@ pub fn build_component_sandbox<C: ComponentInstanceInterface + 'static>(
         } else {
             environment = sandbox.component_input.environment();
         }
-        let input = ComponentInput::new(environment.clone());
+        let input = ComponentInput::new(environment);
         let _ = sandbox.collection_inputs.insert(collection.name.clone(), input);
     }
 

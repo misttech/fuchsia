@@ -258,7 +258,7 @@ impl FatDirectory {
                 FatNode::Dir(entry) => {
                     let name = path.next().unwrap();
                     validate_filename(name).map_err(fatfs_error_to_status)?;
-                    cur_entry = entry.clone().open_child(name, child_flags, closer)?;
+                    cur_entry = entry.open_child(name, child_flags, closer)?;
                 }
                 FatNode::File(_) => {
                     return Err(Status::NOT_DIR);
@@ -285,7 +285,7 @@ impl FatDirectory {
                 FatNode::Dir(entry) => {
                     let name = path.next().unwrap();
                     validate_filename(name).map_err(fatfs_error_to_status)?;
-                    current_entry = entry.clone().open3_child(name, child_flags, closer)?;
+                    current_entry = entry.open3_child(name, child_flags, closer)?;
                 }
                 FatNode::File(_) => {
                     return Err(Status::NOT_DIR);
@@ -960,7 +960,7 @@ impl Directory for FatDirectory {
         // Iterate through the entries, adding them one by one to the sink.
         let mut cur_sink = sink;
         for (name, info) in entries.into_iter() {
-            let result = cur_sink.append(&info, &name.clone());
+            let result = cur_sink.append(&info, &name);
 
             match result {
                 AppendResult::Ok(new_sink) => cur_sink = new_sink,

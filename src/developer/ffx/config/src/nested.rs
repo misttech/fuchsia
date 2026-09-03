@@ -69,12 +69,12 @@ impl RecursiveMap for Value {
                 let mut result = Map::new();
                 for (key, value) in map.into_iter() {
                     let new_value = if value.is_object() || value.is_array() {
-                        value.clone().try_recursive_map(mapper)?
+                        value.try_recursive_map(mapper)?
                     } else {
-                        mapper(value.clone())?
+                        mapper(value)?
                     };
-                    if let Some(new_value) = new_value.clone() {
-                        result.insert(key.clone(), new_value);
+                    if let Some(new_value) = new_value {
+                        result.insert(key, new_value);
                     }
                 }
                 if result.len() == 0 { Ok(None) } else { mapper(Value::Object(result)) }

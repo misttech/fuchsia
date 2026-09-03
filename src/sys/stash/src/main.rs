@@ -6,7 +6,7 @@
 
 //! `stash` provides key/value storage to components.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use fidl::prelude::*;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
@@ -146,7 +146,7 @@ fn stash_server(
             while let Some(req) = stream.try_next().await.context("error running stash server")? {
                 match req {
                     StoreRequest::Identify { name, control_handle } => {
-                        if let Err(e) = state.identify(name.clone()) {
+                        if let Err(e) = state.identify(name) {
                             control_handle.shutdown();
                             return Err(e);
                         }

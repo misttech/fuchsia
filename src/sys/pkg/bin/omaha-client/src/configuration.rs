@@ -185,7 +185,7 @@ impl ClientConfiguration {
                         name: Some(channel_config.name.clone()),
                         ..Cohort::default()
                     })
-                    .extra_fields([("channel".to_string(), channel_config.name.clone())])
+                    .extra_fields([("channel".to_string(), channel_config.name)])
                     .build()
             } else {
                 app_builder.build()

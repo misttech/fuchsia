@@ -116,7 +116,7 @@ pub async fn serve_local_roam_manager_requests(
                     // ensures that new data is initialized for every new caller (e.g. connected_state).
                     RoamServiceRequest::InitializeRoamMonitor { ap_state, network_identifier, credential, roam_request_sender, roam_trigger_data_receiver }=> {
                         let monitor = create_roam_monitor(roaming_policy, ap_state, network_identifier, credential, telemetry_sender.clone(), saved_networks.clone(), past_roams.clone());
-                        let monitor_fut = roam_monitor::serve_roam_monitor(monitor, roaming_policy, roam_trigger_data_receiver, connection_selection_requester.clone(), roam_request_sender.clone(), telemetry_sender.clone(), past_roams.clone());
+                        let monitor_fut = roam_monitor::serve_roam_monitor(monitor, roaming_policy, roam_trigger_data_receiver, connection_selection_requester.clone(), roam_request_sender, telemetry_sender.clone(), past_roams.clone());
                         monitor_futs.push(Box::pin(monitor_fut));
                     }
                 }

@@ -285,7 +285,7 @@ impl PkgServerInstanceInfo for PkgServerInstances {
                                     "Error deserializing {:?} into PkgServerInfo: {e}",
                                     entry.path()
                                 );
-                                let mut bad_name = entry.path().clone();
+                                let mut bad_name = entry.path();
                                 bad_name.set_extension("json.bad");
                                 fs::rename(entry.path(), &bad_name)
                                     .map_err(|e| InstanceError::IoWithPath(entry.path(), e))?;

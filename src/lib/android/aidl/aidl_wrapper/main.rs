@@ -88,7 +88,7 @@ fn main() -> Result<(), Error> {
     for deps in opt.deps {
         for package in read_file::<BTreeSet<String>>(deps.join(PACKAGE_FILE))? {
             glue_args.push("-I".to_owned());
-            glue_args.push(package.replace(".", "_").to_owned());
+            glue_args.push(package.replace(".", "_"));
         }
         for base in read_file::<BTreeSet<String>>(deps.join(BASES_FILE))? {
             dependencies.insert(base.into());

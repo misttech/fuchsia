@@ -928,10 +928,10 @@ impl<T: Borrow<Selector>> TryFrom<&[T]> for HierarchyMatcher {
             // Selector.
             match selector.tree_selector.clone().unwrap() {
                 TreeSelector::SubtreeSelector(subtree_selector) => {
-                    matcher.insert_subtree(subtree_selector.clone());
+                    matcher.insert_subtree(subtree_selector);
                 }
                 TreeSelector::PropertySelector(property_selector) => {
-                    matcher.insert_property(property_selector.clone());
+                    matcher.insert_property(property_selector);
                 }
                 _ => return Err(Error::Selectors(selectors::Error::InvalidTreeSelector)),
             }

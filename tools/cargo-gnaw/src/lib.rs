@@ -848,7 +848,7 @@ pub fn generate_from_manifest<W: io::Write>(mut output: &mut W, opt: &Opt) -> Re
                 target.gn_target_name()
             ),
             shortcut_target,
-            path: package_root.to_owned(),
+            path: package_root,
         });
 
         // If there is an existing GN target, we want a group and not a new GN target.

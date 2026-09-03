@@ -1424,7 +1424,7 @@ impl MemoryManagerState {
                 break;
             }
 
-            let mut new_mapping = mapping.clone();
+            let mut new_mapping = mapping;
             new_mapping.set_flags(new_mapping.flags().with_access_flags(prot_flags));
             let push_range = intersection.clone();
             start_cursor = intersection.end;
@@ -2604,7 +2604,7 @@ impl MemoryManagerState {
                 for range in userfault.get_registered_pages_overlapping_range(range.clone()) {
                     let mut mapping = mapping.clone();
                     mapping.clear_uffd();
-                    updates.push((range.clone(), mapping));
+                    updates.push((range, mapping));
                 }
             }
         }

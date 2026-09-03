@@ -69,7 +69,7 @@ fn hash_by_name<'de, D: Deserializer<'de>, T: Named + DeserializeIface<'de>>(
 ) -> std::result::Result<HashMap<String, T>, D::Error> {
     let mut ret = HashMap::new();
     for item in Vec::<T>::deserialize(deserializer)? {
-        ret.insert(item.name().clone(), item);
+        ret.insert(item.name(), item);
     }
     Ok(ret)
 }
@@ -80,7 +80,7 @@ fn hash_by_name_arc<'de, D: Deserializer<'de>, T: Named + DeserializeIface<'de>>
 ) -> std::result::Result<HashMap<String, Arc<T>>, D::Error> {
     let mut ret = HashMap::new();
     for item in Vec::<T>::deserialize(deserializer)? {
-        ret.insert(item.name().clone(), Arc::new(item));
+        ret.insert(item.name(), Arc::new(item));
     }
     Ok(ret)
 }

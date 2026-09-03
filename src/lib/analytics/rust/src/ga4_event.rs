@@ -315,7 +315,7 @@ pub(crate) fn make_ga4_event<'a>(
     insert_if_present("label", params, label);
 
     for (key, value) in custom_dimensions.into_iter() {
-        params.insert(key.into(), value.clone().into());
+        params.insert(key.into(), value.into());
     }
 
     insert_if_present("args", params, action);
@@ -389,7 +389,7 @@ pub(crate) fn make_ga4_timing_event<'a>(
     insert_if_present("variable", params, variable);
     insert_if_present("label", params, label);
     for (key, value) in custom_dimensions.into_iter() {
-        params.insert(key.into(), value.clone());
+        params.insert(key.into(), value);
     }
     if let Some(s) = invoker {
         params.insert("invoker".into(), s.into());

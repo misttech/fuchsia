@@ -680,7 +680,7 @@ impl StorageAdmin {
                     }
                 };
 
-                let namespace = component_state.sandbox.program_input.namespace().clone();
+                let namespace = component_state.sandbox.program_input.namespace();
 
                 let storage_paths = component_state.storage_paths.clone();
 

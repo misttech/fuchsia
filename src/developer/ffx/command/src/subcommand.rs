@@ -234,7 +234,7 @@ impl ToolSuite for ExternalSubToolSuite {
 
             external_args_info.commands.push(SubCommandInfo {
                 name: subcmd_args_info.name.clone(),
-                command: subcmd_args_info.clone(),
+                command: subcmd_args_info,
             });
         }
         Ok(external_args_info)

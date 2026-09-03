@@ -15,7 +15,7 @@ async fn run_echo_server(mut stream: EchoRequestStream, reverse: bool) -> Result
             }
             EchoRequest::EchoString { value, responder } => {
                 println!("Received EchoString request for string {:?}", value);
-                let resp = if reverse { value.chars().rev().collect() } else { value.clone() };
+                let resp = if reverse { value.chars().rev().collect() } else { value };
                 responder.send(&resp).context("error sending response")?;
                 println!("Response sent successfully");
             }

@@ -361,7 +361,7 @@ fn handle_pending_packets<I: IpLayerIpExt, CC, BC>(
             bindings_ctx.on_event(
                 MulticastForwardingEvent::WrongInputInterface {
                     key: key.clone(),
-                    actual_input_interface: device.clone(),
+                    actual_input_interface: device,
                     expected_input_interface: input_interface.clone(),
                 }
                 .into(),

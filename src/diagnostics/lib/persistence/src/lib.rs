@@ -175,7 +175,7 @@ fn try_insert_items(config: &mut Config, config_text: &str) -> Result<(), Error>
         let name = ServiceName::new(service_name)?;
         let mut name_filter = SameTreeNameFilter::default();
         tag_config.selectors.retain(|s| name_filter.check(s));
-        if let Some(existing) = config.entry(name.clone()).or_default().insert(tag, tag_config) {
+        if let Some(existing) = config.entry(name).or_default().insert(tag, tag_config) {
             bail!("Duplicate TagConfig found: {:?}", existing);
         }
     }

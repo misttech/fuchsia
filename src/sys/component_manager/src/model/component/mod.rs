@@ -1279,7 +1279,7 @@ impl ComponentInstance {
         loop {
             match current.try_get_parent()? {
                 ExtendedInstance::Component(parent) => {
-                    current = parent.clone();
+                    current = parent;
                 }
                 ExtendedInstance::AboveRoot(parent) => {
                     return Ok(parent);

@@ -363,7 +363,7 @@ fn create_tee_clients(
                 rights: Some(Rights(vec![Right::ReadAlias])),
                 ..Offer::empty(
                     OfferFromRef::Parent.into(),
-                    OfferToRef::Named(component_name.clone()).into(),
+                    OfferToRef::Named(component_name).into(),
                 )
             })
         }

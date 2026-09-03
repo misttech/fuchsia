@@ -156,7 +156,7 @@ impl CrashReporter {
         fasync::Task::local(async move {
             while let Some(msg) = receive_channel.next().await {
                 let ctx_string = match msg.context {
-                    Some(ctx) => ctx.to_string(),
+                    Some(ctx) => ctx,
                     None => "".to_string(),
                 };
                 match Self::send_crash_report(&proxy_fn, msg.error, ctx_string).await {

@@ -241,7 +241,7 @@ where
                         self.postscript_name_lookup.insert(postscript_name, typeface.clone());
 
                         if full_name.is_some() {
-                            self.full_name_lookup.insert(full_name.unwrap(), typeface.clone());
+                            self.full_name_lookup.insert(full_name.unwrap(), typeface);
                         }
                     }
                 }

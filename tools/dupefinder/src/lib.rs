@@ -61,7 +61,7 @@ impl Sample {
 
             locations.insert(
                 loc.id,
-                Location { address: loc.address, library_name: library_name.clone(), lines },
+                Location { address: loc.address, library_name: library_name, lines },
             );
         }
 

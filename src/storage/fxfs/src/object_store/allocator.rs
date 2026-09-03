@@ -780,7 +780,7 @@ impl<'a> Drop for TrimmableExtents<'a> {
             inner.strategy.free(device_range.clone()).expect("drop trim extent");
             self.allocator
                 .temporary_allocations
-                .erase(&AllocatorKey { device_range: Extent(device_range.clone()) });
+                .erase(&AllocatorKey { device_range: Extent(device_range) });
         }
         inner.trim_reserved_bytes = 0;
     }
@@ -1778,8 +1778,7 @@ impl Allocator {
             *(totals.entry(dealloc.owner_object_id).or_default()) +=
                 dealloc.range.length().unwrap();
             inner.strategy.free(dealloc.range.clone()).expect("dealloced ranges");
-            self.temporary_allocations
-                .erase(&AllocatorKey { device_range: Extent(dealloc.range.clone()) });
+            self.temporary_allocations.erase(&AllocatorKey { device_range: Extent(dealloc.range) });
         }
 
         // This *must* come after we've removed the records from reserved reservations because the

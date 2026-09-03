@@ -427,9 +427,9 @@ fn translate_use(
                     panic!("numbered_handle: multiple source_name");
                 };
                 out_uses.push(fdecl::Use::Protocol(fdecl::UseProtocol {
-                    source: Some(source.clone()),
+                    source: Some(source),
                     source_name: Some(source_name.to_string()),
-                    source_dictionary: source_dictionary.clone(),
+                    source_dictionary: source_dictionary,
                     target_path: None,
                     numbered_handle: use_.numbered_handle.as_ref().map(|s| s.value.into()),
                     dependency_type: Some(
@@ -819,7 +819,7 @@ fn translate_expose(
                         all_collections,
                     );
                 out_exposes.push(fdecl::Expose::Config(fdecl::ExposeConfiguration {
-                    source: Some(source.clone()),
+                    source: Some(source),
                     source_name: Some(source_name.to_string()),
                     source_dictionary,
                     target: Some(target.clone()),
@@ -1960,7 +1960,7 @@ fn extract_offer_sources_and_targets<'a>(
                         source.clone(),
                         source_dictionary.clone(),
                         *source_name,
-                        target.clone(),
+                        target,
                         *target_name,
                     ));
                 }

@@ -588,8 +588,8 @@ impl InterpreterInner {
                 let Some(target) = symlink_info.target else {
                     return Err(FSError::NoSymlinkTarget(path).into());
                 };
-                let target = String::from_utf8(target.clone())
-                    .map_err(|_| FSError::SymlinkNotUTF(path.clone()))?;
+                let target =
+                    String::from_utf8(target).map_err(|_| FSError::SymlinkNotUTF(path.clone()))?;
                 let end = path.rfind('/').expect("Canonicalized path wasn't absolute!");
                 let prefix = &path[..end];
                 let prefix = if prefix.is_empty() { "/" } else { prefix };

@@ -490,7 +490,7 @@ impl ImageAssemblyConfigBuilder {
     /// Add all the bootfs file entries to the builder.
     pub fn add_bootfs_files(&mut self, files: &NamedFileMap<BootfsDestination>) -> Result<()> {
         for entry in files.clone().into_file_entries() {
-            self.bootfs_files.add_entry(entry.to_owned())?;
+            self.bootfs_files.add_entry(entry)?;
         }
         Ok(())
     }

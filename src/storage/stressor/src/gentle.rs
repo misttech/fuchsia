@@ -149,7 +149,7 @@ impl Stressor {
                     match File::options().create(true).read(true).write(true).open(&path) {
                         Ok(file) => {
                             let file_state = Arc::new(FileState { path });
-                            self.all_files.write().push(file_state.clone());
+                            self.all_files.write().push(file_state);
                             self.open_files.write().push(Arc::new(file));
                         }
                         Err(error) => {

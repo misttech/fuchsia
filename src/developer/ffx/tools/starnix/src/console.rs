@@ -68,7 +68,7 @@ fn get_environ() -> Vec<String> {
     let mut result = vec![];
     for key in ["TERM"] {
         if let Ok(value) = std::env::var(key) {
-            result.push(format!("{key}={value}").to_string());
+            result.push(format!("{key}={value}"));
         }
     }
     result

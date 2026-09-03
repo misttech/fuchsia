@@ -4,20 +4,21 @@
 
 use anyhow::{Context, Result};
 use fidl::endpoints::RequestStream;
+use fidl_fuchsia_hardware_sensors as fsensors;
 use fidl_fuchsia_sensors_types::{
     EventPayload, Scale, SensorEvent, SensorInfo, SensorReportingMode, SensorType,
     SensorWakeUpType, Unit,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use futures::future::join_all;
 use futures::lock::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::{info, warn};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use {fidl_fuchsia_hardware_sensors as fsensors, fuchsia_async as fasync};
 
 struct TimeSource {
     pub boot_instant: Instant,
@@ -166,7 +167,7 @@ async fn handle_driver_service_request(
                 // Activating a sensor that is already active is treated as a NO-OP.
                 sensor_enabled.store(true, Ordering::Release);
                 fasync::Task::local({
-                    let fake_sensor: Arc<Mutex<FakeSensor>> = fake_sensor.clone();
+                    let fake_sensor: Arc<Mutex<FakeSensor>> = fake_sensor;
                     let control_handle = stream.control_handle();
 
                     async move {

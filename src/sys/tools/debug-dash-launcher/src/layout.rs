@@ -142,7 +142,7 @@ async fn inject_process_launcher_and_resolver(svc_dir: fio::DirectoryProxy) -> f
     // Create forwarding entries for namespace protocols
     for entry in entries {
         let svc_dir = Clone::clone(&svc_dir);
-        let protocol_name = entry.name.clone();
+        let protocol_name = entry.name;
         vfs.add_entry(
             protocol_name.clone(),
             endpoint(move |_, server_end| {

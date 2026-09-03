@@ -295,7 +295,7 @@ fn find_keys_in_dirs(
             let content = match fs::read_to_string(&pub_key_file) {
                 Ok(c) => c,
                 Err(e) => {
-                    io_errors.push(pub_key_file.clone(), e);
+                    io_errors.push(pub_key_file, e);
                     continue;
                 }
             };

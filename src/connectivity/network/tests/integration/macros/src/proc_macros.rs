@@ -216,7 +216,7 @@ fn permutations_over_type_generics<'a>(
         for piece in pieces {
             match piece {
                 Piece::Instantiated(Implementation { type_name, suffix, attrs }) => {
-                    params.push(type_name.clone());
+                    params.push(type_name);
                     name_pieces.push(suffix);
                     attributes.extend(attrs.into_iter());
                 }

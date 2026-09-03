@@ -94,7 +94,7 @@ impl ExtDirectory {
             match current_entry {
                 ExtNode::Dir(dir) => {
                     let name = Name::try_from(path.next().unwrap().to_string())?;
-                    current_entry = dir.clone().open_child(&name, child_flags)?;
+                    current_entry = dir.open_child(&name, child_flags)?;
                 }
                 ExtNode::File(_) | ExtNode::Symlink(_) => {
                     return Err(Status::NOT_DIR);

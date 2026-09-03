@@ -293,10 +293,7 @@ impl Node for ThermalSensorManager {
             };
 
             sensor_map.insert(sensor_name.clone(), node.clone());
-            sensors.push(fthermal::SensorInfo {
-                name: Some(sensor_name.clone()),
-                ..Default::default()
-            });
+            sensors.push(fthermal::SensorInfo { name: Some(sensor_name), ..Default::default() });
         }
 
         match self.sensor_deps.set(SensorDeps { sensors, sensor_map }).await {

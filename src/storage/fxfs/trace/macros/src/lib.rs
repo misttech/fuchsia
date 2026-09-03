@@ -285,7 +285,7 @@ fn add_tracing_to_impl(mut item_impl: ItemImpl, args: TraceImplArgs) -> syn::Res
                 add_tracing_to_async_block(
                     &func.sig.output,
                     &mut func.block,
-                    trace_name.clone(),
+                    trace_name,
                     trace_fn_args.0.trace_args,
                 );
             } else {

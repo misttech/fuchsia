@@ -54,9 +54,9 @@ pub fn repackage_starnix_containers(config: &mut ProductConfig, outdir: &Utf8Pat
         let output_manifest_path = crate::StarnixContainerRepackager {
             name: container.name.clone(),
             outdir: container_outdir,
-            container_manifest_path: container_manifest_path.clone(),
+            container_manifest_path: container_manifest_path,
             base: container_base_manifest_path,
-            hals: hals.clone(),
+            hals: hals,
             skip_subpackages: container.skip_subpackages,
         }
         .build(&mut depfile)?;
