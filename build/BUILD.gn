@@ -551,7 +551,6 @@ group("deprecated_zx_wrapper_allowlist") {
     "//zircon/system/ulib/zircon-internal:*",
     "//zircon/system/ulib/zx:*",
     "//zircon/third_party/ulib/cksum:*",
-    "//zircon/third_party/ulib/linenoise:*",
     "//zircon/tools/zbi:*",
   ]
 }

@@ -101,7 +101,6 @@ group("bootfs-tests") {
     "//zircon/system/utest/task-utils:task-utils-bootfs-test",
     "//zircon/system/utest/trace:trace-bootfs-test",
     "//zircon/system/utest/utc-procargs:utc-procargs-bootfs-test",
-    "//zircon/third_party/ulib/linenoise/test:linenoise-test-bootfs-test",
   ]
 
   if (target_cpu == "x64") {

@@ -13,7 +13,6 @@
                     "zircon/third_party/dev/ethernet/e1000",
                     "zircon/third_party/tools/android",
                     "zircon/third_party/uapp/fsck-msdosfs",
-                    "zircon/third_party/ulib/linenoise",
                     "zircon/third_party/ulib/musl",
                     "zircon/third_party/ulib/safemath"
                 ]

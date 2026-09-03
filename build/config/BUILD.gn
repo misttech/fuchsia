@@ -1165,7 +1165,6 @@ config("Wno-conversion") {
     "//zircon/third_party/uapp/fsck-msdosfs:*",
     "//zircon/third_party/uapp/mkfs-msdosfs:*",
     "//zircon/third_party/ulib/cksum:*",
-    "//zircon/third_party/ulib/linenoise:*",
     "//zircon/third_party/ulib/musl:*",
     "//zircon/third_party/ulib/musl/ldso",
     "//zircon/third_party/ulib/musl/src/complex",

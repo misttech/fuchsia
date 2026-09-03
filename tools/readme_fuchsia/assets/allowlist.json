@@ -75,7 +75,6 @@
         "zircon/third_party/uapp/fsck-msdosfs/README.fuchsia",
         "zircon/third_party/ulib/chromiumos-platform-ec/README.fuchsia",
         "zircon/third_party/ulib/cksum/README.fuchsia",
-        "zircon/third_party/ulib/linenoise/README.fuchsia",
         "zircon/third_party/ulib/musl/README.fuchsia",
         "zircon/third_party/ulib/musl/third_party/README.fuchsia",
         "zircon/third_party/ulib/safemath/README.fuchsia"
