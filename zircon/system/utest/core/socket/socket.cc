@@ -8,9 +8,8 @@
 #include <lib/zx/vmo.h>
 
 #include <string_view>
-#include <utility>
+#include <vector>
 
-#include <fbl/array.h>
 #include <zxtest/zxtest.h>
 
 namespace {
@@ -160,12 +159,9 @@ TEST(SocketTest, Signals) {
     EXPECT_EQ(GetSignals(local), ZX_SOCKET_WRITABLE);
     EXPECT_EQ(GetSignals(remote), ZX_SOCKET_WRITABLE);
 
-    const size_t kAllSize = 128 * 1024;
-    const size_t kChunk = kAllSize / 16;
-    fbl::Array<char> big_buf(new char[kAllSize], kAllSize);
-    ASSERT_NOT_NULL(big_buf.data());
-    memset(big_buf.data(), 0x66, big_buf.size());
-
+    constexpr size_t kAllSize = 128 * 1024;
+    constexpr size_t kChunk = kAllSize / 16;
+    std::vector<char> big_buf(kAllSize, 0x66);
     {
       size_t count;
       ASSERT_OK(local.write(0u, big_buf.data(), kChunk, &count));
@@ -271,8 +267,9 @@ TEST(SocketTest, SetThreshholdsAndCheckSignals) {
   EXPECT_EQ(GetSignals(remote_clone), ZX_SOCKET_WRITABLE | ZX_SOCKET_WRITE_THRESHOLD);
 
   /* Write data and test signals */
-  size_t bufsize = SOCKET2_SIGNALTEST_RX_THRESHOLD - 1;
-  char buf[bufsize];
+  constexpr size_t kMaxBufSize = SOCKET2_SIGNALTEST_RX_THRESHOLD - 1;
+  char buf[kMaxBufSize];
+  size_t bufsize = kMaxBufSize;
   {
     size_t count;
     ASSERT_OK(remote.write(0u, buf, bufsize, &count));
@@ -342,7 +339,7 @@ TEST(SocketTest, SetThreshholdsAndCheckSignals) {
    * Next write enough data to de-assert WRITE Threshold
    */
   bufsize = write_threshold - (SOCKET2_SIGNALTEST_RX_THRESHOLD + 1);
-  fbl::Array<char> buf2(new char[bufsize], bufsize);
+  std::vector<char> buf2(bufsize, 0);
   {
     size_t count;
     ASSERT_OK(remote.write(0u, buf2.data(), bufsize, &count));
@@ -359,7 +356,7 @@ TEST(SocketTest, SetThreshholdsAndCheckSignals) {
    * re-assert the write threshold signals.
    */
   bufsize += 10;
-  buf2.reset(new char[bufsize], bufsize);
+  buf2.resize(bufsize);
   {
     size_t count;
     ASSERT_OK(local.read(0u, buf2.data(), bufsize, &count));
@@ -626,7 +623,7 @@ TEST(SocketTest, ShortWrite) {
   zx_info_socket_t info{};
   ASSERT_OK(local.get_info(ZX_INFO_SOCKET, &info, sizeof(info), nullptr, nullptr));
   const size_t buffer_size = info.rx_buf_max + 1;
-  fbl::Array<char> buffer(new char[buffer_size], buffer_size);
+  std::vector<char> buffer(buffer_size, 0);
 
   size_t written = ~(size_t)0;  // This should get overwritten by the syscall.
   ASSERT_OK(local.write(0u, buffer.data(), buffer_size, &written));
@@ -782,9 +779,7 @@ TEST(SocketTest, DatagramNoShortWrite) {
   size_t buffer_size = info.tx_buf_max * 2;
   ASSERT_GT(buffer_size, 0);
 
-  fbl::Array<char> buffer(new char[buffer_size]{}, buffer_size);
-  ASSERT_NOT_NULL(buffer.data());
-
+  std::vector<char> buffer(buffer_size, 0);
   size_t written = ~0u;
   ASSERT_STATUS(local.write(0u, buffer.data(), buffer_size, &written), ZX_ERR_OUT_OF_RANGE);
   // Since the syscall failed, it should not have overwritten this output
@@ -1388,9 +1383,7 @@ TEST(SocketTest, DatagramWriteExceedingCapacityReturnsShouldWait) {
   constexpr size_t kFirstChunk = 200 * 1024;
   constexpr size_t kSecondChunk = 100 * 1024;
 
-  fbl::Array<char> buffer(new char[kFirstChunk], kFirstChunk);
-  memset(buffer.data(), 'x', kFirstChunk);
-
+  std::vector<char> buffer(kFirstChunk, 'x');
   size_t written = 0;
   ASSERT_OK(local.write(0, buffer.data(), kFirstChunk, &written));
   ASSERT_EQ(written, kFirstChunk);
