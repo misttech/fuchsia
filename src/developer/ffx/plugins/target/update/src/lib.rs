@@ -252,7 +252,7 @@ impl UpdateTool {
                 .try_into()
                 .unwrap();
             Some(
-                Box::pin(server::package_server_task(
+                server::package_server_task(
                     self.target_spec,
                     self.rcs_proxy_connector.clone(),
                     self.host_address,
@@ -260,7 +260,7 @@ impl UpdateTool {
                     product_path,
                     repo_port,
                     true,
-                ))
+                )
                 .await?,
             )
         } else if cmd.product_bundle_path.is_some() {
@@ -274,45 +274,42 @@ impl UpdateTool {
         if let Some(server_task) = package_server_task {
             // Use select! to run the package server at the same time as the others. This is preferable
             // to using detach(), since we can get error result from the package server.
+            let server::PackageServerTask { repo_name, repo_host_rx: _, task } = server_task;
+            let rcs_proxy_connector = self.rcs_proxy_connector.clone();
 
             // wait for the server to be registered before running the check.
             let check = async {
-                Box::pin(server::wait_for_device_task(
-                    server_task.repo_name.clone(),
-                    self.rcs_proxy_connector.clone(),
-                ))
-                .await?;
-                Self::check_for_update(update_manager_proxy.clone(), &cmd, writer).await
+                server::wait_for_device_task(&repo_name, rcs_proxy_connector).await?;
+                Self::check_for_update(&update_manager_proxy, cmd, writer).await
             };
 
-            let fused_server_task = server_task.task.fuse();
+            let fused_server_task = task.fuse();
             let check_task = check.fuse();
 
             pin_mut!(fused_server_task, check_task);
 
-            let repo_name = server_task.repo_name.clone();
-
             select!(
-                server_task_result = fused_server_task =>  {
+                server_task_result = fused_server_task => {
                     // The server should start and run indefiniitely, if we get here there is a problem.
                     match server_task_result {
                         Ok(_) => return Err(UpdateError::PackageServerExitedPrematurely),
-                        Err(e) => return Err(UpdateError::PackageServerRunFailed(e))
+                        Err(e) => return Err(UpdateError::PackageServerRunFailed(e)),
                     }
                 }
-                update_task_result =  check_task => {
-                   Box::pin(server::unregister_pb_repo_server(&repo_name, self.rcs_proxy_connector.clone())).await?;
-                   return update_task_result}
+                update_task_result = check_task => {
+                    server::unregister_pb_repo_server(&repo_name, self.rcs_proxy_connector).await?;
+                    return update_task_result;
+                }
             );
         } else {
-            Self::check_for_update(update_manager_proxy, &cmd, writer).await?;
+            Self::check_for_update(&update_manager_proxy, cmd, writer).await?;
         }
 
         Ok(())
     }
 
     async fn check_for_update<W: std::io::Write>(
-        update_manager_proxy: ManagerProxy,
+        update_manager_proxy: &ManagerProxy,
         cmd: &args::CheckNow,
         writer: &mut W,
     ) -> Result<(), UpdateError> {
@@ -374,7 +371,7 @@ impl UpdateTool {
                     .unwrap();
                 (
                     Some(
-                        Box::pin(server::package_server_task(
+                        server::package_server_task(
                             self.target_spec,
                             self.rcs_proxy_connector.clone(),
                             self.host_address,
@@ -382,7 +379,7 @@ impl UpdateTool {
                             product_path,
                             repo_port,
                             !cmd.packageless,
-                        ))
+                        )
                         .await?,
                     ),
                     None,
@@ -471,26 +468,22 @@ impl UpdateTool {
         if let Some(server_task) = package_server_task {
             // Use select! to run the package server at the same time as the others. This is preferable
             // to using detach(), since we can get error result from the package server.
+            let server::PackageServerTask { repo_name, repo_host_rx: _, task } = server_task;
+            let rcs_proxy_connector = self.rcs_proxy_connector.clone();
 
             // wait for the server to be registered before running the check.
             let install = async {
                 // Packageless update does not need the server to be registered on the target.
                 if !cmd.packageless {
-                    Box::pin(server::wait_for_device_task(
-                        server_task.repo_name.clone(),
-                        self.rcs_proxy_connector.clone(),
-                    ))
-                    .await?;
+                    server::wait_for_device_task(&repo_name, rcs_proxy_connector).await?;
                 }
                 Self::force_install(update_url, cmd.reboot, installer_proxy, writer).await
             };
 
-            let fused_server_task = server_task.task.fuse();
+            let fused_server_task = task.fuse();
             let install_task = install.fuse();
 
             pin_mut!(fused_server_task, install_task);
-
-            let repo_name = server_task.repo_name.clone();
 
             select!(
                 server_task_result = fused_server_task =>  {
@@ -505,7 +498,7 @@ impl UpdateTool {
                         if cmd.reboot {
                             Timer::new(Duration::from_secs(15)).await;
                         }
-                        Box::pin(server::unregister_pb_repo_server(&repo_name, self.rcs_proxy_connector.clone())).await?;
+                        server::unregister_pb_repo_server(&repo_name, self.rcs_proxy_connector).await?;
                     }
                     return update_task_result;
                 }
@@ -718,12 +711,12 @@ async fn monitor_state<W: std::io::Write>(
                 responder.send().map_err(|e| UpdateError::Fho(bug!(e)))?;
 
                 let state = State::from(state);
-                match state.clone() {
+                match &state {
                     State::CheckingForUpdates => write_progress("Checking for updates", writer)?,
                     State::NoUpdateAvailable => write_progress("No update available", writer)?,
                     State::InstallationDeferredByPolicy(installation_deferred_data) => {
                         let reason =
-                            if let Some(reason) = installation_deferred_data.deferral_reason {
+                            if let Some(reason) = &installation_deferred_data.deferral_reason {
                                 format!("{reason:?}")
                             } else {
                                 "".into()
@@ -731,7 +724,7 @@ async fn monitor_state<W: std::io::Write>(
                         write_progress(&format!("Update deferred by policy: {reason}"), writer)?
                     }
                     State::InstallingUpdate(installing_data) => {
-                        let pct = if let Some(progress) = installing_data.installation_progress {
+                        let pct = if let Some(progress) = &installing_data.installation_progress {
                             format!("{:6.2}%", progress.fraction_completed.unwrap_or(0.0) * 100.0)
                         } else {
                             "".into()
@@ -739,7 +732,7 @@ async fn monitor_state<W: std::io::Write>(
                         write_progress(&format!("{pct} Installing"), writer)?;
                     }
                     State::WaitingForReboot(installing_data) => {
-                        let pct = if let Some(progress) = installing_data.installation_progress {
+                        let pct = if let Some(progress) = &installing_data.installation_progress {
                             format!("{:6.2}%", progress.fraction_completed.unwrap_or(0.0) * 100.0)
                         } else {
                             "".into()
@@ -750,6 +743,7 @@ async fn monitor_state<W: std::io::Write>(
                     State::InstallationError(installing_data) => {
                         let pct = installing_data
                             .installation_progress
+                            .as_ref()
                             .and_then(|p| p.fraction_completed);
                         return Err(UpdateError::InternalInstallation(pct));
                     }
