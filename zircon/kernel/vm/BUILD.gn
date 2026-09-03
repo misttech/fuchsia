@@ -1053,6 +1053,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_evict_loaned_page",
     "cpp_vm_cow_pages_debug_get_page",
     "cpp_vm_cow_pages_debug_is_empty",
+    "cpp_vm_cow_pages_debug_is_high_memory_priority",
     "cpp_vm_cow_pages_debug_get_discardable_tracker",
     "cpp_vm_cow_pages_reclaim_page",
     "cpp_vm_cow_pages_debug_lookup_readable",

@@ -61,6 +61,10 @@ FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_debug_is_empty(const VmCowPages* cow, ui
   return cow->DebugIsEmpty(offset);
 }
 
+FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_debug_is_high_memory_priority(const VmCowPages* cow) {
+  return cow->DebugIsHighMemoryPriority();
+}
+
 FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_reclaim_page(
     VmCowPages* cow, vm_page_t* page, uint64_t offset, VmCowPages::EvictionAction eviction_action,
     VmCompressor* compressor, VmCowReclaimSuccess* out_success, VmCowReclaimFailure* out_failure) {

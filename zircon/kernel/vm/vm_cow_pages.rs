@@ -153,6 +153,12 @@ impl VmCowPages {
         unsafe { bindings::cpp_vm_cow_pages_debug_is_empty(self.as_raw(), offset) }
     }
 
+    /// Returns whether this VmCowPages is marked high memory priority.
+    pub fn debug_is_high_memory_priority(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
+        unsafe { bindings::cpp_vm_cow_pages_debug_is_high_memory_priority(self.as_raw()) }
+    }
+
     /// Returns the debug discardable tracker, if present.
     pub fn debug_get_discardable_tracker(&self) -> Option<&DiscardableVmoTracker> {
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
