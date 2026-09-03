@@ -12,6 +12,7 @@ driver_bind_rules("aml-cpu-legacy-bind") {
   bind_output = "aml-cpu-legacy.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.google.platform",
     "//src/devices/bind/fuchsia.platform",

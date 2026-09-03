@@ -24,6 +24,13 @@
                     "fuchsia.BIND_PLATFORM_DEV_PID": "fuchsia.google.platform.BIND_PLATFORM_DEV_PID.SHERLOCK",
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.google.platform.BIND_PLATFORM_DEV_DID.GOOGLE_AMLOGIC_CPU"
                 }
+            },
+            {
+                "name": "Match Compatible",
+                "expected": "match",
+                "device": {
+                    "fuchsia.COMPATIBLE": "\"google,amlogic-cpu\""
+                }
             }
         ]
     }
