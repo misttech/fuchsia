@@ -16,7 +16,7 @@ namespace f2fs {
 
 class AdminService final : public fidl::WireServer<fuchsia_fs::Admin>, public fs::Service {
  public:
-  using ShutdownRequester = fit::callback<void(fs::FuchsiaVfs::ShutdownCallback)>;
+  using ShutdownRequester = fit::function<void(fs::FuchsiaVfs::ShutdownCallback)>;
   AdminService(async_dispatcher_t* dispatcher, ShutdownRequester shutdown);
 
   void Shutdown(ShutdownCompleter::Sync& completer) final;

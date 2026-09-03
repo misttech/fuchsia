@@ -5,10 +5,12 @@
 #include "src/storage/f2fs/component_runner.h"
 
 #include <fidl/fuchsia.fs.startup/cpp/wire.h>
+#include <fidl/fuchsia.fs/cpp/wire.h>
 #include <fidl/fuchsia.io/cpp/wire.h>
 #include <fidl/fuchsia.process.lifecycle/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async/cpp/task.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/zx/resource.h>
 
@@ -189,6 +191,133 @@ TEST_F(F2fsComponentRunnerTest, LifecycleChannelShutsDownRunner) {
 
   ASSERT_EQ(loop_.Run(), ZX_ERR_CANCELED);
   ASSERT_TRUE(unmount_callback_called);
+}
+
+TEST_F(F2fsComponentRunnerTest, DoubleShutdown) {
+  ASSERT_NO_FATAL_FAILURE(StartServe());
+
+  auto svc_dir = GetSvcDir();
+  auto client_end = component::ConnectAt<fuchsia_fs_startup::Startup>(svc_dir.borrow());
+  ASSERT_EQ(client_end.status_value(), ZX_OK);
+
+  MountOptions options;
+  zx::result status = runner_->Configure(std::move(bcache_), options);
+  ASSERT_EQ(status.status_value(), ZX_OK);
+  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+
+  // ManagedVfs::Shutdown doesn't support being called twice. Lifecycle.Stop and Admin.Shutdown
+  // could race and both call ComponentRunner::Shutdown. ComponentRunner::Shutdown needs to handle
+  // being called twice, only calling ManagedVfs::Shutdown once and calling both callbacks with the
+  // result.
+  std::atomic<bool> callback_called = false;
+  async::PostTask(loop_.dispatcher(), [this, callback_called = &callback_called]() {
+    runner_->Shutdown([callback_called](zx_status_t status) {
+      EXPECT_EQ(status, ZX_OK);
+      *callback_called = true;
+    });
+  });
+  std::atomic<bool> callback2_called = false;
+  async::PostTask(loop_.dispatcher(), [this, callback_called = &callback2_called]() {
+    runner_->Shutdown([callback_called](zx_status_t status) {
+      EXPECT_EQ(status, ZX_OK);
+      *callback_called = true;
+    });
+  });
+
+  // Shutdown quits the loop, but not before running the callbacks.
+  ASSERT_EQ(loop_.Run(), ZX_ERR_CANCELED);
+  // Both callbacks were completed.
+  ASSERT_TRUE(callback_called);
+  ASSERT_TRUE(callback2_called);
+}
+
+TEST_F(F2fsComponentRunnerTest, AdminShutdownCanBeCalledMultipleTimes) {
+  ASSERT_NO_FATAL_FAILURE(StartServe());
+
+  auto svc_dir = GetSvcDir();
+  auto startup_client_end = component::ConnectAt<fuchsia_fs_startup::Startup>(svc_dir.borrow());
+  ASSERT_EQ(startup_client_end.status_value(), ZX_OK);
+
+  MountOptions options;
+  zx::result status = runner_->Configure(std::move(bcache_), options);
+  ASSERT_EQ(status.status_value(), ZX_OK);
+  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+
+  auto admin_client_end1 = component::ConnectAt<fuchsia_fs::Admin>(svc_dir.borrow());
+  ASSERT_EQ(admin_client_end1.status_value(), ZX_OK);
+  auto admin_client_end2 = component::ConnectAt<fuchsia_fs::Admin>(svc_dir.borrow());
+  ASSERT_EQ(admin_client_end2.status_value(), ZX_OK);
+  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+
+  fidl::WireSharedClient<fuchsia_fs::Admin> admin_client1(std::move(*admin_client_end1),
+                                                          loop_.dispatcher());
+  fidl::WireSharedClient<fuchsia_fs::Admin> admin_client2(std::move(*admin_client_end2),
+                                                          loop_.dispatcher());
+
+  runner_->SetUnmountCallback(
+      [this]() { async::PostTask(loop_.dispatcher(), [this]() { loop_.Quit(); }); });
+
+  std::atomic<bool> shutdown1_called = false;
+  admin_client1->Shutdown().ThenExactlyOnce(
+      [&](fidl::WireUnownedResult<fuchsia_fs::Admin::Shutdown>& result) {
+        EXPECT_EQ(result.status(), ZX_OK);
+        shutdown1_called = true;
+      });
+
+  std::atomic<bool> shutdown2_called = false;
+  admin_client2->Shutdown().ThenExactlyOnce(
+      [&](fidl::WireUnownedResult<fuchsia_fs::Admin::Shutdown>& result) {
+        EXPECT_EQ(result.status(), ZX_OK);
+        shutdown2_called = true;
+      });
+
+  ASSERT_EQ(loop_.Run(), ZX_ERR_CANCELED);
+  ASSERT_TRUE(shutdown1_called);
+  ASSERT_TRUE(shutdown2_called);
+}
+
+TEST_F(F2fsComponentRunnerTest, AdminShutdownAndLifecycleStopRace) {
+  auto lifecycle_endpoints = fidl::Endpoints<fuchsia_process_lifecycle::Lifecycle>::Create();
+  auto lifecycle = std::move(lifecycle_endpoints.client);
+
+  runner_ = std::make_unique<ComponentRunner>(loop_.dispatcher());
+  std::atomic<bool> unmount_callback_called = false;
+  runner_->SetUnmountCallback([this, &unmount_callback_called]() {
+    EXPECT_FALSE(unmount_callback_called);
+    unmount_callback_called = true;
+    async::PostTask(loop_.dispatcher(), [this]() { loop_.Quit(); });
+  });
+  zx::result status =
+      runner_->ServeRoot(std::move(server_end_), std::move(lifecycle_endpoints.server));
+  ASSERT_EQ(status.status_value(), ZX_OK);
+  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+
+  MountOptions options;
+  status = runner_->Configure(std::move(bcache_), options);
+  ASSERT_EQ(status.status_value(), ZX_OK);
+  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+
+  auto svc_dir = GetSvcDir();
+  auto admin_client_end = component::ConnectAt<fuchsia_fs::Admin>(svc_dir.borrow());
+  ASSERT_EQ(admin_client_end.status_value(), ZX_OK);
+  ASSERT_EQ(loop_.RunUntilIdle(), ZX_OK);
+
+  fidl::WireSharedClient<fuchsia_fs::Admin> admin_client(std::move(*admin_client_end),
+                                                         loop_.dispatcher());
+
+  std::atomic<bool> admin_shutdown_called = false;
+  admin_client->Shutdown().ThenExactlyOnce(
+      [&](fidl::WireUnownedResult<fuchsia_fs::Admin::Shutdown>& result) {
+        EXPECT_EQ(result.status(), ZX_OK);
+        admin_shutdown_called = true;
+      });
+
+  auto lifecycle_stop_res = fidl::WireCall(lifecycle)->Stop();
+  ASSERT_EQ(lifecycle_stop_res.status(), ZX_OK);
+
+  ASSERT_EQ(loop_.Run(), ZX_ERR_CANCELED);
+  ASSERT_TRUE(unmount_callback_called);
+  ASSERT_TRUE(admin_shutdown_called);
 }
 
 }  // namespace

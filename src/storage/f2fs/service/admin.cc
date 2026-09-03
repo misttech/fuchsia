@@ -10,7 +10,10 @@ namespace f2fs {
 
 AdminService::AdminService(async_dispatcher_t* dispatcher, ShutdownRequester shutdown)
     : fs::Service([dispatcher, this](fidl::ServerEnd<fuchsia_fs::Admin> server_end) {
-        fidl::BindServer(dispatcher, std::move(server_end), this);
+        fidl::BindServer(
+            dispatcher, std::move(server_end), this,
+            [self = fbl::RefPtr<AdminService>(this)](AdminService*, fidl::UnbindInfo,
+                                                     fidl::ServerEnd<fuchsia_fs::Admin>) {});
         return ZX_OK;
       }),
       shutdown_(std::move(shutdown)) {}

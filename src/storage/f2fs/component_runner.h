@@ -7,6 +7,10 @@
 
 #include <fidl/fuchsia.process.lifecycle/cpp/wire.h>
 #include <lib/inspect/component/cpp/component.h>
+#include <zircon/compiler.h>
+
+#include <mutex>
+#include <vector>
 
 #include "src/storage/f2fs/common.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
@@ -57,6 +61,12 @@ class ComponentRunner final : public PlatformVfs {
   std::unique_ptr<F2fs> f2fs_;
 
   std::optional<inspect::ComponentInspector> exposed_inspector_ = {};
+
+  std::mutex shutdown_lock_;
+  bool is_shutdown_ __TA_GUARDED(shutdown_lock_) = false;
+  zx::result<> shutdown_result_ __TA_GUARDED(shutdown_lock_) = zx::ok();
+  // A queue of callbacks for shutdown requests that arrive while shutdown is running.
+  std::vector<fs::FuchsiaVfs::ShutdownCallback> shutdown_callbacks_ __TA_GUARDED(shutdown_lock_);
 };
 
 }  // namespace f2fs

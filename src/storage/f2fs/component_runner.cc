@@ -148,29 +148,65 @@ zx::result<> ComponentRunner::Configure(std::unique_ptr<BcacheMapper> bcache,
 
 void ComponentRunner::Shutdown(fs::FuchsiaVfs::ShutdownCallback cb) {
   TRACE_DURATION("f2fs", "ComponentRunner::Shutdown");
-  if (!IsTerminating()) {
-    ManagedVfs::Shutdown([this, cb = std::move(cb)](zx_status_t status) mutable {
-      async::PostTask(dispatcher(), [this, status, cb = std::move(cb)]() mutable {
-        if (f2fs_) {
-          f2fs_->Sync([this](zx_status_t) mutable { f2fs_->PutSuper(); });
-          TearDown();
-          // F2fs has a BcacheMapper which has a VmoBuffer which has a Vmoid. When the VmoBuffer is
-          // destructed it tries to detach the Vmoid from the block device. F2fs must be destructed
-          // before responding to the Shutdown request to ensure that the block device still exists
-          // for these operations.
-          f2fs_.reset();
-        }
-        if (on_unmount_) {
-          on_unmount_();
-        }
-
-        // Tell the unmounting channel that we've completed teardown. This *must* be the last
-        // thing we do because after this, the caller can assume that it's safe to destroy the
-        // runner.
-        cb(status);
-      });
-    });
+  fs::FuchsiaVfs::ShutdownCallback to_call;
+  zx_status_t cached_result = ZX_OK;
+  {
+    std::scoped_lock lock(shutdown_lock_);
+    // If the shutdown has already completed, just report it and be done.
+    if (is_shutdown_) {
+      to_call = std::move(cb);
+      cached_result = shutdown_result_.status_value();
+    } else {
+      // Queue up any callbacks to be run at the end.
+      shutdown_callbacks_.push_back(std::move(cb));
+      // Only if this is the first entry should it actually perform the shutdown.
+      if (shutdown_callbacks_.size() > 1) {
+        return;
+      }
+    }
   }
+  if (to_call) {
+    to_call(cached_result);
+    return;
+  }
+
+  fs::FuchsiaVfs::ShutdownCallback final_cb = [this](zx_status_t status) {
+    std::vector<fs::FuchsiaVfs::ShutdownCallback> callbacks;
+    {
+      std::scoped_lock lock(shutdown_lock_);
+      is_shutdown_ = true;
+      shutdown_result_ = zx::make_result(status);
+      callbacks = std::move(shutdown_callbacks_);
+    }
+    for (auto& cb : callbacks) {
+      cb(status);
+    }
+  };
+
+  ManagedVfs::Shutdown([this, cb = std::move(final_cb)](zx_status_t status) mutable {
+    if (status != ZX_OK) {
+      FX_PLOGS(ERROR, status) << "Managed VFS shutdown failed";
+    }
+    async::PostTask(dispatcher(), [this, status, cb = std::move(cb)]() mutable {
+      if (f2fs_) {
+        f2fs_->Sync([this](zx_status_t) mutable { f2fs_->PutSuper(); });
+        TearDown();
+        // F2fs has a BcacheMapper which has a VmoBuffer which has a Vmoid. When the VmoBuffer is
+        // destructed it tries to detach the Vmoid from the block device. F2fs must be destructed
+        // before responding to the Shutdown request to ensure that the block device still exists
+        // for these operations.
+        f2fs_.reset();
+      }
+      if (on_unmount_) {
+        on_unmount_();
+      }
+
+      // Tell the unmounting channel that we've completed teardown. This *must* be the last
+      // thing we do because after this, the caller can assume that it's safe to destroy the
+      // runner.
+      cb(status);
+    });
+  });
 }
 
 zx::result<fs::FilesystemInfo> ComponentRunner::GetFilesystemInfo() {
