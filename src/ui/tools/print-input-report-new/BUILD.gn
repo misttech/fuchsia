@@ -18,6 +18,7 @@ rustc_binary("bin") {
     "src/commands/read.rs",
     "src/common.rs",
     "src/descriptor_types.rs",
+    "src/indented_serializer.rs",
     "src/input_report_types.rs",
     "src/main.rs",
   ]

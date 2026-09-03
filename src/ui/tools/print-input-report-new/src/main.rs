@@ -8,6 +8,8 @@ use argh::FromArgs;
 mod commands;
 mod common;
 mod descriptor_types;
+#[expect(dead_code, reason = "Used in subsequent CLs and unit tests")]
+mod indented_serializer;
 mod input_report_types;
 
 #[derive(FromArgs, Debug)]
