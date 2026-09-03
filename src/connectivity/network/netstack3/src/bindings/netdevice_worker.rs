@@ -20,9 +20,10 @@ use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6, Ipv6Addr, Mtu, Subnet};
 use net_types::{MulticastAddr, UnicastAddr};
 use netstack3_core::device::{
     BufferSlice, EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice,
-    EthernetWeakDeviceId, GroBufferStorage, GroInputItem, GroOutputItem, MaxEthernetFrameSize,
-    MaybeContiguousBuffer, PureIpDevice, PureIpDeviceCreationProperties, PureIpDeviceId,
-    PureIpDeviceReceiveFrameMetadata, PureIpWeakDeviceId, RecvEthernetFrameMeta,
+    EthernetWeakDeviceId, GroBufferDestination, GroBufferStorage, GroFrameType, GroInputItem,
+    GroOutputItem, MaxEthernetFrameSize, MaybeContiguousBuffer, PureIpDevice,
+    PureIpDeviceCreationProperties, PureIpDeviceId, PureIpDeviceReceiveFrameMetadata,
+    PureIpWeakDeviceId, RecvEthernetFrameMeta,
 };
 use netstack3_core::routes::RawMetric;
 use netstack3_core::sync::RwLock as CoreRwLock;
@@ -284,6 +285,16 @@ impl NetdeviceWorker {
 struct GroPortTarget {
     port: netdevice_client::Port,
     frame_type: FrameType,
+}
+
+impl GroBufferDestination for GroPortTarget {
+    fn frame_type(&self) -> GroFrameType {
+        match self.frame_type {
+            FrameType::Ethernet => GroFrameType::Ethernet,
+            FrameType::Ipv4 => GroFrameType::PureIp(IpVersion::V4),
+            FrameType::Ipv6 => GroFrameType::PureIp(IpVersion::V6),
+        }
+    }
 }
 
 /// Converts an rx buffer into a format suitable for processing by GRO.

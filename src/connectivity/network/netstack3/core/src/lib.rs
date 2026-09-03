@@ -81,8 +81,9 @@ pub mod device {
         DeviceClassMatcher, DeviceConfiguration, DeviceConfigurationUpdate,
         DeviceConfigurationUpdateError, DeviceCounters, DeviceId, DeviceIdAndNameMatcher,
         DeviceLayerEventDispatcher, DeviceLayerStateTypes, DeviceProvider, DeviceSendFrameError,
-        GroBufferStorage, GroInputItem, GroIter, GroOutputBuffers, GroOutputItem,
-        MaybeContiguousBuffer, NdpConfiguration, NdpConfigurationUpdate, WeakDeviceId,
+        GroBufferDestination, GroBufferStorage, GroFrameType, GroInputItem, GroIter,
+        GroOutputBuffers, GroOutputItem, MaybeContiguousBuffer, NdpConfiguration,
+        NdpConfigurationUpdate, WeakDeviceId,
     };
 }
 

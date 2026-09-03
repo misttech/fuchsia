@@ -39,6 +39,15 @@ impl EtherType {
             IpVersion::V6 => EtherType::Ipv6,
         }
     }
+
+    /// Constructs the relevant [`IpVersion`] from the given [`EtherType`].
+    pub fn to_ip_version(self) -> Option<IpVersion> {
+        match self {
+            EtherType::Ipv4 => Some(IpVersion::V4),
+            EtherType::Ipv6 => Some(IpVersion::V6),
+            _ => None,
+        }
+    }
 }
 
 /// An extension trait adding IP-related functionality to `Ipv4` and `Ipv6`.
@@ -188,6 +197,11 @@ impl<B: SplitByteSlice> EthernetFrame<B> {
     /// The destination MAC address.
     pub fn dst_mac(&self) -> Mac {
         self.hdr_prefix.dst_mac
+    }
+
+    /// The IEEE 802.1Q tag, if present.
+    pub fn tag(&self) -> Option<u32> {
+        self.tag.as_ref().map(|t| t.get())
     }
 
     /// The EtherType.
@@ -408,6 +422,7 @@ mod tests {
         assert_eq!(frame.hdr_prefix.dst_mac, DEFAULT_DST_MAC);
         assert_eq!(frame.hdr_prefix.src_mac, DEFAULT_SRC_MAC);
         assert!(frame.tag.is_none());
+        assert_eq!(frame.tag(), None);
         assert_eq!(frame.ethertype(), Some(EtherType::Arp));
         assert_eq!(frame.body(), &body[..]);
         // Test parsing with a too-short body but length checking disabled.
@@ -417,6 +432,7 @@ mod tests {
         assert_eq!(frame.hdr_prefix.dst_mac, DEFAULT_DST_MAC);
         assert_eq!(frame.hdr_prefix.src_mac, DEFAULT_SRC_MAC);
         assert!(frame.tag.is_none());
+        assert_eq!(frame.tag(), None);
         assert_eq!(frame.ethertype(), Some(EtherType::Arp));
         assert_eq!(frame.body(), &[]);
 
@@ -438,11 +454,9 @@ mod tests {
             assert_eq!(frame.hdr_prefix.src_mac, DEFAULT_SRC_MAC);
             assert_eq!(frame.ethertype(), Some(EtherType::Arp));
 
-            // help out with type inference
-            let tag: &U32 = frame.tag.as_ref().unwrap();
             let want_tag =
                 u32::from(*tpid) << 16 | ((TPID_OFFSET as u32 + 2) << 8) | (TPID_OFFSET as u32 + 3);
-            assert_eq!(tag.get(), want_tag);
+            assert_eq!(frame.tag(), Some(want_tag));
             // Offset by 4 since new_parse_buf returns a body on the assumption
             // that there's no tag.
             assert_eq!(frame.body(), &body[4..]);

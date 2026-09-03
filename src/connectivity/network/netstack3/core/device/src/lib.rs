@@ -128,8 +128,8 @@ pub use internal::config::{
     NdpConfigurationUpdate,
 };
 pub use internal::gro::{
-    BufferSlice, GroBufferStorage, GroInputItem, GroIter, GroOutputBuffers, GroOutputItem,
-    MaybeContiguousBuffer,
+    BufferSlice, GroBufferDestination, GroBufferStorage, GroFrameType, GroInputItem, GroIter,
+    GroOutputBuffers, GroOutputItem, MaybeContiguousBuffer,
 };
 pub use internal::id::{BaseDeviceId, DeviceId, DeviceProvider, WeakDeviceId};
 pub use internal::state::{
