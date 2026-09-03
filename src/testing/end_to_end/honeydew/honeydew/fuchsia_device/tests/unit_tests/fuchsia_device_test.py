@@ -303,7 +303,12 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
                 },
             )
             self.fd_fc_obj = sync_fd_fc_obj
-            self.fd_fc_obj.fuchsia_controller.ctx = fuchsia_controller.Context()
+            mock_ctx = mock.MagicMock()
+            mock_ctx.channel_create.return_value = (
+                mock.MagicMock(),
+                mock.MagicMock(),
+            )
+            self.fd_fc_obj.fuchsia_controller.ctx = mock_ctx
 
             mock_fc_create_context.assert_called_once_with(
                 self.fd_fc_obj.fuchsia_controller
@@ -2368,6 +2373,60 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             + [self.fd_fc_obj.device_name],
             include_target=False,
         )
+        mock_fuchsia_device_health_check.assert_called_once()
+
+    # Verifies FuchsiaDevice.resolve_device_ip() re-resolves target address for USB-connected devices.
+    @mock.patch.object(
+        fuchsia_device.FuchsiaDevice,
+        "health_check",
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "resolve_target_address",
+        autospec=True,
+    )
+    @mock.patch.object(
+        fc_transport.FuchsiaController,
+        "after_usb_reconnect",
+        autospec=True,
+    )
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        return_value=json.dumps(
+            [
+                {
+                    "nodename": "fuchsia-emulator",
+                    "rcs_state": "Y",
+                    "serial": "<unknown>",
+                    "target_type": "core.arm64",
+                    "target_state": "Product",
+                    "addresses": [{"cid": 13}],
+                    "is_default": False,
+                    "is_manual": False,
+                }
+            ]
+        ),
+        autospec=True,
+    )
+    async def test_resolve_device_ip_usb(
+        self,
+        mock_ffx_run: mock.Mock,
+        mock_fc_after_usb_reconnect: mock.Mock,
+        mock_ffx_resolve_target_address: mock.Mock,
+        mock_fuchsia_device_health_check: mock.Mock,
+    ) -> None:
+        """Testcase for FuchsiaDevice.resolve_device_ip() with USB target."""
+        await self.fd_fc_obj.resolve_device_ip()
+        mock_ffx_run.assert_called_once_with(
+            self.fd_fc_obj.ffx,
+            cmd=fuchsia_device._FFX_CMDS["RESOLVE_IP"]
+            + [self.fd_fc_obj.device_name],
+            include_target=False,
+        )
+        mock_ffx_resolve_target_address.assert_called_once()
+        mock_fc_after_usb_reconnect.assert_called_once()
         mock_fuchsia_device_health_check.assert_called_once()
 
 

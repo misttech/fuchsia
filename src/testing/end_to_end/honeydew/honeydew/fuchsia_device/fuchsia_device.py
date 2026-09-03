@@ -1223,41 +1223,38 @@ class FuchsiaDevice(
                     f"No addresses found for target '{self.device_name}'"
                 )
             address = target["addresses"][0]
-            ssh_ip = address["ip"]
-            ssh_port = address["ssh_port"]
-            if ssh_port == 0:
-                ssh_port = None
+            target_addr = custom_types.TargetAddr.from_json(address)
 
-            ip_port: custom_types.IpPort = custom_types.IpPort(
-                ip=ipaddress.ip_address(ssh_ip),
-                port=ssh_port,
-            )
+            if isinstance(target_addr, custom_types.IpPort):
+                ip_port: custom_types.IpPort = target_addr
+                self._device_info = dataclasses.replace(
+                    self._device_info,
+                    ip_port=ip_port,
+                )
+                if self._device_info.ip_port is not None:
+                    _LOGGER.info(
+                        "'%s' is the IP address of '%s', after resolving device ip",
+                        self._device_info.ip_port,
+                        self.device_name,
+                    )
 
-            self._device_info = dataclasses.replace(
-                self._device_info,
-                ip_port=ip_port,
-            )
+                # Step #2 - Call all of the callback functions that were registered for IP address change.
+                for fn in self._on_device_ip_change_fns:
+                    _LOGGER.info(
+                        "Calling %s with arg %s",
+                        fn.__qualname__,
+                        ip_port,
+                    )
+                    res = fn(ip_port)
+                    if inspect.isawaitable(res):
+                        await res
+            elif isinstance(target_addr, custom_types.TargetUsb):
+                self.ffx.resolve_target_address()
+                self.fuchsia_controller.after_usb_reconnect()
         except Exception as err:
             raise errors.FuchsiaDeviceError(
                 f"Failed to resolve IP for '{self.device_name}'"
             ) from err
-        if self._device_info.ip_port is not None:
-            _LOGGER.info(
-                "'%s' is the IP address of '%s', after resolving device ip",
-                self._device_info.ip_port,
-                self.device_name,
-            )
-
-        # Step #2 - Call all of the callback functions that were registered for IP address change.
-        for fn in self._on_device_ip_change_fns:
-            _LOGGER.info(
-                "Calling %s with arg %s",
-                fn.__qualname__,
-                ip_port,
-            )
-            res = fn(ip_port)
-            if inspect.isawaitable(res):
-                await res
 
         # Step #3 - Ensure device is healthy
         self.health_check()

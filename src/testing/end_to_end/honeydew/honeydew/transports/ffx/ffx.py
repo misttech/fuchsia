@@ -283,17 +283,18 @@ class FFX:
 
     def resolve_target_address(self) -> None:
         """Resolves the target using 'ffx target list' and caches it."""
-        cmd: list[str] = _FFX_CMDS["TARGET_SSH_ADDRESS"] + [self._query]
+        target_to_query = self._name if self._name else self._query
+        cmd: list[str] = _FFX_CMDS["TARGET_SSH_ADDRESS"] + [target_to_query]
         output: str = self.run(cmd=cmd, include_target=False)
         targets = json.loads(output)
         if not targets:
             raise ffx_errors.FfxCommandError(
-                f"Target '{self._query}' not found in 'ffx target list'"
+                f"Target '{target_to_query}' not found in 'ffx target list'"
             )
         target = targets[0]
         if not target.get("addresses"):
             raise ffx_errors.FfxCommandError(
-                f"No addresses found for target '{self._query}'"
+                f"No addresses found for target '{target_to_query}'"
             )
         address_obj = target["addresses"][0]
 
