@@ -7,7 +7,7 @@
 use fdf_component::DriverError;
 use fidl::{Persistable, Serializable};
 use fidl_next_fuchsia_hardware_platform_device as fpdev;
-use log::error;
+use log::{debug, error};
 use mmio::region::MmioRegion;
 use mmio::vmo::{VmoMapping, VmoMemory};
 use std::future::Future;
@@ -107,7 +107,7 @@ impl PlatformDevice for fidl_next::Client<fpdev::Device> {
     ) -> Result<fidl_fuchsia_driver_metadata::Dictionary, DriverError> {
         let bytes = self.get_persisted_metadata_by_id(metadata_id).await?;
         fidl::unpersist(&bytes).map_err(|err| {
-            error!("Failed to unpersist metadata dictionary for {}: {:?}", metadata_id, err);
+            debug!("Failed to unpersist metadata dictionary for {}: {:?}", metadata_id, err);
             DriverError::Status(Status::INVALID_ARGS)
         })
     }
@@ -406,6 +406,16 @@ mod tests {
 
         let retrieved_dict = client.get_dictionary_metadata("test_dict_id").await.unwrap();
         assert_eq!(retrieved_dict, dict);
+
+        // Probing for dictionary metadata when typed metadata is present fails gracefully.
+        assert_eq!(
+            client
+                .get_dictionary_metadata(Metadata::SERIALIZABLE_NAME)
+                .await
+                .err()
+                .map(|e| e.log_to_status()),
+            Some(Status::INVALID_ARGS)
+        );
 
         let _ = server.abort().await;
     }

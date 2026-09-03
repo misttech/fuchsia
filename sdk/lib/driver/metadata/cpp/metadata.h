@@ -141,7 +141,7 @@ zx::result<std::optional<FidlType>> GetMetadataFromFidlServiceIfExists(
   fit::result metadata =
       fidl::Unpersist<FidlType>(persisted_metadata.value()->persisted_metadata.get());
   if (metadata.is_error()) {
-    fdf::error("Failed to unpersist metadata: {}", metadata.error_value().FormatDescription());
+    fdf::debug("Failed to unpersist metadata: {}", metadata.error_value().FormatDescription());
     return zx::error(metadata.error_value().status());
   }
 

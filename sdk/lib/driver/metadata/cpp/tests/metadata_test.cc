@@ -157,6 +157,21 @@ TEST_F(MetadataTest, GetNonExistentMetadataServer) {
   ASSERT_FALSE(metadata.has_value());
 }
 
+// Verify that `fdf_metadata::GetMetadataFromFidlServiceIfExists()` returns an error if unpersisting
+// fails.
+TEST_F(MetadataTest, GetMetadataUnpersistFails) {
+  const fuchsia_hardware_test::Metadata kMetadata{{.test_property = "test value"}};
+
+  InitIncomingNamespace(true);
+  SetIncomingMetadata(kMetadata);
+
+  // Attempt to retrieve the metadata as a Dictionary, which will fail to unpersist.
+  zx::result result =
+      fdf_metadata::GetMetadataFromFidlServiceIfExists<fuchsia_driver_metadata::Dictionary>(
+          incoming().svc_dir(), fuchsia_hardware_test::Metadata::kSerializableName);
+  ASSERT_TRUE(result.is_error());
+}
+
 }  // namespace fdf_metadata::test
 
 #endif
