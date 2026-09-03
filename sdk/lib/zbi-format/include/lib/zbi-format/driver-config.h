@@ -99,6 +99,9 @@ typedef uint32_t zbi_kernel_driver_t;
 // 'SMMU'
 #define ZBI_KERNEL_DRIVER_ARM_SMMU ((zbi_kernel_driver_t)(0x554D4D51u))
 
+// 'CPEM'
+#define ZBI_KERNEL_DRIVER_CPU_ENERGY_MODEL ((zbi_kernel_driver_t)(0x4d455043u))
+
 // Kernel driver struct that can be used for simple drivers.
 // Used by ZBI_KERNEL_DRIVER_PL011_UART, ZBI_KERNEL_DRIVER_AMLOGIC_UART, and
 // ZBI_KERNEL_DRIVER_GENI_UART, ZBI_KERNEL_DRIVER_I8250_MMIO_UART.
@@ -434,6 +437,37 @@ typedef struct {
   uint32_t handoff_smr_cnt;
   uint32_t handoff_smrs[16];
 } zbi_dcfg_arm_smmu_driver_t;
+
+#define ZBI_KERNEL_DRIVER_CPU_ENERGY_MODEL_MAX_OPPS ((uint32_t)(32u))
+
+// Operating Performance Point (OPP) definition for CPU Energy Model.
+typedef struct {
+  // CPU frequency in kilohertz (kHz).
+  uint32_t frequency_khz;
+
+  // Relative compute capacity scale (unit-less, normalized relative to max capacity across power
+  // domains, e.g. 1024 or 1000 scale).
+  uint32_t capacity;
+
+  // Power consumption in microwatts (uW).
+  uint32_t power_uw;
+
+  // Operating voltage in millivolts (mV).
+  uint32_t voltage_mv;
+} zbi_cpu_energy_model_opp_t;
+
+// Performance / Power Domain definition for CPU Energy Model.
+//
+// The ZBI_KERNEL_DRIVER_IRIS_POWER / ZBI_KERNEL_DRIVER_CPU_ENERGY_MODEL payload
+// consists of one or more `CpuEnergyModelDomain` entries. The length of the
+// item is `sizeof(zbi_cpu_energy_model_domain_t)` times the number of domains.
+typedef struct {
+  uint64_t cpu_mask;
+  uint64_t max_rate;
+  uint32_t domain_id;
+  uint32_t opp_count;
+  zbi_cpu_energy_model_opp_t opps[32];
+} zbi_cpu_energy_model_domain_t;
 
 #if defined(__cplusplus)
 }

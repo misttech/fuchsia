@@ -88,6 +88,9 @@ type KernelDriver = enum : uint32 {
 
     /// 'SMMU'
     ArmSmmu = 0x554D4D51;
+
+    /// 'CPEM'
+    CpuEnergyModel = 0x4d455043;
 };
 
 /// Kernel driver struct that can be used for simple drivers.
@@ -412,4 +415,34 @@ type DcfgArmSmmuDriver = struct {
     /// value packed into the lower 16 bits.
     handoff_smr_cnt uint32;
     handoff_smrs array<uint32, KERNEL_DRIVER_SMMU_MAX_HANDOFF_SMRS>;
+};
+
+const KERNEL_DRIVER_CPU_ENERGY_MODEL_MAX_OPPS uint32 = 32;
+
+/// Operating Performance Point (OPP) definition for CPU Energy Model.
+type CpuEnergyModelOpp = struct {
+    /// CPU frequency in kilohertz (kHz).
+    frequency_khz uint32;
+
+    /// Relative compute capacity scale (unit-less, normalized relative to max capacity across power domains, e.g. 1024 or 1000 scale).
+    capacity uint32;
+
+    /// Power consumption in microwatts (uW).
+    power_uw uint32;
+
+    /// Operating voltage in millivolts (mV).
+    voltage_mv uint32;
+};
+
+/// Performance / Power Domain definition for CPU Energy Model.
+///
+/// The ZBI_KERNEL_DRIVER_IRIS_POWER / ZBI_KERNEL_DRIVER_CPU_ENERGY_MODEL payload
+/// consists of one or more `CpuEnergyModelDomain` entries. The length of the
+/// item is `sizeof(zbi_cpu_energy_model_domain_t)` times the number of domains.
+type CpuEnergyModelDomain = struct {
+    cpu_mask uint64;
+    max_rate uint64;
+    domain_id uint32;
+    opp_count uint32;
+    opps array<CpuEnergyModelOpp, KERNEL_DRIVER_CPU_ENERGY_MODEL_MAX_OPPS>;
 };
