@@ -271,7 +271,7 @@ pub fn construct_symbol_table(
                     declaration: declaration.clone(),
                     qualified_k: alias_qualified_id,
                     qualified_v: qualified_id.clone(),
-                    local_qualified_k: alias_local_qualified_id.clone(),
+                    local_qualified_k: alias_local_qualified_id,
                     local_qualified_v: local_qualified_id.clone(),
                 };
 

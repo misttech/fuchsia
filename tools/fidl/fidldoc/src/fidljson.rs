@@ -182,7 +182,7 @@ impl FidlJson {
                 if req.is_some() {
                     let typ = req.unwrap();
                     let payload = payloads.get(typ["identifier"].as_str().unwrap()).unwrap();
-                    m.insert("maybe_request".to_string(), payload.to_owned().clone());
+                    m.insert("maybe_request".to_string(), payload.to_owned());
                 }
 
                 let resp = match m.get("maybe_response_payload") {
@@ -192,7 +192,7 @@ impl FidlJson {
                 if resp.is_some() {
                     let typ = resp.unwrap();
                     let payload = payloads.get(typ["identifier"].as_str().unwrap()).unwrap();
-                    m.insert("maybe_response".to_string(), payload.to_owned().clone());
+                    m.insert("maybe_response".to_string(), payload.to_owned());
                 }
             }
         }
