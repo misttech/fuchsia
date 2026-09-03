@@ -11,7 +11,7 @@
             "fuchsia.BIND_PROTOCOL": "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
             "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.COMM",
             "fuchsia.BIND_USB_SUBCLASS": "0",
-            "fuchsia.BIND_USB_PROTOCOL": "0"
+            "fuchsia.BIND_USB_PROTOCOL": "1"
         },
         "expected": "abort",
         "name": "Wrong_Class"
@@ -21,29 +21,49 @@
             "fuchsia.BIND_PROTOCOL": "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
             "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC",
             "fuchsia.BIND_USB_SUBCLASS": "0",
-            "fuchsia.BIND_USB_PROTOCOL": "0"
+            "fuchsia.BIND_USB_PROTOCOL": "1"
         },
         "expected": "match",
-        "name": "Correct_Function_And_Class"
-    },
-    {
-        "device": {
-            "fuchsia.BIND_PROTOCOL": "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
-            "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC",
-            "fuchsia.BIND_USB_SUBCLASS": "1",
-            "fuchsia.BIND_USB_PROTOCOL": "0"
-        },
-        "expected": "abort",
-        "name": "Wrong_Subclass"
+        "name": "Correct_SourceSink_Function"
     },
     {
         "device": {
             "fuchsia.BIND_PROTOCOL": "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
             "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC",
             "fuchsia.BIND_USB_SUBCLASS": "0",
+            "fuchsia.BIND_USB_PROTOCOL": "2"
+        },
+        "expected": "match",
+        "name": "Correct_Loopback_Function"
+    },
+    {
+        "device": {
+            "fuchsia.BIND_PROTOCOL": "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
+            "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC",
+            "fuchsia.BIND_USB_SUBCLASS": "1",
             "fuchsia.BIND_USB_PROTOCOL": "1"
         },
         "expected": "abort",
-        "name": "Wrong_USB_Protocol"
+        "name": "Non_Zero_Subclass"
+    },
+    {
+        "device": {
+            "fuchsia.BIND_PROTOCOL": "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
+            "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC",
+            "fuchsia.BIND_USB_SUBCLASS": "0",
+            "fuchsia.BIND_USB_PROTOCOL": "0"
+        },
+        "expected": "abort",
+        "name": "Legacy_Zero_Protocol_Rejected"
+    },
+    {
+        "device": {
+            "fuchsia.BIND_PROTOCOL": "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
+            "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC",
+            "fuchsia.BIND_USB_SUBCLASS": "0",
+            "fuchsia.BIND_USB_PROTOCOL": "3"
+        },
+        "expected": "abort",
+        "name": "Unknown_Protocol_Rejected"
     }
 ]

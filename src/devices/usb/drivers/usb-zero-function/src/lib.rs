@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
+use fidl_fuchsia_driver_framework as fdf;
 use fidl_fuchsia_hardware_usb_descriptor as fusb_descriptor;
 use fidl_fuchsia_hardware_usb_endpoint as fusb_endpoint;
 use fidl_fuchsia_hardware_usb_function as fusb_function;
@@ -136,6 +137,17 @@ struct UsbZeroFunctionDevice {
     stalled_endpoints: Vec<u8>,
 }
 
+const BIND_USB_PROTOCOL_KEY: &str = "fuchsia.BIND_USB_PROTOCOL";
+
+pub(crate) fn get_usb_protocol(start_args: &fdf::DriverStartArgs) -> Option<u32> {
+    start_args.node_properties_2.as_ref()?.iter().flat_map(|entry| &entry.properties).find_map(
+        |prop| match (prop.key.as_str(), &prop.value) {
+            (BIND_USB_PROTOCOL_KEY, fdf::NodePropertyValue::IntValue(val)) => Some(*val),
+            _ => None,
+        },
+    )
+}
+
 driver_register!(UsbZeroFunction);
 
 impl Driver for UsbZeroFunction {
@@ -146,6 +158,12 @@ impl Driver for UsbZeroFunction {
         let scope = Arc::new(fasync::Scope::new_with_name("driver"));
 
         info!("Starting usb-zero-function");
+
+        let protocol = get_usb_protocol(&context.start_args).unwrap_or(1);
+        let initial_mode = match protocol {
+            2 => TestMode::Loopback,
+            _ => TestMode::SourceSink,
+        };
 
         let function_client = context
             .incoming
@@ -237,7 +255,7 @@ impl Driver for UsbZeroFunction {
             USB_ZERO_NUM_ENDPOINTS,  // bNumEndpoints
             USB_CLASS_VENDOR,        // bInterfaceClass (Vendor Specific)
             0,                       // bInterfaceSubClass
-            0,                       // bInterfaceProtocol
+            protocol as u8,          // bInterfaceProtocol
             0,                       // iInterface
             // Endpoint Descriptor (IN)
             USB_ENDPOINT_DESC_SIZE,                               // bLength
@@ -283,7 +301,7 @@ impl Driver for UsbZeroFunction {
             USB_ZERO_NUM_ENDPOINTS,
             USB_CLASS_VENDOR,
             0,
-            0,
+            protocol as u8,
             0,
         ]);
         desc.extend_from_within(ep_desc_start..ep_desc_end);
@@ -322,6 +340,7 @@ impl Driver for UsbZeroFunction {
                 ep_intr_in_addr,
                 ep_intr_out_clone,
                 ep_intr_out_addr,
+                initial_mode,
             );
             device.handle_requests(iface_server.into_stream()).await;
         });
@@ -369,6 +388,7 @@ impl UsbZeroFunctionDevice {
         ep_intr_in_addr: u8,
         ep_intr_out: fusb_endpoint::EndpointProxy,
         ep_intr_out_addr: u8,
+        mode: TestMode,
     ) -> Self {
         Self {
             function_client,
@@ -384,7 +404,7 @@ impl UsbZeroFunctionDevice {
             is_configured: Arc::new(AtomicBool::new(false)),
             vmos_registered: false,
             endpoint_tasks: None,
-            mode: TestMode::default(),
+            mode,
             speed: None,
             stalled_endpoints: Vec::new(),
         }

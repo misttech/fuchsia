@@ -261,6 +261,7 @@ async fn test_vendor_requests() {
             TEST_EP_INTR_IN_ADDR,
             ep_intr_out_proxy,
             TEST_EP_INTR_OUT_ADDR,
+            TestMode::SourceSink,
         );
         zero_function.handle_requests(iface_server.into_stream()).await;
     });
@@ -618,6 +619,7 @@ async fn test_set_and_get_interface() {
             TEST_EP_INTR_IN_ADDR,
             ep_io,
             TEST_EP_INTR_OUT_ADDR,
+            TestMode::SourceSink,
         )
         .handle_requests(iface_s.into_stream())
         .await;
@@ -665,6 +667,7 @@ async fn test_endpoint_stall_state() {
         TEST_EP_INTR_IN_ADDR,
         ep_intr_out_client.into_proxy(),
         TEST_EP_INTR_OUT_ADDR,
+        TestMode::SourceSink,
     );
 
     // Initial state: no stalled endpoints
@@ -724,6 +727,7 @@ async fn test_standard_chapter_9_halt_requests() {
         TEST_EP_INTR_IN_ADDR,
         ep_intr_out_client.into_proxy(),
         TEST_EP_INTR_OUT_ADDR,
+        TestMode::SourceSink,
     );
 
     // Test GET_STATUS (Device) -> should succeed and return 0
@@ -832,6 +836,7 @@ async fn test_standard_endpoint_halt() {
         TEST_EP_INTR_IN_ADDR,
         ep_intr_out_c.into_proxy(),
         TEST_EP_INTR_OUT_ADDR,
+        TestMode::SourceSink,
     );
 
     // EP0 (Control Endpoint) stall management is handled by hardware / driver stack
@@ -909,4 +914,36 @@ async fn test_standard_endpoint_halt() {
         control!(set_halt(USB_REQ_STANDARD_ENDPOINT_IN, USB_FEATURE_ENDPOINT_HALT, in_ep)),
         Err(Status::NOT_SUPPORTED.into_raw())
     );
+}
+
+#[fuchsia::test]
+fn test_get_usb_protocol_parsing() {
+    use fidl_fuchsia_driver_framework as fdf;
+
+    let start_args_sourcesink = fdf::DriverStartArgs {
+        node_properties_2: Some(vec![fdf::NodePropertyEntry2 {
+            name: "default".to_string(),
+            properties: vec![fdf::NodeProperty2 {
+                key: super::BIND_USB_PROTOCOL_KEY.to_string(),
+                value: fdf::NodePropertyValue::IntValue(1),
+            }],
+        }]),
+        ..Default::default()
+    };
+    assert_eq!(get_usb_protocol(&start_args_sourcesink), Some(1));
+
+    let start_args_loopback = fdf::DriverStartArgs {
+        node_properties_2: Some(vec![fdf::NodePropertyEntry2 {
+            name: "default".to_string(),
+            properties: vec![fdf::NodeProperty2 {
+                key: super::BIND_USB_PROTOCOL_KEY.to_string(),
+                value: fdf::NodePropertyValue::IntValue(2),
+            }],
+        }]),
+        ..Default::default()
+    };
+    assert_eq!(get_usb_protocol(&start_args_loopback), Some(2));
+
+    let start_args_empty = fdf::DriverStartArgs::default();
+    assert_eq!(get_usb_protocol(&start_args_empty), None);
 }
