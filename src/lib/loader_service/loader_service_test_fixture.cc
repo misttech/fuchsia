@@ -18,11 +18,9 @@
 
 #include <string_view>
 
-#include "lib/stdcompat/string_view.h"
 #include "src/lib/testing/predicates/status.h"
 
-namespace loader {
-namespace test {
+namespace loader::test {
 
 namespace fldsvc = fuchsia_ldsvc;
 namespace fkernel = fuchsia_kernel;
@@ -165,5 +163,4 @@ zx::result<zx::unowned_resource> LoaderServiceTest::GetVmexResource() {
   return zx::ok(vmex_resource.borrow());
 }
 
-}  // namespace test
-}  // namespace loader
+}  // namespace loader::test

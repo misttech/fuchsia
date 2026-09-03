@@ -11,19 +11,19 @@ group("tests") {
 }
 
 source_set("loader_service") {
-  sources = [ "loader_service.cc" ]
-
+  public = [ "loader_service.h" ]
   public_deps = [
     "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_cpp",
     "//sdk/lib/async",
+    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
   ]
 
+  sources = [ "loader_service.cc" ]
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/lib/fdio",
     "//sdk/lib/fidl",
-    "//sdk/lib/stdcompat",
     "//sdk/lib/syslog/cpp",
     "//src/lib/files",
   ]
@@ -32,20 +32,23 @@ source_set("loader_service") {
 # Subclasses of LoaderServiceBase can reuse the test fixture used here.
 source_set("loader_service_test_fixture") {
   testonly = true
-  sources = [ "loader_service_test_fixture.cc" ]
 
+  public = [ "loader_service_test_fixture.h" ]
   public_deps = [
-    ":loader_service",
+    "//sdk/fidl/fuchsia.ldsvc:fuchsia.ldsvc_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
-    "//sdk/lib/component/incoming/cpp",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/loop_fixture",
     "//src/storage/memfs:lib",
     "//zircon/system/ulib/fbl",
+    "//zircon/system/ulib/zx",
   ]
+
+  sources = [ "loader_service_test_fixture.cc" ]
   deps = [
     "//sdk/fidl/fuchsia.kernel:fuchsia.kernel_cpp",
+    "//sdk/lib/component/incoming/cpp",
     "//src/lib/testing/predicates",
   ]
 }
@@ -55,6 +58,7 @@ cc_test_executable("loader_service_test") {
   sources = [ "loader_service_test.cc" ]
 
   deps = [
+    ":loader_service",
     ":loader_service_test_fixture",
     "//zircon/system/ulib/ldmsg",
   ]

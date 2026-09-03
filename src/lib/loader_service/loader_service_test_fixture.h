@@ -21,8 +21,7 @@
 #include "src/storage/memfs/memfs.h"
 #include "src/storage/memfs/vnode_dir.h"
 
-namespace loader {
-namespace test {
+namespace loader::test {
 
 struct TestDirectoryEntry {
   std::string path;
@@ -86,7 +85,6 @@ class LoaderServiceTest : public gtest::RealLoopFixture {
   fbl::RefPtr<memfs::VnodeDir> root_dir_;
 };
 
-}  // namespace test
-}  // namespace loader
+}  // namespace loader::test
 
 #endif  // SRC_LIB_LOADER_SERVICE_LOADER_SERVICE_TEST_FIXTURE_H_

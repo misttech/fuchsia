@@ -7,7 +7,6 @@
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/fdio/directory.h>
 #include <lib/fdio/io.h>
-#include <lib/stdcompat/string_view.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/errors.h>
 
