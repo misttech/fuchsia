@@ -17,6 +17,7 @@
 
 #include <utility>
 
+#include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
@@ -93,13 +94,6 @@ zx_status_t AmlThermal::Create(void* ctx, zx_device_t* device) {
     return pdev_client_end.status_value();
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
-
-  zx::result device_info_result = pdev.GetDeviceInfo();
-  if (device_info_result.is_error()) {
-    zxlogf(ERROR, "Failed to get device info: %s", device_info_result.status_string());
-    return device_info_result.status_value();
-  }
-  fdf::PDev::DeviceInfo device_info = std::move(device_info_result.value());
 
   // Get the voltage-table .
   size_t actual;
@@ -186,7 +180,8 @@ zx_status_t AmlThermal::Create(void* ctx, zx_device_t* device) {
   }
 
   zx_device_str_prop_t props[] = {
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID, device_info.did)};
+      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID,
+                           bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_THERMAL_PLL)};
   status = thermal_device->DdkAdd(
       ddk::DeviceAddArgs("thermal").set_str_props(props).set_proto_id(ZX_PROTOCOL_THERMAL));
   if (status != ZX_OK) {

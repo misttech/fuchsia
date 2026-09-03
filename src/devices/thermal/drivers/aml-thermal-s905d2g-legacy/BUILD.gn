@@ -38,6 +38,7 @@ fuchsia_cc_driver("aml-thermal-s905d2g-legacy-driver") {
   public_deps = [
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.amlogic.platform:fuchsia.amlogic.platform_cpp",
   ]
   deps = [
     ":aml-thermal-s905d2g-legacy-bind",
@@ -97,6 +98,7 @@ test("aml-thermal-s905d2g-legacy-test-bin") {
     "//sdk/lib/driver/mmio/testing/cpp",
     "//sdk/lib/driver/platform-device/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/bind/fuchsia.amlogic.platform:fuchsia.amlogic.platform_cpp",
     "//src/devices/lib/amlogic",
     "//src/devices/testing/mock-mmio-reg:mock-mmio-reg-zxtest",
     "//src/devices/testing/no_ddk",

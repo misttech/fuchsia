@@ -23,6 +23,13 @@
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.amlogic.platform.BIND_PLATFORM_DEV_VID.AMLOGIC",
                     "fuchsia.BIND_PLATFORM_DEV_PID": "fuchsia.amlogic.platform.BIND_PLATFORM_DEV_PID.S905D3"
                 }
+            },
+            {
+                "name": "Match Devicetree",
+                "expected": "match",
+                "device": {
+                    "fuchsia.COMPATIBLE": "\"amlogic,t931-thermal-pll\""
+                }
             }
         ]
     },
