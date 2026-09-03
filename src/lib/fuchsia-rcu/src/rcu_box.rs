@@ -99,7 +99,7 @@ impl<T: RcuDroppable + Sync> From<Box<T>> for RcuBox<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_machine::rcu_synchronize;
+    use crate::state_machine::rcu_run_callbacks;
     use std::ops::Deref;
 
     #[test]
@@ -113,7 +113,7 @@ mod tests {
         let value = RcuBox::new(42);
         value.update(43);
         assert_eq!(value.read().deref(), &43);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]

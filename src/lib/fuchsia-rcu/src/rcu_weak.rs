@@ -135,7 +135,7 @@ impl<T: Send + Sync + 'static> Default for RcuWeak<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_machine::rcu_synchronize;
+    use crate::state_machine::rcu_run_callbacks;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct DropCounter {
@@ -184,7 +184,7 @@ mod tests {
 
         // Old weak should be dropped eventually.
         // This doesn't affect the object1 lifetime, but decrements weak count.
-        rcu_synchronize();
+        rcu_run_callbacks();
 
         drop(object1);
         assert_eq!(drops1.load(Ordering::Relaxed), 1);

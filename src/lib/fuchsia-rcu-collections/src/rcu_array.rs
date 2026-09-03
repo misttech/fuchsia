@@ -88,7 +88,7 @@ impl<T: RcuDroppable + Sync> From<Vec<T>> for RcuArray<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_rcu::{RcuReadScope, rcu_synchronize};
+    use fuchsia_rcu::{RcuReadScope, rcu_run_callbacks};
 
     #[test]
     fn test_rcu_array_get() {
@@ -125,7 +125,7 @@ mod tests {
         assert_eq!(array.as_slice(&scope), &[1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
         std::mem::drop(scope);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]

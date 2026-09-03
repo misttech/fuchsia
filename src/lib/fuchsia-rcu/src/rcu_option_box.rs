@@ -113,7 +113,7 @@ impl<T: RcuDroppable + Sync> From<Option<Box<T>>> for RcuOptionBox<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_machine::rcu_synchronize;
+    use crate::state_machine::rcu_run_callbacks;
     use std::ops::Deref;
 
     #[test]
@@ -139,7 +139,7 @@ mod tests {
         value.update(None);
         assert!(value.read().is_none());
 
-        rcu_synchronize();
+        rcu_run_callbacks();
         assert!(value.read().is_none());
     }
 

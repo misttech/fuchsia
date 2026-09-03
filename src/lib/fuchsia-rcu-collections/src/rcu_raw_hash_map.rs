@@ -409,7 +409,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_rcu::rcu_synchronize;
+    use fuchsia_rcu::rcu_run_callbacks;
 
     #[test]
     fn test_rcu_hash_map_custom_hasher() {
@@ -438,7 +438,7 @@ mod tests {
         assert_eq!(map.get(&scope, &3), None);
 
         std::mem::drop(scope);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -460,7 +460,7 @@ mod tests {
         assert_eq!(map.get(&scope, &2), Some(&20));
 
         std::mem::drop(scope);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -479,7 +479,7 @@ mod tests {
         assert_eq!(map.get(&scope, &1), Some(&100));
 
         std::mem::drop(scope);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -509,7 +509,7 @@ mod tests {
         assert_eq!(cursor.current(), None);
 
         std::mem::drop(scope);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -537,7 +537,7 @@ mod tests {
         assert_eq!(actual_order, expected_order);
 
         std::mem::drop(scope);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
     #[test]
     fn test_rcu_hash_map_grow_overwrites_maintain_order() {
@@ -573,7 +573,7 @@ mod tests {
         assert_eq!(actual_order, expected_order);
 
         std::mem::drop(scope);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -591,7 +591,7 @@ mod tests {
         }
 
         std::mem::drop(scope);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -612,6 +612,6 @@ mod tests {
         assert_eq!(map.get(&scope, &1), None);
 
         std::mem::drop(scope);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 }

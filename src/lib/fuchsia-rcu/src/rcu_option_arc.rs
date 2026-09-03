@@ -118,7 +118,7 @@ impl<T: RcuDroppable + Sync> Default for RcuOptionArc<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_machine::rcu_synchronize;
+    use crate::state_machine::rcu_run_callbacks;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct DropCounter {
@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(arc.read().unwrap().value, 43);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
 
-        rcu_synchronize();
+        rcu_run_callbacks();
         assert_eq!(drops.load(Ordering::Relaxed), 1);
     }
 
@@ -170,7 +170,7 @@ mod tests {
         assert!(arc.read().is_none());
         assert_eq!(drops.load(Ordering::Relaxed), 0);
 
-        rcu_synchronize();
+        rcu_run_callbacks();
         assert_eq!(drops.load(Ordering::Relaxed), 1);
     }
 

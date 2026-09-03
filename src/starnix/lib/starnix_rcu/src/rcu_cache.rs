@@ -169,7 +169,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fuchsia_rcu::rcu_synchronize;
+    use fuchsia_rcu::rcu_run_callbacks;
 
     #[test]
     fn test_rcu_cache_fifo_eviction() {
@@ -225,6 +225,6 @@ mod tests {
 
         std::mem::drop(guard);
         std::mem::drop(scope);
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 }

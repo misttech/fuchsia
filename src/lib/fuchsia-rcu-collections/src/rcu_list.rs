@@ -195,7 +195,7 @@ mod tests {
     use crate::rcu_intrusive_list::{RcuListAdapter, rcu_list_adapter};
 
     use super::*;
-    use fuchsia_rcu::rcu_synchronize;
+    use fuchsia_rcu::rcu_run_callbacks;
 
     #[derive(Debug)]
     struct TestNode {
@@ -236,7 +236,7 @@ mod tests {
             cursor.advance();
             assert_eq!(cursor.current().map(|node| node.value), None);
         }
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -259,7 +259,7 @@ mod tests {
             cursor.advance();
             assert_eq!(cursor.current().map(|node| node.value), None);
         }
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -279,7 +279,7 @@ mod tests {
             assert_eq!(iter.next().map(|node| node.value), None);
         }
 
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -340,7 +340,7 @@ mod tests {
             assert_eq!(drop_count.load(Ordering::SeqCst), 0);
         }
 
-        rcu_synchronize();
+        rcu_run_callbacks();
 
         // The list is dropped here, so the contained objects should also be dropped.
         assert_eq!(drop_count.load(Ordering::SeqCst), 3);
@@ -364,7 +364,7 @@ mod tests {
             assert_eq!(iter.next().map(|node| node.value), None);
         }
 
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -404,7 +404,7 @@ mod tests {
             assert_eq!(iter.next().map(|node| node.value), None);
         }
 
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -426,7 +426,7 @@ mod tests {
             assert_eq!(list.iter(&scope).next().map(|node| node.value), None);
         }
 
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -455,7 +455,7 @@ mod tests {
             assert_eq!(iter.next().map(|node| node.value), None);
         }
 
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -476,7 +476,7 @@ mod tests {
             assert_eq!(iter.next().map(|node| node.value), Some(2));
             assert_eq!(iter.next().map(|node| node.value), None);
         }
-        rcu_synchronize();
+        rcu_run_callbacks();
 
         // Append an empty list.
         {
@@ -494,7 +494,7 @@ mod tests {
             assert_eq!(iter.next().map(|node| node.value), Some(2));
             assert_eq!(iter.next().map(|node| node.value), None);
         }
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -515,7 +515,7 @@ mod tests {
             assert!(list.is_empty());
         }
 
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 
     #[test]
@@ -539,7 +539,7 @@ mod tests {
             assert_eq!(new_iter.next().map(|node| node.value), Some(3));
             assert_eq!(new_iter.next().map(|node| node.value), None);
         }
-        rcu_synchronize();
+        rcu_run_callbacks();
 
         // Split in the middle.
         {
@@ -564,7 +564,7 @@ mod tests {
             assert_eq!(new_iter.next().map(|node| node.value), Some(4));
             assert_eq!(new_iter.next().map(|node| node.value), None);
         }
-        rcu_synchronize();
+        rcu_run_callbacks();
 
         // Split at the last element.
         {
@@ -587,7 +587,7 @@ mod tests {
             assert_eq!(new_iter.next().map(|node| node.value), Some(3));
             assert_eq!(new_iter.next().map(|node| node.value), None);
         }
-        rcu_synchronize();
+        rcu_run_callbacks();
 
         // Split one past the last element.
         {
@@ -609,7 +609,7 @@ mod tests {
 
             assert!(new_list.is_empty());
         }
-        rcu_synchronize();
+        rcu_run_callbacks();
 
         // Split far past the end of the list.
         {
@@ -631,6 +631,6 @@ mod tests {
 
             assert!(new_list.is_empty());
         }
-        rcu_synchronize();
+        rcu_run_callbacks();
     }
 }

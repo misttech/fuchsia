@@ -137,7 +137,7 @@ impl<T: Send + Sync + 'static> Default for RcuArc<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_machine::rcu_synchronize;
+    use crate::state_machine::rcu_run_callbacks;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     // A struct that intentionally does NOT implement RcuDroppable
@@ -176,7 +176,7 @@ mod tests {
         assert!(arc.is_none());
         assert_eq!(drops.load(Ordering::Relaxed), 2, "Drop must execute synchronously on reset");
 
-        rcu_synchronize();
+        rcu_run_callbacks();
         assert_eq!(drops.load(Ordering::Relaxed), 2);
     }
 
