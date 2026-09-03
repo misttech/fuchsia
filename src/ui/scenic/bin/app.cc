@@ -5,6 +5,7 @@
 #include "src/ui/scenic/bin/app.h"
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.ui.display.singleton/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.ui.pointer.augment/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
@@ -495,7 +496,7 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
       fit::function<void(fidl::InterfaceRequest<fuchsia::ui::composition::Flatland>)> handler =
           [flatland_manager = flatland_manager_.get()](
               fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request) {
-            flatland_manager->CreateFlatland(std::move(request));
+            flatland_manager->CreateFlatland(fidl::HLCPPToNatural(std::move(request)));
           };
       FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
     }

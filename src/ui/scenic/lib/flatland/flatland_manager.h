@@ -5,12 +5,12 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_FLATLAND_MANAGER_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_FLATLAND_MANAGER_H_
 
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/default.h>
-#include <lib/fidl/cpp/binding.h>
+#include <lib/fidl/cpp/wire/channel.h>
 
 #include <functional>
 #include <map>
@@ -54,7 +54,7 @@ class FlatlandManager {
   ~FlatlandManager();
 
   std::optional<scheduling::SessionId> CreateFlatland(
-      fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> flatland,
+      fidl::ServerEnd<fuchsia_ui_composition::Flatland> flatland,
       const FlatlandConfig& config = FlatlandConfig{});
 
   // TODO(https://fxbug.dev/42156949): This creates a FlatlandDisplay attached to the "primary"
@@ -136,12 +136,10 @@ class FlatlandManager {
   void RemoveFlatlandInstance(scheduling::SessionId session_id);
 
   std::optional<scheduling::SessionId> CreateTrustedFlatland(
-      fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
-      const FlatlandConfig& config);
+      fidl::ServerEnd<fuchsia_ui_composition::Flatland> request, const FlatlandConfig& config);
 
   std::optional<scheduling::SessionId> CreateUntrustedFlatland(
-      fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
-      const FlatlandConfig& config);
+      fidl::ServerEnd<fuchsia_ui_composition::Flatland> request, const FlatlandConfig& config);
 
   // The function passed into a Flatland constructor that allows the Flatland instance to trigger
   // its own destruction when the client makes an unrecoverable error. This function will be called
@@ -150,8 +148,8 @@ class FlatlandManager {
 
   std::shared_ptr<Flatland> NewFlatland(
       std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-      fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
-      scheduling::SessionId session_id, std::function<void()> destroy_instance_function,
+      fidl::ServerEnd<fuchsia_ui_composition::Flatland> request, scheduling::SessionId session_id,
+      std::function<void()> destroy_instance_function,
       std::shared_ptr<FlatlandPresenter> flatland_presenter,
       std::shared_ptr<LinkSystem> link_system,
       std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue,

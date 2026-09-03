@@ -41,10 +41,8 @@ void TrustedFlatlandFactoryImpl::CreateFlatland(CreateFlatlandRequest& request,
     return;
   }
 
-  fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> server_end(
-      request.server_end().TakeChannel());
-  std::optional<scheduling::SessionId> session_id =
-      flatland_manager_->CreateFlatland(std::move(server_end), ToInternalConfig(request.config()));
+  std::optional<scheduling::SessionId> session_id = flatland_manager_->CreateFlatland(
+      std::move(request.server_end()), ToInternalConfig(request.config()));
   if (!session_id.has_value()) {
     completer.Reply(fit::error(fuchsia_ui_composition::TrustedFlatlandFactoryError::kBadOperation));
     return;

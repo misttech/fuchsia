@@ -5,10 +5,8 @@
 #include "src/ui/scenic/lib/flatland/flatland_manager.h"
 
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
-#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/fit/function.h>
 #include <lib/scheduler/role.h>
 #include <lib/syslog/cpp/macros.h>
@@ -88,8 +86,7 @@ FlatlandManager::~FlatlandManager() {
 }
 
 std::optional<scheduling::SessionId> FlatlandManager::CreateFlatland(
-    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
-    const FlatlandConfig& config) {
+    fidl::ServerEnd<fuchsia_ui_composition::Flatland> request, const FlatlandConfig& config) {
   utils::CheckIsOnMainThread();
 
   if (config.use_trusted_flatland_api) {
@@ -100,8 +97,7 @@ std::optional<scheduling::SessionId> FlatlandManager::CreateFlatland(
 }
 
 std::optional<scheduling::SessionId> FlatlandManager::CreateTrustedFlatland(
-    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
-    const FlatlandConfig& config) {
+    fidl::ServerEnd<fuchsia_ui_composition::Flatland> request, const FlatlandConfig& config) {
   const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
   FX_DCHECK(flatland_instances_.find(id) == flatland_instances_.end());
   FX_DCHECK(flatland_display_instances_.find(id) == flatland_display_instances_.end());
@@ -126,8 +122,7 @@ std::optional<scheduling::SessionId> FlatlandManager::CreateTrustedFlatland(
 }
 
 std::optional<scheduling::SessionId> FlatlandManager::CreateUntrustedFlatland(
-    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
-    const FlatlandConfig& config) {
+    fidl::ServerEnd<fuchsia_ui_composition::Flatland> request, const FlatlandConfig& config) {
   const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
   FX_DCHECK(flatland_instances_.find(id) == flatland_instances_.end());
   FX_DCHECK(flatland_display_instances_.find(id) == flatland_display_instances_.end());
@@ -192,17 +187,17 @@ std::optional<scheduling::SessionId> FlatlandManager::CreateUntrustedFlatland(
 
 std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
     std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
-    scheduling::SessionId session_id, std::function<void()> destroy_instance_function,
+    fidl::ServerEnd<fuchsia_ui_composition::Flatland> request, scheduling::SessionId session_id,
+    std::function<void()> destroy_instance_function,
     std::shared_ptr<FlatlandPresenter> flatland_presenter, std::shared_ptr<LinkSystem> link_system,
     std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue,
     const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&
         buffer_collection_importers,
     const FlatlandConfig& config) const {
-  return Flatland::New(std::move(dispatcher_holder), fidl::HLCPPToNatural(std::move(request)),
-                       session_id, std::move(destroy_instance_function),
-                       std::move(flatland_presenter), std::move(link_system),
-                       std::move(uber_struct_queue), std::move(buffer_collection_importers),
+  return Flatland::New(std::move(dispatcher_holder), std::move(request), session_id,
+                       std::move(destroy_instance_function), std::move(flatland_presenter),
+                       std::move(link_system), std::move(uber_struct_queue),
+                       std::move(buffer_collection_importers),
                        /*register_view_focuser*/ register_view_focuser_,
                        /*register_view_ref_focused*/ register_view_ref_focused_,
                        /*register_touch_source*/ register_touch_source_,
