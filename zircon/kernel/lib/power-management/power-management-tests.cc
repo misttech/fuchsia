@@ -33,6 +33,7 @@
 #include <kernel/cpu.h>
 #include <kernel/deadline.h>
 #include <kernel/event.h>
+#include <kernel/spinlock.h>
 #include <kernel/thread.h>
 #include <ktl/limits.h>
 #include <ktl/optional.h>
@@ -108,19 +109,33 @@ class FakePowerLevelController final : public PowerLevelController {
   FakePowerLevelController() : PowerLevelController(ControlInterface::kCpuDriver) {}
 
   zx::result<uint32_t> Post(const PowerLevelUpdateRequest& request) final {
-    count_++;
+    Guard<SpinLock, IrqSave> guard{&lock_};
     request_ = request;
+    count_++;
     return zx::ok(0);
   }
 
   uint64_t id() const final { return 0; }
 
-  auto& request() { return request_; }
-  size_t count() const { return count_; }
+  ktl::optional<PowerLevelUpdateRequest> request() const {
+    Guard<SpinLock, IrqSave> guard{&lock_};
+    return request_;
+  }
+
+  void reset_request() {
+    Guard<SpinLock, IrqSave> guard{&lock_};
+    request_.reset();
+  }
+
+  size_t count() const {
+    Guard<SpinLock, IrqSave> guard{&lock_};
+    return count_;
+  }
 
  private:
-  ktl::atomic<size_t> count_ = 0;
-  ktl::optional<PowerLevelUpdateRequest> request_ = ktl::nullopt;
+  mutable DECLARE_SPINLOCK(FakePowerLevelController) lock_;
+  size_t count_ TA_GUARDED(lock_) = 0;
+  ktl::optional<PowerLevelUpdateRequest> request_ TA_GUARDED(lock_) = ktl::nullopt;
 };
 
 bool SchedulerFlushesPendingControlRequests() {
@@ -165,19 +180,20 @@ bool SchedulerFlushesPendingControlRequests() {
     count++;
     ASSERT_EQ(controller->count(), count);
 
-    ASSERT_TRUE(controller->request());
-    EXPECT_EQ(controller->request()->control, ControlInterface::kCpuDriver);
-    EXPECT_EQ(controller->request()->control_argument, power_level);
-    EXPECT_EQ(controller->request()->domain_id, domain->id());
-    EXPECT_EQ(controller->request()->options, 0u);
-    EXPECT_EQ(controller->request()->target_id, domain->id());
+    const ktl::optional<PowerLevelUpdateRequest> request = controller->request();
+    ASSERT_TRUE(request);
+    EXPECT_EQ(request->control, ControlInterface::kCpuDriver);
+    EXPECT_EQ(request->control_argument, power_level);
+    EXPECT_EQ(request->domain_id, domain->id());
+    EXPECT_EQ(request->options, 0u);
+    EXPECT_EQ(request->target_id, domain->id());
 
     // Simulate the controller acking the transition. Failing to ack the transition will cause this
     // loop to get stuck in FakePowerLevelController::Wait if the requested transition matches the
     // current power level (i.e. kMaxPowerLevel set above), since redundant requests are dropped.
     ASSERT_OK(scheduler.UpdateActivePowerLevel(power_level).status_value());
 
-    controller->request().reset();
+    controller->reset_request();
   }
 
   // Requesting the same power level as the current power level should be ignored.
@@ -229,12 +245,13 @@ bool SchedulerElidesPendingControlRequests() {
   }
   ASSERT_GE(controller->count(), 1u);
 
-  ASSERT_TRUE(controller->request());
-  EXPECT_EQ(controller->request()->control, ControlInterface::kCpuDriver);
-  EXPECT_EQ(controller->request()->control_argument, kHighPowerLevel);
-  EXPECT_EQ(controller->request()->domain_id, domain->id());
-  EXPECT_EQ(controller->request()->options, 0u);
-  EXPECT_EQ(controller->request()->target_id, domain->id());
+  const ktl::optional<PowerLevelUpdateRequest> request = controller->request();
+  ASSERT_TRUE(request);
+  EXPECT_EQ(request->control, ControlInterface::kCpuDriver);
+  EXPECT_EQ(request->control_argument, kHighPowerLevel);
+  EXPECT_EQ(request->domain_id, domain->id());
+  EXPECT_EQ(request->options, 0u);
+  EXPECT_EQ(request->target_id, domain->id());
 
   END_TEST;
 }
@@ -282,12 +299,13 @@ bool SchedulerCanPendControlRequestsInIrqContext() {
   }
   ASSERT_EQ(controller->count(), 1u);
 
-  ASSERT_TRUE(controller->request());
-  EXPECT_EQ(controller->request()->control, ControlInterface::kCpuDriver);
-  EXPECT_EQ(controller->request()->control_argument, kHighPowerLevel);
-  EXPECT_EQ(controller->request()->domain_id, domain->id());
-  EXPECT_EQ(controller->request()->options, 0u);
-  EXPECT_EQ(controller->request()->target_id, domain->id());
+  const ktl::optional<PowerLevelUpdateRequest> request = controller->request();
+  ASSERT_TRUE(request);
+  EXPECT_EQ(request->control, ControlInterface::kCpuDriver);
+  EXPECT_EQ(request->control_argument, kHighPowerLevel);
+  EXPECT_EQ(request->domain_id, domain->id());
+  EXPECT_EQ(request->options, 0u);
+  EXPECT_EQ(request->target_id, domain->id());
 
   END_TEST;
 }
@@ -344,12 +362,13 @@ bool SchedulerCanPendControlRequestsAcrossCpus() {
   }
   ASSERT_EQ(controller->count(), 1u);
 
-  ASSERT_TRUE(controller->request());
-  EXPECT_EQ(controller->request()->control, ControlInterface::kCpuDriver);
-  EXPECT_EQ(controller->request()->control_argument, kHighPowerLevel);
-  EXPECT_EQ(controller->request()->domain_id, domain->id());
-  EXPECT_EQ(controller->request()->options, 0u);
-  EXPECT_EQ(controller->request()->target_id, domain->id());
+  const ktl::optional<PowerLevelUpdateRequest> request = controller->request();
+  ASSERT_TRUE(request);
+  EXPECT_EQ(request->control, ControlInterface::kCpuDriver);
+  EXPECT_EQ(request->control_argument, kHighPowerLevel);
+  EXPECT_EQ(request->domain_id, domain->id());
+  EXPECT_EQ(request->options, 0u);
+  EXPECT_EQ(request->target_id, domain->id());
 
   END_TEST;
 }
