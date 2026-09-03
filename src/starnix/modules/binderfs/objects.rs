@@ -555,9 +555,7 @@ impl BinderObject {
     pub fn inc_strong_unchecked(self: &Arc<Self>, binder_thread: &BinderThread) -> StrongRefGuard {
         let mut state = self.lock();
         if state.strong_count.inc_immediate() {
-            binder_thread
-                .lock()
-                .enqueue_command(Command::AcquireRef(self.local), fuchsia_trace::Id::new());
+            binder_thread.lock().enqueue_command(Command::AcquireRef(self.local).into());
         }
         StrongRefGuard::new(Arc::clone(self))
     }
@@ -675,7 +673,7 @@ impl BinderObject {
         }
 
         for command in commands {
-            process.enqueue_command(command, fuchsia_trace::Id::new());
+            process.enqueue_command(command.into());
         }
     }
 }

@@ -13,7 +13,8 @@ use crate::resource_accessor::{
 };
 use crate::shared_memory::SharedMemory;
 use crate::thread::{
-    BinderThread, Command, IndexedCommandQueue, RegistrationState, generate_dead_replies,
+    BinderThread, Command, IndexedCommandQueue, QueuedCommand, RegistrationState,
+    generate_dead_replies,
 };
 use crossbeam::queue::SegQueue;
 use starnix_core::mm::MemoryAccessor;
@@ -489,24 +490,23 @@ impl BinderProcess {
     /// and enqueues the command on it.
     ///
     /// Returns `Ok(thread)` if it found a thread to schedule one.
-    /// `Err((command, trace_id))` if no available threads are found.
+    /// `Err(queued)` if no available threads are found.
     #[expect(clippy::result_large_err)]
     pub fn try_enqueue_on_available_thread(
         &self,
-        command: Command,
-        trace_id: fuchsia_trace::Id,
-    ) -> Result<TempRef<'static, BinderThread>, (Command, fuchsia_trace::Id)> {
+        command: QueuedCommand,
+    ) -> Result<TempRef<'static, BinderThread>, QueuedCommand> {
         while let Some(weak_thread) = self.available_threads.pop() {
             if let Some(thread) = weak_thread.upgrade() {
                 let mut thread_guard = thread.lock();
                 if thread_guard.is_available() {
-                    thread_guard.enqueue_command(command, trace_id);
+                    thread_guard.enqueue_command(command);
                     drop(thread_guard);
                     return Ok(TempRef::into_static(thread));
                 }
             }
         }
-        Err((command, trace_id))
+        Err(command)
     }
 
     /// Enqueues `command` for the process and wakes up any thread that is waiting for commands.
@@ -515,14 +515,13 @@ impl BinderProcess {
     /// enqueued in the process's queue.
     pub fn enqueue_command(
         &self,
-        command: Command,
-        trace_id: fuchsia_trace::Id,
+        command: QueuedCommand,
     ) -> Option<TempRef<'static, BinderThread>> {
-        log_trace!("BinderProcess id={} enqueuing command {:?}", self.identifier, command);
+        log_trace!("BinderProcess id={} enqueuing command {:?}", self.identifier, command.command);
         // Handle oneway transactions explicitly. They should always target the process queue to
         // avoid accidentally handling them during an ongoing transaction.
-        if matches!(command, Command::OnewayTransaction(_)) {
-            if self.lock().command_queue.push_back(command, trace_id) {
+        if matches!(command.command, Command::OnewayTransaction(_)) {
+            if self.lock().command_queue.push_back(command) {
                 // Since OnewayTransactions are routed to the process queue, we
                 // must explicitly wake waiters and available threads so it can
                 // grab the command, rather than letting it stall.
@@ -531,21 +530,21 @@ impl BinderProcess {
             return None;
         }
 
-        let mut item = (command, trace_id);
+        let mut queued = command;
         loop {
-            match self.try_enqueue_on_available_thread(item.0, item.1) {
+            match self.try_enqueue_on_available_thread(queued) {
                 Ok(thread) => return Some(thread),
-                Err((c, t)) => {
+                Err(returned_queued) => {
                     let enqueued = {
                         let mut state = self.lock();
                         // We must not call try_enqueue_on_available_thread while holding
                         // the state lock, because that function acquires thread locks,
                         // which causes a lock inversion against thread_read.
                         if !self.available_threads.is_empty() {
-                            item = (c, t);
+                            queued = returned_queued;
                             continue;
                         }
-                        state.command_queue.push_back(c, t)
+                        state.command_queue.push_back(returned_queued)
                     };
                     if enqueued {
                         self.wake_process_and_available_thread();
@@ -597,7 +596,10 @@ impl BinderProcess {
                     drop(object_state);
 
                     // Schedule the transaction
-                    self.enqueue_command(Command::OnewayTransaction(transaction), trace);
+                    self.enqueue_command(QueuedCommand::new(
+                        Command::OnewayTransaction(transaction),
+                        trace,
+                    ));
                 } else {
                     // No more oneway transactions queued, mark the queue handling as done.
                     object_state.handling_oneway_transaction = false;
@@ -672,7 +674,7 @@ impl BinderProcess {
             // cannot handle the notification, in case it is holding some mutex while processing a
             // oneway transaction (where its transaction stack will be empty). It is currently not
             // a problem, because enqueue_command never schedule on the current thread.
-            self.enqueue_command(Command::DeadBinder(cookie), fuchsia_trace::Id::new());
+            self.enqueue_command(Command::DeadBinder(cookie).into());
         }
         Ok(())
     }
@@ -689,10 +691,7 @@ impl BinderProcess {
                     TODO("https://fxbug.dev/322873735"),
                     "binder clear death notification for service manager"
                 );
-                self.enqueue_command(
-                    Command::ClearDeathNotificationDone(cookie),
-                    fuchsia_trace::Id::new(),
-                );
+                self.enqueue_command(Command::ClearDeathNotificationDone(cookie).into());
                 return Ok(());
             }
             Handle::Object { index } => {
@@ -709,7 +708,7 @@ impl BinderProcess {
                 owner.death_subscribers.swap_remove(idx);
             }
         }
-        self.enqueue_command(Command::ClearDeathNotificationDone(cookie), fuchsia_trace::Id::new());
+        self.enqueue_command(Command::ClearDeathNotificationDone(cookie).into());
         Ok(())
     }
 
@@ -726,7 +725,7 @@ impl BinderProcess {
                     "binder freeze notification for service manager"
                 );
                 let info = binder_frozen_state_info { cookie, ..Default::default() };
-                self.enqueue_command(Command::FrozenBinder(info), fuchsia_trace::Id::new());
+                self.enqueue_command(Command::FrozenBinder(info).into());
                 return Ok(());
             }
             Handle::Object { index } => {
@@ -759,7 +758,7 @@ impl BinderProcess {
             is_frozen: if owner_freeze_state.freeze_status.frozen { 1 } else { 0 },
             reserved: 0,
         };
-        self.enqueue_command(Command::FrozenBinder(info), fuchsia_trace::Id::new());
+        self.enqueue_command(Command::FrozenBinder(info).into());
         Ok(())
     }
 
@@ -795,11 +794,11 @@ impl BinderProcess {
         let mut state = self.lock();
         // Purge any pending FrozenBinder commands matching this cookie from the command queues.
         state.command_queue.retain(
-            |(cmd, _)| !matches!(cmd, Command::FrozenBinder(info) if info.cookie == cookie),
+            |queued| !matches!(queued.command, Command::FrozenBinder(info) if info.cookie == cookie),
         );
         for thread in state.thread_pool.threads.values() {
             thread.lock().command_queue.retain(
-                |(cmd, _)| !matches!(cmd, Command::FrozenBinder(info) if info.cookie == cookie),
+                |queued| !matches!(queued.command, Command::FrozenBinder(info) if info.cookie == cookie),
             );
         }
 
@@ -811,10 +810,7 @@ impl BinderProcess {
         }
         drop(state);
 
-        self.enqueue_command(
-            Command::ClearFreezeNotificationDone(cookie),
-            fuchsia_trace::Id::new(),
-        );
+        self.enqueue_command(Command::ClearFreezeNotificationDone(cookie).into());
         Ok(())
     }
 
@@ -824,10 +820,7 @@ impl BinderProcess {
         state.in_flight_freeze_notifications.remove(&cookie);
         if state.pending_clear_freeze_notifications.remove(&cookie) {
             drop(state);
-            self.enqueue_command(
-                Command::ClearFreezeNotificationDone(cookie),
-                fuchsia_trace::Id::new(),
-            );
+            self.enqueue_command(Command::ClearFreezeNotificationDone(cookie).into());
         }
     }
 
@@ -977,9 +970,7 @@ impl<'a> BinderProcessGuard<'a> {
 
             // Tell the owning process that a remote process now has a strong reference to
             // this object.
-            binder_thread
-                .lock()
-                .enqueue_command(Command::AcquireRef(object.local), fuchsia_trace::Id::new());
+            binder_thread.lock().enqueue_command(Command::AcquireRef(object.local).into());
 
             self.objects.insert(object.local.weak_ref_addr, object);
 
@@ -1010,7 +1001,7 @@ impl Releasable for BinderProcess {
         // Notify any subscribers that the objects this process owned are now dead.
         for (proc, cookie) in state.death_subscribers {
             if let Some(target_proc) = proc.upgrade() {
-                target_proc.enqueue_command(Command::DeadBinder(cookie), fuchsia_trace::Id::new());
+                target_proc.enqueue_command(Command::DeadBinder(cookie).into());
             }
         }
 

@@ -58,9 +58,28 @@ pub struct IndexedCommandQueue {
     pending_inc_refs: HashMap<LocalBinderObject, usize>,
 }
 
+/// A binder command queued with its associated tracing span ID.
+#[derive(Debug)]
+pub struct QueuedCommand {
+    pub command: Command,
+    pub trace_id: fuchsia_trace::Id,
+}
+
+impl QueuedCommand {
+    pub fn new(command: Command, trace_id: fuchsia_trace::Id) -> Self {
+        Self { command, trace_id }
+    }
+}
+
+impl From<Command> for QueuedCommand {
+    fn from(command: Command) -> Self {
+        Self { command, trace_id: fuchsia_trace::Id::new() }
+    }
+}
+
 #[derive(Debug)]
 struct CommandNode {
-    item: (Command, fuchsia_trace::Id),
+    command: QueuedCommand,
     prev: Option<usize>,
     next: Option<usize>,
 }
@@ -81,9 +100,9 @@ impl IndexedCommandQueue {
         self.len
     }
 
-    pub fn front(&self) -> Option<&(Command, fuchsia_trace::Id)> {
+    pub fn front(&self) -> Option<&QueuedCommand> {
         let head_idx = self.head?;
-        self.nodes[head_idx].as_ref().map(|n| &n.item)
+        self.nodes[head_idx].as_ref().map(|n| &n.command)
     }
 
     #[cfg(test)]
@@ -125,30 +144,6 @@ impl IndexedCommandQueue {
         node
     }
 
-    /// Try to coalesce opposite reference counting commands for the same
-    /// object in O(1). Returns true if a pending command was cancelled and the
-    /// new command should be discarded.
-    pub fn try_coalesce_refcount(&mut self, new_cmd: &Command) -> bool {
-        match new_cmd {
-            Command::ReleaseRef(obj) => {
-                if let Some(node_idx) = self.pending_acquire_refs.remove(obj) {
-                    let node = self.unlink_and_take(node_idx);
-                    crate::trace::on_command_dequeued(&node.item.0, node.item.1);
-                    return true;
-                }
-            }
-            Command::DecRef(obj) => {
-                if let Some(node_idx) = self.pending_inc_refs.remove(obj) {
-                    let node = self.unlink_and_take(node_idx);
-                    crate::trace::on_command_dequeued(&node.item.0, node.item.1);
-                    return true;
-                }
-            }
-            _ => {}
-        }
-        false
-    }
-
     /// Cancels a pending refcount command for the specified local object if
     /// present in the queue in O(1). Returns true if a command was found and
     /// cancelled.
@@ -165,7 +160,7 @@ impl IndexedCommandQueue {
 
         if let Some(node_idx) = node_idx_opt {
             let node = self.unlink_and_take(node_idx);
-            crate::trace::on_command_dequeued(&node.item.0, node.item.1);
+            crate::trace::on_command_dequeued(&node.command.command, node.command.trace_id);
             true
         } else {
             false
@@ -175,14 +170,14 @@ impl IndexedCommandQueue {
     /// Retains only the elements specified by the predicate.
     pub fn retain<F>(&mut self, mut f: F)
     where
-        F: FnMut(&(Command, fuchsia_trace::Id)) -> bool,
+        F: FnMut(&QueuedCommand) -> bool,
     {
         let mut curr = self.head;
         while let Some(idx) = curr {
             let next = self.nodes[idx].as_ref().expect("node must exist").next;
-            if !f(&self.nodes[idx].as_ref().unwrap().item) {
+            if !f(&self.nodes[idx].as_ref().unwrap().command) {
                 let node = self.unlink_and_take(idx);
-                match &node.item.0 {
+                match &node.command.command {
                     Command::AcquireRef(obj) => {
                         self.pending_acquire_refs.remove(obj);
                     }
@@ -191,7 +186,7 @@ impl IndexedCommandQueue {
                     }
                     _ => {}
                 }
-                crate::trace::on_command_dequeued(&node.item.0, node.item.1);
+                crate::trace::on_command_dequeued(&node.command.command, node.command.trace_id);
             }
             curr = next;
         }
@@ -199,9 +194,24 @@ impl IndexedCommandQueue {
 
     /// Enqueues a command into the queue in O(1). Returns `true` if the
     /// command was enqueued, or `false` if it was coalesced and dropped.
-    pub fn push_back(&mut self, command: Command, trace_id: fuchsia_trace::Id) -> bool {
-        if self.try_coalesce_refcount(&command) {
-            return false;
+    pub fn push_back(&mut self, command: QueuedCommand) -> bool {
+        let QueuedCommand { command, trace_id } = command;
+        match &command {
+            Command::ReleaseRef(obj) => {
+                if let Some(idx) = self.pending_acquire_refs.remove(obj) {
+                    let node = self.unlink_and_take(idx);
+                    crate::trace::on_command_dequeued(&node.command.command, node.command.trace_id);
+                    return false;
+                }
+            }
+            Command::DecRef(obj) => {
+                if let Some(idx) = self.pending_inc_refs.remove(obj) {
+                    let node = self.unlink_and_take(idx);
+                    crate::trace::on_command_dequeued(&node.command.command, node.command.trace_id);
+                    return false;
+                }
+            }
+            _ => {}
         }
         crate::trace::on_command_enqueued(&command, trace_id);
 
@@ -211,7 +221,11 @@ impl IndexedCommandQueue {
             _ => None,
         };
 
-        let node = CommandNode { item: (command, trace_id), prev: self.tail, next: None };
+        let node = CommandNode {
+            command: QueuedCommand::new(command, trace_id),
+            prev: self.tail,
+            next: None,
+        };
 
         let idx = if let Some(free_idx) = self.free_indices.pop() {
             self.nodes[free_idx] = Some(node);
@@ -252,12 +266,12 @@ impl IndexedCommandQueue {
         true
     }
 
-    pub fn pop_front(&mut self) -> Option<(Command, fuchsia_trace::Id)> {
+    pub fn pop_front(&mut self) -> Option<QueuedCommand> {
         let head_idx = self.head?;
         let node = self.unlink_and_take(head_idx);
 
         // Remove from pending maps if the popped node matches the indexed entry
-        match &node.item.0 {
+        match &node.command.command {
             Command::AcquireRef(obj) => {
                 let removed_idx = self.pending_acquire_refs.remove(obj);
                 debug_assert_eq!(
@@ -279,24 +293,24 @@ impl IndexedCommandQueue {
             _ => {}
         }
 
-        crate::trace::on_command_dequeued(&node.item.0, node.item.1);
-        Some(node.item)
+        crate::trace::on_command_dequeued(&node.command.command, node.command.trace_id);
+        Some(node.command)
     }
 
     #[cfg(test)]
-    pub fn iter(&self) -> impl Iterator<Item = &(Command, fuchsia_trace::Id)> {
+    pub fn iter(&self) -> impl Iterator<Item = &QueuedCommand> {
         let mut curr = self.head;
         std::iter::from_fn(move || {
             let idx = curr?;
             let node = self.nodes[idx].as_ref().expect("node must exist");
             curr = node.next;
-            Some(&node.item)
+            Some(&node.command)
         })
     }
 }
 
 impl IntoIterator for IndexedCommandQueue {
-    type Item = (Command, fuchsia_trace::Id);
+    type Item = QueuedCommand;
     type IntoIter = IndexedCommandQueueIntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -309,7 +323,7 @@ pub struct IndexedCommandQueueIntoIter {
 }
 
 impl Iterator for IndexedCommandQueueIntoIter {
-    type Item = (Command, fuchsia_trace::Id);
+    type Item = QueuedCommand;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.queue.pop_front()
@@ -332,23 +346,26 @@ impl CommandQueueWithWaitQueue {
         self.commands.len()
     }
 
-    pub fn front(&self) -> Option<&(Command, fuchsia_trace::Id)> {
+    pub fn front(&self) -> Option<&QueuedCommand> {
         self.commands.front()
     }
 
-    pub fn pop_front(&mut self) -> Option<(Command, fuchsia_trace::Id)> {
+    pub fn pop_front(&mut self) -> Option<QueuedCommand> {
         self.commands.pop_front()
     }
 
-    pub fn push_back(&mut self, command: Command, trace_id: fuchsia_trace::Id) {
-        if self.commands.push_back(command, trace_id) {
+    pub fn push_back(&mut self, command: QueuedCommand) -> bool {
+        if self.commands.push_back(command) {
             self.waiters.notify_fd_events_count(FdEvents::POLLIN, 1);
+            true
+        } else {
+            false
         }
     }
 
     pub fn retain<F>(&mut self, f: F)
     where
-        F: FnMut(&(Command, fuchsia_trace::Id)) -> bool,
+        F: FnMut(&QueuedCommand) -> bool,
     {
         self.commands.retain(f);
     }
@@ -373,14 +390,14 @@ impl CommandQueueWithWaitQueue {
 
 /// transaction's `sender_thread`.
 pub(crate) fn generate_dead_replies(
-    commands: impl IntoIterator<Item = (Command, fuchsia_trace::Id)>,
+    commands: impl IntoIterator<Item = QueuedCommand>,
     target_proc: u64,
     target_thread: Option<i32>,
 ) {
     // Notify all callers that had transactions scheduled for this process that the recipient is
     // dead.
-    for (command, _) in commands {
-        if let Command::Transaction { sender, .. } = command {
+    for queued in commands {
+        if let Command::Transaction { sender, .. } = queued.command {
             if let Some(sender_thread) = sender.thread.upgrade() {
                 let sender_thread = &mut sender_thread.lock();
 
@@ -423,7 +440,8 @@ pub(crate) fn generate_dead_replies_for_transactions(
         // transaction and enqueue the `DeadReply`.
         if top_transaction_was_marked_dead {
             if let Some(TransactionRole::Sender(sender)) = sender_thread.transactions.pop() {
-                sender_thread.enqueue_command(Command::DeadReply, sender.trace_id);
+                sender_thread
+                    .enqueue_command(QueuedCommand::new(Command::DeadReply, sender.trace_id));
             }
         }
     }
@@ -636,9 +654,9 @@ impl BinderThreadState {
     }
 
     /// Enqueues `command` for the thread and wakes it up if necessary.
-    pub fn enqueue_command(&mut self, command: Command, trace_id: fuchsia_trace::Id) {
-        log_trace!("BinderThreadState id={} enqueuing command {:?}", self.tid, command);
-        self.command_queue.push_back(command, trace_id);
+    pub fn enqueue_command(&mut self, command: QueuedCommand) {
+        log_trace!("BinderThreadState id={} enqueuing command {:?}", self.tid, command.command);
+        self.command_queue.push_back(command);
     }
 
     /// Get the binder process and thread to reply to, or fail if there is no ongoing transaction or
@@ -1135,13 +1153,18 @@ pub enum TransactionError {
 impl TransactionError {
     /// Dispatches the error, by potentially queueing a command to `binder_thread` and/or returning
     /// an error.
-    pub fn dispatch(
+    pub fn dispatch(&self, binder_thread: &BinderThread) -> Result<(), Errno> {
+        self.dispatch_with_trace_id(binder_thread, fuchsia_trace::Id::new())
+    }
+
+    /// Dispatches the error with a specific `trace_id`.
+    pub fn dispatch_with_trace_id(
         &self,
         binder_thread: &BinderThread,
         trace_id: fuchsia_trace::Id,
     ) -> Result<(), Errno> {
         log_trace!("Dispatching transaction error {:?} for thread {}", self, binder_thread.tid);
-        binder_thread.lock().enqueue_command(
+        binder_thread.lock().enqueue_command(QueuedCommand::new(
             match self {
                 TransactionError::Malformed(err) => {
                     log_warn!(
@@ -1158,7 +1181,7 @@ impl TransactionError {
                 TransactionError::Frozen => Command::FrozenReply,
             },
             trace_id,
-        );
+        ));
         Ok(())
     }
 }

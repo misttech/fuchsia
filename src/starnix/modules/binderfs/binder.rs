@@ -16,7 +16,7 @@ use crate::resource_accessor::{
 };
 use crate::shared_memory::{SharedBuffer, SharedMemory, TransactionBuffers};
 use crate::thread::{
-    BinderThread, BinderThreadGuard, BinderThreadState, Command, RegistrationState,
+    BinderThread, BinderThreadGuard, BinderThreadState, Command, QueuedCommand, RegistrationState,
     RequeueEventRegistration, TransactionError, TransactionRole, TransactionSender, WeakBinderPeer,
 };
 use crate::user_memory_cursor::UserMemoryCursor;
@@ -373,7 +373,7 @@ impl RemoteBinderConnection {
 
 enum DequeueResult {
     /// A command was dequeued and is ready to be written into the read buffer.
-    Command { command: Command, trace_id: fuchsia_trace::Id },
+    Command(QueuedCommand),
     /// The next command requires more bytes than available in the read buffer.
     InsufficientBuffer,
     /// No commands are currently available in the active queue.
@@ -665,7 +665,7 @@ impl BinderDriver {
 
                 if res.is_ok() {
                     for (proc, cmd) in pending_notifications {
-                        proc.enqueue_command(cmd, fuchsia_trace::Id::new());
+                        proc.enqueue_command(cmd.into());
                         proc.release(current_task.kernel());
                     }
                 } else {
@@ -958,7 +958,7 @@ impl BinderDriver {
                     files,
                     binder_transaction_data_sg { transaction_data: data, buffers_size: 0 },
                 )
-                .or_else(|err| err.dispatch(context.binder_thread, fuchsia_trace::Id::new()))
+                .or_else(|err| err.dispatch(context.binder_thread))
             }
             binder_driver_command_protocol_BC_REPLY => {
                 let data = cursor.read_object::<binder_transaction_data>()?;
@@ -967,17 +967,17 @@ impl BinderDriver {
                     files,
                     binder_transaction_data_sg { transaction_data: data, buffers_size: 0 },
                 )
-                .or_else(|err| err.dispatch(context.binder_thread, fuchsia_trace::Id::new()))
+                .or_else(|err| err.dispatch(context.binder_thread))
             }
             binder_driver_command_protocol_BC_TRANSACTION_SG => {
                 let data = cursor.read_object::<binder_transaction_data_sg>()?;
                 self.handle_transaction(context, files, data)
-                    .or_else(|err| err.dispatch(context.binder_thread, fuchsia_trace::Id::new()))
+                    .or_else(|err| err.dispatch(context.binder_thread))
             }
             binder_driver_command_protocol_BC_REPLY_SG => {
                 let data = cursor.read_object::<binder_transaction_data_sg>()?;
                 self.handle_reply(context, files, data)
-                    .or_else(|err| err.dispatch(context.binder_thread, fuchsia_trace::Id::new()))
+                    .or_else(|err| err.dispatch(context.binder_thread))
             }
             binder_driver_command_protocol_BC_REQUEST_FREEZE_NOTIFICATION => {
                 let handle = cursor.read_object::<u32>()?.into();
@@ -1124,8 +1124,8 @@ impl BinderDriver {
                             Command::PendingFrozen
                         } else {
                             Command::OnewayTransactionComplete
-                        },
-                        fuchsia_trace::Id::new(),
+                        }
+                        .into(),
                     );
 
                     // Register the transaction buffer.
@@ -1155,7 +1155,10 @@ impl BinderDriver {
                     object_state.handling_oneway_transaction = true;
 
                     drop(object_state);
-                    target_proc.enqueue_command(Command::OnewayTransaction(transaction), trace_id);
+                    target_proc.enqueue_command(QueuedCommand::new(
+                        Command::OnewayTransaction(transaction),
+                        trace_id,
+                    ));
                 } else {
                     let target_thread = match match context.binder_thread.lock().transactions.last()
                     {
@@ -1192,17 +1195,20 @@ impl BinderDriver {
                         .into(),
                     );
 
-                    let command = Command::Transaction {
-                        sender: WeakBinderPeer::new(context.binder_proc, context.binder_thread),
-                        data: transaction,
-                    };
+                    let queued = QueuedCommand::new(
+                        Command::Transaction {
+                            sender: WeakBinderPeer::new(context.binder_proc, context.binder_thread),
+                            data: transaction,
+                        },
+                        trace_id,
+                    );
 
                     if let Some(target_thread) = target_thread {
-                        target_thread.lock().enqueue_command(command, trace_id);
+                        target_thread.lock().enqueue_command(queued);
                     } else {
                         // If we don't have an already known target thread, select one if
                         // available.
-                        if let Some(thread) = target_proc.enqueue_command(command, trace_id) {
+                        if let Some(thread) = target_proc.enqueue_command(queued) {
                             // If we were able to schedule on a thread's queue (rather than on a
                             // process' queue), we can update the sender record with that
                             // information.
@@ -1276,7 +1282,7 @@ impl BinderDriver {
             {
                 let (mut target_thread, mut binder_thread) =
                     BinderThread::ordered_lock(&target_thread, context.binder_thread);
-                target_thread.enqueue_command(
+                target_thread.enqueue_command(QueuedCommand::new(
                     Command::Reply(TransactionData {
                         peer_pid: context.binder_proc.key.pid(),
                         peer_tid: context.binder_thread.tid,
@@ -1289,17 +1295,16 @@ impl BinderDriver {
                         buffers,
                     }),
                     trace_id,
-                );
+                ));
 
-                binder_thread
-                    .enqueue_command(Command::TransactionComplete, fuchsia_trace::Id::new());
+                binder_thread.enqueue_command(Command::TransactionComplete.into());
             }
 
             Ok(())
         };
         if let Err(e) = send_reply() {
             // Sending to the target process failed, notify of the transaction failure.
-            let _ = e.dispatch(&target_thread, trace_id);
+            let _ = e.dispatch_with_trace_id(&target_thread, trace_id);
             return Err(e);
         }
         Ok(())
@@ -1314,12 +1319,12 @@ impl BinderDriver {
         available_buffer_len: usize,
     ) -> DequeueResult {
         if !thread_state.command_queue.is_empty() || !thread_state.transactions.is_empty() {
-            if let Some((cmd, _)) = thread_state.command_queue.front() {
-                if available_buffer_len < cmd.required_buffer_size() {
+            if let Some(queued) = thread_state.command_queue.front() {
+                if available_buffer_len < queued.command.required_buffer_size() {
                     return DequeueResult::InsufficientBuffer;
                 }
-                let (command, trace_id) = thread_state.command_queue.pop_front().unwrap();
-                DequeueResult::Command { command, trace_id }
+                let queued = thread_state.command_queue.pop_front().unwrap();
+                DequeueResult::Command(queued)
             } else {
                 // If the command queue is empty but a pending transaction is marked dead,
                 // pop the transaction and dispatch a synthetic DeadReply.
@@ -1335,26 +1340,26 @@ impl BinderDriver {
                         }
                         thread_state.transactions.pop();
                         on_command_dequeued(&Command::DeadReply, trace_id);
-                        DequeueResult::Command { command: Command::DeadReply, trace_id }
+                        DequeueResult::Command(QueuedCommand::new(Command::DeadReply, trace_id))
                     }
                     _ => DequeueResult::Empty,
                 }
             }
         } else {
-            if let Some((cmd, _)) = proc_state.command_queue.front() {
-                if available_buffer_len < cmd.required_buffer_size() {
+            if let Some(queued) = proc_state.command_queue.front() {
+                if available_buffer_len < queued.command.required_buffer_size() {
                     return DequeueResult::InsufficientBuffer;
                 }
-                let (command, trace_id) = proc_state.command_queue.pop_front().unwrap();
-                on_command_dequeued(&command, trace_id);
-                if let Command::Transaction { sender, .. } = &command {
+                let queued = proc_state.command_queue.pop_front().unwrap();
+                on_command_dequeued(&queued.command, queued.trace_id);
+                if let Command::Transaction { sender, .. } = &queued.command {
                     if let Some((_proc, sender_thread)) = sender.upgrade() {
                         if let Some(event) = &*sender_thread.requeue_event.lock() {
                             let _ = event.assign_new_owner(worker_thread);
                         }
                     }
                 }
-                DequeueResult::Command { command, trace_id }
+                DequeueResult::Command(queued)
             } else {
                 DequeueResult::Empty
             }
@@ -1401,13 +1406,13 @@ impl BinderDriver {
 
             // Drain any readily available commands from the queues into the read buffer.
             while current_buffer.length > 0 {
-                let (command, trace_id) = match Self::get_active_command(
+                let QueuedCommand { command, trace_id } = match Self::get_active_command(
                     &mut thread_state,
                     &mut proc_state,
                     &context.binder_thread.thread,
                     current_buffer.length,
                 ) {
-                    DequeueResult::Command { command, trace_id } => (command, trace_id),
+                    DequeueResult::Command(queued) => queued,
                     DequeueResult::InsufficientBuffer => {
                         if total_bytes_written > 0 {
                             break;
