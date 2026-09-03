@@ -72,10 +72,16 @@ void main() {
     test('talks to SL4F setMicMute and changes mic InputState without error',
         () async {
       // If anything throws an exception then we've failed.
-      await setUi.setMicMute(sl4f.MicState.muted);
-      var state = await setUi.isMicMuted();
-      expect(state, true);
-      await setUi.setMicMute(sl4f.MicState.available);
+      var state;
+      try {
+        await setUi.setMicMute(sl4f.MicState.muted);
+        state = await setUi.isMicMuted();
+        expect(state, true);
+      } finally {
+        // Whether or not the test fails, we need to set the mic back to Unmuted
+        // (default state) so that the next test starts with an Unmuted mic.
+        await setUi.setMicMute(sl4f.MicState.available);
+      }
       state = await setUi.isMicMuted();
       expect(state, false);
     });
