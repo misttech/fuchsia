@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/components.gni")
+import("//build/components/fuchsia_unittest_package.gni")
 import("//build/fuzz.gni")
 import("//build/test.gni")
 
@@ -14,14 +14,7 @@ group("tests") {
   ]
 }
 
-test("fcrypto") {
-  output_name = "fcrypto-test"
-  if (is_fuchsia) {
-    fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-    if (configs + fdio_config - fdio_config != configs) {
-      configs -= fdio_config
-    }
-  }
+test("fcrypto-test") {
   sources = [
     "aead.cc",
     "bytes.cc",
@@ -33,19 +26,14 @@ test("fcrypto") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
-    "//sdk/lib/fdio",
     "//src/security/lib/fcrypto",
-    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zxtest",
   ]
 }
 
 fuchsia_library_fuzzer("hmac-fuzzer") {
   sources = [ "hmac-fuzzer.cc" ]
-  deps = [
-    "//src/security/lib/fcrypto",
-    "//zircon/system/ulib/fbl",
-  ]
+  deps = [ "//src/security/lib/fcrypto" ]
 }
 
 fuchsia_fuzzer_component("hmac-fuzzer-component") {
@@ -59,5 +47,5 @@ fuchsia_fuzzer_package("fcrypto-fuzzers") {
 
 fuchsia_unittest_package("fcrypto-test-pkg") {
   package_name = "fcrypto-test"
-  deps = [ ":fcrypto" ]
+  deps = [ ":fcrypto-test" ]
 }

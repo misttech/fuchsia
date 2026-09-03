@@ -4,19 +4,19 @@
 
 #include "src/security/lib/fcrypto/cipher.h"
 
-#include <limits.h>
-#include <stddef.h>
-#include <stdint.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 #include <zxtest/zxtest.h>
 
 #include "src/security/lib/fcrypto/bytes.h"
 #include "src/security/lib/fcrypto/test/utils.h"
 
-namespace crypto {
-namespace testing {
+namespace crypto::testing {
 namespace {
 
 TEST(GetLengths, Uninitialized) {
@@ -115,29 +115,29 @@ void TestEncryptStream(Cipher::Algorithm cipher) {
   Bytes iv, ptext;
   ASSERT_OK(GenerateKeyMaterial(cipher, &key, &iv));
   ASSERT_OK(ptext.Randomize(len));
-  uint8_t ctext[len];
+  std::vector<uint8_t> ctext(len);
 
   // Not initialized
   Cipher encrypt;
-  EXPECT_STATUS(encrypt.Encrypt(ptext.get(), len, ctext), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(encrypt.Encrypt(ptext.get(), len, ctext.data()), ZX_ERR_BAD_STATE);
   ASSERT_OK(encrypt.InitEncrypt(cipher, key, iv));
 
   // Zero length
-  EXPECT_OK(encrypt.Encrypt(ptext.get(), 0, ctext));
+  EXPECT_OK(encrypt.Encrypt(ptext.get(), 0, ctext.data()));
 
   // Bad texts
-  EXPECT_STATUS(encrypt.Encrypt(nullptr, len, ctext), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(encrypt.Encrypt(nullptr, len, ctext.data()), ZX_ERR_INVALID_ARGS);
   EXPECT_STATUS(encrypt.Encrypt(ptext.get(), len, nullptr), ZX_ERR_INVALID_ARGS);
 
   // Wrong mode
-  EXPECT_STATUS(encrypt.Decrypt(ptext.get(), len, ctext), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(encrypt.Decrypt(ptext.get(), len, ctext.data()), ZX_ERR_BAD_STATE);
 
   // Valid
-  EXPECT_OK(encrypt.Encrypt(ptext.get(), len, ctext));
+  EXPECT_OK(encrypt.Encrypt(ptext.get(), len, ctext.data()));
 
   // Reset
   encrypt.Reset();
-  EXPECT_STATUS(encrypt.Encrypt(ptext.get(), len, ctext), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(encrypt.Encrypt(ptext.get(), len, ctext.data()), ZX_ERR_BAD_STATE);
 }
 TEST(EncryptStream, AES256_XTS) { ASSERT_NO_FATAL_FAILURE(TestEncryptStream(Cipher::kAES256_XTS)); }
 
@@ -147,32 +147,32 @@ void TestEncryptRandomAccess(Cipher::Algorithm cipher) {
   Bytes iv, ptext;
   ASSERT_OK(GenerateKeyMaterial(cipher, &key, &iv));
   ASSERT_OK(ptext.Randomize(len));
-  uint8_t ctext[len];
+  std::vector<uint8_t> ctext(len);
 
   // Not initialized
   Cipher encrypt;
-  EXPECT_STATUS(encrypt.Encrypt(ptext.get(), len, ctext), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(encrypt.Encrypt(ptext.get(), len, ctext.data()), ZX_ERR_BAD_STATE);
   ASSERT_OK(encrypt.InitEncrypt(cipher, key, iv, len));
 
   // Zero length
-  EXPECT_OK(encrypt.Encrypt(ptext.get(), 0, 0, ctext));
+  EXPECT_OK(encrypt.Encrypt(ptext.get(), 0, 0, ctext.data()));
 
   // Bad texts
-  EXPECT_STATUS(encrypt.Encrypt(nullptr, 0, len, ctext), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(encrypt.Encrypt(nullptr, 0, len, ctext.data()), ZX_ERR_INVALID_ARGS);
   EXPECT_STATUS(encrypt.Encrypt(ptext.get(), 0, len, nullptr), ZX_ERR_INVALID_ARGS);
 
   // Wrong mode
-  EXPECT_STATUS(encrypt.Decrypt(ptext.get(), 0, len, ctext), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(encrypt.Decrypt(ptext.get(), 0, len, ctext.data()), ZX_ERR_BAD_STATE);
 
   // Bad offset
-  EXPECT_STATUS(encrypt.Encrypt(ptext.get(), 1, len, ctext), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(encrypt.Encrypt(ptext.get(), 1, len, ctext.data()), ZX_ERR_INVALID_ARGS);
 
   // Valid
-  EXPECT_OK(encrypt.Encrypt(ptext.get(), len, len, ctext));
+  EXPECT_OK(encrypt.Encrypt(ptext.get(), len, len, ctext.data()));
 
   // Reset
   encrypt.Reset();
-  EXPECT_STATUS(encrypt.Encrypt(ptext.get(), len, ctext), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(encrypt.Encrypt(ptext.get(), len, ctext.data()), ZX_ERR_BAD_STATE);
 }
 TEST(EncryptRandomAccess, AES256_XTS) {
   ASSERT_NO_FATAL_FAILURE(TestEncryptRandomAccess(Cipher::kAES256_XTS));
@@ -184,30 +184,30 @@ void TestDecryptStream(Cipher::Algorithm cipher) {
   Bytes iv, ptext;
   ASSERT_OK(GenerateKeyMaterial(cipher, &key, &iv));
   ASSERT_OK(ptext.Randomize(len));
-  uint8_t ctext[len];
-  uint8_t result[len];
+  std::vector<uint8_t> ctext(len);
+  std::vector<uint8_t> result(len);
   Cipher encrypt;
   ASSERT_OK(encrypt.InitEncrypt(cipher, key, iv));
-  ASSERT_OK(encrypt.Encrypt(ptext.get(), len, ctext));
+  ASSERT_OK(encrypt.Encrypt(ptext.get(), len, ctext.data()));
 
   // Not initialized
   Cipher decrypt;
-  EXPECT_STATUS(decrypt.Decrypt(ctext, len, result), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(decrypt.Decrypt(ctext.data(), len, result.data()), ZX_ERR_BAD_STATE);
   ASSERT_OK(decrypt.InitDecrypt(cipher, key, iv));
 
   // Zero length
-  EXPECT_OK(decrypt.Decrypt(ctext, 0, result));
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), 0, result.data()));
 
   // Bad texts
-  EXPECT_STATUS(decrypt.Decrypt(nullptr, len, result), ZX_ERR_INVALID_ARGS);
-  EXPECT_STATUS(decrypt.Decrypt(ctext, len, nullptr), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(decrypt.Decrypt(nullptr, len, result.data()), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(decrypt.Decrypt(ctext.data(), len, nullptr), ZX_ERR_INVALID_ARGS);
 
   // Wrong mode
-  EXPECT_STATUS(decrypt.Encrypt(ctext, len, result), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(decrypt.Encrypt(ctext.data(), len, result.data()), ZX_ERR_BAD_STATE);
 
   // Valid
-  EXPECT_OK(decrypt.Decrypt(ctext, len, result));
-  EXPECT_EQ(memcmp(ptext.get(), result, len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), len, result.data()));
+  EXPECT_EQ(memcmp(ptext.get(), result.data(), len), 0);
 
   // Mismatched key, iv
   Secret bad_key;
@@ -215,28 +215,28 @@ void TestDecryptStream(Cipher::Algorithm cipher) {
   ASSERT_OK(GenerateKeyMaterial(cipher, &bad_key, &bad_iv));
 
   ASSERT_OK(decrypt.InitDecrypt(cipher, bad_key, iv));
-  EXPECT_OK(decrypt.Decrypt(ctext, len, result));
-  EXPECT_NE(memcmp(ptext.get(), result, len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), len, result.data()));
+  EXPECT_NE(memcmp(ptext.get(), result.data(), len), 0);
 
   ASSERT_OK(decrypt.InitDecrypt(cipher, key, bad_iv));
-  EXPECT_OK(decrypt.Decrypt(ctext, len, result));
-  EXPECT_NE(memcmp(ptext.get(), result, len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), len, result.data()));
+  EXPECT_NE(memcmp(ptext.get(), result.data(), len), 0);
 
   // Bad stream order
   ASSERT_OK(decrypt.InitDecrypt(cipher, key, iv));
-  EXPECT_OK(decrypt.Decrypt(ctext, len / 2, result + (len / 2)));
-  EXPECT_OK(decrypt.Decrypt(ctext + (len / 2), len / 2, result));
-  EXPECT_NE(memcmp(ptext.get(), result, len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), len / 2, result.data() + (len / 2)));
+  EXPECT_OK(decrypt.Decrypt(ctext.data() + (len / 2), len / 2, result.data()));
+  EXPECT_NE(memcmp(ptext.get(), result.data(), len), 0);
 
   // Modified
   ctext[0] ^= 1;
   ASSERT_OK(decrypt.InitDecrypt(cipher, key, iv));
-  EXPECT_OK(decrypt.Decrypt(ctext, len, result));
-  EXPECT_NE(memcmp(ptext.get(), result, len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), len, result.data()));
+  EXPECT_NE(memcmp(ptext.get(), result.data(), len), 0);
 
   // Reset
   decrypt.Reset();
-  EXPECT_STATUS(decrypt.Decrypt(ctext, len, result), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(decrypt.Decrypt(ctext.data(), len, result.data()), ZX_ERR_BAD_STATE);
 }
 TEST(DecryptStream, AES256_XTS) { ASSERT_NO_FATAL_FAILURE(TestDecryptStream(Cipher::kAES256_XTS)); }
 
@@ -246,33 +246,33 @@ void TestDecryptRandomAccess(Cipher::Algorithm cipher) {
   Bytes iv, ptext;
   ASSERT_OK(GenerateKeyMaterial(cipher, &key, &iv));
   ASSERT_OK(ptext.Randomize(len));
-  uint8_t ctext[len];
-  uint8_t result[len];
+  std::vector<uint8_t> ctext(len);
+  std::vector<uint8_t> result(len);
   Cipher encrypt;
   ASSERT_OK(encrypt.InitEncrypt(cipher, key, iv, len / 4));
-  ASSERT_OK(encrypt.Encrypt(ptext.get(), len, len, ctext));
+  ASSERT_OK(encrypt.Encrypt(ptext.get(), len, len, ctext.data()));
 
   // Not initialized
   Cipher decrypt;
-  EXPECT_STATUS(decrypt.Decrypt(ctext, 0, len, result), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(decrypt.Decrypt(ctext.data(), 0, len, result.data()), ZX_ERR_BAD_STATE);
   ASSERT_OK(decrypt.InitDecrypt(cipher, key, iv, len / 4));
 
   // Zero length
-  EXPECT_OK(decrypt.Decrypt(ctext, 0, 0, result));
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), 0, 0, result.data()));
 
   // Bad texts
-  EXPECT_STATUS(decrypt.Decrypt(nullptr, 0, len, result), ZX_ERR_INVALID_ARGS);
-  EXPECT_STATUS(decrypt.Decrypt(ctext, 0, len, nullptr), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(decrypt.Decrypt(nullptr, 0, len, result.data()), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(decrypt.Decrypt(ctext.data(), 0, len, nullptr), ZX_ERR_INVALID_ARGS);
 
   // Wrong mode
-  EXPECT_STATUS(decrypt.Encrypt(ctext, 0, len, result), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(decrypt.Encrypt(ctext.data(), 0, len, result.data()), ZX_ERR_BAD_STATE);
 
   // Bad offset
-  EXPECT_STATUS(decrypt.Decrypt(ctext, 1, len, result), ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(decrypt.Decrypt(ctext.data(), 1, len, result.data()), ZX_ERR_INVALID_ARGS);
 
   // Valid
-  EXPECT_OK(decrypt.Decrypt(ctext, len, len, result));
-  EXPECT_EQ(memcmp(ptext.get(), result, len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), len, len, result.data()));
+  EXPECT_EQ(memcmp(ptext.get(), result.data(), len), 0);
 
   // Mismatched key, iv and offset
   Secret bad_key;
@@ -280,26 +280,26 @@ void TestDecryptRandomAccess(Cipher::Algorithm cipher) {
   ASSERT_OK(GenerateKeyMaterial(cipher, &bad_key, &bad_iv));
 
   ASSERT_OK(decrypt.InitDecrypt(cipher, bad_key, iv, len / 4));
-  EXPECT_OK(decrypt.Decrypt(ctext, len, len, result));
-  EXPECT_NE(memcmp(ptext.get(), result, len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), len, len, result.data()));
+  EXPECT_NE(memcmp(ptext.get(), result.data(), len), 0);
 
   ASSERT_OK(decrypt.InitDecrypt(cipher, key, bad_iv, len / 4));
-  EXPECT_OK(decrypt.Decrypt(ctext, len, len, result));
-  EXPECT_NE(memcmp(ptext.get(), result, len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), len, len, result.data()));
+  EXPECT_NE(memcmp(ptext.get(), result.data(), len), 0);
 
   ASSERT_OK(decrypt.InitDecrypt(cipher, key, bad_iv, len / 4));
-  EXPECT_OK(decrypt.Decrypt(ctext, 0, len, result));
-  EXPECT_NE(memcmp(ptext.get(), result, len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), 0, len, result.data()));
+  EXPECT_NE(memcmp(ptext.get(), result.data(), len), 0);
 
   // Modified
-  ctext[0] ^= 1;
+  ctext.data()[0] ^= 1;
   ASSERT_OK(decrypt.InitDecrypt(cipher, key, iv, len / 4));
-  EXPECT_OK(decrypt.Decrypt(ctext, len, len, result));
-  EXPECT_NE(memcmp(ptext.get(), result, len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.data(), len, len, result.data()));
+  EXPECT_NE(memcmp(ptext.get(), result.data(), len), 0);
 
   // Reset
   decrypt.Reset();
-  EXPECT_STATUS(decrypt.Decrypt(ctext, 0, len, result), ZX_ERR_BAD_STATE);
+  EXPECT_STATUS(decrypt.Decrypt(ctext.data(), 0, len, result.data()), ZX_ERR_BAD_STATE);
 }
 TEST(DecryptRandomAccess, AES256_XTS) {
   ASSERT_NO_FATAL_FAILURE(TestDecryptRandomAccess(Cipher::kAES256_XTS));
@@ -317,17 +317,17 @@ void TestSP800_TC(Cipher::Algorithm cipher, const char* xkey, const char* xiv, c
   ASSERT_OK(HexToBytes(xptext, &ptext));
   ASSERT_OK(HexToBytes(xctext, &ctext));
   size_t len = ctext.len();
-  uint8_t tmp[len];
+  std::vector<uint8_t> tmp(len);
 
   Cipher encrypt;
   EXPECT_OK(encrypt.InitEncrypt(cipher, key, iv));
-  EXPECT_OK(encrypt.Encrypt(ptext.get(), len, tmp));
-  EXPECT_EQ(memcmp(tmp, ctext.get(), len), 0);
+  EXPECT_OK(encrypt.Encrypt(ptext.get(), len, tmp.data()));
+  EXPECT_EQ(memcmp(tmp.data(), ctext.get(), len), 0);
 
   Cipher decrypt;
   EXPECT_OK(decrypt.InitDecrypt(cipher, key, iv));
-  EXPECT_OK(decrypt.Decrypt(ctext.get(), len, tmp));
-  EXPECT_EQ(memcmp(tmp, ptext.get(), len), 0);
+  EXPECT_OK(decrypt.Decrypt(ctext.get(), len, tmp.data()));
+  EXPECT_EQ(memcmp(tmp.data(), ptext.get(), len), 0);
 }
 
 // clang-format off
@@ -575,5 +575,4 @@ TEST(SP800_38E, TC200) {
 // clang-format on
 
 }  // namespace
-}  // namespace testing
-}  // namespace crypto
+}  // namespace crypto::testing
