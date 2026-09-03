@@ -16,6 +16,7 @@ kernel_rust_mod("iris-rs") {
   source_root = "iris.rs"
   sources = [ "iris.rs" ]
   deps = [
+    "//sdk/rust/zbi",
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
     "//src/lib/regio",

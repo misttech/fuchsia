@@ -141,6 +141,6 @@ void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {
   }
 
   if (!arch_handoff.iris_power_driver.empty()) {
-    iris_power_init();
+    iris_power_init(arch_handoff.iris_power_driver.data(), arch_handoff.iris_power_driver.size());
   }
 }

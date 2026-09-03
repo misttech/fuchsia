@@ -212,94 +212,131 @@ pub extern "C" fn iris_power_init_early() {
     pdev_register_power(&IRIS_POWER_OPS);
 }
 
+fn allocate_and_populate_from_domain_opps(
+    domain: &zbi::CpuEnergyModelDomain,
+    wfi_name: *const core::ffi::c_char,
+    opp_name: *const core::ffi::c_char,
+) -> Option<Box<[ProcessorPowerLevelFfi]>> {
+    let num_opps = (domain.opp_count as usize).min(domain.opps.len()).min(32);
+    let count = num_opps + 1;
+    let mut uninit = Box::<[ProcessorPowerLevelFfi]>::try_new_uninit_slice(count).ok()?;
+    assert_eq!(uninit.len(), count);
+
+    uninit[0].write(ProcessorPowerLevelFfi {
+        options: K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT,
+        processing_rate: 0,
+        power_coefficient_nw: 100_000,
+        control_interface: CONTROL_INTERFACE_ARM_WFI,
+        control_argument: 0,
+        diagnostic_name: wfi_name,
+    });
+
+    if num_opps > 0 {
+        // Sort OPPs in ascending order of frequency (or capacity if frequencies are equal)
+        // so that power levels are strictly increasing in processing rate, regardless of
+        // whether the ZBI payload provided OPPs in ascending, descending, or unsorted order.
+        let mut sorted_opps =
+            [zbi::CpuEnergyModelOpp { frequency_khz: 0, capacity: 0, power_uw: 0, voltage_mv: 0 };
+                32];
+        sorted_opps[..num_opps].copy_from_slice(&domain.opps[..num_opps]);
+        sorted_opps[..num_opps].sort_unstable_by_key(|opp| (opp.frequency_khz, opp.capacity));
+
+        let max_freq = sorted_opps[num_opps - 1].frequency_khz as u64;
+        for (idx, opp) in sorted_opps[..num_opps].iter().enumerate() {
+            let rate = if opp.capacity > 0 {
+                opp.capacity as u64
+            } else if max_freq > 0 {
+                (opp.frequency_khz as u64 * domain.max_rate).div_ceil(max_freq)
+            } else {
+                1
+            };
+            let power_nw = if opp.power_uw > 0 {
+                opp.power_uw as u64 * 1_000
+            } else {
+                (rate * 200_000) + 10_000_000
+            };
+            // Iris hardware OPP index 0 corresponds to the fastest OPP, and index num_opps - 1
+            // corresponds to the slowest OPP. Since sorted_opps is ascending (idx 0 = slowest),
+            // the hardware control argument is mapped as (num_opps - 1 - idx).
+            let control_arg = (num_opps - 1 - idx) as u64;
+            let level_idx = idx + 1;
+            uninit[level_idx].write(ProcessorPowerLevelFfi {
+                options: 0,
+                processing_rate: rate,
+                power_coefficient_nw: power_nw,
+                control_interface: CONTROL_INTERFACE_CPU_DRIVER,
+                control_argument: control_arg,
+                diagnostic_name: opp_name,
+            });
+        }
+    }
+
+    // SAFETY: All elements from 0 to count-1 in `uninit` were explicitly initialized above.
+    Some(unsafe { uninit.assume_init() })
+}
+
 /// Initializes Iris power domains and energy models for the kernel scheduler.
+///
+/// Both the `iris_register_energy_model` build configuration flag and a valid,
+/// populated `domains` array in the ZBI must be present to enable OPP control on Iris.
+///
+/// # Safety
+///
+/// If `domains` is non-null and `domain_count` > 0, caller must ensure `domains` points
+/// to a valid array of `domain_count` initialized `zbi::CpuEnergyModelDomain` structs.
 #[unsafe(no_mangle)]
-pub extern "C" fn iris_power_init() {
+pub unsafe extern "C" fn iris_power_init(
+    domains: *const zbi::CpuEnergyModelDomain,
+    domain_count: usize,
+) {
     if !cfg!(iris_register_energy_model) {
-        dprintf!(INFO, "POWER: Iris energy model registration disabled\n");
+        dprintf!(INFO, "POWER: Iris energy model registration disabled by build flag\n");
         return;
     }
 
-    dprintf!(INFO, "POWER: initializing iris power domains\n");
+    if domains.is_null() || domain_count == 0 {
+        dprintf!(INFO, "POWER: Iris energy model not supplied in ZBI, skipping registration\n");
+        return;
+    }
+
+    // SAFETY: Pointer and count are guaranteed valid by caller if non-null and non-zero.
+    let domain_slice = unsafe { core::slice::from_raw_parts(domains, domain_count) };
+    if domain_count < 4 || domain_slice[0].opp_count == 0 {
+        dprintf!(
+            INFO,
+            "POWER: Iris energy model in ZBI is empty or incomplete, skipping registration\n"
+        );
+        return;
+    }
+
+    dprintf!(INFO, "POWER: initializing iris power domains from ZBI energy model payload\n");
 
     let wfi_name = c"WFI".as_ptr();
     let opp_name = c"OPP".as_ptr();
 
-    const FREQUENCY_LITTLE: &[u32] = &[
-        2246400, 2169600, 2092800, 2054400, 2016000, 1996800, 1881600, 1766400, 1632000, 1555200,
-        1459200, 1363200, 1286400, 1190400, 1036800, 883200, 729600, 533000, 460800, 422400,
-        345600, 268800,
-    ];
-    const FREQUENCY_MEDIUM: &[u32] = &[
-        3052800, 2937600, 2841600, 2688000, 2534400, 2400000, 2284800, 2188800, 2092800, 1939200,
-        1862400, 1785600, 1670400, 1536000, 1401600, 1267200, 1075200, 921600, 729600, 652800,
-        533000, 400000, 266500, 177600,
-    ];
-    const FREQUENCY_BIG: &[u32] = &[
-        3782400, 3590400, 3398400, 3168000, 2937600, 2707200, 2592000, 2457600, 2342400, 2208000,
-        2073600, 1920000, 1766400, 1593600, 1420800, 1305600, 1152000, 1036800, 883200, 800000,
-        533000, 400000, 266500,
-    ];
-
-    fn allocate_and_populate_levels(
-        frequencies: &[u32],
-        max_rate: u64,
-        wfi_name: *const core::ffi::c_char,
-        opp_name: *const core::ffi::c_char,
-    ) -> Option<Box<[ProcessorPowerLevelFfi]>> {
-        let count = frequencies.len() + 1;
-        let mut uninit = Box::<[ProcessorPowerLevelFfi]>::try_new_uninit_slice(count).ok()?;
-        assert_eq!(uninit.len(), frequencies.len() + 1);
-
-        uninit[0].write(ProcessorPowerLevelFfi {
-            options: K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT,
-            processing_rate: 0,
-            power_coefficient_nw: 100_000,
-            control_interface: CONTROL_INTERFACE_ARM_WFI,
-            control_argument: 0,
-            diagnostic_name: wfi_name,
-        });
-
-        let max_freq = frequencies[0] as u64;
-        let num_opps = frequencies.len();
-        for (opp, &freq) in frequencies.iter().enumerate() {
-            let rate = (freq as u64 * max_rate).div_ceil(max_freq);
-            // Levels must be ordered in ascending order of processing rate:
-            // level 1 = lowest frequency OPP, level num_opps = highest frequency OPP.
-            let level_idx = num_opps - opp;
-            uninit[level_idx].write(ProcessorPowerLevelFfi {
-                options: 0,
-                processing_rate: rate,
-                power_coefficient_nw: (rate * 200_000) + 10_000_000,
-                control_interface: CONTROL_INTERFACE_CPU_DRIVER,
-                control_argument: opp as u64,
-                diagnostic_name: opp_name,
-            });
-        }
-
-        // SAFETY: All elements from 0 to count-1 in `uninit` were explicitly initialized above.
-        Some(unsafe { uninit.assume_init() })
-    }
-
     // Allocate power level descriptors on the kernel heap using `kalloc::Box` rather than on the
-    // kernel stack. The combined 4 domains have 97 total levels (~4.6 KB), which would consume a
+    // kernel stack. The combined 4 domains have ~97 total levels (~4.6 KB), which would consume a
     // significant portion of the limited kernel stack (8-16 KB).
-    let Some(levels_d0) = allocate_and_populate_levels(FREQUENCY_LITTLE, 150, wfi_name, opp_name)
+    let Some(levels_d0) =
+        allocate_and_populate_from_domain_opps(&domain_slice[0], wfi_name, opp_name)
     else {
         dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 0 power levels\n");
         return;
     };
-    let Some(levels_d1) = allocate_and_populate_levels(FREQUENCY_MEDIUM, 703, wfi_name, opp_name)
+    let Some(levels_d1) =
+        allocate_and_populate_from_domain_opps(&domain_slice[1], wfi_name, opp_name)
     else {
         dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 1 power levels\n");
         return;
     };
-    let Some(levels_d2) = allocate_and_populate_levels(FREQUENCY_MEDIUM, 703, wfi_name, opp_name)
+    let Some(levels_d2) =
+        allocate_and_populate_from_domain_opps(&domain_slice[2], wfi_name, opp_name)
     else {
         dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 2 power levels\n");
         return;
     };
-    let Some(levels_d3) = allocate_and_populate_levels(FREQUENCY_BIG, 1000, wfi_name, opp_name)
+    let Some(levels_d3) =
+        allocate_and_populate_from_domain_opps(&domain_slice[3], wfi_name, opp_name)
     else {
         dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 3 power levels\n");
         return;
@@ -344,7 +381,7 @@ pub extern "C" fn iris_power_init() {
     dprintf!(INFO, "POWER: Registered iris power domains\n");
 
     // When boot boosting is enabled, set default boot performance limits matching boot OPPs to
-    // ensure responsive boot performance:
+    // ensure responsive boot performance on the 1000 user processing rate scale:
     // - Domain 0 (Little, CPUs 0-1): Boot OPP 8 (1.632 GHz) -> min rate 0, max rate 109
     // - Domain 1 (Medium 1, CPUs 2-4): Boot OPP 11 (1.785 GHz) -> min rate 0, max rate 412
     // - Domain 2 (Medium 2, CPUs 5-6): Boot OPP 11 (1.785 GHz) -> min rate 0, max rate 412
@@ -435,5 +472,132 @@ mod tests {
 
         // Restore original base pointer
         OPP_REG_BASE.store(old_base, Ordering::SeqCst);
+    }
+
+    /// Tests that passing a null or empty config to iris_power_init returns gracefully without panicking.
+    #[test]
+    fn test_iris_power_init_null_or_empty_config() {
+        // SAFETY: Testing null pointer handling.
+        unsafe {
+            super::iris_power_init(core::ptr::null(), 0);
+        }
+
+        const EMPTY_DOMAINS: [zbi::CpuEnergyModelDomain; 4] = [zbi::CpuEnergyModelDomain {
+            cpu_mask: 0,
+            max_rate: 0,
+            domain_id: 0,
+            opp_count: 0,
+            opps: [zbi::CpuEnergyModelOpp {
+                frequency_khz: 0,
+                capacity: 0,
+                power_uw: 0,
+                voltage_mv: 0,
+            }; zbi::KERNEL_DRIVER_CPU_ENERGY_MODEL_MAX_OPPS as usize],
+        }; 4];
+        // SAFETY: Pointer and length are valid for call duration.
+        unsafe {
+            super::iris_power_init(EMPTY_DOMAINS.as_ptr(), EMPTY_DOMAINS.len());
+        }
+    }
+
+    /// Tests that allocate_and_populate_from_domain_opps sorts OPPs ascending.
+    #[test]
+    fn test_allocate_and_populate_opp_sorting() {
+        let wfi_name = c"WFI".as_ptr();
+        let opp_name = c"OPP".as_ptr();
+
+        // Ascending OPPs (500MHz, 1000MHz, 2000MHz).
+        let mut asc_domain = zbi::CpuEnergyModelDomain {
+            cpu_mask: 0x03,
+            max_rate: 150,
+            domain_id: 0,
+            opp_count: 3,
+            opps: [zbi::CpuEnergyModelOpp {
+                frequency_khz: 0,
+                capacity: 0,
+                power_uw: 0,
+                voltage_mv: 0,
+            }; zbi::KERNEL_DRIVER_CPU_ENERGY_MODEL_MAX_OPPS as usize],
+        };
+        asc_domain.opps[0] = zbi::CpuEnergyModelOpp {
+            frequency_khz: 500_000,
+            capacity: 50,
+            power_uw: 100,
+            voltage_mv: 700,
+        };
+        asc_domain.opps[1] = zbi::CpuEnergyModelOpp {
+            frequency_khz: 1_000_000,
+            capacity: 100,
+            power_uw: 200,
+            voltage_mv: 800,
+        };
+        asc_domain.opps[2] = zbi::CpuEnergyModelOpp {
+            frequency_khz: 2_000_000,
+            capacity: 150,
+            power_uw: 300,
+            voltage_mv: 900,
+        };
+
+        // Descending OPPs (2000MHz, 1000MHz, 500MHz).
+        let mut desc_domain = zbi::CpuEnergyModelDomain {
+            cpu_mask: 0x03,
+            max_rate: 150,
+            domain_id: 0,
+            opp_count: 3,
+            opps: [zbi::CpuEnergyModelOpp {
+                frequency_khz: 0,
+                capacity: 0,
+                power_uw: 0,
+                voltage_mv: 0,
+            }; zbi::KERNEL_DRIVER_CPU_ENERGY_MODEL_MAX_OPPS as usize],
+        };
+        desc_domain.opps[0] = zbi::CpuEnergyModelOpp {
+            frequency_khz: 2_000_000,
+            capacity: 150,
+            power_uw: 300,
+            voltage_mv: 900,
+        };
+        desc_domain.opps[1] = zbi::CpuEnergyModelOpp {
+            frequency_khz: 1_000_000,
+            capacity: 100,
+            power_uw: 200,
+            voltage_mv: 800,
+        };
+        desc_domain.opps[2] = zbi::CpuEnergyModelOpp {
+            frequency_khz: 500_000,
+            capacity: 50,
+            power_uw: 100,
+            voltage_mv: 700,
+        };
+
+        let asc_levels =
+            super::allocate_and_populate_from_domain_opps(&asc_domain, wfi_name, opp_name).unwrap();
+        let desc_levels =
+            super::allocate_and_populate_from_domain_opps(&desc_domain, wfi_name, opp_name)
+                .unwrap();
+
+        assert_eq!(asc_levels.len(), 4);
+        assert_eq!(desc_levels.len(), 4);
+
+        // Levels should be identical regardless of input order.
+        for i in 0..4 {
+            assert_eq!(asc_levels[i].processing_rate, desc_levels[i].processing_rate);
+            assert_eq!(asc_levels[i].power_coefficient_nw, desc_levels[i].power_coefficient_nw);
+            assert_eq!(asc_levels[i].control_interface, desc_levels[i].control_interface);
+            assert_eq!(asc_levels[i].control_argument, desc_levels[i].control_argument);
+        }
+
+        // Verify ordering: Level 0 = WFI (rate 0), Level 1 = 50 (ctrl arg 2), Level 2 = 100 (ctrl arg 1), Level 3 = 150 (ctrl arg 0).
+        assert_eq!(asc_levels[0].processing_rate, 0);
+        assert_eq!(asc_levels[0].control_interface, CONTROL_INTERFACE_ARM_WFI);
+
+        assert_eq!(asc_levels[1].processing_rate, 50);
+        assert_eq!(asc_levels[1].control_argument, 2);
+
+        assert_eq!(asc_levels[2].processing_rate, 100);
+        assert_eq!(asc_levels[2].control_argument, 1);
+
+        assert_eq!(asc_levels[3].processing_rate, 150);
+        assert_eq!(asc_levels[3].control_argument, 0);
     }
 }
