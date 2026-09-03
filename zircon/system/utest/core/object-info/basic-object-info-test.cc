@@ -82,7 +82,7 @@ TEST(ObjectGetInfoTest, HandleCountCorrectness) {
 constexpr auto provider = []() { return zx::handle(); };
 
 TEST(ObjectGetInfoTest, InvalidHandleFails) {
-  ASSERT_NO_FATAL_FAILURE((CheckInvalidHandleFails<void*>(ZX_INFO_HANDLE_VALID, 1, provider)));
+  ASSERT_NO_FATAL_FAILURE((CheckInvalidHandleFails<void*>(ZX_INFO_HANDLE_VALID, provider)));
 }
 
 }  // namespace

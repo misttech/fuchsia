@@ -10,67 +10,49 @@
 #include <lib/zx/vmo.h>
 #include <zircon/syscalls/object.h>
 
-#include <cinttypes>
-#include <climits>
 #include <type_traits>
 
 #include <zxtest/zxtest.h>
 
 namespace object_info_test {
 
-template <typename EntryType, typename HandleType>
-void CheckSelfInfoSucceeds(zx_object_info_topic_t topic, uint32_t entry_count,
-                           const HandleType& self) {
-  EntryType entries[entry_count];
+template <typename EntryType, uint32_t EntryCount = 1, class HandleType>
+void CheckSelfInfoSucceeds(zx_object_info_topic_t topic, const HandleType& self) {
+  EntryType entries[EntryCount];
   size_t actual;
   size_t avail;
 
-  ASSERT_OK(self.get_info(topic, entries, sizeof(EntryType) * entry_count, &actual, &avail));
+  ASSERT_OK(self.get_info(topic, entries, sizeof(entries), &actual, &avail));
 }
 
 // Invalid handles should fail.
-template <typename EntryType, typename HandleProvider>
-void CheckInvalidHandleFails(zx_object_info_topic_t topic, uint32_t entry_count,
-                             const HandleProvider& provider) {
-  EntryType entries[entry_count];
+template <typename EntryType, uint32_t EntryCount = 1, typename HandleProvider>
+void CheckInvalidHandleFails(zx_object_info_topic_t topic, const HandleProvider& provider) {
+  EntryType entries[EntryCount];
   size_t actual;
   size_t avail;
   std::decay_t<decltype(provider())> handle;
 
-  ASSERT_EQ(handle.get_info(topic, entries, sizeof(EntryType) * entry_count, &actual, &avail),
-            ZX_ERR_BAD_HANDLE);
+  ASSERT_EQ(handle.get_info(topic, entries, sizeof(entries), &actual, &avail), ZX_ERR_BAD_HANDLE);
 }
 
 // Call should fail if the handle type does not support the requested topic.
-template <typename EntryType, typename HandleProvider>
-void CheckWrongHandleTypeFails(zx_object_info_topic_t topic, uint32_t entry_count,
-                               const HandleProvider& provider) {
-  EntryType entries[entry_count];
+template <typename EntryType, uint32_t EntryCount = 1, typename HandleProvider>
+void CheckWrongHandleTypeFails(zx_object_info_topic_t topic, const HandleProvider& provider) {
+  EntryType entries[EntryCount];
   size_t actual;
   size_t avail;
   const auto& handle = provider();
 
-  ASSERT_NOT_OK(handle.get_info(topic, entries, sizeof(EntryType) * entry_count, &actual, &avail));
-}
-
-// Call should succeed with the default rights.
-template <typename EntryType, typename HandleProvider>
-void CheckDefaultRightsSucceed(zx_object_info_topic_t topic, uint32_t entry_count,
-                               zx_rights_t missing_rights, const HandleProvider& provider) {
-  const auto& handle = provider();
-  EntryType entries[entry_count];
-  size_t actual;
-  size_t avail;
-
-  ASSERT_OK(handle.get_info(topic, entries, sizeof(EntryType) * entry_count, &actual, &avail));
+  ASSERT_NOT_OK(handle.get_info(topic, entries, sizeof(entries), &actual, &avail));
 }
 
 // Calls without enough rights, should fail with ZX_ERR_ACCESS_DENIED
-template <typename EntryType, typename HandleProvider>
-void CheckMissingRightsFail(zx_object_info_topic_t topic, uint32_t entry_count,
-                            zx_rights_t missing_rights, const HandleProvider& provider) {
+template <typename EntryType, uint32_t EntryCount, typename HandleProvider>
+void CheckMissingRightsFail(zx_object_info_topic_t topic, zx_rights_t missing_rights,
+                            const HandleProvider& provider) {
   const auto& handle = provider();
-  EntryType entries[entry_count];
+  EntryType entries[EntryCount];
   size_t actual;
   size_t avail;
 
@@ -86,8 +68,7 @@ void CheckMissingRightsFail(zx_object_info_topic_t topic, uint32_t entry_count,
   ASSERT_OK(handle.duplicate(handle_info.rights & ~missing_rights, &unpriviledged_handle));
 
   // Call should fail without these rights.
-  EXPECT_EQ(unpriviledged_handle.get_info(topic, entries, sizeof(EntryType) * entry_count, &actual,
-                                          &avail),
+  EXPECT_EQ(unpriviledged_handle.get_info(topic, entries, sizeof(entries), &actual, &avail),
             ZX_ERR_ACCESS_DENIED);
 }
 
@@ -143,46 +124,42 @@ void CheckNullBufferSucceeds(zx_object_info_topic_t topic, const HandleProvider&
 }
 
 // Passing a buffer shorter than avail should succeed.
-template <typename EntryType, typename HandleProvider>
-void CheckSmallBufferSucceeds(zx_object_info_topic_t topic, uint32_t entry_count,
-                              const HandleProvider& provider) {
-  EntryType entries[entry_count];
+template <typename EntryType, uint32_t EntryCount = 1, typename HandleProvider>
+void CheckSmallBufferSucceeds(zx_object_info_topic_t topic, const HandleProvider& provider) {
+  EntryType entries[EntryCount];
   size_t actual;
   size_t avail;
   const auto& handle = provider();
 
-  EXPECT_OK(handle.get_info(topic, entries, sizeof(EntryType) * entry_count, &actual, &avail));
+  ASSERT_OK(handle.get_info(topic, entries, sizeof(entries), &actual, &avail));
 
   EXPECT_EQ(1u, actual);
   EXPECT_GT(avail, actual);
 }
 
-template <typename EntryType, typename HandleProvider>
-void CheckNullActualSucceeds(zx_object_info_topic_t topic, uint32_t entry_count,
-                             const HandleProvider& provider) {
-  EntryType entries[entry_count];
+template <typename EntryType, uint32_t EntryCount = 1, typename HandleProvider>
+void CheckNullActualSucceeds(zx_object_info_topic_t topic, const HandleProvider& provider) {
+  EntryType entries[EntryCount];
   const auto& handle = provider();
   size_t tmp;
 
-  ASSERT_OK(handle.get_info(topic, entries, sizeof(EntryType) * entry_count, nullptr, &tmp));
+  ASSERT_OK(handle.get_info(topic, entries, sizeof(entries), nullptr, &tmp));
 }
 
-template <typename EntryType, typename HandleProvider>
-void CheckNullAvailSucceeds(zx_object_info_topic_t topic, uint32_t entry_count,
-                            const HandleProvider& provider) {
-  EntryType entries[entry_count];
+template <typename EntryType, uint32_t EntryCount = 1, typename HandleProvider>
+void CheckNullAvailSucceeds(zx_object_info_topic_t topic, const HandleProvider& provider) {
+  EntryType entries[EntryCount];
   const auto& handle = provider();
   size_t tmp;
 
-  ASSERT_OK(handle.get_info(topic, entries, sizeof(EntryType) * entry_count, &tmp, nullptr));
+  ASSERT_OK(handle.get_info(topic, entries, sizeof(entries), &tmp, nullptr));
 }
 
-template <typename EntryType, typename HandleProvider>
-void CheckNullActualAndAvailSucceeds(zx_object_info_topic_t topic, uint32_t entry_count,
-                                     const HandleProvider& provider) {
-  EntryType entries[entry_count];
+template <typename EntryType, uint32_t EntryCount = 1, typename HandleProvider>
+void CheckNullActualAndAvailSucceeds(zx_object_info_topic_t topic, const HandleProvider& provider) {
+  EntryType entries[EntryCount];
   const auto& handle = provider();
-  ASSERT_OK(handle.get_info(topic, entries, sizeof(EntryType) * entry_count, nullptr, nullptr));
+  ASSERT_OK(handle.get_info(topic, entries, sizeof(entries), nullptr, nullptr));
 }
 
 template <typename EntryType, typename HandleProvider>
@@ -223,7 +200,7 @@ void CheckPartiallyUnmappedBufferIsError(zx_object_info_topic_t topic,
   // Point to a spot in the mapped page just before the unmapped region:
   // the first entry will hit mapped memory, the second entry will hit
   // unmapped memory.
-  EntryType* entries = (EntryType*)(vmo_addr + zx_system_get_page_size()) - 1;
+  EntryType* entries = reinterpret_cast<EntryType*>(vmo_addr + zx_system_get_page_size()) - 1;
 
   size_t actual;
   size_t avail;
@@ -232,25 +209,23 @@ void CheckPartiallyUnmappedBufferIsError(zx_object_info_topic_t topic,
   vmar.destroy();
 }
 
-template <typename EntryType, typename HandleProvider>
-void BadActualIsInvalidArgs(zx_object_info_topic_t topic, size_t entry_count,
-                            const HandleProvider& provider) {
+template <typename EntryType, uint32_t EntryCount = 1, typename HandleProvider>
+void BadActualIsInvalidArgs(zx_object_info_topic_t topic, const HandleProvider& provider) {
   const auto& handle = provider();
-  EntryType entries[entry_count];
+  EntryType entries[EntryCount];
   size_t avail;
-  EXPECT_EQ(handle.get_info(topic, entries, sizeof(EntryType) * entry_count,
+  EXPECT_EQ(handle.get_info(topic, entries, sizeof(entries),
                             // Bad actual pointer value.
                             reinterpret_cast<size_t*>(1), &avail),
             ZX_ERR_INVALID_ARGS);
 }
 
-template <typename EntryType, typename HandleProvider>
-void BadAvailIsInvalidArgs(zx_object_info_topic_t topic, size_t entry_count,
-                           const HandleProvider& provider) {
+template <typename EntryType, uint32_t EntryCount = 1, typename HandleProvider>
+void BadAvailIsInvalidArgs(zx_object_info_topic_t topic, const HandleProvider& provider) {
   const auto& handle = provider();
-  EntryType entries[entry_count];
+  EntryType entries[EntryCount];
   size_t actual;
-  EXPECT_EQ(handle.get_info(topic, entries, sizeof(EntryType) * entry_count, &actual,
+  EXPECT_EQ(handle.get_info(topic, entries, sizeof(entries), &actual,
                             // Bad actual pointer value.
                             reinterpret_cast<size_t*>(1)),
             ZX_ERR_INVALID_ARGS);

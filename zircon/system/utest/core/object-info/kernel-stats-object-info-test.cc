@@ -5,7 +5,6 @@
 #include <lib/core-test-utils.h>
 #include <lib/fit/defer.h>
 #include <lib/maybe-standalone-test/maybe-standalone.h>
-#include <lib/stdcompat/span.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/job.h>
 #include <lib/zx/pager.h>
@@ -19,6 +18,7 @@
 
 #include <atomic>
 #include <random>
+#include <span>
 #include <thread>
 #include <vector>
 
@@ -52,7 +52,7 @@ class KernelStatsGetInfoTest : public zxtest::Test {
 
     std::vector<ElementType> records(probe_avail_records);
     ASSERT_EQ(records.size(), probe_avail_records);
-    cpp20::span buffer = records;
+    std::span buffer = records;
     size_t actual_records, avail_records;
     ASSERT_OK(zx_object_get_info(info_resource.get(), Topic, buffer.data(), buffer.size_bytes(),
                                  &actual_records, &avail_records));

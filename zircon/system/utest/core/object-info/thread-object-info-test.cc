@@ -36,27 +36,27 @@ constexpr auto thread_provider = []() -> const zx::thread& {
 
 TEST(ThreadGetInfoTest, InfoHandleBasicOnSelfSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckSelfInfoSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1, thread_provider())));
+      (CheckSelfInfoSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, thread_provider())));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleBasicInvalidHandleFails) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckInvalidHandleFails<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1, thread_provider)));
+      (CheckInvalidHandleFails<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleBasicNullAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullAvailSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1, thread_provider)));
+      (CheckNullAvailSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleBasicNullActualSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullActualSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1, thread_provider)));
+      (CheckNullActualSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleBasicNullActualAndAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE((CheckNullActualAndAvailSucceeds<zx_info_handle_basic_t>(
-      ZX_INFO_HANDLE_BASIC, 1, thread_provider)));
+      ZX_INFO_HANDLE_BASIC, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleBasicInvalidBufferPointerFails) {
@@ -66,12 +66,12 @@ TEST(ThreadGetInfoTest, InfoHandleBasicInvalidBufferPointerFails) {
 
 TEST(ThreadGetInfoTest, InfoHandleBasicBadActualIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadActualIsInvalidArgs<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1, thread_provider)));
+      (BadActualIsInvalidArgs<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleBasicBadAvailIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadAvailIsInvalidArgs<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1, thread_provider)));
+      (BadAvailIsInvalidArgs<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleBasicZeroSizedBufferFails) {
@@ -81,27 +81,27 @@ TEST(ThreadGetInfoTest, InfoHandleBasicZeroSizedBufferFails) {
 
 TEST(ThreadGetInfoTest, InfoHandleCountOnSelfSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckSelfInfoSucceeds<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, 1, thread_provider())));
+      (CheckSelfInfoSucceeds<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, thread_provider())));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleCountInvalidHandleFails) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckInvalidHandleFails<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, 1, thread_provider)));
+      (CheckInvalidHandleFails<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleCountNullAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullAvailSucceeds<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, 1, thread_provider)));
+      (CheckNullAvailSucceeds<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleCountNullActualSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullActualSucceeds<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, 1, thread_provider)));
+      (CheckNullActualSucceeds<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleCountNullActualAndAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE((CheckNullActualAndAvailSucceeds<zx_info_handle_count_t>(
-      ZX_INFO_HANDLE_COUNT, 1, thread_provider)));
+      ZX_INFO_HANDLE_COUNT, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleCountInvalidBufferPointerFails) {
@@ -111,12 +111,12 @@ TEST(ThreadGetInfoTest, InfoHandleCountInvalidBufferPointerFails) {
 
 TEST(ThreadGetInfoTest, InfoHandleCountBadActualIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadActualIsInvalidArgs<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, 1, thread_provider)));
+      (BadActualIsInvalidArgs<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleCountBadAvailIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadAvailIsInvalidArgs<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, 1, thread_provider)));
+      (BadAvailIsInvalidArgs<zx_info_handle_count_t>(ZX_INFO_HANDLE_COUNT, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoHandleCountZeroSizedBufferFails) {
@@ -126,27 +126,27 @@ TEST(ThreadGetInfoTest, InfoHandleCountZeroSizedBufferFails) {
 
 TEST(ThreadGetInfoTest, InfoThreadOnSelfSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckSelfInfoSucceeds<zx_info_thread_t>(ZX_INFO_THREAD, 1, thread_provider())));
+      (CheckSelfInfoSucceeds<zx_info_thread_t>(ZX_INFO_THREAD, thread_provider())));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadInvalidHandleFails) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckInvalidHandleFails<zx_info_thread_t>(ZX_INFO_THREAD, 1, thread_provider)));
+      (CheckInvalidHandleFails<zx_info_thread_t>(ZX_INFO_THREAD, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadNullAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullAvailSucceeds<zx_info_thread_t>(ZX_INFO_THREAD, 1, thread_provider)));
+      (CheckNullAvailSucceeds<zx_info_thread_t>(ZX_INFO_THREAD, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadNullActualSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullActualSucceeds<zx_info_thread_t>(ZX_INFO_THREAD, 1, thread_provider)));
+      (CheckNullActualSucceeds<zx_info_thread_t>(ZX_INFO_THREAD, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadNullActualAndAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullActualAndAvailSucceeds<zx_info_thread_t>(ZX_INFO_THREAD, 1, thread_provider)));
+      (CheckNullActualAndAvailSucceeds<zx_info_thread_t>(ZX_INFO_THREAD, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadInvalidBufferPointerFails) {
@@ -156,12 +156,12 @@ TEST(ThreadGetInfoTest, InfoThreadInvalidBufferPointerFails) {
 
 TEST(ThreadGetInfoTest, InfoThreadBadActualIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadActualIsInvalidArgs<zx_info_thread_t>(ZX_INFO_THREAD, 1, thread_provider)));
+      (BadActualIsInvalidArgs<zx_info_thread_t>(ZX_INFO_THREAD, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadBadAvailIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadAvailIsInvalidArgs<zx_info_thread_t>(ZX_INFO_THREAD, 1, thread_provider)));
+      (BadAvailIsInvalidArgs<zx_info_thread_t>(ZX_INFO_THREAD, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadZeroSizedBufferFails) {
@@ -171,37 +171,37 @@ TEST(ThreadGetInfoTest, InfoThreadZeroSizedBufferFails) {
 
 TEST(ThreadGetInfoTest, InfoThreadJobHandleIsBadHandle) {
   ASSERT_NO_FATAL_FAILURE(
-      CheckWrongHandleTypeFails<zx_info_thread_t>(ZX_INFO_THREAD, 32, job_provider));
+      (CheckWrongHandleTypeFails<zx_info_thread_t, 32>(ZX_INFO_THREAD, job_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadProcessHandleIsBadHandle) {
   ASSERT_NO_FATAL_FAILURE(
-      CheckWrongHandleTypeFails<zx_info_thread_t>(ZX_INFO_THREAD, 32, process_provider));
+      (CheckWrongHandleTypeFails<zx_info_thread_t, 32>(ZX_INFO_THREAD, process_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadStatsOnSelfSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckSelfInfoSucceeds<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, 1, thread_provider())));
+      (CheckSelfInfoSucceeds<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, thread_provider())));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadStatsInvalidHandleFails) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckInvalidHandleFails<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, 1, thread_provider)));
+      (CheckInvalidHandleFails<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, thread_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadStatsNullAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullAvailSucceeds<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, 1, thread_provider)));
+      CheckNullAvailSucceeds<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, thread_provider));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadStatsNullActualSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullActualSucceeds<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, 1, thread_provider)));
+      CheckNullActualSucceeds<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, thread_provider));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadStatsNullActualAndAvailSucceeds) {
-  ASSERT_NO_FATAL_FAILURE((CheckNullActualAndAvailSucceeds<zx_info_thread_stats_t>(
-      ZX_INFO_THREAD_STATS, 1, thread_provider)));
+  ASSERT_NO_FATAL_FAILURE(CheckNullActualAndAvailSucceeds<zx_info_thread_stats_t>(
+      ZX_INFO_THREAD_STATS, thread_provider));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadStatsInvalidBufferPointerFails) {
@@ -211,12 +211,12 @@ TEST(ThreadGetInfoTest, InfoThreadStatsInvalidBufferPointerFails) {
 
 TEST(ThreadGetInfoTest, InfoThreadStatsBadActualIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadActualIsInvalidArgs<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, 1, thread_provider)));
+      BadActualIsInvalidArgs<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, thread_provider));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadStatsBadAvailIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadAvailIsInvalidArgs<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, 1, thread_provider)));
+      BadAvailIsInvalidArgs<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, thread_provider));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadStatsZeroSizedBufferFails) {
@@ -226,20 +226,20 @@ TEST(ThreadGetInfoTest, InfoThreadStatsZeroSizedBufferFails) {
 
 TEST(ThreadGetInfoTest, InfoThreadStatsJobHandleIsBadHandle) {
   ASSERT_NO_FATAL_FAILURE(
-      CheckWrongHandleTypeFails<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS, 32, job_provider));
+      (CheckWrongHandleTypeFails<zx_info_thread_stats_t, 32>(ZX_INFO_THREAD_STATS, job_provider)));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadStatsProcessHandleIsBadHandle) {
-  ASSERT_NO_FATAL_FAILURE(CheckWrongHandleTypeFails<zx_info_thread_stats_t>(ZX_INFO_THREAD_STATS,
-                                                                            32, process_provider));
+  ASSERT_NO_FATAL_FAILURE((CheckWrongHandleTypeFails<zx_info_thread_stats_t, 32>(
+      ZX_INFO_THREAD_STATS, process_provider)));
 }
 
 // As reference from previous object-info test.
 // Skip most tests for ZX_INFO_THREAD_EXCEPTION_REPORT, which is tested
 // elsewhere and requires the target thread to be in a certain state.
 TEST(ThreadGetInfoTest, InfoThreadExceptionReportInvalidHandleFails) {
-  ASSERT_NO_FATAL_FAILURE(CheckInvalidHandleFails<zx_exception_report_t>(
-      ZX_INFO_THREAD_EXCEPTION_REPORT, 32, []() { return zx::handle(); }));
+  ASSERT_NO_FATAL_FAILURE((CheckInvalidHandleFails<zx_exception_report_t, 32>(
+      ZX_INFO_THREAD_EXCEPTION_REPORT, []() { return zx::handle(); })));
 }
 
 TEST(ThreadGetInfoTest, InfoThreadStatsRuntime) {

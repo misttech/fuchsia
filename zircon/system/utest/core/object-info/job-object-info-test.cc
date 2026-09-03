@@ -10,7 +10,6 @@
 #include <lib/zx/vmo.h>
 #include <zircon/syscalls/object.h>
 
-#include <memory>
 #include <string_view>
 #include <utility>
 
@@ -39,7 +38,7 @@ constexpr std::string_view kGrandChildrenName = "grandchild";
 //   - child job 2 (kChildJobs)
 //     - grandchild process 2.1
 //     - grandchild job 2.1
-class JobFixutre : public zxtest::Test {
+class JobFixture : public zxtest::Test {
  public:
   static void SetUpTestSuite() {
     ASSERT_OK(zx::job::create(*zx::job::default_job(), 0, &root_), "Failed to create job.");
@@ -111,22 +110,21 @@ class JobFixutre : public zxtest::Test {
   fit::function<const zx::job&()> handle_provider = [this]() -> const zx::job& { return GetJob(); };
 };
 
-zx::job JobFixutre::root_;
-fbl::Vector<zx::vmar> JobFixutre::vmar_;
-fbl::Vector<zx::process> JobFixutre::child_processes_;
-fbl::Vector<zx::job> JobFixutre::child_jobs_;
+zx::job JobFixture::root_;
+fbl::Vector<zx::vmar> JobFixture::vmar_;
+fbl::Vector<zx::process> JobFixture::child_processes_;
+fbl::Vector<zx::job> JobFixture::child_jobs_;
 
 constexpr int kChildCount = 32;
 
 // The jobch_helper_* (job child helper) functions allow testing both
 // ZX_INFO_JOB_PROCESS and ZX_INFO_JOB_CHILDREN.
-void CheckJobGetChild(const zx::job* job, uint32_t topic, size_t object_count,
-                      size_t expected_count) {
-  zx_koid_t koids[object_count];
+void CheckJobGetChild(const zx::job* job, uint32_t topic, size_t expected_count) {
+  zx_koid_t koids[kChildCount];
   size_t actual;
   size_t available;
 
-  ASSERT_OK(job->get_info(topic, koids, sizeof(zx_koid_t) * object_count, &actual, &available));
+  ASSERT_OK(job->get_info(topic, koids, sizeof(koids), &actual, &available));
 
   EXPECT_EQ(expected_count, actual);
   EXPECT_EQ(expected_count, available);
@@ -139,7 +137,7 @@ void CheckJobGetChild(const zx::job* job, uint32_t topic, size_t object_count,
   }
 }
 
-using JobGetInfoTest = JobFixutre;
+using JobGetInfoTest = JobFixture;
 
 constexpr auto process_provider = []() -> const zx::process& {
   static const zx::unowned_process process = zx::process::self();
@@ -157,38 +155,36 @@ constexpr auto thread_provider = []() -> const zx::thread& {
 };
 
 TEST_F(JobGetInfoTest, InfoJobProcessesGetChild) {
-  ASSERT_NO_FATAL_FAILURE(
-      CheckJobGetChild(&GetJob(), ZX_INFO_JOB_PROCESSES, kChildCount, kChildProcs));
+  ASSERT_NO_FATAL_FAILURE(CheckJobGetChild(&GetJob(), ZX_INFO_JOB_PROCESSES, kChildProcs));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildJobsGetChild) {
-  ASSERT_NO_FATAL_FAILURE(
-      CheckJobGetChild(&GetJob(), ZX_INFO_JOB_CHILDREN, kChildCount, kChildJobs));
+  ASSERT_NO_FATAL_FAILURE(CheckJobGetChild(&GetJob(), ZX_INFO_JOB_CHILDREN, kChildJobs));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesOnSelfSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckSelfInfoSucceeds<zx_koid_t>(ZX_INFO_JOB_PROCESSES, 1, job_provider())));
+      (CheckSelfInfoSucceeds<zx_koid_t>(ZX_INFO_JOB_PROCESSES, job_provider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesInvalidHandleFails) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckInvalidHandleFails<zx_koid_t>(ZX_INFO_JOB_PROCESSES, 1, GetHandleProvider())));
+      (CheckInvalidHandleFails<zx_koid_t>(ZX_INFO_JOB_PROCESSES, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesNullAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullAvailSucceeds<zx_koid_t>(ZX_INFO_JOB_PROCESSES, 1, GetHandleProvider())));
+      (CheckNullAvailSucceeds<zx_koid_t>(ZX_INFO_JOB_PROCESSES, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesNullActualSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullActualSucceeds<zx_koid_t>(ZX_INFO_JOB_PROCESSES, 1, GetHandleProvider())));
+      (CheckNullActualSucceeds<zx_koid_t>(ZX_INFO_JOB_PROCESSES, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesNullActualAndAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullActualAndAvailSucceeds<zx_koid_t>(ZX_INFO_JOB_PROCESSES, 1, GetHandleProvider())));
+      (CheckNullActualAndAvailSucceeds<zx_koid_t>(ZX_INFO_JOB_PROCESSES, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesInvalidBufferPointerFails) {
@@ -198,12 +194,12 @@ TEST_F(JobGetInfoTest, InfoJobProcessesInvalidBufferPointerFails) {
 
 TEST_F(JobGetInfoTest, InfoJobProcessesBadActualIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadActualIsInvalidArgs<zx_koid_t>(ZX_INFO_JOB_PROCESSES, 1, GetHandleProvider())));
+      (BadActualIsInvalidArgs<zx_koid_t>(ZX_INFO_JOB_PROCESSES, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesBadAvailIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadAvailIsInvalidArgs<zx_koid_t>(ZX_INFO_JOB_PROCESSES, 1, GetHandleProvider())));
+      (BadAvailIsInvalidArgs<zx_koid_t>(ZX_INFO_JOB_PROCESSES, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesZeroSizedBufferIsOk) {
@@ -215,7 +211,7 @@ TEST_F(JobGetInfoTest, InfoJobProcessesSmallBufferIsOk) {
   // We use only one entry count, because we know that the process created at the fixture has more
   // mappings.
   ASSERT_NO_FATAL_FAILURE(
-      (CheckSmallBufferSucceeds<zx_koid_t>(ZX_INFO_JOB_PROCESSES, 1, GetHandleProvider())));
+      (CheckSmallBufferSucceeds<zx_koid_t>(ZX_INFO_JOB_PROCESSES, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesPartiallyUnmappedBufferIsInvalidArgs) {
@@ -224,43 +220,42 @@ TEST_F(JobGetInfoTest, InfoJobProcessesPartiallyUnmappedBufferIsInvalidArgs) {
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesRequiresEnumerateRights) {
-  ASSERT_NO_FATAL_FAILURE(CheckMissingRightsFail<zx_koid_t>(
-      ZX_INFO_JOB_PROCESSES, 32, ZX_RIGHT_ENUMERATE, GetHandleProvider()));
+  ASSERT_NO_FATAL_FAILURE((CheckMissingRightsFail<zx_koid_t, 32>(
+      ZX_INFO_JOB_PROCESSES, ZX_RIGHT_ENUMERATE, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesProcessbHandleIsBadHandle) {
   ASSERT_NO_FATAL_FAILURE(
-      CheckWrongHandleTypeFails<zx_koid_t>(ZX_INFO_JOB_PROCESSES, 32, process_provider));
+      (CheckWrongHandleTypeFails<zx_koid_t, 32>(ZX_INFO_JOB_PROCESSES, process_provider)));
 }
 
 TEST_F(JobGetInfoTest, InfoJobProcessesThreadHandleIsBadHandle) {
   ASSERT_NO_FATAL_FAILURE(
-      CheckWrongHandleTypeFails<zx_koid_t>(ZX_INFO_JOB_PROCESSES, 32, thread_provider));
+      (CheckWrongHandleTypeFails<zx_koid_t, 32>(ZX_INFO_JOB_PROCESSES, thread_provider)));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenOnSelfSucceeds) {
-  ASSERT_NO_FATAL_FAILURE(
-      (CheckSelfInfoSucceeds<zx_koid_t>(ZX_INFO_JOB_CHILDREN, 1, job_provider())));
+  ASSERT_NO_FATAL_FAILURE((CheckSelfInfoSucceeds<zx_koid_t>(ZX_INFO_JOB_CHILDREN, job_provider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenInvalidHandleFails) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckInvalidHandleFails<zx_koid_t>(ZX_INFO_JOB_CHILDREN, 1, GetHandleProvider())));
+      (CheckInvalidHandleFails<zx_koid_t>(ZX_INFO_JOB_CHILDREN, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenNullAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullAvailSucceeds<zx_koid_t>(ZX_INFO_JOB_CHILDREN, 1, GetHandleProvider())));
+      (CheckNullAvailSucceeds<zx_koid_t>(ZX_INFO_JOB_CHILDREN, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenNullActualSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullActualSucceeds<zx_koid_t>(ZX_INFO_JOB_CHILDREN, 1, GetHandleProvider())));
+      (CheckNullActualSucceeds<zx_koid_t>(ZX_INFO_JOB_CHILDREN, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenNullActualAndAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullActualAndAvailSucceeds<zx_koid_t>(ZX_INFO_JOB_CHILDREN, 1, GetHandleProvider())));
+      (CheckNullActualAndAvailSucceeds<zx_koid_t>(ZX_INFO_JOB_CHILDREN, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenInvalidBufferPointerFails) {
@@ -270,12 +265,12 @@ TEST_F(JobGetInfoTest, InfoJobChildrenInvalidBufferPointerFails) {
 
 TEST_F(JobGetInfoTest, InfoJobChildrenBadActualIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadActualIsInvalidArgs<zx_koid_t>(ZX_INFO_JOB_CHILDREN, 1, GetHandleProvider())));
+      (BadActualIsInvalidArgs<zx_koid_t>(ZX_INFO_JOB_CHILDREN, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenBadAvailIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadAvailIsInvalidArgs<zx_koid_t>(ZX_INFO_JOB_CHILDREN, 1, GetHandleProvider())));
+      (BadAvailIsInvalidArgs<zx_koid_t>(ZX_INFO_JOB_CHILDREN, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenZeroSizedBufferIsOk) {
@@ -287,7 +282,7 @@ TEST_F(JobGetInfoTest, InfoJobChildrenSmallBufferIsOk) {
   // We use only one entry count, because we know that the process created at the fixture has more
   // mappings.
   ASSERT_NO_FATAL_FAILURE(
-      (CheckSmallBufferSucceeds<zx_koid_t>(ZX_INFO_JOB_CHILDREN, 1, GetHandleProvider())));
+      CheckSmallBufferSucceeds<zx_koid_t>(ZX_INFO_JOB_CHILDREN, GetHandleProvider()));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenPartiallyUnmappedBufferIsInvalidArgs) {
@@ -296,43 +291,43 @@ TEST_F(JobGetInfoTest, InfoJobChildrenPartiallyUnmappedBufferIsInvalidArgs) {
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenRequiresEnumerateRights) {
-  ASSERT_NO_FATAL_FAILURE(CheckMissingRightsFail<zx_koid_t>(
-      ZX_INFO_JOB_CHILDREN, 32, ZX_RIGHT_ENUMERATE, GetHandleProvider()));
+  ASSERT_NO_FATAL_FAILURE((CheckMissingRightsFail<zx_koid_t, 32>(
+      ZX_INFO_JOB_CHILDREN, ZX_RIGHT_ENUMERATE, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenJobHandleIsBadHandle) {
   ASSERT_NO_FATAL_FAILURE(
-      CheckWrongHandleTypeFails<zx_koid_t>(ZX_INFO_JOB_CHILDREN, 32, process_provider));
+      (CheckWrongHandleTypeFails<zx_koid_t, 32>(ZX_INFO_JOB_CHILDREN, process_provider)));
 }
 
 TEST_F(JobGetInfoTest, InfoJobChildrenThreadHandleIsBadHandle) {
   ASSERT_NO_FATAL_FAILURE(
-      CheckWrongHandleTypeFails<zx_koid_t>(ZX_INFO_JOB_CHILDREN, 32, thread_provider));
+      (CheckWrongHandleTypeFails<zx_koid_t, 32>(ZX_INFO_JOB_CHILDREN, thread_provider)));
 }
 
 TEST_F(JobGetInfoTest, InfoHandleBasicOnSelfSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckSelfInfoSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1, job_provider())));
+      (CheckSelfInfoSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, job_provider())));
 }
 
 TEST_F(JobGetInfoTest, InfoHandleBasicInvalidHandleFails) {
-  ASSERT_NO_FATAL_FAILURE((CheckInvalidHandleFails<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1,
-                                                                           GetHandleProvider())));
+  ASSERT_NO_FATAL_FAILURE(
+      (CheckInvalidHandleFails<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoHandleBasicNullAvailSucceeds) {
-  ASSERT_NO_FATAL_FAILURE((CheckNullAvailSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1,
-                                                                          GetHandleProvider())));
+  ASSERT_NO_FATAL_FAILURE(
+      (CheckNullAvailSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoHandleBasicNullActualSucceeds) {
-  ASSERT_NO_FATAL_FAILURE((CheckNullActualSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1,
-                                                                           GetHandleProvider())));
+  ASSERT_NO_FATAL_FAILURE(
+      (CheckNullActualSucceeds<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoHandleBasicNullActualAndAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE((CheckNullActualAndAvailSucceeds<zx_info_handle_basic_t>(
-      ZX_INFO_HANDLE_BASIC, 1, GetHandleProvider())));
+      ZX_INFO_HANDLE_BASIC, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoHandleBasicInvalidBufferPointerFails) {
@@ -341,13 +336,13 @@ TEST_F(JobGetInfoTest, InfoHandleBasicInvalidBufferPointerFails) {
 }
 
 TEST_F(JobGetInfoTest, InfoHandleBasicBadActualIsInvalidArg) {
-  ASSERT_NO_FATAL_FAILURE((BadActualIsInvalidArgs<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1,
-                                                                          GetHandleProvider())));
+  ASSERT_NO_FATAL_FAILURE(
+      (BadActualIsInvalidArgs<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoHandleBasicBadAvailIsInvalidArg) {
-  ASSERT_NO_FATAL_FAILURE((
-      BadAvailIsInvalidArgs<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, 1, GetHandleProvider())));
+  ASSERT_NO_FATAL_FAILURE(
+      (BadAvailIsInvalidArgs<zx_info_handle_basic_t>(ZX_INFO_HANDLE_BASIC, GetHandleProvider())));
 }
 
 TEST_F(JobGetInfoTest, InfoHandleBasicZeroSizedBufferFails) {

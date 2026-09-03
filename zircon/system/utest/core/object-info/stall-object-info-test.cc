@@ -33,27 +33,27 @@ class StallGetInfoTest : public zxtest::Test {
 zx::resource StallGetInfoTest::stall_resource_;
 
 TEST_F(StallGetInfoTest, MemoryStallSmokeTest) {
-  CheckSelfInfoSucceeds<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, 1, handle_provider());
+  CheckSelfInfoSucceeds<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, handle_provider());
 }
 
 TEST_F(StallGetInfoTest, MemoryStallInvalidHandleFails) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckInvalidHandleFails<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, 1, handle_provider)));
+      (CheckInvalidHandleFails<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, handle_provider)));
 }
 
 TEST_F(StallGetInfoTest, MemoryStallNullAvailSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullAvailSucceeds<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, 1, handle_provider)));
+      CheckNullAvailSucceeds<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, handle_provider));
 }
 
 TEST_F(StallGetInfoTest, MemoryStallNullActualSucceeds) {
   ASSERT_NO_FATAL_FAILURE(
-      (CheckNullActualSucceeds<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, 1, handle_provider)));
+      CheckNullActualSucceeds<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, handle_provider));
 }
 
 TEST_F(StallGetInfoTest, MemoryStallNullActualAndAvailSucceeds) {
-  ASSERT_NO_FATAL_FAILURE((CheckNullActualAndAvailSucceeds<zx_info_memory_stall_t>(
-      ZX_INFO_MEMORY_STALL, 1, handle_provider)));
+  ASSERT_NO_FATAL_FAILURE(CheckNullActualAndAvailSucceeds<zx_info_memory_stall_t>(
+      ZX_INFO_MEMORY_STALL, handle_provider));
 }
 
 TEST_F(StallGetInfoTest, MemoryStallInvalidBufferPointerFails) {
@@ -63,12 +63,12 @@ TEST_F(StallGetInfoTest, MemoryStallInvalidBufferPointerFails) {
 
 TEST_F(StallGetInfoTest, MemoryStallBadActualIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadActualIsInvalidArgs<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, 1, handle_provider)));
+      BadActualIsInvalidArgs<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, handle_provider));
 }
 
 TEST_F(StallGetInfoTest, MemoryStallBadAvailIsInvalidArg) {
   ASSERT_NO_FATAL_FAILURE(
-      (BadAvailIsInvalidArgs<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, 1, handle_provider)));
+      BadAvailIsInvalidArgs<zx_info_memory_stall_t>(ZX_INFO_MEMORY_STALL, handle_provider));
 }
 
 TEST_F(StallGetInfoTest, MemoryStallZeroSizedBufferIsTooSmall) {
