@@ -2,23 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/fit/function.h>
-#include <unistd.h>
-
-#include <atomic>
-#include <cstdio>
-#include <cstdlib>
-#include <limits>
-#include <set>
-#include <vector>
-
 // Needed to test API coverage of null params in GCC.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnonnull"
 #include <lib/zx/channel.h>
 #pragma GCC diagnostic pop
+
 #include <lib/arch/intrin.h>
 #include <lib/fit/defer.h>
+#include <lib/fit/function.h>
 #include <lib/zx/event.h>
 #include <lib/zx/fifo.h>
 #include <lib/zx/job.h>
@@ -29,16 +21,23 @@
 #include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
+#include <unistd.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
 #include <zircon/rights.h>
 #include <zircon/syscalls/policy.h>
 #include <zircon/types.h>
 
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <limits>
+#include <set>
+#include <thread>
+#include <vector>
+
 #include <mini-process/mini-process.h>
 #include <zxtest/zxtest.h>
-
-#include "utils.h"
 
 namespace channel {
 namespace {
@@ -231,9 +230,9 @@ TEST(ChannelTest, WaitManyIsSignaledOnAnyElementWrite) {
   ASSERT_OK(zx::event::create(0, &event));
 
   {
-    AutoJoinThread worker(&WaitOnChannels, zx::unowned_channel(remote_1),
-                          zx::unowned_channel(remote_2), zx::unowned_event(event),
-                          &received_packets, &received_bytes_1, &received_bytes_2, &result);
+    std::jthread worker(&WaitOnChannels, zx::unowned_channel(remote_1),
+                        zx::unowned_channel(remote_2), zx::unowned_event(event), &received_packets,
+                        &received_bytes_1, &received_bytes_2, &result);
     // On exit close the local handles to unblock the service thread.
     auto cleanup = fit::defer([&local_1, &local_2]() {
       local_1.reset();
@@ -276,9 +275,9 @@ TEST(ChannelTest, WaitManyIsSignaledForBothWrites) {
   ASSERT_OK(zx::event::create(0, &event));
 
   {
-    AutoJoinThread worker(&WaitOnChannels, zx::unowned_channel(remote_1),
-                          zx::unowned_channel(remote_2), zx::unowned_event(event),
-                          &received_packets, &received_bytes_1, &received_bytes_2, &result);
+    std::jthread worker(&WaitOnChannels, zx::unowned_channel(remote_1),
+                        zx::unowned_channel(remote_2), zx::unowned_event(event), &received_packets,
+                        &received_bytes_1, &received_bytes_2, &result);
     // On exit close the local handles to unblock the service thread.
     auto cleanup = fit::defer([&local_1, &local_2]() {
       local_1.reset();
@@ -519,22 +518,23 @@ TEST(ChannelTest, ConcurrentReadsConsumeUniqueElements) {
   constexpr uint32_t kReader1Offset = 0;
   constexpr uint32_t kReader2Offset = kNumMessages / 2;
   {
-    AutoJoinThread worker_1(reader_worker, kReader1Offset);
-    AutoJoinThread worker_2(reader_worker, kReader2Offset);
     auto cleanup = fit::defer([&local, &event]() {
       // Unlock read.
       local.reset();
       // Notify cancelled.
       event.reset();
     });
-    for (uint64_t i = 1; i <= kNumMessages; ++i) {
-      ASSERT_OK(local.write(0, &i, sizeof(uint64_t), nullptr, 0));
-    }
+    {
+      // These will be joined at the end of the inner block, before cleanup.
+      std::jthread worker_1(reader_worker, kReader1Offset);
+      std::jthread worker_2(reader_worker, kReader2Offset);
 
-    ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_0));
-    // Join before cleanup.
-    worker_1.Join();
-    worker_2.Join();
+      for (uint64_t i = 1; i <= kNumMessages; ++i) {
+        ASSERT_OK(local.write(0, &i, sizeof(uint64_t), nullptr, 0));
+      }
+
+      ASSERT_OK(event.signal(0, ZX_USER_SIGNAL_0));
+    }
   }
 
   std::set<uint64_t> read_data;
@@ -942,8 +942,8 @@ TEST(ChannelTest, CallResponseBiggerThanRdNumBytesReturnsBufferTooSmall) {
   auto args = MakeArgs(request, &reply);
 
   {
-    AutoJoinThread service_thread(Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>>, request, 1,
-                                  std::move(remote), &error);
+    std::jthread service_thread(Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>>, request, 1,
+                                std::move(remote), &error);
 
     uint32_t actual_bytes = 0;
     uint32_t actual_handles = 0;
@@ -977,8 +977,8 @@ TEST(ChannelTest, CallResponseBiggerThanRdNumHandlesReturnsBufferTooSmall) {
   auto args = MakeArgs(request, &reply);
 
   {
-    AutoJoinThread service_thread(Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>>, request, 1,
-                                  std::move(remote), &error);
+    std::jthread service_thread(Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>>, request, 1,
+                                std::move(remote), &error);
     uint32_t actual_bytes = 0;
     uint32_t actual_handles = 0;
     ASSERT_EQ(local.call(0, zx::time::infinite(), &args, &actual_bytes, &actual_handles),
@@ -998,8 +998,8 @@ void SuccessfullChannelCall(zx::channel local, zx::channel remote, const Message
 
   auto args = MakeArgs(request, &reply);
   {
-    AutoJoinThread service_thread(Reply<ReplyFiller<ReplyDataSize, ReplyHandleCount>>, request, 1,
-                                  std::move(remote), &error);
+    std::jthread service_thread(Reply<ReplyFiller<ReplyDataSize, ReplyHandleCount>>, request, 1,
+                                std::move(remote), &error);
     uint32_t hc, bc;
     ASSERT_OK(local.call(0, zx::time::infinite(), &args, &bc, &hc));
   }
@@ -1088,8 +1088,8 @@ TEST(ChannelTest, CallNullptrNumBytesIsInvalidArgs) {
   Message reply = Message(kReplyDataSize, kReplyHandleCount);
   auto args = MakeArgs(request, &reply);
   {
-    AutoJoinThread service_thread(Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>>, request, 1,
-                                  std::move(remote), &error);
+    std::jthread service_thread(Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>>, request, 1,
+                                std::move(remote), &error);
     uint32_t hc;
     ASSERT_EQ(local_call(local, args, nullptr, &hc), ZX_ERR_INVALID_ARGS);
   }
@@ -1114,8 +1114,8 @@ TEST(ChannelTest, CallNullptrNumHandlesInvalidArgs) {
   Message reply = Message(kReplyDataSize, kReplyHandleCount);
   auto args = MakeArgs(request, &reply);
   {
-    AutoJoinThread service_thread(Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>>, request, 1,
-                                  std::move(remote), &error);
+    std::jthread service_thread(Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>>, request, 1,
+                                std::move(remote), &error);
     uint32_t bc;
     ASSERT_EQ(local_call(local, args, &bc, nullptr), ZX_ERR_INVALID_ARGS);
   }
@@ -1142,14 +1142,14 @@ TEST(ChannelTest, CallPendingTransactionsUseDifferentIds) {
 
   Message request = Message(2, 0);
   {
-    AutoJoinThread service_thread(
+    std::jthread service_thread(
         Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>, kAccumulatedMessages>, request,
         kAccumulatedMessages, std::move(remote), &error);
 
-    std::vector<AutoJoinThread> calling_threads;
+    std::vector<std::jthread> calling_threads;
     calling_threads.reserve(kAccumulatedMessages);
     for (uint32_t i = 0; i < kAccumulatedMessages; ++i) {
-      calling_threads.push_back(AutoJoinThread([i, &call_result, &local, &request]() {
+      calling_threads.push_back(std::jthread([i, &call_result, &local, &request]() {
         Message reply = Message(kReplyDataSize, kReplyHandleCount);
         auto args = MakeArgs(request, &reply);
         uint32_t bc, hc;
@@ -1187,7 +1187,7 @@ TEST(ChannelTest, CallDeadlineExceededReturnsTimedOut) {
   Message reply = Message(kReplyDataSize, kReplyHandleCount);
   auto args = MakeArgs(request, &reply);
   {
-    AutoJoinThread service_thread(
+    std::jthread service_thread(
         ReplyAndWait<ReplyFiller<kReplyDataSize, kReplyHandleCount>, kAccumulatedMessages>, request,
         kAccumulatedMessages - 1, std::move(remote), &error, &event);
     uint32_t bc, hc;
@@ -1224,8 +1224,8 @@ TEST(ChannelTest, CallConsumesHandlesOnSuccess) {
 
   auto args = MakeArgs(request, &reply);
   {
-    AutoJoinThread service_thread(Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>>, request, 1,
-                                  std::move(remote), &error);
+    std::jthread service_thread(Reply<ReplyFiller<kReplyDataSize, kReplyHandleCount>>, request, 1,
+                                std::move(remote), &error);
     uint32_t hc, bc;
     ASSERT_OK(local.call(0, zx::time::infinite(), &args, &bc, &hc));
   }
@@ -1292,7 +1292,7 @@ TEST(ChannelTest, CallNotifiedOnPeerClosed) {
 
   auto args = MakeArgs(request, &reply);
   {
-    AutoJoinThread service_thread(
+    std::jthread service_thread(
         [](zx::channel svc) {
           // Wait until call message is received.
           svc.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr);
@@ -1399,17 +1399,16 @@ TEST(ChannelTest, ReadAndWriteWithMultipleSizes) {
 
   ASSERT_OK(zx::channel::create(0, &local, &remote));
 
-  constexpr uint32_t kNumMessages = 1000;
   // Use the seed that was passed as cmd or generated by the library.
   unsigned int seed = zxtest::Runner::GetInstance()->random_seed();
+
+  constexpr uint32_t kNumMessages = 1000;
   for (uint32_t i = 0; i < kNumMessages; ++i) {
-    uint32_t num_bytes = rand_r(&seed) % ZX_CHANNEL_MAX_MSG_BYTES;
-    uint32_t num_handles = rand_r(&seed) % ZX_CHANNEL_MAX_MSG_HANDLES;
+    const uint32_t num_bytes = rand_r(&seed) % ZX_CHANNEL_MAX_MSG_BYTES;
+    const uint32_t num_handles = rand_r(&seed) % ZX_CHANNEL_MAX_MSG_HANDLES;
 
-    uint8_t data[num_bytes + 1];
-    zx_handle_t handles[num_handles + 1];
-    memset(data, 0, sizeof(data));
-
+    std::vector<uint8_t> data(num_bytes + 1, 0);
+    std::vector<zx_handle_t> handles(num_handles + 1, ZX_HANDLE_INVALID);
     std::vector<zx::event> safe_handles(num_handles + 1);
 
     for (uint32_t j = 0; j < num_handles; ++j) {
@@ -1423,15 +1422,15 @@ TEST(ChannelTest, ReadAndWriteWithMultipleSizes) {
       handles[j] = safe_handles[j].release();
     }
 
-    ASSERT_OK(local.write(0, data, num_bytes, handles, num_handles));
+    ASSERT_OK(local.write(0, data.data(), num_bytes, handles.data(), num_handles));
 
-    uint8_t read_data[num_bytes + 1];
-    zx_handle_t read_handles[num_handles + 1];
+    std::vector<uint8_t> read_data(num_bytes + 1, 0);
+    std::vector<zx_handle_t> read_handles(num_handles + 1, ZX_HANDLE_INVALID);
     uint32_t actual_bytes = 0;
     uint32_t actual_handles = 0;
 
-    ASSERT_OK(remote.read(0, read_data, read_handles, num_bytes, num_handles, &actual_bytes,
-                          &actual_handles));
+    ASSERT_OK(remote.read(0, read_data.data(), read_handles.data(), num_bytes, num_handles,
+                          &actual_bytes, &actual_handles));
     // Transfer handles to safe_handles so they are destroyed on destruction.
     for (uint32_t j = 0; j < num_handles; ++j) {
       safe_handles[j].reset(read_handles[j]);
@@ -1838,7 +1837,7 @@ TEST(ChannelCallEtcTest, CallEtcSuccess) {
 
   std::atomic<const char*> error = nullptr;
 
-  AutoJoinThread service_thread([&remote, &error]() {
+  std::jthread service_thread([&remote, &error]() {
     zx_status_t status = remote.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr);
     if (status != ZX_OK) {
       error = "remote wait failed";
@@ -2445,7 +2444,7 @@ void RunSuspendedCallTest(
   ASSERT_OK(zx::channel::create(0, &local, &remote));
 
   zx::thread caller_thread_handle;
-  AutoJoinThread caller_thread([&]() {
+  std::jthread caller_thread([&]() {
     ASSERT_OK(zx::thread::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &caller_thread_handle));
 
     zx_txid_t txid = 0;

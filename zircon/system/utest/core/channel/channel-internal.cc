@@ -15,8 +15,6 @@
 #include <mini-process/mini-process.h>
 #include <zxtest/zxtest.h>
 
-#include "utils.h"
-
 // SYSCALL_zx_channel_call_finish is an internal system call used in the
 // vDSO's implementation of zx_channel_call.  It's not part of the ABI and
 // so it's not exported from the vDSO.  It's hard to test the kernel's
@@ -125,7 +123,7 @@ TEST(ChannelInternalTest, TransferChannelWithPendingCall) {
 
   {
     std::atomic<zx_handle_t> caller_thread_handle = ZX_HANDLE_INVALID;
-    AutoJoinThread caller_thread([&local, &caller_error, &caller_thread_handle] {
+    std::jthread caller_thread([&local, &caller_error, &caller_thread_handle] {
       Message request;
       request.payload = kRequestPayload;
       Message reply;
@@ -189,8 +187,6 @@ TEST(ChannelInternalTest, TransferChannelWithPendingCall) {
       ASSERT_EQ(actual_bytes, sizeof(transfer_msg));
       ASSERT_EQ(actual_handles, 1);
     }
-
-    caller_thread.Join();
   }
 
   if (caller_error.load() != nullptr) {
