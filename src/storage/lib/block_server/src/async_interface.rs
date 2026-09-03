@@ -9,6 +9,7 @@ use super::{
 use crate::verifier::Verifier;
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse, ReadOptions, WriteFlags, WriteOptions};
+use event_listener::EventListener;
 use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_block::DeviceFlag;
 use fuchsia_async as fasync;
@@ -62,6 +63,7 @@ pub trait Interface: Send + Sync + Unpin + 'static {
         stream: fblock::SessionRequestStream,
         offset_map: OffsetMap,
         block_size: u32,
+        shutdown_listener: Option<EventListener>,
     ) -> impl Future<Output = Result<(), Error>> + Send {
         // By default, serve the session rather than forwarding it.
         session_manager.serve_session(
@@ -69,6 +71,7 @@ pub trait Interface: Send + Sync + Unpin + 'static {
             offset_map,
             self.get_info().max_transfer_blocks(),
             block_size,
+            shutdown_listener,
         )
     }
 
@@ -248,10 +251,28 @@ impl PassthroughSession {
     }
 
     /// Runs `stream` until completion.
-    pub async fn serve(&self, mut stream: fblock::SessionRequestStream) -> Result<(), Error> {
-        while let Some(Ok(request)) = stream.next().await {
-            if let Err(error) = self.handle_request(request).await {
-                log::warn!(error:?; "FIDL error");
+    pub async fn serve(
+        &self,
+        mut stream: fblock::SessionRequestStream,
+        shutdown_listener: Option<EventListener>,
+    ) -> Result<(), Error> {
+        let mut shutdown_listener = match shutdown_listener {
+            Some(l) => l.fuse().left_future(),
+            None => futures::future::pending().right_future(),
+        };
+        loop {
+            futures::select! {
+                request = stream.next().fuse() => {
+                    match request {
+                        Some(Ok(request)) => {
+                            if let Err(error) = self.handle_request(request).await {
+                                log::warn!(error:?; "FIDL error");
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+                _ = shutdown_listener => break,
             }
         }
         Ok(())
@@ -295,6 +316,7 @@ impl<I: Interface + ?Sized> SessionManager<I> {
         offset_map: OffsetMap,
         max_transfer_blocks: Option<std::num::NonZero<u32>>,
         block_size: u32,
+        shutdown_listener: Option<EventListener>,
     ) -> Result<(), Error> {
         let (helper, fifo) =
             SessionHelper::new(self.clone(), offset_map, max_transfer_blocks, block_size)?;
@@ -328,6 +350,10 @@ impl<I: Interface + ?Sized> SessionManager<I> {
 
         let mut closing = false;
         let mut stop_sender = Some(stop_sender);
+        let mut shutdown_listener = match shutdown_listener {
+            Some(l) => l.fuse().left_future(),
+            None => futures::future::pending().right_future(),
+        };
 
         loop {
             futures::select! {
@@ -355,6 +381,14 @@ impl<I: Interface + ?Sized> SessionManager<I> {
                         }
                         closing = true;
                     }
+                }
+                _ = shutdown_listener => {
+                    // Shutdown requested by the server. Tell `run_fifo` to stop reading
+                    // new requests and drain in-flight requests to completion.
+                    if let Some(sender) = stop_sender.take() {
+                        let _ = sender.send(());
+                    }
+                    closing = true;
                 }
                 _ = fifo_task => break,
             }
@@ -823,6 +857,7 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
         stream: fblock::SessionRequestStream,
         offset_map: OffsetMap,
         block_size: u32,
+        shutdown_listener: Option<EventListener>,
     ) -> Result<(), Error> {
         I::open_session(
             &orchestrator.interface,
@@ -830,6 +865,7 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
             stream,
             offset_map,
             block_size,
+            shutdown_listener,
         )
         .await
     }

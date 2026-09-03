@@ -5,7 +5,7 @@ use crate::gpt::GptPartition;
 use anyhow::{Context as _, Error};
 use block_client::{ReadOptions, VmoId, WriteOptions};
 use block_server::async_interface::{PassthroughSession, SessionManager};
-use block_server::{DeviceInfo, OffsetMap};
+use block_server::{DeviceInfo, EventListener, OffsetMap};
 use fidl::endpoints::RequestStream;
 use fidl_fuchsia_storage_block as fblock;
 use fuchsia_async as fasync;
@@ -73,6 +73,7 @@ impl block_server::async_interface::Interface for PartitionBackend {
         stream: fblock::SessionRequestStream,
         offset_map: OffsetMap,
         block_size: u32,
+        shutdown_listener: Option<EventListener>,
     ) -> Result<(), Error> {
         if !offset_map.is_empty() {
             // For now, we don't support double-passthrough.  We could as needed for nested GPT.
@@ -86,13 +87,14 @@ impl block_server::async_interface::Interface for PartitionBackend {
                     OffsetMap::empty(),
                     self.get_info().max_transfer_blocks(),
                     block_size,
+                    shutdown_listener,
                 )
                 .await;
         }
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fblock::SessionMarker>();
         self.partition.open_passthrough_session(server_end, &self.offset_map);
         let passthrough = PassthroughSession::new(proxy);
-        passthrough.serve(stream).await
+        passthrough.serve(stream, shutdown_listener).await
     }
 
     fn open_mapper_session(

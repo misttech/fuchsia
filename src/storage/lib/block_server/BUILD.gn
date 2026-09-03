@@ -34,6 +34,7 @@ block_server_deps = [
   "//src/storage/lib/storage_device",
   "//src/storage/lib/vmo-fifo",
   "//third_party/rust_crates:anyhow",
+  "//third_party/rust_crates:event-listener",
   "//third_party/rust_crates:futures",
   "//third_party/rust_crates:log",
   "//third_party/rust_crates:scopeguard",
@@ -51,7 +52,6 @@ rustc_library("block_server") {
     "//src/lib/fuchsia",
     "//src/storage/lib/blob_pager_and_verifier",
     "//third_party/rust_crates:assert_matches",
-    "//third_party/rust_crates:event-listener",
     "//third_party/rust_crates:rand",
   ]
 }
