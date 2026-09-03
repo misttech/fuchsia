@@ -80,7 +80,7 @@ struct ArchPhysHandoff {
   bool moonflower_power_driver = false;
 
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_IRIS_POWER) payload.
-  bool iris_power_driver = false;
+  PhysHandoffTemporarySpan<const zbi_cpu_energy_model_domain_t> iris_power_driver;
 
   // See ArchPatchInfo, above.
   Arm64AlternateVbar alternate_vbar = Arm64AlternateVbar::kNone;

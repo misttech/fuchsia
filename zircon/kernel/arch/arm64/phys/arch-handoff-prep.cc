@@ -215,10 +215,20 @@ void HandoffPrep::ArchSummarizeMiscZbiItem(const zbi_header_t& header,
           // Ignore the payload and just use the presence of this node.
           arch_handoff.moonflower_power_driver = true;
           break;
-        case ZBI_KERNEL_DRIVER_IRIS_POWER:
-          // Ignore the payload and just use the presence of this node.
-          arch_handoff.iris_power_driver = true;
-          break;
+        case ZBI_KERNEL_DRIVER_IRIS_POWER: {
+          fbl::AllocChecker ac;
+          constexpr size_t elem_size = sizeof(zbi_cpu_energy_model_domain_t);
+          const size_t num_ele = payload.size() / elem_size;
+          ZX_ASSERT_MSG(
+              payload.size() % elem_size == 0,
+              "Payload size of ZBI_KERNEL_DRIVER_IRIS_POWER was %zu, must be multiple of %zu",
+              payload.size(), elem_size);
+          ktl::span buffer = New(arch_handoff.iris_power_driver, ac, num_ele);
+          ZX_ASSERT_MSG(ac.check(), "cannot allocate %zu bytes for ZBI_KERNEL_DRIVER_IRIS_POWER",
+                        payload.size());
+          memcpy(buffer.data(), payload.data(), payload.size_bytes());
+          SaveForMexec(header, payload);
+        } break;
         case ZBI_KERNEL_DRIVER_QCOM_RNG:
           arch_handoff.qcom_rng_driver =
               *reinterpret_cast<const zbi_dcfg_qcom_rng_t*>(payload.data());

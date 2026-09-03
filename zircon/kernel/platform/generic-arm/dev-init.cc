@@ -66,7 +66,7 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
     moonflower_power_init_early();
   }
 
-  if (arch_handoff.iris_power_driver) {
+  if (!arch_handoff.iris_power_driver.empty()) {
     iris_power_init_early();
   }
 
@@ -140,7 +140,7 @@ void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {
     moonflower_power_init();
   }
 
-  if (arch_handoff.iris_power_driver) {
+  if (!arch_handoff.iris_power_driver.empty()) {
     iris_power_init();
   }
 }
