@@ -296,8 +296,8 @@ if (current_toolchain == default_toolchain) {
 
     # This input is a gzipped linux in-kernel config.
     # To update this file, edit ikconfig.txt in this directory and run:
-    #   gzip zircon/kernel/arch/x86/phys/ikconfig.txt \
-    #        -c zircon/kernel/arch/x86/phys/ikconfig.gz
+    #   gzip --no-name --stdout zircon/kernel/arch/x86/phys/ikconfig.txt \
+    #        > zircon/kernel/arch/x86/phys/ikconfig.gz
     inputs = [ "ikconfig.gz" ]
     ikconfig_file = rebase_path("ikconfig.gz", root_build_dir)
     defines = [ "IKCONFIG_FILE=\"$ikconfig_file\"" ]
