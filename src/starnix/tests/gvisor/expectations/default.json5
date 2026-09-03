@@ -165,6 +165,9 @@
                 "Cgroup.AllControllersExplicit",
                 "Cgroup.AllControllersImplicit",
                 "Cgroup.CantRenameControlFile",
+
+                // TODO(https://fxbug.dev/556077553): Bind mounting detached cgroup mount.
+                "Cgroup.DetachedMountBindFails",
                 "Cgroup.CgroupsCannotMountTwice",
                 "Cgroup.ControllersMustBeInUniqueHierarchy",
                 "Cgroup.Create",
@@ -882,6 +885,9 @@
 
                 // tcp_socket_test
                 "AllInetTests/SimpleTcpSocketTest.SetSocketAttachDetachFilter/*",
+
+                // TODO(https://fxbug.dev/556076723): Enforce CAP_NET_ADMIN for SO_ATTACH_FILTER.
+                "AllInetTests/SimpleTcpSocketTest.SetSocketAttachFilterWithoutNetAdmin/*",
                 "AllInetTests/SimpleTcpSocketTest.SetTCPCorkOff/*",
 
                 // socket_ip_tcp_loopback_test
@@ -1075,6 +1081,9 @@
                 // the unmounting process doesn't clean up properly. This causes most subsequent
                 // mount tests to fail with ENOSPC or PosixError(errno=28 No space left on device).
                 "MountTest.MaxMounts",
+
+                // TODO(https://fxbug.dev/556076762): Recursive bind loop causes kernel OOM.
+                "MountTest.FailedBindDoesNotBreakPropagation",
 
                 // We actually pass this test. It just takes a long time because the test
                 // is doing 10 million one-byte transfers. The test is designed to take a
