@@ -5,25 +5,19 @@
 package targets
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/botanist"
 	"go.fuchsia.dev/fuchsia/tools/lib/iomisc"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
-	"go.fuchsia.dev/fuchsia/tools/lib/productbundle"
 	"go.fuchsia.dev/fuchsia/tools/lib/retry"
 	"go.fuchsia.dev/fuchsia/tools/lib/serial"
 	serialconstants "go.fuchsia.dev/fuchsia/tools/lib/serial/constants"
@@ -313,11 +307,6 @@ func (t *Device) Start(ctx context.Context, args []string, pbPath string, isBoot
 					// If successful, early exit.
 					break
 				}
-			} else if os.Getenv("FUCHSIA_DEVICE_TYPE") == "Iris" {
-				if err = t.irisFlash(bootCtx, pbPath, authorizedKeys); err == nil {
-					// If successful, early exit.
-					break
-				}
 			} else {
 				if err = t.flash(bootCtx, pbPath, target, tcpFlash); err == nil {
 					// If successful, early exit.
@@ -427,187 +416,4 @@ func parseOutSigners(keyPaths []string) ([]ssh.Signer, error) {
 		signers = append(signers, signer)
 	}
 	return signers, nil
-}
-
-func (t *Device) findFastboot() (string, error) {
-	if path, err := exec.LookPath("fastboot"); err == nil {
-		return path, nil
-	}
-	return "", fmt.Errorf("could not find fastboot binary")
-}
-
-func (t *Device) runFastboot(ctx context.Context, fastbootPath string, cmdArgs ...string) ([]byte, error) {
-	stdout, stderr, flush := botanist.NewStdioWriters(ctx, "fastboot")
-	defer flush()
-	cmdArgs = append([]string{"-s", t.config.FastbootSernum}, cmdArgs...)
-	cmd := exec.CommandContext(ctx, fastbootPath, cmdArgs...)
-	var out bytes.Buffer
-	cmd.Stdout = io.MultiWriter(stdout, &out)
-	cmd.Stderr = io.MultiWriter(stderr, &out)
-	logger.Debugf(ctx, "starting: %v", cmd.Args)
-	err := cmd.Run()
-	return out.Bytes(), err
-}
-
-func (t *Device) bulkRunFastboot(ctx context.Context, fastbootPath string, cmds [][]string) error {
-	for _, cmdArgs := range cmds {
-		if _, err := t.runFastboot(ctx, fastbootPath, cmdArgs...); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (t *Device) getFastbootVar(ctx context.Context, fastbootPath, varName string) (string, error) {
-	out, err := t.runFastboot(ctx, fastbootPath, "getvar", varName)
-	if err != nil {
-		return "", err
-	}
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, varName+":") {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				return strings.TrimSpace(parts[1]), nil
-			}
-		}
-	}
-	return "", fmt.Errorf("variable %s not found in fastboot output: %s", varName, string(out))
-}
-
-// GetFastbootFlashImages returns the images needed for fastboot flashing Iris.
-func GetFastbootFlashImages(pbPath string) (map[string]string, error) {
-	pbJsonPath := filepath.Join(pbPath, "product_bundle.json")
-	data, err := os.ReadFile(pbJsonPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read product_bundle.json: %w", err)
-	}
-	var pb productbundle.ProductBundle
-	if err := json.Unmarshal(data, &pb); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal product_bundle.json: %w", err)
-	}
-
-	getBootloaderPartition := func(name string) string {
-		for _, p := range pb.Partitions.BootloaderPartitions {
-			if p.Name == name {
-				return filepath.Join(pbPath, p.Image)
-			}
-		}
-		return ""
-	}
-	getSystemImage := func(name, typ string) string {
-		for _, img := range pb.SystemA {
-			if img.Name == name && img.Type == typ {
-				return filepath.Join(pbPath, img.Path)
-			}
-		}
-		return ""
-	}
-
-	zbiPath := getSystemImage("zircon-a", "zbi")
-	fvmPath := getSystemImage("fxfs.fastboot", "blk")
-	dtboPath := getBootloaderPartition("dtbo_a")
-	initBootPath := getBootloaderPartition("init_boot_a")
-	vbmetaPath := getBootloaderPartition("vbmeta_a")
-	vendorBootPath := getBootloaderPartition("vendor_boot_a")
-	vendorKernelBootPath := getBootloaderPartition("vendor_kernel_boot_a")
-
-	return map[string]string{
-		"zbi":                zbiPath,
-		"fvm":                fvmPath,
-		"dtbo":               dtboPath,
-		"init_boot":          initBootPath,
-		"vbmeta":             vbmetaPath,
-		"vendor_boot":        vendorBootPath,
-		"vendor_kernel_boot": vendorKernelBootPath,
-	}, nil
-}
-
-func (t *Device) irisFlash(ctx context.Context, pbPath string, authorizedKeys []byte) error {
-	fastbootPath, err := t.findFastboot()
-	if err != nil {
-		return err
-	}
-
-	flashImages, err := GetFastbootFlashImages(pbPath)
-	if err != nil {
-		return err
-	}
-
-	zbiPath := flashImages["zbi"]
-	fvmPath := flashImages["fvm"]
-	dtboPath := flashImages["dtbo"]
-	initBootPath := flashImages["init_boot"]
-	vbmetaPath := flashImages["vbmeta"]
-	vendorBootPath := flashImages["vendor_boot"]
-	vendorKernelBootPath := flashImages["vendor_kernel_boot"]
-
-	var vbmetaCmds [][]string
-	if vbmetaPath != "" {
-		vbmetaCmds = [][]string{
-			{"flash", "vbmeta_a", vbmetaPath},
-			{"flash", "vbmeta_b", vbmetaPath},
-		}
-	}
-	if err := t.bulkRunFastboot(ctx, fastbootPath, vbmetaCmds); err != nil {
-		return err
-	}
-
-	var flashCmds [][]string
-	addPartition := func(name, path string) {
-		if path != "" {
-			flashCmds = append(flashCmds, []string{"flash", name, path})
-		}
-	}
-
-	addPartition("init_boot_a", initBootPath)
-	addPartition("init_boot_b", initBootPath)
-	addPartition("dtbo_a", dtboPath)
-	addPartition("dtbo_b", dtboPath)
-	addPartition("vendor_boot_a", vendorBootPath)
-	addPartition("vendor_boot_b", vendorBootPath)
-	addPartition("vendor_kernel_boot_a", vendorKernelBootPath)
-	addPartition("vendor_kernel_boot_b", vendorKernelBootPath)
-	addPartition("boot_a", zbiPath)
-	addPartition("boot_b", zbiPath)
-	addPartition("super", fvmPath)
-	if err := t.bulkRunFastboot(ctx, fastbootPath, flashCmds); err != nil {
-		return err
-	}
-
-	if len(authorizedKeys) > 0 {
-		stageCmds := irisAuthorizedKeysCmds(authorizedKeys)
-		if err := t.bulkRunFastboot(ctx, fastbootPath, stageCmds); err != nil {
-			return fmt.Errorf("failed to stage authorized keys: %w", err)
-		}
-	}
-
-	if err := t.bulkRunFastboot(ctx, fastbootPath, [][]string{{"reboot"}}); err != nil {
-		logger.Errorf(ctx, "reboot failed: %s", err)
-	}
-	logger.Debugf(ctx, "done flashing")
-	return nil
-}
-
-func irisAuthorizedKeysCmds(authorizedKeys []byte) [][]string {
-	if len(authorizedKeys) == 0 {
-		return nil
-	}
-	encodedKeys := base64.StdEncoding.EncodeToString(authorizedKeys)
-	const prefix = "oem cmdline add iris.ssh_creds="
-	const maxCmdLen = 64
-	maxChunkSize := maxCmdLen - len(prefix)
-
-	stageCmds := [][]string{
-		{"oem", "cmdline", "set"},
-	}
-	for i := 0; i < len(encodedKeys); i += maxChunkSize {
-		end := i + maxChunkSize
-		if end > len(encodedKeys) {
-			end = len(encodedKeys)
-		}
-		chunk := encodedKeys[i:end]
-		stageCmds = append(stageCmds, []string{"oem", "cmdline", "add", fmt.Sprintf("iris.ssh_creds=%s", chunk)})
-	}
-	return stageCmds
 }
