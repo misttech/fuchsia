@@ -130,6 +130,7 @@ class UsbCdcFunction : public fdf::DriverBase2,
   bool online() const { return online_; }
   bool IntrEpRequestsFull() { return intr_ep_.RequestsFull(); }
   const std::array<uint8_t, ETH_MAC_SIZE> &mac_addr() const { return mac_addr_; }
+  size_t GetInFlightInterruptCountForTesting() { return intr_ep_.GetInFlightCount(); }
 
   uint8_t BulkInAddress() const { return descriptors_.bulk_in_ep.b_endpoint_address; }
   uint8_t BulkOutAddress() const { return descriptors_.bulk_out_ep.b_endpoint_address; }
@@ -210,9 +211,10 @@ class UsbCdcFunction : public fdf::DriverBase2,
 
   // Device attributes
   std::array<uint8_t, ETH_MAC_SIZE> mac_addr_;
-  // Lock for network device state and ifc_
+  // Guarded by the synchronized driver dispatcher.
   bool online_ = false;
   bool configured_ = false;
+  bool pending_notification_ = false;
   fuchsia_hardware_usb_descriptor::UsbSpeed speed_ =
       fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined;
 

@@ -133,10 +133,21 @@ void UsbCdcFunction::CdcIntrComplete(std::vector<fendpoint::Completion> completi
 
   if (unbound_) {
     ContinueStop();
+  } else if (pending_notification_ && intr_ep_.GetInFlightCount() == 0) {
+    pending_notification_ = false;
+    CdcSendNotifications();
   }
 }
 
 void UsbCdcFunction::CdcSendNotifications() {
+  if (unbound_ || !configured_) {
+    return;
+  }
+
+  if (intr_ep_.GetInFlightCount() > 0) {
+    pending_notification_ = true;
+    return;
+  }
   usb_cdc_notification_t network_notification = {
       .bmRequestType = USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
       .bNotification = USB_CDC_NC_NETWORK_CONNECTION,
@@ -268,7 +279,7 @@ void UsbCdcFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> com
 
   for (auto &completion : completions) {
     zx_status_t status = *completion.status();
-    if (status == ZX_ERR_IO_NOT_PRESENT) {
+    if (status == ZX_ERR_IO_NOT_PRESENT || status == ZX_ERR_CANCELED || !online_ || !configured_) {
       bulk_out_ep_.PutRequest(usb::FidlRequest{std::move(completion.request().value())});
       continue;
     }
@@ -471,6 +482,7 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
     configured_ = configured;
     CdcSendNotifications();
   } else {
+    pending_notification_ = false;
     DisableAllEndpoints();
     DiscardPendingTxBuffers(ZX_ERR_CANCELED);
 
@@ -757,6 +769,7 @@ void UsbCdcFunction::Stop(fdf::StopCompleter completer) {
     throughput_tracker_->Stop();
   }
   unbound_ = true;
+  pending_notification_ = false;
   stop_completer_.emplace(std::move(completer));
 
   {

@@ -1333,16 +1333,15 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
   }
 
   // 4. Verify Interrupt Notifications are correctly queued on kIntrEp.
-  // There should be exactly 4 notifications:
-  // - 2 during SetConfigured(true) in SetUp() (offline, speed = 0).
-  // - 2 during EnablePort(true) in SetUp() (online, speed = 100M/1G).
+  // With coalescing, SetConfigured(true) queues initial notifications (offline, speed = 0).
+  // EnablePort(true) sets pending_notification_ = true while initial requests are in flight.
   ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
       [&]() {
         size_t pending = 0;
         driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
           pending = env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count();
         });
-        return pending == 4u;
+        return pending == 2u;
       },
       zx::sec(5)));
 
@@ -1378,6 +1377,21 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
       EXPECT_EQ(le32toh(notif.uplink_br), 0u);
       fake_ep.RequestComplete(ZX_OK, sizeof(usb_cdc_speed_change_notification_t));
     }
+  });
+
+  // After the first pair completes, the pending online notification pair is dispatched.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        size_t pending = 0;
+        driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+          pending = env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count();
+        });
+        return pending == 2u;
+      },
+      zx::sec(5)));
+
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    auto& fake_ep = env.fake_usb_fidl_.fake_endpoint(kIntrEp);
 
     // Notification 3: Network Connection (Online)
     {
@@ -1410,7 +1424,7 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
     }
   });
 
-  // Let the driver process all 4 completions and return requests to its pool.
+  // Let the driver process all completions and return requests to its pool.
   ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
       [&]() {
         bool full = false;
@@ -1868,6 +1882,245 @@ class UsbCdcInvalidMetadataTest : public UsbCdcTest {
 TEST_F(UsbCdcInvalidMetadataTest, FailsToStart) {
   // Driver fails to start in SetUp() because expect_start_success_ is false and
   // StartDriver() returns a failure, which is verified by SetUp().
+}
+
+TEST_F(UsbCdcTest, RapidInterfaceTogglesDoNotExhaustInterruptRequests) {
+  StartNetworkDevice();
+
+  // SetConfigured(true) queues the initial notification pair (network + speed).
+  {
+    fidl::Result result = function_client_->SetConfigured({{
+        .configured = true,
+        .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+    }});
+    ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+  }
+
+  // Verify initial in-flight count is 2 and 2 requests are pending in fake endpoint.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        driver_test_.RunInEnvironmentTypeContext([&ready](Environment& env) {
+          ready = (env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count() == 2);
+        });
+        return ready;
+      },
+      zx::sec(5)));
+
+  // Rapidly toggle interface 10 times without completing any interrupt requests on kIntrEp.
+  // This simulates Pontis / WebUSB host behavior where endpoint 0x81 is never polled.
+  for (int i = 0; i < 10; ++i) {
+    {
+      fidl::Result result = function_client_->SetInterface({{
+          .interface = kDataInterface,
+          .alt_setting = 1,
+      }});
+      ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+    }
+    {
+      fidl::Result result = function_client_->SetInterface({{
+          .interface = kDataInterface,
+          .alt_setting = 0,
+      }});
+      ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+    }
+  }
+
+  // Verify that intr_ep_ in_flight never exceeded 2 and the online Inspect property reflects the
+  // final interface state (false).
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {
+    auto hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector().inspector());
+    auto* cdc_node = hierarchy.GetByPath({"usb-cdc-function"});
+    ASSERT_TRUE(cdc_node != nullptr);
+
+    const auto* online_prop = cdc_node->node().get_property<inspect::BoolPropertyValue>("online");
+    ASSERT_TRUE(online_prop != nullptr);
+    EXPECT_FALSE(online_prop->value());
+  });
+
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    EXPECT_EQ(env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count(), 2u);
+  });
+
+  // One more toggle to alt_setting 1 to verify online property transitions to true.
+  {
+    fidl::Result result = function_client_->SetInterface({{
+        .interface = kDataInterface,
+        .alt_setting = 1,
+    }});
+    ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+  }
+
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {
+    auto hierarchy = usb_inspect::ReadHierarchyFromInspector(driver.inspector().inspector());
+    auto* cdc_node = hierarchy.GetByPath({"usb-cdc-function"});
+    ASSERT_TRUE(cdc_node != nullptr);
+
+    const auto* online_prop = cdc_node->node().get_property<inspect::BoolPropertyValue>("online");
+    ASSERT_TRUE(online_prop != nullptr);
+    EXPECT_TRUE(online_prop->value());
+  });
+}
+
+TEST_F(UsbCdcTest, PendingNotificationDispatchedOnCompletion) {
+  StartNetworkDevice();
+
+  // SetConfigured(true) queues initial notifications with online = false.
+  {
+    fidl::Result result = function_client_->SetConfigured({{
+        .configured = true,
+        .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+    }});
+    ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+  }
+
+  // Wait for initial notification pair to arrive at fake endpoint.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        driver_test_.RunInEnvironmentTypeContext([&ready](Environment& env) {
+          ready = (env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count() == 2);
+        });
+        return ready;
+      },
+      zx::sec(5)));
+
+  // Verify initial in-flight request has network_notification wValue = 0 (offline).
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    ASSERT_EQ(env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count(), 2u);
+    auto data = env.fake_usb_fidl_.fake_endpoint(kIntrEp).ReadPendingRequestData();
+    ASSERT_TRUE(data.is_ok());
+    ASSERT_GE(data->size(), sizeof(usb_cdc_notification_t));
+    const auto* notif = reinterpret_cast<const usb_cdc_notification_t*>(data->data());
+    EXPECT_EQ(notif->bNotification, USB_CDC_NC_NETWORK_CONNECTION);
+    EXPECT_EQ(notif->wValue, 0u);
+  });
+
+  // Toggle interface to alt_setting 1 while initial notification is in flight.
+  // This should set pending_notification_ = true without queueing additional requests.
+  {
+    fidl::Result result = function_client_->SetInterface({{
+        .interface = kDataInterface,
+        .alt_setting = 1,
+    }});
+    ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+  }
+
+  // Pending request count in fake endpoint should still be 2 (no extra requests queued).
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    EXPECT_EQ(env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count(), 2u);
+  });
+
+  // Complete the first in-flight request on fake_endpoint(kIntrEp).
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.fake_usb_fidl_.fake_endpoint(kIntrEp).RequestComplete(ZX_OK,
+                                                              sizeof(usb_cdc_notification_t));
+  });
+
+  // Wait for the first completion to be processed by the driver.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        driver_test_.RunInDriverContext([&ready](UsbCdcFunction& driver) {
+          ready = (driver.GetInFlightInterruptCountForTesting() == 1u);
+        });
+        return ready;
+      },
+      zx::sec(5)));
+
+  // With only 1 request completed, in_flight should be 1 and pending notification should NOT
+  // have been dispatched yet.
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    EXPECT_EQ(env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count(), 1u);
+  });
+
+  // Now complete the second in-flight request.
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.fake_usb_fidl_.fake_endpoint(kIntrEp).RequestComplete(
+        ZX_OK, sizeof(usb_cdc_speed_change_notification_t));
+  });
+
+  // Wait deterministically for CdcIntrComplete to return requests and re-dispatch
+  // the pending notification pair (which will queue 2 new requests to kIntrEp).
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        driver_test_.RunInEnvironmentTypeContext([&ready](Environment& env) {
+          ready = (env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count() == 2);
+        });
+        return ready;
+      },
+      zx::sec(5)));
+
+  // Wait for driver to have both new requests marked in-flight.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        driver_test_.RunInDriverContext([&ready](UsbCdcFunction& driver) {
+          ready = (driver.GetInFlightInterruptCountForTesting() == 2u);
+        });
+        return ready;
+      },
+      zx::sec(5)));
+
+  // Verify that the newly dispatched notification has updated status (wValue = 1, online).
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    auto data = env.fake_usb_fidl_.fake_endpoint(kIntrEp).ReadPendingRequestData();
+    ASSERT_TRUE(data.is_ok());
+    ASSERT_GE(data->size(), sizeof(usb_cdc_notification_t));
+    const auto* notif = reinterpret_cast<const usb_cdc_notification_t*>(data->data());
+    EXPECT_EQ(notif->bNotification, USB_CDC_NC_NETWORK_CONNECTION);
+    EXPECT_EQ(notif->wValue, 1u);
+  });
+}
+
+TEST_F(UsbCdcTest, SetConfiguredFalseClearsPendingNotification) {
+  StartNetworkDevice();
+
+  // SetConfigured(true) queues initial notification pair.
+  {
+    fidl::Result result = function_client_->SetConfigured({{
+        .configured = true,
+        .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+    }});
+    ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+  }
+
+  // Toggle interface to alt_setting 1 to set pending_notification_ = true.
+  {
+    fidl::Result result = function_client_->SetInterface({{
+        .interface = kDataInterface,
+        .alt_setting = 1,
+    }});
+    ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+  }
+
+  // Deconfigure device: SetConfigured(false).
+  // This should reset pending_notification_ = false and disable endpoints.
+  {
+    fidl::Result result = function_client_->SetConfigured({{
+        .configured = false,
+        .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kUndefined,
+    }});
+    ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+  }
+
+  // Wait for cancelled requests to complete and return to intr_ep_.
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool ready = false;
+        driver_test_.RunInDriverContext([&ready](UsbCdcFunction& driver) {
+          ready = (driver.GetInFlightInterruptCountForTesting() == 0u);
+        });
+        return ready;
+      },
+      zx::sec(5)));
+
+  // Verify that all requests have been returned to intr_ep_ (0 in flight)
+  // and no new requests were dispatched after deconfiguration.
+  driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+    EXPECT_EQ(env.fake_usb_fidl_.fake_endpoint(kIntrEp).pending_request_count(), 0u);
+  });
 }
 
 }  // namespace
