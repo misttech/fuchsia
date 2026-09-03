@@ -15,8 +15,8 @@ pub mod tests {
     };
     use crate::shared_memory::{SharedMemory, TransactionBuffers};
     use crate::thread::{
-        BinderThread, Command, RegistrationState, RequeueEventRegistration, TransactionError,
-        TransactionRole, WeakBinderPeer,
+        BinderThread, Command, CommandQueueWithWaitQueue, IndexedCommandQueue, RegistrationState,
+        RequeueEventRegistration, TransactionError, TransactionRole, WeakBinderPeer,
     };
     use crate::user_memory_cursor::UserMemoryCursor;
     use assert_matches::assert_matches;
@@ -3073,7 +3073,10 @@ pub mod tests {
             {
                 let queue = &mut client.proc.lock().command_queue;
                 assert_eq!(queue.len(), 1);
-                assert_matches!(queue[0], (Command::ClearDeathNotificationDone(_), _));
+                assert_matches!(
+                    queue.front().unwrap(),
+                    (Command::ClearDeathNotificationDone(_), _)
+                );
 
                 // Clear the command queue.
                 queue.clear();
@@ -5095,6 +5098,216 @@ pub mod tests {
             // Clean up: notify event and join blocked thread.
             event.notify();
             blocked_thread.join().unwrap();
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn refcount_command_queue_coalescing() {
+        spawn_kernel_and_run(async |_current_task| {
+            let mut queue = CommandQueueWithWaitQueue::default();
+            let local_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+            let local_2 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x3000),
+                strong_ref_addr: UserAddress::from(0x4000),
+            };
+
+            // 1. Push AcquireRef for local_1, then ReleaseRef for local_1.
+            queue.push_back(Command::AcquireRef(local_1), fuchsia_trace::Id::new());
+            assert_eq!(queue.commands.len(), 1);
+
+            queue.push_back(Command::ReleaseRef(local_1), fuchsia_trace::Id::new());
+            // Both should be coalesced / cancelled out!
+            assert_eq!(queue.commands.len(), 0);
+
+            // 2. Push IncRef for local_2, then DecRef for local_2.
+            queue.push_back(Command::IncRef(local_2), fuchsia_trace::Id::new());
+            assert_eq!(queue.commands.len(), 1);
+
+            queue.push_back(Command::DecRef(local_2), fuchsia_trace::Id::new());
+            // Both should be coalesced / cancelled out!
+            assert_eq!(queue.commands.len(), 0);
+
+            // 3. Different addresses should not coalesce each other.
+            queue.push_back(Command::AcquireRef(local_1), fuchsia_trace::Id::new());
+            queue.push_back(Command::ReleaseRef(local_2), fuchsia_trace::Id::new());
+            assert_eq!(queue.commands.len(), 2);
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn transient_refcount_cancellation_in_waiting_ack() {
+        spawn_kernel_and_run(async |current_task| {
+            let device = BinderDevice::default();
+            let owner = BinderProcessFixture::new(current_task, &device);
+            let client = BinderProcessFixture::new(current_task, &device);
+
+            let local_obj = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x5000),
+                strong_ref_addr: UserAddress::from(0x6000),
+            };
+
+            // Register object with owner and retain a strong ref guard.
+            let guard = owner.proc.lock().find_or_register_object(
+                &owner.thread,
+                local_obj,
+                BinderObjectFlags::empty(),
+            );
+
+            // Client inserts handle for transaction.
+            let handle = client
+                .proc
+                .lock()
+                .handles
+                .insert_for_transaction(guard, &mut RefCountActions::default_released());
+
+            // Owner thread has AcquireRef command pending in its queue.
+            assert_eq!(owner.thread.lock().command_queue.commands.len(), 1);
+
+            // Client drops its strong reference immediately.
+            client
+                .proc
+                .handle_refcount_operation(
+                    starnix_uapi::binder_driver_command_protocol_BC_RELEASE,
+                    handle,
+                )
+                .unwrap();
+
+            // If we now push ReleaseRef to owner thread, it should coalesce
+            // with the pending AcquireRef!
+            owner
+                .thread
+                .lock()
+                .command_queue
+                .push_back(Command::ReleaseRef(local_obj), fuchsia_trace::Id::new());
+            assert_eq!(owner.thread.lock().command_queue.commands.len(), 0);
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn indexed_command_queue_operations() {
+        spawn_kernel_and_run(async |_current_task| {
+            let mut queue = IndexedCommandQueue::default();
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+            let obj_2 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x3000),
+                strong_ref_addr: UserAddress::from(0x4000),
+            };
+            let obj_3 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x5000),
+                strong_ref_addr: UserAddress::from(0x6000),
+            };
+
+            // Push 3 commands: Acquire(1), Inc(2), Acquire(3)
+            assert!(queue.push_back(Command::AcquireRef(obj_1), fuchsia_trace::Id::new()));
+            assert!(queue.push_back(Command::IncRef(obj_2), fuchsia_trace::Id::new()));
+            assert!(queue.push_back(Command::AcquireRef(obj_3), fuchsia_trace::Id::new()));
+            assert_eq!(queue.len(), 3);
+
+            // Cancel the middle one (obj_2) directly in O(1)
+            assert!(queue.cancel_refcount(false, &obj_2));
+            assert_eq!(queue.len(), 2);
+            // Cancelling again returns false
+            assert!(!queue.cancel_refcount(false, &obj_2));
+
+            // Coalesce obj_1 by pushing ReleaseRef(obj_1)
+            assert!(!queue.push_back(Command::ReleaseRef(obj_1), fuchsia_trace::Id::new()));
+            assert_eq!(queue.len(), 1);
+
+            // The remaining command should be AcquireRef(obj_3)
+            assert_eq!(queue.iter().count(), 1);
+            assert_matches!(queue.front(), Some((Command::AcquireRef(o), _)) if *o == obj_3);
+            let popped = queue.pop_front().unwrap();
+            assert_matches!(popped.0, Command::AcquireRef(o) if o == obj_3);
+            assert!(queue.is_empty());
+            assert_eq!(queue.len(), 0);
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn indexed_command_queue_distinct_objects_and_interleaved() {
+        spawn_kernel_and_run(async |_current_task| {
+            let mut queue = IndexedCommandQueue::default();
+            let obj_a = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+            // Same weak address, different strong address
+            let obj_b = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x3000),
+            };
+
+            // 1. Objects with different strong addresses must not coalesce each other.
+            assert!(queue.push_back(Command::AcquireRef(obj_a), fuchsia_trace::Id::new()));
+            assert!(queue.push_back(Command::ReleaseRef(obj_b), fuchsia_trace::Id::new()));
+            assert_eq!(queue.len(), 2);
+
+            queue.clear();
+            assert!(queue.is_empty());
+
+            // 2. Interleaved non-refcount command.
+            assert!(queue.push_back(Command::AcquireRef(obj_a), fuchsia_trace::Id::new()));
+            assert!(queue.push_back(Command::TransactionComplete, fuchsia_trace::Id::new()));
+            // Pushing ReleaseRef(obj_a) coalesces with AcquireRef(obj_a) across TransactionComplete.
+            assert!(!queue.push_back(Command::ReleaseRef(obj_a), fuchsia_trace::Id::new()));
+            assert_eq!(queue.len(), 1);
+            assert_matches!(queue.pop_front().unwrap().0, Command::TransactionComplete);
+            assert!(queue.is_empty());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn indexed_command_queue_retain() {
+        spawn_kernel_and_run(async |_current_task| {
+            let mut queue = IndexedCommandQueue::default();
+            let obj_1 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x1000),
+                strong_ref_addr: UserAddress::from(0x2000),
+            };
+            let obj_2 = LocalBinderObject {
+                weak_ref_addr: UserAddress::from(0x3000),
+                strong_ref_addr: UserAddress::from(0x4000),
+            };
+            let freeze_info_1 =
+                binder_frozen_state_info { cookie: 0x1111, is_frozen: 1, reserved: 0 };
+            let freeze_info_2 =
+                binder_frozen_state_info { cookie: 0x2222, is_frozen: 0, reserved: 0 };
+
+            queue.push_back(Command::AcquireRef(obj_1), fuchsia_trace::Id::new());
+            queue.push_back(Command::FrozenBinder(freeze_info_1), fuchsia_trace::Id::new());
+            queue.push_back(Command::IncRef(obj_2), fuchsia_trace::Id::new());
+            queue.push_back(Command::FrozenBinder(freeze_info_2), fuchsia_trace::Id::new());
+            assert_eq!(queue.len(), 4);
+
+            // Retain only commands that are not FrozenBinder with cookie 0x1111.
+            queue.retain(
+                |(cmd, _)| !matches!(cmd, Command::FrozenBinder(info) if info.cookie == 0x1111),
+            );
+            assert_eq!(queue.len(), 3);
+
+            // Check that refcount maps still work after retain:
+            // ReleaseRef(obj_1) should coalesce with the retained AcquireRef(obj_1).
+            assert!(!queue.push_back(Command::ReleaseRef(obj_1), fuchsia_trace::Id::new()));
+            assert_eq!(queue.len(), 2);
+
+            // Pop remaining commands in order: IncRef(obj_2), then FrozenBinder(0x2222).
+            assert_matches!(queue.pop_front().unwrap().0, Command::IncRef(o) if o == obj_2);
+            assert_matches!(
+                queue.pop_front().unwrap().0,
+                Command::FrozenBinder(info) if info.cookie == 0x2222
+            );
+            assert!(queue.is_empty());
         })
         .await;
     }

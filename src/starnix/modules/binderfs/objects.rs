@@ -622,8 +622,31 @@ impl BinderObject {
             if object_state.weak_count.apply_deferred_inc() {
                 commands.push(Command::IncRef(self.local));
             }
-            // No decrease actions are enqueued while waiting for any acknowledgement.
             let mut did_decrease = false;
+
+            // If an increase command (AcquireRef/IncRef) was enqueued to the process queue
+            // but the object reference count dropped back to 0 before userspace dequeued it,
+            // cancel the pending command directly from the process queue.
+            //
+            // In the Binder protocol, an object reference count only transitions 0 -> 1 once
+            // until acknowledged by userspace via BC_ACQUIRE_DONE/BC_INCREFS_DONE. Therefore,
+            // at most one AcquireRef (and at most one IncRef) command can ever be pending in the
+            // queue for a given BinderObject at any time.
+            if object_state.strong_count.is_waiting_ack() && object_state.strong_count.count() == 0
+            {
+                if process_state.cancel_refcount_command(true, &self.local) {
+                    object_state.strong_count = ObjectReferenceCount::NoRef(0);
+                    did_decrease = true;
+                }
+            }
+            if object_state.weak_count.is_waiting_ack() && object_state.weak_count.count() == 0 {
+                if process_state.cancel_refcount_command(false, &self.local) {
+                    object_state.weak_count = ObjectReferenceCount::NoRef(0);
+                    did_decrease = true;
+                }
+            }
+
+            // No decrease actions are enqueued while waiting for any acknowledgement.
             if !object_state.strong_count.is_waiting_ack()
                 && !object_state.weak_count.is_waiting_ack()
             {
@@ -659,7 +682,7 @@ impl BinderObject {
 
 /// A binder object.
 /// All addresses are in the owning process' address space.
-#[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Hash)]
 pub struct LocalBinderObject {
     /// Address to the weak ref-count structure. This uniquely identifies a binder object within
     /// a process. Guaranteed to exist.
