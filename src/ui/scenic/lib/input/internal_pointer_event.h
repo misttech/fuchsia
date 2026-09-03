@@ -5,8 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_INTERNAL_POINTER_EVENT_H_
 #define SRC_UI_SCENIC_LIB_INPUT_INTERNAL_POINTER_EVENT_H_
 
-#include <fuchsia/input/cpp/fidl.h>
-#include <fuchsia/input/report/cpp/fidl.h>
+#include <fidl/fuchsia.input/cpp/wire.h>
 #include <lib/zx/eventpair.h>
 #include <zircon/types.h>
 
@@ -103,7 +102,7 @@ struct InternalTouchEvent {
 // Struct for tracking mouse scroll information.
 struct ScrollInfo {
   // Unit of the scroll.
-  fuchsia::input::UnitType unit = fuchsia::input::UnitType::NONE;
+  fuchsia_input::wire::UnitType unit = fuchsia_input::wire::UnitType::kNone;
   // Exponent of the unit.
   int32_t exponent = 1;
 

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.ui.pointerinjector/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/hlcpp_conversion.h>
 #include <fuchsia/ui/pointer/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
@@ -64,52 +66,50 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
     input_system_.RegisterTouchSource(client2_ptr_.NewRequest(), Client2Koid());
     input_system_.RegisterTouchSource(client3_ptr_.NewRequest(), Client3Koid());
     input_system_.RegisterTouchSource(client4_ptr_.NewRequest(), Client4Koid());
+
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Registry>::Create();
+    input_system_.BindPointerinjectorRegistry(std::move(server_end));
+    registry_client_.Bind(std::move(client_end), dispatcher());
   }
 
   void RegisterInjector(fuchsia::ui::views::ViewRef context_view_ref,
                         fuchsia::ui::views::ViewRef target_view_ref,
-                        fuchsia::ui::pointerinjector::DispatchPolicy dispatch_policy,
-                        fuchsia::ui::pointerinjector::DeviceType type) {
-    fuchsia::ui::pointerinjector::Config config;
-    config.set_device_id(1);
-    config.set_device_type(type);
-    config.set_dispatch_policy(dispatch_policy);
+                        fuchsia_ui_pointerinjector::DispatchPolicy dispatch_policy,
+                        fuchsia_ui_pointerinjector::DeviceType type) {
+    fuchsia_ui_pointerinjector::Config config;
+    config.device_id(1);
+    config.device_type(type);
+    config.dispatch_policy(dispatch_policy);
     {
-      fuchsia::ui::pointerinjector::Viewport viewport;
-      viewport.set_extents({{/*min*/ {0.f, 0.f}, /*max*/ {kDisplayWidth, kDisplayHeight}}});
-      viewport.set_viewport_to_context_transform(
+      fuchsia_ui_pointerinjector::Viewport viewport;
+      viewport.extents(
+          std::array<std::array<float, 2>, 2>{{{0.f, 0.f}, {kDisplayWidth, kDisplayHeight}}});
+      viewport.viewport_to_context_transform(std::array<float, 9>{
           // clang-format off
-      {
-        1.f, 0.f, 0.f, // first column
-        0.f, 1.f, 0.f, // second column
-        0.f, 0.f, 1.f, // third column
-      }  // clang-format on
-      );
-      config.set_viewport(std::move(viewport));
+          1.f, 0.f, 0.f, // first column
+          0.f, 1.f, 0.f, // second column
+          0.f, 0.f, 1.f, // third column
+          // clang-format on
+      });
+      config.viewport(std::move(viewport));
     }
-    {
-      fuchsia::ui::pointerinjector::Context context;
-      context.set_view(std::move(context_view_ref));
-      config.set_context(std::move(context));
-    }
-    {
-      fuchsia::ui::pointerinjector::Target target;
-      target.set_view(std::move(target_view_ref));
-      config.set_target(std::move(target));
-    }
+    config.context(
+        fuchsia_ui_pointerinjector::Context::WithView(fidl::HLCPPToNatural(context_view_ref)));
+    config.target(
+        fuchsia_ui_pointerinjector::Target::WithView(fidl::HLCPPToNatural(target_view_ref)));
 
-    bool error_callback_fired = false;
-    injector_.set_error_handler([&error_callback_fired](zx_status_t) {
-      FX_LOGS(ERROR) << "Channel closed.";
-      error_callback_fired = true;
-    });
+    auto [injector_client_end, injector_server_end] =
+        fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector_.Bind(std::move(injector_client_end), dispatcher(), &device_event_handler_);
     bool register_callback_fired = false;
-    input_system_.RegisterPointerinjector(
-        std::move(config), injector_.NewRequest(),
-        [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(injector_server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          ASSERT_TRUE(result.is_ok());
+          register_callback_fired = true;
+        });
     RunLoopUntilIdle();
     ASSERT_TRUE(register_callback_fired);
-    ASSERT_FALSE(error_callback_fired);
+    ASSERT_FALSE(device_event_handler_.error_fired);
   }
 
   // Creates a new snapshot with a hit test that returns |hits|, and a ViewTree with layout:
@@ -160,8 +160,16 @@ class DispatchPolicyTest : public gtest::TestLoopFixture {
  protected:
   std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   uint64_t next_sequence_number_ = 1;
+  class DeviceEventHandler : public fidl::AsyncEventHandler<fuchsia_ui_pointerinjector::Device> {
+   public:
+    bool error_fired = false;
+    void on_fidl_error(fidl::UnbindInfo error) override { error_fired = true; }
+  };
+
   scenic_impl::input::InputSystem input_system_;
-  fuchsia::ui::pointerinjector::DevicePtr injector_;
+  fidl::Client<fuchsia_ui_pointerinjector::Registry> registry_client_;
+  DeviceEventHandler device_event_handler_;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector_;
   fuchsia::ui::pointer::TouchSourcePtr client1_ptr_;
   fuchsia::ui::pointer::TouchSourcePtr client2_ptr_;
   fuchsia::ui::pointer::TouchSourcePtr client3_ptr_;
@@ -179,29 +187,31 @@ class DispatchPolicyTestP : public DispatchPolicyTest, public testing::WithParam
  public:
   bool use_inject_events() const { return GetParam(); }
 
-  void Inject(fuchsia::ui::pointerinjector::EventPhase phase) {
-    FX_CHECK(injector_);
-    std::vector<fuchsia::ui::pointerinjector::Event> events;
+  void Inject(fuchsia_ui_pointerinjector::EventPhase phase) {
+    FX_CHECK(injector_.is_valid());
+    std::vector<fuchsia_ui_pointerinjector::Event> events;
     {
-      fuchsia::ui::pointerinjector::Event event;
-      event.set_timestamp(0);
-      fuchsia::ui::pointerinjector::PointerSample pointer_sample;
-      pointer_sample.set_pointer_id(1);
-      pointer_sample.set_phase(phase);
-      pointer_sample.set_position_in_viewport({kDisplayWidth / 2.f, kDisplayHeight / 2.f});
-      fuchsia::ui::pointerinjector::Data data;
-      data.set_pointer_sample(std::move(pointer_sample));
-      event.set_data(std::move(data));
+      fuchsia_ui_pointerinjector::Event event;
+      event.timestamp(0);
+      fuchsia_ui_pointerinjector::PointerSample pointer_sample;
+      pointer_sample.pointer_id(1);
+      pointer_sample.phase(phase);
+      pointer_sample.position_in_viewport(
+          std::array<float, 2>{kDisplayWidth / 2.f, kDisplayHeight / 2.f});
+      event.data(fuchsia_ui_pointerinjector::Data::WithPointerSample(std::move(pointer_sample)));
       events.emplace_back(std::move(event));
     }
 
     if (use_inject_events()) {
-      injector_->InjectEvents(std::move(events));
+      auto result = injector_->InjectEvents({std::move(events)});
+      ASSERT_TRUE(result.is_ok());
       RunLoopUntilIdle();
     } else {
       bool inject_callback_fired = false;
-      injector_->Inject(std::move(events),
-                        [&inject_callback_fired] { inject_callback_fired = true; });
+      injector_->Inject({std::move(events)}).Then([&inject_callback_fired](auto& result) {
+        ASSERT_TRUE(result.is_ok());
+        inject_callback_fired = true;
+      });
       RunLoopUntilIdle();
       ASSERT_TRUE(inject_callback_fired);
     }
@@ -216,11 +226,11 @@ TEST_P(DispatchPolicyTestP, ExclusiveMode_ShouldDeliverTo_OnlyTarget) {
   {  // Scene is set up. Inject with Client2 as exclusive target.
     RegisterInjector(
         /*context=*/RootViewRef(),
-        /*target=*/Client2ViewRef(), fuchsia::ui::pointerinjector::DispatchPolicy::EXCLUSIVE_TARGET,
-        fuchsia::ui::pointerinjector::DeviceType::TOUCH);
-    Inject(fuchsia::ui::pointerinjector::EventPhase::ADD);
-    Inject(fuchsia::ui::pointerinjector::EventPhase::CHANGE);
-    Inject(fuchsia::ui::pointerinjector::EventPhase::REMOVE);
+        /*target=*/Client2ViewRef(), fuchsia_ui_pointerinjector::DispatchPolicy::kExclusiveTarget,
+        fuchsia_ui_pointerinjector::DeviceType::kTouch);
+    Inject(fuchsia_ui_pointerinjector::EventPhase::kAdd);
+    Inject(fuchsia_ui_pointerinjector::EventPhase::kChange);
+    Inject(fuchsia_ui_pointerinjector::EventPhase::kRemove);
     RunLoopUntilIdle();
   }
 
@@ -252,11 +262,11 @@ TEST_P(DispatchPolicyTestP, TopHitMode_OnLeafTarget_ShouldDeliverTo_OnlyTarget) 
   {  // Inject with Client3 as target. Top hit is Client3.
     RegisterInjector(/*context=*/RootViewRef(),
                      /*target=*/Client3ViewRef(),
-                     fuchsia::ui::pointerinjector::DispatchPolicy::TOP_HIT_AND_ANCESTORS_IN_TARGET,
-                     fuchsia::ui::pointerinjector::DeviceType::TOUCH);
-    Inject(fuchsia::ui::pointerinjector::EventPhase::ADD);
-    Inject(fuchsia::ui::pointerinjector::EventPhase::CHANGE);
-    Inject(fuchsia::ui::pointerinjector::EventPhase::REMOVE);
+                     fuchsia_ui_pointerinjector::DispatchPolicy::kTopHitAndAncestorsInTarget,
+                     fuchsia_ui_pointerinjector::DeviceType::kTouch);
+    Inject(fuchsia_ui_pointerinjector::EventPhase::kAdd);
+    Inject(fuchsia_ui_pointerinjector::EventPhase::kChange);
+    Inject(fuchsia_ui_pointerinjector::EventPhase::kRemove);
     RunLoopUntilIdle();
   }
 
@@ -289,11 +299,11 @@ TEST_P(DispatchPolicyTestP,
   {  // Inject with Client2 as target. Top hit is Client4.
     RegisterInjector(/*context=*/RootViewRef(),
                      /*target=*/Client2ViewRef(),
-                     fuchsia::ui::pointerinjector::DispatchPolicy::TOP_HIT_AND_ANCESTORS_IN_TARGET,
-                     fuchsia::ui::pointerinjector::DeviceType::TOUCH);
-    Inject(fuchsia::ui::pointerinjector::EventPhase::ADD);
-    Inject(fuchsia::ui::pointerinjector::EventPhase::CHANGE);
-    Inject(fuchsia::ui::pointerinjector::EventPhase::REMOVE);
+                     fuchsia_ui_pointerinjector::DispatchPolicy::kTopHitAndAncestorsInTarget,
+                     fuchsia_ui_pointerinjector::DeviceType::kTouch);
+    Inject(fuchsia_ui_pointerinjector::EventPhase::kAdd);
+    Inject(fuchsia_ui_pointerinjector::EventPhase::kChange);
+    Inject(fuchsia_ui_pointerinjector::EventPhase::kRemove);
     RunLoopUntilIdle();
   }
 

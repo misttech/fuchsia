@@ -74,9 +74,9 @@ InputSystem::InputSystem(async_dispatcher_t *input_dispatcher,
 #if !defined(FUCHSIA_DSO)
 
 void InputSystem::BindPointerinjectorRegistry(
-    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request) {
+    fidl::ServerEnd<fuchsia_ui_pointerinjector::Registry> server_end) {
   utils::CheckIsOnInputThread();
-  pointerinjector_registry_.Bind(std::move(request));
+  pointerinjector_registry_.Bind(std::move(server_end));
 }
 
 #else

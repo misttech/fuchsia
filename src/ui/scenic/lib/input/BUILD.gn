@@ -61,7 +61,7 @@ source_set("input_manager_common") {
     "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_cpp",
     "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_hlcpp",
     "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
+    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp",
     "//src/ui/scenic/lib/focus",
     "//src/ui/scenic/lib/view_tree:geometry_provider",
     "//src/ui/scenic/lib/view_tree:observer_registry",
@@ -210,8 +210,6 @@ source_set("injection") {
     "//sdk/fidl/fuchsia.input:fuchsia.input_cpp",
     "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
     "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp",
-    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp_hlcpp_conversion",
-    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
     "//sdk/lib/sys/cpp",
   ]
 }

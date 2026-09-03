@@ -30,8 +30,8 @@ struct InjectorSettings {
   zx_koid_t context_koid = ZX_KOID_INVALID;
   zx_koid_t target_koid = ZX_KOID_INVALID;
 
-  std::optional<fuchsia::input::Axis> scroll_v_range;
-  std::optional<fuchsia::input::Axis> scroll_h_range;
+  std::optional<fuchsia_input::wire::Axis> scroll_v_range;
+  std::optional<fuchsia_input::wire::Axis> scroll_h_range;
   std::vector<uint8_t> button_identifiers;
 };
 

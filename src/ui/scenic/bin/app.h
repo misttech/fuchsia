@@ -68,6 +68,13 @@ enum class RendererType : uint8_t {
 };
 // LINT.ThenChange(//src/lib/assembly/config_schema/src/platform_settings/ui_config.rs)
 
+// `App` instantiates and stitches together all of the subsystems which comprise the Scenic
+// component.
+//
+// Lifetime requirement: the owner must not destroy `App` while work can still run on either
+// `flatland_dispatcher` or `input_dispatcher`.  `App` hands closures capturing `this` to FIDL
+// service handlers, the frame scheduler, display callbacks, and posted tasks, with no weak
+// pointers.  The destructor cancels none of these; nothing inside `App` enforces the requirement.
 class App {
  public:
   App(async_dispatcher_t* flatland_dispatcher, async_dispatcher_t* input_dispatcher,

@@ -4,26 +4,28 @@
 
 #include "src/ui/scenic/lib/input/pointerinjector_registry.h"
 
-#include <fidl/fuchsia.ui.pointerinjector/cpp/fidl.h>
-#include <fidl/fuchsia.ui.pointerinjector/cpp/hlcpp_conversion.h>
-#include <lib/fidl/cpp/hlcpp_conversion.h>
+#include <fidl/fuchsia.ui.pointerinjector/cpp/wire.h>
+#include <lib/fit/defer.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
 #include "src/ui/scenic/lib/input/mouse_injector.h"
 #include "src/ui/scenic/lib/input/touch_injector.h"
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
+#include "src/ui/scenic/lib/utils/fidl_array_cast.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/math.h"
 
 namespace scenic_impl::input {
 
-using fuchsia::ui::pointerinjector::DeviceType;
-using fuchsia::ui::pointerinjector::DispatchPolicy;
+using fuchsia_ui_pointerinjector::wire::Context;
+using fuchsia_ui_pointerinjector::wire::DeviceType;
+using fuchsia_ui_pointerinjector::wire::DispatchPolicy;
+using fuchsia_ui_pointerinjector::wire::Target;
 
 namespace {
 
-bool IsValidConfig(const fuchsia::ui::pointerinjector::Config& config) {
+bool IsValidConfig(const fuchsia_ui_pointerinjector::wire::Config& config) {
   if (!config.has_device_id() || !config.has_device_type() || !config.has_context() ||
       !config.has_target() || !config.has_viewport() || !config.has_dispatch_policy()) {
     FX_LOGS(ERROR) << "InjectorRegistry::Register : Argument |config| is incomplete.";
@@ -31,22 +33,22 @@ bool IsValidConfig(const fuchsia::ui::pointerinjector::Config& config) {
   }
 
   const auto device_type = config.device_type();
-  if (device_type != DeviceType::TOUCH && device_type != DeviceType::MOUSE) {
+  if (device_type != DeviceType::kTouch && device_type != DeviceType::kMouse) {
     FX_LOGS(ERROR) << "InjectorRegistry::Register : Unknown DeviceType.";
     return false;
   }
 
   const auto dispatch_policy = config.dispatch_policy();
-  if (device_type == DeviceType::MOUSE) {
-    if (dispatch_policy != DispatchPolicy::EXCLUSIVE_TARGET &&
-        dispatch_policy != DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET) {
+  if (device_type == DeviceType::kMouse) {
+    if (dispatch_policy != DispatchPolicy::kExclusiveTarget &&
+        dispatch_policy != DispatchPolicy::kMouseHoverAndLatchInTarget) {
       FX_LOGS(ERROR)
           << "InjectorRegistry::Register : DeviceType::MOUSE with mismatched dispatch policy.";
       return false;
     }
-  } else if (device_type == DeviceType::TOUCH) {
-    if (dispatch_policy != DispatchPolicy::EXCLUSIVE_TARGET &&
-        dispatch_policy != DispatchPolicy::TOP_HIT_AND_ANCESTORS_IN_TARGET) {
+  } else if (device_type == DeviceType::kTouch) {
+    if (dispatch_policy != DispatchPolicy::kExclusiveTarget &&
+        dispatch_policy != DispatchPolicy::kTopHitAndAncestorsInTarget) {
       FX_LOGS(ERROR)
           << "InjectorRegistry::Register : DeviceType::TOUCH with mismatched dispatch policy.";
       return false;
@@ -61,11 +63,7 @@ bool IsValidConfig(const fuchsia::ui::pointerinjector::Config& config) {
     return false;
   }
 
-  fuchsia::ui::pointerinjector::Viewport viewport_copy;
-  fidl::Clone(config.viewport(), &viewport_copy);
-  fidl::Arena arena;
-  auto wire_viewport = fidl::ToWire(arena, fidl::HLCPPToNatural(std::move(viewport_copy)));
-  if (Injector::IsValidViewport(wire_viewport) != ZX_OK) {
+  if (Injector::IsValidViewport(config.viewport()) != ZX_OK) {
     // Errors printed in IsValidViewport. Just return result here.
     return false;
   }
@@ -88,18 +86,25 @@ PointerinjectorRegistry::PointerinjectorRegistry(
       inject_mouse_hit_tested_(std::move(inject_mouse_hit_tested)),
       cancel_mouse_stream_(std::move(cancel_mouse_stream)),
       snapshot_holder_(std::move(snapshot_holder)),
-      inspect_node_(std::move(inspect_node)) {}
-
-void PointerinjectorRegistry::Bind(
-    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request) {
-  injector_registry_.AddBinding(this, std::move(request));
+      input_dispatcher_(input_dispatcher),
+      inspect_node_(std::move(inspect_node)) {
+  FX_DCHECK(input_dispatcher);
 }
 
-void PointerinjectorRegistry::Register(
-    fuchsia::ui::pointerinjector::Config config,
-    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> injector,
-    RegisterCallback callback) {
+void PointerinjectorRegistry::Bind(
+    fidl::ServerEnd<fuchsia_ui_pointerinjector::Registry> server_end) {
+  utils::CheckIsOnInputThread();
+  injector_registry_.AddBinding(input_dispatcher_, std::move(server_end), this,
+                                [](fidl::UnbindInfo) {});
+}
+
+void PointerinjectorRegistry::Register(RegisterRequestView request,
+                                       RegisterCompleter::Sync& completer) {
   TRACE_DURATION("input", "PointerinjectorRegistry::Register");
+  auto reply_defer = fit::defer([&completer] { completer.Reply(); });
+
+  auto& config = request->config;
+  auto& injector = request->injector;
 
   if (!IsValidConfig(config)) {
     // Errors printed inside IsValidConfig. Just return here.
@@ -126,33 +131,32 @@ void PointerinjectorRegistry::Register(
   }
 
   const InjectorId id = ++last_injector_id_;
-  auto server_end = fidl::ServerEnd<fuchsia_ui_pointerinjector::Device>(injector.TakeChannel());
 
-  std::optional<fuchsia::input::Axis> scroll_v_range;
+  std::optional<fuchsia_input::wire::Axis> scroll_v_range;
   if (config.has_scroll_v_range()) {
     scroll_v_range = config.scroll_v_range();
   }
-  std::optional<fuchsia::input::Axis> scroll_h_range;
+  std::optional<fuchsia_input::wire::Axis> scroll_h_range;
   if (config.has_scroll_h_range()) {
     scroll_h_range = config.scroll_h_range();
   }
 
   InjectorSettings settings{
-      .dispatch_policy =
-          static_cast<fuchsia_ui_pointerinjector::wire::DispatchPolicy>(config.dispatch_policy()),
+      .dispatch_policy = config.dispatch_policy(),
       .device_id = config.device_id(),
-      .device_type =
-          static_cast<fuchsia_ui_pointerinjector::wire::DeviceType>(config.device_type()),
+      .device_type = config.device_type(),
       .context_koid = context_koid,
       .target_koid = target_koid,
       .scroll_v_range = scroll_v_range,
       .scroll_h_range = scroll_h_range,
-      .button_identifiers = config.has_buttons() ? config.buttons() : std::vector<uint8_t>()};
+      .button_identifiers = config.has_buttons() ? std::vector<uint8_t>(config.buttons().begin(),
+                                                                        config.buttons().end())
+                                                 : std::vector<uint8_t>()};
 
   Viewport viewport{
       .extents = Extents(config.viewport().extents()),
-      .context_from_viewport_transform =
-          utils::ColumnMajorMat3ArrayToMat4(config.viewport().viewport_to_context_transform()),
+      .context_from_viewport_transform = utils::ColumnMajorMat3ArrayToMat4(
+          utils::ReinterpretFidlArrayAsStdArray(config.viewport().viewport_to_context_transform())),
   };
 
   fit::function<void()> on_channel_closed = [this, id] { injectors_.erase(id); };
@@ -162,7 +166,7 @@ void PointerinjectorRegistry::Register(
         id, std::make_unique<TouchInjector>(
                 snapshot_holder_,
                 inspect_node_.CreateChild(inspect_node_.UniqueName("touch-injector-")), settings,
-                std::move(viewport), std::move(server_end),
+                std::move(viewport), std::move(injector),
                 /*inject=*/
                 [&inject_func =
                      settings.dispatch_policy ==
@@ -180,7 +184,7 @@ void PointerinjectorRegistry::Register(
         id, std::make_unique<MouseInjector>(
                 snapshot_holder_,
                 inspect_node_.CreateChild(inspect_node_.UniqueName("mouse-injector-")), settings,
-                std::move(viewport), std::move(server_end),
+                std::move(viewport), std::move(injector),
                 /*inject=*/
                 [&inject_func =
                      settings.dispatch_policy ==
@@ -197,8 +201,6 @@ void PointerinjectorRegistry::Register(
   } else {
     FX_NOTREACHED();
   }
-
-  callback();
 }
 // LINT.ThenChange(//src/ui/scenic/lib/input/dso/pointerinjector_registry.cc)
 

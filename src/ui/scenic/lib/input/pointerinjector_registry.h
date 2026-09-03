@@ -5,9 +5,9 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_POINTERINJECTOR_REGISTRY_H_
 #define SRC_UI_SCENIC_LIB_INPUT_POINTERINJECTOR_REGISTRY_H_
 
-#include <fuchsia/ui/pointerinjector/cpp/fidl.h>
+#include <fidl/fuchsia.ui.pointerinjector/cpp/wire.h>
 #include <lib/async/dispatcher.h>
-#include <lib/fidl/cpp/binding_set.h>
+#include <lib/fidl/cpp/wire/server.h>
 #include <lib/fit/function.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/sys/cpp/component_context.h>
@@ -26,7 +26,7 @@ using MouseInjectFunc = fit::function<void(InternalMouseEvent event, StreamId st
 
 // Handles the registration and config validation of fuchsia::ui::pointerinjector clients.
 // LINT.IfChange
-class PointerinjectorRegistry : public fuchsia::ui::pointerinjector::Registry {
+class PointerinjectorRegistry : public fidl::WireServer<fuchsia_ui_pointerinjector::Registry> {
  public:
   PointerinjectorRegistry(async_dispatcher_t* input_dispatcher,
                           std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
@@ -37,19 +37,17 @@ class PointerinjectorRegistry : public fuchsia::ui::pointerinjector::Registry {
                           fit::function<void(StreamId stream_id)> cancel_mouse_stream,
                           inspect::Node inspect_node = inspect::Node());
 
-  void Bind(fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request);
+  void Bind(fidl::ServerEnd<fuchsia_ui_pointerinjector::Registry> server_end);
 
-  // |fuchsia.ui.pointerinjector.Registry|
-  void Register(fuchsia::ui::pointerinjector::Config config,
-                fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> injector,
-                RegisterCallback callback) override;
+  // |fidl::WireServer<fuchsia_ui_pointerinjector::Registry>|
+  void Register(RegisterRequestView request, RegisterCompleter::Sync& completer) override;
 
  private:
   using InjectorId = uint64_t;
   InjectorId last_injector_id_ = 0;
   std::unordered_map<InjectorId, std::unique_ptr<Injector>> injectors_;
 
-  fidl::BindingSet<fuchsia::ui::pointerinjector::Registry> injector_registry_;
+  fidl::ServerBindingGroup<fuchsia_ui_pointerinjector::Registry> injector_registry_;
 
   const TouchInjectFunc inject_touch_exclusive_;
   const TouchInjectFunc inject_touch_hit_tested_;
@@ -59,6 +57,7 @@ class PointerinjectorRegistry : public fuchsia::ui::pointerinjector::Registry {
 
   const std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
 
+  async_dispatcher_t* const input_dispatcher_;
   inspect::Node inspect_node_;
 };
 // LINT.ThenChange(//src/ui/scenic/lib/input/dso/pointerinjector_registry.h)

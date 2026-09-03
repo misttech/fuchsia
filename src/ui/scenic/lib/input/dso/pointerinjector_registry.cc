@@ -7,6 +7,7 @@
 #include <lib/async-loop/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
+#include <lib/fit/defer.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-engine/types.h>
 #include <lib/trace/event.h>
@@ -27,6 +28,7 @@ using fuchsia_ui_pointerinjector::wire::Context;
 using fuchsia_ui_pointerinjector::wire::DeviceType;
 using fuchsia_ui_pointerinjector::wire::DispatchPolicy;
 using fuchsia_ui_pointerinjector::wire::Target;
+using scenic_impl::input::Extents;
 
 namespace {
 
@@ -95,6 +97,7 @@ void PointerinjectorRegistry::Bind(fdf::Channel channel) {
 void PointerinjectorRegistry::Register(RegisterRequestView request, fdf::Arena& arena,
                                        RegisterCompleter::Sync& completer) {
   TRACE_DURATION("input", "PointerinjectorRegistry::Register");
+  auto reply_defer = fit::defer([&arena, &completer] { completer.buffer(arena).Reply(); });
 
   auto& config = request->config;
   auto& injector = request->injector;
@@ -129,10 +132,8 @@ void PointerinjectorRegistry::Register(RegisterRequestView request, fdf::Arena& 
                             .device_type = config.device_type(),
                             .context_koid = context_koid,
                             .target_koid = target_koid};
-  const auto& e = config.viewport().extents();
   Viewport viewport{
-      .extents = std::array<std::array<float, 2>, 2>{std::array<float, 2>{e[0][0], e[0][1]},
-                                                     std::array<float, 2>{e[1][0], e[1][1]}},
+      .extents = Extents(config.viewport().extents()),
       .context_from_viewport_transform = utils::ColumnMajorMat3ArrayToMat4(
           utils::ReinterpretFidlArrayAsStdArray(config.viewport().viewport_to_context_transform())),
   };
@@ -160,8 +161,6 @@ void PointerinjectorRegistry::Register(RegisterRequestView request, fdf::Arena& 
   } else {
     FX_NOTREACHED();
   }
-
-  completer.buffer(arena).Reply();
 }
 
 }  // namespace scenic_impl::input_dso

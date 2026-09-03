@@ -705,12 +705,14 @@ void App::InitializeInput() {
 
   // Register Pointerinjector Registry
 #if !defined(FUCHSIA_DSO)
-  app_context_->outgoing()->AddPublicService<fuchsia::ui::pointerinjector::Registry>(
-      [this](fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request) {
-        input_manager_.AsyncCall(&input::InputManager::BindPointerinjectorRegistry,
-                                 std::move(request));
-      });
+  // Zircon channel version of pointerinjector registry.
+  FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_pointerinjector::Registry>(
+               [this](fidl::ServerEnd<fuchsia_ui_pointerinjector::Registry> server_end) {
+                 input_manager_.AsyncCall(&input::InputManager::BindPointerinjectorRegistry,
+                                          std::move(server_end));
+               }) == ZX_OK);
 #else
+  // Driver transport version of pointerinjector registry.
   app_context_->outgoing()->AddPublicService(
       [this](zx::channel channel, async_dispatcher_t* unused_dispatcher) mutable {
         input_manager_.AsyncCall(&input::InputManager::BindPointerinjectorRegistry,

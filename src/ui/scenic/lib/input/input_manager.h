@@ -79,7 +79,7 @@ class InputManager {
       fidl::ServerEnd<fuchsia_ui_observation_scope::Registry> server_end);
 #if !defined(FUCHSIA_DSO)
   void BindPointerinjectorRegistry(
-      fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request);
+      fidl::ServerEnd<fuchsia_ui_pointerinjector::Registry> server_end);
 #else
   void BindPointerinjectorRegistry(zx::channel channel);
 #endif

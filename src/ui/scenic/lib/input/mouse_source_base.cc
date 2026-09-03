@@ -26,14 +26,18 @@ void MouseSourceBase::AddDeviceInfoToEvent(MouseEvent& out_event, const Internal
   if (event.scroll_v.has_value()) {
     const auto& [unit, exponent, range, _] = event.scroll_v.value();
     FX_DCHECK(range[0] < range[1]);
-    device_info.set_scroll_v_range({.range = {.min = range[0], .max = range[1]},
-                                    .unit = {.type = unit, .exponent = exponent}});
+    device_info.set_scroll_v_range(
+        {.range = {.min = range[0], .max = range[1]},
+         .unit = {.type = fuchsia::input::UnitType(static_cast<uint32_t>(unit)),
+                  .exponent = exponent}});
   }
   if (event.scroll_h.has_value()) {
     const auto& [unit, exponent, range, _] = event.scroll_h.value();
     FX_DCHECK(range[0] < range[1]);
-    device_info.set_scroll_h_range({.range = {.min = range[0], .max = range[1]},
-                                    .unit = {.type = unit, .exponent = exponent}});
+    device_info.set_scroll_h_range(
+        {.range = {.min = range[0], .max = range[1]},
+         .unit = {.type = fuchsia::input::UnitType(static_cast<uint32_t>(unit)),
+                  .exponent = exponent}});
   }
   if (!event.buttons.identifiers.empty()) {
     FX_DCHECK(event.buttons.identifiers.size() <= fuchsia::input::MOUSE_MAX_NUM_BUTTONS);

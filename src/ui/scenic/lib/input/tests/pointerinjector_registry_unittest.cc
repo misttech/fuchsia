@@ -4,6 +4,8 @@
 
 #include "src/ui/scenic/lib/input/pointerinjector_registry.h"
 
+#include <fidl/fuchsia.ui.pointerinjector/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/view_ref_pair.h>
 
@@ -14,16 +16,14 @@
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 
-using fuchsia::ui::pointerinjector::DeviceType;
-using fuchsia::ui::pointerinjector::DispatchPolicy;
-using fuchsia::ui::views::ViewRef;
+using fuchsia_ui_pointerinjector::DeviceType;
+using fuchsia_ui_pointerinjector::DispatchPolicy;
+using fuchsia_ui_views::ViewRef;
 // Unit tests for the PointerinjectorRegistry class.
 
 namespace input::test {
 
 namespace {
-
-static uint64_t g_next_sequence_number = 1;
 
 // clang-format off
 static constexpr std::array<float, 9> kIdentityMatrix = {
@@ -33,25 +33,25 @@ static constexpr std::array<float, 9> kIdentityMatrix = {
 };
 // clang-format on
 
-std::vector<fuchsia::ui::pointerinjector::Event> EventsTemplate() {
-  fuchsia::ui::pointerinjector::Event event;
-  event.set_timestamp(1);
-  {
-    fuchsia::ui::pointerinjector::Data data;
-    {
-      fuchsia::ui::pointerinjector::PointerSample pointer;
-      pointer.set_pointer_id(1);
-      pointer.set_phase(fuchsia::ui::pointerinjector::EventPhase::ADD);
-      pointer.set_position_in_viewport({1.f, 1.f});
-      data.set_pointer_sample(std::move(pointer));
-    }
-    event.set_data(std::move(data));
-  }
+std::vector<fuchsia_ui_pointerinjector::Event> EventsTemplate() {
+  fuchsia_ui_pointerinjector::Event event;
+  event.timestamp(1);
+  fuchsia_ui_pointerinjector::PointerSample pointer;
+  pointer.pointer_id(1);
+  pointer.phase(fuchsia_ui_pointerinjector::EventPhase::kAdd);
+  pointer.position_in_viewport(std::array<float, 2>{1.f, 1.f});
+  event.data(fuchsia_ui_pointerinjector::Data::WithPointerSample(std::move(pointer)));
 
-  std::vector<fuchsia::ui::pointerinjector::Event> events;
+  std::vector<fuchsia_ui_pointerinjector::Event> events;
   events.emplace_back(std::move(event));
   return events;
 }
+
+class DeviceEventHandler : public fidl::AsyncEventHandler<fuchsia_ui_pointerinjector::Device> {
+ public:
+  bool error_fired = false;
+  void on_fidl_error(fidl::UnbindInfo error) override { error_fired = true; }
+};
 
 }  // namespace
 
@@ -65,42 +65,36 @@ class PointerinjectorRegistryTest : public gtest::TestLoopFixture {
             /*inject_touch_hit_tested=*/[](auto...) {},
             /*inject_mouse_exclusive=*/[](auto...) {},
             /*inject_mouse_hit_tested=*/[](auto...) {},
-            /*cancel_mouse_stream=*/[](auto...) {}, inspect::Node()) {}
+            /*cancel_mouse_stream=*/[](auto...) {}, inspect::Node()) {
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Registry>::Create();
+    registry_.Bind(std::move(server_end));
+    registry_client_.Bind(std::move(client_end), dispatcher());
+  }
 
  protected:
   struct ScenePair {
-    scenic::ViewRefPair parent;
-    scenic::ViewRefPair child;
+    scenic::cpp::ViewRefPair parent;
+    scenic::cpp::ViewRefPair child;
 
-    ScenePair() : parent(scenic::ViewRefPair::New()), child(scenic::ViewRefPair::New()) {}
+    ScenePair() : parent(scenic::cpp::ViewRefPair::New()), child(scenic::cpp::ViewRefPair::New()) {}
   };
 
-  fuchsia::ui::pointerinjector::Config ConfigTemplate(const ViewRef& context_view_ref,
-                                                      const ViewRef& target_view_ref) {
-    fuchsia::ui::pointerinjector::Config config;
-    config.set_device_id(1);
-    config.set_device_type(DeviceType::TOUCH);
-    config.set_dispatch_policy(DispatchPolicy::EXCLUSIVE_TARGET);
+  fuchsia_ui_pointerinjector::Config ConfigTemplate(const ViewRef& context_view_ref,
+                                                    const ViewRef& target_view_ref) {
+    fuchsia_ui_pointerinjector::Config config;
+    config.device_id(1);
+    config.device_type(DeviceType::kTouch);
+    config.dispatch_policy(DispatchPolicy::kExclusiveTarget);
     {
-      fuchsia::ui::pointerinjector::Viewport viewport;
-      viewport.set_extents({{{0, 0}, {10, 10}}});
-      viewport.set_viewport_to_context_transform(kIdentityMatrix);
-      config.set_viewport(std::move(viewport));
+      fuchsia_ui_pointerinjector::Viewport viewport;
+      viewport.extents(std::array<std::array<float, 2>, 2>{{{0, 0}, {10, 10}}});
+      viewport.viewport_to_context_transform(kIdentityMatrix);
+      config.viewport(std::move(viewport));
     }
-    {
-      fuchsia::ui::pointerinjector::Context context;
-      ViewRef context_clone;
-      fidl::Clone(context_view_ref, &context_clone);
-      context.set_view(std::move(context_clone));
-      config.set_context(std::move(context));
-    }
-    {
-      fuchsia::ui::pointerinjector::Target target;
-      ViewRef target_clone;
-      fidl::Clone(target_view_ref, &target_clone);
-      target.set_view(std::move(target_clone));
-      config.set_target(std::move(target));
-    }
+    config.context(
+        fuchsia_ui_pointerinjector::Context::WithView(scenic::cpp::CloneViewRef(context_view_ref)));
+    config.target(
+        fuchsia_ui_pointerinjector::Target::WithView(scenic::cpp::CloneViewRef(target_view_ref)));
     return config;
   }
 
@@ -121,6 +115,7 @@ class PointerinjectorRegistryTest : public gtest::TestLoopFixture {
 
   std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   scenic_impl::input::PointerinjectorRegistry registry_;
+  fidl::Client<fuchsia_ui_pointerinjector::Registry> registry_client_;
 
  protected:
   uint64_t next_sequence_number_ = 1;
@@ -134,13 +129,22 @@ class PointerinjectorRegistryTestP : public PointerinjectorRegistryTest,
  public:
   bool use_inject_events() const { return GetParam(); }
 
-  void Inject(fuchsia::ui::pointerinjector::DevicePtr& injector,
-              std::vector<fuchsia::ui::pointerinjector::Event> events,
+  void Inject(fidl::Client<fuchsia_ui_pointerinjector::Device>& injector,
+              std::vector<fuchsia_ui_pointerinjector::Event> events,
               std::function<void()> callback) {
     if (use_inject_events()) {
-      injector->InjectEvents(std::move(events));
+      fuchsia_ui_pointerinjector::DeviceInjectRequest request;
+      request.events(std::move(events));
+      auto result = injector->InjectEvents(std::move(request));
+      EXPECT_TRUE(result.is_ok());
     } else {
-      injector->Inject(std::move(events), std::move(callback));
+      fuchsia_ui_pointerinjector::DeviceInjectRequest request;
+      request.events(std::move(events));
+      injector->Inject(std::move(request)).Then([callback = std::move(callback)](auto& result) {
+        if (callback) {
+          callback();
+        }
+      });
     }
   }
 };
@@ -151,347 +155,318 @@ INSTANTIATE_TEST_SUITE_P(PointerinjectorRegistryTest, PointerinjectorRegistryTes
 TEST_F(PointerinjectorRegistryTest, RegisterAttemptWithCorrectArguments_ShouldSucceed) {
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
-  fuchsia::ui::pointerinjector::DevicePtr injector;
+  DeviceEventHandler event_handler;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
   bool register_callback_fired = false;
-  bool error_callback_fired = false;
-  injector.set_error_handler(
-      [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  injector.Bind(std::move(client_end), dispatcher(), &event_handler);
   {
-    fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
   }
 
   RunLoopUntilIdle();
 
   EXPECT_TRUE(register_callback_fired);
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_fired);
 }
 
 TEST_F(PointerinjectorRegistryTest, RegisterAttemptWithBadDeviceConfig_ShouldFail) {
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
-  const fuchsia::ui::pointerinjector::Config base_config =
-      ConfigTemplate(std::move(parent.view_ref), std::move(child.view_ref));
 
   {  // No device id.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    config.clear_device_id();
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    config.device_id().reset();
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
-    EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(register_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 
   {  // No device type.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    config.clear_device_type();
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    config.device_type().reset();
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
-    EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(register_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 
   {  // Wrong device type.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
     // Set to not TOUCH.
-    config.set_device_type(static_cast<DeviceType>(static_cast<uint32_t>(12421)));
+    config.device_type(static_cast<DeviceType>(12421));
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
     EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 }
 
 TEST_F(PointerinjectorRegistryTest, RegisterAttemptWithBadContextOrTarget_ShouldFail) {
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
-  const fuchsia::ui::pointerinjector::Config base_config =
-      ConfigTemplate(parent.view_ref, child.view_ref);
 
   {  // No context.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    config.clear_context();
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    config.context().reset();
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
-    EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(register_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 
   {  // No target.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    config.clear_target();
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    config.target().reset();
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
-    EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(register_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 
   {  // Context equals target.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    ViewRef parent_clone1, parent_clone2;
-    fidl::Clone(parent.view_ref, &parent_clone1);
-    fidl::Clone(parent.view_ref, &parent_clone2);
-    {
-      fuchsia::ui::pointerinjector::Context context;
-      context.set_view(std::move(parent_clone1));
-      config.set_context(std::move(context));
-    }
-    {
-      fuchsia::ui::pointerinjector::Target target;
-      target.set_view(std::move(parent_clone2));
-      config.set_target(std::move(target));
-    }
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, parent.view_ref);
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
-    EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(register_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 
   {  // Context is descendant of target.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
-
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    ViewRef parent_clone, child_clone;
-    fidl::Clone(parent.view_ref, &parent_clone);
-    fidl::Clone(child.view_ref, &child_clone);
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
     // Swap context and target.
-    {
-      fuchsia::ui::pointerinjector::Context context;
-      context.set_view(std::move(child_clone));
-      config.set_context(std::move(context));
-    }
-    {
-      fuchsia::ui::pointerinjector::Target target;
-      target.set_view(std::move(parent_clone));
-      config.set_target(std::move(target));
-    }
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(child.view_ref, parent.view_ref);
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
-    EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(register_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 
   {  // Context is unregistered.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    ViewRef child_clone;
-    fidl::Clone(child.view_ref, &child_clone);
-    auto [control_ref, unregistered_view_ref] = scenic::ViewRefPair::New();
-    {
-      fuchsia::ui::pointerinjector::Context context;
-      context.set_view(std::move(unregistered_view_ref));
-      config.set_context(std::move(context));
-    }
-    {
-      fuchsia::ui::pointerinjector::Target target;
-      target.set_view(std::move(child_clone));
-      config.set_target(std::move(target));
-    }
+    auto unregistered = scenic::cpp::ViewRefPair::New();
+    fuchsia_ui_pointerinjector::Config config =
+        ConfigTemplate(unregistered.view_ref, child.view_ref);
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
-    EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(register_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 
   {  // Target is unregistered.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    ViewRef parent_clone;
-    fidl::Clone(parent.view_ref, &parent_clone);
-    auto [control_ref, unregistered_view_ref] = scenic::ViewRefPair::New();
-    {
-      fuchsia::ui::pointerinjector::Context context;
-      context.set_view(std::move(parent_clone));
-      config.set_context(std::move(context));
-    }
-    {
-      fuchsia::ui::pointerinjector::Target target;
-      target.set_view(std::move(unregistered_view_ref));
-      config.set_target(std::move(target));
-    }
+    auto unregistered = scenic::cpp::ViewRefPair::New();
+    fuchsia_ui_pointerinjector::Config config =
+        ConfigTemplate(parent.view_ref, unregistered.view_ref);
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
-    EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(register_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 
   {  // Context is detached from scene.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    ViewRef parent_clone;
-    fidl::Clone(parent.view_ref, &parent_clone);
-    ViewRef child_clone;
-    fidl::Clone(child.view_ref, &child_clone);
-    {
-      fuchsia::ui::pointerinjector::Context context;
-      context.set_view(std::move(parent_clone));
-      config.set_context(std::move(context));
-    }
-    {
-      fuchsia::ui::pointerinjector::Target target;
-      target.set_view(std::move(child_clone));
-      config.set_target(std::move(target));
-    }
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
 
     // Empty the scene.
     auto empty_snapshot = std::make_shared<view_tree::Snapshot>();
     empty_snapshot->sequence_number = next_sequence_number_++;
     snapshot_holder_->SetSnapshot(empty_snapshot);
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
-    EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(register_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 }
 
 TEST_F(PointerinjectorRegistryTest, RegisterAttemptWithBadDispatchPolicy_ShouldFail) {
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
-  const fuchsia::ui::pointerinjector::Config base_config =
-      ConfigTemplate(parent.view_ref, child.view_ref);
 
   {  // No dispatch policy.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    config.clear_dispatch_policy();
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    config.dispatch_policy().reset();
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
-    EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(register_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 
   {  // Unsupported dispatch policy.
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config;
-    fidl::Clone(base_config, &config);
-    config.set_dispatch_policy(static_cast<DispatchPolicy>(6323));
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    config.dispatch_policy(static_cast<DispatchPolicy>(6323));
 
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
     EXPECT_FALSE(register_callback_fired);
-    EXPECT_TRUE(error_callback_fired);
+    EXPECT_TRUE(event_handler.error_fired);
   }
 }
 
@@ -499,20 +474,24 @@ TEST_F(PointerinjectorRegistryTest, ChannelDying_ShouldNotCrash) {
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
   {
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-    fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
 
     RunLoopUntilIdle();
 
     EXPECT_TRUE(register_callback_fired);
-    EXPECT_FALSE(error_callback_fired);
+    EXPECT_FALSE(event_handler.error_fired);
   }  // |injector| goes out of scope.
 
   RunLoopUntilIdle();
@@ -521,33 +500,41 @@ TEST_F(PointerinjectorRegistryTest, ChannelDying_ShouldNotCrash) {
 TEST_F(PointerinjectorRegistryTest, MultipleRegistrations_ShouldSucceed) {
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
-  fuchsia::ui::pointerinjector::DevicePtr injector;
+  DeviceEventHandler event_handler;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
   {
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
-    fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-    registry_.Register(std::move(config), injector.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
     RunLoopUntilIdle();
     EXPECT_TRUE(register_callback_fired);
-    EXPECT_FALSE(error_callback_fired);
+    EXPECT_FALSE(event_handler.error_fired);
   }
 
-  fuchsia::ui::pointerinjector::DevicePtr injector2;
+  DeviceEventHandler event_handler2;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector2;
   {
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector2.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector2.Bind(std::move(client_end), dispatcher(), &event_handler2);
 
-    fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-    registry_.Register(std::move(config), injector2.NewRequest(),
-                       [&register_callback_fired] { register_callback_fired = true; });
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    registry_client_->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
     RunLoopUntilIdle();
     EXPECT_TRUE(register_callback_fired);
-    EXPECT_FALSE(error_callback_fired);
+    EXPECT_FALSE(event_handler2.error_fired);
   }
 }
 
@@ -566,21 +553,30 @@ TEST_P(PointerinjectorRegistryTestP,
       /*inject_mouse_hit_tested*/
       [&hit_tested_mouse_used](auto...) { hit_tested_mouse_used = true; },
       /*cancel_mouse_stream=*/[](auto...) {});
+  auto [reg_client_end, reg_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointerinjector::Registry>::Create();
+  registry.Bind(std::move(reg_server_end));
+  fidl::Client registry_client(std::move(reg_client_end), dispatcher());
+
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
-  fuchsia::ui::pointerinjector::DevicePtr injector;
+  DeviceEventHandler event_handler;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
   bool register_callback_fired = false;
-  bool error_callback_fired = false;
-  injector.set_error_handler(
-      [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
-  fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-  config.set_device_type(DeviceType::TOUCH);
-  config.set_dispatch_policy(DispatchPolicy::EXCLUSIVE_TARGET);
-  registry.Register(std::move(config), injector.NewRequest(),
-                    [&register_callback_fired] { register_callback_fired = true; });
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  injector.Bind(std::move(client_end), dispatcher(), &event_handler);
+  fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+  config.device_type(DeviceType::kTouch);
+  config.dispatch_policy(DispatchPolicy::kExclusiveTarget);
+  registry_client->Register({std::move(config), std::move(server_end)})
+      .Then([&register_callback_fired](auto& result) {
+        if (result.is_ok()) {
+          register_callback_fired = true;
+        }
+      });
   RunLoopUntilIdle();
   EXPECT_TRUE(register_callback_fired);
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_fired);
 
   Inject(injector, EventsTemplate(), [] {});
   RunLoopUntilIdle();
@@ -605,21 +601,30 @@ TEST_P(PointerinjectorRegistryTestP,
       /*inject_mouse_hit_tested*/
       [&hit_tested_mouse_used](auto...) { hit_tested_mouse_used = true; },
       /*cancel_mouse_stream=*/[](auto...) {});
+  auto [reg_client_end, reg_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointerinjector::Registry>::Create();
+  registry.Bind(std::move(reg_server_end));
+  fidl::Client registry_client(std::move(reg_client_end), dispatcher());
+
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
-  fuchsia::ui::pointerinjector::DevicePtr injector;
+  DeviceEventHandler event_handler;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
   bool register_callback_fired = false;
-  bool error_callback_fired = false;
-  injector.set_error_handler(
-      [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
-  fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-  config.set_device_type(DeviceType::TOUCH);
-  config.set_dispatch_policy(DispatchPolicy::TOP_HIT_AND_ANCESTORS_IN_TARGET);
-  registry.Register(std::move(config), injector.NewRequest(),
-                    [&register_callback_fired] { register_callback_fired = true; });
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  injector.Bind(std::move(client_end), dispatcher(), &event_handler);
+  fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+  config.device_type(DeviceType::kTouch);
+  config.dispatch_policy(DispatchPolicy::kTopHitAndAncestorsInTarget);
+  registry_client->Register({std::move(config), std::move(server_end)})
+      .Then([&register_callback_fired](auto& result) {
+        if (result.is_ok()) {
+          register_callback_fired = true;
+        }
+      });
   RunLoopUntilIdle();
   EXPECT_TRUE(register_callback_fired);
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_fired);
 
   Inject(injector, EventsTemplate(), [] {});
   RunLoopUntilIdle();
@@ -637,22 +642,31 @@ TEST_F(PointerinjectorRegistryTest, MouseDevice_CanRegisterMouseWithoutButtons) 
       /*inject_mouse_exclusive*/ [](const auto&...) {},
       /*inject_mouse_hit_tested*/ [](const auto&...) {},
       /*cancel_mouse_stream=*/[](auto...) {});
+  auto [reg_client_end, reg_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointerinjector::Registry>::Create();
+  registry.Bind(std::move(reg_server_end));
+  fidl::Client registry_client(std::move(reg_client_end), dispatcher());
+
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
-  fuchsia::ui::pointerinjector::DevicePtr injector;
+  DeviceEventHandler event_handler;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
   bool register_callback_fired = false;
-  bool error_callback_fired = false;
-  injector.set_error_handler(
-      [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
-  fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-  config.set_device_type(DeviceType::MOUSE);
-  config.set_dispatch_policy(DispatchPolicy::EXCLUSIVE_TARGET);
-  config.clear_buttons();
-  registry.Register(std::move(config), injector.NewRequest(),
-                    [&register_callback_fired] { register_callback_fired = true; });
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  injector.Bind(std::move(client_end), dispatcher(), &event_handler);
+  fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+  config.device_type(DeviceType::kMouse);
+  config.dispatch_policy(DispatchPolicy::kExclusiveTarget);
+  config.buttons().reset();
+  registry_client->Register({std::move(config), std::move(server_end)})
+      .Then([&register_callback_fired](auto& result) {
+        if (result.is_ok()) {
+          register_callback_fired = true;
+        }
+      });
   RunLoopUntilIdle();
   EXPECT_TRUE(register_callback_fired);
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_fired);
 }
 
 TEST_P(PointerinjectorRegistryTestP,
@@ -670,22 +684,31 @@ TEST_P(PointerinjectorRegistryTestP,
       /*inject_mouse_hit_tested*/
       [&hit_tested_mouse_used](auto...) { hit_tested_mouse_used = true; },
       /*cancel_mouse_stream=*/[](auto...) {});
+  auto [reg_client_end, reg_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointerinjector::Registry>::Create();
+  registry.Bind(std::move(reg_server_end));
+  fidl::Client registry_client(std::move(reg_client_end), dispatcher());
+
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
-  fuchsia::ui::pointerinjector::DevicePtr injector;
+  DeviceEventHandler event_handler;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
   bool register_callback_fired = false;
-  bool error_callback_fired = false;
-  injector.set_error_handler(
-      [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
-  fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-  config.set_device_type(DeviceType::MOUSE);
-  config.set_dispatch_policy(DispatchPolicy::EXCLUSIVE_TARGET);
-  config.set_buttons({0});
-  registry.Register(std::move(config), injector.NewRequest(),
-                    [&register_callback_fired] { register_callback_fired = true; });
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  injector.Bind(std::move(client_end), dispatcher(), &event_handler);
+  fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+  config.device_type(DeviceType::kMouse);
+  config.dispatch_policy(DispatchPolicy::kExclusiveTarget);
+  config.buttons(std::vector<uint8_t>{0});
+  registry_client->Register({std::move(config), std::move(server_end)})
+      .Then([&register_callback_fired](auto& result) {
+        if (result.is_ok()) {
+          register_callback_fired = true;
+        }
+      });
   RunLoopUntilIdle();
   EXPECT_TRUE(register_callback_fired);
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_fired);
 
   Inject(injector, EventsTemplate(), [] {});
   RunLoopUntilIdle();
@@ -710,22 +733,31 @@ TEST_P(PointerinjectorRegistryTestP,
       /*inject_mouse_hit_tested*/
       [&hit_tested_mouse_used](auto...) { hit_tested_mouse_used = true; },
       /*cancel_mouse_stream=*/[](auto...) {});
+  auto [reg_client_end, reg_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointerinjector::Registry>::Create();
+  registry.Bind(std::move(reg_server_end));
+  fidl::Client registry_client(std::move(reg_client_end), dispatcher());
+
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
-  fuchsia::ui::pointerinjector::DevicePtr injector;
+  DeviceEventHandler event_handler;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
   bool register_callback_fired = false;
-  bool error_callback_fired = false;
-  injector.set_error_handler(
-      [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
-  fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-  config.set_device_type(DeviceType::MOUSE);
-  config.set_dispatch_policy(DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET);
-  config.set_buttons({0});
-  registry.Register(std::move(config), injector.NewRequest(),
-                    [&register_callback_fired] { register_callback_fired = true; });
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  injector.Bind(std::move(client_end), dispatcher(), &event_handler);
+  fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+  config.device_type(DeviceType::kMouse);
+  config.dispatch_policy(DispatchPolicy::kMouseHoverAndLatchInTarget);
+  config.buttons(std::vector<uint8_t>{0});
+  registry_client->Register({std::move(config), std::move(server_end)})
+      .Then([&register_callback_fired](auto& result) {
+        if (result.is_ok()) {
+          register_callback_fired = true;
+        }
+      });
   RunLoopUntilIdle();
   EXPECT_TRUE(register_callback_fired);
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_fired);
 
   Inject(injector, EventsTemplate(), [] {});
   RunLoopUntilIdle();
@@ -746,30 +778,39 @@ TEST_P(PointerinjectorRegistryTestP,
       /*inject_mouse_hit_tested*/ [](auto...) {},
       /*cancel_mouse_stream=*/
       [&cancel_mouse_stream_count](auto...) { cancel_mouse_stream_count++; });
+  auto [reg_client_end, reg_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointerinjector::Registry>::Create();
+  registry.Bind(std::move(reg_server_end));
+  fidl::Client registry_client(std::move(reg_client_end), dispatcher());
+
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
   {
-    fuchsia::ui::pointerinjector::DevicePtr injector;
+    DeviceEventHandler event_handler;
+    fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
     bool register_callback_fired = false;
-    bool error_callback_fired = false;
-    injector.set_error_handler(
-        [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
-    fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-    config.set_device_type(DeviceType::MOUSE);
-    config.set_dispatch_policy(DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET);
-    config.set_buttons({0});
-    registry.Register(std::move(config), injector.NewRequest(),
-                      [&register_callback_fired] { register_callback_fired = true; });
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector.Bind(std::move(client_end), dispatcher(), &event_handler);
+    fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+    config.device_type(DeviceType::kMouse);
+    config.dispatch_policy(DispatchPolicy::kMouseHoverAndLatchInTarget);
+    config.buttons(std::vector<uint8_t>{0});
+    registry_client->Register({std::move(config), std::move(server_end)})
+        .Then([&register_callback_fired](auto& result) {
+          if (result.is_ok()) {
+            register_callback_fired = true;
+          }
+        });
     RunLoopUntilIdle();
     EXPECT_TRUE(register_callback_fired);
-    EXPECT_FALSE(error_callback_fired);
+    EXPECT_FALSE(event_handler.error_fired);
     EXPECT_EQ(cancel_mouse_stream_count, 0u);
 
     // Begin two streams.
     Inject(injector, EventsTemplate(), [] {});
     {
       auto events = EventsTemplate();
-      events.back().mutable_data()->pointer_sample().set_pointer_id(2);
+      events.back().data()->pointer_sample()->pointer_id(2);
       Inject(injector, std::move(events), [] {});
     }
     RunLoopUntilIdle();
@@ -783,7 +824,7 @@ TEST_P(PointerinjectorRegistryTestP,
 
 TEST_P(PointerinjectorRegistryTestP,
        MouseInjector_CancelEvent_ShouldTriggerCancelMouseStreamCallback) {
-  uint32_t cancel_mouse_stream_count = false;
+  uint32_t cancel_mouse_stream_count = 0;
   scenic_impl::input::PointerinjectorRegistry registry(
       dispatcher(), snapshot_holder_,
       /*inject_touch_exclusive*/ [](auto...) {},
@@ -792,22 +833,31 @@ TEST_P(PointerinjectorRegistryTestP,
       /*inject_mouse_hit_tested*/ [](auto...) {},
       /*cancel_mouse_stream=*/
       [&cancel_mouse_stream_count](auto...) { cancel_mouse_stream_count++; });
+  auto [reg_client_end, reg_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointerinjector::Registry>::Create();
+  registry.Bind(std::move(reg_server_end));
+  fidl::Client registry_client(std::move(reg_client_end), dispatcher());
+
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
-  fuchsia::ui::pointerinjector::DevicePtr injector;
+  DeviceEventHandler event_handler;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
   bool register_callback_fired = false;
-  bool error_callback_fired = false;
-  injector.set_error_handler(
-      [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
-  fuchsia::ui::pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
-  config.set_device_type(DeviceType::MOUSE);
-  config.set_dispatch_policy(DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET);
-  config.set_buttons({0});
-  registry.Register(std::move(config), injector.NewRequest(),
-                    [&register_callback_fired] { register_callback_fired = true; });
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  injector.Bind(std::move(client_end), dispatcher(), &event_handler);
+  fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
+  config.device_type(DeviceType::kMouse);
+  config.dispatch_policy(DispatchPolicy::kMouseHoverAndLatchInTarget);
+  config.buttons(std::vector<uint8_t>{0});
+  registry_client->Register({std::move(config), std::move(server_end)})
+      .Then([&register_callback_fired](auto& result) {
+        if (result.is_ok()) {
+          register_callback_fired = true;
+        }
+      });
   RunLoopUntilIdle();
   EXPECT_TRUE(register_callback_fired);
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_fired);
   EXPECT_EQ(cancel_mouse_stream_count, 0u);
 
   // Begin a stream.
@@ -817,8 +867,7 @@ TEST_P(PointerinjectorRegistryTestP,
 
   {
     auto events = EventsTemplate();
-    events.back().mutable_data()->pointer_sample().set_phase(
-        fuchsia::ui::pointerinjector::EventPhase::CANCEL);
+    events.back().data()->pointer_sample()->phase(fuchsia_ui_pointerinjector::EventPhase::kCancel);
     Inject(injector, std::move(events), [] {});
     RunLoopUntilIdle();
     EXPECT_EQ(cancel_mouse_stream_count, 1u);
@@ -831,8 +880,7 @@ TEST_P(PointerinjectorRegistryTestP,
 
   {
     auto events = EventsTemplate();
-    events.back().mutable_data()->pointer_sample().set_phase(
-        fuchsia::ui::pointerinjector::EventPhase::REMOVE);
+    events.back().data()->pointer_sample()->phase(fuchsia_ui_pointerinjector::EventPhase::kRemove);
     Inject(injector, std::move(events), [] {});
     RunLoopUntilIdle();
     EXPECT_EQ(cancel_mouse_stream_count, 2u);
@@ -853,34 +901,30 @@ static std::vector<ViewportPair> BadViewportTestData() {
   }
   {  // 1: No viewport_to_context_transform.
     ViewportPair pair;
-    pair.first = {{/*min*/ {0, 0}, /*max*/ {10, 10}}};
+    pair.first = {{{/*min*/ 0, 0}, /*max*/ {10, 10}}};
     bad_viewports.emplace_back(pair);
   }
   {  // 2: Malformed extents: Min bigger than max.
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
-    pair.first = {{/*min*/ {-100, 100}, /*max*/ {100, -100}}};
+    pair.first = {{{/*min*/ -100, 100}, /*max*/ {100, -100}}};
     pair.second = kIdentityMatrix;
     bad_viewports.emplace_back(pair);
   }
   {  // 3: Malformed extents: Min equal to max.
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
-    pair.first = {{/*min*/ {0, -100}, /*max*/ {0, 100}}};
+    pair.first = {{{/*min*/ 0, -100}, /*max*/ {0, 100}}};
     pair.second = kIdentityMatrix;
     bad_viewports.emplace_back(pair);
   }
   {  // 4: Malformed extents: Contains NaN
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
-    pair.first = {{/*min*/ {0, 0}, /*max*/ {100, std::numeric_limits<double>::quiet_NaN()}}};
+    pair.first = {{{/*min*/ 0, 0}, /*max*/ {100, std::numeric_limits<float>::quiet_NaN()}}};
     pair.second = kIdentityMatrix;
     bad_viewports.emplace_back(pair);
   }
   {  // 5: Malformed extents: Contains Inf
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
-    pair.first = {{/*min*/ {0, 0}, /*max*/ {100, std::numeric_limits<double>::infinity()}}};
+    pair.first = {{{/*min*/ 0, 0}, /*max*/ {100, std::numeric_limits<float>::infinity()}}};
     pair.second = kIdentityMatrix;
     bad_viewports.emplace_back(pair);
   }
@@ -892,37 +936,34 @@ static std::vector<ViewportPair> BadViewportTestData() {
       0, 0, 1,
     };
     // clang-format on
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
-    pair.first = {{{/*min*/ {0, 0}, /*max*/ {10, 10}}}};
+    pair.first = {{{/*min*/ 0, 0}, /*max*/ {10, 10}}};
     pair.second = non_invertible_matrix;
     bad_viewports.emplace_back(pair);
   }
   {  // 7: Malformed transform: Contains NaN
     // clang-format off
     const std::array<float, 9> nan_matrix = {
-      1, std::numeric_limits<double>::quiet_NaN(), 0,
+      1, std::numeric_limits<float>::quiet_NaN(), 0,
       0, 1, 0,
       0, 0, 1,
     };
     // clang-format on
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
-    pair.first = {{{/*min*/ {0, 0}, /*max*/ {10, 10}}}};
+    pair.first = {{{/*min*/ 0, 0}, /*max*/ {10, 10}}};
     pair.second = nan_matrix;
     bad_viewports.emplace_back(pair);
   }
   {  // 8: Malformed transform: Contains Inf
     // clang-format off
     const std::array<float, 9> inf_matrix = {
-      1, std::numeric_limits<double>::infinity(), 0,
+      1, std::numeric_limits<float>::infinity(), 0,
       0, 1, 0,
       0, 0, 1,
     };
     // clang-format on
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
-    pair.first = {{{/*min*/ {0, 0}, /*max*/ {10, 10}}}};
+    pair.first = {{{/*min*/ 0, 0}, /*max*/ {10, 10}}};
     pair.second = inf_matrix;
     bad_viewports.emplace_back(pair);
   }
@@ -941,31 +982,34 @@ INSTANTIATE_TEST_SUITE_P(RegisterAttemptWithBadViewport_ShouldFail,
 TEST_P(ParameterizedPointerinjectorRegistryTest, RegisterAttemptWithBadViewport_ShouldFail) {
   const auto [parent, child] = SetupSceneWithParentAndChildViews();
 
-  fuchsia::ui::pointerinjector::DevicePtr injector;
+  DeviceEventHandler event_handler;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector;
   bool register_callback_fired = false;
-  bool error_callback_fired = false;
-  injector.set_error_handler(
-      [&error_callback_fired](zx_status_t status) { error_callback_fired = true; });
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  injector.Bind(std::move(client_end), dispatcher(), &event_handler);
 
-  fuchsia::ui::pointerinjector::Config config =
-      ConfigTemplate(std::move(parent.view_ref), std::move(child.view_ref));
+  fuchsia_ui_pointerinjector::Config config = ConfigTemplate(parent.view_ref, child.view_ref);
   {
     ViewportPair params = GetParam();
-    fuchsia::ui::pointerinjector::Viewport viewport;
+    fuchsia_ui_pointerinjector::Viewport viewport;
     if (params.first)
-      viewport.set_extents(params.first.value());
+      viewport.extents(params.first.value());
     if (params.second)
-      viewport.set_viewport_to_context_transform(params.second.value());
-    config.set_viewport(std::move(viewport));
+      viewport.viewport_to_context_transform(params.second.value());
+    config.viewport(std::move(viewport));
   }
 
-  registry_.Register(std::move(config), injector.NewRequest(),
-                     [&register_callback_fired] { register_callback_fired = true; });
+  registry_client_->Register({std::move(config), std::move(server_end)})
+      .Then([&register_callback_fired](auto& result) {
+        if (result.is_ok()) {
+          register_callback_fired = true;
+        }
+      });
 
   RunLoopUntilIdle();
 
-  EXPECT_FALSE(register_callback_fired);
-  EXPECT_TRUE(error_callback_fired);
+  EXPECT_TRUE(register_callback_fired);
+  EXPECT_TRUE(event_handler.error_fired);
 }
 
 }  // namespace input::test

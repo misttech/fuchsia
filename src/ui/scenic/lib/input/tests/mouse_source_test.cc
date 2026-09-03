@@ -209,7 +209,7 @@ TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
     event.device_id = kDeviceId1;
     event.buttons = {.identifiers = {12, 34, 56}};
     event.scroll_v = {
-        .unit = fuchsia::input::UnitType::DEGREES,
+        .unit = fuchsia_input::wire::UnitType::kDegrees,
         .exponent = 900,
         .range = {-98, 76},
     };
@@ -225,7 +225,7 @@ TEST_F(MouseSourceTest, MouseDeviceInfo_ShouldBeSent_OncePerDevice) {
     InternalMouseEvent event = IMEventTemplate();
     event.device_id = kDeviceId2;
     event.scroll_h = {
-        .unit = fuchsia::input::UnitType::METERS,
+        .unit = fuchsia_input::wire::UnitType::kMeters,
         .exponent = -111,
         .range = {100, 200},
     };
