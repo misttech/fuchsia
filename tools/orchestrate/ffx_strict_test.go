@@ -1112,6 +1112,79 @@ exit 0
 	}
 }
 
+func TestFFXStrictClient_Symbolize(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+cat - # Read stdin and just copy it to stdout to simulate some processing if we wanted
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	inBuf := strings.NewReader("input-data")
+	var outBuf strings.Builder
+
+	err = client.Symbolize(ctx, inBuf, &outBuf)
+	if err != nil {
+		t.Fatalf("Symbolize failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "debug symbolize") {
+		t.Errorf("Expected 'debug symbolize' in args, got: %s", args)
+	}
+	if outBuf.String() != "input-data" {
+		t.Errorf("Expected output to be 'input-data', got %q", outBuf.String())
+	}
+}
+
+func TestFFXStrictClient_ProductDownload(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	err = client.ProductDownload(ctx, "transfer.url", "/out/dir", "/auth/path")
+	if err != nil {
+		t.Fatalf("ProductDownload failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "product download transfer.url /out/dir --auth /auth/path") {
+		t.Errorf("Expected 'product download transfer.url /out/dir --auth /auth/path' in args, got: %s", args)
+	}
+}
+
 func TestFFXStrictClient_FfxConfigOverrides(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -587,6 +588,28 @@ func (c *FFXStrictClient) TargetRepositoryRegister(ctx context.Context, repoName
 	inst := ffxutil.FFXWithTarget(c.ffxInst, target)
 	if err := inst.RunWithTarget(ctx, args...); err != nil {
 		return fmt.Errorf("target repository register failed: %w", err)
+	}
+	return nil
+}
+
+func (c *FFXStrictClient) Symbolize(ctx context.Context, input io.Reader, output io.Writer) error {
+	cmd := c.ffxInst.Command("debug", "symbolize")
+	cmd.Stdin = input
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := c.ffxInst.RunCommand(ctx, cmd); err != nil {
+		return fmt.Errorf("symbolize failed: %w", err)
+	}
+	return nil
+}
+
+func (c *FFXStrictClient) ProductDownload(ctx context.Context, transferURL, outDir, authPath string) error {
+	args := []string{"product", "download", transferURL, outDir}
+	if authPath != "" {
+		args = append(args, "--auth", authPath)
+	}
+	if err := c.ffxInst.Run(ctx, args...); err != nil {
+		return fmt.Errorf("product download failed: %w", err)
 	}
 	return nil
 }
