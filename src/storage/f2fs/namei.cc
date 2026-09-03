@@ -173,8 +173,15 @@ zx_status_t Dir::Rmdir(Dir *vnode, std::string_view name) {
 #endif
 
 zx::result<bool> Dir::IsSubdir(Dir *possible_dir) {
+  const nid_t root_ino = GetSuperblockInfo().GetRootIno();
+  if (Ino() == root_ino) {
+    return zx::ok(true);
+  }
+
   VnodeF2fs *vnode = possible_dir;
-  while (vnode->Ino() != GetSuperblockInfo().GetRootIno()) {
+  fbl::RefPtr<VnodeF2fs> current;
+
+  while (vnode->Ino() != root_ino) {
     if (vnode->Ino() == Ino()) {
       return zx::ok(true);
     }
@@ -183,7 +190,8 @@ zx::result<bool> Dir::IsSubdir(Dir *possible_dir) {
     if (parent.is_error()) {
       return parent.take_error();
     }
-    vnode = (*parent).get();
+    current = std::move(*parent);
+    vnode = current.get();
   }
   return zx::ok(false);
 }
