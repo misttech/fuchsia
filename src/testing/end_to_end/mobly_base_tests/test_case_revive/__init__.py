@@ -4,25 +4,17 @@
 
 import dataclasses
 import enum
-import importlib
 import inspect
 import logging
 from collections.abc import Callable
 from typing import Awaitable, TypeVar
 
 from fuchsia_base_test import FuchsiaBaseTest
-from honeydew.auxiliary_devices.power_switch import power_switch
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 F = TypeVar("F", bound=Callable[..., object])
-
-
-_DMC_MODULE: str = (
-    "honeydew.auxiliary_devices.power_switch.power_switch_using_dmc"
-)
-_DMC_CLASS: str = "PowerSwitchUsingDmc"
 
 
 class FuchsiaDeviceOperation(enum.StrEnum):
@@ -201,30 +193,7 @@ class TestCaseRevive(FuchsiaBaseTest):
                 FuchsiaDeviceOperation.HARD_REBOOT,
                 FuchsiaDeviceOperation.POWER_CYCLE,
             ]:
-                _LOGGER.debug(
-                    "[TestCaseRevive] - Importing %s.%s module",
-                    _DMC_MODULE,
-                    _DMC_CLASS,
-                )
-                power_switch_class = getattr(
-                    importlib.import_module(_DMC_MODULE), _DMC_CLASS
-                )
-
-                _LOGGER.debug(
-                    "[TestCaseRevive] - Instantiating %s.%s module",
-                    _DMC_MODULE,
-                    _DMC_CLASS,
-                )
-                self._power_switch: power_switch.PowerSwitch = (
-                    power_switch_class(
-                        device_name=fuchsia_device.device_name,
-                        ffx=fuchsia_device.ffx,
-                    )
-                )
-
-                await fuchsia_device.power_cycle(
-                    power_switch=self._power_switch, outlet=None
-                )
+                await fuchsia_device.power_cycle()
             elif (
                 fuchsia_device_operation
                 == FuchsiaDeviceOperation.IDLE_SUSPEND_BUTTON_PRESS_RESUME

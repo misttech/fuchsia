@@ -1322,6 +1322,19 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         )
         mock_sl4f_health_check.assert_called_once_with(self.fd_sl4f_obj)
 
+    def test_set_power_switch(self) -> None:
+        """Testcase for FuchsiaDevice.set_power_switch()"""
+        power_switch = mock.MagicMock(spec=power_switch_interface.PowerSwitch)
+        self.fd_fc_obj.set_power_switch(power_switch=power_switch, outlet=5)
+        self.assertEqual(self.fd_fc_obj._power_switch, power_switch)
+        self.assertEqual(self.fd_fc_obj._power_switch_outlet, 5)
+
+    async def test_power_cycle_not_supported_error(self) -> None:
+        """Testcase for FuchsiaDevice.power_cycle() raising NotSupportedError."""
+        self.fd_fc_obj._power_switch = None
+        with self.assertRaises(errors.NotSupportedError):
+            await self.fd_fc_obj.power_cycle()
+
     @mock.patch.object(
         fuchsia_device.FuchsiaDevice,
         "on_device_boot",
@@ -1351,9 +1364,12 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Testcase for FuchsiaDevice.power_cycle()"""
         power_switch = mock.MagicMock(spec=power_switch_interface.PowerSwitch)
-        await self.fd_fc_obj.power_cycle(power_switch=power_switch, outlet=5)
+        self.fd_fc_obj.set_power_switch(power_switch=power_switch, outlet=5)
+        await self.fd_fc_obj.power_cycle()
 
         self.assertEqual(mock_log_message_to_device.call_count, 2)
+        power_switch.power_off.assert_called_with(5)
+        power_switch.power_on.assert_called_with(5)
         mock_wait_for_offline.assert_called()
         mock_wait_for_online.assert_called()
         mock_on_device_boot.assert_called()

@@ -34,7 +34,6 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
 )
-from honeydew.auxiliary_devices.power_switch import power_switch
 from mobly import signals, test_runner
 from openwrt_access_point import AddrType as OpenWrtAddrType
 from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
@@ -185,8 +184,6 @@ class WlanRebootTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     async def setup_class(self) -> None:
         await super().setup_class()
         self.log = logging.getLogger()
-        self._power_switch: power_switch.PowerSwitch | None = None
-        self._outlet: int | None = None
         await self.dut.wlan_policy.set_country_code(
             KNOWN_COUNTRY_CODES["UNITED_STATES_OF_AMERICA"]
         )
@@ -460,11 +457,7 @@ class WlanRebootTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             if reboot_type == RebootType.SOFT:
                 await self.dut.reboot()
             elif reboot_type == RebootType.HARD:
-                power_switch, outlet = self._lookup_power_switch(self.dut)
-                await self.dut.power_cycle(
-                    power_switch=power_switch,
-                    outlet=outlet,
-                )
+                await self.dut.power_cycle()
 
         # AP reboots
         elif reboot_device == DeviceType.AP:

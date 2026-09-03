@@ -188,6 +188,10 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
         )
         self.dut = self.fuchsia_devices[0]
 
+        for device in self.fuchsia_devices:
+            switch, outlet = self._lookup_power_switch(device)
+            if switch is not None:
+                device.set_power_switch(power_switch=switch, outlet=outlet)
         if (
             self.tracing_on == TracingOn.TEARDOWN_CLASS
             or self.tracing_on == TracingOn.TEARDOWN_CLASS_ON_FAIL
@@ -463,17 +467,16 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
             fx_device: FuchsiaDevice object
         """
         try:
-            switch, outlet = self._lookup_power_switch(fx_device)
-            await fx_device.power_cycle(power_switch=switch, outlet=outlet)
-        except power_switch_using_dmc.PowerSwitchDmcError as err:
+            await fx_device.power_cycle()
+        except errors.NotSupportedError as err:
             _LOGGER.warning(
-                "Unable to power cycle %s as test does not have access to DMC.",
+                "Unable to power cycle %s as power switch is not configured.",
                 fx_device.device_name,
             )
             raise errors.FatalDeviceError(
                 f"{fx_device.device_name} is unhealthy and unable to recover it"
             ) from err
-        except power_switch.PowerSwitchError as err:
+        except (power_switch.PowerSwitchError, errors.HoneydewError) as err:
             _LOGGER.warning(
                 "Power cycling %s failed with error '%s'.",
                 fx_device.device_name,
@@ -485,7 +488,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
 
     def _lookup_power_switch(
         self, fx_device: fuchsia_device.FuchsiaDevice
-    ) -> tuple[power_switch.PowerSwitch, int | None]:
+    ) -> tuple[power_switch.PowerSwitch | None, int | None]:
         device_config: dict[str, object] = self._get_device_config(
             controller_type="FuchsiaDevice",
             identifier_key="name",
@@ -509,7 +512,7 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 power_switch_class(ffx=fx_device.ffx, **power_switch_hw),
                 power_switch_outlet,
             )
-        else:
+        elif power_switch_using_dmc.DMC_PATH_KEY in os.environ:
             return (
                 power_switch_using_dmc.PowerSwitchUsingDmc(
                     device_name=fx_device.device_name,
@@ -517,6 +520,8 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 ),
                 None,
             )
+        else:
+            return (None, None)
 
     def _lookup_usb_power_hub(
         self, fx_device: fuchsia_device.FuchsiaDevice

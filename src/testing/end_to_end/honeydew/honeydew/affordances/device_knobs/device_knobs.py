@@ -25,9 +25,6 @@ from honeydew.affordances.tracing import tracing
 from honeydew.affordances.ui.screenshot import screenshot
 from honeydew.affordances.ui.user_input import user_input
 from honeydew.affordances.virtual_audio import audio
-from honeydew.auxiliary_devices.power_switch import (
-    power_switch as power_switch_interface,
-)
 from honeydew.transports.fastboot import fastboot as fastboot_transport
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.fuchsia_controller import (
@@ -394,17 +391,13 @@ class DeviceKnobs(abc.ABC):
         """
 
     @abc.abstractmethod
-    async def power_cycle(
-        self,
-        power_switch: power_switch_interface.PowerSwitch,
-        outlet: int | None,
-    ) -> None:
+    async def power_cycle(self) -> None:
         """Power cycle (power off, wait for delay, power on) the device.
 
-        Args:
-            power_switch: Implementation of PowerSwitch interface.
-            outlet (int): If required by power switch hardware, outlet on
-                power switch hardware where this fuchsia device is connected.
+        Requires a power switch to be configured for the device.
+
+        Raises:
+            NotSupportedError: If power switch is not configured.
         """
 
     @abc.abstractmethod

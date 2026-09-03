@@ -230,6 +230,9 @@ class FuchsiaDevice(
         self._config: dict[str, Any] | None = config
         self._created_context = False
 
+        self._power_switch: power_switch_interface.PowerSwitch | None = None
+        self._power_switch_outlet: int | None = None
+
         self._usb_power_hub: usb_power_hub_interface.UsbPowerHub | None = None
         self._usb_power_hub_port: int | None = None
 
@@ -969,22 +972,37 @@ class FuchsiaDevice(
             if inspect.isawaitable(res):
                 await res
 
-    async def power_cycle(
+    def set_power_switch(
         self,
         power_switch: power_switch_interface.PowerSwitch,
         outlet: int | None = None,
     ) -> None:
-        """Power cycle (power off, wait for delay, power on) the device.
+        """Set power switch for device.
 
         Args:
             power_switch: Implementation of PowerSwitch interface.
-            outlet (int): If required by power switch hardware, outlet on
+            outlet (int | None): If required by power switch hardware, outlet on
                 power switch hardware where this fuchsia device is connected.
+        """
+        self._power_switch = power_switch
+        self._power_switch_outlet = outlet
+
+    async def power_cycle(self) -> None:
+        """Power cycle (power off, wait for delay, power on) the device.
+
+        Requires power switch to be set using `set_power_switch`.
 
         Raises:
+            NotSupportedError: If power switch is not set.
             FuchsiaControllerError: On communications failure.
             Sl4fError: On communications failure.
         """
+        if self._power_switch is None:
+            raise errors.NotSupportedError(
+                f"Cannot power cycle '{self.device_name}': Power switch is not configured. "
+                "Either call `set_power_switch()` or ensure power switch details are provided in the testbed config."
+            )
+
         _LOGGER.info("Power cycling %s...", self.device_name)
 
         try:
@@ -999,11 +1017,11 @@ class FuchsiaDevice(
             pass
 
         _LOGGER.info("Powering off %s...", self.device_name)
-        power_switch.power_off(outlet)
+        self._power_switch.power_off(self._power_switch_outlet)
         await asyncio.to_thread(self.wait_for_offline)
 
         _LOGGER.info("Powering on %s...", self.device_name)
-        power_switch.power_on(outlet)
+        self._power_switch.power_on(self._power_switch_outlet)
         await self.wait_for_online()
 
         await self.on_device_boot()
