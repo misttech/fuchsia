@@ -33,6 +33,7 @@
             protocol: [
                 "fuchsia.boot.ReadOnlyLog",
                 "fuchsia.boot.WriteOnlyLog",
+                "fuchsia.driver.token.NodeBusTopology",
                 "fuchsia.kernel.HypervisorResource",
                 "fuchsia.kernel.MmioResource",
                 "fuchsia.kernel.VmexResource",

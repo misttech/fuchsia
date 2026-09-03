@@ -39,7 +39,10 @@
             to: "#testing",
         },
         {
-            protocol: "fuchsia.driver.development.Manager",
+            protocol: [
+                "fuchsia.driver.development.Manager",
+                "fuchsia.driver.token.NodeBusTopology",
+            ],
             from: "#driver_manager",
             to: "#testing",
         },

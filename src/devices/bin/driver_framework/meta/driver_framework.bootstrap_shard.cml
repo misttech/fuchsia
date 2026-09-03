@@ -525,6 +525,7 @@
                 "fuchsia.driver.crash.CrashIntrospect",
                 "fuchsia.driver.development.Manager",
                 "fuchsia.driver.token.Debug",
+                "fuchsia.driver.token.NodeBusTopology",
                 "fuchsia.firmware.crash.Watcher",
             ],
             from: "#driver_manager",

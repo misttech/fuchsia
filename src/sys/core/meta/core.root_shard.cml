@@ -228,6 +228,7 @@
                 "fuchsia.driver.development.Manager",
                 "fuchsia.driver.registrar.DriverRegistrar",
                 "fuchsia.driver.token.Debug",
+                "fuchsia.driver.token.NodeBusTopology",
                 "fuchsia.firmware.crash.Watcher",
                 "fuchsia.fshost.Admin",
                 "fuchsia.fxfs.BlobCreator",
