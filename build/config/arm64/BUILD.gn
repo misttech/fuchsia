@@ -7,6 +7,7 @@ import("//build/config/compiler_config.gni")
 # Platform baseline.
 # This tracks the minimum hardware requirements for Fuchsia on AArch64.
 compiler_config("arm64") {
+  compiler_configs = [ ":fix-cortex-a53-835769" ]
   cflags = [ "-mtune=generic" ]
 
   if (toolchain_environment != "kernel") {
@@ -39,7 +40,10 @@ compiler_config("cortex-a53") {
 
   # The CPU doesn't support the new atomics, so don't pay conditionalization
   # overhead at runtime.
-  configs = [ ":no-outline-atomics" ]
+  configs = [
+    ":no-outline-atomics",
+    ":fix-cortex-a53-835769",
+  ]
 }
 
 # The compiler default for aarch64 targets uses outcalls to compiler-rt
@@ -48,4 +52,9 @@ compiler_config("cortex-a53") {
 compiler_config("no-outline-atomics") {
   cflags = [ "-mno-outline-atomics" ]
   rust_target_features = [ "-outline-atomics" ]
+}
+
+compiler_config("fix-cortex-a53-835769") {
+  cflags = [ "-mfix-cortex-a53-835769" ]
+  rust_target_features = [ "+fix-cortex-a53-835769" ]
 }
