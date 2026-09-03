@@ -8,8 +8,13 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 import("//build/testing/cc_test_executable.gni")
 
+fuchsia_driver_dml("uart-dml") {
+  dml = "meta/uart.dml"
+  driver_name = "uart"
+}
+
 driver_bind_rules("bt_transport_uart_bind") {
-  rules = "meta/uart.bind"
+  dml_label = ":uart-dml"
   bind_output = "bt-transport-uart.bindbc"
   tests = "meta/bind_tests.json"
   deps = [

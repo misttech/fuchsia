@@ -18,8 +18,13 @@ group("tests") {
   ]
 }
 
+fuchsia_driver_dml("gvnic-dml") {
+  dml = "meta/gvnic.dml"
+  driver_name = "gvnic"
+}
+
 driver_bind_rules("gvnic_bind") {
-  rules = "meta/gvnic.bind"
+  dml_label = ":gvnic-dml"
   bind_output = "gvnic.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
@@ -63,10 +68,10 @@ fuchsia_cc_driver("gvnic-driver") {
 }
 
 fuchsia_driver_component("gvnic") {
+  dml_label = ":gvnic-dml"
   component_name = "gvnic"
   deps = [ ":gvnic-driver" ]
   info = "meta/gvnic-info.json"
-  manifest = "meta/gvnic.cml"
 }
 
 fuchsia_driver_package("gvnic-package") {

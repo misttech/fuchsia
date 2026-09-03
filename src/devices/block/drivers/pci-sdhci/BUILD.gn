@@ -5,8 +5,14 @@
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("pci-sdhci-dml") {
+  dml = "meta/pci-sdhci.dml"
+  driver_name = "pci-sdhci"
+}
+
 driver_bind_rules("pci-sdhci-bind") {
-  rules = "meta/pci-sdhci.bind"
+  bind_output = "pci-sdhci.bindbc"
+  dml_label = ":pci-sdhci-dml"
   tests = "meta/pci-sdhci-bind-test.json"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -34,13 +40,13 @@ fuchsia_cc_driver("pci-sdhci-driver") {
 }
 
 fuchsia_driver_component("pci-sdhci") {
+  dml_label = ":pci-sdhci-dml"
   component_name = "pci-sdhci"
   deps = [
     ":pci-sdhci-bind",
     ":pci-sdhci-driver",
   ]
   info = "meta/pci-sdhci-info.json"
-  manifest = "meta/pci-sdhci.cml"
 }
 
 fuchsia_driver_package("package") {

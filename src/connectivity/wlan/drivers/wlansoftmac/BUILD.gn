@@ -11,11 +11,19 @@ config("wlansoftmac_config") {
   include_dirs = [ "." ]
 }
 
+fuchsia_driver_dml("wlansoftmac-dml") {
+  dml = "meta/wlansoftmac.dml"
+  driver_name = "wlansoftmac"
+}
+
 driver_bind_rules("wlansoftmac-bind") {
-  rules = "meta/wlansoftmac.bind"
+  dml_label = ":wlansoftmac-dml"
   bind_output = "wlansoftmac.bindbc"
   tests = "meta/bind_tests.json"
-  deps = [ "//src/devices/bind/fuchsia" ]
+  deps = [
+    "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia.wlan",
+  ]
 }
 
 source_set("source_set") {
@@ -62,10 +70,10 @@ fuchsia_cc_driver("wlansoftmac_driver-driver") {
 }
 
 fuchsia_driver_component("wlansoftmac_driver") {
+  dml_label = ":wlansoftmac-dml"
   component_name = "wlansoftmac"
   deps = [ ":wlansoftmac_driver-driver" ]
   info = "meta/wlansoftmac.json"
-  manifest = "meta/wlansoftmac.cml"
 }
 
 fuchsia_driver_package("wlansoftmac") {

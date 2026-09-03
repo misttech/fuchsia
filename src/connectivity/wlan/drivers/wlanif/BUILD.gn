@@ -6,10 +6,18 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("wlanif-dml") {
+  dml = "meta/wlanif.dml"
+  driver_name = "wlanif"
+}
+
 driver_bind_rules("wlanif_bind") {
-  rules = "meta/wlanif.bind"
+  dml_label = ":wlanif-dml"
   bind_output = "wlanif.bindbc"
-  deps = [ "//src/devices/bind/fuchsia" ]
+  deps = [
+    "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia.wlan",
+  ]
 }
 
 fuchsia_rust_driver("wlanif_driver-driver") {
@@ -51,8 +59,8 @@ fuchsia_unittest_package("wlanif-test") {
 }
 
 fuchsia_driver_component("wlanif_driver") {
+  dml_label = ":wlanif-dml"
   component_name = "wlanif"
-  manifest = "meta/wlanif.cml"
   deps = [
     ":wlanif_bind",
     ":wlanif_driver-driver",

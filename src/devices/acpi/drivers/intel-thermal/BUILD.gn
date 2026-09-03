@@ -12,8 +12,13 @@ group("tests") {
   deps = [ ":intel-thermal-tests" ]
 }
 
+fuchsia_driver_dml("intel-thermal-dml") {
+  dml = "meta/intel-thermal.dml"
+  driver_name = "intel-thermal"
+}
+
 driver_bind_rules("bind") {
-  rules = "meta/intel-thermal.bind"
+  dml_label = ":intel-thermal-dml"
   bind_output = "intel-thermal.bindbc"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -41,10 +46,10 @@ fuchsia_cc_driver("driver") {
 }
 
 fuchsia_driver_component("component") {
+  dml_label = ":intel-thermal-dml"
   component_name = "intel-thermal"
   deps = [ ":driver" ]
   info = "meta/component-info.json"
-  manifest = "meta/intel-thermal.cml"
 }
 
 fuchsia_driver_package("intel-thermal") {

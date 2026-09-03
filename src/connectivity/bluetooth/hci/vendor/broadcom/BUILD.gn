@@ -13,8 +13,13 @@ import("//build_overrides/pigweed.gni")
 import("//tools/power_config/build/config.gni")
 import("$dir_pigweed/third_party/emboss/build_defs.gni")
 
+fuchsia_driver_dml("broadcom-dml") {
+  dml = "meta/broadcom.dml"
+  driver_name = "broadcom"
+}
+
 driver_bind_rules("bcm_hci_bind") {
-  rules = "meta/broadcom.bind"
+  dml_label = ":broadcom-dml"
   bind_output = "bt-hci-broadcom.bindbc"
   tests = "meta/bind_tests.json"
   deps = [ "//src/devices/bind/fuchsia" ]

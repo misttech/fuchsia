@@ -12,8 +12,13 @@ group("tests") {
   deps = [ ":acpi-battery-tests" ]
 }
 
+fuchsia_driver_dml("acpi-battery-dml") {
+  dml = "meta/acpi-battery.dml"
+  driver_name = "acpi-battery"
+}
+
 driver_bind_rules("bind") {
-  rules = "meta/acpi-battery.bind"
+  dml_label = ":acpi-battery-dml"
   bind_output = "acpi-battery.bindbc"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -43,10 +48,10 @@ fuchsia_cc_driver("driver") {
 }
 
 fuchsia_driver_component("component") {
+  dml_label = ":acpi-battery-dml"
   component_name = "acpi-battery"
   deps = [ ":driver" ]
   info = "meta/component-info.json"
-  manifest = "meta/acpi-battery.cml"
 }
 
 fuchsia_driver_package("acpi-battery") {

@@ -1,0 +1,68 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+{
+  name: "bt-hci-broadcom",
+  include: [
+    "driver_component/driver.shard.cml",
+  ],
+  program: {
+    colocate: "true",
+    default_dispatcher_opts: [
+      "allow_sync_calls",
+    ],
+    bind: {
+      service: "fuchsia.hardware.bluetooth.HciService",
+    },
+  },
+  capabilities: [
+    {
+      service: "fuchsia.hardware.power.PowerTokenService",
+    },
+  ],
+  use: [
+    {
+      config: "fuchsia.power.SuspendEnabled",
+      key: "enable_suspend",
+      type: "bool",
+      default: false,
+      availability: "optional",
+    },
+    {
+      service: "fuchsia.hardware.bluetooth.HciService",
+      name: "default",
+      generate_bind_rule: false,
+    },
+    {
+      service: "fuchsia.hardware.serialimpl.Service",
+      name: "default",
+      generate_bind_rule: false,
+    },
+    {
+      service: "fuchsia.boot.metadata.MacAddressMetadata",
+      name: "default",
+      generate_bind_rule: false,
+    },
+    {
+      protocol: "fuchsia.power.broker.Topology",
+    },
+    {
+      protocol: "fuchsia.power.system.ActivityGovernor",
+    },
+    {
+      protocol: "fuchsia.power.system.CpuElementManager",
+    },
+    {
+      service: "fuchsia.hardware.power.PowerTokenService",
+      name: "default",
+      generate_bind_rule: false,
+    },
+  ],
+  expose: [
+    {
+      service: "fuchsia.hardware.power.PowerTokenService",
+      from: "self",
+    },
+  ],
+}

@@ -1,0 +1,39 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+{
+  name: "pci-sdhci",
+  program: {},
+  capabilities: [
+    {
+      service: "fuchsia.hardware.sdhci.Service"
+    }
+  ],
+  use: [
+    {
+      service: "fuchsia.hardware.pci.Service",
+      name: "pci",
+      primary: true,
+      bind: {
+        service: "fuchsia.hardware.pci.Service",
+        pci_class: "fuchsia.pci.BIND_PCI_CLASS.GENERIC_SYSTEM_PERIPHERAL",
+        pci_subclass: "0x05",
+        pci_interface: "0x01"
+      }
+    },
+    {
+      availability: "optional",
+      name: "acpi",
+      bind: {
+        banjo: "fuchsia.acpi.BIND_PROTOCOL.DEVICE"
+      }
+    }
+  ],
+  expose: [
+    {
+      service: "fuchsia.hardware.sdhci.Service",
+      from: "self"
+    }
+  ]
+}
