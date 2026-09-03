@@ -98,7 +98,7 @@ class TestFxCmd(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(lines, [])
 
 
-class TestCommandTransformers(unittest.TestCase):
+class TestCommandTransformers(unittest.IsolatedAsyncioTestCase):
     class OutputCountTransformer(fx_cmd.CommandTransformer[str, int]):
         """Simple transformer that counts the number of lines in a test execution."""
 
@@ -194,3 +194,31 @@ class TestCommandTransformers(unittest.TestCase):
                 "ignored",
                 inner=fx_cmd.FxCmd(build_directory="/fuchsia", timeout=0.1),
             ).sync()
+
+    class FalsyEventTransformer(fx_cmd.CommandTransformer[str, int]):
+        def _handle_event(
+            self, event: CommandEvent, callback: typing.Callable[[str], None]
+        ) -> None:
+            if isinstance(event, StdoutEvent):
+                callback("")
+                callback("after_falsy")
+
+        def _to_output(self, output: CommandOutput) -> int:
+            return 0
+
+    @mock.patch(
+        "asyncio.subprocess.create_subprocess_exec",
+        mock.Mock(
+            side_effect=lambda *_args, **kwargs: real_subprocess_exec(
+                "echo", "hello", **kwargs
+            ),
+        ),
+    )
+    async def test_falsy_event_does_not_terminate_drain(self) -> None:
+        """Falsy events (e.g. empty strings) do not terminate the event drain prematurely."""
+        received: list[str] = []
+        await self.FalsyEventTransformer(
+            "ignored",
+            inner=fx_cmd.FxCmd(build_directory=pathlib.Path("/fuchsia")),
+        ).sync(event_callback=lambda x: received.append(x))
+        self.assertEqual(received, ["", "after_falsy"])

@@ -230,7 +230,7 @@ class CommandTransformer(typing.Generic[EventType, ReturnType], ABC):
         running_command = await self.start()
 
         async def drain_events() -> None:
-            while event := await running_command.events.get():
+            while (event := await running_command.events.get()) is not None:
                 if isinstance(event, QueueFinished):
                     return
 
