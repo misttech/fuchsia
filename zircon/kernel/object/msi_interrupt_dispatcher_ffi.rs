@@ -8,6 +8,7 @@ use super::handle::KernelHandle;
 use super::msi_allocation::MsiAllocation;
 use super::msi_interrupt_dispatcher::MsiInterruptDispatcher;
 use crate::vm::vm_object::VmObject;
+use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use zx_types::{zx_rights_t, zx_status_t};
 
@@ -18,7 +19,7 @@ unsafe extern "C" {
         vmo: &RefPtr<VmObject>,
         cap_offset: usize,
         options: u32,
-        rights_out: *mut zx_rights_t,
-        handle_out: *mut KernelHandle<MsiInterruptDispatcher>,
+        rights_out: *mut MaybeUninit<zx_rights_t>,
+        handle_out: *mut MaybeUninit<KernelHandle<MsiInterruptDispatcher>>,
     ) -> zx_status_t;
 }

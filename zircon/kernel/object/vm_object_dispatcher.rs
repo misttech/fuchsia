@@ -52,23 +52,19 @@ impl VmObjectDispatcher {
         stream_size: u64,
         initial_mutability: InitialMutability,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-        let mut rights_out: zx_rights_t = 0;
-        // SAFETY: `vmo.as_raw()` returns a valid raw pointer to a VmObject, and `handle_out` and `rights_out`
-        // point to valid uninitialized memory.
-        let status = unsafe {
-            super::vm_object_dispatcher_ffi::cpp_vm_object_dispatcher_create(
-                vmo.as_raw().cast(),
-                stream_size,
-                initial_mutability,
-                &raw mut handle_out,
-                &mut rights_out,
-            )
-        };
-        Status::ok(status)?;
-        // SAFETY: `cpp_vm_object_dispatcher_create` returned ZX_OK, so `handle_out` has been initialized.
-        let handle = unsafe { handle_out.assume_init() };
-        Ok((handle, rights_out))
+        // SAFETY: `vmo.as_raw()` returns a valid raw pointer to a VmObject, and
+        // `cpp_vm_object_dispatcher_create` initializes `handle` and `rights` on success.
+        unsafe {
+            KernelHandle::create_with_rights(|handle_out, rights_out| {
+                super::vm_object_dispatcher_ffi::cpp_vm_object_dispatcher_create(
+                    vmo.as_raw().cast(),
+                    stream_size,
+                    initial_mutability,
+                    handle_out,
+                    rights_out,
+                )
+            })
+        }
     }
 
     /// Returns a reference to the underlying `VmObject`.
@@ -285,23 +281,19 @@ impl VmObjectDispatcher {
         child_vmo: &VmObject,
         initial_mutability: InitialMutability,
     ) -> Result<(KernelHandle<VmObjectDispatcher>, zx_rights_t), Status> {
-        let mut handle_out = MaybeUninit::<KernelHandle<VmObjectDispatcher>>::uninit();
-        let mut rights_out: zx_rights_t = 0;
-        // SAFETY: `self` and `child_vmo` are valid references, `handle_out` and `rights_out` point
-        // to valid writable memory.
-        let status = unsafe {
-            super::vm_object_dispatcher_ffi::cpp_vm_object_dispatcher_create_with_parent_stream_size(
-                self.as_ffi_mut(),
-                child_vmo.as_raw().cast(),
-                initial_mutability,
-                &raw mut handle_out,
-                &mut rights_out,
-            )
-        };
-        Status::ok(status)?;
-        // SAFETY: `cpp_vm_object_dispatcher_create_with_parent_stream_size` succeeded and initialized `handle_out`.
-        let handle = unsafe { handle_out.assume_init() };
-        Ok((handle, rights_out))
+        // SAFETY: `self` and `child_vmo` are valid references, and the FFI function initializes
+        // `handle` and `rights` on success.
+        unsafe {
+            KernelHandle::create_with_rights(|handle_out, rights_out| {
+                super::vm_object_dispatcher_ffi::cpp_vm_object_dispatcher_create_with_parent_stream_size(
+                    self.as_ffi_mut(),
+                    child_vmo.as_raw().cast(),
+                    initial_mutability,
+                    handle_out,
+                    rights_out,
+                )
+            })
+        }
     }
 
     fn as_ffi(&self) -> *const VmObjectDispatcher {

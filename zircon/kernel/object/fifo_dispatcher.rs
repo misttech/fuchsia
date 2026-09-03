@@ -17,7 +17,6 @@ use crate::arch_rs::{
 use crate::kernel::thread::soft_fault;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::convert::Infallible;
-use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr::slice_from_raw_parts_mut;
 use counters_rs::define_kcounter;
@@ -150,19 +149,21 @@ impl FifoDispatcher {
         let create_single = |holder: RefPtr<PeerHolder<Self>>,
                              mut data: Box<[u8]>|
          -> Result<KernelHandle<Self>, Status> {
-            let mut handle = MaybeUninit::<KernelHandle<Self>>::uninit();
-            let status = unsafe {
-                cpp_fifo_dispatcher_create(
-                    RefPtr::into_raw(holder) as *mut _,
-                    count as u32,
-                    elem_size as u32,
-                    data.as_mut_ptr(),
-                    &mut handle,
-                )
-            };
-            Status::ok(status)?;
+            // SAFETY: `holder` transfers an acquired reference count, `data` is a valid buffer,
+            // and `cpp_fifo_dispatcher_create` initializes `handle` on success.
+            let handle = unsafe {
+                KernelHandle::create(|out| {
+                    cpp_fifo_dispatcher_create(
+                        RefPtr::into_raw(holder) as *mut _,
+                        count as u32,
+                        elem_size as u32,
+                        data.as_mut_ptr(),
+                        out,
+                    )
+                })
+            }?;
             core::mem::forget(data);
-            Ok(unsafe { handle.assume_init() })
+            Ok(handle)
         };
 
         let handle0 = create_single(holder0, data0)?;

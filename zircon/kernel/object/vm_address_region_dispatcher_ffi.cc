@@ -23,8 +23,17 @@ cpp_vmar_dispatcher_set_memory_priority(VmAddressRegionDispatcher* vmar, uint32_
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_vmar_dispatcher_allocate(
     VmAddressRegionDispatcher* vmar, size_t offset, size_t size, uint32_t flags,
-    KernelHandle<VmAddressRegionDispatcher>* handle_out, zx_rights_t* rights_out) {
-  return vmar->Allocate(offset, size, flags, handle_out, rights_out);
+    ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* handle_out,
+    ffi::Uninitialized<zx_rights_t>* rights_out) {
+  KernelHandle<VmAddressRegionDispatcher> handle;
+  zx_rights_t rights;
+  zx_status_t status = vmar->Allocate(offset, size, flags, &handle, &rights);
+  if (status != ZX_OK) {
+    return status;
+  }
+  handle_out->Initialize(ktl::move(handle));
+  rights_out->Initialize(rights);
+  return ZX_OK;
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.

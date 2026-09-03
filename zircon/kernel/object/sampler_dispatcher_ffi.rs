@@ -6,6 +6,7 @@
 
 use super::handle::KernelHandle;
 use super::sampler_dispatcher::{SamplerDispatcher, SamplerDispatcherState};
+use core::mem::MaybeUninit;
 use zx_types::{zx_sampler_config_t, zx_status_t};
 
 // C++ FFI declarations
@@ -13,7 +14,7 @@ unsafe extern "C" {
     /// Calls into C++ implementation to create a SamplerDispatcher.
     pub fn cpp_sampler_dispatcher_create(
         config: *const zx_sampler_config_t,
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<SamplerDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<SamplerDispatcher>>,
     ) -> zx_status_t;
 
     /// Calls into C++ implementation to start sampling for a dispatcher.

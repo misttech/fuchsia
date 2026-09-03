@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::pinned_memory_token_dispatcher_ffi::*;
+use core::mem::MaybeUninit;
 use zx_status::Status;
 
 /// Type used to refer to virtual addresses presented in virtual address space
@@ -51,7 +52,7 @@ impl Pmt {
     /// queried size. In the case of being less than, additional contiguous ranges
     /// can be found by calling again with a new `offset`.
     pub fn query_address(&self, offset: u64, size: usize) -> Result<QueryAddressResult, Status> {
-        let mut result = core::mem::MaybeUninit::<QueryAddressResult>::uninit();
+        let mut result = MaybeUninit::<QueryAddressResult>::uninit();
         // SAFETY: `self` is a valid `Pmt` facade and `result` points to uninitialized storage.
         let status =
             unsafe { cpp_pmt_query_address(self.as_ffi_mut(), offset, size, &raw mut result) };

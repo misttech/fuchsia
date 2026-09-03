@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use zx_status::Status;
 use zx_types::{ZX_OBJ_TYPE_INTERRUPT, zx_rights_t};
@@ -28,23 +27,14 @@ impl MsiInterruptDispatcher {
         cap_offset: usize,
         options: u32,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::zeroed();
-        let mut rights_out = MaybeUninit::<zx_rights_t>::zeroed();
-        // SAFETY: `alloc` and `vmo` are valid references to `RefPtr`, and `rights_out` and
-        // `handle_out` point to valid zeroed memory.
-        let status = unsafe {
-            cpp_msi_interrupt_dispatcher_create(
-                alloc,
-                msi_id,
-                vmo,
-                cap_offset,
-                options,
-                rights_out.as_mut_ptr(),
-                handle_out.as_mut_ptr(),
-            )
-        };
-        Status::ok(status)?;
-        // SAFETY: `cpp_msi_interrupt_dispatcher_create` initialized `handle_out` and `rights_out`.
-        unsafe { Ok((handle_out.assume_init(), rights_out.assume_init())) }
+        // SAFETY: `alloc` and `vmo` are valid references to `RefPtr`, and
+        // `cpp_msi_interrupt_dispatcher_create` initializes `handle_out` and `rights_out`.
+        unsafe {
+            KernelHandle::create_with_rights(|handle_out, rights_out| {
+                cpp_msi_interrupt_dispatcher_create(
+                    alloc, msi_id, vmo, cap_offset, options, rights_out, handle_out,
+                )
+            })
+        }
     }
 }

@@ -9,6 +9,7 @@ use super::handle::{HandleValue, KernelHandle};
 use super::job_dispatcher::JobDispatcher;
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher::ThreadDispatcher;
+use core::mem::MaybeUninit;
 use zx_types::{zx_handle_t, zx_info_process_t, zx_rights_t, zx_status_t, zx_vaddr_t};
 
 unsafe extern "C" {
@@ -194,12 +195,12 @@ unsafe extern "C" {
         name_ptr: *const core::ffi::c_char,
         name_len: usize,
         flags: u32,
-        out_proc_handle: *mut KernelHandle<ProcessDispatcher>,
-        out_proc_rights: *mut zx_rights_t,
-        out_vmar_handle: *mut KernelHandle<
-            super::vm_address_region_dispatcher::VmAddressRegionDispatcher,
+        out_proc_handle: *mut MaybeUninit<KernelHandle<ProcessDispatcher>>,
+        out_proc_rights: *mut MaybeUninit<zx_rights_t>,
+        out_vmar_handle: *mut MaybeUninit<
+            KernelHandle<super::vm_address_region_dispatcher::VmAddressRegionDispatcher>,
         >,
-        out_vmar_rights: *mut zx_rights_t,
+        out_vmar_rights: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
 
     /// Creates a new shared process that shares state with `shared_proc`.
@@ -214,12 +215,12 @@ unsafe extern "C" {
         name_ptr: *const core::ffi::c_char,
         name_len: usize,
         flags: u32,
-        out_proc_handle: *mut KernelHandle<ProcessDispatcher>,
-        out_proc_rights: *mut zx_rights_t,
-        out_restricted_vmar_handle: *mut KernelHandle<
-            super::vm_address_region_dispatcher::VmAddressRegionDispatcher,
+        out_proc_handle: *mut MaybeUninit<KernelHandle<ProcessDispatcher>>,
+        out_proc_rights: *mut MaybeUninit<zx_rights_t>,
+        out_restricted_vmar_handle: *mut MaybeUninit<
+            KernelHandle<super::vm_address_region_dispatcher::VmAddressRegionDispatcher>,
         >,
-        out_restricted_vmar_rights: *mut zx_rights_t,
+        out_restricted_vmar_rights: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
 
     /// Exits the current process with the given return code.

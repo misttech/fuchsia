@@ -77,12 +77,10 @@ impl EventDispatcher {
 
     /// Creates a new EventDispatcher via C++ and returns its kernel handle and rights.
     pub fn create(options: u32) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-        // SAFETY: handle_out points to valid uninitialized memory for KernelHandle<Self>.
-        let status = unsafe { cpp_event_dispatcher_create(options, &raw mut handle_out) };
-        Status::ok(status)?;
-        // SAFETY: cpp_event_dispatcher_create initialized handle_out.
-        unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
+        // SAFETY: `cpp_event_dispatcher_create` initializes `handle` on success.
+        let handle =
+            unsafe { KernelHandle::create(|out| cpp_event_dispatcher_create(options, out)) }?;
+        Ok((handle, DEFAULT_RIGHTS))
     }
 
     /// Returns the kernel-owned memory pressure event dispatcher for the given kind.
@@ -101,20 +99,12 @@ impl EventDispatcher {
         threshold: zx_duration_mono_t,
         window: zx_duration_mono_t,
     ) -> Result<(KernelHandle<EventDispatcher>, zx_rights_t), Status> {
-        let mut handle = MaybeUninit::<KernelHandle<EventDispatcher>>::zeroed();
-        let mut rights = 0;
-        // SAFETY: `handle` and `rights` point to valid uninitialized memory.
-        let status = unsafe {
-            cpp_memory_stall_event_dispatcher_create(
-                kind,
-                threshold,
-                window,
-                handle.as_mut_ptr(),
-                &mut rights,
-            )
-        };
-        Status::ok(status)?;
-        // SAFETY: When `Status::ok` succeeds, `handle` and `rights` were initialized by C++.
-        unsafe { Ok((handle.assume_init(), rights)) }
+        // SAFETY: `cpp_memory_stall_event_dispatcher_create` initializes `handle` and `rights`
+        // on success.
+        unsafe {
+            KernelHandle::create_with_rights(|h_out, r_out| {
+                cpp_memory_stall_event_dispatcher_create(kind, threshold, window, h_out, r_out)
+            })
+        }
     }
 }

@@ -18,12 +18,14 @@ FFI_ALWAYS_INLINE bool cpp_job_dispatcher_is_root(const JobDispatcher* job) {
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_job_dispatcher_create(
     uint32_t flags, JobDispatcher* parent, ffi::Uninitialized<KernelHandle<JobDispatcher>>* handle,
-    zx_rights_t* rights) {
+    ffi::Uninitialized<zx_rights_t>* rights) {
   KernelHandle<JobDispatcher> new_handle;
+  zx_rights_t new_rights;
   zx_status_t status =
-      JobDispatcher::Create(flags, fbl::ImportFromRawPtr(parent), &new_handle, rights);
+      JobDispatcher::Create(flags, fbl::ImportFromRawPtr(parent), &new_handle, &new_rights);
   if (status == ZX_OK) {
     handle->Initialize(ktl::move(new_handle));
+    rights->Initialize(new_rights);
   }
   return status;
 }

@@ -22,19 +22,21 @@ class EventDispatcher;
 extern "C" {
 zx_status_t cpp_event_dispatcher_create(
     uint32_t options, ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out);
-zx_status_t rust_event_dispatcher_create(uint32_t options, zx_rights_t* rights_out,
-                                         KernelHandle<EventDispatcher>* handle_out);
+zx_status_t rust_event_dispatcher_create(
+    uint32_t options, zx_rights_t* rights_out,
+    ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle_out);
 void cpp_event_dispatcher_get_mem_pressure_event(uint32_t kind,
                                                  fbl::RefPtr<EventDispatcher>* out_event);
-zx_status_t cpp_memory_stall_event_dispatcher_create(uint32_t kind, zx_duration_mono_t threshold,
-                                                     zx_duration_mono_t window,
-                                                     KernelHandle<EventDispatcher>* out_handle,
-                                                     zx_rights_t* out_rights);
+zx_status_t cpp_memory_stall_event_dispatcher_create(
+    uint32_t kind, zx_duration_mono_t threshold, zx_duration_mono_t window,
+    ffi::Uninitialized<KernelHandle<EventDispatcher>>* out_handle,
+    ffi::Uninitialized<zx_rights_t>* out_rights);
 }
 
 class EventDispatcher : public Dispatcher {
  public:
-  static zx_status_t Create(uint32_t options, KernelHandle<EventDispatcher>* handle,
+  static zx_status_t Create(uint32_t options,
+                            ffi::Uninitialized<KernelHandle<EventDispatcher>>* handle,
                             zx_rights_t* rights) {
     return rust_event_dispatcher_create(options, rights, handle);
   }

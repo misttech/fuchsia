@@ -315,7 +315,7 @@ extern "C" {
 bool cpp_job_dispatcher_is_root(const JobDispatcher* job);
 zx_status_t cpp_job_dispatcher_create(uint32_t flags, JobDispatcher* parent,
                                       ffi::Uninitialized<KernelHandle<JobDispatcher>>* handle,
-                                      zx_rights_t* rights);
+                                      ffi::Uninitialized<zx_rights_t>* rights);
 zx_status_t cpp_job_dispatcher_set_basic_policy_v1(JobDispatcher* job, uint32_t mode,
                                                    const zx_policy_basic_v1_t* policy,
                                                    size_t count);

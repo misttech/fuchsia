@@ -31,7 +31,8 @@ extern "C" {
 const fbl::RefPtr<VmObject>* cpp_vm_object_dispatcher_get_vmo(const VmObjectDispatcher* disp);
 zx_status_t cpp_vm_object_dispatcher_create(
     VmObject* raw_vmo, uint64_t stream_size, uint32_t initial_mutability,
-    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle, zx_rights_t* out_rights);
+    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle,
+    ffi::Uninitialized<zx_rights_t>* out_rights);
 zx_info_vmo_t cpp_vm_object_dispatcher_get_vmo_info(VmObjectDispatcher* vmo, zx_rights_t rights);
 zx_status_t cpp_vm_object_dispatcher_read(VmObjectDispatcher* disp, char* user_data,
                                           uint64_t offset, size_t length);
@@ -57,7 +58,8 @@ zx_status_t cpp_vm_object_dispatcher_create_child(
 // created) and attaches it to the child dispatcher via VmObjectDispatcher::CreateWithSsm.
 zx_status_t cpp_vm_object_dispatcher_create_with_parent_stream_size(
     VmObjectDispatcher* parent_disp, VmObject* raw_child_vmo, uint32_t raw_initial_mutability,
-    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle, zx_rights_t* out_rights);
+    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle,
+    ffi::Uninitialized<zx_rights_t>* out_rights);
 
 zx_status_t rust_vm_object_dispatcher_set_size(const VmObjectDispatcher* disp,
                                                const StreamSizeManager* stream_size_manager,

@@ -10,6 +10,7 @@ use super::bus_transaction_initiator_dispatcher::{
     BusTransactionInitiatorDispatcher, BusTransactionInitiatorDispatcherState,
 };
 use super::iommu::Iommu;
+use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use zx_types::zx_status_t;
 
@@ -38,7 +39,7 @@ unsafe extern "C" {
     pub(crate) fn cpp_bus_transaction_initiator_dispatcher_create(
         iommu: *const Iommu,
         bti_id: u64,
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<BusTransactionInitiatorDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<BusTransactionInitiatorDispatcher>>,
     ) -> zx_status_t;
 
     // PinnedVmObject contains Option<RefPtr<VmObject>>, which rustc warns about
@@ -49,7 +50,7 @@ unsafe extern "C" {
         pinned_vmo: *mut crate::vm::pinned_vm_object::PinnedVmObject,
         perms: u32,
         require_contiguous: bool,
-        pmt_out: *mut core::mem::MaybeUninit<RefPtr<super::pmt::Pmt>>,
+        pmt_out: *mut MaybeUninit<RefPtr<super::pmt::Pmt>>,
     ) -> zx_status_t;
 }
 

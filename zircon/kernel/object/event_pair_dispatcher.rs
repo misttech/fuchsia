@@ -11,7 +11,6 @@ use super::dispatcher::{
 use super::event_pair_dispatcher_ffi::cpp_event_pair_dispatcher_create;
 use super::handle::KernelHandle;
 use core::convert::Infallible;
-use core::mem::MaybeUninit;
 use core::pin::Pin;
 use counters_rs::define_kcounter;
 use fbl::{Canary, RefPtr};
@@ -92,15 +91,13 @@ impl EventPairDispatcher {
 
         let create_single =
             |holder: RefPtr<PeerHolder<Self>>| -> Result<KernelHandle<Self>, Status> {
-                let mut handle = MaybeUninit::<KernelHandle<Self>>::uninit();
-                let status = unsafe {
-                    cpp_event_pair_dispatcher_create(
-                        RefPtr::into_raw(holder) as *mut _,
-                        &mut handle,
-                    )
-                };
-                Status::ok(status)?;
-                Ok(unsafe { handle.assume_init() })
+                // SAFETY: `holder` transfers an acquired reference count into C++, and
+                // `cpp_event_pair_dispatcher_create` initializes `handle` on success.
+                unsafe {
+                    KernelHandle::create(|out| {
+                        cpp_event_pair_dispatcher_create(RefPtr::into_raw(holder) as *mut _, out)
+                    })
+                }
             };
 
         let handle0 = create_single(holder0)?;

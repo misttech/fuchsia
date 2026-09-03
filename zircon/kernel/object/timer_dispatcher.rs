@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::{Canary, HasRefCount};
 use ksync::{KMutex, RawCriticalMutex, guarded};
@@ -150,12 +149,11 @@ impl TimerDispatcher {
             _ => return Err(Status::INVALID_ARGS),
         }
 
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-        // SAFETY: handle_out points to valid uninitialized memory for KernelHandle<Self>.
-        let status = unsafe { cpp_timer_dispatcher_create(options, clock_id, &raw mut handle_out) };
-        Status::ok(status)?;
-        // SAFETY: cpp_timer_dispatcher_create initialized the handle.
-        unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
+        // SAFETY: `cpp_timer_dispatcher_create` initializes the handle on success.
+        let handle = unsafe {
+            KernelHandle::create(|out| cpp_timer_dispatcher_create(options, clock_id, out))
+        }?;
+        Ok((handle, DEFAULT_RIGHTS))
     }
 
     pub fn on_zero_handles(&self) {

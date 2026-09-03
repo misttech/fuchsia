@@ -267,9 +267,9 @@ impl ProcessDispatcher {
         Status,
     > {
         let mut proc_handle = MaybeUninit::uninit();
-        let mut proc_rights = MaybeUninit::uninit();
+        let mut proc_rights = MaybeUninit::<zx_rights_t>::uninit();
         let mut vmar_handle = MaybeUninit::uninit();
-        let mut vmar_rights = MaybeUninit::uninit();
+        let mut vmar_rights = MaybeUninit::<zx_rights_t>::uninit();
 
         // SAFETY: `job` is a valid `RefPtr<JobDispatcher>` whose refcount is transferred to C++,
         // `name` points to readable memory of length `name.len()`, and output pointers point to valid uninitialized storage.
@@ -279,10 +279,10 @@ impl ProcessDispatcher {
                 name.as_ptr().cast(),
                 name.len(),
                 flags,
-                proc_handle.as_mut_ptr(),
-                proc_rights.as_mut_ptr(),
-                vmar_handle.as_mut_ptr(),
-                vmar_rights.as_mut_ptr(),
+                &raw mut proc_handle,
+                &raw mut proc_rights,
+                &raw mut vmar_handle,
+                &raw mut vmar_rights,
             )
         };
         Status::ok(status)?;
@@ -307,9 +307,9 @@ impl ProcessDispatcher {
         Status,
     > {
         let mut proc_handle = MaybeUninit::uninit();
-        let mut proc_rights = MaybeUninit::uninit();
+        let mut proc_rights = MaybeUninit::<zx_rights_t>::uninit();
         let mut vmar_handle = MaybeUninit::uninit();
-        let mut vmar_rights = MaybeUninit::uninit();
+        let mut vmar_rights = MaybeUninit::<zx_rights_t>::uninit();
 
         // SAFETY: `shared_proc` is a valid `RefPtr<ProcessDispatcher>` whose refcount is transferred to C++.
         let status = unsafe {
@@ -318,10 +318,10 @@ impl ProcessDispatcher {
                 name.as_ptr().cast(),
                 name.len(),
                 flags,
-                proc_handle.as_mut_ptr(),
-                proc_rights.as_mut_ptr(),
-                vmar_handle.as_mut_ptr(),
-                vmar_rights.as_mut_ptr(),
+                &raw mut proc_handle,
+                &raw mut proc_rights,
+                &raw mut vmar_handle,
+                &raw mut vmar_rights,
             )
         };
         Status::ok(status)?;

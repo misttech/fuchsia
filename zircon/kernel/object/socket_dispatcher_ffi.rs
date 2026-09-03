@@ -6,13 +6,14 @@
 
 use super::handle::KernelHandle;
 use super::socket_dispatcher::{SocketDispatcher, SocketDispatcherState};
+use core::mem::MaybeUninit;
 use zx_types::{zx_info_socket_t, zx_status_t};
 
 unsafe extern "C" {
     pub(crate) fn cpp_socket_dispatcher_create(
         holder: *mut (),
         flags: u32,
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<SocketDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<SocketDispatcher>>,
     ) -> zx_status_t;
 }
 

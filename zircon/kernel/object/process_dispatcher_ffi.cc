@@ -123,40 +123,48 @@ FFI_ALWAYS_INLINE zx_status_t cpp_process_dispatcher_set_critical_to_job(Process
 zx_status_t cpp_process_dispatcher_create(
     JobDispatcher* job, const char* name_ptr, size_t name_len, uint32_t flags,
     ffi::Uninitialized<KernelHandle<ProcessDispatcher>>* out_proc_handle,
-    zx_rights_t* out_proc_rights,
+    ffi::Uninitialized<zx_rights_t>* out_proc_rights,
     ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* out_vmar_handle,
-    zx_rights_t* out_vmar_rights) {
+    ffi::Uninitialized<zx_rights_t>* out_vmar_rights) {
   ktl::string_view sp(name_ptr, name_len);
   KernelHandle<ProcessDispatcher> proc_handle;
   KernelHandle<VmAddressRegionDispatcher> vmar_handle;
+  zx_rights_t proc_rights;
+  zx_rights_t vmar_rights;
   zx_status_t status =
-      ProcessDispatcher::Create(fbl::ImportFromRawPtr(job), sp, flags, &proc_handle,
-                                out_proc_rights, &vmar_handle, out_vmar_rights);
+      ProcessDispatcher::Create(fbl::ImportFromRawPtr(job), sp, flags, &proc_handle, &proc_rights,
+                                &vmar_handle, &vmar_rights);
   if (status != ZX_OK) {
     return status;
   }
   out_proc_handle->Initialize(ktl::move(proc_handle));
   out_vmar_handle->Initialize(ktl::move(vmar_handle));
+  out_proc_rights->Initialize(proc_rights);
+  out_vmar_rights->Initialize(vmar_rights);
   return ZX_OK;
 }
 
 zx_status_t cpp_process_dispatcher_create_shared(
     ProcessDispatcher* shared_proc, const char* name_ptr, size_t name_len, uint32_t flags,
     ffi::Uninitialized<KernelHandle<ProcessDispatcher>>* out_proc_handle,
-    zx_rights_t* out_proc_rights,
+    ffi::Uninitialized<zx_rights_t>* out_proc_rights,
     ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* out_restricted_vmar_handle,
-    zx_rights_t* out_restricted_vmar_rights) {
+    ffi::Uninitialized<zx_rights_t>* out_restricted_vmar_rights) {
   ktl::string_view sp(name_ptr, name_len);
   KernelHandle<ProcessDispatcher> proc_handle;
   KernelHandle<VmAddressRegionDispatcher> restricted_vmar_handle;
+  zx_rights_t proc_rights;
+  zx_rights_t restricted_vmar_rights;
   zx_status_t status = ProcessDispatcher::CreateShared(
-      fbl::ImportFromRawPtr(shared_proc), sp, flags, &proc_handle, out_proc_rights,
-      &restricted_vmar_handle, out_restricted_vmar_rights);
+      fbl::ImportFromRawPtr(shared_proc), sp, flags, &proc_handle, &proc_rights,
+      &restricted_vmar_handle, &restricted_vmar_rights);
   if (status != ZX_OK) {
     return status;
   }
   out_proc_handle->Initialize(ktl::move(proc_handle));
   out_restricted_vmar_handle->Initialize(ktl::move(restricted_vmar_handle));
+  out_proc_rights->Initialize(proc_rights);
+  out_restricted_vmar_rights->Initialize(restricted_vmar_rights);
   return ZX_OK;
 }
 

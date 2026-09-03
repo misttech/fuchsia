@@ -7,6 +7,7 @@
 use super::handle::KernelHandle;
 use super::iommu::Iommu;
 use super::iommu_dispatcher::{IommuDispatcher, IommuDispatcherState};
+use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use zx_types::zx_status_t;
 
@@ -16,7 +17,7 @@ unsafe extern "C" {
         type_param: u32,
         desc_ptr: *const u8,
         desc_len: usize,
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<IommuDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<IommuDispatcher>>,
     ) -> zx_status_t;
     pub(crate) fn cpp_iommu_recycle(iommu: *mut Iommu);
     pub(crate) fn cpp_iommu_get_ref_counted(iommu: *mut Iommu) -> *mut ();

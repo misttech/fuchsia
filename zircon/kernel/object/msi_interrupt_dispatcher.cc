@@ -296,9 +296,17 @@ MsixInterruptDispatcherImpl::~MsixInterruptDispatcherImpl() {
 
 extern "C" zx_status_t cpp_msi_interrupt_dispatcher_create(
     const fbl::RefPtr<MsiAllocation>* alloc, uint32_t msi_id, const fbl::RefPtr<VmObject>* vmo,
-    size_t cap_offset, uint32_t options, zx_rights_t* rights_out,
-    KernelHandle<MsiInterruptDispatcher>* handle_out) {
-  return MsiInterruptDispatcher::Create(
-      *alloc, msi_id, *vmo, cap_offset, options, rights_out,
-      reinterpret_cast<KernelHandle<InterruptDispatcher>*>(handle_out));
+    size_t cap_offset, uint32_t options, ffi::Uninitialized<zx_rights_t>* rights_out,
+    ffi::Uninitialized<KernelHandle<MsiInterruptDispatcher>>* handle_out) {
+  KernelHandle<InterruptDispatcher> handle;
+  zx_rights_t rights;
+  zx_status_t status =
+      MsiInterruptDispatcher::Create(*alloc, msi_id, *vmo, cap_offset, options, &rights, &handle);
+  if (status != ZX_OK) {
+    return status;
+  }
+  rights_out->Initialize(rights);
+  handle_out->Initialize(KernelHandle<MsiInterruptDispatcher>(
+      fbl::RefPtr<MsiInterruptDispatcher>::Downcast(handle.release())));
+  return ZX_OK;
 }

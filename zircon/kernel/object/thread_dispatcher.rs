@@ -78,23 +78,21 @@ impl ThreadDispatcher {
         flags: u32,
         name: &[u8],
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut handle = MaybeUninit::<KernelHandle<Self>>::uninit();
-        let mut rights = MaybeUninit::<zx_rights_t>::uninit();
         let process_raw = fbl::RefPtr::into_raw(process) as *mut _;
-        // SAFETY: `process_raw` is a valid pointer carrying an acquired refcount.
-        let status = unsafe {
-            cpp_thread_dispatcher_create(
-                process_raw,
-                flags,
-                name.as_ptr().cast(),
-                name.len(),
-                handle.as_mut_ptr(),
-                rights.as_mut_ptr(),
-            )
-        };
-        Status::ok(status)?;
-        // SAFETY: `cpp_thread_dispatcher_create` initialized handle and rights on success.
-        unsafe { Ok((handle.assume_init(), rights.assume_init())) }
+        // SAFETY: `process_raw` is a valid pointer carrying an acquired refcount, and
+        // `cpp_thread_dispatcher_create` initializes `handle` and `rights` on success.
+        unsafe {
+            KernelHandle::create_with_rights(|handle_out, rights_out| {
+                cpp_thread_dispatcher_create(
+                    process_raw,
+                    flags,
+                    name.as_ptr().cast(),
+                    name.len(),
+                    handle_out,
+                    rights_out,
+                )
+            })
+        }
     }
 
     /// Initializes a newly created `ThreadDispatcher`.

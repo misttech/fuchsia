@@ -80,25 +80,18 @@ impl JobDispatcher {
         flags: u32,
         parent: fbl::RefPtr<JobDispatcher>,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-        let mut rights_out = MaybeUninit::<zx_rights_t>::uninit();
-
-        // SAFETY: `parent` transfers an acquired reference count into C++, and `handle_out` and
-        // `rights_out` point to valid uninitialized memory.
-        let status = unsafe {
-            cpp_job_dispatcher_create(
-                flags,
-                fbl::RefPtr::into_raw(parent) as *mut _,
-                handle_out.as_mut_ptr(),
-                rights_out.as_mut_ptr(),
-            )
-        };
-        Status::ok(status)?;
-
-        // SAFETY: On ZX_OK, C++ initialized `handle_out` and `rights_out`.
-        let handle = unsafe { handle_out.assume_init() };
-        let rights = unsafe { rights_out.assume_init() };
-        Ok((handle, rights))
+        // SAFETY: `parent` transfers an acquired reference count into C++, and
+        // `cpp_job_dispatcher_create` initializes `handle` and `rights` on success.
+        unsafe {
+            KernelHandle::create_with_rights(|handle_out, rights_out| {
+                cpp_job_dispatcher_create(
+                    flags,
+                    fbl::RefPtr::into_raw(parent) as *mut _,
+                    handle_out,
+                    rights_out,
+                )
+            })
+        }
     }
 
     /// Sets basic policy (v1) on this job.

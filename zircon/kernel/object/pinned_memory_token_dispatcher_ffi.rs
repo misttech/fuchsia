@@ -10,6 +10,7 @@ use super::pinned_memory_token_dispatcher::{
     PinnedMemoryTokenDispatcher, PinnedMemoryTokenDispatcherState,
 };
 use super::pmt::QueryAddressResult;
+use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use zx_types::zx_status_t;
 
@@ -24,12 +25,12 @@ unsafe extern "C" {
         pmt: *mut super::pmt::Pmt,
         query_offset: u64,
         query_size: usize,
-        out_result: *mut core::mem::MaybeUninit<QueryAddressResult>,
+        out_result: *mut MaybeUninit<QueryAddressResult>,
     ) -> zx_status_t;
 
     pub(crate) fn cpp_pinned_memory_token_dispatcher_create(
         bti: *mut BusTransactionInitiatorDispatcher,
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<PinnedMemoryTokenDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<PinnedMemoryTokenDispatcher>>,
     ) -> zx_status_t;
 }
 

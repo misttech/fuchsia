@@ -6,6 +6,7 @@
 
 use super::bus_transaction_initiator_dispatcher_ffi::*;
 use super::pmt::Pmt;
+use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use zx_status::Status;
 use zx_types::ZX_MAX_NAME_LEN;
@@ -111,7 +112,7 @@ impl Bti {
         perms: u32,
         require_contiguous: bool,
     ) -> Result<RefPtr<Pmt>, Status> {
-        let mut pmt = core::mem::MaybeUninit::<RefPtr<Pmt>>::uninit();
+        let mut pmt = MaybeUninit::<RefPtr<Pmt>>::uninit();
         // SAFETY: `self` is a valid `Bti` facade and `pinned_vmo` is a valid `PinnedVmObject`.
         let status = unsafe {
             cpp_bti_map(self.as_ffi_mut(), pinned_vmo, perms, require_contiguous, &raw mut pmt)

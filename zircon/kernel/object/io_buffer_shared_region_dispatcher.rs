@@ -154,18 +154,17 @@ impl IoBufferSharedRegionDispatcher {
 
         mapping.mapping.map_range(0, size as usize, true, false)?;
 
-        let mut handle = MaybeUninit::<KernelHandle<Self>>::uninit();
-        let status = unsafe {
-            cpp_io_buffer_shared_region_dispatcher_create(
-                &vmo,
-                &mapping.mapping,
-                VAddr(mapping.base),
-                &raw mut handle,
-            )
-        };
-        Status::ok(status)?;
-
-        let handle = unsafe { handle.assume_init() };
+        // SAFETY: `cpp_io_buffer_shared_region_dispatcher_create` initializes `handle` on success.
+        let handle = unsafe {
+            KernelHandle::create(|out| {
+                cpp_io_buffer_shared_region_dispatcher_create(
+                    &vmo,
+                    &mapping.mapping,
+                    VAddr(mapping.base),
+                    out,
+                )
+            })
+        }?;
         handle.dispatcher().state().vmo.set_user_id(handle.dispatcher().get_koid());
 
         Ok((handle, DEFAULT_RIGHTS))

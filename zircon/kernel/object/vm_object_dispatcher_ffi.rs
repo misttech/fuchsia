@@ -20,7 +20,7 @@ unsafe extern "C" {
         stream_size: u64,
         initial_mutability: InitialMutability,
         out_handle: *mut MaybeUninit<KernelHandle<VmObjectDispatcher>>,
-        out_rights: *mut zx_rights_t,
+        out_rights: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
     pub(crate) fn cpp_vm_object_dispatcher_get_vmo_info(
         vmo: *mut VmObjectDispatcher,
@@ -77,7 +77,7 @@ unsafe extern "C" {
         raw_child_vmo: *mut VmObject,
         initial_mutability: InitialMutability,
         out_handle: *mut MaybeUninit<KernelHandle<VmObjectDispatcher>>,
-        out_rights: *mut zx_rights_t,
+        out_rights: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
 }
 

@@ -7,7 +7,7 @@
 use super::DispatcherOps;
 use super::handle::KernelHandle;
 use super::log_dispatcher::{LogDispatcher, LogDispatcherState};
-
+use core::mem::MaybeUninit;
 use zx_types::{ZX_LOG_READABLE, zx_rights_t, zx_status_t};
 
 // C++ FFI declarations
@@ -15,7 +15,7 @@ unsafe extern "C" {
     pub(crate) fn cpp_log_dispatcher_create(
         flags: u32,
         rights: zx_rights_t,
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<LogDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<LogDispatcher>>,
     ) -> zx_status_t;
 }
 
@@ -47,14 +47,14 @@ pub unsafe extern "C" fn rust_log_dispatcher_notify(cookie: *mut core::ffi::c_vo
 pub unsafe extern "C" fn rust_log_dispatcher_create(
     flags: u32,
     rights_out: *mut zx_rights_t,
-    handle_out: *mut KernelHandle<LogDispatcher>,
+    handle_out: *mut MaybeUninit<KernelHandle<LogDispatcher>>,
 ) -> zx_status_t {
     // SAFETY: `rights_out` and `handle_out` are valid non-null writable pointers.
     unsafe {
         match LogDispatcher::create(flags) {
             Ok((handle, rights)) => {
                 rights_out.write(rights);
-                handle_out.write(handle);
+                (*handle_out).write(handle);
                 zx_types::ZX_OK
             }
             Err(status) => status.into_raw(),

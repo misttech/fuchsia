@@ -516,14 +516,14 @@ void MemoryWatchdog::Init(Executor* executor) {
 
   for (uint8_t i = 0; i < PressureLevel::kNumLevels; i++) {
     auto level = PressureLevel(i);
-    KernelHandle<EventDispatcher> event;
+    ffi::Uninitialized<KernelHandle<EventDispatcher>> event;
     zx_rights_t rights;
     zx_status_t status = EventDispatcher::Create(0, &event, &rights);
     if (status != ZX_OK) {
       panic("memory-pressure: create memory event %s failed: %d\n", PressureLevelToString(level),
             status);
     }
-    mem_pressure_events_[i] = event.release();
+    mem_pressure_events_[i] = event.Get().release();
   }
 
   if (BootOptions::Get()->oom_enabled) {

@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use zx_types::{zx_info_stream_t, zx_off_t, zx_status_t};
 
@@ -13,6 +12,7 @@ use super::stream_dispatcher::{StreamDispatcher, StreamDispatcherState, StreamOp
 use super::vm_object_dispatcher::VmObjectDispatcher;
 use crate::vm::stream_size_manager::StreamSizeManager;
 use crate::vm::vm_object_paged::VmObjectPaged;
+use core::mem::MaybeUninit;
 
 // C++ FFI declarations
 #[allow(improper_ctypes)]

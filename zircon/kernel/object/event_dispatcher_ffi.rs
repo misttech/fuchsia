@@ -6,6 +6,7 @@
 
 use super::event_dispatcher::{EventDispatcher, EventDispatcherState};
 use super::handle::KernelHandle;
+use core::mem::MaybeUninit;
 use zx_types::{zx_duration_mono_t, zx_rights_t, zx_status_t};
 
 // C++ FFI declarations
@@ -17,7 +18,7 @@ unsafe extern "C" {
     /// `handle_out` must point to uninitialized memory for a `KernelHandle<EventDispatcher>`.
     pub(crate) fn cpp_event_dispatcher_create(
         options: u32,
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<EventDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<EventDispatcher>>,
     ) -> zx_status_t;
 
     /// Retrieves a reference to the kernel-owned memory pressure event dispatcher for the given kind.
@@ -40,8 +41,8 @@ unsafe extern "C" {
         kind: u32,
         threshold: zx_duration_mono_t,
         window: zx_duration_mono_t,
-        out_handle: *mut KernelHandle<EventDispatcher>,
-        out_rights: *mut zx_rights_t,
+        out_handle: *mut MaybeUninit<KernelHandle<EventDispatcher>>,
+        out_rights: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
 }
 
@@ -58,14 +59,14 @@ crate::object::dispatcher::impl_dispatcher_state_init!(EventDispatcher, EventDis
 pub unsafe extern "C" fn rust_event_dispatcher_create(
     options: u32,
     rights_out: *mut zx_types::zx_rights_t,
-    handle_out: *mut KernelHandle<EventDispatcher>,
+    handle_out: *mut MaybeUninit<KernelHandle<EventDispatcher>>,
 ) -> zx_types::zx_status_t {
     // SAFETY: `rights_out` and `handle_out` are valid non-null writable pointers.
     unsafe {
         match EventDispatcher::create(options) {
             Ok((handle, rights)) => {
                 rights_out.write(rights);
-                handle_out.write(handle);
+                (*handle_out).write(handle);
                 zx_types::ZX_OK
             }
             Err(status) => status.into_raw(),

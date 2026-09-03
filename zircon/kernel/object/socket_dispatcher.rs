@@ -13,7 +13,6 @@ use super::mbuf::MBufChain;
 use super::socket_dispatcher_ffi::cpp_socket_dispatcher_create;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::convert::Infallible;
-use core::mem::MaybeUninit;
 use core::pin::Pin;
 use counters_rs::define_kcounter;
 use debug::ltrace_entry;
@@ -215,20 +214,13 @@ impl SocketDispatcher {
 
         let create_single =
             |holder: RefPtr<PeerHolder<Self>>| -> Result<KernelHandle<Self>, Status> {
-                let mut handle = MaybeUninit::<KernelHandle<Self>>::uninit();
                 // SAFETY: `RefPtr::into_raw(holder)` converts the valid reference into a raw
-                // pointer, and `handle` points to valid stack memory.
-                let status = unsafe {
-                    cpp_socket_dispatcher_create(
-                        RefPtr::into_raw(holder) as *mut _,
-                        flags,
-                        &mut handle,
-                    )
-                };
-                Status::ok(status)?;
-                // SAFETY: `cpp_socket_dispatcher_create` returned success, so `handle` is
-                // initialized.
-                Ok(unsafe { handle.assume_init() })
+                // pointer, and `cpp_socket_dispatcher_create` initializes `handle` on success.
+                unsafe {
+                    KernelHandle::create(|out| {
+                        cpp_socket_dispatcher_create(RefPtr::into_raw(holder) as *mut _, flags, out)
+                    })
+                }
             };
 
         let handle0 = create_single(holder0)?;

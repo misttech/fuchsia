@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::Canary;
 use ksync::{KMutex, RawCriticalMutex, guarded};
@@ -128,11 +127,8 @@ impl CounterDispatcher {
 
     /// Creates a new CounterDispatcher via C++ and returns its kernel handle and rights.
     pub fn create() -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-        // SAFETY: `handle_out` points to valid uninitialized memory for a KernelHandle.
-        let status = unsafe { cpp_counter_dispatcher_create(&raw mut handle_out) };
-        Status::ok(status)?;
-        // SAFETY: `cpp_counter_dispatcher_create` initialized the handle on success.
-        unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
+        // SAFETY: `cpp_counter_dispatcher_create` initializes the handle on success.
+        let handle = unsafe { KernelHandle::create(|out| cpp_counter_dispatcher_create(out)) }?;
+        Ok((handle, DEFAULT_RIGHTS))
     }
 }

@@ -6,13 +6,13 @@
 
 use super::counter_dispatcher::{CounterDispatcher, CounterDispatcherState};
 use super::handle::KernelHandle;
-
+use core::mem::MaybeUninit;
 use zx_types::zx_status_t;
 
 // C++ FFI declarations
 unsafe extern "C" {
     pub(crate) fn cpp_counter_dispatcher_create(
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<CounterDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<CounterDispatcher>>,
     ) -> zx_status_t;
 }
 

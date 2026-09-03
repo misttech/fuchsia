@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::Canary;
 use ksync::{KMutex, RawCriticalMutex, guarded};
@@ -153,15 +152,9 @@ impl SuspendTokenDispatcher {
         task: fbl::RefPtr<Dispatcher>,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         let rights = Self::default_rights();
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-
-        // SAFETY: `handle_out` points to uninitialized memory allocated for a KernelHandle.
-        let status = unsafe { cpp_suspend_token_dispatcher_create(&raw mut handle_out) };
-        Status::ok(status)?;
-
-        // SAFETY: `cpp_suspend_token_dispatcher_create` returned ZX_OK and initialized
-        // `handle_out`.
-        let handle = unsafe { handle_out.assume_init() };
+        // SAFETY: `cpp_suspend_token_dispatcher_create` initializes `handle` on success.
+        let handle =
+            unsafe { KernelHandle::create(|out| cpp_suspend_token_dispatcher_create(out)) }?;
 
         // Suspend the task after creating the dispatcher handle. If suspension fails,
         // `handle` is dropped without setting `task`, so `on_zero_handles()` does nothing.

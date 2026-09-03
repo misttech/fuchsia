@@ -7,6 +7,7 @@
 use super::handle::KernelHandle;
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher::ThreadDispatcher;
+use core::mem::MaybeUninit;
 use zx_types::{
     zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t, zx_info_thread_stats_t,
     zx_info_thread_t, zx_rights_t, zx_status_t, zx_vaddr_t,
@@ -33,8 +34,8 @@ unsafe extern "C" {
         flags: u32,
         name_ptr: *const core::ffi::c_char,
         name_len: usize,
-        out_handle: *mut KernelHandle<ThreadDispatcher>,
-        out_rights: *mut zx_rights_t,
+        out_handle: *mut MaybeUninit<KernelHandle<ThreadDispatcher>>,
+        out_rights: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
 
     /// Initializes a ThreadDispatcher.

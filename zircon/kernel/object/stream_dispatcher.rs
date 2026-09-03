@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT
 
 use bitrs::layout;
-use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::{Canary, RefPtr};
 use ksync::{KMutex, RawCriticalMutex, RawMutex, guarded};
@@ -171,18 +170,6 @@ impl StreamDispatcher {
         vmo_dispatcher: &VmObjectDispatcher,
         seek: zx_off_t,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-        // SAFETY: `vmo_dispatcher` is a valid `VmObjectDispatcher`, and `handle_out` is a valid
-        // uninitialized destination buffer for `KernelHandle<StreamDispatcher>`.
-        let status = unsafe {
-            cpp_stream_dispatcher_create(
-                options.bits(),
-                vmo_dispatcher as *const _,
-                seek,
-                &raw mut handle_out,
-            )
-        };
-        Status::ok(status)?;
         let mut rights = DEFAULT_RIGHTS;
         if options.read() {
             rights |= ZX_RIGHT_READ;
@@ -190,8 +177,14 @@ impl StreamDispatcher {
         if options.write() {
             rights |= ZX_RIGHT_WRITE;
         }
-        // SAFETY: `cpp_stream_dispatcher_create` successfully initialized the handle.
-        unsafe { Ok((handle_out.assume_init(), rights)) }
+        // SAFETY: `vmo_dispatcher` is a valid `VmObjectDispatcher`, and
+        // `cpp_stream_dispatcher_create` initializes `handle` on success.
+        let handle = unsafe {
+            KernelHandle::create(|out| {
+                cpp_stream_dispatcher_create(options.bits(), vmo_dispatcher as *const _, seek, out)
+            })
+        }?;
+        Ok((handle, rights))
     }
 
     fn create_write_op(

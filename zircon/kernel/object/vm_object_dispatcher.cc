@@ -519,17 +519,20 @@ extern "C" FFI_ALWAYS_INLINE const fbl::RefPtr<VmObject>* cpp_vm_object_dispatch
 
 extern "C" zx_status_t cpp_vm_object_dispatcher_create(
     VmObject* raw_vmo, uint64_t stream_size, uint32_t raw_initial_mutability,
-    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle, zx_rights_t* out_rights) {
+    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle,
+    ffi::Uninitialized<zx_rights_t>* out_rights) {
   fbl::RefPtr<VmObject> vmo(raw_vmo);
   auto initial_mutability =
       static_cast<VmObjectDispatcher::InitialMutability>(raw_initial_mutability);
   KernelHandle<VmObjectDispatcher> handle;
-  zx_status_t status = VmObjectDispatcher::Create(ktl::move(vmo), stream_size, initial_mutability,
-                                                  &handle, out_rights);
+  zx_rights_t rights;
+  zx_status_t status =
+      VmObjectDispatcher::Create(ktl::move(vmo), stream_size, initial_mutability, &handle, &rights);
   if (status != ZX_OK) {
     return status;
   }
   out_handle->Initialize(ktl::move(handle));
+  out_rights->Initialize(rights);
   return ZX_OK;
 }
 
@@ -612,7 +615,8 @@ extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dispatcher_create_child(
 // created) and attaches it to the child dispatcher via VmObjectDispatcher::CreateWithSsm.
 extern "C" zx_status_t cpp_vm_object_dispatcher_create_with_parent_stream_size(
     VmObjectDispatcher* parent_disp, VmObject* raw_child_vmo, uint32_t raw_initial_mutability,
-    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle, zx_rights_t* out_rights) {
+    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle,
+    ffi::Uninitialized<zx_rights_t>* out_rights) {
   fbl::RefPtr<VmObject> child_vmo(raw_child_vmo);
   auto initial_mutability =
       static_cast<VmObjectDispatcher::InitialMutability>(raw_initial_mutability);
@@ -621,11 +625,13 @@ extern "C" zx_status_t cpp_vm_object_dispatcher_create_with_parent_stream_size(
     return ssm.status_value();
   }
   KernelHandle<VmObjectDispatcher> kernel_handle;
+  zx_rights_t rights;
   zx_status_t status = VmObjectDispatcher::CreateWithSsm(
-      ktl::move(child_vmo), ktl::move(*ssm), initial_mutability, &kernel_handle, out_rights);
+      ktl::move(child_vmo), ktl::move(*ssm), initial_mutability, &kernel_handle, &rights);
   if (status != ZX_OK) {
     return status;
   }
   out_handle->Initialize(ktl::move(kernel_handle));
+  out_rights->Initialize(rights);
   return ZX_OK;
 }

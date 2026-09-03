@@ -6,6 +6,7 @@
 
 use super::handle::KernelHandle;
 use super::timer_dispatcher::{OnTimerFiredAction, TimerDispatcher, TimerDispatcherState};
+use core::mem::MaybeUninit;
 use zx_types::{zx_clock_t, zx_status_t};
 
 // C++ FFI declarations
@@ -13,7 +14,7 @@ unsafe extern "C" {
     pub(crate) fn cpp_timer_dispatcher_create(
         options: u32,
         clock_id: zx_clock_t,
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<TimerDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<TimerDispatcher>>,
     ) -> zx_status_t;
 
     pub(crate) fn cpp_timer_dispatcher_init_dpc(

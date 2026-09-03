@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::{Canary, RefPtr};
 use ksync::{KMutex, RawCriticalMutex, guarded};
@@ -95,16 +94,15 @@ impl IommuDispatcher {
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         let desc_len = desc.len();
         let desc_ptr = kalloc::Box::into_raw(desc) as *const u8;
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
         // SAFETY: `desc_ptr` points to `desc_len` bytes of valid heap-allocated memory that is
         // transferred to C++ (`cpp_iommu_dispatcher_create` takes ownership of `desc_ptr`), and
-        // `handle_out` points to valid uninitialized memory for `KernelHandle<Self>`.
-        let status = unsafe {
-            cpp_iommu_dispatcher_create(type_param, desc_ptr, desc_len, &raw mut handle_out)
-        };
-        Status::ok(status)?;
-        // SAFETY: cpp_iommu_dispatcher_create initialized handle_out.
-        unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
+        // `cpp_iommu_dispatcher_create` initializes `handle` on success.
+        let handle = unsafe {
+            KernelHandle::create(|out| {
+                cpp_iommu_dispatcher_create(type_param, desc_ptr, desc_len, out)
+            })
+        }?;
+        Ok((handle, DEFAULT_RIGHTS))
     }
 
     /// Returns a reference to the underlying `Iommu` facade object.

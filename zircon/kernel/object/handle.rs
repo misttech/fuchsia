@@ -7,10 +7,11 @@
 use super::DispatcherOps;
 use super::dispatcher::Dispatcher;
 use super::process_dispatcher::ProcessDispatcher;
+use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use zx_status::Status;
-use zx_types::{zx_handle_t, zx_rights_t};
+use zx_types::{zx_handle_t, zx_rights_t, zx_status_t};
 
 /// A wrapper around a handle value received from userspace.
 #[repr(transparent)]
@@ -43,6 +44,41 @@ impl<T> KernelHandle<T>
 where
     T: HasRefCount + Recyclable + DispatcherOps,
 {
+    /// Creates a `KernelHandle<T>` using an initializer closure (typically an FFI call) that
+    /// writes to an uninitialized handle pointer and returns a `zx_status_t`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `init` initializes the memory at `*out` with a valid
+    /// `KernelHandle<T>` whenever it returns `ZX_OK` (0).
+    pub unsafe fn create(
+        init: impl FnOnce(&mut MaybeUninit<Self>) -> zx_status_t,
+    ) -> Result<Self, Status> {
+        let mut handle = MaybeUninit::<Self>::uninit();
+        let status = init(&mut handle);
+        Status::ok(status)?;
+        // SAFETY: `init` succeeded and initialized `handle`.
+        unsafe { Ok(handle.assume_init()) }
+    }
+
+    /// Creates a `KernelHandle<T>` and rights using an initializer closure that writes
+    /// to uninitialized handle and rights pointers.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `init` initializes the memory at `*handle_out` and
+    /// `*rights_out` whenever it returns `ZX_OK` (0).
+    pub unsafe fn create_with_rights(
+        init: impl FnOnce(&mut MaybeUninit<Self>, &mut MaybeUninit<zx_rights_t>) -> zx_status_t,
+    ) -> Result<(Self, zx_rights_t), Status> {
+        let mut handle = MaybeUninit::<Self>::uninit();
+        let mut rights = MaybeUninit::<zx_rights_t>::uninit();
+        let status = init(&mut handle, &mut rights);
+        Status::ok(status)?;
+        // SAFETY: `init` succeeded and initialized `handle` and `rights`.
+        unsafe { Ok((handle.assume_init(), rights.assume_init())) }
+    }
+
     pub fn new(dispatcher: RefPtr<T>) -> Self {
         Self { ptr: RefPtr::into_raw(dispatcher) }
     }
@@ -137,7 +173,7 @@ impl HandleOwner {
 
     /// Returns a reference-counted pointer to the handle's dispatcher.
     pub fn dispatcher(&self) -> RefPtr<Dispatcher> {
-        let mut out = core::mem::MaybeUninit::<RefPtr<Dispatcher>>::uninit();
+        let mut out = MaybeUninit::<RefPtr<Dispatcher>>::uninit();
         // SAFETY: `self.ptr` is guaranteed to be a valid non-null handle pointer.
         unsafe {
             cpp_handle_get_dispatcher(self.ptr.as_ptr(), &mut out);
@@ -181,7 +217,7 @@ impl<'a> HandleRef<'a> {
 
     /// Returns a reference-counted pointer to the handle's dispatcher.
     pub fn dispatcher(&self) -> RefPtr<Dispatcher> {
-        let mut out = core::mem::MaybeUninit::<RefPtr<Dispatcher>>::uninit();
+        let mut out = MaybeUninit::<RefPtr<Dispatcher>>::uninit();
         // SAFETY: `self.ptr` is guaranteed to be a valid handle pointer protected by the handle table lock.
         unsafe {
             cpp_handle_get_dispatcher(self.ptr.as_ptr(), &mut out);
@@ -204,7 +240,7 @@ unsafe extern "C" {
     fn cpp_handle_has_rights(handle: *const core::ffi::c_void, rights: zx_rights_t) -> bool;
     fn cpp_handle_get_dispatcher(
         handle: *const core::ffi::c_void,
-        out_dispatcher: *mut core::mem::MaybeUninit<RefPtr<Dispatcher>>,
+        out_dispatcher: *mut MaybeUninit<RefPtr<Dispatcher>>,
     );
     fn cpp_handle_get_rights(handle: *const core::ffi::c_void) -> zx_rights_t;
 }

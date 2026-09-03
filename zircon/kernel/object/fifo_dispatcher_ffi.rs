@@ -6,6 +6,7 @@
 
 use super::fifo_dispatcher::{FifoDispatcher, FifoDispatcherState};
 use super::handle::KernelHandle;
+use core::mem::MaybeUninit;
 use zx_types::zx_status_t;
 
 unsafe extern "C" {
@@ -14,7 +15,7 @@ unsafe extern "C" {
         count: u32,
         elem_size: u32,
         data: *mut u8,
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<FifoDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<FifoDispatcher>>,
     ) -> zx_status_t;
 }
 

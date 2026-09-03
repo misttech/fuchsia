@@ -461,15 +461,15 @@ zx_status_t cpp_process_dispatcher_set_critical_to_job(ProcessDispatcher* proces
 zx_status_t cpp_process_dispatcher_create(
     JobDispatcher* job, const char* name_ptr, size_t name_len, uint32_t flags,
     ffi::Uninitialized<KernelHandle<ProcessDispatcher>>* out_proc_handle,
-    zx_rights_t* out_proc_rights,
+    ffi::Uninitialized<zx_rights_t>* out_proc_rights,
     ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* out_vmar_handle,
-    zx_rights_t* out_vmar_rights);
+    ffi::Uninitialized<zx_rights_t>* out_vmar_rights);
 zx_status_t cpp_process_dispatcher_create_shared(
     ProcessDispatcher* shared_proc, const char* name_ptr, size_t name_len, uint32_t flags,
     ffi::Uninitialized<KernelHandle<ProcessDispatcher>>* out_proc_handle,
-    zx_rights_t* out_proc_rights,
+    ffi::Uninitialized<zx_rights_t>* out_proc_rights,
     ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* out_restricted_vmar_handle,
-    zx_rights_t* out_restricted_vmar_rights);
+    ffi::Uninitialized<zx_rights_t>* out_restricted_vmar_rights);
 [[noreturn]] void cpp_process_dispatcher_exit_current(int64_t retcode);
 
 JobDispatcher* cpp_process_dispatcher_job(ProcessDispatcher* process);

@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT
 
 use crate::user_copy::UserOutPtr;
-use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::Canary;
 use ksync::{KMutex, RawCriticalMutex, guarded};
@@ -82,13 +81,11 @@ impl SamplerDispatcher {
         config: &zx_sampler_config_t,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         let rights = Self::default_rights();
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-        // SAFETY: `config` is a valid reference and `handle_out` points to uninitialized handle
-        // memory.
-        let status = unsafe { cpp_sampler_dispatcher_create(config, &raw mut handle_out) };
-        Status::ok(status)?;
-        // SAFETY: cpp_sampler_dispatcher_create initialized handle_out.
-        unsafe { Ok((handle_out.assume_init(), rights)) }
+        // SAFETY: `config` is a valid reference and `cpp_sampler_dispatcher_create` initializes
+        // `handle` on success.
+        let handle =
+            unsafe { KernelHandle::create(|out| cpp_sampler_dispatcher_create(config, out)) }?;
+        Ok((handle, rights))
     }
 
     /// Starts sampling session for this sampler.

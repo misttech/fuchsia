@@ -26,7 +26,6 @@ use crate::vm::vm_mapping::VmMapping;
 use crate::vm::vm_object::{Resizability, VmObject, VmObjectChildObserver};
 use crate::vm::vm_object_paged::VmObjectPaged;
 use core::convert::Infallible;
-use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::{ptr, slice};
 use counters_rs::define_kcounter;
@@ -525,17 +524,18 @@ impl IoBufferDispatcher {
                              endpoint_id: IobEndpointId,
                              shared_state: RefPtr<SharedIobState>|
          -> Result<KernelHandle<Self>, Status> {
-            let mut handle = MaybeUninit::<KernelHandle<Self>>::uninit();
-            let status = unsafe {
-                cpp_io_buffer_dispatcher_create(
-                    RefPtr::into_raw(holder) as *mut _,
-                    endpoint_id as usize,
-                    RefPtr::into_raw(shared_state) as *mut _,
-                    &mut handle,
-                )
-            };
-            Status::ok(status)?;
-            Ok(unsafe { handle.assume_init() })
+            // SAFETY: `holder` and `shared_state` transfer acquired refcounts, and
+            // `cpp_io_buffer_dispatcher_create` initializes `handle` on success.
+            unsafe {
+                KernelHandle::create(|out| {
+                    cpp_io_buffer_dispatcher_create(
+                        RefPtr::into_raw(holder) as *mut _,
+                        endpoint_id as usize,
+                        RefPtr::into_raw(shared_state) as *mut _,
+                        out,
+                    )
+                })
+            }
         };
 
         let handle0 = create_single(holder0, IobEndpointId::Ep0, shared_state.clone())?;

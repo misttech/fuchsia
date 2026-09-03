@@ -6,12 +6,13 @@
 
 use super::handle::KernelHandle;
 use super::profile_dispatcher::{ProfileDispatcher, ProfileDispatcherState};
+use core::mem::MaybeUninit;
 use zx_types::{zx_profile_info_t, zx_status_t};
 
 unsafe extern "C" {
     pub(crate) fn cpp_profile_dispatcher_create(
         info: *const zx_profile_info_t,
-        handle_out: *mut core::mem::MaybeUninit<KernelHandle<ProfileDispatcher>>,
+        handle_out: *mut MaybeUninit<KernelHandle<ProfileDispatcher>>,
     ) -> zx_status_t;
 
     pub(crate) fn cpp_profile_dispatcher_validate_and_create_profile(

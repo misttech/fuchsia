@@ -39,25 +39,13 @@ impl VmAddressRegionDispatcher {
         size: usize,
         flags: u32,
     ) -> Result<(KernelHandle<VmAddressRegionDispatcher>, zx_rights_t), Status> {
-        let mut handle_out =
-            core::mem::MaybeUninit::<KernelHandle<VmAddressRegionDispatcher>>::uninit();
-        let mut rights_out = 0;
-        // SAFETY: `self` is a valid `VmAddressRegionDispatcher` reference.
-        // `handle_out` and `rights_out` point to valid writable stack memory.
-        let status = unsafe {
-            cpp_vmar_dispatcher_allocate(
-                self,
-                offset,
-                size,
-                flags,
-                handle_out.as_mut_ptr(),
-                &mut rights_out,
-            )
-        };
-        Status::ok(status)?;
-        // SAFETY: `cpp_vmar_dispatcher_allocate` initialized `handle_out` on success.
-        let handle = unsafe { handle_out.assume_init() };
-        Ok((handle, rights_out))
+        // SAFETY: `self` is a valid `VmAddressRegionDispatcher` reference, and
+        // `cpp_vmar_dispatcher_allocate` initializes `handle` and `rights` on success.
+        unsafe {
+            KernelHandle::create_with_rights(|handle_out, rights_out| {
+                cpp_vmar_dispatcher_allocate(self, offset, size, flags, handle_out, rights_out)
+            })
+        }
     }
 
     /// Maps a VMO into this VMAR.

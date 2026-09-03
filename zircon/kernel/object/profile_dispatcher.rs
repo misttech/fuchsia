@@ -172,13 +172,11 @@ impl ProfileDispatcher {
 
     pub fn create(info: &zx_profile_info_t) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         validate_profile_info(info)?;
-        let mut handle_out = core::mem::MaybeUninit::<KernelHandle<Self>>::uninit();
-        // SAFETY: handle_out points to valid uninitialized memory for KernelHandle<Self>.
-        let status =
-            unsafe { cpp_profile_dispatcher_create(info as *const _, &raw mut handle_out) };
-        Status::ok(status)?;
-        // SAFETY: cpp_profile_dispatcher_create initialized handle_out.
-        unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
+        // SAFETY: `cpp_profile_dispatcher_create` initializes `handle` on success.
+        let handle = unsafe {
+            KernelHandle::create(|out| cpp_profile_dispatcher_create(info as *const _, out))
+        }?;
+        Ok((handle, DEFAULT_RIGHTS))
     }
 
     pub fn apply_profile_to_thread(&self, thread: &ThreadDispatcher) -> Result<(), Status> {

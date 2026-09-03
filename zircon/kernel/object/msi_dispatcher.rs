@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::{Canary, RefPtr};
 use ksync::{KMutex, RawCriticalMutex, guarded};
@@ -92,15 +91,14 @@ impl MsiDispatcher {
     pub fn create(
         msi_alloc: RefPtr<MsiAllocation>,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
         // SAFETY: `msi_alloc` is transferred to C++ (`cpp_msi_dispatcher_create` takes ownership
-        // of the raw pointer), and `handle_out` points to valid uninitialized memory for KernelHandle<Self>.
-        let status = unsafe {
-            cpp_msi_dispatcher_create(RefPtr::into_raw(msi_alloc).cast_mut(), &raw mut handle_out)
-        };
-        Status::ok(status)?;
-        // SAFETY: cpp_msi_dispatcher_create initialized handle_out.
-        unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
+        // of the raw pointer), and `cpp_msi_dispatcher_create` initializes `handle` on success.
+        let handle = unsafe {
+            KernelHandle::create(|out| {
+                cpp_msi_dispatcher_create(RefPtr::into_raw(msi_alloc).cast_mut(), out)
+            })
+        }?;
+        Ok((handle, DEFAULT_RIGHTS))
     }
 
     /// Returns `zx_info_msi_t` for this MSI dispatcher.

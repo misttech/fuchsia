@@ -6,6 +6,7 @@
 
 use super::handle::KernelHandle;
 use super::job_dispatcher::JobDispatcher;
+use core::mem::MaybeUninit;
 use zx_types::{
     zx_info_job_t, zx_policy_basic_v1_t, zx_policy_basic_v2_t, zx_policy_timer_slack_t,
     zx_rights_t, zx_status_t,
@@ -29,8 +30,8 @@ unsafe extern "C" {
     pub(crate) fn cpp_job_dispatcher_create(
         flags: u32,
         parent: *mut JobDispatcher,
-        handle: *mut KernelHandle<JobDispatcher>,
-        rights: *mut zx_rights_t,
+        handle: *mut MaybeUninit<KernelHandle<JobDispatcher>>,
+        rights: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
 
     /// Sets basic policy (v1) on the given job.

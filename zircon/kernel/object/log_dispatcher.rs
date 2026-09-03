@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT
 
 use crate::debuglog_rs::{DlogReaderStorage, dlog_record_t, dlog_write};
-use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::Canary;
 use ksync::{KMutex, RawCriticalMutex, guarded};
@@ -122,13 +121,10 @@ impl LogDispatcher {
     /// Creates a new LogDispatcher and returns its kernel handle and rights.
     pub fn create(flags: u32) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
         let rights = Self::default_rights(flags);
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-        // SAFETY: `handle_out` points to local stack memory and is valid for writing.
-        let status = unsafe { cpp_log_dispatcher_create(flags, rights, &raw mut handle_out) };
-        Status::ok(status)?;
-        // SAFETY: `cpp_log_dispatcher_create` returned success, so
-        // `handle_out` is initialized.
-        unsafe { Ok((handle_out.assume_init(), rights)) }
+        // SAFETY: `cpp_log_dispatcher_create` initializes `handle` on success.
+        let handle =
+            unsafe { KernelHandle::create(|out| cpp_log_dispatcher_create(flags, rights, out)) }?;
+        Ok((handle, rights))
     }
 
     /// Writes `bytes` to debuglog with given options/flags.

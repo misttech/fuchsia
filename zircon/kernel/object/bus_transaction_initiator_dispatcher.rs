@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use core::mem::MaybeUninit;
 use counters_rs::define_kcounter;
 use fbl::{Canary, RefPtr};
 use ksync::{KMutex, RawCriticalMutex, guarded};
@@ -126,19 +125,14 @@ impl BusTransactionInitiatorDispatcher {
 
     /// Creates a new BusTransactionInitiatorDispatcher and returns its kernel handle and rights.
     pub fn create(iommu: &Iommu, bti_id: u64) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
-        // SAFETY: `iommu` points to a valid `Iommu`, and `handle_out` points to valid
-        // uninitialized memory for `KernelHandle<Self>`.
-        let status = unsafe {
-            cpp_bus_transaction_initiator_dispatcher_create(
-                iommu as *const Iommu,
-                bti_id,
-                &raw mut handle_out,
-            )
-        };
-        Status::ok(status)?;
-        // SAFETY: cpp_bus_transaction_initiator_dispatcher_create initialized handle_out.
-        unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
+        // SAFETY: `iommu` points to a valid `Iommu`, and the FFI function initializes `handle`
+        // on success.
+        let handle = unsafe {
+            KernelHandle::create(|out| {
+                cpp_bus_transaction_initiator_dispatcher_create(iommu as *const Iommu, bti_id, out)
+            })
+        }?;
+        Ok((handle, DEFAULT_RIGHTS))
     }
 
     /// Pins the given VMO range and returns a `PinnedMemoryTokenDispatcher` representing the

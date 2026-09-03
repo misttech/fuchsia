@@ -7,6 +7,7 @@
 use super::handle::KernelHandle;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
 use crate::vm::vm_object::VmObject;
+use core::mem::MaybeUninit;
 use zx_types::{zx_rights_t, zx_status_t, zx_vaddr_t};
 
 unsafe extern "C" {
@@ -32,8 +33,8 @@ unsafe extern "C" {
         offset: usize,
         size: usize,
         flags: u32,
-        handle_out: *mut KernelHandle<VmAddressRegionDispatcher>,
-        rights_out: *mut zx_rights_t,
+        handle_out: *mut MaybeUninit<KernelHandle<VmAddressRegionDispatcher>>,
+        rights_out: *mut MaybeUninit<zx_rights_t>,
     ) -> zx_status_t;
 
     /// Calls into C++ implementation to map a VMO into a VMAR.
