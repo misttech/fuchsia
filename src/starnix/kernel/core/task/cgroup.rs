@@ -465,8 +465,12 @@ impl CgroupOps for CgroupRoot {
     }
 
     fn get_pids(&self, kernel: &Kernel) -> Vec<pid_t> {
-        let controlled_pids: HashSet<pid_t> =
-            self.pid_table.lock().keys().filter_map(|v| v.upgrade().map(|tg| tg.leader)).collect();
+        let controlled_pids: HashSet<pid_t> = self
+            .pid_table
+            .lock()
+            .keys()
+            .filter_map(|v| v.upgrade().map(|tg| tg.leader.id))
+            .collect();
         let kernel_pids = kernel.pids.read().process_ids();
         kernel_pids.into_iter().filter(|pid| !controlled_pids.contains(pid)).collect()
     }
@@ -942,7 +946,7 @@ impl CgroupOps for Cgroup {
     fn get_pids(&self, _kernel: &Kernel) -> Vec<pid_t> {
         let mut state = self.state.lock();
         state.update_processes();
-        state.processes.iter().filter_map(|v| v.upgrade().map(|tg| tg.leader)).collect()
+        state.processes.iter().filter_map(|v| v.upgrade().map(|tg| tg.leader.id)).collect()
     }
 
     fn kill(&self) {

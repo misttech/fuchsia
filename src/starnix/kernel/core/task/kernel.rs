@@ -679,7 +679,7 @@ impl Kernel {
                     .read()
                     .get_thread_groups()
                     .into_iter()
-                    .filter(|tg| tg.leader != SYSTEM_TASK_PID && tg.leader != INIT_PID)
+                    .filter(|tg| tg.leader.id != SYSTEM_TASK_PID && tg.leader.id != INIT_PID)
                     .collect::<Vec<_>>()
             };
             if tgs.is_empty() {
@@ -996,7 +996,7 @@ impl Kernel {
             if let Ok(koid) = thread_group.process.koid() {
                 tg_node.record_int("koid", koid.raw_koid() as i64);
             }
-            tg_node.record_int("pid", thread_group.leader as i64);
+            tg_node.record_int("pid", thread_group.leader.id as i64);
             tg_node.record_int("ppid", ppid);
             tg_node.record_bool("stopped", thread_group.load_stopped() == StopState::GroupStopped);
 
@@ -1024,7 +1024,7 @@ impl Kernel {
                         });
                     }
                 };
-                if task.tid.id == thread_group.leader {
+                if task.tid == thread_group.leader {
                     let mut argv = task.read_argv(256).unwrap_or_default();
 
                     // Any runtime that overwrites argv is likely to leave a lot of trailing

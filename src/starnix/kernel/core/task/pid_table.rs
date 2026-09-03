@@ -89,6 +89,20 @@ impl std::fmt::Display for PidEntry {
     }
 }
 
+impl PartialEq for PidEntry {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
+
+impl Eq for PidEntry {}
+
+impl std::hash::Hash for PidEntry {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (self as *const Self).hash(state);
+    }
+}
+
 pub enum ProcessEntryRef {
     Process(Arc<ThreadGroup>),
     Zombie,

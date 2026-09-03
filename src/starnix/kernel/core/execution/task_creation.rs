@@ -18,7 +18,7 @@ use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::signals::{SIGCHLD, Signal};
-use starnix_uapi::{errno, error, from_status_like_fdio, pid_t, rlimit};
+use starnix_uapi::{errno, error, from_status_like_fdio, rlimit};
 use std::ffi::CString;
 use std::sync::Arc;
 
@@ -37,7 +37,7 @@ pub struct TaskInfo {
 pub fn create_zircon_process(
     kernel: &Arc<Kernel>,
     parent: Option<ThreadGroupWriteGuard<'_>>,
-    pid: pid_t,
+    pid: Pid,
     exit_signal: Option<Signal>,
     process_group: Arc<ProcessGroup>,
     signal_actions: Arc<SignalActions>,
@@ -273,7 +273,7 @@ pub fn create_task<F>(
     creds: Arc<Credentials>,
 ) -> Result<TaskBuilder, Errno>
 where
-    F: FnOnce(i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
+    F: FnOnce(Pid, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
 {
     let mut pids = kernel.pids.write();
     let pid = pids.allocate_pid();
@@ -291,7 +291,7 @@ fn create_task_with_pid<F>(
     rlimits: &[(Resource, u64)],
 ) -> Result<TaskBuilder, Errno>
 where
-    F: FnOnce(i32, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
+    F: FnOnce(Pid, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
 {
     debug_assert!(pids.get_task(pid.id).is_err());
 
@@ -299,7 +299,7 @@ where
     pids.add_process_group(&process_group);
 
     let TaskInfo { thread_group, memory_manager } =
-        task_info_factory(pid.id, process_group.clone())?;
+        task_info_factory(pid.clone(), process_group.clone())?;
 
     process_group.insert(&thread_group);
 

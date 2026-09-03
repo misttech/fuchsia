@@ -83,11 +83,11 @@ impl SchedulerManager {
         // via `fork` only inherit standard scheduling policies (SCHED_NORMAL/SCHED_FIFO) with
         // default profiles to maintain basic parity with Linux and prevent demand amplification.
         if thread_group_state.did_exec {
-            let process_name = if task.tid.id == thread_group.leader {
+            let process_name = if task.tid == thread_group.leader {
                 task.command()
             } else {
                 thread_group_state
-                    .get_task(thread_group.leader)
+                    .get_task(thread_group.leader.id)
                     .ok_or_else(|| errno!(EINVAL))?
                     .command()
             };

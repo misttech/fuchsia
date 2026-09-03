@@ -1222,7 +1222,7 @@ impl CurrentTask {
         starnix_logging::set_current_task_info(
             new_name,
             leader_command,
-            self.thread_group().leader,
+            self.thread_group().leader.id,
             self.tid.id,
         );
     }
@@ -1672,7 +1672,7 @@ impl CurrentTask {
                     create_zircon_process(
                         kernel,
                         Some(thread_group_state),
-                        pid.id,
+                        pid.clone(),
                         child_exit_signal,
                         process_group,
                         signal_actions,

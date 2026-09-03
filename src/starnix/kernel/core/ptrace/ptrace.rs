@@ -1200,12 +1200,9 @@ pub fn ptrace_traceme(current_task: &mut CurrentTask) -> Result<SyscallResult, E
     if let Some(parent) = parent {
         let parent = parent.upgrade();
         // TODO: Move this check into `do_attach()` so that there is a single `ptrace_access_check(tracer, tracee)`?
-        let parent_task = {
-            let pids = current_task.kernel().pids.read();
-            let parent_task = pids.get_task(parent.leader).map_err(|_| errno!(EINVAL))?;
-            security::ptrace_traceme(current_task, &parent_task)?;
-            Arc::downgrade(&parent_task)
-        };
+        let parent_task = parent.leader.get_task().map_err(|_| errno!(EINVAL))?;
+        security::ptrace_traceme(current_task, &parent_task)?;
+        let parent_task = Arc::downgrade(&parent_task);
 
         do_attach(
             &parent,
@@ -1444,7 +1441,7 @@ mod tests {
                 sys_prctl(
                     &mut tracee,
                     PR_SET_PTRACER,
-                    tracer.thread_group().leader as u64,
+                    tracer.thread_group().leader.id as u64,
                     0,
                     0,
                     0

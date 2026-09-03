@@ -80,7 +80,7 @@ impl MemoryAttributionManager {
             for thread_group in pids.get_thread_groups() {
                 let name = get_thread_group_identifier(&thread_group);
                 events.append(&mut attribution_info_for_thread_group(name, &thread_group));
-                processes.insert(thread_group.leader);
+                processes.insert(thread_group.leader.id);
             }
 
             // Hold the PID table lock until the thread group notifier is set. This avoids a race
@@ -269,7 +269,7 @@ impl MemoryAttributionManager {
                             None => continue,
                         };
                         let name = get_thread_group_identifier(&thread_group);
-                        updates.push(new_principal(thread_group.leader, name));
+                        updates.push(new_principal(thread_group.leader.id, name));
                     }
                     MemoryAttributionLifecycleEventType::Destruction => {
                         if !processes.remove(&pid) {
@@ -307,7 +307,7 @@ fn scan_processes(
     let pids = kernel.pids.read();
     let mut new_processes = HashSet::new();
     for thread_group in pids.get_thread_groups() {
-        let pid = thread_group.leader;
+        let pid = thread_group.leader.id;
         new_processes.insert(pid);
         // TODO(https://fxbug.dev/379733655): Remove this
         #[allow(clippy::set_contains_or_insert)]
@@ -331,7 +331,7 @@ fn get_thread_group_identifier(thread_group: &ThreadGroup) -> String {
         true => zx::Name::new_lossy("[system task]"),
         false => thread_group.process.get_name().unwrap_or_default(),
     };
-    let id = thread_group.leader;
+    let id = thread_group.leader.id;
     let name = format!("{id}: {name}");
     name
 }
@@ -340,7 +340,7 @@ fn attribution_info_for_thread_group(
     name: String,
     thread_group: &ThreadGroup,
 ) -> Vec<fattribution::AttributionUpdate> {
-    let new = new_principal(thread_group.leader, name);
+    let new = new_principal(thread_group.leader.id, name);
     let updated = updated_principal(thread_group);
     iter::once(new).chain(updated.into_iter()).collect()
 }
@@ -363,7 +363,7 @@ fn updated_principal(thread_group: &ThreadGroup) -> Option<fattribution::Attribu
         return None;
     };
     let update = fattribution::AttributionUpdate::Update(fattribution::UpdatedPrincipal {
-        identifier: Some(thread_group.leader as u64),
+        identifier: Some(thread_group.leader.id as u64),
         resources: Some(fattribution::Resources::Data(fattribution::Data {
             resources: vec![fattribution::Resource::ProcessMapped(fattribution::ProcessMapped {
                 process: process_koid.raw_koid(),

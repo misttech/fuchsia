@@ -86,7 +86,7 @@ impl ProcessGroup {
     state_accessor!(ProcessGroup, mutable_state);
 
     pub fn insert(&self, thread_group: &ThreadGroup) {
-        self.write().thread_groups.insert(thread_group.leader, thread_group.weak_self.clone());
+        self.write().thread_groups.insert(thread_group.leader.id, thread_group.weak_self.clone());
     }
 
     /// Removes the thread group from the process group.
@@ -94,7 +94,7 @@ impl ProcessGroup {
     /// the caller must use to explicitly disassociate the controlling terminal if the
     /// exiting thread group was the session leader.
     pub fn remove(&self, thread_group: &ThreadGroup) -> (bool, SessionDisassociation) {
-        let is_session_leader = self.session.leader == thread_group.leader;
+        let is_session_leader = self.session.leader == thread_group.leader.id;
         let is_empty = self.write().remove(thread_group);
         let disassociation = if is_session_leader {
             SessionDisassociation::new(Some(self.session.clone()))
@@ -170,7 +170,7 @@ impl ProcessGroupMutableState<Base = ProcessGroup> {
 
     /// Removes the thread group from the process group. Returns whether the process group is empty.
     fn remove(&mut self, thread_group: &ThreadGroup) -> bool {
-        self.thread_groups.remove(&thread_group.leader);
+        self.thread_groups.remove(&thread_group.leader.id);
 
         self.thread_groups.is_empty()
     }

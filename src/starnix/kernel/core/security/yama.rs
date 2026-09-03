@@ -76,10 +76,10 @@ pub(super) fn ptrace_access_check(
             // This only allows us to attach to descendants and tasks that have
             // explicitly allowlisted us with PR_SET_PTRACER.
             let mut ttg = tracee.thread_group().read().parent.clone();
-            let my_pid = current_task.thread_group().leader;
+            let my_pid = &current_task.thread_group().leader;
             while let Some(target) = ttg {
                 let target = target.upgrade();
-                if target.leader == my_pid {
+                if target.leader == *my_pid {
                     return Ok(());
                 }
                 ttg = target.read().parent.clone();
@@ -88,7 +88,7 @@ pub(super) fn ptrace_access_check(
             match tracee.thread_group().read().allowed_ptracers {
                 PtraceAllowedPtracers::None => (),
                 PtraceAllowedPtracers::Some(pid) => {
-                    if my_pid == pid {
+                    if my_pid.id == pid {
                         return Ok(());
                     }
                 }

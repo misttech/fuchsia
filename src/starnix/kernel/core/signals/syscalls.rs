@@ -427,7 +427,7 @@ fn send_unchecked_signal(
             signal,
             si_code,
             SignalDetail::Kill {
-                pid: current_task.thread_group().leader,
+                pid: current_task.thread_group().leader.id,
                 uid: current_task.current_creds().uid,
             },
             Some(current_task.weak_self.clone()),
@@ -516,7 +516,7 @@ pub fn sys_kill(
                     if *current_task.thread_group() == *thread_group {
                         return false;
                     }
-                    if thread_group.leader == 1 {
+                    if thread_group.leader.id == 1 {
                         return false;
                     }
                     true
@@ -2272,7 +2272,7 @@ mod tests {
                 SIGIO,
                 SI_QUEUE,
                 SignalDetail::Kill {
-                    pid: current_task.thread_group().leader,
+                    pid: current_task.thread_group().leader.id,
                     uid: current_task.current_creds().uid,
                 },
             );

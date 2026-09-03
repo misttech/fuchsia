@@ -304,7 +304,7 @@ impl IntervalTimer {
                         if let Some(signal_info) = self.signal_info() {
                             log_trace!(
                                 signal = signal_info.signal.number(),
-                                pid = timer_thread_group.leader;
+                                pid = timer_thread_group.leader.id;
                                 "sending signal for timer"
                             );
                             timer_thread_group.write().send_signal(signal_info);

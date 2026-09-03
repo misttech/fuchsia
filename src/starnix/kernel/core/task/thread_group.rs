@@ -16,7 +16,7 @@ use crate::signals::{
 };
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
-    ControllingTerminal, CurrentTask, ExitStatus, Kernel, PidTable, ProcessGroup, Session,
+    ControllingTerminal, CurrentTask, ExitStatus, Kernel, Pid, PidTable, ProcessGroup, Session,
     SessionDisassociation, Task, TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
@@ -102,7 +102,7 @@ impl std::ops::Deref for ThreadGroupKey {
 
 impl From<&ThreadGroup> for ThreadGroupKey {
     fn from(tg: &ThreadGroup) -> Self {
-        Self { pid: tg.leader, thread_group: WeakKey::from(&tg.weak_self.upgrade().unwrap()) }
+        Self { pid: tg.leader.id, thread_group: WeakKey::from(&tg.weak_self.upgrade().unwrap()) }
     }
 }
 
@@ -274,7 +274,7 @@ pub struct ThreadGroup {
     /// The lead task of this thread group.
     ///
     /// The lead task is typically the initial thread created in the thread group.
-    pub leader: pid_t,
+    pub leader: Pid,
 
     // TODO(https://fxbug.dev/508746892): Remove this once the `PidTable` lock is removed.
     /// Cached weak reference to the leader task.
@@ -390,7 +390,7 @@ impl Drop for ThreadGroup {
                 .and_then(|p| p.0.upgrade().as_ref().map(|p| p
                     .read()
                     .children
-                    .get(&self.leader)
+                    .get(&self.leader.id)
                     .is_none()))
                 .unwrap_or(true)
         );
@@ -685,7 +685,7 @@ impl ThreadGroup {
         process: zx::Process,
         root_vmar: zx::Vmar,
         parent: Option<ThreadGroupWriteGuard<'_>>,
-        leader: pid_t,
+        leader: Pid,
         exit_signal: Option<Signal>,
         process_group: Arc<ProcessGroup>,
         signal_actions: Arc<SignalActions>,
@@ -707,7 +707,7 @@ impl ThreadGroup {
     /// Creates a ThreadGroup for a kernel system task (e.g., kthreadd).
     pub fn for_system(
         kernel: Arc<Kernel>,
-        leader: pid_t,
+        leader: Pid,
         process_group: Arc<ProcessGroup>,
     ) -> Arc<ThreadGroup> {
         Self::new_internal(
@@ -733,7 +733,7 @@ impl ThreadGroup {
         kernel: Arc<Kernel>,
         process: zx::Process,
         parent: ThreadGroupWriteGuard<'_>,
-        leader: pid_t,
+        leader: Pid,
         process_group: Arc<ProcessGroup>,
     ) -> Arc<ThreadGroup> {
         Self::new_internal(
@@ -753,7 +753,7 @@ impl ThreadGroup {
         process: zx::Process,
         root_vmar: zx::Vmar,
         parent: Option<ThreadGroupWriteGuard<'_>>,
-        leader: pid_t,
+        leader: Pid,
         exit_signal: Option<Signal>,
         process_group: Arc<ProcessGroup>,
         signal_actions: Arc<SignalActions>,
@@ -815,7 +815,7 @@ impl ThreadGroup {
 
             if let Some(mut parent) = parent {
                 thread_group.next_seccomp_filter_id.reset(parent.base.next_seccomp_filter_id.get());
-                parent.children.insert(leader, weak_self.clone());
+                parent.children.insert(thread_group.leader.id, weak_self.clone());
                 process_group.insert(&thread_group);
             };
             thread_group
@@ -881,7 +881,7 @@ impl ThreadGroup {
             }
             return error!(EINVAL);
         }
-        if task.tid.id == self.leader {
+        if task.tid == self.leader {
             let _ = self.leader_task.set(Arc::downgrade(&task));
         }
         state.tasks.insert(task.tid.id, (&task).into());
@@ -929,7 +929,7 @@ impl ThreadGroup {
                 ProcessExitInfo { status: exit_status, exit_signal: state.exit_signal.clone() };
             let zombie =
                 ZombieProcess::new(state.as_ref(), &persistent_info.real_creds(), exit_info);
-            pids.kill_process(self.leader);
+            pids.kill_process(self.leader.id);
 
             let session = state.leave_process_group(&pids);
 
@@ -987,7 +987,7 @@ impl ThreadGroup {
                                 child_state.exit_signal = Some(SIGCHLD);
                                 child_state.parent =
                                     Some(ThreadGroupParent::new(Arc::downgrade(&reaper)));
-                                reaper_state.children.insert(child.leader, weak_child.clone());
+                                reaper_state.children.insert(child.leader.id, weak_child.clone());
                             }
                         }
                         reaper_state.zombie_children.append(&mut state.zombie_children);
@@ -1203,10 +1203,10 @@ impl ThreadGroup {
 
     pub fn setsid(&self) -> Result<(), Errno> {
         let pids = self.kernel.pids.read();
-        if pids.get_process_group(self.leader).is_some() {
+        if pids.get_process_group(self.leader.id).is_some() {
             return error!(EPERM);
         }
-        let process_group = ProcessGroup::new(self.leader, None);
+        let process_group = ProcessGroup::new(self.leader.id, None);
         pids.add_process_group(&process_group);
         let session = self.write().set_process_group(process_group, &pids);
         session.disassociate_controlling_terminal();
@@ -1228,10 +1228,11 @@ impl ThreadGroup {
 
             // The target process must be either the current process of a child of the current process
             let mut target_thread_group = target.thread_group().write();
-            let is_target_current_process_child =
-                target_thread_group.parent.as_ref().map(|tg| tg.upgrade().leader)
-                    == Some(self.leader);
-            if target_thread_group.leader() != self.leader && !is_target_current_process_child {
+            let is_target_current_process_child = target_thread_group
+                .parent
+                .as_ref()
+                .is_some_and(|tg| tg.upgrade().leader == self.leader);
+            if target_thread_group.leader() != self.leader.id && !is_target_current_process_child {
                 return error!(ESRCH);
             }
 
@@ -1490,7 +1491,7 @@ impl ThreadGroup {
 
         // "The calling process must be a session leader and not have a
         // controlling terminal already." - tty_ioctl(4)
-        if process_group.session.leader != self.leader {
+        if process_group.session.leader != self.leader.id {
             return error!(EINVAL);
         }
         if let Some(ref current_ct) = session_writer.controlling_terminal {
@@ -1564,7 +1565,7 @@ impl ThreadGroup {
             terminal_state.controller = None;
         }
 
-        if process_group.session.leader == self.leader {
+        if process_group.session.leader == self.leader.id {
             process_group.send_signals(&[SIGHUP, SIGCONT]);
         }
 
@@ -1780,7 +1781,7 @@ impl ThreadGroup {
                             .as_mut()
                             .map(|ptrace| ptrace.get_last_signal(options.keep_waitable_state));
                     }
-                    pid = process_state.base.leader;
+                    pid = process_state.base.leader.id;
                 }
                 if exit_status == None {
                     if let Some(ptrace) = task_state.ptrace.as_mut() {
@@ -1848,7 +1849,7 @@ impl ThreadGroup {
                 signal,
                 SI_USER as i32,
                 SignalDetail::Kill {
-                    pid: current_task.thread_group().leader,
+                    pid: current_task.thread_group().leader.id,
                     uid: current_task.current_creds().uid,
                 },
             );
@@ -1873,7 +1874,7 @@ impl ThreadGroup {
             signal,
             SI_USER as i32,
             SignalDetail::Kill {
-                pid: current_task.thread_group().leader,
+                pid: current_task.thread_group().leader.id,
                 uid: current_task.current_creds().uid,
             },
         );
@@ -1904,7 +1905,7 @@ impl ThreadGroup {
     ) -> Result<(), Errno> {
         if let Some(signal) = self.check_signal_access(current_task, unchecked_signal)? {
             let siginfo = UncheckedSignalInfo::read_from_siginfo(current_task, siginfo_ref)?;
-            if self.leader != current_task.get_pid()
+            if self.leader.id != current_task.get_pid()
                 && (siginfo.code() >= 0 || siginfo.code() == SI_TKILL)
             {
                 return error!(EPERM);
@@ -2045,7 +2046,7 @@ pub enum WaitableChildResult {
 #[apply(state_implementation!)]
 impl ThreadGroupMutableState<Base = ThreadGroup> {
     pub fn leader(&self) -> pid_t {
-        self.base.leader
+        self.base.leader.id
     }
 
     pub fn leader_command(&self) -> TaskCommand {
@@ -2105,7 +2106,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 
     pub fn get_ppid(&self) -> pid_t {
         match &self.parent {
-            Some(parent) => parent.upgrade().leader,
+            Some(parent) => parent.upgrade().leader.id,
             None => 0,
         }
     }
@@ -2200,7 +2201,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         // The children whose pid matches the pid selector queried.
         let filter_children_by_pid_selector = |child: &ThreadGroup| match *selector {
             ProcessSelector::Any => true,
-            ProcessSelector::Pid(pid) => child.leader == pid,
+            ProcessSelector::Pid(pid) => child.leader.id == pid,
             ProcessSelector::Pgid(pgid) => {
                 // This allow_subclass is safe because the lock is being acquired
                 // in a strictly top-down traversal of the ThreadGroup tree (from parent
@@ -2269,7 +2270,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                     let info = child.tasks.values().next().unwrap().info();
                     let uid = info.real_creds().uid;
                     WaitResult {
-                        pid: child.base.leader,
+                        pid: child.base.leader.id,
                         uid,
                         exit_info: ProcessExitInfo {
                             status: exit_status,

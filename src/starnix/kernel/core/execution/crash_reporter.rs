@@ -78,7 +78,7 @@ impl CrashReporter {
             .get()
             .expect("handles for crashing threads are still valid")
             .koid;
-        let linux_pid = current_task.thread_group().leader as i64;
+        let linux_pid = current_task.thread_group().leader.id as i64;
         let thread_name = current_task.command().to_string();
 
         // TODO(https://fxbug.dev/356912301) use boot time
