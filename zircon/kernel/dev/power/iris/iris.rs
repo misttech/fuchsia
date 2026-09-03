@@ -18,7 +18,7 @@ use crate::pdev_power::{
     power_management_boot_boost_enabled, power_management_register_domains,
     power_management_set_rate_limits,
 };
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use debug::dprintf;
 use kalloc::Box;
 use regio::{MmioBank, MmioPtr, Offset, RwSafe};
@@ -38,6 +38,53 @@ const DOMAIN3_REG_OFFSET: Offset<u32, RwSafe> = Offset::new(0x18);
 const OPP_BANK_SIZE: usize = 0x20;
 
 static OPP_REG_BASE: AtomicPtr<u32> = AtomicPtr::new(core::ptr::null_mut());
+
+const UNCACHED_OPP: u64 = u64::MAX;
+
+static CURRENT_OPPS: [AtomicU64; POWER_DOMAIN_COUNT] = [
+    AtomicU64::new(UNCACHED_OPP),
+    AtomicU64::new(UNCACHED_OPP),
+    AtomicU64::new(UNCACHED_OPP),
+    AtomicU64::new(UNCACHED_OPP),
+];
+
+#[cfg(ktest)]
+fn reset_cached_opps_for_test() {
+    for opp in &CURRENT_OPPS {
+        opp.store(UNCACHED_OPP, Ordering::SeqCst);
+    }
+}
+
+ksync::declare_singleton_lock!(Domain0Lock, ::ksync::RawSpinlock);
+ksync::declare_singleton_lock!(Domain1Lock, ::ksync::RawSpinlock);
+ksync::declare_singleton_lock!(Domain2Lock, ::ksync::RawSpinlock);
+ksync::declare_singleton_lock!(Domain3Lock, ::ksync::RawSpinlock);
+
+/// Acquires the spinlock corresponding to `domain_index` and executes `f`.
+fn with_domain_lock<R>(
+    domain_index: usize,
+    f: impl FnOnce() -> Result<R, Status>,
+) -> Result<R, Status> {
+    match domain_index {
+        0 => {
+            ksync::lock!(Domain0Lock::lock());
+            f()
+        }
+        1 => {
+            ksync::lock!(Domain1Lock::lock());
+            f()
+        }
+        2 => {
+            ksync::lock!(Domain2Lock::lock());
+            f()
+        }
+        3 => {
+            ksync::lock!(Domain3Lock::lock());
+            f()
+        }
+        _ => Err(Status::INVALID_ARGS),
+    }
+}
 
 #[derive(Copy, Clone, Debug)]
 struct DomainInfo {
@@ -128,9 +175,6 @@ fn get_opp_bank() -> Option<MmioBank<u32, RwSafe>> {
 
 /// Sets the active Operating Performance Point (OPP) for the specified power domain.
 extern "C" fn iris_opp_set(domain_id: u32, opp: u64) -> Result<(), Status> {
-    let Some(bank) = get_opp_bank() else {
-        return Err(Status::BAD_STATE);
-    };
     let Ok(domain_index) = usize::try_from(domain_id) else {
         return Err(Status::INVALID_ARGS);
     };
@@ -141,11 +185,28 @@ extern "C" fn iris_opp_set(domain_id: u32, opp: u64) -> Result<(), Status> {
         return Err(Status::INVALID_ARGS);
     }
 
-    let mmio_opp = (opp as u32) + info.mmio_offset;
-    // SAFETY: `info.reg_offset` is within `OPP_BANK_SIZE` (0x20) and aligned to 4 bytes.
-    let reg = unsafe { bank.at(info.reg_offset) };
-    reg.write(mmio_opp);
-    Ok(())
+    // Fast path: if the requested OPP is already cached as active for this domain, return
+    // immediately without acquiring the domain spinlock or writing to MMIO.
+    if CURRENT_OPPS[domain_index].load(Ordering::Acquire) == opp {
+        return Ok(());
+    }
+
+    with_domain_lock(domain_index, || {
+        if CURRENT_OPPS[domain_index].load(Ordering::Relaxed) == opp {
+            return Ok(());
+        }
+
+        let Some(bank) = get_opp_bank() else {
+            return Err(Status::BAD_STATE);
+        };
+
+        let mmio_opp = (opp as u32) + info.mmio_offset;
+        // SAFETY: `info.reg_offset` is within `OPP_BANK_SIZE` (0x20) and aligned to 4 bytes.
+        let reg = unsafe { bank.at(info.reg_offset) };
+        reg.write(mmio_opp);
+        CURRENT_OPPS[domain_index].store(opp, Ordering::Release);
+        Ok(())
+    })
 }
 
 /// Retrieves the active Operating Performance Point (OPP) for the specified power domain.
@@ -153,9 +214,6 @@ extern "C" fn iris_opp_get(domain_id: u32, out_opp: *mut u64) -> Result<(), Stat
     if out_opp.is_null() {
         return Err(Status::INVALID_ARGS);
     }
-    let Some(bank) = get_opp_bank() else {
-        return Err(Status::BAD_STATE);
-    };
     let Ok(domain_index) = usize::try_from(domain_id) else {
         return Err(Status::INVALID_ARGS);
     };
@@ -163,15 +221,31 @@ extern "C" fn iris_opp_get(domain_id: u32, out_opp: *mut u64) -> Result<(), Stat
         return Err(Status::INVALID_ARGS);
     };
 
-    // SAFETY: `info.reg_offset` is within `OPP_BANK_SIZE` (0x20) and aligned to 4 bytes.
-    let reg = unsafe { bank.at(info.reg_offset) };
-    let raw_val = reg.read();
-    let opp = raw_val.saturating_sub(info.mmio_offset) as u64;
-    // SAFETY: `out_opp` was checked non-null above.
-    unsafe {
-        *out_opp = opp;
+    let cached = CURRENT_OPPS[domain_index].load(Ordering::Acquire);
+    if cached != UNCACHED_OPP {
+        // SAFETY: `out_opp` was checked non-null above.
+        unsafe {
+            *out_opp = cached;
+        }
+        return Ok(());
     }
-    Ok(())
+
+    with_domain_lock(domain_index, || {
+        let Some(bank) = get_opp_bank() else {
+            return Err(Status::BAD_STATE);
+        };
+
+        // SAFETY: `info.reg_offset` is within `OPP_BANK_SIZE` (0x20) and aligned to 4 bytes.
+        let reg = unsafe { bank.at(info.reg_offset) };
+        let raw_val = reg.read();
+        let opp = raw_val.saturating_sub(info.mmio_offset) as u64;
+        CURRENT_OPPS[domain_index].store(opp, Ordering::Release);
+        // SAFETY: `out_opp` was checked non-null above.
+        unsafe {
+            *out_opp = opp;
+        }
+        Ok(())
+    })
 }
 
 /// Retrieves the number of supported OPP control domains.
@@ -432,6 +506,15 @@ mod tests {
         assert_err!(super::iris_get_cpu_state(0, core::ptr::null_mut()), Status::INVALID_ARGS);
     }
 
+    /// Tests that with_domain_lock acquires and releases domain spinlocks properly.
+    #[test]
+    fn test_iris_domain_spinlock() {
+        for domain in 0..4 {
+            assert_ok!(super::with_domain_lock(domain, || Ok(())));
+        }
+        assert_err!(super::with_domain_lock(4, || Ok(())), Status::INVALID_ARGS);
+    }
+
     /// Tests opp_get_domain_count.
     #[test]
     fn test_iris_opp_get_domain_count() {
@@ -442,9 +525,10 @@ mod tests {
         assert_eq!(count, 4);
     }
 
-    /// Tests opp_get and opp_set with mock backing memory.
+    /// Tests opp_get and opp_set with mock backing memory and verifies cached OPP behavior.
     #[test]
     fn test_iris_opp_get_set() {
+        super::reset_cached_opps_for_test();
         let mut mock_reg_bank = [0u32; 8];
         let old_base = OPP_REG_BASE.swap(mock_reg_bank.as_mut_ptr(), Ordering::SeqCst);
 
@@ -455,6 +539,15 @@ mod tests {
         let mut opp = 0u64;
         assert_ok!(super::iris_opp_get(0, &mut opp));
         assert_eq!(opp, 5);
+
+        // Setting the same OPP should hit the cache and skip MMIO write.
+        mock_reg_bank[0] = 0xbeef;
+        assert_ok!(super::iris_opp_set(0, 5));
+        assert_eq!(mock_reg_bank[0], 0xbeef); // Untouched due to cache hit
+
+        // Setting a different OPP writes to MMIO and updates cache.
+        assert_ok!(super::iris_opp_set(0, 6));
+        assert_eq!(mock_reg_bank[0], 8); // 6 + 2
 
         // Test Domain 3 (mmio_offset = 1, reg offset 0x18 -> index 6)
         assert_ok!(super::iris_opp_set(3, 10));
@@ -470,8 +563,9 @@ mod tests {
         // Test Out of bounds opp
         assert_err!(super::iris_opp_set(0, 22), Status::INVALID_ARGS);
 
-        // Restore original base pointer
+        // Restore original base pointer and reset cache
         OPP_REG_BASE.store(old_base, Ordering::SeqCst);
+        super::reset_cached_opps_for_test();
     }
 
     /// Tests that passing a null or empty config to iris_power_init returns gracefully without panicking.

@@ -19,7 +19,9 @@ kernel_rust_mod("iris-rs") {
     "//sdk/rust/zbi",
     "//sdk/rust/zx-status",
     "//src/lib/kalloc",
+    "//src/lib/ksync",
     "//src/lib/regio",
+    "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/debug",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
