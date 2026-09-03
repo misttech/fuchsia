@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef __Fuchsia__
 // In some Linux systems we can determine if
 // flock is blocking a thread by examining the
 // contents of /proc/<process_id>/task/<thread_id>/wchan.
@@ -14,27 +13,18 @@
 //
 // Uncomment if /proc/<process_id>/task/<thread_id>/wchan works.
 // #define LINUX_HAS_WCHAN (1)
-#ifdef LINUX_HAS_WCHAN
 
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
-#include <fstream>
-#include <string>
-
-#endif
-#endif
-
-#include <fcntl.h>
-#include <pthread.h>
-#include <sys/file.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-
 #include <algorithm>
+#include <fstream>
 #include <functional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -105,8 +95,7 @@ class LockThread {
       }
     }
   }
-#else
-#ifdef LINUX_HAS_WCHAN
+#elifdef LINUX_HAS_WCHAN
   void registerThreadInfo() {
     proc_status_ = std::string("/proc/") + std::to_string(getpid()) + std::string("/task/") +
                    std::to_string(gettid()) + std::string("/wchan");
@@ -135,7 +124,6 @@ class LockThread {
     ASSERT_EQ(true, false);
   }
 #endif
-#endif
 
  private:
   int fd_;
@@ -160,14 +148,13 @@ class TempFile {
     use_first_fd_ = true;  // first |GetFd| gets this one
     EXPECT_LT(-1, fd);
     fds_.push_back(fd);
-    char buf[size_];
-    memset(buf, 0, size_);
-    EXPECT_EQ(size_, write(fd, buf, size_));
+    std::vector<char> buf(size_, 0);
+    EXPECT_EQ(size_, write(fd, buf.data(), size_));
     EXPECT_EQ(0, lseek(fd, SEEK_SET, 0));
   }
 
   ~TempFile() {
-    std::for_each(fds_.begin(), fds_.end(), &close);
+    std::ranges::for_each(fds_, close);
     unlink(kFlockFilePath);
   }
 
