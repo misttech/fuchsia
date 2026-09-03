@@ -31,14 +31,16 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
  public:
   UsbFunction(size_t index, UsbPeripheral* peripheral,
               fuchsia_hardware_usb_peripheral::wire::FunctionDescriptor desc, uint8_t configuration,
-              async_dispatcher_t* dispatcher)
+              uint64_t config_generation, async_dispatcher_t* dispatcher)
       : index_(index),
+        config_generation_(config_generation),
         configuration_(configuration),
         peripheral_(peripheral),
         function_descriptor_(desc),
         dispatcher_(dispatcher),
         name_(std::format("function-{:03d}", index)) {}
   ~UsbFunction() override;
+  uint64_t config_generation() const { return config_generation_; }
 
   // If SetConfigured(true, ...) is called from an already configured state,
   // then a deconfigure/reconfigure sequence is performed to reset the function
@@ -137,6 +139,7 @@ class UsbFunction : public fidl::Server<fuchsia_hardware_usb_function::UsbFuncti
   };
 
   const size_t index_;
+  const uint64_t config_generation_;
   uint8_t configuration_;
 
   std::optional<bool> last_configured_;

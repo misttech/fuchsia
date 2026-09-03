@@ -201,11 +201,33 @@ class UsbPeripheral : public fdf::DriverBase2,
   zx_status_t StartController();
   zx_status_t StopController();
   zx_status_t FunctionUnregistered();
-  void FunctionCleared(size_t function_index);
+  void FunctionCleared(size_t function_index, uint64_t config_generation);
 
   DeviceState SnapshotState() const {
     fbl::AutoLock lock(&lock_);
     return state_;
+  }
+
+  size_t active_functions_count() const {
+    fbl::AutoLock lock(&lock_);
+    return active_functions_count_;
+  }
+
+  void IncrementActiveFunctionsLocked() __TA_REQUIRES(lock_) { active_functions_count_++; }
+
+  void DecrementActiveFunctions(uint64_t config_generation) {
+    fbl::AutoLock lock(&lock_);
+    if (config_generation < config_generation_) {
+      fdf::info(
+          "UsbPeripheral: Discarding DecrementActiveFunctions from old config generation {} (current {})",
+          config_generation, config_generation_);
+      return;
+    }
+    if (active_functions_count_ > 0) {
+      active_functions_count_--;
+    } else {
+      fdf::warn("DecrementActiveFunctions called when active_functions_count_ is already 0.");
+    }
   }
 
   void SetStateLocked(DeviceState state) __TA_REQUIRES(lock_);
@@ -463,6 +485,9 @@ class UsbPeripheral : public fdf::DriverBase2,
   inspect::Node hardware_info_node_;
   inspect::BoolProperty supports_dynamic_ep_sizing_property_;
   std::vector<InspectEndpoint> inspect_endpoints_;
+
+  size_t active_functions_count_ __TA_GUARDED(lock_) = 0;
+  uint64_t config_generation_ __TA_GUARDED(lock_) = 0;
 };
 
 }  // namespace usb_peripheral

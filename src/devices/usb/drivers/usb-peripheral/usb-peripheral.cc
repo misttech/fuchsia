@@ -1339,8 +1339,8 @@ zx::result<size_t> UsbPeripheral::AddFunction(UsbConfiguration& config, Function
   ZX_ASSERT(state_ == DeviceState::kNoConfiguration);
 
   auto function_index = functions_.size();
-  auto function = std::shared_ptr<UsbFunction>(
-      new UsbFunction(function_index, this, desc, config.index, dispatcher()));
+  auto function = std::make_shared<UsbFunction>(function_index, this, desc, config.index,
+                                                config_generation_, dispatcher());
   functions_.emplace_back(std::move(function));
 
   config.functions.push_back(function_index);
@@ -1427,6 +1427,7 @@ void UsbPeripheral::CheckAllFunctionsCleared() {
     if (!functions_.empty()) {
       return;
     }
+    config_generation_++;  // Increment configuration generation fence.
     if (!stopping_driver_ && state_ != DeviceState::kWaitForFunctionBind) {
       SetStateLocked(DeviceState::kNoConfiguration);
     }
@@ -1448,12 +1449,20 @@ void UsbPeripheral::CheckAllFunctionsCleared() {
   }
 }
 
-void UsbPeripheral::FunctionCleared(size_t function_index) {
+void UsbPeripheral::FunctionCleared(size_t function_index, uint64_t config_generation) {
   bool do_stop = false;
   {
     fbl::AutoLock lock(&lock_);
 
-    fdf::info("UsbPeripheral: FunctionCleared called for index {}.", function_index);
+    fdf::info("UsbPeripheral: FunctionCleared called for index {} (generation {}).", function_index,
+              config_generation);
+
+    if (config_generation < config_generation_) {
+      fdf::info(
+          "UsbPeripheral: Discarding stale unbind callback from old config generation {} (current {})",
+          config_generation, config_generation_);
+      return;
+    }
 
     if (state_ != DeviceState::kStopping) {
       if (state_ == DeviceState::kPeripheralReady || state_ == DeviceState::kHostConnected) {
@@ -1501,7 +1510,9 @@ zx_status_t UsbPeripheral::AddFunctionDevices() {
     for (auto function_index : configuration.functions) {
       auto& function = GetFunction(function_index);
       zx::result result = function.AddChild(child_.node_, incoming_, outgoing());
-      if (result.is_error() && result.status_value() != ZX_ERR_ALREADY_BOUND) {
+      if (result.is_ok()) {
+        IncrementActiveFunctionsLocked();
+      } else if (result.status_value() != ZX_ERR_ALREADY_BOUND) {
         fdf::error("Failed to add child {}: {}; Continuing on to next.", function.name(), result);
       }
     }

@@ -391,22 +391,21 @@ void UsbFunction::CloseFunctionInterface() {
 }
 
 void UsbFunction::RequestRemoval() {
-  if (!child_.is_valid()) {
-    fdf::info(
-        "UsbFunction: RequestRemoval called on function {} which has no valid child node "
-        "controller (already unbound).",
-        name_);
-    // If there is no child, we're already effectively cleared.
-    peripheral_->FunctionCleared(function_index());
-    return;
-  }
+  async::PostTask(dispatcher_, [this, self = shared_from_this()]() {
+    if (!child_.is_valid()) {
+      // If there is no child, we're already effectively cleared. Since child_ is invalid,
+      // active_functions_count_ was either never incremented or already decremented.
+      peripheral_->FunctionCleared(function_index(), config_generation());
+      return;
+    }
 
-  fdf::debug("UsbFunction: Sending Remove() to node Controller for {}.", name_);
-  fidl::Status result = child_->Remove();
-  if (!result.ok()) {
-    fdf::error("Failed to send Remove request to child node {}: {}", name_,
-               result.FormatDescription());
-  }
+    fdf::debug("UsbFunction: Sending Remove() to node Controller for {}.", name_);
+    fidl::Status result = child_->Remove();
+    if (!result.ok()) {
+      fdf::error("UsbFunction: Failed to send Remove request to child node {}: {}", name_,
+                 result.FormatDescription());
+    }
+  });
 }
 
 void UsbFunction::OnNodeControllerUnbound(fidl::UnbindInfo info) {
@@ -420,7 +419,8 @@ void UsbFunction::OnNodeControllerUnbound(fidl::UnbindInfo info) {
   }
   child_ = {};
   CloseFunctionInterface();
-  peripheral_->FunctionCleared(function_index());
+  peripheral_->DecrementActiveFunctions(config_generation());
+  peripheral_->FunctionCleared(function_index(), config_generation());
 }
 
 void UsbFunction::SetConfigured(bool configured, usb_speed_t speed,

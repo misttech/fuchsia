@@ -13,11 +13,15 @@ namespace {
 
 class UsbPeripheralTestHelper {
  public:
-  static size_t active_functions_count(const UsbPeripheral& peripheral) { return 0; }
+  static size_t active_functions_count(const UsbPeripheral& peripheral) {
+    return peripheral.active_functions_count();
+  }
+  static void DecrementActiveFunctions(UsbPeripheral& peripheral, uint64_t config_generation) {
+    peripheral.DecrementActiveFunctions(config_generation);
+  }
   static void FunctionCleared(UsbPeripheral& peripheral, size_t function_index,
                               uint64_t config_generation) {
-    // TODO: Pass config_generation once the driver backend supports generation fencing.
-    peripheral.FunctionCleared(function_index);
+    peripheral.FunctionCleared(function_index, config_generation);
   }
 };
 
@@ -1394,17 +1398,17 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, StopControllerFailsFromDci) {
   });
 }
 
-TEST_F(UsbPeripheralReadyTest, DISABLED_ActiveFunctionsCountTracking) {
+TEST_F(UsbPeripheralReadyTest, ActiveFunctionsCountTracking) {
   // Initially in kPeripheralReady with 1 function from SetUp().
   size_t active_count = dut().RunInDriverContext<size_t>([](UsbPeripheral& peripheral) {
     return UsbPeripheralTestHelper::active_functions_count(peripheral);
   });
   EXPECT_EQ(1u, active_count);
 
-  // Close function channel.
-  function_clients_.clients.clear();
-  function_clients_.fakes.clear();
-  dut().runtime().RunUntilIdle();
+  // Simulate function node unbind.
+  SimulateFunctionUnbind({"function-000"});
+  WaitUntilChildNodeCount(0);
+  WaitUntilState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
 
   active_count = dut().RunInDriverContext<size_t>([](UsbPeripheral& peripheral) {
     return UsbPeripheralTestHelper::active_functions_count(peripheral);
@@ -1412,8 +1416,7 @@ TEST_F(UsbPeripheralReadyTest, DISABLED_ActiveFunctionsCountTracking) {
   EXPECT_EQ(0u, active_count);
 }
 
-TEST_F(UnmanagedUsbPeripheralReadyTest,
-       DISABLED_LateFunctionClearedCallbackIgnoredByGenerationFence) {
+TEST_F(UnmanagedUsbPeripheralReadyTest, LateFunctionClearedCallbackIgnoredByGenerationFence) {
   usb_peripheral_config::Config config;
   config.functions() = {"test"};
   StartDriverWithConfig(config);
@@ -1452,9 +1455,10 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
   });
   EXPECT_EQ(1u, active_count);
 
-  // Direct injection of a stale FunctionCleared callback stamped with Generation 0.
+  // Direct injection of stale unbind callbacks stamped with Generation 0.
   dut().RunInDriverContext([](UsbPeripheral& peripheral) {
     // Generation 0 is stale (the current generation is 1).
+    UsbPeripheralTestHelper::DecrementActiveFunctions(peripheral, 0);
     UsbPeripheralTestHelper::FunctionCleared(peripheral, 0, 0);
   });
 
