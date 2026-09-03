@@ -143,8 +143,7 @@ where
 
         if self.write_task.is_none() {
             let mut stream = self.stream.clone();
-            let mut data = vec![];
-            data.extend(buf);
+            let data = buf.to_vec().into_boxed_slice();
             self.write_task.replace(Box::pin(async move {
                 let mut start = 0;
                 while start < data.len() {

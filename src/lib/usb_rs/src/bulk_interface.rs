@@ -30,7 +30,7 @@ const MAX_WRITE_BUFFER_SIZE: usize = MAX_USBFS_BULK_WRITE_SIZE * MAX_IN_FLIGHT_U
 pub struct BulkInterface {
     inner: Arc<Interface>,
     guard: Arc<RwLock<()>>,
-    read_future: Option<Pin<Box<dyn Future<Output = std::io::Result<Vec<u8>>> + Send>>>,
+    read_future: Option<Pin<Box<dyn Future<Output = std::io::Result<Box<[u8]>>> + Send>>>,
     write_future: Option<Pin<Box<dyn Future<Output = std::io::Result<usize>> + Send>>>,
 }
 
@@ -64,7 +64,7 @@ impl AsyncRead for BulkInterface {
         if self.read_future.is_none() {
             let inner_ref = self.inner.clone();
             let guard_ref = self.guard.clone();
-            let mut buffer = buf[..].to_vec();
+            let mut buffer = buf.to_vec().into_boxed_slice();
             let read_future = async move {
                 // Get the bulk in interface
                 for endpoint in inner_ref.endpoints() {

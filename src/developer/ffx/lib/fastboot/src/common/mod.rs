@@ -34,6 +34,7 @@ use std::num::{NonZeroU64, ParseIntError};
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::task::spawn_blocking;
 use zerocopy::IntoBytes;
 
 pub const MISSING_CREDENTIALS: &str = "The flash manifest is missing the credential files to unlock this device.\n\
@@ -492,7 +493,6 @@ async fn streaming_flash_impl<T: FastbootInterface>(
 
     let start_time = Utc::now();
     let (prog_client, prog_server) = mpsc::channel(5);
-
     let server_task = async |mut prog_server: Receiver<UploadProgress>| -> Result<()> {
         while let Some(upload) = prog_server.recv().await {
             messenger.send(Event::Upload(upload)).await?;
@@ -500,10 +500,29 @@ async fn streaming_flash_impl<T: FastbootInterface>(
         Ok(())
     };
 
-    let stream_task = async |prog_client: Sender<UploadProgress>| -> Result<()> {
+    // Use a bounded channel for double-buffering: prefetch/prepare the next command (disk read + CRC32)
+    // concurrently while the previous command is being transmitted to and flashed on the device.
+    // Offload the command generation (disk I/O and CRC32 hashing) to a blocking thread so it does
+    // not stall the async runtime while commands are streamed to the device.
+    let (cmd_client, cmd_server) = mpsc::channel(2);
+    let producer_task = async move {
+        spawn_blocking(move || {
+            for command in commands {
+                if cmd_client.blocking_send(command).is_err() {
+                    break;
+                }
+            }
+        })
+        .await
+        .map_err(|e| streaming_err_helper(format!("Producer task failed: {e}")))
+    };
+
+    let mut stream_task = async |prog_client: Sender<UploadProgress>,
+                                 mut cmd_server: Receiver<StreamCommand>|
+           -> Result<()> {
         // TODO: map the damn error
         let _ = prog_client.send(UploadProgress::OnStarted { size: expanded_size }).await;
-        for command in commands {
+        while let Some(command) = cmd_server.recv().await {
             fastboot_interface.stream(name, command, &prog_client, timeout).await?;
         }
         // TODO: map the damn error
@@ -519,7 +538,7 @@ async fn streaming_flash_impl<T: FastbootInterface>(
     messenger
         .send(Event::Upload(UploadProgress::OnReady { partition: name.to_owned(), files: 1 }))
         .await?;
-    try_join!(stream_task(prog_client), server_task(prog_server))?;
+    try_join!(producer_task, stream_task(prog_client, cmd_server), server_task(prog_server))?;
 
     let duration = Utc::now().signed_duration_since(start_time);
     messenger
@@ -1310,10 +1329,10 @@ mod test {
 
     #[fuchsia::test]
     async fn test_stream_flash() -> Result<()> {
-        const SEGMENT_SIZE_BYTES: usize = 0x1000;
+        const SEGMENT_SIZE_BYTES: usize = 0x4000;
 
-        let fill_zero = std::iter::repeat(0u8).take(SEGMENT_SIZE_BYTES * 4);
-        let fill_data = (0u8..=255).cycle().take(SEGMENT_SIZE_BYTES * 4);
+        let fill_zero = std::iter::repeat(0u8).take(SEGMENT_SIZE_BYTES);
+        let fill_data = (0u8..=255).cycle().take(SEGMENT_SIZE_BYTES);
         let buf = multi_chain!(fill_data.clone(), fill_zero.clone(), fill_data.clone())
             .collect::<Vec<_>>();
 
@@ -1491,6 +1510,54 @@ mod test {
         ];
 
         assert_eq!(&server_actual, server_expected);
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_stream_flash_error_propagation_stops_producer() -> Result<()> {
+        const SEGMENT_SIZE_BYTES: usize = 0x4000;
+
+        let fill_zero = std::iter::repeat(0u8).take(SEGMENT_SIZE_BYTES);
+        let fill_data = (0u8..=255).cycle().take(SEGMENT_SIZE_BYTES);
+        let buf = multi_chain!(fill_data.clone(), fill_zero.clone(), fill_data.clone())
+            .collect::<Vec<_>>();
+
+        let (mut file, tmp_path) = NamedTempFile::new().unwrap().into_parts();
+        file.write_all(buf.as_slice()).unwrap();
+        file.seek(SeekFrom::Start(0)).unwrap();
+        file.flush().unwrap();
+
+        let mut test_transport = TestTransport::new();
+        test_transport.extend([
+            Reply::Okay("0x1000".to_owned()),      // Stream segment size
+            Reply::Okay("0x2000".to_owned()),      // Partition zircon_a start
+            Reply::Okay("0x1000000".to_owned()),   // Partition zircon_a size
+            Reply::Okay("0x2000".to_owned()),      // Max download size
+            Reply::Data(0x2000),                   // Download request
+            Reply::Okay("".to_owned()),            // Download
+            Reply::Fail("Flash error".to_owned()), // Stream flash fails
+        ]);
+
+        let mut fastboot_client = FastbootProxy::<TestTransport>::new(
+            "stream".to_string(),
+            test_transport,
+            TestTransportFactory {},
+        );
+
+        let (var_client, _var_server): (Sender<Event>, Receiver<Event>) = mpsc::channel(3);
+        let mut resolver = TestResolver::new();
+        let result = flash_partition(
+            var_client,
+            &mut resolver,
+            "zircon_a",
+            tmp_path.to_str().unwrap(),
+            &mut fastboot_client,
+            360,
+            1000.0,
+        )
+        .await;
+
+        assert!(result.is_err());
         Ok(())
     }
 }

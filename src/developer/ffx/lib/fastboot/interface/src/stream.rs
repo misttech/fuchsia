@@ -102,7 +102,7 @@ enum Payload {
 }
 
 impl Payload {
-    fn from_segment(segment: Bytes) -> Self {
+    fn from_segment(segment: &[u8]) -> Self {
         // Safety:
         // * All bit patterns are valid u32
         // * Segment _should_ be u32 aligned and sized.
@@ -133,11 +133,8 @@ impl Chunk {
         Self { range, payload }
     }
 
-    fn from_data(range: Range<u64>, data: &Bytes) -> Self {
-        Self::from_payload(
-            range,
-            Payload::from_segment(data.slice(convert_range::<_, usize>(range))),
-        )
+    fn from_data(range: Range<u64>, data: &[u8]) -> Self {
+        Self::from_payload(range, Payload::from_segment(&data[convert_range::<_, usize>(range)]))
     }
 
     fn offset(&self) -> u64 {
@@ -176,7 +173,8 @@ fn process_segment(
     use Payload::*;
 
     let segment_len_bytes = range_length(segment_range);
-    let new_payload = Payload::from_segment(data.slice(convert_range::<_, usize>(segment_range)));
+    let new_payload =
+        Payload::from_segment(&data.as_ref()[convert_range::<_, usize>(segment_range)]);
     match (chunk.payload, new_payload) {
         // New payload is a flash or a fill with a different value
         (p1 @ Fill(val), p2) if p1 != p2 => {
