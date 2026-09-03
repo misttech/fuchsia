@@ -157,6 +157,10 @@ pub(crate) async fn handle_monitor_request(
             let status = reset(phys, phy_id).await;
             responder.send(status.map_err(|e| e.into_raw()))?;
         }
+        DeviceMonitorRequest::GetPowerElementDependencyToken { phy_id, responder } => {
+            responder
+                .send(get_power_element_dependency_token(phys, phy_id).map_err(|s| s.into_raw()))?;
+        }
         DeviceMonitorRequest::GetPowerState { phy_id, responder } => {
             responder.send(
                 get_power_state(phys, phy_id).await.as_ref().map_err(|s| s.into_raw()).copied(),
@@ -329,6 +333,18 @@ async fn reset(phys: &PhyMap, phy_id: u16) -> Result<(), zx::Status> {
         Some(p) => p,
     };
     phy.proxy.reset().await.map_phy_status(phy_id, "Reset")
+}
+
+fn get_power_element_dependency_token(
+    phys: &PhyMap,
+    phy_id: u16,
+) -> Result<fidl_fuchsia_power_broker::DependencyToken, zx::Status> {
+    let phy = phys.get(&phy_id).ok_or(zx::Status::NOT_FOUND)?;
+    if let Some(token) = phy.power_dependency_token.as_ref() {
+        token.duplicate_handle(zx::Rights::SAME_RIGHTS).map_err(|_| zx::Status::INTERNAL)
+    } else {
+        Err(zx::Status::NOT_SUPPORTED)
+    }
 }
 
 async fn get_power_state(phys: &PhyMap, phy_id: u16) -> Result<bool, zx::Status> {
@@ -785,7 +801,7 @@ mod tests {
     fn fake_phy_device() -> (PhyDevice, fidl_fuchsia_wlan_phy::WlanPhyRequestStream) {
         let (proxy, server) = create_proxy::<fidl_fuchsia_wlan_phy::WlanPhyMarker>();
         let stream = server.into_stream();
-        (PhyDevice { proxy }, stream)
+        (PhyDevice { proxy, power_dependency_token: None }, stream)
     }
 
     fn expect_get_supported_mac_roles(

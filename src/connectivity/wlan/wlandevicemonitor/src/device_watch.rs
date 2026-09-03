@@ -13,6 +13,7 @@ pub struct NewPhyDevice {
     pub id: u16,
     pub proxy: fidl_fuchsia_wlan_phy::WlanPhyProxy,
     pub event_stream: futures::stream::BoxStream<'static, Result<PhyEvent, anyhow::Error>>,
+    pub power_dependency_token: Option<fidl_fuchsia_power_broker::DependencyToken>,
 }
 
 // Implement Debug manually because BoxStream doesn't implement Debug
@@ -63,8 +64,13 @@ async fn watch_phy_devices_impl(
                 };
 
                 let id = next_id.fetch_add(1, Ordering::Relaxed);
-                let event_stream = init_phy(&phy_proxy).await?;
-                Ok(Some(NewPhyDevice { id, proxy: phy_proxy, event_stream }))
+                let (event_stream, power_dependency_token) = init_phy(&phy_proxy).await?;
+                Ok(Some(NewPhyDevice {
+                    id,
+                    proxy: phy_proxy,
+                    event_stream,
+                    power_dependency_token,
+                }))
             }
         })
         .try_filter_map(|x| futures::future::ready(Ok(x)))

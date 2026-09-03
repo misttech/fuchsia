@@ -24,6 +24,7 @@ metrics_registry("wlan_metrics_registry") {
 
 wlandevicemonitor_deps = [
   ":wlandevicemonitor_config",
+  "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
   "//sdk/fidl/fuchsia.wlan.common:fuchsia.wlan.common_rust",
   "//sdk/fidl/fuchsia.wlan.device.service:fuchsia.wlan.device.service_rust",
   "//sdk/fidl/fuchsia.wlan.internal:fuchsia.wlan.internal_rust",

@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.wlan.device.service;
 
+using fuchsia.power.broker;
 using fuchsia.wlan.common;
 using fuchsia.wlan.ieee80211 as ieee80211;
 using fuchsia.wlan.internal;
@@ -173,6 +174,13 @@ closed protocol DeviceMonitor {
         phy_id uint16;
     }) -> (struct {
         scenario fuchsia.wlan.internal.TxPowerScenario;
+    }) error zx.Status;
+
+    /// Returns the dependency token for the PHY if power control is supported.
+    strict GetPowerElementDependencyToken(struct {
+        phy_id uint16;
+    }) -> (resource struct {
+        token fuchsia.power.broker.DependencyToken;
     }) error zx.Status;
 
     /// This will return the current power state of the wlan chip.

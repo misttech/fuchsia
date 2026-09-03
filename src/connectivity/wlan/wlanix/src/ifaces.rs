@@ -56,6 +56,11 @@ pub(crate) trait IfaceManager: Send + Sync {
     async fn power_down(&self, phy_id: u16) -> Result<(), Error>;
     async fn power_up(&self, phy_id: u16) -> Result<(), Error>;
     async fn get_power_state(&self, phy_id: u16) -> Result<bool, Error>;
+    #[expect(dead_code)]
+    async fn get_power_element_dependency_token(
+        &self,
+        phy_id: u16,
+    ) -> Result<fidl_fuchsia_power_broker::DependencyToken, Error>;
     async fn query_iface(
         &self,
         iface_id: u16,
@@ -160,6 +165,28 @@ impl IfaceManager for DeviceMonitorIfaceManager {
                 Err(e) => Err(e.into()),
                 Ok(()) => Err(format_err!("get_power_state returned error with ok status")),
             },
+        }
+    }
+
+    async fn get_power_element_dependency_token(
+        &self,
+        phy_id: u16,
+    ) -> Result<fidl_fuchsia_power_broker::DependencyToken, Error> {
+        let result = self
+            .monitor_svc
+            .get_power_element_dependency_token(phy_id)
+            .await
+            .map_err(Into::<Error>::into)?;
+        match result {
+            Ok(token) => Ok(token),
+            Err(e) => {
+                let status = zx::Status::err_from_raw(e);
+                Err(format_err!(
+                    "unable to get power dependency token for phy {}: {}",
+                    phy_id,
+                    status
+                ))
+            }
         }
     }
 
@@ -1454,6 +1481,7 @@ pub mod test_utils {
         PowerDown(u16),
         PowerUp(u16),
         GetPowerState(u16),
+        GetPowerElementDependencyToken(u16),
         ResetTxPowerScenario(u16),
         SetTxPowerScenario { phy_id: u16, scenario: fidl_internal::TxPowerScenario },
         ResetPhy(u16),
@@ -1701,6 +1729,14 @@ pub mod test_utils {
         async fn get_power_state(&self, phy_id: u16) -> Result<bool, Error> {
             self.calls.lock().push(IfaceManagerCall::GetPowerState(phy_id));
             Ok(*self.power_state.lock())
+        }
+
+        async fn get_power_element_dependency_token(
+            &self,
+            phy_id: u16,
+        ) -> Result<fidl_fuchsia_power_broker::DependencyToken, Error> {
+            self.calls.lock().push(IfaceManagerCall::GetPowerElementDependencyToken(phy_id));
+            Err(format_err!("mock get_power_element_dependency_token not fully implemented"))
         }
 
         async fn reset_tx_power_scenario(&self, phy_id: u16) -> Result<(), Error> {

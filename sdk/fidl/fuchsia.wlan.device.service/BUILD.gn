@@ -38,6 +38,7 @@ fidl("fuchsia.wlan.device.service") {
   excluded_checks = [ "disallowed-library-name-component" ]
   visibility = [ "*" ]
   public_deps = [
+    "//sdk/fidl/fuchsia.power.broker",
     "//sdk/fidl/fuchsia.wlan.common",
     "//sdk/fidl/fuchsia.wlan.ieee80211",
     "//sdk/fidl/fuchsia.wlan.internal",

@@ -75,7 +75,13 @@ impl TryFrom<fidl_wlan_phy::WlanPhyNotifyRequest> for PhyEvent {
 
 pub async fn init_phy(
     proxy: &fidl_wlan_phy::WlanPhyProxy,
-) -> Result<futures::stream::BoxStream<'static, Result<PhyEvent, anyhow::Error>>, anyhow::Error> {
+) -> Result<
+    (
+        futures::stream::BoxStream<'static, Result<PhyEvent, anyhow::Error>>,
+        Option<fidl_fuchsia_power_broker::DependencyToken>,
+    ),
+    anyhow::Error,
+> {
     let (client_end, request_stream) =
         fidl::endpoints::create_request_stream::<fidl_wlan_phy::WlanPhyNotifyMarker>();
 
@@ -83,7 +89,7 @@ pub async fn init_phy(
         fidl_wlan_phy::WlanPhyInitRequest { notify_client: Some(client_end), ..Default::default() };
 
     // Initialize the PHY with the notify client.
-    proxy
+    let init_resp = proxy
         .init(req)
         .await
         .map_err(|e| anyhow::anyhow!("failed to initialize PHY: {:?}", e))?
@@ -104,7 +110,7 @@ pub async fn init_phy(
         })
         .boxed();
 
-    Ok(event_stream)
+    Ok((event_stream, init_resp.power_dependency_token))
 }
 
 /// Iface's PHY information.
@@ -128,6 +134,7 @@ pub struct NewIface {
 
 pub struct PhyDevice {
     pub proxy: fidl_wlan_phy::WlanPhyProxy,
+    pub power_dependency_token: Option<fidl_fuchsia_power_broker::DependencyToken>,
 }
 
 pub struct IfaceDevice {
@@ -191,7 +198,10 @@ async fn serve_phy(
     // Insert the newly discovered device into the `WatchableMap`.  This will trigger the watchable
     // map to produce an event so that the `DeviceWatcher` service can produce an update for API
     // consumers.
-    phys.insert(id, PhyDevice { proxy: new_phy.proxy });
+    phys.insert(
+        id,
+        PhyDevice { proxy: new_phy.proxy, power_dependency_token: new_phy.power_dependency_token },
+    );
 
     let mut phy_stream_result = Ok(());
     while let Some(event) = event_stream.next().await {
@@ -307,13 +317,18 @@ mod tests {
                 other => panic!("expected Init request, got {:?}", other),
             }
         };
-        let event_stream = match exec.run_until_stalled(&mut new_fut) {
+        let (event_stream, power_dependency_token) = match exec.run_until_stalled(&mut new_fut) {
             Poll::Ready(Ok(val)) => val,
             _ => panic!("expected init_phy to resolve"),
         };
         let _server = Box::new((stream, notify_client_holder)) as Box<dyn std::any::Any>;
 
-        let new_phy = device_watch::NewPhyDevice { id: 0, proxy: phy_proxy, event_stream };
+        let new_phy = device_watch::NewPhyDevice {
+            id: 0,
+            proxy: phy_proxy,
+            event_stream,
+            power_dependency_token,
+        };
 
         let fut = serve_phy(&phys, new_phy, inspect_tree, sender);
         let mut fut = pin!(fut);
