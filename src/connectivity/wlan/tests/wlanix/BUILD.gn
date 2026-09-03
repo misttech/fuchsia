@@ -4,6 +4,7 @@
 import("//build/python/python_mobly_test.gni")
 import("//build/testing/host_test_data.gni")
 import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
+import("./test_lists.gni")
 
 assert(is_host, "WLAN end-to-end tests only supported for host testing")
 
@@ -130,7 +131,7 @@ group("tests_host") {
 # Consider instead putting your test in `tests_for_wlan_presubmit`
 group("tests_for_presubmit") {
   testonly = true
-  public_deps = [ ":connect_to_ap_test" ]
+  public_deps = wlanix_tests_for_presubmit  # Edit in test_lists.gni
 }
 
 # Only tests which do not interact with a AP or SoftAP can be run
@@ -139,14 +140,8 @@ group("tests_for_presubmit") {
 # than the WLAN-specific shielded testbeds.
 group("tests_for_presubmit_no_shield_box") {
   testonly = true
-  public_deps = [
-    ":iface_correctness_and_consistency_test",
-    ":iface_lifecycle_test",
-    ":wifi_chip_correctness_and_consistency_test",
-    ":wifi_chip_existence_test",
-    ":wifi_chip_restart_test",
-    ":wlan_canary_test",
-  ]
+  public_deps =
+      wlanix_tests_for_presubmit_no_shield_box  # Edit in test_lists.gni
 }
 
 # These tests run in blocking CI (~once per hour) as well as a blocking
@@ -155,16 +150,13 @@ group("tests_for_presubmit_no_shield_box") {
 # should go here, but most tests should likely go into `tests_for_postsubmit`.
 group("tests_for_wlan_presubmit") {
   testonly = true
-  public_deps = []
+  public_deps = wlanix_tests_for_wlan_presubmit  # Edit in test_lists.gni
 }
 
 # These tests run in blocking CI (~once per hour).
 group("tests_for_postsubmit") {
   testonly = true
-  public_deps = [
-    ":apf_test",
-    ":sched_scan_test",
-  ]
+  public_deps = wlanix_tests_for_postsubmit  # Edit in test_lists.gni
 }
 
 # If you're writing a new test, add it to FYI first until it has a sufficient
@@ -174,14 +166,14 @@ group("tests_for_postsubmit") {
 # above.
 group("tests_for_fyi") {
   testonly = true
-  public_deps = []
+  public_deps = wlanix_tests_for_fyi  # Edit in test_lists.gni
 }
 
 # These tests don't cause alerting if they break, and are configured to
 # upload performance data to fuchsiaperf via Catapult.
 group("tests_for_fyi_performance") {
   testonly = true
-  public_deps = [ ":create_client_iface_benchmark_test" ]
+  public_deps = wlanix_tests_for_fyi_performance  # Edit in test_lists.gni
 }
 
 # Tests longer than ~20 minutes consume significant resources and significantly
@@ -189,5 +181,5 @@ group("tests_for_fyi_performance") {
 # them at reduced frequency.
 group("tests_for_fyi_long") {
   testonly = true
-  public_deps = []
+  public_deps = wlanix_tests_for_fyi_long  # Edit in test_lists.gni
 }
