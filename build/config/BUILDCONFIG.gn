@@ -1382,6 +1382,7 @@ is_heapdump = fuchsia_toolchain_tags + [ "heapdump" ] - [ "heapdump" ] !=
 default_common_binary_configs = toolchain_variant.prefix_configs
 
 default_common_rust_configs = [
+  "//build/config/rust:next_solver",
   "//build/config/rust:parallel_frontend_threads",
   "//build/config/rust:error_format_human",
   "//build/config/rust:incremental",

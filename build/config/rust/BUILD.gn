@@ -74,6 +74,11 @@ config("no_features") {
   rustflags = [ "-Zallow-features=" ]
 }
 
+# TODO(https://fxbug.dev/556328773): Use next generation trait solver after compile time regression is addressed.
+config("next_solver") {
+  rustflags = [ "-Znext-solver=coherence" ]
+}
+
 config("error_format_human") {
   rustflags = [ "--error-format=human" ]
 }

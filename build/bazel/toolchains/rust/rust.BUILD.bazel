@@ -27,6 +27,10 @@ _HOST_STRIP_LEVEL = {
 # LINT.ThenChange(//build/bazel/debug_symbols/README.md)
 
 _DEFAULT_COMMON_RUST_FLAGS = [
+    # GN: //build/config/rust:next_solver
+    # TODO(https://fxbug.dev/556328773): Use next generation trait solver after compile time regression is addressed.
+    "-Znext-solver=coherence",
+
     # GN: //build/config/rust:2018_idioms
     "-Wrust-2018-idioms",
 
