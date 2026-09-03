@@ -366,14 +366,24 @@ class SpiDeviceTest : public ::testing::Test {
     driver_test().RunInEnvironmentTypeContext([channel_count](TestEnvironment& environment) {
       ASSERT_TRUE(environment.SetSpiChannelCount(channel_count).is_ok());
     });
+
+    zx::event node_token;
+    EXPECT_OK(zx::event::create(0, &node_token));
+
+    zx_info_handle_basic_t info;
+    EXPECT_OK(node_token.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr));
+    node_token_koid_ = info.koid;
+
     EXPECT_TRUE(driver_test()
-                    .StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
-                      spi_config::Config config{{
-                          .enable_suspend = true,
-                          .expose_debug_capabilities = true,
-                      }};
-                      args.config(config.ToVmo());
-                    })
+                    .StartDriverWithCustomStartArgs(
+                        [node_token = std::move(node_token)](fdf::DriverStartArgs& args) mutable {
+                          spi_config::Config config{{
+                              .enable_suspend = true,
+                              .expose_debug_capabilities = true,
+                          }};
+                          args.config(config.ToVmo());
+                          args.node_token(std::move(node_token));
+                        })
                     .is_ok());
 
     bool all_children_added =
@@ -416,6 +426,9 @@ class SpiDeviceTest : public ::testing::Test {
   }
 
   fdf_testing::BackgroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
+
+ protected:
+  zx_koid_t node_token_koid_ = ZX_KOID_INVALID;
 
  private:
   fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
@@ -929,6 +942,16 @@ TEST_F(SpiDeviceTest, TestService) {
   zx::result test_client_end = driver_test().Connect<fuchsia_hardware_spi::TestService::Test>();
   ASSERT_TRUE(test_client_end.is_ok());
   fidl::WireSyncClient<fuchsia_hardware_spi::Test> test_client(std::move(test_client_end.value()));
+
+  {
+    auto result = test_client->Get();
+    ASSERT_OK(result.status());
+    ASSERT_TRUE(result.value().is_ok());
+    zx_info_handle_basic_t info;
+    ASSERT_OK(result.value()->token.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr,
+                                             nullptr));
+    EXPECT_EQ(info.koid, node_token_koid_);
+  }
 
   auto [device_client, device_server] = fidl::Endpoints<fuchsia_hardware_spi::Device>::Create();
 

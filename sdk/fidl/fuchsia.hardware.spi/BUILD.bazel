@@ -17,6 +17,7 @@ fidl_library(
     stable = False,
     visibility = ["//visibility:public"],
     deps = [
+        "//sdk/fidl/fuchsia.driver.token",
         "//sdk/fidl/fuchsia.hardware.sharedmemory",
         "//sdk/fidl/fuchsia.mem",
         "//zircon/vdso/zx",

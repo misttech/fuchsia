@@ -23,6 +23,7 @@ namespace spi {
 
 zx::result<> SpiDriver::Start(fdf::DriverContext context) {
   incoming_ = context.take_incoming();
+  node_token_ = context.take_node_token();
 
   zx::result metadata_result =
       fdf_metadata::GetMetadata<fuchsia_hardware_spi_businfo::SpiBusMetadata>(*incoming_);
@@ -248,6 +249,15 @@ void SpiDriver::ConnectSpiLoopback(
     completer.ReplySuccess();
   } else {
     completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+  }
+}
+
+void SpiDriver::Get(GetCompleter::Sync& completer) {
+  zx::event token;
+  if (zx_status_t status = node_token_.duplicate(ZX_RIGHT_SAME_RIGHTS, &token); status == ZX_OK) {
+    completer.ReplySuccess(std::move(token));
+  } else {
+    completer.ReplyError(status);
   }
 }
 

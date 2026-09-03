@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.hardware.spi;
 
+using fuchsia.driver.token;
 using fuchsia.hardware.sharedmemory;
 using zx;
 
@@ -81,6 +82,8 @@ open protocol Test {
     strict ConnectSpiLoopback(resource struct {
         server server_end:Device;
     }) -> () error zx.Status;
+
+    compose fuchsia.driver.token.NodeToken;
 };
 
 service TestService {

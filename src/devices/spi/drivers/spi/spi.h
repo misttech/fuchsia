@@ -38,6 +38,7 @@ class SpiDriver : public fdf::DriverBase2, public fidl::WireServer<fuchsia_hardw
 
   void ConnectSpiLoopback(fuchsia_hardware_spi::wire::TestConnectSpiLoopbackRequest* request,
                           ConnectSpiLoopbackCompleter::Sync& completer) override;
+  void Get(GetCompleter::Sync& completer) override;
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_hardware_spi::Test> metadata,
                              fidl::UnknownMethodCompleter::Sync& completer) override;
 
@@ -58,6 +59,7 @@ class SpiDriver : public fdf::DriverBase2, public fidl::WireServer<fuchsia_hardw
   fdf::OwnedChildNode child_;
 
   std::unique_ptr<fdf::Namespace> incoming_;
+  zx::event node_token_;
 
   std::unique_ptr<SpiChild> test_child_;
   fidl::ServerBindingGroup<fuchsia_hardware_spi::Test> test_bindings_;
