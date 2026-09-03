@@ -50,7 +50,7 @@ const USB_MAX_PACKET_SIZE_SUPER_SPEED: u16 = 1024;
 
 // USB Zero Function Specific Constants
 const USB_ZERO_NUM_INTERFACES: u8 = 1;
-const USB_ZERO_NUM_ENDPOINTS: u8 = 4;
+const USB_ZERO_NUM_ENDPOINTS: u8 = 2;
 const USB_ZERO_DEFAULT_MAX_PACKET_SIZE: u16 = USB_MAX_PACKET_SIZE_HIGH_SPEED;
 
 const USB_ZERO_OUT_VMO_ID: u64 = 1;
@@ -124,11 +124,6 @@ struct UsbZeroFunctionDevice {
     ep_out_addr: u8,
     interface_num: u8,
     #[allow(dead_code)]
-    ep_intr_in: fusb_endpoint::EndpointProxy,
-    ep_intr_in_addr: u8,
-    #[allow(dead_code)]
-    ep_intr_out: fusb_endpoint::EndpointProxy,
-    ep_intr_out_addr: u8,
     is_configured: Arc<AtomicBool>,
     vmos_registered: bool,
     endpoint_tasks: Option<(fasync::Task<()>, fasync::Task<()>)>,
@@ -180,10 +175,6 @@ impl Driver for UsbZeroFunction {
             fidl::endpoints::create_endpoints::<fusb_endpoint::EndpointMarker>();
         let (ep_out_client, ep_out_server) =
             fidl::endpoints::create_endpoints::<fusb_endpoint::EndpointMarker>();
-        let (ep_intr_in_client, ep_intr_in_server) =
-            fidl::endpoints::create_endpoints::<fusb_endpoint::EndpointMarker>();
-        let (ep_intr_out_client, ep_intr_out_server) =
-            fidl::endpoints::create_endpoints::<fusb_endpoint::EndpointMarker>();
 
         let make_ep = |direction, endpoint, ep_info| fusb_function::EndpointResource {
             direction,
@@ -203,16 +194,6 @@ impl Driver for UsbZeroFunction {
                 ep_out_server,
                 fusb_endpoint::EndpointInfo::Bulk(Default::default()),
             ),
-            make_ep(
-                fusb_descriptor::EndpointDirection::In,
-                ep_intr_in_server,
-                fusb_endpoint::EndpointInfo::Interrupt(Default::default()),
-            ),
-            make_ep(
-                fusb_descriptor::EndpointDirection::Out,
-                ep_intr_out_server,
-                fusb_endpoint::EndpointInfo::Interrupt(Default::default()),
-            ),
         ];
 
         let alloc_result = function_client
@@ -229,17 +210,12 @@ impl Driver for UsbZeroFunction {
             error!("Invalid interfaces length from AllocResources");
             return Err(Status::NO_RESOURCES.into());
         };
-        let &[ep_in_addr, ep_out_addr, ep_intr_in_addr, ep_intr_out_addr] = endpoints.as_slice()
-        else {
+        let &[ep_in_addr, ep_out_addr] = endpoints.as_slice() else {
             error!("Invalid endpoints length from AllocResources");
             return Err(Status::NO_RESOURCES.into());
         };
 
-        if (ep_in_addr & USB_ENDPOINT_DIR_MASK) == 0
-            || (ep_out_addr & USB_ENDPOINT_DIR_MASK) != 0
-            || (ep_intr_in_addr & USB_ENDPOINT_DIR_MASK) == 0
-            || (ep_intr_out_addr & USB_ENDPOINT_DIR_MASK) != 0
-        {
+        if (ep_in_addr & USB_ENDPOINT_DIR_MASK) == 0 || (ep_out_addr & USB_ENDPOINT_DIR_MASK) != 0 {
             error!("Invalid endpoint direction bits assigned");
             return Err(Status::NO_RESOURCES.into());
         }
@@ -273,22 +249,6 @@ impl Driver for UsbZeroFunction {
             default_max_packet_size_bytes[0],
             default_max_packet_size_bytes[1], // wMaxPacketSize (little endian)
             0,                                // bInterval
-            // Endpoint Descriptor (Interrupt IN)
-            USB_ENDPOINT_DESC_SIZE,
-            USB_DESC_TYPE_ENDPOINT,
-            ep_intr_in_addr,
-            fusb_descriptor::EndpointType::Interrupt.into_primitive(),
-            default_max_packet_size_bytes[0],
-            default_max_packet_size_bytes[1],
-            1, // bInterval
-            // Endpoint Descriptor (Interrupt OUT)
-            USB_ENDPOINT_DESC_SIZE,
-            USB_DESC_TYPE_ENDPOINT,
-            ep_intr_out_addr,
-            fusb_descriptor::EndpointType::Interrupt.into_primitive(),
-            default_max_packet_size_bytes[0],
-            default_max_packet_size_bytes[1],
-            1, // bInterval
         ];
         // Alternate Setting 1 (Loopback) Interface and Endpoint Descriptors
         let ep_desc_start = USB_INTERFACE_DESC_SIZE as usize;
@@ -320,14 +280,10 @@ impl Driver for UsbZeroFunction {
 
         let ep_in = ep_in_client.into_proxy();
         let ep_out = ep_out_client.into_proxy();
-        let ep_intr_in = ep_intr_in_client.into_proxy();
-        let ep_intr_out = ep_intr_out_client.into_proxy();
 
         let function_client_clone = function_client.clone();
         let ep_in_clone = ep_in.clone();
         let ep_out_clone = ep_out.clone();
-        let ep_intr_in_clone = ep_intr_in.clone();
-        let ep_intr_out_clone = ep_intr_out.clone();
         scope.spawn_local(async move {
             let mut device = UsbZeroFunctionDevice::new(
                 function_client_clone,
@@ -336,10 +292,6 @@ impl Driver for UsbZeroFunction {
                 ep_out_clone,
                 ep_out_addr,
                 interface_num,
-                ep_intr_in_clone,
-                ep_intr_in_addr,
-                ep_intr_out_clone,
-                ep_intr_out_addr,
                 initial_mode,
             );
             device.handle_requests(iface_server.into_stream()).await;
@@ -384,10 +336,6 @@ impl UsbZeroFunctionDevice {
         ep_out: fusb_endpoint::EndpointProxy,
         ep_out_addr: u8,
         interface_num: u8,
-        ep_intr_in: fusb_endpoint::EndpointProxy,
-        ep_intr_in_addr: u8,
-        ep_intr_out: fusb_endpoint::EndpointProxy,
-        ep_intr_out_addr: u8,
         mode: TestMode,
     ) -> Self {
         Self {
@@ -397,10 +345,6 @@ impl UsbZeroFunctionDevice {
             ep_out,
             ep_out_addr,
             interface_num,
-            ep_intr_in,
-            ep_intr_in_addr,
-            ep_intr_out,
-            ep_intr_out_addr,
             is_configured: Arc::new(AtomicBool::new(false)),
             vmos_registered: false,
             endpoint_tasks: None,
@@ -418,9 +362,7 @@ impl UsbZeroFunctionDevice {
             self.vmos_registered = false;
         }
         self.is_configured.store(false, Ordering::Relaxed);
-        for ep_addr in
-            [self.ep_in_addr, self.ep_out_addr, self.ep_intr_in_addr, self.ep_intr_out_addr]
-        {
+        for ep_addr in [self.ep_in_addr, self.ep_out_addr] {
             let _ = self.function_client.disable_endpoint(ep_addr).await;
         }
         self.stalled_endpoints.clear();
@@ -474,7 +416,7 @@ impl UsbZeroFunctionDevice {
         }
     }
 
-    /// Configures and activates the IN/OUT bulk and interrupt endpoints.
+    /// Configures and activates the IN and OUT bulk endpoints.
     async fn activate_endpoints(&self, speed: fusb_descriptor::UsbSpeed) -> Result<(), Status> {
         let w_max_packet_size = Self::max_packet_size_for_speed(speed);
         let super_speed_companion = match speed {
@@ -496,39 +438,10 @@ impl UsbZeroFunctionDevice {
             super_speed_companion: super_speed_companion.clone(),
             ..Default::default()
         };
-        let int_super_speed_companion = super_speed_companion.as_ref().map(|c| {
-            let mut c = c.clone();
-            c.w_bytes_per_interval = w_max_packet_size;
-            c
-        });
-        let int_ep_config = fusb_function::EndpointConfiguration {
-            descriptor: Some(fusb_function::EndpointDescriptor {
-                bm_attributes: fusb_descriptor::EndpointType::Interrupt.into_primitive(),
-                w_max_packet_size,
-                b_interval: 1,
-            }),
-            super_speed_companion: int_super_speed_companion,
-            ..Default::default()
-        };
 
         configure_ep(&self.function_client, self.ep_in_addr, &ep_config).await?;
         if let Err(e) = configure_ep(&self.function_client, self.ep_out_addr, &ep_config).await {
             let _ = self.function_client.disable_endpoint(self.ep_in_addr).await;
-            return Err(e);
-        }
-        if let Err(e) =
-            configure_ep(&self.function_client, self.ep_intr_in_addr, &int_ep_config).await
-        {
-            let _ = self.function_client.disable_endpoint(self.ep_in_addr).await;
-            let _ = self.function_client.disable_endpoint(self.ep_out_addr).await;
-            return Err(e);
-        }
-        if let Err(e) =
-            configure_ep(&self.function_client, self.ep_intr_out_addr, &int_ep_config).await
-        {
-            let _ = self.function_client.disable_endpoint(self.ep_in_addr).await;
-            let _ = self.function_client.disable_endpoint(self.ep_out_addr).await;
-            let _ = self.function_client.disable_endpoint(self.ep_intr_in_addr).await;
             return Err(e);
         }
         Ok(())
@@ -692,9 +605,7 @@ impl UsbZeroFunctionDevice {
             return Err(Status::NOT_SUPPORTED);
         }
         let ep_addr = (setup.w_index & 0xff) as u8;
-        if ![self.ep_in_addr, self.ep_out_addr, self.ep_intr_in_addr, self.ep_intr_out_addr]
-            .contains(&ep_addr)
-        {
+        if ![self.ep_in_addr, self.ep_out_addr].contains(&ep_addr) {
             return Err(Status::NOT_SUPPORTED);
         }
         Ok(ep_addr)
@@ -718,13 +629,7 @@ impl UsbZeroFunctionDevice {
                     }
                     if recipient == USB_RECIP_ENDPOINT && setup.w_index <= 0xff {
                         let ep_addr = (setup.w_index & 0xff) as u8;
-                        if [
-                            self.ep_in_addr,
-                            self.ep_out_addr,
-                            self.ep_intr_in_addr,
-                            self.ep_intr_out_addr,
-                        ]
-                        .contains(&ep_addr)
+                        if [self.ep_in_addr, self.ep_out_addr].contains(&ep_addr)
                             || (ep_addr & USB_ENDPOINT_NUM_MASK) == 0
                         {
                             let is_stalled = self.stalled_endpoints.contains(&ep_addr);
