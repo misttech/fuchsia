@@ -6,18 +6,18 @@ import("//build/test.gni")
 import("//build/testing/bootfs_test.gni")
 
 source_set("iommu-x86") {
-  sources = [
-    "iommu-x86.cc",
-    "iommu-x86.h",
-  ]
-
-  public_deps = [ ":iommu" ]
-  deps = [
+  public = [ "iommu-x86.h" ]
+  public_deps = [
+    ":iommu",
     "//sdk/lib/fit",
-    "//src/lib/ddk",
-    "//third_party/acpica",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
+  ]
+
+  sources = [ "iommu-x86.cc" ]
+  deps = [
+    "//src/lib/ddk",
+    "//third_party/acpica",
   ]
 }
 
@@ -31,15 +31,14 @@ source_set("iommu-arm") {
 }
 
 source_set("iommu") {
-  sources = [ "iommu.h" ]
-
+  public = [ "iommu.h" ]
   public_deps = [ "//zircon/system/ulib/zx" ]
 }
 
 test("iommu-test") {
   sources = [ "iommu-x86-test.cc" ]
   deps = [
-    "//src/devices/lib/iommu:iommu-x86",
+    ":iommu-x86",
     "//src/devices/testing/no_ddk",
     "//src/lib/ddk",
     "//third_party/acpica",

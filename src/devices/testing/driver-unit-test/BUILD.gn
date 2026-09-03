@@ -10,6 +10,9 @@ library_headers("headers") {
     "lib/driver-unit-test/utils.h",
   ]
   public_deps = [
+    # lib/driver-unit-test/logger.h has #include <fbl/string.h>.
+    "//zircon/system/ulib/fbl",
+
     # <lib/driver-unit-test/logger.h> has #include
     # <fidl/fuchsia.driver.test.logger/cpp/fidl.h>
     "//sdk/fidl/fuchsia.driver.test.logger:fuchsia.driver.test.logger_cpp",
@@ -25,7 +28,6 @@ source_set("driver-unit-test") {
   deps = [
     "//sdk/lib/fidl",
     "//src/lib/ddk",
-    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
