@@ -58,10 +58,9 @@ size small is a primary design goal:
 
 In interactive mode (`src/repl/mod.rs`):
 
-*   **Linenoise Integration**: Uses a thin Rust FFI wrapper
-    (`src/repl/linenoise.rs`) around the minimal C `linenoise` library
-    (`//zircon/third_party/ulib/linenoise`) for history management and
-    interactive line editing.
+*   **Line Editor Integration**: Uses the pure-Rust `line-editor` library
+    (`//src/lib/line-editor`) for history management and interactive line
+    editing.
 *   **Tab Completion**: Provides autocompletion (`src/repl/completion.rs`) for
     commands in `PATH` as well as filesystem paths.
 *   **Dynamic Prompts**: Supports shell prompt expansion for `PS1` (default

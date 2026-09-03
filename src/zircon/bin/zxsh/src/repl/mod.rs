@@ -9,10 +9,10 @@ use crate::parser::ast::ASTBuilder;
 use crate::parser::{ParseError, parse_script, tokenize};
 use crate::tty::ShellSignals;
 use bstr::{BStr, BString, ByteSlice, ByteVec};
+use line_editor::{Config, Editor, ReadlineError};
+use std::io::{BufRead, IsTerminal, Write};
 
 mod completion;
-mod linenoise;
-use std::io::{BufRead, IsTerminal, Write};
 
 const DEFAULT_PS1: &str = "$ ";
 const DEFAULT_PS2: &str = "> ";
@@ -25,7 +25,12 @@ fn get_prompt(input_buffer: &BStr, state: &mut ShellState, ctx: &ExecutionContex
     expand_prompt(prompt_var, default_prompt, state, ctx)
 }
 
-/// Starts the interactive read-eval-print loop (REPL) using `linenoise` for command history and
+/// Creates an interactive line editor configured for zxsh.
+fn create_editor() -> Editor {
+    Editor::with_config(Config { max_history_len: 100, ..Default::default() })
+}
+
+/// Starts the interactive read-eval-print loop (REPL) using `line-editor` for command history and
 /// autocompletion.
 pub fn run_repl(state: ShellState) {
     let stdin = std::io::stdin();
@@ -35,10 +40,26 @@ pub fn run_repl(state: ShellState) {
     }
 }
 
-pub fn run_repl_reader<R: BufRead>(
-    mut reader: R,
-    mut state: ShellState,
+fn run_repl_reader<R: BufRead>(reader: R, state: ShellState, is_tty: bool) -> Option<i32> {
+    let stdout = std::io::stdout();
+    run_repl_stream(reader, stdout.lock(), state, is_tty)
+}
+
+fn run_repl_stream<R: BufRead, W: Write>(
+    reader: R,
+    writer: W,
+    state: ShellState,
     is_tty: bool,
+) -> Option<i32> {
+    let mut editor = if is_tty { Some(create_editor()) } else { None };
+    run_repl_loop(reader, writer, state, editor.as_mut())
+}
+
+fn run_repl_loop<R: BufRead, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    mut state: ShellState,
+    mut editor: Option<&mut Editor>,
 ) -> Option<i32> {
     state.opt_interactive = true;
     let mut ctx = match ExecutionContext::initial() {
@@ -49,11 +70,7 @@ pub fn run_repl_reader<R: BufRead>(
         }
     };
 
-    if is_tty {
-        linenoise::history_set_max_len(100);
-        linenoise::set_completion_callback(completion::tab_complete);
-    }
-
+    let has_editor = editor.is_some();
     let mut input_buffer = BString::default();
     let mut numeof = 0;
 
@@ -62,36 +79,46 @@ pub fn run_repl_reader<R: BufRead>(
 
         ctx.signal_state.clear(ShellSignals::INT);
 
-        let line = if is_tty {
-            let rust_line = {
-                let _scoped_env = completion::ScopedState::new(&state);
-                linenoise::readline(prompt.as_ref())
-            };
-            let rust_line = match rust_line {
-                Some(l) => {
+        let line = if let Some(ref mut ed) = editor {
+            let path = state.path();
+            ed.set_completion_handler(move |line| completion::tab_complete(line, &path));
+            let mode = ed.config.resolve_operating_mode(|| true);
+            let read_result = ed.readline_from(&mut reader, &mut writer, mode, prompt.as_bstr());
+            let mut line = match read_result {
+                Ok(l) => {
                     numeof = 0;
                     l
                 }
-                None => {
+                Err(ReadlineError::Interrupted) => {
+                    ctx.signal_state.clear(ShellSignals::INT);
+                    let _ = writeln!(writer);
+                    state.set_last_status(130);
+                    input_buffer.clear();
+                    continue;
+                }
+                Err(ReadlineError::Eof) => {
                     if ctx.signal_state.is_pending(ShellSignals::INT) {
                         ctx.signal_state.clear(ShellSignals::INT);
-                        println!();
+                        let _ = writeln!(writer);
                         state.set_last_status(130);
                         input_buffer.clear();
                         continue;
                     }
                     if state.opt_ignoreeof && numeof < 10 {
                         numeof += 1;
-                        println!("Use \"exit\" to leave shell.");
+                        let _ = writeln!(writer, "Use \"exit\" to leave shell.");
                         continue;
                     }
                     break 'repl_loop;
                 }
+                Err(ReadlineError::Io(e)) => {
+                    eprintln!("Read line error: {}", e);
+                    break 'repl_loop;
+                }
             };
 
-            linenoise::history_add(rust_line.as_ref());
+            ed.add_history(line.as_bstr());
 
-            let mut line = rust_line;
             line.push_byte(b'\n');
             line
         } else {
@@ -106,7 +133,7 @@ pub fn run_repl_reader<R: BufRead>(
             }
         };
 
-        if state.opt_verbose && !is_tty {
+        if state.opt_verbose && !has_editor {
             if let Some(mut err) = ctx.stderr() {
                 let _ = err.write_all(line.as_bytes());
                 let _ = err.flush();
@@ -247,5 +274,152 @@ mod tests {
         state.opt_verbose = true;
         let res = run_repl_reader(cursor, state, false);
         assert_eq!(res, Some(0));
+    }
+
+    #[test]
+    fn test_repl_interactive_execution_and_history() {
+        let input = "x=100\nexport VAL=$x\nexit 42\n";
+        let cursor = Cursor::new(input.as_bytes());
+        let mut output = Vec::new();
+        let mut editor = Editor::with_config(
+            Config::default()
+                .with_terminal_mode(line_editor::TerminalMode::Tty)
+                .with_column_width(line_editor::ColumnWidth::Fixed(80)),
+        );
+
+        let res = run_repl_loop(cursor, &mut output, ShellState::new(), Some(&mut editor));
+        assert_eq!(res, Some(42));
+
+        let history_entries: Vec<&str> =
+            editor.history().entries().iter().map(|e| e.to_str().unwrap()).collect();
+        assert_eq!(history_entries, vec!["x=100", "export VAL=$x", "exit 42"]);
+    }
+
+    #[test]
+    fn test_repl_interactive_ctrl_d_eof() {
+        let cursor = Cursor::new(b"");
+        let mut output = Vec::new();
+        let mut editor = Editor::with_config(
+            Config::default()
+                .with_terminal_mode(line_editor::TerminalMode::Tty)
+                .with_column_width(line_editor::ColumnWidth::Fixed(80)),
+        );
+
+        let res = run_repl_loop(cursor, &mut output, ShellState::new(), Some(&mut editor));
+        assert_eq!(res, None);
+        assert!(editor.history().entries().is_empty());
+    }
+
+    #[test]
+    fn test_repl_interactive_ignoreeof() {
+        let cursor = Cursor::new(b"");
+        let mut output = Vec::new();
+        let mut editor = Editor::with_config(
+            Config::default()
+                .with_terminal_mode(line_editor::TerminalMode::Tty)
+                .with_column_width(line_editor::ColumnWidth::Fixed(80)),
+        );
+        let mut state = ShellState::new();
+        state.opt_ignoreeof = true;
+
+        let res = run_repl_loop(cursor, &mut output, state, Some(&mut editor));
+        assert_eq!(res, None);
+        let out_str = String::from_utf8_lossy(&output);
+        assert!(out_str.contains("Use \"exit\" to leave shell."));
+    }
+
+    #[test]
+    fn test_repl_interactive_multiline_ps2() {
+        let input = "if true; then\nexport FOO=BAR\nfi\nexit 7\n";
+        let cursor = Cursor::new(input.as_bytes());
+        let mut output = Vec::new();
+        let mut editor = Editor::with_config(
+            Config::default()
+                .with_terminal_mode(line_editor::TerminalMode::Tty)
+                .with_column_width(line_editor::ColumnWidth::Fixed(80)),
+        );
+
+        let res = run_repl_loop(cursor, &mut output, ShellState::new(), Some(&mut editor));
+        assert_eq!(res, Some(7));
+
+        let history_entries: Vec<&str> =
+            editor.history().entries().iter().map(|e| e.to_str().unwrap()).collect();
+        assert_eq!(history_entries, vec!["if true; then", "export FOO=BAR", "fi", "exit 7"]);
+    }
+
+    #[test]
+    fn test_repl_interactive_status_codes() {
+        let input = "false\nexit $?\n";
+        let cursor = Cursor::new(input.as_bytes());
+        let mut output = Vec::new();
+        let mut editor = Editor::with_config(
+            Config::default()
+                .with_terminal_mode(line_editor::TerminalMode::Tty)
+                .with_column_width(line_editor::ColumnWidth::Fixed(80)),
+        );
+
+        let res = run_repl_loop(cursor, &mut output, ShellState::new(), Some(&mut editor));
+        assert_eq!(res, Some(1));
+    }
+
+    #[test]
+    fn test_repl_interactive_completion_integration() {
+        let temp_dir = std::env::temp_dir();
+        let test_dir = temp_dir.join("zxsh_repl_complete_test");
+        let _ = std::fs::create_dir_all(&test_dir);
+        let f1 = test_dir.join("cmd_alpha");
+        let f2 = test_dir.join("cmd_beta");
+        let _ = std::fs::write(&f1, "1");
+        let _ = std::fs::write(&f2, "2");
+
+        let mut state = ShellState::new();
+        state.set_var("PATH", test_dir.to_str().unwrap());
+
+        let path = state.path();
+        let comps = completion::tab_complete(BStr::new("cmd_"), &path);
+        assert_eq!(comps.len(), 2);
+        assert!(comps.contains(&BString::from("cmd_alpha")));
+        assert!(comps.contains(&BString::from("cmd_beta")));
+
+        let _ = std::fs::remove_file(f1);
+        let _ = std::fs::remove_file(f2);
+        let _ = std::fs::remove_dir(test_dir);
+    }
+
+    #[test]
+    fn test_repl_uart_execution() {
+        let input = "x=42\nexit $x\n";
+        let cursor = Cursor::new(input.as_bytes());
+        let mut output = Vec::new();
+        let mut editor = Editor::with_config(Config::default().with_term_name(Some("uart")));
+
+        let res = run_repl_loop(cursor, &mut output, ShellState::new(), Some(&mut editor));
+        assert_eq!(res, Some(42));
+
+        let out_str = String::from_utf8_lossy(&output);
+        // In UartEcho mode, prompt is written and characters are echoed back.
+        assert!(out_str.contains("$ "));
+        assert!(out_str.contains("x=42"));
+        assert!(out_str.contains("exit $x"));
+
+        let history_entries: Vec<&str> =
+            editor.history().entries().iter().map(|e| e.to_str().unwrap()).collect();
+        assert_eq!(history_entries, vec!["x=42", "exit $x"]);
+    }
+
+    #[test]
+    fn test_repl_dumb_terminal() {
+        let input = "echo hello\nexit 0\n";
+        let cursor = Cursor::new(input.as_bytes());
+        let mut output = Vec::new();
+        let mut editor = Editor::with_config(Config::default().with_term_name(Some("dumb")));
+
+        let res = run_repl_loop(cursor, &mut output, ShellState::new(), Some(&mut editor));
+        assert_eq!(res, Some(0));
+
+        let out_str = String::from_utf8_lossy(&output);
+        // Prompt is rendered, but PromptOnly mode does not echo typed characters.
+        assert!(out_str.contains("$ "));
+        assert!(!out_str.contains("echo hello"));
     }
 }

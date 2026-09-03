@@ -60,7 +60,6 @@ rustc_binary("bin") {
     "src/process.rs",
     "src/relative.rs",
     "src/repl/completion.rs",
-    "src/repl/linenoise.rs",
     "src/repl/mod.rs",
     "src/runner.rs",
     "src/serialization.rs",
@@ -110,12 +109,11 @@ rustc_binary("bin") {
     "//src/lib/fdio/rust:fdio",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-runtime",
-    "//src/lib/fuchsia-sync",
+    "//src/lib/line-editor",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:libc",
     "//third_party/rust_crates:zerocopy",
-    "//zircon/third_party/ulib/linenoise",
   ]
 }
 

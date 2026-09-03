@@ -2,43 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::eval::{ShellPath, ShellState};
+use crate::eval::ShellPath;
 use bstr::{BStr, BString, ByteSlice};
-use fuchsia_sync::Mutex;
 use std::os::unix::ffi::OsStrExt;
-
-static ACTIVE_PATH: Mutex<Option<ShellPath>> = Mutex::new(None);
-
-pub struct ScopedState(());
-
-impl ScopedState {
-    /// Binds the given shell state into thread-local storage for autocompletion callback
-    /// resolution.
-    pub fn new(state: &ShellState) -> Self {
-        let mut path = ACTIVE_PATH.lock();
-        assert!(path.is_none(), "ACTIVE_PATH already set");
-        *path = Some(state.path());
-        Self(())
-    }
-}
-
-impl Drop for ScopedState {
-    fn drop(&mut self) {
-        let mut path = ACTIVE_PATH.lock();
-        assert!(path.is_some(), "ACTIVE_PATH not set on drop");
-        *path = None;
-    }
-}
-
-/// Get the active shell path.
-///
-/// # Panics
-///
-/// Panics if no shell path is currently active, i.e. if called outside of a
-/// `ScopedState`.
-fn get_active_path() -> ShellPath {
-    ACTIVE_PATH.lock().clone().expect("ACTIVE_PATH is not set")
-}
 
 #[derive(Default)]
 struct TokenInfo {
@@ -72,7 +38,7 @@ fn complete_at_dir(
     line_prefix: &BStr,
     line_separator: &BStr,
     file_prefix: &BStr,
-    comps: &mut super::linenoise::Completions,
+    comps: &mut Vec<BString>,
 ) {
     let dir_path_ref = match dir_path.to_path() {
         Ok(p) => p,
@@ -97,18 +63,19 @@ fn complete_at_dir(
             completion.extend_from_slice(line_separator);
             completion.extend_from_slice(name_bstr);
 
-            comps.add(completion.as_bytes());
+            comps.push(completion);
         }
     }
 }
 
 /// Generates interactive tab-completion suggestions matching commands, variables, aliases, or
 /// file paths.
-pub fn tab_complete(line: &BStr, comps: &mut super::linenoise::Completions) {
+pub fn tab_complete(line: &BStr, path: &ShellPath) -> Vec<BString> {
+    let mut comps = Vec::new();
     let line_bytes = line.as_bytes();
     let token = tokenize_line(line_bytes);
     if token.in_env {
-        return;
+        return comps;
     }
 
     let token_bytes = &line_bytes[token.start..];
@@ -131,7 +98,7 @@ pub fn tab_complete(line: &BStr, comps: &mut super::linenoise::Completions) {
         let prefix_len = token.start + dir_bytes.len();
         let line_prefix = BStr::new(&line_bytes[..prefix_len]);
 
-        complete_at_dir(dir_bstr, line_prefix, BStr::new(b"/"), prefix_bstr, comps);
+        complete_at_dir(dir_bstr, line_prefix, BStr::new(b"/"), prefix_bstr, &mut comps);
     } else {
         // No slash in the last token
         let file_prefix = token_bstr;
@@ -141,23 +108,35 @@ pub fn tab_complete(line: &BStr, comps: &mut super::linenoise::Completions) {
             // Prefix is the line up to the space before the last token
             if token.start > 0 && line_bytes[token.start - 1] == b' ' {
                 let line_prefix = BStr::new(&line_bytes[..token.start - 1]);
-                complete_at_dir(BStr::new(b"."), line_prefix, BStr::new(b" "), file_prefix, comps);
+                complete_at_dir(
+                    BStr::new(b"."),
+                    line_prefix,
+                    BStr::new(b" "),
+                    file_prefix,
+                    &mut comps,
+                );
             }
         } else {
             // Case 3: Command name completion (e.g. "fo")
             // Search directories in PATH
-            let path = get_active_path();
-
             for path_segment in path.entries() {
-                complete_at_dir(path_segment, BStr::new(b""), BStr::new(b""), file_prefix, comps);
+                complete_at_dir(
+                    path_segment,
+                    BStr::new(b""),
+                    BStr::new(b""),
+                    file_prefix,
+                    &mut comps,
+                );
             }
         }
     }
+    comps
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::eval::ShellState;
 
     #[test]
     fn test_tokenize_line() {
@@ -188,29 +167,14 @@ mod tests {
     }
 
     #[test]
-    fn test_scoped_state() {
-        let mut state = ShellState::new();
-        state.set_var("PATH", "/bin:/usr/bin");
-        {
-            let _scope = ScopedState::new(&state);
-            let path = get_active_path();
-            let entries: Vec<_> = path.entries().collect();
-            assert_eq!(entries, vec![BStr::new("/bin"), BStr::new("/usr/bin")]);
-        }
-    }
-
-    use crate::repl::linenoise::tests::TestCompletionsGuard;
-
-    #[test]
     fn test_tab_complete_in_env() {
-        let mut guard = TestCompletionsGuard::new();
-        tab_complete(BStr::new("FOO=BAR"), &mut guard.completions());
-        assert!(guard.items().is_empty());
+        let path = ShellPath::default();
+        assert!(tab_complete(BStr::new("FOO=BAR"), &path).is_empty());
     }
 
     #[test]
     fn test_complete_at_dir_invalid_and_nonexistent() {
-        let mut guard = TestCompletionsGuard::new();
+        let mut comps = Vec::new();
 
         // Invalid path (fails to_path)
         complete_at_dir(
@@ -218,9 +182,9 @@ mod tests {
             BStr::new(""),
             BStr::new(""),
             BStr::new(""),
-            &mut guard.completions(),
+            &mut comps,
         );
-        assert!(guard.items().is_empty());
+        assert!(comps.is_empty());
 
         // Non-existent directory (fails read_dir)
         complete_at_dir(
@@ -228,9 +192,9 @@ mod tests {
             BStr::new(""),
             BStr::new(""),
             BStr::new(""),
-            &mut guard.completions(),
+            &mut comps,
         );
-        assert!(guard.items().is_empty());
+        assert!(comps.is_empty());
     }
 
     #[test]
@@ -245,19 +209,16 @@ mod tests {
 
         let dir_str = test_dir.to_str().unwrap();
 
-        let mut guard = TestCompletionsGuard::new();
-
         // Slash in last token: dir_str/al
         let line = format!("{}/al", dir_str);
-        tab_complete(BStr::new(line.as_bytes()), &mut guard.completions());
+        let path = ShellPath::default();
+        let items = tab_complete(BStr::new(line.as_bytes()), &path);
 
-        let items = guard.items();
         let expected = format!("{}/alpha.txt", dir_str);
         assert!(items.contains(&BString::from(expected)), "Items: {:?}", items);
 
         // Root slash /
-        let mut guard2 = TestCompletionsGuard::new();
-        tab_complete(BStr::new("/al"), &mut guard2.completions());
+        let _items2 = tab_complete(BStr::new("/al"), &path);
 
         let _ = std::fs::remove_file(file1);
         let _ = std::fs::remove_file(file2);
@@ -278,18 +239,12 @@ mod tests {
 
         let mut state = ShellState::new();
         state.set_var("PATH", bin_dir.to_str().unwrap());
+        let path = state.path();
+        let items = tab_complete(BStr::new("mytool_"), &path);
 
-        {
-            let _scoped = ScopedState::new(&state);
-            let mut guard = TestCompletionsGuard::new();
-
-            tab_complete(BStr::new("mytool_"), &mut guard.completions());
-
-            let items = guard.items();
-            assert_eq!(items.len(), 2, "Items: {:?}", items);
-            assert!(items.contains(&BString::from("mytool_one")));
-            assert!(items.contains(&BString::from("mytool_two")));
-        }
+        assert_eq!(items.len(), 2, "Items: {:?}", items);
+        assert!(items.contains(&BString::from("mytool_one")));
+        assert!(items.contains(&BString::from("mytool_two")));
 
         let _ = std::fs::remove_file(cmd1);
         let _ = std::fs::remove_file(cmd2);
@@ -299,10 +254,7 @@ mod tests {
 
     #[test]
     fn test_tab_complete_argument_space() {
-        let mut guard = TestCompletionsGuard::new();
-
-        // Command with argument space: "echo "
-        tab_complete(BStr::new("echo "), &mut guard.completions());
-        // Exercises the line_prefix logic for argument completion
+        let path = ShellPath::default();
+        let _ = tab_complete(BStr::new("echo "), &path);
     }
 }
