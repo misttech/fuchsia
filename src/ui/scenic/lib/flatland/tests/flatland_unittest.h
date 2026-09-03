@@ -5,14 +5,11 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_TESTS_FLATLAND_UNITTEST_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_TESTS_FLATLAND_UNITTEST_H_
 
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
-#include <fidl/fuchsia.ui.views/cpp/hlcpp_conversion.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/default.h>
 #include <lib/async/time.h>
-#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/stdcompat/source_location.h>
 #include <lib/sync/cpp/completion.h>
@@ -124,7 +121,47 @@ const uint32_t kDefaultSize = 1;
 const glm::vec2 kDefaultDisplayPixelRatio = {1.0f, 1.0f};
 const int32_t kDefaultInset = 0;
 
-inline fuchsia_ui_composition::ViewBoundProtocols NoViewProtocols() { return {}; }
+inline fuchsia_ui_composition::wire::ViewBoundProtocols NoViewProtocols() { return {}; }
+
+inline fuchsia_ui_views::wire::ViewIdentityOnCreation NewWireViewIdentityOnCreation() {
+  auto view_identity_hlcpp = scenic::NewViewIdentityOnCreation();
+  return fuchsia_ui_views::wire::ViewIdentityOnCreation{
+      .view_ref = fuchsia_ui_views::wire::ViewRef{.reference = std::move(
+                                                      view_identity_hlcpp.view_ref.reference)},
+      .view_ref_control =
+          fuchsia_ui_views::wire::ViewRefControl{
+              .reference = std::move(view_identity_hlcpp.view_ref_control.reference)},
+  };
+}
+
+inline fuchsia_ui_composition::wire::BufferCollectionImportToken ToWire(
+    fuchsia_ui_composition::BufferCollectionImportToken token) {
+  return {.value = std::move(token.value())};
+}
+
+inline fuchsia_ui_composition::wire::BufferCollectionImportToken ToWire(
+    fuchsia::ui::composition::BufferCollectionImportToken token) {
+  return {.value = std::move(token.value)};
+}
+
+inline fuchsia_ui_views::wire::ViewportCreationToken ToWire(
+    fuchsia_ui_views::ViewportCreationToken token) {
+  return {.value = std::move(token.value())};
+}
+
+inline fuchsia_ui_views::wire::ViewportCreationToken ToWire(
+    fuchsia::ui::views::ViewportCreationToken token) {
+  return {.value = std::move(token.value)};
+}
+
+inline fuchsia_ui_views::wire::ViewCreationToken ToWire(fuchsia_ui_views::ViewCreationToken token) {
+  return {.value = std::move(token.value())};
+}
+
+inline fuchsia_ui_views::wire::ViewCreationToken ToWire(
+    fuchsia::ui::views::ViewCreationToken token) {
+  return {.value = std::move(token.value)};
+}
 
 class EventHandler : public fidl::AsyncEventHandler<fuchsia_ui_composition::Flatland> {
  public:
@@ -499,13 +536,21 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
                        cpp20::source_location location = cpp20::source_location::current()) {
     SCOPED_TRACE(::testing::Message() << location.file_name() << ":" << location.line());
     bool had_acquire_fences = !args.acquire_fences.empty();
-    fuchsia_ui_composition::PresentArgs present_args;
-    present_args.requested_presentation_time(args.requested_presentation_time.get())
-        .acquire_fences(std::move(args.acquire_fences))
-        .release_fences(std::move(args.release_fences))
-        .present_fences(std::move(args.present_fences))
+    fidl::Arena arena;
+    auto builder = fuchsia_ui_composition::wire::PresentArgs::Builder(arena);
+    builder.requested_presentation_time(args.requested_presentation_time.get())
         .unsquashable(args.unsquashable);
-    flatland->Present(std::move(present_args));
+    if (!args.acquire_fences.empty()) {
+      builder.acquire_fences(fidl::VectorView<zx::event>::FromExternal(args.acquire_fences));
+    }
+    if (!args.release_fences.empty()) {
+      builder.release_fences(fidl::VectorView<zx::event>::FromExternal(args.release_fences));
+    }
+    if (!args.present_fences.empty()) {
+      builder.present_fences(fidl::VectorView<zx::counter>::FromExternal(args.present_fences));
+    }
+    auto present_args = builder.Build();
+    flatland->Present(present_args);
     if (expect_success) {
       // Even with no acquire_fences, UberStruct updates queue on the dispatcher.
       if (!had_acquire_fences) {
@@ -545,19 +590,21 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
       Flatland* parent, Flatland* child, ContentId viewport_id,
       fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher,
       fidl::ServerEnd<fuchsia_ui_composition::ParentViewportWatcher> parent_viewport_watcher) {
-    fuchsia_ui_views::ViewportCreationToken parent_token;
-    fuchsia_ui_views::ViewCreationToken child_token;
-    ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
+    fuchsia_ui_views::wire::ViewportCreationToken parent_token;
+    fuchsia_ui_views::wire::ViewCreationToken child_token;
+    ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value, &child_token.value));
 
-    fuchsia_ui_composition::ViewportProperties properties;
-    properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                          .Build();
 
-    parent->CreateViewport(viewport_id, std::move(parent_token), std::move(properties),
+    parent->CreateViewport(viewport_id, std::move(parent_token), properties,
                            std::move(child_view_watcher));
 
-    child->CreateView2(
-        std::move(child_token), fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
-        fuchsia_ui_composition::ViewBoundProtocols(), std::move(parent_viewport_watcher));
+    child->CreateView2(std::move(child_token), NewWireViewIdentityOnCreation(),
+                       fuchsia_ui_composition::wire::ViewBoundProtocols(),
+                       std::move(parent_viewport_watcher));
 
     Present(parent, true);
     Present(child, true);
@@ -578,16 +625,16 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     FX_CHECK(child_view_watcher_server_end);
     FX_CHECK(parent_viewport_watcher_server_end);
     fuchsia_ui_views::ViewportCreationToken parent_token;
-    fuchsia_ui_views::ViewCreationToken child_token;
-    ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
+    fuchsia_ui_views::wire::ViewCreationToken child_token;
+    ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value));
     auto present_id = scheduling::PeekNextPresentId();
     EXPECT_CALL(*mock_flatland_presenter_,
                 ScheduleUpdateForSession(
                     zx::time(0), scheduling::SchedulingIdPair{display->session_id(), present_id},
                     true, ::testing::_, ::testing::_, ::testing::_, ::testing::_));
     display->SetContent(std::move(parent_token), std::move(child_view_watcher_server_end));
-    child->CreateView2(std::move(child_token),
-                       fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
+
+    child->CreateView2(std::move(child_token), NewWireViewIdentityOnCreation(), NoViewProtocols(),
                        std::move(parent_viewport_watcher_server_end));
   }
 
@@ -650,8 +697,17 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
               return fpromise::make_ok_promise();
             }));
 
-    flatland->CreateImage(image_id, std::move(buffer_collection_import_export_tokens.import_token),
-                          0, std::move(properties));
+    fidl::Arena arena;
+    auto wire_properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                               .size(fuchsia_math::wire::SizeU{properties.size()->width(),
+                                                               properties.size()->height()})
+                               .Build();
+
+    flatland->CreateImage(
+        image_id,
+        fuchsia_ui_composition::wire::BufferCollectionImportToken{
+            .value = std::move(buffer_collection_import_export_tokens.import_token.value())},
+        0, wire_properties);
     Present(flatland, true);
     return {.collection_id = koid, .image_id = global_image_id};
   }

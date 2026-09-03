@@ -51,7 +51,7 @@ namespace flatland {
 // thread/dispatcher, and communicates with the main/render thread(s) via the UberStruct mechanism,
 // as well as other interfaces such as FlatlandPresenter.  Because `fuchsia.ui.composition.Flatland`
 // is a stateful protocol, each client is connected to a different Flatland object.
-class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
+class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
                  public std::enable_shared_from_this<Flatland> {
  public:
   using BufferCollectionId = uint64_t;
@@ -104,19 +104,19 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   ~Flatland() override;
 
   // |fuchsia_ui_composition::Flatland|
-  void Present(PresentRequest& request, PresentCompleter::Sync& completer) override;
-  void Present(fuchsia_ui_composition::PresentArgs args);
+  void Present(PresentRequestView request, PresentCompleter::Sync& completer) override;
+  void Present(fuchsia_ui_composition::wire::PresentArgs& args);
 
   // |fuchsia_ui_composition::Flatland|
-  void CreateView(CreateViewRequest& request, CreateViewCompleter::Sync& completer) override;
+  void CreateView(CreateViewRequestView request, CreateViewCompleter::Sync& completer) override;
   void CreateView(
-      fuchsia_ui_views::ViewCreationToken token,
+      fuchsia_ui_views::wire::ViewCreationToken token,
       fidl::ServerEnd<fuchsia_ui_composition::ParentViewportWatcher> parent_viewport_watcher);
-  void CreateView2(CreateView2Request& request, CreateView2Completer::Sync& completer) override;
+  void CreateView2(CreateView2RequestView request, CreateView2Completer::Sync& completer) override;
   void CreateView2(
-      fuchsia_ui_views::ViewCreationToken token,
-      fuchsia_ui_views::ViewIdentityOnCreation view_identity,
-      fuchsia_ui_composition::ViewBoundProtocols protocols,
+      fuchsia_ui_views::wire::ViewCreationToken token,
+      fuchsia_ui_views::wire::ViewIdentityOnCreation view_identity,
+      fuchsia_ui_composition::wire::ViewBoundProtocols protocols,
       fidl::ServerEnd<fuchsia_ui_composition::ParentViewportWatcher> parent_viewport_watcher);
 
   // |fuchsia_ui_composition::Flatland|
@@ -129,43 +129,43 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   void Clear();
 
   // |fuchsia_ui_composition::Flatland|
-  void CreateTransform(CreateTransformRequest& request,
+  void CreateTransform(CreateTransformRequestView request,
                        CreateTransformCompleter::Sync& completer) override;
   void CreateTransform(TransformId transform_id);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetTranslation(SetTranslationRequest& request,
+  void SetTranslation(SetTranslationRequestView request,
                       SetTranslationCompleter::Sync& completer) override;
-  void SetTranslation(TransformId transform_id, fuchsia_math::Vec translation);
+  void SetTranslation(TransformId transform_id, fuchsia_math::wire::Vec translation);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetOrientation(SetOrientationRequest& request,
+  void SetOrientation(SetOrientationRequestView request,
                       SetOrientationCompleter::Sync& completer) override;
   void SetOrientation(TransformId transform_id, fuchsia_ui_composition::Orientation orientation);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetScale(SetScaleRequest& request, SetScaleCompleter::Sync& completer) override;
-  void SetScale(TransformId transform_id, fuchsia_math::VecF scale);
+  void SetScale(SetScaleRequestView request, SetScaleCompleter::Sync& completer) override;
+  void SetScale(TransformId transform_id, fuchsia_math::wire::VecF scale);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetOpacity(SetOpacityRequest& request, SetOpacityCompleter::Sync& completer) override;
+  void SetOpacity(SetOpacityRequestView request, SetOpacityCompleter::Sync& completer) override;
   void SetOpacity(TransformId transform_id, float value);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetClipBoundary(SetClipBoundaryRequest& request,
+  void SetClipBoundary(SetClipBoundaryRequestView request,
                        SetClipBoundaryCompleter::Sync& completer) override;
-  void SetClipBoundary(TransformId transform_id, fidl::Box<fuchsia_math::Rect> bounds);
+  void SetClipBoundary(TransformId transform_id, std::optional<fuchsia_math::wire::Rect> bounds);
 
   // |fuchsia_ui_composition::Flatland|
-  void AddChild(AddChildRequest& request, AddChildCompleter::Sync& completer) override;
+  void AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) override;
   void AddChild(TransformId parent_transform_id, TransformId child_transform_id);
 
   // |fuchsia_ui_composition::Flatland|
-  void RemoveChild(RemoveChildRequest& request, RemoveChildCompleter::Sync& completer) override;
+  void RemoveChild(RemoveChildRequestView request, RemoveChildCompleter::Sync& completer) override;
   void RemoveChild(TransformId parent_transform_id, TransformId child_transform_id);
 
   // |fuchsia_ui_composition::Flatland|
-  void ReplaceChildren(ReplaceChildrenRequest& request,
+  void ReplaceChildren(ReplaceChildrenRequestView request,
                        ReplaceChildrenCompleter::Sync& completer) override;
   void ReplaceChildren(TransformId parent_transform_id,
                        std::span<const TransformId> new_child_transform_ids);
@@ -176,185 +176,200 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   }
 
   // |fuchsia_ui_composition::Flatland|
-  void SetRootTransform(SetRootTransformRequest& request,
+  void SetRootTransform(SetRootTransformRequestView request,
                         SetRootTransformCompleter::Sync& completer) override;
   void SetRootTransform(TransformId transform_id);
 
   // |fuchsia_ui_composition::Flatland|
-  void CreateViewport(CreateViewportRequest& request,
+  void CreateViewport(CreateViewportRequestView request,
                       CreateViewportCompleter::Sync& completer) override;
-  void CreateViewport(ContentId viewport_id, fuchsia_ui_views::ViewportCreationToken token,
-                      fuchsia_ui_composition::ViewportProperties properties,
+  void CreateViewport(ContentId viewport_id, fuchsia_ui_views::wire::ViewportCreationToken token,
+                      const fuchsia_ui_composition::wire::ViewportProperties& properties,
                       fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher);
 
-  void CreateViewport2(CreateViewport2Request& request,
+  void CreateViewport2(CreateViewport2RequestView request,
                        CreateViewport2Completer::Sync& completer) override;
   void CreateViewport2(
-      ViewportId viewport_id, fuchsia_ui_views::ViewportCreationToken token,
-      fuchsia_ui_composition::ViewportProperties properties,
+      ViewportId viewport_id, fuchsia_ui_views::wire::ViewportCreationToken token,
+      const fuchsia_ui_composition::wire::ViewportProperties& properties,
       fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher);
 
   // |fuchsia_ui_composition::Flatland|
-  void CreateImage(CreateImageRequest& request, CreateImageCompleter::Sync& completer) override;
+  void CreateImage(CreateImageRequestView request, CreateImageCompleter::Sync& completer) override;
   void CreateImage(ContentId image_id,
-                   fuchsia_ui_composition::BufferCollectionImportToken import_token,
-                   uint32_t vmo_index, fuchsia_ui_composition::ImageProperties properties);
+                   fuchsia_ui_composition::wire::BufferCollectionImportToken import_token,
+                   uint32_t vmo_index,
+                   const fuchsia_ui_composition::wire::ImageProperties& properties);
 
-  void CreateImage2(CreateImage2Request& request, CreateImage2Completer::Sync& completer) override;
+  void CreateImage2(CreateImage2RequestView request,
+                    CreateImage2Completer::Sync& completer) override;
   void CreateImage2(ImageId image_id,
-                    fuchsia_ui_composition::BufferCollectionImportToken import_token,
-                    uint32_t vmo_index, fuchsia_ui_composition::ImageProperties properties);
+                    fuchsia_ui_composition::wire::BufferCollectionImportToken import_token,
+                    uint32_t vmo_index,
+                    const fuchsia_ui_composition::wire::ImageProperties& properties);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetImageSampleRegion(SetImageSampleRegionRequest& request,
+  void SetImageSampleRegion(SetImageSampleRegionRequestView request,
                             SetImageSampleRegionCompleter::Sync& completer) override;
   void SetImageSampleRegion(ContentId image_id, types::RectangleF rect);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetImageDestinationSize(SetImageDestinationSizeRequest& request,
+  void SetImageDestinationSize(SetImageDestinationSizeRequestView request,
                                SetImageDestinationSizeCompleter::Sync& completer) override;
-  void SetImageDestinationSize(ContentId image_id, fuchsia_math::SizeU size);
+  void SetImageDestinationSize(ContentId image_id, fuchsia_math::wire::SizeU size);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetImageBlendingFunction(SetImageBlendingFunctionRequest& request,
+  void SetImageBlendingFunction(SetImageBlendingFunctionRequestView request,
                                 SetImageBlendingFunctionCompleter::Sync& completer) override;
 
   // |fuchsia_ui_composition::Flatland|
-  void SetImageBlendMode(SetImageBlendModeRequest& request,
+  void SetImageBlendMode(SetImageBlendModeRequestView request,
                          SetImageBlendModeCompleter::Sync& completer) override;
   void SetImageBlendMode(ContentId image_id, BlendMode blend_mode);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetImageFlip(SetImageFlipRequest& request, SetImageFlipCompleter::Sync& completer) override;
+  void SetImageFlip(SetImageFlipRequestView request,
+                    SetImageFlipCompleter::Sync& completer) override;
   void SetImageFlip(ContentId image_id, fuchsia_ui_composition::ImageFlip flip);
 
   // |fuchsia_ui_composition::Flatland|
-  void CreateFilledRect(CreateFilledRectRequest& request,
+  void CreateFilledRect(CreateFilledRectRequestView request,
                         CreateFilledRectCompleter::Sync& completer) override;
   void CreateFilledRect(ContentId rect_id);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetSolidFill(SetSolidFillRequest& request, SetSolidFillCompleter::Sync& completer) override;
-  void SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba color,
-                    fuchsia_math::SizeU size);
+  void SetSolidFill(SetSolidFillRequestView request,
+                    SetSolidFillCompleter::Sync& completer) override;
+  void SetSolidFill(ContentId rect_id, fuchsia_ui_composition::wire::ColorRgba color,
+                    fuchsia_math::wire::SizeU size);
 
   // |fuchsia_ui_composition::Flatland|
-  void ReleaseFilledRect(ReleaseFilledRectRequest& request,
+  void ReleaseFilledRect(ReleaseFilledRectRequestView request,
                          ReleaseFilledRectCompleter::Sync& completer) override;
   void ReleaseFilledRect(ContentId rect_id);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetImageOpacity(SetImageOpacityRequest& request,
+  void SetImageOpacity(SetImageOpacityRequestView request,
                        SetImageOpacityCompleter::Sync& completer) override;
   void SetImageOpacity(ContentId image_id, float opacity);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetHitRegions(SetHitRegionsRequest& request,
+  void SetHitRegions(SetHitRegionsRequestView request,
                      SetHitRegionsCompleter::Sync& completer) override;
   void SetHitRegions(TransformId transform_id,
-                     std::vector<fuchsia_ui_composition::HitRegion> regions);
+                     std::span<const fuchsia_ui_composition::wire::HitRegion> regions);
+  void SetHitRegions(TransformId transform_id,
+                     std::initializer_list<fuchsia_ui_composition::wire::HitRegion> regions) {
+    SetHitRegions(transform_id, std::span(regions.begin(), regions.size()));
+  }
 
   // |fuchsia_ui_composition::Flatland|
-  void SetInfiniteHitRegion(SetInfiniteHitRegionRequest& request,
+  void SetInfiniteHitRegion(SetInfiniteHitRegionRequestView request,
                             SetInfiniteHitRegionCompleter::Sync& completer) override;
   void SetInfiniteHitRegion(TransformId transform_id,
                             fuchsia_ui_composition::HitTestInteraction hit_test);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetContent(SetContentRequest& request, SetContentCompleter::Sync& completer) override;
+  void SetContent(SetContentRequestView request, SetContentCompleter::Sync& completer) override;
   void SetContent(TransformId transform_id, ContentId content_id);
 
-  void SetTransformContent(SetTransformContentRequest& request,
+  void SetTransformContent(SetTransformContentRequestView request,
                            SetTransformContentCompleter::Sync& completer) override;
   void SetTransformContent(TransformId transform_id,
-                           fidl::Box<fuchsia_ui_composition::TransformContent> content);
+                           const fuchsia_ui_composition::wire::TransformContent* content);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetViewportProperties(SetViewportPropertiesRequest& request,
+  void SetViewportProperties(SetViewportPropertiesRequestView request,
                              SetViewportPropertiesCompleter::Sync& completer) override;
   void SetViewportProperties(ContentId viewport_id,
-                             fuchsia_ui_composition::ViewportProperties properties);
+                             const fuchsia_ui_composition::wire::ViewportProperties& properties);
 
-  void SetViewportProperties2(SetViewportProperties2Request& request,
+  void SetViewportProperties2(SetViewportProperties2RequestView request,
                               SetViewportProperties2Completer::Sync& completer) override;
   void SetViewportProperties2(ViewportId viewport_id,
-                              fuchsia_ui_composition::ViewportProperties properties);
+                              const fuchsia_ui_composition::wire::ViewportProperties& properties);
 
   // |fuchsia_ui_composition::Flatland|
-  void ReleaseTransform(ReleaseTransformRequest& request,
+  void ReleaseTransform(ReleaseTransformRequestView request,
                         ReleaseTransformCompleter::Sync& completer) override;
   void ReleaseTransform(TransformId transform_id);
 
   // |fuchsia_ui_composition::Flatland|
-  void ReleaseViewport(ReleaseViewportRequest& request,
+  void ReleaseViewport(ReleaseViewportRequestView request,
                        ReleaseViewportCompleter::Sync& completer) override;
-  void ReleaseViewport(ContentId viewport_id,
-                       fit::function<void(fuchsia_ui_views::ViewportCreationToken)> completer);
+  void ReleaseViewport(
+      ContentId viewport_id,
+      fit::function<void(fuchsia_ui_views::wire::ViewportCreationToken)> completer);
 
-  void ReleaseViewport2(ReleaseViewport2Request& request,
+  void ReleaseViewport2(ReleaseViewport2RequestView request,
                         ReleaseViewport2Completer::Sync& completer) override;
-  void ReleaseViewport2(ViewportId viewport_id,
-                        fit::function<void(fuchsia_ui_views::ViewportCreationToken)> completer);
+  void ReleaseViewport2(
+      ViewportId viewport_id,
+      fit::function<void(fuchsia_ui_views::wire::ViewportCreationToken)> completer);
 
   // |fuchsia_ui_composition::Flatland|
-  void ReleaseImage(ReleaseImageRequest& request, ReleaseImageCompleter::Sync& completer) override;
+  void ReleaseImage(ReleaseImageRequestView request,
+                    ReleaseImageCompleter::Sync& completer) override;
   void ReleaseImage(ContentId image_id);
 
   // |fuchsia_ui_composition::Flatland2|
-  void ReleaseImage2(ReleaseImage2Request& request,
+  void ReleaseImage2(ReleaseImage2RequestView request,
                      ReleaseImage2Completer::Sync& completer) override;
   void ReleaseImage2(ImageId image_id);
 
   // |fuchsia_ui_composition::Flatland|
-  void SetDebugName(SetDebugNameRequest& request, SetDebugNameCompleter::Sync& completer) override;
+  void SetDebugName(SetDebugNameRequestView request,
+                    SetDebugNameCompleter::Sync& completer) override;
   void SetDebugName(std::string name);
 
   // |fuchsia_ui_composition::TrustedFlatland|
-  void ReleaseImageImmediately(ReleaseImageImmediatelyRequest& request,
+  void ReleaseImageImmediately(ReleaseImageImmediatelyRequestView request,
                                ReleaseImageImmediatelyCompleter::Sync& completer) override;
   void ReleaseImageImmediately(ContentId image_id);
 
-  void ReleaseImageImmediately2(ReleaseImageImmediately2Request& request,
+  void ReleaseImageImmediately2(ReleaseImageImmediately2RequestView request,
                                 ReleaseImageImmediately2Completer::Sync& completer) override;
   void ReleaseImageImmediately2(ImageId image_id);
 
   // |fuchsia_ui_composition::Flatland2|
-  void CreateLayer(CreateLayerRequest& request, CreateLayerCompleter::Sync& completer) override;
+  void CreateLayer(CreateLayerRequestView request, CreateLayerCompleter::Sync& completer) override;
   void CreateLayer(LayerId layer_id);
 
   // |fuchsia_ui_composition::Flatland2|
-  void ReleaseLayer(ReleaseLayerRequest& request, ReleaseLayerCompleter::Sync& completer) override;
+  void ReleaseLayer(ReleaseLayerRequestView request,
+                    ReleaseLayerCompleter::Sync& completer) override;
   void ReleaseLayer(LayerId layer_id);
 
   // |fuchsia_ui_composition::Flatland2|
-  void CreateLayerStack(CreateLayerStackRequest& request,
+  void CreateLayerStack(CreateLayerStackRequestView request,
                         CreateLayerStackCompleter::Sync& completer) override;
   void CreateLayerStack(LayerStackId stack_id);
 
   // |fuchsia_ui_composition::Flatland2|
-  void ReleaseLayerStack(ReleaseLayerStackRequest& request,
+  void ReleaseLayerStack(ReleaseLayerStackRequestView request,
                          ReleaseLayerStackCompleter::Sync& completer) override;
   void ReleaseLayerStack(LayerStackId stack_id);
 
   // |fuchsia_ui_composition::Flatland2|
-  void SetStackLayers(SetStackLayersRequest& request,
+  void SetStackLayers(SetStackLayersRequestView request,
                       SetStackLayersCompleter::Sync& completer) override;
   void SetStackLayers(LayerStackId stack_id, std::span<const flatland::LayerId> layers);
 
   // |fuchsia_ui_composition::Flatland2|
-  void SetLayerImage(SetLayerImageRequest& request,
+  void SetLayerImage(SetLayerImageRequestView request,
                      SetLayerImageCompleter::Sync& completer) override;
   void SetLayerImage(LayerId layer_id, ImageId image_id,
-                     fidl::Box<fuchsia_ui_composition::WaitFence> acquire_fence,
-                     fidl::Box<fuchsia_ui_composition::SignalFence> release_fence);
+                     std::optional<fuchsia_ui_composition::wire::WaitFence> acquire_fence,
+                     std::optional<fuchsia_ui_composition::wire::SignalFence> release_fence);
 
   // |fuchsia_ui_composition::Flatland2|
-  void SetLayerProperties(SetLayerPropertiesRequest& request,
+  void SetLayerProperties(SetLayerPropertiesRequestView request,
                           SetLayerPropertiesCompleter::Sync& completer) override;
-  void SetLayerProperties(LayerId layer_id, fuchsia_ui_composition::LayerProperties properties);
+  void SetLayerProperties(LayerId layer_id,
+                          const fuchsia_ui_composition::wire::LayerProperties& properties);
 
   // |fuchsia_ui_composition::Flatland2|
-  void ResetLayer(ResetLayerRequest& request, ResetLayerCompleter::Sync& completer) override;
+  void ResetLayer(ResetLayerRequestView request, ResetLayerCompleter::Sync& completer) override;
   void ResetLayer(LayerId layer_id);
 
   // Called just before the FIDL client receives the event of the same name, indicating that this
@@ -423,12 +438,15 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // Note: Any new CreateView function must use this helper function for it to have the same
   // test coverage as its siblings.
   void CreateViewHelper(
-      fuchsia_ui_views::ViewCreationToken token,
+      fuchsia_ui_views::wire::ViewCreationToken token,
       fidl::ServerEnd<fuchsia_ui_composition::ParentViewportWatcher> parent_viewport_watcher,
-      std::optional<fuchsia_ui_views::ViewIdentityOnCreation> view_identity,
-      std::optional<fuchsia_ui_composition::ViewBoundProtocols> protocols);
+      std::optional<fuchsia_ui_views::wire::ViewIdentityOnCreation> view_identity,
+      std::optional<fuchsia_ui_composition::wire::ViewBoundProtocols> protocols);
 
-  void RegisterViewBoundProtocols(fuchsia_ui_composition::ViewBoundProtocols protocols,
+  // Registers view-bound protocols (e.g. focuser, input sources) for |view_ref_koid|.
+  // Returns true on success, or false if invalid protocol combinations were provided (in which
+  // case CloseConnection() has already been called).
+  bool RegisterViewBoundProtocols(fuchsia_ui_composition::wire::ViewBoundProtocols protocols,
                                   zx_koid_t view_ref_koid);
 
   // Sets clip bounds on the provided transform handle. Takes in TransformHandle and not
@@ -626,9 +644,9 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // origin as defined by the translation), and scale (relative to the new rotated origin).
   class MatrixData {
    public:
-    void SetTranslation(fuchsia_math::Vec translation);
+    void SetTranslation(fuchsia_math::wire::Vec translation);
     void SetOrientation(fuchsia_ui_composition::Orientation orientation);
-    void SetScale(fuchsia_math::VecF scale);
+    void SetScale(fuchsia_math::wire::VecF scale);
 
     // Returns this geometric transformation as a single 3x3 matrix using the order of operations
     // above: translation, orientation, then scale.
@@ -688,7 +706,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // preventing the BufferCollection from being destroyed while asynchronous image imports are still
   // running.
   std::shared_ptr<std::unordered_map<allocation::GlobalImageId,
-                                     fuchsia_ui_composition::BufferCollectionImportToken>>
+                                     fuchsia_ui_composition::wire::BufferCollectionImportToken>>
       import_tokens_;
 
   // Tracks API calls which have the potential to modify the view tree.  If true, the next-presented

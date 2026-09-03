@@ -270,8 +270,8 @@ TEST_F(FlatlandTest, PresentWithNoFieldsSet) {
   const bool kDefaultUnsquashable = false;
   const zx::time kDefaultRequestedPresentationTime = zx::time(0);
 
-  fuchsia_ui_composition::PresentArgs present_args;
-  flatland->Present(std::move(present_args));
+  fuchsia_ui_composition::wire::PresentArgs present_args;
+  flatland->Present(present_args);
 
   EXPECT_CALL(*mock_flatland_presenter_,
               ScheduleUpdateForSession(kDefaultRequestedPresentationTime, _, kDefaultUnsquashable,
@@ -507,7 +507,7 @@ TEST_F(FlatlandTest, SetHitRegionsErrorTest) {
     const TransformId kId(1);
     flatland->CreateTransform(kId);
     flatland->SetRootTransform(kId);
-    fuchsia_ui_composition::HitRegion region = {
+    fuchsia_ui_composition::wire::HitRegion region = {
         {0, 2, -10, 4}, fuchsia_ui_composition::HitTestInteraction::kDefault};
     flatland->SetHitRegions(kId, {region});
     Present(flatland, /*expect_success=*/false);
@@ -527,8 +527,8 @@ TEST_F(FlatlandTest, SetHitRegionsErrorTest) {
   // Height should be non-negative.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    fuchsia_math::RectF rect = {0, 0, 0, -1};
-    fuchsia_ui_composition::HitRegion region = {rect, interaction};
+    fuchsia_math::wire::RectF rect = {0, 0, 0, -1};
+    fuchsia_ui_composition::wire::HitRegion region = {rect, interaction};
 
     flatland->CreateTransform(kId);
     flatland->SetRootTransform(kId);
@@ -539,8 +539,8 @@ TEST_F(FlatlandTest, SetHitRegionsErrorTest) {
   // Width should be non-negative.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    fuchsia_math::RectF rect = {0, 0, -1, 0};
-    fuchsia_ui_composition::HitRegion region = {rect, interaction};
+    fuchsia_math::wire::RectF rect = {0, 0, -1, 0};
+    fuchsia_ui_composition::wire::HitRegion region = {rect, interaction};
 
     flatland->CreateTransform(kId);
     flatland->SetRootTransform(kId);
@@ -551,8 +551,8 @@ TEST_F(FlatlandTest, SetHitRegionsErrorTest) {
   // Negative origin should succeed.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    fuchsia_math::RectF rect = {-1, -1, 0, 0};
-    fuchsia_ui_composition::HitRegion region = {rect, interaction};
+    fuchsia_math::wire::RectF rect = {-1, -1, 0, 0};
+    fuchsia_ui_composition::wire::HitRegion region = {rect, interaction};
 
     flatland->CreateTransform(kId);
     flatland->SetRootTransform(kId);
@@ -572,8 +572,8 @@ TEST_F(FlatlandTest, SetHitRegionsErrorTest) {
   // Valid hit region vector should succeed.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    fuchsia_math::RectF rect = {0, 0, 10, 10};
-    fuchsia_ui_composition::HitRegion region = {rect, interaction};
+    fuchsia_math::wire::RectF rect = {0, 0, 10, 10};
+    fuchsia_ui_composition::wire::HitRegion region = {rect, interaction};
 
     flatland->CreateTransform(kId);
     flatland->SetRootTransform(kId);
@@ -584,8 +584,8 @@ TEST_F(FlatlandTest, SetHitRegionsErrorTest) {
   // Consecutive SetRootTransforms with the same transform should work.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    fuchsia_math::RectF rect = {0, 0, 0, 0};
-    fuchsia_ui_composition::HitRegion region = {rect, interaction};
+    fuchsia_math::wire::RectF rect = {0, 0, 0, 0};
+    fuchsia_ui_composition::wire::HitRegion region = {rect, interaction};
 
     flatland->CreateTransform(kId);
     flatland->SetRootTransform(kId);
@@ -1345,8 +1345,7 @@ TEST_F(FlatlandTest, CreateViewReplaceWithoutConnection) {
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
 
-  flatland->CreateView2(std::move(child_token),
-                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
+  flatland->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
                         NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
   Present(flatland, true);
 
@@ -1357,8 +1356,7 @@ TEST_F(FlatlandTest, CreateViewReplaceWithoutConnection) {
   auto [parent_viewport_watcher_client_end2, parent_viewport_watcher_server_end2] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
 
-  flatland->CreateView2(std::move(child_token2),
-                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
+  flatland->CreateView2(ToWire(std::move(child_token2)), NewWireViewIdentityOnCreation(),
                         NoViewProtocols(), std::move(parent_viewport_watcher_server_end2));
 
   RunLoopUntilIdle();
@@ -1395,9 +1393,8 @@ TEST_F(FlatlandTest, ParentViewportWatcherReplaceWithConnection) {
   // Present() is called on the child->
   auto [parent_viewport_watcher_client_end2, parent_viewport_watcher_server_end2] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end2));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end2));
 
   RunLoopUntilIdle();
 
@@ -1423,8 +1420,7 @@ TEST_F(FlatlandTest, ParentViewportWatcherUnbindsOnParentDeath) {
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  flatland->CreateView2(std::move(child_token),
-                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
+  flatland->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
                         NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
   Present(flatland, true);
 
@@ -1441,8 +1437,7 @@ TEST_F(FlatlandTest, ParentViewportWatcherUnbindsImmediatelyWithInvalidToken) {
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  flatland->CreateView2(std::move(child_token),
-                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
+  flatland->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
                         NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   // The link will be unbound even before Present() is called.
@@ -1469,8 +1464,7 @@ TEST_F(FlatlandTest, ReleaseViewSucceedsWithLink) {
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  flatland->CreateView2(std::move(child_token),
-                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
+  flatland->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
                         NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
   Present(flatland, true);
 
@@ -1491,8 +1485,7 @@ TEST_F(FlatlandTest, CreateViewSuccceedsAfterReleaseView) {
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  flatland->CreateView2(std::move(child_token),
-                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
+  flatland->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
                         NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
   Present(flatland, true);
 
@@ -1506,8 +1499,7 @@ TEST_F(FlatlandTest, CreateViewSuccceedsAfterReleaseView) {
 
   auto [parent_viewport_watcher_client_end2, parent_viewport_watcher_server_end2] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  flatland->CreateView2(std::move(child_token2),
-                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
+  flatland->CreateView2(ToWire(std::move(child_token2)), NewWireViewIdentityOnCreation(),
                         NoViewProtocols(), std::move(parent_viewport_watcher_server_end2));
   Present(flatland, true);
 }
@@ -1525,13 +1517,15 @@ TEST_F(FlatlandTest, RegisterViewBoundProtocols_BothTouchSources_ReturnsBadOpera
   auto [touch_source_v2_client_end, touch_source_v2_server_end] =
       fidl::Endpoints<fuchsia_ui_pointer::TouchSourceV2>::Create();
 
-  fuchsia_ui_composition::ViewBoundProtocols protocols;
-  protocols.touch_source(std::move(touch_source_server_end));
-  protocols.touch_source_v2(std::move(touch_source_v2_server_end));
+  fidl::Arena arena;
+  auto protocols = fuchsia_ui_composition::wire::ViewBoundProtocols::Builder(arena)
+                       .touch_source(std::move(touch_source_server_end))
+                       .touch_source_v2(std::move(touch_source_v2_server_end))
+                       .Build();
 
-  flatland->CreateView2(fidl::HLCPPToNatural(std::move(creation_tokens.view_token)),
-                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
-                        std::move(protocols), std::move(parent_viewport_watcher_server_end));
+  flatland->CreateView2(ToWire(std::move(creation_tokens.view_token)),
+                        NewWireViewIdentityOnCreation(), protocols,
+                        std::move(parent_viewport_watcher_server_end));
 
   RunLoopUntilIdle();
 
@@ -1551,13 +1545,15 @@ TEST_F(FlatlandTest, RegisterViewBoundProtocols_BothMouseSources_ReturnsBadOpera
   auto [mouse_source_v2_client_end, mouse_source_v2_server_end] =
       fidl::Endpoints<fuchsia_ui_pointer::MouseSourceV2>::Create();
 
-  fuchsia_ui_composition::ViewBoundProtocols protocols;
-  protocols.mouse_source(std::move(mouse_source_server_end));
-  protocols.mouse_source_v2(std::move(mouse_source_v2_server_end));
+  fidl::Arena arena;
+  auto protocols = fuchsia_ui_composition::wire::ViewBoundProtocols::Builder(arena)
+                       .mouse_source(std::move(mouse_source_server_end))
+                       .mouse_source_v2(std::move(mouse_source_v2_server_end))
+                       .Build();
 
-  flatland->CreateView2(fidl::HLCPPToNatural(std::move(creation_tokens.view_token)),
-                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
-                        std::move(protocols), std::move(parent_viewport_watcher_server_end));
+  flatland->CreateView2(ToWire(std::move(creation_tokens.view_token)),
+                        NewWireViewIdentityOnCreation(), protocols,
+                        std::move(parent_viewport_watcher_server_end));
 
   RunLoopUntilIdle();
 
@@ -1575,9 +1571,11 @@ TEST_F(FlatlandTest, ChildViewWatcherUnbindsOnChildDeath) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-  flatland->CreateViewport(kLinkId1, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
+  flatland->CreateViewport(kLinkId1, ToWire(std::move(parent_token)), properties,
                            std::move(child_view_watcher_server_end));
   Present(flatland, true);
 
@@ -1596,7 +1594,7 @@ TEST_F(FlatlandTest, ChildViewWatcherUnbindsImmediatelyWithInvalidToken) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  flatland->CreateViewport(kLinkId1, std::move(parent_token), {},
+  flatland->CreateViewport(kLinkId1, ToWire(std::move(parent_token)), {},
                            std::move(child_view_watcher_server_end));
 
   // The link will be unbound even before Present() is called.
@@ -1615,9 +1613,11 @@ TEST_F(FlatlandTest, ChildViewWatcherFailsIdIsZero) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-  flatland->CreateViewport(kInvalidContentId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
+  flatland->CreateViewport(kInvalidContentId, ToWire(std::move(parent_token)), properties,
                            std::move(child_view_watcher_server_end));
   Present(flatland, false);
 }
@@ -1631,8 +1631,9 @@ TEST_F(FlatlandTest, ChildViewWatcherFailsNoLogicalSize) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  flatland->CreateViewport(kInvalidContentId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena).Build();
+  flatland->CreateViewport(kInvalidContentId, ToWire(std::move(parent_token)), properties,
                            std::move(child_view_watcher_server_end));
   Present(flatland, false);
 }
@@ -1645,11 +1646,13 @@ TEST_F(FlatlandTest, ChildViewWatcherFailsInvalidLogicalSize) {
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
-    ViewportProperties properties;
-    properties.logical_size(fuchsia_math::SizeU{0, kDefaultSize});
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{0, kDefaultSize})
+                          .Build();
     auto [child_view_watcher_client_end, child_view_watcher_server_end] =
         fidl::Endpoints<ChildViewWatcher>::Create();
-    flatland->CreateViewport(kInvalidContentId, std::move(parent_token), std::move(properties),
+    flatland->CreateViewport(kInvalidContentId, ToWire(std::move(parent_token)), properties,
                              std::move(child_view_watcher_server_end));
     Present(flatland, false);
   }
@@ -1658,11 +1661,13 @@ TEST_F(FlatlandTest, ChildViewWatcherFailsInvalidLogicalSize) {
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
-    ViewportProperties properties2;
-    properties2.logical_size(fuchsia_math::SizeU{kDefaultSize, 0});
+    fidl::Arena arena;
+    auto properties2 = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                           .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, 0})
+                           .Build();
     auto [child_view_watcher_client_end, child_view_watcher_server_end] =
         fidl::Endpoints<ChildViewWatcher>::Create();
-    flatland->CreateViewport(kInvalidContentId, std::move(parent_token), std::move(properties2),
+    flatland->CreateViewport(kInvalidContentId, ToWire(std::move(parent_token)), properties2,
                              std::move(child_view_watcher_server_end));
     Present(flatland, false);
   }
@@ -1676,15 +1681,17 @@ TEST_F(FlatlandTest, ChildViewAutomaticallyClipsBounds) {
   ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
 
   const ContentId kLinkId1(1);
-  ViewportProperties properties;
   // Create the viewport and check the uberstruct for the clip bounds.
   {
     const int32_t kWidth = 300;
     const int32_t kHeight = 500;
-    properties.logical_size(fuchsia_math::SizeU{kWidth, kHeight});
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{kWidth, kHeight})
+                          .Build();
     auto [child_view_watcher_client_end, child_view_watcher_server_end] =
         fidl::Endpoints<ChildViewWatcher>::Create();
-    flatland->CreateViewport(kLinkId1, std::move(parent_token), std::move(properties),
+    flatland->CreateViewport(kLinkId1, ToWire(std::move(parent_token)), properties,
                              std::move(child_view_watcher_server_end));
     Present(flatland, true);
 
@@ -1705,8 +1712,11 @@ TEST_F(FlatlandTest, ChildViewAutomaticallyClipsBounds) {
   {
     const int32_t kWidth = 900;
     const int32_t kHeight = 700;
-    properties.logical_size(fuchsia_math::SizeU{kWidth, kHeight});
-    flatland->SetViewportProperties(kLinkId1, std::move(properties));
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{kWidth, kHeight})
+                          .Build();
+    flatland->SetViewportProperties(kLinkId1, properties);
     Present(flatland, true);
 
     auto maybe_transform = flatland->GetContentHandle(kLinkId1);
@@ -1738,21 +1748,22 @@ TEST_F(FlatlandTest, ViewportClippingPersistsAcrossInstances) {
 
   const ContentId kLinkId(1);
 
-  ViewportProperties properties;
   const int32_t kViewportWidth = 75;
   const int32_t kViewportHeight = 325;
-  properties.logical_size(fuchsia_math::SizeU{kViewportWidth, kViewportHeight});
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kViewportWidth, kViewportHeight})
+                        .Build();
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
   parent->SetContent(kId1, kLinkId);
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   Present(parent, true);
   Present(child, true);
@@ -2047,9 +2058,11 @@ TEST_F(FlatlandTest, ChildViewWatcherFailsIdCollision) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-  flatland->CreateViewport(kId1, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
+  flatland->CreateViewport(kId1, ToWire(std::move(parent_token)), properties,
                            std::move(child_view_watcher_server_end));
   Present(flatland, true);
 
@@ -2057,7 +2070,7 @@ TEST_F(FlatlandTest, ChildViewWatcherFailsIdCollision) {
   ViewCreationToken child_token2;
   ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token2.value(), &child_token2.value()));
 
-  flatland->CreateViewport(kId1, std::move(parent_token2), std::move(properties),
+  flatland->CreateViewport(kId1, ToWire(std::move(parent_token2)), properties,
                            std::move(child_view_watcher_server_end));
   Present(flatland, false);
 }
@@ -2157,16 +2170,17 @@ TEST_F(FlatlandTest, ChildGetsLayoutUpdateWithoutPresenting) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{1, 2})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   fidl::Client parent_viewport_watcher(std::move(parent_viewport_watcher_client_end), dispatcher());
 
@@ -2197,18 +2211,19 @@ TEST_F(FlatlandTest, OverwrittenHangingGetsReturnError) {
   const ContentId kLinkId(1);
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{1, 2})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
   fidl::Client parent_viewport_watcher(std::move(parent_viewport_watcher_client_end), dispatcher());
 
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
   UpdateLinks(parent->GetRoot());
 
   // First layout request should succeed immediately.
@@ -2264,9 +2279,11 @@ TEST_F(FlatlandTest, ConnectedToDisplayParentPresentsBeforeChild) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{1, 2})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
   parent->SetContent(kTransformId, kLinkId);
 
@@ -2274,9 +2291,8 @@ TEST_F(FlatlandTest, ConnectedToDisplayParentPresentsBeforeChild) {
       fidl::Endpoints<ParentViewportWatcher>::Create();
   fidl::Client parent_viewport_watcher(std::move(parent_viewport_watcher_client_end), dispatcher());
 
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   // Request a status update.
   std::optional<ParentViewportStatus> parent_status;
@@ -2331,17 +2347,18 @@ TEST_F(FlatlandTest, ConnectedToDisplayChildPresentsBeforeParent) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{1, 2})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
   parent->SetContent(kTransformId, kLinkId);
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
   fidl::Client parent_viewport_watcher(std::move(parent_viewport_watcher_client_end), dispatcher());
 
   // Request a status update.
@@ -2397,9 +2414,11 @@ TEST_F(FlatlandTest, ChildReceivesDisconnectedFromDisplay) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{1, 2})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
   parent->SetContent(kTransformId, kLinkId);
 
@@ -2407,9 +2426,8 @@ TEST_F(FlatlandTest, ChildReceivesDisconnectedFromDisplay) {
       fidl::Endpoints<ParentViewportWatcher>::Create();
   fidl::Client parent_viewport_watcher(std::move(parent_viewport_watcher_client_end), dispatcher());
 
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   // The ParentViewportStatus will update when both the parent and child Present().
   std::optional<ParentViewportStatus> parent_status;
@@ -2460,16 +2478,17 @@ TEST_F(FlatlandTest, ValidChildToParentFlow_ChildUsedCreateView2) {
       fidl::Endpoints<ChildViewWatcher>::Create();
   fidl::Client child_view_watcher(std::move(child_view_watcher_client_end), dispatcher());
 
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_viewport_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{1, 2})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_viewport_token)), properties,
                          std::move(child_view_watcher_server_end));
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  child->CreateView2(std::move(child_view_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_view_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   std::optional<ChildViewStatus> child_status;
   child_view_watcher->GetStatus().ThenExactlyOnce([&](ChildViewWatcher_GetStatusResult& result) {
@@ -2546,15 +2565,18 @@ TEST_F(FlatlandTest, ValidChildToParentFlow_ChildUsedCreateView) {
       fidl::Endpoints<ChildViewWatcher>::Create();
   fidl::Client child_view_watcher(std::move(child_view_watcher_client_end), dispatcher());
 
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_viewport_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{1, 2})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_viewport_token)), properties,
                          std::move(child_view_watcher_server_end));
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
 
-  child->CreateView(std::move(child_view_token), std::move(parent_viewport_watcher_server_end));
+  child->CreateView(ToWire(std::move(child_view_token)),
+                    std::move(parent_viewport_watcher_server_end));
 
   std::optional<ChildViewStatus> child_status;
   child_view_watcher->GetStatus().ThenExactlyOnce([&](ChildViewWatcher_GetStatusResult& result) {
@@ -2585,16 +2607,17 @@ TEST_F(FlatlandTest, ContentHasPresentedSignalWaitsForAcquireFences) {
       fidl::Endpoints<ChildViewWatcher>::Create();
   fidl::Client child_view_watcher(std::move(child_view_watcher_client_end), dispatcher());
 
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{1, 2})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   std::optional<ChildViewStatus> cvs;
   child_view_watcher->GetStatus().ThenExactlyOnce([&](ChildViewWatcher_GetStatusResult& result) {
@@ -2644,16 +2667,20 @@ TEST_F(FlatlandTest, SetViewportProperties_WithDeadViewport_ShouldNotCrash) {
   {
     auto [child_view_watcher_client_end, child_view_watcher_server_end] =
         fidl::Endpoints<ChildViewWatcher>::Create();
-    ViewportProperties properties;
-    properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-    parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                          .Build();
+    parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                            std::move(child_view_watcher_server_end));
     Present(parent, true);
   }
 
   {
     // Now call SetViewportProperties() and make sure we don't crash.
-    parent->SetViewportProperties(kLinkId, ViewportProperties{});
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena).Build();
+    parent->SetViewportProperties(kLinkId, properties);
     Present(parent, true);
   }
 }
@@ -2717,10 +2744,18 @@ TEST_F(FlatlandTest, AfterSetViewportProperties_NewLayoutIsDeliveredWithoutPrese
   RunLoopUntilIdle();
 
   {  // Call SetViewportProperties(), but don't present.
-    ViewportProperties properties;
-    properties.logical_size(fuchsia_math::SizeU{kDefaultSize + 1, kDefaultSize + 2});
-    properties.inset(fuchsia_math::Inset{}.top(4).right(5).bottom(6).left(7));
-    parent->SetViewportProperties(kLinkId, std::move(properties));
+    fidl::Arena arena;
+    auto properties =
+        fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+            .logical_size(fuchsia_math::wire::SizeU{kDefaultSize + 1, kDefaultSize + 2})
+            .inset(fuchsia_math::wire::Inset{
+                .top = 4,
+                .right = 5,
+                .bottom = 6,
+                .left = 7,
+            })
+            .Build();
+    parent->SetViewportProperties(kLinkId, properties);
   }
 
   {  // Observe new layout being delivered immediately.
@@ -2763,24 +2798,33 @@ TEST_F(FlatlandTest, SetViewportProperties_BeforeLinkResolution_ShouldUpdateInit
   ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
 
   {  // Create the Viewport.
-    ViewportProperties properties;
-    properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-    parent->CreateViewport(kLinkId1, std::move(parent_token), std::move(properties),
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                          .Build();
+    parent->CreateViewport(kLinkId1, ToWire(std::move(parent_token)), properties,
                            std::move(child_view_watcher_server_end));
     Present(parent, true);
   }
 
   {  // Before the child's View is created, call SetViewportProperties.
-    ViewportProperties properties;
-    properties.logical_size(fuchsia_math::SizeU{kDefaultSize + 1, kDefaultSize + 2});
-    properties.inset(fuchsia_math::Inset{}.top(4).right(5).bottom(6).left(7));
-    parent->SetViewportProperties(kLinkId1, std::move(properties));
+    fidl::Arena arena;
+    auto properties =
+        fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+            .logical_size(fuchsia_math::wire::SizeU{kDefaultSize + 1, kDefaultSize + 2})
+            .inset(fuchsia_math::wire::Inset{
+                .top = 4,
+                .right = 5,
+                .bottom = 6,
+                .left = 7,
+            })
+            .Build();
+    parent->SetViewportProperties(kLinkId1, properties);
   }
 
   {  // Create the child View to let the link resolve.
-    child->CreateView2(std::move(child_token),
-                       fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                       std::move(parent_viewport_watcher_server_end));
+    child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                       NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
     Present(child, true);
   }
 
@@ -2825,9 +2869,11 @@ TEST_F(FlatlandTest, SetViewportProperties_HandlesMissingValues) {
   }
 
   {  // SetViewportProperties with only the logical size set.
-    ViewportProperties properties;
-    properties.logical_size(fuchsia_math::SizeU{2, 3});
-    parent->SetViewportProperties(kLinkId, std::move(properties));
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{2, 3})
+                          .Build();
+    parent->SetViewportProperties(kLinkId, properties);
   }
 
   {  // Confirm that the logical size is updated and the rest is unchanged.
@@ -2852,9 +2898,16 @@ TEST_F(FlatlandTest, SetViewportProperties_HandlesMissingValues) {
   }
 
   {  // Set the inset to something new.
-    ViewportProperties properties;
-    properties.inset(fuchsia_math::Inset{}.top(4).right(5).bottom(6).left(7));
-    parent->SetViewportProperties(kLinkId, std::move(properties));
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .inset(fuchsia_math::wire::Inset{
+                              .top = 4,
+                              .right = 5,
+                              .bottom = 6,
+                              .left = 7,
+                          })
+                          .Build();
+    parent->SetViewportProperties(kLinkId, properties);
   }
 
   {  // Confirm that the insets are updated and the rest is unchanged.
@@ -2879,8 +2932,10 @@ TEST_F(FlatlandTest, SetViewportProperties_HandlesMissingValues) {
   }
 
   {  // Call SetViewportProperties with an empty table.
-    ViewportProperties empty_properties;
-    parent->SetViewportProperties(kLinkId, std::move(empty_properties));
+    fidl::Arena arena;
+    auto empty_properties =
+        fuchsia_ui_composition::wire::ViewportProperties::Builder(arena).Build();
+    parent->SetViewportProperties(kLinkId, empty_properties);
   }
 
   {  // Confirm that no update has been triggered.
@@ -2920,12 +2975,18 @@ TEST_F(FlatlandTest,
 
   // Set the logical size to something new multiple times.
   for (int i = 10; i >= 0; --i) {
-    ViewportProperties properties;
-    properties.logical_size(fuchsia_math::SizeU{kInitialSize + i + 1, kInitialSize + i + 1});
-    parent->SetViewportProperties(kLinkId, std::move(properties));
-    ViewportProperties properties2;
-    properties2.logical_size(fuchsia_math::SizeU{kInitialSize + i, kInitialSize + i});
-    parent->SetViewportProperties(kLinkId, std::move(properties2));
+    fidl::Arena arena;
+    auto properties =
+        fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+            .logical_size(fuchsia_math::wire::SizeU{kInitialSize + i + 1, kInitialSize + i + 1})
+            .Build();
+    parent->SetViewportProperties(kLinkId, properties);
+    fidl::Arena arena2;
+    auto properties2 =
+        fuchsia_ui_composition::wire::ViewportProperties::Builder(arena2)
+            .logical_size(fuchsia_math::wire::SizeU{kInitialSize + i, kInitialSize + i})
+            .Build();
+    parent->SetViewportProperties(kLinkId, properties2);
   }
 
   {  // Confirm that the callback fires, and that it has the most up-to-date data.
@@ -2958,9 +3019,11 @@ TEST_F(FlatlandTest,
     // Update the properties again and observe the pending GetLayout() triggering.
     const uint32_t kNewSize = 50u;
     {
-      ViewportProperties properties;
-      properties.logical_size(fuchsia_math::SizeU{kNewSize, kNewSize});
-      parent->SetViewportProperties(kLinkId, std::move(properties));
+      fidl::Arena arena;
+      auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                            .logical_size(fuchsia_math::wire::SizeU{kNewSize, kNewSize})
+                            .Build();
+      parent->SetViewportProperties(kLinkId, properties);
     }
     RunLoopUntilIdle();
 
@@ -3012,12 +3075,13 @@ TEST_F(FlatlandTest, SetViewportProperties_OnMultipleChildren_ShouldUpdateEachOn
 
   // Resize the content on all children.
   for (auto id : kLinkIds) {
-    SizeU size;
-    size.width(id.value());
-    size.height(id.value() * 2);
-    ViewportProperties properties;
-    properties.logical_size(size);
-    parent->SetViewportProperties(id, std::move(properties));
+    fidl::Arena arena;
+    auto properties =
+        fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+            .logical_size(fuchsia_math::wire::SizeU{static_cast<uint32_t>(id.value()),
+                                                    static_cast<uint32_t>(id.value() * 2)})
+            .Build();
+    parent->SetViewportProperties(id, properties);
   }
 
   // Confirm that all children are updated.
@@ -3110,11 +3174,13 @@ TEST_F(FlatlandTest, SetLinkOnTransformErrorCases) {
     ViewportCreationToken parent_token;
     ViewCreationToken child_token;
     ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
-    ViewportProperties empty_properties;
+    fidl::Arena arena;
+    auto empty_properties =
+        fuchsia_ui_composition::wire::ViewportProperties::Builder(arena).Build();
 
     auto [child_view_watcher_client_end, child_view_watcher_server_end] =
         fidl::Endpoints<ChildViewWatcher>::Create();
-    flatland->CreateViewport(kLinkId1, std::move(parent_token), std::move(empty_properties),
+    flatland->CreateViewport(kLinkId1, ToWire(std::move(parent_token)), empty_properties,
                              std::move(child_view_watcher_server_end));
 
     Present(flatland, false);
@@ -3126,12 +3192,14 @@ TEST_F(FlatlandTest, SetLinkOnTransformErrorCases) {
     ViewportCreationToken parent_token;
     ViewCreationToken child_token;
     zx::channel::create(0, &parent_token.value(), &child_token.value());
-    ViewportProperties properties;
-    properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                          .Build();
 
     auto [child_view_watcher_client_end, child_view_watcher_server_end] =
         fidl::Endpoints<ChildViewWatcher>::Create();
-    flatland->CreateViewport(kLinkId1, std::move(parent_token), std::move(properties),
+    flatland->CreateViewport(kLinkId1, ToWire(std::move(parent_token)), properties,
                              std::move(child_view_watcher_server_end));
     return flatland;
   };
@@ -3171,8 +3239,9 @@ TEST_F(FlatlandTest, ReleaseViewportErrorCases) {
   // Zero is not a valid link_id.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->ReleaseViewport(kInvalidContentId,
-                              [](ViewportCreationToken token) { EXPECT_TRUE(false); });
+    flatland->ReleaseViewport(
+        kInvalidContentId,
+        [](fuchsia_ui_views::wire::ViewportCreationToken token) { EXPECT_TRUE(false); });
     Present(flatland, false);
   }
 
@@ -3180,7 +3249,8 @@ TEST_F(FlatlandTest, ReleaseViewportErrorCases) {
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     const ContentId kLinkId1(1);
-    flatland->ReleaseViewport(kLinkId1, [](ViewportCreationToken token) { EXPECT_TRUE(false); });
+    flatland->ReleaseViewport(
+        kLinkId1, [](fuchsia_ui_views::wire::ViewportCreationToken token) { EXPECT_TRUE(false); });
     Present(flatland, false);
   }
 
@@ -3196,7 +3266,8 @@ TEST_F(FlatlandTest, ReleaseViewportErrorCases) {
     CreateImage(flatland.get(), allocator.get(), kImageId, std::move(ref_pair),
                 std::move(properties));
 
-    flatland->ReleaseViewport(kImageId, [](ViewportCreationToken token) { EXPECT_TRUE(false); });
+    flatland->ReleaseViewport(
+        kImageId, [](fuchsia_ui_views::wire::ViewportCreationToken token) { EXPECT_TRUE(false); });
     Present(flatland, false);
   }
 }
@@ -3219,10 +3290,12 @@ TEST_F(FlatlandTest, ReleaseViewportViaFidlClient) {
 
     libsync::Completion completion;
     async::PostTask(client_server.server_loop().dispatcher(), [&]() {
-      ViewportProperties properties;
-      properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-      client_server.server()->CreateViewport(viewport_id, std::move(parent_token),
-                                             std::move(properties),
+      fidl::Arena arena;
+      auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                            .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                            .Build();
+      client_server.server()->CreateViewport(viewport_id, ToWire(std::move(parent_token)),
+                                             properties,
                                              std::move(child_view_watcher_endpoints.server));
       Present(client_server.server(), true);
       completion.Signal();
@@ -3321,23 +3394,26 @@ TEST_F(FlatlandTest, ReleaseViewportReturnsOriginalToken) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-  flatland->CreateViewport(kLinkId1, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
+  flatland->CreateViewport(kLinkId1, ToWire(std::move(parent_token)), properties,
                            std::move(child_view_watcher_server_end));
   Present(flatland, true);
 
-  ViewportCreationToken content_token;
-  flatland->ReleaseViewport(kLinkId1, [&content_token](ViewportCreationToken token) {
-    content_token = std::move(token);
-  });
+  fuchsia_ui_views::wire::ViewportCreationToken content_token;
+  flatland->ReleaseViewport(kLinkId1,
+                            [&content_token](fuchsia_ui_views::wire::ViewportCreationToken token) {
+                              content_token = std::move(token);
+                            });
 
   RunLoopUntilIdle();
 
   // Until Present() is called and the acquire fence is signaled, the previous ChildViewWatcher is
   // not unbound.
   EXPECT_TRUE(ClientEndPeerExists(child_view_watcher_client_end));
-  EXPECT_FALSE(content_token.value().is_valid());
+  EXPECT_FALSE(content_token.value.is_valid());
 
   PresentArgs args;
   args.acquire_fences = utils::CreateEventArray(1);
@@ -3346,7 +3422,7 @@ TEST_F(FlatlandTest, ReleaseViewportReturnsOriginalToken) {
   PresentWithArgs(flatland, std::move(args), true);
 
   EXPECT_TRUE(ClientEndPeerExists(child_view_watcher_client_end));
-  EXPECT_FALSE(content_token.value().is_valid());
+  EXPECT_FALSE(content_token.value.is_valid());
 
   // Signal the acquire fence to unbind the link.
   event_copy.signal(0, ZX_EVENT_SIGNALED);
@@ -3355,8 +3431,8 @@ TEST_F(FlatlandTest, ReleaseViewportReturnsOriginalToken) {
   RunLoopUntilIdle();
 
   EXPECT_FALSE(ClientEndPeerExists(child_view_watcher_client_end));
-  EXPECT_TRUE(content_token.value().is_valid());
-  EXPECT_EQ(fsl::GetKoid(content_token.value().get()), expected_koid);
+  EXPECT_TRUE(content_token.value.is_valid());
+  EXPECT_EQ(fsl::GetKoid(content_token.value.get()), expected_koid);
 }
 
 TEST_F(FlatlandTest, ReleaseViewportReturnsOrphanedTokenOnChildDeath) {
@@ -3370,9 +3446,11 @@ TEST_F(FlatlandTest, ReleaseViewportReturnsOrphanedTokenOnChildDeath) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-  flatland->CreateViewport(kLinkId1, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
+  flatland->CreateViewport(kLinkId1, ToWire(std::move(parent_token)), properties,
                            std::move(child_view_watcher_server_end));
   Present(flatland, true);
 
@@ -3380,13 +3458,14 @@ TEST_F(FlatlandTest, ReleaseViewportReturnsOrphanedTokenOnChildDeath) {
   child_token.value().reset();
   RunLoopUntilIdle();
 
-  ViewportCreationToken content_token;
-  flatland->ReleaseViewport(kLinkId1, [&content_token](ViewportCreationToken token) {
-    content_token = std::move(token);
-  });
+  fuchsia_ui_views::wire::ViewportCreationToken content_token;
+  flatland->ReleaseViewport(kLinkId1,
+                            [&content_token](fuchsia_ui_views::wire::ViewportCreationToken token) {
+                              content_token = std::move(token);
+                            });
   Present(flatland, true);
 
-  EXPECT_TRUE(content_token.value().is_valid());
+  EXPECT_TRUE(content_token.value.is_valid());
 
   // But trying to link with that token will immediately fail because it is already orphaned.
   const ContentId kLinkId2(2);
@@ -3394,7 +3473,7 @@ TEST_F(FlatlandTest, ReleaseViewportReturnsOrphanedTokenOnChildDeath) {
   auto [child_view_watcher_client_end2, child_view_watcher_server_end2] =
       fidl::Endpoints<ChildViewWatcher>::Create();
 
-  flatland->CreateViewport(kLinkId2, std::move(content_token), std::move(properties),
+  flatland->CreateViewport(kLinkId2, std::move(content_token), properties,
                            std::move(child_view_watcher_server_end2));
   Present(flatland, true);
 
@@ -3418,9 +3497,11 @@ TEST_F(FlatlandTest, CreateViewportPresentedBeforeCreateView) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
   parent->SetContent(kId1, kLinkId);
 
@@ -3429,9 +3510,8 @@ TEST_F(FlatlandTest, CreateViewportPresentedBeforeCreateView) {
   // Link the child to the parent->
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   // The child should only be accessible from the parent when Present() is called on the child->
   EXPECT_FALSE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
@@ -3453,9 +3533,8 @@ TEST_F(FlatlandTest, CreateViewPresentedBeforeCreateViewport) {
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
 
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   Present(child, true);
 
@@ -3472,9 +3551,11 @@ TEST_F(FlatlandTest, CreateViewPresentedBeforeCreateViewport) {
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
 
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
   parent->SetContent(kId1, kLinkId);
 
@@ -3507,18 +3588,19 @@ TEST_F(FlatlandTest, LinkResolvedBeforeEitherPresent) {
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
 
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
   parent->SetContent(kId1, kLinkId);
 
   // Link the child to the parent->
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   // The child should only be accessible from the parent when Present() is called on both the
   // parent and the child->
@@ -3550,17 +3632,18 @@ TEST_F(FlatlandTest, ClearLinkToChild) {
 
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<ChildViewWatcher>::Create();
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
+  parent->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                          std::move(child_view_watcher_server_end));
   parent->SetContent(kId1, kLinkId);
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
-  child->CreateView2(std::move(child_token),
-                     fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
-                     std::move(parent_viewport_watcher_server_end));
+  child->CreateView2(ToWire(std::move(child_token)), NewWireViewIdentityOnCreation(),
+                     NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
 
   Present(parent, true);
   Present(child, true);
@@ -3621,10 +3704,11 @@ TEST_F(FlatlandTest, RecreateReleasedLinkSameToken) {
   EXPECT_TRUE(PeerExists(unowned_parent_viewport_watcher_client_end));
 
   // Release the link on parent.
-  ViewportCreationToken content_token;
-  parent->ReleaseViewport(kLinkId1, [&content_token](ViewportCreationToken token) {
-    content_token = std::move(token);
-  });
+  fuchsia_ui_views::wire::ViewportCreationToken content_token;
+  parent->ReleaseViewport(kLinkId1,
+                          [&content_token](fuchsia_ui_views::wire::ViewportCreationToken token) {
+                            content_token = std::move(token);
+                          });
   Present(parent, true);
   EXPECT_FALSE(IsDescendantOf(parent->GetRoot(), child->GetRoot()));
 
@@ -3642,9 +3726,11 @@ TEST_F(FlatlandTest, RecreateReleasedLinkSameToken) {
   fidl::Client child_view_watcher2(std::move(child_view_watcher_client_end2), dispatcher());
 
   const ContentId kLinkId2(2);
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-  parent2->CreateViewport(kLinkId2, std::move(content_token), std::move(properties),
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
+  parent2->CreateViewport(kLinkId2, std::move(content_token), properties,
                           std::move(child_view_watcher_server_end2));
   parent2->SetContent(kId2, kLinkId2);
   Present(parent2, true);
@@ -3987,28 +4073,27 @@ TEST_F(FlatlandTest, SetClipBoundaryErrorCases) {
 
   // Zero is not a valid transform ID.
   {
-    fuchsia_math::Rect rect{0, 0, 20, 30};
+    fuchsia_math::wire::Rect rect{0, 0, 20, 30};
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->SetClipBoundary(kInvalidTransformId,
-                              std::make_unique<fuchsia_math::Rect>(std::move(rect)));
+    flatland->SetClipBoundary(kInvalidTransformId, rect);
     Present(flatland, false);
   }
 
   // Transform ID is valid but not yet imported
   {
-    fuchsia_math::Rect rect{0, 0, 20, 30};
+    fuchsia_math::wire::Rect rect{0, 0, 20, 30};
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->SetClipBoundary(kTransformId, std::make_unique<fuchsia_math::Rect>(std::move(rect)));
+    flatland->SetClipBoundary(kTransformId, rect);
     Present(flatland, false);
   }
 
   // Width must be positive.
   {
-    fuchsia_math::Rect rect{0, 0, 20, 30};
+    fuchsia_math::wire::Rect rect{0, 0, 20, 30};
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     flatland->CreateTransform(kTransformId);
     flatland->SetRootTransform(kTransformId);
-    flatland->SetClipBoundary(kTransformId, std::make_unique<fuchsia_math::Rect>(std::move(rect)));
+    flatland->SetClipBoundary(kTransformId, rect);
     Present(flatland, true);
 
     const auto maybe_transform_handle = flatland->GetTransformHandle(kTransformId);
@@ -4021,41 +4106,39 @@ TEST_F(FlatlandTest, SetClipBoundaryErrorCases) {
     auto clip_region = clip_region_itr->second;
     EXPECT_EQ(TransformClipRegion::From(rect), clip_region);
 
-    fuchsia_math::Rect rect_bad = {0, 0, -20, 30};
-    flatland->SetClipBoundary(kTransformId,
-                              std::make_unique<fuchsia_math::Rect>(std::move(rect_bad)));
+    fuchsia_math::wire::Rect rect_bad = {0, 0, -20, 30};
+    flatland->SetClipBoundary(kTransformId, rect_bad);
     Present(flatland, false);
   }
 
   // Height must be positive.
   {
-    fuchsia_math::Rect rect{0, 0, 20, 30};
+    fuchsia_math::wire::Rect rect{0, 0, 20, 30};
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     flatland->CreateTransform(kTransformId);
-    flatland->SetClipBoundary(kTransformId, std::make_unique<fuchsia_math::Rect>(std::move(rect)));
+    flatland->SetClipBoundary(kTransformId, rect);
     Present(flatland, true);
 
-    fuchsia_math::Rect rect_bad = {0, 0, 20, -30};
-    flatland->SetClipBoundary(kTransformId,
-                              std::make_unique<fuchsia_math::Rect>(std::move(rect_bad)));
+    fuchsia_math::wire::Rect rect_bad = {0, 0, 20, -30};
+    flatland->SetClipBoundary(kTransformId, rect_bad);
     Present(flatland, false);
   }
 
   // Can't overflow on the X-axis.
   {
-    fuchsia_math::Rect rect = {INT_MAX - 1, 0, INT_MAX - 1, 30};
+    fuchsia_math::wire::Rect rect = {INT_MAX - 1, 0, INT_MAX - 1, 30};
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     flatland->CreateTransform(kTransformId);
-    flatland->SetClipBoundary(kTransformId, std::make_unique<fuchsia_math::Rect>(std::move(rect)));
+    flatland->SetClipBoundary(kTransformId, rect);
     Present(flatland, false);
   }
 
   // Can't overflow on the Y-axis.
   {
-    fuchsia_math::Rect rect = {0, INT_MAX - 1, 30, INT_MAX - 1};
+    fuchsia_math::wire::Rect rect = {0, INT_MAX - 1, 30, INT_MAX - 1};
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     flatland->CreateTransform(kTransformId);
-    flatland->SetClipBoundary(kTransformId, std::make_unique<fuchsia_math::Rect>(std::move(rect)));
+    flatland->SetClipBoundary(kTransformId, rect);
     Present(flatland, false);
   }
 
@@ -4071,7 +4154,7 @@ TEST_F(FlatlandTest, SetClipBoundaryErrorCases) {
     const auto transform_handle = maybe_transform_handle.value();
 
     // Set a null value.
-    flatland->SetClipBoundary(kTransformId, nullptr);
+    flatland->SetClipBoundary(kTransformId, std::nullopt);
     Present(flatland, true);
 
     // Check that there is no clip region in the uber struct.
@@ -4079,8 +4162,8 @@ TEST_F(FlatlandTest, SetClipBoundaryErrorCases) {
     EXPECT_FALSE(uber_struct->local_clip_regions.contains(transform_handle));
 
     // Set a proper value.
-    fuchsia_math::Rect rect = {10, 30, 20, 90};
-    flatland->SetClipBoundary(kTransformId, std::make_unique<fuchsia_math::Rect>(std::move(rect)));
+    fuchsia_math::wire::Rect rect = {10, 30, 20, 90};
+    flatland->SetClipBoundary(kTransformId, rect);
     Present(flatland, true);
 
     // Check that this value has now made its way to the uber struct.
@@ -4091,7 +4174,7 @@ TEST_F(FlatlandTest, SetClipBoundaryErrorCases) {
     EXPECT_EQ(TransformClipRegion::From(rect), clip_region);
 
     // Set it to be null again.
-    flatland->SetClipBoundary(kTransformId, nullptr);
+    flatland->SetClipBoundary(kTransformId, std::nullopt);
     Present(flatland, true);
 
     // Now check that its not in the uber struct anymore.
@@ -4115,52 +4198,56 @@ TEST_F(FlatlandTest, CreateImageErrorCases) {
   // Zero is not a valid image ID.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->CreateImage(kInvalidContentId, ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
-                          ImageProperties());
+    flatland->CreateImage(kInvalidContentId, ToWire(ref_pair.DuplicateImportToken()),
+                          kDefaultVmoIndex, {});
     Present(flatland, false);
   }
 
   // The import token must also be valid.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->CreateImage(ContentId(1), BufferCollectionImportToken(), kDefaultVmoIndex,
-                          ImageProperties());
+    flatland->CreateImage(ContentId(1), fuchsia_ui_composition::wire::BufferCollectionImportToken{},
+                          kDefaultVmoIndex, {});
     Present(flatland, false);
   }
 
   // The buffer collection can fail to create an image.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->CreateImage(ContentId(1), ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
-                          ImageProperties());
+    flatland->CreateImage(ContentId(1), ToWire(ref_pair.DuplicateImportToken()), kDefaultVmoIndex,
+                          {});
     Present(flatland, false);
   }
 
   // Size must be set.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    flatland->CreateImage(ContentId(1), ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
-                          ImageProperties());
+    flatland->CreateImage(ContentId(1), ToWire(ref_pair.DuplicateImportToken()), kDefaultVmoIndex,
+                          {});
     Present(flatland, false);
   }
 
   // Width cannot be 0.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    ImageProperties properties;
-    properties.size(SizeU{0, 1});
-    flatland->CreateImage(ContentId(1), ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
-                          std::move(properties));
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                          .size(fuchsia_math::wire::SizeU{0, 1})
+                          .Build();
+    flatland->CreateImage(ContentId(1), ToWire(ref_pair.DuplicateImportToken()), kDefaultVmoIndex,
+                          properties);
     Present(flatland, false);
   }
 
   // Height cannot be 0.
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
-    ImageProperties properties;
-    properties.size(SizeU{1, 0});
-    flatland->CreateImage(ContentId(1), ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
-                          std::move(properties));
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                          .size(fuchsia_math::wire::SizeU{1, 0})
+                          .Build();
+    flatland->CreateImage(ContentId(1), ToWire(ref_pair.DuplicateImportToken()), kDefaultVmoIndex,
+                          properties);
     Present(flatland, false);
   }
 
@@ -4169,12 +4256,14 @@ TEST_F(FlatlandTest, CreateImageErrorCases) {
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     const ContentId kId(100);
-    ImageProperties properties;
-    properties.size(SizeU{kDefaultWidth, kDefaultHeight});
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                          .size(fuchsia_math::wire::SizeU{kDefaultWidth, kDefaultHeight})
+                          .Build();
     EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
         .WillOnce(ReturnPromise(fpromise::error()));
-    flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
-                          std::move(properties));
+    flatland->CreateImage(kId, ToWire(ref_pair.DuplicateImportToken()), kDefaultVmoIndex,
+                          properties);
     RunLoopUntilIdle();
     Present(flatland, false);
   }
@@ -4184,8 +4273,10 @@ TEST_F(FlatlandTest, CreateImageErrorCases) {
   {
     std::shared_ptr<Flatland> flatland = CreateFlatland();
     {
-      ImageProperties properties;
-      properties.size(SizeU{kDefaultWidth, kDefaultHeight});
+      fidl::Arena arena;
+      auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                            .size(fuchsia_math::wire::SizeU{kDefaultWidth, kDefaultHeight})
+                            .Build();
 
       // This is the first call in these series of test components that makes it down to
       // the BufferCollectionImporter. We have to make sure it returns true here so that
@@ -4193,20 +4284,22 @@ TEST_F(FlatlandTest, CreateImageErrorCases) {
       EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
           .WillOnce(ReturnPromise(fpromise::ok()));
 
-      flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
-                            std::move(properties));
+      flatland->CreateImage(kId, ToWire(ref_pair.DuplicateImportToken()), kDefaultVmoIndex,
+                            properties);
       Present(flatland, true);
     }
 
     {
-      ImageProperties properties;
-      properties.size(SizeU{kDefaultWidth, kDefaultHeight});
+      fidl::Arena arena;
+      auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                            .size(fuchsia_math::wire::SizeU{kDefaultWidth, kDefaultHeight})
+                            .Build();
 
       // We shouldn't even make it to the BufferCollectionImporter here due to the duplicate
       // ID causing CreateImage() to return early.
       EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _)).Times(0);
-      flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
-                            std::move(properties));
+      flatland->CreateImage(kId, ToWire(ref_pair.DuplicateImportToken()), kDefaultVmoIndex,
+                            properties);
       Present(flatland, false);
     }
   }
@@ -4221,17 +4314,21 @@ TEST_F(FlatlandTest, CreateImageErrorCases) {
 
     auto [child_view_watcher_client_end, child_view_watcher_server_end] =
         fidl::Endpoints<ChildViewWatcher>::Create();
-    ViewportProperties link_properties;
-    link_properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-    flatland->CreateViewport(kLinkId, std::move(parent_token), std::move(link_properties),
+    fidl::Arena arena;
+    auto link_properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                               .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                               .Build();
+    flatland->CreateViewport(kLinkId, ToWire(std::move(parent_token)), link_properties,
                              std::move(child_view_watcher_server_end));
     Present(flatland, true);
 
-    ImageProperties image_properties;
-    image_properties.size(SizeU{kDefaultWidth, kDefaultHeight});
+    fidl::Arena arena2;
+    auto image_properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena2)
+                                .size(fuchsia_math::wire::SizeU{kDefaultWidth, kDefaultHeight})
+                                .Build();
 
-    flatland->CreateImage(kLinkId, ref_pair.DuplicateImportToken(), kDefaultVmoIndex,
-                          std::move(image_properties));
+    flatland->CreateImage(kLinkId, ToWire(ref_pair.DuplicateImportToken()), kDefaultVmoIndex,
+                          image_properties);
     Present(flatland, false);
   }
 }
@@ -4249,10 +4346,12 @@ TEST_F(FlatlandTest, CreateImageWithDuplicatedImportTokens) {
       .WillRepeatedly(ReturnPromise(fpromise::ok()));
 
   for (uint64_t i = 0; i < kNumImages; ++i) {
-    ImageProperties properties;
-    properties.size(SizeU{150, 175});
-    flatland->CreateImage(/*image_id*/ ContentId(i + 1), ref_pair.DuplicateImportToken(),
-                          /*vmo_idx*/ i, std::move(properties));
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                          .size(fuchsia_math::wire::SizeU{150, 175})
+                          .Build();
+    flatland->CreateImage(/*image_id*/ ContentId(i + 1), ToWire(ref_pair.DuplicateImportToken()),
+                          /*vmo_idx*/ static_cast<uint32_t>(i), properties);
     Present(flatland, true);
   }
 }
@@ -4272,15 +4371,17 @@ TEST_F(FlatlandTest, CreateImageAsyncWaitsForPresent) {
             return bridge.consumer.promise();
           }));
 
-  ImageProperties properties;
-  properties.size(SizeU{100, 100});
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
 
   const ContentId kId(1);
-  flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), 0, std::move(properties));
+  flatland->CreateImage(kId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
 
   // Call Present.
-  fuchsia_ui_composition::PresentArgs present_args;
-  flatland->Present(std::move(present_args));
+  fuchsia_ui_composition::wire::PresentArgs present_args;
+  flatland->Present(present_args);
 
   // Run loop. The task should be blocked on the fence.
   RunLoopUntilIdle();
@@ -4311,11 +4412,13 @@ TEST_F(FlatlandTest, DestroyFlatlandBeforeCreateImageResolves) {
             return bridge.consumer.promise();
           }));
 
-  ImageProperties properties;
-  properties.size(SizeU{100, 100});
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
 
   const ContentId kId(1);
-  flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), 0, std::move(properties));
+  flatland->CreateImage(kId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
 
   // Run loop to get the task scheduled on the executor.
   RunLoopUntilIdle();
@@ -4351,18 +4454,20 @@ TEST_F(FlatlandTest, ReleaseImageBeforeAsyncCreateImageCompletes) {
             return bridge.consumer.promise();
           }));
 
-  ImageProperties properties;
-  properties.size(SizeU{100, 100});
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 100})
+                        .Build();
 
   const ContentId kId(1);
-  flatland->CreateImage(kId, ref_pair.DuplicateImportToken(), 0, std::move(properties));
+  flatland->CreateImage(kId, ToWire(ref_pair.DuplicateImportToken()), 0, properties);
 
   // Release the image before the promise is resolved.
   flatland->ReleaseImage(kId);
 
   // Call Present.
-  fuchsia_ui_composition::PresentArgs present_args;
-  flatland->Present(std::move(present_args));
+  fuchsia_ui_composition::wire::PresentArgs present_args;
+  flatland->Present(present_args);
 
   // Run loop to get the task scheduled on the executor. The task should be blocked on the fence.
   RunLoopUntilIdle();
@@ -4395,17 +4500,21 @@ TEST_F(FlatlandTest, CreateImageInMultipleFlatlands) {
   {
     EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
         .WillOnce(ReturnPromise(fpromise::ok()));
-    ImageProperties properties;
-    properties.size(SizeU{150, 175});
-    flatland1->CreateImage(ContentId(1), ref_pair.DuplicateImportToken(), 0, std::move(properties));
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                          .size(fuchsia_math::wire::SizeU{150, 175})
+                          .Build();
+    flatland1->CreateImage(ContentId(1), ToWire(ref_pair.DuplicateImportToken()), 0, properties);
     Present(flatland1, true);
   }
   {
     EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
         .WillOnce(ReturnPromise(fpromise::ok()));
-    ImageProperties properties;
-    properties.size(SizeU{150, 175});
-    flatland2->CreateImage(ContentId(1), ref_pair.DuplicateImportToken(), 0, std::move(properties));
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                          .size(fuchsia_math::wire::SizeU{150, 175})
+                          .Build();
+    flatland2->CreateImage(ContentId(1), ToWire(ref_pair.DuplicateImportToken()), 0, properties);
     Present(flatland2, true);
   }
 
@@ -4632,8 +4741,10 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionHappensAfterCreateImage) {
   RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
 
   const ContentId kImageId(1);
-  ImageProperties properties;
-  properties.size(SizeU{100, 200});
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 200})
+                        .Build();
 
   // Send our only import token to CreateImage(). Buffer collection should be released only after
   // Image creation.
@@ -4641,7 +4752,7 @@ TEST_F(FlatlandTest, ReleaseBufferCollectionHappensAfterCreateImage) {
     EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
         .WillOnce(ReturnPromise(fpromise::ok()));
     EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(_, _)).Times(1);
-    flatland->CreateImage(kImageId, std::move(ref_pair.import_token), 0, std::move(properties));
+    flatland->CreateImage(kImageId, ToWire(std::move(ref_pair.import_token)), 0, properties);
     RunLoopUntilIdle();
   }
 }
@@ -4853,9 +4964,11 @@ TEST_F(FlatlandTest, ReleaseImageErrorCases) {
 
     auto [child_view_watcher_client_end, child_view_watcher_server_end] =
         fidl::Endpoints<ChildViewWatcher>::Create();
-    ViewportProperties properties;
-    properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
-    flatland->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+    fidl::Arena arena;
+    auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                          .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                          .Build();
+    flatland->CreateViewport(kLinkId, ToWire(std::move(parent_token)), properties,
                              std::move(child_view_watcher_server_end));
 
     flatland->ReleaseImage(kLinkId);
@@ -4901,8 +5014,10 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
   auto ref_pair = BufferCollectionImportExportTokens::New();
   RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
 
-  ImageProperties properties;
-  properties.size(SizeU{100, 200});
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{100, 200})
+                        .Build();
 
   // We have the first importer return true, signifying a successful import, and the second one
   // returning false. This should trigger the first importer to call ReleaseBufferImage().
@@ -4911,8 +5026,8 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
   EXPECT_CALL(*local_mock_buffer_collection_importer, ImportBufferImage(_, _))
       .WillOnce(ReturnPromise(fpromise::error()));
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).WillOnce(Return());
-  flatland->CreateImage(ContentId(1), std::move(ref_pair.import_token), /*vmo_idx*/ 0,
-                        std::move(properties));
+  flatland->CreateImage(ContentId(1), ToWire(std::move(ref_pair.import_token)), /*vmo_idx*/ 0,
+                        properties);
 }
 
 // Test to make sure that if a buffer collection importer returns |false|
@@ -4925,16 +5040,18 @@ TEST_F(FlatlandTest, BufferImporterImportImageReturnsFalseTest) {
   RegisterBufferCollection(allocator, std::move(ref_pair.export_token), CreateToken(), true);
 
   // Create a proper properties struct.
-  ImageProperties properties1;
-  properties1.size(SizeU{150, 175});
+  fidl::Arena arena1;
+  auto properties1 = fuchsia_ui_composition::wire::ImageProperties::Builder(arena1)
+                         .size(fuchsia_math::wire::SizeU{150, 175})
+                         .Build();
 
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
       .WillOnce(ReturnPromise(fpromise::ok()));
 
   // We've imported a proper image and we have the importer returning true, so
   // Present() should return true.
-  flatland->CreateImage(ContentId(1), ref_pair.DuplicateImportToken(), /*vmo_idx*/ 0,
-                        std::move(properties1));
+  flatland->CreateImage(ContentId(1), ToWire(ref_pair.DuplicateImportToken()), /*vmo_idx*/ 0,
+                        properties1);
   RunLoopUntilIdle();
   Present(flatland, true);
 
@@ -4944,10 +5061,12 @@ TEST_F(FlatlandTest, BufferImporterImportImageReturnsFalseTest) {
 
   // Import again, but this time have the importer return false. Flatland should catch
   // this and Present() should return false.
-  ImageProperties properties2;
-  properties2.size(SizeU{150, 175});
-  flatland->CreateImage(ContentId(2), ref_pair.DuplicateImportToken(), /*vmo_idx*/ 0,
-                        std::move(properties2));
+  fidl::Arena arena2;
+  auto properties2 = fuchsia_ui_composition::wire::ImageProperties::Builder(arena2)
+                         .size(fuchsia_math::wire::SizeU{150, 175})
+                         .Build();
+  flatland->CreateImage(ContentId(2), ToWire(ref_pair.DuplicateImportToken()), /*vmo_idx*/ 0,
+                        properties2);
   RunLoopUntilIdle();
   Present(flatland, false);
 }
@@ -5372,12 +5491,14 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
   // One of the link ends needs to run first.  Here, we arbitrarily choose it to be the viewport
   // end, and wait for it to finish.  Of course, the link is not yet resolved, because the view
   // hasn't yet been created.
-  ViewportProperties properties;
-  properties.logical_size(fuchsia_math::SizeU{kDefaultSize, kDefaultSize});
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ViewportProperties::Builder(arena)
+                        .logical_size(fuchsia_math::wire::SizeU{kDefaultSize, kDefaultSize})
+                        .Build();
   parent_flatland->CreateTransform(kRootTransform);
   parent_flatland->SetRootTransform(kRootTransform);
-  parent_flatland->CreateViewport(kLinkId, fidl::HLCPPToNatural(creation_tokens.viewport_token),
-                                  std::move(properties), std::move(child_view_watcher_server_end));
+  parent_flatland->CreateViewport(kLinkId, ToWire(std::move(creation_tokens.viewport_token)),
+                                  properties, std::move(child_view_watcher_server_end));
   parent_flatland->SetContent(kRootTransform, kLinkId);
   Present(parent_flatland, true);
   RunLoopUntilIdle();
@@ -5393,20 +5514,15 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
   EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _));
   libsync::Completion completion;
   async::PostTask(child_flatland_thread_loop.dispatcher(), ([&]() {
-                    child_flatland->CreateView2(
-                        fidl::HLCPPToNatural(creation_tokens.view_token),
-                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
-                        NoViewProtocols(), std::move(parent_viewport_watcher_server_end));
+                    child_flatland->CreateView2(ToWire(std::move(creation_tokens.view_token)),
+                                                NewWireViewIdentityOnCreation(), NoViewProtocols(),
+                                                std::move(parent_viewport_watcher_server_end));
 
-                    fuchsia_ui_composition::PresentArgs present_args;
-                    present_args.requested_presentation_time(0)
-                        .acquire_fences({})
-                        .release_fences({})
-                        .unsquashable({});
+                    fuchsia_ui_composition::wire::PresentArgs present_args;
                     // `Present()` puts the resulting UberStruct into the "acquire fence queue";
                     // since there are no fences it is not-quite-immediately made available via a
                     // posted task.
-                    child_flatland->Present(std::move(present_args));
+                    child_flatland->Present(present_args);
                     completion.Signal();
                   }));
 
@@ -5468,17 +5584,15 @@ TEST_F(FlatlandTest, NoDoubleDestroyRequest) {
   // Wait for server channel to be bound; see `Flatland::Bind()`.
   RunLoopUntilIdle();
 
-  fuchsia_ui_composition::PresentArgs present_args;
-  present_args.requested_presentation_time(0).acquire_fences({}).release_fences({}).unsquashable(
-      {});
+  fuchsia_ui_composition::wire::PresentArgs present_args;
 
   flatland->AddChild(TransformId(11), TransformId(12));
-  flatland->Present(std::move(present_args));
+  flatland->Present(present_args);
 
   EXPECT_EQ(destroy_instance_function_invocation_count, 1U);
 
   flatland->AddChild(TransformId(11), TransformId(12));
-  flatland->Present(std::move(present_args));
+  flatland->Present(present_args);
 
   // If it wasn't for the guard variable `destroy_instance_function_was_invoked_` in
   // `Flatland::CloseConnection()`, this check would fail deterministically.
@@ -5505,9 +5619,8 @@ TEST_F(FlatlandTest, PresentWithScheduleAsapConfig) {
   EXPECT_CALL(*mock_flatland_presenter_,
               ScheduleUpdateForSession(_, _, _, _, _, _, /*schedule_asap=*/true));
 
-  fuchsia_ui_composition::PresentArgs present_args;
-  present_args.requested_presentation_time(0);
-  flatland->Present(std::move(present_args));
+  fuchsia_ui_composition::wire::PresentArgs present_args;
+  flatland->Present(present_args);
 
   RunLoopUntilIdle();
   ApplySessionUpdatesAndSignalFences();
@@ -5588,9 +5701,10 @@ TEST_F(FlatlandTest, SetTransformContentRejectsZeroId) {
     std::shared_ptr<Flatland> flatland = CreateFlatland(FlatlandConfig{.use_flatland2 = true});
     flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log));
     flatland->CreateTransform(kId);
-    flatland->SetTransformContent(kId, std::make_unique<fuchsia_ui_composition::TransformContent>(
-                                           fuchsia_ui_composition::TransformContent::WithLayerStack(
-                                               fuchsia_ui_composition::LayerStackId{0})));
+    fidl::Arena arena;
+    auto content = fuchsia_ui_composition::wire::TransformContent::WithLayerStack(
+        arena, fuchsia_ui_composition::wire::LayerStackId{0});
+    flatland->SetTransformContent(kId, &content);
     Present(flatland, false);
     ASSERT_TRUE(error_log.has_value());
     EXPECT_NE(error_log->find("must be non-zero"), std::string::npos);
@@ -5602,9 +5716,10 @@ TEST_F(FlatlandTest, SetTransformContentRejectsZeroId) {
     std::shared_ptr<Flatland> flatland = CreateFlatland(FlatlandConfig{.use_flatland2 = true});
     flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log));
     flatland->CreateTransform(kId);
-    flatland->SetTransformContent(kId, std::make_unique<fuchsia_ui_composition::TransformContent>(
-                                           fuchsia_ui_composition::TransformContent::WithViewport(
-                                               fuchsia_ui_composition::ViewportId{0})));
+    fidl::Arena arena;
+    auto content = fuchsia_ui_composition::wire::TransformContent::WithViewport(
+        arena, fuchsia_ui_composition::wire::ViewportId{0});
+    flatland->SetTransformContent(kId, &content);
     Present(flatland, false);
     ASSERT_TRUE(error_log.has_value());
     EXPECT_NE(error_log->find("must be non-zero"), std::string::npos);
@@ -6051,7 +6166,7 @@ TEST_F(Flatland1FacadeTest, DestinationSizeResolvesIntoSnapshot) {
               std::move(properties));
   flatland->SetContent(kRootId, kImageId);
 
-  fuchsia_math::SizeU destination_size = {300, 400};
+  fuchsia_math::wire::SizeU destination_size = {300, 400};
   flatland->SetImageDestinationSize(kImageId, destination_size);
 
   Present(flatland, true);
@@ -6284,8 +6399,8 @@ TEST_F(Flatland1FacadeTest, FilledRectPopulatesSolidColorSnapshot) {
   flatland->SetRootTransform(kRootId);
 
   flatland->CreateFilledRect(kRectId);
-  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.4f},
-                         SizeU{100, 200});
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::wire::ColorRgba{0.1f, 0.2f, 0.3f, 0.4f},
+                         fuchsia_math::wire::SizeU{100, 200});
   flatland->SetContent(kRootId, kRectId);
 
   Present(flatland, true);
@@ -6394,8 +6509,8 @@ TEST_F(Flatland1FacadeTest, FilledRectInterleavesWithImagesInZOrder) {
 
   // Child 2 has a filled rect.
   flatland->CreateFilledRect(kRectId);
-  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.5f, 0.5f, 0.5f, 0.5f},
-                         SizeU{300, 400});
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::wire::ColorRgba{0.5f, 0.5f, 0.5f, 0.5f},
+                         fuchsia_math::wire::SizeU{300, 400});
   flatland->SetContent(kChild2Id, kRectId);
 
   // Child 3 has the other image.
@@ -6525,8 +6640,8 @@ TEST_F(Flatland1FacadeTest, ReleaseFilledRectKeepAlive) {
   flatland->SetRootTransform(kRootId);
 
   flatland->CreateFilledRect(kRectId);
-  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.4f},
-                         SizeU{100, 200});
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::wire::ColorRgba{0.1f, 0.2f, 0.3f, 0.4f},
+                         fuchsia_math::wire::SizeU{100, 200});
   flatland->SetContent(kRootId, kRectId);
 
   Present(flatland, true);
@@ -6579,8 +6694,8 @@ TEST_F(Flatland1FacadeTest, TranslucentFillResultsInPremultiplied) {
   const TransformHandle content_handle = flatland->GetContentHandle(kRectId).value();
 
   // 1. Translucent fill -> blend_mode == kPremultipliedAlpha
-  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
-                         SizeU{100, 200});
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::wire::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
+                         fuchsia_math::wire::SizeU{100, 200});
   Present(flatland, true);
 
   {
@@ -6599,8 +6714,8 @@ TEST_F(Flatland1FacadeTest, TranslucentFillResultsInPremultiplied) {
   }
 
   // 2. Re-fill opaque -> blend_mode == kReplace
-  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 1.f},
-                         SizeU{100, 200});
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::wire::ColorRgba{0.1f, 0.2f, 0.3f, 1.f},
+                         fuchsia_math::wire::SizeU{100, 200});
   Present(flatland, true);
 
   {
@@ -6629,8 +6744,8 @@ TEST_F(FlatlandTest, StraightAlphaSolidLeftUnchanged) {
   flatland->CreateTransform(kRootId);
   flatland->SetRootTransform(kRootId);
   flatland->CreateFilledRect(kRectId);
-  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
-                         SizeU{100, 200});
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::wire::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
+                         fuchsia_math::wire::SizeU{100, 200});
   flatland->SetImageBlendMode(kRectId, BlendMode::kStraightAlpha());
   flatland->SetContent(kRootId, kRectId);
   Present(flatland, true);
@@ -6655,8 +6770,8 @@ TEST_F(FlatlandTest, SolidFillRederivesBlendMode) {
   flatland->SetRootTransform(kRootId);
   flatland->CreateFilledRect(kRectId);
   flatland->SetImageBlendMode(kRectId, BlendMode::kReplace());
-  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
-                         SizeU{100, 200});
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::wire::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
+                         fuchsia_math::wire::SizeU{100, 200});
   flatland->SetContent(kRootId, kRectId);
   Present(flatland, true);
 
@@ -6678,8 +6793,8 @@ TEST_F(FlatlandTest, SolidFillThenBlendModeOverrides) {
   flatland->CreateTransform(kRootId);
   flatland->SetRootTransform(kRootId);
   flatland->CreateFilledRect(kRectId);
-  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
-                         SizeU{100, 200});
+  flatland->SetSolidFill(kRectId, fuchsia_ui_composition::wire::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
+                         fuchsia_math::wire::SizeU{100, 200});
   flatland->SetImageBlendMode(kRectId, BlendMode::kReplace());
   flatland->SetContent(kRootId, kRectId);
   Present(flatland, true);
@@ -6733,8 +6848,8 @@ TEST_F(FlatlandTest, SetSolidFillOnImageRejected) {
   CreateImage(flatland.get(), allocator.get(), kImageId, std::move(ref_pair),
               fuchsia_ui_composition::ImageProperties{{.size = SizeU{kImageWidth, kImageHeight}}});
 
-  flatland->SetSolidFill(kImageId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
-                         SizeU{100, 200});
+  flatland->SetSolidFill(kImageId, fuchsia_ui_composition::wire::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
+                         fuchsia_math::wire::SizeU{100, 200});
 
   Present(flatland, false);
 }

@@ -34,6 +34,8 @@ class Rectangle {
                                               bool should_assert = false);
   [[nodiscard]] static constexpr bool IsValid(const fuchsia_math::Rect& rect,
                                               bool should_assert = false);
+  [[nodiscard]] static constexpr bool IsValid(const fuchsia_math::wire::Rect& rect,
+                                              bool should_assert = false);
   [[nodiscard]] static constexpr bool IsValid(const fuchsia_math::RectU& rect,
                                               bool should_assert = false);
   [[nodiscard]] static constexpr bool IsValid(const fuchsia_math::wire::RectU& rect,
@@ -43,6 +45,7 @@ class Rectangle {
 
   // Constructors.  All arguments must be valid; use `IsValid()` to validate if you're not sure.
   [[nodiscard]] static constexpr Rectangle From(const fuchsia_math::Rect& fidl_rectangle);
+  [[nodiscard]] static constexpr Rectangle From(const fuchsia_math::wire::Rect& fidl_rectangle);
   [[nodiscard]] static constexpr Rectangle From(const fuchsia_math::RectU& fidl_rectangle);
   [[nodiscard]] static constexpr Rectangle From(const fuchsia_math::wire::RectU& fidl_rectangle);
   [[nodiscard]] static constexpr Rectangle From(const Point2& origin, const Extent2& extent);
@@ -139,6 +142,12 @@ constexpr bool Rectangle::IsValid(const fuchsia_math::Rect& rect, bool should_as
 }
 
 // static
+constexpr bool Rectangle::IsValid(const fuchsia_math::wire::Rect& rect, bool should_assert) {
+  const ConstructorArgs args{.x = rect.x, .y = rect.y, .width = rect.width, .height = rect.height};
+  return IsValid(args, should_assert);
+}
+
+// static
 constexpr bool Rectangle::IsValid(const fuchsia_math::RectU& rect, bool should_assert) {
   if (rect.x() > INT32_MAX || rect.y() > INT32_MAX || rect.width() > INT32_MAX ||
       rect.height() > INT32_MAX) {
@@ -192,6 +201,14 @@ constexpr Rectangle Rectangle::From(const fuchsia_math::Rect& fidl_rectangle) {
                     .y = fidl_rectangle.y(),
                     .width = fidl_rectangle.width(),
                     .height = fidl_rectangle.height()});
+}
+
+// static
+constexpr Rectangle Rectangle::From(const fuchsia_math::wire::Rect& fidl_rectangle) {
+  return Rectangle({.x = fidl_rectangle.x,
+                    .y = fidl_rectangle.y,
+                    .width = fidl_rectangle.width,
+                    .height = fidl_rectangle.height});
 }
 
 // static

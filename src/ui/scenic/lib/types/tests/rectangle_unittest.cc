@@ -39,6 +39,12 @@ TEST(RectangleTest, FromFidl) {
   EXPECT_EQ(Rectangle::From(fidl_rect), kRect1);
 }
 
+TEST(RectangleTest, FromWireRect) {
+  // Basic conversion from a fuchsia_math::wire::Rect.
+  const fuchsia_math::wire::Rect wire_rect = {.x = 100, .y = 200, .width = 400, .height = 500};
+  EXPECT_EQ(Rectangle::From(wire_rect), kRect1);
+}
+
 TEST(RectangleTest, FromFidlRectU) {
   // Basic conversion from a fuchsia_math::RectU.
   const fuchsia_math::RectU fidl_rect_u(100, 200, 400, 500);

@@ -20,12 +20,7 @@ class Rectangle;
 class RectangleF {
  public:
   // Enables creating instances using the designated initializer syntax.
-  struct ConstructorArgs {
-    float x;
-    float y;
-    float width;
-    float height;
-  };
+  using ConstructorArgs = fuchsia_math::wire::RectF;
 
   // Returns true iff the args can be used to construct a valid RectangleF.
   // If `should_assert` is true, invalid args will trigger a FX_DCHECK.
@@ -45,6 +40,7 @@ class RectangleF {
 
   // Constructors.  All arguments must be valid; use `IsValid()` to validate if you're not sure.
   [[nodiscard]] static constexpr RectangleF From(const fuchsia_math::RectF& fidl_rectangle);
+  [[nodiscard]] static constexpr RectangleF From(const fuchsia_math::wire::RectF& fidl_rectangle);
   [[nodiscard]] static constexpr RectangleF From(const Point2F& origin, const Extent2F& extent);
   // May lose precision.
   [[nodiscard]] static RectangleF From(const Rectangle& rectangle);
@@ -67,6 +63,7 @@ class RectangleF {
   friend constexpr bool operator!=(const RectangleF& lhs, const RectangleF& rhs);
 
   fuchsia_math::RectF ToFidl() const;
+  constexpr fuchsia_math::wire::RectF ToWire() const;
 
   constexpr const Point2F& origin() const { return origin_; }
   constexpr const Extent2F& extent() const { return extent_; }
@@ -135,6 +132,14 @@ constexpr RectangleF RectangleF::From(const fuchsia_math::RectF& fidl_rectangle)
 }
 
 // static
+constexpr RectangleF RectangleF::From(const fuchsia_math::wire::RectF& fidl_rectangle) {
+  return RectangleF({.x = fidl_rectangle.x,
+                     .y = fidl_rectangle.y,
+                     .width = fidl_rectangle.width,
+                     .height = fidl_rectangle.height});
+}
+
+// static
 constexpr RectangleF RectangleF::From(const Point2F& origin, const Extent2F& extent) {
   return RectangleF(
       {.x = origin.x(), .y = origin.y(), .width = extent.width(), .height = extent.height()});
@@ -148,6 +153,10 @@ constexpr bool operator!=(const RectangleF& lhs, const RectangleF& rhs) { return
 
 inline fuchsia_math::RectF RectangleF::ToFidl() const {
   return fuchsia_math::RectF(x(), y(), width(), height());
+}
+
+constexpr fuchsia_math::wire::RectF RectangleF::ToWire() const {
+  return {.x = x(), .y = y(), .width = width(), .height = height()};
 }
 
 constexpr bool RectangleF::Contains(const Point2F& point, float epsilon) const {

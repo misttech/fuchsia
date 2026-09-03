@@ -37,6 +37,10 @@ TEST(RectangleFTest, FromFidl) {
   const fuchsia_math::RectF fidl_rect(1.f, 2.f, 3.f, 4.f);
   EXPECT_EQ(RectangleF::From(fidl_rect),
             RectangleF({.x = 1.f, .y = 2.f, .width = 3.f, .height = 4.f}));
+
+  const fuchsia_math::wire::RectF wire_rect{.x = 1.f, .y = 2.f, .width = 3.f, .height = 4.f};
+  EXPECT_EQ(RectangleF::From(wire_rect),
+            RectangleF({.x = 1.f, .y = 2.f, .width = 3.f, .height = 4.f}));
 }
 
 TEST(RectangleFTest, FromPointAndExtent) {
@@ -55,6 +59,12 @@ TEST(RectangleFTest, ToFidl) {
   EXPECT_EQ(fidl_rect.y(), 2.f);
   EXPECT_EQ(fidl_rect.width(), 3.f);
   EXPECT_EQ(fidl_rect.height(), 4.f);
+
+  const fuchsia_math::wire::RectF wire_rect = r.ToWire();
+  EXPECT_EQ(wire_rect.x, 1.f);
+  EXPECT_EQ(wire_rect.y, 2.f);
+  EXPECT_EQ(wire_rect.width, 3.f);
+  EXPECT_EQ(wire_rect.height, 4.f);
 }
 
 TEST(RectangleFTest, Accessors) {

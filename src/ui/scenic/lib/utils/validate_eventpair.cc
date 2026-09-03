@@ -69,4 +69,9 @@ bool validate_viewref(const fuchsia_ui_views::ViewRefControl& control_ref,
   return validate_viewref(control_ref.reference(), view_ref.reference());
 }
 
+bool validate_viewref(const fuchsia_ui_views::wire::ViewRefControl& control_ref,
+                      const fuchsia_ui_views::wire::ViewRef& view_ref) {
+  return validate_viewref(control_ref.reference, view_ref.reference);
+}
+
 }  // namespace utils
