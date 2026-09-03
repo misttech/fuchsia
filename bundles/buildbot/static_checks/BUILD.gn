@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+assert(is_host, "These tools should only be included via 'host_tools'.")
+
+group("static_checks") {
+  testonly = true
+  deps = [
+    "//build/bazel/host:bazel_root_host_tools.check-licenses",
+    "//build/bazel/host:bazel_root_host_tools.clippy-reporter",
+    "//build/bazel/host:bazel_root_host_tools.formatjson5",
+    "//build/bazel/host:bazel_root_host_tools.gidl-format.host_tool",
+    "//build/bazel/host:bazel_root_host_tools.mdlint",
+    "//build/bazel/host:bazel_root_host_tools.readme_fuchsia.host_tool",
+    "//build/bazel/host:bazel_root_host_tools.rfcmeta",
+    "//tools/cmc:cmc.actual",
+    "//tools/doc_checker:doc_checker_bin.actual",
+    "//tools/fidl/fidlc:fidl-format",
+    "//tools/fidl/fidlc:fidl-lint",
+  ]
+}
