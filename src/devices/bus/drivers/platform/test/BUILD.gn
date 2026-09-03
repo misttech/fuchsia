@@ -28,11 +28,69 @@ test("platform-bus") {
   deps += [ "//src/lib/ddk:ddk-deprecated-binding-headers" ]
 }
 
+fuchsia_driver_dml("test-board-dml") {
+  dml = "meta/test-board.dml"
+  driver_name = "test-board"
+}
+
+fuchsia_driver_dml("test-bti-board-dml") {
+  dml = "meta/test-bti-board.dml"
+  driver_name = "test-bti-board"
+}
+
+fuchsia_driver_dml("test-bti-dml") {
+  dml = "meta/test-bti.dml"
+  driver_name = "test-bti"
+}
+
+fuchsia_driver_dml("test-child-1-dml") {
+  dml = "meta/test-child-1.dml"
+  driver_name = "test-child-1"
+}
+
+fuchsia_driver_dml("test-child-2-dml") {
+  dml = "meta/test-child-2.dml"
+  driver_name = "test-child-2"
+}
+
+fuchsia_driver_dml("test-child-3-dml") {
+  dml = "meta/test-child-3.dml"
+  driver_name = "test-child-3"
+}
+
+fuchsia_driver_dml("test-gpio-dml") {
+  dml = "meta/test-gpio.dml"
+  driver_name = "test-gpio"
+}
+
+fuchsia_driver_dml("test-interrupt-controller-dml") {
+  dml = "meta/test-interrupt-controller.dml"
+  driver_name = "test-interrupt-controller"
+}
+
+fuchsia_driver_dml("test-parent-dml") {
+  dml = "meta/test-parent.dml"
+  driver_name = "test-parent"
+}
+
+fuchsia_driver_dml("test-power-dml") {
+  dml = "meta/test-power.dml"
+  driver_name = "test-power"
+}
+
+fuchsia_driver_dml("test-spi-dml") {
+  dml = "meta/test-spi.dml"
+  driver_name = "test-spi"
+}
+
 driver_bind_rules("test-board-bind") {
+  bind_output = "test-board.bindbc"
   testonly = true
-  rules = "meta/test-board.bind"
+  dml_label = ":test-board-dml"
   deps = [
     "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.test",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }
@@ -73,18 +131,20 @@ fuchsia_cc_driver("test-board-driver") {
 }
 
 fuchsia_driver_component("test-board") {
+  dml_label = ":test-board-dml"
   testonly = true
   component_name = "test-board"
   deps = [ ":test-board-driver" ]
   info = "meta/test-driver-info.json"
-  manifest = "meta/test-board.cml"
 }
 
 driver_bind_rules("test-gpio-bind") {
+  bind_output = "test-gpio.bindbc"
   testonly = true
-  rules = "meta/test-gpio.bind"
+  dml_label = ":test-gpio-dml"
   deps = [
     "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.test",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }
@@ -106,18 +166,20 @@ fuchsia_cc_driver("test-gpio-driver") {
 }
 
 fuchsia_driver_component("test-gpio") {
+  dml_label = ":test-gpio-dml"
   testonly = true
   component_name = "test-gpio"
   deps = [ ":test-gpio-driver" ]
   info = "meta/test-driver-info.json"
-  manifest = "meta/test-gpio.cml"
 }
 
 driver_bind_rules("test-interrupt-controller-bind") {
+  bind_output = "test-interrupt-controller.bindbc"
   testonly = true
-  rules = "meta/test-interrupt-controller.bind"
+  dml_label = ":test-interrupt-controller-dml"
   deps = [
     "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.test",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }
@@ -138,18 +200,20 @@ fuchsia_cc_driver("test-interrupt-controller-driver") {
 }
 
 fuchsia_driver_component("test-interrupt-controller") {
+  dml_label = ":test-interrupt-controller-dml"
   testonly = true
   component_name = "test-interrupt-controller"
   deps = [ ":test-interrupt-controller-driver" ]
   info = "meta/test-driver-info.json"
-  manifest = "meta/test-interrupt-controller.cml"
 }
 
 driver_bind_rules("test-power-bind") {
+  bind_output = "test-power.bindbc"
   testonly = true
-  rules = "meta/test-power.bind"
+  dml_label = ":test-power-dml"
   deps = [
     "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.test",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }
@@ -172,18 +236,20 @@ fuchsia_cc_driver("test-power-driver") {
 }
 
 fuchsia_driver_component("test-power") {
+  dml_label = ":test-power-dml"
   testonly = true
   component_name = "test-power"
   deps = [ ":test-power-driver" ]
   info = "meta/test-driver-info.json"
-  manifest = "meta/test-power.cml"
 }
 
 driver_bind_rules("test-spi-bind") {
+  bind_output = "test-spi.bindbc"
   testonly = true
-  rules = "meta/test-spi.bind"
+  dml_label = ":test-spi-dml"
   deps = [
     "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.test",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }
@@ -207,17 +273,24 @@ fuchsia_cc_driver("test-spi-driver") {
 }
 
 fuchsia_driver_component("test-spi") {
+  dml_label = ":test-spi-dml"
   testonly = true
   component_name = "test-spi"
   deps = [ ":test-spi-driver" ]
   info = "meta/test-driver-info.json"
-  manifest = "meta/test-spi.cml"
+}
+
+fuchsia_driver_dml("test-composite-node-spec-dml") {
+  dml = "meta/test-composite-node-spec.dml"
+  driver_name = "test-composite-node-spec"
 }
 
 driver_bind_rules("test-composite-node-spec-bind") {
   testonly = true
-  rules = "meta/test-composite-node-spec.bind"
+  bind_output = "test-composite-node-spec.bindbc"
+  dml_label = ":test-composite-node-spec-dml"
   deps = [
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.test",
     "//src/devices/bind/fuchsia.test.platform",
@@ -241,10 +314,10 @@ fuchsia_cc_driver("test-composite-node-spec-driver") {
 
 fuchsia_driver_component("test-composite-node-spec") {
   testonly = true
+  dml_label = ":test-composite-node-spec-dml"
   component_name = "test-composite-node-spec"
   deps = [ ":test-composite-node-spec-driver" ]
   info = "meta/test-driver-info.json"
-  manifest = "meta/test-composite-node-spec.cml"
 }
 
 simple_drivers = [
@@ -256,10 +329,12 @@ simple_drivers = [
 
 foreach(driver, simple_drivers) {
   driver_bind_rules("test-${driver}-bind") {
+    bind_output = "test-${driver}.bindbc"
     testonly = true
     rules = "meta/test-${driver}.bind"
     deps = [
       "//src/devices/bind/fuchsia.platform",
+      "//src/devices/bind/fuchsia.test",
       "//src/devices/bind/fuchsia.test.platform",
     ]
   }
@@ -314,10 +389,13 @@ fidl("fuchsia.hardware.btitest") {
 }
 
 driver_bind_rules("test-bti-board-bind") {
+  bind_output = "test-bti-board.bindbc"
   testonly = true
-  rules = "meta/test-bti-board.bind"
+  dml_label = ":test-bti-board-dml"
   deps = [
     "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia.platform",
+    "//src/devices/bind/fuchsia.test",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }
@@ -343,18 +421,21 @@ fuchsia_cc_driver("test-bti-board-driver") {
 }
 
 fuchsia_driver_component("test-bti-board") {
+  dml_label = ":test-bti-board-dml"
   testonly = true
   component_name = "test-bti-board"
   deps = [ ":test-bti-board-driver" ]
   info = "meta/test-driver-info.json"
-  manifest = "meta/test-bti-board.cml"
 }
 
 driver_bind_rules("test-bti-bind") {
+  bind_output = "test-bti.bindbc"
   testonly = true
-  rules = "meta/test-bti.bind"
+  dml_label = ":test-bti-dml"
   deps = [
+    "//src/devices/bind/fuchsia.platform",
     "//src/devices/bind/fuchsia.resource",
+    "//src/devices/bind/fuchsia.test",
     "//src/devices/bind/fuchsia.test.platform",
   ]
 }
@@ -378,11 +459,11 @@ fuchsia_cc_driver("test-bti-driver") {
 }
 
 fuchsia_driver_component("test-bti") {
+  dml_label = ":test-bti-dml"
   testonly = true
   component_name = "test-bti"
   deps = [ ":test-bti-driver" ]
   info = "meta/test-driver-info.json"
-  manifest = "meta/test-bti.cml"
 }
 
 test("platform-bus-bti") {
