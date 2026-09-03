@@ -376,13 +376,15 @@ TEST_F(GraphServerTest, CreateProducerFailsUnknownDataSource) {
     fidl_xunion_tag_t ordinal;
     FIDL_ALIGNDECL fidl::UntypedEnvelope envelope;
   };
-  // C++ type punning requires using std::memcpy.
   RawProducerDataSource raw{
       .ordinal = std::numeric_limits<fidl_xunion_tag_t>::max(),
   };
-  ProducerDataSource data_source;
-  static_assert(sizeof(data_source) == sizeof(raw));
-  std::memcpy(&data_source, &raw, sizeof(data_source));
+  static_assert(sizeof(ProducerDataSource) == sizeof(raw));
+  auto decoded = fidl::StandaloneInplaceDecode<ProducerDataSource>(
+      fidl::EncodedMessage::Create(cpp20::span(reinterpret_cast<uint8_t*>(&raw), sizeof(raw))),
+      fidl::internal::WireFormatMetadataForVersion(fidl::internal::WireFormatVersion::kV2));
+  ASSERT_TRUE(decoded.is_ok()) << decoded.error_value();
+  ProducerDataSource& data_source = *decoded.value();
 
   auto result = client()->CreateProducer(
       MakeDefaultCreateProducerRequestWithStreamSink(arena_)

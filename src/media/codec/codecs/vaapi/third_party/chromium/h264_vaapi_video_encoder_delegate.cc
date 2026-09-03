@@ -444,7 +444,7 @@ bool H264VaapiVideoEncoderDelegate::UpdateRates(const VideoBitrateAllocation& bi
 void H264VaapiVideoEncoderDelegate::UpdateSPS() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  memset(&current_sps_, 0, sizeof(H264SPS));
+  current_sps_ = {};
 
   // Spec A.2 and A.3.
   switch (profile_) {
@@ -543,7 +543,7 @@ void H264VaapiVideoEncoderDelegate::UpdateSPS() {
 void H264VaapiVideoEncoderDelegate::UpdatePPS() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  memset(&current_pps_, 0, sizeof(H264PPS));
+  current_pps_ = {};
 
   current_pps_.seq_parameter_set_id = current_sps_.seq_parameter_set_id;
   DCHECK_EQ(current_pps_.pic_parameter_set_id, 0);

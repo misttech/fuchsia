@@ -1406,7 +1406,7 @@ H264Parser::Result H264Parser::ParseSliceHeader(const H264NALU& nalu,
   const H264PPS* pps;
   Result res;
 
-  memset(shdr, 0, sizeof(*shdr));
+  *shdr = {};
 
   shdr->idr_pic_flag = (nalu.nal_unit_type == 5);
   shdr->nal_ref_idc = nalu.nal_ref_idc;
