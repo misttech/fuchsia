@@ -137,6 +137,14 @@ zx_status_t VnodeF2fs::ClonePagedVmo(fuchsia_io::wire::VmoFlags flags, size_t si
     options = ZX_VMO_CHILD_SNAPSHOT_AT_LEAST_ON_WRITE;
     // Allowed only on private vmo.
     rights |= ZX_RIGHT_SET_PROPERTY;
+  } else if (flags & fuchsia_io::wire::VmoFlags::kWrite) {
+    // Shared writable VMOs use child slices rather than child references: a child slice
+    // directly shares pager pages with the parent VMO for writable mmap mappings, but
+    // maintains an independent StreamSizeManager. This prevents out-of-band stream size
+    // modifications via zx_vmo_set_stream_size from affecting the parent VMO or bypassing
+    // filesystem truncate locking and metadata consistency checks.
+    options = ZX_VMO_CHILD_SLICE;
+    size = fbl::round_up(size, zx_system_get_page_size());
   } else {
     // |size| should be 0 with ZX_VMO_CHILD_REFERENCE.
     size = 0;
@@ -183,12 +191,22 @@ void VnodeF2fs::VmoRead(uint64_t offset, uint64_t length) {
 
 zx::result<size_t> VnodeF2fs::CreateAndPopulateVmo(zx::vmo& vmo, const size_t offset,
                                                    const size_t length) {
-  constexpr size_t block_size = kBlockSize;
   const size_t file_size = GetSize();
-  const size_t max_block = CheckedDivRoundUp(file_size, block_size);
-
+  const size_t max_bytes = fbl::round_up(file_size, kBlockSize);
+  const size_t max_block = max_bytes / kBlockSize;
   const size_t start_block = offset / kBlockSize;
-  const size_t end_block = std::min(CheckedDivRoundUp(offset + length, block_size), max_block);
+  if (start_block >= max_block) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+
+  size_t end_offset;
+  if (!safemath::CheckAdd(offset, length).AssignIfValid(&end_offset) || length == 0) {
+    return zx::error(ZX_ERR_OUT_OF_RANGE);
+  }
+
+  const size_t end_block =
+      end_offset >= max_bytes ? max_block : fbl::round_up(end_offset, kBlockSize) / kBlockSize;
+  ZX_DEBUG_ASSERT(start_block < end_block);
   const size_t request_blocks = end_block - start_block;
   size_t num_read_blocks = 0;
 
@@ -220,7 +238,7 @@ zx::result<size_t> VnodeF2fs::CreateAndPopulateVmo(zx::vmo& vmo, const size_t of
   }
 
   // Create vmo to feed paged vmo.
-  size_t vmo_size = std::max(request_blocks, num_read_blocks) * block_size;
+  size_t vmo_size = std::max(request_blocks, num_read_blocks) * kBlockSize;
   if (auto status = zx::vmo::create(vmo_size, 0, &vmo); status != ZX_OK) {
     return zx::error(status);
   }

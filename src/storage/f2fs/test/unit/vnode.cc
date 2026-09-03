@@ -232,8 +232,8 @@ TEST_F(VnodeTest, InconsistentInlineLayout) {
     node->i.i_extra_isize = CpuToLe(uint16_t{kMaxExtraAttrSize});
     node->i.i_inline_xattr_size = CpuToLe(uint16_t{kInlineXattrAddrs + 1});
   };
-  VgetFaultInjetionAndTest(*fs_, *root_dir_, "inline_xattr_size_foreign",
-                           foreign_inline_xattr_size, ZX_ERR_IO_DATA_INTEGRITY);
+  VgetFaultInjetionAndTest(*fs_, *root_dir_, "inline_xattr_size_foreign", foreign_inline_xattr_size,
+                           ZX_ERR_IO_DATA_INTEGRITY);
 
   // A layout that stays within the extra attribute fields remains loadable.
   auto valid = [](Node *node) {
@@ -389,6 +389,59 @@ TEST_F(VnodeTest, GetLockedDataPages) TA_NO_THREAD_SAFETY_ANALYSIS {
     dir->GetFileCache().InvalidatePages(kMidOffset);
   }
   ASSERT_EQ(dir->Close(), ZX_OK);
+}
+
+TEST_F(VnodeTest, PagedVmoSharedWritableSlice) TA_NO_THREAD_SAFETY_ANALYSIS {
+  fbl::RefPtr<fs::Vnode> file_fs_vnode;
+  FileTester::CreateChild(root_dir_.get(), S_IFREG, "stream_size_test");
+  FileTester::Lookup(root_dir_.get(), "stream_size_test", &file_fs_vnode);
+  fbl::RefPtr<VnodeF2fs> file_vnode = fbl::RefPtr<VnodeF2fs>::Downcast(std::move(file_fs_vnode));
+
+  // Truncate file to 20480 bytes.
+  ASSERT_EQ(file_vnode->Truncate(20480), ZX_OK);
+  ASSERT_EQ(file_vnode->GetSize(), 20480u);
+
+  // Shared writable backing VMOs use child slices.
+  zx::vmo client_vmo;
+  ASSERT_EQ(
+      file_vnode->GetVmo(fuchsia_io::wire::VmoFlags::kRead | fuchsia_io::wire::VmoFlags::kWrite,
+                         &client_vmo),
+      ZX_OK);
+  uint64_t vmo_size = 0;
+  ASSERT_EQ(client_vmo.get_size(&vmo_size), ZX_OK);
+  EXPECT_EQ(vmo_size, fbl::round_up(20480u, zx_system_get_page_size()));
+
+  // Modifying the child slice's stream size does not affect server file size.
+  ASSERT_EQ(client_vmo.set_stream_size(0), ZX_OK);
+  EXPECT_EQ(file_vnode->GetSize(), 20480u);
+
+  // Shared buffer with write is also permitted via child slices.
+  zx::vmo shared_vmo;
+  ASSERT_EQ(file_vnode->GetVmo(
+                fuchsia_io::wire::VmoFlags::kSharedBuffer | fuchsia_io::wire::VmoFlags::kWrite,
+                &shared_vmo),
+            ZX_OK);
+  ASSERT_EQ(shared_vmo.get_size(&vmo_size), ZX_OK);
+  EXPECT_EQ(vmo_size, fbl::round_up(20480u, zx_system_get_page_size()));
+
+  // Private clone with write is allowed and cannot affect server i_size.
+  zx::vmo private_vmo;
+  ASSERT_EQ(
+      file_vnode->GetVmo(fuchsia_io::wire::VmoFlags::kPrivateClone |
+                             fuchsia_io::wire::VmoFlags::kRead | fuchsia_io::wire::VmoFlags::kWrite,
+                         &private_vmo),
+      ZX_OK);
+  ASSERT_EQ(private_vmo.set_stream_size(0), ZX_OK);
+  EXPECT_EQ(file_vnode->GetSize(), 20480u);
+
+  // Shared read-only VMO is allowed.
+  zx::vmo ro_vmo;
+  ASSERT_EQ(
+      file_vnode->GetVmo(
+          fuchsia_io::wire::VmoFlags::kSharedBuffer | fuchsia_io::wire::VmoFlags::kRead, &ro_vmo),
+      ZX_OK);
+
+  ASSERT_EQ(file_vnode->Close(), ZX_OK);
 }
 
 }  // namespace
