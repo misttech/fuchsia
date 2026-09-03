@@ -165,7 +165,7 @@ zx_status_t Sherlock::AudioInit() {
   // Add a spec for the enable audio GPIO pin.
   auto enable_audio_gpio_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SOC_AUDIO_EN)),
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(GPIO_SOC_AUDIO_EN)),
   };
   auto enable_audio_gpio_props = std::vector{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),

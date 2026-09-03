@@ -56,7 +56,7 @@ const std::vector<fuchsia_driver_framework::NodeProperty2> kClockInitProps = std
 
 const std::vector<fuchsia_driver_framework::BindRule2> kAudioEnableGpioRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SOC_AUDIO_EN)),
+    fdf::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(GPIO_SOC_AUDIO_EN)),
 };
 const std::vector<fuchsia_driver_framework::NodeProperty2> kAudioEnableGpioProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
@@ -103,7 +103,7 @@ const std::vector<fuchsia_driver_framework::NodeProperty2> kOutI2cProps = std::v
 
 const std::vector<fuchsia_driver_framework::BindRule2> kFaultGpioRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_AUDIO_SOC_FAULT_L)),
+    fdf::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(GPIO_AUDIO_SOC_FAULT_L)),
 };
 const std::vector<fuchsia_driver_framework::NodeProperty2> kFaultGpioProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),

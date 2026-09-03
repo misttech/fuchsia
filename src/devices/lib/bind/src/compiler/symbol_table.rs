@@ -367,10 +367,6 @@ fn deprecated_keys() -> Vec<(String, u32)> {
     keys.push(("BIND_I2C_BUS_ID".to_string(), 0x0A01));
     keys.push(("BIND_I2C_ADDRESS".to_string(), 0x0A02));
 
-    // GPIO binding variables at 0x0A1X
-    keys.push(("BIND_GPIO_PIN".to_string(), 0x0A10));
-    keys.push(("BIND_GPIO_CONTROLLER".to_string(), 0x0A11));
-
     // Init step binding variables at 0x0A6X.
     keys.push(("BIND_INIT_STEP".to_string(), 0x0A60));
 
@@ -447,10 +443,6 @@ pub fn get_deprecated_key_identifier(key: u32) -> Option<String> {
         0x0A01 => Some("fuchsia.BIND_I2C_BUS_ID".to_string()),
         0x0A02 => Some("fuchsia.BIND_I2C_ADDRESS".to_string()),
 
-        // GPIO binding variables at 0x0A1X.
-        0x0A10 => Some("fuchsia.BIND_GPIO_PIN".to_string()),
-        0x0A11 => Some("fuchsia.BIND_GPIO_CONTROLLER".to_string()),
-
         // Init step binding variables at 0x0A6X.
         0x0A60 => Some("fuchsia.BIND_INIT_STEP".to_string()),
 
@@ -511,10 +503,6 @@ pub fn get_deprecated_key_value(key: &str) -> Option<u32> {
         "fuchsia.BIND_I2C_CLASS" => Some(0x0A00),
         "fuchsia.BIND_I2C_BUS_ID" => Some(0x0A01),
         "fuchsia.BIND_I2C_ADDRESS" => Some(0x0A02),
-
-        // GPIO binding variables at 0x0A1X
-        "fuchsia.BIND_GPIO_PIN" => Some(0x0A10),
-        "fuchsia.BIND_GPIO_CONTROLLER" => Some(0x0A11),
 
         // Init step binding variables at 0x0A6X.
         "fuchsia.BIND_INIT_STEP" => Some(0x0A60),

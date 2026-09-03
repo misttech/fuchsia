@@ -23,7 +23,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/pin/cpp/bind.h>
 
 namespace gpio_impl_dt {
 
@@ -286,15 +285,13 @@ zx::result<> GpioImplVisitor::ParseBootTimeConfig(fdf_devicetree::Node& node) {
   return zx::ok();
 }
 
-zx::result<> GpioImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t pin,
-                                               uint32_t controller_id,
+zx::result<> GpioImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t global_id,
                                                const std::string& gpio_name) {
   auto gpio_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-              fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, controller_id),
-              fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, pin),
+              fdf::MakeAcceptBindRule(bind_fuchsia::ID, global_id),
           },
       .properties =
           {
@@ -313,12 +310,12 @@ zx::result<> GpioImplVisitor::AddInitNodeSpec(fdf_devicetree::Node& child, uint3
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP,
                                       bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-              fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_CONTROLLER, controller_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia::ID, controller_id),
           },
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-              fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_index),
+              fdf::MakeProperty2(bind_fuchsia::ID, controller_index),
           },
   }};
   child.AddNodeSpec(gpio_init_node);
@@ -334,13 +331,13 @@ zx::result<> GpioImplVisitor::AddPinStatesNodeSpec(fdf_devicetree::Node& child,
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
                                       "fuchsia.hardware.pin.PinStatesService"),
-              fdf::MakeAcceptBindRule(bind_fuchsia_pin::CONTROLLER, controller_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia::ID, controller_id),
               fdf::MakeAcceptBindRule(bind_fuchsia::NAME, client_name),
           },
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
-              fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, controller_index),
+              fdf::MakeProperty2(bind_fuchsia::ID, controller_index),
           },
   }};
   child.AddNodeSpec(pin_states_node);
@@ -734,23 +731,25 @@ zx::result<> GpioImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
   }
 
   auto cells = GpioCells(specifiers);
-  fuchsia_hardware_pinimpl::Pin pin{{
-      .pin = cells.pin(),
-      .name = reference_name,
-  }};
-
-  fdf::debug("Gpio pin added - pin {:#x} name '{}' to controller '{}'", cells.pin(), reference_name,
-             parent.name());
-
-  // Insert if the pin is not already present.
   auto it = std::find_if(
       controller.metadata.pins()->begin(), controller.metadata.pins()->end(),
-      [&pin](const fuchsia_hardware_pinimpl::Pin& entry) { return entry.pin() == pin.pin(); });
+      [&cells](const fuchsia_hardware_pinimpl::Pin& entry) { return entry.pin() == cells.pin(); });
+  uint32_t global_id;
   if (it == controller.metadata.pins()->end()) {
-    controller.metadata.pins()->push_back(pin);
+    global_id = pin_id_counter_++;
+    fuchsia_hardware_pinimpl::Pin pin{{
+        .pin = cells.pin(),
+        .name = reference_name,
+        .id = global_id,
+    }};
+    fdf::debug("Gpio pin added - pin {:#x} id {} name '{}' to controller '{}'", cells.pin(),
+               global_id, reference_name, parent.name());
+    controller.metadata.pins()->push_back(std::move(pin));
+  } else {
+    global_id = it->id().value();
   }
 
-  return AddChildNodeSpec(child, pin.pin().value(), parent.id(), reference_name);
+  return AddChildNodeSpec(child, global_id, reference_name);
 }
 
 zx::result<> GpioImplVisitor::FinalizeNode(fdf_devicetree::Node& node) {

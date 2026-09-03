@@ -193,7 +193,7 @@ zx_status_t Nelson::BrownoutProtectionInit() {
 
   const ddk::BindRule kGpioRules[] = {
       ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      ddk::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+      ddk::MakeAcceptBindRule(bind_fuchsia::ID,
                               bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_10),
   };
 

@@ -111,7 +111,7 @@ zx_status_t Astro::ButtonsInit() {
 
   const std::vector<fuchsia_driver_framework::BindRule2> kVolUpRules = {
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID,
                               bind_fuchsia_amlogic_platform_s905d2::GPIOZ_PIN_ID_PIN_5)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolUpProps = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
@@ -120,7 +120,7 @@ zx_status_t Astro::ButtonsInit() {
 
   const std::vector<fuchsia_driver_framework::BindRule2> kVolDownRules = {
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID,
                               bind_fuchsia_amlogic_platform_s905d2::GPIOZ_PIN_ID_PIN_6)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolDownProps = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
@@ -129,7 +129,7 @@ zx_status_t Astro::ButtonsInit() {
 
   const std::vector<fuchsia_driver_framework::BindRule2> kVolBothRules = {
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID,
                               bind_fuchsia_amlogic_platform_s905d2::GPIOAO_PIN_ID_PIN_10)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kVolBothProps = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
@@ -138,7 +138,7 @@ zx_status_t Astro::ButtonsInit() {
 
   const std::vector<fuchsia_driver_framework::BindRule2> kMicPrivacyRules = {
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID,
                               bind_fuchsia_amlogic_platform_s905d2::GPIOZ_PIN_ID_PIN_2)};
   const std::vector<fuchsia_driver_framework::NodeProperty2> kMicPrivacyProps = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),

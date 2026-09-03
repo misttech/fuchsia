@@ -254,11 +254,11 @@ zx_status_t Astro::AddPostInitDevice() {
   for (const uint32_t pin : kPostInitGpios) {
     const ddk::BindRule gpio_rules[] = {
         ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-        ddk::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, pin),
+        ddk::MakeAcceptBindRule(bind_fuchsia::ID, pin),
     };
     const device_bind_prop_t gpio_properties[] = {
         ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-        ddk::MakeProperty(bind_fuchsia::GPIO_PIN, pin),
+        ddk::MakeProperty(bind_fuchsia::ID, pin),
     };
     spec.AddParentSpec(gpio_rules, gpio_properties);
 

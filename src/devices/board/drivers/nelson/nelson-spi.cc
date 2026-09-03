@@ -73,7 +73,7 @@ fdf::wire::CompositeNodeSpec MakeSpiCompositeNodeSpec(fidl::AnyArena& fidl_arena
                                                       std::string register_id) {
   const std::vector kGpioSpiRules = {
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, gpio_pin),
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID, gpio_pin),
   };
 
   const std::vector kGpioSpiProperties = {

@@ -88,8 +88,8 @@ class GpioImplVisitor : public fdf_devicetree::Visitor {
   static zx::result<fdf_devicetree::ParentNode> GetGpioNodeForPinConfig(
       fdf_devicetree::ReferenceNode& cfg_node);
 
-  static zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t pin,
-                                       uint32_t controller_id, const std::string& gpio_name);
+  static zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t global_id,
+                                       const std::string& gpio_name);
 
   static zx::result<> AddInitNodeSpec(fdf_devicetree::Node& child, uint32_t controller_id,
                                       uint32_t controller_index);
@@ -108,6 +108,7 @@ class GpioImplVisitor : public fdf_devicetree::Visitor {
   // Mapping of gpio controller node ID to its info.
   std::map<uint32_t, GpioController> gpio_controllers_;
   std::unique_ptr<fdf_devicetree::PropertyParser> gpio_parser_;
+  uint32_t pin_id_counter_ = 0;
 };
 
 }  // namespace gpio_impl_dt

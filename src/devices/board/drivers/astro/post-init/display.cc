@@ -132,7 +132,7 @@ zx::result<> PostInit::InitDisplay() {
 
   std::vector<fuchsia_driver_framework::BindRule2> gpio_bind_rules{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID,
                               bind_fuchsia_amlogic_platform_s905d2::GPIOH_PIN_ID_PIN_6),
   };
 

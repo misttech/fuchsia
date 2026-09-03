@@ -29,11 +29,9 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
                    public fidl::WireServer<fuchsia_hardware_pin::Debug> {
  public:
   GpioDevice(fdf::WireSharedClient<fuchsia_hardware_pinimpl::PinImpl> pinimpl, uint32_t pin,
-             uint32_t controller_id, std::string_view name, std::optional<uint32_t> id,
-             fdf::Logger& logger)
+             std::string_view name, std::optional<uint32_t> id, fdf::Logger& logger)
       : fidl_dispatcher_(fdf::Dispatcher::GetCurrent()->async_dispatcher()),
         pin_(pin),
-        controller_id_(controller_id),
         name_(name),
         id_(id),
         pinimpl_(std::move(pinimpl)),
@@ -134,7 +132,6 @@ class GpioDevice : public fidl::WireServer<fuchsia_hardware_pin::Pin>,
 
   async_dispatcher_t* const fidl_dispatcher_;
   const uint32_t pin_;
-  const uint32_t controller_id_;
   const std::string name_;
   const std::optional<uint32_t> id_;
 

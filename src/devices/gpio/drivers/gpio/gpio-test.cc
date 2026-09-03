@@ -16,6 +16,7 @@
 #include <optional>
 
 #include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/gpio/cpp/bind.h>
 #include <gtest/gtest.h>
 #include <sdk/lib/driver/testing/cpp/driver_runtime.h>
 #include <src/lib/testing/predicates/status.h>
@@ -816,15 +817,16 @@ TEST_F(GpioTest, ControllerId) {
 
       ASSERT_EQ(properties.size(), 3ul);
 
-      EXPECT_EQ(properties[0].key(), bind_fuchsia::GPIO_PIN);
+      EXPECT_EQ(properties[0].key(), bind_fuchsia::ID);
 
       ASSERT_TRUE(properties[0].value().int_value().has_value());
       EXPECT_EQ(properties[0].value().int_value().value(), pin.pin().value());
 
-      EXPECT_EQ(properties[1].key(), bind_fuchsia::GPIO_CONTROLLER);
+      EXPECT_EQ(properties[1].key(), bind_fuchsia::NAME);
 
-      ASSERT_TRUE(properties[1].value().int_value().has_value());
-      EXPECT_EQ(properties[1].value().int_value().value(), kController);
+      ASSERT_TRUE(properties[1].value().string_value().has_value());
+      EXPECT_EQ(properties[1].value().string_value().value(),
+                std::string{"gpio-"} + pin.name().value());
 
       EXPECT_EQ(properties[2].key(), bind_fuchsia::SERVICE);
       ASSERT_TRUE(properties[2].value().string_value().has_value());
@@ -838,12 +840,13 @@ TEST_F(GpioTest, ControllerId) {
               .GetProperties();
 
       ASSERT_EQ(pin_properties.size(), 3ul);
-      EXPECT_EQ(pin_properties[0].key(), bind_fuchsia::GPIO_PIN);
+      EXPECT_EQ(pin_properties[0].key(), bind_fuchsia::ID);
       ASSERT_TRUE(pin_properties[0].value().int_value().has_value());
       EXPECT_EQ(pin_properties[0].value().int_value().value(), pin.pin().value());
-      EXPECT_EQ(pin_properties[1].key(), bind_fuchsia::GPIO_CONTROLLER);
-      ASSERT_TRUE(pin_properties[1].value().int_value().has_value());
-      EXPECT_EQ(pin_properties[1].value().int_value().value(), kController);
+      EXPECT_EQ(pin_properties[1].key(), bind_fuchsia::NAME);
+      ASSERT_TRUE(pin_properties[1].value().string_value().has_value());
+      EXPECT_EQ(pin_properties[1].value().string_value().value(),
+                std::string{"gpio-"} + pin.name().value());
       EXPECT_EQ(pin_properties[2].key(), bind_fuchsia::SERVICE);
       ASSERT_TRUE(pin_properties[2].value().string_value().has_value());
       EXPECT_EQ(pin_properties[2].value().string_value().value(),
@@ -1491,21 +1494,24 @@ TEST_F(GpioTest, GenericMetadataTest) {
   driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
     std::vector<fuchsia_driver_framework::NodeProperty2> properties =
         node.children().at("gpio").children().at("gpio-1").GetProperties();
-    ASSERT_EQ(properties.size(), 4ul);
-    EXPECT_EQ(properties[3].key(), bind_fuchsia::ID);
-    ASSERT_TRUE(properties[3].value().int_value().has_value());
-    EXPECT_EQ(properties[3].value().int_value().value(), 42ul);
+    ASSERT_EQ(properties.size(), 3ul);
+    EXPECT_EQ(properties[0].key(), bind_fuchsia::ID);
+    ASSERT_TRUE(properties[0].value().int_value().has_value());
+    EXPECT_EQ(properties[0].value().int_value().value(), 42ul);
 
     std::vector<fuchsia_driver_framework::NodeProperty2> pin_properties =
         node.children().at("gpio").children().at("gpio-1-pin").GetProperties();
-    ASSERT_EQ(pin_properties.size(), 4ul);
-    EXPECT_EQ(pin_properties[3].key(), bind_fuchsia::ID);
-    ASSERT_TRUE(pin_properties[3].value().int_value().has_value());
-    EXPECT_EQ(pin_properties[3].value().int_value().value(), 42ul);
+    ASSERT_EQ(pin_properties.size(), 3ul);
+    EXPECT_EQ(pin_properties[0].key(), bind_fuchsia::ID);
+    ASSERT_TRUE(pin_properties[0].value().int_value().has_value());
+    EXPECT_EQ(pin_properties[0].value().int_value().value(), 42ul);
 
     std::vector<fuchsia_driver_framework::NodeProperty2> pin2_properties =
         node.children().at("gpio").children().at("gpio-2").GetProperties();
     ASSERT_EQ(pin2_properties.size(), 3ul);
+    EXPECT_EQ(pin2_properties[0].key(), bind_fuchsia::ID);
+    ASSERT_TRUE(pin2_properties[0].value().int_value().has_value());
+    EXPECT_EQ(pin2_properties[0].value().int_value().value(), 2ul);
   });
 
   EXPECT_TRUE(driver_test().StopDriver().is_ok());
