@@ -24,7 +24,8 @@ pub mod ff1;
 pub use cipher::fscrypt_ino_lblk32::FscryptSoftwareInoLblk32FileCipher;
 pub use cipher::fxfs::FxfsCipher;
 pub use cipher::{
-    Cipher, CipherHolder, CipherSet, FindKeyResult, KeyType, MutPtrByteSlice, key_to_cipher,
+    Cipher, CipherHolder, CipherSet, FindKeyResult, KeyType, MutPtrByteSlice, PtrByteSlice,
+    key_to_cipher,
 };
 pub use fidl_fuchsia_fxfs::{
     EmptyStruct, FscryptKeyIdentifier, FscryptKeyIdentifierAndNonce, ObjectType, WrappedKey,
@@ -318,27 +319,33 @@ impl JournalXtsCipher {
         }
     }
 
-    /// Encrypts `buffer` in place using AES-256-XTS with ciphertext stealing.
+    /// Encrypts `buffer` using AES-256-XTS with ciphertext stealing into a newly allocated vector.
     /// If `buffer.len() < 16`, it will be zero-padded to 16 bytes first.
-    pub fn encrypt(&mut self, buffer: &mut Vec<u8>) {
-        if buffer.len() < 16 {
-            buffer.resize(16, 0);
-        }
-        let len = buffer.len();
+    pub fn encrypt(&mut self, buffer: &[u8]) -> Vec<u8> {
+        let out_len = std::cmp::max(buffer.len(), 16);
+        let mut out_buf = vec![0u8; out_len];
         let mut tweak = Tweak::new(self.tweak as u128);
         self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
-        if buffer.as_ptr().cast::<u128>().is_aligned() {
-            let slice = MutPtrByteSlice::from(buffer.as_mut_bytes());
-            self.key.encrypt_with_backend(XtsCtsProcessor::new_in_place(tweak, slice));
+        if buffer.as_ptr().cast::<u128>().is_aligned()
+            && buffer.len() >= 16
+            && out_buf.as_ptr().cast::<u128>().is_aligned()
+        {
+            let slice = PtrByteSlice::from(buffer);
+            let out_slice = MutPtrByteSlice::from(&mut out_buf[..]);
+            self.key.encrypt_with_backend(XtsCtsProcessor::new(tweak, slice, out_slice));
         } else {
-            self.aligned_buf.resize(buffer.len().div_ceil(16), 0u128);
-            let aligned_bytes = &mut self.aligned_buf.as_mut_bytes()[..len];
-            aligned_bytes.copy_from_slice(buffer);
-            let slice = MutPtrByteSlice::from(aligned_bytes);
+            self.aligned_buf.resize(out_len.div_ceil(16), 0u128);
+            let aligned_bytes = &mut self.aligned_buf.as_mut_bytes()[..out_len];
+            if buffer.len() < 16 {
+                aligned_bytes.fill(0);
+            }
+            aligned_bytes[..buffer.len()].copy_from_slice(buffer);
+            let slice = MutPtrByteSlice::from(&mut *aligned_bytes);
             self.key.encrypt_with_backend(XtsCtsProcessor::new_in_place(tweak, slice));
-            buffer.copy_from_slice(&self.aligned_buf.as_bytes()[..len]);
+            out_buf.copy_from_slice(&aligned_bytes[..out_len]);
         }
         self.tweak += 1;
+        out_buf
     }
 
     /// Decrypts `buffer` in place using AES-256-XTS with ciphertext stealing.
@@ -386,9 +393,9 @@ impl JournalCipher {
         JournalCipher::Aes256Xts(Box::new(JournalXtsCipher::new(key, current_tweak)))
     }
 
-    pub fn encrypt(&mut self, buffer: &mut Vec<u8>) {
+    pub fn encrypt(&mut self, buffer: &[u8]) -> Vec<u8> {
         match self {
-            JournalCipher::ChaCha20(c) => c.encrypt(buffer.as_mut_slice()),
+            JournalCipher::ChaCha20(_) => unreachable!(),
             JournalCipher::Aes256Xts(c) => c.encrypt(buffer),
         }
     }
@@ -540,30 +547,30 @@ mod tests {
         let mut dec = JournalXtsCipher::new(&key, 0);
 
         // Test < 16 bytes (padded to 16)
-        let mut buf_short = vec![1, 2, 3, 4, 5];
-        enc.encrypt(&mut buf_short);
-        assert_eq!(buf_short.len(), 16);
-        dec.decrypt(&mut buf_short);
-        assert_eq!(&buf_short[..5], &[1, 2, 3, 4, 5]);
-        assert_eq!(&buf_short[5..], &[0; 11]);
+        let buf_short = vec![1, 2, 3, 4, 5];
+        let mut enc_short = enc.encrypt(&buf_short);
+        assert_eq!(enc_short.len(), 16);
+        dec.decrypt(&mut enc_short);
+        assert_eq!(&enc_short[..5], &[1, 2, 3, 4, 5]);
+        assert_eq!(&enc_short[5..], &[0; 11]);
         assert_eq!(enc.current_tweak(), 1);
         assert_eq!(dec.current_tweak(), 1);
 
         // Test exact 16 bytes
-        let mut buf_16 = vec![7u8; 16];
-        enc.encrypt(&mut buf_16);
-        assert_eq!(buf_16.len(), 16);
-        dec.decrypt(&mut buf_16);
-        assert_eq!(buf_16, vec![7u8; 16]);
+        let buf_16 = vec![7u8; 16];
+        let mut enc_16 = enc.encrypt(&buf_16);
+        assert_eq!(enc_16.len(), 16);
+        dec.decrypt(&mut enc_16);
+        assert_eq!(enc_16, vec![7u8; 16]);
         assert_eq!(enc.current_tweak(), 2);
         assert_eq!(dec.current_tweak(), 2);
 
         // Test 25 bytes (CTS)
-        let mut buf_25: Vec<u8> = (0..25).collect();
-        enc.encrypt(&mut buf_25);
-        assert_eq!(buf_25.len(), 25);
-        dec.decrypt(&mut buf_25);
-        assert_eq!(buf_25, (0..25).collect::<Vec<u8>>());
+        let buf_25: Vec<u8> = (0..25).collect();
+        let mut enc_25 = enc.encrypt(&buf_25);
+        assert_eq!(enc_25.len(), 25);
+        dec.decrypt(&mut enc_25);
+        assert_eq!(enc_25, (0..25).collect::<Vec<u8>>());
         assert_eq!(enc.current_tweak(), 3);
         assert_eq!(dec.current_tweak(), 3);
     }
@@ -574,11 +581,11 @@ mod tests {
         let mut enc = JournalCipher::new_aes256_xts(&key, 0);
         let mut dec = JournalCipher::new_aes256_xts(&key, 0);
 
-        let mut buf = vec![9u8; 20];
-        enc.encrypt(&mut buf);
-        assert_eq!(buf.len(), 20);
-        dec.decrypt(&mut buf);
-        assert_eq!(buf, vec![9u8; 20]);
+        let buf = vec![9u8; 20];
+        let mut enc_buf = enc.encrypt(&buf);
+        assert_eq!(enc_buf.len(), 20);
+        dec.decrypt(&mut enc_buf);
+        assert_eq!(enc_buf, vec![9u8; 20]);
         assert_eq!(enc.sequence_number(), 1);
     }
 
@@ -638,15 +645,15 @@ mod tests {
                 });
                 assert!(buf.as_ptr().cast::<u128>().is_aligned());
                 buf.copy_from_slice(plaintext.as_slice());
-                {
+                let mut encrypted = {
                     let mut enc = JournalXtsCipher::new(&key, 13);
-                    enc.encrypt(&mut buf);
-                }
+                    enc.encrypt(&buf)
+                };
                 {
                     let mut dec = JournalXtsCipher::new(&key, 13);
-                    dec.decrypt(&mut buf);
+                    dec.decrypt(&mut encrypted);
                 }
-                assert_eq!(*buf, expected_plaintext);
+                assert_eq!(encrypted, expected_plaintext);
             }
 
             // Unaligned case.
@@ -660,15 +667,15 @@ mod tests {
                 });
                 assert!(!buf.as_ptr().cast::<u128>().is_aligned());
                 buf.copy_from_slice(plaintext.as_slice());
-                {
+                let mut encrypted = {
                     let mut enc = JournalXtsCipher::new(&key, 13);
-                    enc.encrypt(&mut buf);
-                }
+                    enc.encrypt(&buf)
+                };
                 {
                     let mut dec = JournalXtsCipher::new(&key, 13);
-                    dec.decrypt(&mut buf);
+                    dec.decrypt(&mut encrypted);
                 }
-                assert_eq!(*buf, expected_plaintext);
+                assert_eq!(encrypted, expected_plaintext);
             }
         }
     }

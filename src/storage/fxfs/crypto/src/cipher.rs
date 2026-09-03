@@ -5,7 +5,7 @@ use crate::{EncryptionKey, UnwrappedKey, WrappedKey};
 use anyhow::Error;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-pub use storage_ptr_slice::MutPtrByteSlice;
+pub use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
 use zx_status as zx;
 
 pub mod fscrypt_ino_lblk32;
