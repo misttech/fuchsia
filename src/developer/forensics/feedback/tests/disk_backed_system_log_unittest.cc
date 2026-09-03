@@ -31,8 +31,10 @@
 namespace forensics::feedback {
 namespace {
 
-using testing::IsEmpty;
-using testing::UnorderedElementsAreArray;
+using ::testing::ElementsAre;
+using ::testing::IsEmpty;
+using ::testing::Pair;
+using ::testing::UnorderedElementsAreArray;
 
 class DiskBackedSystemLogTest : public UnitTestFixture {
  public:
@@ -344,6 +346,54 @@ TEST_F(DiskBackedSystemLogTest, GetCurrentBootLogsForceCompletion) {
   RunLoopUntilIdle();
   EXPECT_TRUE(callback_called);
   EXPECT_THAT(result, AttachmentDataIs(Error::kTimeout));
+}
+
+TEST_F(DiskBackedSystemLogTest, GetCurrentBootLogsSourceDisk) {
+  fuchsia_feedback_internal::SystemLogMetadata metadata;
+  metadata.source(fuchsia_feedback_internal::SystemLogSource::kDisk);
+
+  stubs::SystemLogRecorder stub;
+  stub.SetResponse(fit::ok("stub logs content"), std::move(metadata));
+  InjectServiceProvider(&stub);
+
+  DiskBackedSystemLog system_log(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
+                                 Redactor(), Cobalt());
+
+  const uint64_t kTicket = 1234;
+  AttachmentData result(Error::kNotSet);
+  GetExecutor().schedule_task(
+      system_log.Get(kTicket)
+          .and_then([&result](AttachmentData& res) { result = std::move(res); })
+          .or_else([] { FX_LOGS(FATAL) << "Bad path"; }));
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(result.HasValue());
+  EXPECT_THAT(result.Metadata(), ElementsAre(Pair(feedback_data::kAttachmentMetadataSourceKey,
+                                                  feedback_data::kAttachmentMetadataSourceDisk)));
+}
+
+TEST_F(DiskBackedSystemLogTest, GetCurrentBootLogsSourceStream) {
+  fuchsia_feedback_internal::SystemLogMetadata metadata;
+  metadata.source(fuchsia_feedback_internal::SystemLogSource::kStream);
+
+  stubs::SystemLogRecorder stub;
+  stub.SetResponse(fit::ok("stub logs content"), std::move(metadata));
+  InjectServiceProvider(&stub);
+
+  DiskBackedSystemLog system_log(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
+                                 Redactor(), Cobalt());
+
+  const uint64_t kTicket = 1234;
+  AttachmentData result(Error::kNotSet);
+  GetExecutor().schedule_task(
+      system_log.Get(kTicket)
+          .and_then([&result](AttachmentData& res) { result = std::move(res); })
+          .or_else([] { FX_LOGS(FATAL) << "Bad path"; }));
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(result.HasValue());
+  EXPECT_THAT(result.Metadata(), ElementsAre(Pair(feedback_data::kAttachmentMetadataSourceKey,
+                                                  feedback_data::kAttachmentMetadataSourceStream)));
 }
 
 TEST_F(DiskBackedSystemLogTest, ForceCompletionUnknownTicketIsNoOp) {

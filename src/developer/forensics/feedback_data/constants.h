@@ -56,6 +56,9 @@ constexpr char kUtcBootDifferenceFile[] = "current_utc_monotonic_difference.txt"
 // Buffer up to 4MiB of logs in memory.
 constexpr StorageSize kCurrentLogBufferSize = StorageSize::Megabytes(4);
 
+// Buffer up to 8MiB of logs in memory when collecting a fallback snapshot from Archivist.
+constexpr StorageSize kFallbackLogBufferSize = StorageSize::Megabytes(8);
+
 // Stream and buffer logs for 5 minutes after a snapshot collected.
 //
 // TODO(https://fxbug.dev/42181644): Set the default value for userdebug to at least 1 hour. Logs

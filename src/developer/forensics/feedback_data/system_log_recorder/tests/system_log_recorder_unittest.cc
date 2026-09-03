@@ -148,6 +148,7 @@ TEST_F(SystemLogRecorderSingleDispatcherTest, SmokeTest) {
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
                                  .metadata_path = metadata_path,
+                                 .fallback_buffer_size = kFallbackLogBufferSize,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<IdentityEncoder>(),
@@ -312,6 +313,7 @@ TEST_F(SystemLogRecorderSingleDispatcherTest, SingleThreaded_Flush) {
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
                                  .metadata_path = metadata_path,
+                                 .fallback_buffer_size = kFallbackLogBufferSize,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<IdentityEncoder>(),
@@ -403,6 +405,7 @@ TEST_F(SystemLogRecorderSingleDispatcherTest, MultipleFlushes) {
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
                                  .metadata_path = metadata_path,
+                                 .fallback_buffer_size = kFallbackLogBufferSize,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<IdentityEncoder>(),
@@ -473,6 +476,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, RecordsLogs) {
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
                                  .metadata_path = metadata_path,
+                                 .fallback_buffer_size = kFallbackLogBufferSize,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<IdentityEncoder>(),
@@ -528,6 +532,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogs) {
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
                                  .metadata_path = metadata_path,
+                                 .fallback_buffer_size = kFallbackLogBufferSize,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<ProductionEncoder>(),
@@ -565,6 +570,8 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogs) {
   ASSERT_TRUE(response.metadata()->last_timestamp().has_value());
   EXPECT_EQ(*response.metadata()->first_timestamp(), zx::time_boot(zx::sec(15604).get()));
   EXPECT_EQ(*response.metadata()->last_timestamp(), zx::time_boot(zx::sec(15604).get()));
+  ASSERT_TRUE(response.metadata()->source().has_value());
+  EXPECT_EQ(*response.metadata()->source(), ffi::SystemLogSource::kDisk);
 }
 
 TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogsEmptyLogs) {
@@ -586,6 +593,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogsEmptyLogs) {
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
                                  .metadata_path = metadata_path,
+                                 .fallback_buffer_size = kFallbackLogBufferSize,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<ProductionEncoder>(),
@@ -606,6 +614,160 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogsEmptyLogs) {
   ASSERT_TRUE(result->is_error());
   ASSERT_TRUE(result->error_value().is_domain_error());
   EXPECT_EQ(result->error_value().domain_error(), ffi::RecorderError::kIoError);
+}
+
+TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogsFallbackToArchivistOnPurgeSuccess) {
+  std::unique_ptr<async::LoopInterface> write_loop = test_loop().StartNewLoop();
+
+  const zx::duration kArchivePeriod = zx::msec(750);
+  const zx::duration kWriterPeriod = zx::sec(1);
+
+  const std::vector<std::vector<std::string>> disk_json_batches({
+      {
+          BuildLogMessage("disk line 0"),
+          BuildLogMessage("disk line 1"),
+      },
+      {},
+  });
+
+  const std::vector<std::vector<std::string>> fallback_stream_json_batches({
+      {
+          BuildLogMessage("fallback stream line 0"),
+          BuildLogMessage("fallback stream line 1"),
+      },
+      {},
+  });
+
+  std::vector<std::unique_ptr<stubs::DiagnosticsBatchIteratorBase>> iterators;
+  iterators.push_back(std::make_unique<stubs::DiagnosticsBatchIteratorNeverRespondsAfterOneBatch>(
+      disk_json_batches[0]));
+  iterators.push_back(
+      std::make_unique<stubs::DiagnosticsBatchIterator>(fallback_stream_json_batches));
+
+  stubs::DiagnosticsArchiveSequentialIterators archive(dispatcher(), std::move(iterators));
+  InjectServiceProvider(&archive, kArchiveAccessorName);
+
+  files::ScopedTempDir temp_dir;
+  const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
+  const std::string metadata_path = files::JoinPath(temp_dir.path(), "metadata.json");
+  const StorageSize kWriteSize = kMaxLogLineSize * 2 + kDroppedFormatStrSize;
+  SystemLogRecorder recorder(dispatcher(), write_loop->dispatcher(), services(),
+                             SystemLogRecorder::WriteParameters{
+                                 .period = kWriterPeriod,
+                                 .max_write_size = kWriteSize,
+                                 .logs_dir = logs_dir,
+                                 .max_num_files = 2u,
+                                 .total_log_size = 2u * kWriteSize,
+                                 .metadata_path = metadata_path,
+                                 .fallback_buffer_size = kFallbackLogBufferSize,
+                             },
+                             std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
+                             std::make_unique<ProductionEncoder>(),
+                             std::make_unique<ProductionDecoder>());
+  recorder.Start();
+
+  RunLoopFor(kTimeWaitForLimitedLogs);
+  RunLoopFor(kArchivePeriod);
+  RunLoopFor(kWriterPeriod);
+
+  // Simulate a cache purge.
+  ASSERT_TRUE(files::DeletePath(temp_dir.path(), /*recursive=*/true));
+
+  auto endpoints = fidl::CreateEndpoints<ffi::SystemLogRecorder>();
+  ASSERT_TRUE(endpoints.is_ok());
+
+  fidl::BindServer(dispatcher(), std::move(endpoints->server), &recorder);
+  fidl::Client client(std::move(endpoints->client), dispatcher());
+
+  std::optional<fidl::Result<ffi::SystemLogRecorder::GetCurrentBootLogs>> result;
+  client->GetCurrentBootLogs().Then([&result](auto& res) { result = std::move(res); });
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(result->is_ok());
+  ffi::SystemLogRecorderGetCurrentBootLogsResponse response = std::move(result->value());
+
+  ASSERT_TRUE(response.logs().has_value());
+  zx::vmo vmo = std::move(*response.logs());
+
+  const zx::result<std::string> contents = StringFromVmo(vmo);
+  ASSERT_TRUE(contents.is_ok());
+
+  EXPECT_THAT(*contents, HasSubstr("fallback stream line 0"));
+  EXPECT_THAT(*contents, HasSubstr("fallback stream line 1"));
+  ASSERT_TRUE(response.metadata().has_value());
+  ASSERT_TRUE(response.metadata()->first_timestamp().has_value());
+  ASSERT_TRUE(response.metadata()->last_timestamp().has_value());
+  EXPECT_EQ(*response.metadata()->first_timestamp(), zx::time_boot(zx::sec(15604).get()));
+  EXPECT_EQ(*response.metadata()->last_timestamp(), zx::time_boot(zx::sec(15604).get()));
+  ASSERT_TRUE(response.metadata()->source().has_value());
+  EXPECT_EQ(*response.metadata()->source(), ffi::SystemLogSource::kStream);
+}
+
+TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogsFallbackToArchivistOnPurgeError) {
+  std::unique_ptr<async::LoopInterface> write_loop = test_loop().StartNewLoop();
+
+  const zx::duration kArchivePeriod = zx::msec(750);
+  const zx::duration kWriterPeriod = zx::sec(1);
+
+  const std::vector<std::vector<std::string>> disk_json_batches({
+      {
+          BuildLogMessage("disk line 0"),
+      },
+      {},
+  });
+
+  // |archive| provides an iterator for the initial stream to disk and an error-returning iterator
+  // for the subsequent fallback request.
+  std::vector<std::unique_ptr<stubs::DiagnosticsBatchIteratorBase>> iterators;
+  iterators.push_back(std::make_unique<stubs::DiagnosticsBatchIteratorNeverRespondsAfterOneBatch>(
+      disk_json_batches[0]));
+  iterators.push_back(std::make_unique<stubs::DiagnosticsBatchIteratorReturnsError>());
+  stubs::DiagnosticsArchiveSequentialIterators archive(dispatcher(), std::move(iterators));
+  InjectServiceProvider(&archive, kArchiveAccessorName);
+
+  files::ScopedTempDir temp_dir;
+  const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
+  const std::string metadata_path = files::JoinPath(temp_dir.path(), "metadata.json");
+  const StorageSize kWriteSize = kMaxLogLineSize * 2 + kDroppedFormatStrSize;
+
+  SystemLogRecorder recorder(dispatcher(), write_loop->dispatcher(), services(),
+                             SystemLogRecorder::WriteParameters{
+                                 .period = kWriterPeriod,
+                                 .max_write_size = kWriteSize,
+                                 .logs_dir = logs_dir,
+                                 .max_num_files = 2u,
+                                 .total_log_size = 2u * kWriteSize,
+                                 .metadata_path = metadata_path,
+                                 .fallback_buffer_size = kFallbackLogBufferSize,
+                             },
+                             std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
+                             std::make_unique<ProductionEncoder>(),
+                             std::make_unique<ProductionDecoder>());
+  recorder.Start();
+
+  RunLoopFor(kTimeWaitForLimitedLogs);
+  RunLoopFor(kArchivePeriod);
+  RunLoopFor(kWriterPeriod);
+
+  // Simulate cache purge.
+  ASSERT_TRUE(files::DeletePath(temp_dir.path(), /*recursive=*/true));
+
+  auto endpoints = fidl::CreateEndpoints<ffi::SystemLogRecorder>();
+  ASSERT_TRUE(endpoints.is_ok());
+
+  fidl::BindServer(dispatcher(), std::move(endpoints->server), &recorder);
+  fidl::Client client(std::move(endpoints->client), dispatcher());
+
+  std::optional<fidl::Result<ffi::SystemLogRecorder::GetCurrentBootLogs>> result;
+  client->GetCurrentBootLogs().Then([&result](auto& res) { result = std::move(res); });
+
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(result->is_error());
+  ASSERT_TRUE(result->error_value().is_domain_error());
+  EXPECT_EQ(result->error_value().domain_error(), ffi::RecorderError::kStreamError);
 }
 
 TEST_F(SystemLogRecorderMultiDispatcherTest, ResumesPersistingAfterCachePurge) {
@@ -641,6 +803,7 @@ TEST_F(SystemLogRecorderMultiDispatcherTest, ResumesPersistingAfterCachePurge) {
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
                                  .metadata_path = metadata_path,
+                                 .fallback_buffer_size = kFallbackLogBufferSize,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<ProductionEncoder>(),

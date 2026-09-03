@@ -70,6 +70,7 @@ int main() {
           .max_num_files = feedback::kPersistedLogsNumFiles,
           .total_log_size = feedback::kPersistedLogsTotalSize,
           .metadata_path = feedback::kCurrentDiskBackedLogsMetadataPath,
+          .fallback_buffer_size = feedback_data::kFallbackLogBufferSize,
       },
       // Don't set up Inspect because all messages in the previous boot log
       // are in the current boot log and counted in Inspect.

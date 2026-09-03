@@ -12,6 +12,13 @@ void DiagnosticsArchive::StreamDiagnostics(StreamDiagnosticsRequest& request,
   batch_iterator_->Bind(std::move(request.result_stream()), dispatcher_);
 }
 
+void DiagnosticsArchiveSequentialIterators::StreamDiagnostics(
+    StreamDiagnosticsRequest& request, StreamDiagnosticsCompleter::Sync& completer) {
+  FX_CHECK(current_iterator_index_ < batch_iterators_.size());
+  batch_iterators_[current_iterator_index_++]->Bind(std::move(request.result_stream()),
+                                                    dispatcher_);
+}
+
 void DiagnosticsArchiveClosesFirstIteratorConnection::StreamDiagnostics(
     StreamDiagnosticsRequest& request, StreamDiagnosticsCompleter::Sync& completer) {
   if (is_first_) {

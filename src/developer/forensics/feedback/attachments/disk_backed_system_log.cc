@@ -26,6 +26,7 @@ struct LogData {
   std::string contents;
   std::optional<zx::time_boot> first_timestamp;
   std::optional<zx::time_boot> last_timestamp;
+  std::optional<std::string> source;
 };
 
 // Creates a callable object that can be used to complete the system log collection flow with an
@@ -109,13 +110,13 @@ void DiskBackedSystemLog::handle_unknown_event(
 ::fpromise::promise<AttachmentData> DiskBackedSystemLog::Get(uint64_t ticket) {
   FX_CHECK(!completers_.contains(ticket)) << "Ticket used twice: " << ticket;
 
-  // TODO(https://fxbug.dev/495946460): check if SystemLogRecorder used a fallback stream.
-  const AttachmentMetadata metadata({
+  AttachmentMetadata metadata({
       {feedback_data::kAttachmentMetadataSourceKey, feedback_data::kAttachmentMetadataSourceDisk},
   });
 
   if (!client_.is_valid()) {
-    return ::fpromise::make_ok_promise(AttachmentData(Error::kConnectionError, metadata));
+    return ::fpromise::make_ok_promise(
+        AttachmentData(Error::kConnectionError, std::move(metadata)));
   }
 
   auto [complete_ok, complete_error, consume] = CompletesAndConsume();
@@ -148,6 +149,21 @@ void DiskBackedSystemLog::handle_unknown_event(
         if (result->metadata().has_value()) {
           log_data.first_timestamp = result->metadata()->first_timestamp();
           log_data.last_timestamp = result->metadata()->last_timestamp();
+
+          if (result->metadata()->source().has_value()) {
+            switch (*result->metadata()->source()) {
+              case fuchsia_feedback_internal::SystemLogSource::kDisk:
+                log_data.source = feedback_data::kAttachmentMetadataSourceDisk;
+                break;
+              case fuchsia_feedback_internal::SystemLogSource::kStream:
+                log_data.source = feedback_data::kAttachmentMetadataSourceStream;
+                break;
+              default:
+                FX_LOGS(WARNING) << "Unknown SystemLogSource enum value: "
+                                 << static_cast<uint32_t>(*result->metadata()->source());
+                break;
+            }
+          }
         }
 
         const zx::vmo vmo = std::move(*result->logs());
@@ -171,39 +187,42 @@ void DiskBackedSystemLog::handle_unknown_event(
 
   fxl::WeakPtr<DiskBackedSystemLog> self = ptr_factory_.GetWeakPtr();
 
-  return consume.then(
-      [self, ticket,
-       metadata](::fpromise::result<LogData, Error>& result) -> ::fpromise::result<AttachmentData> {
-        if (!self) {
-          return ::fpromise::ok(AttachmentData(Error::kLogicError, metadata));
-        }
+  return consume.then([self, ticket, metadata = std::move(metadata)](
+                          ::fpromise::result<LogData, Error>& result) mutable
+                          -> ::fpromise::result<AttachmentData> {
+    if (!self) {
+      return ::fpromise::ok(AttachmentData(Error::kLogicError, std::move(metadata)));
+    }
 
-        self->completers_.erase(ticket);
+    self->completers_.erase(ticket);
 
-        if (result.is_error()) {
-          if (result.error() == Error::kLogicError) {
-            FX_LOGS(FATAL) << "Log collection promise was incorrectly dropped";
-          }
-          return ::fpromise::ok(AttachmentData(result.error(), metadata));
-        }
+    if (result.is_error()) {
+      if (result.error() == Error::kLogicError) {
+        FX_LOGS(FATAL) << "Log collection promise was incorrectly dropped";
+      }
+      return ::fpromise::ok(AttachmentData(result.error(), std::move(metadata)));
+    }
 
-        LogData& data = result.value();
+    LogData& data = result.value();
+    if (data.source.has_value()) {
+      metadata = {{feedback_data::kAttachmentMetadataSourceKey, *data.source}};
+    }
 
-        // The logs are sorted, so we can assume the platform's log buffer is at capacity if the
-        // first log has a timestamp > 0.
-        if (data.first_timestamp.has_value() && *data.first_timestamp > zx::time_boot(0)) {
-          self->cobalt_->LogIntegerEvent(cobalt_registry::kSyslogBytesAtCapacityMetricId,
-                                         data.contents.size());
+    // The logs are sorted, so we can assume the platform's log buffer is at capacity if the
+    // first log has a timestamp > 0.
+    if (data.first_timestamp.has_value() && *data.first_timestamp > zx::time_boot(0)) {
+      self->cobalt_->LogIntegerEvent(cobalt_registry::kSyslogBytesAtCapacityMetricId,
+                                     data.contents.size());
 
-          if (data.last_timestamp.has_value()) {
-            const int64_t duration = (*data.last_timestamp - *data.first_timestamp).to_mins();
-            self->cobalt_->LogIntegerEvent(cobalt_registry::kSyslogDurationAtCapacityMetricId,
-                                           duration);
-          }
-        }
+      if (data.last_timestamp.has_value()) {
+        const int64_t duration = (*data.last_timestamp - *data.first_timestamp).to_mins();
+        self->cobalt_->LogIntegerEvent(cobalt_registry::kSyslogDurationAtCapacityMetricId,
+                                       duration);
+      }
+    }
 
-        return ::fpromise::ok(AttachmentData(std::move(data.contents), metadata));
-      });
+    return ::fpromise::ok(AttachmentData(std::move(data.contents), std::move(metadata)));
+  });
 }
 
 void DiskBackedSystemLog::ForceCompletion(const uint64_t ticket, const Error error) {

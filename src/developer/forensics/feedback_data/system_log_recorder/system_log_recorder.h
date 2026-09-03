@@ -10,19 +10,25 @@
 #include <lib/async_patterns/cpp/dispatcher_bound.h>
 #include <lib/async_patterns/cpp/receiver.h>
 #include <lib/fit/function.h>
+#include <lib/fit/result.h>
 #include <lib/sys/cpp/service_directory.h>
 #include <lib/zx/time.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <queue>
 #include <string>
+#include <unordered_map>
 
 #include "src/developer/forensics/feedback_data/log_source.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/decoder.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/encoder.h"
+#include "src/developer/forensics/feedback_data/system_log_recorder/log_collector.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/log_message_store.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/writer.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
 #include "src/developer/forensics/utils/storage_size.h"
+#include "src/lib/fxl/memory/weak_ptr.h"
 
 namespace forensics {
 namespace feedback_data {
@@ -37,6 +43,7 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
     size_t max_num_files;
     StorageSize total_log_size;
     std::string metadata_path;
+    StorageSize fallback_buffer_size;
   };
 
   SystemLogRecorder(async_dispatcher_t* archive_dispatcher, async_dispatcher_t* write_dispatcher,
@@ -62,10 +69,13 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
   void OnWriteComplete(SystemLogWriter::WriteResult result);
   void OnFlushComplete(bool success);
   void OnFlushAndReadLogsComplete(SystemLogWriter::FlushAndReadLogsResult result);
+  void CollectArchivistLogs(GetCurrentBootLogsCompleter::Async completer);
 
   async_dispatcher_t* archive_dispatcher_;
+  std::shared_ptr<sys::ServiceDirectory> services_;
   std::unique_ptr<RedactorBase> redactor_;
   const zx::duration write_period_;
+  const StorageSize fallback_buffer_size_;
 
   LogMessageStore store_;
   LogSource log_source_;
@@ -74,8 +84,16 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
   std::queue<::fit::callback<void()>> flush_callbacks_;
   std::queue<GetCurrentBootLogsCompleter::Async> current_boot_logs_completers_;
 
+  struct CollectOperation {
+    std::unique_ptr<LogCollector> collector;
+    GetCurrentBootLogsCompleter::Async completer;
+  };
+  uint64_t next_collection_id_;
+  std::unordered_map<uint64_t, CollectOperation> in_flight_collections_;
+
   async::TaskClosureMethod<SystemLogRecorder, &SystemLogRecorder::PeriodicWriteTask>
       periodic_write_task_{this};
+  fxl::WeakPtrFactory<SystemLogRecorder> ptr_factory_{this};
 };
 
 }  // namespace system_log_recorder

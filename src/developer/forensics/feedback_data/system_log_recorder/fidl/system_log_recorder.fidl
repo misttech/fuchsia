@@ -11,11 +11,18 @@ type RecorderError = flexible enum {
     IO_ERROR = 1;
     DECOMPRESSION_ERROR = 2;
     VMO_ERROR = 3;
+    STREAM_ERROR = 4;
+};
+
+type SystemLogSource = flexible enum {
+    DISK = 1;
+    STREAM = 2;
 };
 
 type SystemLogMetadata = table {
     1: first_timestamp zx.InstantBoot;
     2: last_timestamp zx.InstantBoot;
+    3: source SystemLogSource;
 };
 
 @discoverable

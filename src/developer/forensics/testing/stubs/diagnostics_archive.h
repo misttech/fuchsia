@@ -36,6 +36,25 @@ class DiagnosticsArchive : public DiagnosticsArchiveBase {
   std::unique_ptr<DiagnosticsBatchIteratorBase> batch_iterator_;
 };
 
+class DiagnosticsArchiveSequentialIterators : public DiagnosticsArchiveBase {
+ public:
+  DiagnosticsArchiveSequentialIterators(
+      async_dispatcher_t* dispatcher,
+      std::vector<std::unique_ptr<DiagnosticsBatchIteratorBase>> batch_iterators)
+      : dispatcher_(dispatcher),
+        batch_iterators_(std::move(batch_iterators)),
+        current_iterator_index_(0) {}
+
+  // |fuchsia_diagnostics::ArchiveAccessor|
+  void StreamDiagnostics(StreamDiagnosticsRequest& request,
+                         StreamDiagnosticsCompleter::Sync& completer) override;
+
+ private:
+  async_dispatcher_t* dispatcher_;
+  std::vector<std::unique_ptr<DiagnosticsBatchIteratorBase>> batch_iterators_;
+  size_t current_iterator_index_;
+};
+
 class DiagnosticsArchiveCaptureParameters : public DiagnosticsArchiveBase {
  public:
   explicit DiagnosticsArchiveCaptureParameters(fuchsia_diagnostics::StreamParameters* parameters)

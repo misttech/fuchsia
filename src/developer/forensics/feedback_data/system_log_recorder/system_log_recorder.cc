@@ -4,6 +4,7 @@
 
 #include "src/developer/forensics/feedback_data/system_log_recorder/system_log_recorder.h"
 
+#include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <utility>
@@ -32,14 +33,17 @@ SystemLogRecorder::SystemLogRecorder(async_dispatcher_t* archive_dispatcher,
                                      std::unique_ptr<Encoder> encoder,
                                      std::unique_ptr<Decoder> decoder)
     : archive_dispatcher_(archive_dispatcher),
+      services_(services),
       redactor_(std::move(redactor)),
       write_period_(write_parameters.period),
+      fallback_buffer_size_(write_parameters.fallback_buffer_size),
       store_(write_parameters.total_log_size / write_parameters.max_num_files,
              write_parameters.max_write_size, redactor_.get(), std::move(encoder)),
       log_source_(archive_dispatcher, std::move(services), &store_),
       writer_(write_dispatcher, std::in_place, write_parameters.logs_dir,
               write_parameters.max_num_files, std::move(decoder), write_parameters.metadata_path),
-      receiver_(this, archive_dispatcher) {}
+      receiver_(this, archive_dispatcher),
+      next_collection_id_(0) {}
 
 void SystemLogRecorder::Start() {
   log_source_.Start();
@@ -129,8 +133,7 @@ void SystemLogRecorder::OnFlushAndReadLogsComplete(SystemLogWriter::FlushAndRead
         completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kVmoError));
         return;
       case SystemLogWriter::WriterError::kInsufficientCoverage:
-        // TODO(https://fxbug.dev/495946460): fallback to snapshot from Archivist.
-        completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kIoError));
+        CollectArchivistLogs(std::move(completer));
         return;
     }
   }
@@ -138,12 +141,66 @@ void SystemLogRecorder::OnFlushAndReadLogsComplete(SystemLogWriter::FlushAndRead
   fuchsia_feedback_internal::SystemLogMetadata metadata;
   metadata.first_timestamp(result.logs->first_timestamp);
   metadata.last_timestamp(result.logs->last_timestamp);
+  metadata.source(fuchsia_feedback_internal::SystemLogSource::kDisk);
 
   fuchsia_feedback_internal::SystemLogRecorderGetCurrentBootLogsResponse response;
   response.logs(std::move(result.logs->vmo));
   response.metadata(std::move(metadata));
 
   completer.Reply(fit::ok(std::move(response)));
+}
+
+void SystemLogRecorder::CollectArchivistLogs(GetCurrentBootLogsCompleter::Async completer) {
+  const uint64_t id = next_collection_id_++;
+  auto collector = std::make_unique<LogCollector>(archive_dispatcher_, services_,
+                                                  fallback_buffer_size_, redactor_.get());
+
+  LogCollector* collector_ptr = collector.get();
+  in_flight_collections_.emplace(id, CollectOperation{
+                                         .collector = std::move(collector),
+                                         .completer = std::move(completer),
+                                     });
+
+  collector_ptr->Start([self = ptr_factory_.GetWeakPtr(),
+                        id](fit::result<LogCollector::Error, LogCollector::Logs> result) {
+    if (!self) {
+      return;
+    }
+
+    auto node = self->in_flight_collections_.extract(id);
+    if (node.empty()) {
+      FX_LOGS(ERROR) << "No callback for collection id: " << id;
+      return;
+    }
+
+    CollectOperation operation = std::move(node.mapped());
+
+    if (result.is_error()) {
+      switch (result.error_value()) {
+        case LogCollector::Error::kStreamError:
+          operation.completer.Reply(
+              fit::error(fuchsia_feedback_internal::RecorderError::kStreamError));
+          return;
+        case LogCollector::Error::kVmoError:
+          operation.completer.Reply(
+              fit::error(fuchsia_feedback_internal::RecorderError::kVmoError));
+          return;
+      }
+    }
+
+    LogCollector::Logs logs = std::move(result.value());
+
+    fuchsia_feedback_internal::SystemLogMetadata metadata;
+    metadata.first_timestamp(logs.first_timestamp);
+    metadata.last_timestamp(logs.last_timestamp);
+    metadata.source(fuchsia_feedback_internal::SystemLogSource::kStream);
+
+    fuchsia_feedback_internal::SystemLogRecorderGetCurrentBootLogsResponse response;
+    response.logs(std::move(logs.vmo));
+    response.metadata(std::move(metadata));
+
+    operation.completer.Reply(fit::ok(std::move(response)));
+  });
 }
 
 }  // namespace system_log_recorder
