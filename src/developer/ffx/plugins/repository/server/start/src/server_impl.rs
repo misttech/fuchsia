@@ -283,6 +283,7 @@ pub async fn serve_impl_validate_args(
                         err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
                         target: None,
                         targets: vec![],
+                        target_source: None,
                     })
                     .into());
                 } else {
@@ -1094,6 +1095,7 @@ mod test {
             err: fidl_fuchsia_developer_ffx::OpenTargetError::TargetNotFound,
             target: None,
             targets: vec![],
+            target_source: None,
         };
         let resolution = ffx_target::Resolution::mock(move || Err(anyhow::anyhow!(err.clone())));
         let behavior = ConnectionBehavior::fake_direct_connector(resolution);
@@ -1111,6 +1113,7 @@ mod test {
             err: fidl_fuchsia_developer_ffx::OpenTargetError::QueryAmbiguous,
             target: None,
             targets: vec!["foo".to_string(), "bar".to_string()],
+            target_source: None,
         };
         let resolution = ffx_target::Resolution::mock(move || Err(anyhow::anyhow!(err.clone())));
         let behavior = ConnectionBehavior::fake_direct_connector(resolution);

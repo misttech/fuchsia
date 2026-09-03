@@ -22,7 +22,7 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use target_errors::FfxTargetError;
+use target_errors::{FfxTargetError, TargetSource};
 use tokio::sync::Mutex;
 
 use crate::analytics::PointOfFailure;
@@ -30,7 +30,7 @@ use crate::connection::Connection;
 use crate::ssh_connector::SshConnector;
 use crate::usb_connector::{UsbConnector, try_daemon_autostart};
 use crate::vsock_connector::VSockConnector;
-use crate::{TargetInfo, get_target_specifier};
+use crate::{TargetInfo, get_target_specifier_with_source, target_source_for_query};
 
 const CONFIG_TARGET_SSH_TIMEOUT: &str = "target.host_pipe_ssh_timeout";
 
@@ -85,8 +85,9 @@ async fn locally_resolve_target_spec<T: TargetResolver>(
         TargetInfoQuery::Addr(addr) => format!("{}", replace_default_port(addr)),
         TargetInfoQuery::Id(sn) => format!("id:{sn}"),
         _ => {
+            let source = target_source_for_query(target_spec, env_context);
             let resolution =
-                resolver.resolve_single_target(&target_spec, true, env_context).await?;
+                resolver.resolve_single_target(&target_spec, true, env_context, source).await?;
             log::debug!("Locally resolved target '{target_spec:?}' to {:?}", resolution.discovered);
             resolution.target.to_spec()
         }
@@ -130,6 +131,7 @@ fn target_error_to_analytics<'a>(
 pub(crate) fn expect_single_target<T>(
     query: &TargetInfoQuery,
     targets: Vec<T>,
+    source: Option<TargetSource>,
 ) -> Result<T, FfxTargetError>
 where
     T: Display,
@@ -139,6 +141,7 @@ where
             err: ffx::OpenTargetError::TargetNotFound,
             target: Some(query.into()),
             targets: vec![],
+            target_source: source,
         })
         .into(),
         1 => Ok(targets.into_iter().next().unwrap()),
@@ -146,6 +149,7 @@ where
             err: ffx::OpenTargetError::QueryAmbiguous,
             target: Some(query.into()),
             targets: targets.iter().map(|f| format!("{}", f)).collect(),
+            target_source: source,
         })
         .into(),
     }
@@ -157,12 +161,12 @@ where
 pub async fn discover_single_default_target(
     ctx: &EnvironmentContext,
 ) -> std::result::Result<TargetHandle, crate::FfxTargetCrateError> {
-    let query_s = get_target_specifier(ctx)?;
+    let (query_s, source) = get_target_specifier_with_source(ctx)?;
     let query = TargetInfoQuery::try_from(query_s)?;
 
     // Note: this will use the target cache if it exists
     let handles = get_discovered_targets(query.clone(), true, true, ctx).await?;
-    let res = expect_single_target(&query, handles)
+    let res = expect_single_target(&query, handles, source)
         .or_else_maybe_analytics(|e| target_error_to_analytics(e).map(Into::into))
         .await?;
     Ok(res)
@@ -204,6 +208,7 @@ pub trait TargetResolver {
         target_spec: &TargetInfoQuery,
         use_cache: bool,
         ctx: &EnvironmentContext,
+        source: Option<TargetSource>,
     ) -> impl Future<Output = Result<Resolution, FfxTargetError>> {
         async move {
             if let Some(target_addr) = target_spec.get_target_addr() {
@@ -211,7 +216,7 @@ pub trait TargetResolver {
                 emit_cache_event("explicit_addr", &query_tag).await;
                 return Ok(Resolution::from_target(target_addr.into()));
             }
-            let res = self.resolve_single_target(target_spec, use_cache, ctx).await?;
+            let res = self.resolve_single_target(target_spec, use_cache, ctx, source).await?;
             let target_spec_info: String = target_spec.into();
             log::debug!("resolved target spec {target_spec_info} to address {:?}", res.addr());
             Ok(res)
@@ -228,6 +233,7 @@ pub trait TargetResolver {
         &self,
         target_spec: &TargetInfoQuery,
         env_context: &EnvironmentContext,
+        source: Option<TargetSource>,
     ) -> impl Future<Output = Result<Vec<Resolution>, FfxTargetError>> {
         async move {
             let handles_fut = self.discovered_targets(target_spec.clone()).fuse();
@@ -256,6 +262,7 @@ pub trait TargetResolver {
                                 err: ffx::OpenTargetError::FailedDiscovery,
                                 target: Some(target_spec.into()),
                                 targets: vec![],
+                                target_source: source.clone(),
                             })
                         },
                     },
@@ -273,6 +280,7 @@ pub trait TargetResolver {
                         err: ffx::OpenTargetError::FailedDiscovery,
                         target: Some(target_spec.into()),
                         targets: vec![],
+                        target_source: source.clone(),
                     }
                 })?,
             };
@@ -285,6 +293,7 @@ pub trait TargetResolver {
                             err: ffx::OpenTargetError::FailedDiscovery,
                             target: Some(target_spec.into()),
                             targets: vec![],
+                            target_source: source.clone(),
                         }
                     })
                 })
@@ -301,6 +310,7 @@ pub trait TargetResolver {
         target_spec: &TargetInfoQuery,
         use_cache: bool,
         env_context: &EnvironmentContext,
+        source: Option<TargetSource>,
     ) -> impl Future<Output = Result<Resolution, FfxTargetError>> {
         async move {
             let query_tag = target_spec.to_analytics_tag();
@@ -352,10 +362,12 @@ pub trait TargetResolver {
 
             let resolutions = match resolutions {
                 Some(rs) => rs,
-                None => self.discover_matching_targets(target_spec, env_context).await?,
+                None => {
+                    self.discover_matching_targets(target_spec, env_context, source.clone()).await?
+                }
             };
 
-            expect_single_target(target_spec, resolutions)
+            expect_single_target(target_spec, resolutions, source)
                 .or_else_maybe_analytics(|e| target_error_to_analytics(e).map(Into::into))
                 .await
         }
@@ -471,9 +483,10 @@ pub async fn resolve_target_address(
     use_cache: bool,
     ctx: &EnvironmentContext,
 ) -> Result<Resolution, FfxTargetError> {
+    let source = target_source_for_query(target_spec, ctx);
     let discovery = build_discovery_from_config(ctx);
     let resolver = DefaultTargetResolver::new(discovery);
-    resolver.resolve_target_address(target_spec, use_cache, ctx).await
+    resolver.resolve_target_address(target_spec, use_cache, ctx, source).await
 }
 
 pub struct DefaultTargetResolver {
@@ -1046,7 +1059,7 @@ impl Resolution {
         env: &EnvironmentContext,
         use_cache: bool,
     ) -> ffx_command_error::Result<Self> {
-        let target_spec = get_target_specifier(env)?;
+        let (target_spec, source) = get_target_specifier_with_source(env)?;
         if env.is_strict() && target_spec.is_none() {
             return Err(user_error!(
                 "You must specify a target via `-t <target_name>` before any command arguments"
@@ -1057,7 +1070,7 @@ impl Resolution {
             .map_err(|e| user_error!("Invalid target specifier: {}", e))?;
 
         let resolution = resolver
-            .resolve_target_address(&spec, use_cache, env)
+            .resolve_target_address(&spec, use_cache, env, source)
             .await
             .map_err(|e| ffx_command_error::Error::User(NonFatalError(e.into()).into()))?;
         Ok(resolution)
@@ -1304,7 +1317,7 @@ mod test {
     async fn test_expect_single_target_empty() {
         let query = TargetInfoQuery::NodenameOrId("foo".to_string());
         let handles: Vec<TargetHandle> = vec![];
-        let res = expect_single_target(&query, handles);
+        let res = expect_single_target(&query, handles, None);
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(matches!(
@@ -1318,7 +1331,7 @@ mod test {
         let query = TargetInfoQuery::NodenameOrId("foo".to_string());
         let handle = make_target_handle_for_product("foo", "127.0.0.1:8080".parse().unwrap());
         let handles = vec![handle.clone()];
-        let res = expect_single_target(&query, handles);
+        let res = expect_single_target(&query, handles, None);
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), handle);
     }
@@ -1329,7 +1342,7 @@ mod test {
         let handle1 = make_target_handle_for_product("foo", "127.0.0.1:8080".parse().unwrap());
         let handle2 = make_target_handle_for_product("bar", "127.0.0.1:8081".parse().unwrap());
         let handles = vec![handle1, handle2];
-        let res = expect_single_target(&query, handles);
+        let res = expect_single_target(&query, handles, None);
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(matches!(
@@ -1536,8 +1549,10 @@ mod test {
         // Note: MockTargetResolver has no expectations configured.
         // If resolution falls back to discovery, this test will panic,
         // verifying that explicit USB resolution returns immediately.
-        let res =
-            resolver.resolve_target_address(&usb_spec, false, &test_env.context).await.unwrap();
+        let res = resolver
+            .resolve_target_address(&usb_spec, false, &test_env.context, None)
+            .await
+            .unwrap();
         assert_eq!(res.usb_cid(), Some(42));
         assert_eq!(res.vsock_cid(), None);
         assert_eq!(res.target_spec(), "usb:cid:42");
@@ -1557,8 +1572,10 @@ mod test {
         // Note: MockTargetResolver has no expectations configured.
         // If resolution falls back to discovery, this test will panic,
         // verifying that explicit VSOCK resolution returns immediately.
-        let res =
-            resolver.resolve_target_address(&vsock_spec, false, &test_env.context).await.unwrap();
+        let res = resolver
+            .resolve_target_address(&vsock_spec, false, &test_env.context, None)
+            .await
+            .unwrap();
         assert_eq!(res.vsock_cid(), Some(12345));
         assert_eq!(res.usb_cid(), None);
         assert_eq!(res.target_spec(), "vsock:cid:12345");
@@ -1576,8 +1593,10 @@ mod test {
         let resolver = MockTargetResolver::new();
         let (sa, addr_spec) = get_addr_and_spec();
         // Note: MockTargetResolver has no expectations configured.
-        let res =
-            resolver.resolve_target_address(&addr_spec, false, &test_env.context).await.unwrap();
+        let res = resolver
+            .resolve_target_address(&addr_spec, false, &test_env.context, None)
+            .await
+            .unwrap();
         assert_eq!(res.addr().unwrap(), sa);
         assert_eq!(res.usb_cid(), None);
         assert_eq!(res.vsock_cid(), None);

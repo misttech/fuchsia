@@ -13,7 +13,7 @@ use futures::Future;
 use futures::future::{Either, pending};
 use log::{debug, info};
 use std::time::Duration;
-use target_errors::FfxTargetError;
+use target_errors::{FfxTargetError, TargetSource};
 use thiserror::Error;
 
 #[cfg(test)]
@@ -195,12 +195,14 @@ async fn wait_for_discovered_state(
 ) -> Result<(), ffx_command_error::Error> {
     let query = TargetInfoQuery::try_from(target_spec.clone())
         .map_err(|e| ffx_command_error::Error::User(e.into()))?;
+    let source = target_source_for_query(&query, env);
     let discover_fut = async {
         loop {
             futures_lite::future::yield_now().await;
 
             match discoverer.discover(query.clone(), env).await {
-                Ok(handles) => match resolve::expect_single_target(&query, handles) {
+                Ok(handles) => match resolve::expect_single_target(&query, handles, source.clone())
+                {
                     Ok(handle) => {
                         let matches_state = match (behavior, &handle.state) {
                             (WaitFor::Fastboot, discovery::TargetState::Fastboot(_)) => true,
@@ -422,10 +424,13 @@ pub(crate) async fn knock_target_impl(
     let knock_timeout = knock_timeout.unwrap_or(DEFAULT_RCS_KNOCK_TIMEOUT * 2);
     let res_future = async {
         log::debug!("resolving target spec address from {target_spec:?}");
+        let source = target_source_for_query(target_spec, context);
         let discovery = build_discovery_from_config(context);
         let resolver = resolve::DefaultTargetResolver::new(discovery);
-        let res = resolver.resolve_target_address(target_spec, use_cache, context).await.map_err(
-            |e| match e {
+        let res = resolver
+            .resolve_target_address(target_spec, use_cache, context, source)
+            .await
+            .map_err(|e| match e {
                 // When knocking, it's not critical if we have not yet found the target. The caller should just retry
                 FfxTargetError::OpenTargetError {
                     err: ffx::OpenTargetError::TargetNotFound,
@@ -434,8 +439,7 @@ pub(crate) async fn knock_target_impl(
                     target: format!("{:?}", target_spec),
                 }),
                 _ => KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e))),
-            },
-        )?;
+            })?;
 
         if let Some(ever_found) = ever_found {
             ever_found.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -453,6 +457,7 @@ pub(crate) async fn knock_target_impl(
         }
         Ok(())
     };
+
     futures_lite::pin!(res_future);
     timeout::timeout(knock_timeout, res_future).await.map_err(|_| {
         KnockError::NonCritical(KnockNonCriticalError::Timeout {
@@ -508,28 +513,58 @@ pub(crate) async fn knock_target_impl(
 /// the specifier to be a substring of the nodename, a network address, serial
 /// number, or vsock identifier.
 pub fn get_target_specifier(context: &EnvironmentContext) -> Result<Option<String>> {
+    get_target_specifier_with_source(context).map(|(spec, _)| spec)
+}
+
+/// Get the target specifier along with the source where it was configured.
+///
+/// See [`get_target_specifier`] for full details on how the target is determined.
+pub fn get_target_specifier_with_source(
+    context: &EnvironmentContext,
+) -> Result<(Option<String>, Option<TargetSource>)> {
     if let Some(ts) = context.get_overridden_target_specifier() {
-        return Ok(ts);
+        return Ok((ts, Some(TargetSource::Overridden)));
     }
-    let target_spec = match context
+    let (runtime_spec, runtime_source) = context
         .query(TARGET_DEFAULT_KEY)
         .level(Some(ConfigLevel::Runtime))
         .build()
-        .get_optional::<Option<String>>(context)
-    {
-        Ok(None) => context
-            .query(TARGET_DEFAULT_KEY)
-            .level(Some(ConfigLevel::Default))
-            .build()
-            .get_optional::<Option<String>>(context),
-        runtime_result => runtime_result,
-    }?;
+        .get_optional_with_source::<Option<String>>(context)?;
 
-    match target_spec {
-        Some(ref target) => info!("Target specifier: ['{target:?}']"),
-        None => debug!("No target specified"),
+    if let Some(spec) = runtime_spec {
+        let source = runtime_source.map(Into::into).unwrap_or(TargetSource::CommandLine);
+        info!("Target specifier: ['{spec:?}'] (source: command-line/runtime)");
+        return Ok((Some(spec), Some(source)));
     }
-    Ok(target_spec)
+
+    let (default_spec, default_source) = context
+        .query(TARGET_DEFAULT_KEY)
+        .level(Some(ConfigLevel::Default))
+        .build()
+        .get_optional_with_source::<Option<String>>(context)?;
+
+    if let Some(spec) = default_spec {
+        let source = default_source.map(Into::into).unwrap_or(TargetSource::Default);
+        info!("Target specifier: ['{spec:?}'] (source: {source:?})");
+        return Ok((Some(spec), Some(source)));
+    }
+
+    debug!("No target specified");
+    Ok((None, None))
+}
+
+/// Returns the `TargetSource` if the given `query` matches the target configured in the `context`.
+pub fn target_source_for_query(
+    query: &TargetInfoQuery,
+    context: &EnvironmentContext,
+) -> Option<TargetSource> {
+    match get_target_specifier_with_source(context) {
+        Ok((spec, source)) => match TargetInfoQuery::try_from(spec) {
+            Ok(default_query) if &default_query == query => source,
+            _ => None,
+        },
+        Err(_) => None,
+    }
 }
 
 /// Discover fastboot targets only. Useful for fastboot-related plugins (flash/bootloader/fastboot).
@@ -550,7 +585,8 @@ pub async fn discover_fastboot_target(
         .filter(|h| matches!(h.state, discovery::TargetState::Fastboot(_)))
         .collect();
 
-    resolve::expect_single_target(&query, filtered).map_err(|e| e.into())
+    let source = target_source_for_query(&query, ctx);
+    resolve::expect_single_target(&query, filtered, source).map_err(|e| e.into())
 }
 
 #[cfg(test)]
@@ -655,6 +691,69 @@ mod test {
         context.override_target_specifier(&Some("foo".to_string()));
         let target = get_target_specifier(&context).expect("get_target_specifier");
         assert_eq!(target, Some("foo".to_string()));
+    }
+
+    #[fuchsia::test]
+    async fn test_get_target_specifier_with_source() {
+        let env = test_env().env_var("FUCHSIA_NODENAME", "nodename-default").build().unwrap();
+        let (spec, source) = get_target_specifier_with_source(&env.context).unwrap();
+        assert_eq!(spec, Some("nodename-default".into()));
+        assert_eq!(source, Some(TargetSource::Environment("FUCHSIA_NODENAME".into())));
+
+        let env_addr = test_env().env_var("FUCHSIA_DEVICE_ADDR", "addr-default").build().unwrap();
+        let (spec, source) = get_target_specifier_with_source(&env_addr.context).unwrap();
+        assert_eq!(spec, Some("addr-default".into()));
+        assert_eq!(source, Some(TargetSource::Environment("FUCHSIA_DEVICE_ADDR".into())));
+
+        let env_runtime = test_env()
+            .runtime_config(TARGET_DEFAULT_KEY, "runtime-target")
+            .env_var("FUCHSIA_NODENAME", "nodename-default")
+            .build()
+            .unwrap();
+        let (spec, source) = get_target_specifier_with_source(&env_runtime.context).unwrap();
+        assert_eq!(spec, Some("runtime-target".into()));
+        assert_eq!(source, Some(TargetSource::CommandLine));
+
+        let env_unset = test_env().build().unwrap();
+        let (spec, source) = get_target_specifier_with_source(&env_unset.context).unwrap();
+        assert_eq!(spec, None);
+        assert_eq!(source, None);
+
+        let mut override_context = env_unset.context.clone();
+        override_context.override_target_specifier(&Some("overridden-target".to_string()));
+        let (spec, source) = get_target_specifier_with_source(&override_context).unwrap();
+        assert_eq!(spec, Some("overridden-target".into()));
+        assert_eq!(source, Some(TargetSource::Overridden));
+
+        // Test with empty string in runtime config (does not fall back to default)
+        let env_empty_runtime = test_env()
+            .runtime_config(TARGET_DEFAULT_KEY, "")
+            .env_var("FUCHSIA_NODENAME", "nodename-default")
+            .build()
+            .unwrap();
+        let (spec, source) = get_target_specifier_with_source(&env_empty_runtime.context).unwrap();
+        assert_eq!(spec, Some("".into()));
+        assert_eq!(source, Some(TargetSource::CommandLine));
+    }
+
+    #[fuchsia::test]
+    async fn test_target_source_for_query() {
+        let env = test_env().env_var("FUCHSIA_NODENAME", "my-target").build().unwrap();
+
+        // Query matching the default target from environment
+        let matching_query = TargetInfoQuery::NodenameOrId("my-target".to_string());
+        assert_eq!(
+            target_source_for_query(&matching_query, &env.context),
+            Some(TargetSource::Environment("FUCHSIA_NODENAME".to_string()))
+        );
+
+        // Query for a different custom/explicit target
+        let different_query = TargetInfoQuery::NodenameOrId("other-target".to_string());
+        assert_eq!(target_source_for_query(&different_query, &env.context), None);
+
+        // Environment with no default target set
+        let unset_env = test_env().build().unwrap();
+        assert_eq!(target_source_for_query(&matching_query, &unset_env.context), None);
     }
 
     #[fuchsia::test]

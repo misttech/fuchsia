@@ -3,10 +3,149 @@
 // found in the LICENSE file.
 
 use errors::{FfxError, IntoExitCode};
+use ffx_config::{ConfigLevel, ConfigSource};
 use fidl_fuchsia_developer_ffx::{
     DaemonError, OpenTargetError, TargetConnectionError, TunnelError,
 };
 use traceable_error::TraceableError;
+
+/// Describes the source of a target specifier.
+///
+/// Note: The variants here do not directly map 1:1 to `ffx_config::ConfigLevel`
+/// because default target resolution is intentionally stateless (see https://fxbug.dev/394619603).
+/// Persistent stateful configuration levels (`User`, `Build`, `Global`) for `target.default`
+/// are ignored by `ffx` to prevent configuration drift and cross-build/cross-device conflicts.
+/// Instead, targets can only originate from:
+/// - Command line flags (`-t` / `--target`, corresponding to `ConfigLevel::Runtime`)
+/// - Programmatic overrides set directly in the tool (`context.override_target_specifier()`)
+/// - Environment variables (e.g. `$FUCHSIA_NODENAME` set by `fx set-device`, or `$FUCHSIA_DEVICE_ADDR`,
+///   evaluated via `ConfigLevel::Default`)
+/// - Default configuration fallbacks from `config.json`
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TargetSource {
+    /// The target was specified on the command line via `-t` or `--target`.
+    CommandLine,
+    /// The target was overridden programmatically in the tool.
+    Overridden,
+    /// The target was configured via an environment variable (e.g. `$FUCHSIA_NODENAME` or `$FUCHSIA_DEVICE_ADDR`).
+    Environment(String),
+    /// The target was configured via default configuration.
+    Default,
+}
+
+impl TargetSource {
+    pub fn is_explicit(&self) -> bool {
+        matches!(self, Self::CommandLine | Self::Overridden)
+    }
+
+    pub fn source_description(&self) -> String {
+        match self {
+            Self::CommandLine => "specified on the command line".to_string(),
+            Self::Overridden => "specified in the tool".to_string(),
+            Self::Environment(var) => format!("target configured by ${var}"),
+            Self::Default => "target configured in default config".to_string(),
+        }
+    }
+
+    pub fn remediation_hint(&self) -> String {
+        match self {
+            Self::CommandLine | Self::Overridden => {
+                "Use `ffx target list` to list known targets, and use a different target query."
+                    .to_string()
+            }
+            Self::Environment(var) => {
+                if var == "FUCHSIA_NODENAME" {
+                    "This is set by `fx set-device <name>`. Change it with `fx set-device <name>`, or remove it with `fx unset-device` (or by unsetting $FUCHSIA_NODENAME).".to_string()
+                } else if var == "FUCHSIA_DEVICE_ADDR" {
+                    "Change or remove it by setting/unsetting $FUCHSIA_DEVICE_ADDR.".to_string()
+                } else {
+                    format!("Change or remove it by setting/unsetting ${var}.")
+                }
+            }
+            Self::Default => {
+                "Set a default target with `ffx config set target.default <name>` or specify one with `-t`.".to_string()
+            }
+        }
+    }
+}
+
+impl From<ConfigSource> for TargetSource {
+    fn from(src: ConfigSource) -> Self {
+        if let Some(var) = src.expanded_var {
+            TargetSource::Environment(var)
+        } else {
+            match src.level {
+                ConfigLevel::Runtime => TargetSource::CommandLine,
+                _ => TargetSource::Default,
+            }
+        }
+    }
+}
+
+fn format_open_target_error(
+    err: &OpenTargetError,
+    target: &Option<String>,
+    targets: &[String],
+    target_source: &Option<TargetSource>,
+) -> String {
+    let target_str = target_string(target);
+    match err {
+        OpenTargetError::FailedDiscovery => match target_source {
+            Some(src) if !src.is_explicit() && target_str != UNSPECIFIED_TARGET_NAME => {
+                format!(
+                    "Could not resolve default target {target_str} ({}) due to discovery failure",
+                    src.source_description()
+                )
+            }
+            _ => format!("Could not resolve specification {target_str} due to discovery failure"),
+        },
+        OpenTargetError::QueryAmbiguous => {
+            if target_str == UNSPECIFIED_TARGET_NAME {
+                format!(
+                    "More than one device/emulator found. Use `ffx target list` to list known targets and specify one with the `-t` or `--target` flag.\nCurrently found: \n\t{}",
+                    targets.join("\n\t")
+                )
+            } else {
+                match target_source {
+                    Some(src) if !src.is_explicit() => {
+                        format!(
+                            "Default target {target_str} matched multiple targets ({}). {}\nCurrently found: \n\t{}",
+                            src.source_description(),
+                            src.remediation_hint(),
+                            targets.join("\n\t")
+                        )
+                    }
+                    _ => {
+                        format!(
+                            "Target specification {target_str} matched multiple targets. Use `ffx target list` to list known targets, and use a more specific target query.\nCurrently found: \n\t{}",
+                            targets.join("\n\t")
+                        )
+                    }
+                }
+            }
+        }
+        OpenTargetError::TargetNotFound => {
+            if target_str == UNSPECIFIED_TARGET_NAME {
+                "No devices/emulators found. Please ensure the device you want to use is connected and reachable, or an emulator is started.".to_string()
+            } else {
+                match target_source {
+                    Some(src) if !src.is_explicit() => {
+                        format!(
+                            "Default target {target_str} was not found ({}). {}",
+                            src.source_description(),
+                            src.remediation_hint()
+                        )
+                    }
+                    _ => {
+                        format!(
+                            "Target specification {target_str} was not found. Use `ffx target list` to list known targets, and use a different target query."
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// The default target name if no target spec is given (for debugging, reporting to the user, etc).
 pub const UNSPECIFIED_TARGET_NAME: &str = "[unspecified]";
@@ -42,22 +181,13 @@ pub enum FfxTargetError {
     DaemonError { err: DaemonError, target: Option<String> },
 
     #[cfg(not(target_os = "fuchsia"))]
-    #[error("{}", match .err {
-            OpenTargetError::FailedDiscovery => format!("Could not resolve specification {} due to discovery failure", target_string(.target)),
-            OpenTargetError::QueryAmbiguous => {
-                match target_string(.target) {
-                    target if target == UNSPECIFIED_TARGET_NAME => format!("More than one device/emulator found. Use `ffx target list` to list known targets and specify one with the `-t` or `--target` flag.\nCurrently found: \n\t{}", targets.join("\n\t")),
-                    target => format!("Target specification {} matched multiple targets. Use `ffx target list` to list known targets, and use a more specific target query.\nCurrently found: \n\t{}", target, targets.join("\n\t")),
-                }
-            },
-            OpenTargetError::TargetNotFound => {
-                match target_string(.target) {
-                    target if target == UNSPECIFIED_TARGET_NAME => format!("No devices/emulators found. Please ensure the device you want to use is connected and reachable, or an emulator is started."),
-                    target => format!("Target specification {} was not found. Use `ffx target list` to list known targets, and use a different target query.", .target),
-                }
-            }
-        })]
-    OpenTargetError { err: OpenTargetError, target: Option<String>, targets: Vec<String> },
+    #[error("{}", format_open_target_error(.err, .target, .targets, .target_source))]
+    OpenTargetError {
+        err: OpenTargetError,
+        target: Option<String>,
+        targets: Vec<String>,
+        target_source: Option<TargetSource>,
+    },
 
     #[cfg(not(target_os = "fuchsia"))]
     #[error("{}", match .err {
@@ -293,35 +423,112 @@ mod tests {
 
     #[test]
     fn test_open_target_error_string_display() {
-        fn error_message(err: OpenTargetError, target: Option<&str>) -> String {
+        fn error_message(
+            err: OpenTargetError,
+            target: Option<&str>,
+            source: Option<TargetSource>,
+        ) -> String {
             format!(
                 "{}",
                 FfxTargetError::OpenTargetError {
                     err,
                     target: target.map(|s| s.to_owned()),
-                    targets: vec![]
+                    targets: vec!["foo".to_string(), "bar".to_string()],
+                    target_source: source,
                 }
             )
         }
 
+        // Test without source (legacy/unspecified source behavior)
         assert!(
-            error_message(OpenTargetError::QueryAmbiguous, Some("ambigious-query"))
+            error_message(OpenTargetError::QueryAmbiguous, Some("ambigious-query"), None)
                 .contains("Target specification \"ambigious-query\" matched multiple targets")
         );
         assert!(
             !Regex::new(r"Target specification .* matched multiple targets")
                 .unwrap()
-                .is_match(error_message(OpenTargetError::QueryAmbiguous, None).as_str())
+                .is_match(error_message(OpenTargetError::QueryAmbiguous, None, None).as_str())
         );
 
         assert!(
-            error_message(OpenTargetError::TargetNotFound, Some("nonexistent-target"))
+            error_message(OpenTargetError::TargetNotFound, Some("nonexistent-target"), None)
                 .contains("Target specification \"nonexistent-target\" was not found")
         );
         assert!(
             !Regex::new(r"Target specification .* was not found")
                 .unwrap()
-                .is_match(error_message(OpenTargetError::TargetNotFound, None).as_str())
+                .is_match(error_message(OpenTargetError::TargetNotFound, None, None).as_str())
+        );
+
+        // Test with CommandLine source
+        assert_eq!(
+            error_message(
+                OpenTargetError::TargetNotFound,
+                Some("nonexistent-target"),
+                Some(TargetSource::CommandLine),
+            ),
+            "Target specification \"nonexistent-target\" was not found. Use `ffx target list` to list known targets, and use a different target query."
+        );
+
+        // Test with Overridden source
+        let overridden_err = error_message(
+            OpenTargetError::TargetNotFound,
+            Some("foo"),
+            Some(TargetSource::Overridden),
+        );
+        assert_eq!(
+            overridden_err,
+            "Target specification \"foo\" was not found. Use `ffx target list` to list known targets, and use a different target query."
+        );
+
+        // Test with FUCHSIA_NODENAME environment source
+        let nodename_err = error_message(
+            OpenTargetError::TargetNotFound,
+            Some("foo"),
+            Some(TargetSource::Environment("FUCHSIA_NODENAME".to_string())),
+        );
+        assert!(nodename_err.contains(
+            "Default target \"foo\" was not found (target configured by $FUCHSIA_NODENAME)."
+        ));
+        assert!(nodename_err.contains("fx set-device"));
+        assert!(nodename_err.contains("fx unset-device"));
+
+        // Test with FUCHSIA_DEVICE_ADDR environment source
+        let addr_err = error_message(
+            OpenTargetError::TargetNotFound,
+            Some("192.168.1.1"),
+            Some(TargetSource::Environment("FUCHSIA_DEVICE_ADDR".to_string())),
+        );
+        assert!(addr_err.contains("Default target \"192.168.1.1\" was not found (target configured by $FUCHSIA_DEVICE_ADDR)."));
+        assert!(addr_err.contains("setting/unsetting $FUCHSIA_DEVICE_ADDR"));
+
+        // Test with Default config source
+        let default_config_err = error_message(
+            OpenTargetError::TargetNotFound,
+            Some("foo"),
+            Some(TargetSource::Default),
+        );
+        assert!(default_config_err.contains(
+            "Default target \"foo\" was not found (target configured in default config)."
+        ));
+
+        // Test QueryAmbiguous with source
+        let ambig_err = error_message(
+            OpenTargetError::QueryAmbiguous,
+            Some("foo"),
+            Some(TargetSource::Environment("FUCHSIA_NODENAME".to_string())),
+        );
+        assert!(ambig_err.contains("Default target \"foo\" matched multiple targets (target configured by $FUCHSIA_NODENAME)."));
+
+        // Test FailedDiscovery with source
+        let failed_disc_err = error_message(
+            OpenTargetError::FailedDiscovery,
+            Some("foo"),
+            Some(TargetSource::Environment("FUCHSIA_NODENAME".to_string())),
+        );
+        assert_eq!(
+            failed_disc_err,
+            "Could not resolve default target \"foo\" (target configured by $FUCHSIA_NODENAME) due to discovery failure"
         );
     }
 
@@ -345,6 +552,7 @@ mod tests {
             err: OpenTargetError::TargetNotFound,
             target: None,
             targets: vec![],
+            target_source: None,
         };
         assert_eq!(
             open_err.layer_code(),
