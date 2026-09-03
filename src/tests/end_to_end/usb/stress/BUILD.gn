@@ -32,6 +32,7 @@ if (is_host) {
     }
     local_config_source = "UsbDisconnectTestbed.yaml"
     environments = [
+      iris_env,
       vim3_env,
       nuc11_env,
       nelson_env,
