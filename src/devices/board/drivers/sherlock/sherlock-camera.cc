@@ -17,7 +17,6 @@
 #include <bind/fuchsia/camera/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/i2c/cpp/bind.h>
 #include <bind/fuchsia/isp/cpp/bind.h>
 #include <bind/fuchsia/sony/platform/cpp/bind.h>
 #include <soc/aml-common/aml-registers.h>
@@ -265,14 +264,12 @@ zx_status_t Sherlock::CameraInit() {
       .bind_rules =
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-              fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID,
-                                      bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
-              fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
-                                      bind_fuchsia_i2c::BIND_I2C_ADDRESS_SHERLOCK),
+              fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "camera_sensor"),
           },
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
+              fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
           },
   }};
 

@@ -102,6 +102,8 @@ class Manager {
   bool published_pci_bus_ = false;
   uint32_t device_id_ = 1;
   uint32_t next_bti_ = 0;
+  uint32_t next_i2c_global_id_ = 0;
+  uint32_t next_spi_global_id_ = 0;
 };
 
 }  // namespace acpi

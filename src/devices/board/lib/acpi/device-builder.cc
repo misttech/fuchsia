@@ -102,9 +102,8 @@ acpi::status<> DeviceBuilder::GatherResources(acpi::Acpi* acpi, acpi::Manager* m
             return result.take_error();
           }
           entry = result.value();
-          bus_id_prop = bind_fuchsia::I2C_BUS_ID;
-          str_props_.emplace_back(
-              OwnedStringProp(bind_fuchsia::I2C_ADDRESS, result.value().address().value()));
+          bus_id_prop = bind_fuchsia::ID;
+          str_props_.emplace_back(OwnedStringProp(bind_fuchsia::NAME, "i2c"));
         } else if (resource_is_irq(res)) {
           irq_count_++;
         }
@@ -394,27 +393,30 @@ DeviceBuilder::GetFragmentBindRulesAndPropertiesForChild(size_t child_index) {
   }
 
   std::visit(
-      [&bind_rules, &properties, child_index, bus_id = GetBusId()](auto&& arg) {
+      [&bind_rules, &properties, child_index](auto&& arg) {
         using T = std::decay_t<decltype(arg)>;
         using SpiChannel = fuchsia_hardware_spi_businfo::SpiChannel;
         using I2CChannel = fuchsia_hardware_i2c_businfo::I2CChannel;
         if constexpr (std::is_same_v<T, std::monostate>) {
           ZX_PANIC("Bus should have children");
         } else if constexpr (std::is_same_v<T, std::vector<SpiChannel>>) {
-          bind_rules.emplace_back(ddk::MakeAcceptBindRule(bind_fuchsia::ID, bus_id));
-          properties.emplace_back(ddk::MakeProperty(bind_fuchsia::ID, bus_id));
+          SpiChannel& chan = arg[child_index];
+          if (chan.global_id().has_value()) {
+            bind_rules.emplace_back(ddk::MakeAcceptBindRule(bind_fuchsia::ID, *chan.global_id()));
+            properties.emplace_back(ddk::MakeProperty(bind_fuchsia::ID, *chan.global_id()));
+          }
           properties.emplace_back(ddk::MakeProperty(bind_fuchsia::NAME, "spi"));
         } else if constexpr (std::is_same_v<T, std::vector<I2CChannel>>) {
           I2CChannel& chan = arg[child_index];
-          auto chan_addr = static_cast<uint32_t>(chan.address().value());
-          bind_rules.emplace_back(ddk::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bus_id));
-          bind_rules.emplace_back(ddk::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, chan_addr));
+          if (chan.global_id().has_value()) {
+            bind_rules.emplace_back(ddk::MakeAcceptBindRule(bind_fuchsia::ID, *chan.global_id()));
+            properties.emplace_back(ddk::MakeProperty(bind_fuchsia::ID, *chan.global_id()));
+          }
           bind_rules.emplace_back(
               ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"));
-          properties.emplace_back(ddk::MakeProperty(bind_fuchsia::I2C_BUS_ID, bus_id));
-          properties.emplace_back(ddk::MakeProperty(bind_fuchsia::I2C_ADDRESS, chan_addr));
           properties.emplace_back(
               ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"));
+          properties.emplace_back(ddk::MakeProperty(bind_fuchsia::NAME, "i2c"));
         }
       },
       bus_children_);

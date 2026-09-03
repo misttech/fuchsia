@@ -12,7 +12,6 @@
 #include <zircon/compiler.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/i2c/cpp/bind.h>
 #include <soc/aml-s905d3/s905d3-hw.h>
 
 #include "post-init.h"
@@ -90,13 +89,12 @@ zx::result<> PostInit::InitBacklight() {
 
   auto bind_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
-      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
-                              bind_fuchsia_i2c::BIND_I2C_ADDRESS_BACKLIGHT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "backlight"),
   };
 
   auto properties = std::vector{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
+      fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
   };
 
   auto parents = std::vector{

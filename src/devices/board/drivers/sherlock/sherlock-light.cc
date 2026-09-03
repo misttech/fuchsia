@@ -19,7 +19,6 @@
 #include <bind/fuchsia/ams/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/i2c/cpp/bind.h>
 #include <bind/fuchsia/pwm/cpp/bind.h>
 #include <soc/aml-t931/t931-pwm.h>
 
@@ -67,15 +66,11 @@ zx_status_t Sherlock::LightInit() {
 
   const auto kI2cBindRules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_A0_0),
-      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
-                              bind_fuchsia_i2c::BIND_I2C_ADDRESS_AMBIENTLIGHT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "als"),
   };
   const auto kI2cProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeProperty2(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_A0_0),
-      fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
-                         bind_fuchsia_i2c::BIND_I2C_ADDRESS_AMBIENTLIGHT),
+      fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
   };
 
   const auto kGpioLightInterruptRules = std::vector{

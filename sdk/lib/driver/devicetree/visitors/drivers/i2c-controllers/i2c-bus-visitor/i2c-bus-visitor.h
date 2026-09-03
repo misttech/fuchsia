@@ -10,6 +10,7 @@
 #include <lib/driver/devicetree/visitors/property-parser.h>
 
 #include <cstdint>
+#include <string_view>
 
 namespace i2c_bus_dt {
 
@@ -29,8 +30,8 @@ class I2cBusVisitor : public fdf_devicetree::Visitor {
   // Create new instance of I2cController, returns error if one already exists for the node_name.
   zx::result<> CreateController(std::string node_name);
 
-  zx::result<> AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t bus_id,
-                                uint32_t address);
+  void AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t global_id,
+                        std::string_view name);
 
   zx::result<> ParseChild(I2cController& controller, fdf_devicetree::Node& parent,
                           fdf_devicetree::ChildNode& child);
@@ -40,6 +41,7 @@ class I2cBusVisitor : public fdf_devicetree::Visitor {
   // Mapping of devicetree node name to i2c controller struct.
   std::map<std::string, I2cController> i2c_controllers_;
   uint32_t bus_id_counter_ = 0;
+  uint32_t channel_id_counter_ = 0;
 };
 
 }  // namespace i2c_bus_dt

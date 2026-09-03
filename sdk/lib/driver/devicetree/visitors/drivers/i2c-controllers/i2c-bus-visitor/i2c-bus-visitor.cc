@@ -42,23 +42,21 @@ bool I2cBusVisitor::is_match(fdf_devicetree::Node& node) {
   return true;
 }
 
-zx::result<> I2cBusVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t bus_id,
-                                             uint32_t address) {
+void I2cBusVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t global_id,
+                                     std::string_view name) {
   auto i2c_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-              fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bus_id),
-              fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, address),
+              fdf::MakeAcceptBindRule(bind_fuchsia::ID, global_id),
           },
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-              fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, address),
+              fdf::MakeProperty2(bind_fuchsia::NAME, name),
           },
   }};
   child.AddNodeSpec(i2c_node);
-  return zx::ok();
 }
 
 zx::result<> I2cBusVisitor::CreateController(std::string node_name) {
@@ -89,14 +87,20 @@ zx::result<> I2cBusVisitor::ParseChild(I2cController& controller, fdf_devicetree
     return zx::error(ZX_ERR_INVALID_ARGS);
   }
 
-  for (const uint32_t address : *reg) {
-    bool duplicate = std::ranges::any_of(controller.channels, [address](const auto& ch) {
+  auto reg_names = child.GetProperty<std::vector<std::string>>("reg-names");
+
+  for (size_t i = 0; i < reg->size(); ++i) {
+    const uint32_t address = (*reg)[i];
+    const auto it = std::ranges::find_if(controller.channels, [address](const auto& ch) {
       return ch.address() && *ch.address() == address;
     });
 
-    if (!duplicate) {
+    uint32_t global_id;
+    if (it == controller.channels.end()) {
+      global_id = channel_id_counter_++;
       fuchsia_hardware_i2c_businfo::I2CChannel channel;
       channel.address() = address;
+      channel.global_id() = global_id;
 
       std::string child_name;
       if (reg->size() > 1) {
@@ -106,22 +110,25 @@ zx::result<> I2cBusVisitor::ParseChild(I2cController& controller, fdf_devicetree
       }
       channel.name() = std::move(child_name);
 
-      controller.channels.emplace_back(channel);
-      fdf::debug("I2c channel '{}' added at address {:#x} to controller '{}'", *channel.name(),
-                 address, parent.name());
+      controller.channels.emplace_back(std::move(channel));
+      fdf::debug("I2c channel '{}' added at address {:#x} to controller '{}'",
+                 *controller.channels.back().name(), address, parent.name());
     } else {
+      global_id = *it->global_id();
       fdf::debug(
           "I2c channel at address {:#x} already exists in controller '{}', skipping metadata addition",
           address, parent.name());
     }
 
-    zx::result<> add_child_result = AddChildNodeSpec(child, controller.bus_id, address);
-    if (add_child_result.is_error()) {
-      fdf::error("Failed to add I2c node at address {:#x} to controller '{}': {}", address,
-                 parent.name(), add_child_result);
-
-      return add_child_result.take_error();
+    std::string name = "i2c";
+    if (reg_names.is_ok() && i < reg_names->size()) {
+      if ((*reg_names)[i].starts_with("i2c-")) {
+        name = (*reg_names)[i];
+      } else {
+        name = "i2c-" + (*reg_names)[i];
+      }
     }
+    AddChildNodeSpec(child, global_id, name);
   }
 
   return zx::ok();

@@ -43,7 +43,6 @@ source_set("common") {
     "//sdk/fidl/fuchsia.hardware.power:fuchsia.hardware.power_cpp",
     "//sdk/fidl/fuchsia.scheduler:fuchsia.scheduler_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.i2c:fuchsia.i2c_cpp",
     "//src/devices/lib/driver:driver_runtime",
     "//zircon/system/ulib/trace",
     "//zircon/system/ulib/zx",

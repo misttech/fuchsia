@@ -26,16 +26,16 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
         "fuchsia.hardware.i2c.Service" => ServiceBindConfig {
             rules: &[
                 PropertyRule {
-                    bind_key: "fuchsia.BIND_I2C_BUS_ID",
+                    bind_key: "fuchsia.ID",
                     sources: &[ValueSource::ProviderId],
                     value_type: RuleValueType::Integer,
-                    destination: Destination::Both,
+                    destination: Destination::BindRules,
                 },
                 PropertyRule {
-                    bind_key: "fuchsia.BIND_I2C_ADDRESS",
-                    sources: &[ValueSource::ConstraintKey("address")],
-                    value_type: RuleValueType::Integer,
-                    destination: Destination::Both,
+                    bind_key: "fuchsia.NAME",
+                    sources: &[ValueSource::ResourceName],
+                    value_type: RuleValueType::String,
+                    destination: Destination::Properties,
                 },
             ],
             ..DEFAULT_SERVICE_BIND_CONFIG

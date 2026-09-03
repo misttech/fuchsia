@@ -78,12 +78,6 @@ static const char SDIO_PID[] = "fuchsia.BIND_SDIO_PID";
 
 static const char SDIO_FUNCTION[] = "fuchsia.BIND_SDIO_FUNCTION";
 
-static const char I2C_CLASS[] = "fuchsia.BIND_I2C_CLASS";
-
-static const char I2C_BUS_ID[] = "fuchsia.BIND_I2C_BUS_ID";
-
-static const char I2C_ADDRESS[] = "fuchsia.BIND_I2C_ADDRESS";
-
 static const char INIT_STEP[] = "fuchsia.BIND_INIT_STEP";
 
 static const char SERVICE[] = "fuchsia.Service";

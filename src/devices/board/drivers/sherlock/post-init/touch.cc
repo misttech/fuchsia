@@ -11,9 +11,7 @@
 
 #include <bind/fuchsia/amlogic/platform/t931/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/focaltech/platform/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/i2c/cpp/bind.h>
 
 #include "src/devices/board/drivers/sherlock/post-init/post-init.h"
 
@@ -22,15 +20,12 @@ namespace fpbus = fuchsia_hardware_platform_bus;
 
 const std::vector kI2cRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
-    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
-                            bind_fuchsia_focaltech_platform::BIND_I2C_ADDRESS_TOUCH),
+    fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "touch"),
 };
 
 const std::vector kI2cProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
-                       bind_fuchsia_focaltech_platform::BIND_I2C_ADDRESS_TOUCH),
+    fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
 };
 
 const std::vector kInterruptRules = std::vector{
