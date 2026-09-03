@@ -17,6 +17,7 @@ kernel_rust_mod("iris-rs") {
   sources = [ "iris.rs" ]
   deps = [
     "//sdk/rust/zx-status",
+    "//src/lib/kalloc",
     "//src/lib/regio",
     "//zircon/kernel/lib/debug",
   ]

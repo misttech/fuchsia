@@ -15,10 +15,12 @@ use crate::pdev_power::{
     CONTROL_INTERFACE_ARM_WFI, CONTROL_INTERFACE_CPU_DRIVER,
     K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT, PdevPowerOps, PowerCpuState, PowerDomainConfigFfi,
     PowerRebootFlags, ProcessorPowerLevelFfi, pdev_register_power,
-    power_management_register_domains,
+    power_management_boot_boost_enabled, power_management_register_domains,
+    power_management_set_rate_limits,
 };
 use core::sync::atomic::{AtomicPtr, Ordering};
 use debug::dprintf;
+use kalloc::Box;
 use regio::{MmioBank, MmioPtr, Offset, RwSafe};
 #[cfg(ktest)]
 use unittest as _;
@@ -239,77 +241,144 @@ pub extern "C" fn iris_power_init() {
         533000, 400000, 266500,
     ];
 
-    struct DomainConfig {
-        domain_id: u32,
-        cpu_mask: u64,
+    fn allocate_and_populate_levels(
+        frequencies: &[u32],
         max_rate: u64,
-        frequencies: &'static [u32],
-    }
+        wfi_name: *const core::ffi::c_char,
+        opp_name: *const core::ffi::c_char,
+    ) -> Option<Box<[ProcessorPowerLevelFfi]>> {
+        let count = frequencies.len() + 1;
+        let mut uninit = Box::<[ProcessorPowerLevelFfi]>::try_new_uninit_slice(count).ok()?;
+        assert_eq!(uninit.len(), frequencies.len() + 1);
 
-    const DOMAINS: [DomainConfig; 4] = [
-        // Domain 0: Little (CPUs 0-1)
-        DomainConfig { domain_id: 0, cpu_mask: 0x03, max_rate: 150, frequencies: FREQUENCY_LITTLE },
-        // Domain 1: Medium 1 (CPUs 2-4)
-        DomainConfig { domain_id: 1, cpu_mask: 0x1c, max_rate: 703, frequencies: FREQUENCY_MEDIUM },
-        // Domain 2: Medium 2 (CPUs 5-6)
-        DomainConfig { domain_id: 2, cpu_mask: 0x60, max_rate: 703, frequencies: FREQUENCY_MEDIUM },
-        // Domain 3: Big (CPU 7)
-        DomainConfig { domain_id: 3, cpu_mask: 0x80, max_rate: 1000, frequencies: FREQUENCY_BIG },
-    ];
-
-    let mut levels = [ProcessorPowerLevelFfi {
-        options: 0,
-        processing_rate: 0,
-        power_coefficient_nw: 0,
-        control_interface: 0,
-        control_argument: 0,
-        diagnostic_name: core::ptr::null(),
-    }; 25];
-
-    // Register each power domain iteratively to minimize kernel stack footprint (~1.2 KB instead of
-    // ~4.65 KB).
-    for config in DOMAINS.iter() {
-        levels[0] = ProcessorPowerLevelFfi {
+        uninit[0].write(ProcessorPowerLevelFfi {
             options: K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT,
             processing_rate: 0,
             power_coefficient_nw: 100_000,
             control_interface: CONTROL_INTERFACE_ARM_WFI,
             control_argument: 0,
             diagnostic_name: wfi_name,
-        };
+        });
 
-        let max_freq = config.frequencies[0] as u64;
-        for (opp, &freq) in config.frequencies.iter().enumerate() {
-            let rate = (freq as u64 * config.max_rate).div_ceil(max_freq);
-            levels[opp + 1] = ProcessorPowerLevelFfi {
+        let max_freq = frequencies[0] as u64;
+        let num_opps = frequencies.len();
+        for (opp, &freq) in frequencies.iter().enumerate() {
+            let rate = (freq as u64 * max_rate).div_ceil(max_freq);
+            // Levels must be ordered in ascending order of processing rate:
+            // level 1 = lowest frequency OPP, level num_opps = highest frequency OPP.
+            let level_idx = num_opps - opp;
+            uninit[level_idx].write(ProcessorPowerLevelFfi {
                 options: 0,
                 processing_rate: rate,
                 power_coefficient_nw: (rate * 200_000) + 10_000_000,
                 control_interface: CONTROL_INTERFACE_CPU_DRIVER,
                 control_argument: opp as u64,
                 diagnostic_name: opp_name,
-            };
+            });
         }
 
-        let domain_config = PowerDomainConfigFfi {
-            domain_id: config.domain_id,
-            cpu_mask: config.cpu_mask,
-            levels: levels.as_ptr(),
-            level_count: config.frequencies.len() + 1,
-        };
+        // SAFETY: All elements from 0 to count-1 in `uninit` were explicitly initialized above.
+        Some(unsafe { uninit.assume_init() })
+    }
 
-        if let Err(status) = power_management_register_domains(&[domain_config]) {
-            dprintf!(
-                CRITICAL,
-                "POWER: Failed to register iris power domain {}: {}\n",
-                config.domain_id,
-                status.into_raw()
-            );
-            return;
-        }
+    // Allocate power level descriptors on the kernel heap using `kalloc::Box` rather than on the
+    // kernel stack. The combined 4 domains have 97 total levels (~4.6 KB), which would consume a
+    // significant portion of the limited kernel stack (8-16 KB).
+    let Some(levels_d0) = allocate_and_populate_levels(FREQUENCY_LITTLE, 150, wfi_name, opp_name)
+    else {
+        dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 0 power levels\n");
+        return;
+    };
+    let Some(levels_d1) = allocate_and_populate_levels(FREQUENCY_MEDIUM, 703, wfi_name, opp_name)
+    else {
+        dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 1 power levels\n");
+        return;
+    };
+    let Some(levels_d2) = allocate_and_populate_levels(FREQUENCY_MEDIUM, 703, wfi_name, opp_name)
+    else {
+        dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 2 power levels\n");
+        return;
+    };
+    let Some(levels_d3) = allocate_and_populate_levels(FREQUENCY_BIG, 1000, wfi_name, opp_name)
+    else {
+        dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 3 power levels\n");
+        return;
+    };
+
+    let domain_configs = [
+        // Domain 0: Little (CPUs 0-1)
+        PowerDomainConfigFfi {
+            domain_id: 0,
+            cpu_mask: 0x03,
+            levels: levels_d0.as_ptr(),
+            level_count: levels_d0.len(),
+        },
+        // Domain 1: Medium 1 (CPUs 2-4)
+        PowerDomainConfigFfi {
+            domain_id: 1,
+            cpu_mask: 0x1c,
+            levels: levels_d1.as_ptr(),
+            level_count: levels_d1.len(),
+        },
+        // Domain 2: Medium 2 (CPUs 5-6)
+        PowerDomainConfigFfi {
+            domain_id: 2,
+            cpu_mask: 0x60,
+            levels: levels_d2.as_ptr(),
+            level_count: levels_d2.len(),
+        },
+        // Domain 3: Big (CPU 7)
+        PowerDomainConfigFfi {
+            domain_id: 3,
+            cpu_mask: 0x80,
+            levels: levels_d3.as_ptr(),
+            level_count: levels_d3.len(),
+        },
+    ];
+
+    if let Err(status) = power_management_register_domains(&domain_configs) {
+        dprintf!(CRITICAL, "POWER: Failed to register iris power domains: {}\n", status.into_raw());
+        return;
     }
 
     dprintf!(INFO, "POWER: Registered iris power domains\n");
+
+    // When boot boosting is enabled, set default boot performance limits matching boot OPPs to
+    // ensure responsive boot performance:
+    // - Domain 0 (Little, CPUs 0-1): Boot OPP 8 (1.632 GHz) -> min rate 0, max rate 109
+    // - Domain 1 (Medium 1, CPUs 2-4): Boot OPP 11 (1.785 GHz) -> min rate 0, max rate 412
+    // - Domain 2 (Medium 2, CPUs 5-6): Boot OPP 11 (1.785 GHz) -> min rate 0, max rate 412
+    // - Domain 3 (Big, CPU 7): Boot OPP 10 (2.073 GHz) -> min rate 0, max rate 549
+    if power_management_boot_boost_enabled() {
+        if let Err(status) = power_management_set_rate_limits(0x03, 0, 109) {
+            dprintf!(
+                CRITICAL,
+                "POWER: Failed to set iris domain 0 boot performance limits: {}\n",
+                status.into_raw()
+            );
+        }
+        if let Err(status) = power_management_set_rate_limits(0x1c, 0, 412) {
+            dprintf!(
+                CRITICAL,
+                "POWER: Failed to set iris domain 1 boot performance limits: {}\n",
+                status.into_raw()
+            );
+        }
+        if let Err(status) = power_management_set_rate_limits(0x60, 0, 412) {
+            dprintf!(
+                CRITICAL,
+                "POWER: Failed to set iris domain 2 boot performance limits: {}\n",
+                status.into_raw()
+            );
+        }
+        if let Err(status) = power_management_set_rate_limits(0x80, 0, 549) {
+            dprintf!(
+                CRITICAL,
+                "POWER: Failed to set iris domain 3 boot performance limits: {}\n",
+                status.into_raw()
+            );
+        }
+    }
 }
 
 /// In-kernel unit tests for the Iris power driver.
