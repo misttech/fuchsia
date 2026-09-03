@@ -763,12 +763,34 @@ kernel_bindgen_crate("vm-page-list-bindings") {
   edition = "2024"
   notice_year = 2026
   function_allowlist = [
+    "cpp_vm_page_list_btree_clear",
+    "cpp_vm_page_list_btree_const_cursor_init",
+    "cpp_vm_page_list_btree_const_cursor_next",
+    "cpp_vm_page_list_btree_cursor_init",
+    "cpp_vm_page_list_btree_cursor_next",
+    "cpp_vm_page_list_btree_destroy",
+    "cpp_vm_page_list_btree_erase_at",
+    "cpp_vm_page_list_btree_find",
+    "cpp_vm_page_list_btree_find_const",
+    "cpp_vm_page_list_btree_find_or_allocate",
+    "cpp_vm_page_list_btree_init",
+    "cpp_vm_page_list_btree_is_empty",
     "cpp_vm_page_splice_list_construct",
     "cpp_vm_page_splice_list_destroy",
     "cpp_vm_page_splice_list_is_processed",
   ]
-  type_allowlist = [ "VmPageSpliceList" ]
-  opaque_types = [ "VmPageSpliceList" ]
+  type_allowlist = [
+    "VmPageListBtree",
+    "VmPageListBtreeConstCursor",
+    "VmPageListBtreeCursor",
+    "VmPageSpliceList",
+  ]
+  opaque_types = [
+    "VmPageListBtree",
+    "VmPageListBtreeConstCursor",
+    "VmPageListBtreeCursor",
+    "VmPageSpliceList",
+  ]
   function_blocklist = [ "VmPageSpliceList_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   raw_lines = [ "#![no_std]" ]
