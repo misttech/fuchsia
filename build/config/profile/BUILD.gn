@@ -15,6 +15,34 @@ _coverage_c_family_flags = [
   "-fcoverage-mapping",
 ]
 
+# File extensions of the supported filetypes should match:
+# https://gn.googlesource.com/gn/+/dfcbc6fed0a8352696f92d67ccad54048ad182b3/src/gn/source_file.cc#24
+_c_family_patterns = [
+  "*.c",
+  "*.cc",
+  "*.cpp",
+  "*.cxx",
+  "*.c++",
+  "*.h",
+  "*.hh",
+  "*.hpp",
+  "*.hxx",
+  "*.inc",
+  "*.ipp",
+  "*.inl",
+  "*.def",
+]
+_rust_patterns = [ "*.rs" ]
+
+# In CI, profile_source_files is the default ["//*"] (all checked-in sources).
+# In CQ, it is passed via profile_source_files GN arg by infra.
+_has_c_files =
+    filter_include(profile_source_files, _c_family_patterns) != [] ||
+    profile_source_files == [ "//*" ] || profile_source_files_list_files != []
+
+_has_rust_files = filter_include(profile_source_files, _rust_patterns) != [] ||
+                  profile_source_files == [ "//*" ]
+
 _profile_source_files_lines = []
 foreach(file, dont_profile_source_files) {
   file = rebase_path(file, root_build_dir)
@@ -96,41 +124,49 @@ group("runtime-deps") {
 variant("coverage") {
   configs = [ ":variant-libprefix" ]
 
-  # TODO(https://fxbug.dev/414673148): In the current experiment, Rust coverage
-  # is enabled alongside C/C++ in the unified coverage variant. The long-term
-  # plan is to remove the coverage-rust variant and fold its implementation
-  # directly into this variant.
-  configs += [ ":coverage-rust" ]
+  # Only instrument C/C++ when C-family files are targeted.
+  # On Rust only CLs (*.rs), this is skipped.
+  if (_has_c_files) {
+    deps = [ ":runtime-deps" ]
 
-  deps = [ ":runtime-deps" ]
+    c_family_flags = _coverage_c_family_flags
+    inputs = _coverage_inputs
 
-  c_family_flags = _coverage_c_family_flags
-  inputs = _coverage_inputs
-
-  cflags = [
-    # Enable binary profile correlation.
-    "-mllvm",
-    "-profile-correlate=binary",
-
-    # TODO(https://fxbug.dev/551939010): Re-enable single-byte coverage.
-    # "-mllvm",
-    # "-enable-single-byte-coverage=true",
-  ]
-
-  # Enable runtime counter relocation in Linux.
-  if (is_linux) {
-    cflags += [
+    cflags = [
+      # Enable binary profile correlation.
       "-mllvm",
-      "-runtime-counter-relocation",
+      "-profile-correlate=binary",
+
+      # TODO(https://fxbug.dev/551939010): Re-enable single-byte coverage.
+      # "-mllvm",
+      # "-enable-single-byte-coverage=true",
     ]
+
+    # Enable runtime counter relocation in Linux.
+    if (is_linux) {
+      cflags += [
+        "-mllvm",
+        "-runtime-counter-relocation",
+      ]
+    }
+
+    # Enable coverage from system headers in Fuchsia.
+    if (is_fuchsia) {
+      cflags += [
+        "-mllvm",
+        "-system-headers-coverage",
+      ]
+    }
   }
 
-  # Enable coverage from system headers in Fuchsia.
-  if (is_fuchsia) {
-    cflags += [
-      "-mllvm",
-      "-system-headers-coverage",
-    ]
+  # Only instrument Rust when Rust files are targeted.
+  # On C++ only CLs (*.c, *.cc, *.cpp, *.h), this is skipped.
+  if (_has_rust_files) {
+    # TODO(https://fxbug.dev/414673148): In the current experiment, Rust coverage
+    # is enabled alongside C/C++ in the unified coverage variant. The long-term
+    # plan is to remove the coverage-rust variant and fold its implementation
+    # directly into this variant.
+    configs += [ ":coverage-rust" ]
   }
 }
 
