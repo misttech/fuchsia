@@ -780,8 +780,8 @@ mod tests {
                 voltage_mv: 0,
             }; zbi::KERNEL_DRIVER_CPU_ENERGY_MODEL_MAX_OPPS as usize],
         };
-        for i in 0..24 {
-            domain.opps[i] = zbi::CpuEnergyModelOpp {
+        for (i, opp) in domain.opps.iter_mut().enumerate().take(24) {
+            *opp = zbi::CpuEnergyModelOpp {
                 frequency_khz: ((i + 1) * 100_000) as u32,
                 capacity: ((i + 1) * 100) as u32,
                 power_uw: ((i + 1) * 50) as u32,
