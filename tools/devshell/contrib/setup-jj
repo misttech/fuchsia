@@ -16,6 +16,29 @@ if ! command -v jj &> /dev/null; then
   exit 1
 fi
 
+ref_format="$(git -C "$FUCHSIA_DIR" rev-parse --show-ref-format 2>/dev/null || git -C "$FUCHSIA_DIR" config --get extensions.refstorage 2>/dev/null || echo "files")"
+if [[ "$ref_format" == "reftable" ]]; then
+  fx-error "The git repository in $FUCHSIA_DIR is using the 'reftable' ref storage format."
+  fx-error "jj does not currently support git reftables (see https://github.com/jj-vcs/jj/issues/9358)."
+  fx-error ""
+  if [[ ! -d "$FUCHSIA_DIR/.jj" ]]; then
+    fx-error "Before initializing jj, you must migrate this checkout to the 'files' format:"
+    fx-error "  git -C \"$FUCHSIA_DIR\" refs migrate --ref-format files"
+    fx-error ""
+    fx-error "After migrating, re-run 'fx setup-jj'."
+  else
+    fx-error "An existing .jj directory was detected in a reftable repository."
+    fx-error "jj cannot read reftables and may have written conflicting files into .git/refs/."
+    fx-error "Migrating to the 'files' format ('git refs migrate --ref-format files') may fail"
+    fx-error "unless conflicting jj refs in .git/ are cleaned up. Be aware that removing or"
+    fx-error "resetting .jj will lose uncommitted jj state, so ensure any work is backed up."
+  fi
+  fx-error ""
+  fx-error "Tip: To prevent future clones from defaulting to reftables, run:"
+  fx-error "  git config --global init.defaultRefFormat files"
+  exit 1
+fi
+
 if [[ ! -d "$FUCHSIA_DIR/.jj" ]]; then
   fx-info "Initializing jj in $FUCHSIA_DIR..."
   if ! jj git init --colocate "$FUCHSIA_DIR"; then
@@ -34,13 +57,13 @@ fi
 # When the migration happens there may be some intermittent breakage where
 # users may need to re-run this script.
 JJ_CONFIG_FILE=$(jj config path --repo)
-JJ_CONFIG_DIR=$(dirname JJ_CONFIG_FILE)
+JJ_CONFIG_DIR=$(dirname "$JJ_CONFIG_FILE")
 mkdir -p "$JJ_CONFIG_DIR"
 
 fx-info "Linking tools/jj/config.toml to $JJ_CONFIG_FILE..."
 # Use a relative (-r) symbolic (-s) link so that if FUCHSIA_DIR ever gets
 # moved the link doesnt break. Use -f to force creation.
-if ! (ln -sfr $FUCHSIA_DIR/tools/jj/config.toml $JJ_CONFIG_FILE); then
+if ! (ln -sfr "$FUCHSIA_DIR/tools/jj/config.toml" "$JJ_CONFIG_FILE"); then
   fx-error "Failed to create jj config symlink."
   exit 1
 fi
