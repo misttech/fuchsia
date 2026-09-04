@@ -55,57 +55,6 @@ func (d *Distribution) NewInstance(ctx context.Context, fvd *fvdpb.VirtualDevice
 	return &Instance{i, d.t}
 }
 
-// InstanceBuilder wraps emulator.InstanceBuilder for testing.
-type InstanceBuilder struct {
-	b *emulator.InstanceBuilder
-	t *testing.T
-}
-
-// InstanceBuilder returns a builder for creating an emulator instance with custom configuration.
-func (d *Distribution) InstanceBuilder(ctx context.Context, fvd *fvdpb.VirtualDevice) *InstanceBuilder {
-	return &InstanceBuilder{
-		b: d.d.InstanceBuilder(ctx, fvd),
-		t: d.t,
-	}
-}
-
-// WithArgs appends extra command-line arguments to the emulator invocation.
-func (b *InstanceBuilder) WithArgs(args ...string) *InstanceBuilder {
-	b.b.WithArgs(args...)
-	return b
-}
-
-// WithAuthorizedKeys configures the emulator to update the virtual device's initrd
-// to contain the specified authorized keys using the provided zbi binary.
-func (b *InstanceBuilder) WithAuthorizedKeys(hostPathZbiBinary, hostPathAuthorizedKeys string) *InstanceBuilder {
-	b.b.WithAuthorizedKeys(hostPathZbiBinary, hostPathAuthorizedKeys)
-	return b
-}
-
-// WithImageOverride configures the emulator instance to override an image file.
-func (b *InstanceBuilder) WithImageOverride(name, typ, path string) *InstanceBuilder {
-	b.b.WithImageOverride(name, typ, path)
-	return b
-}
-
-// Build builds and returns the Instance, failing the test on error.
-func (b *InstanceBuilder) Build() *Instance {
-	b.t.Helper()
-	i, err := b.b.Build()
-	if err != nil {
-		b.t.Fatal(err)
-	}
-	return &Instance{i, b.t}
-}
-
-// Start builds and starts the emulator instance, failing the test on error.
-func (b *InstanceBuilder) Start() *Instance {
-	b.t.Helper()
-	i := b.Build()
-	i.Start()
-	return i
-}
-
 // RunNonInteractive reimplements emulator.Distribution.
 func (d *Distribution) RunNonInteractive(toRun, hostPathExtractLogsBinary, hostPathZbiBinary string, fvd *fvdpb.VirtualDevice) (string, string) {
 	log, logerr, err := d.d.RunNonInteractive(toRun, hostPathExtractLogsBinary, hostPathZbiBinary, fvd)
@@ -134,13 +83,6 @@ func (d *Distribution) ResizeRawImage(imageName, hostPathResizeBinary string, is
 		d.t.Fatal(err)
 	}
 	return
-}
-
-// OverrideImage wraps emulator.Distribution.OverrideImage.
-func (d *Distribution) OverrideImage(name, typ, path string) {
-	if err := d.d.OverrideImage(name, typ, path); err != nil {
-		d.t.Fatal(err)
-	}
 }
 
 // FindImageByName wraps emulator.Distribution.FindImageByName.

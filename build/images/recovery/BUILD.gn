@@ -4,6 +4,7 @@
 
 import("//build/assembly/assembled_system.gni")
 import("//build/assembly/product_assembly_configuration.gni")
+import("//build/assembly/product_bundle.gni")
 import("//build/images/args.gni")
 import("//build/images/vbmeta.gni")
 import("//build/testing/host_test_data.gni")
@@ -75,5 +76,12 @@ if (is_fuchsia) {
 
     # The following are set to match the board's configuration
     generate_vbmeta = use_vbmeta
+  }
+
+  product_bundle("recovery-fdr-product-bundle") {
+    testonly = true
+    name = "recovery-fdr-product-bundle"
+    system_a = "$target_out_dir/recovery-fdr"
+    deps = [ ":recovery-fdr" ]
   }
 }

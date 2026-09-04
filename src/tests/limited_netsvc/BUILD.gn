@@ -4,7 +4,6 @@
 
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
-import("//build/images/paths.gni")
 import("//build/testing/host_test_data.gni")
 
 group("tests") {
@@ -66,16 +65,12 @@ if (is_linux) {
   # TODO(scottmg): Colocate this test with netsvc when it moves out of //zircon.
   go_test("limited_netsvc_tests") {
     embed = [ ":lib" ]
-    _assembled_system_label =
-        "image:limited_netsvc_assembled_system($default_toolchain)"
-    _out_dir = get_label_info(_assembled_system_label, "target_out_dir")
+
+    _pb_label = "image:limited_netsvc_product_bundle($default_toolchain)"
+    _out_dir = get_label_info(_pb_label, "target_out_dir")
     args = [
-      "-zbi-path",
-      rebase_path(
-          "$_out_dir/limited_netsvc_assembled_system_gen/limited_netsvc_assembled_system.zbi",
-          root_build_dir),
       "--emulator.pb-path",
-      rebase_path(files.product_bundle_dir, root_build_dir),
+      rebase_path("$_out_dir/limited_netsvc_product_bundle", root_build_dir),
     ]
     deps = [
       "//tools/net/netutil",

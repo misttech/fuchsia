@@ -18,9 +18,10 @@ Declare your product bundle in GN.
 ```gn
 # //examples/assembly/test_product_bundle/BUILD.gn
 import("//build/assembly/test_product_bundle.gni")
+import("//boards/default_for_emulator.gni")
 
 test_product_bundle("test_product.arm64") {
-  board_config = "//boards/arm64"
+  board_config = default_board_for_emulator
   platform = {
     build_type = "eng"
   }

@@ -4,7 +4,6 @@
 
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
-import("//build/images/paths.gni")
 import("//build/testing/host_test_data.gni")
 
 group("tests") {
@@ -21,14 +20,14 @@ group("tests") {
 }
 
 if (is_linux) {
-  host_test_data("recovery_test_data") {
-    _out_dir = get_label_info(
-            "//build/images/recovery:recovery-fdr($target_toolchain)",
-            "target_out_dir")
-    sources = [ "${_out_dir}/recovery-fdr_gen/fuchsia.zbi" ]
-    outputs =
-        [ "$root_out_dir/test_data/recovery_simulator_tests/recovery-fdr.zbi" ]
-    deps = [ "//build/images/recovery:recovery-fdr($target_toolchain)" ]
+  _pb_target =
+      "//build/images/recovery:recovery-fdr-product-bundle($target_toolchain)"
+  _pb_out_dir = get_label_info(_pb_target, "target_out_dir")
+  _pb_path = "${_pb_out_dir}/recovery-fdr-product-bundle"
+
+  host_test_data("recovery_fdr_test_data") {
+    sources = [ _pb_path ]
+    deps = [ _pb_target ]
   }
 
   # These take >5m (the infra timeout) if they're all in one binary, so they
@@ -44,17 +43,11 @@ if (is_linux) {
 
     go_test("recovery_simulator_${split_name}") {
       embed = [ ":$split_name" ]
-      _outputs = get_target_outputs(":recovery_test_data")
       args = [
-        "-zbi-path",
-        rebase_path(_outputs[0], root_build_dir),
         "--emulator.pb-path",
-        rebase_path(files.product_bundle_dir, root_build_dir),
+        rebase_path(_pb_path, root_build_dir),
       ]
-      non_go_deps = [
-        ":recovery_test_data",
-        "//build/images/fuchsia:default_product_bundle_for_emulator.go",
-      ]
+      non_go_deps = [ ":recovery_fdr_test_data" ]
     }
   }
 

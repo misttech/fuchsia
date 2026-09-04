@@ -6,7 +6,6 @@ package uart_interrupt_test
 
 import (
 	"context"
-	"flag"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -26,20 +25,6 @@ const (
 
 	zbiName string = "uart-interrupt-test-zbi.eng"
 )
-
-var zbiPathFlag = flag.String("zbi-path", "", "Path to the custom ZBI")
-
-func getZBIPath(t *testing.T) string {
-	t.Helper()
-	if *zbiPathFlag == "" {
-		t.Fatal("-zbi-path flag is required")
-	}
-	absZbiPath, err := filepath.Abs(*zbiPathFlag)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return absZbiPath
-}
 
 func getCwd(t *testing.T) string {
 	ex, err := os.Executable()
@@ -69,7 +54,6 @@ func TestLegacyUartSmallMessage(t *testing.T) {
 	t.Logf("msg=%v", msg)
 	cwd := getCwd(t)
 	distro := emulatortest.UnpackFrom(t, filepath.Join(cwd, "test_data"), emulator.DistributionParams{Emulator: emulator.Qemu})
-	distro.OverrideImage(zbiName, "zbi", getZBIPath(t))
 	arch := distro.TargetCPU()
 	t.Log(arch)
 
@@ -79,7 +63,6 @@ func TestLegacyUartSmallMessage(t *testing.T) {
 	}
 
 	device := emulator.DefaultVirtualDevice(string(arch))
-	device.Initrd = zbiName
 	device.KernelArgs = append(device.KernelArgs, "uart_test.message_size=128", "kernel.enable-debugging-syscalls=true", "kernel.enable-serial-syscalls=true")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -101,7 +84,6 @@ func TestLegacyUartLargeMessage(t *testing.T) {
 	t.Logf("msg=%v", msg)
 	cwd := getCwd(t)
 	distro := emulatortest.UnpackFrom(t, filepath.Join(cwd, "test_data"), emulator.DistributionParams{Emulator: emulator.Qemu})
-	distro.OverrideImage(zbiName, "zbi", getZBIPath(t))
 	arch := distro.TargetCPU()
 
 	// TODO(https://fxbug.dev/42079799): Disabled for legacy x86 uart driver.
@@ -110,7 +92,6 @@ func TestLegacyUartLargeMessage(t *testing.T) {
 	}
 
 	device := emulator.DefaultVirtualDevice(string(arch))
-	device.Initrd = zbiName
 	device.KernelArgs = append(device.KernelArgs, "uart_test.message_size=2048", "kernel.enable-debugging-syscalls=true", "kernel.enable-serial-syscalls=true")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -132,10 +113,8 @@ func TestMigratedUartSmallMessage(t *testing.T) {
 	t.Logf("msg=%v", msg)
 	cwd := getCwd(t)
 	distro := emulatortest.UnpackFrom(t, filepath.Join(cwd, "test_data"), emulator.DistributionParams{Emulator: emulator.Qemu})
-	distro.OverrideImage(zbiName, "zbi", getZBIPath(t))
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
-	device.Initrd = zbiName
 	device.KernelArgs = append(device.KernelArgs, "uart_test.message_size=128", "kernel.enable-debugging-syscalls=true", "kernel.enable-serial-syscalls=true", "kernel.experimental.serial_migration=true")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -157,10 +136,8 @@ func TestMigratedUartLargeMessage(t *testing.T) {
 	t.Logf("msg=%v", msg)
 	cwd := getCwd(t)
 	distro := emulatortest.UnpackFrom(t, filepath.Join(cwd, "test_data"), emulator.DistributionParams{Emulator: emulator.Qemu})
-	distro.OverrideImage(zbiName, "zbi", getZBIPath(t))
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))
-	device.Initrd = zbiName
 	device.KernelArgs = append(device.KernelArgs, "uart_test.message_size=2048", "kernel.enable-debugging-syscalls=true", "kernel.enable-serial-syscalls=true", "kernel.experimental.serial_migration=true")
 
 	ctx, cancel := context.WithCancel(context.Background())

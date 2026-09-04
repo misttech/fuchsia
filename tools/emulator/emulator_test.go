@@ -7,7 +7,6 @@ package emulator
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,7 +16,6 @@ import (
 	"testing"
 
 	"go.fuchsia.dev/fuchsia/tools/lib/productbundle"
-	"go.fuchsia.dev/fuchsia/tools/virtual_device"
 )
 
 func TestCheckForLogMessage(t *testing.T) {
@@ -142,42 +140,6 @@ func TestFindImageByName(t *testing.T) {
 	expectedPath = filepath.Join(tmpDir, "zircon-r.zbi")
 	if img.Path != expectedPath {
 		t.Errorf("expected path %q, got %q", expectedPath, img.Path)
-	}
-}
-
-func TestInstanceBuilder(t *testing.T) {
-	dist := &Distribution{}
-
-	// Nil FVD should return error.
-	b := dist.InstanceBuilder(context.Background(), nil)
-	if _, err := b.Build(); err == nil {
-		t.Error("expected error for nil fvd, got nil")
-	}
-
-	// Mismatched ZBI binary / auth keys should return error.
-	fvd := DefaultVirtualDevice("x64")
-	b = dist.InstanceBuilder(context.Background(), fvd).WithAuthorizedKeys("zbi_bin", "")
-	if _, err := b.Build(); err == nil {
-		t.Error("expected error for mismatched hostPathAuthorizedKeys, got nil")
-	}
-
-	// Nil distro should return error.
-	bNilDistro := (&InstanceBuilder{}).WithArgs("-device", "edu")
-	if _, err := bNilDistro.Build(); err == nil {
-		t.Error("expected error for nil distro, got nil")
-	}
-
-	// WithArgs should append extra args correctly.
-	b = dist.InstanceBuilder(context.Background(), fvd).WithArgs("-device", "edu")
-	if len(b.extraArgs) != 2 || b.extraArgs[0] != "-device" || b.extraArgs[1] != "edu" {
-		t.Errorf("expected extraArgs [-device, edu], got %v", b.extraArgs)
-	}
-
-	// WithImageOverride should set image override correctly.
-	b = dist.InstanceBuilder(context.Background(), fvd).WithImageOverride("zircon-r", "zbi", "/tmp/zircon-r.zbi")
-	key := virtual_device.ImageKey{Name: "zircon-r", Type: "zbi"}
-	if b.imageOverrides[key] != "/tmp/zircon-r.zbi" {
-		t.Errorf("expected imageOverrides[%v] = /tmp/zircon-r.zbi, got %v", key, b.imageOverrides[key])
 	}
 }
 

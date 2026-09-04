@@ -12,7 +12,6 @@ bazel_assembly_cache_packages_list =
 if (is_fuchsia) {
   import("//build/assembly/packages_from_product_assembler.gni")
   import("//build/bazel/assembly/bazel_product_bundle.gni")
-  import("//build/images/paths.gni")
 
   bazel_product_bundle("bazel_pb") {
     testonly = true

@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//boards/default_for_emulator.gni")
 import("//build/assembly/product_bundle_test_group.gni")
 import("//build/assembly/test_product_bundle.gni")
 import("//build/bazel/assembly/bazel_test_product_bundle.gni")
@@ -17,7 +18,7 @@ product_bundle_test_group("test_product_bundle") {
 ## Option 1: Build it in GN
 
 test_product_bundle("test_product.arm64") {
-  board_config = "//boards/arm64"
+  board_config = default_board_for_emulator
   platform = {
     build_type = "eng"
   }

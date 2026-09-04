@@ -24,15 +24,11 @@ type QemuInstance struct {
 type QemuInstanceArgs struct {
 	// The nodename that should be assigned to the QEMU instance.
 	Nodename string
-	// The name of the initrd from images.json that should be used.
-	Initrd string
 	// The root_out_dir for the host toolchain, e.g. /.../out/default/host_x64
 	HostX64Path string
 	// The network devices that should be added to the QEMU instance, i.e. any tap interfaces
 	// that it should be using.
 	NetworkDevices []*fvdpb.Netdev
-	// The path to the custom ZBI image.
-	ZBIPath string
 	// The path to the custom product bundle. Required if the -emulator.pb-path
 	// command-line flag is not passed to the executable.
 	ProductBundlePath string
@@ -64,20 +60,6 @@ func NewQemuInstance(
 		return nil, fmt.Errorf("couldn't unpack emulator distribution: %w", err)
 	}
 
-	if args.ZBIPath != "" {
-		absZbiPath, err := filepath.Abs(args.ZBIPath)
-		if err != nil {
-			return nil, err
-		}
-		if err := distro.OverrideImage(args.Initrd, "zbi", absZbiPath); err != nil {
-			return nil, fmt.Errorf("couldn't register custom initrd image: %w", err)
-		}
-	} else if args.Initrd != "" {
-		if _, err := distro.FindImageByName(args.Initrd, "zbi"); err != nil {
-			return nil, fmt.Errorf("initrd %q not found in distro and no ZbiPath provided: %w", args.Initrd, err)
-		}
-	}
-
 	// We don't need the distro after we've created and started the emulator Instance.
 	defer func() {
 		err = errors.Join(err, distro.Delete())
@@ -89,9 +71,6 @@ func NewQemuInstance(
 	}
 
 	device := emulator.DefaultVirtualDevice(string(arch))
-	if args.Initrd != "" {
-		device.Initrd = args.Initrd
-	}
 	device.KernelArgs = append(device.KernelArgs,
 		fmt.Sprintf("zircon.nodename=%s", args.Nodename))
 	device.Hw.NetworkDevices = args.NetworkDevices

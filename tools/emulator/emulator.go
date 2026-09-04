@@ -84,12 +84,11 @@ func untar(dst string, src string) error {
 //
 // Delete must be called once done with it.
 type Distribution struct {
-	testDataDir    string
-	unpackedPath   string
-	Emulator       Emulator
-	pbPath         string
-	pb             *productbundle.ProductBundle
-	imageOverrides virtual_device.ImageOverrides
+	testDataDir  string
+	unpackedPath string
+	Emulator     Emulator
+	pbPath       string
+	pb           *productbundle.ProductBundle
 }
 
 // Arch is the architecture to emulate.
@@ -188,9 +187,8 @@ func UnpackFrom(path string, distroParams DistributionParams) (*Distribution, er
 		return nil, err
 	}
 	d := &Distribution{
-		testDataDir:    path,
-		Emulator:       distroParams.Emulator,
-		imageOverrides: make(virtual_device.ImageOverrides),
+		testDataDir: path,
+		Emulator:    distroParams.Emulator,
 	}
 
 	if (distroParams.ProductBundlePath == "") == (*pbPathFlag == "") {
@@ -291,13 +289,13 @@ func (d *Distribution) buildCommandLine(
 	return b.Build()
 }
 
-// NewInstance creates an instance of the emulator, passing through ctx to the
-// underlying exec.Cmd.
+// NewInstance creates an instance of the emulator with the given parameters,
+// passing through ctx to the underlying exec.Cmd.
 func (d *Distribution) NewInstance(
 	ctx context.Context,
 	fvd *fvdpb.VirtualDevice,
 ) (*Instance, error) {
-	return d.InstanceBuilder(ctx, fvd).Build()
+	return d.NewInstanceWithAuthorizedKeys(ctx, fvd, "", "")
 }
 
 // NewInstanceWithAuthorizedKeys creates an instance of the emulator, passing through ctx to the
@@ -308,89 +306,26 @@ func (d *Distribution) NewInstanceWithAuthorizedKeys(
 	fvd *fvdpb.VirtualDevice,
 	hostPathZbiBinary, hostPathAuthorizedKeys string,
 ) (*Instance, error) {
-	return d.InstanceBuilder(ctx, fvd).WithAuthorizedKeys(hostPathZbiBinary, hostPathAuthorizedKeys).Build()
-}
-
-// InstanceBuilder constructs an Instance with custom options.
-type InstanceBuilder struct {
-	distro                 *Distribution
-	ctx                    context.Context
-	fvd                    *fvdpb.VirtualDevice
-	extraArgs              []string
-	hostPathZbiBinary      string
-	hostPathAuthorizedKeys string
-	imageOverrides         virtual_device.ImageOverrides
-}
-
-// InstanceBuilder returns a builder for creating an emulator instance with custom configuration.
-func (d *Distribution) InstanceBuilder(ctx context.Context, fvd *fvdpb.VirtualDevice) *InstanceBuilder {
-	return &InstanceBuilder{
-		distro: d,
-		ctx:    ctx,
-		fvd:    fvd,
-	}
-}
-
-// WithArgs appends extra command-line arguments to the emulator invocation.
-func (b *InstanceBuilder) WithArgs(args ...string) *InstanceBuilder {
-	b.extraArgs = append(b.extraArgs, args...)
-	return b
-}
-
-// WithAuthorizedKeys configures the emulator to update the virtual device's initrd
-// to contain the specified authorized keys using the provided zbi binary.
-func (b *InstanceBuilder) WithAuthorizedKeys(hostPathZbiBinary, hostPathAuthorizedKeys string) *InstanceBuilder {
-	b.hostPathZbiBinary = hostPathZbiBinary
-	b.hostPathAuthorizedKeys = hostPathAuthorizedKeys
-	return b
-}
-
-// WithImageOverride configures the emulator to override an image file.
-func (b *InstanceBuilder) WithImageOverride(name, typ, path string) *InstanceBuilder {
-	if b.imageOverrides == nil {
-		b.imageOverrides = make(virtual_device.ImageOverrides)
-	}
-	b.imageOverrides[virtual_device.ImageKey{Name: name, Type: typ}] = path
-	return b
-}
-
-// Build creates and returns the configured emulator Instance without starting it.
-func (b *InstanceBuilder) Build() (*Instance, error) {
-	if b.distro == nil {
-		return nil, fmt.Errorf("distribution must not be nil")
-	}
-	if b.fvd == nil || b.fvd.Hw == nil {
-		return nil, fmt.Errorf("virtual device and hardware configuration must not be nil")
-	}
-	if (b.hostPathZbiBinary != "") != (b.hostPathAuthorizedKeys != "") {
-		return nil, fmt.Errorf("both hostPathZbiBinary and hostPathAuthorizedKeys must be specified together")
-	}
-	pb, err := b.distro.loadProductBundle()
+	pb, err := d.loadProductBundle()
 	if err != nil {
 		return nil, err
 	}
 
 	overrides := make(virtual_device.ImageOverrides)
-	for k, v := range b.distro.imageOverrides {
-		overrides[k] = v
-	}
-	for k, v := range b.imageOverrides {
-		overrides[k] = v
-	}
 
-	if b.hostPathZbiBinary != "" && b.hostPathAuthorizedKeys != "" {
-		// This will get cleaned up by b.distro.Delete().
-		root, err := os.MkdirTemp(b.distro.unpackedPath, "zbi-tmp-dir-*")
+	if hostPathZbiBinary != "" && hostPathAuthorizedKeys != "" {
+		// This will get cleaned up by d.Delete().
+		root, err := os.MkdirTemp(d.unpackedPath, "zbi-tmp-dir-*")
 		if err != nil {
 			return nil, fmt.Errorf(
 				"error making temp directory in %s: %w",
-				b.distro.unpackedPath,
+				d.unpackedPath,
 				err,
 			)
 		}
 
 		newZBIPath := filepath.Join(root, "a.zbi")
-		oldZBIPath, err := virtual_device.ResolveImage(pb, overrides, b.fvd.Initrd, "zbi")
+		oldZBIPath, err := virtual_device.ResolveImage(pb, nil, fvd.Initrd, "zbi")
 		if err != nil {
 			if rmErr := os.RemoveAll(root); rmErr != nil {
 				log.Println(rmErr)
@@ -398,33 +333,27 @@ func (b *InstanceBuilder) Build() (*Instance, error) {
 			return nil, err
 		}
 
-		if err := runZbi(b.hostPathZbiBinary, oldZBIPath, newZBIPath, []string{
+		if err := runZbi(hostPathZbiBinary, oldZBIPath, newZBIPath, []string{
 			"--entry",
-			fmt.Sprintf("data/ssh/authorized_keys=%s", b.hostPathAuthorizedKeys),
+			fmt.Sprintf("data/ssh/authorized_keys=%s", hostPathAuthorizedKeys),
 		}); err != nil {
 			if rmErr := os.RemoveAll(root); rmErr != nil {
 				log.Println(rmErr)
 			}
 			return nil, err
 		}
-		key := virtual_device.ImageKey{Name: b.fvd.Initrd, Type: "zbi"}
+		key := virtual_device.ImageKey{Name: fvd.Initrd, Type: "zbi"}
 		overrides[key] = newZBIPath
 	}
 
-	args, err := b.distro.buildCommandLine(b.fvd, pb, overrides)
+	args, err := d.buildCommandLine(fvd, pb, overrides)
 	if err != nil {
 		return nil, err
-	}
-	args = append(args, b.extraArgs...)
-
-	ctx := b.ctx
-	if ctx == nil {
-		ctx = context.Background()
 	}
 
 	i := &Instance{
 		cmd:            exec.CommandContext(ctx, args[0], args[1:]...),
-		emulator:       b.distro.Emulator,
+		emulator:       d.Emulator,
 		logDestination: os.Stdout,
 	}
 	// QEMU looks in the cwd for some specially named files, in particular
@@ -520,24 +449,7 @@ func (d *Distribution) ResizeRawImage(imageName, hostPathResizeBinary string, is
 	return resizedPath, err
 }
 
-// OverrideImage overrides an image file in the distribution.
-// This is useful for tests that need to boot custom ZBIs or disk images
-// that are not part of the product bundle, or override existing ones.
-func (d *Distribution) OverrideImage(name, typ, path string) error {
-	key := virtual_device.ImageKey{Name: name, Type: typ}
-	d.imageOverrides[key] = path
-	return nil
-}
-
 func (d *Distribution) FindImageByName(name, typ string) (*productbundle.SystemImage, error) {
-	key := virtual_device.ImageKey{Name: name, Type: typ}
-	if path, ok := d.imageOverrides[key]; ok {
-		return &productbundle.SystemImage{
-			Name: name,
-			Type: typ,
-			Path: path,
-		}, nil
-	}
 	pb, err := d.loadProductBundle()
 	if err != nil {
 		return nil, err
@@ -632,13 +544,8 @@ func (d *Distribution) runNonInteractive(
 		return "", "", err
 	}
 
-	overrides := make(virtual_device.ImageOverrides)
-	for k, v := range d.imageOverrides {
-		overrides[k] = v
-	}
-
 	newZBIPath := filepath.Join(root, "a.zbi")
-	oldZBIPath, err := virtual_device.ResolveImage(pb, overrides, fvd.Initrd, "zbi")
+	oldZBIPath, err := virtual_device.ResolveImage(pb, nil, fvd.Initrd, "zbi")
 	if err != nil {
 		return "", "", err
 	}
@@ -646,8 +553,9 @@ func (d *Distribution) runNonInteractive(
 	if err := runZbi(hostPathZbiBinary, oldZBIPath, newZBIPath, []string{"-e", "runcmds=" + runcmds}); err != nil {
 		return "", "", err
 	}
-	key := virtual_device.ImageKey{Name: fvd.Initrd, Type: "zbi"}
-	overrides[key] = newZBIPath
+	overrides := virtual_device.ImageOverrides{
+		virtual_device.ImageKey{Name: fvd.Initrd, Type: "zbi"}: newZBIPath,
+	}
 
 	fvd.KernelArgs = append(fvd.KernelArgs, "zircon.autorun.boot=/boot/bin/sh+/boot/runcmds")
 
