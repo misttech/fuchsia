@@ -8,15 +8,12 @@ import argparse
 import pathlib
 import re
 import sys
+import tomllib
 
 
 def get_rust_package_paths(fuchsia_dir: pathlib.Path) -> dict[str, str]:
-    sys.path += [str(fuchsia_dir / "third_party/pytoml")]
-    import pytoml as toml
-
-    cargo_toml = toml.parser.load(
-        open(fuchsia_dir / "third_party/rust_crates/Cargo.toml")
-    )
+    with open(fuchsia_dir / "third_party/rust_crates/Cargo.toml", "rb") as f:
+        cargo_toml = tomllib.load(f)
     return {
         k: f'third_party/rust_crates/{v["path"]}'
         for k, v in cargo_toml["patch"]["crates-io"].items()
