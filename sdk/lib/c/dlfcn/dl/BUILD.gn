@@ -60,8 +60,15 @@ source_set("concat-view") {
 
 source_set("tlsdesc-runtime-dynamic") {
   public = [ "tlsdesc-runtime-dynamic.h" ]
-  public_deps = [ "//sdk/lib/ld:headers" ]
-  sources = [ "tlsdesc-runtime-dynamic.S" ]
+  public_deps = [
+    ":diagnostics",
+    "//sdk/lib/ld:headers",
+    "//zircon/system/ulib/fbl",
+  ]
+  sources = [
+    "tlsdesc-runtime-dynamic.S",
+    "tlsdesc-runtime-dynamic.cc",
+  ]
 }
 
 source_set("tls-desc-resolver") {

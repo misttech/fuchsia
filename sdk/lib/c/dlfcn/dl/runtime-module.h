@@ -27,6 +27,7 @@
 namespace dl {
 
 using AbiModule = ld::AbiModule<>;
+using TlsModule = ld::abi::Abi<>::TlsModule;
 using Elf = elfldltl::Elf<>;
 using Soname = elfldltl::Soname<>;
 
@@ -67,7 +68,6 @@ class RuntimeModule : public fbl::DoublyLinkedListable<std::unique_ptr<RuntimeMo
  public:
   using Addr = Elf::Addr;
   using SymbolInfo = elfldltl::SymbolInfo<Elf>;
-  using TlsModule = ld::abi::Abi<>::TlsModule;
   using size_type = Elf::size_type;
 
   // Not copyable, but movable.
@@ -128,19 +128,13 @@ class RuntimeModule : public fbl::DoublyLinkedListable<std::unique_ptr<RuntimeMo
     no_delete_ = true;
     initialized_ = true;
 
-    size_t tls_modid = abi_module_.tls_modid;
-    if (tls_modid > 0) {
-      const size_t idx = tls_modid - 1;
-      tls_module_ = abi.static_tls_modules[idx];
-      static_tls_bias_ = abi.static_tls_offsets[idx];
+    if (abi_module_.tls_modid > 0) {
+      static_tls_bias_ = abi.static_tls_offsets[abi_module_.tls_modid - 1];
     }
   }
 
   constexpr AbiModule& module() { return abi_module_; }
   constexpr const AbiModule& module() const { return abi_module_; }
-
-  constexpr void set_tls_module(TlsModule tls_module) { tls_module_ = tls_module; }
-  constexpr const TlsModule& tls_module() const { return tls_module_; }
 
   size_t vaddr_size() const { return abi_module_.vaddr_end - abi_module_.vaddr_start; }
 
@@ -243,7 +237,6 @@ class RuntimeModule : public fbl::DoublyLinkedListable<std::unique_ptr<RuntimeMo
   // This name matches abi_module_.link_map.name, not abi_module_.soname.
   Soname name_;
   AbiModule abi_module_;
-  TlsModule tls_module_;
 
   Vector<RuntimeModule*> direct_deps_;
   Vector<RuntimeModule*> module_tree_;  // This is a superset of direct_deps_.

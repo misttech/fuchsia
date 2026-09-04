@@ -33,13 +33,9 @@ struct LinkingResult {
   // the RuntimeDynamicLinker::modules_ list.
   ModuleList loaded_modules;
 
-  // The updated max TLS modid: this value is incremented for every new module
-  // that is loaded and defines a TLS variable.  This starts as the max TLS
-  // modid from the RuntimeDynamicLinker when it constructs the new
-  // LinkingSession.  It gets incremented and assigned to each new TLS module
-  // that is loaded as a part of this LinkingSession.  The final new max is
-  // reported back to become the new RuntimeDynamicLinker::max_tls_modid_.
-  size_type max_tls_modid;
+  // ABI information for the modules in the above list with TLS.  Ordered parallel to
+  // loaded_modules, which is also in order of sequentially increasing TLS module ID.
+  Vector<TlsModule> tls_modules;
 };
 
 // The base class holds the state that's independent of the Loader class used.
@@ -50,9 +46,8 @@ class LinkingSessionBase {
 
   // The caller calls Commit() to finalize the LinkingSession after it has
   // loaded and linked all the modules needed for a single dlopen call. This
-  // will transfer ownership of the RuntimeModules created during this session
-  // and provide an updated max_tls_modid in the LinkingResult returned back to
-  // the caller.
+  // will transfer ownership of the RuntimeModules and TlsModules created during
+  // this session in the LinkingResult returned back to the caller.
   LinkingResult Commit() && { return std::move(result_); }
 
  protected:
@@ -66,17 +61,15 @@ class LinkingSessionBase {
   ModuleList& loaded_modules();
 
   size_type max_static_tls_modid() const;
+  size_type max_tls_modid() const;
 
   ModuleList& result_modules() { return result_.loaded_modules; }
 
-  size_type& result_max_tls_modid() { return result_.max_tls_modid; }
-
- private:
   RuntimeDynamicLinker& linker_;
 
-  // New (prospective) "permanent" modules are appended here to parallel new
-  // session_modules_ elements, and result_.max_tls_modid is incremented for
-  // each new PT_TLS segment.  Commit() moves this out of a successful session.
+  // New (prospective) "permanent" modules are appended here to parallel new session_modules_
+  // elements, and TLS modules are appended likewise for each new PT_TLS segment.  Commit() moves
+  // this out of a successful session.
   LinkingResult result_;
 };
 
@@ -137,7 +130,13 @@ class LinkingSession : public LinkingSessionBase {
         return fit::error(true);
       }
 
-      if (auto dep_names = module.Load(diag, *std::move(file), result_max_tls_modid())) {
+      if (auto dep_names =
+              module.Load(diag, *std::move(file), max_tls_modid() + result_.tls_modules.size())) {
+        if (module.tls_module()) {
+          if (!result_.tls_modules.push_back(diag, "TLS module vector", *module.tls_module())) {
+            return fit::error(false);
+          }
+        }
         // Create and enqueue a module for each dependency, skipping
         // dependencies that have already been enqueued. The (parent) module
         // that was just loaded will also store a reference to its dependencies'
@@ -299,7 +298,7 @@ class LinkingSession<Loader>::SessionModule
   // the the ABI module. A vector of Soname objects of the module's DT_NEEDEDs
   // are returned to the caller.
   template <class File>
-  std::optional<Vector<Soname>> Load(Diagnostics& diag, File&& file, size_type& max_tls_modid) {
+  std::optional<Vector<Soname>> Load(Diagnostics& diag, File&& file, size_type max_tls_modid) {
     // Read the file header and program headers into stack buffers and map in
     // the image.  This fills in load_info() as well as the module vaddr bounds
     // and phdrs fields.
@@ -320,7 +319,7 @@ class LinkingSession<Loader>::SessionModule
     }
 
     if (decoded().tls_module_id() > 0) {
-      runtime_module_.set_tls_module(decoded().tls_module());
+      tls_module_ = decoded().tls_module();
     }
 
     // After successfully loading the file, finalize the module's mapping by
@@ -351,6 +350,7 @@ class LinkingSession<Loader>::SessionModule
   bool ProtectRelro(Diagnostics& diag) { return std::move(relro_).Commit(diag); }
 
   RuntimeModule& runtime_module() { return runtime_module_; }
+  const std::optional<TlsModule>& tls_module() const { return tls_module_; }
 
  private:
   // A SessionModule can only be created with SessionModule::Create...).
@@ -363,6 +363,9 @@ class LinkingSession<Loader>::SessionModule
   // its `runtime_module_` will live as long as the file is loaded, in the
   // RuntimeDynamicLinker's `modules_` list.
   RuntimeModule& runtime_module_;
+
+  // The TLS header info for the module.
+  std::optional<TlsModule> tls_module_;
 
   // The relro capability that is provided when the module is decoded and is
   // used to apply relro protections after the module is relocated.

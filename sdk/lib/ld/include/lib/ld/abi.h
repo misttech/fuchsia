@@ -130,6 +130,17 @@ struct Abi {
   // the space and alignment expected by that module's PT_TLS.
   elfldltl::TlsLayout<Elf> static_tls_layout;
 
+  // Maps a dynamic TLS module ID to a 0-based index for dynamic TLS allocations.
+  static constexpr typename Elf::size_type dynamic_tls_index(
+      typename Elf::size_type tls_module_id, typename Elf::size_type max_static_tls_modid) {
+    assert(tls_module_id > max_static_tls_modid);
+    return tls_module_id - max_static_tls_modid - 1;
+  }
+
+  constexpr typename Elf::size_type dynamic_tls_index(typename Elf::size_type tls_module_id) const {
+    return dynamic_tls_index(tls_module_id, static_tls_modules.size());
+  }
+
   // This is the DT_SONAME value representing the ABI declared in this file.
   static constexpr elfldltl::Soname<Elf> kSoname{"ld.so.1"};
 

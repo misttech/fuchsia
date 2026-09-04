@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_DL_TLSDESC_RUNTIME_DYNAMIC_H_
-#define LIB_DL_TLSDESC_RUNTIME_DYNAMIC_H_
+#ifndef LIB_C_DLFCN_DL_TLSDESC_RUNTIME_DYNAMIC_H_
+#define LIB_C_DLFCN_DL_TLSDESC_RUNTIME_DYNAMIC_H_
 
 #include <lib/elfldltl/layout.h>
 #include <lib/ld/tls.h>
@@ -12,15 +12,22 @@
 #include <algorithm>
 #include <cstddef>
 #include <memory>
+#include <span>
 #include <type_traits>
 
 #include <fbl/alloc_checker.h>
 #include <fbl/array.h>
+#include <fbl/intrusive_double_list.h>
+
+#include "diagnostics.h"
 
 namespace [[gnu::visibility("hidden")]] dl {
 
+using Elf = elfldltl::Elf<>;
+using TlsModule = ld::abi::Abi<>::TlsModule;
+
 // The argument to TLSDESC hooks is `const TlsDescGot&`.
-using TlsDescGot = elfldltl::Elf<>::TlsDescGot<>;
+using TlsDescGot = Elf::TlsDescGot<>;
 
 // For dynamic TLS modules, each thread's copy of each dynamic PT_TLS segment
 // is found in by index into an array of pointers.  That array itself is found
@@ -98,8 +105,6 @@ inline RawDynamicTlsArray& TpToDynamicTlsBlocks(void* tp) {
 // std::unique_ptr doesn't formally guarantee that.)
 class DynamicTlsPtr {
  public:
-  using TlsModule = ld::abi::Abi<>::TlsModule;
-
   // The std::unique_ptr to own a TLS block needs a custom deleter to use the
   // `operator delete[]` *function* directly, rather than the `delete[]`
   // *operator*.  This is to match the precise means of allocation, which has
@@ -312,6 +317,21 @@ using UnsizedDynamicTlsArray = std::unique_ptr<DynamicTlsPtr[]>;
   return new_array;
 }
 
+// Given the startup ABI, a global TLS module ID for a dynamically-loaded
+// module, and its module descriptor, return a pointer to the beginning of the
+// dynamic TLS block on the calling thread.
+inline void* DynamicTlsData(const ld::abi::Abi<>& abi, Elf::size_type tls_module_id,
+                            const TlsModule& tls_module) {
+  DynamicTlsPtr& module_tls =
+      _dl_tlsdesc_runtime_dynamic_blocks[abi.dynamic_tls_index(tls_module_id)];
+  return module_tls.contents(tls_module).data();
+}
+
+// Allocate and initialize dynamic TLS blocks for a newly-created thread given
+// a list of dynamic TLS module descriptors.
+fit::result<Error> PrepareTlsBlocksForThread(std::span<const TlsModule> dynamic_tls_modules,
+                                             void* tp = __builtin_thread_pointer());
+
 }  // namespace dl
 
-#endif  // LIB_DL_TLSDESC_RUNTIME_DYNAMIC_H_
+#endif  // LIB_C_DLFCN_DL_TLSDESC_RUNTIME_DYNAMIC_H_

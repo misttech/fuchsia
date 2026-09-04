@@ -97,12 +97,13 @@ class DlTlsRuntimeTests : public ::testing::Test {
  protected:
   static constexpr std::byte kData0[] = {std::byte{0xaa}, std::byte{0xbb}};
   static constexpr std::byte kData1[] = {std::byte{0xcc}, std::byte{0xdd}};
-  static constexpr ld::abi::Abi<>::TlsModule kTlsModule0 = {
+  static constexpr dl::TlsModule kTlsModule0 = {
       .tls_initial_data{kData0},
       .tls_bss_size = 3,
       .tls_alignment = 1,
   };
-  static constexpr ld::abi::Abi<>::TlsModule kTlsModule1 = {
+
+  static constexpr dl::TlsModule kTlsModule1 = {
       .tls_initial_data{kData1},
       .tls_bss_size = 5,
       .tls_alignment = 1,

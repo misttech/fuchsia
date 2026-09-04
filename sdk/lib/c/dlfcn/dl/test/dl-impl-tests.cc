@@ -4,6 +4,8 @@
 
 #include "dl-impl-tests.h"
 
+#include <ranges>
+
 namespace dl::testing {
 
 thread_local DlImplTestsTls DlImplTestsTls::cleanup_at_thread_exit_;
@@ -13,7 +15,8 @@ thread_local DlImplTestsTls DlImplTestsTls::cleanup_at_thread_exit_;
 // match what's in _dl_tlsdesc_runtime_dynamic_blocks.  Its only real purpose
 // is just to remember the old size so EnlargeDynamicTlsArray can be used.
 void DlImplTestsTls::Prepare(const RuntimeDynamicLinker& linker) {
-  size_t dynamic_tls_size = linker.DynamicTlsCount();
+  std::span<const dl::TlsModule> dynamic_tls_modules = linker.dynamic_tls_modules();
+  size_t dynamic_tls_size = dynamic_tls_modules.size();
 
   UnsizedDynamicTlsArray used_blocks = ExchangeRuntimeDynamicBlocks({});
   ASSERT_EQ(used_blocks.release(), cleanup_at_thread_exit_.blocks_.data());
@@ -30,13 +33,10 @@ void DlImplTestsTls::Prepare(const RuntimeDynamicLinker& linker) {
 
     // Initialize any new TLS blocks for TLS modules that have been loaded since
     // the last time __dl_tlsdesc_runtime_dynamic_blocks was prepared for TLS access.
-    DynamicTlsPtr* next = new_blocks.begin() + prev_tls_size;
-    for (const RuntimeModule& module : linker.modules()) {
-      if (module.tls_module_id() <= (linker.max_static_tls_modid() + prev_tls_size)) {
-        continue;
-      }
+    for (const auto& [dest, module] :
+         std::views::drop(std::views::zip(new_blocks, dynamic_tls_modules), prev_tls_size)) {
       fbl::AllocChecker block_ac;
-      *next++ = DynamicTlsPtr::New(block_ac, module.tls_module());
+      dest = DynamicTlsPtr::New(block_ac, module);
       ASSERT_TRUE(block_ac.check());
     }
     cleanup_at_thread_exit_.blocks_ = std::move(new_blocks);

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_DL_TLS_DESC_RESOLVER_H_
-#define LIB_DL_TLS_DESC_RESOLVER_H_
+#ifndef LIB_C_DLFCN_DL_TLS_DESC_RESOLVER_H_
+#define LIB_C_DLFCN_DL_TLS_DESC_RESOLVER_H_
 
 #include <lib/ld/tlsdesc.h>
 
@@ -68,8 +68,9 @@ class TlsDescResolver : public ld::LocalRuntimeTlsDescResolver {
     if (defn.tls_module_id() <= max_static_tls_modid_) {
       return Base::operator()(diag, defn);
     }
-    const size_type index = defn.tls_module_id() - max_static_tls_modid_ - 1;
-    return Dynamic(diag, index, defn.symbol().value);
+    return Dynamic(diag,
+                   ld::abi::Abi<>::dynamic_tls_index(defn.tls_module_id(), max_static_tls_modid_),
+                   defn.symbol().value);
   }
 
  private:
@@ -98,4 +99,4 @@ class TlsdescIndirectStorage final
 
 }  // namespace dl
 
-#endif  // LIB_DL_TLS_DESC_RESOLVER_H_
+#endif  // LIB_C_DLFCN_DL_TLS_DESC_RESOLVER_H_
