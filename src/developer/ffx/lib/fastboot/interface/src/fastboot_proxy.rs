@@ -16,7 +16,8 @@ use fastboot::command::{ClientVariable, Command};
 use fastboot::reply::Reply;
 use fastboot::{
     BUFFER_SIZE, FastbootContext, UploadProgressListener, download, read_and_log_info_with_timeout,
-    send, send_with_listener, send_with_timeout, upload, upload_with_read_timeout,
+    send, send_with_listener, send_with_timeout, upload, upload_from_reader,
+    upload_with_read_timeout,
 };
 use futures::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use std::fmt::Debug;
@@ -169,6 +170,46 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> FastbootProxy<T> {
         }
         Ok(self.interface.as_mut().expect("interface interface not available"))
     }
+
+    async fn flash_uploaded(
+        &mut self,
+        partition_name: &str,
+        timeout: Duration,
+    ) -> Result<(), FastbootError> {
+        // Flash the uploaded file
+        let command = Command::Flash(partition_name.to_string());
+        let send_reply =
+            send_with_timeout(self.ctx.clone(), command.clone(), self.interface().await?, timeout)
+                .await;
+        match send_reply {
+            Ok(reply) => match reply {
+                Reply::Okay(_) => Ok(()),
+                Reply::Fail(s) => Err(FastbootError::FlashError(FlashError::FlashFailed {
+                    partition: partition_name.to_string(),
+                    message: s,
+                })),
+                r @ _ => Err(FastbootError::UnexpectedReply {
+                    method: command.to_string(),
+                    reply: r.to_string(),
+                }),
+            },
+            Err(ref e) => {
+                let e: &fastboot::FastbootError = e;
+                if let fastboot::FastbootError::Read(fastboot::ReadError::Timeout) = e {
+                    let message = format!(
+                        "Time out while waiting on a response from the device. \n\
+                            The current timeout is {}.  Try increacing the timeout",
+                        timeout
+                    );
+                    Err(FastbootError::FlashError(FlashError::TimeoutError(message)))
+                } else {
+                    Err(FastbootError::FlashError(FlashError::Error(anyhow::anyhow!(
+                        e.to_string()
+                    ))))
+                }
+            }
+        }
+    }
 }
 
 async fn handle_command<T: AsyncRead + AsyncWrite + Unpin>(
@@ -291,26 +332,14 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
         listener: Sender<UploadProgress>,
         timeout: Duration,
     ) -> Result<(), FastbootError> {
-        let mut file_to_flash = File::open(path).map_err(FlashError::from)?;
+        let file_to_flash = File::open(path).map_err(FlashError::from)?;
         let size = file_to_flash.metadata().map_err(FlashError::from)?.len();
         let size = u32::try_from(size).map_err(|e| FlashError::InvalidFileSize(e))?;
-        self.flash_from_reader(partition_name, size, &mut file_to_flash, listener, timeout).await
-    }
-
-    async fn flash_from_reader(
-        &mut self,
-        partition_name: &str,
-        size: u32,
-        reader: &mut (dyn std::io::Read + Send),
-        listener: Sender<UploadProgress>,
-        timeout: Duration,
-    ) -> Result<(), FastbootError> {
         let progress_listener = ProgressListener::new(&listener);
-        let mut reader: &mut (dyn std::io::Read + Send) = reader;
         let upload_reply = upload_with_read_timeout(
             self.ctx.clone(),
             size,
-            &mut reader,
+            file_to_flash,
             self.interface().await?,
             &progress_listener,
             timeout,
@@ -331,40 +360,43 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
                 });
             }
         };
+        self.flash_uploaded(partition_name, timeout).await
+    }
 
-        // Flash the uploaded file
-        let command = Command::Flash(partition_name.to_string());
-        let send_reply =
-            send_with_timeout(self.ctx.clone(), command.clone(), self.interface().await?, timeout)
-                .await;
-        match send_reply {
-            Ok(reply) => match reply {
-                Reply::Okay(_) => Ok(()),
-                Reply::Fail(s) => Err(FastbootError::FlashError(FlashError::FlashFailed {
-                    partition: partition_name.to_string(),
+    async fn flash_from_reader(
+        &mut self,
+        partition_name: &str,
+        size: u32,
+        reader: &mut (dyn std::io::Read + Send),
+        listener: Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError> {
+        let progress_listener = ProgressListener::new(&listener);
+        let upload_reply = upload_from_reader(
+            self.ctx.clone(),
+            size,
+            reader,
+            self.interface().await?,
+            &progress_listener,
+            timeout,
+        )
+        .await?;
+        match upload_reply {
+            Reply::Okay(s) => log::debug!("Received response from download command: {}", s),
+            Reply::Fail(s) => {
+                return Err(FastbootError::StageError(StageError::UploadFailed {
+                    path: partition_name.to_string(),
                     message: s,
-                })),
-                r @ _ => Err(FastbootError::UnexpectedReply {
-                    method: command.to_string(),
-                    reply: r.to_string(),
-                }),
-            },
-            Err(ref e) => {
-                let e: &fastboot::FastbootError = e;
-                if let fastboot::FastbootError::Read(fastboot::ReadError::Timeout) = e {
-                    let message = format!(
-                        "Time out while waiting on a response from the device. \n\
-                            The current timeout is {}.  Try increacing the timeout",
-                        timeout
-                    );
-                    Err(FastbootError::FlashError(FlashError::TimeoutError(message)))
-                } else {
-                    Err(FastbootError::FlashError(FlashError::Error(anyhow::anyhow!(
-                        e.to_string()
-                    ))))
-                }
+                }));
             }
-        }
+            r @ _ => {
+                return Err(FastbootError::UnexpectedReply {
+                    method: Command::Download(size).to_string(),
+                    reply: r.to_string(),
+                });
+            }
+        };
+        self.flash_uploaded(partition_name, timeout).await
     }
 
     async fn erase(&mut self, partition_name: &str) -> Result<(), FastbootError> {
@@ -525,14 +557,14 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
         listener: Sender<UploadProgress>,
     ) -> Result<(), FastbootError> {
         let progress_listener = ProgressListener::new(&listener);
-        let mut file_to_stage = File::open(path).map_err(StageError::from)?;
+        let file_to_stage = File::open(path).map_err(StageError::from)?;
         let size = file_to_stage.metadata().map_err(StageError::from)?.len();
         let size = u32::try_from(size).map_err(|e| StageError::InvalidFileSize(e))?;
         log::debug!("uploading file size: {}", size);
         match upload(
             self.ctx.clone(),
             size,
-            &mut file_to_stage,
+            file_to_stage,
             self.interface().await?,
             &progress_listener,
         )

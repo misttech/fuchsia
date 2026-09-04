@@ -235,10 +235,12 @@ pub async fn send_with_timeout<T: AsyncRead + AsyncWrite + Unpin>(
     Ok(read_with_timeout(interface, &LogInfoListener {}, timeout).await?)
 }
 
-pub async fn upload<T: AsyncRead + AsyncWrite + Unpin, R: Read>(
+const PIPELINE_BUFFER_CHUNKS: usize = 2;
+
+pub async fn upload<T: AsyncRead + AsyncWrite + Unpin, R: Read + Send + 'static>(
     ctx: FastbootContext,
     size: u32,
-    buf: &mut R,
+    buf: R,
     interface: &mut T,
     listener: &impl UploadProgressListener,
 ) -> Result<Reply, FastbootError> {
@@ -253,10 +255,13 @@ pub async fn upload<T: AsyncRead + AsyncWrite + Unpin, R: Read>(
     .await
 }
 
-pub async fn upload_with_read_timeout<T: AsyncRead + AsyncWrite + Unpin, R: Read>(
+pub async fn upload_with_read_timeout<
+    T: AsyncRead + AsyncWrite + Unpin,
+    R: Read + Send + 'static,
+>(
     ctx: FastbootContext,
     size: u32,
-    buf: &mut R,
+    mut buf: R,
     interface: &mut T,
     listener: &impl UploadProgressListener,
     timeout: Duration,
@@ -265,62 +270,167 @@ pub async fn upload_with_read_timeout<T: AsyncRead + AsyncWrite + Unpin, R: Read
     // We are sending "Download" in our "upload" function because we are the
     // host -- from the device's point of view, it is a download
     let reply = send(ctx.clone(), Command::Download(size), interface).await?;
-    match reply {
-        Reply::Data(s) => {
-            if s != size {
-                let err = UploadError::WrongSizeResponse { received: s, expected: size };
-                log::error!("{}", err);
-                listener.on_error(&err).await?;
-                return Err(FastbootError::Upload(err));
-            }
-            listener.on_started(size.try_into().unwrap()).await?;
-            log::debug!("fastboot: writing {} bytes", size);
+    let Reply::Data(s) = reply else {
+        return Err(FastbootError::Upload(UploadError::UnexpectedReply { reply }));
+    };
 
-            let chunk_size = std::cmp::min(size as usize, BUFFER_SIZE);
-            let mut bytes = vec![0; chunk_size];
-            loop {
-                match buf.read(&mut bytes) {
-                    Ok(n) => {
-                        if n == 0 {
-                            break;
-                        }
-                        match interface.write_all(&bytes[..n]).await {
-                            Err(e) => {
-                                let err = UploadError::CouldNotWriteToInterface(e);
-                                log::error!("{}", err);
-                                listener.on_error(&err).await?;
-                                return Err(FastbootError::Upload(err));
-                            }
-                            Ok(()) => {
-                                listener.on_progress(n.try_into().unwrap()).await?;
-                                log::trace!("fastboot: wrote {} bytes", n);
-                            }
-                        }
+    if s != size {
+        let err = UploadError::WrongSizeResponse { received: s, expected: size };
+        log::error!("{}", err);
+        listener.on_error(&err).await?;
+        return Err(FastbootError::Upload(err));
+    }
+    listener.on_started(size.try_into().unwrap()).await?;
+    log::debug!("fastboot: writing {} bytes", size);
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(PIPELINE_BUFFER_CHUNKS);
+
+    let reader_thread = std::thread::spawn(move || {
+        let mut remaining = size as usize;
+        while remaining > 0 {
+            let to_read = std::cmp::min(remaining, BUFFER_SIZE);
+            let mut chunk = vec![0; to_read];
+            match buf.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    chunk.truncate(n);
+                    remaining -= n;
+                    if tx.blocking_send(Ok(chunk)).is_err() {
+                        break;
                     }
+                }
+                Err(e) => {
+                    let _ = tx.blocking_send(Err(e));
+                    break;
+                }
+            }
+        }
+    });
+
+    let mut upload_err = None;
+    while let Some(chunk_res) = rx.recv().await {
+        match chunk_res {
+            Ok(chunk) => {
+                let n = chunk.len();
+                match interface.write_all(&chunk).await {
                     Err(e) => {
-                        let err = UploadError::CouldNotReadBytesToUpload { source: e };
+                        let err = UploadError::CouldNotWriteToInterface(e);
+                        log::error!("{}", err);
+                        let _ = listener.on_error(&err).await;
+                        upload_err = Some(FastbootError::Upload(err));
+                        break;
+                    }
+                    Ok(()) => {
+                        listener.on_progress(n.try_into().unwrap()).await?;
+                        log::trace!("fastboot: wrote {} bytes", n);
+                    }
+                }
+            }
+            Err(e) => {
+                let err = UploadError::CouldNotReadBytesToUpload { source: e };
+                log::error!("{}", err);
+                let _ = listener.on_error(&err).await;
+                upload_err = Some(FastbootError::Upload(err));
+                break;
+            }
+        }
+    }
+
+    // Close the receiver so the reader thread unblocks if waiting on a full channel,
+    // then join the thread before checking errors.
+    drop(rx);
+    let _ = reader_thread.join();
+
+    if let Some(err) = upload_err {
+        return Err(err);
+    }
+
+    log::debug!("fastboot: completed writing {} bytes", size);
+
+    match read_and_log_info_with_timeout(interface, timeout).await {
+        Ok(reply) => {
+            listener.on_finished().await?;
+            Ok(reply)
+        }
+        Err(e) => {
+            let err = UploadError::CouldNotVerifyUpload(e);
+            log::error!("{}", err);
+            listener.on_error(&err).await?;
+            Err(FastbootError::Upload(err))
+        }
+    }
+}
+
+pub async fn upload_from_reader<T: AsyncRead + AsyncWrite + Unpin, R: Read + ?Sized>(
+    ctx: FastbootContext,
+    size: u32,
+    buf: &mut R,
+    interface: &mut T,
+    listener: &impl UploadProgressListener,
+    timeout: Duration,
+) -> Result<Reply, FastbootError> {
+    let _lock = ctx.transfer_lock.lock().await;
+    let reply = send(ctx.clone(), Command::Download(size), interface).await?;
+    let Reply::Data(s) = reply else {
+        return Err(FastbootError::Upload(UploadError::UnexpectedReply { reply }));
+    };
+
+    if s != size {
+        let err = UploadError::WrongSizeResponse { received: s, expected: size };
+        log::error!("{}", err);
+        listener.on_error(&err).await?;
+        return Err(FastbootError::Upload(err));
+    }
+    listener.on_started(size.try_into().unwrap()).await?;
+    log::debug!("fastboot: writing {} bytes", size);
+
+    let mut remaining = size as usize;
+    let chunk_size = std::cmp::min(size as usize, BUFFER_SIZE);
+    let mut bytes = vec![0; chunk_size];
+    loop {
+        let to_read = std::cmp::min(remaining, BUFFER_SIZE);
+        if to_read == 0 {
+            break;
+        }
+        match buf.read(&mut bytes[..to_read]) {
+            Ok(0) => break,
+            Ok(n) => {
+                remaining -= n;
+                match interface.write_all(&bytes[..n]).await {
+                    Err(e) => {
+                        let err = UploadError::CouldNotWriteToInterface(e);
                         log::error!("{}", err);
                         listener.on_error(&err).await?;
                         return Err(FastbootError::Upload(err));
                     }
+                    Ok(()) => {
+                        listener.on_progress(n.try_into().unwrap()).await?;
+                        log::trace!("fastboot: wrote {} bytes", n);
+                    }
                 }
             }
-            log::debug!("fastboot: completed writing {} bytes", size);
-
-            match read_and_log_info_with_timeout(interface, timeout).await {
-                Ok(reply) => {
-                    listener.on_finished().await?;
-                    Ok(reply)
-                }
-                Err(e) => {
-                    let err = UploadError::CouldNotVerifyUpload(e);
-                    log::error!("{}", err);
-                    listener.on_error(&err).await?;
-                    return Err(FastbootError::Upload(err));
-                }
+            Err(e) => {
+                let err = UploadError::CouldNotReadBytesToUpload { source: e };
+                log::error!("{}", err);
+                listener.on_error(&err).await?;
+                return Err(FastbootError::Upload(err));
             }
         }
-        rep @ _ => return Err(FastbootError::Upload(UploadError::UnexpectedReply { reply: rep })),
+    }
+
+    log::debug!("fastboot: completed writing {} bytes", size);
+
+    match read_and_log_info_with_timeout(interface, timeout).await {
+        Ok(reply) => {
+            listener.on_finished().await?;
+            Ok(reply)
+        }
+        Err(e) => {
+            let err = UploadError::CouldNotVerifyUpload(e);
+            log::error!("{}", err);
+            listener.on_error(&err).await?;
+            Err(FastbootError::Upload(err))
+        }
     }
 }
 
@@ -418,7 +528,7 @@ mod test {
         }
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_send_does_not_return_info_replies() {
         let mut test_transport = TestTransport::new();
         let ctx = FastbootContext::new();
@@ -442,7 +552,8 @@ mod test {
         assert_eq!(response_with_info.unwrap(), Reply::Okay("0.4".to_string()));
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
+    #[allow(clippy::large_futures)]
     async fn test_uploading_data_to_partition() {
         let data: [u8; 14336] = [0; 14336];
         let mut test_transport = TestTransport::new();
@@ -458,7 +569,7 @@ mod test {
         let data_len = u32::try_from(data.len()).unwrap();
         let ctx = FastbootContext::new();
         let response =
-            upload(ctx, data_len, &mut Cursor::new(data), &mut test_transport, &listener).await;
+            upload(ctx, data_len, Cursor::new(data), &mut test_transport, &listener).await;
         assert!(!response.is_err());
         assert_eq!(response.unwrap(), Reply::Okay("Done Writing".to_string()));
 
@@ -473,7 +584,46 @@ mod test {
         );
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
+    async fn test_upload_from_reader_to_partition() {
+        let data: [u8; 14336] = [0; 14336];
+        let mut test_transport = TestTransport::new();
+        test_transport.extend([
+            Reply::Data(14336),
+            Reply::Info("Writing".to_string()),
+            Reply::Okay("Done Writing".to_string()),
+        ]);
+
+        let events = Arc::new(Mutex::new(Vec::<UploadEvent>::new()));
+        let listener = PushEventsUploadProgressListener { event_queue: events.clone() };
+
+        let data_len = u32::try_from(data.len()).unwrap();
+        let ctx = FastbootContext::new();
+        let mut reader = &data[..];
+        let response = upload_from_reader(
+            ctx,
+            data_len,
+            &mut reader,
+            &mut test_transport,
+            &listener,
+            Duration::seconds(DEFAULT_READ_TIMEOUT_SECS),
+        )
+        .await;
+        assert!(!response.is_err());
+        assert_eq!(response.unwrap(), Reply::Okay("Done Writing".to_string()));
+
+        let queue = events.lock().await;
+        assert_eq!(
+            *queue,
+            vec![
+                UploadEvent::OnStarted(14336),
+                UploadEvent::OnProgress(14336),
+                UploadEvent::OnFinished,
+            ]
+        );
+    }
+
+    #[fuchsia::test]
     async fn test_uploading_data_with_unexpected_reply() {
         let data: [u8; 1024] = [0; 1024];
         let mut test_transport = TestTransport::new();
@@ -484,13 +634,13 @@ mod test {
         let listener = PushEventsUploadProgressListener { event_queue: events.clone() };
         let data_len = u32::try_from(data.len()).unwrap();
         let response =
-            upload(ctx, data_len, &mut Cursor::new(data), &mut test_transport, &listener).await;
+            upload(ctx, data_len, Cursor::new(data), &mut test_transport, &listener).await;
         assert!(response.is_err());
         let queue = events.lock().await;
         assert_eq!(*queue, vec![]);
     }
 
-    #[fuchsia_async::run_singlethreaded(test)]
+    #[fuchsia::test]
     async fn test_uploading_data_with_unexpected_data_size_reply() {
         let data: [u8; 1024] = [0; 1024];
         let mut test_transport = TestTransport::new();
@@ -501,7 +651,7 @@ mod test {
         let listener = PushEventsUploadProgressListener { event_queue: events.clone() };
         let data_len = u32::try_from(data.len()).unwrap();
         let response =
-            upload(ctx, data_len, &mut Cursor::new(data), &mut test_transport, &listener).await;
+            upload(ctx, data_len, Cursor::new(data), &mut test_transport, &listener).await;
         assert!(response.is_err());
         let queue = events.lock().await;
         assert_eq!(
