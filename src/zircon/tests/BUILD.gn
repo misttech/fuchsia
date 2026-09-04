@@ -14,6 +14,7 @@ group("tests") {
     "kernel-clocks:tests",
     "next-vdso:tests",
     "processor:tests",
+    "register-state:tests",
     "restricted-mode-shared:tests",
     "status:tests",
     "stress-tests:tests",
