@@ -29,6 +29,10 @@ pub enum KernelArg {
     /// critical dependencies on it.
     SchedulerPreferLittleCpus(bool),
 
+    /// Controls whether platform CPU power drivers register the energy model and enable
+    /// runtime processor power management (RPPM) by the kernel scheduler.
+    PowerRppm(bool),
+
     /// Disable emulation of the previous thread wakeup accounting behavior when unified bookkeeping
     /// is enabled. The previous wakeup behavior makes it less likely that a newly woken thread will
     /// preempt a currently running thread. This behavior is less fair to newly woken threads than
@@ -279,6 +283,7 @@ impl KernelArg {
             Self::SchedulerPreferLittleCpus(b) => {
                 ("kernel.scheduler.prefer-little-cpus", b.to_string())
             }
+            Self::PowerRppm(b) => ("kernel.power.rppm", b.to_string()),
             Self::SchedulerEnableNewWakeupAccounting(b) => {
                 ("kernel.scheduler.enable-new-wakeup-accounting", b.to_string())
             }
@@ -344,6 +349,7 @@ impl KernelArg {
             // These kernel args do not have any product-provided pieces, therefore they can be
             // serialized as-is.
             Self::SchedulerPreferLittleCpus(_)
+            | Self::PowerRppm(_)
             | Self::SchedulerEnableNewWakeupAccounting(_)
             | Self::OomEvictAtWarning(_)
             | Self::OomEvictContinuous(_)
@@ -397,6 +403,7 @@ impl AddToImage for KernelArg {
     fn add_to_user_images(&self) -> bool {
         match self {
             Self::SchedulerPreferLittleCpus(_)
+            | Self::PowerRppm(_)
             | Self::SchedulerEnableNewWakeupAccounting(_)
             | Self::Serial(_)
             | Self::OomEvictAtWarning(_)

@@ -16,7 +16,7 @@ use crate::pdev_power::{
     K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT, PdevPowerOps, PowerCpuState, PowerDomainConfigFfi,
     PowerRebootFlags, ProcessorPowerLevelFfi, pdev_register_power,
     power_management_boot_boost_enabled, power_management_register_domains,
-    power_management_set_rate_limits,
+    power_management_rppm_enabled, power_management_set_rate_limits,
 };
 use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use debug::dprintf;
@@ -412,8 +412,8 @@ fn allocate_and_populate_from_domain_opps(
 
 /// Initializes Iris power domains and energy models for the kernel scheduler.
 ///
-/// Both the `iris_register_energy_model` build configuration flag and a valid,
-/// populated `domains` array in the ZBI must be present to enable OPP control on Iris.
+/// Both the `kernel.power.rppm` boot option and a valid, populated `domains` array
+/// in the ZBI must be present to enable OPP control on Iris.
 ///
 /// # Safety
 ///
@@ -424,8 +424,8 @@ pub unsafe extern "C" fn iris_power_init(
     domains: *const zbi::CpuEnergyModelDomain,
     domain_count: usize,
 ) {
-    if !cfg!(iris_register_energy_model) {
-        dprintf!(INFO, "POWER: Iris energy model registration disabled by build flag\n");
+    if !power_management_rppm_enabled() {
+        dprintf!(INFO, "POWER: Iris energy model registration disabled by boot option\n");
         return;
     }
 

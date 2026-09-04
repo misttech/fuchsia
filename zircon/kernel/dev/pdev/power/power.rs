@@ -127,6 +127,8 @@ pub struct PowerDomainConfigFfi {
 zr::static_assert!(core::mem::size_of::<PowerDomainConfigFfi>() == 32);
 zr::static_assert!(core::mem::align_of::<PowerDomainConfigFfi>() == 8);
 
+use boot_options::BootOptions;
+
 unsafe extern "C" {
     fn cpp_power_management_register_domains(
         domains: *const PowerDomainConfigFfi,
@@ -167,6 +169,11 @@ pub fn power_management_set_rate_limits(
 pub fn power_management_boot_boost_enabled() -> bool {
     // SAFETY: Foreign FFI call to C++ boot options query.
     unsafe { cpp_power_management_boot_boost_enabled() }
+}
+
+/// Returns whether runtime processor power management (RPPM) is enabled via kernel boot options.
+pub fn power_management_rppm_enabled() -> bool {
+    BootOptions::get().power_rppm
 }
 
 static DEFAULT_OPS: PdevPowerOps = PdevPowerOps {
@@ -564,5 +571,11 @@ mod tests {
     #[test]
     fn test_power_management_boot_boost_enabled() {
         let _ = super::power_management_boot_boost_enabled();
+    }
+
+    /// Tests querying the RPPM enabled configuration.
+    #[test]
+    fn test_power_management_rppm_enabled() {
+        let _ = super::power_management_rppm_enabled();
     }
 }

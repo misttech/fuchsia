@@ -21,6 +21,7 @@ kernel_rust_mod("power-rs") {
   deps = [
     "//sdk/rust/zx-status",
     "//src/lib/zr",
+    "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]

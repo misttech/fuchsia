@@ -6,7 +6,7 @@ use crate::subsystems::prelude::*;
 use anyhow::Context;
 use assembly_config_capabilities::{Config, ConfigValueType};
 use assembly_config_schema::platform_settings::power_config::PowerConfig;
-use assembly_constants::{BoardFeature, BootfsDestination, FileEntry};
+use assembly_constants::{BoardFeature, BootfsDestination, FileEntry, KernelArg};
 
 pub(crate) struct PowerManagementSubsystem;
 
@@ -175,16 +175,16 @@ impl DefineSubsystemConfiguration<PowerConfig> for PowerManagementSubsystem {
             ),
         )?;
 
+        let rppm_enabled =
+            context.board_config.provides_feature(BoardFeature::RuntimeProcessorPowerManagement);
         builder.set_config_capability(
             "fuchsia.power.RuntimeProcessorPowerManagementEnabled",
-            Config::new(
-                ConfigValueType::Bool,
-                context
-                    .board_config
-                    .provides_feature(BoardFeature::RuntimeProcessorPowerManagement)
-                    .into(),
-            ),
+            Config::new(ConfigValueType::Bool, rppm_enabled.into()),
         )?;
+
+        if rppm_enabled {
+            builder.kernel_arg(KernelArg::PowerRppm(true));
+        }
 
         builder.set_config_capability(
             "fuchsia.power.SuspendEnabled",

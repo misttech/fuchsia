@@ -16,7 +16,7 @@ use crate::pdev_power::{
     K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT, PdevPowerOps, PowerCpuState, PowerDomainConfigFfi,
     PowerRebootFlags, ProcessorPowerLevelFfi, pdev_register_power,
     power_management_boot_boost_enabled, power_management_register_domains,
-    power_management_set_rate_limits,
+    power_management_rppm_enabled, power_management_set_rate_limits,
 };
 use core::sync::atomic::{AtomicPtr, Ordering};
 use debug::dprintf;
@@ -218,6 +218,11 @@ pub extern "C" fn moonflower_power_init_early() {
 /// Initializes Moonflower power domain and energy model for the kernel scheduler.
 #[unsafe(no_mangle)]
 pub extern "C" fn moonflower_power_init() {
+    if !power_management_rppm_enabled() {
+        dprintf!(INFO, "POWER: Moonflower energy model registration disabled by boot option\n");
+        return;
+    }
+
     dprintf!(INFO, "POWER: initializing moonflower power domain\n");
 
     let wfi_name = c"WFI".as_ptr();

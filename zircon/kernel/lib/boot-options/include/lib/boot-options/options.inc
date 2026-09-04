@@ -920,6 +920,11 @@ When enabled, platforms with energy models register initial boot performance lim
 performance during system boot until userspace updates limits.
 )""")
 
+DEFINE_OPTION("kernel.power.rppm", bool, power_rppm, {false}, R"""(
+Controls whether platform CPU power drivers register the energy model and enable
+runtime processor power management (RPPM) by the kernel scheduler.
+)""")
+
 DEFINE_OPTION("kernel.scheduler.prefer-little-cpus", bool, scheduler_prefer_little_cpus, {false},
               R"""(
 When searching for a CPU on which to place a task, prefer little cores over big cores.  Enabling
