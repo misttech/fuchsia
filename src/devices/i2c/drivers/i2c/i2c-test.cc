@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <gtest/gtest.h>
 
 #include "src/devices/i2c/drivers/i2c/i2c-test-env.h"
@@ -105,8 +106,10 @@ TEST_F(I2cDriverTest, MultipleChannels) {
 TEST_F(I2cDriverTest, GetName) {
   const std::string kTestChildName = "i2c-16-5";
   const std::string kChannelName = "xyz";
+  constexpr uint32_t kGlobalId = 42;
   fuchsia_hardware_i2c_businfo::I2CChannel channel = CreateChannel(5, 10, 2, 4, 6);
   channel.name(kChannelName);
+  channel.global_id(kGlobalId);
 
   constexpr uint32_t kBusId = 16;
 
@@ -115,10 +118,25 @@ TEST_F(I2cDriverTest, GetName) {
       .bus_id = kBusId,
   }});
 
-  test_runner.RunInNodeContext([expected_name = kTestChildName](fdf_testing::TestNode& node) {
+  test_runner.RunInNodeContext([&](fdf_testing::TestNode& node) {
     ASSERT_EQ(1u, node.children().count("i2c"));
     fdf_testing::TestNode& i2c_node = node.children().at("i2c");
-    EXPECT_TRUE(i2c_node.children().count(expected_name));
+    ASSERT_TRUE(i2c_node.children().count(kTestChildName));
+
+    auto properties = i2c_node.children().at(kTestChildName).GetProperties();
+    auto name_prop = std::ranges::find_if(
+        properties, [](const auto& prop) { return prop.key() == bind_fuchsia::NAME; });
+    ASSERT_NE(name_prop, properties.end());
+    ASSERT_EQ(name_prop->value().Which(),
+              fuchsia_driver_framework::NodePropertyValue::Tag::kStringValue);
+    EXPECT_EQ(name_prop->value().string_value().value(), kChannelName);
+
+    auto id_prop = std::ranges::find_if(
+        properties, [](const auto& prop) { return prop.key() == bind_fuchsia::ID; });
+    ASSERT_NE(id_prop, properties.end());
+    ASSERT_EQ(id_prop->value().Which(),
+              fuchsia_driver_framework::NodePropertyValue::Tag::kIntValue);
+    EXPECT_EQ(id_prop->value().int_value().value(), kGlobalId);
   });
 
   zx::result connect_result =
@@ -135,20 +153,40 @@ TEST_F(I2cDriverTest, GetName) {
 }
 
 TEST_F(I2cDriverTest, GenericMetadataTest) {
-  const fuchsia_hardware_i2c_businfo::I2CChannel kChannel = CreateChannel(5, 10, 2, 4, 6);
+  const std::string kTestChildName = "i2c-32-5";
+  const std::string kChannelName = "xyz";
+  constexpr uint32_t kGlobalId = 42;
+  fuchsia_hardware_i2c_businfo::I2CChannel channel = CreateChannel(5, 10, 2, 4, 6);
+  channel.name(kChannelName);
+  channel.global_id(kGlobalId);
   const uint32_t kBusId = 32;
 
   InitGeneric(fuchsia_hardware_i2c_businfo::I2CBusMetadata{{
-      .channels{{kChannel}},
+      .channels{{channel}},
       .bus_id = kBusId,
   }});
 
-  test_runner.RunInNodeContext([](fdf_testing::TestNode& node) {
+  test_runner.RunInNodeContext([&](fdf_testing::TestNode& node) {
     ASSERT_EQ(1u, node.children().count("i2c"));
     fdf_testing::TestNode& i2c_node = node.children().at("i2c");
 
     EXPECT_EQ(1u, i2c_node.children().size());
-    EXPECT_TRUE(i2c_node.children().count("i2c-32-5"));
+    ASSERT_TRUE(i2c_node.children().count(kTestChildName));
+
+    auto properties = i2c_node.children().at(kTestChildName).GetProperties();
+    auto name_prop = std::ranges::find_if(
+        properties, [](const auto& prop) { return prop.key() == bind_fuchsia::NAME; });
+    ASSERT_NE(name_prop, properties.end());
+    ASSERT_EQ(name_prop->value().Which(),
+              fuchsia_driver_framework::NodePropertyValue::Tag::kStringValue);
+    EXPECT_EQ(name_prop->value().string_value().value(), kChannelName);
+
+    auto id_prop = std::ranges::find_if(
+        properties, [](const auto& prop) { return prop.key() == bind_fuchsia::ID; });
+    ASSERT_NE(id_prop, properties.end());
+    ASSERT_EQ(id_prop->value().Which(),
+              fuchsia_driver_framework::NodePropertyValue::Tag::kIntValue);
+    EXPECT_EQ(id_prop->value().int_value().value(), kGlobalId);
   });
 }
 

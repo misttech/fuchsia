@@ -22,6 +22,9 @@ fuchsia_hardware_i2c_businfo::I2CBusMetadata ConvertMetadata(i2c_metadata::I2cMe
   for (auto& c : generic.channels) {
     fuchsia_hardware_i2c_businfo::I2CChannel channel;
     channel.address(c.address);
+    if (c.id) {
+      channel.global_id(*c.id);
+    }
     if (c.name) {
       channel.name(std::move(*c.name));
     }

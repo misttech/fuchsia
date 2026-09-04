@@ -100,6 +100,11 @@ class TestEnvironment : public fdf_testing::Environment {
               fuchsia_driver_metadata::DictionaryValue::WithInt64(
                   static_cast<int64_t>(c.address().value()))));
         }
+        if (c.global_id().has_value()) {
+          entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
+              std::format("channels.{}.id", i), fuchsia_driver_metadata::DictionaryValue::WithInt64(
+                                                    static_cast<int64_t>(c.global_id().value()))));
+        }
         if (c.name().has_value()) {
           entries.push_back(fuchsia_driver_metadata::DictionaryEntry(
               std::format("channels.{}.name", i),
