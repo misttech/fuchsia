@@ -33,7 +33,7 @@ from shared.protocol.stack_trace import (
 from shared.protocol.step_in import StepInRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
-from zxdb_dap import ZxdbPauseArguments
+from zxdb_dap import AsyncTaskNode, ZxdbPauseArguments
 
 
 class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
@@ -216,6 +216,8 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon.zxdb_writer = Mock()
         thread = daemon.get_or_create_thread(1, process_id=1234)
         thread.is_stopped = True
+        proc = daemon.processes[1234]
+        proc.async_backtrace = [AsyncTaskNode(name="task")]
 
         resp = await daemon.registry.handle(
             "continue", ContinueRequest(thread_id=1)
@@ -224,6 +226,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(resp.success)
         mock_dap_client.continue_thread.assert_called_once()
         self.assertFalse(thread.is_stopped)
+        self.assertIsNone(proc.async_backtrace)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_continue_single_thread(
@@ -247,6 +250,8 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         thread2 = daemon.get_or_create_thread(2, process_id=1234)
         thread1.is_stopped = True
         thread2.is_stopped = True
+        proc = daemon.processes[1234]
+        proc.async_backtrace = [AsyncTaskNode(name="task")]
 
         resp = await daemon.registry.handle(
             "continue", ContinueRequest(thread_id=1, single_thread=True)
@@ -256,6 +261,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_dap_client.continue_thread.assert_called_once()
         self.assertFalse(thread1.is_stopped)
         self.assertTrue(thread2.is_stopped)
+        self.assertIsNone(proc.async_backtrace)
 
     def test_update_resumed_threads_single_thread_none_raises(self) -> None:
         daemon = Daemon(port=15678)
@@ -269,6 +275,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
     def test_process_resume(self) -> None:
         daemon = Daemon(port=15678)
         proc = daemon.get_or_create_process(1234)
+        proc.async_backtrace = [AsyncTaskNode(name="foo")]
         thread1 = daemon.get_or_create_thread(1, process_id=1234)
         thread2 = daemon.get_or_create_thread(2, process_id=1234)
         thread1.is_stopped = True
@@ -279,6 +286,45 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(thread1.is_stopped)
         self.assertFalse(thread2.is_stopped)
         self.assertFalse(proc.all_threads_stopped)
+        self.assertIsNone(proc.async_backtrace)
+
+    def test_thread_resume_clears_process_cache(self) -> None:
+        daemon = Daemon(port=15678)
+        proc = daemon.get_or_create_process(1234)
+        proc.async_backtrace = [AsyncTaskNode(name="foo")]
+        thread = daemon.get_or_create_thread(1, process_id=1234)
+        thread.is_stopped = True
+
+        thread.resume()
+        self.assertFalse(thread.is_stopped)
+        self.assertIsNone(proc.async_backtrace)
+
+    def test_thread_resume_no_clear_cache(self) -> None:
+        daemon = Daemon(port=15678)
+        proc = daemon.get_or_create_process(1234)
+        proc.async_backtrace = [AsyncTaskNode(name="foo")]
+        thread = daemon.get_or_create_thread(1, process_id=1234)
+        thread.is_stopped = True
+
+        thread._resume_internal(clear_process_cache=False)
+        self.assertFalse(thread.is_stopped)
+        self.assertIsNotNone(proc.async_backtrace)
+
+    def test_thread_resume_without_process(self) -> None:
+        daemon = Daemon(port=15678)
+        thread = daemon.get_or_create_thread(1)
+        thread.is_stopped = True
+
+        thread.resume()
+        self.assertFalse(thread.is_stopped)
+
+    def test_process_clear_cache(self) -> None:
+        daemon = Daemon(port=15678)
+        proc = daemon.get_or_create_process(1234)
+        proc.async_backtrace = [AsyncTaskNode(name="foo")]
+
+        proc.clear_cache()
+        self.assertIsNone(proc.async_backtrace)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_finish(self, mock_dap_client_class: Mock) -> None:
@@ -294,6 +340,8 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         thread2 = daemon.get_or_create_thread(2, process_id=1234)
         thread1.is_stopped = True
         thread2.is_stopped = True
+        proc = daemon.processes[1234]
+        proc.async_backtrace = [AsyncTaskNode(name="task")]
 
         resp = await daemon.registry.handle(
             "finish",
@@ -306,6 +354,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(args.single_thread)
         self.assertFalse(thread1.is_stopped)
         self.assertTrue(thread2.is_stopped)
+        self.assertIsNone(proc.async_backtrace)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_finish_all_threads(
@@ -323,6 +372,8 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         thread2 = daemon.get_or_create_thread(2, process_id=1234)
         thread1.is_stopped = True
         thread2.is_stopped = True
+        proc = daemon.processes[1234]
+        proc.async_backtrace = [AsyncTaskNode(name="task")]
 
         resp = await daemon.registry.handle(
             "finish",
@@ -335,6 +386,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(args.single_thread)
         self.assertFalse(thread1.is_stopped)
         self.assertFalse(thread2.is_stopped)
+        self.assertIsNone(proc.async_backtrace)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_next(self, mock_dap_client_class: Mock) -> None:
@@ -351,6 +403,8 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         thread2 = daemon.get_or_create_thread(2, process_id=1234)
         thread1.is_stopped = True
         thread2.is_stopped = True
+        proc = daemon.processes[1234]
+        proc.async_backtrace = [AsyncTaskNode(name="task")]
 
         resp = await daemon.registry.handle(
             "next",
@@ -367,6 +421,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(args.single_thread)
         self.assertFalse(thread1.is_stopped)
         self.assertTrue(thread2.is_stopped)
+        self.assertIsNone(proc.async_backtrace)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_next_all_threads(
@@ -385,6 +440,8 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         thread2 = daemon.get_or_create_thread(2, process_id=1234)
         thread1.is_stopped = True
         thread2.is_stopped = True
+        proc = daemon.processes[1234]
+        proc.async_backtrace = [AsyncTaskNode(name="task")]
 
         resp = await daemon.registry.handle(
             "next",
@@ -401,6 +458,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(args.single_thread)
         self.assertFalse(thread1.is_stopped)
         self.assertFalse(thread2.is_stopped)
+        self.assertIsNone(proc.async_backtrace)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_next_dap_error(
@@ -434,6 +492,8 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         thread2 = daemon.get_or_create_thread(2, process_id=1234)
         thread1.is_stopped = True
         thread2.is_stopped = True
+        proc = daemon.processes[1234]
+        proc.async_backtrace = [AsyncTaskNode(name="task")]
 
         resp = await daemon.registry.handle(
             "step-in",
@@ -447,6 +507,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(args.single_thread)
         self.assertFalse(thread1.is_stopped)
         self.assertTrue(thread2.is_stopped)
+        self.assertIsNone(proc.async_backtrace)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_step_in_all_threads(
@@ -464,6 +525,8 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         thread2 = daemon.get_or_create_thread(2, process_id=1234)
         thread1.is_stopped = True
         thread2.is_stopped = True
+        proc = daemon.processes[1234]
+        proc.async_backtrace = [AsyncTaskNode(name="task")]
 
         resp = await daemon.registry.handle(
             "step-in",
@@ -477,6 +540,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(args.single_thread)
         self.assertFalse(thread1.is_stopped)
         self.assertFalse(thread2.is_stopped)
+        self.assertIsNone(proc.async_backtrace)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_step_in_dap_error(

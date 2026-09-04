@@ -10,6 +10,7 @@ from daemon.daemon import Daemon
 from pydap.client import READER_STOPPED_EVENT
 from shared.protocol import Response
 from shared.protocol.wait_for_event import WaitForEventRequest
+from zxdb_dap import AsyncTaskNode
 
 
 class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
@@ -269,6 +270,160 @@ class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(proc.all_threads_stopped)
         self.assertTrue(daemon.threads[1].is_stopped)
         self.assertTrue(daemon.threads[2].is_stopped)
+
+    async def test_async_backtrace_update_event_caching(self) -> None:
+        daemon = Daemon(port=None)
+        daemon.get_or_create_thread(100, process_id=5678)
+
+        await daemon.event_queue.put(
+            {
+                "event": "zxdb.updateAsyncBacktrace",
+                "body": {
+                    "id": 100,
+                    "name": "main",
+                    "processId": 5678,
+                    "tasks": [{"name": "task1"}],
+                },
+            }
+        )
+        await daemon.event_queue.put({"type": READER_STOPPED_EVENT})
+
+        await daemon._process_events()
+
+        self.assertIn(5678, daemon.processes)
+        self.assertEqual(
+            daemon.processes[5678].async_backtrace,
+            [AsyncTaskNode(name="task1")],
+        )
+
+    async def test_empty_tasks_event_does_not_clobber_non_empty_cache(
+        self,
+    ) -> None:
+        daemon = Daemon(port=None)
+        proc = daemon.get_or_create_process(5678)
+        daemon.get_or_create_thread(100, process_id=5678)
+        daemon.get_or_create_thread(101, process_id=5678)
+        proc.async_backtrace = [AsyncTaskNode(name="valid_task")]
+
+        # Running threads that are unrelated to the async executor will emit an empty task list.
+        await daemon.event_queue.put(
+            {
+                "event": "zxdb.updateAsyncBacktrace",
+                "body": {
+                    "id": 101,
+                    "name": "unrelated_thread",
+                    "processId": 5678,
+                    "tasks": [],
+                },
+            }
+        )
+        await daemon.event_queue.put({"type": READER_STOPPED_EVENT})
+
+        await daemon._process_events()
+
+        # Cache must retain executor_thread's valid task list.
+        assert proc.async_backtrace is not None
+        self.assertEqual(
+            proc.async_backtrace,
+            [AsyncTaskNode(name="valid_task")],
+        )
+
+    async def test_empty_tasks_event_caches_empty_list(self) -> None:
+        daemon = Daemon(port=None)
+        proc = daemon.get_or_create_process(5678)
+        daemon.get_or_create_thread(100, process_id=5678)
+
+        await daemon.event_queue.put(
+            {
+                "event": "zxdb.updateAsyncBacktrace",
+                "body": {
+                    "id": 100,
+                    "name": "thread",
+                    "processId": 5678,
+                    "tasks": [],
+                },
+            }
+        )
+        await daemon.event_queue.put({"type": READER_STOPPED_EVENT})
+
+        await daemon._process_events()
+
+        self.assertEqual(proc.async_backtrace, [])
+
+    async def test_event_with_tasks_overwrites_empty_tasks_cache(self) -> None:
+        daemon = Daemon(port=None)
+        proc = daemon.get_or_create_process(5678)
+        daemon.get_or_create_thread(100, process_id=5678)
+        daemon.get_or_create_thread(101, process_id=5678)
+
+        # An unrelated thread emits an empty task list first.
+        await daemon.event_queue.put(
+            {
+                "event": "zxdb.updateAsyncBacktrace",
+                "body": {
+                    "id": 100,
+                    "name": "unrelated_thread",
+                    "processId": 5678,
+                    "tasks": [],
+                },
+            }
+        )
+        # Followed immediately by an executor thread emitting valid tasks.
+        await daemon.event_queue.put(
+            {
+                "event": "zxdb.updateAsyncBacktrace",
+                "body": {
+                    "id": 101,
+                    "name": "executor_thread",
+                    "processId": 5678,
+                    "tasks": [{"name": "valid_task"}],
+                },
+            }
+        )
+        await daemon.event_queue.put({"type": READER_STOPPED_EVENT})
+
+        await daemon._process_events()
+
+        self.assertEqual(
+            proc.async_backtrace,
+            [AsyncTaskNode(name="valid_task")],
+        )
+
+    async def test_async_backtrace_invalid_model_rejected(self) -> None:
+        daemon = Daemon(port=None)
+        proc = daemon.get_or_create_process(5678)
+        daemon.get_or_create_thread(100, process_id=5678)
+
+        await daemon.event_queue.put(
+            {
+                "event": "zxdb.updateAsyncBacktrace",
+                "body": {
+                    "id": 100,
+                    "name": "thread",
+                    "processId": 5678,
+                    "tasks": [{"line": "invalid_not_an_int"}],
+                },
+            }
+        )
+        await daemon.event_queue.put({"type": READER_STOPPED_EVENT})
+
+        await daemon._process_events()
+
+        self.assertIsNone(proc.async_backtrace)
+
+    async def test_detached_event_clears_async_backtrace_cache(self) -> None:
+        daemon = Daemon(port=None)
+        proc = daemon.get_or_create_process(5678, name="p1")
+        proc.async_backtrace = [AsyncTaskNode(name="main")]
+
+        await daemon.event_queue.put(
+            {"event": "detached", "body": {"processId": 5678}}
+        )
+        await daemon.event_queue.put({"type": READER_STOPPED_EVENT})
+
+        await daemon._process_events()
+
+        self.assertNotIn(5678, daemon.processes)
 
 
 if __name__ == "__main__":
