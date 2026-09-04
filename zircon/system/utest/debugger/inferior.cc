@@ -4,14 +4,7 @@
 
 #include "inferior.h"
 
-#include <assert.h>
 #include <dlfcn.h>
-#include <inttypes.h>
-#include <lib/zx/thread.h>
-#include <link.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <zircon/assert.h>
 #include <zircon/process.h>
 #include <zircon/processargs.h>
@@ -22,8 +15,12 @@
 #include <zircon/syscalls/object.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/threads.h>
+#include <zircon/time.h>
 
 #include <atomic>
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
 
 #include <test-utils/test-utils.h>
 
@@ -34,41 +31,22 @@
 
 namespace {
 
-// Produce a backtrace of sufficient size to be interesting but not excessive.
-constexpr int kTestSegfaultDepth = 4;
-
-// Compilers are getting too smart.
-// These maintain the semantics we want even under optimization.
-
-volatile int* crashing_ptr = (int*)42;
-volatile int crash_depth;
-
-// This is used to cause fp != sp when the crash happens on arm64.
-int leaf_stack_size = 10;
+// Don't use safe-stack, so we'll overflow the machine stack quicker.
+[[clang::no_sanitize("safe-stack")]] int recurse(void*) {
+  // The compiler doesn't know what function pointer this is anymore after the
+  // asm, but it hasn't changed.
+  decltype(recurse)* self = recurse;
+  // Occupy enough stack to use it up quickly, but not enough to overflow in a
+  // single stack frame.  Nothing will be written before the recursion pushes
+  // below this array, but the compiler thinks it was written and now is being
+  // passed to some unknown function that presumably will be reading it, so
+  // there is no way to elide it.
+  char stack[16 << 10];
+  __asm__ volatile("" : "+r"(self), "=m"(stack));
+  return self(stack) + 1;
+}
 
 std::atomic<int> extra_thread_count;
-
-int __NO_INLINE test_segfault_doit2(int*);
-
-int __NO_INLINE test_segfault_leaf(int n, int* p) {
-  volatile int x[n];
-  x[0] = *p;
-  *crashing_ptr = x[0];
-  return 0;
-}
-
-int __NO_INLINE test_segfault_doit1(int* p) {
-  if (crash_depth > 0) {
-    int n = crash_depth;
-    int use_stack[n];
-    memset(use_stack, 0x99, n * sizeof(int));
-    crash_depth = crash_depth - 1;
-    return test_segfault_doit2(use_stack) + 99;
-  }
-  return test_segfault_leaf(leaf_stack_size, p) + 99;
-}
-
-int __NO_INLINE test_segfault_doit2(int* p) { return test_segfault_doit1(p) + *p; }
 
 int looping_thread_func(void* arg) {
   auto thread_count_ptr = reinterpret_cast<std::atomic<int>*>(arg);
@@ -147,11 +125,7 @@ void msg_loop(zx_handle_t channel) {
 }  // namespace
 
 // Produce a crash with a moderately interesting backtrace.
-int __NO_INLINE test_segfault() {
-  crash_depth = kTestSegfaultDepth;
-  int i = 0;
-  return test_segfault_doit1(&i);
-}
+int test_segfault() { return recurse(nullptr); }
 
 // Invoke the s/w breakpoint insn using the crashlogger mechanism
 // to request a backtrace but not terminate the process.
