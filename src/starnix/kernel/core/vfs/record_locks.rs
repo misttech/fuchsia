@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::{CurrentTask, WaitQueue, Waiter};
+use crate::task::{CurrentTask, Pid, WaitQueue, Waiter};
 use crate::vfs::{FdTableId, FileObject, FileObjectId};
 use starnix_sync::{LockDepMutex, RecordLocksStateLock};
 use starnix_uapi::errors::{EAGAIN, Errno};
 use starnix_uapi::{
     __kernel_off_t, F_GETLK, F_GETLK64, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_RDLCK, F_SETLK,
     F_SETLK64, F_SETLKW, F_SETLKW64, F_UNLCK, F_WRLCK, SEEK_CUR, SEEK_END, SEEK_SET, c_short,
-    errno, error, pid_t, uapi,
+    errno, error, uapi,
 };
 use std::collections::BTreeSet;
 
@@ -239,7 +239,7 @@ struct RecordLock {
     pub owner: RecordLockOwner,
     pub range: RecordRange,
     pub lock_type: RecordLockType,
-    pub process_id: pid_t,
+    pub process_id: Option<Pid>,
 }
 
 impl RecordLock {
@@ -295,7 +295,7 @@ impl RecordLocksState {
                     l_whence: SEEK_SET as c_short,
                     l_start: record.range.start as __kernel_off_t,
                     l_len: record.range.length.value(),
-                    l_pid: record.process_id,
+                    l_pid: record.process_id.as_ref().map_or(-1, |pid| pid.id),
                     ..Default::default()
                 });
             }
@@ -305,7 +305,7 @@ impl RecordLocksState {
 
     fn apply_lock(
         &mut self,
-        process_id: pid_t,
+        process_id: Option<Pid>,
         owner: RecordLockOwner,
         lock_type: RecordLockType,
         range: RecordRange,
@@ -452,7 +452,8 @@ impl RecordLocks {
                             state.queue.wait_async(&waiter);
                             waiter
                         });
-                        let process_id = if cmd.is_ofd() { -1 } else { current_task.pid.id };
+                        let process_id =
+                            if cmd.is_ofd() { None } else { Some(current_task.pid.clone()) };
                         match state.apply_lock(process_id, owner, lock_type, range) {
                             Err(errno) if blocking && errno == EAGAIN => {
                                 // TODO(qsr): Check deadlocks.
