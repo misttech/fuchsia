@@ -10,8 +10,9 @@ use fidl_fuchsia_hardware_usb_function as fusb_function;
 use fidl_fuchsia_hardware_usb_request as fusb_request;
 use fuchsia_async as fasync;
 use futures::channel::mpsc;
-use futures::{StreamExt, TryStreamExt};
-use log::{error, info, warn};
+use futures::{SinkExt, StreamExt, TryStreamExt};
+use log::{debug, error, info, warn};
+use std::collections::VecDeque;
 use std::sync::Arc;
 use zx::Status;
 
@@ -54,7 +55,9 @@ const USB_ZERO_NUM_ENDPOINTS: u8 = 2;
 const USB_ZERO_DEFAULT_MAX_PACKET_SIZE: u16 = USB_MAX_PACKET_SIZE_HIGH_SPEED;
 
 const USB_ZERO_OUT_VMO_ID: u64 = 1;
-const USB_ZERO_IN_VMO_ID: u64 = 2;
+const USB_ZERO_IN_VMO_ID: u64 = 100;
+
+const QUEUE_DEPTH: usize = 32;
 
 const USB_ZERO_WRITE_PAYLOAD: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF];
 const USB_ZERO_READ_PAYLOAD: &[u8] = &[0x12, 0x34, 0x56, 0x78];
@@ -374,8 +377,12 @@ impl UsbZeroFunctionDevice {
     async fn cleanup_endpoints(&mut self) {
         self.endpoint_tasks = None;
         if self.vmos_registered {
-            let _ = self.ep_in.unregister_vmos(&[USB_ZERO_IN_VMO_ID]).await;
-            let _ = self.ep_out.unregister_vmos(&[USB_ZERO_OUT_VMO_ID]).await;
+            let in_ids: Vec<u64> =
+                (USB_ZERO_IN_VMO_ID..USB_ZERO_IN_VMO_ID + QUEUE_DEPTH as u64).collect();
+            let out_ids: Vec<u64> =
+                (USB_ZERO_OUT_VMO_ID..USB_ZERO_OUT_VMO_ID + QUEUE_DEPTH as u64).collect();
+            let _ = self.ep_in.unregister_vmos(&in_ids).await;
+            let _ = self.ep_out.unregister_vmos(&out_ids).await;
             self.vmos_registered = false;
         }
         self.is_configured = false;
@@ -486,8 +493,13 @@ impl UsbZeroFunctionDevice {
                     .await
                 }
                 TestMode::Loopback => {
-                    run_loopback(self.ep_in.clone(), self.ep_out.clone(), &mut self.vmos_registered)
-                        .await
+                    run_loopback(
+                        self.ep_in.clone(),
+                        self.ep_out.clone(),
+                        &mut self.vmos_registered,
+                        transfer_size,
+                    )
+                    .await
                 }
             };
             match res {
@@ -789,25 +801,33 @@ impl UsbZeroFunctionDevice {
     }
 }
 
-async fn register_vmo(
+async fn register_vmos(
     ep: &fusb_endpoint::EndpointProxy,
-    id: u64,
+    base_id: u64,
+    count: usize,
     size: u64,
-) -> Result<zx::Vmo, Status> {
-    let _ = ep.unregister_vmos(&[id]).await;
-    let vmo_infos =
-        vec![fusb_endpoint::VmoInfo { id: Some(id), size: Some(size), ..Default::default() }];
+) -> Result<Vec<zx::Vmo>, Status> {
+    let unreg_ids: Vec<u64> = (base_id..base_id + count as u64).collect();
+    let _ = ep.unregister_vmos(&unreg_ids).await;
+
+    let vmo_infos: Vec<_> = (base_id..base_id + count as u64)
+        .map(|id| fusb_endpoint::VmoInfo { id: Some(id), size: Some(size), ..Default::default() })
+        .collect();
 
     let mut response = ep.register_vmos(&vmo_infos).await.map_err(|e| {
         warn!("FIDL error: {:?}", e);
         Status::INTERNAL
     })?;
-    let vmo_handle = response.pop().ok_or(Status::INTERNAL)?;
-    if vmo_handle.id != Some(id) {
+    if response.len() != count {
         return Err(Status::INTERNAL);
     }
-    let vmo = vmo_handle.vmo.ok_or(Status::INTERNAL)?;
-    Ok(vmo)
+    response.sort_by_key(|h| h.id);
+    for (i, h) in response.iter().enumerate() {
+        if h.id != Some(base_id + i as u64) {
+            return Err(Status::INTERNAL);
+        }
+    }
+    response.into_iter().map(|mut h| h.vmo.take().ok_or(Status::INTERNAL)).collect()
 }
 
 fn make_bulk_request(vmo_id: u64, offset: u64, size: u64) -> fusb_request::Request {
@@ -826,190 +846,360 @@ fn make_bulk_request(vmo_id: u64, offset: u64, size: u64) -> fusb_request::Reque
     }
 }
 
-fn queue_requests_batch(ep: &fusb_endpoint::EndpointProxy, reqs: Vec<fusb_request::Request>) {
+fn queue_requests_batch(
+    ep: &fusb_endpoint::EndpointProxy,
+    reqs: Vec<fusb_request::Request>,
+) -> Result<(), fidl::Error> {
     if !reqs.is_empty() {
         if let Err(e) = ep.queue_requests(reqs) {
-            warn!("Failed to queue endpoint requests batch: {:?}", e);
+            error!("Failed to queue endpoint requests batch: {:?}", e);
+            return Err(e);
         }
     }
+    Ok(())
 }
 
-fn queue_request(ep: &fusb_endpoint::EndpointProxy, vmo_id: u64, size: u64) {
-    queue_requests_batch(ep, vec![make_bulk_request(vmo_id, 0, size)]);
-}
-
-async fn handle_read_completion(
-    c: fusb_endpoint::Completion,
-    vmo_size: u64,
-    vmo_out: &zx::Vmo,
-    recycled_buf: &mut Option<Vec<u8>>,
-    tx: &mpsc::UnboundedSender<Vec<u8>>,
-    ack_rx: &mut mpsc::UnboundedReceiver<Vec<u8>>,
-    ep_out_clone: &fusb_endpoint::EndpointProxy,
-) -> bool {
-    if c.status.is_some_and(|s| Status::ok(s).is_ok()) {
-        let size = std::cmp::min(c.transfer_size.unwrap_or(0), vmo_size) as usize;
-        let mut buf = recycled_buf.take().unwrap_or_default();
-        buf.resize(size, 0);
-        if let Err(e) = vmo_out.op_range(zx::VmoOp::CACHE_CLEAN_INVALIDATE, 0, size as u64) {
-            warn!("VMO cache op failed: {:?}", e);
-        }
-        if let Err(e) = vmo_out.read(&mut buf, 0) {
-            warn!("Failed to read OUT VMO: {:?}", e);
-            return false;
-        }
-        if tx.unbounded_send(buf).is_err() {
-            return false;
-        }
-        let Some(buf_back) = ack_rx.next().await else {
-            return false;
-        };
-        *recycled_buf = Some(buf_back);
-        queue_request(ep_out_clone, USB_ZERO_OUT_VMO_ID, vmo_size);
-    } else {
-        if c.status == Some(Status::CANCELED.into_raw()) {
-            return false;
-        }
-        warn!("Read error status: {:?}", c.status);
-        fasync::Timer::new(std::time::Duration::from_millis(10)).await;
-        queue_request(ep_out_clone, USB_ZERO_OUT_VMO_ID, vmo_size);
-    }
-    true
-}
-
-fn handle_write_completion(
-    completion: Vec<fusb_endpoint::Completion>,
-    data: Vec<u8>,
-    ack_tx: &mpsc::UnboundedSender<Vec<u8>>,
-) {
-    let mut ok = false;
-    for c in completion {
-        if c.status.is_some_and(|s| Status::ok(s).is_ok()) {
-            ok = true;
-        } else {
-            warn!("Write error status: {:?}", c.status);
-        }
-    }
-    let send_data = if ok { data } else { vec![] };
-    let _ = ack_tx.unbounded_send(send_data);
-}
-
-fn spawn_endpoint_pump(
-    ep: fusb_endpoint::EndpointProxy,
+fn queue_request(
+    ep: &fusb_endpoint::EndpointProxy,
     vmo_id: u64,
+    size: u64,
+) -> Result<(), fidl::Error> {
+    let req = make_bulk_request(vmo_id, 0, size);
+    queue_requests_batch(ep, vec![req])
+}
+
+fn completion_vmo_id(c: &fusb_endpoint::Completion) -> Option<u64> {
+    let region = c.request.as_ref()?.data.as_ref()?.first()?;
+    match region.buffer.as_ref()? {
+        fusb_request::Buffer::VmoId(id) => Some(*id),
+        _ => None,
+    }
+}
+
+fn spawn_endpoint_pump_ring(
+    ep: fusb_endpoint::EndpointProxy,
+    base_vmo_id: u64,
     transfer_size: u64,
+    queue_depth: usize,
 ) -> fasync::Task<()> {
     fasync::Task::spawn(async move {
         let mut event_stream = ep.take_event_stream();
-        queue_request(&ep, vmo_id, transfer_size);
+        let make_req = |vmo_id, size| make_bulk_request(vmo_id, 0, size);
+        let reqs: Vec<_> =
+            (0..queue_depth as u64).map(|i| make_req(base_vmo_id + i, transfer_size)).collect();
+        let _ = queue_requests_batch(&ep, reqs);
 
         while let Ok(Some(event)) = event_stream.try_next().await {
             match event {
                 fusb_endpoint::EndpointEvent::OnCompletion { completion } => {
+                    let mut re_reqs = Vec::with_capacity(completion.len());
                     for c in completion {
-                        match c.status.and_then(Status::try_from_raw) {
-                            Some(Status::CANCELED) => return,
-                            Some(err) => {
-                                warn!("Endpoint transfer completed with non-OK status: {:?}", err);
+                        match c.status {
+                            Some(zx::sys::ZX_OK) => {}
+                            Some(s)
+                                if s == Status::CANCELED.into_raw()
+                                    || s == Status::IO_NOT_PRESENT.into_raw() =>
+                            {
+                                // Transfer canceled or endpoint disconnected; drop without re-queuing.
+                                continue;
+                            }
+                            Some(s) => {
+                                warn!(
+                                    "Endpoint transfer completed with non-OK status: {:?}",
+                                    Status::err_from_raw(s)
+                                );
                             }
                             None => {}
                         }
+
+                        if let Some(vmo_id) = completion_vmo_id(&c) {
+                            re_reqs.push(make_req(vmo_id, transfer_size));
+                        } else {
+                            warn!("Malformed completion request data: missing VmoId");
+                        }
                     }
-                    queue_request(&ep, vmo_id, transfer_size);
+                    if !re_reqs.is_empty() {
+                        let _ = queue_requests_batch(&ep, re_reqs);
+                    }
                 }
             }
         }
     })
 }
 
-/// Runs the driver in uncoupled Source/Sink testing mode.
-///
-/// In this mode, the IN endpoint continuously sources fixed test data payloads
-/// while the OUT endpoint continuously receives and sinks host data. Unlike loopback
-/// mode, the endpoints operate independently without lockstep synchronization.
+/// Runs the driver in uncoupled Source/Sink testing mode for Bulk endpoints.
 async fn run_source_sink(
     ep_in: fusb_endpoint::EndpointProxy,
     ep_out: fusb_endpoint::EndpointProxy,
     vmos_registered: &mut bool,
     transfer_size: u64,
 ) -> Result<(fasync::Task<()>, fasync::Task<()>), Status> {
-    info!("Starting source/sink loop");
+    if transfer_size > DEFAULT_VMO_SIZE {
+        return Err(Status::INVALID_ARGS);
+    }
+    info!("Starting source/sink loop (Bulk Only)");
 
     // Register VMOs
-    let _vmo_out = register_vmo(&ep_out, USB_ZERO_OUT_VMO_ID, DEFAULT_VMO_SIZE).await?;
-    let vmo_in = match register_vmo(&ep_in, USB_ZERO_IN_VMO_ID, DEFAULT_VMO_SIZE).await {
-        Ok(vmo) => vmo,
-        Err(e) => {
-            let _ = ep_out.unregister_vmos(&[USB_ZERO_OUT_VMO_ID]).await;
-            return Err(e);
-        }
-    };
+    let _vmo_out =
+        register_vmos(&ep_out, USB_ZERO_OUT_VMO_ID, QUEUE_DEPTH, DEFAULT_VMO_SIZE).await?;
+    let vmos_in =
+        match register_vmos(&ep_in, USB_ZERO_IN_VMO_ID, QUEUE_DEPTH, DEFAULT_VMO_SIZE).await {
+            Ok(vmos) => vmos,
+            Err(e) => {
+                let ids: Vec<u64> =
+                    (USB_ZERO_OUT_VMO_ID..USB_ZERO_OUT_VMO_ID + QUEUE_DEPTH as u64).collect();
+                let _ = ep_out.unregister_vmos(&ids).await;
+                return Err(e);
+            }
+        };
     *vmos_registered = true;
 
-    if let Err(e) = vmo_in.op_range(zx::VmoOp::CACHE_CLEAN, 0, DEFAULT_VMO_SIZE) {
-        warn!("VMO cache op failed: {:?}", e);
+    for vmo_in in &vmos_in {
+        if let Err(e) = vmo_in.op_range(zx::VmoOp::CACHE_CLEAN, 0, DEFAULT_VMO_SIZE) {
+            warn!("VMO cache op failed: {:?}", e);
+        }
     }
 
-    let sink_task = spawn_endpoint_pump(ep_out, USB_ZERO_OUT_VMO_ID, DEFAULT_VMO_SIZE);
-    let source_task = spawn_endpoint_pump(ep_in, USB_ZERO_IN_VMO_ID, transfer_size);
+    let sink_task =
+        spawn_endpoint_pump_ring(ep_out, USB_ZERO_OUT_VMO_ID, DEFAULT_VMO_SIZE, QUEUE_DEPTH);
+    let source_task =
+        spawn_endpoint_pump_ring(ep_in, USB_ZERO_IN_VMO_ID, transfer_size, QUEUE_DEPTH);
 
     Ok((sink_task, source_task))
 }
 
-// Note on Loopback Synchronization:
-// By waiting for ack_rx before calling queue_request, the driver ensures it doesn't
-// overwrite the single buffer in the VMO during processing. However, this lockstep execution
-// means the OUT endpoint will NAK the host while the driver is processing the previous packet.
-// TODO(https://fxbug.dev/540805677): For higher performance requirements, a multi-buffered
-// approach with a larger VMO or multiple ring buffer regions can be used.
+struct MappedVmo {
+    _vmo: zx::Vmo,
+    addr: usize,
+    size: usize,
+}
+
+impl MappedVmo {
+    pub fn as_ptr(&self) -> *const u8 {
+        self.addr as *const u8
+    }
+
+    pub fn as_mut_ptr(&self) -> *mut u8 {
+        self.addr as *mut u8
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+}
+
+impl Drop for MappedVmo {
+    fn drop(&mut self) {
+        if self.addr != 0 && self.size != 0 {
+            let root_vmar = fuchsia_runtime::vmar_root_self();
+            // SAFETY: `self.addr` is a valid userspace virtual memory address returned by
+            // `root_vmar.map` of size `self.size`, which has not yet been unmapped. No other
+            // references alias this virtual memory range upon destruction.
+            if let Err(status) = unsafe { root_vmar.unmap(self.addr, self.size) } {
+                warn!(
+                    "MappedVmo: failed to unmap VMAR (addr={:#x}, size={}): {:?}",
+                    self.addr, self.size, status
+                );
+            }
+        }
+    }
+}
+
+fn map_vmos(vmos: Vec<zx::Vmo>, size: u64, flags: zx::VmarFlags) -> Result<Vec<MappedVmo>, Status> {
+    let size_usize = usize::try_from(size).map_err(|_| Status::INVALID_ARGS)?;
+    let root_vmar = fuchsia_runtime::vmar_root_self();
+    vmos.into_iter()
+        .map(|vmo| {
+            let addr = root_vmar.map(0, &vmo, 0, size_usize, flags)?;
+            Ok(MappedVmo { _vmo: vmo, addr, size: size_usize })
+        })
+        .collect()
+}
+
 async fn run_loopback(
     ep_in: fusb_endpoint::EndpointProxy,
     ep_out: fusb_endpoint::EndpointProxy,
     vmos_registered: &mut bool,
+    transfer_size: u64,
 ) -> Result<(fasync::Task<()>, fasync::Task<()>), Status> {
-    info!("Starting loopback loop");
+    if transfer_size > DEFAULT_VMO_SIZE {
+        return Err(Status::INVALID_ARGS);
+    }
+    info!("Starting loopback loop (Bulk Only)");
 
-    let vmo_size = 4096;
-
-    // Register VMOs
-    let vmo_out = register_vmo(&ep_out, USB_ZERO_OUT_VMO_ID, vmo_size).await?;
-    let vmo_in = match register_vmo(&ep_in, USB_ZERO_IN_VMO_ID, vmo_size).await {
-        Ok(vmo) => vmo,
+    // Register and map OUT VMOs (PERM_WRITE is required on riscv64 for zx_cache_flush).
+    let vmos_out =
+        register_vmos(&ep_out, USB_ZERO_OUT_VMO_ID, QUEUE_DEPTH, DEFAULT_VMO_SIZE).await?;
+    let mapped_out = match map_vmos(
+        vmos_out,
+        DEFAULT_VMO_SIZE,
+        zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
+    ) {
+        Ok(m) => m,
         Err(e) => {
-            let _ = ep_out.unregister_vmos(&[USB_ZERO_OUT_VMO_ID]).await;
+            let ids: Vec<u64> =
+                (USB_ZERO_OUT_VMO_ID..USB_ZERO_OUT_VMO_ID + QUEUE_DEPTH as u64).collect();
+            let _ = ep_out.unregister_vmos(&ids).await;
+            return Err(e);
+        }
+    };
+
+    // Register and map IN VMOs
+    let vmos_in =
+        match register_vmos(&ep_in, USB_ZERO_IN_VMO_ID, QUEUE_DEPTH, DEFAULT_VMO_SIZE).await {
+            Ok(vmos) => vmos,
+            Err(e) => {
+                let ids: Vec<u64> =
+                    (USB_ZERO_OUT_VMO_ID..USB_ZERO_OUT_VMO_ID + QUEUE_DEPTH as u64).collect();
+                let _ = ep_out.unregister_vmos(&ids).await;
+                return Err(e);
+            }
+        };
+    let mapped_in = match map_vmos(
+        vmos_in,
+        DEFAULT_VMO_SIZE,
+        zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE,
+    ) {
+        Ok(m) => m,
+        Err(e) => {
+            let out_ids: Vec<u64> =
+                (USB_ZERO_OUT_VMO_ID..USB_ZERO_OUT_VMO_ID + QUEUE_DEPTH as u64).collect();
+            let in_ids: Vec<u64> =
+                (USB_ZERO_IN_VMO_ID..USB_ZERO_IN_VMO_ID + QUEUE_DEPTH as u64).collect();
+            let _ = ep_out.unregister_vmos(&out_ids).await;
+            let _ = ep_in.unregister_vmos(&in_ids).await;
             return Err(e);
         }
     };
     *vmos_registered = true;
 
-    let (tx, mut rx) = mpsc::unbounded::<Vec<u8>>();
-    let (ack_tx, mut ack_rx) = mpsc::unbounded::<Vec<u8>>();
+    let (read_bulk, write_bulk) = spawn_loopback_pair(
+        ep_in,
+        ep_out,
+        mapped_in,
+        mapped_out,
+        USB_ZERO_IN_VMO_ID,
+        USB_ZERO_OUT_VMO_ID,
+        transfer_size,
+    );
+
+    Ok((read_bulk, write_bulk))
+}
+
+fn spawn_loopback_pair(
+    ep_in: fusb_endpoint::EndpointProxy,
+    ep_out: fusb_endpoint::EndpointProxy,
+    mapped_in: Vec<MappedVmo>,
+    mapped_out: Vec<MappedVmo>,
+    base_in_id: u64,
+    base_out_id: u64,
+    buffer_size: u64,
+) -> (fasync::Task<()>, fasync::Task<()>) {
+    let (mut tx, mut rx) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
+    let (mut ack_tx, mut ack_rx) = mpsc::channel::<Vec<u8>>(QUEUE_DEPTH);
 
     let ep_out_clone = ep_out.clone();
+    let count_out = mapped_out.len();
     let read_task = fasync::Task::spawn(async move {
         let mut event_stream = ep_out_clone.take_event_stream();
 
-        queue_request(&ep_out_clone, USB_ZERO_OUT_VMO_ID, vmo_size);
+        // Queue initial ring of OUT requests
+        let mut initial_reqs = Vec::with_capacity(count_out);
+        for (i, mapped) in mapped_out.iter().enumerate() {
+            let vmo_id = base_out_id + (i as u64);
+            // SAFETY: `mapped.as_ptr()` is a valid mapped userspace pointer of size
+            // `mapped.size()` (DEFAULT_VMO_SIZE >= buffer_size) returned by
+            // `root_vmar.map`. The address is non-null and valid for cache operations.
+            unsafe {
+                let _ = zx::sys::zx_cache_flush(
+                    mapped.as_ptr(),
+                    buffer_size as usize,
+                    zx::sys::ZX_CACHE_FLUSH_DATA | zx::sys::ZX_CACHE_FLUSH_INVALIDATE,
+                );
+            }
+            initial_reqs.push(make_bulk_request(vmo_id, 0, buffer_size));
+        }
+        let _ = queue_requests_batch(&ep_out_clone, initial_reqs);
+        debug!("read_task queued initial {} OUT requests of size {}", count_out, buffer_size);
 
-        let mut recycled_buf: Option<Vec<u8>> = None;
+        let mut recycled_bufs: Vec<Vec<u8>> = Vec::with_capacity(QUEUE_DEPTH);
 
         while let Ok(Some(event)) = event_stream.try_next().await {
             match event {
                 fusb_endpoint::EndpointEvent::OnCompletion { completion } => {
+                    // Harvest any recycled buffers from write_task without blocking
+                    while let Ok(Some(buf)) = ack_rx.try_next() {
+                        recycled_bufs.push(buf);
+                    }
+
+                    let mut re_reqs = Vec::with_capacity(completion.len());
                     for c in completion {
-                        if !handle_read_completion(
-                            c,
-                            vmo_size,
-                            &vmo_out,
-                            &mut recycled_buf,
-                            &tx,
-                            &mut ack_rx,
-                            &ep_out_clone,
-                        )
-                        .await
-                        {
-                            return;
+                        let vmo_id = completion_vmo_id(&c);
+                        if let Some(status) = c.status {
+                            if status == Status::CANCELED.into_raw()
+                                || status == Status::IO_NOT_PRESENT.into_raw()
+                            {
+                                // Canceled transfer or endpoint disconnected; drop and do not re-queue.
+                                continue;
+                            }
+                            if status != zx::sys::ZX_OK {
+                                warn!(
+                                    "Endpoint read completed with non-OK status: {:?}",
+                                    Status::err_from_raw(status)
+                                );
+                                if let Some(id) = vmo_id {
+                                    re_reqs.push(make_bulk_request(id, 0, buffer_size));
+                                }
+                                continue;
+                            }
                         }
+
+                        if let Some(id) = vmo_id {
+                            let Some(idx) = id
+                                .checked_sub(base_out_id)
+                                .and_then(|diff| usize::try_from(diff).ok())
+                                .filter(|&idx| idx < mapped_out.len())
+                            else {
+                                continue;
+                            };
+
+                            let actual_size = std::cmp::min(
+                                c.transfer_size.unwrap_or(0) as usize,
+                                mapped_out[idx].size(),
+                            );
+                            let ptr = mapped_out[idx].as_ptr();
+
+                            let mut buf = recycled_bufs
+                                .pop()
+                                .unwrap_or_else(|| Vec::with_capacity(buffer_size as usize));
+                            buf.clear();
+
+                            if actual_size > 0 {
+                                // SAFETY: `ptr` is a valid mapped userspace pointer of size `mapped_out[idx].size() >= actual_size`
+                                // returned by `root_vmar.map`. The address is non-null and valid for cache operations and slice creation.
+                                // The USB controller transfer has completed and the request will not be re-queued until after the slice
+                                // data is copied into 'buf', ensuring hardware DMA does not mutate the memory while the slice is alive.
+                                unsafe {
+                                    let _ = zx::sys::zx_cache_flush(
+                                        ptr,
+                                        actual_size,
+                                        zx::sys::ZX_CACHE_FLUSH_DATA
+                                            | zx::sys::ZX_CACHE_FLUSH_INVALIDATE,
+                                    );
+                                    let slice = std::slice::from_raw_parts(ptr, actual_size);
+                                    buf.extend_from_slice(slice);
+                                }
+                            }
+
+                            // Exert backpressure if write_task is busy: awaits when tx channel is full
+                            if tx.send(buf).await.is_err() {
+                                return;
+                            }
+                            re_reqs.push(make_bulk_request(id, 0, buffer_size));
+                        }
+                    }
+                    if !re_reqs.is_empty() {
+                        let _ = queue_requests_batch(&ep_out_clone, re_reqs);
                     }
                 }
             }
@@ -1017,33 +1207,121 @@ async fn run_loopback(
     });
 
     let ep_in_clone = ep_in.clone();
+    let count_in = mapped_in.len();
     let write_task = fasync::Task::spawn(async move {
         let mut event_stream = ep_in_clone.take_event_stream();
+        let mut free_slots: VecDeque<usize> = (0..count_in).collect();
 
-        while let Some(data) = rx.next().await {
-            let write_len = std::cmp::min(data.len() as u64, vmo_size);
-            if vmo_in.write(&data[..write_len as usize], 0).is_err() {
-                return;
-            }
-            if let Err(e) = vmo_in.op_range(zx::VmoOp::CACHE_CLEAN, 0, write_len) {
-                warn!("VMO cache op failed: {:?}", e);
-            }
-            queue_request(&ep_in_clone, USB_ZERO_IN_VMO_ID, write_len);
+        enum Action {
+            Data(Option<Vec<u8>>),
+            Event(Option<Result<fusb_endpoint::EndpointEvent, fidl::Error>>),
+        }
 
-            // Wait for write completion
-            if let Ok(Some(event)) = event_stream.try_next().await {
-                match event {
-                    fusb_endpoint::EndpointEvent::OnCompletion { completion } => {
-                        handle_write_completion(completion, data, &ack_tx);
+        loop {
+            let action = if free_slots.is_empty() {
+                Action::Event(event_stream.next().await)
+            } else {
+                futures::select! {
+                    data = rx.next() => Action::Data(data),
+                    event = event_stream.next() => Action::Event(event),
+                }
+            };
+
+            match action {
+                Action::Data(Some(mut data)) => {
+                    let slot = free_slots.pop_front().expect("free_slots not empty");
+                    let mapped = &mapped_in[slot];
+                    let write_len = std::cmp::min(data.len(), mapped.size());
+                    let vmo_id = base_in_id + slot as u64;
+
+                    if write_len > 0 {
+                        let ptr = mapped.as_mut_ptr();
+                        // SAFETY: `data` points to `write_len` valid contiguous bytes in userspace memory.
+                        // `ptr` points to `mapped.as_mut_ptr()`, which is a valid userspace VMAR mapping of size
+                        // `mapped.size() >= write_len`. The source (`data`) and destination (`ptr`) reside
+                        // in disjoint memory allocations and do not overlap. `ptr` is valid and non-null
+                        // for `write_len` bytes for cache flush.
+                        unsafe {
+                            std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, write_len);
+                            let _ = zx::sys::zx_cache_flush(
+                                ptr,
+                                write_len,
+                                zx::sys::ZX_CACHE_FLUSH_DATA,
+                            );
+                        }
+                    }
+
+                    // Recycle data buffer back to read_task
+                    data.clear();
+                    let _ = ack_tx.try_send(data);
+
+                    match queue_request(&ep_in_clone, vmo_id, write_len as u64) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            error!("Failed to queue request on ep_in: {:?}", e);
+                            free_slots.push_front(slot);
+                            return;
+                        }
                     }
                 }
-            } else {
-                return;
+                Action::Data(None) => {
+                    while free_slots.len() < count_in {
+                        if let Some(Ok(fusb_endpoint::EndpointEvent::OnCompletion { completion })) =
+                            event_stream.next().await
+                        {
+                            for c in completion {
+                                if let Some(vmo_id) = completion_vmo_id(&c) {
+                                    let Some(slot) = vmo_id
+                                        .checked_sub(base_in_id)
+                                        .and_then(|diff| usize::try_from(diff).ok())
+                                        .filter(|&slot| {
+                                            slot < count_in && !free_slots.contains(&slot)
+                                        })
+                                    else {
+                                        continue;
+                                    };
+                                    free_slots.push_back(slot);
+                                }
+                            }
+                        } else {
+                            return;
+                        }
+                    }
+                    return;
+                }
+                Action::Event(Some(Ok(fusb_endpoint::EndpointEvent::OnCompletion {
+                    completion,
+                }))) => {
+                    for c in completion {
+                        if let Some(status) = c.status {
+                            if status != zx::sys::ZX_OK
+                                && status != Status::CANCELED.into_raw()
+                                && status != Status::IO_NOT_PRESENT.into_raw()
+                            {
+                                warn!(
+                                    "Endpoint write completed with non-OK status: {:?}",
+                                    Status::err_from_raw(status)
+                                );
+                            }
+                        }
+                        if let Some(vmo_id) = completion_vmo_id(&c) {
+                            let Some(slot) = vmo_id
+                                .checked_sub(base_in_id)
+                                .and_then(|diff| usize::try_from(diff).ok())
+                                .filter(|&slot| slot < count_in && !free_slots.contains(&slot))
+                            else {
+                                continue;
+                            };
+                            free_slots.push_back(slot);
+                        }
+                    }
+                }
+                Action::Event(Some(Err(_))) | Action::Event(None) => return,
             }
         }
     });
 
-    Ok((read_task, write_task))
+    (read_task, write_task)
 }
 
 #[cfg(test)]

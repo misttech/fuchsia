@@ -126,9 +126,10 @@ async fn test_loopback() {
     let state_out =
         Arc::new(Mutex::new(MockEndpointState { requests: vec![], vmos: HashMap::new() }));
 
-    let (_comp_in_tx, comp_in_rx) = mpsc::unbounded();
+    let (comp_in_tx, comp_in_rx) = mpsc::unbounded();
     let (comp_out_tx, comp_out_rx) = mpsc::unbounded();
-    let (event_tx, mut event_rx) = mpsc::unbounded();
+    let (event_in_tx, mut event_in_rx) = mpsc::unbounded();
+    let (event_out_tx, mut event_out_rx) = mpsc::unbounded();
 
     let scope = Arc::new(fasync::Scope::new_with_name("test"));
 
@@ -136,14 +137,14 @@ async fn test_loopback() {
         ep_in_server.into_stream(),
         state_in.clone(),
         comp_in_rx,
-        event_tx.clone(),
+        event_in_tx,
         scope.clone(),
     ));
     scope.spawn_local(run_mock_endpoint(
         ep_out_server.into_stream(),
         state_out.clone(),
         comp_out_rx,
-        event_tx,
+        event_out_tx,
         scope.clone(),
     ));
 
@@ -151,19 +152,20 @@ async fn test_loopback() {
     let ep_out_proxy = ep_out_client.into_proxy();
 
     let mut vmos_registered = false;
-    let _tasks = run_loopback(ep_in_proxy, ep_out_proxy, &mut vmos_registered).await.unwrap();
+    let _tasks = run_loopback(
+        ep_in_proxy,
+        ep_out_proxy,
+        &mut vmos_registered,
+        u64::from(USB_MAX_PACKET_SIZE_HIGH_SPEED),
+    )
+    .await
+    .unwrap();
 
     // Await setup events: ep_out registered (1), ep_in registered (1),
     // and ep_out queued read request (1).
-    let mut vmo_reg_count = 0;
-    let mut req_queue_count = 0;
-    while vmo_reg_count < 2 || req_queue_count < 1 {
-        match event_rx.next().await {
-            Some(MockEvent::VmoRegistered) => vmo_reg_count += 1,
-            Some(MockEvent::RequestQueued) => req_queue_count += 1,
-            None => panic!("Event stream ended unexpectedly during setup"),
-        }
-    }
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::VmoRegistered));
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::RequestQueued));
+    assert_eq!(event_in_rx.next().await, Some(MockEvent::VmoRegistered));
 
     // Verify OUT VMO was registered
     let vmo_out = {
@@ -187,10 +189,10 @@ async fn test_loopback() {
             .unwrap()
     };
 
-    // Verify read request was queued
+    // Verify read request was queued (request 0 maps to USB_ZERO_OUT_VMO_ID)
     let read_req = {
         let mut state = state_out.lock().unwrap();
-        state.requests.pop().unwrap()
+        state.requests.remove(0)
     };
 
     // Fill VMO with some data
@@ -208,24 +210,67 @@ async fn test_loopback() {
         .unwrap();
 
     // Wait for loopback to process and queue write request on ep_in
-    loop {
-        match event_rx.next().await {
-            Some(MockEvent::RequestQueued) => break,
-            Some(MockEvent::VmoRegistered) => {}
-            None => panic!("Event stream ended unexpectedly waiting for write request"),
-        }
-    }
+    assert_eq!(event_in_rx.next().await, Some(MockEvent::RequestQueued));
 
     // Verify write request was queued on ep_in
-    let _write_req = {
+    let write_req = {
         let mut state = state_in.lock().unwrap();
         state.requests.pop().unwrap()
     };
+
+    // Complete write
+    comp_in_tx
+        .unbounded_send(vec![fusb_endpoint::Completion {
+            request: Some(write_req),
+            status: Some(zx::sys::ZX_OK),
+            transfer_size: Some(test_data.len() as u64),
+            ..Default::default()
+        }])
+        .unwrap();
 
     // Verify data in VMO IN
     let mut read_back = vec![0; test_data.len()];
     vmo_in.read(&mut read_back, 0).unwrap();
     assert_eq!(read_back, test_data);
+
+    // Verify Zero-Length Packet (ZLP) through loopback
+    let zlp_read_req = {
+        let mut state = state_out.lock().unwrap();
+        state.requests.remove(0)
+    };
+    comp_out_tx
+        .unbounded_send(vec![fusb_endpoint::Completion {
+            request: Some(zlp_read_req),
+            status: Some(zx::sys::ZX_OK),
+            transfer_size: Some(0),
+            ..Default::default()
+        }])
+        .unwrap();
+
+    assert_eq!(event_in_rx.next().await, Some(MockEvent::RequestQueued));
+    let zlp_write_req = {
+        let mut state = state_in.lock().unwrap();
+        let req = state.requests.pop().unwrap();
+        let len = req
+            .data
+            .as_ref()
+            .and_then(|d| d.first())
+            .and_then(|b| match b.buffer.as_ref() {
+                Some(fusb_request::Buffer::VmoId(_)) => Some(b.size.unwrap_or(0)),
+                _ => None,
+            })
+            .unwrap_or(0);
+        assert_eq!(len, 0);
+        req
+    };
+    comp_in_tx
+        .unbounded_send(vec![fusb_endpoint::Completion {
+            request: Some(zlp_write_req),
+            status: Some(zx::sys::ZX_OK),
+            transfer_size: Some(0),
+            ..Default::default()
+        }])
+        .unwrap();
 }
 
 #[fuchsia::test]
@@ -531,7 +576,7 @@ async fn test_source_sink() {
     assert_eq!(event, Some(MockEvent::RequestQueued));
     {
         let state = state_out.lock().unwrap();
-        assert_eq!(state.requests.len(), 1);
+        assert_eq!(state.requests.len(), QUEUE_DEPTH);
     }
 
     // Send mock completion on IN to assert write loop re-queues
@@ -548,7 +593,7 @@ async fn test_source_sink() {
     assert_eq!(event, Some(MockEvent::RequestQueued));
     {
         let state = state_in.lock().unwrap();
-        assert_eq!(state.requests.len(), 1);
+        assert_eq!(state.requests.len(), QUEUE_DEPTH);
     }
 }
 
@@ -1000,4 +1045,300 @@ async fn test_loopback_mode_and_set_interface() {
         proxy.control(&setup_get_mode, &[]).await.unwrap(),
         Ok(vec![TestMode::Loopback as u8])
     );
+}
+
+#[fuchsia::test]
+async fn test_source_sink_cancellation() {
+    let (ep_in_client, ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_client, ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+    let state_in =
+        Arc::new(Mutex::new(MockEndpointState { requests: vec![], vmos: HashMap::new() }));
+    let state_out =
+        Arc::new(Mutex::new(MockEndpointState { requests: vec![], vmos: HashMap::new() }));
+
+    let (comp_in_tx, comp_in_rx) = mpsc::unbounded();
+    let (comp_out_tx, comp_out_rx) = mpsc::unbounded();
+    let (event_in_tx, mut event_in_rx) = mpsc::unbounded();
+    let (event_out_tx, mut event_out_rx) = mpsc::unbounded();
+
+    let scope = Arc::new(fasync::Scope::new_with_name("test_ss_cancel"));
+
+    scope.spawn_local(run_mock_endpoint(
+        ep_in_server.into_stream(),
+        state_in.clone(),
+        comp_in_rx,
+        event_in_tx,
+        scope.clone(),
+    ));
+    scope.spawn_local(run_mock_endpoint(
+        ep_out_server.into_stream(),
+        state_out.clone(),
+        comp_out_rx,
+        event_out_tx,
+        scope.clone(),
+    ));
+
+    let ep_in_proxy = ep_in_client.into_proxy();
+    let ep_out_proxy = ep_out_client.into_proxy();
+
+    let mut vmos_registered = false;
+    let _tasks = run_source_sink(
+        ep_in_proxy,
+        ep_out_proxy,
+        &mut vmos_registered,
+        USB_MAX_PACKET_SIZE_HIGH_SPEED.into(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::VmoRegistered));
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::RequestQueued));
+    assert_eq!(event_in_rx.next().await, Some(MockEvent::VmoRegistered));
+    assert_eq!(event_in_rx.next().await, Some(MockEvent::RequestQueued));
+
+    // Verify cancellation in a mixed batch on OUT endpoint
+    let (canceled_out_req, valid_out_req) = {
+        let mut state = state_out.lock().unwrap();
+        let c_req = state.requests.pop().unwrap();
+        let v_req = state.requests.pop().unwrap();
+        assert_eq!(state.requests.len(), QUEUE_DEPTH - 2);
+        (c_req, v_req)
+    };
+
+    comp_out_tx
+        .unbounded_send(vec![
+            fusb_endpoint::Completion {
+                request: Some(canceled_out_req),
+                status: Some(zx::sys::ZX_ERR_CANCELED),
+                transfer_size: Some(0),
+                ..Default::default()
+            },
+            fusb_endpoint::Completion {
+                request: Some(valid_out_req),
+                status: Some(zx::sys::ZX_OK),
+                transfer_size: Some(0),
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+
+    let event = event_out_rx.next().await;
+    assert_eq!(event, Some(MockEvent::RequestQueued));
+    {
+        let state = state_out.lock().unwrap();
+        // Canceled transfer dropped; only valid transfer re-queued.
+        assert_eq!(state.requests.len(), QUEUE_DEPTH - 1);
+    }
+
+    // Verify cancellation in a mixed batch on IN endpoint
+    let (canceled_in_req, valid_in_req) = {
+        let mut state = state_in.lock().unwrap();
+        let c_req = state.requests.pop().unwrap();
+        let v_req = state.requests.pop().unwrap();
+        assert_eq!(state.requests.len(), QUEUE_DEPTH - 2);
+        (c_req, v_req)
+    };
+
+    comp_in_tx
+        .unbounded_send(vec![
+            fusb_endpoint::Completion {
+                request: Some(canceled_in_req),
+                status: Some(zx::sys::ZX_ERR_CANCELED),
+                transfer_size: Some(0),
+                ..Default::default()
+            },
+            fusb_endpoint::Completion {
+                request: Some(valid_in_req),
+                status: Some(zx::sys::ZX_OK),
+                transfer_size: Some(512),
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+
+    let event = event_in_rx.next().await;
+    assert_eq!(event, Some(MockEvent::RequestQueued));
+    {
+        let state = state_in.lock().unwrap();
+        // Canceled transfer dropped; only valid transfer re-queued.
+        assert_eq!(state.requests.len(), QUEUE_DEPTH - 1);
+    }
+}
+
+#[fuchsia::test]
+async fn test_loopback_cancellation() {
+    let (ep_in_client, ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_client, ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+    let state_in =
+        Arc::new(Mutex::new(MockEndpointState { requests: vec![], vmos: HashMap::new() }));
+    let state_out =
+        Arc::new(Mutex::new(MockEndpointState { requests: vec![], vmos: HashMap::new() }));
+
+    let (_comp_in_tx, comp_in_rx) = mpsc::unbounded();
+    let (comp_out_tx, comp_out_rx) = mpsc::unbounded();
+    let (event_in_tx, _event_in_rx) = mpsc::unbounded();
+    let (event_out_tx, mut event_out_rx) = mpsc::unbounded();
+
+    let scope = Arc::new(fasync::Scope::new_with_name("test_loopback_cancellation"));
+
+    scope.spawn_local(run_mock_endpoint(
+        ep_in_server.into_stream(),
+        state_in.clone(),
+        comp_in_rx,
+        event_in_tx,
+        scope.clone(),
+    ));
+    scope.spawn_local(run_mock_endpoint(
+        ep_out_server.into_stream(),
+        state_out.clone(),
+        comp_out_rx,
+        event_out_tx,
+        scope.clone(),
+    ));
+
+    let ep_in_proxy = ep_in_client.into_proxy();
+    let ep_out_proxy = ep_out_client.into_proxy();
+
+    let mut vmos_registered = false;
+    let _tasks = run_loopback(
+        ep_in_proxy,
+        ep_out_proxy,
+        &mut vmos_registered,
+        u64::from(USB_MAX_PACKET_SIZE_HIGH_SPEED),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::VmoRegistered));
+    assert_eq!(event_out_rx.next().await, Some(MockEvent::RequestQueued));
+
+    // Verify cancellation in a mixed batch on OUT endpoint
+    let (canceled_out_req, valid_out_req) = {
+        let mut state = state_out.lock().unwrap();
+        let c_req = state.requests.pop().unwrap();
+        let v_req = state.requests.pop().unwrap();
+        assert_eq!(state.requests.len(), QUEUE_DEPTH - 2);
+        (c_req, v_req)
+    };
+
+    comp_out_tx
+        .unbounded_send(vec![
+            fusb_endpoint::Completion {
+                request: Some(canceled_out_req),
+                status: Some(zx::sys::ZX_ERR_CANCELED),
+                transfer_size: Some(0),
+                ..Default::default()
+            },
+            fusb_endpoint::Completion {
+                request: Some(valid_out_req),
+                status: Some(zx::sys::ZX_OK),
+                transfer_size: Some(0),
+                ..Default::default()
+            },
+        ])
+        .unwrap();
+
+    let event = event_out_rx.next().await;
+    assert_eq!(event, Some(MockEvent::RequestQueued));
+    {
+        let state = state_out.lock().unwrap();
+        // Canceled transfer dropped; only valid transfer re-queued.
+        assert_eq!(state.requests.len(), QUEUE_DEPTH - 1);
+    }
+}
+
+#[fuchsia::test]
+async fn test_transfer_size_exceeds_vmo_size() {
+    let (ep_in_client, _ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_client, _ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let mut vmos_registered = false;
+    let res = run_source_sink(
+        ep_in_client.into_proxy(),
+        ep_out_client.into_proxy(),
+        &mut vmos_registered,
+        DEFAULT_VMO_SIZE + 1,
+    )
+    .await;
+    assert_eq!(res.err(), Some(Status::INVALID_ARGS));
+
+    let (ep_in_client, _ep_in_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_client, _ep_out_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let mut vmos_registered = false;
+    let res = run_loopback(
+        ep_in_client.into_proxy(),
+        ep_out_client.into_proxy(),
+        &mut vmos_registered,
+        DEFAULT_VMO_SIZE + 1,
+    )
+    .await;
+    assert_eq!(res.err(), Some(Status::INVALID_ARGS));
+}
+
+#[fuchsia::test]
+async fn test_register_vmos_out_of_order_and_mismatch() {
+    let (ep_client, ep_server) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let mut ep_stream = ep_server.into_stream();
+    let scope = Arc::new(fasync::Scope::new());
+    let s = scope.clone();
+    s.spawn_local(async move {
+        while let Ok(Some(req)) = ep_stream.try_next().await {
+            match req {
+                fusb_endpoint::EndpointRequest::UnregisterVmos { responder, .. } => {
+                    let _ = responder.send(&[], &[]);
+                }
+                fusb_endpoint::EndpointRequest::RegisterVmos { vmo_ids, responder } => {
+                    // Return VMOs in reverse order to test sorting
+                    let mut vmos = vec![];
+                    for info in vmo_ids.into_iter().rev() {
+                        let id = info.id.unwrap();
+                        let size = info.size.unwrap();
+                        let vmo = zx::Vmo::create(size).unwrap();
+                        let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+                        vmos.push(fusb_endpoint::VmoHandle {
+                            id: Some(id),
+                            vmo: Some(dup),
+                            ..Default::default()
+                        });
+                    }
+                    let _ = responder.send(vmos);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let ep_proxy = ep_client.into_proxy();
+    let vmos = register_vmos(&ep_proxy, 100, 4, 4096).await.expect("register_vmos should sort");
+    assert_eq!(vmos.len(), 4);
+
+    // Test mismatched ID
+    let (ep_client2, ep_server2) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let mut ep_stream2 = ep_server2.into_stream();
+    let s2 = scope.clone();
+    s2.spawn_local(async move {
+        while let Ok(Some(req)) = ep_stream2.try_next().await {
+            match req {
+                fusb_endpoint::EndpointRequest::UnregisterVmos { responder, .. } => {
+                    let _ = responder.send(&[], &[]);
+                }
+                fusb_endpoint::EndpointRequest::RegisterVmos { responder, .. } => {
+                    let vmo = zx::Vmo::create(4096).unwrap();
+                    let dup = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+                    let vmos = vec![fusb_endpoint::VmoHandle {
+                        id: Some(999), // Mismatched! Expected 100
+                        vmo: Some(dup),
+                        ..Default::default()
+                    }];
+                    let _ = responder.send(vmos);
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let ep_proxy2 = ep_client2.into_proxy();
+    let res = register_vmos(&ep_proxy2, 100, 1, 4096).await;
+    assert_eq!(res.err(), Some(Status::INTERNAL));
 }
