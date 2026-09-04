@@ -21,6 +21,7 @@
 
 #include <ddktl/device.h>
 #include <ddktl/protocol/empty-protocol.h>
+#include <fbl/ref_counted.h>
 
 #include "src/devices/i2c/lib/i2c-channel-legacy/i2c-channel.h"
 #include "src/ui/input/lib/input-report-reader/reader.h"
@@ -50,7 +51,9 @@ using DeviceType =
     ddk::Device<Gt6853Device, ddk::Messageable<fuchsia_input_report::InputDevice>::Mixin,
                 ddk::Unbindable>;
 
-class Gt6853Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_INPUTREPORT> {
+class Gt6853Device : public DeviceType,
+                     public ddk::EmptyProtocol<ZX_PROTOCOL_INPUTREPORT>,
+                     public fbl::RefCounted<Gt6853Device> {
  public:
   enum class Register : uint16_t {
     kDspMcuPower = 0x2010,
@@ -97,7 +100,7 @@ class Gt6853Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
   static zx_status_t Create(void* ctx, zx_device_t* parent);
   static bool RunUnitTests(void* ctx, zx_device_t* parent, zx_handle_t channel);
 
-  void DdkRelease() { delete this; }
+  void DdkRelease();
 
   void DdkUnbind(ddk::UnbindTxn txn);
 
@@ -156,6 +159,7 @@ class Gt6853Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
   zx_status_t SendConfig(cpp20::span<const uint8_t> config);
   zx_status_t ReadBackConfig(cpp20::span<const uint8_t> config);
 
+  zx_status_t UpdateFirmwareAndConfig();
   zx_status_t UpdateFirmwareIfNeeded();
   // Returns the number of subsys entries found and populated.
   static zx::result<size_t> ParseFirmwareInfo(const fzl::VmoMapper& mapped_fw,
@@ -166,6 +170,8 @@ class Gt6853Device : public DeviceType, public ddk::EmptyProtocol<ZX_PROTOCOL_IN
   static uint16_t Checksum16(const uint8_t* data, size_t size);
   zx_status_t SendFirmwarePacket(uint8_t type, const uint8_t* packet, size_t size);
   zx_status_t FinishFirmwareUpdate();
+
+  void StartInterruptHandling();
 
   zx::result<uint8_t> ReadReg8(Register reg);
   zx::result<> Read(Register reg, uint8_t* buffer, size_t size);

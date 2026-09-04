@@ -17,7 +17,9 @@
 #include <cstdint>
 
 #include <ddktl/fidl.h>
+#include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
+#include <fbl/ref_ptr.h>
 
 namespace {
 
@@ -111,10 +113,12 @@ zx_status_t Gt6853Device::Create(void* ctx, zx_device_t* parent) {
     return ZX_ERR_NO_RESOURCES;
   }
 
-  std::unique_ptr<Gt6853Device> device = std::make_unique<Gt6853Device>(
-      parent, fdf_dispatcher_get_async_dispatcher(fdf_dispatcher_get_current_dispatcher()),
-      std::move(i2c), std::move(interrupt_gpio.value()), std::move(reset_gpio.value()));
-  if (!device) {
+  fbl::AllocChecker alloc_checker;
+  fbl::RefPtr<Gt6853Device> device = fbl::MakeRefCountedChecked<Gt6853Device>(
+      &alloc_checker, parent,
+      fdf_dispatcher_get_async_dispatcher(fdf_dispatcher_get_current_dispatcher()), std::move(i2c),
+      std::move(interrupt_gpio.value()), std::move(reset_gpio.value()));
+  if (!alloc_checker.check()) {
     return ZX_ERR_NO_MEMORY;
   }
 
@@ -129,8 +133,22 @@ zx_status_t Gt6853Device::Create(void* ctx, zx_device_t* parent) {
     return status;
   }
 
-  [[maybe_unused]] auto _ = device.release();
+  // Driver Framework now owns a reference that will be dropped in DdkRelease().
+  device->AddRef();
+
+  if ((status = device->UpdateFirmwareAndConfig()) != ZX_OK) {
+    device->DdkAsyncRemove();
+    return status;
+  }
+
+  device->StartInterruptHandling();
   return ZX_OK;
+}
+
+void Gt6853Device::DdkRelease() {
+  if (Release()) {
+    delete this;
+  }
 }
 
 void Gt6853Device::DdkUnbind(ddk::UnbindTxn txn) {
@@ -308,6 +326,10 @@ zx_status_t Gt6853Device::Init() {
   }
   interrupt_ = std::move(interrupt_result.value()->interrupt);
 
+  return ZX_OK;
+}
+
+zx_status_t Gt6853Device::UpdateFirmwareAndConfig() {
   zx::result<fuchsia_mem::wire::Range> config = GetConfigFileVmo();
   if (config.is_error()) {
     return config.status_value();
@@ -329,19 +351,20 @@ zx_status_t Gt6853Device::Init() {
     firmware_status_.Set("skipped");
   }
 
+  return ZX_OK;
+}
+
+void Gt6853Device::StartInterruptHandling() {
   irq_handler_.set_object(interrupt_.get());
   irq_handler_.Begin(dispatcher_);
 
   // Set scheduling role for device thread.
-  {
-    const char* role_name = "fuchsia.ui.input.drivers.goodix-gt6853.device";
-    status = device_set_profile_by_role(parent(), zx_thread_self(), role_name, strlen(role_name));
-    if (status != ZX_OK) {
-      zxlogf(WARNING, "Failed to apply role to worker: %d", status);
-    }
+  const char* role_name = "fuchsia.ui.input.drivers.goodix-gt6853.device";
+  zx_status_t status =
+      device_set_profile_by_role(parent(), zx_thread_self(), role_name, strlen(role_name));
+  if (status != ZX_OK) {
+    zxlogf(WARNING, "Failed to apply role to worker: %d", status);
   }
-
-  return ZX_OK;
 }
 
 zx_status_t Gt6853Device::DownloadConfigIfNeeded(const fuchsia_mem::wire::Range& config_file) {
