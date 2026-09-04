@@ -1733,13 +1733,16 @@ exec "${{cmd[@]}}"
             expected_length = int(xattr_value[65:])
             actual_length = os.stat(output_file).st_size
             if actual_length != expected_length:
-                raise FileSizeMismatchError(
-                    str(output_file)
-                    + ": expected "
-                    + str(expected_length)
-                    + ", got "
-                    + str(actual_length)
-                )
+                if not is_download_stub_file(
+                    output_file, use_xattr=self._use_xattr
+                ):
+                    raise FileSizeMismatchError(
+                        str(output_file)
+                        + ": expected "
+                        + str(expected_length)
+                        + ", got "
+                        + str(actual_length)
+                    )
         else:
             # RBE ran the action locally, so we'll need to hash it ourselves to produce
             # the above string.

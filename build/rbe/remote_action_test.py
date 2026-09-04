@@ -6,6 +6,7 @@
 import argparse
 import contextlib
 import copy
+import hashlib
 import io
 import os
 import sys
@@ -4162,6 +4163,167 @@ class MainTests(unittest.TestCase):
         main_args = args[0]
         self.assertTrue(main_args.local)
         self.assertTrue(main_args.check_determinism)
+
+
+class WriteOutputFileHashXattrsTests(unittest.TestCase):
+    """Tests for validating _write_output_file_hash_xattrs behavior, ensuring
+
+    proper defensive size checking and seamless download stub bypassing.
+    """
+
+    def setUp(self) -> None:
+        # Mocking the platform-level filesystem extended attribute (xattr) calls.
+        # This prevents raising OS or filesystem-dependent errors (such as xattrs
+        # not being supported on the host filesystem or OS platform).
+        self.setxattr_patcher = mock.patch.object(os, "setxattr")
+        self.removexattr_patcher = mock.patch.object(os, "removexattr")
+        self.listxattr_patcher = mock.patch.object(
+            os, "listxattr", return_value=[]
+        )
+        self.mock_setxattr = self.setxattr_patcher.start()
+        self.mock_removexattr = self.removexattr_patcher.start()
+        self.mock_listxattr = self.listxattr_patcher.start()
+
+    def tearDown(self) -> None:
+        # Cleanly restore standard library os xattr methods after each test run.
+        self.listxattr_patcher.stop()
+        self.removexattr_patcher.stop()
+        self.setxattr_patcher.stop()
+
+    def test_size_match(self) -> None:
+        # Test that when a download artifact's disk size perfectly matches the
+        # metadata's expected size, verification succeeds cleanly.
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            output_file = tdp / "output.txt"
+            content = "hello world"
+            _write_file_contents(output_file, content)
+
+            digest = hashlib.sha256(content.encode()).hexdigest()
+            size = len(content)
+            xattr_value = f"{digest}/{size}"
+
+            # Mock RBE action log record returning a matching expected digest/size
+            fake_log_record = FakeReproxyLogEntry(
+                output_file_digests={output_file: xattr_value}
+            )
+
+            action = remote_action.RemoteAction(
+                rewrapper=Path("/path/to/rewrapper"),
+                command=["echo"],
+                exec_root=tdp,
+                working_dir=tdp,
+                use_xattr=True,
+            )
+
+            with mock.patch.object(
+                remote_action.RemoteAction,
+                "action_log_record",
+                new_callable=mock.PropertyMock,
+                return_value=fake_log_record,
+            ):
+                with mock.patch.object(
+                    remote_action, "is_download_stub_file", return_value=False
+                ) as mock_is_stub:
+                    action._write_output_file_hash_xattrs(output_file)
+                    # Because sizes match, there's no need to execute a stub check.
+                    mock_is_stub.assert_not_called()
+                    # Verify that xattrs are set with the correct digest/size string
+                    self.mock_setxattr.assert_any_call(
+                        output_file,
+                        remote_action._RBE_XATTR_HASH,
+                        xattr_value.encode(),
+                    )
+
+    def test_size_mismatch_raises(self) -> None:
+        # Test that when a standard file has a size mismatch against remote metadata,
+        # FileSizeMismatchError is correctly raised.
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            output_file = tdp / "output.txt"
+            content = "hello world"
+            _write_file_contents(output_file, content)
+
+            digest = hashlib.sha256(content.encode()).hexdigest()
+            # Set expected size to be different from actual disk size
+            expected_size = len(content) + 10
+            xattr_value = f"{digest}/{expected_size}"
+
+            fake_log_record = FakeReproxyLogEntry(
+                output_file_digests={output_file: xattr_value}
+            )
+
+            action = remote_action.RemoteAction(
+                rewrapper=Path("/path/to/rewrapper"),
+                command=["echo"],
+                exec_root=tdp,
+                working_dir=tdp,
+                use_xattr=True,
+            )
+
+            with mock.patch.object(
+                remote_action.RemoteAction,
+                "action_log_record",
+                new_callable=mock.PropertyMock,
+                return_value=fake_log_record,
+            ):
+                with mock.patch.object(
+                    remote_action, "is_download_stub_file", return_value=False
+                ) as mock_is_stub:
+                    # Expect FileSizeMismatchError due to unmatched actual disk size
+                    with self.assertRaises(remote_action.FileSizeMismatchError):
+                        action._write_output_file_hash_xattrs(output_file)
+                    # The mismatch should trigger the fallback stub verification check
+                    mock_is_stub.assert_called_once_with(
+                        output_file, use_xattr=True
+                    )
+
+    def test_size_mismatch_ignored_for_download_stub(self) -> None:
+        # Test that when a legitimate download stub is on disk, we correctly bypass
+        # the FileSizeMismatchError verification and proceed to write the digest xattrs.
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            output_file = tdp / "output.txt"
+            content = "hello world"
+            _write_file_contents(output_file, content)
+
+            # Define expected_size of the real remote artifact (much larger than actual disk size)
+            expected_size = 1337
+            digest = "a" * 64
+            xattr_value = f"{digest}/{expected_size}"
+
+            fake_log_record = FakeReproxyLogEntry(
+                output_file_digests={output_file: xattr_value}
+            )
+
+            action = remote_action.RemoteAction(
+                rewrapper=Path("/path/to/rewrapper"),
+                command=["echo"],
+                exec_root=tdp,
+                working_dir=tdp,
+                use_xattr=True,
+            )
+
+            with mock.patch.object(
+                remote_action.RemoteAction,
+                "action_log_record",
+                new_callable=mock.PropertyMock,
+                return_value=fake_log_record,
+            ):
+                with mock.patch.object(
+                    remote_action, "is_download_stub_file", return_value=True
+                ) as mock_is_stub:
+                    # Should NOT raise an error despite the mismatch, because the file is a download stub
+                    action._write_output_file_hash_xattrs(output_file)
+                    mock_is_stub.assert_called_once_with(
+                        output_file, use_xattr=True
+                    )
+                    # Ensure digest xattrs are still written for the download stub
+                    self.mock_setxattr.assert_any_call(
+                        output_file,
+                        remote_action._RBE_XATTR_HASH,
+                        xattr_value.encode(),
+                    )
 
 
 if __name__ == "__main__":
