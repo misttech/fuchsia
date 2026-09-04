@@ -17,10 +17,7 @@ import re
 import shutil
 import sys
 import textwrap
-
-ROOT_PATH = os.path.abspath(__file__ + "/../..")
-sys.path += [os.path.join(ROOT_PATH, "third_party", "pytoml")]
-import pytoml as toml
+import tomllib
 
 CARGO_PACKAGE_CONTENTS = """\
 # Copyright %(year)s The Fuchsia Authors. All rights reserved.
@@ -535,8 +532,8 @@ def main():
         return 0
 
     # this will be removed eventually?
-    with open(rust_crates_path + "/Cargo.toml", "r") as f:
-        project.patches = toml.load(f)["patch"]["crates-io"]
+    with open(rust_crates_path + "/Cargo.toml", "rb") as f:
+        project.patches = tomllib.load(f)["patch"]["crates-io"]
 
     lookup = {}
     for target in project.rust_targets:
