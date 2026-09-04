@@ -235,6 +235,7 @@ if (!is_kernel) {
         ":crypto",
         ":crypto_test_main",
         ":test_support",
+        "//third_party/googletest:gmock",
         "//third_party/googletest:gtest",
       ]
     }

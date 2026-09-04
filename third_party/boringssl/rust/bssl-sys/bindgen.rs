@@ -497,7 +497,7 @@ impl<const N: usize> __BindgenBitfieldUnit<[u8; N]> {
 }
 pub const OPENSSL_VERSION_NUMBER: i32 = 269488255;
 pub const SSLEAY_VERSION_NUMBER: i32 = 269488255;
-pub const BORINGSSL_API_VERSION: i32 = 42;
+pub const BORINGSSL_API_VERSION: i32 = 43;
 pub const AES_ENCRYPT: i32 = 1;
 pub const AES_DECRYPT: i32 = 0;
 pub const AES_MAXNR: i32 = 14;
@@ -1215,7 +1215,6 @@ pub const EVP_AEAD_MAX_NONCE_LENGTH: i32 = 24;
 pub const EVP_AEAD_MAX_OVERHEAD: i32 = 64;
 pub const EVP_AEAD_MAX_OPEN_OVERHEAD: i32 = 320;
 pub const EVP_AEAD_DEFAULT_TAG_LENGTH: i32 = 0;
-pub const CRYPTO_IOVEC_MAX: i32 = 16;
 pub const SN_undef: &[u8; 6] = b"UNDEF\0";
 pub const LN_undef: &[u8; 10] = b"undefined\0";
 pub const NID_undef: i32 = 0;
@@ -3528,6 +3527,13 @@ pub const LN_ML_KEM_768: &[u8; 11] = b"ML-KEM-768\0";
 pub const NID_ML_KEM_768: i32 = 970;
 pub const SN_X_Wing: &[u8; 7] = b"X-Wing\0";
 pub const NID_X_Wing: i32 = 972;
+pub const SN_alg_mtcProof_draft: &[u8; 19] = b"alg-mtcProof-draft\0";
+pub const NID_alg_mtcProof_draft: i32 = 976;
+pub const SN_rdna_trustAnchorID_draft: &[u8; 25] = b"rdna-trustAnchorID-draft\0";
+pub const NID_rdna_trustAnchorID_draft: i32 = 977;
+pub const SN_pe_mtcCertificationAuthority_draft: &[u8; 35] =
+    b"pe-mtcCertificationAuthority-draft\0";
+pub const NID_pe_mtcCertificationAuthority_draft: i32 = 978;
 pub const EVP_PKEY_NONE: i32 = 0;
 pub const EVP_PKEY_RSA: i32 = 6;
 pub const EVP_PKEY_RSA_PSS: i32 = 912;
@@ -3870,10 +3876,12 @@ pub const X509_V_FLAG_NOTIFY_POLICY: i32 = 2048;
 pub const X509_V_FLAG_EXTENDED_CRL_SUPPORT: i32 = 4096;
 pub const X509_V_FLAG_USE_DELTAS: i32 = 8192;
 pub const X509_V_FLAG_CHECK_SS_SIGNATURE: i32 = 16384;
-pub const X509_V_FLAG_TRUSTED_FIRST: i32 = 32768;
+pub const X509_V_FLAG_TRUSTED_FIRST: i32 = 0;
 pub const X509_V_FLAG_PARTIAL_CHAIN: i32 = 524288;
-pub const X509_V_FLAG_NO_ALT_CHAINS: i32 = 1048576;
+pub const X509_V_FLAG_NO_ALT_CHAINS: i32 = 0;
 pub const X509_V_FLAG_NO_CHECK_TIME: i32 = 2097152;
+pub const X509_V_FLAG_ALLOW_TIMEZONE_OFFSET: i32 = 16777216;
+pub const X509_V_FLAG_USE_MTC_DRAFT_PLANTS_05: i32 = 4194304;
 pub const X509_CHECK_FLAG_NO_WILDCARDS: i32 = 2;
 pub const X509_CHECK_FLAG_NEVER_CHECK_SUBJECT: i32 = 32;
 pub const X509_PURPOSE_SSL_CLIENT: i32 = 1;
@@ -3990,6 +3998,8 @@ pub const X509_R_NO_CERTIFICATE_FOUND: i32 = 141;
 pub const X509_R_NO_CERTIFICATE_OR_CRL_FOUND: i32 = 142;
 pub const X509_R_NO_CRL_FOUND: i32 = 143;
 pub const X509_R_INVALID_POLICY_EXTENSION: i32 = 144;
+pub const X509_R_INVALID_MTC_CA: i32 = 145;
+pub const X509_R_INVALID_MTC_PROOF: i32 = 146;
 pub const PEM_BUFSIZE: i32 = 1024;
 pub const PEM_STRING_X509_OLD: &[u8; 17] = b"X509 CERTIFICATE\0";
 pub const PEM_STRING_X509: &[u8; 12] = b"CERTIFICATE\0";
@@ -4070,9 +4080,11 @@ pub const PKCS8_R_AMBIGUOUS_FRIENDLY_NAME: i32 = 133;
 pub const RIPEMD160_CBLOCK: i32 = 64;
 pub const RIPEMD160_LBLOCK: i32 = 16;
 pub const RIPEMD160_DIGEST_LENGTH: i32 = 20;
+pub const SLHDSA_SHA2_128S_SEED_BYTES: i32 = 48;
 pub const SLHDSA_SHA2_128S_PUBLIC_KEY_BYTES: i32 = 32;
 pub const SLHDSA_SHA2_128S_PRIVATE_KEY_BYTES: i32 = 64;
 pub const SLHDSA_SHA2_128S_SIGNATURE_BYTES: i32 = 7856;
+pub const SLHDSA_SHAKE_256F_SEED_BYTES: i32 = 96;
 pub const SLHDSA_SHAKE_256F_PUBLIC_KEY_BYTES: i32 = 64;
 pub const SLHDSA_SHAKE_256F_PRIVATE_KEY_BYTES: i32 = 128;
 pub const SLHDSA_SHAKE_256F_SIGNATURE_BYTES: i32 = 49856;
@@ -4384,6 +4396,7 @@ pub const SSL_CIPHER_RSA_WITH_3DES_EDE_CBC_SHA: i32 = 10;
 pub const SSL_CIPHER_EMPTY_RENEGOTIATION_INFO_SCSV: i32 = 255;
 pub const SSL_CIPHER_FALLBACK_SCSV: i32 = 22016;
 pub const SSL_DEFAULT_CIPHER_LIST: &[u8; 4] = b"ALL\0";
+pub const SSL_CIPHER_FLAG_EQUAL_PREFERENCE_WITH_NEXT: i32 = 1;
 pub const SSL_MAX_SSL_SESSION_ID_LENGTH: i32 = 32;
 pub const SSL_MAX_MASTER_KEY_LENGTH: i32 = 48;
 pub const SSL_SESS_CACHE_OFF: i32 = 0;
@@ -4406,7 +4419,6 @@ pub const SSL_GROUP_SECP384R1: i32 = 24;
 pub const SSL_GROUP_SECP521R1: i32 = 25;
 pub const SSL_GROUP_X25519: i32 = 29;
 pub const SSL_GROUP_X25519_MLKEM768: i32 = 4588;
-pub const SSL_GROUP_X25519_KYBER768_DRAFT00: i32 = 25497;
 pub const SSL_GROUP_MLKEM1024: i32 = 514;
 pub const SSL_GROUP_FLAG_EQUAL_PREFERENCE_WITH_NEXT: i32 = 1;
 pub const SSL_VERIFY_NONE: i32 = 0;
@@ -4577,7 +4589,6 @@ pub const SSL_CURVE_SECP256R1: i32 = 23;
 pub const SSL_CURVE_SECP384R1: i32 = 24;
 pub const SSL_CURVE_SECP521R1: i32 = 25;
 pub const SSL_CURVE_X25519: i32 = 29;
-pub const SSL_CURVE_X25519_KYBER768_DRAFT00: i32 = 25497;
 pub const TLSEXT_nid_unknown: i32 = 16777216;
 pub const SSL_R_APP_DATA_IN_HANDSHAKE: i32 = 100;
 pub const SSL_R_ATTEMPT_TO_REUSE_SESSION_IN_DIFFERENT_CONTEXT: i32 = 101;
@@ -4813,6 +4824,9 @@ pub const SSL_R_INVALID_CERT_TYPES_LIST: i32 = 333;
 pub const SSL_R_UNSUPPORTED_CERTIFICATE: i32 = 334;
 pub const SSL_R_MISSING_KEY: i32 = 335;
 pub const SSL_R_INVALID_RAW_PUBLIC_KEY: i32 = 336;
+pub const SSL_R_UNUSABLE_ECH_CONFIG_LIST: i32 = 337;
+pub const SSL_R_INVALID_CIPHER_FLAGS: i32 = 338;
+pub const SSL_R_DUPLICATE_CIPHER: i32 = 339;
 pub const SSL_R_SSLV3_ALERT_CLOSE_NOTIFY: i32 = 1000;
 pub const SSL_R_SSLV3_ALERT_UNEXPECTED_MESSAGE: i32 = 1010;
 pub const SSL_R_SSLV3_ALERT_BAD_RECORD_MAC: i32 = 1020;
@@ -9929,6 +9943,9 @@ unsafe extern "C" {
     pub fn CBS_asn1_relative_oid_to_text(cbs: *const CBS) -> *mut ::core::ffi::c_char;
 }
 unsafe extern "C" {
+    pub fn CBS_get_asn1_oid_component(cbs: *mut CBS, out: *mut u64) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
     pub fn CBS_parse_generalized_time(
         cbs: *const CBS,
         out_tm: *mut tm,
@@ -10165,6 +10182,9 @@ unsafe extern "C" {
     pub fn CBB_add_u32le(cbb: *mut CBB, value: u32) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
+    pub fn CBB_add_u48(cbb: *mut CBB, value: u64) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
     pub fn CBB_add_u64(cbb: *mut CBB, value: u64) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -10226,6 +10246,13 @@ unsafe extern "C" {
         cbb: *mut CBB,
         text: *const ::core::ffi::c_char,
         len: usize,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn CBB_add_asn1_relative_oid_from_der_to_text(
+        cbb: *mut CBB,
+        data: *const u8,
+        data_len: usize,
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -10759,7 +10786,6 @@ pub struct evp_cipher_ctx_st {
     pub num: ::core::ffi::c_uint,
     pub final_used: ::core::ffi::c_int,
     pub final_: [u8; 32usize],
-    pub poisoned: ::core::ffi::c_int,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -12693,6 +12719,17 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
+    pub fn EC_wpa3_sae_hunt_and_peck_p256(
+        group: *const EC_GROUP,
+        out: *mut EC_POINT,
+        salt: *const u8,
+        salt_len: usize,
+        password: *const u8,
+        password_len: usize,
+        min_iterations: u8,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
     pub fn EC_GROUP_free(group: *mut EC_GROUP);
 }
 unsafe extern "C" {
@@ -13988,6 +14025,32 @@ unsafe extern "C" {
     pub fn EVP_RSA_gen(bits: ::core::ffi::c_uint) -> *mut EVP_PKEY;
 }
 unsafe extern "C" {
+    pub fn EVP_PKEY_from_rsa_public_key(
+        alg: *const EVP_PKEY_ALG,
+        in_: *const u8,
+        len: usize,
+    ) -> *mut EVP_PKEY;
+}
+unsafe extern "C" {
+    pub fn EVP_PKEY_from_rsa_private_key(
+        alg: *const EVP_PKEY_ALG,
+        in_: *const u8,
+        len: usize,
+    ) -> *mut EVP_PKEY;
+}
+unsafe extern "C" {
+    pub fn EVP_PKEY_marshal_rsa_public_key(
+        cbb: *mut CBB,
+        key: *const EVP_PKEY,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EVP_PKEY_marshal_rsa_private_key(
+        cbb: *mut CBB,
+        key: *const EVP_PKEY,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
     pub fn EVP_PKEY_CTX_set_rsa_padding(
         ctx: *mut EVP_PKEY_CTX,
         padding: ::core::ffi::c_int,
@@ -14058,6 +14121,45 @@ unsafe extern "C" {
     pub fn EVP_PKEY_CTX_get0_rsa_oaep_label(
         ctx: *mut EVP_PKEY_CTX,
         out_label: *mut *const u8,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EVP_PKEY_from_ec_uncompressed_point(
+        alg: *const EVP_PKEY_ALG,
+        in_: *const u8,
+        len: usize,
+    ) -> *mut EVP_PKEY;
+}
+unsafe extern "C" {
+    pub fn EVP_PKEY_from_ec_compressed_point(
+        alg: *const EVP_PKEY_ALG,
+        in_: *const u8,
+        len: usize,
+    ) -> *mut EVP_PKEY;
+}
+unsafe extern "C" {
+    pub fn EVP_PKEY_marshal_ec_uncompressed_point(
+        cbb: *mut CBB,
+        key: *const EVP_PKEY,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EVP_PKEY_marshal_ec_compressed_point(
+        cbb: *mut CBB,
+        key: *const EVP_PKEY,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn EVP_PKEY_from_ec_private_scalar(
+        alg: *const EVP_PKEY_ALG,
+        in_: *const u8,
+        len: usize,
+    ) -> *mut EVP_PKEY;
+}
+unsafe extern "C" {
+    pub fn EVP_PKEY_marshal_ec_private_scalar(
+        cbb: *mut CBB,
+        key: *const EVP_PKEY,
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -21670,6 +21772,9 @@ unsafe extern "C" {
     pub fn X509_cmp_time_posix(s: *const ASN1_TIME, t: i64) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
+    pub fn X509_cmp_time_posix_nonstandard(s: *const ASN1_TIME, t: i64) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
     pub fn X509_cmp_current_time(s: *const ASN1_TIME) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -23332,6 +23437,20 @@ unsafe extern "C" {
     pub fn SIPHASH_24(key: *const u64, input: *const u8, input_len: usize) -> u64;
 }
 unsafe extern "C" {
+    pub fn SLHDSA_SHA2_128S_generate_key_from_seed(
+        out_public_key: *mut u8,
+        out_private_key: *mut u8,
+        seed: *const u8,
+    );
+}
+unsafe extern "C" {
+    pub fn SLHDSA_SHAKE_256F_generate_key_from_seed(
+        out_public_key: *mut u8,
+        out_private_key: *mut u8,
+        seed: *const u8,
+    );
+}
+unsafe extern "C" {
     pub fn SLHDSA_SHA2_128S_generate_key(out_public_key: *mut u8, out_private_key: *mut u8);
 }
 unsafe extern "C" {
@@ -23705,6 +23824,13 @@ unsafe extern "C" {
         cred: *mut SSL_CREDENTIAL,
         match_: ::core::ffi::c_int,
     );
+}
+unsafe extern "C" {
+    pub fn SSL_CREDENTIAL_set1_session_id_context(
+        cred: *mut SSL_CREDENTIAL,
+        sid_ctx: *const u8,
+        sid_ctx_len: usize,
+    ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
     pub fn SSL_CTX_add1_credential(
@@ -24347,6 +24473,22 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn SSL_get_ciphers(ssl: *const SSL) -> *mut stack_st_SSL_CIPHER;
+}
+unsafe extern "C" {
+    pub fn SSL_CTX_set1_tls13_ciphers(
+        ctx: *mut SSL_CTX,
+        cipher_ids: *const u16,
+        flags: *const u32,
+        num_cipher_ids: usize,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SSL_set1_tls13_ciphers(
+        ssl: *mut SSL,
+        cipher_ids: *const u16,
+        flags: *const u32,
+        num_cipher_ids: usize,
+    ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
     pub fn SSL_is_init_finished(ssl: *const SSL) -> ::core::ffi::c_int;
@@ -25111,6 +25253,15 @@ unsafe extern "C" {
     ) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
+    pub fn SSL_CREDENTIAL_add1_trust_anchor_group_inclusion(
+        cred: *mut SSL_CREDENTIAL,
+        base: *const u8,
+        base_len: usize,
+        min: u64,
+        max: u64,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
     pub fn SSL_CTX_set1_requested_trust_anchors(
         ctx: *mut SSL_CTX,
         ids: *const u8,
@@ -25564,6 +25715,12 @@ unsafe extern "C" {
     ) -> *mut SSL_CREDENTIAL;
 }
 unsafe extern "C" {
+    pub fn SSL_CREDENTIAL_get0_pre_shared_key_id(
+        cred: *const SSL_CREDENTIAL,
+        id_len: *mut usize,
+    ) -> *const u8;
+}
+unsafe extern "C" {
     pub fn SSL_CTX_set_psk_client_callback(
         ctx: *mut SSL_CTX,
         cb: ::core::option::Option<
@@ -25887,6 +26044,9 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn SSL_set_enable_ech_grease(ssl: *mut SSL, enable: ::core::ffi::c_int);
+}
+unsafe extern "C" {
+    pub fn SSL_set_reject_unusable_ech_config(ssl: *mut SSL, enable: ::core::ffi::c_int);
 }
 unsafe extern "C" {
     pub fn SSL_set1_ech_config_list(
@@ -26661,6 +26821,9 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn SSL_get_server_tmp_key(ssl: *mut SSL, out_key: *mut *mut EVP_PKEY)
         -> ::core::ffi::c_int;
+}
+unsafe extern "C" {
+    pub fn SSL_get_peer_tmp_key(ssl: *mut SSL, out_key: *mut *mut EVP_PKEY) -> ::core::ffi::c_int;
 }
 unsafe extern "C" {
     pub fn SSL_CTX_set_tmp_dh(ctx: *mut SSL_CTX, dh: *const DH) -> ::core::ffi::c_int;
