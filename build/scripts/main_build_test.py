@@ -3,15 +3,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import argparse
 import builtins
 import contextlib
 import io
+import json
 import os
 import pathlib
 import shutil
 import signal
 import subprocess
-import tempfile
+import sys
 import time
 import unittest
 from contextlib import contextmanager
@@ -20,6 +22,13 @@ from unittest import mock
 
 import main_build
 import signal_utils
+
+
+def default_args() -> argparse.Namespace:
+    """Returns a default-populated argparse.Namespace using the production parser."""
+    return main_build._MAIN_ARG_PARSER.parse_args(
+        ["--build-dir", "out/default", "ninja"]
+    )
 
 
 class MainBuildTestBase(unittest.TestCase):
@@ -591,7 +600,7 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
         context = self.create_context(rbe=False, resultstore="none")
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
-            prefix = main_build.top_build_command_prefix(invocation)
+            prefix = list(invocation.top_build_command_prefix())
             self.assertIn(
                 "/tmp/fuchsia/build/scripts/top_build_wrap.sh", prefix[0]
             )
@@ -603,7 +612,7 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
         context = self.create_context(dry_run=True)
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
-            prefix = main_build.top_build_command_prefix(invocation)
+            prefix = list(invocation.top_build_command_prefix())
             self.assertIn("--dry-run", prefix)
 
     def test_rbe_resultstore(self) -> None:
@@ -615,7 +624,7 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
         ):
             with self.mock_invocation_context():
                 invocation = main_build.BuildInvocation(context)
-                prefix = main_build.top_build_command_prefix(invocation)
+                prefix = list(invocation.top_build_command_prefix())
                 self.assertIn("--rbe", prefix)
                 self.assertIn("--reproxy-cfg", prefix)
                 self.assertIn("--resultstore", prefix)
@@ -624,7 +633,7 @@ class TopBuildCommandPrefixTest(MainBuildTestBase):
         context = self.create_context(tui=True)
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
-            prefix = main_build.top_build_command_prefix(invocation)
+            prefix = list(invocation.top_build_command_prefix())
             self.assertIn("--tui", prefix)
 
 
@@ -634,7 +643,7 @@ class InjectNinjaArgsTest(MainBuildTestBase):
         with self.mock_invocation_context() as (mock_mkdir, _):
             invocation = main_build.BuildInvocation(context)
             cmd = ["ninja", "target"]
-            injected = main_build.inject_ninja_args(invocation, cmd)
+            injected = invocation._inject_ninja_args(cmd)
             self.assertEqual(injected[0], "ninja")
             self.assertIn("--dirty_sources_list", injected)
             self.assertIn("--action_metrics_output", injected)
@@ -653,8 +662,8 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
                 needs_auth=mock.PropertyMock(return_value=False),
             ):
                 with mock.patch.object(main_build, "mkdir"):
-                    exec_info = main_build.new_build_command_execution(
-                        invocation, "ninja", ["ninja", "target"]
+                    exec_info = invocation.new_build_command_execution(
+                        "ninja", ["ninja", "target"]
                     )
                     self.assertEqual(
                         exec_info.full_command[0],
@@ -668,8 +677,8 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
         with self.mock_invocation_context("uuid-123", "ts-456"):
             invocation = main_build.BuildInvocation(context)
             with mock.patch.object(main_build, "mkdir"):
-                exec_info = main_build.new_build_command_execution(
-                    invocation, "ninja", ["ninja", "target"]
+                exec_info = invocation.new_build_command_execution(
+                    "ninja", ["ninja", "target"]
                 )
                 self.assertIn("--post-build-uploads", exec_info.full_command)
                 metrics_path = (
@@ -678,18 +687,6 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
                     / "ninja_action_metrics.json"
                 )
                 self.assertIn(str(metrics_path), exec_info.full_command)
-
-    def test_new_build_command_execution_fint_resultstore(self) -> None:
-        context = self.create_context(rbe=False, resultstore="all")
-        with self.mock_invocation_context("uuid-123", "ts-456"):
-            invocation = main_build.BuildInvocation(context)
-            with mock.patch.object(main_build, "mkdir"):
-                exec_info = main_build.new_build_command_execution(
-                    invocation, "fint", ["fint", "build"]
-                )
-                self.assertIn("--post-build-uploads", exec_info.full_command)
-                trace_path = context.build_dir / "ninja_build_trace.json.gz"
-                self.assertIn(str(trace_path), exec_info.full_command)
 
 
 class PrepareFunctionsTest(MainBuildTestBase):
@@ -704,20 +701,19 @@ class PrepareFunctionsTest(MainBuildTestBase):
 
     def test_fint(self) -> None:
         context = self.create_context()
+        context.config.fint_params_path = pathlib.Path("/tmp/static.proto")
         with self.mock_invocation_context():
-            with mock.patch.object(tempfile, "NamedTemporaryFile") as mock_tmp:
-                mock_tmp.return_value.__enter__.return_value.name = (
-                    "/tmp/fint.proto"
+            exec_info = main_build.new_other_build_command_execution(
+                context, ["ls", "-l"]
+            )
+            self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
+            self.assertTrue(
+                any(
+                    "fint_build.py" in str(arg)
+                    for arg in exec_info.full_command
                 )
-                exec_info = main_build.new_fint_build_command_execution(
-                    context, ["fint", "build"]
-                )
-                self.assertIsInstance(
-                    exec_info, main_build.BuildCommandExecution
-                )
-                self.assertIn(
-                    "/tmp/fint.proto", [str(p) for p in exec_info.cleanup_files]
-                )
+            )
+            self.assertEqual(len(exec_info.cleanup_files), 0)
 
     def test_other(self) -> None:
         context = self.create_context()
@@ -765,10 +761,11 @@ class MainFunctionTest(MainBuildTestBase):
         self.assertFalse(args.status)
 
     def test_main_catches_config_error(self) -> None:
+        mock_args = default_args()
+        mock_args.func = mock.Mock()
         with mock.patch.object(
             main_build._MAIN_ARG_PARSER, "parse_known_args"
         ) as mock_parse:
-            mock_args = mock.Mock()
             mock_parse.return_value = (mock_args, [])
             mock_args.func.side_effect = main_build.BuildConfigurationError(
                 "test error"
@@ -779,13 +776,16 @@ class MainFunctionTest(MainBuildTestBase):
                         ["--build-dir", "out/default", "ninja"]
                     )
                     self.assertEqual(rc, 1)
-                    mock_print.assert_called_with("Error: test error")
+                    mock_print.assert_called_with(
+                        "[main_build.py] Error: test error", file=sys.stderr
+                    )
 
     def test_main_catches_keyboard_interrupt(self) -> None:
+        mock_args = default_args()
+        mock_args.func = mock.Mock()
         with mock.patch.object(
             main_build._MAIN_ARG_PARSER, "parse_known_args"
         ) as mock_parse:
-            mock_args = mock.Mock()
             mock_parse.return_value = (mock_args, [])
             mock_args.func.side_effect = KeyboardInterrupt
             with mock.patch.object(
@@ -797,14 +797,16 @@ class MainFunctionTest(MainBuildTestBase):
                     )
                     self.assertEqual(rc, 130)
                     mock_print.assert_called_with(
-                        "[main_build.py] Received KeyboardInterrupt, exiting (130)"
+                        "[main_build.py] Received KeyboardInterrupt, exiting (130)",
+                        file=sys.stderr,
                     )
 
     def test_main_catches_build_interrupted_error(self) -> None:
+        mock_args = default_args()
+        mock_args.func = mock.Mock()
         with mock.patch.object(
             main_build._MAIN_ARG_PARSER, "parse_known_args"
         ) as mock_parse:
-            mock_args = mock.Mock()
             mock_parse.return_value = (mock_args, [])
             mock_args.func.side_effect = signal_utils.BuildInterruptedError(
                 137, signal.SIGKILL
@@ -818,7 +820,8 @@ class MainFunctionTest(MainBuildTestBase):
                     )
                     self.assertEqual(rc, 137)
                     mock_print.assert_called_with(
-                        "[main_build.py] Interrupted by SIGKILL, exiting (137)"
+                        "[main_build.py] Interrupted by SIGKILL, exiting (137)",
+                        file=sys.stderr,
                     )
 
 
@@ -898,6 +901,262 @@ class BuildCommandSignalTest(MainBuildTestBase):
         result = exec_info._run_without_locking()
         self.assertEqual(result.return_code, 130)
         mock_instance.run.assert_called_once()
+
+
+class ContextPropertiesAndLoggingTest(unittest.TestCase):
+    def test_context_properties(self) -> None:
+        # Create context without fint-params
+        config = main_build.FuchsiaBuildConfig(
+            rbe=False,
+            resultstore="none",
+            profile=False,
+            tui=False,
+            verbose=False,
+            dry_run=False,
+        )
+        context = main_build.FuchsiaBuildContext(
+            source_dir=pathlib.Path("/tmp/fuchsia"),
+            out_dir=pathlib.Path("/tmp/out"),
+            build_dir=pathlib.Path("/tmp/out/default"),
+            env={"PREBUILT_PYTHON3": "/custom/bin/python3"},
+            config=config,
+        )
+
+        # 1. Verify fint_build_py resolved path
+        self.assertEqual(
+            context.fint_build_py,
+            pathlib.Path("/tmp/fuchsia/tools/integration/fint/fint_build.py"),
+        )
+
+        # 2. Verify python_bin respects environmental variable
+        self.assertEqual(
+            context.python_bin, pathlib.Path("/custom/bin/python3")
+        )
+
+        # 3. Verify fint_build_cmd is empty when not specified
+        self.assertEqual(list(context.fint_build_cmd()), [])
+
+        # 4. Verify fint_build_cmd is fully populated when specified
+        context.config.fint_params_path = pathlib.Path("/tmp/static.proto")
+        expected_cmd = [
+            "/custom/bin/python3",
+            "-S",
+            "-u",
+            "/tmp/fuchsia/tools/integration/fint/fint_build.py",
+            "--static",
+            "/tmp/static.proto",
+            "--",
+        ]
+        self.assertEqual(
+            [str(arg) for arg in context.fint_build_cmd()],
+            expected_cmd,
+        )
+
+        # 5. Verify fint_build_cmd forwards context path when specified
+        context.config.fint_context_path = pathlib.Path("/tmp/context.proto")
+        expected_cmd_with_context = [
+            "/custom/bin/python3",
+            "-S",
+            "-u",
+            "/tmp/fuchsia/tools/integration/fint/fint_build.py",
+            "--static",
+            "/tmp/static.proto",
+            "--context",
+            "/tmp/context.proto",
+            "--",
+        ]
+        self.assertEqual(
+            [str(arg) for arg in context.fint_build_cmd()],
+            expected_cmd_with_context,
+        )
+
+    def test_msg_logging(self) -> None:
+        f_stdout = io.StringIO()
+        with contextlib.redirect_stdout(f_stdout):
+            main_build.msg("hello stdout")
+        self.assertEqual(f_stdout.getvalue(), "[main_build.py] hello stdout\n")
+
+        f_stderr = io.StringIO()
+        with contextlib.redirect_stderr(f_stderr):
+            main_build.msg("hello stderr", file=sys.stderr)
+        self.assertEqual(f_stderr.getvalue(), "[main_build.py] hello stderr\n")
+
+    def test_output_metadata_json(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = pathlib.Path(tmpdir)
+            output_json_path = tmp_path / "metadata.json"
+            build_dir = tmp_path / "build"
+            out_dir = tmp_path / "out"
+            log_dir = out_dir / "_build_logs/build_name/invocation_logs"
+            reproxy_log_dir = log_dir / "reproxy_logs"
+
+            # Create required directories and files
+            main_build.mkdir(build_dir)
+            main_build.mkdir(out_dir)
+            main_build.mkdir(reproxy_log_dir)
+
+            fuchsia_gn_trace = build_dir / "fuchsia_gn_trace.json"
+            main_build.write_text(fuchsia_gn_trace, "[]")
+
+            # Create dynamic mock context file containing artifact_dir
+            context_proto = tmp_path / "context.proto"
+            artifact_dir_path = tmp_path / "artifacts"
+            main_build.mkdir(artifact_dir_path)
+            main_build.write_text(
+                context_proto, f'artifact_dir: "{artifact_dir_path}"\n'
+            )
+
+            # Create mock build_artifacts.json
+            build_artifacts_file = artifact_dir_path / "build_artifacts.json"
+            main_build.write_text(build_artifacts_file, "{}")
+
+            # Create mock reproxy files
+            main_build.write_text(
+                reproxy_log_dir / "bootstrap.INFO", "bootstrap"
+            )
+            main_build.write_text(reproxy_log_dir / "reproxy.INFO", "reproxy")
+            main_build.write_text(
+                reproxy_log_dir / "reproxy_log.pb", "reproxy_log_pb"
+            )
+            main_build.write_text(
+                reproxy_log_dir / "rbe_metrics.txt", "metrics"
+            )
+            main_build.write_text(reproxy_log_dir / "reproxy_run.rrpl", "rrpl")
+
+            config = main_build.FuchsiaBuildConfig(
+                rbe=True,
+                resultstore="all",
+                profile=True,
+                tui=True,
+                verbose=False,
+                dry_run=False,
+                fint_params_path=None,
+                fint_context_path=context_proto,
+                output_metadata_json=output_json_path,
+            )
+
+            context = main_build.FuchsiaBuildContext(
+                source_dir=pathlib.Path("/tmp"),
+                out_dir=out_dir,
+                build_dir=build_dir,
+                env={},
+                config=config,
+            )
+
+            invocation = main_build.BuildInvocation(context)
+            with mock.patch.object(
+                main_build.BuildInvocation,
+                "log_dir",
+                new_callable=mock.PropertyMock,
+                return_value=log_dir,
+            ), mock.patch.object(
+                main_build.FuchsiaBuildContext,
+                "fint_artifact_dir",
+                new_callable=mock.PropertyMock,
+                return_value=artifact_dir_path,
+            ):
+                invocation.write_metadata_json(output_json_path)
+
+            # Verify contents of written JSON
+            self.assertTrue(output_json_path.exists())
+            with open(output_json_path, "r") as f:
+                data = json.load(f)
+
+            self.assertEqual(
+                data["fint_build_artifacts"],
+                str(build_artifacts_file.resolve()),
+            )
+            self.assertEqual(data["gn_trace"], str(fuchsia_gn_trace.resolve()))
+            self.assertEqual(
+                data["rbe"]["log_dir"], str(reproxy_log_dir.resolve())
+            )
+            self.assertEqual(
+                data["rbe"]["diagnostic_logs"]["bootstrap.INFO"],
+                str((reproxy_log_dir / "bootstrap.INFO").resolve()),
+            )
+            self.assertEqual(
+                data["rbe"]["diagnostic_logs"]["reproxy.INFO"],
+                str((reproxy_log_dir / "reproxy.INFO").resolve()),
+            )
+            self.assertEqual(
+                data["rbe"]["diagnostic_logs"]["rbe_metrics.txt"],
+                str((reproxy_log_dir / "rbe_metrics.txt").resolve()),
+            )
+            self.assertIn(
+                str((reproxy_log_dir / "reproxy_run.rrpl").resolve()),
+                data["rbe"]["cas_upload_candidates"],
+            )
+            self.assertEqual(
+                data["rbe"]["reproxy_log_pb"],
+                str((reproxy_log_dir / "reproxy_log.pb").resolve()),
+            )
+
+    @mock.patch.object(subprocess, "check_output")
+    def test_fint_artifact_dir_success(
+        self, mock_check_output: mock.Mock
+    ) -> None:
+        mock_check_output.return_value = "/mock/resolved/artifacts\n"
+        config = main_build.FuchsiaBuildConfig(
+            rbe=True,
+            resultstore="all",
+            profile=True,
+            tui=True,
+            verbose=False,
+            dry_run=False,
+            fint_params_path=pathlib.Path("/tmp/static.proto"),
+            fint_context_path=pathlib.Path("/tmp/context.proto"),
+            output_metadata_json=None,
+        )
+        context = main_build.FuchsiaBuildContext(
+            source_dir=pathlib.Path("/tmp/fuchsia"),
+            out_dir=pathlib.Path("/tmp/fuchsia/out/default"),
+            build_dir=pathlib.Path("/tmp/fuchsia/out/default"),
+            env={},
+            config=config,
+        )
+        self.assertEqual(
+            context.fint_artifact_dir, pathlib.Path("/mock/resolved/artifacts")
+        )
+        mock_check_output.assert_called_once_with(
+            [
+                "python3",
+                "-S",
+                "-u",
+                "/tmp/fuchsia/tools/integration/fint/fint_build.py",
+                "--context",
+                "/tmp/context.proto",
+                "--print-artifact-dir",
+            ],
+            text=True,
+            stderr=subprocess.PIPE,
+        )
+
+    @mock.patch.object(subprocess, "check_output")
+    def test_fint_artifact_dir_failure(
+        self, mock_check_output: mock.Mock
+    ) -> None:
+        mock_check_output.side_effect = subprocess.CalledProcessError(2, "cmd")
+        config = main_build.FuchsiaBuildConfig(
+            rbe=True,
+            resultstore="all",
+            profile=True,
+            tui=True,
+            verbose=False,
+            dry_run=False,
+            fint_params_path=pathlib.Path("/tmp/static.proto"),
+            fint_context_path=pathlib.Path("/tmp/context.proto"),
+            output_metadata_json=None,
+        )
+        context = main_build.FuchsiaBuildContext(
+            source_dir=pathlib.Path("/tmp/fuchsia"),
+            out_dir=pathlib.Path("/tmp/fuchsia/out/default"),
+            build_dir=pathlib.Path("/tmp/fuchsia/out/default"),
+            env={},
+            config=config,
+        )
+        self.assertIsNone(context.fint_artifact_dir)
 
 
 if __name__ == "__main__":

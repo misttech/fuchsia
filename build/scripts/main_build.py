@@ -29,14 +29,26 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, TextIO
 
 import signal_utils
 
+_JSONPrimitive = str | int | float | bool | None
+JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
+JSONObject = dict[str, JSONValue]
+JSONArray = list[JSONValue]
+
 _SCRIPT = pathlib.Path(__file__)
+
+
+def msg(text: str, file: TextIO | None = None) -> None:
+    """Print a message prefixed with the script's basename."""
+    if file is None:
+        file = sys.stdout
+    print(f"[{_SCRIPT.name}] {text}", file=file)
+
 
 GLOBAL_RESULTSTORE_CONFIG = pathlib.Path(".fx/config/resultstore")
 LOCAL_RESULTSTORE_CONFIG = pathlib.Path(".resultstore")
@@ -62,6 +74,7 @@ class FuchsiaBuildConfig(object):
       resultstore: "all", "none", "ninja", or "bazel"
       profile: if True, collect system profile during build
       tui: if True, enable terminal UI for monitoring build
+      fint_params_path: path to Fint static parameters if Fint wrapping is triggered
     """
 
     rbe: bool | None
@@ -71,6 +84,9 @@ class FuchsiaBuildConfig(object):
     verbose: bool
     dry_run: bool
     status: bool = True
+    fint_params_path: pathlib.Path | None = None
+    fint_context_path: pathlib.Path | None = None
+    output_metadata_json: pathlib.Path | None = None
 
     @staticmethod
     def from_args(
@@ -86,11 +102,61 @@ class FuchsiaBuildConfig(object):
             verbose=args.verbose,
             dry_run=args.dry_run,
             status=args.status,
+            fint_params_path=args.fint_params_path,
+            fint_context_path=args.fint_context_path,
+            output_metadata_json=args.output_metadata_json,
         )
 
 
 def check_shell_command(cmd: str) -> bool:
     return shutil.which(cmd) is not None
+
+
+def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
+    """Scans the active reproxy logs directory for diagnostic files and CAS logs.
+
+    Args:
+        log_dir: Path to the active build invocation's log directory.
+
+    Returns:
+        A dictionary containing paths to the reproxy log directory, diagnostic
+        log files, CAS upload candidates (.rrpl/.rpl), and serialized proto logs.
+    """
+    rbe_metadata: JSONObject = {}
+    reproxy_log_dir = log_dir / "reproxy_logs"
+    if not reproxy_log_dir.exists():
+        return rbe_metadata
+
+    reproxy_log_dir_abs = reproxy_log_dir.resolve()
+    rbe_metadata["log_dir"] = str(reproxy_log_dir_abs)
+
+    diagnostic_logs = {}
+    for name in ["bootstrap.INFO", "reproxy.INFO", "rbe_metrics.txt"]:
+        candidate = reproxy_log_dir_abs / name
+        if candidate.exists():
+            diagnostic_logs[name] = str(candidate)
+    if diagnostic_logs:
+        rbe_metadata["diagnostic_logs"] = diagnostic_logs
+
+    cas_candidates = []
+    try:
+        for item in reproxy_log_dir_abs.iterdir():
+            if item.is_file() and item.suffix in (".rrpl", ".rpl"):
+                cas_candidates.append(str(item.resolve()))
+    except Exception:
+        pass
+    if cas_candidates:
+        rbe_metadata["cas_upload_candidates"] = cas_candidates
+
+    for pb_name, pb_filename in [
+        ("rbe_metrics_pb", "rbe_metrics.pb"),
+        ("reproxy_log_pb", "reproxy_log.pb"),
+    ]:
+        candidate = reproxy_log_dir_abs / pb_filename
+        if candidate.exists():
+            rbe_metadata[pb_name] = str(candidate)
+
+    return rbe_metadata
 
 
 def exists(path: pathlib.Path) -> bool:
@@ -161,7 +227,7 @@ def _check_rbe_env_vars(environ: dict[str, str]) -> None:
     """Warns if environment variables starting with 'RBE_' are set."""
     rbe_vars = sorted([k for k in environ if k.startswith("RBE_")])
     if rbe_vars:
-        print(
+        msg(
             f"Warning: The following environment variables starting with 'RBE_' "
             f"are set and may override RBE tool configurations: {', '.join(rbe_vars)}"
         )
@@ -361,6 +427,80 @@ class FuchsiaBuildContext(object):
         return self.build_dir / "rbe_settings.json"
 
     @property
+    def fint_build_py(self) -> pathlib.Path:
+        return self.source_dir / "tools/integration/fint/fint_build.py"
+
+    @property
+    def python_bin(self) -> pathlib.Path:
+        return pathlib.Path(self.env.get("PREBUILT_PYTHON3", "python3"))
+
+    def _fint_wrapper_cmd(
+        self,
+        static_path: pathlib.Path | None = None,
+        context_path: pathlib.Path | None = None,
+        print_artifact_dir: bool = False,
+    ) -> Iterable[str]:
+        """Constructs and yields command-line arguments for executing fint_build.py.
+
+        Args:
+            static_path: Path to the Fint static parameters textproto.
+            context_path: Path to the Fint context parameters textproto.
+            print_artifact_dir: If True, appends the query flag to print the
+              artifact directory path and exits instead of running the build.
+        """
+        yield str(self.python_bin)
+        yield "-S"
+        yield "-u"
+        yield str(self.fint_build_py)
+
+        if static_path:
+            yield "--static"
+            yield str(static_path)
+        if context_path:
+            yield "--context"
+            yield str(context_path)
+        if print_artifact_dir:
+            yield "--print-artifact-dir"
+        else:
+            yield "--"
+
+    def fint_build_cmd(self) -> Iterable[str]:
+        """Constructs and yields command-line arguments for standard Fint build execution."""
+        if not self.config.fint_params_path:
+            return
+        yield from self._fint_wrapper_cmd(
+            static_path=self.config.fint_params_path,
+            context_path=self.config.fint_context_path,
+        )
+
+    @functools.cached_property
+    def fint_artifact_dir(self) -> pathlib.Path | None:
+        """Parses and returns the Fint artifact directory path from context parameters if specified."""
+        if not self.config.fint_context_path:
+            return None
+
+        try:
+            cmd = list(
+                self._fint_wrapper_cmd(
+                    context_path=self.config.fint_context_path,
+                    print_artifact_dir=True,
+                )
+            )
+            output = subprocess.check_output(
+                cmd,
+                text=True,
+                stderr=subprocess.PIPE,
+            ).strip()
+            if output:
+                return pathlib.Path(output)
+        except (subprocess.CalledProcessError, OSError) as e:
+            msg(
+                f"Failed to delegate artifact_dir parsing to fint_build.py: {e}",
+                file=sys.stderr,
+            )
+        return None
+
+    @property
     def rbe_config_json(self) -> pathlib.Path:
         return self.build_dir / "rbe_config.json"
 
@@ -375,6 +515,11 @@ class FuchsiaBuildContext(object):
     @property
     def args_gn(self) -> pathlib.Path:
         return self.build_dir / "args.gn"
+
+    @property
+    def gn_trace_path(self) -> pathlib.Path:
+        """Returns the path to the GN-generated trace file."""
+        return self.build_dir / "fuchsia_gn_trace.json"
 
     @property
     def rsninja_sh(self) -> pathlib.Path:
@@ -456,6 +601,48 @@ class BuildInvocation(object):
         # which creates the directory and writes the invocation_id.
         _ = self.log_dir
 
+    def write_metadata_json(self, output_path: pathlib.Path) -> None:
+        """Serializes build log paths and metadata to a structured JSON file.
+
+        Enables downstream build recipes to dynamically resolve and upload logs
+        (like RBE and ResultStore) without hardcoding source-tree path patterns.
+
+        Args:
+            output_path: Path where the structured metadata JSON will be written.
+        """
+        context = self.context
+        log_dir = self.log_dir
+
+        fint_build_artifacts = None
+        artifact_dir = context.fint_artifact_dir
+        if artifact_dir:
+            candidate = artifact_dir / "build_artifacts.json"
+            if candidate.exists():
+                fint_build_artifacts = str(candidate.resolve())
+
+        gn_trace = None
+        gn_trace_candidate = context.gn_trace_path
+        if gn_trace_candidate.exists():
+            gn_trace = str(gn_trace_candidate.resolve())
+
+        metadata: JSONObject = {}
+        if fint_build_artifacts:
+            metadata["fint_build_artifacts"] = fint_build_artifacts
+        if gn_trace:
+            metadata["gn_trace"] = gn_trace
+
+        rbe_metadata = _collect_rbe_metadata(log_dir)
+        if rbe_metadata:
+            metadata["rbe"] = rbe_metadata
+
+        try:
+            mkdir(output_path.parent)
+            with open(output_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+                f.write("\n")
+        except Exception as e:
+            msg(f"Failed to write metadata JSON: {e}", file=sys.stderr)
+
     @functools.cached_property
     def build_uuid(self) -> str:
         """Generates a unique ID for this build."""
@@ -488,6 +675,45 @@ class BuildInvocation(object):
         return log_dir
 
     # LINT.ThenChange(//tools/devshell/lib/vars.sh:build_log_dir_structure)
+
+    def top_build_command_prefix(self) -> Iterable[str]:
+        """Construct the prefix command for the top-level wrapper."""
+        context = self.context
+        # top_build_wrapper is a wrapper orchestrator whose purpose is to
+        # auto-start/stop processes around the build.
+        yield str(context.top_build_wrapper)
+
+        if context.config.dry_run:
+            yield "--dry-run"
+
+        if context.config.tui:
+            yield "--tui"
+
+        if context.rbe_enabled:
+            yield "--rbe"
+            for cfg_path in context.get_rbe_reproxy_configs():
+                yield "--reproxy-cfg"
+                yield str(cfg_path)
+
+        # LOAS handling
+        yield "--loas-type"
+        yield context.loas_type
+
+        # Log directory setup
+        yield "--build-dir"
+        yield str(context.build_dir)
+        yield "--log-dir"
+        yield str(self.log_dir)
+
+        if context.config.resultstore in ("all", "ninja"):
+            yield "--resultstore"
+            args_gn = context.args_gn
+            if exists(args_gn):
+                yield "--pre-build-uploads"
+                yield str(args_gn)
+
+        if context.config.profile:
+            yield "--profile"
 
     def get_build_env(self) -> dict[str, str]:
         """Curate a build environment for this invocation."""
@@ -601,6 +827,73 @@ class BuildInvocation(object):
 
         return build_env
 
+    def new_build_command_execution(
+        self,
+        command_type: str,
+        build_command: list[str],
+    ) -> "BuildCommandExecution":
+        """Creates a self-contained BuildCommandExecution."""
+        top_cmd = list(self.top_build_command_prefix())
+        build_env = self.get_build_env()
+        context = self.context
+
+        resultstore_post_build_uploads = []
+
+        if context.config.resultstore in ("all", "ninja"):
+            if command_type == "ninja":
+                ninja_log_dir = self.log_dir / "ninja_logs"
+                resultstore_post_build_uploads.extend(
+                    [
+                        ninja_log_dir / "ninja_action_metrics.json",
+                        ninja_log_dir / "ninja_dirty_sources.log",
+                        context.ninja_edge_weights_csv,
+                    ]
+                )
+
+        top_cmd.extend(
+            arg
+            for f in resultstore_post_build_uploads
+            for arg in ("--post-build-uploads", str(f))
+        )
+
+        # Prepare Ninja-specific options
+        if command_type == "ninja":
+            build_command = self._inject_ninja_args(build_command)
+
+        fint_cmd = list(context.fint_build_cmd())
+        if fint_cmd:
+            build_command = fint_cmd + list(build_command)
+
+        full_cmd = top_cmd + ["--"] + list(build_command)
+
+        return BuildCommandExecution(
+            full_command=full_cmd,
+            env=build_env,
+            invocation=self,
+        )
+
+    def _inject_ninja_args(
+        self,
+        build_command: list[str],
+    ) -> list[str]:
+        """Return new build command with Ninja-specific flags injected in the right place."""
+        ninja_log_dir = self.log_dir / "ninja_logs"
+        mkdir(ninja_log_dir)
+        # Record the set of inputs that triggered build actions.
+        dirty_sources = ninja_log_dir / "ninja_dirty_sources.log"
+        # Record action count metrics.
+        action_metrics = ninja_log_dir / "ninja_action_metrics.json"
+
+        ninja_bin = build_command[0]
+        remaining_args = build_command[1:]
+        return [
+            ninja_bin,
+            "--dirty_sources_list",
+            str(dirty_sources),
+            "--action_metrics_output",
+            str(action_metrics),
+        ] + list(remaining_args)
+
 
 @dataclasses.dataclass
 class BuildCommandExecution(object):
@@ -627,7 +920,7 @@ class BuildCommandExecution(object):
             env_str = " ".join(
                 f"{k}={shlex.quote(v)}" for k, v in sorted(self.env.items())
             )
-            print(
+            msg(
                 f"Running: {env_str} {' '.join(shlex.quote(c) for c in self.full_command)}"
             )
         # Note: when config.dry_run is set, we still execute the command,
@@ -670,121 +963,6 @@ class BuildCommandExecution(object):
         finally:
             for f in self.cleanup_files:
                 f.unlink(missing_ok=True)
-
-
-def top_build_command_prefix(
-    invocation: BuildInvocation,
-) -> list[str]:
-    """Construct the prefix command for the top-level wrapper."""
-    context = invocation.context
-    # top_build_wrapper is a wrapper orchestrator whose purpose is to
-    # auto-start/stop processes around the build.
-    top_cmd = [str(context.top_build_wrapper)]
-
-    if context.config.dry_run:
-        top_cmd.append("--dry-run")
-
-    if context.config.tui:
-        top_cmd.append("--tui")
-
-    if context.rbe_enabled:
-        top_cmd.append("--rbe")
-        for cfg_path in context.get_rbe_reproxy_configs():
-            top_cmd.extend(["--reproxy-cfg", str(cfg_path)])
-
-    # LOAS handling
-    top_cmd.extend(["--loas-type", context.loas_type])
-
-    # Log directory setup
-    top_cmd.extend(["--build-dir", str(context.build_dir)])
-    top_cmd.extend(["--log-dir", str(invocation.log_dir)])
-
-    if context.config.resultstore in ("all", "ninja"):
-        top_cmd.append("--resultstore")
-        args_gn = context.args_gn
-        if exists(args_gn):
-            top_cmd.extend(["--pre-build-uploads", str(args_gn)])
-
-    if context.config.profile:
-        top_cmd.append("--profile")
-
-    return top_cmd
-
-
-def inject_ninja_args(
-    invocation: BuildInvocation,
-    build_command: list[str],
-) -> list[str]:
-    """Return new build command with Ninja-specific flags injected in the right place."""
-    ninja_log_dir = invocation.log_dir / "ninja_logs"
-    mkdir(ninja_log_dir)
-    # Record the set of inputs that triggered build actions.
-    dirty_sources = ninja_log_dir / "ninja_dirty_sources.log"
-    # Record action count metrics.
-    action_metrics = ninja_log_dir / "ninja_action_metrics.json"
-
-    ninja_bin = build_command[0]
-    remaining_args = build_command[1:]
-    return [
-        ninja_bin,
-        "--dirty_sources_list",
-        str(dirty_sources),
-        "--action_metrics_output",
-        str(action_metrics),
-    ] + list(remaining_args)
-
-
-def new_build_command_execution(
-    invocation: BuildInvocation,
-    command_type: str,
-    build_command: list[str],
-) -> BuildCommandExecution:
-    """Creates a self-contained BuildCommandExecution."""
-    top_cmd = top_build_command_prefix(invocation)
-    build_env = invocation.get_build_env()
-    context = invocation.context
-
-    resultstore_post_build_uploads = []
-
-    if context.config.resultstore in ("all", "ninja"):
-        if command_type == "ninja":
-            ninja_log_dir = invocation.log_dir / "ninja_logs"
-            resultstore_post_build_uploads.extend(
-                [
-                    ninja_log_dir / "ninja_action_metrics.json",
-                    ninja_log_dir / "ninja_dirty_sources.log",
-                    context.ninja_edge_weights_csv,
-                ]
-            )
-        elif command_type == "fint":
-            # TODO(https://fxbug.dev/537038381): Remove fint-awareness from main_build.py
-            # once the build recipes migrate to wrapping fint_build.py around main_build.py.
-            # Under fint builds, the telemetry outputs are expected in the build output directory
-            resultstore_post_build_uploads.extend(
-                [
-                    context.build_dir / "ninja_build_trace.json.gz",
-                    context.build_dir / "ninja_action_metrics.json",
-                    context.ninja_edge_weights_csv,
-                ]
-            )
-
-    top_cmd.extend(
-        arg
-        for f in resultstore_post_build_uploads
-        for arg in ("--post-build-uploads", str(f))
-    )
-
-    # Prepare Ninja-specific options
-    if command_type == "ninja":
-        build_command = inject_ninja_args(invocation, build_command)
-
-    full_cmd = top_cmd + ["--"] + list(build_command)
-
-    return BuildCommandExecution(
-        full_command=full_cmd,
-        env=build_env,
-        invocation=invocation,
-    )
 
 
 # TODO: De-duplicate with find_fuchsia_dir in //build/bazel/scripts/build_utils.py.
@@ -892,7 +1070,7 @@ def new_ninja_build_command_execution(
         + remaining
     )
     invocation = BuildInvocation(context)
-    return new_build_command_execution(invocation, "ninja", build_cmd)
+    return invocation.new_build_command_execution("ninja", build_cmd)
 
 
 def new_bazel_build_command_execution(
@@ -912,52 +1090,7 @@ def new_bazel_build_command_execution(
         build_cmd = ["bazel"] + list(bazel_args)
 
     invocation = BuildInvocation(context)
-    return new_build_command_execution(invocation, "bazel", build_cmd)
-
-
-def new_fint_build_command_execution(
-    context: FuchsiaBuildContext,
-    fint_args: list[str],
-) -> BuildCommandExecution:
-    """Construct a fint build command.
-
-    Args:
-        context: FuchsiaBuildContext.
-        fint_args: list of arguments, where the first element must be the path
-            to the fint binary. Remaining arguments are passed to 'fint build'.
-
-    Behavior:
-    - Generates a temporary textproto context file for fint.
-    - Appends '-context=<path>' to the fint command.
-    - Schedules the temporary context file for cleanup after execution.
-    """
-    # fint_args should be [fint_bin, build, -static=...]
-    if not fint_args:
-        raise BuildConfigurationError("fint requires at least the binary path.")
-
-    fint_bin = fint_args[0]
-    remaining = fint_args[1:]
-
-    concurrency = context.concurrency
-    # MacOS ulimit check
-    ensure_file_descriptor_limit(int(concurrency) * 2)
-
-    context_content = f"""
-checkout_dir: "{context.source_dir.resolve()}"
-build_dir: "{context.build_dir.resolve()}"
-job_count: {concurrency}
-"""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".textproto", delete=False
-    ) as tf:
-        tf.write(context_content)
-        context_path = pathlib.Path(tf.name)
-
-    build_cmd = [fint_bin] + remaining + [f"-context={context_path}"]
-    invocation = BuildInvocation(context)
-    exec_info = new_build_command_execution(invocation, "fint", build_cmd)
-    exec_info.cleanup_files.append(context_path)
-    return exec_info
+    return invocation.new_build_command_execution("bazel", build_cmd)
 
 
 def new_other_build_command_execution(
@@ -976,7 +1109,7 @@ def new_other_build_command_execution(
         )
 
     invocation = BuildInvocation(context)
-    return new_build_command_execution(invocation, "other", other_args)
+    return invocation.new_build_command_execution("other", other_args)
 
 
 def _main_arg_parser() -> argparse.ArgumentParser:
@@ -1014,6 +1147,25 @@ def _main_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-status", action="store_false", dest="status")
 
+    parser.add_argument(
+        "--fint-params-path",
+        type=pathlib.Path,
+        default=None,
+        help="Path to the Fint static parameters textproto. If provided, main_build.py automatically wraps execution inside fint_build.py.",
+    )
+    parser.add_argument(
+        "--fint-context-path",
+        type=pathlib.Path,
+        default=None,
+        help="Path to the Fint context parameters textproto. If provided, forwarded to fint_build.py --context.",
+    )
+    parser.add_argument(
+        "--output-metadata-json",
+        type=pathlib.Path,
+        default=None,
+        help="Path to write the structured metadata JSON describing all build logs and artifacts.",
+    )
+
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser(
@@ -1026,11 +1178,6 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         help="Execute a Bazel build.",
         description="Expects arbitrary Bazel arguments to be passed after 'bazel'.",
     ).set_defaults(func=new_bazel_build_command_execution)
-    subparsers.add_parser(
-        "fint",
-        help="Execute a fint build.",
-        description="Expects [fint_bin, build, -static=...] to be passed after 'fint'.",
-    ).set_defaults(func=new_fint_build_command_execution)
     subparsers.add_parser(
         "other",
         help="Execute an arbitrary command.",
@@ -1049,24 +1196,37 @@ def main(argv: list[str]) -> int:
     _check_rbe_env_vars(environ)
     context = FuchsiaBuildContext.from_args(args, environ)
 
+    invocation = None
     try:
         exec_info = args.func(context, unknown)
+        invocation = exec_info.invocation
         return exec_info.run().return_code
     except BuildConfigurationError as e:
-        print(f"Error: {e}")
+        msg(f"Error: {e}", file=sys.stderr)
         return 1
     except signal_utils.BuildInterruptedError as e:
         # SignalManagedProcess ensures that we have already waited for any
         # child processes before this is raised.
         sig_name = signal.Signals(e.signum).name
-        print(
-            f"[main_build.py] Interrupted by {sig_name}, exiting ({e.return_code})"
+        msg(
+            f"Interrupted by {sig_name}, exiting ({e.return_code})",
+            file=sys.stderr,
         )
         return e.return_code
     except KeyboardInterrupt:
         # Fallback for standard interrupts outside SignalManagedProcess
-        print("[main_build.py] Received KeyboardInterrupt, exiting (130)")
+        msg("Received KeyboardInterrupt, exiting (130)", file=sys.stderr)
         return 130
+    finally:
+        if args.output_metadata_json:
+            active_invocation = invocation
+            if not active_invocation:
+                try:
+                    active_invocation = BuildInvocation(context)
+                except Exception:
+                    pass
+            if active_invocation:
+                active_invocation.write_metadata_json(args.output_metadata_json)
 
 
 if __name__ == "__main__":

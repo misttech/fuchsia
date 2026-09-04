@@ -1160,8 +1160,7 @@ function fx-run-build-command {
   # in the python implementation to ensure early failure.
 
   local print_full_cmd="$1"
-  local command_type="$2"
-  shift 2
+  shift 1
   local -a args=(
     "--build-dir" "${FUCHSIA_BUILD_DIR}"
     "--out-dir" "${FUCHSIA_OUT_DIR}"
@@ -1181,7 +1180,6 @@ function fx-run-build-command {
     args+=("--no-status")
   fi
   args+=(
-    "${command_type}"
     "$@"
   )
   fx-wait-ignoring-signals "fx-build" "${PREBUILT_PYTHON3}" "${main_build_script}" "${args[@]}"

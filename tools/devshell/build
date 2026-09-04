@@ -710,10 +710,9 @@ function main {
   echo "[]" > "${last_bazel_build_invocations_file}"
 
   if [[ "${FX_BUILD_MODE}" == "fint" ]]; then
-    readonly fint="${FX_CACHE_DIR}/fint"
-    "$FUCHSIA_DIR/tools/integration/bootstrap.sh" -o "$fint" || exit $?
-
-    (fx-run-fint "${is_logging}" "$fint" -log-level=error build -static="${fint_params_path}" "${extra_switches[@]}")
+    (fx-run-build-command "${is_logging}" \
+      --fint-params-path "${fint_params_path}" \
+      "ninja")
     status=$?
     exit-with-message
   fi

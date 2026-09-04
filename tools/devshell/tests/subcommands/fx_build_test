@@ -100,12 +100,12 @@ function fx-get-bazel {
 function fx-update-bazel-workspace { return 0; }
 EOF
   cat > "${BT_TEMP_DIR}/tools/devshell/lib/platform.sh.mock_side_effects" <<EOF
-    readonly PREBUILT_ALL_PATHS="${BT_TEMP_DIR}"
-    readonly PREBUILT_JQ="${BT_TEMP_DIR}/prebuilt/third_party/jq/linux-x64/bin/jq"
-    readonly PREBUILT_PYTHON3="$(command -v python3)"
-    readonly PREBUILT_PYTHON3_DIR="$(dirname "${PREBUILT_PYTHON3}")"
-    readonly PREBUILT_NINJA="${ninja}"
-    readonly PREBUILT_GN="${gn_bin}"
+    export PREBUILT_ALL_PATHS="${BT_TEMP_DIR}"
+    export PREBUILT_JQ="${BT_TEMP_DIR}/prebuilt/third_party/jq/linux-x64/bin/jq"
+    export PREBUILT_PYTHON3="$(command -v python3)"
+    export PREBUILT_PYTHON3_DIR="$(dirname "${PREBUILT_PYTHON3}")"
+    export PREBUILT_NINJA="${ninja}"
+    export PREBUILT_GN="${gn_bin}"
 EOF
 
   if [[ "$1" != "enable_landmines" ]]; then
@@ -165,22 +165,19 @@ setup_build_api_results() {
 }
 
 setup_fint_build() {
-  # tools/integration/bootstrap.sh is already mocked, populated
-  # the mock FX_CACHE_DIR with a symlink to a mock fint tool.
-  fint_bin=$(btf::make_mock_binary bin/fint)
-  # bootstrap.sh -o <path>
-  cat > "${BT_TEMP_DIR}/tools/integration/bootstrap.sh.mock_side_effects" <<EOF
-if [[ "\$1" == "-o" ]]; then
-  mkdir -p "\$(dirname "\$2")"
-  # Use a real script that records its own execution in the EXPECTED path
-  cat > "\$2" <<INNER
-#!/bin/bash
-# Records arguments in a way that can be sourced
-echo "BT_MOCK_ARGS=(\"\\\$0\" \"\\\$@\")" > "${fint_bin}.mock_state"
-INNER
-  chmod +x "\$2"
-fi
+  fint_build_mock="${BT_TEMP_DIR}/tools/integration/fint/fint_build.py"
+  mkdir -p "$(dirname "${fint_build_mock}")"
+  cat > "${fint_build_mock}" <<EOF
+#!/usr/bin/env python3
+import sys
+import pathlib
+
+state_file = pathlib.Path("${BT_TEMP_DIR}/tools/integration/fint/fint_build_test_state")
+# Format as a Bash-compatible array declaration
+args_str = " ".join(f'"{arg}"' for arg in sys.argv)
+state_file.write_text(f'BT_MOCK_ARGS=({args_str})\\n')
 EOF
+  chmod +x "${fint_build_mock}"
 }
 
 # --- Validation Tests ---
@@ -317,14 +314,12 @@ TEST_fx-build-with-fint() {
     setup_build_test
     setup_fint_build
     BT_EXPECT "${fx}" build --fint-params-path=path/to/build_config.proto
-    BT_EXPECT_FILE_EXISTS "${fint_bin}.mock_state"
-    source "${fint_bin}.mock_state"
-    local actual_args="${BT_MOCK_ARGS[*]}"
-    # The last item in BT_MOCK_ARGS will be -context=/path/to/tmp.textproto
-    # Sanitize dynamic paths (like /dev/fd/N or /tmp/tmp.textproto) to allow for stable comparisons.
-    actual_args=$(echo "${actual_args}" | sed -e 's|/.*/fint|/dev/ANY/fint|' -e 's|-context=[^ ]*|-context=/dev/fd/ANY|')
-    local expected_args="/dev/ANY/fint -log-level=error build -static=path/to/build_config.proto -context=/dev/fd/ANY"
-    BT_EXPECT_EQ "${actual_args}" "${expected_args}"
+    local mock_state_file="${BT_TEMP_DIR}/tools/integration/fint/fint_build_test_state"
+    BT_EXPECT_FILE_EXISTS "${mock_state_file}"
+    source "${mock_state_file}"
+    # Verify that fint_build.py was executed with the correct static parameters path
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[1]}" "--static"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[2]}" "path/to/build_config.proto"
 }
 
 TEST_fx-build-with-gn-label() {
