@@ -6,6 +6,7 @@ use anyhow::Error;
 use fidl_fuchsia_hardware_temperature as ftemperature;
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client as fclient;
+use futures::future::FutureExt;
 use futures::stream::FuturesUnordered;
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use zx::MonotonicDuration;
@@ -114,34 +115,33 @@ impl CobaltIntHistogram {
     }
 }
 
-const TEMPERATURE_DRIVER_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(5);
+const TEMPERATURE_DRIVER_TIMEOUT: MonotonicDuration = MonotonicDuration::from_seconds(60);
 
 pub async fn get_temperature_driver_proxy(
     sensor_name: &str,
 ) -> Result<ftemperature::DeviceProxy, Error> {
     const TEMPERATURE_DRIVER_DIRS: [&str; 2] = ["/dev/class/temperature", "/dev/class/thermal"];
 
+    // Search for the temperature driver across DevFS directories and FIDL service instances
+    // concurrently. The first watcher to find the matching sensor will return, cancelling
+    // remaining watchers.
     let mut futures = FuturesUnordered::new();
     for dir_path in TEMPERATURE_DRIVER_DIRS {
-        futures.push(get_temperature_driver_proxy_from_dir(dir_path, sensor_name));
+        futures.push(get_temperature_driver_proxy_from_dir(dir_path, sensor_name).boxed());
     }
+    futures.push(get_temperature_driver_proxy_from_svc(sensor_name).boxed());
 
     let mut debug_messages = Vec::new();
     while let Some(result) = futures.next().await {
         match result {
             Ok(proxy) => return Ok(proxy),
-            // It is ok that a driver directory listed above doesn't exist or timeout waiting for
-            // `sensor_name` to show up. Cache the error.
+            // It is ok that a driver directory or svc doesn't have the sensor or times out waiting
+            // for `sensor_name` to show up. Cache the error.
             Err(err) => debug_messages.push(err),
         };
     }
-    match get_temperature_driver_proxy_from_svc(sensor_name).await {
-        Ok(proxy) => return Ok(proxy),
-        // It is ok that a driver directory listed above doesn't exist or timeout waiting for
-        // `sensor_name` to show up. Cache the error.
-        Err(err) => debug_messages.push(err),
-    }
-    // If `sensor_name` is not found, print all the error messages to help with debugging.
+    // If `sensor_name` is not found across all sources, print all the error messages to help with
+    // debugging.
     for (i, message) in debug_messages.into_iter().enumerate() {
         log::error!("Failed to find temperature driver debug message [{}]: {:?}", i, message);
     }
