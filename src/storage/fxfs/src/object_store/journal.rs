@@ -26,7 +26,6 @@ use crate::checksum::{Checksum, Checksums, ChecksumsV38};
 use crate::errors::FxfsError;
 use crate::filesystem::{ApplyContext, ApplyMode, FxFilesystem, SyncOptions};
 use crate::log::*;
-use crate::lsm_tree::cache::NullCache;
 use crate::lsm_tree::types::LayerIterator;
 use crate::object_handle::{ObjectHandle as _, ReadObjectHandle};
 use crate::object_store::allocator::Allocator;
@@ -841,13 +840,9 @@ impl Journal {
         }
 
         // Now we can open the root store.
-        let root_store = ObjectStore::open(
-            &root_parent,
-            super_block.root_store_object_id,
-            Box::new(NullCache {}),
-        )
-        .await
-        .context("Unable to open root store")?;
+        let root_store = ObjectStore::open(&root_parent, super_block.root_store_object_id, None)
+            .await
+            .context("Unable to open root store")?;
 
         ensure!(
             !root_store.is_encrypted(),
@@ -1265,7 +1260,7 @@ impl Journal {
             None,
             INIT_ROOT_PARENT_STORE_OBJECT_ID,
             filesystem.clone(),
-            Box::new(NullCache {}),
+            None,
         );
         self.objects.set_root_parent_store(root_parent.clone());
 
@@ -1287,7 +1282,7 @@ impl Journal {
             .new_child_store(
                 &mut transaction,
                 NewChildStoreOptions { object_id: INIT_ROOT_STORE_OBJECT_ID, ..Default::default() },
-                Box::new(NullCache {}),
+                None,
             )
             .await
             .context("new_child_store")?;

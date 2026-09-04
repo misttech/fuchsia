@@ -4,7 +4,7 @@
 
 use super::object_record::{ObjectKey, ObjectKeyData, ObjectValue};
 use crate::lsm_tree::cache::{ObjectCache, ObjectCachePlaceholder, ObjectCacheResult};
-use fuchsia_sync::Mutex;
+use fuchsia_sync::{Mutex, MutexGuard};
 use linked_hash_map::{Entry, LinkedHashMap};
 use std::hash::BuildHasherDefault;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -103,11 +103,15 @@ impl ObjectCache<ObjectKey, ObjectValue> for TreeCache {
         if !filter(key) {
             return ObjectCacheResult::NoCache;
         }
-        let mut inner = self.inner.lock();
-        match inner.get_refresh(key) {
-            Some(CacheValue::Value(entry)) => ObjectCacheResult::Value(entry.clone()),
-            Some(CacheValue::Placeholder(_)) => ObjectCacheResult::NoCache,
-            _ => {
+        let inner = self.inner.lock();
+        match MutexGuard::try_map_or_err(inner, |inner| match inner.get_refresh(key) {
+            Some(CacheValue::Value(v)) => Ok(v),
+            Some(CacheValue::Placeholder(_)) => Err(false),
+            None => Err(true),
+        }) {
+            Ok(guard) => ObjectCacheResult::Value(guard),
+            Err((_, false)) => ObjectCacheResult::NoCache,
+            Err((mut inner, true)) => {
                 let placeholder_id = self.placeholder_counter.fetch_add(1, Ordering::Relaxed);
                 inner.insert(key.clone(), CacheValue::Placeholder(placeholder_id));
                 if inner.len() > ITEM_LIMIT {
@@ -122,17 +126,21 @@ impl ObjectCache<ObjectKey, ObjectValue> for TreeCache {
         }
     }
 
-    fn invalidate(&self, key: ObjectKey, value: Option<ObjectValue>) {
-        if !filter(&key) {
+    fn is_cacheable(&self, key: &ObjectKey) -> bool {
+        filter(key)
+    }
+
+    fn invalidate(&self, key: &ObjectKey, value: Option<ObjectValue>) {
+        if !filter(key) {
             return;
         }
         let mut inner = self.inner.lock();
-        if let Entry::Occupied(mut entry) = inner.entry(key) {
-            if let Some(replacement) = value {
-                *(entry.get_mut()) = CacheValue::Value(replacement);
-            } else {
-                entry.remove();
+        if let Some(replacement) = value {
+            if let Some(entry) = inner.get_mut(key) {
+                *entry = CacheValue::Value(replacement);
             }
+        } else {
+            inner.remove(key);
         }
     }
 }
@@ -158,13 +166,12 @@ mod tests {
         };
         placeholder.complete(Some(&value));
 
-        let result = match cache.lookup_or_reserve(&key) {
-            ObjectCacheResult::Value(value) => value,
+        match cache.lookup_or_reserve(&key) {
+            ObjectCacheResult::Value(result) => assert_eq!(&*result, &value),
             _ => panic!("Expected to find item."),
         };
-        assert_eq!(&result, &value);
 
-        cache.invalidate(key.clone(), None);
+        cache.invalidate(&key, None);
 
         match cache.lookup_or_reserve(&key) {
             ObjectCacheResult::Placeholder(placeholder) => placeholder.complete(None),
@@ -214,19 +221,17 @@ mod tests {
         };
         placeholder.complete(Some(&value1));
 
-        let result = match cache.lookup_or_reserve(&key) {
-            ObjectCacheResult::Value(value) => value,
+        match cache.lookup_or_reserve(&key) {
+            ObjectCacheResult::Value(result) => assert_eq!(&*result, &value1),
             _ => panic!("Expected to find item."),
         };
-        assert_eq!(&result, &value1);
 
-        cache.invalidate(key.clone(), Some(value2.clone()));
+        cache.invalidate(&key, Some(value2.clone()));
 
-        let result = match cache.lookup_or_reserve(&key) {
-            ObjectCacheResult::Value(value) => value,
+        match cache.lookup_or_reserve(&key) {
+            ObjectCacheResult::Value(result) => assert_eq!(&*result, &value2),
             _ => panic!("Expected to find item."),
         };
-        assert_eq!(&result, &value2);
     }
 
     #[fuchsia::test]
@@ -234,7 +239,27 @@ mod tests {
         let cache = TreeCache::new();
         let key = ObjectKey::extent(1, AttributeId::TEST_ID, 1..2);
 
+        assert!(!cache.is_cacheable(&key));
         assert!(matches!(cache.lookup_or_reserve(&key), ObjectCacheResult::NoCache));
+    }
+
+    #[fuchsia::test]
+    async fn test_is_cacheable() {
+        let cache = TreeCache::new();
+
+        // Cacheable keys: Object, ExtendedAttribute, Keys
+        assert!(cache.is_cacheable(&ObjectKey::object(1)));
+        assert!(cache.is_cacheable(&ObjectKey::keys(1)));
+        assert!(cache.is_cacheable(&ObjectKey::extended_attribute(1, vec![1, 2, 3])));
+
+        // Non-cacheable keys: Extent, Graveyard, etc.
+        assert!(!cache.is_cacheable(&ObjectKey::extent(1, AttributeId::TEST_ID, 1..2)));
+        assert!(!cache.is_cacheable(&ObjectKey::graveyard_entry(1, 2)));
+        assert!(!cache.is_cacheable(&ObjectKey::graveyard_attribute_entry(
+            1,
+            2,
+            AttributeId::TEST_ID
+        )));
     }
 
     // Two clients looking for the same key don't interfere with each other. Prevents priority
@@ -256,7 +281,7 @@ mod tests {
         assert!(matches!(cache.lookup_or_reserve(&key), ObjectCacheResult::NoCache));
 
         // Invalidate the current placeholder.
-        cache.invalidate(key.clone(), None);
+        cache.invalidate(&key, None);
 
         // Get a new placeholder
         let placeholder2 = match cache.lookup_or_reserve(&key) {
@@ -269,11 +294,10 @@ mod tests {
         placeholder1.complete(Some(&value1));
 
         // Result should be from the second placeholder, as the first was invalidated.
-        let result = match cache.lookup_or_reserve(&key) {
-            ObjectCacheResult::Value(value) => value,
+        match cache.lookup_or_reserve(&key) {
+            ObjectCacheResult::Value(result) => assert_eq!(&*result, &value2),
             _ => panic!("Expected to find item."),
         };
-        assert_eq!(&result, &value2);
     }
 
     #[fuchsia::test]
@@ -290,13 +314,12 @@ mod tests {
         };
         placeholder.complete(Some(&value));
 
-        let result = match cache.lookup_or_reserve(&key) {
-            ObjectCacheResult::Value(value) => value,
+        match cache.lookup_or_reserve(&key) {
+            ObjectCacheResult::Value(result) => assert_eq!(&*result, &value),
             _ => panic!("Expected to find item."),
         };
-        assert_eq!(&result, &value);
 
-        cache.invalidate(key.clone(), None);
+        cache.invalidate(&key, None);
 
         match cache.lookup_or_reserve(&key) {
             ObjectCacheResult::Placeholder(placeholder) => placeholder.complete(None),

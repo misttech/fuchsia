@@ -6,7 +6,6 @@ use fuchsia_criterion::FuchsiaCriterion;
 use fuchsia_criterion::criterion::Criterion;
 use futures::executor::block_on;
 
-use fxfs::lsm_tree::cache::NullCache;
 use fxfs::lsm_tree::merge::{MergeLayerIterator, MergeResult};
 use fxfs::lsm_tree::types::{Item, LayerIterator};
 use fxfs::lsm_tree::{LSMTree, Query, compact_with_iterator, layers_from_handles};
@@ -39,7 +38,7 @@ where
     let mut handles = Vec::new();
 
     for layer_idx in 0..depth {
-        let layer_tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let layer_tree = LSMTree::new(emit_left_merge_fn, None);
         populate_layer(&layer_tree, layer_idx, items_per_layer);
         layer_tree.seal();
 
@@ -66,7 +65,7 @@ where
 
     let layers = block_on(async { layers_from_handles(handles).await.unwrap() });
 
-    let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+    let tree = LSMTree::new(emit_left_merge_fn, None);
     tree.set_layers(layers);
     tree
 }

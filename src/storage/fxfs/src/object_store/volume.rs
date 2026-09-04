@@ -60,7 +60,7 @@ impl RootVolume {
             FxfsError::AlreadyExists
         );
         store = root_store
-            .new_child_store(&mut transaction, options, Box::new(TreeCache::new()))
+            .new_child_store(&mut transaction, options, Some(Box::new(TreeCache::new())))
             .await?;
         store.set_trace(self.filesystem.trace());
 

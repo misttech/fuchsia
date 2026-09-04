@@ -166,14 +166,14 @@ pub async fn compact_with_iterator<K: Key, V: Value, W: WriteBytes + Send>(
 pub struct LSMTree<K, V> {
     data: RwLock<Inner<K, V>>,
     merge_fn: merge::MergeFn<K, V>,
-    cache: Box<dyn ObjectCache<K, V>>,
+    cache: Option<Box<dyn ObjectCache<K, V>>>,
     counters: Arc<TreeCounters>,
 }
 
 #[fxfs_trace::trace]
 impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     /// Creates a new empty tree.
-    pub fn new(merge_fn: merge::MergeFn<K, V>, cache: Box<dyn ObjectCache<K, V>>) -> Self {
+    pub fn new(merge_fn: merge::MergeFn<K, V>, cache: Option<Box<dyn ObjectCache<K, V>>>) -> Self {
         let counters = TreeCounters::default();
         counters.compaction.lock().unwrap().max_layer_count = 1;
         LSMTree {
@@ -192,7 +192,7 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     pub async fn open(
         merge_fn: merge::MergeFn<K, V>,
         handles: impl IntoIterator<Item = impl ReadObjectHandle + 'static>,
-        cache: Box<dyn ObjectCache<K, V>>,
+        cache: Option<Box<dyn ObjectCache<K, V>>>,
     ) -> Result<Self, Error> {
         let layers = layers_from_handles(handles).await?;
         let max_layer_count = layers.len() as u64 + 1;
@@ -326,8 +326,8 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
     pub fn insert(&self, item: Item<K, V>) -> Result<(), Error> {
         let _measure = DurationMeasureScope::new(&crate::metrics::lsm_tree_metrics().insert);
 
-        let key = item.key.clone();
-        let val = if item.value == V::DELETED_MARKER { None } else { Some(item.value.clone()) };
+        let item_dup = if self.is_cacheable(&item.key) { Some(item.clone()) } else { None };
+
         {
             // `seal` below relies on us holding a read lock whilst we do the mutation.
             let data = self.data.read();
@@ -336,7 +336,11 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
             }
             data.mutable_layer.insert(item)?;
         }
-        self.cache.invalidate(key, val);
+
+        if let Some(item) = item_dup {
+            let val = if item.value == V::DELETED_MARKER { None } else { Some(item.value) };
+            self.invalidate_cache(&item.key, val);
+        }
         Ok(())
     }
 
@@ -345,8 +349,8 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         let _measure =
             DurationMeasureScope::new(&crate::metrics::lsm_tree_metrics().replace_or_insert);
 
-        let key = item.key.clone();
-        let val = if item.value == V::DELETED_MARKER { None } else { Some(item.value.clone()) };
+        let item_dup = if self.is_cacheable(&item.key) { Some(item.clone()) } else { None };
+
         {
             // `seal` below relies on us holding a read lock whilst we do the mutation.
             let data = self.data.read();
@@ -355,14 +359,18 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
             }
             data.mutable_layer.replace_or_insert(item);
         }
-        self.cache.invalidate(key, val);
+
+        if let Some(item) = item_dup {
+            let val = if item.value == V::DELETED_MARKER { None } else { Some(item.value) };
+            self.invalidate_cache(&item.key, val);
+        }
     }
 
     /// Merges the given item into the mutable layer.
     pub fn merge_into(&self, item: Item<K, V>, lower_bound: &K) {
         let _measure = DurationMeasureScope::new(&crate::metrics::lsm_tree_metrics().merge_into);
 
-        let key = item.key.clone();
+        let key = if self.is_cacheable(&item.key) { Some(item.key.clone()) } else { None };
         {
             // `seal` below relies on us holding a read lock whilst we do the mutation.
             let data = self.data.read();
@@ -371,7 +379,31 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
             }
             data.mutable_layer.merge_into(item, lower_bound, self.merge_fn);
         }
-        self.cache.invalidate(key, None);
+
+        if let Some(key) = key {
+            self.invalidate_cache(&key, None);
+        }
+    }
+
+    /// Returns true if `key` is cacheable by the underlying cache.
+    ///
+    /// Returns false if no cache is configured or if the key is not cacheable.
+    /// This allows tree mutation operations (`insert`, `replace_or_insert`, `merge_into`) to skip
+    /// cloning keys and values when cache invalidation would be a no-op.
+    #[inline(always)]
+    fn is_cacheable(&self, key: &K) -> bool {
+        if let Some(cache) = &self.cache { cache.is_cacheable(key) } else { false }
+    }
+
+    /// Invalidates the cache entry for `key` if a cache is configured.
+    ///
+    /// If `value` is Some, the cache entry may be updated with the new value. If `value` is None,
+    /// the entry is removed from the cache. Does nothing if no cache is configured.
+    #[inline(always)]
+    fn invalidate_cache(&self, key: &K, value: Option<V>) {
+        if let Some(cache) = &self.cache {
+            cache.invalidate(key, value);
+        }
     }
 
     /// Searches for an exact match for the given key, applying `f` to the found [`ItemRef`].
@@ -388,16 +420,20 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
         // It is important that the cache lookup is done prior to fetching the layer set as the
         // placeholder returned acts as a sort of lock for the validity of the item that may be
         // inserted later via that placeholder.
-        let mut token = match self.cache.lookup_or_reserve(search_key) {
-            ObjectCacheResult::Value(value) => {
-                if value == V::DELETED_MARKER {
-                    return Ok(None);
-                } else {
-                    return Ok(Some(f(ItemRef { key: search_key, value: &value })));
+        let mut token = if let Some(cache) = &self.cache {
+            match cache.lookup_or_reserve(search_key) {
+                ObjectCacheResult::Value(value) => {
+                    if *value == V::DELETED_MARKER {
+                        return Ok(None);
+                    } else {
+                        return Ok(Some(f(ItemRef { key: search_key, value: &value })));
+                    }
                 }
+                ObjectCacheResult::Placeholder(token) => Some(token),
+                ObjectCacheResult::NoCache => None,
             }
-            ObjectCacheResult::Placeholder(token) => Some(token),
-            ObjectCacheResult::NoCache => None,
+        } else {
+            None
         };
         let layer_set = self.layer_set();
         let result = layer_set
@@ -669,9 +705,7 @@ pub trait Yielder: Send {
 mod tests {
     use super::{LSMTree, Yielder, compact_with_iterator};
     use crate::drop_event::DropEvent;
-    use crate::lsm_tree::cache::{
-        NullCache, ObjectCache, ObjectCachePlaceholder, ObjectCacheResult,
-    };
+    use crate::lsm_tree::cache::{ObjectCache, ObjectCachePlaceholder, ObjectCacheResult};
     use crate::lsm_tree::merge::{ItemOp, MergeLayerIterator, MergeResult};
     use crate::lsm_tree::types::{
         BoxedLayerIterator, Existence, Item, ItemRef, Key, Layer, LayerIterator, MaybeContainsKey,
@@ -685,7 +719,7 @@ mod tests {
     use anyhow::{Error, anyhow};
     use async_trait::async_trait;
 
-    use fuchsia_sync::Mutex;
+    use fuchsia_sync::{Mutex, MutexGuard};
 
     use rand::rng;
     use rand::seq::SliceRandom;
@@ -737,7 +771,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_iteration() {
-        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
         let items = [Item::new(TestKey(1..1), 1), Item::new(TestKey(2..2), 2)];
         tree.insert(items[0].clone()).expect("insert error");
         tree.insert(items[1].clone()).expect("insert error");
@@ -755,7 +789,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_compact() {
-        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
         let items = [
             Item::new(TestKey(1..1), 1),
             Item::new(TestKey(2..2), 2),
@@ -786,9 +820,7 @@ mod tests {
         }
         tree.set_layers(layers_from_handles([handle]).await.expect("layers_from_handles failed"));
         let handle = FakeObjectHandle::new(object.clone());
-        let tree = LSMTree::open(emit_left_merge_fn, [handle], Box::new(NullCache {}))
-            .await
-            .expect("open failed");
+        let tree = LSMTree::open(emit_left_merge_fn, [handle], None).await.expect("open failed");
 
         let layers = tree.layer_set();
         let mut merger = layers.merger();
@@ -809,7 +841,7 @@ mod tests {
             Item::new(TestKey(3..3), 3),
             Item::new(TestKey(4..4), 4),
         ];
-        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
         tree.insert(items[0].clone()).expect("insert error");
         tree.insert(items[1].clone()).expect("insert error");
         tree.seal();
@@ -841,7 +873,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_find_no_return_deleted_values() {
         let items = [Item::new(TestKey(1..1), 1), Item::new(TestKey(2..2), u64::DELETED_MARKER)];
-        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
         tree.insert(items[0].clone()).expect("insert error");
         tree.insert(items[1].clone()).expect("insert error");
 
@@ -862,7 +894,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_find_full_merge() {
-        let tree = LSMTree::new(emit_left_i32_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_i32_merge_fn, None);
         let items = [
             Item::new(1, 10),
             Item::new(2, 20),
@@ -896,7 +928,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_find_full_merge_multi_layer() {
-        let tree = LSMTree::new(merge_sum_i32, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge_sum_i32, None);
 
         // Base layer:
         tree.insert(Item::new(1, 100)).expect("insert error");
@@ -939,7 +971,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_find_optimized_merge_multi_layer() {
-        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
 
         // Insert items in base layer (older).
         tree.insert(Item::new(TestKey(1..1), 10)).expect("insert error");
@@ -1023,7 +1055,7 @@ mod tests {
             }
         }
 
-        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
         let layer: Arc<dyn Layer<TestKey, u64>> = Arc::new(BloomFilterMockLayer::new());
         tree.set_layers(vec![layer]);
 
@@ -1046,7 +1078,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_empty_seal() {
-        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
         tree.seal();
         let item = Item::new(TestKey(1..1), 1);
         tree.insert(item.clone()).expect("insert error");
@@ -1080,7 +1112,7 @@ mod tests {
             Item::new(TestKey(3..3), 3),
             Item::new(TestKey(4..4), 4),
         ];
-        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
         tree.insert(items[0].clone()).expect("insert error");
         tree.insert(items[1].clone()).expect("insert error");
         tree.insert(items[2].clone()).expect("insert error");
@@ -1115,11 +1147,11 @@ mod tests {
             Item::new(TestKey(5..5), 5),
             Item::new(TestKey(6..6), 6),
         ];
-        let a = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let a = LSMTree::new(emit_left_merge_fn, None);
         for item in &items {
             a.insert(item.clone()).expect("insert error");
         }
-        let b = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let b = LSMTree::new(emit_left_merge_fn, None);
         let mut shuffled = items.clone();
         shuffled.shuffle(&mut rng());
         for item in &shuffled {
@@ -1142,25 +1174,31 @@ mod tests {
         assert!(iter_b.get().is_none());
     }
 
-    struct AuditCacheInner<'a, V: Value> {
+    enum AuditCacheResult<V> {
+        Value(V),
+        NoCache,
+    }
+
+    struct AuditCacheInner<V: Value> {
         lookups: u64,
         completions: u64,
         invalidations: u64,
         drops: u64,
-        result: Option<ObjectCacheResult<'a, V>>,
+        result: Option<AuditCacheResult<V>>,
+        is_cacheable: bool,
     }
 
-    impl<V: Value> AuditCacheInner<'_, V> {
+    impl<V: Value> AuditCacheInner<V> {
         fn stats(&self) -> (u64, u64, u64, u64) {
             (self.lookups, self.completions, self.invalidations, self.drops)
         }
     }
 
-    struct AuditCache<'a, V: Value> {
-        inner: Arc<Mutex<AuditCacheInner<'a, V>>>,
+    struct AuditCache<V: Value> {
+        inner: Arc<Mutex<AuditCacheInner<V>>>,
     }
 
-    impl<V: Value> AuditCache<'_, V> {
+    impl<V: Value> AuditCache<V> {
         fn new() -> Self {
             Self {
                 inner: Arc::new(Mutex::new(AuditCacheInner {
@@ -1169,24 +1207,25 @@ mod tests {
                     invalidations: 0,
                     drops: 0,
                     result: None,
+                    is_cacheable: true,
                 })),
             }
         }
     }
 
-    struct AuditPlaceholder<'a, V: Value> {
-        inner: Arc<Mutex<AuditCacheInner<'a, V>>>,
+    struct AuditPlaceholder<V: Value> {
+        inner: Arc<Mutex<AuditCacheInner<V>>>,
         completed: Mutex<bool>,
     }
 
-    impl<V: Value> ObjectCachePlaceholder<V> for AuditPlaceholder<'_, V> {
+    impl<V: Value> ObjectCachePlaceholder<V> for AuditPlaceholder<V> {
         fn complete(self: Box<Self>, _: Option<&V>) {
             self.inner.lock().completions += 1;
             *self.completed.lock() = true;
         }
     }
 
-    impl<V: Value> Drop for AuditPlaceholder<'_, V> {
+    impl<V: Value> Drop for AuditPlaceholder<V> {
         fn drop(&mut self) {
             if !*self.completed.lock() {
                 self.inner.lock().drops += 1;
@@ -1194,13 +1233,23 @@ mod tests {
         }
     }
 
-    impl<K: Key + std::cmp::PartialEq, V: Value> ObjectCache<K, V> for AuditCache<'_, V> {
+    impl<K: Key + std::cmp::PartialEq, V: Value> ObjectCache<K, V> for AuditCache<V> {
         fn lookup_or_reserve(&self, _key: &K) -> ObjectCacheResult<'_, V> {
             {
                 let mut inner = self.inner.lock();
                 inner.lookups += 1;
-                if inner.result.is_some() {
-                    return std::mem::take(&mut inner.result).unwrap();
+                match MutexGuard::try_map_or_err(inner, |inner| match &mut inner.result {
+                    Some(AuditCacheResult::Value(value)) => Ok(value),
+                    Some(AuditCacheResult::NoCache) => Err(false),
+                    None => Err(true),
+                }) {
+                    Ok(guard) => {
+                        return ObjectCacheResult::Value(guard);
+                    }
+                    Err((_, false)) => {
+                        return ObjectCacheResult::NoCache;
+                    }
+                    Err((_, true)) => {}
                 }
             }
             ObjectCacheResult::Placeholder(Box::new(AuditPlaceholder {
@@ -1209,7 +1258,11 @@ mod tests {
             }))
         }
 
-        fn invalidate(&self, _key: K, _value: Option<V>) {
+        fn is_cacheable(&self, _key: &K) -> bool {
+            self.inner.lock().is_cacheable
+        }
+
+        fn invalidate(&self, _key: &K, _value: Option<V>) {
             self.inner.lock().invalidations += 1;
         }
     }
@@ -1219,7 +1272,7 @@ mod tests {
         let item = Item::new(TestKey(1..1), 1);
         let cache = Box::new(AuditCache::new());
         let inner = cache.inner.clone();
-        let a = LSMTree::new(emit_left_merge_fn, cache);
+        let a = LSMTree::new(emit_left_merge_fn, Some(cache));
 
         // Zero counters.
         assert_eq!(inner.lock().stats(), (0, 0, 0, 0));
@@ -1270,7 +1323,7 @@ mod tests {
         let item = Item::new(TestKey(1..1), 1);
         let cache = Box::new(AuditCache::new());
         let inner = cache.inner.clone();
-        let a = LSMTree::new(emit_left_merge_fn, cache);
+        let a = LSMTree::new(emit_left_merge_fn, Some(cache));
 
         // Zero counters.
         assert_eq!(inner.lock().stats(), (0, 0, 0, 0));
@@ -1280,7 +1333,7 @@ mod tests {
         assert_eq!(inner.lock().stats(), (0, 0, 1, 0));
 
         // Set up the item to find in the cache.
-        inner.lock().result = Some(ObjectCacheResult::Value(item.value.clone()));
+        inner.lock().result = Some(AuditCacheResult::Value(item.value.clone()));
 
         // Look for item, find it in cache, so no insert.
         assert_eq!(
@@ -1295,7 +1348,7 @@ mod tests {
         let item = Item::new(TestKey(1..1), 1);
         let cache = Box::new(AuditCache::new());
         let inner = cache.inner.clone();
-        let a = LSMTree::new(emit_left_merge_fn, cache);
+        let a = LSMTree::new(emit_left_merge_fn, Some(cache));
 
         // Zero counters.
         assert_eq!(inner.lock().stats(), (0, 0, 0, 0));
@@ -1305,24 +1358,24 @@ mod tests {
         assert_eq!(inner.lock().stats(), (0, 0, 1, 0));
 
         // Set up the cache to return DELETED_MARKER.
-        inner.lock().result = Some(ObjectCacheResult::Value(u64::DELETED_MARKER));
+        inner.lock().result = Some(AuditCacheResult::Value(u64::DELETED_MARKER));
 
         // find_value should hit the cache, see DELETED_MARKER, and return None.
         assert_eq!(a.find_value(&item.key).await.expect("Failed find_value"), None);
         assert_eq!(inner.lock().stats(), (1, 0, 1, 0));
 
         // exists should also return false on cache hit DELETED_MARKER.
-        inner.lock().result = Some(ObjectCacheResult::Value(u64::DELETED_MARKER));
+        inner.lock().result = Some(AuditCacheResult::Value(u64::DELETED_MARKER));
         assert!(!a.exists(&item.key).await.expect("Failed exists"));
         assert_eq!(inner.lock().stats(), (2, 0, 1, 0));
 
         // find should also return None on cache hit DELETED_MARKER.
-        inner.lock().result = Some(ObjectCacheResult::Value(u64::DELETED_MARKER));
+        inner.lock().result = Some(AuditCacheResult::Value(u64::DELETED_MARKER));
         assert!(a.find(&item.key).await.expect("Failed find").is_none());
         assert_eq!(inner.lock().stats(), (3, 0, 1, 0));
 
         // find_map should also return None on cache hit DELETED_MARKER.
-        inner.lock().result = Some(ObjectCacheResult::Value(u64::DELETED_MARKER));
+        inner.lock().result = Some(AuditCacheResult::Value(u64::DELETED_MARKER));
         assert!(a.find_map(&item.key, |_| ()).await.expect("Failed find_map").is_none());
         assert_eq!(inner.lock().stats(), (4, 0, 1, 0));
     }
@@ -1332,14 +1385,14 @@ mod tests {
         let item = Item::new(TestKey(1..1), 1);
         let cache = Box::new(AuditCache::new());
         let inner = cache.inner.clone();
-        let a = LSMTree::new(emit_left_merge_fn, cache);
+        let a = LSMTree::new(emit_left_merge_fn, Some(cache));
         let _ = a.insert(item.clone());
 
         // One invalidation from the insert.
         assert_eq!(inner.lock().stats(), (0, 0, 1, 0));
 
         // Set up the NoCache response to find in the cache.
-        inner.lock().result = Some(ObjectCacheResult::NoCache);
+        inner.lock().result = Some(AuditCacheResult::NoCache);
 
         // Look for item, it is uncacheable, so no insert.
         assert_eq!(
@@ -1347,6 +1400,27 @@ mod tests {
             item.value
         );
         assert_eq!(inner.lock().stats(), (1, 0, 1, 0));
+    }
+
+    #[fuchsia::test]
+    async fn test_uncacheable_key_skips_invalidation() {
+        let item = Item::new(TestKey(1..1), 1);
+        let cache = Box::new(AuditCache::new());
+        cache.inner.lock().is_cacheable = false;
+        let inner = cache.inner.clone();
+        let a = LSMTree::new(emit_left_merge_fn, Some(cache));
+
+        // Insert of an uncacheable key should not invalidate the cache.
+        a.insert(item.clone()).expect("insert failed");
+        assert_eq!(inner.lock().stats(), (0, 0, 0, 0));
+
+        // replace_or_insert of an uncacheable key should not invalidate the cache.
+        a.replace_or_insert(item.clone());
+        assert_eq!(inner.lock().stats(), (0, 0, 0, 0));
+
+        // merge_into of an uncacheable key should not invalidate the cache.
+        a.merge_into(item.clone(), &TestKey(1..1));
+        assert_eq!(inner.lock().stats(), (0, 0, 0, 0));
     }
 
     struct FailLayer {
@@ -1442,7 +1516,7 @@ mod tests {
     async fn test_layer_set_key_exists() {
         use super::LockedLayer;
 
-        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
         let mut layer_set = tree.empty_layer_set();
 
         // Empty layer set should return Missing.
@@ -1486,7 +1560,7 @@ mod tests {
     async fn test_failed_lookup() {
         let cache = Box::new(AuditCache::new());
         let inner = cache.inner.clone();
-        let a = LSMTree::new(emit_left_merge_fn, cache);
+        let a = LSMTree::new(emit_left_merge_fn, Some(cache));
         a.set_layers(vec![Arc::new(FailLayer::new())]);
 
         // Zero counters.
@@ -1533,7 +1607,6 @@ mod fuzz {
     #[fuzz]
     fn fuzz_lsm_tree_actions(actions: Vec<FuzzAction>) {
         use super::LSMTree;
-        use super::cache::NullCache;
         use crate::lsm_tree::merge::{MergeLayerIterator, MergeResult};
         use futures::executor::block_on;
 
@@ -1544,7 +1617,7 @@ mod fuzz {
             MergeResult::EmitLeft
         }
 
-        let tree = LSMTree::new(emit_left_merge_fn, Box::new(NullCache {}));
+        let tree = LSMTree::new(emit_left_merge_fn, None);
         for action in actions {
             match action {
                 FuzzAction::Insert(item) => {

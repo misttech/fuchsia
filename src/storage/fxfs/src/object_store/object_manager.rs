@@ -419,7 +419,7 @@ impl ObjectManager {
         if self.inner.read().stores.contains_key(&object_id) {
             return Ok(());
         }
-        let store = ObjectStore::open(parent, object_id, Box::new(TreeCache::new()))
+        let store = ObjectStore::open(parent, object_id, Some(Box::new(TreeCache::new())))
             .await
             .with_context(|| format!("Failed to open store {object_id}"))?;
         if let Some(on_new_store) = &self.on_new_store {

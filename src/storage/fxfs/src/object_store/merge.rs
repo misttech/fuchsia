@@ -255,7 +255,6 @@ pub fn merge(
 mod tests {
     use super::merge;
     use crate::checksum::Checksums;
-    use crate::lsm_tree::cache::NullCache;
     use crate::lsm_tree::types::{Item, LayerIterator, MergeableKey, Value};
     use crate::lsm_tree::{LSMTree, Query};
     use crate::object_store::extent_record::ExtentValue;
@@ -290,7 +289,7 @@ mod tests {
     async fn test_merge_extents_non_overlapping() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..512),
@@ -320,7 +319,7 @@ mod tests {
     async fn test_merge_extents_rewrite_right() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..1024),
@@ -358,7 +357,7 @@ mod tests {
     async fn test_merge_extents_rewrite_left() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..1024),
@@ -412,7 +411,7 @@ mod tests {
     async fn test_merge_extents_rewrite_middle() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..2048),
@@ -476,7 +475,7 @@ mod tests {
     async fn test_merge_extents_rewrite_eclipses() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 1024..1536),
@@ -508,7 +507,7 @@ mod tests {
     async fn test_merge_extents_delete_left() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..1024),
@@ -543,7 +542,7 @@ mod tests {
     async fn test_merge_extents_delete_right() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..1024),
@@ -578,7 +577,7 @@ mod tests {
     async fn test_merge_extents_delete_middle() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..2048),
@@ -619,7 +618,7 @@ mod tests {
     async fn test_merge_extents_delete_eclipses() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 1024..1536),
@@ -651,7 +650,7 @@ mod tests {
         // Merged:     [--------------]
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..512),
@@ -689,7 +688,7 @@ mod tests {
         // Merged:     [--------------]
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 512..1024),
@@ -724,7 +723,7 @@ mod tests {
     async fn test_merge_deleted_extents_overlapping_newest_on_right() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..1024),
@@ -753,7 +752,7 @@ mod tests {
     async fn test_merge_deleted_extents_overlapping_newest_on_left() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 512..1536),
@@ -784,7 +783,7 @@ mod tests {
         // Merged:     [--------------]
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..1536),
@@ -817,7 +816,7 @@ mod tests {
         // Merged:     [--------------]
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 512..1024),
@@ -852,7 +851,7 @@ mod tests {
         //  Merged:  [XXXXX|--------]
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 512..1024),
@@ -898,7 +897,7 @@ mod tests {
         //  Merged:  [XXXXX|--------]
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 1024..1536),
@@ -938,7 +937,7 @@ mod tests {
     async fn test_merge_deleted_extent_into_overwrites_extents() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..1024),
@@ -982,7 +981,7 @@ mod tests {
     async fn test_merge_deleted_extent_into_merges_with_other_deletions() -> Result<(), Error> {
         let object_id = 0;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::<ObjectKey, ObjectValue>::new(merge, None);
 
         tree.insert(Item::new(
             ObjectKey::extent(object_id, attr_id, 0..1024),
@@ -1021,7 +1020,7 @@ mod tests {
             ObjectKey::attribute(1, AttributeId::TEST_ID, AttributeKey::Attribute),
             ObjectValue::attribute(10, false),
         )];
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         test_merge(&tree, left, right, left).await;
     }
 
@@ -1035,7 +1034,7 @@ mod tests {
             ObjectKey::attribute(1, AttributeId::TEST_ID.next(), AttributeKey::Attribute),
             ObjectValue::attribute(10, false),
         );
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         test_merge(&tree, &[left.clone()], &[right.clone()], &[left, right]).await;
 
         let left = Item::new(
@@ -1046,7 +1045,7 @@ mod tests {
             ObjectKey::extent(1, AttributeId::TEST_ID.next(), 0..100),
             ObjectValue::Extent(ExtentValue::new_raw(1, VOLUME_DATA_KEY_ID)),
         );
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         test_merge(&tree, &[left.clone()], &[right.clone()], &[left, right]).await;
     }
 
@@ -1066,7 +1065,7 @@ mod tests {
                 None,
             ),
         );
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         test_merge(
             &tree,
             &[tombstone.clone()],
@@ -1097,7 +1096,6 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_extent_overlapping_boundaries() {
-        use crate::lsm_tree::cache::NullCache;
         use crate::object_store::VOLUME_DATA_KEY_ID;
         let object_id = 1;
         let attr_id = AttributeId::TEST_ID;
@@ -1109,7 +1107,7 @@ mod tests {
         // 1. Same end, start off-by-one.
         // 49..100 (older, val 2) vs 50..100 (newer, val 1).
         // Yields 49..50 (val 2), 50..100 (val 1).
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         test_merge(
             &tree,
             &[base.clone()],
@@ -1129,7 +1127,7 @@ mod tests {
 
         // 51..100 (older, val 2) vs 50..100 (newer, val 1).
         // Yields 50..100 (val 1).
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         test_merge(
             &tree,
             &[base.clone()],
@@ -1148,7 +1146,6 @@ mod tests {
     // segments to verify against the merger iterator output and layer advance depths.
     #[fuchsia::test]
     async fn test_extent_complex_multi_layer() {
-        use crate::lsm_tree::cache::NullCache;
         use crate::object_store::extent_record::ExtentValue;
         use crate::object_store::object_record::{
             AttributeKey, ObjectKey, ObjectKeyData, ObjectValue,
@@ -1223,7 +1220,7 @@ mod tests {
                 let expected =
                     calculate_expected(top_range.clone(), middle_range.clone(), base_range.clone());
 
-                let tree = LSMTree::new(merge, Box::new(NullCache {}));
+                let tree = LSMTree::new(merge, None);
 
                 // Base layer (Layer 2)
                 tree.insert(Item::new(
@@ -1290,7 +1287,7 @@ mod tests {
     async fn test_next_key_behavior() -> Result<(), Error> {
         let object_id = 1;
         let attr_id = AttributeId::TEST_ID;
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
 
         // Layer 1 (older)
         tree.insert(Item::new(
@@ -1328,7 +1325,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_merge_project_usage() {
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
         tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 100, nodes: 1000 }))
@@ -1364,7 +1361,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_merge_project_usage_gap_layer() {
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
         let key2 = ObjectKey::project_usage(5, ProjectId::new(7).unwrap());
 
@@ -1419,7 +1416,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_merge_project_usage_to_zero() {
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
         tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }))
@@ -1440,7 +1437,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_merge_project_usage_recover_from_zero() {
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
         tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }))
@@ -1470,7 +1467,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_merge_project_usage_layer_merge_to_negative() {
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         let key = ObjectKey::project_usage(5, ProjectId::new(6).unwrap());
 
         tree.insert(Item::new(key.clone(), ObjectValue::BytesAndNodes { bytes: 4, nodes: 8 }))

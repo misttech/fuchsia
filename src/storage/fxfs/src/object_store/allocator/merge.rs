@@ -170,7 +170,6 @@ pub fn filter_marked_for_deletion<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::lsm_tree::cache::NullCache;
     use crate::lsm_tree::types::{Item, ItemRef, LayerIterator};
     use crate::lsm_tree::{LSMTree, Query};
     use crate::object_store::allocator::merge::{filter_tombstones, merge};
@@ -183,7 +182,7 @@ mod tests {
         right: (Range<u64>, AllocatorValue),
         expected: &[(Range<u64>, AllocatorValue)],
     ) {
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         tree.insert(Item::new(AllocatorKey { device_range: right.0.into() }, right.1))
             .expect("insert error");
         tree.seal();
@@ -343,7 +342,7 @@ mod tests {
         //  3. Dealloc object_id B, Alloc object_id A.
         let key = AllocatorKey { device_range: (0..100 * 512).into() };
         let lower_bound = AllocatorKey::lower_bound_for_merge_into(&key);
-        let tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let tree = LSMTree::new(merge, None);
         tree.merge_into(
             Item::new(key.clone(), AllocatorValue::Abs { count: 1, owner_object_id: 1 }),
             &lower_bound,
@@ -378,7 +377,7 @@ mod tests {
     async fn test_merge_adjacent_in_mutable_layer() {
         // Left-to-right insertion
         {
-            let tree = LSMTree::new(merge, Box::new(NullCache {}));
+            let tree = LSMTree::new(merge, None);
 
             let key1 = AllocatorKey { device_range: (4096..135168).into() };
             let val1 = AllocatorValue::Abs { count: 1, owner_object_id: 3 };
@@ -413,7 +412,7 @@ mod tests {
 
         // Right-to-left (reverse) insertion
         {
-            let tree = LSMTree::new(merge, Box::new(NullCache {}));
+            let tree = LSMTree::new(merge, None);
 
             let key2 = AllocatorKey { device_range: (135168..139264).into() };
             let val2 = AllocatorValue::Abs { count: 1, owner_object_id: 3 };

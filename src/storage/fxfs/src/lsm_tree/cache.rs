@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use super::types::{Key, Value};
+use fuchsia_sync::MappedMutexGuard;
 use std::fmt;
 
 pub trait ObjectCachePlaceholder<V: Value>: Send + Sync {
@@ -15,7 +16,7 @@ pub trait ObjectCachePlaceholder<V: Value>: Send + Sync {
 /// Possible results for a cache `lookup_or_reserve()`
 pub enum ObjectCacheResult<'a, V: Value> {
     /// Contains the value successfully retrieved from the cache.
-    Value(V),
+    Value(MappedMutexGuard<'a, V>),
     /// The object was not found in the cache, so this placeholder can be used to insert the
     /// calculated result.
     Placeholder(Box<dyn ObjectCachePlaceholder<V> + 'a>),
@@ -40,21 +41,16 @@ impl<'a, V: Value> fmt::Debug for ObjectCacheResult<'a, V> {
 
 pub trait ObjectCache<K: Key, V: Value>: Send + Sync {
     /// Looks up a key in the cache and may return a cached value for it. See `ObjectCacheResult`.
-    fn lookup_or_reserve<'a>(&'a self, key: &K) -> ObjectCacheResult<'_, V>;
+    fn lookup_or_reserve<'a>(&'a self, key: &K) -> ObjectCacheResult<'a, V>;
+
+    /// Returns whether the key is cacheable. This is used by clients to avoid cloning keys and
+    /// values when calling `invalidate` would do nothing.
+    ///
+    /// Must be consistent with `lookup_or_reserve` returning `NoCache`.
+    fn is_cacheable(&self, key: &K) -> bool;
 
     /// Removes key from cache if `value` is None, invalidates the results of placeholders that have
     /// not been resolved. When `value` is provided then the value may be inserted, and may replace
     /// an existing value.
-    fn invalidate(&self, key: K, value: Option<V>);
-}
-
-/// A cache that will always return NoCache in lookups, and does no actual work.
-pub struct NullCache {}
-
-impl<K: Key, V: Value> ObjectCache<K, V> for NullCache {
-    fn lookup_or_reserve(&self, _key: &K) -> ObjectCacheResult<'_, V> {
-        ObjectCacheResult::NoCache
-    }
-
-    fn invalidate(&self, _key: K, _value: Option<V>) {}
+    fn invalidate(&self, key: &K, value: Option<V>);
 }

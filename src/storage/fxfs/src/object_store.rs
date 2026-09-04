@@ -37,7 +37,7 @@ use crate::filesystem::{
     TruncateGuard,
 };
 use crate::log::*;
-use crate::lsm_tree::cache::{NullCache, ObjectCache};
+use crate::lsm_tree::cache::ObjectCache;
 use crate::lsm_tree::types::{Existence, Item, ItemRef, LayerIterator};
 use crate::lsm_tree::{LSMTree, Query};
 use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, ObjectProperties, ReadObjectHandle};
@@ -709,7 +709,7 @@ impl ObjectStore {
         store_object_id: u64,
         filesystem: Arc<FxFilesystem>,
         store_info: Option<StoreInfo>,
-        object_cache: Box<dyn ObjectCache<ObjectKey, ObjectValue>>,
+        object_cache: Option<Box<dyn ObjectCache<ObjectKey, ObjectValue>>>,
         mutations_cipher: Option<StreamCipher>,
         lock_state: LockState,
         last_object_id: LastObjectId,
@@ -744,7 +744,7 @@ impl ObjectStore {
         parent_store: Option<Arc<ObjectStore>>,
         store_object_id: u64,
         filesystem: Arc<FxFilesystem>,
-        object_cache: Box<dyn ObjectCache<ObjectKey, ObjectValue>>,
+        object_cache: Option<Box<dyn ObjectCache<ObjectKey, ObjectValue>>>,
     ) -> Arc<Self> {
         Self::new(
             parent_store,
@@ -768,7 +768,7 @@ impl ObjectStore {
             block_size,
             filesystem: Weak::<FxFilesystem>::new(),
             store_info: Mutex::new(Some(StoreInfo::default())),
-            tree: LSMTree::new(merge::merge, Box::new(NullCache {})),
+            tree: LSMTree::new(merge::merge, None),
             store_info_handle: OnceLock::new(),
             mutations_cipher: Mutex::new(None),
             lock_state: Mutex::new(LockState::Unencrypted),
@@ -879,7 +879,7 @@ impl ObjectStore {
         self: &Arc<Self>,
         transaction: &mut Transaction<'_>,
         options: NewChildStoreOptions,
-        object_cache: Box<dyn ObjectCache<ObjectKey, ObjectValue>>,
+        object_cache: Option<Box<dyn ObjectCache<ObjectKey, ObjectValue>>>,
     ) -> Result<Arc<Self>, Error> {
         ensure!(
             !options.reserve_32bit_object_ids || !options.low_32_bit_object_ids,
@@ -1909,7 +1909,7 @@ impl ObjectStore {
     async fn open(
         parent_store: &Arc<ObjectStore>,
         store_object_id: u64,
-        object_cache: Box<dyn ObjectCache<ObjectKey, ObjectValue>>,
+        object_cache: Option<Box<dyn ObjectCache<ObjectKey, ObjectValue>>>,
     ) -> Result<Arc<ObjectStore>, Error> {
         let handle =
             ObjectStore::open_object(parent_store, store_object_id, HandleOptions::default(), None)

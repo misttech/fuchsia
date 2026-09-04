@@ -93,7 +93,6 @@ use crate::drop_event::DropEvent;
 use crate::errors::FxfsError;
 use crate::filesystem::{ApplyContext, ApplyMode, FxFilesystem, JournalingObject, SyncOptions};
 use crate::log::*;
-use crate::lsm_tree::cache::NullCache;
 use crate::lsm_tree::skip_list_layer::SkipListLayer;
 use crate::lsm_tree::types::{
     FuzzyHash, Item, ItemRef, Layer, LayerIterator, LayerKey, MergeType, OrdLowerBound,
@@ -803,7 +802,7 @@ impl Allocator {
             device_size,
             object_id,
             max_extent_size_bytes,
-            tree: LSMTree::new(merge, Box::new(NullCache {})),
+            tree: LSMTree::new(merge, None),
             temporary_allocations: SkipListLayer::new(1024),
             inner: Mutex::new(Inner {
                 info: AllocatorInfo::default(),
@@ -2272,7 +2271,6 @@ mod tests {
         FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem,
     };
     use crate::fsck::fsck;
-    use crate::lsm_tree::cache::NullCache;
     use crate::lsm_tree::skip_list_layer::SkipListLayer;
     use crate::lsm_tree::types::{FuzzyHash as _, Item, ItemRef, LayerIterator, LayerKey as _};
     use crate::lsm_tree::{LSMTree, Query};
@@ -2394,7 +2392,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_merge_and_coalesce_across_three_layers() {
-        let lsm_tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let lsm_tree = LSMTree::new(merge, None);
         lsm_tree
             .insert(Item::new(
                 AllocatorKey { device_range: (100 * 512..200 * 512).into() },
@@ -2429,7 +2427,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_merge_and_coalesce_wont_merge_across_object_id() {
-        let lsm_tree = LSMTree::new(merge, Box::new(NullCache {}));
+        let lsm_tree = LSMTree::new(merge, None);
         lsm_tree
             .insert(Item::new(
                 AllocatorKey { device_range: (100 * 512..200 * 512).into() },
