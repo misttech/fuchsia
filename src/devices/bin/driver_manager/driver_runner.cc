@@ -1095,8 +1095,8 @@ void DriverRunner::DestroyDriverHostComponent(std::string_view driver_host_name_
       .collection = "driver-hosts",
   };
   runner_.realm()->DestroyChild(child_ref).Then(
-      [completion_cb = std::move(completion_cb), moniker = std::move(name)](
-          fidl::WireUnownedResult<fcomponent::Realm::DestroyChild>& result) mutable {
+      [completion_cb = std::move(completion_cb),
+       moniker = name](fidl::WireUnownedResult<fcomponent::Realm::DestroyChild>& result) mutable {
         if (!result.ok()) {
           fdf_log::error("Failed to destroy driver host '{}': {}", moniker,
                          result.FormatDescription());
