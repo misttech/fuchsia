@@ -1974,7 +1974,7 @@ pub fn sys_pidfd_getfd(
     }
 
     let file = current_task.files().get(pidfd)?;
-    let tg = file.as_pid()?.get_thread_group().ok_or_else(|| errno!(ESRCH))?;
+    let tg = file.as_pid()?.get_thread_group()?;
     let task = tg.read().get_running_task()?;
 
     current_task.check_ptrace_access_mode(PTRACE_MODE_ATTACH_REALCREDS, &task)?;

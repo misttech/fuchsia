@@ -5,7 +5,9 @@
 use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::signals::SignalEvent;
-use crate::task::{CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Waiter};
+use crate::task::{
+    CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Task, ThreadGroup, Waiter,
+};
 use crate::time::utc::utc_now;
 use crate::time::{ClockId, GenericDuration, Timeline, TimerId, TimerWakeup};
 use fuchsia_runtime::UtcInstant;
@@ -21,10 +23,10 @@ use starnix_uapi::{
     CLOCK_BOOTTIME, CLOCK_BOOTTIME_ALARM, CLOCK_MONOTONIC, CLOCK_MONOTONIC_COARSE,
     CLOCK_MONOTONIC_RAW, CLOCK_PROCESS_CPUTIME_ID, CLOCK_REALTIME, CLOCK_REALTIME_ALARM,
     CLOCK_REALTIME_COARSE, CLOCK_TAI, CLOCK_THREAD_CPUTIME_ID, MAX_CLOCKS, TIMER_ABSTIME, errno,
-    error, from_status_like_fdio, pid_t, tid_t, timespec, timezone, tms, uapi,
+    error, from_status_like_fdio, pid_t, timespec, timezone, tms, uapi,
 };
 use zx::{
-    Task, {self as zx},
+    Task as _, {self as zx},
 };
 
 pub type TimeSpecPtr = MultiArchUserRef<uapi::timespec, uapi::arch32::timespec>;
@@ -79,8 +81,8 @@ fn get_clock_gettime(current_task: &CurrentTask, which_clock: i32) -> Result<tim
                 zx::MonotonicInstant::get().into_nanos()
             }
             CLOCK_BOOTTIME => zx::BootInstant::get().into_nanos(),
-            CLOCK_THREAD_CPUTIME_ID => get_thread_cpu_time(current_task, current_task.get_tid())?,
-            CLOCK_PROCESS_CPUTIME_ID => get_process_cpu_time(current_task, current_task.get_pid())?,
+            CLOCK_THREAD_CPUTIME_ID => get_thread_cpu_time(current_task)?,
+            CLOCK_PROCESS_CPUTIME_ID => get_process_cpu_time(current_task.thread_group())?,
             _ => return error!(EINVAL),
         }
     };
@@ -324,22 +326,13 @@ pub fn sys_nanosleep(
     sys_clock_nanosleep(current_task, CLOCK_REALTIME as ClockId, 0, user_request, user_remaining)
 }
 
-/// Returns the cpu time for the task with the given `pid`.
-///
-/// Returns EINVAL if no such task can be found.
-fn get_thread_cpu_time(current_task: &CurrentTask, tid: tid_t) -> Result<i64, Errno> {
-    let task = current_task.get_task(tid).map_err(|_| errno!(EINVAL))?;
+/// Returns the cpu time for `task`.
+fn get_thread_cpu_time(task: &Task) -> Result<i64, Errno> {
     Ok(task.thread_runtime_info()?.cpu_time)
 }
 
-/// Returns the cpu time for the process associated with the given `pid`. `pid`
-/// can be the `pid` for any task in the thread_group (so the caller can get the
-/// process cpu time for any `task` by simply using `task.get_pid()`).
-///
-/// Returns EINVAL if no such process can be found.
-fn get_process_cpu_time(current_task: &CurrentTask, pid: pid_t) -> Result<i64, Errno> {
-    let pids = current_task.kernel().pids.read();
-    let tg = pids.get_thread_group(pid).ok_or_else(|| errno!(EINVAL))?;
+/// Returns the cpu time for the thread group `tg`.
+fn get_process_cpu_time(tg: &ThreadGroup) -> Result<i64, Errno> {
     Ok(tg.process.get_runtime_info().map_err(|status| from_status_like_fdio!(status))?.cpu_time)
 }
 
@@ -389,11 +382,15 @@ fn get_dynamic_clock(current_task: &CurrentTask, which_clock: i32) -> Result<i64
     }
 
     let pid = pid_of_clock_id(which_clock);
+    let target_pid =
+        current_task.kernel().pids.read().get(pid).map_err(|_| errno!(EINVAL))?.clone();
 
     if is_thread_clock(which_clock) {
-        get_thread_cpu_time(current_task, pid)
+        let task = target_pid.get_task().map_err(|_| errno!(EINVAL))?;
+        get_thread_cpu_time(&task)
     } else {
-        get_process_cpu_time(current_task, pid)
+        let tg = target_pid.get_thread_group().map_err(|_| errno!(EINVAL))?;
+        get_process_cpu_time(&tg)
     }
 }
 

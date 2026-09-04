@@ -418,7 +418,7 @@ impl ProcessSelector {
                 }
             }
             ProcessSelector::Process(ref key) => {
-                if let Some(tg) = key.get_thread_group() {
+                if let Ok(tg) = key.get_thread_group() {
                     tg.read().tasks.contains_key(&tid)
                 } else {
                     false

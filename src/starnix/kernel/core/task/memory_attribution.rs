@@ -244,13 +244,12 @@ impl MemoryAttributionManager {
                         // It is faster to take the lock multiple times for short durations than to
                         // take it for the whole for loop.
                         let pid_table = kernel.pids.read();
-                        let thread_group = match pid_table.get_thread_group(pid) {
-                            Some(tg) => tg,
-                            None => {
-                                // The thread group is missing. This can happen if it has already
-                                // exited.
-                                continue;
-                            }
+                        let Ok(thread_group) =
+                            pid_table.get(pid).and_then(|entry| entry.get_thread_group())
+                        else {
+                            // The thread group is missing. This can happen if it has already
+                            // exited.
+                            continue;
                         };
                         let name = get_thread_group_identifier(&thread_group);
                         let mut update = attribution_info_for_thread_group(name, &thread_group);
@@ -264,9 +263,10 @@ impl MemoryAttributionManager {
                             );
                         }
                         let pid_table = kernel.pids.read();
-                        let thread_group = match pid_table.get_thread_group(pid) {
-                            Some(tg) => tg,
-                            None => continue,
+                        let Ok(thread_group) =
+                            pid_table.get(pid).and_then(|entry| entry.get_thread_group())
+                        else {
+                            continue;
                         };
                         let name = get_thread_group_identifier(&thread_group);
                         updates.push(new_principal(thread_group.leader.id, name));

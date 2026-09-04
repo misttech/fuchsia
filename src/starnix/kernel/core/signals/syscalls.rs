@@ -716,7 +716,7 @@ pub fn sys_pidfd_send_signal(
     }
 
     let file = current_task.files().get(pidfd)?;
-    let target = file.as_pid()?.get_thread_group().ok_or_else(|| errno!(ESRCH))?;
+    let target = file.as_pid()?.get_thread_group()?;
 
     if siginfo_ref.is_null() {
         target.send_signal_unchecked(current_task, unchecked_signal)

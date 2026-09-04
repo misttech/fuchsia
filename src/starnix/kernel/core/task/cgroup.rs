@@ -462,7 +462,7 @@ impl CgroupOps for CgroupRoot {
             .pid_table
             .lock()
             .keys()
-            .filter_map(|v| v.get_thread_group().map(|tg| tg.leader.id))
+            .filter_map(|v| v.get_thread_group().ok().map(|tg| tg.leader.id))
             .collect();
         let kernel_pids = kernel.pids.read().process_ids();
         kernel_pids.into_iter().filter(|pid| !controlled_pids.contains(pid)).collect()
@@ -620,7 +620,7 @@ impl CgroupState {
     // Goes through `processes` and remove processes that are no longer alive.
     fn update_processes(&mut self) {
         self.processes.retain(|thread_group| {
-            let Some(thread_group) = thread_group.get_thread_group() else {
+            let Ok(thread_group) = thread_group.get_thread_group() else {
                 return false;
             };
             let running = thread_group.read().is_running();
@@ -686,7 +686,7 @@ impl CgroupState {
         }
 
         for pid in self.processes.iter() {
-            let Some(thread_group) = pid.get_thread_group() else {
+            let Ok(thread_group) = pid.get_thread_group() else {
                 continue;
             };
             self.freeze_thread_group(&thread_group);
@@ -720,7 +720,7 @@ impl CgroupState {
 
     fn propagate_kill(&self) {
         for pid in self.processes.iter() {
-            let Some(thread_group) = pid.get_thread_group() else {
+            let Ok(thread_group) = pid.get_thread_group() else {
                 continue;
             };
             thread_group.write().send_signal(SignalInfo::kernel(SIGKILL));
@@ -939,7 +939,11 @@ impl CgroupOps for Cgroup {
     fn get_pids(&self, _kernel: &Kernel) -> Vec<pid_t> {
         let mut state = self.state.lock();
         state.update_processes();
-        state.processes.iter().filter_map(|v| v.get_thread_group().map(|tg| tg.leader.id)).collect()
+        state
+            .processes
+            .iter()
+            .filter_map(|v| v.get_thread_group().ok().map(|tg| tg.leader.id))
+            .collect()
     }
 
     fn kill(&self) {

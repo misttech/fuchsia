@@ -8,7 +8,7 @@ use fuchsia_rcu::{RcuDroppable, RcuOptionBox, RcuWeak};
 use starnix_logging::track_stub;
 use starnix_rcu::RcuReadScope;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{errno, pid_t, tid_t};
+use starnix_uapi::{errno, error, pid_t, tid_t};
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
@@ -57,10 +57,10 @@ impl PidEntry {
         }
     }
 
-    pub fn get_thread_group(&self) -> Option<Arc<ThreadGroup>> {
+    pub fn get_thread_group(&self) -> Result<Arc<ThreadGroup>, Errno> {
         match self.get_process() {
-            Some(ProcessEntryRef::Process(tg)) => Some(tg),
-            _ => None,
+            Some(ProcessEntryRef::Process(tg)) => Ok(tg),
+            _ => error!(ESRCH),
         }
     }
 
@@ -232,10 +232,6 @@ impl PidTable {
 
     pub fn get_process(&self, pid: pid_t) -> Option<ProcessEntryRef> {
         self.get(pid).ok()?.get_process()
-    }
-
-    pub fn get_thread_group(&self, pid: pid_t) -> Option<Arc<ThreadGroup>> {
-        self.get(pid).ok()?.get_thread_group()
     }
 
     pub fn get_thread_groups(&self) -> Vec<Arc<ThreadGroup>> {
