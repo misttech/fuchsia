@@ -1434,6 +1434,39 @@ exit 0
 	}
 }
 
+func TestFFXStrictClient_SymbolIndexAdd(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	err = client.SymbolIndexAdd(ctx, "/path/to/build-id")
+	if err != nil {
+		t.Fatalf("SymbolIndexAdd failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "debug symbol-index add /path/to/build-id") {
+		t.Errorf("Expected 'debug symbol-index add /path/to/build-id' in args, got: %s", args)
+	}
+}
+
 func TestFFXStrictClient_FfxConfigOverrides(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()

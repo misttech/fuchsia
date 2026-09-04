@@ -616,6 +616,13 @@ func (c *FFXStrictClient) ProductDownload(ctx context.Context, transferURL, outD
 	return nil
 }
 
+func (c *FFXStrictClient) SymbolIndexAdd(ctx context.Context, buildID string) error {
+	if err := c.ffxInst.Run(ctx, "debug", "symbol-index", "add", buildID); err != nil {
+		return fmt.Errorf("symbol-index add failed: %w", err)
+	}
+	return nil
+}
+
 type ffxLogCloser struct {
 	cmd    *exec.Cmd
 	closed chan struct{}
