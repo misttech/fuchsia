@@ -60,8 +60,9 @@ fn instantiate_symbolizer(
     let mut symbolizer = ffx_symbolize::Symbolizer::with_context(context)?;
     let mut symbolizer_module_ids = HashMap::new();
     for (region_starting_address, region) in referenced_regions {
+        let base = region_starting_address.wrapping_sub(region.vaddr);
         let module_id = symbolizer_module_ids
-            .entry(region.build_id.clone())
+            .entry((region.build_id.clone(), base))
             .or_insert_with(|| symbolizer.add_module(&region.name, &region.build_id));
         symbolizer.add_mapping(
             *module_id,
@@ -1002,5 +1003,53 @@ mod tests {
             .unwrap();
         let profile = builder.write_to_message();
         assert_profile_matches_two_fake_snapshots_with_extra_labels(&profile);
+    }
+
+    #[test]
+    fn test_symbolize_multiple_mappings_same_build_id() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let snapshot = Snapshot {
+            allocations: vec![Allocation {
+                address: None,
+                size: ALLOC_1_SIZE.try_into().unwrap(),
+                count: ALLOC_1_COUNT,
+                thread_info: None,
+                stack_trace: Rc::new(StackTrace {
+                    program_addresses: vec![LOC_1_ADDRESS, LOC_2_ADDRESS],
+                }),
+                timestamp: None,
+                contents: None,
+            }],
+            executable_regions: hashmap![
+                MAP_1_ADDRESS => ExecutableRegion {
+                    name: MAP_1_NAME.to_string(),
+                    size: MAP_1_SIZE,
+                    file_offset: MAP_1_FILE_OFFSET,
+                    vaddr: MAP_1_VADDR,
+                    build_id: hex::decode(MAP_1_BUILD_ID).unwrap(),
+                },
+                MAP_2_ADDRESS => ExecutableRegion {
+                    name: MAP_2_NAME.to_string(),
+                    size: MAP_2_SIZE,
+                    file_offset: MAP_2_FILE_OFFSET,
+                    vaddr: MAP_2_VADDR,
+                    build_id: hex::decode(MAP_1_BUILD_ID).unwrap(),
+                },
+            ],
+        };
+
+        let mut builder = PProfProfileBuilder::new(&env.context, false, true);
+        builder.add(&snapshot, &[]).unwrap();
+        let profile = builder.write_to_message();
+
+        assert_eq!(profile.mapping.len(), 2);
+        assert_eq!(profile.location.len(), 2);
+
+        let loc1 = profile.location.iter().find(|l| l.address == LOC_1_ADDRESS).unwrap();
+        let loc2 = profile.location.iter().find(|l| l.address == LOC_2_ADDRESS).unwrap();
+        let map1 = profile.mapping.iter().find(|m| m.memory_start == MAP_1_ADDRESS).unwrap();
+        let map2 = profile.mapping.iter().find(|m| m.memory_start == MAP_2_ADDRESS).unwrap();
+        assert_eq!(loc1.mapping_id, map1.id);
+        assert_eq!(loc2.mapping_id, map2.id);
     }
 }
