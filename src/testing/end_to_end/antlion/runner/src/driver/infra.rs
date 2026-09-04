@@ -205,7 +205,7 @@ impl InfraDriver {
                     }?;
 
                     fuchsia_devices.push(config::Fuchsia {
-                        name: nodename.clone(),
+                        name: nodename,
                         ip: ip.clone(),
                         device_ip_port: format!("{}", ip), // If ssh_port is ever set, this needs to be updated
                         ssh_port: None,
@@ -215,7 +215,7 @@ impl InfraDriver {
                         ssh_config: None,
                         ffx_binary_path: ffx_binary.clone(),
                         ffx_subtools_search_path: ffx_subtools_search_path.clone(),
-                        ssh_priv_key: ssh_key.clone(),
+                        ssh_priv_key: ssh_key,
                         pdu_device: pdu.clone(),
                         hard_reboot_on_fail: true,
                         honeydew_config: config::HoneydewConfig {
@@ -247,7 +247,7 @@ impl InfraDriver {
                             host: ip.clone(),
                             port: None,
                             user: "root".to_string(),
-                            identity_file: ssh_key.clone(),
+                            identity_file: ssh_key,
                         },
                         pdu_device: pdu.clone(),
                         attenuators: attenuator.as_ref().map(|a| {
@@ -280,8 +280,8 @@ impl InfraDriver {
                             ssh_binary_path: ssh_binary.clone(),
                             host: ip.clone(),
                             port: None,
-                            user: user.to_string(),
-                            identity_file: ssh_key.clone(),
+                            user,
+                            identity_file: ssh_key,
                         },
                         port: 5201,
                         test_interface: test_interface.clone(),
