@@ -263,11 +263,6 @@
 	url = https://fuchsia.googlesource.com/third_party/github.com/pciutils/pciids
 	name = third_party/github.com/pciutils/pciids
 	ignore = all
-[submodule "third_party/pytoml"]
-	path = third_party/pytoml
-	url = https://fuchsia.googlesource.com/third_party/pytoml
-	name = third_party/pytoml
-	ignore = all
 [submodule "third_party/pyyaml/src"]
 	path = third_party/pyyaml/src
 	url = https://fuchsia.googlesource.com/third_party/pyyaml
