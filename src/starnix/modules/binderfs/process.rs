@@ -13,8 +13,7 @@ use crate::resource_accessor::{
 };
 use crate::shared_memory::SharedMemory;
 use crate::thread::{
-    BinderThread, Command, IndexedCommandQueue, QueuedCommand, RegistrationState,
-    generate_dead_replies,
+    BinderThread, Command, QueuedCommand, RegistrationState, generate_dead_replies,
 };
 use crossbeam::queue::SegQueue;
 use starnix_core::mm::MemoryAccessor;
@@ -40,7 +39,7 @@ use starnix_uapi::{
     binder_driver_command_protocol_BC_RELEASE, binder_frozen_state_info, binder_uintptr_t, errno,
     error, pid_t,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -73,7 +72,7 @@ pub struct BinderProcessState {
     /// error.
     pub interrupted: bool,
     /// Pending commands.
-    pub command_queue: IndexedCommandQueue,
+    pub command_queue: VecDeque<QueuedCommand>,
     /// Freeze notifications that have been dispatched to userspace (via BR_FROZEN_BINDER)
     /// but not yet acknowledged via BC_FREEZE_NOTIFICATION_DONE.
     pub in_flight_freeze_notifications: BTreeSet<binder_uintptr_t>,
@@ -142,13 +141,6 @@ impl BinderFreezeState {
 impl BinderProcessState {
     pub fn has_pending_transactions(&self) -> bool {
         !self.active_transactions.is_empty()
-    }
-
-    /// Cancels a pending refcount command for the specified local object if
-    /// present in the process queue. Returns true if a command was found and
-    /// cancelled.
-    pub fn cancel_refcount_command(&mut self, is_acquire: bool, obj: &LocalBinderObject) -> bool {
-        self.command_queue.cancel_refcount(is_acquire, obj)
     }
 }
 
@@ -521,12 +513,12 @@ impl BinderProcess {
         // Handle oneway transactions explicitly. They should always target the process queue to
         // avoid accidentally handling them during an ongoing transaction.
         if matches!(command.command, Command::OnewayTransaction(_)) {
-            if self.lock().command_queue.push_back(command) {
-                // Since OnewayTransactions are routed to the process queue, we
-                // must explicitly wake waiters and available threads so it can
-                // grab the command, rather than letting it stall.
-                self.wake_process_and_available_thread();
-            }
+            crate::trace::on_command_enqueued(&command.command, command.trace_id);
+            self.lock().command_queue.push_back(command);
+
+            // Since OnewayTransactions are routed to the process queue, we must explicitly
+            // wake waiters and available threads so it can grab the command, rather than letting it stall.
+            self.wake_process_and_available_thread();
             return None;
         }
 
@@ -535,7 +527,7 @@ impl BinderProcess {
             match self.try_enqueue_on_available_thread(queued) {
                 Ok(thread) => return Some(thread),
                 Err(returned_queued) => {
-                    let enqueued = {
+                    {
                         let mut state = self.lock();
                         // We must not call try_enqueue_on_available_thread while holding
                         // the state lock, because that function acquires thread locks,
@@ -544,11 +536,13 @@ impl BinderProcess {
                             queued = returned_queued;
                             continue;
                         }
-                        state.command_queue.push_back(returned_queued)
-                    };
-                    if enqueued {
-                        self.wake_process_and_available_thread();
+                        crate::trace::on_command_enqueued(
+                            &returned_queued.command,
+                            returned_queued.trace_id,
+                        );
+                        state.command_queue.push_back(returned_queued);
                     }
+                    self.wake_process_and_available_thread();
                     return None;
                 }
             }

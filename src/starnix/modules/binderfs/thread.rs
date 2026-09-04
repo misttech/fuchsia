@@ -36,27 +36,12 @@ use starnix_uapi::{
     binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX, binder_frozen_state_info,
     binder_ptr_cookie, binder_transaction_data, binder_uintptr_t, errno, error, pid_t,
 };
-use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use zerocopy::{Immutable, IntoBytes};
-
-/// An index-based doubly linked queue for Binder commands providing O(1) push,
-/// pop, and refcount cancellation.
-#[derive(Debug, Default)]
-pub struct IndexedCommandQueue {
-    nodes: Vec<Option<CommandNode>>,
-    free_indices: Vec<usize>,
-    head: Option<usize>,
-    tail: Option<usize>,
-    len: usize,
-    /// Maps object to node index in `nodes` for pending AcquireRef commands.
-    pending_acquire_refs: HashMap<LocalBinderObject, usize>,
-    /// Maps object to node index in `nodes` for pending IncRef commands.
-    pending_inc_refs: HashMap<LocalBinderObject, usize>,
-}
 
 /// A binder command queued with its associated tracing span ID.
 #[derive(Debug)]
@@ -77,262 +62,9 @@ impl From<Command> for QueuedCommand {
     }
 }
 
-#[derive(Debug)]
-struct CommandNode {
-    command: QueuedCommand,
-    prev: Option<usize>,
-    next: Option<usize>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum PendingRefCommand {
-    Acquire(LocalBinderObject),
-    Inc(LocalBinderObject),
-}
-
-impl IndexedCommandQueue {
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    #[cfg(test)]
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    pub fn front(&self) -> Option<&QueuedCommand> {
-        let head_idx = self.head?;
-        self.nodes[head_idx].as_ref().map(|n| &n.command)
-    }
-
-    #[cfg(test)]
-    pub fn clear(&mut self) {
-        self.nodes.clear();
-        self.free_indices.clear();
-        self.head = None;
-        self.tail = None;
-        self.len = 0;
-        self.pending_acquire_refs.clear();
-        self.pending_inc_refs.clear();
-    }
-
-    fn unlink_and_take(&mut self, idx: usize) -> CommandNode {
-        let node = self.nodes[idx].take().expect("node must exist");
-        self.free_indices.push(idx);
-        self.len -= 1;
-
-        if let Some(prev_idx) = node.prev {
-            self.nodes[prev_idx].as_mut().expect("prev node must exist").next = node.next;
-        } else {
-            self.head = node.next;
-        }
-
-        if let Some(next_idx) = node.next {
-            self.nodes[next_idx].as_mut().expect("next node must exist").prev = node.prev;
-        } else {
-            self.tail = node.prev;
-        }
-
-        // Release slot capacity if the queue becomes completely empty.
-        if self.len == 0 {
-            self.nodes.clear();
-            self.free_indices.clear();
-            self.head = None;
-            self.tail = None;
-        }
-
-        node
-    }
-
-    /// Cancels a pending refcount command for the specified local object if
-    /// present in the queue in O(1). Returns true if a command was found and
-    /// cancelled.
-    ///
-    /// Note: `ObjectReferenceCount` only ever transitions from 0 -> 1 once until
-    /// acknowledged by userspace, so there is at most one pending AcquireRef (and
-    /// at most one pending IncRef) in the queue for a given object at any time.
-    pub fn cancel_refcount(&mut self, is_acquire: bool, obj: &LocalBinderObject) -> bool {
-        let node_idx_opt = if is_acquire {
-            self.pending_acquire_refs.remove(obj)
-        } else {
-            self.pending_inc_refs.remove(obj)
-        };
-
-        if let Some(node_idx) = node_idx_opt {
-            let node = self.unlink_and_take(node_idx);
-            crate::trace::on_command_dequeued(&node.command.command, node.command.trace_id);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Retains only the elements specified by the predicate.
-    pub fn retain<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&QueuedCommand) -> bool,
-    {
-        let mut curr = self.head;
-        while let Some(idx) = curr {
-            let next = self.nodes[idx].as_ref().expect("node must exist").next;
-            if !f(&self.nodes[idx].as_ref().unwrap().command) {
-                let node = self.unlink_and_take(idx);
-                match &node.command.command {
-                    Command::AcquireRef(obj) => {
-                        self.pending_acquire_refs.remove(obj);
-                    }
-                    Command::IncRef(obj) => {
-                        self.pending_inc_refs.remove(obj);
-                    }
-                    _ => {}
-                }
-                crate::trace::on_command_dequeued(&node.command.command, node.command.trace_id);
-            }
-            curr = next;
-        }
-    }
-
-    /// Enqueues a command into the queue in O(1). Returns `true` if the
-    /// command was enqueued, or `false` if it was coalesced and dropped.
-    pub fn push_back(&mut self, command: QueuedCommand) -> bool {
-        let QueuedCommand { command, trace_id } = command;
-        match &command {
-            Command::ReleaseRef(obj) => {
-                if let Some(idx) = self.pending_acquire_refs.remove(obj) {
-                    let node = self.unlink_and_take(idx);
-                    crate::trace::on_command_dequeued(&node.command.command, node.command.trace_id);
-                    return false;
-                }
-            }
-            Command::DecRef(obj) => {
-                if let Some(idx) = self.pending_inc_refs.remove(obj) {
-                    let node = self.unlink_and_take(idx);
-                    crate::trace::on_command_dequeued(&node.command.command, node.command.trace_id);
-                    return false;
-                }
-            }
-            _ => {}
-        }
-        crate::trace::on_command_enqueued(&command, trace_id);
-
-        let pending_ref = match &command {
-            Command::AcquireRef(obj) => Some(PendingRefCommand::Acquire(*obj)),
-            Command::IncRef(obj) => Some(PendingRefCommand::Inc(*obj)),
-            _ => None,
-        };
-
-        let node = CommandNode {
-            command: QueuedCommand::new(command, trace_id),
-            prev: self.tail,
-            next: None,
-        };
-
-        let idx = if let Some(free_idx) = self.free_indices.pop() {
-            self.nodes[free_idx] = Some(node);
-            free_idx
-        } else {
-            let idx = self.nodes.len();
-            self.nodes.push(Some(node));
-            idx
-        };
-
-        if let Some(tail_idx) = self.tail {
-            self.nodes[tail_idx].as_mut().expect("tail node must exist").next = Some(idx);
-        } else {
-            self.head = Some(idx);
-        }
-        self.tail = Some(idx);
-        self.len += 1;
-
-        match pending_ref {
-            Some(PendingRefCommand::Acquire(obj)) => {
-                let prev = self.pending_acquire_refs.insert(obj, idx);
-                debug_assert!(
-                    prev.is_none(),
-                    "unexpected duplicate pending AcquireRef for obj {:?}",
-                    obj
-                );
-            }
-            Some(PendingRefCommand::Inc(obj)) => {
-                let prev = self.pending_inc_refs.insert(obj, idx);
-                debug_assert!(
-                    prev.is_none(),
-                    "unexpected duplicate pending IncRef for obj {:?}",
-                    obj
-                );
-            }
-            None => {}
-        }
-        true
-    }
-
-    pub fn pop_front(&mut self) -> Option<QueuedCommand> {
-        let head_idx = self.head?;
-        let node = self.unlink_and_take(head_idx);
-
-        // Remove from pending maps if the popped node matches the indexed entry
-        match &node.command.command {
-            Command::AcquireRef(obj) => {
-                let removed_idx = self.pending_acquire_refs.remove(obj);
-                debug_assert_eq!(
-                    removed_idx,
-                    Some(head_idx),
-                    "popped AcquireRef for obj {:?} did not match indexed node",
-                    obj
-                );
-            }
-            Command::IncRef(obj) => {
-                let removed_idx = self.pending_inc_refs.remove(obj);
-                debug_assert_eq!(
-                    removed_idx,
-                    Some(head_idx),
-                    "popped IncRef for obj {:?} did not match indexed node",
-                    obj
-                );
-            }
-            _ => {}
-        }
-
-        crate::trace::on_command_dequeued(&node.command.command, node.command.trace_id);
-        Some(node.command)
-    }
-
-    #[cfg(test)]
-    pub fn iter(&self) -> impl Iterator<Item = &QueuedCommand> {
-        let mut curr = self.head;
-        std::iter::from_fn(move || {
-            let idx = curr?;
-            let node = self.nodes[idx].as_ref().expect("node must exist");
-            curr = node.next;
-            Some(&node.command)
-        })
-    }
-}
-
-impl IntoIterator for IndexedCommandQueue {
-    type Item = QueuedCommand;
-    type IntoIter = IndexedCommandQueueIntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        IndexedCommandQueueIntoIter { queue: self }
-    }
-}
-
-pub struct IndexedCommandQueueIntoIter {
-    queue: IndexedCommandQueue,
-}
-
-impl Iterator for IndexedCommandQueueIntoIter {
-    type Item = QueuedCommand;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.queue.pop_front()
-    }
-}
-
 #[derive(Default, Debug)]
 pub struct CommandQueueWithWaitQueue {
-    pub commands: IndexedCommandQueue,
+    pub commands: VecDeque<QueuedCommand>,
     pub waiters: WaitQueue,
 }
 
@@ -351,23 +83,28 @@ impl CommandQueueWithWaitQueue {
     }
 
     pub fn pop_front(&mut self) -> Option<QueuedCommand> {
-        self.commands.pop_front()
+        let queued = self.commands.pop_front()?;
+        crate::trace::on_command_dequeued(&queued.command, queued.trace_id);
+        Some(queued)
     }
 
-    pub fn push_back(&mut self, command: QueuedCommand) -> bool {
-        if self.commands.push_back(command) {
-            self.waiters.notify_fd_events_count(FdEvents::POLLIN, 1);
-            true
-        } else {
-            false
-        }
+    pub fn push_back(&mut self, command: QueuedCommand) {
+        crate::trace::on_command_enqueued(&command.command, command.trace_id);
+        self.commands.push_back(command);
+        self.waiters.notify_fd_events_count(FdEvents::POLLIN, 1);
     }
 
-    pub fn retain<F>(&mut self, f: F)
+    pub fn retain<F>(&mut self, mut f: F)
     where
         F: FnMut(&QueuedCommand) -> bool,
     {
-        self.commands.retain(f);
+        self.commands.retain(|cmd| {
+            let keep = f(cmd);
+            if !keep {
+                crate::trace::on_command_dequeued(&cmd.command, cmd.trace_id);
+            }
+            keep
+        });
     }
 
     pub fn has_waiters(&self) -> bool {
