@@ -188,12 +188,43 @@ pub struct EnumDef {
     pub variants: Vec<String>,
 }
 
+pub const DEFAULT_ROOT_STRUCT_NAME: &str = "Root";
+
+pub fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Schema {
     pub id: String,
     pub enums: HashMap<String, EnumDef>,
     pub structs: HashMap<String, StructDef>,
     pub root_layout: StructDef,
+}
+
+impl Schema {
+    /// Determines the name for the generated root metadata struct.
+    ///
+    /// Naming precedence:
+    /// 1. If the schema explicitly specifies a `title` property, use that title.
+    /// 2. If there is only a single schema (`total_schemas == 1`), default to
+    ///    `<DriverName>Metadata` (preserving backwards compatibility).
+    /// 3. If there are multiple schemas and `title` is omitted, fall back to
+    ///    the capitalized last dot-separated segment of the schema `id`.
+    pub fn root_struct_name(&self, normalized_driver_name: &str, total_schemas: usize) -> String {
+        if self.root_layout.name != DEFAULT_ROOT_STRUCT_NAME {
+            self.root_layout.name.clone()
+        } else if total_schemas == 1 {
+            format!("{}Metadata", capitalize(normalized_driver_name))
+        } else {
+            let last_part = self.id.rsplit('.').next().unwrap_or(normalized_driver_name);
+            capitalize(last_part)
+        }
+    }
 }
 
 pub fn load_dml_file(
@@ -288,8 +319,13 @@ pub fn parse_json_schema(schema_val: &Value, metadata_id: &str) -> Result<Schema
     if schema_val.get("type").and_then(|v| v.as_str()) != Some("object") {
         anyhow::bail!("Root schema must be of type 'object'");
     }
+    let root_name = schema_val
+        .get("title")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| DEFAULT_ROOT_STRUCT_NAME.to_string());
     let root_fields = parse_properties(schema_val, &enums)?;
-    let root_layout = StructDef { name: "Root".to_string(), fields: root_fields };
+    let root_layout = StructDef { name: root_name, fields: root_fields };
 
     Ok(Schema { id: metadata_id.to_string(), enums, structs, root_layout })
 }

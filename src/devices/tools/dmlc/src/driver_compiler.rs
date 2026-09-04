@@ -5,7 +5,7 @@
 use crate::bind_generator::{AdditionalParentInfo, generate_bind_file};
 use crate::cml_generator::de_duplicate_use_entries;
 use crate::parser::*;
-use crate::{CompileDriverArgs, cpp_generator};
+use crate::{CompileDriverArgs, cpp_generator, rust_generator};
 use anyhow::Context;
 use serde_json::Value;
 use std::path::Path;
@@ -14,8 +14,8 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     let driver_dml = load_driver_dml(Path::new(&args.input_file))?;
     let driver_name = &driver_dml.name;
 
-    // Find the schema for this driver
-    let mut schema_def = None;
+    // Find the schemas for this driver
+    let mut schema_defs = Vec::new();
     for cap_val in &driver_dml.capabilities {
         let Some(obj) = cap_val.as_object() else {
             continue;
@@ -30,20 +30,28 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
             continue;
         };
         if meta.schema.is_some() {
-            schema_def = Some(meta);
-            break;
+            schema_defs.push(meta);
         }
     }
-    if let Some(schema_def) = schema_def {
-        let parsed_schema = parse_json_schema(schema_def.schema.as_ref().unwrap(), &schema_def.id)?;
+    if !schema_defs.is_empty() {
+        let mut parsed_schemas = Vec::new();
+        for schema_def in &schema_defs {
+            let parsed_schema =
+                parse_json_schema(schema_def.schema.as_ref().unwrap(), &schema_def.id)?;
+            parsed_schemas.push(parsed_schema);
+        }
         let namespace = args.namespace.as_deref().unwrap_or(driver_name);
         let (h_code, cc_code) =
-            cpp_generator::generate_cpp_parser(&parsed_schema, driver_name, namespace, year)?;
+            cpp_generator::generate_cpp_parser(&parsed_schemas, driver_name, namespace, year)?;
         if let Some(h_output) = &args.h_output {
             std::fs::write(h_output, h_code).context("Failed to write header file")?;
         }
         if let Some(cc_output) = &args.cc_output {
             std::fs::write(cc_output, cc_code).context("Failed to write source file")?;
+        }
+        if let Some(rs_output) = &args.rs_output {
+            let rs_code = rust_generator::generate_rust_parser(&parsed_schemas, driver_name, year)?;
+            std::fs::write(rs_output, rs_code).context("Failed to write Rust parser file")?;
         }
     } else {
         if let Some(h_output) = &args.h_output {
@@ -51,6 +59,9 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
         }
         if let Some(cc_output) = &args.cc_output {
             std::fs::write(cc_output, "").context("Failed to write stub source file")?;
+        }
+        if let Some(rs_output) = &args.rs_output {
+            std::fs::write(rs_output, "").context("Failed to write stub Rust parser file")?;
         }
     }
 
@@ -61,6 +72,11 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     let mut has_explicit_bind_block = false;
     if let Some(obj) = driver_dml.program.as_object() {
         if let Some(bind_val) = obj.get("requirements").or_else(|| obj.get("bind")) {
+            if bind_val.is_string() {
+                anyhow::bail!(
+                    "DML does not support string 'program.bind'. Bind rules should be specified as a structured object or under 'use' for composite drivers."
+                );
+            }
             bind_config = serde_json::from_value(bind_val.clone())
                 .context("Failed to parse structured 'requirements' block in DML program")?;
             has_explicit_bind_block = true;
@@ -265,6 +281,9 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     // Generate CML if requested
     if let Some(cml_output) = &args.cml_output {
         let mut program_val = driver_dml.program.clone();
+        if program_val.is_null() {
+            program_val = Value::Object(serde_json::Map::new());
+        }
         if let Some(obj) = program_val.as_object_mut() {
             obj.remove("requirements");
             obj.remove("bind");
@@ -278,12 +297,10 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                     Value::String(format!("driver/{}.so", driver_name)),
                 );
             }
-            if !obj.contains_key("bind") {
-                obj.insert(
-                    "bind".to_string(),
-                    Value::String(format!("meta/bind/{}.bindbc", driver_name)),
-                );
-            }
+            obj.insert(
+                "bind".to_string(),
+                Value::String(format!("meta/bind/{}.bindbc", driver_name)),
+            );
         }
 
         let expose = driver_dml.expose.clone();
@@ -375,6 +392,7 @@ mod tests {
             input_file: dml_path.to_str().unwrap().to_string(),
             h_output: None,
             cc_output: None,
+            rs_output: None,
             cml_output: Some(cml_path.to_str().unwrap().to_string()),
             bind_output: Some(bind_path.to_str().unwrap().to_string()),
             namespace: None,
@@ -429,6 +447,7 @@ mod tests {
             input_file: dml_path.to_str().unwrap().to_string(),
             h_output: None,
             cc_output: None,
+            rs_output: None,
             cml_output: None,
             bind_output: Some(bind_path.to_str().unwrap().to_string()),
             namespace: None,
@@ -484,6 +503,7 @@ mod tests {
             input_file: dml_path.to_str().unwrap().to_string(),
             h_output: None,
             cc_output: None,
+            rs_output: None,
             cml_output: Some(cml_path.to_str().unwrap().to_string()),
             bind_output: Some(bind_path.to_str().unwrap().to_string()),
             namespace: None,
@@ -503,7 +523,6 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
-
     #[test]
     fn test_primary_use_entry_without_service_or_protocol() {
         let temp_dir = std::env::temp_dir().join("test_temp_primary_no_service");
@@ -537,6 +556,7 @@ mod tests {
             input_file: dml_path.to_str().unwrap().to_string(),
             h_output: None,
             cc_output: None,
+            rs_output: None,
             cml_output: Some(cml_path.to_str().unwrap().to_string()),
             bind_output: Some(bind_path.to_str().unwrap().to_string()),
             namespace: None,
@@ -559,7 +579,7 @@ mod tests {
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         let dml_content = r#"{
-            name: "sample_banjo_driver",
+            name: "sample_driver",
             use: [
                 {
                     banjo: "fuchsia.platform.BIND_PROTOCOL.DEVICE",
@@ -588,6 +608,7 @@ mod tests {
             input_file: dml_path.to_str().unwrap().to_string(),
             h_output: None,
             cc_output: None,
+            rs_output: None,
             cml_output: Some(cml_path.to_str().unwrap().to_string()),
             bind_output: Some(bind_path.to_str().unwrap().to_string()),
             namespace: None,
@@ -634,6 +655,7 @@ mod tests {
             input_file: dml_path.to_str().unwrap().to_string(),
             h_output: None,
             cc_output: None,
+            rs_output: None,
             cml_output: None,
             bind_output: None,
             namespace: None,
@@ -680,6 +702,7 @@ mod tests {
             input_file: dml_path.to_str().unwrap().to_string(),
             h_output: None,
             cc_output: None,
+            rs_output: None,
             cml_output: Some(cml_path.to_str().unwrap().to_string()),
             bind_output: Some(bind_path.to_str().unwrap().to_string()),
             namespace: None,
@@ -689,6 +712,43 @@ mod tests {
 
         let bind_content = std::fs::read_to_string(&bind_path).unwrap();
         assert!(bind_content.contains("composite aml_mipi;"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_string_bind_in_program_error() {
+        let temp_dir = std::env::temp_dir().join("test_temp_string_bind_in_program_error");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let dml_content = r#"{
+            name: "sample_driver",
+            program: {
+                runner: "driver",
+                binary: "driver/sample.so",
+                bind: "meta/bind/sample.bindbc"
+            }
+        }"#;
+
+        let dml_path = temp_dir.join("sample.dml");
+        std::fs::write(&dml_path, dml_content).unwrap();
+
+        let args = CompileDriverArgs {
+            input_file: dml_path.to_str().unwrap().to_string(),
+            h_output: None,
+            cc_output: None,
+            rs_output: None,
+            cml_output: None,
+            bind_output: None,
+            namespace: None,
+        };
+
+        let res = compile_driver(&args, "2026");
+        assert!(res.is_err());
+        assert!(
+            res.unwrap_err().to_string().contains("DML does not support string 'program.bind'")
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

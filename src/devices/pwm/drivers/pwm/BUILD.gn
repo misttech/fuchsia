@@ -12,7 +12,7 @@ fuchsia_driver_dml("pwm-dml") {
   driver_name = "pwm"
 }
 
-fuchsia_driver_dml_parser("pwm-metadata") {
+fuchsia_driver_dml_cpp_parser("pwm-metadata") {
   dml_label = ":pwm-dml"
 }
 

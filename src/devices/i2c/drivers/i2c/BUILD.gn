@@ -12,7 +12,7 @@ fuchsia_driver_dml("i2c-dml") {
   driver_name = "i2c"
 }
 
-fuchsia_driver_dml_parser("i2c-metadata") {
+fuchsia_driver_dml_cpp_parser("i2c-metadata") {
   dml_label = ":i2c-dml"
 }
 

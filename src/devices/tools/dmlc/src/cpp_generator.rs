@@ -6,7 +6,7 @@ use crate::parser::{Schema, StructDef, Type};
 use std::collections::HashSet;
 
 pub fn generate_cpp_parser(
-    schema: &Schema,
+    schemas: &[Schema],
     driver_name: &str,
     namespace: &str,
     year: &str,
@@ -38,101 +38,128 @@ namespace {normalized_namespace} {{
 "#
     ));
 
-    // Generate Enums
-    let mut sorted_enums: Vec<(&String, &crate::parser::EnumDef)> = schema.enums.iter().collect();
-    sorted_enums.sort_by_key(|(name, _)| *name);
-    for (name, enum_def) in sorted_enums {
-        h_code.push_str(&format!("enum class {name} : uint8_t {{\n"));
-        for (idx, variant) in enum_def.variants.iter().enumerate() {
-            h_code.push_str(&format!("    k{variant} = {idx},\n"));
+    let mut generated_enums = HashSet::new();
+    for schema in schemas {
+        // Generate Enums
+        let mut sorted_enums: Vec<(&String, &crate::parser::EnumDef)> =
+            schema.enums.iter().collect();
+        sorted_enums.sort_by_key(|(name, _)| *name);
+        for (name, enum_def) in sorted_enums {
+            if !generated_enums.insert(name.clone()) {
+                continue;
+            }
+            h_code.push_str(&format!("enum class {name} : uint8_t {{\n"));
+            for (idx, variant) in enum_def.variants.iter().enumerate() {
+                h_code.push_str(&format!("    k{variant} = {idx},\n"));
+            }
+            h_code.push_str("};\n\n");
         }
-        h_code.push_str("};\n\n");
     }
 
     // Forward declarations of structs
-    let mut sorted_struct_names: Vec<&String> = schema.structs.keys().collect();
-    sorted_struct_names.sort();
-    for name in sorted_struct_names {
-        h_code.push_str(&format!("struct {name};\n"));
+    let mut forward_declared_structs = HashSet::new();
+    for schema in schemas {
+        let mut sorted_struct_names: Vec<&String> = schema.structs.keys().collect();
+        sorted_struct_names.sort();
+        for name in sorted_struct_names {
+            if !forward_declared_structs.insert(name.clone()) {
+                continue;
+            }
+            h_code.push_str(&format!("struct {name};\n"));
+        }
     }
     h_code.push_str("\n");
 
-    // Validate struct dependencies
-    for struct_def in schema.structs.values() {
-        for dep in get_dependencies(struct_def) {
+    let mut generated_structs = HashSet::new();
+
+    for schema in schemas {
+        // Validate struct dependencies
+        for struct_def in schema.structs.values() {
+            for dep in get_dependencies(struct_def) {
+                if !schema.structs.contains_key(&dep) {
+                    anyhow::bail!(
+                        "Struct '{}' references undefined type '{}'",
+                        struct_def.name,
+                        dep
+                    );
+                }
+            }
+        }
+
+        // Validate root layout dependencies
+        for dep in get_dependencies(&schema.root_layout) {
             if !schema.structs.contains_key(&dep) {
-                anyhow::bail!("Struct '{}' references undefined type '{}'", struct_def.name, dep);
+                anyhow::bail!("Root layout references undefined type '{}'", dep);
             }
         }
-    }
 
-    // Validate root layout dependencies
-    for dep in get_dependencies(&schema.root_layout) {
-        if !schema.structs.contains_key(&dep) {
-            anyhow::bail!("Root layout references undefined type '{}'", dep);
-        }
-    }
+        // Sort structs topologically by dependency
+        let mut ordered_structs = Vec::new();
+        let mut ordered_names = HashSet::new();
+        let mut pending: Vec<&StructDef> = schema.structs.values().collect();
+        pending.sort_by_key(|s| &s.name);
 
-    // Sort structs topologically by dependency
-    let mut ordered_structs = Vec::new();
-    let mut ordered_names = HashSet::new();
-    let mut pending: Vec<&StructDef> = schema.structs.values().collect();
-    pending.sort_by_key(|s| &s.name);
-
-    while !pending.is_empty() {
-        let mut progress = false;
-        let mut i = 0;
-        while i < pending.len() {
-            let struct_def = pending[i];
-            let deps = get_dependencies(struct_def);
-            if deps.iter().all(|dep| ordered_names.contains(dep)) {
-                ordered_names.insert(struct_def.name.clone());
-                ordered_structs.push(struct_def);
-                pending.remove(i);
-                progress = true;
-            } else {
-                i += 1;
+        while !pending.is_empty() {
+            let mut progress = false;
+            let mut i = 0;
+            while i < pending.len() {
+                let struct_def = pending[i];
+                let deps = get_dependencies(struct_def);
+                if deps.iter().all(|dep| ordered_names.contains(dep)) {
+                    ordered_names.insert(struct_def.name.clone());
+                    ordered_structs.push(struct_def);
+                    pending.remove(i);
+                    progress = true;
+                } else {
+                    i += 1;
+                }
+            }
+            if !progress {
+                anyhow::bail!("Circular dependency detected in schema structs!");
             }
         }
-        if !progress {
-            anyhow::bail!("Circular dependency detected in schema structs!");
+
+        // Generate Structs in dependency order
+        for struct_def in ordered_structs {
+            let name = &struct_def.name;
+            if !generated_structs.insert(name.clone()) {
+                continue;
+            }
+            h_code.push_str(&format!("struct {name} {{\n"));
+            let mut sorted_fields = struct_def.fields.clone();
+            sorted_fields.sort_by(|a, b| a.name.cmp(&b.name));
+            for field in &sorted_fields {
+                let cpp_type = to_cpp_type(&field.ty, field.optional);
+                h_code.push_str(&format!("    {} {};\n", cpp_type, field.name));
+            }
+            h_code.push_str("\n");
+            h_code.push_str(&format!(
+                "    static std::optional<{name}> Parse(const fuchsia_driver_metadata::Dictionary& dict, const std::string& prefix);\n"
+            ));
+            h_code.push_str("};\n\n");
         }
     }
 
-    // Generate Structs in dependency order
-    for struct_def in ordered_structs {
-        let name = &struct_def.name;
-        h_code.push_str(&format!("struct {name} {{\n"));
-        let mut sorted_fields = struct_def.fields.clone();
-        sorted_fields.sort_by(|a, b| a.name.cmp(&b.name));
-        for field in &sorted_fields {
+    // Root structs
+    for schema in schemas {
+        let root_class_name = schema.root_struct_name(&normalized_name, schemas.len());
+
+        h_code.push_str(&format!("struct {root_class_name} {{\n"));
+        let mut sorted_root_fields = schema.root_layout.fields.clone();
+        sorted_root_fields.sort_by(|a, b| a.name.cmp(&b.name));
+        for field in &sorted_root_fields {
             let cpp_type = to_cpp_type(&field.ty, field.optional);
             h_code.push_str(&format!("    {} {};\n", cpp_type, field.name));
         }
         h_code.push_str("\n");
         h_code.push_str(&format!(
-            "    static std::optional<{name}> Parse(const fuchsia_driver_metadata::Dictionary& dict, const std::string& prefix);\n"
+            "    static std::optional<{root_class_name}> Parse(const std::vector<uint8_t>& bytes);\n"
+        ));
+        h_code.push_str(&format!(
+            "    static std::optional<{root_class_name}> Parse(const fuchsia_driver_metadata::Dictionary& dict, const std::string& prefix = \"\");\n"
         ));
         h_code.push_str("};\n\n");
     }
-
-    // Root struct
-    let root_class_name = format!("{}Metadata", capitalize(&normalized_name));
-    h_code.push_str(&format!("struct {root_class_name} {{\n"));
-    let mut sorted_root_fields = schema.root_layout.fields.clone();
-    sorted_root_fields.sort_by(|a, b| a.name.cmp(&b.name));
-    for field in &sorted_root_fields {
-        let cpp_type = to_cpp_type(&field.ty, field.optional);
-        h_code.push_str(&format!("    {} {};\n", cpp_type, field.name));
-    }
-    h_code.push_str("\n");
-    h_code.push_str(&format!(
-        "    static std::optional<{root_class_name}> Parse(const std::vector<uint8_t>& bytes);\n"
-    ));
-    h_code.push_str(&format!(
-        "    static std::optional<{root_class_name}> Parse(const fuchsia_driver_metadata::Dictionary& dict, const std::string& prefix = \"\");\n"
-    ));
-    h_code.push_str("};\n\n");
 
     h_code.push_str(&format!("}} // namespace {normalized_namespace}\n\n"));
     h_code.push_str(&format!("#endif // {guard}\n"));
@@ -390,19 +417,65 @@ namespace {{
     ));
 
     // Implement Parse for Structs
-    let mut sorted_structs: Vec<_> = schema.structs.iter().collect();
-    sorted_structs.sort_unstable_by_key(|&(name, _)| name);
-    for (name, struct_def) in sorted_structs {
+    let mut implemented_structs = HashSet::new();
+
+    for schema in schemas {
+        let mut sorted_structs: Vec<_> = schema.structs.iter().collect();
+        sorted_structs.sort_unstable_by_key(|&(name, _)| name);
+        for (name, struct_def) in sorted_structs {
+            if !implemented_structs.insert(name.clone()) {
+                continue;
+            }
+            cc_code.push_str(&format!(
+                "std::optional<{name}> {name}::Parse(const fuchsia_driver_metadata::Dictionary& dict, const std::string& prefix) {{\n"
+            ));
+            cc_code.push_str(&format!("    {name} res;\n"));
+
+            let mut sorted_fields = struct_def.fields.clone();
+            sorted_fields.sort_by(|a, b| a.name.cmp(&b.name));
+
+            for field in &sorted_fields {
+                let key_expr = format!("prefix + \".{}\"", field.name);
+                let val_getter = get_value_getter(&field.ty, "dict", &key_expr, schema)?;
+                if field.optional {
+                    cc_code.push_str(&format!("    res.{} = {};\n", field.name, val_getter));
+                } else {
+                    cc_code.push_str(&format!(
+                        "    if (auto v = {}; v) {{ res.{} = *v; }} else {{ return std::nullopt; }}\n",
+                        val_getter, field.name
+                    ));
+                }
+            }
+            cc_code.push_str("    return res;\n");
+            cc_code.push_str("}\n\n");
+        }
+
+        // Implement Parse for Roots
+        let root_class_name = schema.root_struct_name(&normalized_name, schemas.len());
+
         cc_code.push_str(&format!(
-            "std::optional<{name}> {name}::Parse(const fuchsia_driver_metadata::Dictionary& dict, const std::string& prefix) {{\n"
+            "std::optional<{root_class_name}> {root_class_name}::Parse(const std::vector<uint8_t>& bytes) {{\n"
         ));
-        cc_code.push_str(&format!("    {name} res;\n"));
+        cc_code.push_str(
+            "    auto result = fidl::Unpersist<fuchsia_driver_metadata::Dictionary>(bytes);\n",
+        );
+        cc_code.push_str("    if (result.is_error()) return std::nullopt;\n");
+        cc_code.push_str("    return Parse(result.value());\n");
+        cc_code.push_str("}\n\n");
 
-        let mut sorted_fields = struct_def.fields.clone();
-        sorted_fields.sort_by(|a, b| a.name.cmp(&b.name));
+        cc_code.push_str(&format!(
+            "std::optional<{root_class_name}> {root_class_name}::Parse(const fuchsia_driver_metadata::Dictionary& dict, const std::string& prefix) {{\n"
+        ));
+        cc_code.push_str(&format!("    {root_class_name} res;\n"));
 
-        for field in &sorted_fields {
-            let key_expr = format!("prefix + \".{}\"", field.name);
+        let mut sorted_root_fields = schema.root_layout.fields.clone();
+        sorted_root_fields.sort_by(|a, b| a.name.cmp(&b.name));
+
+        for field in &sorted_root_fields {
+            let key_expr = format!(
+                "(prefix.empty() ? \"{field_name}\" : prefix + \".{field_name}\")",
+                field_name = field.name
+            );
             let val_getter = get_value_getter(&field.ty, "dict", &key_expr, schema)?;
             if field.optional {
                 cc_code.push_str(&format!("    res.{} = {};\n", field.name, val_getter));
@@ -416,43 +489,6 @@ namespace {{
         cc_code.push_str("    return res;\n");
         cc_code.push_str("}\n\n");
     }
-
-    // Implement Parse for Root
-    cc_code.push_str(&format!(
-        "std::optional<{root_class_name}> {root_class_name}::Parse(const std::vector<uint8_t>& bytes) {{\n"
-    ));
-    cc_code.push_str(
-        "    auto result = fidl::Unpersist<fuchsia_driver_metadata::Dictionary>(bytes);\n",
-    );
-    cc_code.push_str("    if (result.is_error()) return std::nullopt;\n");
-    cc_code.push_str("    return Parse(result.value());\n");
-    cc_code.push_str("}\n\n");
-
-    cc_code.push_str(&format!(
-        "std::optional<{root_class_name}> {root_class_name}::Parse(const fuchsia_driver_metadata::Dictionary& dict, const std::string& prefix) {{\n"
-    ));
-    cc_code.push_str(&format!("    {root_class_name} res;\n"));
-
-    let mut sorted_root_fields = schema.root_layout.fields.clone();
-    sorted_root_fields.sort_by(|a, b| a.name.cmp(&b.name));
-
-    for field in &sorted_root_fields {
-        let key_expr = format!(
-            "(prefix.empty() ? \"{field_name}\" : prefix + \".{field_name}\")",
-            field_name = field.name
-        );
-        let val_getter = get_value_getter(&field.ty, "dict", &key_expr, schema)?;
-        if field.optional {
-            cc_code.push_str(&format!("    res.{} = {};\n", field.name, val_getter));
-        } else {
-            cc_code.push_str(&format!(
-                "    if (auto v = {}; v) {{ res.{} = *v; }} else {{ return std::nullopt; }}\n",
-                val_getter, field.name
-            ));
-        }
-    }
-    cc_code.push_str("    return res;\n");
-    cc_code.push_str("}\n\n");
 
     cc_code.push_str(&format!("}} // namespace {normalized_namespace}\n"));
 
@@ -564,14 +600,6 @@ fn get_value_getter(
     Ok(expr)
 }
 
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-    }
-}
-
 fn get_dependencies(struct_def: &StructDef) -> HashSet<String> {
     let mut deps = HashSet::new();
     for field in &struct_def.fields {
@@ -629,7 +657,7 @@ mod tests {
         };
 
         let schema = make_schema(vec![struct_a, struct_b]);
-        let res = generate_cpp_parser(&schema, "my_driver", "my_driver", "2026");
+        let res = generate_cpp_parser(&[schema], "my_driver", "my_driver", "2026");
         assert!(res.is_ok());
         let (h_code, _) = res.unwrap();
 
@@ -661,7 +689,7 @@ mod tests {
         };
 
         let schema = make_schema(vec![struct_a, struct_b]);
-        let res = generate_cpp_parser(&schema, "my_driver", "my_driver", "2026");
+        let res = generate_cpp_parser(&[schema], "my_driver", "my_driver", "2026");
         assert!(res.is_err());
         let err_msg = format!("{}", res.err().unwrap());
         assert!(
@@ -684,7 +712,7 @@ mod tests {
         };
 
         let schema = make_schema(vec![struct_a]);
-        let res = generate_cpp_parser(&schema, "my_driver", "my_driver", "2026");
+        let res = generate_cpp_parser(&[schema], "my_driver", "my_driver", "2026");
         assert!(res.is_err());
         let err_msg = format!("{}", res.err().unwrap());
         assert!(
@@ -709,7 +737,7 @@ mod tests {
             }],
         };
         let schema = make_schema(vec![element_struct, root_struct]);
-        let res = generate_cpp_parser(&schema, "my_driver", "my_driver", "2026");
+        let res = generate_cpp_parser(&[schema], "my_driver", "my_driver", "2026");
         assert!(res.is_ok());
         let (_, cc_code) = res.unwrap();
         // It should contain _count check
@@ -735,7 +763,7 @@ mod tests {
                 }],
             },
         };
-        let res = generate_cpp_parser(&schema, "my_driver", "my_driver", "2026");
+        let res = generate_cpp_parser(&[schema], "my_driver", "my_driver", "2026");
         assert!(res.is_err());
         let err_msg = format!("{}", res.err().unwrap());
         assert!(
@@ -775,7 +803,7 @@ mod tests {
             root_layout: StructDef { name: "MyStruct".to_string(), fields: vec![] },
         };
 
-        let res = generate_cpp_parser(&schema, "my_driver", "my_driver", "2026");
+        let res = generate_cpp_parser(&[schema], "my_driver", "my_driver", "2026");
         assert!(res.is_ok());
         let (_, cc_code) = res.unwrap();
 
@@ -806,7 +834,7 @@ mod tests {
             ],
         };
         let schema = make_schema(vec![root_struct]);
-        let res = generate_cpp_parser(&schema, "my_driver", "my_driver", "2026");
+        let res = generate_cpp_parser(&[schema], "my_driver", "my_driver", "2026");
         assert!(res.is_ok());
         let (_, cc_code) = res.unwrap();
 
@@ -826,7 +854,7 @@ mod tests {
     fn test_cpp_parser_generation_hyphenated_driver() {
         let schema = make_schema(vec![]);
         let res =
-            generate_cpp_parser(&schema, "my-hyphenated-driver", "my-hyphenated-driver", "2025");
+            generate_cpp_parser(&[schema], "my-hyphenated-driver", "my-hyphenated-driver", "2025");
         assert!(res.is_ok());
         let (h_code, cc_code) = res.unwrap();
 
@@ -850,7 +878,7 @@ mod tests {
             }],
         };
         let schema = make_schema(vec![root_struct]);
-        let res = generate_cpp_parser(&schema, "my_driver", "my_driver", "2026");
+        let res = generate_cpp_parser(&[schema], "my_driver", "my_driver", "2026");
         assert!(res.is_ok());
         let (_, cc_code) = res.unwrap();
 
@@ -860,5 +888,45 @@ mod tests {
             "Generated code did not contain required vector check:\n{}",
             cc_code
         );
+    }
+
+    #[test]
+    fn test_multiple_schemas_cpp_generation() {
+        let schema1 = Schema {
+            id: "fuchsia.hardware.reset.Metadata".to_string(),
+            enums: HashMap::new(),
+            structs: HashMap::new(),
+            root_layout: StructDef {
+                name: "ResetMetadata".to_string(),
+                fields: vec![Field {
+                    name: "controller_id".to_string(),
+                    ty: Type::Uint32,
+                    optional: true,
+                }],
+            },
+        };
+
+        let schema2 = Schema {
+            id: "fuchsia.hardware.powerdomain.DomainMetadata".to_string(),
+            enums: HashMap::new(),
+            structs: HashMap::new(),
+            root_layout: StructDef {
+                name: "DomainMetadata".to_string(),
+                fields: vec![Field {
+                    name: "domains".to_string(),
+                    ty: Type::Vector(Box::new(Type::Uint32)),
+                    optional: false,
+                }],
+            },
+        };
+
+        let res = generate_cpp_parser(&[schema1, schema2], "google_cpm", "google_cpm", "2026");
+        assert!(res.is_ok());
+        let (h_code, cc_code) = res.unwrap();
+
+        assert!(h_code.contains("struct ResetMetadata {"));
+        assert!(h_code.contains("struct DomainMetadata {"));
+        assert!(cc_code.contains("std::optional<ResetMetadata> ResetMetadata::Parse"));
+        assert!(cc_code.contains("std::optional<DomainMetadata> DomainMetadata::Parse"));
     }
 }

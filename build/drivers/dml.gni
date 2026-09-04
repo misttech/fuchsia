@@ -4,6 +4,7 @@
 
 import("//build/compiled_action.gni")
 import("//build/components.gni")
+import("//build/rust/rustc_library.gni")
 import("//build/testing/golden_files.gni")
 
 # Defines a driver DML target that generates C++ parser, CML, and Bind rules.
@@ -52,6 +53,7 @@ template("fuchsia_driver_dml") {
       "$target_gen_dir/${_driver_name}_parser.h",
       "$target_gen_dir/${_driver_name}_parser.cc",
       "$target_gen_dir/${_driver_name}.cml.raw",
+      "$target_gen_dir/${_driver_name}_parser.rs",
     ]
 
     args = [
@@ -63,6 +65,8 @@ template("fuchsia_driver_dml") {
       rebase_path(outputs[1], root_build_dir),
       "--cml-output",
       rebase_path(outputs[2], root_build_dir),
+      "--rs-output",
+      rebase_path(outputs[3], root_build_dir),
       "--namespace",
       _namespace,
     ]
@@ -149,9 +153,9 @@ template("fuchsia_driver_dml") {
 #   dml_label (required)
 #     The label of the fuchsia_driver_dml target.
 #
-template("fuchsia_driver_dml_parser") {
+template("fuchsia_driver_dml_cpp_parser") {
   assert(defined(invoker.dml_label),
-         "dml_label must be defined for fuchsia_driver_dml_parser")
+         "dml_label must be defined for fuchsia_driver_dml_cpp_parser")
 
   _dml_outputs = get_target_outputs(invoker.dml_label)
   _sources = filter_include(_dml_outputs,
@@ -182,6 +186,42 @@ template("fuchsia_driver_dml_parser") {
       "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
       "//sdk/lib/driver/metadata/cpp",
     ]
+  }
+}
+
+# Defines a Rust parser library generated from a driver DML target.
+#
+# Parameters
+#
+#   dml_label (required)
+#     The label of the fuchsia_driver_dml target.
+#
+template("fuchsia_driver_dml_rust_parser") {
+  assert(defined(invoker.dml_label),
+         "dml_label must be defined for fuchsia_driver_dml_rust_parser")
+
+  _dml_outputs = get_target_outputs(invoker.dml_label)
+  _rs_sources = filter_include(_dml_outputs, [ "*.rs" ])
+  assert(_rs_sources != [], "No Rust sources found in dml_label outputs")
+
+  rustc_library(target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    edition = "2024"
+    source_root = _rs_sources[0]
+    sources = _rs_sources
+
+    deps = [
+      "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_rust",
+      "//src/lib/fidl/rust/fidl",
+      invoker.dml_label,
+    ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
   }
 }
 

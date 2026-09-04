@@ -12,7 +12,7 @@ fuchsia_driver_dml("clock-dml") {
   driver_name = "clock"
 }
 
-fuchsia_driver_dml_parser("clock-metadata") {
+fuchsia_driver_dml_cpp_parser("clock-metadata") {
   dml_label = ":clock-dml"
 }
 

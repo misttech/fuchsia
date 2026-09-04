@@ -10,6 +10,7 @@ mod cml_generator;
 mod cpp_generator;
 mod driver_compiler;
 mod parser;
+mod rust_generator;
 mod workarounds;
 
 #[derive(FromArgs)]
@@ -70,6 +71,10 @@ pub struct CompileDriverArgs {
     #[argh(option)]
     /// path to output C++ parser source file
     pub cc_output: Option<String>,
+
+    #[argh(option)]
+    /// path to output Rust parser source file
+    pub rs_output: Option<String>,
 
     #[argh(option)]
     /// path to output CML file

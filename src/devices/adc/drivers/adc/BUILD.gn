@@ -12,7 +12,7 @@ fuchsia_driver_dml("adc-dml") {
   driver_name = "adc"
 }
 
-fuchsia_driver_dml_parser("adc-metadata") {
+fuchsia_driver_dml_cpp_parser("adc-metadata") {
   dml_label = ":adc-dml"
 }
 

@@ -12,7 +12,7 @@ fuchsia_driver_dml("gpio-dml") {
   driver_name = "gpio"
 }
 
-fuchsia_driver_dml_parser("gpio-metadata") {
+fuchsia_driver_dml_cpp_parser("gpio-metadata") {
   dml_label = ":gpio-dml"
 }
 

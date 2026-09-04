@@ -12,7 +12,7 @@ fuchsia_driver_dml("registers-dml") {
   driver_name = "registers"
 }
 
-fuchsia_driver_dml_parser("registers-metadata") {
+fuchsia_driver_dml_cpp_parser("registers-metadata") {
   dml_label = ":registers-dml"
 }
 

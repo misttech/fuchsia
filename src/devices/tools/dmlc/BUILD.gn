@@ -19,6 +19,7 @@ if (is_host) {
       "src/driver_compiler.rs",
       "src/main.rs",
       "src/parser.rs",
+      "src/rust_generator.rs",
       "src/workarounds.rs",
     ]
     deps = [
