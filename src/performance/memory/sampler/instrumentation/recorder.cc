@@ -48,8 +48,21 @@ void Recorder::InitSingletonOnce() {
   alignas(Recorder) static std::byte storage[sizeof(Recorder)];
   auto result = component::Connect<fuchsia_memory_sampler::Sampler>();
   ZX_ASSERT(result.is_ok());
+
+  fidl::SyncClient client{std::move(result.value())};
+  zx::socket client_socket;
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  zx::socket server_socket;
+  zx_status_t status = zx::socket::create(ZX_SOCKET_DATAGRAM, &client_socket, &server_socket);
+  ZX_ASSERT(status == ZX_OK);
+
+  auto set_socket_result = client->SetSharedSocket({{.socket = std::move(server_socket)}});
+  ZX_ASSERT(set_socket_result.is_ok());
+#endif
+
   auto* recorder = new (storage)
-      Recorder(fidl::SyncClient{std::move(result.value())}, GetNonDeterministicPoissonSampler);
+      Recorder(std::move(client), std::move(client_socket), GetNonDeterministicPoissonSampler);
 
   recorder->SetModulesInfo();
 
@@ -84,9 +97,34 @@ void Recorder::MaybeRecordAllocation(void* address, size_t size) {
 }
 
 void Recorder::RecordAllocation(void* address, size_t size) {
-  // Collect a stack trace.
   uint64_t pc_buffer[kMaxStackFramesLength]{0};
   const size_t count = __sanitizer_fast_backtrace(pc_buffer, kMaxStackFramesLength);
+
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  fuchsia_memory_sampler::RecordAllocationEvent event{{
+      .address = std::optional{reinterpret_cast<uint64_t>(address)},
+      .stack_trace = std::optional<fuchsia_memory_sampler::StackTrace>{{{
+          .stack_frames = std::optional{std::vector<uint64_t>(pc_buffer, pc_buffer + count)},
+      }}},
+      .size = std::optional<uint64_t>{size},
+  }};
+
+  if (socket_.is_valid()) {
+    auto datagram = fuchsia_memory_sampler::SamplerDatagram::WithRecordAllocation(std::move(event));
+    fit::result encoded = fidl::Persist(datagram);
+    if (encoded.is_ok()) {
+      socket_.write(0, encoded->data(), encoded->size(), nullptr);
+    }
+    return;
+  }
+
+  // Fallback FIDL path
+  {
+    fbl::AutoLock lock(&lock_);
+    auto result = client_->RecordAllocation(event);
+    ZX_ASSERT(result.is_ok());
+  }
+#else
   {
     fbl::AutoLock lock(&lock_);
     auto result = client_->RecordAllocation({{
@@ -95,9 +133,9 @@ void Recorder::RecordAllocation(void* address, size_t size) {
             {{.stack_frames = std::optional{std::vector<uint64_t>(pc_buffer, pc_buffer + count)}}}),
         .size = std::optional<uint64_t>{size},
     }});
-
     ZX_ASSERT(result.is_ok());
   }
+#endif
 }
 
 void Recorder::MaybeForgetAllocation(void* address) {
@@ -114,13 +152,36 @@ void Recorder::MaybeForgetAllocation(void* address) {
 }
 
 void Recorder::ForgetAllocation(void* address) {
-  // Collect a stack trace.
   uint64_t pc_buffer[kMaxStackFramesLength]{0};
   const size_t count = __sanitizer_fast_backtrace(pc_buffer, kMaxStackFramesLength);
 
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  fuchsia_memory_sampler::RecordDeallocationEvent event{{
+      .address = std::optional{reinterpret_cast<uint64_t>(address)},
+      .stack_trace = std::optional<fuchsia_memory_sampler::StackTrace>{{{
+          .stack_frames = std::optional{std::vector<uint64_t>(pc_buffer, pc_buffer + count)},
+      }}},
+  }};
+
+  if (socket_.is_valid()) {
+    auto datagram =
+        fuchsia_memory_sampler::SamplerDatagram::WithRecordDeallocation(std::move(event));
+    fit::result encoded = fidl::Persist(datagram);
+    if (encoded.is_ok()) {
+      socket_.write(0, encoded->data(), encoded->size(), nullptr);
+    }
+    return;
+  }
+
+  // Fallback FIDL path
   {
     fbl::AutoLock lock(&lock_);
-
+    auto result = client_->RecordDeallocation(event);
+    ZX_ASSERT(result.is_ok());
+  }
+#else
+  {
+    fbl::AutoLock lock(&lock_);
     auto result = client_->RecordDeallocation(
         {{.address = std::optional{reinterpret_cast<uint64_t>(address)},
           .stack_trace = std::optional<fuchsia_memory_sampler::StackTrace>{
@@ -128,6 +189,7 @@ void Recorder::ForgetAllocation(void* address) {
                     std::optional{std::vector<uint64_t>(pc_buffer, pc_buffer + count)}}}}}});
     ZX_ASSERT(result.is_ok());
   }
+#endif
 }
 
 void Recorder::SetModulesInfo() {
@@ -179,14 +241,26 @@ void Recorder::SetModulesInfo() {
   }
 }
 
-Recorder::Recorder(fidl::SyncClient<fuchsia_memory_sampler::Sampler> client,
+Recorder::Recorder(fidl::SyncClient<fuchsia_memory_sampler::Sampler> client, zx::socket socket,
                    std::function<PoissonSampler&()> get_poisson_sampler)
-    : client_(std::move(client)), GetPoissonSampler(std::move(get_poisson_sampler)) {}
+    : client_(std::move(client)),
+      socket_(std::move(socket)),
+      GetPoissonSampler(std::move(get_poisson_sampler)) {}
 
 Recorder Recorder::CreateRecorderForTesting(
     fidl::SyncClient<fuchsia_memory_sampler::Sampler> client,
-    std::function<PoissonSampler&()> get_poisson_sampler) {
-  return Recorder{std::move(client), std::move(get_poisson_sampler)};
+    std::function<PoissonSampler&()> get_poisson_sampler, bool use_socket) {
+#if FUCHSIA_API_LEVEL_AT_LEAST(HEAD)
+  if (use_socket) {
+    zx::socket client_socket, server_socket;
+    zx_status_t status = zx::socket::create(ZX_SOCKET_DATAGRAM, &client_socket, &server_socket);
+    ZX_ASSERT(status == ZX_OK);
+    auto set_socket_result = client->SetSharedSocket({{.socket = std::move(server_socket)}});
+    ZX_ASSERT(set_socket_result.is_ok());
+    return Recorder{std::move(client), std::move(client_socket), std::move(get_poisson_sampler)};
+  }
+#endif
+  return Recorder{std::move(client), zx::socket{}, std::move(get_poisson_sampler)};
 }
 }  // namespace memory_sampler
 #endif  // FUCHSIA_API_LEVEL_AT_LEAST(29)

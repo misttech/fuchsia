@@ -9,15 +9,16 @@
 use crate::crash_reporter::ProfileReport;
 use crate::profile_builder::ProfileBuilder;
 
-use anyhow::{Context, Error, anyhow};
+use anyhow::Error;
 use fidl_fuchsia_memory_sampler::{
-    SamplerRecordAllocationRequest, SamplerRecordDeallocationRequest, SamplerRequest,
-    SamplerRequestStream, SamplerSetProcessInfoRequest,
+    RecordAllocationEvent, RecordDeallocationEvent, SamplerRequest, SamplerRequestStream,
+    SamplerSetProcessInfoRequest,
 };
 use fuchsia_async::Task;
 use fuchsia_component::server::ServiceFs;
 use futures::channel::mpsc;
 use futures::prelude::*;
+use futures::stream::SelectAll;
 use std::time::{Duration, Instant};
 
 /// The threshold of recorded stack traces to trigger a partial
@@ -33,70 +34,12 @@ const MAX_CONCURRENT_REQUESTS: usize = 10;
 /// profiles.
 const MAX_DURATION_BETWEEN_PARTIAL_PROFILES: Duration = Duration::from_secs(12 * 60 * 60);
 
-/// Accumulate profiling information in the builder. May send a
-/// partial profile depending on the amount of recorded data, at least
-/// once every `MAX_DURATION_BETWEEN_PARTIAL_PROFILES`.
-async fn process_sampler_request<'a>(
+async fn maybe_emit_partial_profile<'a>(
     builder: &'a mut ProfileBuilder,
     tx: &'a mut mpsc::Sender<ProfileReport>,
-    request: SamplerRequest,
     index: usize,
     mut time_of_last_profile: Instant,
 ) -> Result<Option<(&'a mut ProfileBuilder, &'a mut mpsc::Sender<ProfileReport>, Instant)>, Error> {
-    match request {
-        SamplerRequest::RecordAllocation {
-            payload: SamplerRecordAllocationRequest { address, stack_trace, size, .. },
-            ..
-        } => {
-            builder.allocate(
-                address.ok_or_else(|| {
-                    anyhow!("Unsupported record allocation request: missing address")
-                })?,
-                stack_trace
-                    .ok_or_else(|| {
-                        anyhow!("Unsupported record allocation request: missing stack_trace")
-                    })?
-                    .stack_frames
-                    .ok_or_else(|| anyhow!("Unsupported stack trace: missing stack frames"))?,
-                size.ok_or_else(|| {
-                    anyhow!("Unsupporterd record allocation request: missing size")
-                })?,
-            );
-        }
-        SamplerRequest::RecordDeallocation {
-            payload: SamplerRecordDeallocationRequest { address, stack_trace, .. },
-            ..
-        } => {
-            builder.deallocate(
-                address
-                    .ok_or_else(|| anyhow!("Unsupported deallocation request: missing address"))?,
-                stack_trace
-                    .ok_or_else(|| {
-                        anyhow!("Unsupported deallocation request: missing stack trace")
-                    })?
-                    .stack_frames
-                    .ok_or_else(|| anyhow!("Unsupported stack_trace: missing stack frames"))?,
-            );
-        }
-        SamplerRequest::SetProcessInfo {
-            payload: SamplerSetProcessInfoRequest { process_name, module_map, .. },
-            ..
-        } => {
-            builder.set_process_info(process_name, module_map.into_iter().flatten());
-        }
-        unknown_method @ _ => {
-            log::debug!("Unknown, unhandled method: {:?}", unknown_method);
-            return Ok(Some((builder, tx, time_of_last_profile)));
-        }
-    };
-
-    // File a partial profile under one of two conditions:
-    //
-    // * The recorded data reached a size threshold, and it's time to
-    //   file a profile to reclaim some memory.
-    //
-    // * MAX_DURATION_BETWEEN_PARTIAL_PROFILES has elapsed since the
-    //   last time we filed a partial profile for this process.
     let now = Instant::now();
     if (now - time_of_last_profile >= MAX_DURATION_BETWEEN_PARTIAL_PROFILES)
         || (builder.get_approximate_reclaimable_stack_traces_count()
@@ -119,31 +62,169 @@ async fn process_sampler_request<'a>(
     Ok(Some((builder, tx, time_of_last_profile)))
 }
 
-/// Build a profile from a stream of profiling requests. Requests are
-/// processed sequentially, in order.
+enum ClientEvent {
+    RecordAllocation(RecordAllocationEvent),
+    RecordDeallocation(RecordDeallocationEvent),
+    SetProcessInfo(SamplerSetProcessInfoRequest),
+    SetSharedSocket(zx::Socket),
+    Ignored,
+    PeerClosed,
+}
+
+impl From<&[u8]> for ClientEvent {
+    fn from(datagram: &[u8]) -> ClientEvent {
+        if datagram.is_empty() {
+            return ClientEvent::PeerClosed;
+        }
+        match fidl::unpersist::<fidl_fuchsia_memory_sampler::SamplerDatagram>(&datagram) {
+            Ok(fidl_fuchsia_memory_sampler::SamplerDatagram::RecordAllocation(alloc)) => {
+                ClientEvent::RecordAllocation(alloc)
+            }
+            Ok(fidl_fuchsia_memory_sampler::SamplerDatagram::RecordDeallocation(dealloc)) => {
+                ClientEvent::RecordDeallocation(dealloc)
+            }
+            Ok(fidl_fuchsia_memory_sampler::SamplerDatagramUnknown!()) => {
+                log::warn!("Received unknown SamplerDatagram variant");
+                ClientEvent::Ignored
+            }
+            Err(e) => {
+                log::warn!("Failed to handle datagram: {:#}", e);
+                ClientEvent::Ignored
+            }
+        }
+    }
+}
+
+impl From<SamplerRequest> for ClientEvent {
+    fn from(request: SamplerRequest) -> ClientEvent {
+        match request {
+            SamplerRequest::SetSharedSocket { socket, .. } => ClientEvent::SetSharedSocket(socket),
+            SamplerRequest::RecordAllocation { payload, .. } => {
+                ClientEvent::RecordAllocation(payload)
+            }
+            SamplerRequest::RecordDeallocation { payload, .. } => {
+                ClientEvent::RecordDeallocation(payload)
+            }
+            SamplerRequest::SetProcessInfo { payload, .. } => ClientEvent::SetProcessInfo(payload),
+            unknown_method => {
+                log::debug!("Unknown, unhandled method: {:?}", unknown_method);
+                ClientEvent::Ignored
+            }
+        }
+    }
+}
+
+/// Build a profile from a stream of profiling requests and socket datagrams.
 async fn process_sampler_requests(
-    stream: impl Stream<Item = Result<SamplerRequest, fidl::Error>>,
+    stream: SamplerRequestStream,
     tx: &mut mpsc::Sender<ProfileReport>,
 ) -> Result<ProfileReport, Error> {
     let mut profile_builder = ProfileBuilder::default();
-    stream
-        .enumerate()
-        .map(|(i, request)| request.context("failed request").map(|r| (i, r)))
-        .try_fold(
-            Some((&mut profile_builder, tx, Instant::now())),
-            |state, (index, request)| async move {
-                match state {
-                    Some((builder, tx, time_of_last_profile)) => {
-                        process_sampler_request(builder, tx, request, index, time_of_last_profile)
-                            .await
-                    }
-                    // We've disabled collection for this process. We should keep reading messages to
-                    // avoid the channel filling up, but we will not process them.
-                    None => Ok(None),
-                }
-            },
+    let mut time_of_last_profile = Instant::now();
+    let mut request_index = 0;
+    let mut is_enabled = true;
+
+    let mut event_streams: SelectAll<
+        futures::stream::BoxStream<'static, Result<ClientEvent, Error>>,
+    > = SelectAll::new();
+
+    let fidl_stream = stream
+        .map(|res| match res {
+            Ok(request) => Ok(ClientEvent::from(request)),
+            Err(e) => Err(anyhow::Error::from(e).context("failed fidl request")),
+        })
+        .boxed();
+
+    event_streams.push(fidl_stream);
+
+    while let Some(event_res) = event_streams.next().await {
+        let event = event_res?;
+        if !is_enabled {
+            continue;
+        }
+
+        match event {
+            ClientEvent::SetSharedSocket(socket) => {
+                let socket_stream = fuchsia_async::Socket::from_socket(socket)
+                    .into_datagram_stream()
+                    .map(|res| match res {
+                        Ok(datagram) => Ok(ClientEvent::from(&datagram[..])),
+                        Err(e) => Err(anyhow::Error::from(e).context("failed socket read")),
+                    })
+                    .boxed();
+                event_streams.push(socket_stream);
+            }
+            ClientEvent::RecordAllocation(RecordAllocationEvent {
+                address,
+                stack_trace,
+                size,
+                ..
+            }) => {
+                let address = address.ok_or_else(|| {
+                    anyhow::anyhow!("Unsupported record allocation request: missing address")
+                })?;
+                let stack_frames = stack_trace
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Unsupported record allocation request: missing stack_trace"
+                        )
+                    })?
+                    .stack_frames
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Unsupported stack trace: missing stack frames")
+                    })?;
+                let size = size.ok_or_else(|| {
+                    anyhow::anyhow!("Unsupported record allocation request: missing size")
+                })?;
+                profile_builder.allocate(address, stack_frames, size);
+            }
+            ClientEvent::RecordDeallocation(RecordDeallocationEvent {
+                address,
+                stack_trace,
+                ..
+            }) => {
+                let address = address.ok_or_else(|| {
+                    anyhow::anyhow!("Unsupported deallocation request: missing address")
+                })?;
+                let stack_frames = stack_trace
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Unsupported deallocation request: missing stack trace")
+                    })?
+                    .stack_frames
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Unsupported stack_trace: missing stack frames")
+                    })?;
+                profile_builder.deallocate(address, stack_frames);
+            }
+            ClientEvent::SetProcessInfo(SamplerSetProcessInfoRequest {
+                process_name,
+                module_map,
+                ..
+            }) => {
+                profile_builder.set_process_info(process_name, module_map.into_iter().flatten());
+            }
+            ClientEvent::PeerClosed => {
+                log::info!("Socket connection closed by peer");
+                break;
+            }
+            ClientEvent::Ignored => {}
+        }
+
+        request_index += 1;
+        if let Some((_, _, new_time)) = maybe_emit_partial_profile(
+            &mut profile_builder,
+            tx,
+            request_index,
+            time_of_last_profile,
         )
-        .await?;
+        .await?
+        {
+            time_of_last_profile = new_time;
+        } else {
+            is_enabled = false;
+        }
+    }
+
     profile_builder.build()
 }
 
@@ -203,7 +284,7 @@ pub fn setup_sampler_service(
 #[cfg(test)]
 mod test {
     use super::*;
-    use fidl::endpoints::{RequestStream, create_proxy_and_stream};
+    use fidl::endpoints::create_proxy_and_stream;
     use fidl_fuchsia_memory_sampler::{ExecutableSegment, ModuleMap, SamplerMarker, StackTrace};
     use futures::{StreamExt, join};
     use itertools::{assert_equal, sorted};
@@ -214,7 +295,7 @@ mod test {
     use crate::pprof::pproto::{Location, Mapping, Profile};
     use crate::sampler_service::{
         MAX_DURATION_BETWEEN_PARTIAL_PROFILES, ProfileBuilder,
-        RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD, process_sampler_request,
+        RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD, maybe_emit_partial_profile,
         process_sampler_requests,
     };
 
@@ -268,19 +349,19 @@ mod test {
             module_map: Some(module_map),
             ..Default::default()
         })?;
-        client.record_allocation(&SamplerRecordAllocationRequest {
+        client.record_allocation(&RecordAllocationEvent {
             address: Some(0x100),
             stack_trace: Some(allocation_stack_trace.clone()),
             size: Some(100),
             ..Default::default()
         })?;
-        client.record_allocation(&SamplerRecordAllocationRequest {
+        client.record_allocation(&RecordAllocationEvent {
             address: Some(0x200),
             stack_trace: Some(allocation_stack_trace),
             size: Some(1000),
             ..Default::default()
         })?;
-        client.record_deallocation(&SamplerRecordDeallocationRequest {
+        client.record_deallocation(&RecordDeallocationEvent {
             address: Some(0x100),
             stack_trace: Some(deallocation_stack_trace),
             ..Default::default()
@@ -320,21 +401,14 @@ mod test {
 
         let stack_trace = StackTrace { stack_frames: Some(vec![1000, 1500]), ..Default::default() };
         const TEST_INDEX: usize = 42;
-        let profile_future = process_sampler_request(
-            &mut builder,
-            &mut tx,
-            SamplerRequest::RecordAllocation {
-                payload: SamplerRecordAllocationRequest {
-                    address: Some(RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD as u64),
-                    stack_trace: Some(stack_trace),
-                    size: Some(10),
-                    ..Default::default()
-                },
-                control_handle: request_stream.control_handle(),
-            },
-            TEST_INDEX,
-            Instant::now(),
+        builder.allocate(
+            RECLAIMABLE_STACK_TRACES_PROFILE_THRESHOLD as u64,
+            stack_trace.stack_frames.unwrap(),
+            10,
         );
+        let profile_future =
+            maybe_emit_partial_profile(&mut builder, &mut tx, TEST_INDEX, Instant::now());
+        let _ = request_stream; // Silence unused variable warning
         let (_, report) = join!(profile_future, rx.next());
         let report = report.unwrap();
         match report {
@@ -361,21 +435,14 @@ mod test {
 
         let stack_trace = StackTrace { stack_frames: Some(vec![1000, 1500]), ..Default::default() };
         const TEST_INDEX: usize = 42;
-        let profile_future = process_sampler_request(
+        builder.allocate(1, stack_trace.stack_frames.unwrap(), 10);
+        let profile_future = maybe_emit_partial_profile(
             &mut builder,
             &mut tx,
-            SamplerRequest::RecordAllocation {
-                payload: SamplerRecordAllocationRequest {
-                    address: Some(1),
-                    stack_trace: Some(stack_trace),
-                    size: Some(10),
-                    ..Default::default()
-                },
-                control_handle: request_stream.control_handle(),
-            },
             TEST_INDEX,
             Instant::now() - MAX_DURATION_BETWEEN_PARTIAL_PROFILES,
         );
+        let _ = request_stream; // Silence unused variable warning
         let (_, report) = join!(profile_future, rx.next());
         let report = report.unwrap();
         match report {
@@ -517,7 +584,7 @@ mod test {
         let allocation_stack_trace =
             StackTrace { stack_frames: Some(vec![1000, 1500]), ..Default::default() };
 
-        client.record_allocation(&SamplerRecordAllocationRequest {
+        client.record_allocation(&RecordAllocationEvent {
             address: Some(0x100),
             stack_trace: Some(allocation_stack_trace),
             size: Some(100),
@@ -544,7 +611,7 @@ mod test {
 
         let stack_trace = StackTrace { stack_frames: Some(vec![3000, 3001]), ..Default::default() };
 
-        client.record_deallocation(&SamplerRecordDeallocationRequest {
+        client.record_deallocation(&RecordDeallocationEvent {
             address: Some(0x100),
             stack_trace: Some(stack_trace),
             ..Default::default()
@@ -556,6 +623,64 @@ mod test {
             let profile = deserialize_profile(profile, size);
             assert_eq!(Vec::<Mapping>::new(), profile.mapping);
             assert_eq!(Vec::<Location>::new(), profile.location);
+        } else {
+            panic!("Expected complete report, got partial report instead.");
+        };
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_process_sampler_requests_shared_socket() -> Result<(), Error> {
+        let (client, request_stream) = create_proxy_and_stream::<SamplerMarker>();
+        let (mut tx, _rx) = mpsc::channel(1);
+        let profile_future = process_sampler_requests(request_stream, &mut tx);
+
+        let (client_sock, server_sock) = zx::Socket::create_datagram();
+        client.set_shared_socket(server_sock)?;
+
+        client.set_process_info(&SamplerSetProcessInfoRequest {
+            process_name: Some("socket test process".to_string()),
+            module_map: Some(vec![]),
+            ..Default::default()
+        })?;
+
+        // Send an allocation record over the socket datagram
+        let alloc =
+            fidl_fuchsia_memory_sampler::SamplerDatagram::RecordAllocation(RecordAllocationEvent {
+                address: Some(0x100),
+                size: Some(200),
+                stack_trace: Some(StackTrace {
+                    stack_frames: Some(vec![1000, 1500]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+        let alloc_bytes = fidl::persist(&alloc)?;
+        client_sock.write(&alloc_bytes)?;
+
+        // Send a deallocation record over the socket datagram
+        let dealloc = fidl_fuchsia_memory_sampler::SamplerDatagram::RecordDeallocation(
+            RecordDeallocationEvent {
+                address: Some(0x100),
+                stack_trace: Some(StackTrace {
+                    stack_frames: Some(vec![3000]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let dealloc_bytes = fidl::persist(&dealloc)?;
+        client_sock.write(&dealloc_bytes)?;
+
+        drop(client_sock);
+        drop(client);
+
+        if let ProfileReport::Final { process_name, profile, size } = profile_future.await? {
+            assert_eq!("socket test process", process_name);
+            let profile = deserialize_profile(profile, size);
+            let locations = profile.location.into_iter().map(|Location { address, .. }| address);
+            assert_equal(vec![1000, 1500, 3000].into_iter(), sorted(locations));
         } else {
             panic!("Expected complete report, got partial report instead.");
         };

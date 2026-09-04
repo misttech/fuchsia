@@ -10,6 +10,7 @@
 #if FUCHSIA_API_LEVEL_AT_LEAST(29)
 #include <fidl/fuchsia.memory.sampler/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/zx/socket.h>
 
 #include <unordered_set>
 
@@ -52,18 +53,20 @@ class Recorder {
   // client. It does not perform any of the initialisations handled by
   // the singleton interface. This should not be used outside of tests.
   static Recorder CreateRecorderForTesting(fidl::SyncClient<fuchsia_memory_sampler::Sampler> client,
-                                           std::function<PoissonSampler &()> get_poisson_sampler);
+                                           std::function<PoissonSampler &()> get_poisson_sampler,
+                                           bool use_socket = true);
 
   // The average count of bytes allocated between two samples.
   static constexpr size_t kSamplingIntervalBytes = static_cast<size_t>(128 * 1024);
 
  private:
-  Recorder(fidl::SyncClient<fuchsia_memory_sampler::Sampler> client,
+  Recorder(fidl::SyncClient<fuchsia_memory_sampler::Sampler> client, zx::socket socket,
            std::function<PoissonSampler &()> get_poisson_sampler);
   // Initializes the singleton into statically-allocated storage.
   static void InitSingletonOnce();
   fbl::Mutex lock_;
   fidl::SyncClient<fuchsia_memory_sampler::Sampler> client_ __TA_GUARDED(&lock_);
+  zx::socket socket_;
   std::unordered_set<void *> recorded_allocations_ __TA_GUARDED(&lock_);
   std::function<PoissonSampler &()> GetPoissonSampler;
 
