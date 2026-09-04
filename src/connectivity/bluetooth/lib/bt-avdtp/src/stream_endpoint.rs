@@ -306,22 +306,26 @@ impl StreamEndpoint {
             let peer = peer.clone();
             let state = self.state.clone();
             async move {
-                let Some(transport) = transport.try_read() else {
-                    warn!("unable to lock transport channel, dropping and assuming closed");
-                    *state.lock() = StreamState::Idle;
-                    return;
+                let closed_fut = {
+                    let Some(channel) = transport.try_read() else {
+                        warn!("unable to lock transport channel, dropping and assuming closed");
+                        *state.lock() = StreamState::Idle;
+                        return;
+                    };
+                    channel.closed()
                 };
-                let closed_fut = transport
-                    .closed()
+
+                let closed_fut = closed_fut
                     .on_timeout(MonotonicDuration::from_seconds(3).after_now(), || {
                         Err(Status::TIMED_OUT)
                     });
+
                 if let Err(Status::TIMED_OUT) = closed_fut.await {
                     let _ = peer.abort(&seid).await;
                     *state.lock() = StreamState::Aborting;
-                    // As the initiator of the Abort, we close our channel.
-                    drop(transport);
                 }
+                // Dropping the Arc<RwLock<Channel>> closes our end of the transport.
+                drop(transport);
                 *state.lock() = StreamState::Idle;
             }
         };

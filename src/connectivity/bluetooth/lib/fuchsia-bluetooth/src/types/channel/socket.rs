@@ -38,10 +38,15 @@ impl SocketConnection {
 }
 
 impl Connection for SocketConnection {
-    fn closed<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), zx::Status>> + 'a>> {
-        let close_signals = zx::Signals::SOCKET_PEER_CLOSED;
-        let close_wait = fasync::OnSignals::new(&self.socket, close_signals);
-        Box::pin(close_wait.map_ok(|_o| ()))
+    fn closed(&self) -> Pin<Box<dyn Future<Output = Result<(), zx::Status>> + Send + 'static>> {
+        let handle = match self.socket.as_ref().duplicate_handle(zx::Rights::SAME_RIGHTS) {
+            Ok(h) => h,
+            Err(e) => return Box::pin(futures::future::ready(Err(e))),
+        };
+        Box::pin(async move {
+            let wait = fasync::OnSignals::new(handle, zx::Signals::SOCKET_PEER_CLOSED);
+            wait.map_ok(|_| ()).await
+        })
     }
 
     fn connection_type(&self) -> ConnectionBackendType {

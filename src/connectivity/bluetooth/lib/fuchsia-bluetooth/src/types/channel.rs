@@ -120,7 +120,7 @@ pub trait Connection:
     + Unpin
 {
     /// Returns a future that resolves when the connection is closed.
-    fn closed<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), zx::Status>> + 'a>>;
+    fn closed(&self) -> Pin<Box<dyn Future<Output = Result<(), zx::Status>> + Send + 'static>>;
 
     /// Returns the type of the connection backend.
     fn connection_type(&self) -> ConnectionBackendType;
@@ -230,7 +230,7 @@ impl Channel {
         self.flush_timeout.lock().clone()
     }
 
-    pub fn closed<'a>(&'a self) -> impl Future<Output = Result<(), zx::Status>> + 'a {
+    pub fn closed(&self) -> impl Future<Output = Result<(), zx::Status>> + Send + 'static {
         self.connection.closed()
     }
 

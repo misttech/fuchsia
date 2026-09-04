@@ -263,7 +263,7 @@ impl FidlServerConnection {
 }
 
 impl Connection for FidlServerConnection {
-    fn closed<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), zx::Status>> + 'a>> {
+    fn closed(&self) -> Pin<Box<dyn Future<Output = Result<(), zx::Status>> + Send + 'static>> {
         Box::pin(self.close_fut.clone())
     }
 

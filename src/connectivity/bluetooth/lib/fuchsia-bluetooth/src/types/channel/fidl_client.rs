@@ -163,7 +163,7 @@ impl FidlClientConnection {
 }
 
 impl Connection for FidlClientConnection {
-    fn closed<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<(), zx::Status>> + 'a>> {
+    fn closed(&self) -> Pin<Box<dyn Future<Output = Result<(), zx::Status>> + Send + 'static>> {
         let proxy_cloned = self.proxy.clone();
         Box::pin(async move {
             let _ = proxy_cloned.on_closed().await;
