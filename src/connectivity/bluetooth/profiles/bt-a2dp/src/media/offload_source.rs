@@ -256,7 +256,7 @@ impl MediaTaskRunner for ConfiguredTask {
 
 struct RunningTask {
     stream_task: Option<fasync::Task<()>>,
-    result_fut: Shared<BoxFuture<'static, Result<(), MediaTaskError>>>,
+    result_fut: Shared<BoxFuture<'static, Result<MediaTaskStatus, MediaTaskError>>>,
     /// AudioOffloadController, used to stop offload and get indication of when
     /// started.
     offload_controller: AudioOffloadControllerProxy,
@@ -349,29 +349,33 @@ impl RunningTask {
             trace::instant!("bt-a2dp", "Media:Start", trace::Scope::Thread);
             let result = stream_task_fut
                 .await
+                .map(|()| MediaTaskStatus::Stopped)
                 .map_err(|e| MediaTaskError::Other(format!("Error in streaming audio: {}", e)));
             let _ = sender.send(result);
         });
-        let result_fut = receiver.map_ok_or_else(|_err| Ok(()), |result| result).boxed().shared();
+        let result_fut = receiver
+            .map_ok_or_else(|_err| Ok(MediaTaskStatus::Stopped), |result| result)
+            .boxed()
+            .shared();
         Self { stream_task: Some(wrapped_task), result_fut, offload_controller }
     }
 }
 
 impl MediaTask for RunningTask {
-    fn finished(&mut self) -> BoxFuture<'static, Result<(), MediaTaskError>> {
+    fn finished(&mut self) -> BoxFuture<'static, Result<MediaTaskStatus, MediaTaskError>> {
         self.result_fut.clone().boxed()
     }
 
-    fn stop(&mut self) -> Result<(), MediaTaskError> {
+    fn stop(&mut self) -> Result<MediaTaskStatus, MediaTaskError> {
         // Send a stop, although dropping the offload controller (or this task) should also stop
         let _ = self.offload_controller.stop().now_or_never();
         if let Some(task) = self.stream_task.take() {
             trace::instant!("bt-a2dp", "Media:Stopped", trace::Scope::Thread);
             drop(task);
         }
-        // Either a result already happened, or we will just have sent an Ok(()) by dropping the result
+        // Either a result already happened, or we will just have sent an Ok(MediaTaskStatus::Stopped) by dropping the result
         // sender
-        self.result().unwrap_or(Ok(()))
+        self.result().unwrap_or(Ok(MediaTaskStatus::Stopped))
     }
 }
 

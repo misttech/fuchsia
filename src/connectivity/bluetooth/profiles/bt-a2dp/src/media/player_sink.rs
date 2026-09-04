@@ -269,12 +269,12 @@ enum StreamingError {
 /// Reports the streaming metrics to Cobalt when streaming has completed.
 struct RunningSinkTask {
     media_task: Option<fasync::Task<()>>,
-    result_fut: Shared<fasync::Task<Result<(), MediaTaskError>>>,
+    result_fut: Shared<fasync::Task<Result<MediaTaskStatus, MediaTaskError>>>,
 }
 
 impl RunningSinkTask {
     fn start(
-        media_task: impl Future<Output = Result<(), MediaTaskError>> + Send + 'static,
+        media_task: impl Future<Output = Result<MediaTaskStatus, MediaTaskError>> + Send + 'static,
         metrics: bt_metrics::MetricsLogger,
         codec_type: avdtp::MediaCodecType,
     ) -> Self {
@@ -285,7 +285,7 @@ impl RunningSinkTask {
         });
         let recv_task = fasync::Task::spawn(async move {
             // Receives the result of the media task, or Canceled, from the stop() dropping it
-            receiver.await.unwrap_or(Ok(()))
+            receiver.await.unwrap_or(Ok(MediaTaskStatus::Stopped))
         });
         let result_fut = recv_task.shared();
         fasync::Task::spawn({
@@ -306,16 +306,16 @@ impl RunningSinkTask {
 }
 
 impl MediaTask for RunningSinkTask {
-    fn finished(&mut self) -> BoxFuture<'static, Result<(), MediaTaskError>> {
+    fn finished(&mut self) -> BoxFuture<'static, Result<MediaTaskStatus, MediaTaskError>> {
         self.result_fut.clone().boxed()
     }
 
-    fn stop(&mut self) -> Result<(), MediaTaskError> {
+    fn stop(&mut self) -> Result<MediaTaskStatus, MediaTaskError> {
         if let Some(_task) = self.media_task.take() {
             debug!("Media Task stopped via stop signal");
         }
-        // Either there was already a result, or we just send Ok(()) by dropping the sender.
-        self.result().unwrap_or(Ok(()))
+        // Either there was already a result, or we just send Ok(MediaTaskStatus::Stopped) by dropping the sender.
+        self.result().unwrap_or(Ok(MediaTaskStatus::Stopped))
     }
 }
 
@@ -521,7 +521,7 @@ mod tests {
 
         let mut running_task = runner.start(stream, None).expect("media task should start");
 
-        running_task.stop().expect("task to stop with okay");
+        assert_eq!(running_task.stop().expect("task to stop with okay"), MediaTaskStatus::Stopped);
         drop(running_task);
 
         // Should receive a metrics report.

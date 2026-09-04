@@ -2,21 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Error;
+use bt_a2dp::media_task::MediaTaskError;
 use fidl_fuchsia_media::PcmFormat;
 use fuchsia_async as fasync;
 use fuchsia_audio_device::AudioStreamItem;
 use fuchsia_bluetooth::types::PeerId;
 use fuchsia_inspect as inspect;
-use fuchsia_inspect::Node;
 use fuchsia_inspect_derive::Inspect;
 use futures::FutureExt;
-use futures::stream::{BoxStream, FusedStream};
+use futures::stream::FusedStream;
 use futures::task::{Context, Poll};
 use std::pin::Pin;
 use zx;
 
-use super::AudioSourceStreamBuilder;
+use super::{AudioSourceStream, AudioSourceStreamBuilder};
 use crate::PcmAudio;
 
 pub struct SawWaveStream {
@@ -94,6 +93,8 @@ impl SawWaveStream {
     }
 }
 
+impl AudioSourceStream for SawWaveStream {}
+
 #[derive(Default)]
 pub(crate) struct BigBenStream {}
 
@@ -103,10 +104,10 @@ impl AudioSourceStreamBuilder for BigBenStream {
         _peer_id: &PeerId,
         pcm_format: PcmFormat,
         _external_delay: std::time::Duration,
-        inspect_parent: &mut Node,
-    ) -> Result<BoxStream<'static, fuchsia_audio_device::Result<AudioStreamItem>>, Error> {
+        inspect_parent: &mut inspect::Node,
+    ) -> Result<Box<dyn AudioSourceStream>, MediaTaskError> {
         let mut stream = SawWaveStream::new_big_ben(pcm_format);
         let _ = stream.iattach(inspect_parent, "audio_source");
-        Ok(Box::pin(stream))
+        Ok(Box::new(stream))
     }
 }

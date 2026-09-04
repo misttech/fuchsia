@@ -42,7 +42,7 @@ impl EncodedStream {
     /// is attempted.  EncodedStream produces a Some(Err) result in these cases.  It is
     /// recommended to confirm that the system can encode using `EncodedStream::test()` first.
     pub fn build(
-        input_format: PcmFormat,
+        input_format: &PcmFormat,
         source: BoxStream<'static, fuchsia_audio_device::Result<AudioStreamItem>>,
         config: &a2dp::codec::MediaCodecConfig,
     ) -> Result<Self, Error> {
@@ -55,7 +55,7 @@ impl EncodedStream {
             * config.frames_per_packet();
 
         let pcm_input_format = DomainFormat::Audio(AudioFormat::Uncompressed(
-            AudioUncompressedFormat::Pcm(input_format),
+            AudioUncompressedFormat::Pcm(input_format.clone()),
         ));
         let processor = StreamProcessor::create_encoder(
             pcm_input_format.clone(),
@@ -106,7 +106,7 @@ impl EncodedStream {
         config: &a2dp::codec::MediaCodecConfig,
     ) -> Result<(), MediaTaskError> {
         let silence_source = SilenceStream::build(input_format.clone());
-        let mut encoder = EncodedStream::build(input_format, silence_source.boxed(), config)
+        let mut encoder = EncodedStream::build(&input_format, silence_source.boxed(), config)
             .context("Building encoder")
             .map_err(|e| MediaTaskError::Other(e.to_string()))?;
         match encoder.next().await {

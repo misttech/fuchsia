@@ -2,21 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Error};
+use anyhow::Context as _;
+use bt_a2dp::media_task::MediaTaskError;
 use fidl_fuchsia_media::{AudioDeviceEnumeratorMarker, PcmFormat};
 use fuchsia_audio_device::stream_config::SoftStreamConfig;
 use fuchsia_bluetooth::types::{PeerId, peer_audio_stream_id};
+use fuchsia_inspect::Node;
+use fuchsia_inspect_derive::Inspect;
+use futures::FutureExt;
+use futures::future::BoxFuture;
 use zx;
+
+use super::{AudioSourceStream, AudioSourceStreamBuilder};
 
 pub struct AudioOutStream {}
 
 const LOCAL_MONOTONIC_CLOCK_DOMAIN: u32 = 0;
 
-use super::AudioSourceStreamBuilder;
-use fuchsia_audio_device::AudioStreamItem;
-use fuchsia_inspect::Node;
-use fuchsia_inspect_derive::Inspect;
-use futures::stream::BoxStream;
+impl AudioSourceStream for fuchsia_audio_device::AudioFrameStream {
+    fn watch_active(&self) -> BoxFuture<'static, bool> {
+        self.watch_active_channels().boxed()
+    }
+}
 
 impl AudioSourceStreamBuilder for AudioOutStream {
     fn build(
@@ -25,10 +32,10 @@ impl AudioSourceStreamBuilder for AudioOutStream {
         pcm_format: PcmFormat,
         external_delay: std::time::Duration,
         inspect_parent: &mut Node,
-    ) -> Result<BoxStream<'static, fuchsia_audio_device::Result<AudioStreamItem>>, Error> {
+    ) -> Result<Box<dyn AudioSourceStream>, MediaTaskError> {
         let mut stream = AudioOutStream::new(peer_id, pcm_format, external_delay.into())?;
         let _ = stream.iattach(inspect_parent, "audio_source");
-        Ok(Box::pin(stream))
+        Ok(Box::new(stream))
     }
 }
 
@@ -37,7 +44,7 @@ impl AudioOutStream {
         peer_id: &PeerId,
         pcm_format: PcmFormat,
         external_delay: zx::MonotonicDuration,
-    ) -> Result<fuchsia_audio_device::AudioFrameStream, Error> {
+    ) -> Result<fuchsia_audio_device::AudioFrameStream, MediaTaskError> {
         let id = peer_audio_stream_id(*peer_id, crate::media::AUDIO_SOURCE_UUID);
         let (client, frame_stream) = SoftStreamConfig::create_output(
             &id,
@@ -47,7 +54,8 @@ impl AudioOutStream {
             pcm_format,
             zx::Duration::from_millis(10),
             external_delay,
-        )?;
+        )
+        .map_err(|e| MediaTaskError::Other(e.to_string()))?;
 
         let svc = fuchsia_component::client::connect_to_protocol::<AudioDeviceEnumeratorMarker>()
             .context("Failed to connect to AudioDeviceEnumerator")?;

@@ -10,12 +10,19 @@ use fuchsia_inspect::Node;
 use fuchsia_inspect_derive::AttachError;
 use futures::FutureExt;
 use futures::future::{BoxFuture, Shared};
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
 use crate::codec::MediaCodecConfig;
 
-#[derive(Debug, Error, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum MediaTaskStatus {
+    AudioDisabled,
+    Stopped,
+}
+
+#[derive(Debug, Error, Clone)]
 #[non_exhaustive]
 pub enum MediaTaskError {
     #[error("Operation or configuration not supported")]
@@ -24,13 +31,31 @@ pub enum MediaTaskError {
     PeerClosed,
     #[error("Resources needed are already being used")]
     ResourcesInUse,
-    #[error("Other Media Task Error: {}", _0)]
+    #[error("Media stream error: {0}")]
+    MediaStream(Arc<std::io::Error>),
+    #[error("Codec configuration error: {0}")]
+    CodecConfig(Arc<bt_avdtp::Error>),
+    #[error("FIDL error: {0}")]
+    Fidl(#[from] fidl::Error),
+    #[error("Other Media Task Error: {0}")]
     Other(String),
+}
+
+impl From<std::io::Error> for MediaTaskError {
+    fn from(error: std::io::Error) -> Self {
+        Self::MediaStream(Arc::new(error))
+    }
 }
 
 impl From<bt_avdtp::Error> for MediaTaskError {
     fn from(error: bt_avdtp::Error) -> Self {
-        Self::Other(format!("AVDTP Error: {}", error))
+        Self::CodecConfig(Arc::new(error))
+    }
+}
+
+impl From<anyhow::Error> for MediaTaskError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Other(error.to_string())
     }
 }
 
@@ -102,6 +127,13 @@ pub trait MediaTaskRunner: Send {
         Err(MediaTaskError::NotSupported)
     }
 
+    /// Watch for active channel state changes on the media source.
+    /// Resolves to true when active, false when inactive.
+    /// Default implementation is Ready(true) for tasks that are always active.
+    fn watch_active(&mut self) -> BoxFuture<'static, bool> {
+        futures::future::ready(true).boxed()
+    }
+
     /// Add information from the running media task to the inspect tree
     /// (i.e. data transferred, jitter, etc)
     fn iattach(&mut self, _parent: &Node, _name: &str) -> Result<(), AttachError> {
@@ -114,20 +146,20 @@ pub trait MediaTaskRunner: Send {
 /// Typically a MediaTask will run a background task that is active until dropped or
 /// `MediaTask::stop` is called.
 pub trait MediaTask: Send {
-    /// Returns a Future that finishes when the running media task finshes for any reason.
+    /// Returns a Future that finishes when the running media task finishes for any reason.
     /// Should return a future that immediately resolves if this task is finished.
-    fn finished(&mut self) -> BoxFuture<'static, Result<(), MediaTaskError>>;
+    fn finished(&mut self) -> BoxFuture<'static, Result<MediaTaskStatus, MediaTaskError>>;
 
     /// Returns the result if this task has finished, and None otherwise
-    fn result(&mut self) -> Option<Result<(), MediaTaskError>> {
+    fn result(&mut self) -> Option<Result<MediaTaskStatus, MediaTaskError>> {
         self.finished().now_or_never()
     }
 
-    /// Stops the task normally, signalling to all waiters Ok(()).
-    /// Returns the result sent to MediaTask::finished futures, which may be different from Ok(()).
-    /// When this function returns, is is good practice to ensure the MediaStream that started
+    /// Stops the task normally, signalling to all waiters Ok(MediaTaskStatus::Stopped).
+    /// Returns the result sent to MediaTask::finished futures, which may be different from Ok(MediaTaskStatus::Stopped).
+    /// When this function returns, it is good practice to ensure the MediaStream that started
     /// this task is also dropped.
-    fn stop(&mut self) -> Result<(), MediaTaskError>;
+    fn stop(&mut self) -> Result<MediaTaskStatus, MediaTaskError>;
 }
 
 pub mod tests {
@@ -139,6 +171,7 @@ pub mod tests {
     use futures::{Future, TryFutureExt};
     use std::fmt;
     use std::sync::Arc;
+    use std::task::Poll;
 
     #[derive(Clone)]
     pub struct TestMediaTask {
@@ -149,9 +182,9 @@ pub mod tests {
         /// If still started, this holds the MediaStream.
         pub stream: Arc<Mutex<Option<MediaStream>>>,
         /// Sender for the shared result future. None if already sent.
-        sender: Arc<Mutex<Option<oneshot::Sender<Result<(), MediaTaskError>>>>>,
+        sender: Arc<Mutex<Option<oneshot::Sender<Result<MediaTaskStatus, MediaTaskError>>>>>,
         /// Shared result future.
-        result: Shared<BoxFuture<'static, Result<(), MediaTaskError>>>,
+        result: Shared<BoxFuture<'static, Result<MediaTaskStatus, MediaTaskError>>>,
         /// Delay the task was started with.
         pub delay: Duration,
     }
@@ -175,10 +208,7 @@ pub mod tests {
         ) -> Self {
             let (sender, receiver) = oneshot::channel();
             let result = receiver
-                .map_ok_or_else(
-                    |_err| Err(MediaTaskError::Other(format!("Nothing sent"))),
-                    |result| result,
-                )
+                .map_ok_or_else(|_err| Ok(MediaTaskStatus::Stopped), |result| result)
                 .boxed()
                 .shared();
             Self {
@@ -199,7 +229,10 @@ pub mod tests {
 
         /// End the streaming task without an external stop().
         /// Sends an optional result from the task.
-        pub fn end_prematurely(&self, task_result: Option<Result<(), MediaTaskError>>) {
+        pub fn end_prematurely(
+            &self,
+            task_result: Option<Result<MediaTaskStatus, MediaTaskError>>,
+        ) {
             let _removed_stream = self.stream.lock().take();
             let mut lock = self.sender.lock();
             let sender = lock.take();
@@ -210,17 +243,17 @@ pub mod tests {
     }
 
     impl MediaTask for TestMediaTask {
-        fn finished(&mut self) -> BoxFuture<'static, Result<(), MediaTaskError>> {
+        fn finished(&mut self) -> BoxFuture<'static, Result<MediaTaskStatus, MediaTaskError>> {
             self.result.clone().boxed()
         }
 
-        fn stop(&mut self) -> Result<(), MediaTaskError> {
+        fn stop(&mut self) -> Result<MediaTaskStatus, MediaTaskError> {
             let _ = self.stream.lock().take();
             {
                 let mut lock = self.sender.lock();
                 if let Some(sender) = lock.take() {
-                    let _ = sender.send(Ok(()));
-                    return Ok(());
+                    let _ = sender.send(Ok(MediaTaskStatus::Stopped));
+                    return Ok(MediaTaskStatus::Stopped);
                 }
             }
             // Result should be available.
@@ -241,6 +274,8 @@ pub mod tests {
         pub set_delay: Option<std::time::Duration>,
         /// The Sender that will send a clone of the started tasks to the builder.
         pub sender: mpsc::Sender<TestMediaTask>,
+        /// Receiver for active state changes.
+        pub active_receiver: Option<Arc<Mutex<mpsc::UnboundedReceiver<bool>>>>,
     }
 
     impl MediaTaskRunner for TestMediaTaskRunner {
@@ -277,6 +312,18 @@ pub mod tests {
                 Err(MediaTaskError::NotSupported)
             }
         }
+
+        fn watch_active(&mut self) -> BoxFuture<'static, bool> {
+            let Some(receiver) = self.active_receiver.clone() else {
+                return futures::future::ready(true).boxed();
+            };
+            futures::future::poll_fn(move |cx| match receiver.lock().poll_next_unpin(cx) {
+                Poll::Ready(Some(val)) => Poll::Ready(val),
+                Poll::Ready(None) => Poll::Ready(false),
+                Poll::Pending => Poll::Pending,
+            })
+            .boxed()
+        }
     }
 
     /// A TestMediaTask expects to be configured once, and then started and stopped as appropriate.
@@ -285,29 +332,35 @@ pub mod tests {
     pub struct TestMediaTaskBuilder {
         sender: Mutex<mpsc::Sender<TestMediaTask>>,
         receiver: mpsc::Receiver<TestMediaTask>,
+        active_sender: mpsc::UnboundedSender<bool>,
+        active_receiver: Arc<Mutex<mpsc::UnboundedReceiver<bool>>>,
         reconfigurable: bool,
         supports_set_delay: bool,
-        configs: Result<Vec<MediaCodecConfig>, MediaTaskError>,
+        configs: Vec<MediaCodecConfig>,
         direction: EndpointType,
     }
 
     impl TestMediaTaskBuilder {
         pub fn new() -> Self {
             let (sender, receiver) = mpsc::channel(5);
+            let (active_sender, active_receiver) = mpsc::unbounded();
             Self {
                 sender: Mutex::new(sender),
                 receiver,
+                active_sender,
+                active_receiver: Arc::new(Mutex::new(active_receiver)),
                 reconfigurable: false,
                 supports_set_delay: false,
-                configs: Ok(vec![crate::codec::MediaCodecConfig::min_sbc()]),
+                configs: vec![crate::codec::MediaCodecConfig::min_sbc()],
                 direction: EndpointType::Sink,
             }
         }
 
-        pub fn with_configs(
-            &mut self,
-            configs: Result<Vec<MediaCodecConfig>, MediaTaskError>,
-        ) -> &mut Self {
+        pub fn set_active(&self, active: bool) {
+            let _ = self.active_sender.unbounded_send(active);
+        }
+
+        pub fn with_configs(&mut self, configs: Vec<MediaCodecConfig>) -> &mut Self {
             self.configs = configs;
             self
         }
@@ -330,6 +383,7 @@ pub mod tests {
         pub fn builder(&self) -> Box<dyn MediaTaskBuilder> {
             Box::new(TestMediaTaskBuilderBuilder {
                 sender: self.sender.lock().clone(),
+                active_receiver: self.active_receiver.clone(),
                 reconfigurable: self.reconfigurable,
                 supports_set_delay: self.supports_set_delay,
                 configs: self.configs.clone(),
@@ -357,9 +411,10 @@ pub mod tests {
     #[derive(Clone)]
     struct TestMediaTaskBuilderBuilder {
         sender: mpsc::Sender<TestMediaTask>,
+        active_receiver: Arc<Mutex<mpsc::UnboundedReceiver<bool>>>,
         reconfigurable: bool,
         supports_set_delay: bool,
-        configs: Result<Vec<MediaCodecConfig>, MediaTaskError>,
+        configs: Vec<MediaCodecConfig>,
         direction: EndpointType,
     }
 
@@ -373,6 +428,7 @@ pub mod tests {
                 peer_id: peer_id.clone(),
                 codec_config: codec_config.clone(),
                 sender: self.sender.clone(),
+                active_receiver: Some(self.active_receiver.clone()),
                 reconfigurable: self.reconfigurable,
                 supports_set_delay: self.supports_set_delay,
                 set_delay: None,
@@ -389,7 +445,7 @@ pub mod tests {
             _peer_id: &PeerId,
             _offload: Option<AudioOffloadExtProxy>,
         ) -> BoxFuture<'static, Result<Vec<MediaCodecConfig>, MediaTaskError>> {
-            futures::future::ready(self.configs.clone()).boxed()
+            futures::future::ready(Ok(self.configs.clone())).boxed()
         }
     }
 }

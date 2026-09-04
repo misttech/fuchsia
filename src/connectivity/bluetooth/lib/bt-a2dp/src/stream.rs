@@ -19,7 +19,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::codec::{CodecNegotiation, MediaCodecConfig};
-use crate::media_task::{MediaTask, MediaTaskBuilder, MediaTaskError, MediaTaskRunner};
+use crate::media_task::{
+    MediaTask, MediaTaskBuilder, MediaTaskError, MediaTaskRunner, MediaTaskStatus,
+};
 
 /// Manages a local StreamEndpoint and its associated media task, starting and stopping the
 /// related media task in sync with the endpoint's configured or streaming state.
@@ -201,7 +203,9 @@ impl Stream {
     /// Attempt to start the endpoint.
     /// If the endpoint is successfully started, the media task is started and a future that
     /// will finish when the media task finishes is returned.
-    pub fn start(&mut self) -> Result<BoxFuture<'static, Result<(), Error>>, ErrorCode> {
+    pub fn start(
+        &mut self,
+    ) -> Result<BoxFuture<'static, Result<MediaTaskStatus, Error>>, ErrorCode> {
         if self.media_task_runner.is_none() {
             return Err(ErrorCode::BadState);
         };
@@ -217,7 +221,7 @@ impl Stream {
         };
         let finished = task.finished();
         self.media_task = Some(task);
-        Ok(finished.err_into().boxed())
+        Ok(finished.map_err(Into::into).boxed())
     }
 
     /// Suspends the media processor and endpoint.
@@ -225,6 +229,15 @@ impl Stream {
         self.endpoint.suspend()?;
         let _ = self.media_task.take().ok_or(ErrorCode::BadState)?.stop();
         Ok(())
+    }
+
+    /// Watch for active channel state changes on the media task runner.
+    /// Resolves to true when active, false when inactive.
+    pub fn watch_active(&mut self) -> BoxFuture<'static, bool> {
+        let Some(runner) = self.media_task_runner.as_mut() else {
+            return futures::future::ready(true).boxed();
+        };
+        runner.watch_active()
     }
 
     fn stop_media_task(&mut self) {
@@ -883,12 +896,12 @@ pub(crate) mod tests {
 
         assert!(exec.run_until_stalled(&mut stream_finish_fut).is_pending());
 
-        task.end_prematurely(Some(Ok(())));
+        task.end_prematurely(Some(Ok(MediaTaskStatus::Stopped)));
         assert!(!task.is_started());
 
         // The future should be finished, since the task ended.
         match exec.run_until_stalled(&mut stream_finish_fut) {
-            Poll::Ready(Ok(())) => {}
+            Poll::Ready(Ok(MediaTaskStatus::Stopped)) => {}
             x => panic!("Expected to get ready Ok from finish future, but got {x:?}"),
         };
 

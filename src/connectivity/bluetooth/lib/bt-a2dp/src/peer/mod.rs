@@ -35,6 +35,7 @@ mod volume_relay;
 pub(crate) use volume_relay::run_avrcp_volume_relay;
 
 use crate::codec::MediaCodecConfig;
+use crate::media_task::MediaTaskStatus;
 use crate::permits::{Permit, Permits};
 use crate::stream::{Stream, Streams};
 
@@ -1109,7 +1110,7 @@ struct WatchedStream {
 impl WatchedStream {
     fn new(
         permit: Option<StreamPermit>,
-        finish_fut: BoxFuture<'static, Result<(), anyhow::Error>>,
+        finish_fut: BoxFuture<'static, Result<MediaTaskStatus, anyhow::Error>>,
     ) -> Self {
         let permit_task = fasync::Task::spawn(async move {
             let _ = finish_fut.await;
