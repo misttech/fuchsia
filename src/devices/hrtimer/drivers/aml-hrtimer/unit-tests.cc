@@ -3,194 +3,29 @@
 // found in the LICENSE file.
 
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
-#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
-#include <fidl/fuchsia.power.broker/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <fidl/fuchsia.power.system/cpp/test_base.h>
-#include <lib/ddk/platform-defs.h>
+#include <lib/driver/fake-platform-device/cpp/fake-pdev.h>
+#include <lib/driver/mmio/testing/cpp/test-helper.h>
 #include <lib/driver/testing/cpp/driver_test.h>
-#include <lib/fake-bti/bti.h>
 #include <lib/fpromise/result.h>
 #include <lib/fpromise/single_threaded_executor.h>
-#include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/cpp/reader.h>
 
 #include <gtest/gtest.h>
+#include <src/lib/testing/predicates/status.h>
 
+#include "src/devices/hrtimer/drivers/aml-hrtimer/aml-hrtimer-regs.h"
 #include "src/devices/hrtimer/drivers/aml-hrtimer/aml-hrtimer.h"
 #include "src/devices/hrtimer/drivers/aml-hrtimer/aml_hrtimer_config.h"
 
 namespace hrtimer {
 
-class FakePlatformDevice : public fidl::Server<fuchsia_hardware_platform_device::Device> {
- public:
-  fuchsia_hardware_platform_device::Service::InstanceHandler GetInstanceHandler() {
-    return fuchsia_hardware_platform_device::Service::InstanceHandler({
-        .device = bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                          fidl::kIgnoreBindingClosure),
-    });
-  }
-
-  void InitResources() {
-    zx::vmo::create(kMmioSize, 0, &mmio_);
-    fake_bti_create(bti_.reset_and_get_address());
-  }
-
-  cpp20::span<uint32_t> mmio() {
-    // The test has to wait for the driver to set the MMIO cache policy before mapping.
-    if (!mapped_mmio_.start()) {
-      MapMmio();
-    }
-
-    return {reinterpret_cast<uint32_t*>(mapped_mmio_.start()), kMmioSize / sizeof(uint32_t)};
-  }
-
-  void TriggerIrq(size_t timer_index) {
-    ASSERT_TRUE(timer_index < kNumberOfTimers);
-    ASSERT_EQ(fake_interrupts_[*kTimerToIrqsIndexes[timer_index]].trigger(0, zx::clock::get_boot()),
-              ZX_OK);
-  }
-
-  void TriggerAllIrqs() {
-    for (size_t i = 0; i < AmlHrtimer::GetNumberOfIrqs(); ++i) {
-      ASSERT_EQ(fake_interrupts_[i].trigger(0, zx::clock::get_boot()), ZX_OK);
-    }
-  }
-
- private:
-  static constexpr size_t kMmioSize = 0x10000;
-  std::optional<size_t> kTimerToIrqsIndexes[kNumberOfTimers] = {0, 1, 2, 3, std::nullopt,
-                                                                4, 5, 6, 7};
-  void GetMmioById(GetMmioByIdRequest& request, GetMmioByIdCompleter::Sync& completer) override {
-    if (request.index() != 0) {
-      return completer.Reply(zx::error(ZX_ERR_OUT_OF_RANGE));
-    }
-
-    zx::vmo vmo;
-    if (zx_status_t status = mmio_.duplicate(ZX_RIGHT_SAME_RIGHTS, &vmo); status != ZX_OK) {
-      return completer.Reply(zx::error(status));
-    }
-
-    completer.Reply(zx::ok(fuchsia_hardware_platform_device::Mmio{{
-        .offset = 0,
-        .size = kMmioSize,
-        .vmo = std::move(vmo),
-    }}));
-  }
-
-  void GetMmioByName(GetMmioByNameRequest& request,
-                     GetMmioByNameCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
-  void GetInterruptById(GetInterruptByIdRequest& request,
-                        GetInterruptByIdCompleter::Sync& completer) override {
-    if (request.index() >= AmlHrtimer::GetNumberOfIrqs()) {
-      completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
-      return;
-    }
-    zx::interrupt interrupt;
-    ASSERT_EQ(zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL,
-                                    &fake_interrupts_[request.index()]),
-              ZX_OK);
-    zx_status_t status =
-        fake_interrupts_[request.index()].duplicate(ZX_RIGHT_SAME_RIGHTS, &interrupt);
-    if (status != ZX_OK) {
-      completer.Reply(zx::error(status));
-      return;
-    }
-    completer.Reply(zx::ok(std::move(interrupt)));
-  }
-
-  void GetInterruptByName(GetInterruptByNameRequest& request,
-                          GetInterruptByNameCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
-  void GetBtiById(GetBtiByIdRequest& request, GetBtiByIdCompleter::Sync& completer) override {
-    zx::bti bti;
-    if (zx_status_t status = bti_.duplicate(ZX_RIGHT_SAME_RIGHTS, &bti); status != ZX_OK) {
-      return completer.Reply(zx::error(status));
-    }
-    completer.Reply(zx::ok((std::move(bti))));
-  }
-
-  void GetBtiByName(GetBtiByNameRequest& request, GetBtiByNameCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
-  void GetSmcById(GetSmcByIdRequest& request, GetSmcByIdCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
-  void GetNodeDeviceInfo(GetNodeDeviceInfoCompleter::Sync& completer) override {
-    fuchsia_hardware_platform_device::NodeDeviceInfo info;
-    info.vid(PDEV_VID_AMLOGIC).pid(PDEV_PID_AMLOGIC_A311D);
-    completer.Reply(zx::ok(std::move(info)));
-  }
-
-  void GetSmcByName(GetSmcByNameRequest& request, GetSmcByNameCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
-  void GetBoardInfo(GetBoardInfoCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
-  void GetMetadata(GetMetadataRequest& request, GetMetadataCompleter::Sync& completer) override {
-    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
-  }
-
-  void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_hardware_platform_device::Device> metadata,
-      fidl::UnknownMethodCompleter::Sync& completer) override {}
-
-  void MapMmio() { mapped_mmio_.Map(mmio_); }
-
-  void GetPowerConfiguration(GetPowerConfigurationCompleter::Sync& completer) override {
-    // fuchsia_hardware_power uses FIDL uint8 for power levels matching fuchsia_power_broker's.
-    constexpr uint8_t kPowerLevelOff =
-        static_cast<uint8_t>(fuchsia_power_broker::BinaryPowerLevel::kOff);
-    constexpr uint8_t kPowerLevelOn =
-        static_cast<uint8_t>(fuchsia_power_broker::BinaryPowerLevel::kOn);
-    constexpr char kPowerElementName[] = "aml-hrtimer-wake";
-    fuchsia_hardware_power::LevelTuple wake_handling_on = {{
-        .child_level = kPowerLevelOn,
-        .parent_level =
-            static_cast<uint8_t>(fuchsia_power_system::ExecutionStateLevel::kSuspending),
-    }};
-    fuchsia_hardware_power::PowerDependency wake_handling = {{
-        .child = kPowerElementName,
-        .parent = fuchsia_hardware_power::ParentElement::WithSag(
-            fuchsia_hardware_power::SagElement::kExecutionState),
-        .level_deps = {{std::move(wake_handling_on)}},
-    }};
-    fuchsia_hardware_power::PowerLevel off = {{.level = kPowerLevelOff, .name = "off"}};
-    fuchsia_hardware_power::PowerLevel on = {{.level = kPowerLevelOn, .name = "on"}};
-    fuchsia_hardware_power::PowerElement element = {
-        {.name = kPowerElementName, .levels = {{std::move(off), std::move(on)}}}};
-    fuchsia_hardware_power::PowerElementConfiguration wake_config = {
-        {.element = std::move(element), .dependencies = {{std::move(wake_handling)}}}};
-
-    completer.Reply(zx::ok(
-        std::vector<fuchsia_hardware_power::PowerElementConfiguration>{{std::move(wake_config)}}));
-  }
-
-  zx::vmo mmio_;
-  fzl::VmoMapper mapped_mmio_;
-  zx::bti bti_;
-  zx::interrupt fake_interrupts_[AmlHrtimer::GetNumberOfIrqs()];
-
-  fidl::ServerBindingGroup<fuchsia_hardware_platform_device::Device> bindings_;
-};
-
-// Power Specific.
-// TODO(https://fxbug.dev/342124966): Move to the Power Framework Testing Client
-// at //src/power/testing/client.
+// In-process fake SAG for wake leases to avoid Power Framework Testing Client dependencies.
 class FakeSystemActivityGovernor
     : public fidl::testing::TestBase<fuchsia_power_system::ActivityGovernor> {
  public:
-  FakeSystemActivityGovernor(zx::event wake_handling) : wake_handling_(std::move(wake_handling)) {}
+  FakeSystemActivityGovernor() = default;
 
   fidl::ProtocolHandler<fuchsia_power_system::ActivityGovernor> CreateHandler() {
     return bindings_.CreateHandler(this, fdf::Dispatcher::GetCurrent()->async_dispatcher(),
@@ -199,16 +34,13 @@ class FakeSystemActivityGovernor
 
   void GetPowerElements(GetPowerElementsCompleter::Sync& completer) override {
     fuchsia_power_system::PowerElements elements;
-    zx::event duplicate;
-    wake_handling_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate);
-
     completer.Reply({{std::move(elements)}});
   }
 
   zx::eventpair AcquireWakeLease() {
-    zx::eventpair wake_lease_remote, wake_lease_local;
-    zx::eventpair::create(0, &wake_lease_local, &wake_lease_remote);
-    wake_leases_.push_back(std::move(wake_lease_local));
+    zx::eventpair wake_lease_local, wake_lease_remote;
+    EXPECT_OK(zx::eventpair::create(0, &wake_lease_local, &wake_lease_remote));
+    wake_leases_.emplace_back(std::move(wake_lease_local));
     lease_requested_ = true;
     return wake_lease_remote;
   }
@@ -225,11 +57,10 @@ class FakeSystemActivityGovernor
   void handle_unknown_method(fidl::UnknownMethodMetadata<fuchsia_power_system::ActivityGovernor> md,
                              fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  bool GetLeaseRequested() { return lease_requested_; }
+  bool GetLeaseRequested() const { return lease_requested_; }
 
  private:
   bool lease_requested_ = false;
-  zx::event wake_handling_;
   std::vector<zx::eventpair> wake_leases_;
   fidl::ServerBindingGroup<fuchsia_power_system::ActivityGovernor> bindings_;
 };
@@ -237,29 +68,73 @@ class FakeSystemActivityGovernor
 class TestEnvironment : public fdf_testing::Environment {
  public:
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
-    platform_device_.InitResources();
-    auto result = to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
-        platform_device_.GetInstanceHandler());
-    EXPECT_EQ(ZX_OK, result.status_value());
-
-    // Power specific.
-    zx::event::create(0, &wake_handling_);
-    zx::event duplicate;
-    EXPECT_EQ(wake_handling_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate), ZX_OK);
-    system_activity_governor_.emplace(std::move(duplicate));
-    auto result_sag =
-        to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_system::ActivityGovernor>(
-            system_activity_governor_->CreateHandler());
-    EXPECT_EQ(ZX_OK, result_sag.status_value());
+    InitResources(to_driver_vfs);
+    if (::testing::Test::HasFatalFailure()) {
+      return zx::error(ZX_ERR_INTERNAL);
+    }
     return zx::ok();
   }
-  FakePlatformDevice& platform_device() { return platform_device_; }
-  FakeSystemActivityGovernor& system_activity_governor() { return *system_activity_governor_; }
+
+  void SetEnableSag(bool enable) { enable_sag_ = enable; }
+
+  void SetTimerCurrentTicks(size_t timer_id, uint32_t count) {
+    ZX_ASSERT(timer_id < 4 || (timer_id >= 5 && timer_id < kNumberOfTimers));
+    uint32_t offset = (timer_id < 4)
+                          ? (IsaTimerA::Get().addr() + static_cast<uint32_t>(timer_id) * 4)
+                          : (IsaTimerF::Get().addr() + static_cast<uint32_t>(timer_id - 5) * 4);
+    mmio_.Write32((count & 0xffff) << 16, offset);
+  }
+
+  void TriggerIrq(size_t timer_index) {
+    EXPECT_OK(
+        fake_interrupts_[*kTimerToIrqsIndexes[timer_index]].trigger(0, zx::clock::get_boot()));
+  }
+
+  void TriggerAllIrqs() {
+    for (uint32_t i = 0; i < AmlHrtimer::GetNumberOfIrqs(); ++i) {
+      EXPECT_OK(fake_interrupts_[i].trigger(0, zx::clock::get_boot()));
+    }
+  }
+
+  FakeSystemActivityGovernor& system_activity_governor() { return system_activity_governor_; }
 
  private:
-  FakePlatformDevice platform_device_;
-  std::optional<FakeSystemActivityGovernor> system_activity_governor_;
-  zx::event wake_handling_;
+  void InitResources(fdf::OutgoingDirectory& to_driver_vfs) {
+    fdf_fake::FakePDev::Config config;
+    auto& mmio_info = config.mmios[0].emplace<fdf::PDev::MmioInfo>();
+    mmio_info.offset = 0;
+    mmio_info.size = kMmioSize;
+    ASSERT_OK(mmio_.get_vmo()->duplicate(ZX_RIGHT_SAME_RIGHTS, &mmio_info.vmo));
+
+    for (uint32_t i = 0; i < AmlHrtimer::GetNumberOfIrqs(); ++i) {
+      ASSERT_OK(
+          zx::interrupt::create(zx::resource(), 0, ZX_INTERRUPT_VIRTUAL, &fake_interrupts_[i]));
+      ASSERT_OK(fake_interrupts_[i].duplicate(ZX_RIGHT_SAME_RIGHTS, &config.irqs[i]));
+    }
+
+    // Power elements / GetPowerConfiguration are not needed for these tests as aml-hrtimer
+    // only acquires wake leases and does not manage power elements directly.
+    pdev_.SetConfig(std::move(config));
+
+    ASSERT_OK(to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+        pdev_.GetInstanceHandler(fdf::Dispatcher::GetCurrent()->async_dispatcher())));
+
+    if (enable_sag_) {
+      ASSERT_OK(
+          to_driver_vfs.component().AddUnmanagedProtocol<fuchsia_power_system::ActivityGovernor>(
+              system_activity_governor_.CreateHandler()));
+    }
+  }
+  static constexpr size_t kMmioSize = 0x10000;
+  static constexpr size_t kNumberOfTimers = 9;
+  static constexpr std::optional<size_t> kTimerToIrqsIndexes[kNumberOfTimers] = {
+      0, 1, 2, 3, std::nullopt, 4, 5, 6, 7};
+
+  bool enable_sag_ = true;
+  fdf::MmioBuffer mmio_ = fdf_testing::CreateMmioBuffer(kMmioSize);
+  zx::interrupt fake_interrupts_[AmlHrtimer::GetNumberOfIrqs()];
+  fdf_fake::FakePDev pdev_;
+  FakeSystemActivityGovernor system_activity_governor_;
 };
 
 class FixtureConfig final {
@@ -270,33 +145,29 @@ class FixtureConfig final {
 
 class DriverTest : public ::testing::Test {
  public:
-  void TearDown() override {
-    zx::result<> result = driver_test().StopDriver();
-    ASSERT_EQ(ZX_OK, result.status_value());
-  }
-
   void SetUp() override {
-    zx::result<> result =
-        driver_test().StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& start_args) mutable {
+    ASSERT_OK(
+        driver_test_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& start_args) mutable {
           aml_hrtimer_config::Config fake_config;
           fake_config.enable_suspend() = true;
           start_args.config(fake_config.ToVmo());
-        });
-    ASSERT_EQ(ZX_OK, result.status_value());
+        }));
     zx::result device_result =
-        driver_test().ConnectThroughDevfs<fuchsia_hardware_hrtimer::Device>("aml-hrtimer");
-    ASSERT_EQ(ZX_OK, device_result.status_value());
+        driver_test_.ConnectThroughDevfs<fuchsia_hardware_hrtimer::Device>("aml-hrtimer");
+    ASSERT_OK(device_result);
     client_.Bind(std::move(device_result.value()));
   }
 
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
+
   void CheckLeaseRequested(size_t timer_id) {
-    driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    driver_test_.RunInEnvironmentTypeContext([](TestEnvironment& env) {
       ASSERT_FALSE(env.system_activity_governor().GetLeaseRequested());
     });
     zx::eventpair lease;
     std::thread thread([this, timer_id, &lease]() {
       zx::event setup_event;
-      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      ASSERT_OK(zx::event::create(0, &setup_event));
       auto result_start = client_->StartAndWait(
           {timer_id, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 0,
            std::move(setup_event)});
@@ -308,21 +179,21 @@ class DriverTest : public ::testing::Test {
     // Wait until the driver has acquired the timer wait completer before triggering the IRQ.
     bool has_wait_completer = false;
     while (!has_wait_completer) {
-      driver_test().RunInDriverContext([timer_id, &has_wait_completer](AmlHrtimer& driver) {
+      driver_test_.RunInDriverContext([timer_id, &has_wait_completer](AmlHrtimer& driver) {
         has_wait_completer = driver.HasWaitCompleter(timer_id);
       });
       zx::nanosleep(zx::deadline_after(zx::msec(1)));
     }
-    driver_test().RunInEnvironmentTypeContext(
-        [timer_id](TestEnvironment& env) { env.platform_device().TriggerIrq(timer_id); });
+    driver_test_.RunInEnvironmentTypeContext(
+        [timer_id](TestEnvironment& env) { env.TriggerIrq(timer_id); });
     thread.join();
-    driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
+    driver_test_.RunInEnvironmentTypeContext([](TestEnvironment& env) {
       ASSERT_TRUE(env.system_activity_governor().GetLeaseRequested());
     });
   }
 
   void CheckInspect(const char* path, const char* type, uint64_t id, uint64_t data) {
-    driver_test().RunInDriverContext([&](AmlHrtimer& driver) {
+    driver_test_.RunInDriverContext([&](AmlHrtimer& driver) {
       auto& inspector = driver.inspect();
       fpromise::single_threaded_executor executor;
       executor.schedule_task(inspect::ReadFromInspector(inspector).then(
@@ -348,7 +219,6 @@ class DriverTest : public ::testing::Test {
   fdf_testing::BackgroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
 
   fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
-
   fidl::SyncClient<fuchsia_hardware_hrtimer::Device> client_;
 };
 
@@ -453,7 +323,7 @@ TEST_F(DriverTest, StartStop) {
 TEST_F(DriverTest, EventTriggering) {
   zx::event events[kNumberOfTimers];
   for (auto& i : kTimersSupportWait) {
-    ASSERT_EQ(zx::event::create(0, &events[i]), ZX_OK);
+    ASSERT_OK(zx::event::create(0, &events[i]));
     zx::event duplicate_event;
     events[i].duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_event);
     auto result_event = client_->SetEvent({i, std::move(duplicate_event)});
@@ -476,18 +346,18 @@ TEST_F(DriverTest, GetTicksTimers0123) {
   constexpr uint32_t kArbitraryCount16bits1 = 0x5678;
   constexpr uint32_t kArbitraryCount16bits2 = 0x90ab;
   constexpr uint32_t kArbitraryCount16bits3 = 0xcdef;
-  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
-    env.platform_device().mmio()[0x3c51] = kArbitraryCount16bits0 << 16;  // Timer A.
-    env.platform_device().mmio()[0x3c52] = kArbitraryCount16bits1 << 16;  // Timer B.
-    env.platform_device().mmio()[0x3c53] = kArbitraryCount16bits2 << 16;  // Timer C.
-    env.platform_device().mmio()[0x3c54] = kArbitraryCount16bits3 << 16;  // Timer D.
+  driver_test().RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.SetTimerCurrentTicks(0, kArbitraryCount16bits0);
+    env.SetTimerCurrentTicks(1, kArbitraryCount16bits1);
+    env.SetTimerCurrentTicks(2, kArbitraryCount16bits2);
+    env.SetTimerCurrentTicks(3, kArbitraryCount16bits3);
   });
 
   std::vector<std::thread> threads;
   for (uint64_t i = 0; i < 4; ++i) {
     threads.emplace_back([this, i]() {
       zx::event setup_event;
-      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      ASSERT_OK(zx::event::create(0, &setup_event));
       auto result_start =
           client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
                                  kArbitraryTicksRequest, std::move(setup_event)});
@@ -526,8 +396,7 @@ TEST_F(DriverTest, GetTicksTimers0123) {
     ASSERT_EQ(result->ticks(), kArbitraryCount16bits3);
   }
 
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
   for (auto& thread : threads) {
     thread.join();
   }
@@ -554,18 +423,18 @@ TEST_F(DriverTest, GetTicksTimers5678TicksStayAtRequested) {
 
   // The count starts at max for the register since the request goes beyond the register max.
   constexpr uint64_t kMaxCount = 0xffff;
-  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
-    env.platform_device().mmio()[0x3c65] = kMaxCount << 16;  // Timer F.
-    env.platform_device().mmio()[0x3c66] = kMaxCount << 16;  // Timer G.
-    env.platform_device().mmio()[0x3c67] = kMaxCount << 16;  // Timer H.
-    env.platform_device().mmio()[0x3c68] = kMaxCount << 16;  // Timer I.
+  driver_test().RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.SetTimerCurrentTicks(5, kMaxCount);
+    env.SetTimerCurrentTicks(6, kMaxCount);
+    env.SetTimerCurrentTicks(7, kMaxCount);
+    env.SetTimerCurrentTicks(8, kMaxCount);
   });
 
   std::vector<std::thread> threads;
   for (uint64_t i = 5; i < 9; ++i) {
     threads.emplace_back([this, i]() {
       zx::event setup_event;
-      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      ASSERT_OK(zx::event::create(0, &setup_event));
       auto result_start =
           client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
                                  kArbitraryTicksRequest, std::move(setup_event)});
@@ -588,11 +457,9 @@ TEST_F(DriverTest, GetTicksTimers5678TicksStayAtRequested) {
   }
 
   // Trigger IRQs twice to finish the StartAndWait calls.
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
   zx::nanosleep(zx::deadline_after(zx::msec(10)));
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
 
   for (auto& thread : threads) {
     thread.join();
@@ -605,18 +472,18 @@ TEST_F(DriverTest, GetTicksTimers5678TicksDownBy0xffff) {
   constexpr uint64_t kArbitraryTicksRequest = 0x1'1234;
 
   // The count has decreased by 0xffff to 0.
-  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
-    env.platform_device().mmio()[0x3c65] = 0 << 16;  // Timer F.
-    env.platform_device().mmio()[0x3c66] = 0 << 16;  // Timer G.
-    env.platform_device().mmio()[0x3c67] = 0 << 16;  // Timer H.
-    env.platform_device().mmio()[0x3c68] = 0 << 16;  // Timer I.
+  driver_test().RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.SetTimerCurrentTicks(5, 0);
+    env.SetTimerCurrentTicks(6, 0);
+    env.SetTimerCurrentTicks(7, 0);
+    env.SetTimerCurrentTicks(8, 0);
   });
 
   std::vector<std::thread> threads;
   for (uint64_t i = 5; i < 9; ++i) {
     threads.emplace_back([this, i]() {
       zx::event setup_event;
-      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      ASSERT_OK(zx::event::create(0, &setup_event));
       auto result_start =
           client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
                                  kArbitraryTicksRequest, std::move(setup_event)});
@@ -639,11 +506,9 @@ TEST_F(DriverTest, GetTicksTimers5678TicksDownBy0xffff) {
   }
 
   // Trigger IRQs twice to finish the StartAndWait calls.
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
   zx::nanosleep(zx::deadline_after(zx::msec(10)));
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
 
   for (auto& thread : threads) {
     thread.join();
@@ -659,18 +524,18 @@ TEST_F(DriverTest, GetTicksTimers5678ArbitraryCount) {
   constexpr uint64_t kArbitraryCount6 = 0x5678;
   constexpr uint64_t kArbitraryCount7 = 0x90ab;
   constexpr uint64_t kArbitraryCount8 = 0xcdef;
-  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
-    env.platform_device().mmio()[0x3c65] = kArbitraryCount5 << 16;  // Timer F.
-    env.platform_device().mmio()[0x3c66] = kArbitraryCount6 << 16;  // Timer G.
-    env.platform_device().mmio()[0x3c67] = kArbitraryCount7 << 16;  // Timer H.
-    env.platform_device().mmio()[0x3c68] = kArbitraryCount8 << 16;  // Timer I.
+  driver_test().RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.SetTimerCurrentTicks(5, kArbitraryCount5);
+    env.SetTimerCurrentTicks(6, kArbitraryCount6);
+    env.SetTimerCurrentTicks(7, kArbitraryCount7);
+    env.SetTimerCurrentTicks(8, kArbitraryCount8);
   });
 
   std::vector<std::thread> threads;
   for (uint64_t i = 5; i < 9; ++i) {
     threads.emplace_back([this, i]() {
       zx::event setup_event;
-      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      ASSERT_OK(zx::event::create(0, &setup_event));
       auto result_start =
           client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
                                  kArbitraryTicksRequest, std::move(setup_event)});
@@ -710,11 +575,9 @@ TEST_F(DriverTest, GetTicksTimers5678ArbitraryCount) {
   }
 
   // Trigger IRQs twice to finish the StartAndWait calls.
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
   zx::nanosleep(zx::deadline_after(zx::msec(10)));
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
 
   for (auto& thread : threads) {
     thread.join();
@@ -726,18 +589,18 @@ TEST_F(DriverTest, GetTicksTimers5678ArbitraryCountWithIrq) {
   constexpr uint64_t kTicksRequestEnoughFor2Irqs = 0x1'1235;
 
   constexpr uint64_t kArbitraryCount = 0x1234;
-  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) {
-    env.platform_device().mmio()[0x3c65] = kArbitraryCount << 16;  // Timer F.
-    env.platform_device().mmio()[0x3c66] = kArbitraryCount << 16;  // Timer G.
-    env.platform_device().mmio()[0x3c67] = kArbitraryCount << 16;  // Timer H.
-    env.platform_device().mmio()[0x3c68] = kArbitraryCount << 16;  // Timer I.
+  driver_test().RunInEnvironmentTypeContext([&](TestEnvironment& env) {
+    env.SetTimerCurrentTicks(5, kArbitraryCount);
+    env.SetTimerCurrentTicks(6, kArbitraryCount);
+    env.SetTimerCurrentTicks(7, kArbitraryCount);
+    env.SetTimerCurrentTicks(8, kArbitraryCount);
   });
 
   std::vector<std::thread> threads;
   for (uint64_t i = 5; i < 9; ++i) {
     threads.emplace_back([this, i]() {
       zx::event setup_event;
-      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      ASSERT_OK(zx::event::create(0, &setup_event));
       auto result_start =
           client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
                                  kTicksRequestEnoughFor2Irqs, std::move(setup_event)});
@@ -761,8 +624,7 @@ TEST_F(DriverTest, GetTicksTimers5678ArbitraryCountWithIrq) {
   }
 
   // Trigger IRQs, indicates that the first 0xffff passed.
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
 
   for (uint64_t i = 5; i < 9; ++i) {
     // Wait until after the IRQ is handled and start ticks left fit in the hardware capabilities.
@@ -782,8 +644,7 @@ TEST_F(DriverTest, GetTicksTimers5678ArbitraryCountWithIrq) {
   }
 
   // Trigger IRQs again to finish the StartAndWait calls.
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
   for (auto& thread : threads) {
     thread.join();
   }
@@ -794,7 +655,7 @@ TEST_F(DriverTest, StartAndWaitTriggering) {
   for (auto& i : kTimersSupportWait) {
     threads.emplace_back([this, i]() {
       zx::event setup_event;
-      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      ASSERT_OK(zx::event::create(0, &setup_event));
       zx::event duplicate_event;
       setup_event.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_event);
       auto result_start =
@@ -805,7 +666,7 @@ TEST_F(DriverTest, StartAndWaitTriggering) {
 
       // setup_event must have been signaled since the timer expired.
       zx_signals_t signals = {};
-      ASSERT_EQ(setup_event.wait_one(ZX_EVENT_SIGNALED, zx::time::infinite(), &signals), ZX_OK);
+      ASSERT_OK(setup_event.wait_one(ZX_EVENT_SIGNALED, zx::time::infinite(), &signals));
     });
 
     // Wait until the driver has acquired the timer wait completer before triggering the IRQ.
@@ -817,8 +678,7 @@ TEST_F(DriverTest, StartAndWaitTriggering) {
       zx::nanosleep(zx::deadline_after(zx::msec(1)));
     }
   }
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
 
   // Join the threads such that we check for timers triggered.
   for (auto& thread : threads) {
@@ -849,8 +709,7 @@ TEST_F(DriverTest, StartAndWait2Triggering) {
   for (auto& i : kTimersSupportWait) {
     threads.emplace_back([this, i]() {
       zx::eventpair local_wake_lease, remote_wake_lease;
-      ASSERT_TRUE(fuchsia_power_system::LeaseToken::create(0, &local_wake_lease,
-                                                           &remote_wake_lease) == ZX_OK);
+      ASSERT_OK(fuchsia_power_system::LeaseToken::create(0, &local_wake_lease, &remote_wake_lease));
       auto result_start =
           client_->StartAndWait2({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
                                   0, std::move(remote_wake_lease)});
@@ -866,8 +725,7 @@ TEST_F(DriverTest, StartAndWait2Triggering) {
       zx::nanosleep(zx::deadline_after(zx::msec(1)));
     }
   }
-  driver_test().RunInEnvironmentTypeContext(
-      [](TestEnvironment& env) { env.platform_device().TriggerAllIrqs(); });
+  driver_test().RunInEnvironmentTypeContext([](TestEnvironment& env) { env.TriggerAllIrqs(); });
 
   // Join the threads such that we check for timers triggered.
   for (auto& thread : threads) {
@@ -897,7 +755,7 @@ TEST_F(DriverTest, StartAndWaitStop) {
   for (auto& i : kTimersSupportWait) {
     std::thread thread([this, i]() {
       zx::event setup_event;
-      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      ASSERT_OK(zx::event::create(0, &setup_event));
       zx::event duplicate_event;
       setup_event.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_event);
       auto result_start =
@@ -909,7 +767,7 @@ TEST_F(DriverTest, StartAndWaitStop) {
 
       // setup_event must have been signaled since the timer expired.
       zx_signals_t signals = {};
-      ASSERT_EQ(setup_event.wait_one(ZX_EVENT_SIGNALED, zx::time::infinite(), &signals), ZX_OK);
+      ASSERT_OK(setup_event.wait_one(ZX_EVENT_SIGNALED, zx::time::infinite(), &signals));
     });
 
     // Wait until the driver has acquired a wait completer such that we can cancel the timer.
@@ -931,8 +789,7 @@ TEST_F(DriverTest, StartAndWait2Stop) {
   for (auto& i : kTimersSupportWait) {
     std::thread thread([this, i]() {
       zx::eventpair local_wake_lease, remote_wake_lease;
-      ASSERT_TRUE(fuchsia_power_system::LeaseToken::create(0, &local_wake_lease,
-                                                           &remote_wake_lease) == ZX_OK);
+      ASSERT_OK(fuchsia_power_system::LeaseToken::create(0, &local_wake_lease, &remote_wake_lease));
       auto result_start =
           client_->StartAndWait2({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL),
                                   0, std::move(remote_wake_lease)});
@@ -959,18 +816,18 @@ TEST_F(DriverTest, StartAndWait2Stop) {
 class DriverTestNoAutoStop : public ::testing::Test {
  public:
   void SetUp() override {
-    zx::result<> result =
-        driver_test().StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& start_args) mutable {
+    ASSERT_OK(
+        driver_test_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& start_args) mutable {
           aml_hrtimer_config::Config fake_config;
           fake_config.enable_suspend() = true;
           start_args.config(fake_config.ToVmo());
-        });
-    ASSERT_EQ(ZX_OK, result.status_value());
+        }));
     zx::result device_result =
-        driver_test().ConnectThroughDevfs<fuchsia_hardware_hrtimer::Device>("aml-hrtimer");
-    ASSERT_EQ(ZX_OK, device_result.status_value());
+        driver_test_.ConnectThroughDevfs<fuchsia_hardware_hrtimer::Device>("aml-hrtimer");
+    ASSERT_OK(device_result);
     client_.Bind(std::move(device_result.value()));
   }
+
   fdf_testing::BackgroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
 
   fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
@@ -982,7 +839,7 @@ TEST_F(DriverTestNoAutoStop, CancelOnDriverStop) {
   std::vector<std::thread> threads;
   zx::event events[kNumberOfTimers];
   for (auto& i : kTimersSupportWait) {
-    ASSERT_EQ(zx::event::create(0, &events[i]), ZX_OK);
+    ASSERT_OK(zx::event::create(0, &events[i]));
     zx::event duplicate_event;
     events[i].duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate_event);
     auto result_event = client_->SetEvent({i, std::move(duplicate_event)});
@@ -992,7 +849,7 @@ TEST_F(DriverTestNoAutoStop, CancelOnDriverStop) {
 
     threads.emplace_back([this, i]() {
       zx::event setup_event;
-      ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+      ASSERT_OK(zx::event::create(0, &setup_event));
       auto result_start =
           client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 0,
                                  std::move(setup_event)});
@@ -1020,8 +877,7 @@ TEST_F(DriverTestNoAutoStop, CancelOnDriverStop) {
             fuchsia_hardware_hrtimer::DriverError::kNotSupported);
 
   // Force driver stop.
-  auto result_stop_driver = driver_test().StopDriver();
-  ASSERT_FALSE(result_stop_driver.is_error());
+  ASSERT_OK(driver_test().StopDriver());
 
   // Join the threads such that we check for timers canceled.
   for (auto& thread : threads) {
@@ -1039,7 +895,7 @@ TEST_F(DriverTest, LeaseNotRequested4) {
     ASSERT_FALSE(env.system_activity_governor().GetLeaseRequested());
   });
   zx::event setup_event;
-  ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+  ASSERT_OK(zx::event::create(0, &setup_event));
   auto result_start = client_->StartAndWait(
       {4, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 0, std::move(setup_event)});
   ASSERT_TRUE(result_start.is_error());
@@ -1053,59 +909,32 @@ TEST_F(DriverTest, LeaseRequested6) { CheckLeaseRequested(6); }
 TEST_F(DriverTest, LeaseRequested7) { CheckLeaseRequested(7); }
 TEST_F(DriverTest, LeaseRequested8) { CheckLeaseRequested(8); }
 
-class TestEnvironmentNoPower : public fdf_testing::Environment {
- public:
-  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
-    platform_device_.InitResources();
-    auto result = to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
-        platform_device_.GetInstanceHandler());
-    EXPECT_EQ(ZX_OK, result.status_value());
-    return zx::ok();
-  }
-  FakePlatformDevice& platform_device() { return platform_device_; }
-
- private:
-  FakePlatformDevice platform_device_;
-};
-
-class FixtureConfigNoPower final {
- public:
-  using DriverType = AmlHrtimer;
-  using EnvironmentType = TestEnvironmentNoPower;
-};
-
 class DriverTestNoPower : public ::testing::Test {
  public:
-  void TearDown() override {
-    zx::result<> result = driver_test().StopDriver();
-    ASSERT_EQ(ZX_OK, result.status_value());
-  }
-
   void SetUp() override {
-    zx::result<> result =
-        driver_test().StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& start_args) mutable {
+    driver_test_.RunInEnvironmentTypeContext([](TestEnvironment& env) { env.SetEnableSag(false); });
+    ASSERT_OK(
+        driver_test_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& start_args) mutable {
           aml_hrtimer_config::Config fake_config;
           fake_config.enable_suspend() = false;
           start_args.config(fake_config.ToVmo());
-        });
-    ASSERT_EQ(ZX_OK, result.status_value());
+        }));
     zx::result device_result =
-        driver_test().ConnectThroughDevfs<fuchsia_hardware_hrtimer::Device>("aml-hrtimer");
-    ASSERT_EQ(ZX_OK, device_result.status_value());
+        driver_test_.ConnectThroughDevfs<fuchsia_hardware_hrtimer::Device>("aml-hrtimer");
+    ASSERT_OK(device_result);
     client_.Bind(std::move(device_result.value()));
   }
 
-  fdf_testing::BackgroundDriverTest<FixtureConfigNoPower>& driver_test() { return driver_test_; }
+  void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
 
-  fdf_testing::BackgroundDriverTest<FixtureConfigNoPower> driver_test_;
-
+  fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
   fidl::SyncClient<fuchsia_hardware_hrtimer::Device> client_;
 };
 
 TEST_F(DriverTestNoPower, StartAndWaitTriggeringNoPower) {
   for (auto& i : kTimersSupportWait) {
     zx::event setup_event;
-    ASSERT_EQ(ZX_OK, zx::event::create(0, &setup_event));
+    ASSERT_OK(zx::event::create(0, &setup_event));
     auto result_start =
         client_->StartAndWait({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 0,
                                std::move(setup_event)});
@@ -1120,8 +949,7 @@ TEST_F(DriverTestNoPower, StartAndWaitTriggeringNoPower) {
 TEST_F(DriverTestNoPower, StartAndWait2TriggeringNoPower) {
   for (auto& i : kTimersSupportWait) {
     zx::eventpair local_wake_lease, remote_wake_lease;
-    ASSERT_TRUE(fuchsia_power_system::LeaseToken::create(0, &local_wake_lease,
-                                                         &remote_wake_lease) == ZX_OK);
+    ASSERT_OK(fuchsia_power_system::LeaseToken::create(0, &local_wake_lease, &remote_wake_lease));
     auto result_start =
         client_->StartAndWait2({i, fuchsia_hardware_hrtimer::Resolution::WithDuration(1'000ULL), 0,
                                 std::move(remote_wake_lease)});
