@@ -30,14 +30,12 @@ core_tests = [
   "event-pair",
   "exceptions",
   "fifo",
-  "fpu",
   "futex",
   "handle-close",
   "handle-dup",
   "handle-info",
   "handle-transfer",
   "handle-wait",
-  "iob",
   "membarrier",
   "object-child",
   "object-wait",
@@ -46,6 +44,7 @@ core_tests = [
   "pthread",
   "pthread-barrier",
   "pthread-tls",
+  "register-context-switch",
   "socket",
   "stack",
   "standalone-elf-load",
@@ -63,8 +62,11 @@ core_tests = [
 # test, but not a standalone bootfs test.
 # TODO(https://fxbug.dev/42170954): Remove this once standalone bootfs tests can access the next vDSO.
 requires_next_vdso = [
-  "pager-writeback",
+  "iob",
   "rseq",
+
+  # Requires ZX_POL_NEW_PROCESS, ZX_POL_AMBIENT_MARK_VMO_EXEC, and next vDSO.
+  "process-shared",
 ]
 
 # The restricted mode test does not work in asan.
@@ -80,8 +82,6 @@ core_tests_with_custom_manifests =
       "channel",
       "memory-mapping",
       "port",
-      "process-shared",  # requires ZX_POL_NEW_PROCESS,
-                         # ZX_POL_AMBIENT_MARK_VMO_EXEC, and the next vDSO
 
       # Some tests require ZX_POL_AMBIENT_MARK_VMO_EXEC.
       "vmo",
@@ -108,10 +108,11 @@ bootfs_only = [
   # is blocked against *some* user pager, not any specific one. So they cannot
   # run in an environment where test threads can block on pagers created outside
   # of the test, e.g. when the test is run as a component.
-  #
+  "pager",
+
   # TODO(https://fxbug.dev/42170954): pager-writeback should be moved here too once standalone bootfs tests
   # can access the next vDSO.
-  "pager",
+  #"pager-writeback",
 ]
 
 # These tests need to run in the unified core-tests binary because
@@ -146,29 +147,32 @@ assert(bootfs_only + core_tests_with_custom_manifests -
 assert(core_tests + unified_only - unified_only == core_tests,
        "core_tests and unified_only must be disjoint")
 
-all_bootfs_tests = core_tests + core_tests_with_custom_manifests + bootfs_only
+all_test_executables = core_tests + core_tests_with_custom_manifests +
+                       bootfs_only + unified_only - unified_only
+
+all_bootfs_tests = all_test_executables + requires_next_vdso -
+                   requires_next_vdso + unified_only - unified_only
 
 # Build each test as a standalone binary meant to be run by runtests.
-foreach(test_name, all_bootfs_tests) {
+foreach(test_name, all_test_executables) {
   test(test_name) {
     output_name = "core-$test_name"
-
-    deps = [ test_name ]
-
-    if (is_fuchsia) {
-      deps += [ ":standalone-hosted" ]
-
-      fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-      if (configs + fdio_config - fdio_config != configs) {
-        configs -= fdio_config
-      }
-      deps += [ "//sdk/lib/fdio" ]
-    }
+    deps = [ test_name ] + [ ":standalone-hosted" ]
   }
+}
 
+foreach(test_name, all_bootfs_tests) {
   bootfs_test("core-$test_name-bootfs-test") {
     name = "core-$test_name"
     deps = [ ":$test_name" ]
+  }
+}
+
+group("bootfs-tests") {
+  testonly = true
+  deps = []
+  foreach(test_name, all_bootfs_tests) {
+    deps += [ ":core-$test_name-bootfs-test" ]
   }
 }
 
