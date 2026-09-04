@@ -11,7 +11,7 @@ use crate::signals::{
     SignalDetail, SignalInfo, UncheckedSignalInfo, send_signal_first, send_standard_signal,
 };
 use crate::task::{
-    CurrentTask, PidTable, ProcessSelector, Task, TaskMutableState, ThreadGroup, ThreadState,
+    CurrentTask, Pid, PidTable, ProcessSelector, Task, TaskMutableState, ThreadGroup, ThreadState,
     WaitQueue, ZombieNotification, ZombieProcess,
 };
 use bitflags::bitflags;
@@ -37,7 +37,7 @@ use starnix_uapi::{
     PTRACE_PEEKDATA, PTRACE_PEEKTEXT, PTRACE_PEEKUSR, PTRACE_POKEDATA, PTRACE_POKETEXT,
     PTRACE_POKEUSR, PTRACE_SETOPTIONS, PTRACE_SETREGSET, PTRACE_SETSIGINFO, PTRACE_SETSIGMASK,
     PTRACE_SYSCALL, PTRACE_SYSCALL_INFO_ENTRY, PTRACE_SYSCALL_INFO_EXIT, PTRACE_SYSCALL_INFO_NONE,
-    clone_args, errno, error, pid_t, ptrace_syscall_info, tid_t, uapi,
+    clone_args, errno, error, pid_t, ptrace_syscall_info, uapi,
 };
 use zerocopy::IntoBytes;
 
@@ -507,7 +507,7 @@ impl TracedZombie {
 pub struct ZombiePtracees {
     /// A list of zombies that have to be delivered to the ptracer.  The key is
     /// the tid of the traced process.
-    zombies: BTreeMap<tid_t, TracedZombie>,
+    zombies: BTreeMap<Pid, TracedZombie>,
 }
 
 impl Drop for ZombiePtracees {
@@ -523,7 +523,7 @@ impl ZombiePtracees {
 
     /// Adds a zombie tracee to the list, but does not provide a parent task to
     /// notify when the tracer is done.
-    pub fn add(&mut self, pids: &mut PidTable, tid: tid_t, zombie: ZombieProcess) {
+    pub fn add(&mut self, pids: &mut PidTable, tid: Pid, zombie: ZombieProcess) {
         if let std::collections::btree_map::Entry::Vacant(entry) = self.zombies.entry(tid) {
             entry.insert(TracedZombie::new(zombie));
         } else {
@@ -534,8 +534,8 @@ impl ZombiePtracees {
     /// Detaches from the zombie tracee with the given TID.
     ///
     /// Returns the notification to deliver to the tracee's real parent.
-    pub fn detach(&mut self, pids: &mut PidTable, tid: tid_t) -> Option<ZombieNotification> {
-        self.zombies.remove(&tid).and_then(|traced_zombie| traced_zombie.detach(pids))
+    pub fn detach(&mut self, pids: &mut PidTable, tid: &Pid) -> Option<ZombieNotification> {
+        self.zombies.remove(tid).and_then(|traced_zombie| traced_zombie.detach(pids))
     }
 
     /// Detaches from every zombie tracee.
@@ -557,11 +557,11 @@ impl ZombiePtracees {
     /// notified.
     pub fn set_parent_of(
         &mut self,
-        tracee: tid_t,
+        tracee: &Pid,
         new_zombie: Option<OwnedRef<ZombieProcess>>,
         new_parent: &ThreadGroup,
     ) {
-        match self.zombies.entry(tracee) {
+        match self.zombies.entry(tracee.clone()) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 if let Some(new_zombie) = new_zombie {
                     entry.insert(TracedZombie::new_with_notification(
@@ -584,7 +584,7 @@ impl ZombiePtracees {
         for deferred_zombie_ptracer in &lockless_list {
             if let Ok(tg) = deferred_zombie_ptracer.tracer_pid.get_thread_group() {
                 tg.write().zombie_ptracees.set_parent_of(
-                    deferred_zombie_ptracer.tracee_tid,
+                    &deferred_zombie_ptracer.tracee_tid,
                     None,
                     new_parent,
                 );
@@ -602,8 +602,8 @@ impl ZombiePtracees {
 
     /// Returns true iff the given `tid` is a traced thread that needs to deliver a zombie to the
     /// tracer.
-    pub fn has_tracee(&self, tid: tid_t) -> bool {
-        self.zombies.contains_key(&tid)
+    pub fn has_tracee(&self, tid: &Pid) -> bool {
+        self.zombies.contains_key(tid)
     }
 
     /// Returns a zombie matching the given selector and options, and
@@ -614,12 +614,12 @@ impl ZombiePtracees {
         selector: &ProcessSelector,
         options: &WaitingOptions,
     ) -> Option<(ZombieProcess, Option<(Weak<ThreadGroup>, OwnedRef<ZombieProcess>)>)> {
-        // We look for the last zombie in the vector that matches pid
-        // selector and waiting options
+        // Look for the last zombie in the map that matches process
+        // selector and waiting options.
         let Some((t, found_zombie)) = self
             .zombies
             .iter()
-            .map(|(t, z)| (*t, &z.artificial_zombie))
+            .map(|(t, z)| (t.clone(), &z.artificial_zombie))
             .rfind(|(_, zombie)| zombie.matches_selector_and_waiting_option(selector, options))
         else {
             return None;
@@ -829,14 +829,13 @@ pub fn ptrace_detach(
     tracee: &Task,
     data: &UserAddress,
 ) -> Result<(), Errno> {
-    let tid = tracee.get_tid();
     let thread_group = tracer.thread_group();
     {
         let mut ptracees = thread_group.ptracees.lock();
         ptrace_cont(tracer, tracee, &data, true)?;
-        ptracees.remove(&tid);
+        ptracees.remove(&tracee.tid);
     }
-    let zombie_notification = thread_group.write().zombie_ptracees.detach(pids, tid);
+    let zombie_notification = thread_group.write().zombie_ptracees.detach(pids, &tracee.tid);
     if let Some(zombie_notification) = zombie_notification {
         zombie_notification.deliver(pids);
     }
@@ -1136,7 +1135,7 @@ fn do_attach(
         options,
     )))?;
 
-    ptracees.insert(task.get_tid(), task.into());
+    ptracees.insert(task.tid.clone(), task.into());
 
     // If the tracee is already stopped, make sure that the tracer can
     // identify that right away.

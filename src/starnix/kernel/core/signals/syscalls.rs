@@ -854,7 +854,6 @@ fn wait_on_pid(
             let mut has_any_tracee = false;
             current_task.thread_group().get_ptracees_and(
                 selector,
-                &pids,
                 &mut |task: &Task, task_state: &TaskMutableState| {
                     if let Some(ptrace) = &task_state.ptrace {
                         has_any_tracee = true;
@@ -923,20 +922,27 @@ pub fn sys_waitid(
     let mut waiting_options = WaitingOptions::new_for_waitid(options)?;
 
     let task_selector = match id_type {
-        P_PID => ProcessSelector::Pid(id),
+        P_PID => {
+            let pid =
+                current_task.kernel().pids.read().get(id).cloned().map_err(|_| errno!(ECHILD))?;
+            ProcessSelector::Pid(pid)
+        }
         P_ALL => ProcessSelector::Any,
-        P_PGID => ProcessSelector::Pgid(if id == 0 {
-            current_task.thread_group().read().process_group.leader.id
-        } else {
-            id
-        }),
+        P_PGID => {
+            let pid = if id == 0 {
+                current_task.thread_group().read().process_group.leader.clone()
+            } else {
+                current_task.kernel().pids.read().get(id).cloned().map_err(|_| errno!(ECHILD))?
+            };
+            ProcessSelector::Pgid(pid)
+        }
         P_PIDFD => {
             let fd = FdNumber::from_raw(id);
             let file = current_task.files().get(fd)?;
             if file.flags().contains(OpenFlags::NONBLOCK) {
                 waiting_options.block = false;
             }
-            ProcessSelector::Process(file.as_pid()?)
+            ProcessSelector::Pid(file.as_pid()?)
         }
         _ => return error!(EINVAL),
     };
@@ -997,13 +1003,27 @@ pub fn sys_wait4(
     let waiting_options = WaitingOptions::new_for_wait4(options)?;
 
     let selector = if raw_selector == 0 {
-        ProcessSelector::Pgid(current_task.thread_group().read().process_group.leader.id)
+        ProcessSelector::Pgid(current_task.thread_group().read().process_group.leader.clone())
     } else if raw_selector == -1 {
         ProcessSelector::Any
     } else if raw_selector > 0 {
-        ProcessSelector::Pid(raw_selector)
+        let pid = current_task
+            .kernel()
+            .pids
+            .read()
+            .get(raw_selector)
+            .cloned()
+            .map_err(|_| errno!(ECHILD))?;
+        ProcessSelector::Pid(pid)
     } else if raw_selector < -1 {
-        ProcessSelector::Pgid(negate_pid(raw_selector)?)
+        let pid = current_task
+            .kernel()
+            .pids
+            .read()
+            .get(negate_pid(raw_selector)?)
+            .cloned()
+            .map_err(|_| errno!(ECHILD))?;
+        ProcessSelector::Pgid(pid)
     } else {
         track_stub!(
             TODO("https://fxbug.dev/322874213"),

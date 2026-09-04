@@ -1036,7 +1036,7 @@ impl Task {
                     is_canonical: false,
                 };
 
-                tracer_state.zombie_ptracees.add(pids, self.tid.id, zombie);
+                tracer_state.zombie_ptracees.add(pids, self.tid.clone(), zombie);
             };
         }
     }
@@ -1052,7 +1052,7 @@ impl Task {
             .map(|p| p.core_state.thread_group.clone())
             .and_then(|tg| tg.upgrade());
         if let Some(tg) = tracer_tg {
-            tg.ptracees.lock().remove(&self.tid.id);
+            tg.ptracees.lock().remove(&self.tid);
         }
     }
 
