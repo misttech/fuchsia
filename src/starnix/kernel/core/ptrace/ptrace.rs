@@ -648,11 +648,11 @@ pub const PR_SET_PTRACER_ANY_ARCH32: u64 = u32::MAX as u64;
 
 /// Indicates processes specifically allowed to trace a given process if using
 /// SCOPE_RESTRICTED.  Used by prctl(PR_SET_PTRACER).
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum PtraceAllowedPtracers {
     #[default]
     None,
-    Some(pid_t),
+    Some(Pid),
     Any,
 }
 
@@ -1218,11 +1218,11 @@ pub fn ptrace_traceme(current_task: &mut CurrentTask) -> Result<SyscallResult, E
 
 pub fn ptrace_attach(
     current_task: &mut CurrentTask,
-    pid: pid_t,
+    pid: &Pid,
     attach_type: PtraceAttachType,
     data: UserAddress,
 ) -> Result<SyscallResult, Errno> {
-    let tracee = current_task.kernel().pids.read().get_task(pid)?;
+    let tracee = pid.get_task()?;
 
     if tracee.thread_group == current_task.thread_group {
         return error!(EPERM);
@@ -1429,7 +1429,7 @@ mod tests {
             assert_eq!(
                 ptrace_attach(
                     &mut tracer,
-                    tracee.as_ref().task.tid.id,
+                    &tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 ),
@@ -1453,7 +1453,7 @@ mod tests {
             assert_eq!(
                 ptrace_attach(
                     &mut not_tracer,
-                    tracee.as_ref().task.tid.id,
+                    &tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 ),
@@ -1463,7 +1463,7 @@ mod tests {
             assert!(
                 ptrace_attach(
                     &mut tracer,
-                    tracee.as_ref().task.tid.id,
+                    &tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 )
@@ -1490,7 +1490,7 @@ mod tests {
             assert_eq!(
                 ptrace_attach(
                     &mut tracer,
-                    tracee.as_ref().task.tid.id,
+                    &tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 ),
@@ -1502,7 +1502,7 @@ mod tests {
             assert!(
                 ptrace_attach(
                     &mut tracer,
-                    tracee.as_ref().task.tid.id,
+                    &tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 )
@@ -1522,7 +1522,7 @@ mod tests {
             assert!(
                 ptrace_attach(
                     &mut tracer,
-                    tracee.as_ref().task.tid.id,
+                    &tracee.as_ref().task.tid,
                     PtraceAttachType::Attach,
                     UserAddress::NULL,
                 )

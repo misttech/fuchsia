@@ -85,10 +85,10 @@ pub(super) fn ptrace_access_check(
                 ttg = target.read().parent.clone();
             }
 
-            match tracee.thread_group().read().allowed_ptracers {
+            match &tracee.thread_group().read().allowed_ptracers {
                 PtraceAllowedPtracers::None => (),
                 PtraceAllowedPtracers::Some(pid) => {
-                    if my_pid.id == pid {
+                    if my_pid == pid {
                         return Ok(());
                     }
                 }

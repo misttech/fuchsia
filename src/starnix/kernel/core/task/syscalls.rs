@@ -1006,10 +1006,13 @@ pub fn sys_prctl(
             } else if arg2 == 0 {
                 PtraceAllowedPtracers::None
             } else {
-                if current_task.kernel().pids.read().get_task(arg2 as i32).is_err() {
-                    return error!(EINVAL);
-                }
-                PtraceAllowedPtracers::Some(arg2 as pid_t)
+                let task = current_task
+                    .kernel()
+                    .pids
+                    .read()
+                    .get_task(arg2 as i32)
+                    .map_err(|_| errno!(EINVAL))?;
+                PtraceAllowedPtracers::Some(task.pid.clone())
             };
             current_task.thread_group().write().allowed_ptracers = allowed_ptracers;
             Ok(().into())
@@ -1186,8 +1189,14 @@ pub fn sys_ptrace(
 ) -> Result<SyscallResult, Errno> {
     match request {
         PTRACE_TRACEME => ptrace_traceme(current_task),
-        PTRACE_ATTACH => ptrace_attach(current_task, pid, PtraceAttachType::Attach, data),
-        PTRACE_SEIZE => ptrace_attach(current_task, pid, PtraceAttachType::Seize, data),
+        PTRACE_ATTACH => {
+            let pid = current_task.kernel().pids.read().get(pid).cloned()?;
+            ptrace_attach(current_task, &pid, PtraceAttachType::Attach, data)
+        }
+        PTRACE_SEIZE => {
+            let pid = current_task.kernel().pids.read().get(pid).cloned()?;
+            ptrace_attach(current_task, &pid, PtraceAttachType::Seize, data)
+        }
         _ => ptrace_dispatch(current_task, request, pid, addr, data),
     }
 }
