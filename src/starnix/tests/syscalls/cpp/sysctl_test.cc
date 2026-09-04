@@ -301,36 +301,66 @@ struct SysctlNodeParam {
 
 class SysctlNodeTest : public testing::TestWithParam<SysctlNodeParam> {
  protected:
-  std::string GetSysctlPath() const { return std::format("/proc/sys/{}", GetParam().path); }
-};
-
-TEST_P(SysctlNodeTest, NonRootWithCapNetAdminCanWriteProcSysNet) {
-  if (!test_helper::HasSysAdmin()) {
-    GTEST_SKIP() << "Need CAP_SYS_ADMIN to run this test";
-  }
-  const std::string sysctl_path = GetSysctlPath();
-
-  if (access(sysctl_path.c_str(), F_OK) != 0) {
-    if (!test_helper::IsStarnix()) {
-      GTEST_SKIP() << sysctl_path << " does not exist on Linux host environment";
-    } else {
-      FAIL() << sysctl_path << " should exist";
+  void SetUp() override {
+    if (!test_helper::HasSysAdmin()) {
+      GTEST_SKIP() << "Need CAP_SYS_ADMIN to run this test";
+    }
+    const std::string sysctl_path = GetSysctlPath();
+    if (access(sysctl_path.c_str(), F_OK) != 0) {
+      if (!test_helper::IsStarnix()) {
+        GTEST_SKIP() << sysctl_path << " does not exist on Linux host environment";
+      } else {
+        FAIL() << sysctl_path << " should exist";
+      }
     }
   }
 
-  test_helper::ForkHelper fork_helper;
-  fork_helper.RunInForkedProcess([&]() {
-    std::string current_val;
-    if (GetParam().readable) {
-      ASSERT_TRUE(files::ReadFileToString(sysctl_path, &current_val));
-    } else {
-      ASSERT_FALSE(files::ReadFileToString(sysctl_path, &current_val));
-      current_val = "1\n";
-    }
-
+  static void DropToNonRootWithKeepcaps() {
     ASSERT_THAT(prctl(PR_SET_KEEPCAPS, 1), SyscallSucceeds());
     ASSERT_THAT(setresuid(99, 99, 99), SyscallSucceeds());
     ASSERT_EQ(getuid(), 99u);
+  }
+
+  std::string GetSysctlPath() const { return std::format("/proc/sys/{}", GetParam().path); }
+
+  std::string GetNodeValueForWriteback(const std::string &path) const {
+    std::string current_val;
+    if (GetParam().readable) {
+      EXPECT_TRUE(files::ReadFileToString(path, &current_val));
+    } else {
+      EXPECT_FALSE(files::ReadFileToString(path, &current_val));
+      current_val = "1\n";
+    }
+    return current_val;
+  }
+
+  void TryWriteNode(const std::string &path, const std::string &val,
+                    int expected_open_errno = EACCES, int expected_write_errno = EINVAL) const {
+    if (!GetParam().writable_by_root) {
+      EXPECT_THAT(open(path.c_str(), O_WRONLY), SyscallFailsWithErrno(expected_open_errno));
+      return;
+    }
+
+    fbl::unique_fd fd(open(path.c_str(), O_WRONLY));
+    ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+    if (!GetParam().writable) {
+      EXPECT_THAT(write(fd.get(), val.data(), val.size()),
+                  SyscallFailsWithErrno(expected_write_errno));
+    } else {
+      EXPECT_THAT(write(fd.get(), val.data(), val.size()), SyscallSucceeds());
+    }
+  }
+};
+
+TEST_P(SysctlNodeTest, NonRootWithCapNetAdminCanWriteProcSysNet) {
+  const std::string sysctl_path = GetSysctlPath();
+
+  test_helper::ForkHelper fork_helper;
+  fork_helper.RunInForkedProcess([&]() {
+    std::string current_val = GetNodeValueForWriteback(sysctl_path);
+
+    DropToNonRootWithKeepcaps();
 
     // Give the user CAP_NET_ADMIN. For /proc/sys/net, this overrides DAC checks.
     test_helper::SetCapabilityEffective(CAP_NET_ADMIN);
@@ -356,52 +386,25 @@ TEST_P(SysctlNodeTest, NonRootWithCapNetAdminCanWriteProcSysNet) {
 }
 
 TEST_P(SysctlNodeTest, NonRootWithCapDacOverrideCannotWrite) {
-  if (!test_helper::HasSysAdmin()) {
-    GTEST_SKIP() << "Need CAP_SYS_ADMIN to run this test";
-  }
   const std::string sysctl_path = GetSysctlPath();
-
-  if (access(sysctl_path.c_str(), F_OK) != 0) {
-    if (!test_helper::IsStarnix()) {
-      GTEST_SKIP() << sysctl_path << " does not exist on Linux host environment";
-    } else {
-      FAIL() << sysctl_path << " should exist";
-    }
-  }
 
   test_helper::ForkHelper fork_helper;
   fork_helper.RunInForkedProcess([&]() {
-    // 1. Keep capabilities across setuid.
-    ASSERT_THAT(prctl(PR_SET_KEEPCAPS, 1), SyscallSucceeds());
+    DropToNonRootWithKeepcaps();
 
-    // 2. Change UID to non-root (99 is nobody).
-    ASSERT_THAT(setresuid(99, 99, 99), SyscallSucceeds());
-    ASSERT_EQ(getuid(), 99u);
-
-    // 3. Enable CAP_DAC_OVERRIDE but ensure CAP_NET_ADMIN is disabled.
+    // Enable CAP_DAC_OVERRIDE but ensure CAP_NET_ADMIN is disabled.
     test_helper::SetCapabilityEffective(CAP_DAC_OVERRIDE);
     ASSERT_TRUE(test_helper::HasCapabilityEffective(CAP_DAC_OVERRIDE));
     ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_NET_ADMIN));
 
-    // 4. Open for writing should fail, because CAP_DAC_OVERRIDE is ignored for /proc/sys.
+    // Open for writing should fail, because CAP_DAC_OVERRIDE is ignored for /proc/sys.
     EXPECT_THAT(open(sysctl_path.c_str(), O_WRONLY), SyscallFailsWithErrno(EACCES));
   });
   ASSERT_TRUE(fork_helper.WaitForChildren());
 }
 
 TEST_P(SysctlNodeTest, CapDacOverrideHasNoEffectOnRootWrite) {
-  if (!test_helper::HasSysAdmin()) {
-    GTEST_SKIP() << "Need CAP_SYS_ADMIN to run this test";
-  }
   const std::string sysctl_path = GetSysctlPath();
-
-  if (access(sysctl_path.c_str(), F_OK) != 0) {
-    if (!test_helper::IsStarnix()) {
-      GTEST_SKIP() << sysctl_path << " does not exist on Linux host environment";
-    } else {
-      FAIL() << sysctl_path << " should exist";
-    }
-  }
 
   test_helper::ForkHelper fork_helper;
   fork_helper.RunInForkedProcess([&]() {
@@ -410,47 +413,14 @@ TEST_P(SysctlNodeTest, CapDacOverrideHasNoEffectOnRootWrite) {
     test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
     ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_NET_ADMIN));
 
-    // First read the current value
-    std::string current_val;
-    if (GetParam().readable) {
-      ASSERT_TRUE(files::ReadFileToString(sysctl_path, &current_val));
-    } else {
-      ASSERT_FALSE(files::ReadFileToString(sysctl_path, &current_val));
-      current_val = "1\n";
-    }
-
-    if (!GetParam().writable_by_root) {
-      EXPECT_THAT(open(sysctl_path.c_str(), O_WRONLY), SyscallFailsWithErrno(EACCES));
-      return;
-    }
-
-    // Root can open because they are the owner, bypassing the DAC override limitation.
-    fbl::unique_fd fd(open(sysctl_path.c_str(), O_WRONLY));
-    ASSERT_TRUE(fd.is_valid()) << strerror(errno);
-
-    if (!GetParam().writable) {
-      EXPECT_THAT(write(fd.get(), current_val.data(), current_val.size()),
-                  SyscallFailsWithErrno(EINVAL));
-    } else {
-      EXPECT_THAT(write(fd.get(), current_val.data(), current_val.size()), SyscallSucceeds());
-    }
+    std::string current_val = GetNodeValueForWriteback(sysctl_path);
+    TryWriteNode(sysctl_path, current_val);
   });
   ASSERT_TRUE(fork_helper.WaitForChildren());
 }
 
 TEST_P(SysctlNodeTest, RootCanWriteWithoutCapDacOverrideAndNetAdmin) {
-  if (!test_helper::HasSysAdmin()) {
-    GTEST_SKIP() << "Need CAP_SYS_ADMIN to run this test";
-  }
   const std::string sysctl_path = GetSysctlPath();
-
-  if (access(sysctl_path.c_str(), F_OK) != 0) {
-    if (!test_helper::IsStarnix()) {
-      GTEST_SKIP() << sysctl_path << " does not exist on Linux host environment";
-    } else {
-      FAIL() << sysctl_path << " should exist";
-    }
-  }
 
   test_helper::ForkHelper fork_helper;
   fork_helper.RunInForkedProcess([&]() {
@@ -459,30 +429,8 @@ TEST_P(SysctlNodeTest, RootCanWriteWithoutCapDacOverrideAndNetAdmin) {
     test_helper::UnsetCapabilityEffective(CAP_NET_ADMIN);
     ASSERT_FALSE(test_helper::HasCapabilityEffective(CAP_NET_ADMIN));
 
-    // First read the current value
-    std::string current_val;
-    if (GetParam().readable) {
-      ASSERT_TRUE(files::ReadFileToString(sysctl_path, &current_val));
-    } else {
-      ASSERT_FALSE(files::ReadFileToString(sysctl_path, &current_val));
-      current_val = "1\n";
-    }
-
-    if (!GetParam().writable_by_root) {
-      EXPECT_THAT(open(sysctl_path.c_str(), O_WRONLY), SyscallFailsWithErrno(EACCES));
-      return;
-    }
-
-    // Root can open because they are the owner.
-    fbl::unique_fd fd(open(sysctl_path.c_str(), O_WRONLY));
-    ASSERT_TRUE(fd.is_valid()) << strerror(errno);
-
-    if (!GetParam().writable) {
-      EXPECT_THAT(write(fd.get(), current_val.data(), current_val.size()),
-                  SyscallFailsWithErrno(EINVAL));
-    } else {
-      EXPECT_THAT(write(fd.get(), current_val.data(), current_val.size()), SyscallSucceeds());
-    }
+    std::string current_val = GetNodeValueForWriteback(sysctl_path);
+    TryWriteNode(sysctl_path, current_val);
   });
   ASSERT_TRUE(fork_helper.WaitForChildren());
 }
