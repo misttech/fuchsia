@@ -59,7 +59,7 @@ Dispatcher objects in Zircon use intrusive reference counting
 
 ```mermaid
 graph TD
-    Subtype[CounterDispatcher Facade Struct] -->|contains _facade| Facade[OpaqueRefCountedFacade<Dispatcher>]
+    Subtype[CounterDispatcher] -->|contains _facade| Facade[OpaqueRefCountedFacade<Dispatcher>]
     Subtype -->|impls| IsOpaque[IsOpaqueRefCounted]
     IsOpaque -->|associated type TargetBase| Base[Dispatcher]
     Facade -->|blanket impls| RefCount[fbl::HasRefCount & fbl::Recyclable]
@@ -166,7 +166,11 @@ impl LogDispatcherState {
             flags,
             lock <- KMutex::init(),
             reader <- ksync::kcell_init(unsafe {
-                DlogReaderStorage::init(flags, rust_log_dispatcher_notify, dispatcher.cast_mut().cast())
+                DlogReaderStorage::init(
+                    flags,
+                    rust_log_dispatcher_notify,
+                    dispatcher.cast_mut().cast(),
+                )
             }),
         })
     }
@@ -434,7 +438,8 @@ In the dispatcher's header:
 
 ```cpp
 // Helper for internal kernel callers (such as userboot.cc) to create a LogDispatcher.
-static zx_status_t Create(uint32_t flags, KernelHandle<LogDispatcher>* handle, zx_rights_t* rights) {
+static zx_status_t Create(
+    uint32_t flags, KernelHandle<LogDispatcher>* handle, zx_rights_t* rights) {
   return rust_log_dispatcher_create(flags, rights, handle);
 }
 ```
