@@ -602,7 +602,8 @@ class FidlRequest {
   const fuchsia_hardware_usb_request::Request& request() const { return request_; }
   // Ensures any removal of `request` is intentional and `Unpin` is called.
   fuchsia_hardware_usb_request::Request take_request() {
-    ZX_DEBUG_ASSERT(Unpin() == ZX_OK);
+    zx_status_t status = Unpin();
+    ZX_DEBUG_ASSERT(status == ZX_OK);
     return std::move(request_);
   }
   // Returns the total length of all data in the request. Saves to a variable for future use.
