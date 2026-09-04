@@ -37,7 +37,7 @@ use starnix_uapi::{
     PTRACE_PEEKDATA, PTRACE_PEEKTEXT, PTRACE_PEEKUSR, PTRACE_POKEDATA, PTRACE_POKETEXT,
     PTRACE_POKEUSR, PTRACE_SETOPTIONS, PTRACE_SETREGSET, PTRACE_SETSIGINFO, PTRACE_SETSIGMASK,
     PTRACE_SYSCALL, PTRACE_SYSCALL_INFO_ENTRY, PTRACE_SYSCALL_INFO_EXIT, PTRACE_SYSCALL_INFO_NONE,
-    clone_args, errno, error, pid_t, ptrace_syscall_info, uapi,
+    clone_args, errno, error, ptrace_syscall_info, uapi,
 };
 use zerocopy::IntoBytes;
 
@@ -846,12 +846,11 @@ pub fn ptrace_detach(
 pub fn ptrace_dispatch(
     current_task: &mut CurrentTask,
     request: u32,
-    pid: pid_t,
+    pid: &Pid,
     addr: UserAddress,
     data: UserAddress,
 ) -> Result<SyscallResult, Errno> {
-    let mut pids = current_task.kernel().pids.write();
-    let tracee = pids.get_task(pid)?;
+    let tracee = pid.get_task()?;
 
     if let Some(ptrace) = &tracee.read().ptrace {
         let is_tracer = ptrace
@@ -894,6 +893,7 @@ pub fn ptrace_dispatch(
             return Ok(starnix_syscalls::SUCCESS);
         }
         PTRACE_DETACH => {
+            let mut pids = current_task.kernel().pids.write();
             ptrace_detach(
                 &mut pids,
                 PtraceTracer::Syscall(&current_task.task),

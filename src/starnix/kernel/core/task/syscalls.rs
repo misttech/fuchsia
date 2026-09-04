@@ -1187,17 +1187,14 @@ pub fn sys_ptrace(
     addr: UserAddress,
     data: UserAddress,
 ) -> Result<SyscallResult, Errno> {
+    if request == PTRACE_TRACEME {
+        return ptrace_traceme(current_task);
+    }
+    let pid = current_task.kernel().pids.read().get(pid)?.clone();
     match request {
-        PTRACE_TRACEME => ptrace_traceme(current_task),
-        PTRACE_ATTACH => {
-            let pid = current_task.kernel().pids.read().get(pid).cloned()?;
-            ptrace_attach(current_task, &pid, PtraceAttachType::Attach, data)
-        }
-        PTRACE_SEIZE => {
-            let pid = current_task.kernel().pids.read().get(pid).cloned()?;
-            ptrace_attach(current_task, &pid, PtraceAttachType::Seize, data)
-        }
-        _ => ptrace_dispatch(current_task, request, pid, addr, data),
+        PTRACE_ATTACH => ptrace_attach(current_task, &pid, PtraceAttachType::Attach, data),
+        PTRACE_SEIZE => ptrace_attach(current_task, &pid, PtraceAttachType::Seize, data),
+        _ => ptrace_dispatch(current_task, request, &pid, addr, data),
     }
 }
 
