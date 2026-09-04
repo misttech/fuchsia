@@ -186,7 +186,11 @@ TEST_fx-getdeviceraw-and-isvaliddevice() {
       "[::1]:22" "[fe80::7:8%eth0]:222" "[fe80::7:8%eth0]"
       "[fe80::4607:bff:fe68:41c9%zircon1-4]"
       # no brackets but also no port:
-      "::1" "::1:22" "fe80::7:8%eth0")
+      "::1" "::1:22" "fe80::7:8%eth0"
+      # serial and id:
+      "serial:EM-C0B2F2D96" "serial:12345" "serial:my-target_device.0"
+      "id:EM-C0B2F2D96" "id:12345" "id:my-target_device.0"
+  )
   for valid in "${valids[@]}"; do
     BT_EXPECT is-valid-device "${valid}"
     echo "${valid}" > "${ffx}.mock_stdout"
@@ -201,11 +205,32 @@ TEST_fx-getdeviceraw-and-isvaliddevice() {
       "[2001:db8:aaaa:bbbb:cccc:dddd:0:1:0]" "[2001:db8:aaaa:bbbb:cccc:dddd:0:1:44f%enx44070ba0044e]"
       # invalid port numbers:
       ":122333" ":232a" ":-1"
+      # invalid serial and id:
+      "serial:" "id:" "serial:foo@bar" "id:foo#bar" "serial:foo/bar" "id:foo:bar"
     )
   for invalid in "${invalids[@]}"; do
     BT_EXPECT_FAIL is-valid-device "${invalid}"
     echo "${invalid}" > "${ffx}.mock_stdout"
     BT_EXPECT_FAIL "("get-device-raw ")" 2> /dev/null
+  done
+}
+
+# Test get-device-name with various device formats
+TEST_fx-get-device-name() {
+  local targets=(
+      "strut-wind-ahead-turf:8111" "strut-wind-ahead-turf"
+      "127.0.0.1:8022" "127.0.0.1"
+      "[fe80::7:8%eth0]:222" "[fe80::7:8%eth0]"
+      "serial:EM-C0B2F2D96" "serial:EM-C0B2F2D96"
+      "serial:12345" "serial:12345"
+      "id:EM-C0B2F2D96" "id:EM-C0B2F2D96"
+      "id:12345" "id:12345"
+  )
+  for ((i=0; i<${#targets[@]}; i+=2)); do
+    local input="${targets[i]}"
+    local expected="${targets[i+1]}"
+    echo "${input}" > "${ffx}.mock_stdout"
+    BT_EXPECT_EQ "$(get-device-name)" "${expected}"
   done
 }
 

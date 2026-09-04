@@ -17,8 +17,8 @@
 ## one device is found, that device is set as the default for the current build
 ## directory. If more than one device is found, the user must select one.
 ##
-## If specified, DEVICE may be a Fuchsia device name or network address that will be resolved
-## using ffx.
+## If specified, DEVICE may be a Fuchsia device name, target specifier (e.g. serial:<serial>,
+## id:<id>), or network address that will be resolved using ffx.
 ##
 ## The default device resolution is performed by ffx using
 ## a prioritized list of configuration to resolve the default target.
@@ -47,6 +47,8 @@
 ##   fx set-device 192.168.3.1:8022
 ##   fx set-device [fe80::7:8%eth0]
 ##   fx set-device [fe80::7:8%eth0]:5222
+##   fx set-device serial:EM-C0B2F2D96
+##   fx set-device id:EM-C0B2F2D96
 ##   fx set-device
 ##
 ## To unset, use `fx unset-device`.

@@ -281,6 +281,20 @@ TEST_fx-target-short-flag-specified-test() {
   BT_EXPECT_FILE_CONTAINS "${out}" "<foo,>"
 }
 
+# Tests that $FUCHSIA_NODENAME is set appropriately when `fx -t` is specified
+# with serial: or id: target specifiers.
+TEST_fx-target-serial-and-id-flag-specified-test() {
+  local subcommand="mycommand1"
+  _create_subcommand "${subcommand}" "tools/devshell" "<\${FUCHSIA_NODENAME},\${FUCHSIA_DEVICE_ADDR}>"
+  local out="${BT_TEMP_DIR}/_fx_stdout"
+
+  BT_EXPECT "${fx}" -t serial:EM-C0B2F2D96 "${subcommand}" >"$out" 2>&1
+  BT_EXPECT_FILE_CONTAINS "${out}" "<serial:EM-C0B2F2D96,>"
+
+  BT_EXPECT "${fx}" -t id:EM-C0B2F2D96 "${subcommand}" >"$out" 2>&1
+  BT_EXPECT_FILE_CONTAINS "${out}" "<id:EM-C0B2F2D96,>"
+}
+
 # Tests that $FUCHSIA_NODENAME and $FUCHSIA_DEVICE_ADDR are overridden when
 # `fx --target` is specified and a fx-level default target is set.
 TEST_fx-target-long-flag-specified-with-env-test() {

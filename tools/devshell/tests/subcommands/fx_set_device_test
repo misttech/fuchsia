@@ -39,6 +39,20 @@ TEST_fx-set-device-writes-file() {
     BT_EXPECT_FILE_CONTAINS "${device_file}" "${device_name}"
 }
 
+# Check that serial: and id: specifiers are accepted by set-device
+TEST_fx-set-device-writes-file-serial-and-id() {
+    local device_name="serial:EM-C0B2F2D96"
+    BT_EXPECT "${fx}" set-device "${device_name}"
+
+    local device_file="${FUCHSIA_DIR}/out/default.device"
+    BT_EXPECT_FILE_EXISTS "${device_file}"
+    BT_EXPECT_FILE_CONTAINS "${device_file}" "${device_name}"
+
+    device_name="id:EM-C0B2F2D96"
+    BT_EXPECT "${fx}" set-device "${device_name}"
+    BT_EXPECT_FILE_CONTAINS "${device_file}" "${device_name}"
+}
+
 # Check that the device file is written when setting the device with a non-default build-dir
 TEST_fx-set-device-writes-file-non-standard-build-dir() {
     local device_name="bar"
