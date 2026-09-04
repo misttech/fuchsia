@@ -145,11 +145,7 @@ impl EntryPoint2_1 {
 
         let phys = self.struct_table_phys.get();
         let len = self.struct_table_length.get() as u32;
-        if phys.checked_add(len).is_none() {
-            return false;
-        }
-
-        true
+        !phys.checked_add(len).is_none()
     }
 
     /// Returns the specification version supported by this entry point.
