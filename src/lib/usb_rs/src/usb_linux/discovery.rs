@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use futures::channel::mpsc::{unbounded, UnboundedReceiver};
+use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::stream::Stream;
-use notify::event::{CreateKind, Event, EventKind, ModifyKind};
 use notify::Watcher;
+use notify::event::{CreateKind, Event, EventKind, ModifyKind};
 use std::path::{Component, Path, PathBuf};
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 
 use super::DeviceHandleInner;
 use crate::{DeviceEvent, DeviceHandle, Error, Result};
@@ -83,6 +83,64 @@ pub fn enumerate_devices() -> Result<Vec<DeviceHandle>> {
         }
     }
     Ok(devices)
+}
+
+/// Directly finds the USB DeviceHandle for a specific serial number by querying sysfs.
+pub fn find_device_by_serial(serial: &str) -> Result<Option<DeviceHandle>> {
+    use std::fs::{metadata, read_to_string};
+    use std::os::unix::fs::MetadataExt;
+    use std::str::FromStr;
+
+    fn file_val<F: FromStr>(path: &Path, filename: &str) -> Option<F> {
+        let val = read_to_string(path.join(filename)).ok()?;
+        val.trim().parse::<F>().ok()
+    }
+
+    let Ok(entries) = std::fs::read_dir("/sys/bus/usb/devices") else {
+        return Ok(None);
+    };
+
+    for path in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && name.contains(':')
+        {
+            continue;
+        }
+
+        let serial_path = path.join("serial");
+        if let Ok(dev_serial) = read_to_string(serial_path)
+            && dev_serial.trim() == serial
+        {
+            // Fast path: find the device directly from busnum and devnum attributes
+            if let (Some(busnum), Some(devnum)) =
+                (file_val::<u32>(&path, "busnum"), file_val::<u32>(&path, "devnum"))
+            {
+                let dev_path = format!("{}/{:03}/{:03}", USB_FS_DIR, busnum, devnum);
+                return Ok(Some(DeviceHandleInner::new(dev_path).into()));
+            }
+
+            // Fallback: parse dev file major:minor and match against enumerated devices
+            if let Ok(content) = read_to_string(path.join("dev"))
+                && let Some((major_str, minor_str)) = content.trim().split_once(':')
+            {
+                if let (Ok(major), Ok(minor)) = (major_str.parse::<u32>(), minor_str.parse::<u32>())
+                {
+                    let devices = enumerate_devices()?;
+                    for dev in devices {
+                        if metadata(&dev.debug_name())
+                            .map(|m| (libc::major(m.rdev()), libc::minor(m.rdev())))
+                            .ok()
+                            == Some((major, minor))
+                        {
+                            return Ok(Some(dev));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 /// Waits for USB devices to appear on the bus.

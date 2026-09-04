@@ -182,4 +182,9 @@ pub fn enumerate_devices() -> Result<Vec<DeviceHandle>> {
     usb_plat::enumerate_devices()
 }
 
+/// Directly finds the USB DeviceHandle for a specific serial number by querying sysfs.
+pub fn find_device_by_serial(serial: &str) -> Result<Option<DeviceHandle>> {
+    usb_plat::find_device_by_serial(serial)
+}
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;

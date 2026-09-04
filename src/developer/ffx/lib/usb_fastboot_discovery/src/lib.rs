@@ -404,31 +404,40 @@ async fn find_serial_numbers() -> Vec<String> {
     return serials;
 }
 
+fn device_to_interface(device: &usb_rs::DeviceHandle) -> Result<Interface, UsbDiscoveryError> {
+    device
+        .scan_interfaces(URB_POOL_SIZE, |usb_device, interface| {
+            device_is_fastboot(device, usb_device, interface)
+        })
+        .map(Interface::new)
+        .map_err(|e| {
+            if matches!(e, usb_rs::Error::InterfaceNotFound) {
+                UsbDiscoveryError::InterfaceNotFound
+            } else {
+                log::warn!(device = device.debug_name().as_str(), error:? = e;
+                               "Error scanning USB device");
+                UsbDiscoveryError::Usb(e)
+            }
+        })
+}
+
 pub fn open_interface_with_serial<P>(serial: P) -> Result<Interface, UsbDiscoveryError>
 where
     P: AsRef<str>,
 {
-    let devices = enumerate_devices()?;
-    for device in devices {
-        if device.serial() == Some(serial.as_ref().to_string()) {
-            // Okay we match on serial number lets scan the interfaces
-            let interface = match device.scan_interfaces(URB_POOL_SIZE, |usb_device, interface| {
-                device_is_fastboot(&device, usb_device, interface)
-            }) {
-                Ok(iface) => iface,
-                Err(usb_rs::Error::InterfaceNotFound) => {
-                    return Err(UsbDiscoveryError::InterfaceNotFound);
-                }
-                Err(e) => {
-                    log::warn!(device = device.debug_name().as_str(), error:? = e;
-                                   "Error scanning USB device");
-                    return Err(UsbDiscoveryError::Usb(e));
-                }
-            };
-            return Ok(Interface::new(interface));
-        }
+    let target_serial = serial.as_ref();
+
+    // Fast path: find the device directly in sysfs without full bus enumeration
+    if let Ok(Some(device)) = usb_rs::find_device_by_serial(target_serial) {
+        return device_to_interface(&device);
     }
-    Err(UsbDiscoveryError::InterfaceNotFound)
+
+    // Fallback path (e.g. unit tests with fake USB devices):
+    let device = enumerate_devices()?
+        .into_iter()
+        .find(|d| d.serial().as_deref() == Some(target_serial))
+        .ok_or(UsbDiscoveryError::InterfaceNotFound)?;
+    device_to_interface(&device)
 }
 
 #[cfg(test)]
