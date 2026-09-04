@@ -387,7 +387,6 @@
       "third_party/pylibs/**": true,
       "third_party/pypng/**": true,
       "third_party/python_portpicker/**": true,
-      "third_party/pytoml/**": true,
       "third_party/pyyaml/**": true,
       "third_party/quickjs/**": true,
       "third_party/rapidjson/**": true,
