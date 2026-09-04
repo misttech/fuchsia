@@ -682,7 +682,7 @@ impl FsNodeOps for TaskListDirectory {
     fn lookup(
         &self,
         node: &FsNode,
-        _current_task: &CurrentTask,
+        current_task: &CurrentTask,
         name: &FsStr,
     ) -> Result<FsNodeHandle, Errno> {
         let thread_group = self.thread_group()?;
@@ -690,14 +690,12 @@ impl FsNodeOps for TaskListDirectory {
             .map_err(|_| errno!(ENOENT))?
             .parse::<pid_t>()
             .map_err(|_| errno!(ENOENT))?;
+
+        let task = current_task.get_task(tid).map_err(|_| errno!(ENOENT))?;
         // Make sure the tid belongs to this process.
-        if !thread_group.read().contains_task(tid) {
+        if task.pid != thread_group.leader {
             return error!(ENOENT);
         }
-
-        let pid_state = thread_group.kernel.pids.read();
-        let task = pid_state.get_task(tid).map_err(|_| errno!(ENOENT))?;
-        std::mem::drop(pid_state);
 
         Ok(tid_directory(&node.fs(), &task))
     }

@@ -1353,7 +1353,7 @@ impl Task {
     }
 
     pub fn get_task(&self, tid: tid_t) -> Result<Arc<Task>, Errno> {
-        self.kernel().pids.read().get_task(tid)
+        self.kernel().pids.read().get(tid)?.get_task()
     }
 
     pub fn get_pid(&self) -> pid_t {
@@ -1678,8 +1678,8 @@ mod test {
             assert!(another_tid >= 2);
 
             let pids = kernel.pids.read();
-            assert_eq!(pids.get_task(1).unwrap().get_tid(), 1);
-            assert_eq!(pids.get_task(another_tid).unwrap().get_tid(), another_tid);
+            assert_eq!(pids.get(1).unwrap().get_task().unwrap().get_tid(), 1);
+            assert_eq!(pids.get(another_tid).unwrap().get_task().unwrap().get_tid(), another_tid);
         })
         .await;
     }

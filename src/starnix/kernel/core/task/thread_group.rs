@@ -881,7 +881,7 @@ impl ThreadGroup {
                 ZombieProcess::new(state.as_ref(), &persistent_info.real_creds(), exit_info);
             pids.kill_process(self.leader.id);
 
-            let session = state.leave_process_group(&pids);
+            let session = state.leave_process_group(&mut pids);
 
             // I have no idea if dropping the lock here is correct, and I don't want to think about
             // it. If problems do turn up with another thread observing an intermediate state of
@@ -1149,13 +1149,14 @@ impl ThreadGroup {
     }
 
     pub fn setsid(&self) -> Result<(), Errno> {
-        let pids = self.kernel.pids.read();
-        if pids.get_process_group(self.leader.id).is_some() {
+        let mut pids = self.kernel.pids.write();
+        let pid = self.leader.clone();
+        if pid.get_process_group().is_ok() {
             return error!(EPERM);
         }
-        let process_group = ProcessGroup::new(self.leader.clone(), None);
+        let process_group = ProcessGroup::new(pid, None);
         pids.add_process_group(&process_group);
-        let session = self.write().set_process_group(process_group, &pids);
+        let session = self.write().set_process_group(process_group, &mut pids);
         session.disassociate_controlling_terminal();
         self.check_orphans(&pids);
 
@@ -1168,7 +1169,7 @@ impl ThreadGroup {
         target: &Task,
         pgid: pid_t,
     ) -> Result<(), Errno> {
-        let pids = self.kernel.pids.read();
+        let mut pids = self.kernel.pids.write();
 
         {
             let current_process_group = Arc::clone(&self.read().process_group);
@@ -1212,8 +1213,10 @@ impl ThreadGroup {
                 // If pgid is not equal to the target process id, the associated process group must exist
                 // and be in the same session as the target process.
                 if target_pgid != target_thread_group.leader() {
-                    new_process_group =
-                        pids.get_process_group(target_pgid).ok_or_else(|| errno!(EPERM))?;
+                    new_process_group = pids
+                        .get(target_pgid)
+                        .and_then(|p| p.get_process_group())
+                        .map_err(|_| errno!(EPERM))?;
                     if new_process_group.session != target_process_group.session {
                         return error!(EPERM);
                     }
@@ -1229,7 +1232,7 @@ impl ThreadGroup {
                 }
             }
 
-            let session = target_thread_group.set_process_group(new_process_group, &pids);
+            let session = target_thread_group.set_process_group(new_process_group, &mut pids);
             std::mem::drop(target_thread_group);
             // `disassociate_controlling_terminal` can not be called while holding the
             // ThreadGroup state lock.
@@ -1381,7 +1384,7 @@ impl ThreadGroup {
                 return error!(EINVAL);
             }
 
-            let new_process_group = pids.get_process_group(pgid).ok_or_else(|| errno!(ESRCH))?;
+            let new_process_group = pids.get(pgid)?.get_process_group()?;
             if new_process_group.session != process_group.session {
                 return error!(EPERM);
             }
@@ -2080,7 +2083,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     fn set_process_group(
         &mut self,
         process_group: Arc<ProcessGroup>,
-        pids: &PidTable,
+        pids: &mut PidTable,
     ) -> SessionDisassociation {
         if self.process_group == process_group {
             return SessionDisassociation::new(None);
@@ -2098,7 +2101,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     /// leader.
     /// This must be done after the ThreadGroup state lock is released to avoid lock order
     /// violations.
-    fn leave_process_group(&mut self, pids: &PidTable) -> SessionDisassociation {
+    fn leave_process_group(&mut self, pids: &mut PidTable) -> SessionDisassociation {
         let (is_empty, disassociation) = self.process_group.remove(self.base);
         if is_empty {
             self.process_group.session.write().remove(&self.process_group.leader);

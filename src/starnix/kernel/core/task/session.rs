@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_sync::{LockDepRwLock, SessionMutableStateLock};
-use std::collections::HashSet;
-use std::sync::Arc;
-
 use crate::device::terminal::Terminal;
 use crate::task::{Pid, ProcessGroup};
+use starnix_sync::{LockDepRwLock, SessionMutableStateLock};
+use starnix_uapi::errors::Errno;
 use starnix_uapi::signals::{SIGCONT, SIGHUP};
+use std::collections::HashSet;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct SessionMutableState {
@@ -97,7 +97,7 @@ impl Session {
             let process_group = state.get_foreground_process_group();
             drop(state);
             drop(terminal_state);
-            if let Some(pg) = process_group {
+            if let Ok(pg) = process_group {
                 pg.send_signals(&[SIGHUP, SIGCONT]);
             }
             return;
@@ -127,10 +127,8 @@ impl SessionMutableState {
         &self.foreground_process_group
     }
 
-    pub fn get_foreground_process_group(&self) -> Option<Arc<ProcessGroup>> {
-        self.process_groups
-            .get(&self.foreground_process_group)
-            .and_then(|leader| leader.get_process_group())
+    pub fn get_foreground_process_group(&self) -> Result<Arc<ProcessGroup>, Errno> {
+        self.foreground_process_group.get_process_group()
     }
 
     pub fn set_foreground_process_group(&mut self, process_group: &Arc<ProcessGroup>) {

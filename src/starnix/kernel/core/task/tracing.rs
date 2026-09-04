@@ -157,7 +157,7 @@ impl TracePerformanceEventManager {
         for tid in &ids {
             // Running tasks may exit at any time. Record a task only if a snapshot of its running
             // state can be obtained.
-            let Ok(task) = pid_table.get_task(*tid) else {
+            let Ok(task) = pid_table.get(*tid).and_then(|p| p.get_task()) else {
                 continue;
             };
             let Ok(running_state) = task.running_state() else {

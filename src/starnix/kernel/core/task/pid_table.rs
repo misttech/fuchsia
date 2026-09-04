@@ -64,8 +64,8 @@ impl PidEntry {
         }
     }
 
-    pub fn get_process_group(&self) -> Option<Arc<ProcessGroup>> {
-        self.process_group.upgrade()
+    pub fn get_process_group(&self) -> Result<Arc<ProcessGroup>, Errno> {
+        self.process_group.upgrade().ok_or_else(|| errno!(ESRCH))
     }
 
     #[cfg(test)]
@@ -196,10 +196,6 @@ impl PidTable {
         pid
     }
 
-    pub fn get_task(&self, tid: tid_t) -> Result<Arc<Task>, Errno> {
-        self.get(tid)?.get_task()
-    }
-
     pub fn add_task(&mut self, task: Arc<Task>) {
         let entry = self.get_or_create_entry(task.tid.id);
         let scope = RcuReadScope::new();
@@ -228,10 +224,6 @@ impl PidTable {
             assert!(entry.task.strong_count(&scope) > 0);
             entry.task.update(Weak::new());
         });
-    }
-
-    pub fn get_process(&self, pid: pid_t) -> Option<ProcessEntryRef> {
-        self.get(pid).ok()?.get_process()
     }
 
     pub fn get_thread_groups(&self) -> Vec<Arc<ThreadGroup>> {
@@ -274,17 +266,13 @@ impl PidTable {
         }
     }
 
-    pub fn get_process_group(&self, pid: pid_t) -> Option<Arc<ProcessGroup>> {
-        self.get(pid).ok()?.get_process_group()
-    }
-
-    pub fn add_process_group(&self, process_group: &Arc<ProcessGroup>) {
+    pub fn add_process_group(&mut self, process_group: &Arc<ProcessGroup>) {
         let scope = RcuReadScope::new();
         assert_eq!(process_group.leader.process_group.strong_count(&scope), 0);
         process_group.leader.process_group.update(Arc::downgrade(process_group));
     }
 
-    pub fn remove_process_group(&self, leader: &Pid) {
+    pub fn remove_process_group(&mut self, leader: &Pid) {
         let scope = RcuReadScope::new();
         assert!(leader.process_group.strong_count(&scope) > 0);
         leader.process_group.update(Weak::new());

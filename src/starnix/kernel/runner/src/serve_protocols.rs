@@ -241,7 +241,7 @@ pub async fn serve_container_controller(
                 } => {
                     let pids = system_task.kernel().pids.read();
                     if let Some(ProcessEntryRef::Process(target_thread_group)) =
-                        pids.get_process(pid)
+                        pids.get(pid).ok().and_then(|p| p.get_process())
                     {
                         #[allow(
                             clippy::undocumented_unsafe_blocks,

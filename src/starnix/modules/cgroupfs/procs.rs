@@ -10,13 +10,13 @@
 //! Full details at https://docs.kernel.org/admin-guide/cgroup-v2.html#core-interface-files
 
 use starnix_core::fs_node_impl_not_dir;
-use starnix_core::task::{CgroupOps, CurrentTask, Kernel, ProcessEntryRef};
+use starnix_core::task::{CgroupOps, CurrentTask, Kernel};
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_core::vfs::{AppendLockWriteGuard, FileOps, FsNode, FsNodeOps, InputBuffer};
 
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
-use starnix_uapi::{errno, error, pid_t};
+use starnix_uapi::{errno, pid_t};
 use std::sync::{Arc, Weak};
 
 pub struct ControlGroupNode {
@@ -75,15 +75,8 @@ impl DynamicFileSource for ControlGroupFile {
         let pid_string = std::str::from_utf8(&bytes).map_err(|_| errno!(EINVAL))?;
         let pid = pid_string.trim().parse::<pid_t>().map_err(|_| errno!(EINVAL))?;
 
-        // Check if the pid is a valid task.
-        let thread_group = if let Some(ProcessEntryRef::Process(thread_group)) =
-            current_task.kernel().pids.read().get_process(pid)
-        {
-            thread_group
-        } else {
-            return error!(ESRCH);
-        };
-
+        // Check if the pid is a valid process.
+        let thread_group = current_task.kernel().pids.read().get(pid)?.get_thread_group()?;
         self.cgroup()?.add_process(&thread_group)?;
 
         Ok(bytes.len())

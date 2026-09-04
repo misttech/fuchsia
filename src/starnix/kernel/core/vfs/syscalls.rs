@@ -1948,8 +1948,10 @@ pub fn sys_pidfd_open(
         let open_flags = if blocking { OpenFlags::empty() } else { OpenFlags::NONBLOCK };
 
         // Validate that a process (and not just a task) entry exists for the PID.
-        let task = pid_table.get_task(pid).ok();
-        let file = match (pid_table.get_process(pid), task) {
+        let pid_entry = pid_table.get(pid)?;
+        let task = pid_entry.get_task().ok();
+        let process = pid_entry.get_process();
+        let file = match (process, task) {
             (Some(ProcessEntryRef::Process(proc)), Some(task)) => {
                 new_pidfd(current_task, &proc, &*task.mm()?, open_flags)
             }

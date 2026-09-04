@@ -8,15 +8,14 @@ use crate::task::{EventHandler, ProcessGroup, Session, WaitCanceler, WaitQueue, 
 use crate::vfs::buffers::{InputBuffer, InputBufferExt as _, OutputBuffer};
 use crate::vfs::{DirEntryHandle, FsString, Mounts};
 use derivative::Derivative;
-use macro_rules_attribute::apply;
-
 use line_discipline::{LineDiscipline, PendingSignals};
+use macro_rules_attribute::apply;
 use starnix_sync::{DeviceTerminalsLock, LockDepMutex, LockDepRwLock, PtsIdsSetLock};
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::vfs::FdEvents;
-use starnix_uapi::{error, uapi};
+use starnix_uapi::{errno, error, uapi};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Weak};
 
@@ -219,7 +218,7 @@ impl Terminal {
                 let Some(session) = controller.session.upgrade() else {
                     return;
                 };
-                let Some(process_group) = session.read().get_foreground_process_group() else {
+                let Ok(process_group) = session.read().get_foreground_process_group() else {
                     return;
                 };
                 process_group
@@ -410,8 +409,9 @@ impl TerminalController {
         Some(Self { session: Arc::downgrade(&session) })
     }
 
-    pub fn get_foreground_process_group(&self) -> Option<Arc<ProcessGroup>> {
-        self.session.upgrade().and_then(|session| session.read().get_foreground_process_group())
+    pub fn get_foreground_process_group(&self) -> Result<Arc<ProcessGroup>, Errno> {
+        let session = self.session.upgrade().ok_or_else(|| errno!(ESRCH))?;
+        session.read().get_foreground_process_group()
     }
 }
 

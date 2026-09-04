@@ -1006,12 +1006,7 @@ pub fn sys_prctl(
             } else if arg2 == 0 {
                 PtraceAllowedPtracers::None
             } else {
-                let task = current_task
-                    .kernel()
-                    .pids
-                    .read()
-                    .get_task(arg2 as i32)
-                    .map_err(|_| errno!(EINVAL))?;
+                let task = current_task.get_task(arg2 as i32).map_err(|_| errno!(EINVAL))?;
                 PtraceAllowedPtracers::Some(task.pid.clone())
             };
             current_task.thread_group().write().allowed_ptracers = allowed_ptracers;

@@ -11,11 +11,10 @@ use crate::signals::{
     restore_from_signal_handler, send_signal,
 };
 use crate::task::{
-    CurrentTask, PidTable, ProcessEntryRef, ProcessSelector, RunState, Task, TaskMutableState,
+    CurrentTask, Pid, ProcessEntryRef, ProcessSelector, RunState, Task, TaskMutableState,
     ThreadGroup, ThreadGroupLifecycleWaitValue, WaitResult, WaitableChildResult, Waiter,
 };
 use crate::vfs::{FdFlags, FdNumber};
-use starnix_sync::RwLockReadGuard;
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef};
 use starnix_uapi::{tid_t, uapi};
 
@@ -483,16 +482,17 @@ pub fn sys_kill(
             // "If pid is positive, then signal sig is sent to the process with
             // the ID specified by pid."
             let target_thread_group = {
-                match pids.get_process(pid) {
+                let pid_entry = pids.get(pid)?;
+                match pid_entry.get_process() {
                     Some(ProcessEntryRef::Process(process)) => process,
 
                     // Zombies cannot receive signals. Just ignore it.
                     Some(ProcessEntryRef::Zombie) => return Ok(()),
 
-                    // If we don't have process with `pid` then check if there is a task with
+                    // If there is no process with `pid`, check if there is a task with
                     // the `pid`.
                     None => {
-                        let task = pids.get_task(pid)?;
+                        let task = pid_entry.get_task()?;
                         task.thread_group().clone()
                     }
                 }
@@ -545,17 +545,8 @@ pub fn sys_kill(
     Ok(())
 }
 
-fn verify_tgid_for_task(
-    task: &Task,
-    tgid: pid_t,
-    pids: &RwLockReadGuard<'_, PidTable>,
-) -> Result<(), Errno> {
-    let thread_group = match pids.get_process(tgid) {
-        Some(ProcessEntryRef::Process(proc)) => proc,
-        Some(ProcessEntryRef::Zombie) => return error!(EINVAL),
-        None => return error!(ESRCH),
-    };
-    if *task.thread_group() != thread_group {
+fn verify_tgid_for_task(task: &Task, tgid: &Pid) -> Result<(), Errno> {
+    if &task.pid != tgid {
         return error!(EINVAL);
     } else {
         Ok(())
@@ -607,9 +598,10 @@ pub fn sys_tgkill(
         return error!(EINVAL);
     }
     let pids = current_task.kernel().pids.read();
-
-    let thread = pids.get_task(tid)?;
-    verify_tgid_for_task(&thread, tgid, &pids)?;
+    let tid = pids.get(tid)?;
+    let tgid = pids.get(tgid)?;
+    let thread = tid.get_task()?;
+    verify_tgid_for_task(&thread, tgid)?;
     send_unchecked_signal(current_task, &thread, unchecked_signal, SI_TKILL)
 }
 
@@ -641,7 +633,7 @@ pub fn sys_rt_sigqueueinfo(
     unchecked_signal: UncheckedSignal,
     siginfo_ref: UserAddress,
 ) -> Result<(), Errno> {
-    let task = current_task.kernel().pids.read().get_task(tgid)?;
+    let task = current_task.get_task(tgid)?;
     task.thread_group().send_signal_unchecked_with_info(
         current_task,
         unchecked_signal,
@@ -669,8 +661,9 @@ pub fn sys_rt_tgsigqueueinfo(
 ) -> Result<(), Errno> {
     let pids = current_task.kernel().pids.read();
 
-    let task = pids.get_task(tid)?;
-    verify_tgid_for_task(&task, tgid, &pids)?;
+    let task = pids.get(tid)?.get_task()?;
+    let tgid = pids.get(tgid)?;
+    verify_tgid_for_task(&task, tgid)?;
     send_unchecked_signal_info(current_task, &task, unchecked_signal, siginfo_ref)
 }
 

@@ -293,7 +293,7 @@ fn create_task_with_pid<F>(
 where
     F: FnOnce(Pid, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
 {
-    debug_assert!(pids.get_task(pid.id).is_err());
+    debug_assert!(pid.get_task().is_err());
 
     let process_group = ProcessGroup::new(pid.clone(), None);
     pids.add_process_group(&process_group);

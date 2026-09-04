@@ -1311,12 +1311,7 @@ impl FileAsyncOwner {
             }
             FileAsyncOwner::ProcessGroup(pgid) => {
                 if pgid != 0 {
-                    current_task
-                        .kernel()
-                        .pids
-                        .read()
-                        .get_process_group(pgid)
-                        .ok_or_else(|| errno!(ESRCH))?;
+                    current_task.kernel().pids.read().get(pgid)?.get_process_group()?;
                 }
             }
         }

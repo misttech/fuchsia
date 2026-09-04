@@ -624,7 +624,7 @@ fn shared_ioctl(
             // Send a SIGWINCH signal to the foreground process group.
             let foreground_process_group =
                 terminal.read().controller.as_ref().and_then(|terminal_controller| {
-                    terminal_controller.get_foreground_process_group()
+                    terminal_controller.get_foreground_process_group().ok()
                 });
             if let Some(process_group) = foreground_process_group {
                 process_group.send_signals(&[SIGWINCH]);
