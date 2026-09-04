@@ -1259,7 +1259,7 @@ mod tests {
             set_controlling_terminal(task1, &opened_main, false).unwrap();
             assert_eq!(
                 ioctl::<i32>(task1, &opened_main, TIOCGPGRP, &0),
-                Ok(task1.thread_group().read().process_group.leader)
+                Ok(task1.thread_group().read().process_group.leader.id)
             );
             assert_eq!(ioctl::<i32>(&task2, &opened_replica, TIOCGPGRP, &0), error!(ENOTTY));
 
@@ -1339,7 +1339,7 @@ mod tests {
             task1.thread_group().setsid().expect("setsid");
             let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
             task2.thread_group().setpgid(&task2, &task2, 0).expect("setpgid");
-            let task2_pgid = task2.thread_group().read().process_group.leader;
+            let task2_pgid = task2.thread_group().read().process_group.leader.clone();
 
             assert_ne!(task2_pgid, task1.thread_group().read().process_group.leader);
 
@@ -1350,7 +1350,7 @@ mod tests {
             // Cannot change the foreground process group if the terminal is not the controlling
             // terminal
             assert_eq!(
-                ioctl::<i32>(&task2, &opened_replica, TIOCSPGRP, &task2_pgid),
+                ioctl::<i32>(&task2, &opened_replica, TIOCSPGRP, &task2_pgid.id),
                 error!(ENOTTY)
             );
 
@@ -1359,7 +1359,7 @@ mod tests {
             // The foreground process group should be the one of task1
             assert_eq!(
                 ioctl::<i32>(&task1, &opened_replica, TIOCGPGRP, &0),
-                Ok(task1.thread_group().read().process_group.leader)
+                Ok(task1.thread_group().read().process_group.leader.id)
             );
 
             // Cannot change the foreground process group to a negative pid.
@@ -1369,18 +1369,21 @@ mod tests {
             assert_eq!(ioctl::<i32>(&task2, &opened_replica, TIOCSPGRP, &255), error!(ESRCH));
 
             // Cannot change the foreground process group to a process group in another session.
-            let init_pgid = init.thread_group().read().process_group.leader;
-            assert_eq!(ioctl::<i32>(&task2, &opened_replica, TIOCSPGRP, &init_pgid), error!(EPERM));
+            let init_pgid = init.thread_group().read().process_group.leader.clone();
+            assert_eq!(
+                ioctl::<i32>(&task2, &opened_replica, TIOCSPGRP, &init_pgid.id),
+                error!(EPERM)
+            );
 
             // Changing the foreground process while being in background generates SIGTTOU and fails.
             assert_eq!(
-                ioctl::<i32>(&task2, &opened_replica, TIOCSPGRP, &task2_pgid),
+                ioctl::<i32>(&task2, &opened_replica, TIOCSPGRP, &task2_pgid.id),
                 error!(EINTR)
             );
             assert!(task2.read().has_signal_pending(SIGTTOU));
 
             // Set the foreground process to task2 process group
-            ioctl::<i32>(&task1, &opened_replica, TIOCSPGRP, &task2_pgid).unwrap();
+            ioctl::<i32>(&task1, &opened_replica, TIOCSPGRP, &task2_pgid.id).unwrap();
 
             // Check that the foreground process has been changed.
             let terminal = Arc::clone(
@@ -1406,7 +1409,7 @@ mod tests {
                     .unwrap()
                     .read()
                     .get_foreground_process_group_leader(),
-                task2_pgid
+                &task2_pgid
             );
         })
         .await;

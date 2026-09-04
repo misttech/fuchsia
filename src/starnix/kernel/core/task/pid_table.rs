@@ -129,8 +129,8 @@ pub struct PidTable {
 }
 
 impl PidTable {
-    pub fn get_entry(&self, pid: pid_t) -> Option<&Pid> {
-        self.table.get(&pid)
+    pub fn get(&self, pid: pid_t) -> Result<&Pid, Errno> {
+        self.table.get(&pid).ok_or_else(|| errno!(ESRCH))
     }
 
     fn get_or_create_entry(&mut self, pid: pid_t) -> &PidEntry {
@@ -185,7 +185,7 @@ impl PidTable {
     }
 
     pub fn get_task(&self, tid: tid_t) -> Result<Arc<Task>, Errno> {
-        self.get_entry(tid).ok_or_else(|| errno!(ESRCH))?.get_task()
+        self.get(tid)?.get_task()
     }
 
     pub fn add_task(&mut self, task: Arc<Task>) {
@@ -219,11 +219,11 @@ impl PidTable {
     }
 
     pub fn get_process(&self, pid: pid_t) -> Option<ProcessEntryRef> {
-        self.get_entry(pid)?.get_process()
+        self.get(pid).ok()?.get_process()
     }
 
     pub fn get_thread_group(&self, pid: pid_t) -> Option<Arc<ThreadGroup>> {
-        self.get_entry(pid)?.get_thread_group()
+        self.get(pid).ok()?.get_thread_group()
     }
 
     pub fn get_thread_groups(&self) -> Vec<Arc<ThreadGroup>> {
@@ -267,23 +267,19 @@ impl PidTable {
     }
 
     pub fn get_process_group(&self, pid: pid_t) -> Option<Arc<ProcessGroup>> {
-        self.get_entry(pid)?.get_process_group()
+        self.get(pid).ok()?.get_process_group()
     }
 
     pub fn add_process_group(&self, process_group: &Arc<ProcessGroup>) {
-        let entry = self
-            .get_entry(process_group.leader)
-            .expect("PidEntry must exist for process group leader");
         let scope = RcuReadScope::new();
-        assert_eq!(entry.process_group.strong_count(&scope), 0);
-        entry.process_group.update(Arc::downgrade(process_group));
+        assert_eq!(process_group.leader.process_group.strong_count(&scope), 0);
+        process_group.leader.process_group.update(Arc::downgrade(process_group));
     }
 
-    pub fn remove_process_group(&self, pid: pid_t) {
-        let entry = self.get_entry(pid).expect("PidEntry must exist for process group leader");
+    pub fn remove_process_group(&self, leader: &Pid) {
         let scope = RcuReadScope::new();
-        assert!(entry.process_group.strong_count(&scope) > 0);
-        entry.process_group.update(Weak::new());
+        assert!(leader.process_group.strong_count(&scope) > 0);
+        leader.process_group.update(Weak::new());
     }
 
     /// Returns the process ids for all processes, including zombies.

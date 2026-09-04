@@ -530,12 +530,12 @@ pub fn sys_kill(
             //
             // "If pid is less than -1, then sig is sent to every process in the
             // process group whose ID is -pid."
-            let process_group_id = match pid {
-                0 => current_task.thread_group().read().process_group.leader,
-                _ => negate_pid(pid)?,
+            let pid = match pid {
+                0 => current_task.thread_group().read().process_group.leader.clone(),
+                _ => pids.get(negate_pid(pid)?)?.clone(),
             };
 
-            let process_group = pids.get_process_group(process_group_id);
+            let process_group = pid.get_process_group();
             let thread_groups =
                 process_group.iter().flat_map(|pg| pg.read().thread_groups().collect::<Vec<_>>());
             signal_thread_groups(current_task, unchecked_signal, thread_groups)?;
@@ -927,7 +927,7 @@ pub fn sys_waitid(
         P_PID => ProcessSelector::Pid(id),
         P_ALL => ProcessSelector::Any,
         P_PGID => ProcessSelector::Pgid(if id == 0 {
-            current_task.thread_group().read().process_group.leader
+            current_task.thread_group().read().process_group.leader.id
         } else {
             id
         }),
@@ -998,7 +998,7 @@ pub fn sys_wait4(
     let waiting_options = WaitingOptions::new_for_wait4(options)?;
 
     let selector = if raw_selector == 0 {
-        ProcessSelector::Pgid(current_task.thread_group().read().process_group.leader)
+        ProcessSelector::Pgid(current_task.thread_group().read().process_group.leader.id)
     } else if raw_selector == -1 {
         ProcessSelector::Any
     } else if raw_selector > 0 {

@@ -3,28 +3,25 @@
 // found in the LICENSE file.
 
 use starnix_sync::{LockDepRwLock, SessionMutableStateLock};
-use std::collections::BTreeMap;
-use std::sync::{Arc, Weak};
+use std::collections::HashSet;
+use std::sync::Arc;
 
 use crate::device::terminal::Terminal;
-use crate::task::ProcessGroup;
-use starnix_uapi::pid_t;
+use crate::task::{Pid, ProcessGroup};
 use starnix_uapi::signals::{SIGCONT, SIGHUP};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Debug)]
 pub struct SessionMutableState {
-    /// The process groups in the session
+    /// The process groups in the session.
     ///
-    /// The references to ProcessGroup is weak to prevent cycles as ProcessGroup have a Arc reference to their
-    /// session.
-    /// It is still expected that these weak references are always valid, as process groups must unregister
+    /// It is expected that these process groups are always valid, as process groups must unregister
     /// themselves before they are deleted.
-    process_groups: BTreeMap<pid_t, Weak<ProcessGroup>>,
+    process_groups: HashSet<Pid>,
 
     /// The leader of the foreground process group. This is necessary because the leader must
     /// be returned even if the process group has already been deleted.
-    foreground_process_group: pid_t,
+    foreground_process_group: Pid,
 
     /// The controlling terminal of the session.
     pub controlling_terminal: Option<ControllingTerminal>,
@@ -45,7 +42,7 @@ pub struct SessionMutableState {
 #[derive(Debug)]
 pub struct Session {
     /// The leader of the session
-    pub leader: pid_t,
+    pub leader: Pid,
 
     /// The mutable state of the Session.
     pub mutable_state: LockDepRwLock<SessionMutableState, SessionMutableStateLock>,
@@ -58,11 +55,11 @@ impl PartialEq for Session {
 }
 
 impl Session {
-    pub fn new(leader: pid_t) -> Arc<Session> {
+    pub fn new(leader: Pid) -> Arc<Session> {
         Arc::new(Session {
-            leader,
+            leader: leader.clone(),
             mutable_state: SessionMutableState {
-                process_groups: BTreeMap::new(),
+                process_groups: HashSet::new(),
                 foreground_process_group: leader,
                 controlling_terminal: None,
             }
@@ -117,25 +114,27 @@ impl Session {
 }
 
 impl SessionMutableState {
-    /// Removes the process group from the session. Returns whether the session is empty.
-    pub fn remove(&mut self, pid: pid_t) {
-        self.process_groups.remove(&pid);
+    /// Removes the process group from the session.
+    pub fn remove(&mut self, leader: &Pid) {
+        self.process_groups.remove(leader);
     }
 
     pub fn insert(&mut self, process_group: &Arc<ProcessGroup>) {
-        self.process_groups.insert(process_group.leader, Arc::downgrade(process_group));
+        self.process_groups.insert(process_group.leader.clone());
     }
 
-    pub fn get_foreground_process_group_leader(&self) -> pid_t {
-        self.foreground_process_group
+    pub fn get_foreground_process_group_leader(&self) -> &Pid {
+        &self.foreground_process_group
     }
 
     pub fn get_foreground_process_group(&self) -> Option<Arc<ProcessGroup>> {
-        self.process_groups.get(&self.foreground_process_group).and_then(Weak::upgrade)
+        self.process_groups
+            .get(&self.foreground_process_group)
+            .and_then(|leader| leader.get_process_group())
     }
 
     pub fn set_foreground_process_group(&mut self, process_group: &Arc<ProcessGroup>) {
-        self.foreground_process_group = process_group.leader;
+        self.foreground_process_group = process_group.leader.clone();
     }
 }
 

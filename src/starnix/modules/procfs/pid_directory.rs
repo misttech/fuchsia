@@ -1177,8 +1177,8 @@ impl DynamicFileSource for StatFile {
         {
             let thread_group = task.thread_group().read();
             ppid = thread_group.get_ppid();
-            pgrp = thread_group.process_group.leader;
-            session = thread_group.process_group.session.leader;
+            pgrp = thread_group.process_group.leader.id;
+            session = thread_group.process_group.session.leader.id;
 
             // TTY device ID.
             {

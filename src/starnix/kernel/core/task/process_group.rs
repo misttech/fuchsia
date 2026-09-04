@@ -4,7 +4,7 @@
 
 use crate::mutable_state::{state_accessor, state_implementation};
 use crate::signals::SignalInfo;
-use crate::task::{PidTable, Session, SessionDisassociation, ThreadGroup};
+use crate::task::{Pid, PidTable, Session, SessionDisassociation, ThreadGroup};
 use macro_rules_attribute::apply;
 use starnix_sync::{LockDepRwLock, ProcessGroupState};
 use starnix_uapi::pid_t;
@@ -31,7 +31,7 @@ pub struct ProcessGroup {
     pub session: Arc<Session>,
 
     /// The leader of the process group.
-    pub leader: pid_t,
+    pub leader: Pid,
 
     /// The mutable state of the ProcessGroup.
     mutable_state: LockDepRwLock<ProcessGroupMutableState, ProcessGroupState>,
@@ -69,8 +69,8 @@ impl std::hash::Hash for ProcessGroup {
 ///
 /// Process groups are destroyed when the last process in the group exits.
 impl ProcessGroup {
-    pub fn new(leader: pid_t, session: Option<Arc<Session>>) -> Arc<ProcessGroup> {
-        let session = session.unwrap_or_else(|| Session::new(leader));
+    pub fn new(leader: Pid, session: Option<Arc<Session>>) -> Arc<ProcessGroup> {
+        let session = session.unwrap_or_else(|| Session::new(leader.clone()));
         let process_group = Arc::new(ProcessGroup {
             session: session.clone(),
             leader,
@@ -94,7 +94,7 @@ impl ProcessGroup {
     /// the caller must use to explicitly disassociate the controlling terminal if the
     /// exiting thread group was the session leader.
     pub fn remove(&self, thread_group: &ThreadGroup) -> (bool, SessionDisassociation) {
-        let is_session_leader = self.session.leader == thread_group.leader.id;
+        let is_session_leader = self.session.leader == thread_group.leader;
         let is_empty = self.write().remove(thread_group);
         let disassociation = if is_session_leader {
             SessionDisassociation::new(Some(self.session.clone()))

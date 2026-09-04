@@ -510,7 +510,7 @@ impl WaitResult {
 pub struct ZombieProcess {
     pub thread_group_key: ThreadGroupKey,
     pub pid: Pid,
-    pub pgid: pid_t,
+    pub pgid: Pid,
     pub uid: uid_t,
 
     pub exit_info: ProcessExitInfo,
@@ -558,7 +558,7 @@ impl ZombieProcess {
         OwnedRef::new(ZombieProcess {
             thread_group_key: thread_group.base.into(),
             pid: thread_group.base.leader.clone(),
-            pgid: thread_group.process_group.leader,
+            pgid: thread_group.process_group.leader.clone(),
             uid: credentials.uid,
             exit_info,
             time_stats,
@@ -568,6 +568,10 @@ impl ZombieProcess {
 
     pub fn pid(&self) -> pid_t {
         self.pid.id
+    }
+
+    pub fn pgid(&self) -> pid_t {
+        self.pgid.id
     }
 
     pub fn to_wait_result(&self) -> WaitResult {
@@ -583,7 +587,7 @@ impl ZombieProcess {
         ZombieProcess {
             thread_group_key: self.thread_group_key.clone(),
             pid: self.pid.clone(),
-            pgid: self.pgid,
+            pgid: self.pgid.clone(),
             uid: self.uid,
             exit_info: self.exit_info.clone(),
             time_stats: self.time_stats,
@@ -595,7 +599,7 @@ impl ZombieProcess {
         match *selector {
             ProcessSelector::Any => true,
             ProcessSelector::Pid(pid) => self.pid() == pid,
-            ProcessSelector::Pgid(pgid) => self.pgid == pgid,
+            ProcessSelector::Pgid(pgid) => self.pgid() == pgid,
             ProcessSelector::Process(ref key) => self.thread_group_key == *key,
         }
     }
@@ -1154,7 +1158,7 @@ impl ThreadGroup {
                 drop(state);
                 {
                     // Tell the parent to expect a notification later.
-                    let tracee_pgid = tracee.thread_group().read().process_group.leader;
+                    let tracee_pgid = tracee.thread_group().read().process_group.leader.id;
                     let mut parent_state = parent.write();
                     parent_state.deferred_zombie_ptracers.push(DeferredZombiePTracer::new(
                         self,
@@ -1210,7 +1214,7 @@ impl ThreadGroup {
         if pids.get_process_group(self.leader.id).is_some() {
             return error!(EPERM);
         }
-        let process_group = ProcessGroup::new(self.leader.id, None);
+        let process_group = ProcessGroup::new(self.leader.clone(), None);
         pids.add_process_group(&process_group);
         let session = self.write().set_process_group(process_group, &pids);
         session.disassociate_controlling_terminal();
@@ -1251,7 +1255,7 @@ impl ThreadGroup {
                 let target_process_group = &target_thread_group.process_group;
 
                 // The target process must not be a session leader and must be in the same session as the current process.
-                if target_thread_group.leader() == target_process_group.session.leader
+                if target_thread_group.base.leader == target_process_group.session.leader
                     || current_process_group.session != target_process_group.session
                 {
                     return error!(EPERM);
@@ -1262,7 +1266,7 @@ impl ThreadGroup {
                     return error!(EINVAL);
                 }
 
-                if target_pgid == target_process_group.leader {
+                if target_pgid == target_process_group.leader.id {
                     return Ok(());
                 }
 
@@ -1278,8 +1282,10 @@ impl ThreadGroup {
                 } else {
                     security::check_setpgid_access(current_task, target)?;
                     // Create a new process group
-                    new_process_group =
-                        ProcessGroup::new(target_pgid, Some(target_process_group.session.clone()));
+                    new_process_group = ProcessGroup::new(
+                        target_thread_group.base.leader.clone(),
+                        Some(target_process_group.session.clone()),
+                    );
                     pids.add_process_group(&new_process_group);
                 }
             }
@@ -1411,7 +1417,7 @@ impl ThreadGroup {
         // "When fd does not refer to the controlling terminal of the calling
         // process, -1 is returned" - tcgetpgrp(3)
         Self::check_terminal_controller(&process_group.session, &terminal_state.controller)?;
-        let pid = process_group.session.read().get_foreground_process_group_leader();
+        let pid = process_group.session.read().get_foreground_process_group_leader().id;
         Ok(pid)
     }
 
@@ -1444,7 +1450,8 @@ impl ThreadGroup {
             let mut session_state = process_group.session.write();
             // If the calling process is a member of a background group and not ignoring SIGTTOU, a
             // SIGTTOU signal is sent to all members of this background process group.
-            send_ttou = process_group.leader != session_state.get_foreground_process_group_leader()
+            send_ttou = &process_group.leader
+                != session_state.get_foreground_process_group_leader()
                 && !current_task.read().signal_mask().has_signal(SIGTTOU)
                 && self.signal_actions.get(SIGTTOU).sa_handler != SIG_IGN;
 
@@ -1495,7 +1502,7 @@ impl ThreadGroup {
 
         // "The calling process must be a session leader and not have a
         // controlling terminal already." - tty_ioctl(4)
-        if process_group.session.leader != self.leader.id {
+        if process_group.session.leader != self.leader {
             return error!(EINVAL);
         }
         if let Some(ref current_ct) = session_writer.controlling_terminal {
@@ -1569,7 +1576,7 @@ impl ThreadGroup {
             terminal_state.controller = None;
         }
 
-        if process_group.session.leader == self.leader.id {
+        if process_group.session.leader == self.leader {
             process_group.send_signals(&[SIGHUP, SIGCONT]);
         }
 
@@ -2160,8 +2167,8 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     fn leave_process_group(&mut self, pids: &PidTable) -> SessionDisassociation {
         let (is_empty, disassociation) = self.process_group.remove(self.base);
         if is_empty {
-            self.process_group.session.write().remove(self.process_group.leader);
-            pids.remove_process_group(self.process_group.leader);
+            self.process_group.session.write().remove(&self.process_group.leader);
+            pids.remove_process_group(&self.process_group.leader);
         }
         disassociation
     }
@@ -2541,7 +2548,7 @@ mod test {
             assert_eq!(child_task.thread_group().setsid(), Ok(()));
             assert_eq!(
                 child_task.thread_group().read().process_group.session.leader,
-                child_task.get_pid()
+                child_task.thread_group().leader
             );
             assert!(!old_process_group.read().thread_groups().contains(child_task.thread_group()));
         })
@@ -2610,9 +2617,9 @@ mod test {
             assert_eq!(child_task1.thread_group().setpgid(&current_task, &child_task1, 0), Ok(()));
             assert_eq!(
                 child_task1.thread_group().read().process_group.session.leader,
-                current_task.tid.id
+                current_task.tid
             );
-            assert_eq!(child_task1.thread_group().read().process_group.leader, child_task1.tid.id);
+            assert_eq!(child_task1.thread_group().read().process_group.leader, child_task1.tid);
 
             let old_process_group = child_task2.thread_group().read().process_group.clone();
             assert_eq!(
@@ -2623,7 +2630,7 @@ mod test {
                 ),
                 Ok(())
             );
-            assert_eq!(child_task2.thread_group().read().process_group.leader, child_task1.tid.id);
+            assert_eq!(child_task2.thread_group().read().process_group.leader, child_task1.tid);
             assert!(!old_process_group.read().thread_groups().contains(child_task2.thread_group()));
         })
         .await;

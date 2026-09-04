@@ -2133,8 +2133,8 @@ impl CurrentTask {
         }
 
         if Signal::try_from(unchecked_signal) == Ok(SIGCONT) {
-            let target_session = target.thread_group().read().process_group.session.leader;
-            let self_session = self.thread_group().read().process_group.session.leader;
+            let target_session = target.thread_group().read().process_group.session.leader.clone();
+            let self_session = self.thread_group().read().process_group.session.leader.clone();
             if target_session == self_session {
                 return Ok(());
             }

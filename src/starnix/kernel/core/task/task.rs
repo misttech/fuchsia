@@ -1005,7 +1005,7 @@ impl Task {
             return;
         }
 
-        let pgid = self.thread_group().read().process_group.leader;
+        let pgid = self.thread_group().read().process_group.leader.clone();
         let exit_signal = self.thread_group().read().exit_signal.clone();
         let mut state = self.write();
         state.set_stopped(StopState::ForceAwake, None, None, None);

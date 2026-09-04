@@ -198,7 +198,7 @@ pub fn sys_getdents(
 }
 
 pub fn sys_getpgrp(current_task: &CurrentTask) -> Result<pid_t, Errno> {
-    Ok(current_task.thread_group().read().process_group.leader)
+    Ok(current_task.thread_group().read().process_group.leader.id)
 }
 
 pub fn sys_lchown(

@@ -295,7 +295,7 @@ where
 {
     debug_assert!(pids.get_task(pid.id).is_err());
 
-    let process_group = ProcessGroup::new(pid.id, None);
+    let process_group = ProcessGroup::new(pid.clone(), None);
     pids.add_process_group(&process_group);
 
     let TaskInfo { thread_group, memory_manager } =
