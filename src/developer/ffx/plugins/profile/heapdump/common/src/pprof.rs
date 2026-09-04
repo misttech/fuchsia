@@ -37,7 +37,7 @@ fn instantiate_symbolizer(
             if searched_program_addresses.insert(*program_address) {
                 let region_search_outcome =
                     sorted_regions.binary_search_by(|(region_starting_address, region)| {
-                        if *region_starting_address + region.size < *program_address {
+                        if *region_starting_address + region.size <= *program_address {
                             std::cmp::Ordering::Less
                         } else if *program_address < *region_starting_address {
                             std::cmp::Ordering::Greater
