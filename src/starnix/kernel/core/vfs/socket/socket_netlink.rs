@@ -716,12 +716,17 @@ impl SocketOps for StubbedNetlinkSocket {
 
     fn write(
         &self,
-        _socket: &Socket,
-        _current_task: &CurrentTask,
+        socket: &Socket,
+        current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
         dest_address: &mut Option<SocketAddress>,
         ancillary_data: &mut Vec<AncillaryData>,
     ) -> Result<usize, Errno> {
+        let bytes = data.peek_all()?;
+        if let Ok((nl_msg, _)) = nlmsghdr::read_from_prefix(&bytes) {
+            security::check_netlink_send_access(current_task, socket, nl_msg.nlmsg_type)?;
+        }
+
         let mut local_address = self.lock().address.clone();
 
         let destination = match dest_address {
@@ -1470,8 +1475,8 @@ impl SocketOps for GenericNetlinkSocket {
 
     fn write(
         &self,
-        _socket: &Socket,
-        _current_task: &CurrentTask,
+        socket: &Socket,
+        current_task: &CurrentTask,
         data: &mut dyn InputBuffer,
         _dest_address: &mut Option<SocketAddress>,
         _ancillary_data: &mut Vec<AncillaryData>,
@@ -1482,13 +1487,16 @@ impl SocketOps for GenericNetlinkSocket {
                 log_warn!("Failed to process write; data could not be deserialized: {:?}", e);
                 error!(EINVAL)
             }
-            Ok(msg) => match self.message_sender.unbounded_send(msg) {
-                Ok(()) => Ok(bytes.len()),
-                Err(e) => {
-                    log_warn!("Netlink receiver unexpectedly disconnected for socket: {:?}", e);
-                    error!(EPIPE)
+            Ok(msg) => {
+                security::check_netlink_send_access(current_task, socket, msg.header.message_type)?;
+                match self.message_sender.unbounded_send(msg) {
+                    Ok(()) => Ok(bytes.len()),
+                    Err(e) => {
+                        log_warn!("Netlink receiver unexpectedly disconnected for socket: {:?}", e);
+                        error!(EPIPE)
+                    }
                 }
-            },
+            }
         }
     }
 

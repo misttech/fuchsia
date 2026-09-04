@@ -826,6 +826,12 @@
             ]
         },
         {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_GENERIC__GENL_ID_CTRL__0x5__socket_sendmsg_no_t",
+            "audit_expectations": [
+                "avc:  denied  { write } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_no_t:s0 tclass=netlink_generic_socket permissive=0"
+            ]
+        },
+        {
             "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_ROUTE__RTM_GETLINK__0x5__netlink_socket_no_nlmsg_t",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_readpriv } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_route_socket permissive=0"
@@ -859,6 +865,18 @@
             "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_SOCK_DIAG__SOCK_DIAG_BY_FAMILY__0x5__netlink_socket_no_nlmsg_t",
             "audit_expectations": [
                 "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_tcpdiag_socket permissive=0"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_XFRM__XFRM_MSG_GETSA__0x1__netlink_socket_no_nlmsg_t",
+            "audit_expectations": [
+                "avc:  denied  { nlmsg_read } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_xfrm_socket permissive=0"
+            ]
+        },
+        {
+            "name": "NetlinkSocketTests/NetlinkSocketTest.CheckNetlinkMsgPermission/NETLINK_XFRM__XFRM_MSG_NEWSA__0x401__netlink_socket_no_nlmsg_t",
+            "audit_expectations": [
+                "avc:  denied  { nlmsg_write } for scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:netlink_socket_no_nlmsg_t:s0 tclass=netlink_xfrm_socket permissive=0"
             ]
         },
         {

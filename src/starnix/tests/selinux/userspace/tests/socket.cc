@@ -11,10 +11,12 @@
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 #include <linux/audit.h>
+#include <linux/genetlink.h>
 #include <linux/if_ether.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/sock_diag.h>
+#include <linux/xfrm.h>
 
 #include "src/lib/files/file.h"
 #include "src/starnix/tests/selinux/userspace/netlink_util.h"
@@ -74,6 +76,10 @@ std::string SocketProtocolToString(int family, int protocol) {
         return "NETLINK_AUDIT";
       case NETLINK_SOCK_DIAG:
         return "NETLINK_SOCK_DIAG";
+      case NETLINK_XFRM:
+        return "NETLINK_XFRM";
+      case NETLINK_GENERIC:
+        return "NETLINK_GENERIC";
       default:
         return std::to_string(protocol);
     }
@@ -118,6 +124,26 @@ std::string NetlinkMessageToString(int protocol, uint16_t type) {
     switch (type) {
       case SOCK_DIAG_BY_FAMILY:
         return "SOCK_DIAG_BY_FAMILY";
+    }
+  } else if (protocol == NETLINK_XFRM) {
+    switch (type) {
+      case XFRM_MSG_GETSA:
+        return "XFRM_MSG_GETSA";
+      case XFRM_MSG_NEWSA:
+        return "XFRM_MSG_NEWSA";
+      case XFRM_MSG_DELSA:
+        return "XFRM_MSG_DELSA";
+      case XFRM_MSG_GETPOLICY:
+        return "XFRM_MSG_GETPOLICY";
+      case XFRM_MSG_NEWPOLICY:
+        return "XFRM_MSG_NEWPOLICY";
+      case XFRM_MSG_DELPOLICY:
+        return "XFRM_MSG_DELPOLICY";
+    }
+  } else if (protocol == NETLINK_GENERIC) {
+    switch (type) {
+      case GENL_ID_CTRL:
+        return "GENL_ID_CTRL";
     }
   }
   return std::to_string(type);
@@ -460,6 +486,26 @@ INSTANTIATE_TEST_SUITE_P(
                                             "netlink_socket_nlmsg_read_t", fit::ok()},
         netlink_util::NetlinkSocketTestCase{NETLINK_SOCK_DIAG, SOCK_DIAG_BY_FAMILY,
                                             NLM_F_REQUEST | NLM_F_ACK, "netlink_socket_no_nlmsg_t",
+                                            fit::error(EACCES)},
+
+        // NETLINK_XFRM test cases
+        netlink_util::NetlinkSocketTestCase{NETLINK_XFRM, XFRM_MSG_GETSA, NLM_F_REQUEST,
+                                            "netlink_socket_nlmsg_read_t", fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_XFRM, XFRM_MSG_GETSA, NLM_F_REQUEST,
+                                            "netlink_socket_no_nlmsg_t", fit::error(EACCES)},
+        netlink_util::NetlinkSocketTestCase{NETLINK_XFRM, XFRM_MSG_NEWSA,
+                                            NLM_F_REQUEST | NLM_F_CREATE,
+                                            "netlink_socket_nlmsg_write_t", fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_XFRM, XFRM_MSG_NEWSA,
+                                            NLM_F_REQUEST | NLM_F_CREATE,
+                                            "netlink_socket_no_nlmsg_t", fit::error(EACCES)},
+
+        // NETLINK_GENERIC test cases
+        netlink_util::NetlinkSocketTestCase{NETLINK_GENERIC, GENL_ID_CTRL,
+                                            NLM_F_REQUEST | NLM_F_ACK, "socket_sendmsg_yes_t",
+                                            fit::ok()},
+        netlink_util::NetlinkSocketTestCase{NETLINK_GENERIC, GENL_ID_CTRL,
+                                            NLM_F_REQUEST | NLM_F_ACK, "socket_sendmsg_no_t",
                                             fit::error(EACCES)}),
     NetlinkSocketTestName);
 

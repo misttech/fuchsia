@@ -10,10 +10,12 @@
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 #include <linux/audit.h>
+#include <linux/genetlink.h>
 #include <linux/inet_diag.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/sock_diag.h>
+#include <linux/xfrm.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
 
@@ -33,6 +35,8 @@ int SendNetlinkMsg(const netlink_util::NetlinkSocketTestCase& test_case) {
     struct rtmsg rtmsg;
     struct audit_status audit_status;
     struct inet_diag_req_v2 diag_req;
+    struct xfrm_usersa_info xfrm_sa;
+    struct genlmsghdr genl_hdr;
   } payload;
   memset(&payload, 0, sizeof(payload));
 
@@ -59,6 +63,24 @@ int SendNetlinkMsg(const netlink_util::NetlinkSocketTestCase& test_case) {
     struct inet_diag_req_v2* inet_req = (struct inet_diag_req_v2*)NLMSG_DATA(nlh);
     inet_req->sdiag_family = AF_INET;
     inet_req->sdiag_protocol = IPPROTO_UDP;
+  } else if (test_case.protocol == NETLINK_XFRM) {
+    payload_len = sizeof(struct xfrm_usersa_info);
+    nlh->nlmsg_len = NLMSG_LENGTH((__u32)payload_len);
+    struct xfrm_usersa_info* xfrm_sa = (struct xfrm_usersa_info*)NLMSG_DATA(nlh);
+    xfrm_sa->family = AF_INET;
+  } else if (test_case.protocol == NETLINK_GENERIC) {
+    struct genlmsghdr* genl_hdr = (struct genlmsghdr*)NLMSG_DATA(nlh);
+    genl_hdr->cmd = CTRL_CMD_GETFAMILY;
+    genl_hdr->version = 1;
+    genl_hdr->reserved = 0;
+
+    const char family_name[] = "nlctrl";
+    struct nlattr* nla = (struct nlattr*)((char*)genl_hdr + sizeof(struct genlmsghdr));
+    nla->nla_type = CTRL_ATTR_FAMILY_NAME;
+    nla->nla_len = sizeof(struct nlattr) + sizeof(family_name);
+    memcpy((char*)nla + sizeof(struct nlattr), family_name, sizeof(family_name));
+    payload_len = sizeof(struct genlmsghdr) + NLA_ALIGN(nla->nla_len);
+    nlh->nlmsg_len = NLMSG_LENGTH((__u32)payload_len);
   } else {
     payload_len = sizeof(struct rtmsg);
     nlh->nlmsg_len = NLMSG_LENGTH((__u32)payload_len);
