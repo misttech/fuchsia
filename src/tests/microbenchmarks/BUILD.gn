@@ -336,13 +336,25 @@ if (host_os == "linux" && !is_asan) {
     deps = [ ":no_op_executable" ]
   }
 
+  # Benchmarks that duplicate coverage already provided by gVisor benchmarks
+  # are omitted here.
+  starnix_microbenchmark_sources = [
+    "clone.cc",
+    "main.cc",
+    "malloc.cc",
+    "memcpy.cc",
+    "null.cc",
+    "random_memcpy.cc",
+    "starnix_filesystem.cc",
+    "starnix_tracefs.cc",
+    "stdcompat.cc",
+    "unshare.cc",
+  ]
+
   executable("starnix_microbenchmarks_bin") {
     output_name = "starnix_microbenchmarks"
     testonly = true
-    sources = fuchsia_microbenchmark_sources + [
-                "starnix_filesystem.cc",
-                "starnix_tracefs.cc",
-              ]
+    sources = starnix_microbenchmark_sources
     deps = fuchsia_microbenchmark_deps + [ "//sdk/lib/zircon-assert" ]
   }
 
