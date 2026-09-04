@@ -91,18 +91,43 @@ struct DomainInfo {
     opp_count: u32,
     mmio_offset: u32,
     boot_opp: u64,
+    floor_opp: u64,
     reg_offset: Offset<u32, RwSafe>,
 }
 
 const DOMAIN_INFOS: [DomainInfo; 4] = [
-    // Domain 0 (Little): 22 OPPs (0..21), mmio_offset = 2, boot_opp = 8
-    DomainInfo { opp_count: 22, mmio_offset: 2, boot_opp: 8, reg_offset: DOMAIN0_REG_OFFSET },
-    // Domain 1 (Medium 1): 24 OPPs (0..23), mmio_offset = 0, boot_opp = 11
-    DomainInfo { opp_count: 24, mmio_offset: 0, boot_opp: 11, reg_offset: DOMAIN1_REG_OFFSET },
-    // Domain 2 (Medium 2): 24 OPPs (0..23), mmio_offset = 0, boot_opp = 11
-    DomainInfo { opp_count: 24, mmio_offset: 0, boot_opp: 11, reg_offset: DOMAIN2_REG_OFFSET },
-    // Domain 3 (Big): 23 OPPs (0..22), mmio_offset = 1, boot_opp = 10
-    DomainInfo { opp_count: 23, mmio_offset: 1, boot_opp: 10, reg_offset: DOMAIN3_REG_OFFSET },
+    // Domain 0 (Little)
+    DomainInfo {
+        opp_count: 22,
+        mmio_offset: 2,
+        boot_opp: 8,
+        floor_opp: 15,
+        reg_offset: DOMAIN0_REG_OFFSET,
+    },
+    // Domain 1 (Medium 1):
+    DomainInfo {
+        opp_count: 24,
+        mmio_offset: 0,
+        boot_opp: 11,
+        floor_opp: 20,
+        reg_offset: DOMAIN1_REG_OFFSET,
+    },
+    // Domain 2 (Medium 2):
+    DomainInfo {
+        opp_count: 24,
+        mmio_offset: 0,
+        boot_opp: 11,
+        floor_opp: 20,
+        reg_offset: DOMAIN2_REG_OFFSET,
+    },
+    // Domain 3 (Big):
+    DomainInfo {
+        opp_count: 23,
+        mmio_offset: 1,
+        boot_opp: 10,
+        floor_opp: 21,
+        reg_offset: DOMAIN3_REG_OFFSET,
+    },
 ];
 
 unsafe extern "C" {
@@ -184,6 +209,9 @@ extern "C" fn iris_opp_set(domain_id: u32, opp: u64) -> Result<(), Status> {
     if opp >= info.opp_count as u64 {
         return Err(Status::INVALID_ARGS);
     }
+
+    // Clamp the requested OPP to the hardware floor OPP as driver-level defense in depth.
+    let opp = opp.min(info.floor_opp);
 
     // Fast path: if the requested OPP is already cached as active for this domain, return
     // immediately without acquiring the domain spinlock or writing to MMIO.
@@ -287,15 +315,50 @@ pub extern "C" fn iris_power_init_early() {
 }
 
 fn allocate_and_populate_from_domain_opps(
+    domain_index: usize,
     domain: &zbi::CpuEnergyModelDomain,
     wfi_name: *const core::ffi::c_char,
     opp_name: *const core::ffi::c_char,
 ) -> Option<Box<[ProcessorPowerLevelFfi]>> {
-    let num_opps = (domain.opp_count as usize).min(domain.opps.len()).min(32);
-    let count = num_opps + 1;
-    let mut uninit = Box::<[ProcessorPowerLevelFfi]>::try_new_uninit_slice(count).ok()?;
-    assert_eq!(uninit.len(), count);
+    let floor_opp = DOMAIN_INFOS.get(domain_index).map(|info| info.floor_opp).unwrap_or(u64::MAX);
 
+    let num_opps = (domain.opp_count as usize)
+        .min(domain.opps.len())
+        .min(zbi::KERNEL_DRIVER_CPU_ENERGY_MODEL_MAX_OPPS as usize);
+
+    let mut sorted_opps =
+        [zbi::CpuEnergyModelOpp { frequency_khz: 0, capacity: 0, power_uw: 0, voltage_mv: 0 };
+            zbi::KERNEL_DRIVER_CPU_ENERGY_MODEL_MAX_OPPS as usize];
+    let sorted_opps_slice = if num_opps > 0 {
+        // Sort OPPs in ascending order of frequency (or capacity if frequencies are equal)
+        // so that power levels are strictly increasing in processing rate, regardless of
+        // whether the ZBI payload provided OPPs in ascending, descending, or unsorted order.
+        sorted_opps[..num_opps].copy_from_slice(&domain.opps[..num_opps]);
+        sorted_opps[..num_opps].sort_unstable_by_key(|opp| (opp.frequency_khz, opp.capacity));
+        &sorted_opps[..num_opps]
+    } else {
+        &[]
+    };
+
+    // First pass: count how many active OPP levels satisfy the floor OPP threshold.
+    // Iris hardware OPP index 0 corresponds to the fastest OPP, and index num_opps - 1
+    // corresponds to the slowest OPP. Since sorted_opps is ascending (idx 0 = slowest),
+    // the hardware control argument is mapped as (num_opps - 1 - idx).
+    let mut valid_opp_count = 0usize;
+    for idx in 0..sorted_opps_slice.len() {
+        let control_arg = (num_opps - 1 - idx) as u64;
+        if control_arg <= floor_opp {
+            valid_opp_count += 1;
+        }
+    }
+
+    // Power levels consist of 1 WFI idle level + filtered active OPP levels.
+    // Allocate directly on the kernel heap rather than maintaining a transient stack array.
+    let total_level_count = 1 + valid_opp_count;
+    let mut uninit =
+        Box::<[ProcessorPowerLevelFfi]>::try_new_uninit_slice(total_level_count).ok()?;
+
+    // Populate WFI idle level at index 0.
     uninit[0].write(ProcessorPowerLevelFfi {
         options: K_POWER_LEVEL_OPTIONS_DOMAIN_INDEPENDENT,
         processing_rate: 0,
@@ -305,18 +368,18 @@ fn allocate_and_populate_from_domain_opps(
         diagnostic_name: wfi_name,
     });
 
-    if num_opps > 0 {
-        // Sort OPPs in ascending order of frequency (or capacity if frequencies are equal)
-        // so that power levels are strictly increasing in processing rate, regardless of
-        // whether the ZBI payload provided OPPs in ascending, descending, or unsorted order.
-        let mut sorted_opps =
-            [zbi::CpuEnergyModelOpp { frequency_khz: 0, capacity: 0, power_uw: 0, voltage_mv: 0 };
-                32];
-        sorted_opps[..num_opps].copy_from_slice(&domain.opps[..num_opps]);
-        sorted_opps[..num_opps].sort_unstable_by_key(|opp| (opp.frequency_khz, opp.capacity));
+    if !sorted_opps_slice.is_empty() {
+        let max_freq = sorted_opps_slice.last().map(|opp| opp.frequency_khz as u64).unwrap_or(0);
+        let mut write_idx = 1usize;
+        for (idx, opp) in sorted_opps_slice.iter().enumerate() {
+            let control_arg = (num_opps - 1 - idx) as u64;
 
-        let max_freq = sorted_opps[num_opps - 1].frequency_khz as u64;
-        for (idx, opp) in sorted_opps[..num_opps].iter().enumerate() {
+            // Filter out power levels below the hardware floor OPP (i.e. control_arg > floor_opp).
+            // Operating below this floor causes UFS storage controller and interconnect stalls.
+            if control_arg > floor_opp {
+                continue;
+            }
+
             let rate = if opp.capacity > 0 {
                 opp.capacity as u64
             } else if max_freq > 0 {
@@ -329,12 +392,8 @@ fn allocate_and_populate_from_domain_opps(
             } else {
                 (rate * 200_000) + 10_000_000
             };
-            // Iris hardware OPP index 0 corresponds to the fastest OPP, and index num_opps - 1
-            // corresponds to the slowest OPP. Since sorted_opps is ascending (idx 0 = slowest),
-            // the hardware control argument is mapped as (num_opps - 1 - idx).
-            let control_arg = (num_opps - 1 - idx) as u64;
-            let level_idx = idx + 1;
-            uninit[level_idx].write(ProcessorPowerLevelFfi {
+
+            uninit[write_idx].write(ProcessorPowerLevelFfi {
                 options: 0,
                 processing_rate: rate,
                 power_coefficient_nw: power_nw,
@@ -342,10 +401,12 @@ fn allocate_and_populate_from_domain_opps(
                 control_argument: control_arg,
                 diagnostic_name: opp_name,
             });
+            write_idx += 1;
         }
+        debug_assert_eq!(write_idx, total_level_count);
     }
 
-    // SAFETY: All elements from 0 to count-1 in `uninit` were explicitly initialized above.
+    // SAFETY: All elements from 0 to total_level_count-1 in `uninit` were explicitly initialized above.
     Some(unsafe { uninit.assume_init() })
 }
 
@@ -392,25 +453,25 @@ pub unsafe extern "C" fn iris_power_init(
     // kernel stack. The combined 4 domains have ~97 total levels (~4.6 KB), which would consume a
     // significant portion of the limited kernel stack (8-16 KB).
     let Some(levels_d0) =
-        allocate_and_populate_from_domain_opps(&domain_slice[0], wfi_name, opp_name)
+        allocate_and_populate_from_domain_opps(0, &domain_slice[0], wfi_name, opp_name)
     else {
         dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 0 power levels\n");
         return;
     };
     let Some(levels_d1) =
-        allocate_and_populate_from_domain_opps(&domain_slice[1], wfi_name, opp_name)
+        allocate_and_populate_from_domain_opps(1, &domain_slice[1], wfi_name, opp_name)
     else {
         dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 1 power levels\n");
         return;
     };
     let Some(levels_d2) =
-        allocate_and_populate_from_domain_opps(&domain_slice[2], wfi_name, opp_name)
+        allocate_and_populate_from_domain_opps(2, &domain_slice[2], wfi_name, opp_name)
     else {
         dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 2 power levels\n");
         return;
     };
     let Some(levels_d3) =
-        allocate_and_populate_from_domain_opps(&domain_slice[3], wfi_name, opp_name)
+        allocate_and_populate_from_domain_opps(3, &domain_slice[3], wfi_name, opp_name)
     else {
         dprintf!(CRITICAL, "POWER: Failed to allocate memory for iris domain 3 power levels\n");
         return;
@@ -454,35 +515,38 @@ pub unsafe extern "C" fn iris_power_init(
 
     dprintf!(INFO, "POWER: Registered iris power domains\n");
 
-    // When boot boosting is enabled, set default boot performance limits matching boot OPPs to
-    // ensure responsive boot performance on the 1000 user processing rate scale:
-    // - Domain 0 (Little, CPUs 0-1): Boot OPP 8 (1.632 GHz) -> min rate 0, max rate 109
-    // - Domain 1 (Medium 1, CPUs 2-4): Boot OPP 11 (1.785 GHz) -> min rate 0, max rate 412
-    // - Domain 2 (Medium 2, CPUs 5-6): Boot OPP 11 (1.785 GHz) -> min rate 0, max rate 412
-    // - Domain 3 (Big, CPU 7): Boot OPP 10 (2.073 GHz) -> min rate 0, max rate 549
+    // When boot boosting is enabled, cap the maximum processing rates to boot OPPs during startup
+    // to prevent excessive thermal dissipation before userspace thermal services initialize.
+    //
+    // Note: power_management_set_rate_limits operates in userspace rate units (scale of 1000)
+    // where rate = round(capacity * 1000 / max_system_capacity=1024):
+    // - Domain 0 (Little, CPUs 0-1): Boot OPP 8 (1.882 GHz, cap 200) -> max rate 196
+    // - Domain 1 (Medium 1, CPUs 2-4): Boot OPP 11 (1.785 GHz, cap 556) -> max rate 543
+    // - Domain 2 (Medium 2, CPUs 5-6): Boot OPP 11 (1.785 GHz, cap 555) -> max rate 542
+    // - Domain 3 (Big, CPU 7): Boot OPP 10 (2.208 GHz, cap 811) -> max rate 792
     if power_management_boot_boost_enabled() {
-        if let Err(status) = power_management_set_rate_limits(0x03, 0, 109) {
+        if let Err(status) = power_management_set_rate_limits(0x03, 0, 196) {
             dprintf!(
                 CRITICAL,
                 "POWER: Failed to set iris domain 0 boot performance limits: {}\n",
                 status.into_raw()
             );
         }
-        if let Err(status) = power_management_set_rate_limits(0x1c, 0, 412) {
+        if let Err(status) = power_management_set_rate_limits(0x1c, 0, 543) {
             dprintf!(
                 CRITICAL,
                 "POWER: Failed to set iris domain 1 boot performance limits: {}\n",
                 status.into_raw()
             );
         }
-        if let Err(status) = power_management_set_rate_limits(0x60, 0, 412) {
+        if let Err(status) = power_management_set_rate_limits(0x60, 0, 542) {
             dprintf!(
                 CRITICAL,
                 "POWER: Failed to set iris domain 2 boot performance limits: {}\n",
                 status.into_raw()
             );
         }
-        if let Err(status) = power_management_set_rate_limits(0x80, 0, 549) {
+        if let Err(status) = power_management_set_rate_limits(0x80, 0, 792) {
             dprintf!(
                 CRITICAL,
                 "POWER: Failed to set iris domain 3 boot performance limits: {}\n",
@@ -665,9 +729,10 @@ mod tests {
         };
 
         let asc_levels =
-            super::allocate_and_populate_from_domain_opps(&asc_domain, wfi_name, opp_name).unwrap();
+            super::allocate_and_populate_from_domain_opps(0, &asc_domain, wfi_name, opp_name)
+                .unwrap();
         let desc_levels =
-            super::allocate_and_populate_from_domain_opps(&desc_domain, wfi_name, opp_name)
+            super::allocate_and_populate_from_domain_opps(0, &desc_domain, wfi_name, opp_name)
                 .unwrap();
 
         assert_eq!(asc_levels.len(), 4);
@@ -681,7 +746,8 @@ mod tests {
             assert_eq!(asc_levels[i].control_argument, desc_levels[i].control_argument);
         }
 
-        // Verify ordering: Level 0 = WFI (rate 0), Level 1 = 50 (ctrl arg 2), Level 2 = 100 (ctrl arg 1), Level 3 = 150 (ctrl arg 0).
+        // Verify ordering: Level 0 = WFI (rate 0), Level 1 = 50 (ctrl arg 2), Level 2 = 100 (ctrl
+        // arg 1), Level 3 = 150 (ctrl arg 0).
         assert_eq!(asc_levels[0].processing_rate, 0);
         assert_eq!(asc_levels[0].control_interface, CONTROL_INTERFACE_ARM_WFI);
 
@@ -693,5 +759,51 @@ mod tests {
 
         assert_eq!(asc_levels[3].processing_rate, 150);
         assert_eq!(asc_levels[3].control_argument, 0);
+    }
+
+    /// Tests that allocate_and_populate_from_domain_opps filters out power levels below floor_opp.
+    #[test]
+    fn test_allocate_and_populate_opp_filtering_below_floor() {
+        let wfi_name = c"WFI".as_ptr();
+        let opp_name = c"OPP".as_ptr();
+
+        // Create a domain with 24 OPPs (frequencies 100MHz to 2400MHz, ctrl args 0..23).
+        let mut domain = zbi::CpuEnergyModelDomain {
+            cpu_mask: 0x60,
+            max_rate: 2400,
+            domain_id: 2,
+            opp_count: 24,
+            opps: [zbi::CpuEnergyModelOpp {
+                frequency_khz: 0,
+                capacity: 0,
+                power_uw: 0,
+                voltage_mv: 0,
+            }; zbi::KERNEL_DRIVER_CPU_ENERGY_MODEL_MAX_OPPS as usize],
+        };
+        for i in 0..24 {
+            domain.opps[i] = zbi::CpuEnergyModelOpp {
+                frequency_khz: ((i + 1) * 100_000) as u32,
+                capacity: ((i + 1) * 100) as u32,
+                power_uw: ((i + 1) * 50) as u32,
+                voltage_mv: 800,
+            };
+        }
+
+        // Domain 2 has floor_opp = 20. Control args > 20 (i.e. 21..23) must be filtered out.
+        let levels =
+            super::allocate_and_populate_from_domain_opps(2, &domain, wfi_name, opp_name).unwrap();
+
+        // 1 WFI level + 21 OPP levels (ctrl args 0..20) = 22 total levels.
+        assert_eq!(levels.len(), 22);
+        assert_eq!(levels[0].processing_rate, 0);
+        assert_eq!(levels[0].control_interface, CONTROL_INTERFACE_ARM_WFI);
+
+        // Slowest active level (Level 1) should correspond to floor_opp (ctrl arg 20).
+        assert_eq!(levels[1].control_argument, 20);
+        assert_eq!(levels[1].processing_rate, 400);
+
+        // Fastest level (Level 21) should correspond to max OPP (ctrl arg 0).
+        assert_eq!(levels[21].control_argument, 0);
+        assert_eq!(levels[21].processing_rate, 2400);
     }
 }
