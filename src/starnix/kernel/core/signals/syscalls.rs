@@ -716,8 +716,7 @@ pub fn sys_pidfd_send_signal(
     }
 
     let file = current_task.files().get(pidfd)?;
-    let target = file.as_thread_group_key()?;
-    let target = target.upgrade().ok_or_else(|| errno!(ESRCH))?;
+    let target = file.as_pid()?.get_thread_group().ok_or_else(|| errno!(ESRCH))?;
 
     if siginfo_ref.is_null() {
         target.send_signal_unchecked(current_task, unchecked_signal)
@@ -937,7 +936,7 @@ pub fn sys_waitid(
             if file.flags().contains(OpenFlags::NONBLOCK) {
                 waiting_options.block = false;
             }
-            ProcessSelector::Process(file.as_thread_group_key()?)
+            ProcessSelector::Process(file.as_pid()?)
         }
         _ => return error!(EINVAL),
     };

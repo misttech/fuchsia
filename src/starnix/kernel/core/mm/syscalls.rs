@@ -369,7 +369,7 @@ pub fn sys_process_mrelease(
         return error!(EINVAL);
     }
     let file = current_task.files().get(pidfd)?;
-    let task = current_task.get_task(file.as_thread_group_key()?.pid())?;
+    let task = file.as_pid()?.get_task()?;
     if !task.load_stopped().is_stopped() {
         return error!(EINVAL);
     }

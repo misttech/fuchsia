@@ -10,8 +10,7 @@ use starnix_core::mm::{
 };
 use starnix_core::security;
 use starnix_core::task::{
-    CurrentTask, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup, ThreadGroupKey,
-    path_from_root,
+    CurrentTask, Pid, Task, TaskPersistentInfo, TaskStateCode, ThreadGroup, path_from_root,
 };
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
@@ -321,9 +320,9 @@ impl FileOps for TaskDirectory {
         Ok(())
     }
 
-    fn as_thread_group_key(&self, _file: &FileObject) -> Result<ThreadGroupKey, Errno> {
+    fn as_pid(&self, _file: &FileObject) -> Result<Pid, Errno> {
         let task = self.task_weak.upgrade().ok_or_else(|| errno!(ESRCH))?;
-        Ok(task.thread_group().into())
+        Ok(task.thread_group.leader.clone())
     }
 }
 
@@ -727,11 +726,11 @@ impl DynamicFileSource for CgroupFile {
                 parts.push(&name_storage);
             }
             let controller_str = parts.join(",");
-            let cgroup = root.get_cgroup(task.thread_group());
+            let cgroup = root.get_cgroup(&task.thread_group.leader);
             let path = path_from_root(cgroup)?;
             sink.write(format!("{}:{}:{}\n", root.hierarchy_id, controller_str, path).as_bytes());
         }
-        let cgroup = task.kernel().cgroups.cgroup2.get_cgroup(task.thread_group());
+        let cgroup = task.kernel().cgroups.cgroup2.get_cgroup(&task.thread_group.leader);
         let path = path_from_root(cgroup)?;
         sink.write(format!("0::{}\n", path).as_bytes());
         Ok(())

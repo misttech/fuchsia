@@ -31,7 +31,7 @@ impl ProcessEntry {
 }
 
 /// Entities identified by a pid.
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 pub struct PidEntry {
     pub id: pid_t,
     task: RcuWeak<Task>,
@@ -102,6 +102,18 @@ impl PartialEq for PidEntry {
 }
 
 impl Eq for PidEntry {}
+
+impl PartialOrd for PidEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PidEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self as *const Self).cmp(&(other as *const Self))
+    }
+}
 
 impl std::hash::Hash for PidEntry {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {

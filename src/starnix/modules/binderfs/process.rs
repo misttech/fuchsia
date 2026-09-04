@@ -19,7 +19,7 @@ use crossbeam::queue::SegQueue;
 use starnix_core::mm::MemoryAccessor;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mutable_state::Guard;
-use starnix_core::task::{CurrentTask, Kernel, Task, ThreadGroupKey};
+use starnix_core::task::{CurrentTask, Kernel, Pid, Task};
 use starnix_core::vfs::FdNumber;
 use starnix_logging::{log_trace, log_warn, track_stub};
 use starnix_sync::{
@@ -181,7 +181,7 @@ pub struct TransactionState {
     /// The process whose handle table `handles` belong to.
     pub proc: WeakRef<BinderProcess>,
     /// The target process.
-    pub key: ThreadGroupKey,
+    pub key: Pid,
     /// The remote resource accessor of the target process. This is None when the receiving process
     /// is a local process.
     pub remote_resource_accessor: Option<Arc<RemoteResourceAccessor>>,
@@ -216,7 +216,7 @@ impl Releasable for TransactionState {
                         // Panicking would be wrong, in case the client issued an extra strong decrement.
                         log_warn!(
                             "Error when dropping transaction state for process {}: {:?}",
-                            proc.key.pid(),
+                            proc.key.id,
                             error
                         );
                     }
@@ -356,7 +356,7 @@ pub struct BinderProcess {
     pub identifier: u64,
 
     /// The identifier of the process associated with this binder process.
-    pub key: ThreadGroupKey,
+    pub key: Pid,
 
     /// Resource accessor to access remote resource in case of a remote binder process. None in
     /// case of a local process.
@@ -405,7 +405,7 @@ impl BinderProcess {
     #[allow(clippy::let_and_return)]
     pub fn new(
         identifier: u64,
-        key: ThreadGroupKey,
+        key: Pid,
         remote_resource_accessor: Option<Arc<RemoteResourceAccessor>>,
     ) -> OwnedRef<BinderProcess> {
         log_trace!("new BinderProcess id={}", identifier);
@@ -1173,6 +1173,6 @@ impl HandleTable {
 }
 
 /// Returns a task in the process keyed by `key`.
-fn get_task_for_thread_group(key: &ThreadGroupKey) -> Option<Arc<Task>> {
-    key.upgrade().and_then(|tg| tg.read().get_running_task().ok())
+fn get_task_for_thread_group(key: &Pid) -> Option<Arc<Task>> {
+    key.get_thread_group().and_then(|tg| tg.read().get_running_task().ok())
 }

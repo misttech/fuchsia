@@ -15,8 +15,7 @@ use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentCreds, CurrentTask,
     EventHandler, Kernel, NormalPriority, Pid, ProcessExitInfo, RealtimePriority, SchedulerState,
     SchedulingPolicy, SeccompFilterContainer, SeccompState, SeccompStateValue, TaskRunningState,
-    ThreadGroup, ThreadGroupKey, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter,
-    ZombieProcess,
+    ThreadGroup, ThreadState, UtsNamespaceHandle, WaitCanceler, Waiter, ZombieProcess,
 };
 use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable};
 use atomic_bitflags::atomic_bitflags;
@@ -745,7 +744,7 @@ impl TaskStateCode {
 pub struct TaskPersistentInfoState {
     /// Immutable information about the task
     tid: tid_t,
-    thread_group_key: ThreadGroupKey,
+    pid: Pid,
 
     /// The command of this task.
     command: LockDepMutex<TaskCommand, TaskCommandLevel>,
@@ -789,13 +788,13 @@ impl<'a> CredentialsWriteGuard<'a> {
 impl TaskPersistentInfoState {
     fn new(
         tid: tid_t,
-        thread_group_key: ThreadGroupKey,
+        pid: Pid,
         command: TaskCommand,
         creds: Arc<Credentials>,
     ) -> TaskPersistentInfo {
         Arc::new(Self {
             tid,
-            thread_group_key,
+            pid,
             command: command.into(),
             creds: RcuDroppableArc::new(creds),
             creds_lock: Default::default(),
@@ -807,7 +806,7 @@ impl TaskPersistentInfoState {
     }
 
     pub fn pid(&self) -> pid_t {
-        self.thread_group_key.pid()
+        self.pid.id
     }
 
     pub fn command_guard(&self) -> LockDepGuard<'_, TaskCommand> {
@@ -914,7 +913,7 @@ pub struct Task {
     pub tid: Pid,
 
     /// The process key of this task.
-    pub thread_group_key: ThreadGroupKey,
+    pub pid: Pid,
 
     /// The kernel to which this thread group belongs.
     pub kernel: Arc<Kernel>,
@@ -1028,7 +1027,6 @@ impl Task {
                 let uid = self.real_creds().uid;
                 let exit_info = ProcessExitInfo { status: exit_status, exit_signal };
                 let zombie = ZombieProcess {
-                    thread_group_key: self.thread_group_key.clone(),
                     pid: self.thread_group.leader.clone(),
                     pgid,
                     uid,
@@ -1105,13 +1103,13 @@ impl Task {
         robust_list_head: RobustListHeadPtr,
         timerslack_ns: u64,
     ) -> Arc<Self> {
-        let thread_group_key = ThreadGroupKey::from(&thread_group);
+        let pid = thread_group.leader.clone();
         let tid_id = tid.id;
         Arc::new_cyclic(|weak_self| {
             let task = Task {
                 weak_self: weak_self.clone(),
                 tid,
-                thread_group_key: thread_group_key.clone(),
+                pid: pid.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
                 running_state: RcuArc::new(Some(Arc::new(TaskRunningState {
@@ -1147,12 +1145,7 @@ impl Task {
                     cpuset_path: "/".to_string(),
                 }
                 .into(),
-                persistent_info: TaskPersistentInfoState::new(
-                    tid_id,
-                    thread_group_key,
-                    command,
-                    creds,
-                ),
+                persistent_info: TaskPersistentInfoState::new(tid_id, pid, command, creds),
                 seccomp_filter_state,
                 trace_syscalls: AtomicBool::new(false),
             };
@@ -1364,7 +1357,7 @@ impl Task {
     }
 
     pub fn get_pid(&self) -> pid_t {
-        self.thread_group_key.pid()
+        self.pid.id
     }
 
     pub fn get_tid(&self) -> tid_t {

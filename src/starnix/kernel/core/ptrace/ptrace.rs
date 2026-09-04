@@ -582,7 +582,7 @@ impl ZombiePtracees {
         let mut lockless_list = old_parent.read().deferred_zombie_ptracers.clone();
 
         for deferred_zombie_ptracer in &lockless_list {
-            if let Some(tg) = deferred_zombie_ptracer.tracer_thread_group_key.upgrade() {
+            if let Some(tg) = deferred_zombie_ptracer.tracer_pid.get_thread_group() {
                 tg.write().zombie_ptracees.set_parent_of(
                     deferred_zombie_ptracer.tracee_tid,
                     None,

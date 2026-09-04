@@ -10,7 +10,7 @@ use fidl_fuchsia_hardware_qualcomm_fastrpc as frpc;
 use starnix_core::device::DeviceOps;
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, ProtectionFlags};
-use starnix_core::task::{CurrentTask, Kernel, ThreadGroupKey, ThreadLockupDetector};
+use starnix_core::task::{CurrentTask, Kernel, Pid, ThreadLockupDetector};
 use starnix_core::vfs::{
     Anon, FdFlags, FdNumber, FileObject, FileObjectState, FileOps, NamespaceNode,
     call_fidl_and_await_close,
@@ -232,7 +232,7 @@ struct FastRPCFileState {
     session: Option<Arc<frpc::RemoteDomainSynchronousProxy>>,
     payload_vmos: VecDeque<frpc::SharedPayloadBuffer>,
     cid: Option<i32>,
-    pid: Option<ThreadGroupKey>,
+    pid: Option<Pid>,
 }
 
 struct ParsedInvoke {
@@ -276,7 +276,7 @@ struct PayloadInformation {
 }
 
 struct FastRPCFile {
-    pid_open: ThreadGroupKey,
+    pid_open: Pid,
     device: Arc<frpc::SecureFastRpcSynchronousProxy>,
     cached_capabilities: Arc<OnceLock<[u32; FASTRPC_MAX_DSP_ATTRIBUTES]>>,
     inner_state: LockDepMutex<FastRPCFileState, FastrpcInnerState>,
@@ -284,7 +284,7 @@ struct FastRPCFile {
 
 impl FastRPCFile {
     fn new(
-        pid_open: ThreadGroupKey,
+        pid_open: Pid,
         device: Arc<frpc::SecureFastRpcSynchronousProxy>,
         cached_capabilities: Arc<OnceLock<[u32; FASTRPC_MAX_DSP_ATTRIBUTES]>>,
     ) -> Self {
@@ -785,7 +785,7 @@ impl FileOps for FastRPCFile {
         request: u32,
         arg: SyscallArg,
     ) -> Result<SyscallResult, Errno> {
-        let pid = current_task.thread_group_key.clone();
+        let pid = current_task.pid.clone();
         if pid != self.pid_open {
             return error!(EPERM);
         }
@@ -945,7 +945,7 @@ impl DeviceOps for FastRPCDevice {
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
         Ok(Box::new(FastRPCFile::new(
-            current_task.thread_group_key.clone(),
+            current_task.pid.clone(),
             self.device.clone(),
             self.cached_capabilities.clone(),
         )))

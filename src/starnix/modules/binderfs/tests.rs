@@ -108,8 +108,7 @@ pub mod tests {
     impl BinderProcessFixture {
         fn new(current_task: &CurrentTask, device: &BinderDevice) -> Self {
             let task = create_task(current_task.kernel(), "task");
-            let (proc, thread) =
-                device.create_process_and_thread(task.thread_group_key.clone(), &task.task);
+            let (proc, thread) = device.create_process_and_thread(task.pid.clone(), &task.task);
 
             mmap_shared_memory(&device, &task, &proc);
             Self {
@@ -123,10 +122,8 @@ pub mod tests {
         }
 
         fn new_current(current_task: &CurrentTask, device: &BinderDevice) -> Self {
-            let (proc, thread) = device.create_process_and_thread(
-                current_task.thread_group_key.clone(),
-                &current_task.task,
-            );
+            let (proc, thread) =
+                device.create_process_and_thread(current_task.pid.clone(), &current_task.task);
 
             mmap_shared_memory(&device, current_task, &proc);
             Self {
@@ -1431,7 +1428,7 @@ pub mod tests {
                 transaction_data: binder_transaction_data {
                     code: 1,
                     flags: 0,
-                    sender_pid: sender.proc.key.pid(),
+                    sender_pid: sender.proc.key.id,
                     sender_euid: 0,
                     target: binder_transaction_data__bindgen_ty_1 { handle: 0 },
                     cookie: 0,
@@ -4104,7 +4101,7 @@ pub mod tests {
 
             // 2. A process-directed command is enqueued on proc_a.
             let oneway_to_a = Command::OnewayTransaction(TransactionData {
-                peer_pid: proc_b.proc.key.pid(),
+                peer_pid: proc_b.proc.key.id,
                 peer_tid: proc_b.thread.tid,
                 peer_euid: current_task.current_creds().euid,
                 object: FlatBinderObject::Remote { handle: Handle::ContextManager },
@@ -4535,7 +4532,7 @@ pub mod tests {
             let freeze_info_address = map_object_anywhere(
                 &current_task,
                 &binder_freeze_info {
-                    pid: receiver.proc.key.pid() as u32,
+                    pid: receiver.proc.key.id as u32,
                     enable: 1,
                     timeout_ms: 1000,
                 },
@@ -4581,7 +4578,7 @@ pub mod tests {
             let frozen_status_info_address = map_object_anywhere(
                 &current_task,
                 &binder_frozen_status_info {
-                    pid: receiver.proc.key.pid() as u32,
+                    pid: receiver.proc.key.id as u32,
                     sync_recv: 0,
                     async_recv: 0,
                 },

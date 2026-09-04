@@ -7,8 +7,7 @@ use crate::mm::{DesiredAddress, MappingName, MappingOptions, MemoryAccessorExt, 
 use crate::power::OnWakeOps;
 use crate::security;
 use crate::task::{
-    CurrentTask, EventHandler, ThreadGroupKey, WaitCallback, WaitCanceler, Waiter,
-    register_delayed_release,
+    CurrentTask, EventHandler, Pid, WaitCallback, WaitCanceler, Waiter, register_delayed_release,
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::file_server::serve_file;
@@ -329,10 +328,10 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         error!(ENOTSUP)
     }
 
-    /// Returns the associated pid_t.
+    /// Returns the associated Pid.
     ///
     /// Used by pidfd and `/proc/<pid>`. Unlikely to be used by other files.
-    fn as_thread_group_key(&self, _file: &FileObject) -> Result<ThreadGroupKey, Errno> {
+    fn as_pid(&self, _file: &FileObject) -> Result<Pid, Errno> {
         error!(EBADF)
     }
 
@@ -511,8 +510,8 @@ impl<T: FileOps + CloseFreeSafe, P: Deref<Target = T> + Send + Sync + 'static> F
         self.deref().get_handles(file, current_task)
     }
 
-    fn as_thread_group_key(&self, file: &FileObject) -> Result<ThreadGroupKey, Errno> {
-        self.deref().as_thread_group_key(file)
+    fn as_pid(&self, file: &FileObject) -> Result<Pid, Errno> {
+        self.deref().as_pid(file)
     }
 
     fn readahead(
@@ -1925,8 +1924,8 @@ impl FileObject {
         self.ops().get_handles(self, current_task)
     }
 
-    pub fn as_thread_group_key(&self) -> Result<ThreadGroupKey, Errno> {
-        self.ops().as_thread_group_key(self)
+    pub fn as_pid(&self) -> Result<Pid, Errno> {
+        self.ops().as_pid(self)
     }
 
     /// Update the file flags.

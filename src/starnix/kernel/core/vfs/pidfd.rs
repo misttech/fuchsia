@@ -4,8 +4,8 @@
 
 use crate::mm::MemoryManager;
 use crate::task::{
-    CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, ThreadGroup, ThreadGroupKey,
-    WaitCanceler, Waiter,
+    CurrentTask, EventHandler, Pid, SignalHandler, SignalHandlerInner, ThreadGroup, WaitCanceler,
+    Waiter,
 };
 use crate::vfs::{
     Anon, FileHandle, FileObject, FileOps, fileops_impl_dataless, fileops_impl_nonseekable,
@@ -18,7 +18,7 @@ use starnix_uapi::vfs::FdEvents;
 
 pub struct PidFdFileObject {
     /// The key of the task represented by this file.
-    tg: ThreadGroupKey,
+    tg: Pid,
 
     // Receives a notification when the tracked process terminates.
     terminated_event: zx::EventPair,
@@ -62,7 +62,7 @@ pub fn new_pidfd(
 
     Anon::new_private_file(
         current_task,
-        Box::new(PidFdFileObject { tg: proc.into(), terminated_event }),
+        Box::new(PidFdFileObject { tg: proc.leader.clone(), terminated_event }),
         flags,
         "[pidfd]",
     )
@@ -73,7 +73,7 @@ impl FileOps for PidFdFileObject {
     fileops_impl_dataless!();
     fileops_impl_noop_sync!();
 
-    fn as_thread_group_key(&self, _file: &FileObject) -> Result<ThreadGroupKey, Errno> {
+    fn as_pid(&self, _file: &FileObject) -> Result<Pid, Errno> {
         Ok(self.tg.clone())
     }
 
@@ -128,7 +128,7 @@ impl FileOps for ZombiePidFdFileObject {
     fileops_impl_dataless!();
     fileops_impl_noop_sync!();
 
-    fn as_thread_group_key(&self, _file: &FileObject) -> Result<ThreadGroupKey, Errno> {
+    fn as_pid(&self, _file: &FileObject) -> Result<Pid, Errno> {
         // There's nothing really reasonable to return here?
         error!(EINVAL)
     }

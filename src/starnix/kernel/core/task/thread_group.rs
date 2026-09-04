@@ -20,7 +20,6 @@ use crate::task::{
     SessionDisassociation, Task, TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
-use fuchsia_rcu::RcuDroppable;
 use itertools::Itertools;
 use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicCounter, DropNotifier};
@@ -33,7 +32,6 @@ use starnix_task_command::TaskCommand;
 use starnix_types::ownership::{OwnedRef, Releasable};
 use starnix_types::stats::TaskTimeStats;
 use starnix_types::time::{itimerspec_from_itimerval, timeval_from_duration};
-use starnix_uapi::arc_key::WeakKey;
 use starnix_uapi::auth::{CAP_SYS_ADMIN, CAP_SYS_RESOURCE, Credentials};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::personality::PersonalityFlags;
@@ -76,42 +74,6 @@ impl std::ops::Deref for ZirconProcess {
     }
 }
 
-/// A weak reference to a thread group that can be used in set and maps.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, RcuDroppable)]
-pub struct ThreadGroupKey {
-    pid: pid_t,
-    thread_group: WeakKey<ThreadGroup>,
-}
-
-impl ThreadGroupKey {
-    /// The pid of the thread group keyed by this object.
-    ///
-    /// As the key is weak (and pid are not unique due to pid namespaces), this should not be used
-    /// as an unique identifier of the thread group.
-    pub fn pid(&self) -> pid_t {
-        self.pid
-    }
-}
-
-impl std::ops::Deref for ThreadGroupKey {
-    type Target = Weak<ThreadGroup>;
-    fn deref(&self) -> &Self::Target {
-        &self.thread_group.0
-    }
-}
-
-impl From<&ThreadGroup> for ThreadGroupKey {
-    fn from(tg: &ThreadGroup) -> Self {
-        Self { pid: tg.leader.id, thread_group: WeakKey::from(&tg.weak_self.upgrade().unwrap()) }
-    }
-}
-
-impl<T: AsRef<ThreadGroup>> From<T> for ThreadGroupKey {
-    fn from(tg: T) -> Self {
-        tg.as_ref().into()
-    }
-}
-
 /// Values used for waiting on the [ThreadGroup] lifecycle wait queue.
 #[repr(u64)]
 pub enum ThreadGroupLifecycleWaitValue {
@@ -132,22 +94,22 @@ impl Into<u64> for ThreadGroupLifecycleWaitValue {
 #[derive(Clone, Debug)]
 pub struct DeferredZombiePTracer {
     /// Original tracer
-    pub tracer_thread_group_key: ThreadGroupKey,
+    pub tracer_pid: Pid,
     /// Tracee tid
     pub tracee_tid: tid_t,
     /// Tracee pgid
     pub tracee_pgid: pid_t,
     /// Tracee thread group
-    pub tracee_thread_group_key: ThreadGroupKey,
+    pub tracee_pid: Pid,
 }
 
 impl DeferredZombiePTracer {
     fn new(tracer: &ThreadGroup, tracee: &Task, tracee_pgid: pid_t) -> Self {
         Self {
-            tracer_thread_group_key: tracer.into(),
+            tracer_pid: tracer.leader.clone(),
             tracee_tid: tracee.tid.id,
             tracee_pgid,
-            tracee_thread_group_key: tracee.thread_group_key.clone(),
+            tracee_pid: tracee.thread_group.leader.clone(),
         }
     }
 }
@@ -429,7 +391,7 @@ pub enum ProcessSelector {
     /// Matches all the processes in the given process group
     Pgid(pid_t),
     /// Match the thread group with the given key
-    Process(ThreadGroupKey),
+    Process(Pid),
 }
 
 impl ProcessSelector {
@@ -456,7 +418,7 @@ impl ProcessSelector {
                 }
             }
             ProcessSelector::Process(ref key) => {
-                if let Some(tg) = key.upgrade() {
+                if let Some(tg) = key.get_thread_group() {
                     tg.read().tasks.contains_key(&tid)
                 } else {
                     false
@@ -508,7 +470,6 @@ impl WaitResult {
 
 #[derive(Debug)]
 pub struct ZombieProcess {
-    pub thread_group_key: ThreadGroupKey,
     pub pid: Pid,
     pub pgid: Pid,
     pub uid: uid_t,
@@ -526,11 +487,7 @@ pub struct ZombieProcess {
 impl PartialEq for ZombieProcess {
     fn eq(&self, other: &Self) -> bool {
         // We assume only one set of ZombieProcess data per process, so this should cover it.
-        self.thread_group_key == other.thread_group_key
-            && self.pid == other.pid
-            && self.pgid == other.pgid
-            && self.uid == other.uid
-            && self.is_canonical == other.is_canonical
+        self.pid == other.pid && self.is_canonical == other.is_canonical
     }
 }
 
@@ -544,7 +501,7 @@ impl PartialOrd for ZombieProcess {
 
 impl Ord for ZombieProcess {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.thread_group_key.cmp(&other.thread_group_key)
+        (&self.pid, self.is_canonical).cmp(&(&other.pid, other.is_canonical))
     }
 }
 
@@ -556,7 +513,6 @@ impl ZombieProcess {
     ) -> OwnedRef<Self> {
         let time_stats = thread_group.base.time_stats() + thread_group.children_time_stats;
         OwnedRef::new(ZombieProcess {
-            thread_group_key: thread_group.base.into(),
             pid: thread_group.base.leader.clone(),
             pgid: thread_group.process_group.leader.clone(),
             uid: credentials.uid,
@@ -585,7 +541,6 @@ impl ZombieProcess {
 
     pub fn as_artificial(&self) -> Self {
         ZombieProcess {
-            thread_group_key: self.thread_group_key.clone(),
             pid: self.pid.clone(),
             pgid: self.pgid.clone(),
             uid: self.uid,
@@ -600,7 +555,7 @@ impl ZombieProcess {
             ProcessSelector::Any => true,
             ProcessSelector::Pid(pid) => self.pid() == pid,
             ProcessSelector::Pgid(pgid) => self.pgid() == pgid,
-            ProcessSelector::Process(ref key) => self.thread_group_key == *key,
+            ProcessSelector::Process(ref key) => self.pid == *key,
         }
     }
 
@@ -963,7 +918,7 @@ impl ThreadGroup {
             // Remove the process from the cgroup2 pid table after TG lock is dropped.
             // This function will hold the CgroupState lock which should be before the TG lock. See
             // more in lock_cgroup2_pid_table comments.
-            self.kernel.cgroups.lock_cgroup2_pid_table().remove_process(self.into());
+            self.kernel.cgroups.lock_cgroup2_pid_table().remove_process(&self.leader);
 
             self.detach_ptracees(&mut pids);
 
@@ -1086,9 +1041,7 @@ impl ThreadGroup {
         let mut state = self.write();
 
         state.children.remove(&zombie.pid());
-        state
-            .deferred_zombie_ptracers
-            .retain(|dzp| dzp.tracee_thread_group_key != zombie.thread_group_key);
+        state.deferred_zombie_ptracers.retain(|dzp| dzp.tracee_pid != zombie.pid);
 
         let exit_signal = zombie.exit_info.exit_signal;
         let mut signal_info = zombie.to_wait_result().as_signal_info();
@@ -1690,9 +1643,7 @@ impl ThreadGroup {
                         {
                             let mut state = tg.write();
                             state.children.remove(&z.pid());
-                            state
-                                .deferred_zombie_ptracers
-                                .retain(|dzp| dzp.tracee_thread_group_key != z.thread_group_key);
+                            state.deferred_zombie_ptracers.retain(|dzp| dzp.tracee_pid != z.pid);
                         }
 
                         z.release(pids);
@@ -2234,7 +2185,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                 let _token = allow_subclass();
                 pids.get_process_group(pgid).as_ref() == Some(&child.read().process_group)
             }
-            ProcessSelector::Process(ref key) => *key == ThreadGroupKey::from(child),
+            ProcessSelector::Process(ref key) => key == &child.leader,
         };
 
         // The children whose exit signal matches the waiting options queried.
@@ -2262,9 +2213,9 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             // There still might be a process that ptrace hasn't looked at yet.
             if self.deferred_zombie_ptracers.iter().any(|dzp| match *selector {
                 ProcessSelector::Any => true,
-                ProcessSelector::Pid(pid) => dzp.tracee_thread_group_key.pid() == pid,
+                ProcessSelector::Pid(pid) => dzp.tracee_pid.id == pid,
                 ProcessSelector::Pgid(pgid) => pgid == dzp.tracee_pgid,
-                ProcessSelector::Process(ref key) => *key == dzp.tracee_thread_group_key,
+                ProcessSelector::Process(ref key) => key == &dzp.tracee_pid,
             }) {
                 return WaitableChildResult::ShouldWait;
             }

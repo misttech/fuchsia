@@ -35,7 +35,7 @@ use crate::trace::{
 };
 use starnix_core::security;
 use starnix_core::task::{
-    CurrentTask, EventHandler, Kernel, SimpleWaiter, Task, ThreadGroupKey, WaitCanceler, Waiter,
+    CurrentTask, EventHandler, Kernel, Pid, SimpleWaiter, Task, WaitCanceler, Waiter,
 };
 use starnix_core::vfs::buffers::{InputBuffer, OutputBuffer};
 use starnix_core::vfs::{
@@ -110,7 +110,7 @@ impl DeviceOps for BinderDevice {
         _node: &NamespaceNode,
         _flags: OpenFlags,
     ) -> Result<Box<dyn FileOps>, Errno> {
-        let identifier = self.create_local_process(current_task.thread_group_key.clone());
+        let identifier = self.create_local_process(current_task.pid.clone());
         log_trace!("opened new BinderConnection id={}", identifier);
         Ok(Box::new(BinderConnection {
             identifier,
@@ -134,7 +134,7 @@ pub struct BinderConnection {
 impl BinderConnection {
     pub fn proc(&self, current_task: &CurrentTask) -> Result<OwnedRef<BinderProcess>, Errno> {
         let process = self.device.find_process(self.identifier)?;
-        if process.key == current_task.thread_group_key.clone() {
+        if process.key == current_task.pid.clone() {
             Ok(process)
         } else {
             process.release(current_task.kernel());
@@ -459,28 +459,24 @@ impl BinderDriver {
         self.procs
             .read()
             .iter()
-            .filter_map(|(_k, v)| if v.key.pid() == pid { Some(OwnedRef::share(v)) } else { None })
+            .filter_map(|(_k, v)| if v.key.id == pid { Some(OwnedRef::share(v)) } else { None })
             .collect::<Vec<_>>()
     }
 
     /// Creates and register the binder process state to represent a local process with `key`.
-    fn create_local_process(&self, key: ThreadGroupKey) -> u64 {
+    fn create_local_process(&self, key: Pid) -> u64 {
         self.create_process(key, None)
     }
 
     /// Creates and register the binder process state to represent a remote process with `key`.
-    fn create_remote_process(
-        &self,
-        key: ThreadGroupKey,
-        resource_accessor: RemoteResourceAccessor,
-    ) -> u64 {
+    fn create_remote_process(&self, key: Pid, resource_accessor: RemoteResourceAccessor) -> u64 {
         self.create_process(key, Some(Arc::new(resource_accessor)))
     }
 
     /// Creates and register the binder process state to represent a process with `key`.
     fn create_process(
         &self,
-        key: ThreadGroupKey,
+        key: Pid,
         resource_accessor: Option<Arc<RemoteResourceAccessor>>,
     ) -> u64 {
         let identifier = self.next_identifier.next();
@@ -499,7 +495,7 @@ impl BinderDriver {
     /// binder device represented by this driver.
     pub fn create_process_and_thread(
         &self,
-        key: ThreadGroupKey,
+        key: Pid,
         task: &Task,
     ) -> (OwnedRef<BinderProcess>, OwnedRef<BinderThread>) {
         let identifier = self.create_local_process(key.clone());
@@ -520,7 +516,7 @@ impl BinderDriver {
         let process_accessor =
             fbinder::ProcessAccessorSynchronousProxy::new(process_accessor.into_channel());
         let identifier = this.create_remote_process(
-            current_task.thread_group_key.clone(),
+            current_task.pid.clone(),
             RemoteResourceAccessor {
                 process_accessor,
                 process,
@@ -1093,7 +1089,7 @@ impl BinderDriver {
                 )?;
 
                 let transaction = TransactionData {
-                    peer_pid: if oneway { 0 } else { context.binder_proc.key.pid() },
+                    peer_pid: if oneway { 0 } else { context.binder_proc.key.id },
                     peer_tid: context.binder_thread.tid,
                     peer_euid: context.current_task.current_creds().euid,
                     object: {
@@ -1284,7 +1280,7 @@ impl BinderDriver {
                     BinderThread::ordered_lock(&target_thread, context.binder_thread);
                 target_thread.enqueue_command(QueuedCommand::new(
                     Command::Reply(TransactionData {
-                        peer_pid: context.binder_proc.key.pid(),
+                        peer_pid: context.binder_proc.key.id,
                         peer_tid: context.binder_thread.tid,
                         peer_euid: context.current_task.current_creds().euid,
 
