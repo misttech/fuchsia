@@ -9,14 +9,14 @@ import("//build/rust/rustc_test.gni")
 #
 # Parameters
 #
-#   spi_bus_count (required)
-#     [int] The number of SPI buses to configure.
+#   bus_addresses (required)
+#     [list of strings] The addresses of the SPI buses to target.
 #
 #   test_specs (required)
 #     [scope] Test specifications.
 #
 template("spi_system_test") {
-  assert(defined(invoker.spi_bus_count), "spi_bus_count must be defined")
+  assert(defined(invoker.bus_addresses), "bus_addresses must be defined")
   assert(defined(invoker.test_specs), "test_specs must be defined")
 
   _manifest_target = "${target_name}_manifest"
@@ -45,6 +45,8 @@ template("spi_system_test") {
     sources = [ "//src/devices/spi/tests/spi-system-test/src/lib.rs" ]
     deps = [
       ":$_config_lib_target",
+      "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+      "//sdk/fidl/fuchsia.driver.token:fuchsia.driver.token_rust",
       "//sdk/fidl/fuchsia.hardware.sharedmemory:fuchsia.hardware.sharedmemory_rust",
       "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust",
       "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
@@ -69,7 +71,7 @@ template("spi_system_test") {
     testonly = true
     cm_label = ":$_manifest_target"
     values = {
-      spi_bus_count = invoker.spi_bus_count
+      bus_addresses = invoker.bus_addresses
     }
   }
 

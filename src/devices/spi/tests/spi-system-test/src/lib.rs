@@ -4,6 +4,8 @@
 
 use anyhow::{Context, Result};
 use fidl::endpoints::ServiceMarker;
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_token as ftoken;
 use fidl_fuchsia_hardware_sharedmemory as fsharedmemory;
 use fidl_fuchsia_hardware_spi as fspi;
 use fidl_fuchsia_mem as fmem;
@@ -12,18 +14,80 @@ use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::StreamExt;
 use rand::Rng;
 use spi_system_test_config::Config;
+use std::collections::{HashMap, HashSet};
 use zx::Status;
 
-/// Discovers all available SPI devices using TestService.
-async fn discover_devices(expected_count: usize) -> Result<Vec<fspi::DeviceProxy>> {
-    if expected_count == 0 {
-        return Ok(vec![]);
+/// Returns the most specific address that is stable, or `None` if no such address exists. Only
+/// string addresses are supported for now.
+fn get_bus_address(path: Vec<fdf::BusInfo>) -> Option<String> {
+    for info in path.into_iter().rev() {
+        if info.address_stability != Some(fdf::DeviceAddressStability::Stable) {
+            continue;
+        }
+
+        if let Some(address) = info.address {
+            return match address {
+                fdf::DeviceAddress::StringValue(val) => Some(val),
+                _ => None,
+            };
+        }
     }
+    None
+}
+
+/// Connects to a SPI bus, gets its address, and establishes a loopback connection. `None` is
+/// returned if the bus does not have a stable address.
+async fn try_connect_to_bus(
+    instance_name: &str,
+    topology_proxy: &ftoken::NodeBusTopologyProxy,
+) -> Result<Option<(String, fspi::DeviceProxy)>> {
+    let service_proxy = connect_to_service_instance::<fspi::TestServiceMarker>(instance_name)
+        .context("Failed to connect to TestService instance")?;
+    let test_proxy =
+        service_proxy.connect_to_test().context("Failed to connect to test protocol")?;
+
+    let token = test_proxy
+        .get()
+        .await
+        .context("Get FIDL call failed")?
+        .map_err(|status| anyhow::anyhow!("Get failed: {:?}", Status::err_from_raw(status)))?;
+
+    let path =
+        topology_proxy.get(token).await.context("NodeBusTopology.Get FIDL call failed")?.map_err(
+            |status| {
+                anyhow::anyhow!("NodeBusTopology.Get failed: {:?}", Status::err_from_raw(status))
+            },
+        )?;
+
+    let Some(bus_address) = get_bus_address(path) else {
+        return Ok(None);
+    };
+
+    let (device_client, device_server) = fidl::endpoints::create_proxy::<fspi::DeviceMarker>();
+    test_proxy
+        .connect_spi_loopback(device_server)
+        .await
+        .context("ConnectSpiLoopback FIDL call failed")?
+        .map_err(|status| anyhow::anyhow!("ConnectSpiLoopback failed: {:?}", status))?;
+    return Ok(Some((bus_address, device_client)));
+}
+
+/// Discovers SPI devices matching the specified bus addresses, waiting for all of them to appear.
+async fn discover_devices(bus_addresses: &[String]) -> Result<HashMap<String, fspi::DeviceProxy>> {
+    if bus_addresses.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let topology_proxy =
+        fuchsia_component::client::connect_to_protocol::<ftoken::NodeBusTopologyMarker>()
+            .context("Failed to connect to NodeBusTopology")?;
+
+    let mut remaining_addresses: HashSet<String> = bus_addresses.iter().cloned().collect();
 
     let service_directory = open_service_at(fspi::TestServiceMarker::SERVICE_NAME)
         .context("Failed to open service directory")?;
     let mut watcher = Watcher::new(&service_directory).await.context("Failed to create watcher")?;
-    let mut device_names = Vec::new();
+    let mut devices = HashMap::new();
 
     while let Some(message) = watcher.next().await {
         let message = message.context("Watcher error")?;
@@ -32,42 +96,33 @@ async fn discover_devices(expected_count: usize) -> Result<Vec<fspi::DeviceProxy
                 let filename = message.filename.to_str().ok_or_else(|| {
                     anyhow::anyhow!("Invalid UTF-8 in filename: {:?}", message.filename)
                 })?;
-                if filename != "." && filename != ".." {
-                    device_names.push(filename.to_string());
+                if filename == "." || filename == ".." {
+                    continue;
+                }
+
+                match try_connect_to_bus(filename, &topology_proxy).await {
+                    Ok(Some((bus_address, device_proxy))) => {
+                        // Ignore buses that are not in the list of expected addresses.
+                        if remaining_addresses.remove(&bus_address) {
+                            devices.insert(bus_address, device_proxy);
+                        }
+                    }
+                    _ => {}
                 }
             }
             _ => {}
         }
 
-        if device_names.len() >= expected_count {
-            break;
+        if remaining_addresses.is_empty() {
+            return Ok(devices);
         }
     }
 
-    let futures = device_names.into_iter().map(|name| async move {
-        connect_to_device_by_name(&name)
-            .await
-            .with_context(|| format!("Failed to connect to device {}", name))
-    });
-    let devices = futures::future::try_join_all(futures).await?;
-    Ok(devices)
-}
-
-/// Connects to a SPI device by its service instance name.
-async fn connect_to_device_by_name(name: &str) -> Result<fspi::DeviceProxy> {
-    let service_proxy = connect_to_service_instance::<fspi::TestServiceMarker>(name)
-        .context("Failed to connect to TestService instance")?;
-    let test_proxy =
-        service_proxy.connect_to_test().context("Failed to connect to test protocol")?;
-
-    let (device_client, device_server) = fidl::endpoints::create_proxy::<fspi::DeviceMarker>();
-    test_proxy
-        .connect_spi_loopback(device_server)
-        .await
-        .context("ConnectSpiLoopback FIDL call failed")?
-        .map_err(|status| anyhow::anyhow!("ConnectSpiLoopback failed: {:?}", status))?;
-
-    Ok(device_client)
+    anyhow::bail!(
+        "Watcher stream ended before finding all expected SPI buses. Found {} of {}",
+        devices.len(),
+        bus_addresses.len(),
+    );
 }
 
 async fn run_with_devices<F, Fut>(test_func: F) -> Result<()>
@@ -76,28 +131,17 @@ where
     Fut: futures::Future<Output = Result<()>> + Send,
 {
     static CONFIG: std::sync::OnceLock<Config> = std::sync::OnceLock::new();
-    let expected_count =
-        CONFIG.get_or_init(|| Config::take_from_startup_handle()).spi_bus_count as usize;
+    let config = CONFIG.get_or_init(|| Config::take_from_startup_handle());
 
-    let devices = discover_devices(expected_count).await?;
-    assert_eq!(
-        devices.len(),
-        expected_count,
-        "Expected {} SPI devices, found {}",
-        expected_count,
-        devices.len()
-    );
+    let devices_map = discover_devices(&config.bus_addresses).await?;
 
     let test_func = &test_func;
-    let futures = devices.into_iter().enumerate().map(|(idx, device)| async move {
-        test_func(device).await.with_context(|| format!("Test failed for device at index {}", idx))
+    let futures = devices_map.into_iter().map(|(bus_address, device)| async move {
+        let result = test_func(device).await;
+        assert!(result.is_ok(), "Test failed for bus {}: {:?}", bus_address, result);
     });
 
-    let results = futures::future::join_all(futures).await;
-
-    for (idx, result) in results.iter().enumerate() {
-        assert!(result.is_ok(), "Test failed for device at index {}: {:?}", idx, result);
-    }
+    futures::future::join_all(futures).await;
 
     Ok(())
 }
