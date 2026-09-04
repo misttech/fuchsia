@@ -754,7 +754,7 @@ assembly_input_bundle(
         {
             "set": "base",
             "package_target": "//bundles/assembly/bazel_inputs/src/power/testing/fake-battery:fake_battery",
-            "driver_components": ["meta/fake_battery.cm"],
+            "driver_components": ["meta/fake-battery.cm"],
         },
     ],
 )
