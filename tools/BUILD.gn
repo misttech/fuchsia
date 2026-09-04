@@ -29,6 +29,7 @@ if (is_host) {
       "//tools/fidl",
       "//tools/fidlcat:fidlcat_host",
       "//tools/funnel:host",
+      "//tools/gn_desc:install_gn_desc",
       "//tools/loglistener:host",
       "//tools/make-fuchsia-vol:host",
       "//tools/net/device-finder:host",
