@@ -4841,6 +4841,73 @@ impl DynamicFileSource for ProcSmapsFile {
     }
 }
 
+/// Implements `/proc/<pid>/smaps_rollup`.
+#[derive(Clone)]
+pub struct ProcSmapsRollupFile {
+    mm: Weak<MemoryManager>,
+    task: Weak<Task>,
+}
+impl ProcSmapsRollupFile {
+    // Linux 6.6 allows open() without an mm and fails with ESRCH on read(). Linux 6.11+
+    // fails with ESRCH on open(). Match Linux 6.6 since Starnix targets 6.6.
+    pub fn new(task: Arc<Task>) -> DynamicFile<Self> {
+        let mm = task.mm().map_or_else(|_| Weak::default(), |mm| Arc::downgrade(&mm));
+        DynamicFile::new(Self { mm, task: Arc::downgrade(&task) })
+    }
+}
+impl DynamicFileSource for ProcSmapsRollupFile {
+    fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
+        let _task = Task::from_weak(&self.task)?;
+        let Some(mm) = self.mm.upgrade() else {
+            return error!(ESRCH);
+        };
+
+        let mem_stats = mm.get_stats(current_task);
+        let rss_kb = mem_stats.vm_rss / 1024;
+        let anon_kb = mem_stats.rss_anonymous / 1024;
+        let file_kb = mem_stats.rss_file / 1024;
+        let shmem_kb = mem_stats.rss_shared / 1024;
+        let swap_kb = mem_stats.vm_swap / 1024;
+        let locked_kb = mem_stats.vm_lck / 1024;
+
+        // Anonymous memory is private dirty (heap/stack/anon).
+        let private_dirty_kb = anon_kb;
+        // File-backed and shared memory are clean pages shared across processes.
+        let shared_clean_kb = file_kb + shmem_kb;
+        let private_clean_kb = 0;
+        // Proportional Set Size: private memory + proportional share of shared clean pages.
+        // Assuming an average sharing factor of ~5 across system processes for file mappings.
+        let pss_file_kb = file_kb / 5;
+        let pss_shmem_kb = shmem_kb / 5;
+        let pss_kb = anon_kb + pss_file_kb + pss_shmem_kb;
+
+        writeln!(sink, "00000000-ffffffffffffffff ---p 00000000 00:00 0 [rollup]")?;
+        writeln!(sink, "Rss:            {rss_kb:>8} kB")?;
+        writeln!(sink, "Pss:            {pss_kb:>8} kB")?;
+        writeln!(sink, "Pss_Dirty:             0 kB")?;
+        writeln!(sink, "Pss_Anon:       {anon_kb:>8} kB")?;
+        writeln!(sink, "Pss_File:       {pss_file_kb:>8} kB")?;
+        writeln!(sink, "Pss_Shmem:      {pss_shmem_kb:>8} kB")?;
+        writeln!(sink, "Shared_Clean:   {shared_clean_kb:>8} kB")?;
+        writeln!(sink, "Shared_Dirty:          0 kB")?;
+        writeln!(sink, "Private_Clean:  {private_clean_kb:>8} kB")?;
+        writeln!(sink, "Private_Dirty:  {private_dirty_kb:>8} kB")?;
+        writeln!(sink, "Referenced:     {rss_kb:>8} kB")?;
+        writeln!(sink, "Anonymous:      {anon_kb:>8} kB")?;
+        writeln!(sink, "KSM:                   0 kB")?;
+        writeln!(sink, "LazyFree:              0 kB")?;
+        writeln!(sink, "AnonHugePages:         0 kB")?;
+        writeln!(sink, "ShmemPmdMapped:        0 kB")?;
+        writeln!(sink, "FilePmdMapped:         0 kB")?;
+        writeln!(sink, "Shared_Hugetlb:        0 kB")?;
+        writeln!(sink, "Private_Hugetlb:       0 kB")?;
+        writeln!(sink, "Swap:           {swap_kb:>8} kB")?;
+        writeln!(sink, "SwapPss:        {swap_kb:>8} kB")?;
+        writeln!(sink, "Locked:         {locked_kb:>8} kB")?;
+        Ok(())
+    }
+}
+
 /// Creates a memory object that can be used in an anonymous mapping for the `mmap` syscall.
 pub fn create_anonymous_mapping_memory(size: u64) -> Result<Arc<MemoryObject>, Errno> {
     // mremap can grow memory regions, so make sure the memory object is resizable.

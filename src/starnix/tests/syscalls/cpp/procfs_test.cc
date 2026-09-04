@@ -433,6 +433,33 @@ TEST_F(ProcTaskDirTest, KthreadSmapsIsEmpty) {
   ASSERT_EQ(contents.size(), 0ul);
 }
 
+TEST_F(ProcTaskDirTest, SelfSmapsRollupIsNotEmpty) {
+  std::string contents;
+  ASSERT_TRUE(files::ReadFileToString("/proc/self/smaps_rollup", &contents));
+  ASSERT_THAT(contents.size(), testing::Gt(0));
+  EXPECT_THAT(contents, testing::HasSubstr("[rollup]"));
+  EXPECT_THAT(contents, testing::HasSubstr("\nRss:"));
+  EXPECT_THAT(contents, testing::HasSubstr("\nPss:"));
+  EXPECT_THAT(contents, testing::HasSubstr("\nPss_Anon:"));
+  EXPECT_THAT(contents, testing::HasSubstr("\nPss_File:"));
+  EXPECT_THAT(contents, testing::HasSubstr("\nPss_Shmem:"));
+  EXPECT_THAT(contents, testing::HasSubstr("\nShared_Clean:"));
+  EXPECT_THAT(contents, testing::HasSubstr("\nPrivate_Clean:"));
+  EXPECT_THAT(contents, testing::HasSubstr("\nPrivate_Dirty:"));
+  EXPECT_THAT(contents, testing::HasSubstr("\nAnonymous:"));
+}
+// Linux 6.6 allows open() without an mm and fails on read() with ESRCH (Linux 6.11+ fails on
+// open()).
+TEST_F(ProcTaskDirTest, KthreadSmapsRollupReadFails) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+  fbl::unique_fd fd(open("/proc/2/smaps_rollup", O_RDONLY));
+  ASSERT_TRUE(fd.is_valid());
+  char buf[1024];
+  EXPECT_THAT(read(fd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(ESRCH));
+}
+
 TEST_F(ProcTaskDirTest, SelfStatIsNotEmpty) {
   std::string contents;
   ASSERT_TRUE(files::ReadFileToString("/proc/self/stat", &contents));
@@ -1323,7 +1350,8 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(ProcfsAccessParam{"auxv", true}, ProcfsAccessParam{"environ", true},
                       ProcfsAccessParam{"maps", true}, ProcfsAccessParam{"mem", true},
                       ProcfsAccessParam{"pagemap", true}, ProcfsAccessParam{"smaps", true},
-                      ProcfsAccessParam{"fdinfo", true}, ProcfsAccessParam{"fd", false}),
+                      ProcfsAccessParam{"smaps_rollup", true}, ProcfsAccessParam{"fdinfo", true},
+                      ProcfsAccessParam{"fd", false}),
     [](const auto& info) { return info.param.path; });
 
 TEST(ProcFilesystemsTest, Format) {

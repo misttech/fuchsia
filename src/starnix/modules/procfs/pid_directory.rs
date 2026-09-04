@@ -6,7 +6,7 @@ use itertools::Itertools;
 use regex_lite::Regex;
 use starnix_core::mm::{
     MemoryAccessor, MemoryAccessorExt, MemoryManager, MemoryStats, PAGE_SIZE, ProcMapsFile,
-    ProcSmapsFile,
+    ProcSmapsFile, ProcSmapsRollupFile,
 };
 use starnix_core::security;
 use starnix_core::task::{
@@ -68,6 +68,7 @@ fn task_entries(scope: TaskEntryScope) -> Vec<(FsString, FileMode)> {
         (b"sched".into(), mode!(IFREG, 0o644)),
         (b"schedstat".into(), mode!(IFREG, 0o444)),
         (b"smaps".into(), mode!(IFREG, 0o444)),
+        (b"smaps_rollup".into(), mode!(IFREG, 0o444)),
         (b"stat".into(), mode!(IFREG, 0o444)),
         (b"statm".into(), mode!(IFREG, 0o444)),
         (b"status".into(), mode!(IFREG, 0o444)),
@@ -218,6 +219,11 @@ impl FsNodeOps for TaskDirectoryNode {
                 task_weak,
                 PTRACE_MODE_READ_FSCREDS,
                 |_, task| Ok(ProcSmapsFile::new(task)),
+            )),
+            b"smaps_rollup" => Box::new(PtraceCheckedNode::new_node(
+                task_weak,
+                PTRACE_MODE_READ_FSCREDS,
+                |_, task| Ok(ProcSmapsRollupFile::new(task)),
             )),
             b"stat" => Box::new(StatFile::new_node(task_weak, self.scope)),
             b"statm" => Box::new(StatmFile::new_node(task_weak)),

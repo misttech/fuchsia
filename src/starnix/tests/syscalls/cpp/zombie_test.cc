@@ -175,6 +175,13 @@ TEST_F(ZombieProcTest, MountInfo) {
 }
 TEST_F(ZombieProcTest, Mounts) { ASSERT_TRUE(AssertZombieProcFileOpenError("mounts", EINVAL)); }
 
+// Nodes that succeed on open() but fail with ESRCH on read()
+// Linux 6.6 allows open() without an mm and fails on read() with ESRCH (Linux 6.11+ fails on
+// open()).
+TEST_F(ZombieProcTest, SmapsRollup) {
+  ASSERT_TRUE(AssertZombieProcFileReadError("smaps_rollup", ESRCH));
+}
+
 // Nodes that succeed on open() but fail with EINVAL on read()
 TEST_F(ZombieProcTest, AttrExec) {
   ASSERT_TRUE(AssertZombieProcFileReadError("attr/exec", EINVAL));
