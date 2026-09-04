@@ -8,6 +8,7 @@
 #include <lib/ddk/binding_driver.h>
 #include <lib/ddk/debug.h>
 #include <lib/ddk/platform-defs.h>
+#include <lib/fit/defer.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/profile.h>
 #include <threads.h>
@@ -113,10 +114,32 @@ zx_status_t Gt6853Device::Create(void* ctx, zx_device_t* parent) {
     return ZX_ERR_NO_RESOURCES;
   }
 
+  // Wrap the dispatcher in a shared_ptr so that the shutdown observer can destroy it.
+  auto fw_dispatcher = std::make_shared<std::optional<fdf::SynchronizedDispatcher>>();
+
+  zx::result<fdf::SynchronizedDispatcher> fw_dispatcher_result =
+      fdf::SynchronizedDispatcher::Create(
+          fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "firmware download dispatcher",
+          [fw_dispatcher, driver_dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher()](
+              fdf_dispatcher_t*) {
+            async::PostTask(driver_dispatcher, [fw_dispatcher]() { (*fw_dispatcher).reset(); });
+          });
+  if (fw_dispatcher_result.is_error()) {
+    zxlogf(ERROR, "Failed to create dispatcher: %s", fw_dispatcher_result.status_string());
+    return fw_dispatcher_result.status_value();
+  }
+
+  fw_dispatcher->emplace(*std::move(fw_dispatcher_result));
+
+  auto shutdown_fw_dispatcher = fit::defer([fw_dispatcher]() {
+    if (fw_dispatcher->has_value()) {
+      fw_dispatcher->value().ShutdownAsync();
+    }
+  });
+
   fbl::AllocChecker alloc_checker;
   fbl::RefPtr<Gt6853Device> device = fbl::MakeRefCountedChecked<Gt6853Device>(
-      &alloc_checker, parent,
-      fdf_dispatcher_get_async_dispatcher(fdf_dispatcher_get_current_dispatcher()), std::move(i2c),
+      &alloc_checker, parent, fdf::Dispatcher::GetCurrent()->async_dispatcher(), std::move(i2c),
       std::move(interrupt_gpio.value()), std::move(reset_gpio.value()));
   if (!alloc_checker.check()) {
     return ZX_ERR_NO_MEMORY;
@@ -136,12 +159,40 @@ zx_status_t Gt6853Device::Create(void* ctx, zx_device_t* parent) {
   // Driver Framework now owns a reference that will be dropped in DdkRelease().
   device->AddRef();
 
-  if ((status = device->UpdateFirmwareAndConfig()) != ZX_OK) {
-    device->DdkAsyncRemove();
-    return status;
-  }
+  // The firmware/config download takes a long time due to polling, delays to meet timing, and a
+  // slow transport. To avoid blocking the boot complete signal, spawn a second dispatcher just for
+  // downloading the firmware. It is safe for clients to connect and interact with us in the
+  // meantime, they just won't receive any touch events until interrupt handling has started.
 
-  device->StartInterruptHandling();
+  async::PostTask(fw_dispatcher->value().async_dispatcher(),
+                  [shutdown_fw_dispatcher = std::move(shutdown_fw_dispatcher), device]() mutable {
+                    zx_status_t status = device->UpdateFirmwareAndConfig();
+
+                    // Everything else must be done on the driver dispatcher.
+                    async::PostTask(device->dispatcher_,
+                                    [shutdown_fw_dispatcher = std::move(shutdown_fw_dispatcher),
+                                     device, status]() {
+                                      if (status == ZX_OK) {
+                                        device->StartInterruptHandling();
+                                      } else {
+                                        // Touch won't work if the firmware download failed, so just
+                                        // remove our device.
+                                        device->DdkAsyncRemove();
+                                      }
+
+                                      device->firmware_download_complete_ = true;
+                                      // Complete unbind if it was started during the firmware
+                                      // download.
+                                      if (device->unbind_txn_) {
+                                        device->unbind_txn_->Reply();
+                                      }
+#ifdef GT6853_TEST
+                                      device->fw_download_status_ = status;
+                                      sync_completion_signal(&device->fw_download_wait_);
+#endif
+                                    });
+                  });
+
   return ZX_OK;
 }
 
@@ -152,8 +203,16 @@ void Gt6853Device::DdkRelease() {
 }
 
 void Gt6853Device::DdkUnbind(ddk::UnbindTxn txn) {
+  ZX_DEBUG_ASSERT(!unbind_txn_.has_value());
+
   Shutdown();
-  txn.Reply();
+
+  // Wait for the firmware download to complete before proceeding with unbind.
+  if (firmware_download_complete_) {
+    txn.Reply();
+  } else {
+    unbind_txn_.emplace(std::move(txn));
+  }
 }
 
 void Gt6853Device::GetInputReportsReader(GetInputReportsReaderRequestView request,
@@ -258,6 +317,12 @@ void Gt6853Device::WaitForNextReader() {
   sync_completion_wait(&next_reader_wait_, ZX_TIME_INFINITE);
   sync_completion_reset(&next_reader_wait_);
 }
+
+zx_status_t Gt6853Device::WaitForFirmwareDownload() {
+  sync_completion_wait(&fw_download_wait_, ZX_TIME_INFINITE);
+  sync_completion_reset(&fw_download_wait_);
+  return fw_download_status_;
+}
 #endif
 
 Gt6853Contact Gt6853Device::ParseContact(const uint8_t* const contact_buffer) {
@@ -270,8 +335,8 @@ Gt6853Contact Gt6853Device::ParseContact(const uint8_t* const contact_buffer) {
 
 zx_status_t Gt6853Device::Init() {
   root_ = inspector_.GetRoot().CreateChild("goodix-gt6853");
-  firmware_status_ = root_.CreateString("firmware_status", "initialization failed");
-  config_status_ = root_.CreateString("config_status", "initialization failed");
+  firmware_status_ = root_.CreateString("firmware_status", "initializing");
+  config_status_ = root_.CreateString("config_status", "initializing");
 
   // These names must match the strings in //src/diagnostics/config/sampler/input.json.
   metrics_root_ = inspector_.GetRoot().CreateChild("hid-input-report-touch");
@@ -332,6 +397,8 @@ zx_status_t Gt6853Device::Init() {
 zx_status_t Gt6853Device::UpdateFirmwareAndConfig() {
   zx::result<fuchsia_mem::wire::Range> config = GetConfigFileVmo();
   if (config.is_error()) {
+    firmware_status_.Set("initialization failed");
+    config_status_.Set("initialization failed");
     return config.status_value();
   }
 
@@ -349,6 +416,7 @@ zx_status_t Gt6853Device::UpdateFirmwareAndConfig() {
   } else {
     zxlogf(INFO, "No device metadata, assuming mexec and preserving controller state");
     firmware_status_.Set("skipped");
+    config_status_.Set("skipped");
   }
 
   return ZX_OK;

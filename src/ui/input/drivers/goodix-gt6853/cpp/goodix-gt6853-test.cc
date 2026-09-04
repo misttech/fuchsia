@@ -383,6 +383,9 @@ class Gt6853Test : public zxtest::Test {
   }
 
   void WaitForNextReader() { device_->GetDeviceContext<Gt6853Device>()->WaitForNextReader(); }
+  zx_status_t WaitForFirmwareDownload() {
+    return device_->GetDeviceContext<Gt6853Device>()->WaitForFirmwareDownload();
+  }
 
   fidl::ClientEnd<fuchsia_input_report::InputDevice> GetInputDeviceClient() {
     auto endpoints = fidl::CreateEndpoints<fuchsia_input_report::InputDevice>();
@@ -488,6 +491,7 @@ class Gt6853Test : public zxtest::Test {
 TEST_F(Gt6853Test, GetDescriptor) {
   AddDefaultConfig();
   ASSERT_OK(Init());
+  EXPECT_OK(WaitForFirmwareDownload());
 
   fidl::WireSyncClient client(GetInputDeviceClient());
 
@@ -532,6 +536,7 @@ TEST_F(Gt6853Test, GetDescriptor) {
 TEST_F(Gt6853Test, ReadReport) {
   AddDefaultConfig();
   ASSERT_OK(Init());
+  EXPECT_OK(WaitForFirmwareDownload());
 
   fidl::WireSyncClient client(GetInputDeviceClient());
 
@@ -598,6 +603,7 @@ TEST_F(Gt6853Test, ConfigDownloadPanelType9364) {
   i2c().SyncCall(&FakeTouchDevice::set_sensor_id, 1);
 
   ASSERT_OK(Init());
+  EXPECT_OK(WaitForFirmwareDownload());
 
   auto config_data = i2c().SyncCall(&FakeTouchDevice::get_config_data);
   EXPECT_STREQ(reinterpret_cast<const char*>(config_data.data()), "Config number one");
@@ -628,6 +634,7 @@ TEST_F(Gt6853Test, ConfigDownloadPanelType9365) {
 
   SetDisplayPanelType(display::PanelType::kKdKd070d82FitipowerJd9365);
   ASSERT_OK(Init());
+  EXPECT_OK(WaitForFirmwareDownload());
 
   auto config_data = i2c().SyncCall(&FakeTouchDevice::get_config_data);
   EXPECT_STREQ(reinterpret_cast<const char*>(config_data.data()), "Config number zero");
@@ -635,7 +642,11 @@ TEST_F(Gt6853Test, ConfigDownloadPanelType9365) {
   EXPECT_EQ(config_data.size(), 0x0304 - 121);
 }
 
-TEST_F(Gt6853Test, ConfigDownloadUnableToLoadConfig) { EXPECT_NOT_OK(Init()); }
+TEST_F(Gt6853Test, ConfigDownloadUnableToLoadConfig) {
+  ASSERT_OK(Init());
+  EXPECT_NOT_OK(WaitForFirmwareDownload());
+  EXPECT_OK(device_->WaitUntilAsyncRemoveCalled());
+}
 
 TEST_F(Gt6853Test, NoConfigEntry) {
   config_size = 2338;
@@ -658,7 +669,9 @@ TEST_F(Gt6853Test, NoConfigEntry) {
 
   i2c().SyncCall(&FakeTouchDevice::set_sensor_id, 4);
 
-  EXPECT_NOT_OK(Init());
+  ASSERT_OK(Init());
+  EXPECT_NOT_OK(WaitForFirmwareDownload());
+  EXPECT_OK(device_->WaitUntilAsyncRemoveCalled());
 }
 
 TEST_F(Gt6853Test, InvalidConfigEntry) {
@@ -681,7 +694,9 @@ TEST_F(Gt6853Test, InvalidConfigEntry) {
   i2c().SyncCall(&FakeTouchDevice::set_sensor_id, 1);
 
   config_size = 0x031a + 2;
-  EXPECT_NOT_OK(Init());
+  ASSERT_OK(Init());
+  EXPECT_NOT_OK(WaitForFirmwareDownload());
+  EXPECT_OK(device_->WaitUntilAsyncRemoveCalled());
 }
 
 TEST_F(Gt6853Test, BadConfigChecksum) {
@@ -705,7 +720,9 @@ TEST_F(Gt6853Test, BadConfigChecksum) {
 
   i2c().SyncCall(&FakeTouchDevice::set_sensor_id, 1);
 
-  EXPECT_EQ(Init(), ZX_ERR_IO_DATA_INTEGRITY);
+  ASSERT_OK(Init());
+  EXPECT_EQ(WaitForFirmwareDownload(), ZX_ERR_IO_DATA_INTEGRITY);
+  EXPECT_OK(device_->WaitUntilAsyncRemoveCalled());
 }
 
 TEST_F(Gt6853Test, FirmwareDownload) {
@@ -720,6 +737,7 @@ TEST_F(Gt6853Test, FirmwareDownload) {
   AddDefaultConfig();
 
   EXPECT_OK(Init());
+  EXPECT_OK(WaitForFirmwareDownload());
 
   std::vector reset_gpio_states = reset_gpio().SyncCall(&fake_gpio::FakeGpio::GetStateLog);
   ASSERT_EQ(4, reset_gpio_states.size());
@@ -750,7 +768,9 @@ TEST_F(Gt6853Test, FirmwareDownloadInvalidCrc) {
   ASSERT_OK(WriteFirmwareData({0x02, 0x00, 0x00, 0x01, 0x00, 0x12, 0x34}, 40));
   ASSERT_OK(WriteFirmwareData({0x03, 0x00, 0x00, 0x01, 0x00, 0x56, 0x78}, 48));
 
-  EXPECT_NOT_OK(Init());
+  ASSERT_OK(Init());
+  EXPECT_NOT_OK(WaitForFirmwareDownload());
+  EXPECT_OK(device_->WaitUntilAsyncRemoveCalled());
 }
 
 TEST_F(Gt6853Test, FirmwareDownloadNoIspEntry) {
@@ -759,12 +779,15 @@ TEST_F(Gt6853Test, FirmwareDownloadNoIspEntry) {
   ASSERT_OK(WriteFirmwareData({0x00, 0x00, 0x07, 0xfa, 0x00, 0x00}, 0));
   ASSERT_OK(WriteFirmwareData({0x00}, 27));
 
-  EXPECT_NOT_OK(Init());
+  ASSERT_OK(Init());
+  EXPECT_NOT_OK(WaitForFirmwareDownload());
+  EXPECT_OK(device_->WaitUntilAsyncRemoveCalled());
 }
 
 TEST_F(Gt6853Test, LatencyMeasurements) {
   AddDefaultConfig();
   ASSERT_OK(Init());
+  EXPECT_OK(WaitForFirmwareDownload());
 
   fidl::WireSyncClient client(GetInputDeviceClient());
 

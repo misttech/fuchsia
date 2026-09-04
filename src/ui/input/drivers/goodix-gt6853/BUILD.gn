@@ -42,6 +42,7 @@ group("common") {
     "//sdk/fidl/fuchsia.mem:fuchsia.mem_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
+    "//sdk/lib/fit",
     "//src/devices/i2c/lib/i2c-channel-legacy",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",

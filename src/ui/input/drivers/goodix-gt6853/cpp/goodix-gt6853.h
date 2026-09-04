@@ -125,6 +125,7 @@ class Gt6853Device : public DeviceType,
 #ifdef GT6853_TEST
   // Visible for testing.
   void WaitForNextReader();
+  zx_status_t WaitForFirmwareDownload();
 #endif
 
  private:
@@ -185,6 +186,9 @@ class Gt6853Device : public DeviceType,
 
   async_dispatcher_t* dispatcher_;
 
+  std::optional<ddk::UnbindTxn> unbind_txn_;
+  bool firmware_download_complete_ = false;
+
   ddk::I2cChannel i2c_;
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> interrupt_gpio_;
   fidl::WireSyncClient<fuchsia_hardware_gpio::Gpio> reset_gpio_;
@@ -194,6 +198,8 @@ class Gt6853Device : public DeviceType,
   input_report_reader::InputReportReaderManager<Gt6853InputReport> input_report_readers_;
 #ifdef GT6853_TEST
   sync_completion_t next_reader_wait_;
+  sync_completion_t fw_download_wait_;
+  zx_status_t fw_download_status_ = ZX_ERR_BAD_STATE;
 #endif
 
   inspect::Inspector inspector_;
