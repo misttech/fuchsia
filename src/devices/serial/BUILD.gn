@@ -6,6 +6,7 @@ group("drivers") {
   testonly = true
   deps = [
     "drivers/aml-uart",
+    "drivers/dw-apb-uart",
     "drivers/ftdi",
     "drivers/ftdi:ftdi-fake-usb",
     "drivers/serial",

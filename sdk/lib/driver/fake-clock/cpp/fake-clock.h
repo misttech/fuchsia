@@ -47,6 +47,9 @@ class FakeClock final : public fidl::testing::WireTestBase<fuchsia_hardware_cloc
   void set_disable_result(zx::result<> result) { disable_result_ = result; }
   void set_set_rate_result(zx::result<> result) { set_rate_result_ = result; }
   void set_set_input_result(zx::result<> result) { set_input_result_ = result; }
+  void set_get_rate_result(std::optional<zx::result<uint64_t>> result) {
+    get_rate_result_ = result;
+  }
 
   void set_supported_rates(std::vector<uint64_t> rates) { supported_rates_ = std::move(rates); }
   void set_id(uint32_t id) { id_ = id; }
@@ -79,6 +82,7 @@ class FakeClock final : public fidl::testing::WireTestBase<fuchsia_hardware_cloc
   zx::result<> disable_result_ = zx::ok();
   zx::result<> set_rate_result_ = zx::ok();
   zx::result<> set_input_result_ = zx::ok();
+  std::optional<zx::result<uint64_t>> get_rate_result_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_clock::Clock> bindings_;
   async_dispatcher_t* dispatcher_;

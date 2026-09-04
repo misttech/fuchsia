@@ -70,6 +70,14 @@ void FakeClock::QuerySupportedRate(QuerySupportedRateRequestView request,
 }
 
 void FakeClock::GetRate(GetRateCompleter::Sync& completer) {
+  if (get_rate_result_.has_value()) {
+    if (get_rate_result_->is_error()) {
+      completer.ReplyError(get_rate_result_->status_value());
+      return;
+    }
+    completer.ReplySuccess(get_rate_result_->value());
+    return;
+  }
   completer.ReplySuccess(rate_.value_or(0));
 }
 
