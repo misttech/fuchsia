@@ -107,6 +107,14 @@ void UfsServer::WriteDescriptor(WriteDescriptorRequestView request,
   }
 
   auto [type, index] = result.value();
+  // Configuration Descriptor controls per-LU bBootLunID (pre-vbmeta boot
+  // selection) and LU layout. Not needed by any current FIDL client.
+  if (type == DescriptorType::kConfiguration) {
+    fdf::error("WriteDescriptor: refusing provisioning descriptor IDN 0x{:x}",
+               static_cast<uint8_t>(type));
+    completer.Reply(fit::error(QueryErrorCode::kParameterNotWriteable));
+    return;
+  }
   if (request->data.size() < GetDescriptorSize(type)) {
     fdf::error(
         "Invalid FIDL request: descriptor data length (%zu) is smaller than descriptor size (%zu)",
@@ -152,6 +160,11 @@ void UfsServer::SetFlag(SetFlagRequestView request, SetFlagCompleter::Sync& comp
   }
 
   auto [type, _] = result.value();
+  if (IsWriteOnce(type)) {
+    fdf::error("SetFlag: refusing write-once flag IDN 0x{:x}", static_cast<uint8_t>(type));
+    completer.Reply(fit::error(QueryErrorCode::kParameterNotWriteable));
+    return;
+  }
   SetFlagUpiu set_flag_upiu(type);
   auto response = HandleQueryRequestUpiu<FlagResponseUpiu>(set_flag_upiu);
   if (response.is_error()) {
@@ -171,6 +184,11 @@ void UfsServer::ClearFlag(ClearFlagRequestView request, ClearFlagCompleter::Sync
   }
 
   auto [type, _] = result.value();
+  if (IsWriteOnce(type)) {
+    fdf::error("ClearFlag: refusing write-once flag IDN 0x{:x}", static_cast<uint8_t>(type));
+    completer.Reply(fit::error(QueryErrorCode::kParameterNotWriteable));
+    return;
+  }
   ClearFlagUpiu clear_flag_upiu(type);
   auto response = HandleQueryRequestUpiu<FlagResponseUpiu>(clear_flag_upiu);
   if (response.is_error()) {
@@ -190,6 +208,11 @@ void UfsServer::ToggleFlag(ToggleFlagRequestView request, ToggleFlagCompleter::S
   }
 
   auto [type, _] = result.value();
+  if (IsWriteOnce(type)) {
+    fdf::error("ToggleFlag: refusing write-once flag IDN 0x{:x}", static_cast<uint8_t>(type));
+    completer.Reply(fit::error(QueryErrorCode::kParameterNotWriteable));
+    return;
+  }
   ToggleFlagUpiu toggle_flag_upiu(type);
   auto response = HandleQueryRequestUpiu<FlagResponseUpiu>(toggle_flag_upiu);
   if (response.is_error()) {
@@ -229,6 +252,15 @@ void UfsServer::WriteAttribute(WriteAttributeRequestView request,
   }
 
   auto [type, index] = result.value();
+  switch (type) {
+    case Attributes::bBootLunEn:
+      break;
+    default:
+      fdf::error("WriteAttribute: refusing unapproved attribute IDN 0x{:x}",
+                 static_cast<uint8_t>(type));
+      completer.Reply(fit::error(QueryErrorCode::kParameterNotWriteable));
+      return;
+  }
   WriteAttributeUpiu write_attr_upiu(type, request->value, index);
   auto response = HandleQueryRequestUpiu<AttributeResponseUpiu>(write_attr_upiu);
   if (response.is_error()) {
@@ -325,42 +357,6 @@ zx::result<std::optional<uint32_t>> UfsServer::DispatchUicCommand(
   }
 }
 
-void UfsServer::Request(RequestRequestView request, RequestCompleter::Sync& completer) {
-  uint8_t transaction_type = request->request[0];
-  if (transaction_type == UpiuTransactionCodes::kQueryRequest) {
-    ProcessQueryRequestUpiu(request, completer);
-  } else {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-  }
-}
-
-void UfsServer::ProcessQueryRequestUpiu(const RequestRequestView& request,
-                                        RequestCompleter::Sync& completer) {
-  if (request->request.size() != sizeof(QueryRequestUpiuData)) {
-    fdf::error("Data size mismatch: expected {}, got {}", sizeof(QueryRequestUpiuData),
-               request->request.size());
-    completer.ReplyError(ZX_ERR_INVALID_ARGS);
-    return;
-  }
-
-  QueryRequestUpiu query_request_upiu(
-      *reinterpret_cast<const QueryRequestUpiuData*>(request->request.data()));
-  auto response = controller_->GetTransferRequestProcessor()
-                      .SendRequestUpiu<QueryRequestUpiu, QueryResponseUpiu>(query_request_upiu);
-  if (response.is_error()) {
-    completer.ReplyError(response.error_value());
-    return;
-  }
-
-  auto response_upiu_data =
-      reinterpret_cast<uint8_t*>(response.value()->GetData<QueryResponseUpiuData>());
-  fidl::Arena<> arena;
-  fidl::VectorView<uint8_t> request_data(arena, response_upiu_data,
-                                         response_upiu_data + sizeof(QueryResponseUpiuData));
-
-  completer.ReplySuccess(request_data);
-}
-
 void UfsServer::ReadBuffer(ReadBufferRequestView request, ReadBufferCompleter::Sync& completer) {
   uint64_t size;
   if (request->data.get_size(&size); size < request->length) {
@@ -386,6 +382,21 @@ void UfsServer::ReadBuffer(ReadBufferRequestView request, ReadBufferCompleter::S
 }
 
 void UfsServer::WriteBuffer(WriteBufferRequestView request, WriteBufferCompleter::Sync& completer) {
+  // External clients are only permitted to use standard data buffer modes.
+  // Microcode/firmware download (FFU) and vendor-specific modes are rejected.
+  // TODO(https://fxbug.dev/555277260): If Field Firmware Update (FFU) support is
+  // needed from Fuchsia, expose it via a separate privileged capability rather
+  // than the general SCSI protocol, or perform it in the bootloader instead.
+  switch (request->mode) {
+    case fuchsia_hardware_scsi::wire::WriteBufferMode::kData:
+      break;
+    default:
+      fdf::error("WriteBuffer: refusing unapproved mode 0x{:x}",
+                 static_cast<uint8_t>(request->mode));
+      completer.ReplyError(ZX_ERR_ACCESS_DENIED);
+      return;
+  }
+
   std::vector<uint8_t> buf(request->length);
   if (zx_status_t status = request->data.read(buf.data(), 0, request->length); status != ZX_OK) {
     completer.ReplyError(status);

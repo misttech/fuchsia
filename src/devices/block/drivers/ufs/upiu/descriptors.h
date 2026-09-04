@@ -14,7 +14,7 @@ namespace ufs {
 
 // UFS Specification Version 3.1, section 14.1 "UFS Descriptors".
 // All descriptors use big-endian byte ordering.
-enum class DescriptorType {
+enum class DescriptorType : uint8_t {
   kDevice = 0x00,
   kConfiguration = 0x01,
   kUnit = 0x02,

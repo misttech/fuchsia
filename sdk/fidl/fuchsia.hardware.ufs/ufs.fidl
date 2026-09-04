@@ -7,11 +7,6 @@ library fuchsia.hardware.ufs;
 using zx;
 using fuchsia.hardware.scsi;
 
-/// Maximum supported size of the UPIU (UFS Protocol Information Unit)
-/// This includes the 12-byte basic header segment, transaction-specific fields,
-/// and the data segment.
-const MAX_UPIU_SIZE uint32 = 65600;
-
 @discoverable
 closed protocol Ufs {
     compose fuchsia.hardware.scsi.Scsi;
@@ -75,16 +70,6 @@ closed protocol Ufs {
     /// in the driver's diagnostic allowlist are supported.
     strict SendUicCommand(UicCommand) -> (struct {
         result uint32;
-    }) error zx.Status;
-
-    /// UFS transactions use UPIU packets with a fixed 12-byte header, transaction-specific fields,
-    /// possibly one or more extended header segments and zero or more data segments.
-    /// For direct construction and usage of UPIU packets, use this function.
-    /// The UPIU format is defined in UFS 3.1, section 10.6.
-    strict Request(struct {
-        request vector<uint8>:MAX_UPIU_SIZE;
-    }) -> (struct {
-        response vector<uint8>:MAX_UPIU_SIZE;
     }) error zx.Status;
 };
 

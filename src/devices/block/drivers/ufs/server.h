@@ -34,7 +34,6 @@ class UfsServer : public fidl::WireServer<fuchsia_hardware_ufs::Ufs> {
                       WriteAttributeCompleter::Sync &completer) override;
   void SendUicCommand(SendUicCommandRequestView request,
                       SendUicCommandCompleter::Sync &completer) override;
-  void Request(RequestRequestView request, RequestCompleter::Sync &completer) override;
 
   void ReadBuffer(ReadBufferRequestView request, ReadBufferCompleter::Sync &completer) override;
   void WriteBuffer(WriteBufferRequestView request, WriteBufferCompleter::Sync &completer) override;
@@ -45,9 +44,6 @@ class UfsServer : public fidl::WireServer<fuchsia_hardware_ufs::Ufs> {
       QueryRequestUpiu &request);
   zx::result<std::optional<uint32_t>> DispatchUicCommand(UicCommandOpcode opcode,
                                                          SendUicCommandRequestView request);
-
-  void ProcessQueryRequestUpiu(const RequestRequestView &request,
-                               RequestCompleter::Sync &completer);
 
   Ufs *const controller_;
 };

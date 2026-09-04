@@ -12,7 +12,7 @@
 namespace ufs {
 
 // UFS Specification Version 3.1, section 14.3 "Attributes".
-enum class Attributes {
+enum class Attributes : uint8_t {
   bBootLunEn = 0x00,
   bCurrentPowerMode = 0x02,
   bActiveIccLevel = 0x03,
@@ -47,6 +47,20 @@ enum class Attributes {
   bRefreshMethod = 0x2f,
   kAttributeCount = 0x30,
 };
+
+inline constexpr Attributes kWriteOnceAttributes[] = {
+    Attributes::bConfigDescrLock,  // write-once
+    Attributes::bPSAState,         // can advance to LOCKED (write-once)
+};
+
+constexpr bool IsWriteOnce(Attributes attr) {
+  for (Attributes write_once_attr : kWriteOnceAttributes) {
+    if (attr == write_once_attr) {
+      return true;
+    }
+  }
+  return false;
+}
 
 // UFS Specification Version 3.1, section 14.3 "Attributes".
 enum BackgroundOpStatus {

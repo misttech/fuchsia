@@ -10,7 +10,7 @@
 namespace ufs {
 
 // UFS Specification Version 3.1, section 14.2 "Flags".
-enum class Flags {
+enum class Flags : uint8_t {
   fReserved = 0x0,
   fDeviceInit = 0x1,
   fPermanentWPEn,
@@ -27,6 +27,21 @@ enum class Flags {
   fWBBufferFlushDuringHibernate = 0x10,
   kFlagCount = 0x11,
 };
+
+inline constexpr Flags kWriteOnceFlags[] = {
+    Flags::fPermanentWPEn,               // write-once
+    Flags::fPermanentlyDisableFwUpdate,  // write-once
+    Flags::fPhyResourceRemoval,          // physically removes capacity
+};
+
+constexpr bool IsWriteOnce(Flags flag) {
+  for (Flags write_once_flag : kWriteOnceFlags) {
+    if (flag == write_once_flag) {
+      return true;
+    }
+  }
+  return false;
+}
 
 class ReadFlagUpiu : public QueryReadRequestUpiu {
  public:

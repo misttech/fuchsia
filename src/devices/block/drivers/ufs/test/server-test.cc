@@ -70,40 +70,33 @@ TEST_F(ServerTest, ReadDescriptor) {
   ASSERT_OK(result.status_value());
 }
 
-TEST_F(ServerTest, WriteDescriptor) {
-  zx::result result = driver_test().RunOnBackgroundDispatcherSync(
-      [client_end = GetClient(), &mock_device = mock_device_]() {
-        // 0x7F: Same priority for all LUNs
-        // If all LUNs already have the same priority, change the priority of LUN0 higher
-        // If specific LUN has higher priority, change to the same priority for all LUNs
-        const uint8_t kLunPrioritySameForAll = 0x7F;
-        uint8_t high_priority_lun =
-            mock_device.GetDeviceDesc().bHighPriorityLUN == kLunPrioritySameForAll
-                ? 0
-                : kLunPrioritySameForAll;
+TEST_F(ServerTest, WriteDescriptorRejectsConfigurationDescriptor) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient(),
+                                                                   &mock_device = mock_device_]() {
+    uint8_t initial_priority = mock_device.GetDeviceDesc().bHighPriorityLUN;
+    ConfigurationDescriptor descriptor;
+    std::memset(&descriptor, 0, sizeof(ConfigurationDescriptor));
+    descriptor.bLength = 0xE6;
+    descriptor.bDescriptorIDN = 0x01;
+    descriptor.bConfDescContinue = 0x00;
+    descriptor.bHighPriorityLUN = initial_priority == 0 ? 1 : 0;
 
-        ConfigurationDescriptor descriptor;
-        std::memset(&descriptor, 0, sizeof(ConfigurationDescriptor));
-        descriptor.bLength = 0xE6;
-        descriptor.bDescriptorIDN = 0x01;
-        descriptor.bConfDescContinue = 0x00;
-        descriptor.bHighPriorityLUN = high_priority_lun;
+    fidl::Arena arena;
+    auto desc = fuchsia_hardware_ufs::wire::Descriptor::Builder(arena)
+                    .type(fuchsia_hardware_ufs::DescriptorType::kConfiguration)
+                    .Build();
+    std::vector<uint8_t> data_segment(sizeof(ConfigurationDescriptor));
+    std::memcpy(data_segment.data(), &descriptor, sizeof(ConfigurationDescriptor));
 
-        fidl::Arena arena;
-        auto desc = fuchsia_hardware_ufs::wire::Descriptor::Builder(arena)
-                        .type(fuchsia_hardware_ufs::DescriptorType::kConfiguration)
-                        .Build();
-        std::vector<uint8_t> data_segment(sizeof(ConfigurationDescriptor));
-        std::memcpy(data_segment.data(), &descriptor, sizeof(ConfigurationDescriptor));
-
-        const fidl::WireResult result =
-            fidl::WireCall(client_end)
-                ->WriteDescriptor(desc, fidl::VectorView<uint8_t>(arena, data_segment));
-        ASSERT_TRUE(result.ok());
-        const fit::result response = result.value();
-        ASSERT_TRUE(response.is_ok());
-        ASSERT_EQ(high_priority_lun, mock_device.GetDeviceDesc().bHighPriorityLUN);
-      });
+    const fidl::WireResult result =
+        fidl::WireCall(client_end)
+            ->WriteDescriptor(desc, fidl::VectorView<uint8_t>(arena, data_segment));
+    ASSERT_TRUE(result.ok());
+    const fit::result response = result.value();
+    ASSERT_TRUE(response.is_error());
+    ASSERT_EQ(response.error_value(), fuchsia_hardware_ufs::QueryErrorCode::kParameterNotWriteable);
+    EXPECT_EQ(initial_priority, mock_device.GetDeviceDesc().bHighPriorityLUN);
+  });
   ASSERT_OK(result.status_value());
 }
 
@@ -111,9 +104,9 @@ TEST_F(ServerTest, WriteDescriptorBufferTooShort) {
   zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
     fidl::Arena arena;
     auto desc = fuchsia_hardware_ufs::wire::Descriptor::Builder(arena)
-                    .type(fuchsia_hardware_ufs::DescriptorType::kConfiguration)
+                    .type(fuchsia_hardware_ufs::DescriptorType::kDevice)
                     .Build();
-    // Create a buffer significantly smaller than ConfigurationDescriptor.
+    // Create a buffer significantly smaller than DeviceDescriptor.
     std::vector<uint8_t> short_data_segment(10, 0);
 
     const fidl::WireResult result =
@@ -141,6 +134,7 @@ TEST_F(ServerTest, ReadFlag) {
         ASSERT_TRUE(result.ok());
         const fit::result response = result.value();
         ASSERT_TRUE(response.is_ok());
+        ASSERT_FALSE(response->value);
         ASSERT_EQ(response->value, mock_device.GetFlag(Flags::fDeviceInit));
       });
   ASSERT_OK(result.status_value());
@@ -162,6 +156,78 @@ TEST_F(ServerTest, SetFlag) {
         ASSERT_TRUE(response.is_ok());
         ASSERT_TRUE(response->value);
         ASSERT_EQ(response->value, mock_device.GetFlag(Flags::fRefreshEnable));
+      });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, SetFlagRejectsWriteOnceFlags) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync(
+      [client_end = GetClient(), &mock_device = mock_device_]() {
+        fidl::Arena arena;
+        for (auto flag_type : {fuchsia_hardware_ufs::FlagType::kPermanentWpEn,
+                               fuchsia_hardware_ufs::FlagType::kPermanentlyDisableFwUpdate,
+                               fuchsia_hardware_ufs::FlagType::kPhyResourceRemoval}) {
+          auto flag = fuchsia_hardware_ufs::wire::Flag::Builder(arena).type(flag_type).Build();
+
+          const fidl::WireResult result = fidl::WireCall(client_end)->SetFlag(flag);
+          ASSERT_TRUE(result.ok());
+          const fit::result response = result.value();
+          ASSERT_TRUE(response.is_error());
+          ASSERT_EQ(response.error_value(),
+                    fuchsia_hardware_ufs::QueryErrorCode::kParameterNotWriteable);
+        }
+        ASSERT_FALSE(mock_device.GetFlag(Flags::fPermanentWPEn));
+        ASSERT_FALSE(mock_device.GetFlag(Flags::fPermanentlyDisableFwUpdate));
+        ASSERT_FALSE(mock_device.GetFlag(Flags::fPhyResourceRemoval));
+      });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, ToggleFlagRejectsWriteOnceFlags) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync(
+      [client_end = GetClient(), &mock_device = mock_device_]() {
+        fidl::Arena arena;
+        for (auto flag_type : {fuchsia_hardware_ufs::FlagType::kPermanentWpEn,
+                               fuchsia_hardware_ufs::FlagType::kPermanentlyDisableFwUpdate,
+                               fuchsia_hardware_ufs::FlagType::kPhyResourceRemoval}) {
+          auto flag = fuchsia_hardware_ufs::wire::Flag::Builder(arena).type(flag_type).Build();
+
+          const fidl::WireResult result = fidl::WireCall(client_end)->ToggleFlag(flag);
+          ASSERT_TRUE(result.ok());
+          const fit::result response = result.value();
+          ASSERT_TRUE(response.is_error());
+          ASSERT_EQ(response.error_value(),
+                    fuchsia_hardware_ufs::QueryErrorCode::kParameterNotWriteable);
+        }
+        ASSERT_FALSE(mock_device.GetFlag(Flags::fPermanentWPEn));
+        ASSERT_FALSE(mock_device.GetFlag(Flags::fPermanentlyDisableFwUpdate));
+        ASSERT_FALSE(mock_device.GetFlag(Flags::fPhyResourceRemoval));
+      });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, ClearFlagRejectsWriteOnceFlags) {
+  mock_device_.SetFlag(Flags::fPermanentWPEn, true);
+  mock_device_.SetFlag(Flags::fPermanentlyDisableFwUpdate, true);
+  mock_device_.SetFlag(Flags::fPhyResourceRemoval, true);
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync(
+      [client_end = GetClient(), &mock_device = mock_device_]() {
+        fidl::Arena arena;
+        for (auto flag_type : {fuchsia_hardware_ufs::FlagType::kPermanentWpEn,
+                               fuchsia_hardware_ufs::FlagType::kPermanentlyDisableFwUpdate,
+                               fuchsia_hardware_ufs::FlagType::kPhyResourceRemoval}) {
+          auto flag = fuchsia_hardware_ufs::wire::Flag::Builder(arena).type(flag_type).Build();
+
+          const fidl::WireResult result = fidl::WireCall(client_end)->ClearFlag(flag);
+          ASSERT_TRUE(result.ok());
+          const fit::result response = result.value();
+          ASSERT_TRUE(response.is_error());
+          ASSERT_EQ(response.error_value(),
+                    fuchsia_hardware_ufs::QueryErrorCode::kParameterNotWriteable);
+        }
+        ASSERT_TRUE(mock_device.GetFlag(Flags::fPermanentWPEn));
+        ASSERT_TRUE(mock_device.GetFlag(Flags::fPermanentlyDisableFwUpdate));
+        ASSERT_TRUE(mock_device.GetFlag(Flags::fPhyResourceRemoval));
       });
   ASSERT_OK(result.status_value());
 }
@@ -229,7 +295,7 @@ TEST_F(ServerTest, WriteAttribute) {
                                                                    &mock_device = mock_device_]() {
     fidl::Arena arena;
     auto attr = fuchsia_hardware_ufs::wire::Attribute::Builder(arena)
-                    .type(fuchsia_hardware_ufs::AttributeType::kConfigDescrLock)
+                    .type(fuchsia_hardware_ufs::AttributeType::kBootLunEn)
                     .Build();
 
     uint32_t changed_value = 0x01;
@@ -238,7 +304,49 @@ TEST_F(ServerTest, WriteAttribute) {
 
     const fit::result response = result.value();
     ASSERT_TRUE(response.is_ok());
-    ASSERT_EQ(changed_value, mock_device.GetAttribute(Attributes::bConfigDescrLock));
+    ASSERT_EQ(changed_value, mock_device.GetAttribute(Attributes::bBootLunEn));
+  });
+
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, WriteAttributeRejectsWriteOnceAttributes) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync(
+      [client_end = GetClient(), &mock_device = mock_device_]() {
+        fidl::Arena arena;
+        for (auto attr_type : {fuchsia_hardware_ufs::AttributeType::kConfigDescrLock,
+                               fuchsia_hardware_ufs::AttributeType::kPsaState}) {
+          auto attr = fuchsia_hardware_ufs::wire::Attribute::Builder(arena).type(attr_type).Build();
+
+          const fidl::WireResult result = fidl::WireCall(client_end)->WriteAttribute(attr, 1u);
+          ASSERT_TRUE(result.ok());
+          const fit::result response = result.value();
+          ASSERT_TRUE(response.is_error());
+          ASSERT_EQ(response.error_value(),
+                    fuchsia_hardware_ufs::QueryErrorCode::kParameterNotWriteable);
+        }
+        ASSERT_EQ(0u, mock_device.GetAttribute(Attributes::bConfigDescrLock));
+        ASSERT_EQ(0u, mock_device.GetAttribute(Attributes::bPSAState));
+      });
+
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, WriteAttributeRejectsUnapprovedAttributes) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient(),
+                                                                   &mock_device = mock_device_]() {
+    fidl::Arena arena;
+    auto attr = fuchsia_hardware_ufs::wire::Attribute::Builder(arena)
+                    .type(fuchsia_hardware_ufs::AttributeType::kActiveIccLevel)
+                    .Build();
+
+    const fidl::WireResult result = fidl::WireCall(client_end)->WriteAttribute(attr, 1u);
+    ASSERT_TRUE(result.ok());
+    const fit::result response = result.value();
+    ASSERT_TRUE(response.is_error());
+    ASSERT_EQ(response.error_value(), fuchsia_hardware_ufs::QueryErrorCode::kParameterNotWriteable);
+    ASSERT_EQ(static_cast<uint32_t>(kHighestActiveIcclevel),
+              mock_device.GetAttribute(Attributes::bActiveIccLevel));
   });
 
   ASSERT_OK(result.status_value());
@@ -406,46 +514,6 @@ TEST_F(ServerTest, SendUicCommandRejectsNonVolatileAttrSetType) {
   ASSERT_OK(result.status_value());
 }
 
-TEST_F(ServerTest, RequestQueryUpiu) {
-  uint8_t power_mode = static_cast<uint8_t>(UfsPowerMode::kActive);
-  mock_device_.SetAttribute(Attributes::bCurrentPowerMode, power_mode);
-  zx::result result = driver_test().RunOnBackgroundDispatcherSync(
-      [client_end = GetClient(), &mock_device = mock_device_, &arena = arena_]() {
-        // Prepare the request upiu
-        QueryRequestUpiuData request_upiu;
-        request_upiu.header.trans_type = UpiuTransactionCodes::kQueryRequest;
-        request_upiu.header.function = static_cast<uint8_t>(QueryFunction::kStandardReadRequest);
-        request_upiu.opcode = static_cast<uint8_t>(QueryOpcode::kReadAttribute);
-        request_upiu.idn = 0x2;
-
-        // Copy the data into a vector for FIDL transmission
-        std::vector<uint8_t> upiu_vector(sizeof(QueryRequestUpiuData));
-        std::memcpy(upiu_vector.data(), &request_upiu, sizeof(QueryRequestUpiuData));
-        fidl::VectorView<uint8_t> upiu{arena, upiu_vector};
-
-        // Send the request
-        auto response = fidl::WireCall(client_end)->Request(upiu);
-        ASSERT_TRUE(response.ok());
-        ASSERT_TRUE(response->is_ok());
-
-        // Check response data
-        auto response_data = response.value()->response;
-        QueryResponseUpiuData response_upiu;
-        std::memcpy(&response_upiu, response_data.data(), sizeof(QueryResponseUpiuData));
-
-        // Validate the response
-        ASSERT_EQ(response_upiu.header.trans_type, UpiuTransactionCodes::kQueryResponse);
-        ASSERT_EQ(response_upiu.header.function,
-                  static_cast<uint8_t>(QueryFunction::kStandardReadRequest));
-        ASSERT_EQ(response_upiu.header.response, UpiuHeaderResponseCode::kTargetSuccess);
-        ASSERT_EQ(response_upiu.opcode, static_cast<uint8_t>(QueryOpcode::kReadAttribute));
-        ASSERT_EQ(response_upiu.idn, static_cast<uint8_t>(Attributes::bCurrentPowerMode));
-        ASSERT_EQ(betoh32(response_upiu.value),
-                  mock_device.GetAttribute(Attributes::bCurrentPowerMode));
-      });
-  ASSERT_OK(result.status_value());
-}
-
 TEST_F(ServerTest, ReadDescriptorWithInvalidIdn) {
   zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
     // Checks if an error occurs when the request type is missing.
@@ -474,51 +542,6 @@ TEST_F(ServerTest, RequestInternalFail) {
     ASSERT_TRUE(response.is_error());
     ASSERT_EQ(response.error_value(), fuchsia_hardware_ufs::QueryErrorCode::kGeneralFailure);
   });
-  ASSERT_OK(result.status_value());
-}
-
-TEST_F(ServerTest, RequestNotSupportedTransaction) {
-  zx::result result =
-      driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient(), &arena = arena_]() {
-        // Prepare the request upiu
-        QueryRequestUpiuData request_upiu;
-        request_upiu.header.trans_type = UpiuTransactionCodes::kRejectUpiu;
-
-        // Copy the data into a vector for FIDL transmission
-        std::vector<uint8_t> upiu_vector(sizeof(QueryRequestUpiuData));
-        std::memcpy(upiu_vector.data(), &request_upiu, sizeof(QueryRequestUpiuData));
-        fidl::VectorView<uint8_t> upiu{arena, upiu_vector};
-
-        // Send the request
-        const fidl::WireResult result = fidl::WireCall(client_end)->Request(upiu);
-        ASSERT_TRUE(result.ok());
-        const fit::result response = result.value();
-        ASSERT_TRUE(response.is_error());
-        ASSERT_EQ(response.error_value(), ZX_ERR_NOT_SUPPORTED);
-      });
-  ASSERT_OK(result.status_value());
-}
-
-TEST_F(ServerTest, RequestWrongUpiuData) {
-  zx::result result =
-      driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient(), &arena = arena_]() {
-        // Prepare the request upiu
-        CommandUpiuData request_upiu;
-        request_upiu.header.trans_type = UpiuTransactionCodes::kQueryRequest;
-        request_upiu.header.function = static_cast<uint8_t>(QueryFunction::kStandardReadRequest);
-
-        // Copy the data into a vector for FIDL transmission
-        std::vector<uint8_t> upiu_vector(sizeof(CommandUpiuData));
-        std::memcpy(upiu_vector.data(), &request_upiu, sizeof(CommandUpiuData));
-        fidl::VectorView<uint8_t> upiu{arena, upiu_vector};
-
-        // Send the request
-        const fidl::WireResult result = fidl::WireCall(client_end)->Request(upiu);
-        ASSERT_TRUE(result.ok());
-        const fit::result response = result.value();
-        ASSERT_TRUE(response.is_error());
-        ASSERT_EQ(response.error_value(), ZX_ERR_INVALID_ARGS);
-      });
   ASSERT_OK(result.status_value());
 }
 
@@ -594,6 +617,29 @@ TEST_F(ServerTest, WriteBuffer) {
         mock_device.ReadFromDeviceBuffer(0, buf, buffer_offset, length);
         ASSERT_EQ(memcmp(&write_buf, buf, length), 0);
       });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, WriteBufferRejectsFfuModes) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
+    using WriteBufferMode = fuchsia_hardware_scsi::wire::WriteBufferMode;
+    uint32_t length = 1024;
+    for (WriteBufferMode mode :
+         {WriteBufferMode::kVendorSpecific, WriteBufferMode::kFfuOffsetSaveDefer,
+          WriteBufferMode::kErrorHistory}) {
+      zx::vmo vmo;
+      ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+      zx::vmo dup;
+      ASSERT_OK(vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup));
+
+      const fidl::WireResult result =
+          fidl::WireCall(client_end)->WriteBuffer(0, mode, 0, 0, length, std::move(dup));
+      ASSERT_TRUE(result.ok());
+      const fit::result response = result.value();
+      ASSERT_TRUE(response.is_error());
+      ASSERT_EQ(response.error_value(), ZX_ERR_ACCESS_DENIED);
+    }
+  });
   ASSERT_OK(result.status_value());
 }
 

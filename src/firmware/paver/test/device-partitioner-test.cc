@@ -447,7 +447,6 @@ class FakeUfs : public fidl::WireServer<fuchsia_hardware_ufs::Ufs> {
   void ToggleFlag(ToggleFlagRequestView request, ToggleFlagCompleter::Sync& completer) override {}
   void SendUicCommand(SendUicCommandRequestView request,
                       SendUicCommandCompleter::Sync& completer) override {}
-  void Request(RequestRequestView request, RequestCompleter::Sync& completer) override {}
   void ReadBuffer(ReadBufferRequestView request, ReadBufferCompleter::Sync& completer) override {}
   void WriteBuffer(WriteBufferRequestView request, WriteBufferCompleter::Sync& completer) override {
   }
