@@ -40,6 +40,8 @@ constexpr uint16_t kWordSizeBytes = 4;
 constexpr uint16_t kDefaultRxFifoDepthWords = 256;
 constexpr uint16_t kMaxOutPacketSizeLimit = kDefaultRxFifoDepthWords * kWordSizeBytes;
 
+class Dwc2Test;
+
 class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_dci::UsbDci> {
  public:
   Dwc2() : fdf::DriverBase2("dwc2") {}
@@ -97,6 +99,8 @@ class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_d
   const zx::bti& bti() const { return bti_; }
 
  private:
+  friend class Dwc2Test;
+
   static inline const uint32_t kEp0BufferSize = UINT16_MAX + 1;
 
   zx_status_t DoControl(size_t write_size, size_t read_size, size_t* out_read_actual);
@@ -166,6 +170,7 @@ class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_d
 
     uint16_t max_packet_size = 0;
     bool enabled = false;
+    bool pending_zlp = false;
 
    protected:
     void OnUnbound(fidl::UnbindInfo info,

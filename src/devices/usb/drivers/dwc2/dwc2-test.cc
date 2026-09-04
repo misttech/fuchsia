@@ -17,6 +17,8 @@
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 
+#include <mutex>
+
 #include <gtest/gtest.h>
 
 #include "src/devices/usb/drivers/dwc2/dwc2_config.h"
@@ -112,8 +114,14 @@ class Environment : public fdf_testing::Environment {
       // the test.
       ASSERT_EQ(uint64_t{0}, val64 & 0xFFFF'FFFF'0000'0000);
       const uint32_t val = static_cast<uint32_t>(val64);
-      const uint32_t disallow_mask =
-          ~GRSTCTL::Get().FromValue(0).set_csftrst(1).set_ahbidle(1).reg_value();
+      const uint32_t disallow_mask = ~GRSTCTL::Get()
+                                          .FromValue(0)
+                                          .set_csftrst(1)
+                                          .set_ahbidle(1)
+                                          .set_txfflsh(1)
+                                          .set_rxfflsh(1)
+                                          .set_txfnum(0x1F)
+                                          .reg_value();
       EXPECT_EQ(0u, val & disallow_mask);
 
       // If the user is setting the Soft Reset bit, set the bit in our state as
@@ -160,6 +168,17 @@ class Dwc2Test : public testing::Test {
   void TearDown() override { EXPECT_TRUE(dut_.StopDriver().is_ok()); }
 
  protected:
+  Dwc2::Endpoint* GetEndpoint(Dwc2& driver, uint8_t ep_num) {
+    if (ep_num < std::size(driver.endpoints_) && driver.endpoints_[ep_num].has_value()) {
+      return &*driver.endpoints_[ep_num];
+    }
+    return nullptr;
+  }
+
+  void QueueNextRequest(Dwc2& driver, Dwc2::Endpoint* ep) __TA_REQUIRES(ep->lock) {
+    driver.QueueNextRequest(ep);
+  }
+
   fdf_testing::BackgroundDriverTest<Config> dut_;
 };
 
@@ -205,6 +224,100 @@ TEST_F(Dwc2Test, GetHardwareInfo) {
   EXPECT_EQ(info.endpoints()->at(5).supported_types()->at(1).max_packet_size_limit(), 1024u);
   EXPECT_EQ(info.endpoints()->at(5).supported_types()->at(1).endpoint_type(),
             fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt);
+}
+
+TEST_F(Dwc2Test, PendingZlp_SetOnInShortTransfer) {
+  dut_.RunInDriverContext([this](Dwc2& driver) {
+    uint8_t ep_num = DWC_ADDR_TO_INDEX(0x81);  // EP 1 IN
+    auto* ep = GetEndpoint(driver, ep_num);
+    ASSERT_NE(ep, nullptr);
+
+    std::lock_guard<std::mutex> lock(ep->lock);
+    ep->max_packet_size = 64;
+    ep->enabled = true;
+    EXPECT_FALSE(ep->pending_zlp);
+
+    usb::FidlRequest fidl_req(usb::EndpointType::BULK);
+    fidl_req->short_(true);
+    fidl_req.add_data(std::vector<uint8_t>(64, 0), 64, 0);
+
+    ep->queued_reqs.push(std::move(fidl_req));
+
+    QueueNextRequest(driver, ep);
+    EXPECT_TRUE(ep->pending_zlp);
+  });
+}
+
+TEST_F(Dwc2Test, PendingZlp_NotSetWithoutShortFlag) {
+  dut_.RunInDriverContext([this](Dwc2& driver) {
+    uint8_t ep_num = DWC_ADDR_TO_INDEX(0x81);  // EP 1 IN
+    auto* ep = GetEndpoint(driver, ep_num);
+    ASSERT_NE(ep, nullptr);
+
+    std::lock_guard<std::mutex> lock(ep->lock);
+    ep->max_packet_size = 64;
+    ep->enabled = true;
+    EXPECT_FALSE(ep->pending_zlp);
+
+    usb::FidlRequest fidl_req(usb::EndpointType::BULK);
+    fidl_req->short_(false);
+    fidl_req.add_data(std::vector<uint8_t>(64, 0), 64, 0);
+
+    ep->queued_reqs.push(std::move(fidl_req));
+
+    QueueNextRequest(driver, ep);
+    EXPECT_FALSE(ep->pending_zlp);
+  });
+}
+
+TEST_F(Dwc2Test, PendingZlp_NotSetIfLengthNotMultiple) {
+  dut_.RunInDriverContext([this](Dwc2& driver) {
+    uint8_t ep_num = DWC_ADDR_TO_INDEX(0x81);  // EP 1 IN
+    auto* ep = GetEndpoint(driver, ep_num);
+    ASSERT_NE(ep, nullptr);
+
+    std::lock_guard<std::mutex> lock(ep->lock);
+    ep->max_packet_size = 64;
+    ep->enabled = true;
+    EXPECT_FALSE(ep->pending_zlp);
+
+    usb::FidlRequest fidl_req(usb::EndpointType::BULK);
+    fidl_req->short_(true);
+    fidl_req.add_data(std::vector<uint8_t>(50, 0), 50, 0);
+
+    ep->queued_reqs.push(std::move(fidl_req));
+
+    QueueNextRequest(driver, ep);
+    EXPECT_FALSE(ep->pending_zlp);
+  });
+}
+
+TEST_F(Dwc2Test, PendingZlp_ClearedOnCancelAll) {
+  dut_.RunInDriverContext([this](Dwc2& driver) {
+    uint8_t ep_num = DWC_ADDR_TO_INDEX(0x81);  // EP 1 IN
+    auto* ep = GetEndpoint(driver, ep_num);
+    ASSERT_NE(ep, nullptr);
+
+    {
+      std::lock_guard<std::mutex> lock(ep->lock);
+      ep->max_packet_size = 64;
+      ep->enabled = true;
+      ASSERT_FALSE(ep->pending_zlp);
+
+      usb::FidlRequest fidl_req(usb::EndpointType::BULK);
+      fidl_req->short_(true);
+      fidl_req.add_data(std::vector<uint8_t>(64, 0), 64, 0);
+
+      ep->queued_reqs.push(std::move(fidl_req));
+
+      QueueNextRequest(driver, ep);
+      ASSERT_TRUE(ep->pending_zlp);
+    }
+
+    // CancelAll() acquires lock.
+    ep->CancelAll();
+    EXPECT_FALSE(ep->pending_zlp);
+  });
 }
 
 }  // namespace dwc2

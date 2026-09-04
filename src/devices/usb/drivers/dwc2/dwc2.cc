@@ -574,6 +574,8 @@ void Dwc2::QueueNextRequest(Endpoint* ep) {
   ep->current_req.emplace(std::move(ep->queued_reqs.front()));
   ep->queued_reqs.pop();
 
+  ep->pending_zlp = false;
+
   auto status =
       std::visit([this](auto&& req) -> zx_status_t { return req.PhysMap(bti_); }, *ep->current_req);
   ZX_ASSERT_MSG(status == ZX_OK, "PhysMap failed");
@@ -599,6 +601,14 @@ void Dwc2::QueueNextRequest(Endpoint* ep) {
   ep->phys = static_cast<uint32_t>((*iter).first);
   ep->req_offset = 0;
   ep->req_length = static_cast<uint32_t>((*iter).second);
+
+  bool is_in = DWC_EP_IS_IN(ep->ep_addr());
+  bool is_short =
+      std::visit([](auto&& req) { return req->short_().value_or(false); }, *ep->current_req);
+  if (is_in && is_short && ep->req_length > 0 && (ep->req_length % ep->max_packet_size == 0)) {
+    ep->pending_zlp = true;
+  }
+
   StartTransfer(ep, ep->req_length);
 }
 
@@ -920,6 +930,14 @@ void Dwc2::HandleTransferComplete(uint8_t ep_num) {
   ep->lock.lock();
 
   ep->req_offset += ReadTransfered(&*ep);
+
+  if (ep->pending_zlp) {
+    ep->pending_zlp = false;
+    StartTransfer(&*ep, 0);  // Zero-length transfer results in a ZLP.
+    ep->lock.unlock();
+    return;
+  }
+
   // Make a copy since this is used outside the critical section.
   auto actual = ep->req_offset;
 
@@ -1096,6 +1114,7 @@ void Dwc2::SetConnected(bool connected) {
         }
 
         ep->enabled = false;
+        ep->pending_zlp = false;
       }
 
       // Requests must be completed outside of the lock.
@@ -1525,6 +1544,7 @@ void Dwc2::DisableEndpoint(DisableEndpointRequest& request,
 
   DEPCTL::Get(ep_num).ReadFrom(mmio).set_usbactep(0).WriteTo(mmio);
   ep->enabled = false;
+  ep->pending_zlp = false;
   completer.Reply(zx::ok());
 }
 
@@ -1593,6 +1613,7 @@ void Dwc2::Endpoint::CancelAll() {
   {
     std::lock_guard<std::mutex> ep_guard(lock);
     std::lock_guard<std::mutex> dwc2_guard(dwc2_->lock_);
+    pending_zlp = false;
     if (DWC_EP_IS_OUT(ep_addr())) {
       dwc2_->FlushRxFifoRetryIndefinite();
     } else {
