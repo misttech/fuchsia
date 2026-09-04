@@ -282,10 +282,9 @@ foreach(stage, stages) {
 
       # The custom target defined by the previous stage goes early in the list.
       # The default (final) custom target and a few other things come out.
-      configs = [ ":$previous_stage" ] + default_common_binary_configs - [
-                  "//build/config/rust:no_features",
-                  "//zircon/kernel/lib/rust:target",
-                ] + stage.remove_configs - stage.remove_configs
+      configs = [ ":$previous_stage" ] + default_common_binary_configs -
+                [ "//zircon/kernel/lib/rust:target" ] + stage.remove_configs -
+                stage.remove_configs
 
       # The config() confers an inputs list for the file dependency on the
       # `target.json` file.  Normal Rust targets all get implicit deps that

@@ -292,6 +292,8 @@ template("kernel_switchset") {
         }
         optimize = switchset_optimize
       }
+
+      remove_common_configs += [ "//build/config/rust:no_features" ]
     }
   }
 }
