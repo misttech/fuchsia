@@ -284,11 +284,11 @@ impl InfraDriver {
                             identity_file: ssh_key,
                         },
                         port: 5201,
-                        test_interface: test_interface.clone(),
+                        test_interface: test_interface,
                         use_killall: true,
                     });
 
-                    register_ip(ip.clone())?;
+                    register_ip(ip)?;
                     register_pdu(pdu)?;
                 }
             };
