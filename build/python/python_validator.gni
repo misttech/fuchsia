@@ -55,6 +55,7 @@ template("validate_python") {
     outputs = [ "${target_out_dir}/${target_name}.mypy_checked" ]
     depfile = "${target_out_dir}/${target_name}.d"
     mnemonic = "MYPY"
+    _cache_dir = "${target_gen_dir}/${target_name}.mypy_cache"
     args = [
       "--target_type",
       invoker.target_type,
@@ -68,6 +69,8 @@ template("validate_python") {
       rebase_path(depfile, root_build_dir),
       "--output",
       rebase_path(outputs[0], root_build_dir),
+      "--cache_dir",
+      rebase_path(_cache_dir, root_build_dir),
     ]
 
     if (invoker.target_type == "binary") {

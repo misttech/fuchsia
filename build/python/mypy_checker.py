@@ -71,6 +71,12 @@ def main() -> int:
         help="Path to output file",
         required=True,
     )
+    parser.add_argument(
+        "--cache_dir",
+        help="Path to the cache directory for mypy",
+        type=Path,
+        required=True,
+    )
 
     args = parser.parse_args()
 
@@ -100,6 +106,7 @@ def main() -> int:
                 lib_infos,
                 args.output,
                 args.depfile,
+                args.cache_dir,
             )
         case TargetType.BINARY:
             retval = run_mypy_on_binary_target(
@@ -111,6 +118,7 @@ def main() -> int:
                 lib_infos,
                 args.output,
                 args.depfile,
+                args.cache_dir,
             )
         case default:
             # Here so that type checking knows that all code paths either
@@ -126,13 +134,14 @@ def main() -> int:
 
 def run_mypy_on_binary_target(
     target_name: str,
-    gen_dir: str,
+    gen_dir: Path,
     src_files: list[str],
     data_sources: list[str],
     data_package_name: str | None,
     lib_infos: list[dict[str, object]],
     output_file: Path,
     depfile: Path,
+    cache_dir: Path,
 ) -> int:
     """
     Runs `mypy` type checking on the sources of a binary target, as well as the
@@ -145,6 +154,9 @@ def run_mypy_on_binary_target(
         data_sources: The list of data source file paths.
         data_package_name: Name of the Python package to store data sources in.
         lib_infos: The list of library dependencies of the binary target
+        output_file: The path to the output stamp file
+        depfile: The path to the depfile to generate
+        cache_dir: The path to the incremental cache directory
 
     Returns:
         The exit code of the Mypy invocation.
@@ -183,7 +195,7 @@ def run_mypy_on_binary_target(
             "{}: {}\n".format(output_file, " ".join(list(src_map.values())))
         )
 
-        ret = run_mypy_checks(tmp_dir, src_map)
+        ret = run_mypy_checks(tmp_dir, src_map, cache_dir)
     finally:
         package_python_binary.remove_dir(tmp_dir)
     return ret
@@ -195,6 +207,7 @@ def run_mypy_on_library_target(
     lib_infos: list[dict[str, object]],
     output_file: Path,
     depfile: Path,
+    cache_dir: Path,
 ) -> int:
     """
     Runs `mypy` type checking on the sources of a library target, as well as the
@@ -204,7 +217,9 @@ def run_mypy_on_library_target(
         target_name: The name of the target being built.
         gen_dir: The path to the generated directory
         lib_infos: The list of library dependencies of the library target
+        output_file: The path to the output stamp file
         depfile: The path to the depfile to generate
+        cache_dir: The path to the incremental cache directory
 
     Returns:
         The exit code of the Mypy invocation.
@@ -221,7 +236,7 @@ def run_mypy_on_library_target(
 
     # Copy mypy enabled library sources to the tmp directory.
     package_python_binary.copy_library_sources_for_mypy(
-        tmp_dir,
+        str(tmp_dir),
         [info for info in lib_infos if info["mypy_support"]],
         src_map,
     )
@@ -232,15 +247,16 @@ def run_mypy_on_library_target(
     )
 
     try:
-        ret = run_mypy_checks(str(tmp_dir), src_map)
+        ret = run_mypy_checks(str(tmp_dir), src_map, cache_dir)
     finally:
-        package_python_binary.remove_dir(tmp_dir)
+        package_python_binary.remove_dir(str(tmp_dir))
     return ret
 
 
 def run_mypy_checks(
     app_dir: str,
     src_map: dict[str, str],
+    cache_dir: Path,
     with_incremental_cache: bool = True,
 ) -> int:
     """
@@ -250,6 +266,7 @@ def run_mypy_checks(
     Args:
         app_dir: The path of the directory to run type checking on
         src_map: Mapping from the original source file paths to app dir paths
+        cache_dir: Path to the incremental cache directory.
         with_incremental_cache: If True, use the incremental cache.
             This is known to cause issues in infra due to
             https://fxbug.dev/345717802, so if this option is set
@@ -277,7 +294,12 @@ def run_mypy_checks(
                         "--no-incremental",
                     ]
                     if not with_incremental_cache
-                    else []
+                    else (
+                        [
+                            "--cache-dir",
+                            str(cache_dir),
+                        ]
+                    )
                 )
                 + [
                     "--config-file",
@@ -303,7 +325,10 @@ def run_mypy_checks(
             if with_incremental_cache:
                 # Try again without the incremental cache.
                 return run_mypy_checks(
-                    app_dir, src_map, with_incremental_cache=False
+                    app_dir,
+                    src_map,
+                    cache_dir=cache_dir,
+                    with_incremental_cache=False,
                 )
             if e.stdout:
                 refactored_out = convert_mypy_output(e.stdout, src_map)
