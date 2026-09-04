@@ -60,9 +60,14 @@ impl WatchdogOps for DefaultWatchdog {
 
 static DEFAULT_DRIVER: DefaultWatchdog = DefaultWatchdog;
 
+/// Resolves a registered driver, falling back to the no-op default when none is present.
+fn resolve_driver(driver: Option<&'static dyn WatchdogOps>) -> &'static dyn WatchdogOps {
+    driver.unwrap_or(&DEFAULT_DRIVER)
+}
+
 fn get_driver() -> &'static dyn WatchdogOps {
     // SAFETY: ACTIVE_DRIVER is written once during single-threaded early boot, and read immutable thereafter.
-    unsafe { (*ACTIVE_DRIVER.0.get()).unwrap_or(&DEFAULT_DRIVER) }
+    resolve_driver(unsafe { *ACTIVE_DRIVER.0.get() })
 }
 
 use debug::dprintf;
@@ -175,46 +180,39 @@ pub unsafe extern "C" fn hw_watchdog_is_petting_suppressed() -> bool {
     get_driver().is_petting_suppressed()
 }
 
+// The registered global is read concurrently from timer context, so these drive
+// `resolve_driver` directly rather than publishing a driver.
 /// PDEV hardware watchdog layer kernel tests.
 #[cfg(ktest)]
 #[unittest::suite(name = "hw_watchdog")]
 mod tests {
-    use super::{
-        ACTIVE_DRIVER, DurationBoot, InstantBoot, Status, WatchdogOps,
-        hw_watchdog_get_last_pet_time, hw_watchdog_get_timeout_nsec, hw_watchdog_is_enabled,
-        hw_watchdog_is_petting_suppressed, hw_watchdog_pet, hw_watchdog_present,
-        hw_watchdog_set_enabled, hw_watchdog_suppress_petting, register_watchdog,
-    };
+    use super::{DurationBoot, InstantBoot, Status, WatchdogOps, resolve_driver};
     use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use unittest::{assert_eq, assert_err, assert_false, assert_ok, assert_true};
 
     /// Test default ops dispatch table fallback behavior and default state.
     #[test]
-    fn test_pdev_watchdog_default_ops_fallback() {
-        // SAFETY: Calling global C-ABI watchdog functions and modifying ACTIVE_DRIVER in unit test.
-        unsafe {
-            let saved = *ACTIVE_DRIVER.0.get();
-            *ACTIVE_DRIVER.0.get() = None;
+    fn test_pdev_watchdog_default_driver_ops() {
+        // With no driver registered, dispatch falls back to the no-op default.
+        let driver = resolve_driver(None);
 
-            assert_false!(hw_watchdog_present());
-            assert_err!(hw_watchdog_set_enabled(true), Status::NOT_SUPPORTED);
-            assert_false!(hw_watchdog_is_enabled());
-            assert_eq!(hw_watchdog_get_timeout_nsec(), i64::MAX);
-            assert_eq!(hw_watchdog_get_last_pet_time(), 0);
-            assert_true!(hw_watchdog_is_petting_suppressed());
+        assert_err!(driver.set_enabled(true), Status::NOT_SUPPORTED);
+        assert_false!(driver.is_enabled());
+        assert_eq!(driver.get_timeout_nsec().0, i64::MAX);
+        assert_eq!(driver.get_last_pet_time().0, 0);
 
-            // Verify default no-op callbacks don't crash when invoked.
-            hw_watchdog_pet();
-            hw_watchdog_suppress_petting(true);
-            hw_watchdog_suppress_petting(false);
+        // Verify default no-op callbacks don't crash when invoked.
+        driver.pet();
+        driver.suppress_petting(true);
+        driver.suppress_petting(false);
 
-            *ACTIVE_DRIVER.0.get() = saved;
-        }
+        // Suppression is unconditional for the default driver.
+        assert_true!(driver.is_petting_suppressed());
     }
 
-    /// Test registration of custom watchdog driver and execution of hooks.
+    /// Test that a driver's hooks are reached through the dispatch layer.
     #[test]
-    fn test_pdev_watchdog_registration() {
+    fn test_pdev_watchdog_custom_driver_dispatch() {
         static PET_COUNT: AtomicU32 = AtomicU32::new(0);
         static SUPPRESS_STATE: AtomicBool = AtomicBool::new(false);
 
@@ -248,37 +246,28 @@ mod tests {
         PET_COUNT.store(0, Ordering::SeqCst);
         SUPPRESS_STATE.store(false, Ordering::SeqCst);
 
-        let saved = unsafe { *ACTIVE_DRIVER.0.get() };
-        register_watchdog(&DUMMY_DRIVER);
+        // A registered driver is dispatched to in preference to the default.
+        let driver = resolve_driver(Some(&DUMMY_DRIVER));
 
-        // SAFETY: Testing invocation of global C-ABI watchdog functions after registration.
-        unsafe {
-            assert_true!(hw_watchdog_present());
-            assert_ok!(hw_watchdog_set_enabled(true));
-            assert_true!(hw_watchdog_is_enabled());
-            assert_eq!(hw_watchdog_get_timeout_nsec(), 12345);
-            assert_eq!(hw_watchdog_get_last_pet_time(), 67890);
-            assert_false!(hw_watchdog_is_petting_suppressed());
+        assert_ok!(driver.set_enabled(true));
+        assert_true!(driver.is_enabled());
+        assert_eq!(driver.get_timeout_nsec().0, 12345);
+        assert_eq!(driver.get_last_pet_time().0, 67890);
+        assert_false!(driver.is_petting_suppressed());
 
-            // Verify pet hook execution.
-            hw_watchdog_pet();
-            assert_eq!(PET_COUNT.load(Ordering::SeqCst), 1);
-            hw_watchdog_pet();
-            assert_eq!(PET_COUNT.load(Ordering::SeqCst), 2);
+        // Verify pet hook execution.
+        driver.pet();
+        assert_eq!(PET_COUNT.load(Ordering::SeqCst), 1);
+        driver.pet();
+        assert_eq!(PET_COUNT.load(Ordering::SeqCst), 2);
 
-            // Verify suppress_petting hook execution and state propagation.
-            hw_watchdog_suppress_petting(true);
-            assert_true!(SUPPRESS_STATE.load(Ordering::SeqCst));
-            assert_true!(hw_watchdog_is_petting_suppressed());
+        // Verify suppress_petting hook execution and state propagation.
+        driver.suppress_petting(true);
+        assert_true!(SUPPRESS_STATE.load(Ordering::SeqCst));
+        assert_true!(driver.is_petting_suppressed());
 
-            hw_watchdog_suppress_petting(false);
-            assert_false!(SUPPRESS_STATE.load(Ordering::SeqCst));
-            assert_false!(hw_watchdog_is_petting_suppressed());
-        }
-
-        // Restore saved driver so other tests or kernel state aren't affected.
-        unsafe {
-            *ACTIVE_DRIVER.0.get() = saved;
-        }
+        driver.suppress_petting(false);
+        assert_false!(SUPPRESS_STATE.load(Ordering::SeqCst));
+        assert_false!(driver.is_petting_suppressed());
     }
 }
