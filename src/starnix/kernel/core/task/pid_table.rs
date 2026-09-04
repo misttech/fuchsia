@@ -198,13 +198,17 @@ impl PidTable {
 
     pub fn add_task(&mut self, task: Arc<Task>) {
         let entry = self.get_or_create_entry(task.tid.id);
-        let scope = RcuReadScope::new();
-        assert_eq!(entry.task.strong_count(&scope), 0);
+        {
+            let scope = RcuReadScope::new();
+            assert_eq!(entry.task.strong_count(&scope), 0);
+            if task.is_leader() {
+                assert!(entry.process.is_none(&scope));
+            }
+        }
         entry.task.update(Arc::downgrade(&task));
 
         // If we're not cloning a thread, add its thread group
         if task.is_leader() {
-            assert!(entry.process.is_none(&scope));
             entry
                 .process
                 .update(Some(ProcessEntry::ThreadGroup(Arc::downgrade(task.thread_group()))));
