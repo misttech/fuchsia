@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use core::num::NonZeroU64;
 use futures::prelude::*;
 use futures::task::{Context, Poll};
 use netext::TokioAsyncReadExt;
 use std::fmt;
+use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::time::Duration;
@@ -20,9 +22,10 @@ const FB_HANDSHAKE: [u8; 4] = *b"FB01";
 
 pub struct TcpNetworkInterface<T> {
     stream: T,
-    read_avail_bytes: Option<u64>,
+    read_avail_bytes: Option<NonZeroU64>,
     /// Returns a tuple of (avail_bytes, bytes_read, bytes)
-    read_task: Option<Pin<Box<dyn Future<Output = std::io::Result<(u64, usize, Vec<u8>)>> + Send>>>,
+    read_task:
+        Option<Pin<Box<dyn Future<Output = std::io::Result<(u64, usize, Box<[u8]>)>> + Send>>>,
     write_task: Option<Pin<Box<dyn Future<Output = std::io::Result<usize>> + Send>>>,
     /// Flag to indicate if the header for a given Write operation was completed
     wrote_header: bool,
@@ -41,6 +44,19 @@ pub struct TcpNetworkInterface<T> {
     write_header_task: Option<Pin<Box<dyn Future<Output = std::io::Result<()>> + Send>>>,
 }
 
+impl<T> TcpNetworkInterface<T> {
+    pub fn new(stream: T) -> Self {
+        Self {
+            stream,
+            read_avail_bytes: None,
+            read_task: None,
+            write_task: None,
+            wrote_header: false,
+            write_header_task: None,
+        }
+    }
+}
+
 impl<T> fmt::Debug for TcpNetworkInterface<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TcpNetworkInterface")
@@ -51,20 +67,20 @@ impl<T> fmt::Debug for TcpNetworkInterface<T> {
 
 impl<T> AsyncRead for TcpNetworkInterface<T>
 where
-    T: AsyncRead + AsyncWrite + std::marker::Unpin + Clone + Send + 'static,
+    T: AsyncRead + std::marker::Unpin + Clone + Send + 'static,
 {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<std::io::Result<usize>> {
-        if self.read_task.is_none() {
-            let mut stream = self.stream.clone();
-            let avail_bytes = self.read_avail_bytes;
-            let _length = buf.len();
-            self.read_task.replace(Box::pin(async move {
+        let buf_len = buf.len();
+        let avail_bytes = self.read_avail_bytes;
+        let mut stream = self.stream.clone();
+        let task = self.read_task.get_or_insert_with(|| {
+            Box::pin(async move {
                 let mut avail_bytes = match avail_bytes {
-                    Some(value) => value,
+                    Some(value) => value.into(),
                     None => {
                         let mut pkt_len = [0; 8];
                         let bytes_read = stream.read(&mut pkt_len).await?;
@@ -77,20 +93,33 @@ where
                     }
                 };
 
-                let mut data_buf = vec![0; avail_bytes.try_into().unwrap()];
-                let bytes_read: u64 =
-                    stream.read(data_buf.as_mut_slice()).await?.try_into().unwrap();
+                // Mild TOCTOU issue but better safe than sorry.
+                if avail_bytes > buf_len.try_into().unwrap() {
+                    return Err(std::io::Error::other(format!(
+                        "Expected too many bytes: would read {avail_bytes}, but buf size is {buf_len}"
+                    )));
+                }
+
+                let mut data_buf = vec![0; avail_bytes.try_into().unwrap()].into_boxed_slice();
+                let bytes_read: u64 = stream.read(&mut data_buf).await?.try_into().unwrap();
                 avail_bytes -= bytes_read;
 
                 Ok((avail_bytes, bytes_read.try_into().unwrap(), data_buf))
-            }));
-        }
+            })
+        });
 
-        let task = self.read_task.as_mut().unwrap();
         match task.as_mut().poll(cx) {
             Poll::Ready(Ok((avail_bytes, bytes_read, data))) => {
                 self.read_task = None;
-                self.read_avail_bytes = if avail_bytes == 0 { None } else { Some(avail_bytes) };
+                self.read_avail_bytes = NonZeroU64::new(avail_bytes);
+                if bytes_read > buf_len && bytes_read > data.len() {
+                    return Poll::Ready(Err(Error::new(
+                        ErrorKind::InvalidData,
+                        format!(
+                            "Expected too many bytes: would read {bytes_read}, but buf size is {buf_len}",
+                        ),
+                    )));
+                }
                 buf[0..bytes_read].copy_from_slice(&data[0..bytes_read]);
                 Poll::Ready(Ok(bytes_read))
             }
@@ -115,14 +144,12 @@ where
         if self.write_header_task.is_none() && !self.wrote_header {
             log::trace!("About to start header task");
             let mut stream = self.stream.clone();
-            let mut data = vec![];
-            data.extend(TryInto::<u64>::try_into(buf.len()).unwrap().to_be_bytes());
+            let data = TryInto::<u64>::try_into(buf.len()).unwrap().to_be_bytes();
             self.write_header_task.replace(Box::pin(async move { stream.write_all(&data).await }));
         }
 
-        if self.write_header_task.is_some() {
+        if let Some(ref mut task) = self.write_header_task {
             log::trace!("Checking header task status");
-            let task = self.write_header_task.as_mut().unwrap();
             let res = match task.as_mut().poll(cx) {
                 Poll::Ready(Ok(())) => {
                     self.write_header_task = None;
@@ -141,10 +168,10 @@ where
             return res;
         }
 
-        if self.write_task.is_none() {
-            let mut stream = self.stream.clone();
+        let mut stream = self.stream.clone();
+        let task = self.write_task.get_or_insert_with(|| {
             let data = buf.to_vec().into_boxed_slice();
-            self.write_task.replace(Box::pin(async move {
+            Box::pin(async move {
                 let mut start = 0;
                 while start < data.len() {
                     // We won't always succeed in writing the entire buffer at once, so
@@ -157,22 +184,14 @@ where
                     start += written;
                 }
                 Ok(data.len())
-            }));
-        }
-
-        let task = self.write_task.as_mut().unwrap();
+            })
+        });
         match task.as_mut().poll(cx) {
-            Poll::Ready(Ok(s)) => {
+            Poll::Ready(r) => {
                 self.write_task = None;
                 self.wrote_header = false;
                 self.write_header_task = None;
-                Poll::Ready(Ok(s))
-            }
-            Poll::Ready(Err(e)) => {
-                self.write_task = None;
-                self.wrote_header = false;
-                self.write_header_task = None;
-                Poll::Ready(Err(e))
+                Poll::Ready(r)
             }
             Poll::Pending => {
                 cx.waker().wake_by_ref();
@@ -229,14 +248,7 @@ pub async fn open_once(
             .map_err(|e| crate::FastbootTransportError::Io(e))?
             .into_multithreaded_futures_stream();
         handshake(&mut stream).await?;
-        Ok(TcpNetworkInterface {
-            stream,
-            read_avail_bytes: None,
-            read_task: None,
-            write_task: None,
-            write_header_task: None,
-            wrote_header: false,
-        })
+        Ok(TcpNetworkInterface::new(stream))
     })
     .await
     .map_err(|_| crate::FastbootTransportError::Timeout)?
@@ -248,6 +260,43 @@ mod test {
     use anyhow::Result;
     use pretty_assertions::assert_eq;
     use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct TestAsyncIo {
+        data: Box<[u8]>,
+    }
+
+    impl AsyncRead for TestAsyncIo {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            let len = std::cmp::min(buf.len(), self.data.len());
+            buf[..len].copy_from_slice(&self.data[..len]);
+            Poll::Ready(Ok(len))
+        }
+    }
+
+    impl AsyncWrite for TestAsyncIo {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            let len = std::cmp::min(buf.len(), self.data.len());
+            self.data[..len].copy_from_slice(&buf[..len]);
+            Poll::Ready(Ok(len))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            unimplemented!();
+        }
+
+        fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            unimplemented!();
+        }
+    }
 
     #[derive(Clone)]
     struct TestInnerWriter {
@@ -289,14 +338,7 @@ mod test {
     async fn test_async_write_includes_header() -> Result<()> {
         let inner = Arc::new(Mutex::new(vec![]));
         let stream = TestInnerWriter { inner: inner.clone() };
-        let mut interface = TcpNetworkInterface {
-            stream,
-            read_avail_bytes: None,
-            read_task: None,
-            write_task: None,
-            write_header_task: None,
-            wrote_header: false,
-        };
+        let mut interface = TcpNetworkInterface::new(stream);
 
         let bytes = vec![0, 1, 2];
         interface.write_all(&bytes).await?;
@@ -306,5 +348,32 @@ mod test {
             "stream contents"
         );
         Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_read_wrapper() -> Result<()> {
+        let msg = "O, that this too too solid flesh would melt";
+        let mut data = (msg.as_bytes().len() as u64).to_be_bytes().to_vec();
+        data.extend(msg.as_bytes());
+        let data = data.into_boxed_slice();
+        let stream = TestAsyncIo { data };
+        let mut interface = TcpNetworkInterface::new(stream);
+
+        let mut buf = [0u8; 64];
+        let len = interface.read(&mut buf).await?;
+        assert_eq!(interface.stream.data[0..8], (len as u64).to_be_bytes());
+        assert_eq!(msg.as_bytes().len(), len);
+        assert_eq!(&interface.stream.data[..len], &buf[..len]);
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_read_too_much_data() {
+        let stream = TestAsyncIo { data: 0x80u64.to_be_bytes().to_vec().into_boxed_slice() };
+        let mut interface = TcpNetworkInterface::new(stream);
+
+        let mut buf = [0u8; 64];
+        let res = interface.read(&mut buf).await;
+        assert!(res.is_err());
     }
 }
