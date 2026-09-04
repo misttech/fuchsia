@@ -434,17 +434,31 @@ namespace {{
             let mut sorted_fields = struct_def.fields.clone();
             sorted_fields.sort_by(|a, b| a.name.cmp(&b.name));
 
+            let all_optional = !sorted_fields.is_empty() && sorted_fields.iter().all(|f| f.optional);
+            if all_optional {
+                cc_code.push_str("    bool has_any_field = false;\n");
+            }
+
             for field in &sorted_fields {
                 let key_expr = format!("prefix + \".{}\"", field.name);
                 let val_getter = get_value_getter(&field.ty, "dict", &key_expr, schema)?;
                 if field.optional {
                     cc_code.push_str(&format!("    res.{} = {};\n", field.name, val_getter));
+                    if all_optional {
+                        cc_code.push_str(&format!(
+                            "    if (res.{}.has_value()) {{ has_any_field = true; }}\n",
+                            field.name
+                        ));
+                    }
                 } else {
                     cc_code.push_str(&format!(
                         "    if (auto v = {}; v) {{ res.{} = *v; }} else {{ return std::nullopt; }}\n",
                         val_getter, field.name
                     ));
                 }
+            }
+            if all_optional {
+                cc_code.push_str("    if (!has_any_field) { return std::nullopt; }\n");
             }
             cc_code.push_str("    return res;\n");
             cc_code.push_str("}\n\n");
@@ -541,11 +555,17 @@ fn get_value_getter(
                 .get(name)
                 .ok_or_else(|| anyhow::anyhow!("Enum '{}' not found in schema", name))?;
             let num_variants = enum_def.variants.len();
+            let mut str_checks = String::new();
+            for variant in &enum_def.variants {
+                str_checks
+                    .push_str(&format!("if (*s == \"{variant}\") return {name}::k{variant}; "));
+            }
             format!(
-                "[&]() -> std::optional<{name}> {{ if (auto v = GetUint8({dict_expr}, {key_expr}); v) {{ if (*v < {num_variants}) return static_cast<{name}>(*v); }} return std::nullopt; }}()",
+                "[&]() -> std::optional<{name}> {{ if (auto s = GetString({dict_expr}, {key_expr}); s) {{ {str_checks}}} if (auto v = GetUint8({dict_expr}, {key_expr}); v) {{ if (*v < {num_variants}) return static_cast<{name}>(*v); }} return std::nullopt; }}()",
                 name = name,
                 dict_expr = dict_expr,
                 key_expr = key_expr,
+                str_checks = str_checks,
                 num_variants = num_variants
             )
         }
@@ -814,6 +834,57 @@ mod tests {
             "Generated code did not contain enum validation:\n{}",
             cc_code
         );
+
+        // It should check string variants:
+        let expected_str_checks = "if (auto s = GetString(dict, prefix + \".enum_field\"); s) { if (*s == \"A\") return MyEnum::kA; if (*s == \"B\") return MyEnum::kB; }";
+        assert!(
+            cc_code.contains(expected_str_checks),
+            "Generated code did not contain enum string checks:\n{}",
+            cc_code
+        );
+    }
+
+    #[test]
+    fn test_enum_parsing_string_and_integer() {
+        let mut enums = HashMap::new();
+        enums.insert(
+            "SpeedMode".to_string(),
+            EnumDef {
+                name: "SpeedMode".to_string(),
+                variants: vec!["Low".to_string(), "Medium".to_string(), "High".to_string()],
+            },
+        );
+
+        let root = StructDef {
+            name: "DeviceConfig".to_string(),
+            fields: vec![Field {
+                name: "speed".to_string(),
+                ty: Type::Enum("SpeedMode".to_string()),
+                optional: true,
+            }],
+        };
+
+        let mut structs = HashMap::new();
+        structs.insert("DeviceConfig".to_string(), root.clone());
+
+        let schema = Schema { id: "test_metadata".to_string(), enums, structs, root_layout: root };
+
+        let res = generate_cpp_parser(&[schema], "speed_driver", "speed_driver", "2026");
+        assert!(res.is_ok());
+        let (h_code, cc_code) = res.unwrap();
+
+        assert!(h_code.contains("enum class SpeedMode : uint8_t {"));
+        assert!(h_code.contains("    kLow = 0,"));
+        assert!(h_code.contains("    kMedium = 1,"));
+        assert!(h_code.contains("    kHigh = 2,"));
+
+        // Verify string parsing checks
+        assert!(cc_code.contains("if (*s == \"Low\") return SpeedMode::kLow;"));
+        assert!(cc_code.contains("if (*s == \"Medium\") return SpeedMode::kMedium;"));
+        assert!(cc_code.contains("if (*s == \"High\") return SpeedMode::kHigh;"));
+
+        // Verify integer parsing check
+        assert!(cc_code.contains("if (*v < 3) return static_cast<SpeedMode>(*v);"));
     }
 
     #[test]
@@ -928,5 +999,35 @@ mod tests {
         assert!(h_code.contains("struct DomainMetadata {"));
         assert!(cc_code.contains("std::optional<ResetMetadata> ResetMetadata::Parse"));
         assert!(cc_code.contains("std::optional<DomainMetadata> DomainMetadata::Parse"));
+    }
+
+    #[test]
+    fn test_all_optional_struct_returns_nullopt_if_empty() {
+        let opt_struct = StructDef {
+            name: "OptStruct".to_string(),
+            fields: vec![
+                Field { name: "a".to_string(), ty: Type::Uint32, optional: true },
+                Field { name: "b".to_string(), ty: Type::String, optional: true },
+            ],
+        };
+        let schema = make_schema(vec![opt_struct]);
+        let res = generate_cpp_parser(&[schema], "my_driver", "my_driver", "2026");
+        assert!(res.is_ok());
+        let (_, cc_code) = res.unwrap();
+        assert!(
+            cc_code.contains("bool has_any_field = false;"),
+            "Generated code missing has_any_field:\n{}",
+            cc_code
+        );
+        assert!(
+            cc_code.contains("if (res.a.has_value()) { has_any_field = true; }"),
+            "Generated code missing field check for a:\n{}",
+            cc_code
+        );
+        assert!(
+            cc_code.contains("if (!has_any_field) { return std::nullopt; }"),
+            "Generated code missing !has_any_field check:\n{}",
+            cc_code
+        );
     }
 }

@@ -162,10 +162,18 @@ pub enum {name} {{
             }
             rs_code.push_str("            _ => None,\n");
             rs_code.push_str("        }\n");
+            rs_code.push_str("    }\n\n");
+
+            rs_code.push_str("    pub fn from_str(s: &str) -> Option<Self> {\n");
+            rs_code.push_str("        match s {\n");
+            for variant in &enum_def.variants {
+                rs_code.push_str(&format!("            \"{variant}\" => Some(Self::{variant}),\n"));
+            }
+            rs_code.push_str("            _ => None,\n");
+            rs_code.push_str("        }\n");
             rs_code.push_str("    }\n");
             rs_code.push_str("}\n\n");
         }
-
         // Validate struct dependencies
         for struct_def in schema.structs.values() {
             for dep in get_dependencies(struct_def) {
@@ -336,7 +344,7 @@ fn get_value_getter(ty: &Type, field_name: &str, schema: &Schema) -> Result<Stri
                 anyhow::bail!("Enum '{}' not found in schema", name);
             }
             format!(
-                "get_uint8(dict, &make_key(prefix, \"{field_name}\")).and_then({name}::from_u8)"
+                "get_string(dict, &make_key(prefix, \"{field_name}\")).as_deref().and_then({name}::from_str).or_else(|| get_uint8(dict, &make_key(prefix, \"{field_name}\")).and_then({name}::from_u8))"
             )
         }
         Type::Struct(name) => {
@@ -507,12 +515,68 @@ mod tests {
         let code = res.unwrap();
 
         assert!(code.contains("pub enum MyEnum {"));
+        assert!(code.contains("pub fn from_u8(val: u8) -> Option<Self>"));
+        assert!(code.contains("pub fn from_str(s: &str) -> Option<Self>"));
+        assert!(code.contains("\"First\" => Some(Self::First)"));
+        assert!(code.contains("\"Second\" => Some(Self::Second)"));
+        assert!(code.contains(
+            "get_string(dict, &make_key(prefix, \"mode\")).as_deref().and_then(MyEnum::from_str).or_else(|| get_uint8(dict, &make_key(prefix, \"mode\")).and_then(MyEnum::from_u8))"
+        ));
         assert!(code.contains("pub struct ChildStruct {"));
         assert!(code.contains("pub struct Test_driverMetadata {"));
         assert!(
             code.contains("pub fn parse(dict: &fdr::Dictionary, prefix: &str) -> Option<Self>")
         );
         assert!(code.contains("pub fn parse_bytes(bytes: &[u8]) -> Option<Self>"));
+    }
+
+    #[test]
+    fn test_enum_parsing_string_and_integer_rust() {
+        let mut enums = HashMap::new();
+        enums.insert(
+            "SpeedMode".to_string(),
+            EnumDef {
+                name: "SpeedMode".to_string(),
+                variants: vec!["Low".to_string(), "Medium".to_string(), "High".to_string()],
+            },
+        );
+
+        let root = StructDef {
+            name: "DeviceConfig".to_string(),
+            fields: vec![Field {
+                name: "speed".to_string(),
+                ty: Type::Enum("SpeedMode".to_string()),
+                optional: false,
+            }],
+        };
+
+        let mut structs = HashMap::new();
+        structs.insert("DeviceConfig".to_string(), root.clone());
+
+        let schema = Schema { id: "test_metadata".to_string(), enums, structs, root_layout: root };
+
+        let res = generate_rust_parser(&[schema], "speed-driver", "2026");
+        assert!(res.is_ok());
+        let code = res.unwrap();
+
+        assert!(code.contains("pub enum SpeedMode {"));
+        assert!(code.contains("    Low = 0,"));
+        assert!(code.contains("    Medium = 1,"));
+        assert!(code.contains("    High = 2,"));
+
+        assert!(code.contains("pub fn from_u8(val: u8) -> Option<Self>"));
+        assert!(code.contains("0 => Some(Self::Low)"));
+        assert!(code.contains("1 => Some(Self::Medium)"));
+        assert!(code.contains("2 => Some(Self::High)"));
+
+        assert!(code.contains("pub fn from_str(s: &str) -> Option<Self>"));
+        assert!(code.contains("\"Low\" => Some(Self::Low)"));
+        assert!(code.contains("\"Medium\" => Some(Self::Medium)"));
+        assert!(code.contains("\"High\" => Some(Self::High)"));
+
+        assert!(code.contains(
+            "speed: get_string(dict, &make_key(prefix, \"speed\")).as_deref().and_then(SpeedMode::from_str).or_else(|| get_uint8(dict, &make_key(prefix, \"speed\")).and_then(SpeedMode::from_u8))?"
+        ));
     }
 
     #[test]
