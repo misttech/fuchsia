@@ -256,6 +256,54 @@ class FfxStrictTest(ffxtestcase.FfxTestCase):
         )
         asserts.assert_equal(output[0]["rcs_state"], "N")
 
+    def test_target_list_strict_omitted_ssh_priv(self) -> None:
+        """Test `ffx --strict target list` reports an error if ssh.priv is omitted."""
+        emu_config = self._get_configs(["emu.instance_dir"])
+        configs = self._build_strict_config_args(emu_config)
+        # Filter out ssh.priv completely
+        new_configs: List[str] = []
+        for c in configs:
+            if c.startswith("ssh.priv="):
+                new_configs.pop()  # remove the preceding "--config"
+            else:
+                new_configs.append(c)
+        all_args = [
+            "--strict",
+            "--machine",
+            "json",
+            "-o",
+            "/dev/null",
+            *new_configs,
+            "target",
+            "list",
+            self.dut_name,
+        ]
+        (code, stdout, stderr) = self.run_ffx_unchecked(all_args)
+        asserts.assert_equal(code, 1)
+        message = json.loads(stdout.strip().replace("\n", ""))
+        asserts.assert_equal(message["type"], "user")
+        asserts.assert_equal(message["code"], 1)
+        asserts.assert_equal(
+            message["message"],
+            "Required argument `-c ssh.priv=` not specified. Unable to verify RCS state.",
+        )
+
+        # But with --no-probe, omitting ssh.priv succeeds
+        all_args_no_probe = [
+            "--strict",
+            "--machine",
+            "json",
+            "-o",
+            "/dev/null",
+            *new_configs,
+            "target",
+            "list",
+            "--no-probe",
+            self.dut_name,
+        ]
+        (code, stdout, stderr) = self.run_ffx_unchecked(all_args_no_probe)
+        asserts.assert_equal(code, 0)
+
     def test_target_wait_strict(self) -> None:
         """Test `ffx --strict target wait`."""
         output = self._run_strict_ffx(

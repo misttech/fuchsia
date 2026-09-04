@@ -46,7 +46,8 @@ class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
         Don't wait for the command to return."""
         config = self.dut.ffx.config
         cmd = [config.binary_path]
-        cmd += config.get_config_args()
+        if "--strict" not in args:
+            cmd += config.get_config_args()
         cmd += args
         _LOGGER.info("Running FFX cmd: %s", cmd)
         proc = subprocess.Popen(
@@ -58,7 +59,8 @@ class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
         """Run ffx in the specific way we need, not the standard Honeydew way"""
         config = self.dut.ffx.config
         cmd = [config.binary_path]
-        cmd += config.get_config_args()
+        if "--strict" not in args:
+            cmd += config.get_config_args()
         cmd += args
         _LOGGER.info("Running FFX cmd: %s", cmd)
         proc = subprocess.run(cmd, capture_output=True)
@@ -74,7 +76,8 @@ class FfxTestCase(fuchsia_base_test.FuchsiaBaseTest):
         Also does not check for errors"""
         config = self.dut.ffx.config
         cmd = [config.binary_path]
-        cmd += config.get_config_args()
+        if "--strict" not in args:
+            cmd += config.get_config_args()
         cmd += args
         _LOGGER.info("Running FFX cmd: %s", cmd)
         proc = subprocess.run(cmd, capture_output=True)

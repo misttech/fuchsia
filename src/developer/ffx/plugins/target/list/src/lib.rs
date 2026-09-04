@@ -71,6 +71,10 @@ pub enum ListError {
     #[unexpected]
     #[error("FHO error: {0}")]
     Fho(#[from] fho::Error),
+
+    #[user]
+    #[error("Required argument `-c ssh.priv=` not specified. Unable to verify RCS state.")]
+    MissingSshPrivKey,
 }
 
 #[derive(FfxTool)]
@@ -135,6 +139,14 @@ impl ListTool {
             ffx_list_args::Format::Addresses | ffx_list_args::Format::AddressesWithLexicalScope
         );
         let connect_to_rcs = !self.cmd.no_probe && !is_addresses_format;
+        if self.context.is_strict() && connect_to_rcs {
+            let keys: std::result::Result<Vec<std::path::PathBuf>, _> =
+                self.context.get(ffx_config::keys::SSH_PRIVATE_KEY);
+            match keys {
+                Ok(ref paths) if paths.iter().any(|p| !p.as_os_str().is_empty()) => {}
+                _ => return Err(ListError::MissingSshPrivKey),
+            }
+        }
         Ok(match query.get_target_addr() {
             Some(addr) => {
                 if connect_to_rcs {
@@ -272,6 +284,7 @@ mod test {
     use addr::TargetAddr;
     use anyhow::Result;
     use ffx_command::FfxCommandLine;
+    use ffx_config::environment::ExecutableKind;
     use ffx_list_args::AddressTypes;
     use ffx_target::info::{RemoteControlState, TargetState};
     use ffx_writer::TestBuffers;
@@ -438,5 +451,114 @@ mod test {
             fho_err2.to_string(),
             "Invalid arguments, you must allow at least one address type"
         );
+
+        let err3 = ListError::MissingSshPrivKey;
+        let fho_err3 = fho::Error::from(err3);
+        assert_eq!(
+            fho_err3.to_string(),
+            "Required argument `-c ssh.priv=` not specified. Unable to verify RCS state."
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_list_direct_strict_missing_ssh_priv() {
+        let context =
+            EnvironmentContext::strict(ExecutableKind::Test, ffx_config::ConfigMap::new()).unwrap();
+        let ffx_cmd_line = FfxCommandLine::default();
+        let fho_env = fho::FhoEnvironment::new(&context, &ffx_cmd_line);
+
+        let list_cmd = ListCommand::default();
+        let tool = ListTool { cmd: list_cmd, fho_env, context };
+
+        let query = TargetInfoQuery::First;
+        let res = tool.list_targets_direct(query).await;
+
+        match res {
+            Err(ListError::MissingSshPrivKey) => {}
+            other => panic!("expected MissingSshPrivKey, got {other:?}"),
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_list_direct_strict_missing_ssh_priv_addr_query() {
+        let context =
+            EnvironmentContext::strict(ExecutableKind::Test, ffx_config::ConfigMap::new()).unwrap();
+        let ffx_cmd_line = FfxCommandLine::default();
+        let fho_env = fho::FhoEnvironment::new(&context, &ffx_cmd_line);
+
+        let list_cmd = ListCommand::default();
+        let tool = ListTool { cmd: list_cmd, fho_env, context };
+
+        let query = TargetInfoQuery::Addr("127.0.0.1:8022".parse().unwrap());
+        let res = tool.list_targets_direct(query).await;
+
+        match res {
+            Err(ListError::MissingSshPrivKey) => {}
+            other => panic!("expected MissingSshPrivKey, got {other:?}"),
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_list_direct_strict_with_ssh_priv() {
+        let runtime_args =
+            ffx_config::runtime::populate_runtime(&["ssh.priv=/path/to/key".to_string()], None)
+                .unwrap();
+        let context = EnvironmentContext::strict(ExecutableKind::Test, runtime_args).unwrap();
+        let ffx_cmd_line = FfxCommandLine::default();
+        let fho_env = fho::FhoEnvironment::new(&context, &ffx_cmd_line);
+
+        let resolution =
+            ffx_target::Resolution::mock(|| Err(anyhow::anyhow!("MockConnectionError")));
+        let behavior = ConnectionBehavior::fake_direct_connector(resolution);
+
+        let target_env = target_interface(&fho_env);
+        target_env.set_behavior_for_test(behavior);
+
+        let list_cmd = ListCommand::default();
+        let tool = ListTool { cmd: list_cmd, fho_env, context };
+
+        let query = TargetInfoQuery::Addr("127.0.0.1:8022".parse().unwrap());
+        let res = tool.list_targets_direct(query).await.unwrap();
+
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].addresses, vec!["127.0.0.1:8022".parse::<TargetAddr>().unwrap()]);
+        assert_eq!(res[0].rcs_state, RemoteControlState::Down);
+    }
+
+    #[fuchsia::test]
+    async fn test_list_direct_strict_no_probe_missing_ssh_priv() {
+        let context =
+            EnvironmentContext::strict(ExecutableKind::Test, ffx_config::ConfigMap::new()).unwrap();
+        let ffx_cmd_line = FfxCommandLine::default();
+        let fho_env = fho::FhoEnvironment::new(&context, &ffx_cmd_line);
+
+        let list_cmd = ListCommand { no_probe: true, ..Default::default() };
+        let tool = ListTool { cmd: list_cmd, fho_env, context };
+
+        let query = TargetInfoQuery::Addr("127.0.0.1:8022".parse().unwrap());
+        let res = tool.list_targets_direct(query).await.unwrap();
+
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].addresses, vec!["127.0.0.1:8022".parse::<TargetAddr>().unwrap()]);
+        assert_eq!(res[0].rcs_state, RemoteControlState::Unknown);
+    }
+
+    #[fuchsia::test]
+    async fn test_list_direct_strict_format_addresses_missing_ssh_priv() {
+        let context =
+            EnvironmentContext::strict(ExecutableKind::Test, ffx_config::ConfigMap::new()).unwrap();
+        let ffx_cmd_line = FfxCommandLine::default();
+        let fho_env = fho::FhoEnvironment::new(&context, &ffx_cmd_line);
+
+        let list_cmd =
+            ListCommand { format: ffx_list_args::Format::Addresses, ..Default::default() };
+        let tool = ListTool { cmd: list_cmd, fho_env, context };
+
+        let query = TargetInfoQuery::Addr("127.0.0.1:8022".parse().unwrap());
+        let res = tool.list_targets_direct(query).await.unwrap();
+
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].addresses, vec!["127.0.0.1:8022".parse::<TargetAddr>().unwrap()]);
+        assert_eq!(res[0].rcs_state, RemoteControlState::Unknown);
     }
 }
