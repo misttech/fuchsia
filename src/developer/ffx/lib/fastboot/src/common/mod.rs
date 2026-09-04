@@ -799,35 +799,34 @@ pub async fn flash_partitions<F: FileResolver + Sync, P: Partition, T: FastbootI
     min_timeout_secs: u64,
     flash_timeout_rate_mb_per_second: f64,
 ) -> Result<()> {
+    // Pre-evaluate conditions and pre-resolve all partition files up-front
+    let mut resolved_partitions = Vec::new();
     for partition in partitions {
-        match (partition.variable(), partition.variable_value()) {
+        let should_flash = match (partition.variable(), partition.variable_value()) {
             (Some(var), Some(value)) => {
-                if verify_variable_value(var, value, fastboot_interface).await? {
-                    flash_partition(
-                        messenger.clone(),
-                        file_resolver,
-                        partition.name(),
-                        partition.file(),
-                        fastboot_interface,
-                        min_timeout_secs,
-                        flash_timeout_rate_mb_per_second,
-                    )
-                    .await?;
-                }
+                verify_variable_value(var, value, fastboot_interface).await?
             }
-            _ => {
-                flash_partition(
-                    messenger.clone(),
-                    file_resolver,
-                    partition.name(),
-                    partition.file(),
-                    fastboot_interface,
-                    min_timeout_secs,
-                    flash_timeout_rate_mb_per_second,
-                )
-                .await?
-            }
+            _ => true,
+        };
+
+        if should_flash {
+            let file_to_upload = file_resolver.get_file(partition.file()).await?;
+            resolved_partitions.push((partition.name().to_string(), file_to_upload));
         }
+    }
+
+    // Flash all pre-resolved partitions
+    for (name, file_to_upload) in resolved_partitions {
+        flash_partition_impl(
+            messenger.clone(),
+            &name,
+            &file_to_upload,
+            fastboot_interface,
+            min_timeout_secs,
+            flash_timeout_rate_mb_per_second,
+            None,
+        )
+        .await?;
     }
     Ok(())
 }
