@@ -25,7 +25,7 @@ type PolicyCommand struct {
 func (*PolicyCommand) Name() string     { return "policy" }
 func (*PolicyCommand) Synopsis() string { return "Manage policy exceptions." }
 func (*PolicyCommand) Usage() string {
-	return `policy <subcommand> [options]:
+	return `policy SUBCOMMAND [options]:
   Manage policy exceptions.
 
   Subcommands:
@@ -56,7 +56,7 @@ type PolicyAddCommand struct {
 func (*PolicyAddCommand) Name() string     { return "add" }
 func (*PolicyAddCommand) Synopsis() string { return "Add a policy exception." }
 func (*PolicyAddCommand) Usage() string {
-	return `add -bug <BugID> [-desc <Description>] <CheckName> <targetPath>:
+	return `add -bug BUG_ID [-desc DESCRIPTION] CHECK_NAME TARGET_PATH:
   Adds a policy exception for the given project or file path.
 
   Flags:
@@ -75,7 +75,7 @@ func (p *PolicyAddCommand) SetFlags(f *flag.FlagSet) {
 }
 
 func (p *PolicyAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	cmdStr, misplacedFlags := ReconstructCommand("policy add", f.Args(), []string{"<CheckName>", "<targetPath>"}, p.bug, p.description)
+	cmdStr, misplacedFlags := ReconstructCommand("policy add", f.Args(), []string{"CHECK_NAME", "TARGET_PATH"}, p.bug, p.description)
 	if misplacedFlags || f.NArg() != 2 {
 		if misplacedFlags {
 			fmt.Fprintln(os.Stderr, "❌ Error: Flags (like -bug or -desc) must be placed BEFORE positional arguments.")

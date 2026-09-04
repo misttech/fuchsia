@@ -84,6 +84,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			if relPath == "." {
 				relPath = ""
 			}
+			relPath = filepath.ToSlash(relPath)
 
 			isRecognizedOrAllowed := len(cf.Matches) > 0 || v.isPolicyExceptionAllowed(PolicyUnrecognizedLicense, relPath)
 			if cf.IsLicenseFile && isRecognizedOrAllowed {
@@ -101,7 +102,16 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 							CheckName: PolicyUnrecognizedLicense,
 							Project:   cf.ProjectRoot,
 							FilePath:  cf.Path,
-							Issue:     fmt.Sprintf("Unrecognized license text: no SPDX ID could be matched. If this file is an exception, allow it by running:\n    fx check-licenses policy add -bug <BugID> AllLicenseTextsMustBeRecognized %s", relPath),
+							Issue: fmt.Sprintf(
+								"Unrecognized license text: no SPDX ID could be matched.\n\n"+
+									"Details:\n"+
+									"  - File: %s\n\n"+
+									"Remediation:\n"+
+									"  If this file is an exception, allow it by running:\n"+
+									"    fx check-licenses policy add -bug BUG_ID AllLicenseTextsMustBeRecognized %s\n\n"+
+									"Documentation:\n"+
+									"  https://fuchsia.dev/fuchsia-src/contribute/governance/policy/open-source-licensing-policies",
+								relPath, relPath),
 						}
 						select {
 						case <-ctx.Done():
@@ -137,7 +147,18 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 								CheckName: PolicyFuchsiaCopyright,
 								Project:   cf.ProjectRoot,
 								FilePath:  cf.Path,
-								Issue:     fmt.Sprintf("Missing Fuchsia copyright header in first-party source file. Fix this automatically by running:\n    fx check-licenses copyright %s", relPath),
+								Issue: fmt.Sprintf(
+									"Missing Fuchsia copyright header in first-party source file.\n\n"+
+										"Details:\n"+
+										"  - File: %s\n\n"+
+										"Remediation:\n"+
+										"  Fix this automatically by running:\n"+
+										"    fx check-licenses copyright add %s\n"+
+										"  Or allow an exception by running:\n"+
+										"    fx check-licenses policy add -bug BUG_ID AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders %s\n\n"+
+										"Documentation:\n"+
+										"  https://fuchsia.dev/fuchsia-src/contribute/governance/policy/open-source-licensing-policies",
+									relPath, relPath, relPath),
 							}
 							select {
 							case <-ctx.Done():
@@ -165,6 +186,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 
 					if needsApproval {
 						relProjRoot, _ := filepath.Rel(v.FuchsiaDir, cf.ProjectRoot)
+						relProjRoot = filepath.ToSlash(relProjRoot)
 						if !v.isAllowedLicense(match.SPDXID, relPath, relProjRoot, cf.ProjectRoot) {
 							metrics.ValidationErrors.Inc("UnapprovedLicenseUsage")
 							startLine := match.StartLine
@@ -179,7 +201,19 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 								FilePath:  cf.Path,
 								StartLine: startLine,
 								EndLine:   endLine,
-								Issue:     fmt.Sprintf("File was not approved to use license pattern %s (Type: %s). To allow this project to use this license, run:\n    fx check-licenses allowlist add -bug <BugID> %s %s", match.SPDXID, match.MatchType, match.SPDXID, relProjRoot),
+								Issue: fmt.Sprintf(
+									"File was not approved to use license pattern %s.\n\n"+
+										"Details:\n"+
+										"  - License Pattern: %s\n"+
+										"  - Category / Type: %s\n"+
+										"  - Project: %s\n"+
+										"  - File: %s\n\n"+
+										"Remediation:\n"+
+										"  To allow this project to use this license, run:\n"+
+										"    fx check-licenses allowlist add -bug BUG_ID %s %s\n\n"+
+										"Documentation:\n"+
+										"  https://fuchsia.dev/fuchsia-src/contribute/governance/policy/open-source-licensing-policies",
+									match.SPDXID, match.SPDXID, match.MatchType, relProjRoot, relPath, match.SPDXID, relProjRoot),
 							}
 							select {
 							case <-ctx.Done():
@@ -205,6 +239,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			}
 			if !hasLicense {
 				relProjRoot, _ := filepath.Rel(v.FuchsiaDir, proj)
+				relProjRoot = filepath.ToSlash(relProjRoot)
 				if !v.isPolicyExceptionAllowed(PolicyNoLicense, relProjRoot) {
 					metrics.ValidationErrors.Inc(PolicyNoLicense)
 					targetFile := ""
@@ -215,7 +250,17 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 						CheckName: PolicyNoLicense,
 						Project:   proj,
 						FilePath:  targetFile,
-						Issue:     fmt.Sprintf("Project has no recognized license files. Every third-party project must contain a license file. If this project is an exception, allow it by running:\n    fx check-licenses policy add -bug <BugID> AllProjectsMustHaveALicense %s", relProjRoot),
+						Issue: fmt.Sprintf(
+							"Project has no recognized license files.\n\n"+
+								"Details:\n"+
+								"  - Project: %s\n"+
+								"  - Requirement: Every third-party project must contain a license file.\n\n"+
+								"Remediation:\n"+
+								"  Add a LICENSE file to the project, or if this project is an exception, allow it by running:\n"+
+								"    fx check-licenses policy add -bug BUG_ID AllProjectsMustHaveALicense %s\n\n"+
+								"Documentation:\n"+
+								"  https://fuchsia.dev/fuchsia-src/contribute/governance/policy/open-source-licensing-policies",
+							relProjRoot, relProjRoot),
 					}
 					select {
 					case <-ctx.Done():
@@ -232,13 +277,27 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			hasReadme := projectHasReadme[proj]
 			if !hasReadme {
 				relProjRoot, _ := filepath.Rel(v.FuchsiaDir, proj)
+				relProjRoot = filepath.ToSlash(relProjRoot)
 				if !v.isPolicyExceptionAllowed(PolicyNoReadme, relProjRoot) {
 					metrics.ValidationErrors.Inc(PolicyNoReadme)
 					err := pipeline.ComplianceError{
 						CheckName: PolicyNoReadme,
 						Project:   proj,
 						FilePath:  "",
-						Issue:     fmt.Sprintf("Third-party project is missing a README.fuchsia file. Every third-party project must have a README.fuchsia or package manifest. To fix this:\n    - Add a README.fuchsia to %s/README.fuchsia\n    - Or add a virtual README to tools/check-licenses/assets/readmes/%s/README.fuchsia\n    - Or allow an exception by running:\n        fx check-licenses policy add -bug <BugID> AllProjectsMustHaveAReadme %s", relProjRoot, relProjRoot, relProjRoot),
+						Issue: fmt.Sprintf(
+							"Third-party project is missing a README.fuchsia file.\n\n"+
+								"Details:\n"+
+								"  - Project: %s\n"+
+								"  - Requirement: Every third-party project must have a README.fuchsia or package manifest.\n\n"+
+								"Remediation:\n"+
+								"  To fix this:\n"+
+								"    - Add a README.fuchsia to %s/README.fuchsia\n"+
+								"    - Or add a virtual README to tools/check-licenses/assets/readmes/%s/README.fuchsia\n"+
+								"    - Or allow an exception by running:\n"+
+								"        fx check-licenses policy add -bug BUG_ID AllProjectsMustHaveAReadme %s\n\n"+
+								"Documentation:\n"+
+								"  https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata",
+							relProjRoot, relProjRoot, relProjRoot, relProjRoot),
 					}
 					select {
 					case <-ctx.Done():

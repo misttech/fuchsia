@@ -21,7 +21,7 @@ type AllowlistCommand struct {
 func (*AllowlistCommand) Name() string     { return "allowlist" }
 func (*AllowlistCommand) Synopsis() string { return "Manage allowed licenses." }
 func (*AllowlistCommand) Usage() string {
-	return `allowlist <subcommand> [options]:
+	return `allowlist SUBCOMMAND [options]:
   Manage allowed licenses.
 
   Subcommands:
@@ -52,7 +52,7 @@ type AllowlistAddCommand struct {
 func (*AllowlistAddCommand) Name() string     { return "add" }
 func (*AllowlistAddCommand) Synopsis() string { return "Add an allowed license entry." }
 func (*AllowlistAddCommand) Usage() string {
-	return `add -bug <BugID> [-desc <Description>] <LicenseName> <projectPath>:
+	return `add -bug BUG_ID [-desc DESCRIPTION] LICENSE_NAME PROJECT_PATH:
   Adds an allowed license exception for the given project path.
 
   Flags:
@@ -70,7 +70,7 @@ func (c *AllowlistAddCommand) SetFlags(f *flag.FlagSet) {
 }
 
 func (c *AllowlistAddCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	cmdStr, misplacedFlags := ReconstructCommand("allowlist add", f.Args(), []string{"<LicenseName>", "<projectPath>"}, c.bug, c.description)
+	cmdStr, misplacedFlags := ReconstructCommand("allowlist add", f.Args(), []string{"LICENSE_NAME", "PROJECT_PATH"}, c.bug, c.description)
 	if misplacedFlags || f.NArg() != 2 {
 		if misplacedFlags {
 			fmt.Fprintln(os.Stderr, "❌ Error: Flags (like -bug or -desc) must be placed BEFORE positional arguments.")

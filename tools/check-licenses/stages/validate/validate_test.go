@@ -212,6 +212,25 @@ func TestValidator_Run(t *testing.T) {
 	if !hasUnapprovedPatternErr {
 		t.Error("Expected unapproved pattern error, but it was not emitted")
 	}
+
+	for _, e := range errors {
+		assertFindingStructure(t, e.Issue, true)
+	}
+}
+
+func assertFindingStructure(t *testing.T, issue string, checkBugID bool) {
+	t.Helper()
+	if strings.Contains(issue, "<BugID>") {
+		t.Errorf("Error message must not contain <BugID>: %s", issue)
+	}
+	if checkBugID && !strings.Contains(issue, "BUG_ID") {
+		t.Errorf("Error message must contain 'BUG_ID': %s", issue)
+	}
+	for _, section := range []string{"Details:", "Remediation:", "Documentation:"} {
+		if !strings.Contains(issue, section) {
+			t.Errorf("Error message must contain %q section: %s", section, issue)
+		}
+	}
 }
 
 func TestValidator_RunFailure_MissingLicense(t *testing.T) {
@@ -252,6 +271,7 @@ func TestValidator_RunFailure_MissingLicense(t *testing.T) {
 	if !strings.Contains(errors[0].Issue, "Project has no recognized license files") {
 		t.Errorf("Expected error to contain missing license issue description, got: %v", errors[0].Issue)
 	}
+	assertFindingStructure(t, errors[0].Issue, true)
 }
 
 func TestValidator_RunFailure_MissingReadme(t *testing.T) {
@@ -292,4 +312,5 @@ func TestValidator_RunFailure_MissingReadme(t *testing.T) {
 	if !strings.Contains(errors[0].Issue, "Third-party project is missing a README.fuchsia file") {
 		t.Errorf("Expected error to contain missing readme issue description, got: %v", errors[0].Issue)
 	}
+	assertFindingStructure(t, errors[0].Issue, true)
 }
