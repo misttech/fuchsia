@@ -34,7 +34,7 @@ use starnix_uapi::{
     binder_driver_return_protocol_BR_TRANSACTION_COMPLETE,
     binder_driver_return_protocol_BR_TRANSACTION_PENDING_FROZEN,
     binder_driver_return_protocol_BR_TRANSACTION_SEC_CTX, binder_frozen_state_info,
-    binder_ptr_cookie, binder_transaction_data, binder_uintptr_t, errno, error, pid_t,
+    binder_transaction_data, binder_uintptr_t, errno, error, pid_t,
 };
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
@@ -71,15 +71,6 @@ pub struct CommandQueueWithWaitQueue {
 impl CommandQueueWithWaitQueue {
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
-    }
-
-    #[cfg(test)]
-    pub fn len(&self) -> usize {
-        self.commands.len()
-    }
-
-    pub fn front(&self) -> Option<&QueuedCommand> {
-        self.commands.front()
     }
 
     pub fn pop_front(&mut self) -> Option<QueuedCommand> {
@@ -601,61 +592,6 @@ impl Command {
             Self::ClearFreezeNotificationDone(..) => {
                 binder_driver_return_protocol_BR_CLEAR_FREEZE_NOTIFICATION_DONE
             }
-        }
-    }
-
-    /// Returns the minimum buffer size in bytes required to write this command into memory.
-    pub fn required_buffer_size(&self) -> usize {
-        let payload_size = match self {
-            Self::AcquireRef(..) | Self::ReleaseRef(..) | Self::IncRef(..) | Self::DecRef(..) => {
-                std::mem::size_of::<binder_ptr_cookie>()
-            }
-            Self::Error(..) => std::mem::size_of::<i32>(),
-            Self::OnewayTransaction(data) | Self::Transaction { data, .. } | Self::Reply(data) => {
-                if data.buffers.security_context.is_some() {
-                    std::mem::size_of::<binder_transaction_data>()
-                        + std::mem::size_of::<binder_uintptr_t>()
-                } else {
-                    std::mem::size_of::<binder_transaction_data>()
-                }
-            }
-            Self::TransactionComplete
-            | Self::OnewayTransactionComplete
-            | Self::FailedReply
-            | Self::FrozenReply
-            | Self::PendingFrozen
-            | Self::DeadReply
-            | Self::SpawnLooper => 0,
-            Self::DeadBinder(..)
-            | Self::ClearDeathNotificationDone(..)
-            | Self::ClearFreezeNotificationDone(..) => std::mem::size_of::<binder_uintptr_t>(),
-            Self::FrozenBinder(..) => std::mem::size_of::<binder_frozen_state_info>(),
-        };
-        std::mem::size_of::<binder_driver_return_protocol>() + payload_size
-    }
-
-    /// Returns true if this command terminates a read batch in `handle_thread_read`.
-    pub fn is_terminal(&self) -> bool {
-        match self {
-            Self::Transaction { .. }
-            | Self::Reply(..)
-            | Self::TransactionComplete
-            | Self::OnewayTransaction(..)
-            | Self::OnewayTransactionComplete
-            | Self::DeadReply
-            | Self::FailedReply
-            | Self::FrozenReply
-            | Self::Error(..) => true,
-            Self::AcquireRef(..)
-            | Self::ReleaseRef(..)
-            | Self::IncRef(..)
-            | Self::DecRef(..)
-            | Self::DeadBinder(..)
-            | Self::PendingFrozen
-            | Self::ClearDeathNotificationDone(..)
-            | Self::SpawnLooper
-            | Self::FrozenBinder(..)
-            | Self::ClearFreezeNotificationDone(..) => false,
         }
     }
 

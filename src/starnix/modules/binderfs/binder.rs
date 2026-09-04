@@ -371,15 +371,6 @@ impl RemoteBinderConnection {
     }
 }
 
-enum DequeueResult {
-    /// A command was dequeued and is ready to be written into the read buffer.
-    Command(QueuedCommand),
-    /// The next command requires more bytes than available in the read buffer.
-    InsufficientBuffer,
-    /// No commands are currently available in the active queue.
-    Empty,
-}
-
 /// Holds the context for a binder operation, including information about the sending process and
 /// thread.
 pub struct OperationContext<'a> {
@@ -1306,47 +1297,18 @@ impl BinderDriver {
         Ok(())
     }
 
-    /// Dequeues the next active command if one is available and fits within `available_buffer_len`.
-    /// Prefers the thread-local command queue over the process command queue.
+    /// Select which command queue to read from, preferring the thread-local one.
+    /// If a transaction is pending, deadlocks can happen if reading from the process queue.
     fn get_active_command(
         thread_state: &mut BinderThreadState,
         proc_state: &mut crate::process::BinderProcessState,
         worker_thread: &zx::Thread,
-        available_buffer_len: usize,
-    ) -> DequeueResult {
+    ) -> Option<QueuedCommand> {
         if !thread_state.command_queue.is_empty() || !thread_state.transactions.is_empty() {
-            if let Some(queued) = thread_state.command_queue.front() {
-                if available_buffer_len < queued.command.required_buffer_size() {
-                    return DequeueResult::InsufficientBuffer;
-                }
-                let queued = thread_state.command_queue.pop_front().unwrap();
-                DequeueResult::Command(queued)
-            } else {
-                // If the command queue is empty but a pending transaction is marked dead,
-                // pop the transaction and dispatch a synthetic DeadReply.
-                match thread_state.transactions.last() {
-                    Some(TransactionRole::Sender(TransactionSender {
-                        is_alive: false,
-                        trace_id,
-                        ..
-                    })) => {
-                        let trace_id = *trace_id;
-                        if available_buffer_len < Command::DeadReply.required_buffer_size() {
-                            return DequeueResult::InsufficientBuffer;
-                        }
-                        thread_state.transactions.pop();
-                        on_command_dequeued(&Command::DeadReply, trace_id);
-                        DequeueResult::Command(QueuedCommand::new(Command::DeadReply, trace_id))
-                    }
-                    _ => DequeueResult::Empty,
-                }
-            }
+            thread_state.command_queue.pop_front()
         } else {
-            if let Some(queued) = proc_state.command_queue.front() {
-                if available_buffer_len < queued.command.required_buffer_size() {
-                    return DequeueResult::InsufficientBuffer;
-                }
-                let queued = proc_state.command_queue.pop_front().unwrap();
+            let item = proc_state.command_queue.pop_front();
+            if let Some(queued) = &item {
                 on_command_dequeued(&queued.command, queued.trace_id);
                 if let Command::Transaction { sender, .. } = &queued.command {
                     if let Some((_proc, sender_thread)) = sender.upgrade() {
@@ -1355,10 +1317,8 @@ impl BinderDriver {
                         }
                     }
                 }
-                DequeueResult::Command(queued)
-            } else {
-                DequeueResult::Empty
             }
+            item
         }
     }
 
@@ -1369,22 +1329,10 @@ impl BinderDriver {
         read_buffer: &UserBuffer,
     ) -> Result<usize, Errno> {
         fuchsia_trace::duration!(CATEGORY_STARNIX_BINDER, NAME_HANDLE_THREAD_READ);
-        let mut current_buffer = *read_buffer;
-        let mut total_bytes_written = 0;
-        let mut wake_process = false;
-
         loop {
-            // Check if the process needs to spawn a new worker thread. This MUST be checked
-            // inside the wait loop on every wake-up iteration: when threads are blocked waiting
-            // for work and a sudden burst of transactions arrives, all active threads become
-            // busy (depleting `available_threads`). Waking threads must evaluate this to dispatch
-            // `BR_SPAWN_LOOPER` and scale the thread pool up to `max_thread_count`.
-            //
-            // If this were checked only once before the loop, sleeping threads that wake up under
-            // heavy load would never request new threads, starving the thread pool and deadlocking
-            // concurrent callers (e.g. `BinderLibTest.ThreadPoolAvailableThreads`).
             {
                 let mut binder_proc_state = context.binder_proc.lock();
+
                 if binder_proc_state.should_request_thread(context.binder_thread) {
                     let bytes_written = Command::SpawnLooper
                         .write_to_memory(context.memory_accessor, read_buffer)?;
@@ -1397,39 +1345,61 @@ impl BinderDriver {
 
             if thread_state.request_kick {
                 thread_state.request_kick = false;
-                return Ok(total_bytes_written);
+                return Ok(0);
             }
 
-            // Drain any readily available commands from the queues into the read buffer.
-            while current_buffer.length > 0 {
-                let QueuedCommand { command, trace_id } = match Self::get_active_command(
-                    &mut thread_state,
-                    &mut proc_state,
-                    &context.binder_thread.thread,
-                    current_buffer.length,
-                ) {
-                    DequeueResult::Command(queued) => queued,
-                    DequeueResult::InsufficientBuffer => {
-                        if total_bytes_written > 0 {
-                            break;
+            let command_with_trace = Self::get_active_command(
+                &mut thread_state,
+                &mut proc_state,
+                &context.binder_thread.thread,
+            )
+            .or_else(|| {
+                // If there is no pending command, but the current transaction is marked as dead,
+                // pop the transaction and dispatch a `DeadReply`.
+                match thread_state.transactions.last() {
+                    Some(TransactionRole::Sender(TransactionSender {
+                        is_alive: false,
+                        trace_id,
+                        ..
+                    })) => {
+                        let trace_id = *trace_id;
+                        if let Some(TransactionRole::Sender(_)) = thread_state.transactions.pop() {
+                            on_command_dequeued(&Command::DeadReply, trace_id);
+                            Some(QueuedCommand::new(Command::DeadReply, trace_id))
+                        } else {
+                            None
                         }
-                        return error!(ENOMEM);
                     }
-                    DequeueResult::Empty => break,
-                };
+                    _ => None,
+                }
+            });
 
+            // If we have sent a request and are about to wait for a response, the thread we've
+            // sent to should inherit our priority while we wait.
+            let target_thread = thread_state
+                .transactions
+                .iter()
+                .rev()
+                .find_map(|t| match t {
+                    // Only look for the most recently sent transaction, even if it doesn't have a
+                    // target_thread set. Earlier transactions (if any) won't unblock this thread
+                    // any sooner by inheriting increased priority.
+                    TransactionRole::Sender(sender) => Some(sender),
+                    _ => None,
+                })
+                .and_then(|s| s.target_thread_handle.clone());
+
+            if let Some(QueuedCommand { command, trace_id }) = command_with_trace {
+                // Attempt to write the command to the thread's buffer.
                 let bytes_written =
-                    command.write_to_memory(context.memory_accessor, &current_buffer)?;
-                current_buffer.advance(bytes_written)?;
-                total_bytes_written += bytes_written;
-
-                let is_terminal = command.is_terminal();
-                match command {
+                    command.write_to_memory(context.memory_accessor, read_buffer)?;
+                let has_pending_proc_commands = match command {
                     Command::Transaction { sender, .. } => {
                         // The transaction is synchronous and we're expected to give a reply, so
                         // push the transaction onto the transaction stack.
                         let tx = TransactionRole::Receiver { peer: sender, trace_id };
                         thread_state.transactions.push(tx);
+                        false
                     }
                     Command::Reply(..) => {
                         // The sender got a reply, pop the sender entry from the transaction stack.
@@ -1445,49 +1415,43 @@ impl BinderDriver {
                             command,
                             thread_state.command_queue,
                         );
-                        if !proc_state.command_queue.is_empty() {
-                            wake_process = true;
-                        }
+                        !proc_state.command_queue.is_empty()
                     }
                     Command::FrozenBinder(info) => {
                         proc_state.in_flight_freeze_notifications.insert(info.cookie);
+                        false
                     }
-                    _ => {}
-                }
+                    Command::TransactionComplete
+                    | Command::OnewayTransaction(..)
+                    | Command::OnewayTransactionComplete
+                    | Command::AcquireRef(..)
+                    | Command::ReleaseRef(..)
+                    | Command::IncRef(..)
+                    | Command::DecRef(..)
+                    | Command::Error(..)
+                    | Command::FailedReply
+                    | Command::DeadReply
+                    | Command::DeadBinder(..)
+                    | Command::FrozenReply
+                    | Command::PendingFrozen
+                    | Command::ClearDeathNotificationDone(..)
+                    | Command::SpawnLooper
+                    | Command::ClearFreezeNotificationDone(..) => false,
+                };
 
-                if is_terminal {
-                    break;
-                }
-            }
-
-            // If we have written any data, return immediately so userspace can process the commands.
-            if total_bytes_written > 0 {
                 drop(thread_state);
                 drop(proc_state);
 
-                if wake_process {
+                if has_pending_proc_commands {
                     context.binder_proc.wake_process_and_available_thread();
                 }
 
-                return Ok(total_bytes_written);
+                return Ok(bytes_written);
             }
 
             // No commands readily available to read. Wait for work. The thread will wait on both
             // the thread queue and the process queue, and loop back to check whether some work is
             // available.
-            let target_thread = thread_state
-                .transactions
-                .iter()
-                .rev()
-                .find_map(|t| match t {
-                    // Only look for the most recently sent transaction, even if it doesn't have a
-                    // target_thread set. Earlier transactions (if any) won't unblock this thread
-                    // any sooner by inheriting increased priority.
-                    TransactionRole::Sender(sender) => Some(sender),
-                    _ => None,
-                })
-                .and_then(|s| s.target_thread_handle.clone());
-
             let event = InterruptibleEvent::new();
             let _requeue_registration = if target_thread.is_none() {
                 Some(RequeueEventRegistration::new(context.binder_thread, event.clone()))
