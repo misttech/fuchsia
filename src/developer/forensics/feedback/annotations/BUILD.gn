@@ -114,19 +114,22 @@ source_set("device_id_provider") {
   ]
 
   public_deps = [
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
+    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_cpp",
     "//sdk/lib/async",
-    "//sdk/lib/fit-promise",
+    "//sdk/lib/fit",
     "//sdk/lib/sys/cpp",
     "//src/developer/forensics/feedback/annotations",
-    "//src/developer/forensics/feedback/annotations:fidl_provider_hlcpp",
     "//src/developer/forensics/utils:errors",
-    "//zircon/system/ulib/zx",
+    "//src/lib/backoff",
   ]
 
   deps = [
+    ":fidl_provider",
+    "//sdk/lib/fidl/cpp",
+    "//sdk/lib/syslog/cpp",
     "//src/lib/files",
     "//src/lib/uuid",
+    "//zircon/system/ulib/zx",
   ]
 }
 

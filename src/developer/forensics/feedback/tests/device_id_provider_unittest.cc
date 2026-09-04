@@ -10,6 +10,8 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/feedback/annotations/constants.h"
+#include "src/developer/forensics/testing/backoff.h"
+#include "src/developer/forensics/testing/stubs/device_id_provider.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
@@ -18,14 +20,24 @@
 namespace forensics::feedback {
 namespace {
 
-using ::testing::Not;
+using ::testing::IsEmpty;
 using ::testing::Pair;
 using ::testing::UnorderedElementsAreArray;
 
 constexpr char kDefaultDeviceId[] = "00000000-0000-4000-a000-000000000001";
+constexpr char kOtherDeviceId[] = "00000000-0000-4000-a000-000000000002";
 constexpr char kInvalidDeviceId[] = "INVALID";
 
-using RemoteDeviceIdProviderTest = UnitTestFixture;
+class RemoteDeviceIdProviderTest : public UnitTestFixture {
+ protected:
+  void SetUpDeviceIdProviderServer(
+      std::unique_ptr<stubs::DeviceIdProviderBase> device_id_provider_server) {
+    device_id_provider_server_ = std::move(device_id_provider_server);
+    InjectServiceProvider(device_id_provider_server_.get());
+  }
+
+  std::unique_ptr<stubs::DeviceIdProviderBase> device_id_provider_server_;
+};
 
 TEST_F(RemoteDeviceIdProviderTest, GetKeys) {
   RemoteDeviceIdProvider device_id_provider(dispatcher(), services(), nullptr);
@@ -43,6 +55,86 @@ TEST_F(RemoteDeviceIdProviderTest, DeviceIdToAnnotations) {
   EXPECT_THAT(convert("id"), UnorderedElementsAreArray({
                                  Pair(kDeviceFeedbackIdKey, ErrorOrString("id")),
                              }));
+}
+
+TEST_F(RemoteDeviceIdProviderTest, Get) {
+  SetUpDeviceIdProviderServer(std::make_unique<stubs::DeviceIdProvider>(kDefaultDeviceId));
+  RemoteDeviceIdProvider device_id_provider(dispatcher(), services(),
+                                            std::make_unique<MonotonicBackoff>());
+
+  Annotations annotations;
+  device_id_provider.GetOnUpdate(
+      [&annotations](Annotations result) { annotations = std::move(result); });
+
+  // |annotations| should be empty because the call hasn't completed.
+  EXPECT_THAT(annotations, IsEmpty());
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations, UnorderedElementsAreArray({
+                               Pair(kDeviceFeedbackIdKey, ErrorOrString(kDefaultDeviceId)),
+                           }));
+
+  device_id_provider_server_->SetDeviceId(kOtherDeviceId);
+
+  // |annotations| should contain the old value because the change hasn't propagated yet.
+  EXPECT_THAT(annotations, UnorderedElementsAreArray({
+                               Pair(kDeviceFeedbackIdKey, ErrorOrString(kDefaultDeviceId)),
+                           }));
+
+  RunLoopUntilIdle();
+  EXPECT_THAT(annotations, UnorderedElementsAreArray({
+                               Pair(kDeviceFeedbackIdKey, ErrorOrString(kOtherDeviceId)),
+                           }));
+
+  device_id_provider_server_->CloseConnection(ZX_ERR_PEER_CLOSED);
+
+  // |annotations| should still contain the last value because disconnection doesn't clear the
+  // cache.
+  EXPECT_THAT(annotations, UnorderedElementsAreArray({
+                               Pair(kDeviceFeedbackIdKey, ErrorOrString(kOtherDeviceId)),
+                           }));
+}
+
+TEST_F(RemoteDeviceIdProviderTest, Reconnects) {
+  SetUpDeviceIdProviderServer(std::make_unique<stubs::DeviceIdProviderNeverReturns>());
+  RemoteDeviceIdProvider device_id_provider(dispatcher(), services(),
+                                            std::make_unique<MonotonicBackoff>());
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(device_id_provider_server_->IsBound());
+
+  Annotations annotations;
+  device_id_provider.GetOnUpdate(
+      [&annotations](Annotations result) { annotations = std::move(result); });
+
+  device_id_provider_server_->CloseConnection(ZX_ERR_PEER_CLOSED);
+  ASSERT_FALSE(device_id_provider_server_->IsBound());
+
+  RunLoopUntilIdle();
+
+  // The outstanding request should complete with a connection error and not update annotations.
+  EXPECT_THAT(annotations, IsEmpty());
+  RunLoopFor(zx::sec(1));
+  ASSERT_TRUE(device_id_provider_server_->IsBound());
+}
+
+TEST_F(RemoteDeviceIdProviderTest, DoesNotReconnectIfNotFound) {
+  SetUpDeviceIdProviderServer(std::make_unique<stubs::DeviceIdProviderNeverReturns>());
+  RemoteDeviceIdProvider device_id_provider(dispatcher(), services(),
+                                            std::make_unique<MonotonicBackoff>());
+
+  RunLoopUntilIdle();
+  ASSERT_TRUE(device_id_provider_server_->IsBound());
+
+  Annotations annotations;
+  device_id_provider.GetOnUpdate(
+      [&annotations](Annotations result) { annotations = std::move(result); });
+
+  device_id_provider_server_->CloseConnection(ZX_ERR_NOT_FOUND);
+  ASSERT_FALSE(device_id_provider_server_->IsBound());
+
+  RunLoopFor(zx::sec(1));
+  EXPECT_FALSE(device_id_provider_server_->IsBound());
 }
 
 class LocalDeviceIdProviderTest : public UnitTestFixture {

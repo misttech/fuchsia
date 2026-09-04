@@ -5,15 +5,21 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_DEVICE_ID_PROVIDER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_ANNOTATIONS_DEVICE_ID_PROVIDER_H_
 
-#include <fuchsia/feedback/cpp/fidl.h>
+#include <fidl/fuchsia.feedback/cpp/fidl.h>
+#include <lib/async/cpp/task.h>
+#include <lib/async/dispatcher.h>
+#include <lib/fidl/cpp/client.h>
 #include <lib/fit/function.h>
+#include <lib/sys/cpp/service_directory.h>
 
+#include <memory>
+#include <optional>
 #include <set>
 #include <string>
 
-#include "src/developer/forensics/feedback/annotations/fidl_provider_hlcpp.h"
 #include "src/developer/forensics/feedback/annotations/provider.h"
 #include "src/developer/forensics/feedback/annotations/types.h"
+#include "src/lib/backoff/backoff.h"
 
 namespace forensics::feedback {
 
@@ -35,15 +41,34 @@ class LocalDeviceIdProvider : public CachedAsyncAnnotationProvider {
 };
 
 // Fetches the device id from a FIDL server.
-class RemoteDeviceIdProvider
-    : public HangingGetSingleHlcppFidlMethodAnnotationProvider<
-          fuchsia::feedback::DeviceIdProvider, &fuchsia::feedback::DeviceIdProvider::GetId,
-          DeviceIdToAnnotations> {
+class RemoteDeviceIdProvider : public CachedAsyncAnnotationProvider,
+                               public fidl::AsyncEventHandler<fuchsia_feedback::DeviceIdProvider> {
  public:
-  using HangingGetSingleHlcppFidlMethodAnnotationProvider::
-      HangingGetSingleHlcppFidlMethodAnnotationProvider;
+  RemoteDeviceIdProvider(async_dispatcher_t* dispatcher,
+                         std::shared_ptr<sys::ServiceDirectory> services,
+                         std::unique_ptr<backoff::Backoff> backoff);
+
+  // |fidl::AsyncEventHandler<fuchsia_feedback::DeviceIdProvider>|
+  void on_fidl_error(fidl::UnbindInfo info) override;
+
+  // |CachedAsyncAnnotationProvider|
+  void GetOnUpdate(::fit::function<void(Annotations)> callback) override;
 
   std::set<std::string> GetKeys() const override;
+
+ private:
+  bool Connect();
+  void Call();
+
+  async_dispatcher_t* dispatcher_;
+  std::shared_ptr<sys::ServiceDirectory> services_;
+  std::unique_ptr<backoff::Backoff> backoff_;
+
+  fidl::Client<fuchsia_feedback::DeviceIdProvider> client_;
+  std::optional<Annotations> last_annotations_;
+  ::fit::function<void(Annotations)> on_update_;
+  async::TaskClosureMethod<RemoteDeviceIdProvider, &RemoteDeviceIdProvider::Call> reconnect_task_{
+      this};
 };
 
 }  // namespace forensics::feedback
