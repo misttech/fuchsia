@@ -281,6 +281,67 @@ TEST(PrctlTest, AmbientCapabilitiesBasicOperations) {
   });
 }
 
+TEST(PrctlTest, Dumpable) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    // PR_SET_DUMPABLE accepts 0 (disable) or 1 (user).
+    EXPECT_THAT(prctl(PR_SET_DUMPABLE, 0), SyscallSucceedsWithValue(0));
+    EXPECT_THAT(prctl(PR_GET_DUMPABLE), SyscallSucceedsWithValue(0));
+
+    EXPECT_THAT(prctl(PR_SET_DUMPABLE, 1), SyscallSucceedsWithValue(0));
+    EXPECT_THAT(prctl(PR_GET_DUMPABLE), SyscallSucceedsWithValue(1));
+  });
+}
+
+TEST(PrctlTest, KeepCaps) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    // Initial keepcaps should be 0.
+    EXPECT_THAT(prctl(PR_GET_KEEPCAPS), SyscallSucceedsWithValue(0));
+
+    // Setting keepcaps to 1 should update both PR_GET_KEEPCAPS and PR_GET_SECUREBITS.
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 1), SyscallSucceedsWithValue(0));
+    EXPECT_THAT(prctl(PR_GET_KEEPCAPS), SyscallSucceedsWithValue(1));
+    int securebits = SAFE_SYSCALL(prctl(PR_GET_SECUREBITS));
+    EXPECT_TRUE(securebits & SECBIT_KEEP_CAPS);
+
+    // Setting keepcaps to 0 should clear it.
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 0), SyscallSucceedsWithValue(0));
+    EXPECT_THAT(prctl(PR_GET_KEEPCAPS), SyscallSucceedsWithValue(0));
+    securebits = SAFE_SYSCALL(prctl(PR_GET_SECUREBITS));
+    EXPECT_FALSE(securebits & SECBIT_KEEP_CAPS);
+
+    // Any value other than 0 or 1 should fail with EINVAL.
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 2), SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(prctl(PR_SET_KEEPCAPS, -1), SyscallFailsWithErrno(EINVAL));
+  });
+}
+
+TEST(PrctlTest, NoNewPrivs) {
+  test_helper::ForkHelper helper;
+
+  helper.RunInForkedProcess([&] {
+    // Initially no_new_privs is not enabled.
+    EXPECT_THAT(prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0), SyscallSucceedsWithValue(0));
+
+    // PR_GET_NO_NEW_PRIVS with non-zero extra arguments should return EINVAL.
+    EXPECT_THAT(prctl(PR_GET_NO_NEW_PRIVS, 1, 0, 0, 0), SyscallFailsWithErrno(EINVAL));
+
+    // PR_SET_NO_NEW_PRIVS with arg2 != 1 should fail with EINVAL.
+    EXPECT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 0, 0, 0, 0), SyscallFailsWithErrno(EINVAL));
+    EXPECT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 2, 0, 0, 0), SyscallFailsWithErrno(EINVAL));
+
+    // PR_SET_NO_NEW_PRIVS with extra non-zero arguments should fail with EINVAL.
+    EXPECT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 1, 1, 0, 0), SyscallFailsWithErrno(EINVAL));
+
+    // Successfully enable no_new_privs.
+    EXPECT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0), SyscallSucceedsWithValue(0));
+    EXPECT_THAT(prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0), SyscallSucceedsWithValue(1));
+  });
+}
+
 class CapGetSetTest : public ::testing::Test {
  protected:
   void SetUp() override {
