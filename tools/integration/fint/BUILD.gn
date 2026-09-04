@@ -7,6 +7,8 @@ import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
 import("//build/go/golden_go_proto.gni")
 import("//build/python/golden_python_proto.gni")
+import("//build/python/python_library.gni")
+import("//build/testing/python_build_time_tests.gni")
 
 if (is_host) {
   golden_go_proto("build_artifacts") {
@@ -39,6 +41,19 @@ if (is_host) {
     sources = [ "proto/static.proto" ]
   }
 
+  python_library("fint_build_lib") {
+    sources = [ "fint_build.py" ]
+    deps = [
+      "proto",
+      "//build/scripts:signal_utils_lib",
+    ]
+  }
+
+  python_build_time_tests("fint_build_test") {
+    tests = [ "fint_build_test.py" ]
+    deps = [ ":fint_build_lib" ]
+  }
+
   go_test("fint_lib_tests") {
     embed = [ ":fint_lib" ]
 
@@ -69,6 +84,7 @@ if (is_host) {
 group("tests") {
   testonly = true
   deps = [
+    ":fint_build_test($host_toolchain)",
     ":fint_lib_tests($host_toolchain)",
     ":main_tests($host_toolchain)",
   ]
