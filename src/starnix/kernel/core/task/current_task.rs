@@ -1219,12 +1219,7 @@ impl CurrentTask {
         // set_command_name needs to run before leader_command() in cases where self is the leader.
         self.task.set_command_name(new_name.clone());
         let leader_command = self.thread_group().read().leader_command();
-        starnix_logging::set_current_task_info(
-            new_name,
-            leader_command,
-            self.thread_group().leader.id,
-            self.tid.id,
-        );
+        starnix_logging::set_current_task_info(new_name, leader_command, self.pid.id, self.tid.id);
     }
 
     pub fn add_seccomp_filter(
@@ -1590,7 +1585,7 @@ impl CurrentTask {
         let mut cgroup2_pid_table = kernel.cgroups.lock_cgroup2_pid_table();
         // Create a `KernelSignal::Freeze` to put onto the new task, if the cgroup is frozen.
         let child_kernel_signals = cgroup2_pid_table
-            .maybe_create_freeze_signal(&self.thread_group().leader)
+            .maybe_create_freeze_signal(&self.pid)
             .into_iter()
             .collect::<VecDeque<_>>();
 
@@ -2037,7 +2032,7 @@ impl CurrentTask {
     ) -> Result<(), Errno> {
         // (1)  If the calling thread and the target thread are in the same
         //      thread group, access is always allowed.
-        if self.thread_group().leader == target.thread_group().leader {
+        if self.pid == target.pid {
             return Ok(());
         }
 

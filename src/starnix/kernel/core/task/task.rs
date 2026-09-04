@@ -1027,7 +1027,7 @@ impl Task {
                 let uid = self.real_creds().uid;
                 let exit_info = ProcessExitInfo { status: exit_status, exit_signal };
                 let zombie = ZombieProcess {
-                    pid: self.thread_group.leader.clone(),
+                    pid: self.pid.clone(),
                     pgid,
                     uid,
                     exit_info: exit_info,
@@ -1644,13 +1644,7 @@ impl TaskMemoryAccessor for Task {
 
 impl fmt::Debug for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}:{}[{}]",
-            self.thread_group().leader,
-            self.tid,
-            *self.persistent_info.command.lock()
-        )
+        write!(f, "{}:{}[{}]", self.pid, self.tid, *self.persistent_info.command.lock())
     }
 }
 
@@ -1699,7 +1693,7 @@ mod test {
             );
             assert_eq!(current_task.get_pid(), thread.get_pid());
             assert_ne!(current_task.get_tid(), thread.get_tid());
-            assert_eq!(current_task.thread_group().leader, thread.thread_group().leader);
+            assert_eq!(current_task.pid, thread.thread_group().leader);
 
             let child_task = current_task.clone_task_for_test(0, Some(SIGCHLD));
             assert_ne!(current_task.get_pid(), child_task.get_pid());

@@ -178,7 +178,7 @@ pub async fn serve_container_controller(
                         let thread_groups = system_task.kernel().pids.read().get_thread_groups();
                         let mut results = vec![];
                         for thread_group in thread_groups {
-                            if let Ok(leader) = system_task.get_task(thread_group.leader.id) {
+                            if let Ok(leader) = thread_group.leader.get_task() {
                                 if let Ok(files) = leader.files() {
                                     let fds = files.get_all_fds();
                                     for fd in fds {

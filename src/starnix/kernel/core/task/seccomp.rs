@@ -422,7 +422,7 @@ impl SeccompState {
                 "uid={} gid={} pid={} comm={} syscall={} ip={} ARCH={} SYSCALL={}",
                 uid,
                 gid,
-                task.thread_group().leader,
+                task.pid,
                 task.command(),
                 syscall.decl.number,
                 task.thread_state.registers.instruction_pointer_register(),

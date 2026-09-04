@@ -109,7 +109,7 @@ impl DeferredZombiePTracer {
             tracer_pid: tracer.leader.clone(),
             tracee_tid: tracee.tid.id,
             tracee_pgid,
-            tracee_pid: tracee.thread_group.leader.clone(),
+            tracee_pid: tracee.pid.clone(),
         }
     }
 }
@@ -1825,7 +1825,7 @@ impl ThreadGroup {
                 signal,
                 SI_USER as i32,
                 SignalDetail::Kill {
-                    pid: current_task.thread_group().leader.clone(),
+                    pid: current_task.pid.clone(),
                     uid: current_task.current_creds().uid,
                 },
             );
@@ -1850,7 +1850,7 @@ impl ThreadGroup {
             signal,
             SI_USER as i32,
             SignalDetail::Kill {
-                pid: current_task.thread_group().leader.clone(),
+                pid: current_task.pid.clone(),
                 uid: current_task.current_creds().uid,
             },
         );
@@ -2499,7 +2499,7 @@ mod test {
             assert_eq!(child_task.thread_group().setsid(), Ok(()));
             assert_eq!(
                 child_task.thread_group().read().process_group.session.leader,
-                child_task.thread_group().leader
+                child_task.pid
             );
             assert!(!old_process_group.read().thread_groups().contains(child_task.thread_group()));
         })

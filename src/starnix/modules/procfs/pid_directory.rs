@@ -322,7 +322,7 @@ impl FileOps for TaskDirectory {
 
     fn as_pid(&self, _file: &FileObject) -> Result<Pid, Errno> {
         let task = self.task_weak.upgrade().ok_or_else(|| errno!(ESRCH))?;
-        Ok(task.thread_group.leader.clone())
+        Ok(task.pid.clone())
     }
 }
 
@@ -726,11 +726,11 @@ impl DynamicFileSource for CgroupFile {
                 parts.push(&name_storage);
             }
             let controller_str = parts.join(",");
-            let cgroup = root.get_cgroup(&task.thread_group.leader);
+            let cgroup = root.get_cgroup(&task.pid);
             let path = path_from_root(cgroup)?;
             sink.write(format!("{}:{}:{}\n", root.hierarchy_id, controller_str, path).as_bytes());
         }
-        let cgroup = task.kernel().cgroups.cgroup2.get_cgroup(&task.thread_group.leader);
+        let cgroup = task.kernel().cgroups.cgroup2.get_cgroup(&task.pid);
         let path = path_from_root(cgroup)?;
         sink.write(format!("0::{}\n", path).as_bytes());
         Ok(())
@@ -1544,8 +1544,7 @@ impl TimerslackNsFile {
 impl BytesFileOps for TimerslackNsFile {
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
         let target_task = Task::from_weak(&self.0)?;
-        let same_task =
-            current_task.task.thread_group().leader == target_task.thread_group().leader;
+        let same_task = current_task.task.pid == target_task.pid;
         if !same_task {
             security::check_task_capable(current_task, CAP_SYS_NICE)?;
             security::check_task_setscheduler_access(current_task, &target_task)?;
@@ -1558,8 +1557,7 @@ impl BytesFileOps for TimerslackNsFile {
 
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         let target_task = Task::from_weak(&self.0)?;
-        let same_task =
-            current_task.task.thread_group().leader == target_task.thread_group().leader;
+        let same_task = current_task.task.pid == target_task.pid;
         if !same_task {
             security::check_task_capable(current_task, CAP_SYS_NICE)?;
             security::check_task_getscheduler_access(current_task, &target_task)?;

@@ -452,8 +452,7 @@ impl RecordLocks {
                             state.queue.wait_async(&waiter);
                             waiter
                         });
-                        let process_id =
-                            if cmd.is_ofd() { -1 } else { current_task.thread_group().leader.id };
+                        let process_id = if cmd.is_ofd() { -1 } else { current_task.pid.id };
                         match state.apply_lock(process_id, owner, lock_type, range) {
                             Err(errno) if blocking && errno == EAGAIN => {
                                 // TODO(qsr): Check deadlocks.

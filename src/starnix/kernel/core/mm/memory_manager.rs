@@ -3975,7 +3975,7 @@ impl MemoryManager {
 
     pub fn log_memory_map(&self, task: &Task, fault_address: UserAddress) {
         let state = self.state.read();
-        log_warn!("Memory map for pid={}:", task.thread_group.leader);
+        log_warn!("Memory map for pid={}:", task.pid);
         let mut last_end = UserAddress::from_ptr(0);
         for (range, map) in state.mappings.iter() {
             if fault_address >= last_end && fault_address < range.start {

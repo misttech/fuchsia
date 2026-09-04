@@ -427,7 +427,7 @@ fn send_unchecked_signal(
             signal,
             si_code,
             SignalDetail::Kill {
-                pid: current_task.thread_group().leader.clone(),
+                pid: current_task.pid.clone(),
                 uid: current_task.current_creds().uid,
             },
             Some(current_task.weak_self.clone()),
@@ -2271,7 +2271,7 @@ mod tests {
                 SIGIO,
                 SI_QUEUE,
                 SignalDetail::Kill {
-                    pid: current_task.thread_group().leader.clone(),
+                    pid: current_task.pid.clone(),
                     uid: current_task.current_creds().uid,
                 },
             );

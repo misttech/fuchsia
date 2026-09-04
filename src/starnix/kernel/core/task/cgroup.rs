@@ -1070,10 +1070,7 @@ mod test {
             cgroup.add_process(process.thread_group()).expect("add process to cgroup");
             cgroup.freeze();
             assert_eq!(cgroup.get_pids(&kernel).first(), Some(process.get_pid()).as_ref());
-            assert_eq!(
-                root.get_cgroup(&process.thread_group().leader).unwrap().as_ptr(),
-                Arc::as_ptr(&cgroup)
-            );
+            assert_eq!(root.get_cgroup(&process.pid).unwrap().as_ptr(), Arc::as_ptr(&cgroup));
 
             let thread = process.clone_task_for_test(
                 (CLONE_THREAD | CLONE_SIGHAND | CLONE_VM) as u64,
@@ -1097,10 +1094,7 @@ mod test {
             let process = current_task.clone_task_for_test(0, Some(SIGCHLD));
             cgroup.add_process(process.thread_group()).expect("add process to cgroup");
 
-            assert_eq!(
-                root.get_cgroup(&process.thread_group().leader).unwrap().as_ptr(),
-                Arc::as_ptr(&cgroup)
-            );
+            assert_eq!(root.get_cgroup(&process.pid).unwrap().as_ptr(), Arc::as_ptr(&cgroup));
 
             // Drop the process to release it.
             drop(process);
