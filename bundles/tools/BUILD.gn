@@ -18,6 +18,7 @@ group("tools") {
     "//src/graphics/magma/tools",
     "//src/performance/memory/thrasher",
     "//src/performance/trace",
+    "//src/power/testing/fake-battery/tool:package",
     "//src/recovery/factory_reset:tools",
     "//src/storage:tools",
     "//src/sys/pkg/bin/far",
