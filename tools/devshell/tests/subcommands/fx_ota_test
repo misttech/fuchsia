@@ -31,11 +31,10 @@ BT_MOCKED_TOOLS=(
   "tools/devshell/wait"
   "tools/devshell/shell"
   "tools/devshell/lib/updates.sh"
-  "tools/devshell/reboot"
   "tools/devshell/serve"
 )
 
-declare fx build check_package_server trigger_update commit_update reboot
+declare fx build check_package_server trigger_update trigger_reboot commit_update
 
 BT_SET_UP() {
   source "${BT_TEMP_DIR}/tools/devshell/tests/lib/fuchsia-mock.sh"
@@ -51,12 +50,12 @@ EOF
   build="${BT_TEMP_DIR}/tools/devshell/build"
   check_package_server="${BT_TEMP_DIR}/check_package_server"
   trigger_update="${BT_TEMP_DIR}/trigger_update"
+  trigger_reboot="${BT_TEMP_DIR}/trigger_reboot"
   commit_update="${BT_TEMP_DIR}/commit_update"
-  reboot="${BT_TEMP_DIR}/tools/devshell/reboot"
   btf::make_mock "$check_package_server"
   btf::make_mock "$trigger_update"
+  btf::make_mock "$trigger_reboot"
   btf::make_mock "$commit_update"
-  btf::make_mock "$reboot"
   local updateslib="${BT_TEMP_DIR}/tools/devshell/lib/updates.sh"
   cat > "${updateslib}.mock_side_effects" <<EOF
     function check-for-package-server { $check_package_server ; }
@@ -78,6 +77,9 @@ setup_ffx() {
   cat > "${ffx}.mock_side_effects" <<EOF
    if [[ "\$@" == "target update force-install --reboot false --product-bundle --packageless" ]]; then
      $trigger_update "\$@"
+     return
+   elif [[ "\$@" == "target reboot --reason system-update" ]]; then
+     $trigger_reboot "\$@"
      return
    else
      echo "unknown command \$@" 1>&2
@@ -123,6 +125,8 @@ TEST_ota_incr_noargs() {
   btf::expect-mock-args "${build}" "//build/images/updates"
   # update was triggered
   BT_ASSERT_FILE_EXISTS "${trigger_update}.mock_state"
+  # reboot was called with reason
+  btf::expect-mock-args "${trigger_reboot}" "target" "reboot" "--reason" "system-update"
   # update was committed
   BT_ASSERT_FILE_EXISTS "${commit_update}.mock_state"
 }
@@ -138,6 +142,8 @@ TEST_ota_noincr_noargs() {
   BT_ASSERT_FILE_DOES_NOT_EXIST "${build}.mock_state"
   # update was triggered
   BT_ASSERT_FILE_EXISTS "${trigger_update}.mock_state"
+  # reboot was called with reason
+  btf::expect-mock-args "${trigger_reboot}" "target" "reboot" "--reason" "system-update"
   # update was committed
   BT_ASSERT_FILE_EXISTS "${commit_update}.mock_state"
 }
@@ -153,6 +159,8 @@ TEST_ota_nobuild() {
   BT_ASSERT_FILE_DOES_NOT_EXIST "${build}.mock_state"
   # update was triggered
   BT_ASSERT_FILE_EXISTS "${trigger_update}.mock_state"
+  # reboot was called with reason
+  btf::expect-mock-args "${trigger_reboot}" "target" "reboot" "--reason" "system-update"
   # update was committed
   BT_ASSERT_FILE_EXISTS "${commit_update}.mock_state"
 }
@@ -166,6 +174,8 @@ TEST_ota_packageless() {
   BT_EXPECT ${fx} ota --no-build --packageless > "$out" 2>&1
   # update was triggered
   BT_ASSERT_FILE_EXISTS "${trigger_update}.mock_state"
+  # reboot was called with reason
+  btf::expect-mock-args "${trigger_reboot}" "target" "reboot" "--reason" "system-update"
   # update was committed
   BT_ASSERT_FILE_EXISTS "${commit_update}.mock_state"
   # check that ffx was called with --reboot false, --product-bundle and --packageless
@@ -181,6 +191,9 @@ TEST_ota_no_packageless() {
    if [[ "\$@" == "target update force-install --reboot false" ]]; then
      $trigger_update "\$@"
      return
+   elif [[ "\$@" == "target reboot --reason system-update" ]]; then
+     $trigger_reboot "\$@"
+     return
    else
      echo "unknown command \$@" 1>&2
      exit 1
@@ -191,6 +204,8 @@ EOF
   BT_EXPECT ${fx} ota --no-build --no-packageless > "$out" 2>&1
   # update was triggered
   BT_ASSERT_FILE_EXISTS "${trigger_update}.mock_state"
+  # reboot was called with reason
+  btf::expect-mock-args "${trigger_reboot}" "target" "reboot" "--reason" "system-update"
   # update was committed
   BT_ASSERT_FILE_EXISTS "${commit_update}.mock_state"
   # check that ffx was called with --reboot false and without --packageless
@@ -234,6 +249,9 @@ TEST_ota_serve() {
    if [[ "\$@" == "target update force-install --reboot false" ]]; then
      $trigger_update "\$@"
      return
+   elif [[ "\$@" == "target reboot --reason system-update" ]]; then
+     $trigger_reboot "\$@"
+     return
    elif [[ "\$@" == "repository server stop fx-ota-serve-"* ]]; then
      $stop_called "\$@"
      return
@@ -254,6 +272,9 @@ EOF
   # Assert update was triggered
   BT_ASSERT_FILE_EXISTS "${trigger_update}.mock_state"
 
+  # Assert reboot was called with reason
+  btf::expect-mock-args "${trigger_reboot}" "target" "reboot" "--reason" "system-update"
+
   # Assert stop was called
   BT_ASSERT_FILE_EXISTS "${stop_called}.mock_state"
 }
@@ -273,6 +294,8 @@ TEST_ota_serve_packageless() {
 
   # Assert update was triggered
   BT_ASSERT_FILE_EXISTS "${trigger_update}.mock_state"
+  # Assert reboot was called with reason
+  btf::expect-mock-args "${trigger_reboot}" "target" "reboot" "--reason" "system-update"
   # Assert update was committed
   BT_ASSERT_FILE_EXISTS "${commit_update}.mock_state"
 }

@@ -26,6 +26,18 @@
       "short": "r",
       "description": "reboot to recovery",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "reason"
+        }
+      },
+      "optionality": "optional",
+      "long": "--reason",
+      "short": null,
+      "description": "reboot reason. Defaults to 'developer-request' if unspecified. Ignored if the device is not in \"product\" mode (e.g. fastboot).",
+      "hidden": true
     }
   ],
   "notes": [

@@ -49,21 +49,25 @@ async fn reboot_direct(
     context: &EnvironmentContext,
 ) -> Result<(), fho::Error> {
     let state = reboot_state(&cmd)?;
+    let reason = cmd.reason.unwrap_or(ShutdownReason::DeveloperRequest);
     // Discover the device, because we may need to reach it directly if it's in fastboot mode
     let handle = ffx_target::discover_single_default_target(context)
         .await
         .map_err(|e| e.into_command_error())?;
-    reboot_direct_with_handle(handle, admin_proxy, state, context).await
+    reboot_direct_with_handle(handle, admin_proxy, state, reason, context).await
 }
 
 async fn reboot_direct_with_handle(
     handle: TargetHandle,
     admin_proxy: &mut Deferred<AdminProxy>,
     state: TargetRebootState,
+    reason: ShutdownReason,
     context: &EnvironmentContext,
 ) -> Result<(), fho::Error> {
     match handle.state {
-        TargetState::Product { .. } => reboot_direct_from_product(admin_proxy.await?, state).await,
+        TargetState::Product { .. } => {
+            reboot_direct_from_product(admin_proxy.await?, state, reason).await
+        }
         TargetState::Fastboot(fastboot_state) => {
             reboot_direct_from_fastboot(handle.node_name, fastboot_state, context, state).await
         }
@@ -74,17 +78,15 @@ async fn reboot_direct_with_handle(
 async fn reboot_direct_from_product(
     admin_proxy: AdminProxy,
     state: TargetRebootState,
+    reason: ShutdownReason,
 ) -> Result<(), fho::Error> {
     let action = match state {
         TargetRebootState::Product => ShutdownAction::Reboot,
         TargetRebootState::Bootloader => ShutdownAction::RebootToBootloader,
         TargetRebootState::Recovery => ShutdownAction::RebootToRecovery,
     };
-    let options = ShutdownOptions {
-        action: Some(action),
-        reasons: Some(vec![ShutdownReason::DeveloperRequest]),
-        ..Default::default()
-    };
+    let options =
+        ShutdownOptions { action: Some(action), reasons: Some(vec![reason]), ..Default::default() };
     // There are two errors: the outer error, which represents a FIDL failure, and the inner error
     // which is the Shutdown() failure.  The daemon version ignores the shutdown failure, so so will
     // we.
@@ -164,6 +166,7 @@ fn reboot_state(cmd: &RebootCommand) -> fho::Result<TargetRebootState> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use argh::FromArgs as _;
     use fdomain_fuchsia_hardware_power_statecontrol::AdminRequest;
 
     #[fuchsia::test]
@@ -172,11 +175,36 @@ mod test {
         let admin_proxy = target_holders::fake_proxy(client, |req| match req {
             AdminRequest::Shutdown { options, responder } => {
                 assert_eq!(options.action, Some(ShutdownAction::Reboot));
+                assert_eq!(options.reasons, Some(vec![ShutdownReason::DeveloperRequest]));
                 responder.send(Ok(())).unwrap();
             }
             r => panic!("unexpected request: {:?}", r),
         });
-        reboot_direct_from_product(admin_proxy, TargetRebootState::Product).await
+        reboot_direct_from_product(
+            admin_proxy,
+            TargetRebootState::Product,
+            ShutdownReason::DeveloperRequest,
+        )
+        .await
+    }
+
+    #[fuchsia::test]
+    async fn test_reboot_direct_from_product_with_reason() -> fho::Result<()> {
+        let client = fdomain_local::local_client_empty();
+        let admin_proxy = target_holders::fake_proxy(client, |req| match req {
+            AdminRequest::Shutdown { options, responder } => {
+                assert_eq!(options.action, Some(ShutdownAction::Reboot));
+                assert_eq!(options.reasons, Some(vec![ShutdownReason::SystemUpdate]));
+                responder.send(Ok(())).unwrap();
+            }
+            r => panic!("unexpected request: {:?}", r),
+        });
+        reboot_direct_from_product(
+            admin_proxy,
+            TargetRebootState::Product,
+            ShutdownReason::SystemUpdate,
+        )
+        .await
     }
 
     #[fuchsia::test]
@@ -185,11 +213,17 @@ mod test {
         let admin_proxy = target_holders::fake_proxy(client, |req| match req {
             AdminRequest::Shutdown { options, responder } => {
                 assert_eq!(options.action, Some(ShutdownAction::RebootToBootloader));
+                assert_eq!(options.reasons, Some(vec![ShutdownReason::DeveloperRequest]));
                 responder.send(Ok(())).unwrap();
             }
             r => panic!("unexpected request: {:?}", r),
         });
-        reboot_direct_from_product(admin_proxy, TargetRebootState::Bootloader).await
+        reboot_direct_from_product(
+            admin_proxy,
+            TargetRebootState::Bootloader,
+            ShutdownReason::DeveloperRequest,
+        )
+        .await
     }
 
     #[fuchsia::test]
@@ -198,11 +232,17 @@ mod test {
         let admin_proxy = target_holders::fake_proxy(client, |req| match req {
             AdminRequest::Shutdown { options, responder } => {
                 assert_eq!(options.action, Some(ShutdownAction::RebootToRecovery));
+                assert_eq!(options.reasons, Some(vec![ShutdownReason::DeveloperRequest]));
                 responder.send(Ok(())).unwrap();
             }
             r => panic!("unexpected request: {:?}", r),
         });
-        reboot_direct_from_product(admin_proxy, TargetRebootState::Recovery).await
+        reboot_direct_from_product(
+            admin_proxy,
+            TargetRebootState::Recovery,
+            ShutdownReason::DeveloperRequest,
+        )
+        .await
     }
 
     #[fuchsia::test]
@@ -224,6 +264,7 @@ mod test {
             handle,
             &mut admin_proxy,
             TargetRebootState::Product,
+            ShutdownReason::DeveloperRequest,
             &env.context,
         )
         .await;
@@ -234,5 +275,34 @@ mod test {
                 .to_string()
                 .contains("Rebooting a target in state Zedboot is not supported")
         );
+    }
+
+    #[test]
+    fn test_reboot_command_reason_parsing() {
+        let cmd = RebootCommand::from_args(&["reboot"], &["--reason", "system update"]).unwrap();
+        assert_eq!(cmd.reason, Some(ShutdownReason::SystemUpdate));
+
+        let cmd = RebootCommand::from_args(&["reboot"], &["--reason", "system-update"]).unwrap();
+        assert_eq!(cmd.reason, Some(ShutdownReason::SystemUpdate));
+
+        let cmd =
+            RebootCommand::from_args(&["reboot"], &["--reason", "DEVELOPER_REQUEST"]).unwrap();
+        assert_eq!(cmd.reason, Some(ShutdownReason::DeveloperRequest));
+
+        let cmd = RebootCommand::from_args(&["reboot"], &["--reason", "user-request"]).unwrap();
+        assert_eq!(cmd.reason, Some(ShutdownReason::UserRequest));
+
+        let cmd = RebootCommand::from_args(&["reboot"], &[]).unwrap();
+        assert_eq!(cmd.reason, None);
+
+        // Disallowed reasons or invalid strings should fail parsing.
+        let err = RebootCommand::from_args(&["reboot"], &["--reason", "oom"]);
+        assert!(err.is_err());
+
+        let err = RebootCommand::from_args(&["reboot"], &["--reason", "high-temperature"]);
+        assert!(err.is_err());
+
+        let err = RebootCommand::from_args(&["reboot"], &["--reason", "invalid_reason"]);
+        assert!(err.is_err());
     }
 }

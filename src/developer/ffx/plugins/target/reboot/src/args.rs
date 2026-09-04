@@ -3,7 +3,19 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use fdomain_fuchsia_hardware_power_statecontrol::ShutdownReason;
 use ffx_core::ffx_command;
+
+fn parse_shutdown_reason(value: &str) -> Result<ShutdownReason, String> {
+    match value.to_ascii_lowercase().replace(['_', ' '], "-").as_str() {
+        "system-update" => Ok(ShutdownReason::SystemUpdate),
+        "developer-request" => Ok(ShutdownReason::DeveloperRequest),
+        "user-request" => Ok(ShutdownReason::UserRequest),
+        _ => Err(format!(
+            "invalid reboot reason '{value}'. Supported reasons: 'system-update', 'developer-request', 'user-request'"
+        )),
+    }
+}
 
 #[ffx_command()]
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone, Copy)]
@@ -31,4 +43,9 @@ pub struct RebootCommand {
     /// reboot to recovery
     #[argh(switch, short = 'r')]
     pub recovery: bool,
+
+    /// reboot reason. Defaults to 'developer-request' if unspecified. Ignored if the device is not
+    /// in "product" mode (e.g. fastboot).
+    #[argh(option, hidden_help, from_str_fn(parse_shutdown_reason))]
+    pub reason: Option<ShutdownReason>,
 }
