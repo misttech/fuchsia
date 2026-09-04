@@ -1937,18 +1937,31 @@ impl BinderDriver {
             return error!(EINVAL);
         }
 
+        // Reject writable mappings (Linux binder_mmap returns -EPERM).
+        if prot_flags.contains(ProtectionFlags::WRITE) {
+            return error!(EPERM);
+        }
+
         // Create a VMO that will be shared between the driver and the client process.
         let vmo = with_zx_name(
             zx::Vmo::create(length as u64).map_err(|_| errno!(ENOMEM))?,
             b"starnix:device_binder",
         );
-        let memory = Arc::new(MemoryObject::from(vmo));
+        let memory = MemoryObject::from(vmo);
+
+        // Strip WRITE from the userspace handle so mprotect(PROT_WRITE) fails
+        // at zx_vmar_protect, matching Linux's VM_MAYWRITE clearing.
+        let user_memory = Arc::new(
+            memory
+                .duplicate_handle(zx::Rights::VMO_DEFAULT - zx::Rights::WRITE)
+                .map_err(|_| errno!(ENOMEM))?,
+        );
 
         // Map the VMO into the binder process' address space.
         let mm = current_task.mm()?;
         let user_address = mm.map_memory(
             addr,
-            memory.clone(),
+            user_memory,
             0,
             length,
             prot_flags,

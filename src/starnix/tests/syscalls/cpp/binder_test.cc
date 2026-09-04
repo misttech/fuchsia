@@ -6,6 +6,7 @@
 #include <lib/fit/function.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -373,6 +374,36 @@ TEST_F(BinderTest, SendFdToExitingProcess) {
   EXPECT_FALSE(got_error.load());
   EXPECT_TRUE(got_dead_or_failed_reply.load());
   EXPECT_THAT(ioctl_errno.load(), SyscallSucceedsWithValue(0));
+}
+
+// Linux's binder driver rejects mmap with PROT_WRITE and clears VM_MAYWRITE to
+// prevent mprotect from adding write permission. Verify Starnix matches this
+// behavior.
+TEST_F(BinderTest, MmapRejectsProtWrite) {
+  using namespace starnix_binder;
+  fbl::unique_fd binder =
+      fbl::unique_fd(open(TestPath("binderfs/binder").c_str(), O_RDWR | O_CLOEXEC));
+  ASSERT_TRUE(binder) << strerror(errno);
+
+  auto mapping = test_helper::ScopedMMap::MMap(nullptr, kBinderMMapSize, PROT_READ | PROT_WRITE,
+                                               MAP_PRIVATE, binder.get(), 0);
+  ASSERT_TRUE(mapping.is_error()) << "mmap with PROT_WRITE should fail with EPERM";
+  EXPECT_EQ(mapping.error_value(), EPERM) << strerror(mapping.error_value());
+}
+
+TEST_F(BinderTest, MprotectCannotAddWriteToBinder) {
+  using namespace starnix_binder;
+  fbl::unique_fd binder =
+      fbl::unique_fd(open(TestPath("binderfs/binder").c_str(), O_RDWR | O_CLOEXEC));
+  ASSERT_TRUE(binder) << strerror(errno);
+
+  auto mapping = test_helper::ScopedMMap::MMap(nullptr, kBinderMMapSize, PROT_READ, MAP_PRIVATE,
+                                               binder.get(), 0);
+  ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
+
+  EXPECT_THAT(mprotect(mapping->mapping(), kBinderMMapSize, PROT_READ | PROT_WRITE),
+              SyscallFailsWithErrno(EACCES))
+      << "mprotect should not be able to add PROT_WRITE to a binder mapping";
 }
 
 }  // namespace
