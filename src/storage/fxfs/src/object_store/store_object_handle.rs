@@ -1994,6 +1994,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         match value {
             ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(value)) => Ok(value),
             ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => {
+                ensure!(id.is_xattr(), FxfsError::Inconsistent);
                 Ok(self.read_attr(id).await?.ok_or(FxfsError::Inconsistent)?.into_vec())
             }
             _ => {
@@ -2038,6 +2039,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 .find_map(&object_key, |item| match item.value {
                     ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(..)) => Ok(None),
                     ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => {
+                        ensure!(id.is_xattr(), FxfsError::Inconsistent);
                         Ok(Some(*id))
                     }
                     _ => Err(anyhow!(FxfsError::Inconsistent)
@@ -2152,6 +2154,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let attribute_to_delete = tree
             .find_map(&object_key, |item| match item.value {
                 ObjectValue::ExtendedAttribute(ExtendedAttributeValue::AttributeId(id)) => {
+                    ensure!(id.is_xattr(), FxfsError::Inconsistent);
                     Ok(Some(*id))
                 }
                 ObjectValue::ExtendedAttribute(ExtendedAttributeValue::Inline(..)) => Ok(None),
@@ -2521,6 +2524,50 @@ mod tests {
         is_error(
             object.get_extended_attribute(test_attr.name()).await.unwrap_err(),
             FxfsError::NotFound,
+        );
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn extended_attribute_invalid_id_range() {
+        let (fs, object) = test_filesystem_and_empty_object().await;
+
+        let store = object.owner();
+        let mut transaction = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), object.object_id())],
+                Options::default(),
+            )
+            .await
+            .unwrap();
+        transaction.add(
+            store.store_object_id(),
+            Mutation::replace_or_insert_object(
+                ObjectKey::extended_attribute(object.object_id(), b"bad_attr".to_vec()),
+                ObjectValue::extended_attribute(AttributeId::DATA),
+            ),
+        );
+        transaction.commit().await.unwrap();
+
+        is_error(
+            object.get_extended_attribute(b"bad_attr".to_vec()).await.unwrap_err(),
+            FxfsError::Inconsistent,
+        );
+        is_error(
+            object
+                .set_extended_attribute(
+                    b"bad_attr".to_vec(),
+                    b"new_val".to_vec(),
+                    SetExtendedAttributeMode::Set,
+                )
+                .await
+                .unwrap_err(),
+            FxfsError::Inconsistent,
+        );
+        is_error(
+            object.remove_extended_attribute(b"bad_attr".to_vec()).await.unwrap_err(),
+            FxfsError::Inconsistent,
         );
 
         fs.close().await.expect("close failed");

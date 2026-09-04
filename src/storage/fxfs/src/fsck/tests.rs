@@ -1512,6 +1512,63 @@ async fn test_large_extended_attribute_nonexistent_attribute() {
 }
 
 #[fuchsia::test]
+async fn test_invalid_extended_attribute_id() {
+    let mut test = FsckTest::new().await;
+
+    let store_id = {
+        let fs = test.filesystem();
+        let root_volume = root_volume(fs.clone()).await.unwrap();
+        let store = root_volume
+            .new_volume(
+                "vol",
+                NewChildStoreOptions {
+                    options: StoreOptions {
+                        crypt: Some(test.get_crypt()),
+                        ..StoreOptions::default()
+                    },
+                    ..NewChildStoreOptions::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        let invalid_attr_id = AttributeId(1000);
+        install_items_in_store(
+            &fs,
+            store.as_ref(),
+            vec![
+                Item::new(
+                    ObjectKey::attribute(
+                        store.root_directory_object_id(),
+                        invalid_attr_id,
+                        AttributeKey::Attribute,
+                    ),
+                    ObjectValue::attribute(0, false),
+                ),
+                Item::new(
+                    ObjectKey::extended_attribute(
+                        store.root_directory_object_id(),
+                        b"foo".to_vec(),
+                    ),
+                    ObjectValue::extended_attribute(invalid_attr_id),
+                ),
+            ],
+        )
+        .await;
+        store.store_object_id()
+    };
+
+    test.remount().await.expect("Remount failed");
+    test.run(TestOptions { volume_store_id: Some(store_id), ..Default::default() })
+        .await
+        .expect_err("Fsck should fail");
+    assert_matches!(
+        test.errors()[..],
+        [.., FsckIssue::Error(FsckError::InvalidExtendedAttributeId(..))]
+    );
+}
+
+#[fuchsia::test]
 async fn test_orphaned_extended_attribute() {
     let mut test = FsckTest::new().await;
 

@@ -1354,6 +1354,13 @@ fn validate_attributes(
     }
 
     for expected_attribute_id in extended_attributes {
+        if !expected_attribute_id.is_xattr() {
+            fsck.error(FsckError::InvalidExtendedAttributeId(
+                store_id,
+                object_id,
+                *expected_attribute_id,
+            ))?;
+        }
         if attributes
             .iter()
             .find(|attribute| attribute.attribute_id == *expected_attribute_id)

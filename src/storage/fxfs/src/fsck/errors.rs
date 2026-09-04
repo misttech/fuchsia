@@ -243,6 +243,7 @@ pub enum FsckError {
     MisalignedAllocation(Allocation),
     MisalignedExtent(u64, u64, Range<u64>, u64),
     MissingAllocation(Allocation),
+    InvalidExtendedAttributeId(u64, u64, AttributeId),
     MissingAttributeForExtendedAttribute(u64, u64, AttributeId),
     MissingDataAttribute(u64, u64),
     MissingEncryptionKeys(u64, u64),
@@ -368,6 +369,13 @@ impl FsckError {
             }
             FsckError::MissingAllocation(allocation) => {
                 format!("Observed {:?} but didn't find record in allocator", allocation)
+            }
+            FsckError::InvalidExtendedAttributeId(store_id, oid, attribute_id) => {
+                format!(
+                    "Object {} in store {} has an extended attribute stored in an invalid \
+                    attribute {}",
+                    oid, store_id, attribute_id
+                )
             }
             FsckError::MissingAttributeForExtendedAttribute(store_id, oid, attribute_id) => {
                 format!(
@@ -620,6 +628,9 @@ impl FsckError {
             }
             FsckError::MissingAllocation(allocation) => {
                 error!(allocation:?; "Missing allocation");
+            }
+            FsckError::InvalidExtendedAttributeId(store_id, oid, attribute_id) => {
+                error!(store_id, oid, attribute_id; "Invalid extended attribute id");
             }
             FsckError::MissingAttributeForExtendedAttribute(store_id, oid, attribute_id) => {
                 error!(store_id, oid, attribute_id; "Missing attribute for extended attribute");
