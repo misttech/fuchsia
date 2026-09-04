@@ -13,10 +13,12 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil"
@@ -612,6 +614,92 @@ func (c *FFXStrictClient) ProductDownload(ctx context.Context, transferURL, outD
 		return fmt.Errorf("product download failed: %w", err)
 	}
 	return nil
+}
+
+type ffxLogCloser struct {
+	cmd    *exec.Cmd
+	closed chan struct{}
+	done   chan struct{}
+	once   sync.Once
+	pgid   int
+	err    error
+}
+
+func (c *ffxLogCloser) Close() error {
+	if c.cmd == nil || c.cmd.Process == nil {
+		return nil
+	}
+	c.once.Do(func() {
+		close(c.closed)
+		pgid := c.pgid
+		var killErr error
+		if pgid > 0 {
+			killErr = syscall.Kill(-pgid, syscall.SIGKILL)
+			if killErr != nil {
+				killErr = c.cmd.Process.Kill()
+			}
+		} else {
+			killErr = c.cmd.Process.Kill()
+		}
+		c.err = killErr
+	})
+
+	<-c.done
+
+	if c.err != nil && (errors.Is(c.err, os.ErrProcessDone) || strings.Contains(c.err.Error(), "process already finished") || errors.Is(c.err, syscall.ESRCH)) {
+		return nil
+	}
+	return c.err
+}
+
+func (c *FFXStrictClient) TargetLogStart(ctx context.Context, output io.Writer) (io.Closer, error) {
+	c.mu.Lock()
+	target := c.ffxInst.GetTarget()
+	c.mu.Unlock()
+
+	// FFXWithTarget returns a shallow copy of FFXInstance with the target set.
+	// We use it here to snapshot the target and ensure thread-safety.
+	inst := ffxutil.FFXWithTarget(c.ffxInst, target)
+	cmd, err := inst.CommandWithTarget("log", "--symbolize", "off")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create log command: %w", err)
+	}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start log command: %w", err)
+	}
+
+	closed := make(chan struct{})
+	done := make(chan struct{})
+	closer := &ffxLogCloser{cmd: cmd, closed: closed, done: done, pgid: cmd.Process.Pid}
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			closer.Close()
+		case <-closed:
+		case <-done:
+		}
+	}()
+
+	go func() {
+		err := cmd.Wait()
+		close(done)
+
+		if err != nil {
+			isIntentional := false
+			select {
+			case <-closed:
+				isIntentional = true
+			default:
+			}
+			if !isIntentional {
+				log.Printf("ffx log stream finished unexpectedly: %v", err)
+			}
+		}
+	}()
+	return closer, nil
 }
 
 var xdgEnvVars = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -324,6 +325,41 @@ func TestFFXStrictClient_IsPackageServerRunning_CacheError(t *testing.T) {
 		t.Errorf("Second IsPackageServerRunning expected error, got nil")
 	} else if !errors.Is(err2, err1) {
 		t.Errorf("Expected identical errors, got: %v vs %v", err1, err2)
+	}
+}
+
+func TestFFXStrictClient_LogStart_DoubleClose(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	fakeFfx := createFakeFfx(t, tmpDir, "#!/bin/bash\nexit 0")
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	target := "fake-target"
+	client.SetDefaultTarget(&target)
+
+	closer, err := client.TargetLogStart(ctx, io.Discard)
+	if err != nil {
+		t.Fatalf("TargetLogStart failed: %v", err)
+	}
+
+	// Double close should not panic
+	if err := closer.Close(); err != nil {
+		t.Errorf("First Close failed: %v", err)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Second Close panicked: %v", r)
+		}
+	}()
+	if err := closer.Close(); err != nil {
+		t.Errorf("Second Close failed: %v", err)
 	}
 }
 
@@ -1182,6 +1218,219 @@ exit 0
 
 	if !strings.Contains(args, "product download transfer.url /out/dir --auth /auth/path") {
 		t.Errorf("Expected 'product download transfer.url /out/dir --auth /auth/path' in args, got: %s", args)
+	}
+}
+
+func TestFFXStrictClient_TargetLogStart(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	logStartedFile := filepath.Join(tmpDir, "log_started.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+if [ "$#" -eq 0 ]; then
+  exit 0
+fi
+for arg in "$@"; do
+  if [ "$arg" = "log" ]; then
+    echo "$@" >> %s
+    echo "sample target log message"
+    touch %s
+    exit 0
+  fi
+done
+exit 0
+`, argsFile, logStartedFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	target := "my-target"
+	client.SetDefaultTarget(&target)
+
+	var outBuf strings.Builder
+	closer, err := client.TargetLogStart(ctx, &outBuf)
+	if err != nil {
+		t.Fatalf("TargetLogStart failed: %v", err)
+	}
+
+	// Poll until fake_ffx log command has executed
+	pollCtx, pollCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pollCancel()
+	for {
+		if _, err := os.Stat(logStartedFile); err == nil {
+			break
+		}
+		select {
+		case <-pollCtx.Done():
+			closer.Close()
+			t.Fatalf("Timed out waiting for fake_ffx log command to execute")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Guarantee process has completed and output is flushed
+	if err := closer.Close(); err != nil {
+		t.Fatalf("closer.Close failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "--target my-target log --symbolize off") {
+		t.Errorf("Expected '--target my-target log --symbolize off' in args, got: %s", args)
+	}
+
+	if !strings.Contains(outBuf.String(), "sample target log message") {
+		t.Errorf("Expected output to contain 'sample target log message', got: %q", outBuf.String())
+	}
+}
+
+func TestFFXStrictClient_TargetLogStart_NoTarget(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	fakeFfx := createFakeFfx(t, tmpDir, "#!/bin/bash\nexit 0\n")
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	closer, err := client.TargetLogStart(ctx, io.Discard)
+	if err == nil {
+		closer.Close()
+		t.Fatalf("TargetLogStart succeeded, expected error when no target is set")
+	}
+	if !strings.Contains(err.Error(), "no target is set") {
+		t.Errorf("Expected 'no target is set' error, got: %v", err)
+	}
+}
+
+func TestFFXStrictClient_TargetLogStart_LiveProcess_KillPGID(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	startedFile := filepath.Join(tmpDir, "started.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+if [ "$#" -eq 0 ]; then
+  exit 0
+fi
+for arg in "$@"; do
+  if [ "$arg" = "log" ]; then
+    touch %s
+    # Spawn background sleep process to form a process group
+    sleep 60 &
+    wait
+  fi
+done
+exit 0
+`, startedFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	target := "my-target"
+	client.SetDefaultTarget(&target)
+
+	closer, err := client.TargetLogStart(ctx, io.Discard)
+	if err != nil {
+		t.Fatalf("TargetLogStart failed: %v", err)
+	}
+
+	// Poll until fake_ffx is confirmed to be running the log command
+	pollCtx, pollCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pollCancel()
+	for {
+		if _, err := os.Stat(startedFile); err == nil {
+			break
+		}
+		select {
+		case <-pollCtx.Done():
+			closer.Close()
+			t.Fatalf("Timed out waiting for fake_ffx log process to start")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Kill the running process group and verify clean termination
+	start := time.Now()
+	if err := closer.Close(); err != nil {
+		t.Errorf("closer.Close on live process failed: %v", err)
+	}
+	if duration := time.Since(start); duration > 10*time.Second {
+		t.Errorf("closer.Close took too long (%v), process group kill may have failed", duration)
+	}
+}
+
+func TestFFXStrictClient_TargetLogStart_ContextCancel(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	startedFile := filepath.Join(tmpDir, "started.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+if [ "$#" -eq 0 ]; then
+  exit 0
+fi
+for arg in "$@"; do
+  if [ "$arg" = "log" ]; then
+    touch %s
+    sleep 60
+  fi
+done
+exit 0
+`, startedFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo", nil)
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	target := "my-target"
+	client.SetDefaultTarget(&target)
+
+	closer, err := client.TargetLogStart(ctx, io.Discard)
+	if err != nil {
+		t.Fatalf("TargetLogStart failed: %v", err)
+	}
+
+	// Wait for fake_ffx log process to start
+	pollCtx, pollCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pollCancel()
+	for {
+		if _, err := os.Stat(startedFile); err == nil {
+			break
+		}
+		select {
+		case <-pollCtx.Done():
+			closer.Close()
+			t.Fatalf("Timed out waiting for fake_ffx log process to start")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	// Cancel context; background watcher should invoke closer.Close()
+	cancel()
+
+	// Calling closer.Close() afterwards (as orchestrator teardown does) must succeed without error
+	if err := closer.Close(); err != nil {
+		t.Errorf("closer.Close() after context cancellation failed: %v", err)
 	}
 }
 
