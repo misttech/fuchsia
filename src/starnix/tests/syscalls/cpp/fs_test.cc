@@ -100,6 +100,116 @@ TEST(FsTest, FchmodTest) {
   ASSERT_EQ(fchmod(fd, S_IRWXU | S_IRWXG | S_IFCHR), 0);
 }
 
+TEST(FsTest, DevTmpFsInitialDirectoryLinkCount) {
+  auto mount_info = test_helper::ReadMountInfoLine("/dev");
+  if (!mount_info || mount_info->fs_type != "devtmpfs") {
+    GTEST_SKIP() << "/dev is not a devtmpfs mount, skipping test.";
+  }
+
+  struct stat st = {};
+  ASSERT_THAT(stat("/dev", &st), SyscallSucceeds());
+  // /dev is a devtmpfs instance containing initial subdirectories (e.g., /dev/shm, /dev/pts).
+  // Under POSIX, each child subdirectory increments the parent's link count for its ".." entry,
+  // so /dev must have at least 2 + 2 = 4 links.
+  EXPECT_GE(st.st_nlink, 4u);
+}
+
+TEST(FsTest, DirectoryLinkCountAndRmdirEmptiness) {
+  test_helper::ScopedTempDir temp_dir;
+  std::string parent = temp_dir.path();
+
+  struct stat parent_stat = {};
+  ASSERT_THAT(stat(parent.c_str(), &parent_stat), SyscallSucceeds());
+  nlink_t initial_nlink = parent_stat.st_nlink;
+
+  std::string sub = parent + "/sub";
+  ASSERT_THAT(mkdir(sub.c_str(), 0755), SyscallSucceeds());
+
+  ASSERT_THAT(stat(parent.c_str(), &parent_stat), SyscallSucceeds());
+  EXPECT_EQ(parent_stat.st_nlink, initial_nlink + 1);
+
+  struct stat sub_stat = {};
+  ASSERT_THAT(stat(sub.c_str(), &sub_stat), SyscallSucceeds());
+  EXPECT_EQ(sub_stat.st_nlink, 2u);
+
+  std::string file = sub + "/file.txt";
+  int fd = open(file.c_str(), O_CREAT | O_WRONLY | O_EXCL, 0644);
+  ASSERT_GE(fd, 0);
+  close(fd);
+
+  // Attempting to rmdir a non-empty directory must fail with ENOTEMPTY.
+  EXPECT_THAT(rmdir(sub.c_str()), SyscallFailsWithErrno(ENOTEMPTY));
+
+  // Unlink the file.
+  ASSERT_THAT(unlink(file.c_str()), SyscallSucceeds());
+
+  // Now rmdir on the empty directory succeeds and decrements parent link count.
+  EXPECT_THAT(rmdir(sub.c_str()), SyscallSucceeds());
+  ASSERT_THAT(stat(parent.c_str(), &parent_stat), SyscallSucceeds());
+  EXPECT_EQ(parent_stat.st_nlink, initial_nlink);
+}
+
+TEST(FsTest, RenameDirectoryLinkCounts) {
+  test_helper::ScopedTempDir temp_dir;
+  std::string root = temp_dir.path();
+
+  std::string parent1 = root + "/parent1";
+  std::string parent2 = root + "/parent2";
+  ASSERT_THAT(mkdir(parent1.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir(parent2.c_str(), 0755), SyscallSucceeds());
+
+  struct stat st = {};
+  ASSERT_THAT(stat(parent1.c_str(), &st), SyscallSucceeds());
+  nlink_t p1_initial = st.st_nlink;
+  ASSERT_THAT(stat(parent2.c_str(), &st), SyscallSucceeds());
+  nlink_t p2_initial = st.st_nlink;
+
+  // 1. Move directory across parents to a new name.
+  // parent1/dirA -> parent2/dirA
+  std::string dir_a = parent1 + "/dirA";
+  ASSERT_THAT(mkdir(dir_a.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(stat(parent1.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, p1_initial + 1);
+
+  std::string p2_dir_a = parent2 + "/dirA";
+  ASSERT_THAT(rename(dir_a.c_str(), p2_dir_a.c_str()), SyscallSucceeds());
+  ASSERT_THAT(stat(parent1.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, p1_initial);
+  ASSERT_THAT(stat(parent2.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, p2_initial + 1);
+
+  // 2. Move directory across parents replacing an existing empty directory.
+  // parent1/dirB -> parent2/dirA
+  std::string dir_b = parent1 + "/dirB";
+  ASSERT_THAT(mkdir(dir_b.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(stat(parent1.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, p1_initial + 1);
+
+  ASSERT_THAT(rename(dir_b.c_str(), p2_dir_a.c_str()), SyscallSucceeds());
+  ASSERT_THAT(stat(parent1.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, p1_initial);
+  ASSERT_THAT(stat(parent2.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, p2_initial + 1);
+
+  // 3. Rename directory within the same parent to a new name.
+  // parent2/dirA -> parent2/dirC
+  std::string p2_dir_c = parent2 + "/dirC";
+  ASSERT_THAT(rename(p2_dir_a.c_str(), p2_dir_c.c_str()), SyscallSucceeds());
+  ASSERT_THAT(stat(parent2.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, p2_initial + 1);
+
+  // 4. Rename directory within the same parent replacing an existing empty directory.
+  // parent2/dirD -> parent2/dirC
+  std::string p2_dir_d = parent2 + "/dirD";
+  ASSERT_THAT(mkdir(p2_dir_d.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(stat(parent2.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, p2_initial + 2);
+
+  ASSERT_THAT(rename(p2_dir_d.c_str(), p2_dir_c.c_str()), SyscallSucceeds());
+  ASSERT_THAT(stat(parent2.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_nlink, p2_initial + 1);
+}
+
 // This test passes non-null arguments and has other quirks that fail under sanitizers.
 #if (!__has_feature(address_sanitizer) && !defined(__arm__))
 TEST(FsTest, DevZeroAndNullQuirks) {

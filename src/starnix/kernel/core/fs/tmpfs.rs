@@ -76,35 +76,44 @@ impl FileSystemOps for Arc<TmpFs> {
             }
         }
 
-        // Update child counts before borrowing parent_infos_mut to
-        // avoid borrow checker issues with context methods.
+        let has_replaced = replaced.is_some();
+
+        // Update child counts without intermediate churn. We borrow parent nodes within a scoped
+        // block before calling parent_infos_mut to avoid Arc::clone() overhead as well as borrow
+        // checker conflicts with context methods.
         {
             let old_parent = &context.old_parent().node;
             let new_parent = &context.new_parent().node;
-            if !Arc::ptr_eq(old_parent, new_parent) {
-                child_count(new_parent).fetch_add(1, Ordering::Release);
+            let same_parent = Arc::ptr_eq(old_parent, new_parent);
+
+            if same_parent {
+                // Renaming within the same directory only changes the count if an entry was replaced.
+                if has_replaced {
+                    child_count(old_parent).fetch_sub(1, Ordering::Release);
+                }
+            } else {
+                // Moving across directories removes one entry from old_parent, and only adds to
+                // new_parent if we did not overwrite an existing entry.
                 child_count(old_parent).fetch_sub(1, Ordering::Release);
-            }
-            if replaced.is_some() {
-                child_count(new_parent).fetch_sub(1, Ordering::Release);
+                if !has_replaced {
+                    child_count(new_parent).fetch_add(1, Ordering::Release);
+                }
             }
         }
 
+        // Update parent directory link counts for subdirectories (".." references).
+
         let (old_parent_info, mut new_parent_info) = context.parent_infos_mut();
-        if renamed_is_dir {
-            if let Some(new_info) = new_parent_info.as_deref_mut() {
+        if let Some(new_info) = new_parent_info.as_deref_mut() {
+            if renamed_is_dir {
+                old_parent_info.link_count -= 1;
                 new_info.link_count += 1;
-                old_parent_info.link_count -= 1;
             }
-        }
-        // Fix the wrong changes to new_parent due to the fact that the
-        // target element has been replaced instead of added.
-        if replaced_is_dir {
-            if let Some(new_info) = new_parent_info.as_deref_mut() {
+            if replaced_is_dir {
                 new_info.link_count -= 1;
-            } else {
-                old_parent_info.link_count -= 1;
             }
+        } else if replaced_is_dir {
+            old_parent_info.link_count -= 1;
         }
         Ok(())
     }
@@ -232,6 +241,16 @@ impl TmpFs {
                         let node = fs.create_node_and_allocate_node_id(TmpFsDirectory::new(), info);
                         new_direntry(node, None, name.clone())
                     });
+                    // Each child subdirectory contributes an extra link to the parent for its ".." entry.
+                    let subdir_count = children
+                        .values()
+                        .filter(|child| matches!(child.node_type, TmpFsNodeType::Directory(_)))
+                        .count();
+                    if subdir_count > 0 {
+                        this.node.update_info(|info| {
+                            info.link_count += subdir_count;
+                        });
+                    }
                     this.node
                         .downcast_ops::<TmpFsDirectory>()
                         .expect("directory must be from tmpfs")
@@ -268,6 +287,11 @@ pub struct TmpFsData {
 
 pub struct TmpFsDirectory {
     xattrs: MemoryXattrStorage,
+    /// Live entry count, used for non-blocking directory emptiness checks.
+    ///
+    /// This atomic is only responsible for cross-thread visibility of the child count,
+    /// with link/unlink of children in the directory being guarded via synchronization
+    /// on the VFS `DirEntry`.
     child_count: AtomicU32,
 }
 
@@ -401,7 +425,7 @@ impl FsNodeOps for TmpFsDirectory {
             // - TmpFsDirectory is the ops for directories in this filesystem.
             let child_count =
                 &child_to_unlink.downcast_ops::<TmpFsDirectory>().unwrap().child_count;
-            if child_count.load(Ordering::Relaxed) != 0 {
+            if child_count.load(Ordering::Acquire) != 0 {
                 return error!(ENOTEMPTY);
             }
 
@@ -674,6 +698,39 @@ mod test {
             assert_eq!(info.mode, mode!(IFDIR, 0o123));
             assert_eq!(info.uid, 42);
             assert_eq!(info.gid, 84);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_set_initial_content_link_count() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let fs = TmpFs::new_fs(&kernel);
+            let mut children = BTreeMap::new();
+            children.insert(
+                "dir1".into(),
+                TmpFsData {
+                    owner: FsCred::root(),
+                    perm: 0o755,
+                    node_type: TmpFsNodeType::Directory(BTreeMap::new()),
+                },
+            );
+            children.insert(
+                "link1".into(),
+                TmpFsData {
+                    owner: FsCred::root(),
+                    perm: 0o755,
+                    node_type: TmpFsNodeType::Link("target".into()),
+                },
+            );
+            let initial = TmpFsData {
+                owner: FsCred::root(),
+                perm: 0o755,
+                node_type: TmpFsNodeType::Directory(children),
+            };
+            TmpFs::set_initial_content(&kernel, &fs, initial);
+            assert_eq!(fs.root().node.info().link_count, 3);
         })
         .await;
     }
