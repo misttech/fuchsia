@@ -773,6 +773,8 @@ pub struct WaitingOptions {
     pub wait_for_stopped: bool,
     /// Wait for a process that was continued.
     pub wait_for_continued: bool,
+    /// Do not block if no child has exited.
+    pub wnohang: bool,
     /// Block the wait until a process matches.
     pub block: bool,
     /// Do not clear the waitable state.
@@ -793,6 +795,7 @@ impl WaitingOptions {
             wait_for_exited: options & WEXITED > 0,
             wait_for_stopped: options & WSTOPPED > 0,
             wait_for_continued: options & WCONTINUED > 0,
+            wnohang: options & WNOHANG > 0,
             block: options & WNOHANG == 0,
             keep_waitable_state: options & WNOWAIT > 0,
             wait_for_all: options & __WALL > 0,
@@ -965,7 +968,7 @@ pub fn sys_waitid(
             let siginfo = waitable_process.as_signal_info();
             siginfo.write(current_task, user_info)?;
         }
-    } else if id_type == P_PIDFD {
+    } else if id_type == P_PIDFD && !waiting_options.wnohang {
         // From <https://man7.org/linux/man-pages/man2/pidfd_open.2.html>:
         //
         //   PIDFD_NONBLOCK
