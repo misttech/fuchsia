@@ -831,9 +831,12 @@ template("bazel_action") {
         deps += [ "//zircon/public/sysroot_sdk:sysroot_for_fuchsia_platform" ]
       }
 
-      # Use the local pool (although Ninja will delay and coalesce all Bazel
-      # actions so they can be run together, and exclusively)
-      pool = "//build/config:local($default_toolchain)"
+      # We don't want to use the local pool, since delayed actions aren't part
+      # of the pool at all, but ninja is still counting them as using pool
+      # slots.
+      # TODO(fxbug.dev/556911936): Remove once ninja doesn't count delayed
+      # bazel actions as part of the pool
+      use_remote_pool = true
 
       # The build events log contains absolute paths written by Bazel!
       check_for_output_dir_leaks = false
