@@ -26,14 +26,37 @@
 
 namespace thermal {
 
+zx_status_t AmlThermal::ValidatePowerDomain(
+    fuchsia_hardware_thermal::wire::PowerDomain power_domain) const {
+  if (power_domain != fuchsia_hardware_thermal::wire::PowerDomain::kBigClusterPowerDomain &&
+      power_domain != fuchsia_hardware_thermal::wire::PowerDomain::kLittleClusterPowerDomain) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  if (power_domain == fuchsia_hardware_thermal::wire::PowerDomain::kLittleClusterPowerDomain &&
+      !thermal_config_.big_little) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  return ZX_OK;
+}
+
 zx_status_t AmlThermal::SetTarget(uint32_t opp_idx,
                                   fuchsia_hardware_thermal::wire::PowerDomain power_domain) {
-  if (opp_idx >= fuchsia_hardware_thermal::wire::kMaxDvfsOpps) {
+  if (zx_status_t status = ValidatePowerDomain(power_domain); status != ZX_OK) {
+    return status;
+  }
+
+  if (opp_idx >= thermal_config_.opps[static_cast<uint32_t>(power_domain)].count) {
     return ZX_ERR_INVALID_ARGS;
   }
 
   // Get current settings.
   uint32_t old_voltage = voltage_regulator_->GetVoltage(power_domain);
+  if (old_voltage == 0) {
+    zxlogf(ERROR, "aml-thermal: GetVoltage returned 0, regulator may be uninitialized");
+    return ZX_ERR_INTERNAL;
+  }
   uint32_t old_frequency = cpufreq_scaling_->GetFrequency(power_domain);
 
   // Get new settings.
@@ -173,22 +196,6 @@ zx_status_t AmlThermal::Create(void* ctx, zx_device_t* device) {
     return ZX_ERR_NO_MEMORY;
   }
 
-  status = thermal_device->StartConnectDispatchThread();
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "aml-thermal: Could not start connect dispatcher thread, st = %d", status);
-    return status;
-  }
-
-  zx_device_str_prop_t props[] = {
-      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID,
-                           bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_THERMAL_PLL)};
-  status = thermal_device->DdkAdd(
-      ddk::DeviceAddArgs("thermal").set_str_props(props).set_proto_id(ZX_PROTOCOL_THERMAL));
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "aml-thermal: Could not create thermal device: %d", status);
-    return status;
-  }
-
   // Set the default CPU frequency.
   // We could be running Zircon only, or thermal daemon might not
   // run, so we manually set the CPU frequency here.
@@ -207,6 +214,22 @@ zx_status_t AmlThermal::Create(void* ctx, zx_device_t* device) {
     if (status != ZX_OK) {
       return status;
     }
+  }
+
+  status = thermal_device->StartConnectDispatchThread();
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "aml-thermal: Could not start connect dispatcher thread, st = %d", status);
+    return status;
+  }
+
+  zx_device_str_prop_t props[] = {
+      ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID,
+                           bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_THERMAL_PLL)};
+  status = thermal_device->DdkAdd(
+      ddk::DeviceAddArgs("thermal").set_str_props(props).set_proto_id(ZX_PROTOCOL_THERMAL));
+  if (status != ZX_OK) {
+    zxlogf(ERROR, "aml-thermal: Could not create thermal device: %d", status);
+    return status;
   }
 
   // devmgr is now in charge of the memory for dev.
@@ -233,9 +256,14 @@ void AmlThermal::GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) {
 
 void AmlThermal::GetDvfsInfo(GetDvfsInfoRequestView request,
                              GetDvfsInfoCompleter::Sync& completer) {
-  fuchsia_hardware_thermal::wire::OperatingPoint opp =
-      thermal_config_.opps[static_cast<uint32_t>(request->power_domain)];
-  completer.Reply(ZX_OK, fidl::ObjectView<decltype(opp)>::FromExternal(&opp));
+  if (zx_status_t status = ValidatePowerDomain(request->power_domain); status != ZX_OK) {
+    completer.Reply(status, {});
+    return;
+  }
+
+  completer.Reply(ZX_OK,
+                  fidl::ObjectView<fuchsia_hardware_thermal::wire::OperatingPoint>::FromExternal(
+                      &thermal_config_.opps[static_cast<uint32_t>(request->power_domain)]));
 }
 
 void AmlThermal::GetTemperatureCelsius(GetTemperatureCelsiusCompleter::Sync& completer) {

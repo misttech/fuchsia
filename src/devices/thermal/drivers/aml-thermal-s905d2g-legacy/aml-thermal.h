@@ -83,6 +83,9 @@ class AmlThermal : public DeviceType, public ddk::ThermalProtocol<AmlThermal, dd
   int ThermalNotificationThread();
   zx_status_t NotifyThermalDaemon();
 
+  zx_status_t ValidatePowerDomain(
+      fuchsia_hardware_thermal::wire::PowerDomain power_domain) const;
+
   zx_status_t StartConnectDispatchThread();
 
   std::unique_ptr<thermal::AmlTSensor> tsensor_;

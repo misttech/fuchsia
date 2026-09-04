@@ -666,6 +666,39 @@ TEST_F(AmlVoltageRegulatorTest, AstroSetVoltageTest) {
   EXPECT_EQ(val, 861000);
 }
 
+TEST_F(AmlVoltageRegulatorTest, GetVoltageUninitializedTest) {
+  // Simply construct regulator without calling Init() to verify default values
+  FakeAmlVoltageRegulator regulator;
+  // Should return 0 (not crash or access out-of-bounds)
+  EXPECT_EQ(
+      regulator.GetVoltage(fuchsia_hardware_thermal::wire::PowerDomain::kBigClusterPowerDomain), 0);
+  EXPECT_EQ(
+      regulator.GetVoltage(fuchsia_hardware_thermal::wire::PowerDomain::kLittleClusterPowerDomain),
+      0);
+}
+
+TEST_F(AmlVoltageRegulatorTest, InvalidPowerDomainTest) {
+  Create(4);  // Sherlock (big-little)
+
+  // Cast an invalid value to PowerDomain to test bounds checks
+  auto invalid_domain = static_cast<fuchsia_hardware_thermal::wire::PowerDomain>(99);
+
+  EXPECT_EQ(voltage_regulator_->GetVoltage(invalid_domain), 0);
+  EXPECT_EQ(voltage_regulator_->SetVoltage(invalid_domain, 891000), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(AmlVoltageRegulatorTest, AstroUnsupportedDomainTest) {
+  Create(3);  // Astro (single cluster)
+
+  // Astro is not big-little, so little cluster is not supported
+  EXPECT_EQ(voltage_regulator_->GetVoltage(
+                fuchsia_hardware_thermal::wire::PowerDomain::kLittleClusterPowerDomain),
+            0);
+  EXPECT_EQ(voltage_regulator_->SetVoltage(
+                fuchsia_hardware_thermal::wire::PowerDomain::kLittleClusterPowerDomain, 891000),
+            ZX_ERR_NOT_SUPPORTED);
+}
+
 // CPU Frequency and Scaling
 class FakeAmlCpuFrequency : public AmlCpuFrequency {
  public:

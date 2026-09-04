@@ -38,9 +38,23 @@ class AmlVoltageRegulator {
                    const aml_thermal_info_t* thermal_info);
   uint32_t GetVoltage(fuchsia_hardware_thermal::wire::PowerDomain power_domain) {
     if (power_domain == fuchsia_hardware_thermal::wire::PowerDomain::kBigClusterPowerDomain) {
+      if (current_big_cluster_voltage_index_ < 0 ||
+          current_big_cluster_voltage_index_ >= MAX_VOLTAGE_TABLE) {
+        return 0;
+      }
       return thermal_info_.voltage_table[current_big_cluster_voltage_index_].microvolt;
     }
-    return thermal_info_.voltage_table[current_little_cluster_voltage_index_].microvolt;
+
+    if (power_domain == fuchsia_hardware_thermal::wire::PowerDomain::kLittleClusterPowerDomain &&
+        big_little_) {
+      if (current_little_cluster_voltage_index_ < 0 ||
+          current_little_cluster_voltage_index_ >= MAX_VOLTAGE_TABLE) {
+        return 0;
+      }
+      return thermal_info_.voltage_table[current_little_cluster_voltage_index_].microvolt;
+    }
+
+    return 0;
   }
 
   zx_status_t SetVoltage(fuchsia_hardware_thermal::wire::PowerDomain power_domain,
@@ -48,7 +62,16 @@ class AmlVoltageRegulator {
     if (power_domain == fuchsia_hardware_thermal::wire::PowerDomain::kBigClusterPowerDomain) {
       return SetClusterVoltage(&current_big_cluster_voltage_index_, big_cluster_pwm_, microvolt);
     }
-    return SetLittleClusterVoltage(microvolt);
+
+    if (power_domain == fuchsia_hardware_thermal::wire::PowerDomain::kLittleClusterPowerDomain) {
+      if (!big_little_) {
+        return ZX_ERR_NOT_SUPPORTED;
+      }
+      return SetClusterVoltage(&current_little_cluster_voltage_index_, little_cluster_pwm_,
+                               microvolt);
+    }
+
+    return ZX_ERR_INVALID_ARGS;
   }
 
  private:
@@ -73,8 +96,8 @@ class AmlVoltageRegulator {
   fidl::WireSyncClient<fuchsia_hardware_pwm::Pwm> big_cluster_pwm_;
   fidl::WireSyncClient<fuchsia_hardware_pwm::Pwm> little_cluster_pwm_;
   aml_thermal_info_t thermal_info_;
-  int current_big_cluster_voltage_index_;
-  int current_little_cluster_voltage_index_;
+  int current_big_cluster_voltage_index_ = -1;
+  int current_little_cluster_voltage_index_ = -1;
   bool big_little_ = false;
 };
 }  // namespace thermal
