@@ -129,6 +129,74 @@ pub async fn check_emulators<W: Write>(
             LedgerOutcome::Info,
         );
     }
+    for instance in &instances {
+        if !instance.is_running() {
+            let instance_dir = match emu_instances.get_instance_dir(instance.get_name(), false) {
+                Ok(dir) => dir,
+                Err(e) => {
+                    emu_node.add_node_with_outcome(
+                        &format!(
+                            "Could not determine directory for instance '{}': {}",
+                            instance.get_name(),
+                            e
+                        ),
+                        LedgerMode::Normal,
+                        LedgerOutcome::Warning,
+                    );
+                    continue;
+                }
+            };
+
+            let should_clean = match emulator_instance::read_from_disk_untyped(&instance_dir) {
+                Ok(value) => {
+                    let state = value.get("engine_state").and_then(|s| s.as_str());
+                    state.is_some_and(|s| s.eq_ignore_ascii_case("running"))
+                }
+                Err(emulator_instance::EmulatorInstanceError::MissingEngineFile(_))
+                | Err(emulator_instance::EmulatorInstanceError::ParseJson { .. }) => {
+                    // Clean up if it's missing or fundamentally corrupted.
+                    true
+                }
+                Err(e) => {
+                    emu_node.add_node_with_outcome(
+                        &format!(
+                            "Unexpected error reading config for '{}': {}",
+                            instance.get_name(),
+                            e
+                        ),
+                        LedgerMode::Normal,
+                        LedgerOutcome::Warning,
+                    );
+                    false
+                }
+            };
+
+            if should_clean {
+                let mut cleanup_node = emu_node.add_node(
+                    &format!("Cleanup Stale Emulator: {}", instance.get_name()),
+                    LedgerMode::Normal,
+                );
+                cleanup_node.add_node_with_outcome(
+                    &format!("Cleaning up orphaned instance '{}'", instance.get_name()),
+                    LedgerMode::Normal,
+                    LedgerOutcome::Info,
+                );
+                if let Err(e) = emu_instances.clean_up_instance_dir(instance.get_name()) {
+                    cleanup_node.add_node_with_outcome(
+                        &format!("Failed to clean up instance dir: {}", e),
+                        LedgerMode::Normal,
+                        LedgerOutcome::Failure,
+                    );
+                } else {
+                    cleanup_node.add_node_with_outcome(
+                        "Cleanup successful.",
+                        LedgerMode::Normal,
+                        LedgerOutcome::Success,
+                    );
+                }
+            }
+        }
+    }
     if instances.is_empty() {
         emu_node.add_node_with_outcome(
             "No Emulator instances",

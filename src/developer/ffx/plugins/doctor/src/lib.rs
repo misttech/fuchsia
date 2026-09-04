@@ -822,6 +822,27 @@ mod test {
             assert!(output.contains("Engine State: staged"));
         }
 
+        // One orphaned instance (Running but pid not running/crashing, triggers cleanup)
+        instance_data.set_engine_state(EngineState::Running);
+        instance_data.set_pid(9999999);
+        fs::write(&engine_json_path, serde_json::to_string(&instance_data)?)?;
+
+        {
+            let mut writer = MockWriter::new();
+            let mut ledger = DoctorLedger::new(
+                &mut writer,
+                Box::new(VisualLedgerView::new()),
+                LedgerViewMode::Verbose,
+            );
+            check_emulators(&mut ledger.root_guard(), &test_env.context).await?;
+            let output = writer.get_data();
+            assert!(output.contains("FFX Emulator Instances"));
+            assert!(output.contains("Cleanup Stale Emulator: fuchsia-emulator"));
+            assert!(output.contains("Cleaning up orphaned instance 'fuchsia-emulator'"));
+            assert!(output.contains("Cleanup successful."));
+            // At this point, the cleanup should have removed the directory.
+            assert!(!instance_dir.exists());
+        }
         Ok(())
     }
 
