@@ -323,6 +323,8 @@ class BtTransportUartHciTransportProtocolTest
     }
   }
 
+  void SetScoConnectionStopped(bool stopped) { sco_connection_stopped_ = stopped; }
+
   // fidl::AsyncEventHandler<fhbt::Snoop> overrides:
   void OnObservePacket(
       ::fidl::Event<::fuchsia_hardware_bluetooth::Snoop::OnObservePacket>& event) override {
@@ -410,7 +412,12 @@ class BtTransportUartHciTransportProtocolTest
     FAIL();
   }
 
-  void on_fidl_error(fidl::UnbindInfo error) override { FAIL(); }
+  void on_fidl_error(fidl::UnbindInfo error) override {
+    if (sco_connection_stopped_ && error.is_peer_closed()) {
+      return;
+    }
+    FAIL();
+  }
 
   // fuchsia_hardware_bluetooth::ScoConnection event handler overrides
   void OnReceive(fhbt::wire::ScoPacket* packet) override {
@@ -483,6 +490,7 @@ class BtTransportUartHciTransportProtocolTest
   fidl::Client<fhbt::Snoop> snoop_client_;
 
   bool manual_ack_receive_ = false;
+  bool sco_connection_stopped_ = false;
   uint64_t current_snoop_seq_ = 0;
   std::vector<std::vector<uint8_t>> received_event_packets_;
   std::vector<std::vector<uint8_t>> received_acl_packets_;
@@ -749,7 +757,7 @@ TEST_F(BtTransportUartHciTransportProtocolTest, ReceiveAclPacketsWithFlowControl
 
   // The packet number exceeds the limit of unacked packets in the driver. The limit is now 10.
   const size_t kNumPackets = 35;
-  const size_t kUnackedLimit = 30;
+  const size_t kUnackedLimit = BtTransportUart::kUnackedReceivePacketLimit;
   for (size_t i = 0; i < kNumPackets; i++) {
     driver_test().RunInEnvironmentTypeContext([&](FixtureBasedTestEnvironment& env) {
       // Store the sequence number in packet payload.
@@ -1064,6 +1072,62 @@ TEST_F(BtTransportUartHciTransportProtocolTest, ReceiveScoPacketsIn2Parts) {
   for (uint8_t i = 0; i < kNumPackets; i++) {
     EXPECT_EQ(snoop_received_sco_packets()[i], kScoBuffer);
   }
+}
+
+// Tests that when SCO packets are received from the UART while no SCO connection is active,
+// the driver drops the packets without delivering them to clients, forwards them to the snoop
+// channel, and does not count dropped packets against the unacked receive packet limit so UART
+// reads do not stall.
+TEST_F(BtTransportUartHciTransportProtocolTest, ReceiveScoPacketWithoutActiveConnection) {
+  // Stop the SCO connection.
+  SetScoConnectionStopped(true);
+  auto stop_result = sco_client_.sync()->Stop();
+  ASSERT_EQ(stop_result.status(), ZX_OK);
+
+  // Wait for the driver to finish stopping the SCO connection.
+  driver_test().runtime().RunUntil([&]() {
+    return driver_test().RunInDriverContext<bool>(
+        [](BtTransportUart& driver) { return !driver.HasScoConnection(); });
+  });
+
+  const std::vector<uint8_t> kSerialScoBuffer = {
+      BtHciPacketIndicator::kHciSco,
+      0x07,
+      0x08,  // arbitrary header fields
+      0x01,  // 1-byte payload length in little endian
+      0x02,  // arbitrary payload
+  };
+  const std::vector<uint8_t> kScoBuffer(kSerialScoBuffer.begin() + 1, kSerialScoBuffer.end());
+
+  const std::vector<uint8_t> kSerialEventBuffer = {
+      BtHciPacketIndicator::kHciEvent,
+      0x01,  // event_code
+      0x01,  // parameter_total_size
+      0x05,  // arbitrary parameter
+  };
+  const std::vector<uint8_t> kEventBuffer(kSerialEventBuffer.begin() + 1, kSerialEventBuffer.end());
+
+  // Queue more SCO packets than the unacked receive packet limit followed by an Event packet to
+  // verify that dropped SCO packets do not count against the unacked packet limit and cause UART
+  // reading to pause.
+  const size_t kNumScoPackets = BtTransportUart::kUnackedReceivePacketLimit + 1;
+  driver_test().RunInEnvironmentTypeContext([&](FixtureBasedTestEnvironment& env) {
+    for (size_t i = 0; i < kNumScoPackets; i++) {
+      env.serial_device_.QueueReadValue(kSerialScoBuffer);
+    }
+    env.serial_device_.QueueReadValue(kSerialEventBuffer);
+  });
+
+  // Snoop should still receive the SCO packet.
+  driver_test().runtime().RunUntil([&]() { return !snoop_received_sco_packets().empty(); });
+  EXPECT_EQ(snoop_received_sco_packets()[0], kScoBuffer);
+
+  // The event packet should still be received, verifying that the SCO packet was properly dropped
+  // without wedging the read state machine.
+  driver_test().runtime().RunUntil([&]() { return received_event_packets().size() == 1u; });
+  EXPECT_EQ(received_event_packets()[0], kEventBuffer);
+
+  EXPECT_TRUE(received_sco_packets().empty());
 }
 
 TEST_F(BtTransportUartHciTransportProtocolTest, SendIsoPackets) {

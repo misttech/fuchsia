@@ -508,17 +508,18 @@ void BtTransportUart::ProcessNextUartPacketFromReadBuffer(uint8_t* buffer, size_
   if (packet_ind == kHciSco) {
     if (sco_connection_binding_.size() == 0) {
       fdf::debug("No SCO connection available for sending SCO packets up.");
-      return;
+    } else {
+      sco_connection_binding_.ForEachBinding(
+          [&](const fidl::ServerBinding<fhbt::ScoConnection>& binding) {
+            fidl::OneWayStatus result = fidl::WireSendEvent(binding)->OnReceive(fidl_vec);
+
+            if (!result.ok()) {
+              fdf::error("Failed to send SCO packet to bt-host: {}", result.error());
+            } else {
+              unacked_receive_packet_number_++;
+            }
+          });
     }
-
-    sco_connection_binding_.ForEachBinding(
-        [&](const fidl::ServerBinding<fhbt::ScoConnection>& binding) {
-          fidl::OneWayStatus result = fidl::WireSendEvent(binding)->OnReceive(fidl_vec);
-
-          if (!result.ok()) {
-            fdf::error("Failed to send vendor features to bt-host: {}", result.error());
-          }
-        });
   } else if (packet_ind == kHciAclData) {
     auto received_packet = fhbt::wire::ReceivedPacket::WithAcl(arena, fidl_vec);
     if (hci_transport_binding_.has_value()) {
@@ -526,6 +527,8 @@ void BtTransportUart::ProcessNextUartPacketFromReadBuffer(uint8_t* buffer, size_
           fidl::WireSendEvent(hci_transport_binding_.value())->OnReceive(received_packet);
       if (!result.ok()) {
         fdf::error("Failed to send ACL packet to host: {}", result.error());
+      } else {
+        unacked_receive_packet_number_++;
       }
     } else {
       // Note that this likely happens during system shutdown, when the other end of the channel
@@ -541,6 +544,8 @@ void BtTransportUart::ProcessNextUartPacketFromReadBuffer(uint8_t* buffer, size_
           fidl::WireSendEvent(hci_transport_binding_.value())->OnReceive(received_packet);
       if (!result.ok()) {
         fdf::error("Failed to send event packet to host: {}", result.error());
+      } else {
+        unacked_receive_packet_number_++;
       }
     } else {
       // Note that this likely happens during system shutdown, when the other end of the channel
@@ -556,19 +561,19 @@ void BtTransportUart::ProcessNextUartPacketFromReadBuffer(uint8_t* buffer, size_
           fidl::WireSendEvent(hci_transport_binding_.value())->OnReceive(received_packet);
       if (!result.ok()) {
         fdf::error("Failed to send ISO packet to host: {}", result.error());
+      } else {
+        unacked_receive_packet_number_++;
       }
     } else {
       // Note that this likely happens during system shutdown, when the other end of the channel
       // has been shutdown but this driver haven't gotten into the PrepareStop() step. If it
       // doesn't happen during shutdown, this might indicate a bug in either the driver or the
       // other end of this FIDL connection.
-      fdf::info("No HciTransport bindings available for sending up event packets.");
+      fdf::info("No HciTransport bindings available for sending up ISO packets.");
     }
   } else {
     fdf::error("Unsupported packet type received");
   }
-
-  unacked_receive_packet_number_++;
 
   fhbt::wire::SnoopPacket::Tag type = fhbt::wire::SnoopPacket::Tag::kIso;
   if (packet_ind == kHciAclData) {
@@ -715,6 +720,8 @@ fit::function<void(void)> BtTransportUart::WaitForScoConnectionCallback() {
 }
 
 uint64_t BtTransportUart::GetAckedSnoopSeq() { return acked_snoop_seq_; }
+
+bool BtTransportUart::HasScoConnection() const { return sco_connection_binding_.size() != 0; }
 
 void BtTransportUart::handle_unknown_method(
     ::fidl::UnknownMethodMetadata<fhbt::HciTransport> metadata,

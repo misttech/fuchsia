@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SRC_CONNECTIVITY_BLUETOOTH_HCI_TRANSPORT_UART_BT_TRANSPORT_UART_H_
-#define SRC_CONNECTIVITY_BLUETOOTH_HCI_TRANSPORT_UART_BT_TRANSPORT_UART_H_
+#ifndef SRC_CONNECTIVITY_BLUETOOTH_HCI_TRANSPORT_UART_CPP_BT_TRANSPORT_UART_H_
+#define SRC_CONNECTIVITY_BLUETOOTH_HCI_TRANSPORT_UART_CPP_BT_TRANSPORT_UART_H_
 
 #include <fidl/fuchsia.boot.metadata/cpp/fidl.h>
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
@@ -111,10 +111,14 @@ class BtTransportUart : public fdf::DriverBase2,
       fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::Snoop> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
+  static constexpr size_t kUnackedReceivePacketLimit = 30;
+  static constexpr size_t kUnackedReceivePacketRecover = 25;
+
   // Used by tests only.
   fit::function<void(void)> WaitForSnoopCallback();
   fit::function<void(void)> WaitForScoConnectionCallback();
   uint64_t GetAckedSnoopSeq();
+  bool HasScoConnection() const;
 
  private:
   // Returns length of current event packet being received
@@ -190,24 +194,22 @@ class BtTransportUart : public fdf::DriverBase2,
 
   // for accumulating ACL data packets
   // Must only be used in the UART read callback (HciHandleUartReadEvents).
-  uint8_t acl_buffer_[fuchsia_hardware_bluetooth::kAclPacketMax];
+  uint8_t acl_buffer_[fuchsia_hardware_bluetooth::kAclPacketMax + 1];
   // Must only be used in the UART read callback (HciHandleUartReadEvents).
   size_t acl_buffer_offset_ = 0;
 
   // For accumulating SCO packets
   // Must only be used in the UART read callback (HciHandleUartReadEvents).
-  uint8_t sco_buffer_[fuchsia_hardware_bluetooth::kScoPacketMax];
+  uint8_t sco_buffer_[fuchsia_hardware_bluetooth::kScoPacketMax + 1];
   // Must only be used in the UART read callback (HciHandleUartReadEvents).
   size_t sco_buffer_offset_ = 0;
 
   // For accumulating ISO packets
   // Must only be used in the UART read callback (HciHandleUartReadEvents).
-  uint8_t iso_buffer_[fuchsia_hardware_bluetooth::kIsoPacketMax];
+  uint8_t iso_buffer_[fuchsia_hardware_bluetooth::kIsoPacketMax + 1];
   // Must only be used in the UART read callback (HciHandleUartReadEvents).
   size_t iso_buffer_offset_ = 0;
 
-  static constexpr size_t kUnackedReceivePacketLimit = 30;
-  static constexpr size_t kUnackedReceivePacketRecover = 25;
   // Mark the read state of the driver, when the value is set to true, it means that the driver has
   // stopped reading data from the bus.
   bool read_stopped_ = false;
@@ -283,4 +285,4 @@ class BtTransportUart : public fdf::DriverBase2,
 
 }  // namespace bt_transport_uart
 
-#endif  // SRC_CONNECTIVITY_BLUETOOTH_HCI_TRANSPORT_UART_BT_TRANSPORT_UART_H_
+#endif  // SRC_CONNECTIVITY_BLUETOOTH_HCI_TRANSPORT_UART_CPP_BT_TRANSPORT_UART_H_
