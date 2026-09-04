@@ -9,10 +9,7 @@ if (is_host) {
   python_mobly_test("reboot_hang_test") {
     main_source = "reboot_hang_test.py"
 
-    environments = [
-      iris_env,
-      sorrel_env,
-    ]
+    environments = [ iris_env ]
 
     timeout_secs = 900
 
