@@ -1356,6 +1356,7 @@ class Scheduler::CandidatePlacement {
     const Scheduler* scheduler = Scheduler::Get(cpu_num);
     const SchedDuration cpu_queue_time_ns = scheduler->exported_queue_time_ns();
     const SchedProcessingRate cpu_processing_rate = scheduler->exported_processing_rate();
+    const SchedProcessingRate cpu_max_processing_rate = scheduler->exported_max_processing_rate();
     const SchedUtilization cpu_deadline_utilization = scheduler->exported_deadline_utilization();
 
     // TODO(https://fxbug.dev/448195120): Factor in estimated utilization for
@@ -1417,13 +1418,14 @@ class Scheduler::CandidatePlacement {
 
     LOCAL_KTRACE_INSTANT(QUEUE, "evaluate", ("cpu", cpu_num), ("queue time", cpu_queue_time_ns),
                          ("actual rate", cpu_processing_rate),
+                         ("max rate", cpu_max_processing_rate),
                          ("current required rate", current_required_processing_rate),
                          ("new required rate", new_required_processing_rate),
                          ("estimated power delta nw", estimated_power_delta_nw));
 
     return CandidatePlacement(cpu_num, scheduler->cluster(), cpu_queue_time_ns, cpu_processing_rate,
-                              new_required_processing_rate, cpu_deadline_utilization,
-                              estimated_power_delta_nw);
+                              cpu_max_processing_rate, new_required_processing_rate,
+                              cpu_deadline_utilization, estimated_power_delta_nw);
   }
 
   CandidatePlacement(const CandidatePlacement&) = default;
@@ -1478,10 +1480,10 @@ class Scheduler::CandidatePlacement {
              queue_time_ns() < current_target.queue_time_ns();
     }
 
-    ktl::tuple candidate_criteria{is_admissible_order_key(), estimated_power_delta_nw(),
+    ktl::tuple candidate_criteria{capacity_shortfall(), estimated_power_delta_nw(),
                                   deadline_utilization(), queue_time_ns()};
     ktl::tuple current_criteria{
-        current_target.is_admissible_order_key(), current_target.estimated_power_delta_nw(),
+        current_target.capacity_shortfall(), current_target.estimated_power_delta_nw(),
         current_target.deadline_utilization(), current_target.queue_time_ns()};
 
     return candidate_criteria < current_criteria;
@@ -1491,17 +1493,24 @@ class Scheduler::CandidatePlacement {
   constexpr size_t cluster() const { return cluster_; }
   constexpr SchedDuration queue_time_ns() const { return queue_time_ns_; }
   constexpr SchedProcessingRate processing_rate() const { return processing_rate_; }
+  constexpr SchedProcessingRate max_processing_rate() const { return max_processing_rate_; }
   constexpr SchedProcessingRate required_processing_rate() const {
     return required_processing_rate_;
   }
   constexpr SchedUtilization deadline_utilization() const { return deadline_utilization_; }
   constexpr uint64_t estimated_power_delta_nw() const { return estimated_power_delta_nw_; }
-  constexpr bool is_admissible() const { return required_processing_rate() <= processing_rate(); }
-  constexpr int is_admissible_order_key() const { return is_admissible() ? 0 : 1; }
+  constexpr bool is_admissible() const {
+    return required_processing_rate() <= max_processing_rate();
+  }
+  constexpr SchedProcessingRate capacity_shortfall() const {
+    return is_admissible() ? SchedProcessingRate{0}
+                           : required_processing_rate() - max_processing_rate();
+  }
 
  private:
   constexpr CandidatePlacement(cpu_num_t cpu, size_t cluster, SchedDuration queue_time_ns,
                                SchedProcessingRate processing_rate,
+                               SchedProcessingRate max_processing_rate,
                                SchedProcessingRate required_processing_rate,
                                SchedUtilization deadline_utilization,
                                uint64_t estimated_power_delta_nw)
@@ -1510,6 +1519,7 @@ class Scheduler::CandidatePlacement {
         cluster_{cluster},
         queue_time_ns_{queue_time_ns},
         processing_rate_{processing_rate},
+        max_processing_rate_{max_processing_rate},
         required_processing_rate_{required_processing_rate},
         deadline_utilization_{deadline_utilization},
         estimated_power_delta_nw_{estimated_power_delta_nw} {}
@@ -1519,6 +1529,7 @@ class Scheduler::CandidatePlacement {
   size_t cluster_{0};
   SchedDuration queue_time_ns_{0};
   SchedProcessingRate processing_rate_{0};
+  SchedProcessingRate max_processing_rate_{0};
   SchedProcessingRate required_processing_rate_{0};
   SchedUtilization deadline_utilization_{0};
   uint64_t estimated_power_delta_nw_{0};
@@ -3433,6 +3444,7 @@ void Scheduler::InitializeProcessingRate(SchedProcessingRate scale) TA_NO_THREAD
   // acquiring the queue lock is unnecessary.
   power_level_control_.TopologySetDefaultProcessingRate(scale);
   exported_processing_rate_ = scale;
+  exported_max_processing_rate_ = power_level_control_.clamped_max_processing_rate();
 }
 
 void Scheduler::UpdateProcessingRates(ktl::span<zx_cpu_performance_info_t> info) {
@@ -3747,6 +3759,8 @@ bool Scheduler::PowerLevelControl::UserSetProcessingRateLimits(SchedProcessingRa
                                                                SchedProcessingRate max) {
   processing_rate_limit_min_ = ktl::clamp(min, SchedProcessingRate{0}, SchedProcessingRate{1});
   processing_rate_limit_max_ = ktl::clamp(max, SchedProcessingRate{0}, SchedProcessingRate{1});
+
+  scheduler().exported_max_processing_rate_ = clamped_max_processing_rate();
 
   if (processing_rate_should_change()) {
     AssertHeld(scheduler().queue_lock());

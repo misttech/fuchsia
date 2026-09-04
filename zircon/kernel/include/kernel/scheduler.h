@@ -190,6 +190,12 @@ class Scheduler {
   // scheduler is associated with.
   SchedProcessingRate exported_processing_rate() const { return exported_processing_rate_.load(); }
 
+  // Returns the lock-free value of the max processing rate for the CPU this
+  // scheduler is associated with.
+  SchedProcessingRate exported_max_processing_rate() const {
+    return exported_max_processing_rate_.load();
+  }
+
   // Returns the processing rate of the CPU this scheduler instance is
   // associated with.
   SchedProcessingRate processing_rate() const TA_REQ(queue_lock_) {
@@ -502,7 +508,7 @@ class Scheduler {
 
     // Update the cross-processor shadow value of the max processing rate to match the current power
     // domain value.
-    exported_max_processing_rate_ = power_level_control_.max_processing_rate();
+    exported_max_processing_rate_ = power_level_control_.clamped_max_processing_rate();
 
     return previous;
   }
@@ -1697,6 +1703,12 @@ class Scheduler {
     // Returns the maximum processing rate of this processor. Initially set from the CPU topology
     // data and updated whenever the energy model is set/updated by userspace.
     SchedProcessingRate max_processing_rate() const { return max_processing_rate_; }
+
+    // Returns the maximum processing rate of this processor, clamped to the
+    // current performance limits.
+    SchedProcessingRate clamped_max_processing_rate() const {
+      return ktl::min(max_processing_rate_, processing_rate_limit_max_);
+    }
 
     // Returns the minimum processing rate limit of this processor. Initially
     // set to 0.0 and updated by userspace to effect performance limits policy.
