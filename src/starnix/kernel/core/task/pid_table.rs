@@ -6,7 +6,7 @@ use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{ProcessGroup, Task, ThreadGroup};
 use fuchsia_rcu::{RcuDroppable, RcuOptionBox, RcuWeak};
 use starnix_logging::track_stub;
-use starnix_rcu::RcuReadScope;
+pub use starnix_rcu::RcuReadScope;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error, pid_t, tid_t};
 use std::collections::HashMap;
@@ -287,13 +287,12 @@ impl PidTable {
             .collect()
     }
 
-    /// Returns the task ids for all the currently running tasks.
-    pub fn running_task_ids(&self) -> Vec<pid_t> {
-        let scope = RcuReadScope::new();
-        self.table
-            .iter()
-            .flat_map(|(_, entry)| (entry.task.strong_count(&scope) > 0).then_some(entry.id))
-            .collect()
+    /// Returns an iterator over the [`Pid`]s for all the currently running tasks.
+    pub fn running_task_ids<'a>(
+        &'a self,
+        scope: &'a RcuReadScope,
+    ) -> impl Iterator<Item = &'a Pid> {
+        self.table.values().filter(|entry| entry.task.strong_count(scope) > 0)
     }
 
     pub fn last_pid(&self) -> pid_t {

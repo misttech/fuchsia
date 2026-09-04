@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use starnix_core::task::{CurrentTask, Kernel, TaskStateCode};
+use starnix_core::task::{CurrentTask, Kernel, RcuReadScope, TaskStateCode};
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_logging::track_stub;
@@ -29,17 +29,19 @@ impl DynamicFileSource for LoadavgFile {
             let kernel = self.0.upgrade().ok_or_else(|| errno!(EIO))?;
             let pid_table = kernel.pids.read();
 
-            let curr_tids = pid_table.running_task_ids();
+            let scope = RcuReadScope::new();
+            let mut running_tasks_count = 0;
             let mut runnable_tasks = 0;
-            for pid in &curr_tids {
-                if let Ok(task) = pid_table.get(*pid).and_then(|p| p.get_task()) {
+            for pid in pid_table.running_task_ids(&scope) {
+                running_tasks_count += 1;
+                if let Ok(task) = pid.get_task() {
                     if task.state_code() == TaskStateCode::Running {
                         runnable_tasks += 1;
                     }
-                };
+                }
             }
 
-            let existing_tasks = pid_table.process_ids().len() + curr_tids.len();
+            let existing_tasks = pid_table.process_ids().len() + running_tasks_count;
             (runnable_tasks, existing_tasks, pid_table.last_pid())
         };
 

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::{Kernel, PidTable};
+use crate::task::{Kernel, PidTable, RcuReadScope};
 use starnix_logging::{log_debug, log_error, log_info};
 use starnix_sync::LockDepRwLock;
 use starnix_uapi::{pid_t, tid_t};
@@ -153,11 +153,13 @@ impl TracePerformanceEventManager {
     fn read_existing_pid_map(pid_table: &PidTable) -> HashMap<tid_t, KoidPair> {
         let mut pid_map = HashMap::new();
 
-        let ids = pid_table.running_task_ids();
-        for tid in &ids {
+        let scope = RcuReadScope::new();
+        let mut count = 0;
+        for pid in pid_table.running_task_ids(&scope) {
+            count += 1;
             // Running tasks may exit at any time. Record a task only if a snapshot of its running
             // state can be obtained.
-            let Ok(task) = pid_table.get(*tid).and_then(|p| p.get_task()) else {
+            let Ok(task) = pid.get_task() else {
                 continue;
             };
             let Ok(running_state) = task.running_state() else {
@@ -169,11 +171,11 @@ impl TracePerformanceEventManager {
             };
             // ignore entries with no process or thread.
             if pair.process.is_some() || pair.thread.is_some() {
-                pid_map.insert(*tid, pair);
+                pid_map.insert(pid.id, pair);
             }
         }
 
-        log_debug!("Initialized {} pid mappings. From {} ids", pid_map.len(), ids.len());
+        log_debug!("Initialized {} pid mappings. From {} ids", pid_map.len(), count);
         pid_map
     }
 }
