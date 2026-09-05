@@ -180,15 +180,16 @@ fuchsia::sysmem::BufferCollectionConstraints CodecAdapterLc3Encoder::BufferColle
 
 size_t CodecAdapterLc3Encoder::InputChunkSize() {
   ZX_DEBUG_ASSERT(codec_params_);
-  int num_bytes_per_sample = (codec_params_->fmt == LC3_PCM_FORMAT_S16) ? 2 : 4;
+  size_t num_bytes_per_sample = (codec_params_->fmt == LC3_PCM_FORMAT_S16) ? 2 : 4;
 
   // LC3 Spec v1.0 section 2.2. Encoder Interfaces.
   // The total size of an input frame is specified by the session
   // configured number of channels, the frame size in samples, and the
   // configured encoder PCM bits per audio sample.
-  // Frame size in samples is duration in microseconds * sampling frequency in hz / 1000 / 1000.
-  return codec_params_->num_channels * codec_params_->dt_us * codec_params_->sr_hz *
-         num_bytes_per_sample / 1000 / 1000;
+  int frame_samples = lc3_frame_samples(codec_params_->dt_us, codec_params_->sr_hz);
+  ZX_DEBUG_ASSERT(frame_samples > 0);
+  return static_cast<size_t>(codec_params_->num_channels) * static_cast<size_t>(frame_samples) *
+         num_bytes_per_sample;
 }
 
 size_t CodecAdapterLc3Encoder::MinOutputBufferSize() {
