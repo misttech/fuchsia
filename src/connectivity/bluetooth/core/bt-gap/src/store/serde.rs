@@ -34,6 +34,7 @@ use fidl_fuchsia_bluetooth_sys as sys;
 use fuchsia_bluetooth::types::{
     Address, BondingData, BredrBondData, HostData, LeBondData, OneOrBoth, PeerId, Uuid,
 };
+use log::info;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -291,6 +292,7 @@ option_encoding!(OptionPeerKeyDef, sys::PeerKey, "PeerKeyDef");
 struct SecurityPropertiesDef {
     pub authenticated: bool,
     pub secure_connections: bool,
+    #[serde(default)]
     pub encryption_key_size: u8,
 }
 
@@ -383,8 +385,22 @@ impl From<&BondingData> for BondingDataDef {
 // JSON schema.
 impl TryInto<BondingData> for BondingDataDef {
     type Error = anyhow::Error;
-    fn try_into(self) -> Result<BondingData, Self::Error> {
+    fn try_into(mut self) -> Result<BondingData, Self::Error> {
         use anyhow::format_err;
+
+        let _ = self.bredr.as_mut().map(|b| {
+            b.link_key.as_mut().map(|lk| {
+                // BR/EDR link keys are always 16 bytes by specification. Default to 16
+                // if legacy or migrated stores omitted or zeroed encryption_key_size.
+                if lk.security.encryption_key_size == 0 {
+                    info!(
+                        "normalizing BR/EDR link key encryption size to 16 for peer: {}",
+                        PeerId(self.identifier)
+                    );
+                    lk.security.encryption_key_size = 16;
+                }
+            })
+        });
 
         let data = match (self.le, self.bredr) {
             (Some(le), Some(bredr)) => OneOrBoth::Both(le, bredr),
@@ -858,6 +874,73 @@ mod tests {
         assert_eq!(expected, deserialized);
     }
 
+    #[test]
+    fn deserialize_bredr_zero_encryption_key_size_normalizes_to_16() {
+        let json_input = r#"{
+             "identifier": 1234,
+             "address":{
+                "type": "public",
+                "value": [6,5,4,3,2,1]
+             },
+             "hostAddress":{
+                "type": "public",
+                "value": [255,238,221,204,187,170]
+             },
+             "name": "Device Name",
+             "le": null,
+             "bredr": {
+                 "rolePreference": "follower",
+                 "linkKey": {
+                     "security": {
+                         "authenticated": false,
+                         "secureConnections": true,
+                         "encryptionKeySize": 0
+                     },
+                     "value": [9,10,11,12,13,14,15,16,1,2,3,4,5,6,7,8]
+                 },
+                 "services": []
+             }
+        }"#;
+
+        let deserialized = BondingDataDeserializer::from_json(json_input).unwrap();
+        let bredr = deserialized.bredr().unwrap();
+        let link_key = bredr.link_key.as_ref().unwrap();
+        assert_eq!(16, link_key.security.encryption_key_size);
+    }
+
+    #[test]
+    fn deserialize_bredr_omitted_encryption_key_size_normalizes_to_16() {
+        let json_input = r#"{
+             "identifier": 1234,
+             "address":{
+                "type": "public",
+                "value": [6,5,4,3,2,1]
+             },
+             "hostAddress":{
+                "type": "public",
+                "value": [255,238,221,204,187,170]
+             },
+             "name": "Device Name",
+             "le": null,
+             "bredr": {
+                 "rolePreference": "follower",
+                 "linkKey": {
+                     "security": {
+                         "authenticated": false,
+                         "secureConnections": true
+                     },
+                     "value": [9,10,11,12,13,14,15,16,1,2,3,4,5,6,7,8]
+                 },
+                 "services": []
+             }
+        }"#;
+
+        let deserialized = BondingDataDeserializer::from_json(json_input).unwrap();
+        let bredr = deserialized.bredr().unwrap();
+        let link_key = bredr.link_key.as_ref().unwrap();
+        assert_eq!(16, link_key.security.encryption_key_size);
+    }
+
     mod roundtrip {
         use super::*;
         use fuchsia_bluetooth::types::bonding_data::proptest_util::any_bonding_data;
@@ -871,9 +954,20 @@ mod tests {
                 .. ProptestConfig::default()
             })]
             #[test]
-            fn bonding_data(bonding_data in any_bonding_data()) {
+            fn bonding_data(mut bonding_data in any_bonding_data()) {
                 let serialized = serde_json::to_string(&BondingDataSerializer::new(&bonding_data)).unwrap();
                 let deserialized = BondingDataDeserializer::from_json(&serialized).unwrap();
+                // Deserialization normalizes BR/EDR link key encryption_key_size == 0 to 16.
+                match &mut bonding_data.data {
+                    OneOrBoth::Left(_) => {}
+                    OneOrBoth::Right(bredr) | OneOrBoth::Both(_, bredr) => {
+                        if let Some(lk) = &mut bredr.link_key {
+                            if lk.security.encryption_key_size == 0 {
+                                lk.security.encryption_key_size = 16;
+                            }
+                        }
+                    }
+                }
                 assert_eq!(bonding_data, deserialized);
             }
         }
