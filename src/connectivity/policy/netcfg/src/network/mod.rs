@@ -63,10 +63,26 @@ impl NetworkId {
     pub fn is_fuchsia(&self) -> bool {
         matches!(self, NetworkId::Fuchsia(_))
     }
+}
 
-    pub fn is_delegated(&self) -> bool {
-        matches!(self, NetworkId::Delegated(_))
-    }
+// Using the interface's current v4/v6 default route properties and v4/v6 default route
+// properties provided through `fnet_interfaces_ext::Event::Changed`, determine
+// whether the interface gained or lost candidacy because of the event, or maintained
+// the same state.
+//
+// Returns None when the candidacy has not changed, Some(true) when the interface
+// gains candidacy, and Some(false) when the interface loses candidacy.
+pub(crate) fn determine_interface_state_changed(
+    prev: &fidl_fuchsia_net_interfaces::Properties,
+    curr: &fidl_fuchsia_net_interfaces_ext::Properties<
+        fidl_fuchsia_net_interfaces_ext::DefaultInterest,
+    >,
+) -> Option<bool> {
+    let was_candidate = (prev.has_default_ipv4_route.unwrap_or(curr.has_default_ipv4_route)
+        || prev.has_default_ipv6_route.unwrap_or(curr.has_default_ipv6_route))
+        && prev.online.unwrap_or(curr.online);
+    let is_candidate = (curr.has_default_ipv4_route || curr.has_default_ipv6_route) && curr.online;
+    (is_candidate != was_candidate).then_some(is_candidate)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -248,7 +264,10 @@ impl RegisteredNetworks {
                                 default_changed: self.handle_default_network_update(),
                             }
                         } else {
-                            error!("Cannot remove a non-existent network. Update ignored.");
+                            error!(
+                                "Cannot remove a non-existent network ({network_id:?}). \
+                                Update ignored."
+                            );
                             RegistryUpdateResult {
                                 event: UpdateApplied::None,
                                 default_changed: None,
@@ -1088,14 +1107,15 @@ impl NetpolNetworksService {
                                 Ok(network_contents) => {
                                     // Determine whether a new update is available
                                     // (last_sent_generation < current_generation)
-                                    if self
-                                        .generations_by_connection
-                                        .properties(&id)
-                                        .unwrap_or_default()
-                                        < self.current_generation.properties
+                                    let is_initial =
+                                        self.generations_by_connection.properties(&id).is_none();
+                                    if is_initial
+                                        || self
+                                            .generations_by_connection
+                                            .properties(&id)
+                                            .unwrap_or_default()
+                                            < self.current_generation.properties
                                     {
-                                        self.generations_by_connection
-                                            .set_properties(id, self.current_generation);
                                         let mut updates = fnp_properties::PropertyUpdate::default();
                                         updates.add_socket_marks(
                                             &self.network_registry,
@@ -1107,7 +1127,15 @@ impl NetpolNetworksService {
                                             &network_contents,
                                             registration.properties,
                                         );
-                                        if updates != fnp_properties::PropertyUpdate::default() {
+                                        let network_is_known = self
+                                            .network_registry
+                                            .networks
+                                            .contains_key(&network_contents.network_id);
+                                        if (is_initial && network_is_known)
+                                            || updates != fnp_properties::PropertyUpdate::default()
+                                        {
+                                            self.generations_by_connection
+                                                .set_properties(id, self.current_generation);
                                             if let Some(responder) = registration.responder.take() {
                                                 responder.send(Ok(&updates))?;
                                             }

@@ -70,10 +70,6 @@
             availability: "optional",
         },
         {
-            protocol: "fuchsia.net.policy.socketproxy.FuchsiaNetworks",
-            availability: "optional",
-        },
-        {
             protocol: "fuchsia.net.policy.properties.DefaultNetworkWatcher",
             availability: "optional",
         },

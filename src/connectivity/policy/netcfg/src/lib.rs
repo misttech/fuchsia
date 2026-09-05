@@ -13,7 +13,6 @@ mod filter;
 mod interface;
 mod masquerade;
 pub mod network;
-mod socketproxy;
 pub mod telemetry;
 mod virtualization;
 
@@ -76,7 +75,6 @@ use self::interface::{
     ProvisioningType,
 };
 use self::masquerade::MasqueradeHandler;
-use self::socketproxy::SocketProxyState;
 
 /// Interface Identifier
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -582,11 +580,11 @@ impl InterfaceState {
         dhcpv6_client_provider: Option<&fnet_dhcpv6::ClientProviderProxy>,
         dhcpv4_server: Option<&fnet_dhcp::Server_Proxy>,
         route_set_provider: &fnet_routes_admin::RouteTableV4Proxy,
-        socket_proxy_state: &mut Option<SocketProxyState>,
         netpol_networks_service: &mut network::NetpolNetworksService,
         watchers: &mut DnsServerWatchers<'_>,
         dhcpv4_configuration_streams: &mut dhcpv4::ConfigurationStreamMap,
         dhcpv6_prefixes_streams: &mut dhcpv6::PrefixesStreamMap,
+        enable_socket_proxy: bool,
     ) -> Result<(), errors::Error> {
         let Self { config, provisioning, device_class, .. } = self;
         let fnet_interfaces_ext::Properties {
@@ -598,29 +596,25 @@ impl InterfaceState {
 
         // Netcfg won't handle interface update results for a delegated
         // interface.
-        debug_assert!(provisioning == &interface::ProvisioningType::Local);
+        if !provisioning.track_in_network_registry() {
+            return Ok(());
+        }
 
         // Note: No discovery actions are needed for offline interfaces.
         if !online {
             return Ok(());
         }
 
-        // TODO(https://fxbug.dev/475916525): Stop sharing Fuchsia networks
-        // state with socket-proxy once the source-of-truth registry exists
-        // solely within netcfg.
         // TODO(https://fxbug.dev/498654191): Add Locally provisioned networks to
         // the networks service even when socket-proxy is absent.
-        // When the socketproxy is enabled, communicate the presence of the
-        // new network to the socketproxy.
-        if let Some(state) = socket_proxy_state {
-            // TODO(https://fxbug.dev/390709467): Involve Reachability state when evaluating whether
-            // to add discovered interfaces with Internet to the socketproxy.
+        if enable_socket_proxy {
+            // TODO(https://fxbug.dev/390709467): Involve Reachability state when
+            // evaluating whether to add discovered interfaces with Internet to the
+            // socketproxy.
             //
             // Verify that the interface has a v4 or v6 default route, as this
             // is a signal that there might be a higher layer of connectivity.
             if *has_default_ipv4_route || *has_default_ipv6_route {
-                state.handle_interface_new_candidate(properties).await;
-
                 netpol_networks_service
                     .update(network::NetworkRegistryUpdate::ChangeNetwork(
                         network::NetworkId::fuchsia(properties.id),
@@ -695,7 +689,6 @@ pub struct NetCfg<'a> {
     dhcpv6_client_provider: Option<fnet_dhcpv6::ClientProviderProxy>,
     route_set_v4_provider: fnet_routes_admin::RouteTableV4Proxy,
 
-    socket_proxy_state: Option<SocketProxyState>,
     locally_provisioned_network_rule_set:
         Option<(fnet_routes_admin::RuleSetV4Proxy, fnet_routes_admin::RuleSetV6Proxy)>,
 
@@ -740,6 +733,7 @@ pub struct NetCfg<'a> {
     ndp_dns_expiry_tracker: dns::NdpDnsExpiryTracker,
 
     telemetry_node: fuchsia_inspect::Node,
+    enable_socket_proxy: bool,
     inspector: fuchsia_inspect::Inspector,
 }
 
@@ -1052,15 +1046,6 @@ impl<'a> NetCfg<'a> {
         >(&svc_dir)
         .await
         .context("could not connect to fuchsia.net.ndp.RouteAdvertisementOptionWatcherProvider")?;
-        let socket_proxy_state = if enable_socket_proxy {
-            let fuchsia_networks = fuchsia_component::client::connect_to_protocol::<
-                fnp_socketproxy::FuchsiaNetworksMarker,
-            >()
-            .context("could not connect to Fuchsia Networks Marker")?;
-            Some(SocketProxyState::new(fuchsia_networks))
-        } else {
-            None
-        };
         let interface_naming_config =
             interface::InterfaceNamingConfig::from_naming_rules(interface_naming_policy);
         let telemetry_node = inspector.root().create_child(TELEMETRY_INSPECT_NODE_NAME);
@@ -1078,7 +1063,6 @@ impl<'a> NetCfg<'a> {
             dhcpv4_client_provider,
             dhcpv6_client_provider,
             route_set_v4_provider,
-            socket_proxy_state,
             locally_provisioned_network_rule_set: None,
             interface_naming_config,
             filter_enabled_state: FilterEnabledState::new(filter_enabled_interface_types),
@@ -1098,6 +1082,7 @@ impl<'a> NetCfg<'a> {
             ndp_dns_servers: Default::default(),
             ndp_dns_expiry_tracker: dns::NdpDnsExpiryTracker::new(),
             telemetry_node,
+            enable_socket_proxy,
             inspector,
         })
     }
@@ -2044,13 +2029,13 @@ impl<'a> NetCfg<'a> {
             dhcpv4_client_provider,
             dhcpv6_client_provider,
             route_set_v4_provider,
-            socket_proxy_state,
             dhcpv4_configuration_streams,
             dhcpv6_prefixes_streams,
             allowed_upstream_device_classes,
             dhcpv6_prefix_provider_handler,
             filter_enabled_state,
             ndp_dns_servers,
+            enable_socket_proxy,
             ..
         } = self;
         let update_result = interface_properties
@@ -2103,9 +2088,9 @@ impl<'a> NetCfg<'a> {
             dhcpv4_client_provider,
             dhcpv6_client_provider,
             route_set_v4_provider,
-            socket_proxy_state,
             filter_enabled_state,
             ndp_dns_servers,
+            *enable_socket_proxy,
         )
         .await
         .context("handle interface update");
@@ -2159,12 +2144,12 @@ impl<'a> NetCfg<'a> {
         dhcpv4_client_provider: &Option<fnet_dhcp::ClientProviderProxy>,
         dhcpv6_client_provider: &Option<fnet_dhcpv6::ClientProviderProxy>,
         route_set_v4_provider: &fnet_routes_admin::RouteTableV4Proxy,
-        socket_proxy_state: &mut Option<SocketProxyState>,
         filter_enabled_state: &mut FilterEnabledState,
         ndp_dns_servers: &mut HashMap<
             (InterfaceId, net_types::ip::Ipv6Addr),
             Vec<fnet_name::DnsServer_>,
         >,
+        enable_socket_proxy: bool,
     ) -> Result<Option<InterfaceId>, errors::Error> {
         match update_result {
             fnet_interfaces_ext::UpdateResult::Added { properties, state: _ } => {
@@ -2176,11 +2161,11 @@ impl<'a> NetCfg<'a> {
                             dhcpv6_client_provider.as_ref(),
                             dhcp_server.as_ref(),
                             route_set_v4_provider,
-                            socket_proxy_state,
                             netpol_networks_service,
                             watchers,
                             dhcpv4_configuration_streams,
                             dhcpv6_prefixes_streams,
+                            enable_socket_proxy,
                         )
                         .await
                         .context("failed to handle interface added event")
@@ -2198,11 +2183,11 @@ impl<'a> NetCfg<'a> {
                             dhcpv6_client_provider.as_ref(),
                             dhcp_server.as_ref(),
                             route_set_v4_provider,
-                            socket_proxy_state,
                             netpol_networks_service,
                             watchers,
                             dhcpv4_configuration_streams,
                             dhcpv6_prefixes_streams,
+                            enable_socket_proxy,
                         )
                         .await
                         .context("failed to handle existing interface event")
@@ -2224,6 +2209,7 @@ impl<'a> NetCfg<'a> {
                     // An interface netcfg is not configuring was changed, do nothing.
                     None => return Ok(None),
                     Some(InterfaceState {
+                        device_class,
                         config:
                             InterfaceConfigState::Host(HostInterfaceState {
                                 dhcpv4_client,
@@ -2233,8 +2219,7 @@ impl<'a> NetCfg<'a> {
                                 interface_naming_id,
                             }),
                         control,
-                        device_class,
-                        ..
+                        provisioning,
                     }) => {
                         if previous_online.is_some() {
                             Self::handle_dhcpv4_client_update(
@@ -2255,25 +2240,20 @@ impl<'a> NetCfg<'a> {
                             .await?;
                         }
 
-                        // TODO(https://fxbug.dev/475916525): Stop sharing Fuchsia networks
-                        // state with socket-proxy once the source-of-truth registry exists
-                        // solely within netcfg.
-                        // TODO(https://fxbug.dev/498654191): Add Locally provisioned networks to
-                        // the networks service even when socket-proxy is absent.
-                        // When the socket proxy is present, communicate whether the
-                        // interface has gained or lost candidacy.
-                        if let Some(state) = socket_proxy_state {
-                            match socketproxy::determine_interface_state_changed(
+                        // TODO(https://fxbug.dev/498654191): Add locally provisioned networks to
+                        // the network registry even when socket-proxy is absent.
+                        if enable_socket_proxy && provisioning.track_in_network_registry() {
+                            // Determine whether the interface has gained or lost candidacy, and
+                            // update the network registry accordingly.
+                            match crate::network::determine_interface_state_changed(
                                 &previous_properties,
                                 &current_properties,
                             ) {
                                 Some(true) => {
                                     info!(
-                                        "Interface {} (id={}) is now eligible to be \
-                                        added to the socket-proxy, attempting addition",
-                                        name, id
+                                        "Interface {name} (id={id}) is now a default candidate, \
+                                         updating central registry"
                                     );
-                                    state.handle_interface_new_candidate(&current_properties).await;
 
                                     netpol_networks_service
                                         .update(network::NetworkRegistryUpdate::ChangeNetwork(
@@ -2305,13 +2285,9 @@ impl<'a> NetCfg<'a> {
                                 }
                                 Some(false) => {
                                     info!(
-                                        "Interface {} (id={}) is no longer eligible to be \
-                                        in the socket-proxy, attempting removal",
-                                        name, id
+                                        "Interface {name} (id={id}) is no longer a default candidate, \
+                                         removing from central registry"
                                     );
-                                    state
-                                        .handle_interface_no_longer_candidate(InterfaceId(*id))
-                                        .await;
 
                                     netpol_networks_service
                                         .update(network::NetworkRegistryUpdate::ChangeNetwork(
@@ -2492,9 +2468,9 @@ impl<'a> NetCfg<'a> {
                     None => return Ok(None),
                     Some(InterfaceState { config, control, provisioning, .. }) => {
                         filter_enabled_state.remove_interface(interface_id);
-                        // TODO(https://fxbug.dev/498654191): Add Locally provisioned networks to
-                        // the networks service even when socket-proxy is absent.
-                        if let Some(state) = socket_proxy_state {
+                        // TODO(https://fxbug.dev/498654191): Add locally provisioned networks to
+                        // the network registry even when socket-proxy is absent.
+                        if enable_socket_proxy {
                             if provisioning.track_in_network_registry() {
                                 let network_id = network::NetworkId::fuchsia(*id);
                                 netpol_networks_service
@@ -2504,19 +2480,12 @@ impl<'a> NetCfg<'a> {
                                     ))
                                     .await;
                             }
-
-                            // TODO(https://fxbug.dev/475916525): Stop sharing Fuchsia networks
-                            // state with socket-proxy once the source-of-truth registry exists
-                            // solely within netcfg.
-                            state.handle_interface_no_longer_candidate(interface_id).await;
                         }
                         let res = match config {
                             InterfaceConfigState::Host(HostInterfaceState {
                                 mut dhcpv4_client,
                                 mut dhcpv6_client_state,
-                                dhcpv6_pd_config: _,
-                                interface_admin_auth: _,
-                                interface_naming_id: _,
+                                ..
                             }) => {
                                 Self::handle_dhcpv4_client_stop(
                                     interface_id,
@@ -3084,7 +3053,7 @@ impl<'a> NetCfg<'a> {
                     .map_err(errors::Error::NonFatal)?;
             }
 
-            if self.socket_proxy_state.is_some() && provisioning_type.track_in_network_registry() {
+            if self.enable_socket_proxy && provisioning_type.track_in_network_registry() {
                 if self.locally_provisioned_network_rule_set.is_none() {
                     self.locally_provisioned_network_rule_set = futures::try_join!(
                         install_locally_provisioned_network_rule_set::<Ipv4>(),
@@ -4151,7 +4120,6 @@ mod tests {
 
     use super::*;
     use crate::interface::ProvisioningType::{Delegated, Local};
-    use crate::socketproxy::socketproxy_utils::respond_to_socketproxy;
 
     impl Config {
         pub fn load_str(s: &str) -> Result<Self, anyhow::Error> {
@@ -4167,7 +4135,6 @@ mod tests {
         dhcpv6_client_provider: fnet_dhcpv6::ClientProviderRequestStream,
         route_set_v4_provider: fidl::endpoints::ServerEnd<fnet_routes_admin::RouteTableV4Marker>,
         dhcpv4_server: fidl::endpoints::ServerEnd<fnet_dhcp::Server_Marker>,
-        fuchsia_networks: fidl::endpoints::ServerEnd<fnp_socketproxy::FuchsiaNetworksMarker>,
     }
 
     impl Into<anyhow::Error> for errors::Error {
@@ -4197,9 +4164,10 @@ mod tests {
     static DEFAULT_ALLOWED_UPSTREAM_DEVICE_CLASSES: std::sync::LazyLock<HashSet<DeviceClass>> =
         std::sync::LazyLock::new(HashSet::new);
 
+    #[derive(Default)]
     struct NetcfgTestArgs {
         with_dhcpv4_client_provider: bool,
-        with_fuchsia_networks: bool,
+        enable_socket_proxy: bool,
     }
 
     fn test_netcfg(args: NetcfgTestArgs) -> Result<(NetCfg<'static>, ServerEnds), anyhow::Error> {
@@ -4221,8 +4189,6 @@ mod tests {
             fidl::endpoints::create_proxy::<fidl_fuchsia_net_interfaces_admin::InstallerMarker>();
         let (route_set_v4_provider, route_set_v4_provider_server) =
             fidl::endpoints::create_proxy::<fnet_routes_admin::RouteTableV4Marker>();
-        let (fuchsia_networks, fuchsia_networks_server) =
-            fidl::endpoints::create_proxy::<fnp_socketproxy::FuchsiaNetworksMarker>();
         Ok((
             NetCfg {
                 stack,
@@ -4236,9 +4202,6 @@ mod tests {
                     .then_some(dhcpv4_client_provider),
                 dhcpv6_client_provider: Some(dhcpv6_client_provider),
                 route_set_v4_provider,
-                socket_proxy_state: args
-                    .with_fuchsia_networks
-                    .then_some(SocketProxyState::new(fuchsia_networks)),
                 locally_provisioned_network_rule_set: None,
                 filter_enabled_state: Default::default(),
                 interface_properties: Default::default(),
@@ -4260,6 +4223,7 @@ mod tests {
                 ndp_dns_servers: Default::default(),
                 ndp_dns_expiry_tracker: dns::NdpDnsExpiryTracker::new(),
                 telemetry_node: Default::default(),
+                enable_socket_proxy: args.enable_socket_proxy,
                 inspector: fuchsia_inspect::Inspector::default(),
             },
             ServerEnds {
@@ -4268,7 +4232,6 @@ mod tests {
                 dhcpv6_client_provider: dhcpv6_client_provider_server.into_stream(),
                 route_set_v4_provider: route_set_v4_provider_server,
                 dhcpv4_server: dhcp_server_server_end,
-                fuchsia_networks: fuchsia_networks_server,
             },
         ))
     }
@@ -4432,11 +4395,10 @@ mod tests {
                 mut dhcpv6_client_provider,
                 route_set_v4_provider: _,
                 dhcpv4_server: _,
-                fuchsia_networks: _,
             },
         ) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: false,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
         let mut dns_watchers = DnsServerWatchers::empty();
@@ -4598,7 +4560,7 @@ mod tests {
     async fn test_dhcpv4_server_started(added_online: bool) {
         let (mut netcfg, ServerEnds { dhcpv4_server, .. }) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: false,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
 
@@ -4699,11 +4661,10 @@ mod tests {
                 dhcpv6_client_provider: _,
                 route_set_v4_provider,
                 dhcpv4_server: _,
-                fuchsia_networks: _,
             },
         ) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: true,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
         let mut dns_watchers = DnsServerWatchers::empty();
@@ -5024,11 +4985,10 @@ mod tests {
                 dhcpv6_client_provider: _,
                 route_set_v4_provider: _,
                 dhcpv4_server: _,
-                fuchsia_networks: _,
             },
         ) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: false,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
 
@@ -5102,11 +5062,10 @@ mod tests {
                 dhcpv6_client_provider: _,
                 route_set_v4_provider,
                 dhcpv4_server: _,
-                fuchsia_networks: _,
             },
         ) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: true,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
         let mut dns_watchers = DnsServerWatchers::empty();
@@ -5257,11 +5216,10 @@ mod tests {
                 dhcpv6_client_provider: _,
                 route_set_v4_provider,
                 dhcpv4_server: _,
-                fuchsia_networks: _,
             },
         ) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: true,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
         let mut dns_watchers = DnsServerWatchers::empty();
@@ -5370,7 +5328,7 @@ mod tests {
     async fn test_dhcpv6() {
         let (mut netcfg, mut servers) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: false,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
         let mut dns_watchers = DnsServerWatchers::empty();
@@ -5687,11 +5645,10 @@ mod tests {
                 dhcpv6_client_provider: mut dhcpv6_client_provider_request_stream,
                 route_set_v4_provider: _,
                 dhcpv4_server: _,
-                fuchsia_networks: _,
             },
         ) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: false,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
         let allowed_upstream_device_classes = HashSet::from([ALLOWED_UPSTREAM_DEVICE_CLASS]);
@@ -6125,11 +6082,10 @@ mod tests {
                 dhcpv6_client_provider: mut dhcpv6_client_provider_request_stream,
                 route_set_v4_provider: _,
                 dhcpv4_server: _,
-                fuchsia_networks: _,
             },
         ) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: false,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
         let allowed_upstream_device_classes = HashSet::from([ALLOWED_UPSTREAM_DEVICE_CLASS]);
@@ -6266,22 +6222,20 @@ mod tests {
     const INTERFACE_ID2: InterfaceId = InterfaceId::new(2).unwrap();
     const INTERFACE_ID3: InterfaceId = InterfaceId::new(3).unwrap();
 
-    async fn fuchsia_networks_fallback_helper(
+    async fn default_network_fallback_helper(
         interfaces: &[(InterfaceId, interface::ProvisioningType)],
         final_event: fnet_interfaces::Event,
     ) {
         // The provided interface id list must be non-empty.
         assert!(interfaces.len() > 0);
 
-        let (mut netcfg, ServerEnds { fuchsia_networks, .. }) = test_netcfg(NetcfgTestArgs {
+        let (mut netcfg, _server_ends) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: false,
-            with_fuchsia_networks: true,
+            enable_socket_proxy: true,
         })
         .expect("error creating test netcfg");
-        let mut fuchsia_networks_stream = fuchsia_networks.into_stream();
         let mut dns_watchers = DnsServerWatchers::empty();
 
-        assert_eq!(netcfg.socket_proxy_state.as_ref().expect("should be set").default_id(), None);
         assert_eq!(netcfg.netpol_networks_service.default_network(), None);
 
         // The initial default interface is the first one that is
@@ -6314,29 +6268,11 @@ mod tests {
                     .insert(*id, new_host_result.expect("new_host should succeed")),
                 None
             );
-            // Manually register Fuchsia networks inside netpol_networks_service,
-            // matching the configure_host production path.
-            if *provisioning_action == Local {
-                netcfg
-                    .netpol_networks_service
-                    .update(network::NetworkRegistryUpdate::ChangeNetwork(
-                        network::NetworkId::fuchsia(*id),
-                        network::NetworkUpdate::Properties(network::NetworkPropertiesChange {
-                            added: true,
-                            marks: None,
-                            dns_servers: None,
-                            connectivity_state: None,
-                            name: Some(format!("testif{}", id)),
-                            network_type: Some(fnp_socketproxy::NetworkType::Ethernet),
-                        }),
-                    ))
-                    .await;
-            }
             // Fake an interface added event. As `has_default_ipv4_route` and
             // `has_default_ipv6_route` are true, the network should be added to
-            // the socketproxy state and made as default.
-            let (watcher_result, ()) = futures::future::join(
-                netcfg.handle_interface_watcher_event(
+            // the networks service and made default.
+            let watcher_result = netcfg
+                .handle_interface_watcher_event(
                     fnet_interfaces::Event::Added(create_properties(InterfacePropertiesHelper {
                         id: *id,
                         online: Some(true),
@@ -6347,32 +6283,12 @@ mod tests {
                     .into(),
                     &mut dns_watchers,
                     &mut virtualization::Stub,
-                ),
-                async {
-                    // The call to `add`. Only locally provisioned networks
-                    // are added in FuchsiaNetworks.
-                    if *provisioning_action == Local {
-                        respond_to_socketproxy(&mut fuchsia_networks_stream, Ok(())).await;
-                    }
-
-                    // The call to `set_default`. Only the first viable network
-                    // will be set to default.
-                    if *id == initial_default_interface {
-                        respond_to_socketproxy(&mut fuchsia_networks_stream, Ok(())).await;
-                    }
-                },
-            )
-            .await;
+                )
+                .await;
             assert_matches::assert_matches!(watcher_result, Ok(None));
         }
 
-        // Verify the default network through the socketproxy state.
-        assert_eq!(
-            netcfg.socket_proxy_state.as_ref().expect("should be set").default_id(),
-            Some(initial_default_interface)
-        );
-
-        // Verify Fuchsia networks are successfully forwarded and registered.
+        // Verify Fuchsia networks are successfully registered in the networks service.
         for (id, provisioning_action) in interfaces.iter() {
             if *provisioning_action == Local {
                 assert!(
@@ -6387,8 +6303,8 @@ mod tests {
         );
 
         // Send an interface changed event with `has_default_ipv4_route`
-        // becoming false. This results in no calls against FuchsiaNetworks
-        // due to one of the default routes still being present.
+        // becoming false. Default network remains unchanged due to one of
+        // the default routes still being present.
         assert_matches::assert_matches!(
             netcfg
                 .handle_interface_watcher_event(
@@ -6409,7 +6325,6 @@ mod tests {
 
         // Send an interface changed event with an address update
         // that does not impact the network being a valid candidate.
-        // This results in no calls against FuchsiaNetworks.
         assert_matches::assert_matches!(
             netcfg
                 .handle_interface_watcher_event(
@@ -6435,37 +6350,22 @@ mod tests {
         );
 
         // Send an interface changed event that should cause the network
-        // to be removed from the socketproxy.
+        // to be removed from the registry.
         let expected_result = match &final_event {
             fnet_interfaces::Event::Removed(id) => Some(InterfaceId::new(*id).unwrap()),
             _ => None,
         };
-        let (watcher_result, ()) = futures::future::join(
-            netcfg.handle_interface_watcher_event(
+        let watcher_result = netcfg
+            .handle_interface_watcher_event(
                 final_event.into(),
                 &mut dns_watchers,
                 &mut virtualization::Stub,
-            ),
-            async {
-                // The call to `set_default`.
-                respond_to_socketproxy(&mut fuchsia_networks_stream, Ok(())).await;
-
-                // The call to `remove`.
-                respond_to_socketproxy(&mut fuchsia_networks_stream, Ok(())).await;
-            },
-        )
-        .await;
+            )
+            .await;
         let watcher_result = watcher_result.expect("watcher_result error");
         assert_eq!(watcher_result, expected_result);
 
-        // The fallback default interface is the second one that is locally
-        // provisioned (or None if one does not exist).
-        assert_eq!(
-            netcfg.socket_proxy_state.as_ref().expect("should be set").default_id(),
-            get_nth_interface_id_locally_provisioned(interfaces, 1)
-        );
-
-        // Verify the fallback default interface in the networks service.
+        // Verify the central networks service fallback is correctly computed.
         assert_eq!(
             netcfg.netpol_networks_service.default_network(),
             get_nth_interface_id_locally_provisioned(interfaces, 1)
@@ -6473,8 +6373,7 @@ mod tests {
         );
     }
 
-    // Test the default network functionality of the FuchsiaNetworks
-    // integration. Determine the fallback behavior when there is another
+    // Test the default network fallback behavior when there is another
     // valid network and when no alternative network exists.
     #[test_case(
         &[INTERFACE_ID],
@@ -6500,46 +6399,17 @@ mod tests {
         &[INTERFACE_ID],
         fnet_interfaces::Event::Removed(INTERFACE_ID.get())
     ; "one_iface_remove_default")]
-    #[test_case(
-        &[INTERFACE_ID, INTERFACE_ID2],
-            fnet_interfaces::Event::Changed(create_properties(InterfacePropertiesHelper {
-                id: INTERFACE_ID,
-                online: None,
-                has_default_ipv4_route: None,
-                has_default_ipv6_route: Some(false),
-                addresses: None,
-        }))
-    ; "two_iface_update_lost_candidacy")]
-    #[test_case(
-        &[INTERFACE_ID, INTERFACE_ID2],
-        fnet_interfaces::Event::Removed(INTERFACE_ID.get())
-    ; "two_iface_remove_default")]
-    #[test_case(
-        &[INTERFACE_ID, INTERFACE_ID2, INTERFACE_ID3],
-            fnet_interfaces::Event::Changed(create_properties(InterfacePropertiesHelper {
-                id: INTERFACE_ID,
-                online: None,
-                has_default_ipv4_route: None,
-                has_default_ipv6_route: Some(false),
-                addresses: None,
-        }))
-    ; "three_iface_update_lost_candidacy")]
-    #[test_case(
-        &[INTERFACE_ID, INTERFACE_ID2, INTERFACE_ID3],
-        fnet_interfaces::Event::Removed(INTERFACE_ID.get())
-    ; "three_iface_remove_default")]
     #[fuchsia::test]
-    async fn test_fuchsia_networks_fallback_all_local(
+    async fn test_default_network_fallback_all_local(
         interface_ids: &[InterfaceId],
         final_event: fnet_interfaces::Event,
     ) {
         let interfaces: Vec<(InterfaceId, interface::ProvisioningType)> =
             interface_ids.iter().map(|id| (*id, Local)).collect();
-        fuchsia_networks_fallback_helper(&interfaces, final_event).await
+        default_network_fallback_helper(&interfaces, final_event).await
     }
 
-    // Test the default network functionality of the FuchsiaNetworks
-    // integration. Determine the fallback behavior when there are delegated
+    // Test the default network fallback behavior when there are delegated
     // interfaces present.
     #[test_case(
         &[(INTERFACE_ID, Local), (INTERFACE_ID2, Delegated)],
@@ -6549,20 +6419,12 @@ mod tests {
         &[(INTERFACE_ID, Delegated), (INTERFACE_ID2, Delegated), (INTERFACE_ID3, Local)],
         fnet_interfaces::Event::Removed(INTERFACE_ID3.get())
     ; "one_local_iface_not_first_iface")]
-    #[test_case(
-        &[(INTERFACE_ID, Local), (INTERFACE_ID2, Delegated), (INTERFACE_ID3, Local)],
-        fnet_interfaces::Event::Removed(INTERFACE_ID.get())
-    ; "two_local_iface_first_iface")]
-    #[test_case(
-        &[(INTERFACE_ID, Delegated), (INTERFACE_ID2, Local), (INTERFACE_ID3, Local)],
-        fnet_interfaces::Event::Removed(INTERFACE_ID2.get())
-    ; "two_local_iface_not_first_iface")]
     #[fuchsia::test]
-    async fn test_fuchsia_networks_fallback_mixed_provisioning(
+    async fn test_default_network_fallback_mixed_provisioning(
         interfaces: &[(InterfaceId, interface::ProvisioningType)],
         final_event: fnet_interfaces::Event,
     ) {
-        fuchsia_networks_fallback_helper(&interfaces, final_event).await
+        default_network_fallback_helper(&interfaces, final_event).await
     }
 
     #[test]
@@ -7220,11 +7082,10 @@ mod tests {
                 dhcpv6_client_provider: _,
                 route_set_v4_provider: _,
                 dhcpv4_server: _,
-                fuchsia_networks: _,
             },
         ) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: false,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
         let mut dns_watchers = DnsServerWatchers::empty();
@@ -7295,11 +7156,10 @@ mod tests {
                 dhcpv6_client_provider: _,
                 route_set_v4_provider: _,
                 dhcpv4_server: _,
-                fuchsia_networks: _,
             },
         ) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: false,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
         let mut dns_watchers = DnsServerWatchers::empty();
@@ -7423,11 +7283,10 @@ mod tests {
                 dhcpv6_client_provider: _,
                 route_set_v4_provider: _,
                 dhcpv4_server: _,
-                fuchsia_networks: _,
             },
         ) = test_netcfg(NetcfgTestArgs {
             with_dhcpv4_client_provider: false,
-            with_fuchsia_networks: false,
+            enable_socket_proxy: false,
         })
         .expect("error creating test netcfg");
         const IFACE_ID: InterfaceId = InterfaceId::new(1).unwrap();

@@ -24,8 +24,6 @@ use fidl_fuchsia_net_interfaces as fnet_interfaces;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use fidl_fuchsia_net_masquerade as fnet_masquerade;
-use fidl_fuchsia_net_policy_properties as fnp_properties;
-use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_net_resources as fnet_resources;
 use fidl_fuchsia_net_root as fnet_root;
 use fidl_fuchsia_net_routes as fnet_routes;
@@ -34,7 +32,6 @@ use fidl_fuchsia_net_routes_ext as fnet_routes_ext;
 use fidl_fuchsia_net_routes_ext::FidlRouteIpExt;
 use fidl_fuchsia_net_routes_ext::admin::FidlRouteAdminIpExt;
 use fidl_fuchsia_netemul_network as fnetemul_network;
-use fidl_fuchsia_posix_socket::{self as fposix_socket, OptionalUint32};
 use fuchsia_async::{self as fasync, DurationExt as _, TimeoutExt as _};
 
 use anyhow::Context as _;
@@ -47,7 +44,7 @@ use net_declare::{
     fidl_ip, fidl_ip_v4, fidl_subnet, net_ip_v6, net_prefix_length_v4, net_subnet_v6, std_ip,
 };
 use net_types::ethernet::Mac;
-use net_types::ip::{self as net_types_ip, Ip, IpVersion, Ipv4, Ipv6};
+use net_types::ip::{self as net_types_ip, IpVersion, Ipv4, Ipv6};
 use netemul::{RealmTcpListener, RealmTcpStream, RealmUdpSocket, TestRealm};
 use netstack_testing_common::interfaces::{self, TestInterfaceExt as _};
 use netstack_testing_common::nud::apply_nud_flake_workaround;
@@ -75,8 +72,7 @@ use packet_formats::testutil::parse_ip_packet;
 use packet_formats::udp::{UdpPacket, UdpPacketBuilder, UdpParseArgs};
 use packet_formats_dhcp::v6 as dhcpv6;
 use policy_testing_common::{
-    NetcfgOwnedDeviceArgs, add_default_route, add_device_to_devfs, verify_interface_added,
-    with_netcfg_owned_device,
+    NetcfgOwnedDeviceArgs, add_device_to_devfs, verify_interface_added, with_netcfg_owned_device,
 };
 use test_case::test_case;
 
@@ -2039,197 +2035,6 @@ async fn disable_interface_while_having_dhcpv6_prefix<M: Manager, N: Netstack>(n
         },
     )
     .await;
-}
-
-/// Asserts that a newly created stream socket inherits the expected mark.
-async fn assert_socket_mark(posix_socket: &fposix_socket::ProviderProxy, expect: &OptionalUint32) {
-    let domain = fposix_socket::Domain::Ipv4;
-    let proto = fposix_socket::StreamSocketProtocol::Tcp;
-    let socket = posix_socket
-        .stream_socket(domain, proto)
-        .await
-        .expect("stream socket FIDL call failed")
-        .expect("failed to create stream socket")
-        .into_proxy();
-
-    let mark = socket
-        .get_mark(fidl_fuchsia_net::MARK_DOMAIN_SO_MARK)
-        .await
-        .expect("get_mark FIDL call failed");
-
-    assert_eq!(mark, Ok(*expect));
-}
-
-#[netstack_test]
-#[variant(M, Manager)]
-#[test_case(ManagerConfig::EnableSocketProxy; "local_provisioning")]
-#[test_case(ManagerConfig::EnableSocketProxyAllDelegated; "delegated_provisioning")]
-async fn fuchsia_networks_default_network<M: Manager>(name: &str, manager_config: ManagerConfig) {
-    const STARNIX_NETWORK_ID: u32 = 1;
-    const STARNIX_NETWORK_MARK: u32 = 123;
-
-    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
-    let realm = sandbox
-        .create_netstack_realm_with::<Netstack3, _, _>(
-            format!("{name}-realm"),
-            [
-                KnownServiceProvider::Manager {
-                    agent: M::MANAGEMENT_AGENT,
-                    config: manager_config.clone(),
-                    use_dhcp_server: false,
-                    use_out_of_stack_dhcp_client: true,
-                    socket_proxy_type: SocketProxyType::Real,
-                },
-                KnownServiceProvider::DnsResolver,
-                KnownServiceProvider::FakeClock,
-                KnownServiceProvider::SocketProxy,
-                KnownServiceProvider::DhcpClient,
-            ]
-            .into_iter(),
-        )
-        .expect("create netstack realm");
-
-    // Deliberately connect to the version of posix_socket offered from socketproxy,
-    // not from the Netstack.
-    let posix_socket = realm
-        .connect_to_protocol_from_child::<fposix_socket::ProviderMarker>(
-            realms::constants::socket_proxy::COMPONENT_NAME,
-        )
-        .expect("while connecting to provider");
-    let starnix_networks = realm
-        .connect_to_protocol::<fnp_socketproxy::StarnixNetworksMarker>()
-        .expect("while connecting to StarnixNetworks");
-    // In local provisioning, netcfg publishes default network transitions via
-    // the Networks service. In delegated provisioning, netcfg does not, so no
-    // transitions are expected.
-    let is_local_provisioning = manager_config == ManagerConfig::EnableSocketProxy;
-    let networks = is_local_provisioning.then(|| {
-        realm
-            .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
-                realms::constants::netcfg::COMPONENT_NAME,
-            )
-            .expect("connect to Networks")
-    });
-    let root_routes = realm
-        .connect_to_protocol::<fnet_root::RoutesV4Marker>()
-        .expect("connect to fuchsia.net.root.RoutesV4");
-    let (global_route_set, server_end) =
-        fidl::endpoints::create_proxy::<fnet_routes_admin::RouteSetV4Marker>();
-    root_routes.global_route_set(server_end).expect("create global RouteSetV4");
-
-    // Add a Starnix network to the Starnix NetworkRegistry and set it as default. Since there is
-    // no default network in the Fuchsia NetworkRegistry, the Starnix default network will dictate
-    // the mark used during socket creation.
-    let starnix_network = fnp_socketproxy::Network {
-        network_id: Some(STARNIX_NETWORK_ID),
-        info: Some(fnp_socketproxy::NetworkInfo::Starnix(fnp_socketproxy::StarnixNetworkInfo {
-            mark: Some(STARNIX_NETWORK_MARK),
-            handle: Some(0), // Arbitrary and irrelevant for this test, but must be provided.
-            ..Default::default()
-        })),
-        dns_servers: Some(fnp_socketproxy::NetworkDnsServers {
-            v4: Some(vec![]),
-            v6: Some(vec![]),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    assert_matches!(starnix_networks.add(&starnix_network).await, Ok(Ok(())));
-    assert_matches!(
-        starnix_networks.set_default(&OptionalUint32::Value(STARNIX_NETWORK_ID)).await,
-        Ok(Ok(()))
-    );
-
-    // Consume the initial Starnix default network notification so subsequent
-    // WatchDefault calls synchronize on newly triggered transitions.
-    if let Some(networks) = &networks {
-        assert_matches!(
-            networks.watch_default().await,
-            Ok(fnp_properties::NetworksWatchDefaultResponse::Network(_))
-        );
-    }
-
-    // Verify that the mark reflects the Starnix NetworkRegistry's default network.
-    let starnix_mark = OptionalUint32::Value(STARNIX_NETWORK_MARK);
-    assert_socket_mark(&posix_socket, &starnix_mark).await;
-
-    // Add a device to the realm via devfs so it can be discovered by netcfg.
-    let network = sandbox.create_network(name).await.expect("create network");
-    let _ep = add_device_to_devfs::<M>(&network, &realm, name.to_string(), None).await;
-
-    // Make sure the Netstack got the new device added.
-    let (_interface_state, if_id, _if_name) = verify_interface_added::<M>(&realm).await;
-
-    // Acquire the control for the interface so we can directly add a default route to the
-    // interface without going through DHCP. This meets the condition for the interface to
-    // be added to Fuchsia's NetworkRegistry and set as default if it is Locally provisioned.
-    assert!(add_default_route::<Ipv4>(&realm, if_id, &global_route_set).await);
-
-    // In local provisioning, netcfg publishes the new default network to
-    // Networks.WatchDefault once socket-proxy has been updated.
-    if let Some(networks) = &networks {
-        assert_matches!(
-            networks.watch_default().await,
-            Ok(fnp_properties::NetworksWatchDefaultResponse::Network(_))
-        );
-    }
-
-    // Only locally provisioned networks should be added to Fuchsia's NetworkRegistry and become
-    // the default network. If the network is marked as delegated provisioning, the Starnix mark
-    // should continue to take precedent.
-    let expected_mark_after_default_route = match manager_config {
-        // The unset mark reflects the Fuchsia network being set as default.
-        ManagerConfig::EnableSocketProxy => OptionalUint32::Unset(fposix_socket::Empty),
-        ManagerConfig::EnableSocketProxyAllDelegated => OptionalUint32::Value(STARNIX_NETWORK_MARK),
-        config => {
-            panic!(
-                "this test should only be run with socketproxy-enabled variants,\
-                    variant was: {config:?}"
-            )
-        }
-    };
-    assert_socket_mark(&posix_socket, &expected_mark_after_default_route).await;
-
-    // Remove the default route.
-    let _: bool = fnet_routes_ext::admin::remove_route::<Ipv4>(
-        &global_route_set,
-        &fnet_routes_ext::Route {
-            destination: Ipv4::ALL_ADDRS_SUBNET,
-            action: fnet_routes_ext::RouteAction::Forward(fnet_routes_ext::RouteTarget::<Ipv4> {
-                outbound_interface: if_id,
-                next_hop: None,
-            }),
-            properties: fnet_routes_ext::RouteProperties {
-                specified_properties: fnet_routes_ext::SpecifiedRouteProperties {
-                    metric: fnet_routes::SpecifiedMetric::InheritedFromInterface(
-                        fnet_routes::Empty,
-                    ),
-                },
-            },
-        }
-        .try_into()
-        .expect("convert to FIDL route"),
-    )
-    .await
-    .expect("should not see RouteSet FIDL error")
-    .expect("should not see RouteSet error");
-
-    // In local provisioning, netcfg falls back to the Starnix default network
-    // and publishes the updated default network via WatchDefault.
-    if let Some(networks) = &networks {
-        assert_matches::assert_matches!(
-            networks.watch_default().await,
-            Ok(fnp_properties::NetworksWatchDefaultResponse::Network(_))
-        );
-    }
-
-    // Verify that the mark reflects the Starnix NetworkRegistry's default network regardless of
-    // whether or not the Fuchsia network above was impactful in changing the mark.
-    let starnix_mark = OptionalUint32::Value(STARNIX_NETWORK_MARK);
-    assert_socket_mark(&posix_socket, &starnix_mark).await;
-
-    drop(networks);
-    realm.shutdown().await.expect("failed to shutdown realm");
 }
 
 #[derive(Clone)]
