@@ -7,6 +7,7 @@ use crate::mm::{
     DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryManager, PAGE_SIZE,
     ProtectionFlags, VMEX_RESOURCE,
 };
+use crate::security;
 use crate::task::CurrentTask;
 use crate::vdso::vdso_loader::ZX_TIME_VALUES_MEMORY;
 use crate::vfs::{FdNumber, FileHandle, FileMapping, FileWriteGuardMode};
@@ -277,12 +278,19 @@ fn parse_elf_headers(vmo: &zx::Vmo) -> Result<elf_parse::Elf64Headers, Errno> {
 }
 
 fn load_elf(
+    current_task: &CurrentTask,
     elf_file: Arc<FileMapping>,
     elf_memory: Arc<MemoryObject>,
     headers: elf_parse::Elf64Headers,
     mm: &Arc<MemoryManager>,
     usage: LoadElfUsage,
 ) -> Result<LoadedElf, Errno> {
+    security::mmap_file_node(
+        current_task,
+        &elf_file.name.entry.node,
+        ProtectionFlags::READ | ProtectionFlags::EXEC,
+        MappingOptions::ELF_BINARY,
+    )?;
     let vmo = elf_memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
     let arch_width = get_arch_width(&headers);
     let elf_info = elf_load::loaded_elf_info(&headers);
@@ -550,6 +558,7 @@ pub fn load_executable(
 ) -> Result<ThreadStartInfo, Errno> {
     let mm = current_task.mm()?;
     let main_elf = load_elf(
+        current_task,
         resolved_elf.file,
         resolved_elf.memory,
         resolved_elf.headers,
@@ -567,7 +576,14 @@ pub fn load_executable(
         .map(|interp| {
             let vmo = interp.memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
             let headers = parse_elf_headers(vmo)?;
-            load_elf(interp.file, interp.memory, headers, &mm, LoadElfUsage::Interpreter)
+            load_elf(
+                current_task,
+                interp.file,
+                interp.memory,
+                headers,
+                &mm,
+                LoadElfUsage::Interpreter,
+            )
         })
         .transpose()?;
 

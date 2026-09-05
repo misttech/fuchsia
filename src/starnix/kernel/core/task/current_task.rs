@@ -1183,12 +1183,14 @@ impl CurrentTask {
         let new_creds = Arc::new(resolved_elf.creds.clone());
         writable_creds.update(self, new_creds);
 
+        self.thread_group().signal_actions.reset_for_exec();
+        security::bprm_committed_creds(self)?;
+
         let start_info = load_executable(self, resolved_elf, &path)?;
 
         let regs: zx_restricted_state_t = start_info.into();
         self.thread_state.registers.load(regs);
         self.thread_state.extended_pstate.reset();
-        self.thread_group().signal_actions.reset_for_exec();
 
         // The exit signal (and that of the children) is reset to SIGCHLD.
         {
@@ -1205,8 +1207,6 @@ impl CurrentTask {
                 }
             }
         }
-
-        security::bprm_committed_creds(self)?;
 
         self.thread_group().write().did_exec = true;
 

@@ -390,6 +390,28 @@ pub fn mmap_file(
     })
 }
 
+/// Checks whether [`CurrentTask`] is allowed to mmap [`FsNode`] using the given
+/// [`ProtectionFlags`] and [`MappingOptions`].
+///
+/// Corresponds to the `mmap_file()` LSM hook for an [`FsNode`].
+pub fn mmap_file_node(
+    current_task: &CurrentTask,
+    fs_node: &FsNode,
+    protection_flags: ProtectionFlags,
+    options: MappingOptions,
+) -> Result<(), Errno> {
+    track_hook_duration!("security.hooks.mmap_file_node");
+    if_selinux_else_default_ok(current_task, |security_server| {
+        selinux_hooks::file::mmap_file_node(
+            security_server,
+            current_task,
+            fs_node,
+            protection_flags,
+            options,
+        )
+    })
+}
+
 /// Checks whether `current_task` is allowed to request setting the memory protection of
 /// `mapping` to `prot`.
 /// Corresponds to the `file_mprotect` LSM hook.
