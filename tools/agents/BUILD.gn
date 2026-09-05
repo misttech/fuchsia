@@ -24,32 +24,32 @@ if (is_host) {
     sources = _agents_sources
   }
 
-  python_host_test("main_test") {
+  python_host_test("agents_main_test") {
     main_source = "tests/main_test.py"
     libraries = [ ":agents_lib" ]
   }
 
-  python_host_test("setup_test") {
+  python_host_test("agents_setup_test") {
     main_source = "tests/setup_test.py"
     libraries = [ ":agents_lib" ]
   }
 
-  python_host_test("config_test") {
+  python_host_test("agents_config_test") {
     main_source = "tests/config_test.py"
     libraries = [ ":agents_lib" ]
   }
 
-  python_host_test("permissions_test") {
+  python_host_test("agents_permissions_test") {
     main_source = "tests/permissions_test.py"
     libraries = [ ":agents_lib" ]
   }
 
-  python_host_test("services_test") {
+  python_host_test("agents_services_test") {
     main_source = "tests/services_test.py"
     libraries = [ ":agents_lib" ]
   }
 
-  python_host_test("state_test") {
+  python_host_test("agents_state_test") {
     main_source = "tests/state_test.py"
     libraries = [ ":agents_lib" ]
   }
@@ -58,11 +58,11 @@ if (is_host) {
 group("tests") {
   testonly = true
   deps = [
-    ":config_test($host_toolchain)",
-    ":main_test($host_toolchain)",
-    ":permissions_test($host_toolchain)",
-    ":services_test($host_toolchain)",
-    ":setup_test($host_toolchain)",
-    ":state_test($host_toolchain)",
+    ":agents_config_test($host_toolchain)",
+    ":agents_main_test($host_toolchain)",
+    ":agents_permissions_test($host_toolchain)",
+    ":agents_services_test($host_toolchain)",
+    ":agents_setup_test($host_toolchain)",
+    ":agents_state_test($host_toolchain)",
   ]
 }

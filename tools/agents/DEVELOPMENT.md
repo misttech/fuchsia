@@ -161,7 +161,9 @@ def find_config_dirs(fuchsia_dir: pathlib.Path) -> list[pathlib.Path]:
 ## GN Build Packaging & Testing Guidelines
 
 ### GN Build Rules (`tools/agents/BUILD.gn`)
-The package is structured as a host Python library and individual host unit tests:
+
+The package is structured as a host Python library and individual host unit tests prefixed with `agents_` to prevent target name collisions across the Fuchsia build graph:
+
 ```gn
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
@@ -185,18 +187,86 @@ if (is_host) {
     sources = _agents_sources
   }
 
-  python_host_test("main_test") {
+  python_host_test("agents_main_test") {
     main_source = "tests/main_test.py"
     libraries = [ ":agents_lib" ]
   }
   # ...
 }
+
+group("tests") {
+  testonly = true
+  deps = [
+    ":agents_config_test($host_toolchain)",
+    ":agents_main_test($host_toolchain)",
+    ":agents_permissions_test($host_toolchain)",
+    ":agents_services_test($host_toolchain)",
+    ":agents_setup_test($host_toolchain)",
+    ":agents_state_test($host_toolchain)",
+  ]
+}
 ```
 
-### Running Unit Tests
+### Running Tests (Golden Path)
+
+The standard, golden path workflow for configuring and running the test suite:
+
+1. **Configure tests in build** (one-time setup if not already in `args.gn`):
+   ```bash
+   fx add-host-test //tools/agents:tests
+   ```
+2. **Build and run all tool tests**:
+   ```bash
+   fx test //tools/agents
+   ```
+
+> **Note**: `//tools/agents:tests` is the GN aggregator target (`group("tests")`) used when configuring build targets (`fx add-host-test` or in `args.gn`). For running tests with `fx test`, provide the directory path `//tools/agents` (or `tools/agents`), which matches all test target labels declared under that directory.
+
+### Running Individual Sub-Tests
+
+- **Run a single test target via `fx test`**:
+  ```bash
+  fx test agents_setup_test
+  ```
+- **Filter specific test cases within a suite**:
+  ```bash
+  # Pass test case names after '--' to forward to python unittest:
+  fx test agents_setup_test -- SetupCommandTest.test_run_dry_run
+
+  # Or filter by substring with '-k':
+  fx test agents_setup_test -- -k dry_run
+  ```
+
+### Rapid Direct Testing (Standalone Python)
+
+For fast inner-loop iteration (e.g. tweaking regex patterns or unit test logic), tests can be run directly with Python unittest without waiting for GN/Ninja build graph checks:
+
 ```bash
-fx test main_test setup_test config_test permissions_test services_test state_test
+# Run all unit tests directly:
+PYTHONPATH=tools python3 -m unittest discover -s tools/agents/tests -p "*_test.py"
+
+# Run a specific test module:
+PYTHONPATH=tools python3 -m unittest tools/agents/tests/setup_test.py
 ```
+
+> **Important**: Rapid direct testing executes local `.py` source files directly and bypasses GN hermetic `.pyz` packaging. **Always run `fx test //tools/agents` before committing** to verify that all build definitions, library dependencies, and hermetic packaging artifacts build and pass cleanly in parity with CI/CQ.
+
+### Code Formatting & Linting
+
+Before committing code changes, run the formatting and linter checks:
+
+- **Format code**:
+  ```bash
+  fx format-code
+  ```
+- **Run shac linters** (Python formatting, GN formatting, markdown lint, doc checks):
+  ```bash
+  fx host-tool shac check --only python_format,gn_format,mdlint,doc_checker,commit_msg
+  ```
+- **Verify commit message format**:
+  ```bash
+  python3 scripts/shac/commit_msg_checker.py --strict --message-file <file>
+  ```
 
 ---
 
@@ -231,4 +301,4 @@ To add a new subcommand `fx agents <subcommand>`:
        return parser
    ```
 4. **Update `BUILD.gn`**: Add `"commands/<subcommand>.py"` to `_agents_sources` in `tools/agents/BUILD.gn`.
-5. **Add Tests**: Create `tools/agents/tests/<subcommand>_test.py` and declare `python_host_test("<subcommand>_test")` in `BUILD.gn`.
+5. **Add Tests**: Create `tools/agents/tests/<subcommand>_test.py` and declare `python_host_test("agents_<subcommand>_test")` in `BUILD.gn`.
