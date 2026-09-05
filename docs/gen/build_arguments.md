@@ -951,11 +951,11 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   ubsan = {
@@ -1823,7 +1823,7 @@ Enable compression of debug sections.
 
 **Current value (from the default):** `"zstd"`
 
-From //build/config/compiler.gni:123
+From //build/config/compiler.gni:126
 
 ### config_example_cpp_greeting
 
@@ -2053,7 +2053,7 @@ From //src/storage/fshost/generated_fshost_config.gni:12
 
 **Current value (from the default):** `"debug"`
 
-From //build/config/compiler.gni:88
+From //build/config/compiler.gni:91
 
 ### default_bazel_root_host_targets
 
@@ -2243,6 +2243,7 @@ From //build/config/compiler.gni:88
   install_host_tool = true
 }, {
   bazel_label = "//tools/rust_extract"
+  install_host_tool = true
 }, {
   bazel_label = "//tools/create:create_bin"
   install_host_tool = true
@@ -3811,7 +3812,7 @@ Explicitly specify DWARF version used.
 
 **Current value (from the default):** `5`
 
-From //build/config/compiler.gni:102
+From //build/config/compiler.gni:105
 
 ### e2e_test_labels
 
@@ -3926,7 +3927,7 @@ disabled.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:138
+From //zircon/kernel/params.gni:132
 
 ### enable_mdns_trace
 
@@ -5217,17 +5218,6 @@ By default, log verbose font messages in tests.
 **Current value (from the default):** `true`
 
 From //src/fonts/tests/integration/BUILD.gn:20
-
-### iris_register_energy_model
-
-Controls whether the Iris CPU power driver registers the energy model,
-enabling runtime processor power management (RPPM) by the kernel scheduler.
-Defaulted to false to prevent regressing existing builds until priority
-assignments on Iris are tuned.
-
-**Current value (from the default):** `false`
-
-From //zircon/kernel/params.gni:130
 
 ### is_analysis
 
