@@ -128,7 +128,7 @@ if (current_toolchain != default_toolchain) {
       # via --with-host or `host_labels`, and specifying the fuchsia toolchain:
       "//:host",
     ]
-    script = "//scripts/generate_cargo.py"
+    script = "generate_cargo.py"
     sources = []
     inputs = [
       project_json,
