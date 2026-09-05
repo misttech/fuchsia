@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use bitrs::{bitfield_repr, layout};
+use bitrs::{bitfield_repr, layout, multilayout};
 use regio::arm64::{SysReg, spec};
 
 use super::PhysicalAddressSize;
@@ -52,13 +52,13 @@ impl MultiprocessorAffinityRegister {
 }
 
 /// [arm/sysreg]/sctlr_el1: System Control Register (EL1)
-pub const SCTLR_EL1: SysReg<spec::SCTLR_EL1, SystemControlRegister> = SysReg::new();
+pub const SCTLR_EL1: SysReg<spec::SCTLR_EL1, SystemControlRegisterEl1> = SysReg::new();
 
 /// [arm/sysreg]/sctlr_el2: System Control Register (EL2)
-pub const SCTLR_EL2: SysReg<spec::SCTLR_EL2, SystemControlRegister> = SysReg::new();
+pub const SCTLR_EL2: SysReg<spec::SCTLR_EL2, SystemControlRegisterEl2> = SysReg::new();
 
 /// [arm/sysreg]/sctlr_el3: System Control Register (EL3)
-pub const SCTLR_EL3: SysReg<spec::SCTLR_EL3, SystemControlRegister> = SysReg::new();
+pub const SCTLR_EL3: SysReg<spec::SCTLR_EL3, SystemControlRegisterEl3> = SysReg::new();
 
 #[bitfield_repr(u8)]
 #[derive(Clone, Copy)]
@@ -69,79 +69,94 @@ pub enum TagCheckFault {
     SynchronousRead = 0b11, // Synchronous for read, asynchronous for write.
 }
 
-// TODO(https://fxbug.dev/525077555): bitrs::multilayout!() would bring the
-// variations of SystemControlRegister across the ELs up to the API level,
-// which seems nice.
-layout!({
-    /// The layout of [`SCTLR_EL1`], [`SCTLR_EL2`], and [`SCTLR_EL3`].
-    ///
-    /// Some fields (mostly things relating to EL0) are only used in EL1 and are
-    /// reserved in the other registers.  Missing bits are reserved in all cases.
-    pub struct SystemControlRegister(u64);
+multilayout!({
+    /// The layout of [`SCTLR_EL1`].
+    #[bitrs(el1)]
+    pub struct SystemControlRegisterEl1(u64);
+
+    /// The layout of [`SCTLR_EL2`].
+    #[bitrs(el2)]
+    pub struct SystemControlRegisterEl2(u64);
+
+    /// The layout of [`SCTLR_EL3`].
+    #[bitrs(el3)]
+    pub struct SystemControlRegisterEl3(u64);
+
+    // EL1, EL2, EL3
     {
-        let tidcp @ 63; // EL1, EL2
-        let spintmask @ 62; // EL1, EL2, EL3
-        let nmi @ 61; // EL1, EL2, EL3
-        let entp2 @ 60; // EL1, EL2
-        let tsco @ 59; // EL1, EL2, EL3
-        let tsco0 @ 58; // EL1, EL2
-        let epan @ 57; // EL1, EL2
-        let enals @ 56; // EL1, EL2
-        let enas0 @ 55; // EL1, EL2
-        let enasr @ 54; // EL1, EL2
-        let tme @ 53; // EL1, EL2, EL3
-        let tme0 @ 52; // EL1, EL2
-        let tmt @ 51; // EL1, EL2, EL3
-        let tmt0 @ 50; // EL1, EL2
-        let twedel @ 49..46; // EL1
-        let tweden @ 45; // EL1
-        let dsbss @ 44; // EL1, EL2, EL3
-        let ata @ 43; // EL1, EL2, EL3
-        let ata0 @ 42; // EL1
-        let tcf @ 41..40: TagCheckFault; // EL1, EL2, EL3
-        let tcf0 @ 39..38: TagCheckFault; // EL1
-        let itfsb @ 37; // EL1, EL2, EL3
-        let bt @ 36; // EL1, EL2, EL3
-        let bt0 @ 35; // EL1
+        let spintmask @ 62;
+        let nmi @ 61;
+        let tsco @ 59;
+        let tme @ 53;
+        let tmt @ 51;
+        let dsbss @ 44;
+        let ata @ 43;
+        let tcf @ 41..40: TagCheckFault;
+        let itfsb @ 37;
+        let bt @ 36;
         let __ @ 34;
-        let mscen @ 33; // EL1, EL2
-        let cmow @ 32; // EL1, EL2
-        let enia @ 31; // EL1, EL2, EL3
-        let enib @ 30; // EL1, EL2, EL3
-        let lsmaoe @ 29; // EL1
-        let ntlsmd @ 28; // EL1
-        let enda @ 27; // EL1, EL2, EL3
-        let uci @ 26; // EL1
-        let ee @ 25; // EL1, EL2, EL3
-        let e0e @ 24; // EL1
-        let span @ 23; // EL1
-        let eis @ 22; // EL1, EL2, EL3
-        let iesb @ 21; // EL1, EL2, EL3
-        let tscxt @ 20; // EL1
-        let wxn @ 19; // EL1, EL2, EL3
-        let ntwe @ 18; // EL1
+        let enia @ 31;
+        let enib @ 30;
+        let enda @ 27;
+        let ee @ 25;
+        let eis @ 22;
+        let iesb @ 21;
+        let wxn @ 19;
         let __ @ 17;
-        let ntwi @ 16; // EL1
-        let uct @ 15; // EL1
-        let dze @ 14; // EL1, EL2, EL3
-        let endb @ 13; // EL1, EL2, EL3
-        let i @ 12; // EL1, EL2, EL3
-        let eos @ 11; // EL1, EL2, EL3
-        let enrctx @ 10; // EL1
-        let uma @ 9; // EL1
-        let sed @ 8; // EL1
-        let itd @ 7; // EL1
-        let naa @ 6; // EL1, EL2, EL3
-        let cp15ben @ 5; // EL1
-        let sa0 @ 4; // EL1
-        let sa @ 3; // EL1, EL2, EL3
-        let c @ 2; // EL1, EL2, EL3
-        let a @ 1; // EL1, EL2, EL3
-        let m @ 0; // EL1, EL2, EL3
+        let dze @ 14;
+        let endb @ 13;
+        let i @ 12;
+        let eos @ 11;
+        let naa @ 6;
+        let sa @ 3;
+        let c @ 2;
+        let a @ 1;
+        let m @ 0;
+    }
+
+    // EL1, EL2
+    #[any(el1, el2)]
+    {
+        let tidcp @ 63;
+        let entp2 @ 60;
+        let tsco0 @ 58;
+        let epan @ 57;
+        let enals @ 56;
+        let enas0 @ 55;
+        let enasr @ 54;
+        let tme0 @ 52;
+        let tmt0 @ 50;
+        let mscen @ 33;
+        let cmow @ 32;
+    }
+
+    // EL1
+    #[el1]
+    {
+        let twedel @ 49..46;
+        let tweden @ 45;
+        let ata0 @ 42;
+        let tcf0 @ 39..38: TagCheckFault;
+        let bt0 @ 35;
+        let lsmaoe @ 29;
+        let ntlsmd @ 28;
+        let uci @ 26;
+        let e0e @ 24;
+        let span @ 23;
+        let tscxt @ 20;
+        let ntwe @ 18;
+        let ntwi @ 16;
+        let uct @ 15;
+        let enrctx @ 10;
+        let uma @ 9;
+        let sed @ 8;
+        let itd @ 7;
+        let cp15ben @ 5;
+        let sa0 @ 4;
     }
 });
 
-impl SystemControlRegister {
+impl SystemControlRegisterEl1 {
     /// Returns the minimum delay in cycles if TWEDEn is enabled.
     pub fn twedel_cycles(&self) -> Option<u64> {
         if self.tweden() { Some(1u64 << self.twedel() << 8) } else { None }
@@ -149,29 +164,47 @@ impl SystemControlRegister {
 }
 
 /// [arm/sysreg]/sctlr2_el1: System Control Register 2 (EL1)
-pub const SCTLR2_EL1: SysReg<spec::SCTLR2_EL1, SystemControlRegister2> = SysReg::new();
+pub const SCTLR2_EL1: SysReg<spec::SCTLR2_EL1, SystemControlRegister2El1> = SysReg::new();
 
 /// [arm/sysreg]/sctlr2_el2: System Control Register 2 (EL2)
-pub const SCTLR2_EL2: SysReg<spec::SCTLR2_EL2, SystemControlRegister2> = SysReg::new();
+pub const SCTLR2_EL2: SysReg<spec::SCTLR2_EL2, SystemControlRegister2El2> = SysReg::new();
 
 /// [arm/sysreg]/sctlr2_el3: System Control Register 2 (EL3)
-pub const SCTLR2_EL3: SysReg<spec::SCTLR2_EL3, SystemControlRegister2> = SysReg::new();
+pub const SCTLR2_EL3: SysReg<spec::SCTLR2_EL3, SystemControlRegister2El3> = SysReg::new();
 
-// TODO(https://fxbug.dev/525077555): bitrs::multilayout!() would bring the
-// variations of SystemControlRegister2 across the ELs up to the API level,
-// which seems nice.
-layout!({
-    /// The layout of [`SCTLR2_EL1`], [`SCTLR2_EL2`], and [`SCTLR2_EL3`].
-    pub struct SystemControlRegister2(u64);
+multilayout!({
+    /// The layout of [`SCTLR2_EL1`].
+    #[bitrs(el1)]
+    pub struct SystemControlRegister2El1(u64);
+
+    /// The layout of [`SCTLR2_EL2`].
+    #[bitrs(el2)]
+    pub struct SystemControlRegister2El2(u64);
+
+    /// The layout of [`SCTLR2_EL3`].
+    #[bitrs(el3)]
+    pub struct SystemControlRegister2El3(u64);
+
+    // EL1, EL2, EL3
     {
         let __ @ 63..7;
-        let enidcp128 @ 6; // EL1, EL2
-        let ease @ 5; // EL1, EL2
-        let enanerr @ 4; // EL1, EL2, EL3
-        let enaderr @ 3; // EL1, EL2, EL3
-        let nmea @ 2; // EL1, EL2
-        let emec @ 1; // EL2, EL3
+        let enanerr @ 4;
+        let enaderr @ 3;
         let __ @ 0;
+    }
+
+    // EL1, EL2
+    #[any(el1, el2)]
+    {
+        let enidcp128 @ 6;
+        let ease @ 5;
+        let nmea @ 2;
+    }
+
+    // EL2, EL3
+    #[any(el2, el3)]
+    {
+        let emec @ 1;
     }
 });
 
@@ -260,9 +293,105 @@ pub enum TcrTg0Value {
     Tg64KiB = 0b01,
 }
 
-// TODO(https://fxbug.dev/525077555): bitrs::multilayout!() would make the
-// definitions of TCR_EL{1, 2} tidier, which are slight variations of each
-// other.
+/// Granule size values for the TCR_EL1.TG1 field.
+///
+/// WARNING: The encodings for the TG0 field and TG1 field are different.
+///
+/// [arm/v8]: D13.2.120 TCR_EL1, Translation Control Register (EL1)
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum TcrTg1Value {
+    Tg16KiB = 0b01,
+    Tg4KiB = 0b10,
+    Tg64KiB = 0b11,
+}
+
+/// [arm/v8]: D13.2.120 TCR_EL1, Translation Control Register (EL1)
+pub const TCR_EL1: SysReg<spec::TCR_EL1, TranslationControlRegisterEl1> = SysReg::new();
+
+/// [arm/v8]: D13.2.121 TCR_EL2, Translation Control Register (EL2)
+pub const TCR_EL2: SysReg<spec::TCR_EL2, TranslationControlRegisterEl2> = SysReg::new();
+
+multilayout!({
+    /// The layout of [`TCR_EL1`].
+    #[bitrs(el1)]
+    pub struct TranslationControlRegisterEl1(u64);
+
+    /// The layout of [`TCR_EL2`].
+    #[bitrs(el2)]
+    pub struct TranslationControlRegisterEl2(u64);
+
+    // EL1, EL2.
+    {
+        let __ @ 63..62;
+        let tg0 @ 15..14: TcrTg0Value;
+        let sh0 @ 13..12: ShareabilityAttribute;
+        let orgn0 @ 11..10: CacheabilityAttribute;
+        let irgn0 @ 9..8: CacheabilityAttribute;
+        let t0sz @ 5..0;
+    }
+
+    #[el1]
+    {
+        let mtx1 @ 61;
+        let mtx0 @ 60;
+        let ds @ 59;
+        let tcma1 @ 58;
+        let tcma0 @ 57;
+        let e0pd1 @ 56;
+        let e0pd0 @ 55;
+        let nfd1 @ 54;
+        let nfd0 @ 53;
+        let tbid1 @ 52;
+        let tbid0 @ 51;
+        let hwu162 @ 50;
+        let hwu161 @ 49;
+        let hwu160 @ 48;
+        let hwu159 @ 47;
+        let hwu062 @ 46;
+        let hwu061 @ 45;
+        let hwu060 @ 44;
+        let hwu059 @ 43;
+        let hpd1 @ 42;
+        let hpd0 @ 41;
+        let hd @ 40;
+        let ha @ 39;
+        let tbi1 @ 38;
+        let tbi0 @ 37;
+        let asid_size @ 36; // `as` is reserved
+        let __ @ 35;
+        let ips @ 34..32: PhysicalAddressSize;
+        let tg1 @ 31..30: TcrTg1Value;
+        let sh1 @ 29..28: ShareabilityAttribute;
+        let orgn1 @ 27..26: CacheabilityAttribute;
+        let irgn1 @ 25..24: CacheabilityAttribute;
+        let epd1 @ 23;
+        let a1 @ 22;
+        let t1sz @ 21..16;
+        let epd0 @ 7;
+        let __ @ 6;
+    }
+
+    #[el2]
+    {
+        let mtx @ 33;
+        let ds @ 32;
+        let __ @ 31 = 1;
+        let tcma @ 30;
+        let tbid @ 29;
+        let hwu62 @ 28;
+        let hwu61 @ 27;
+        let hwu60 @ 26;
+        let hwu59 @ 25;
+        let hpd @ 24;
+        let __ @ 23 = 1;
+        let hd @ 22;
+        let ha @ 21;
+        let tbi @ 20;
+        let ps @ 18..16: PhysicalAddressSize;
+        let __ @ 7..6;
+    }
+});
 
 /// [arm/v8]: VTCR_EL2, Virtualization Translation Control Register
 pub const VTCR_EL2: SysReg<spec::VTCR_EL2, VirtualizationTranslationControlRegister> =
@@ -608,9 +737,64 @@ layout!({
     }
 });
 
-// TODO(https://fxbug.dev/525077555): bitrs::multilayout!() would make the
-// definitions of CPTR_EL{2,3} and CNTHCTL_EL2 more tidier, which have slight
-// variations dependent on FEAT_VHE / HCR_EL2.E2H.
+/// [arm/sysreg]/cptr_el2: Architectural Feature Trap Register (EL2) when `HCR_EL2.E2H == 0`
+pub const CPTR_EL2_NO_VHE: SysReg<spec::CPTR_EL2, ArchitecturalFeatureTrapRegisterNoVhe> =
+    SysReg::new();
+
+/// [arm/sysreg]/cptr_el2: Architectural Feature Trap Register (EL2) when `HCR_EL2.E2H == 1` (FEAT_VHE)
+pub const CPTR_EL2_VHE: SysReg<spec::CPTR_EL2, ArchitecturalFeatureTrapRegisterVhe> = SysReg::new();
+
+/// [arm/sysreg]/cptr_el3: Architectural Feature Trap Register (EL3) when `HCR_EL2.E2H == 0`
+pub const CPTR_EL3_NO_VHE: SysReg<spec::CPTR_EL3, ArchitecturalFeatureTrapRegisterNoVhe> =
+    SysReg::new();
+
+/// [arm/sysreg]/cptr_el3: Architectural Feature Trap Register (EL3) when `HCR_EL2.E2H == 1` (FEAT_VHE)
+pub const CPTR_EL3_VHE: SysReg<spec::CPTR_EL3, ArchitecturalFeatureTrapRegisterVhe> = SysReg::new();
+
+multilayout!({
+    /// The layout of [`CPTR_EL2`] and [`CPTR_EL3`] when `HCR_EL2.E2H == 0`.
+    #[bitrs(no_e2h)]
+    pub struct ArchitecturalFeatureTrapRegisterNoVhe(u64);
+
+    /// The layout of [`CPTR_EL2`] and [`CPTR_EL3`] when `HCR_EL2.E2H == 1` (FEAT_VHE).
+    #[bitrs(e2h)]
+    pub struct ArchitecturalFeatureTrapRegisterVhe(u64);
+
+    {
+        let __ @ 63..32;
+        let tcpac @ 31;
+        let tam @ 30;
+        let __ @ 29;
+        let __ @ 27..26;
+        let __ @ 23..22;
+        let __ @ 19..18;
+    }
+
+    #[e2h]
+    {
+        let tta @ 28;
+        let smen @ 25..24;
+        let fpen @ 21..20;
+        let zen @ 17..16;
+        let __ @ 15..0;
+    }
+
+    #[no_e2h]
+    {
+        let __ @ 28;
+        let __ @ 25..24;
+        let __ @ 21;
+        let tta @ 20;
+        let __ @ 17..14;
+        let __ @ 13 = 1;
+        let tsm @ 12;
+        let __ @ 11;
+        let tfp @ 10;
+        let __ @ 9 = 1;
+        let tz @ 8;
+        let __ @ 7..0;
+    }
+});
 
 /// [arm/sysreg]/hcr_el2: Hypervisor Configuration register (EL2)
 pub const HCR_EL2: SysReg<spec::HCR_EL2, HypervisorConfigurationRegister> = SysReg::new();
@@ -716,6 +900,58 @@ layout!({
         let enasr @ 2; // if FEAT_LS64_V
         let enals @ 1; // if FEAT_LS64
         let enas0 @ 0; // if FEAT_LS64_ACCDATA
+    }
+});
+
+/// [arm/sysreg]/cnthctl_el2: Counter-timer Hypervisor Control register (EL2) when `HCR_EL2.E2H == 0`
+pub const CNTHCTL_EL2_NO_VHE: SysReg<
+    spec::CNTHCTL_EL2,
+    CounterTimerHypervisorControlRegisterNoVhe,
+> = SysReg::new();
+
+/// [arm/sysreg]/cnthctl_el2: Counter-timer Hypervisor Control register (EL2) when `HCR_EL2.E2H == 1` (FEAT_VHE)
+pub const CNTHCTL_EL2_VHE: SysReg<spec::CNTHCTL_EL2, CounterTimerHypervisorControlRegisterVhe> =
+    SysReg::new();
+
+multilayout!({
+    /// The layout of [`CNTHCTL_EL2`] when `HCR_EL2.E2H == 0`.
+    #[bitrs(no_e2h)]
+    pub struct CounterTimerHypervisorControlRegisterNoVhe(u64);
+
+    /// The layout of [`CNTHCTL_EL2`] when `HCR_EL2.E2H == 1` (FEAT_VHE).
+    #[bitrs(e2h)]
+    pub struct CounterTimerHypervisorControlRegisterVhe(u64);
+
+    {
+        let __ @ 63..20;
+        let cntpmask @ 19;
+        let cntvmask @ 18;
+        let evntis @ 17;
+        let el1nvvct @ 16;
+        let el1nvpct @ 15;
+        let el1tvct @ 14;
+        let el1tvt @ 13;
+        let ecv @ 12;
+        let evnti @ 7..4;
+        let evntdir @ 3;
+        let evnten @ 2;
+    }
+
+    #[e2h]
+    {
+        let el1pten @ 11;
+        let el1pcten @ 10;
+        let el0pten @ 9;
+        let el0vten @ 8;
+        let el0vcten @ 1;
+        let el0pcten @ 0;
+    }
+
+    #[no_e2h]
+    {
+        let __ @ 11..8;
+        let el1pcen @ 1;
+        let el1pcten @ 0;
     }
 });
 
