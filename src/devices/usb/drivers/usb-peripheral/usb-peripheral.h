@@ -14,6 +14,7 @@
 #include <lib/fit/function.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/fpromise/promise.h>
+#include <lib/fpromise/scope.h>
 #include <lib/trace/event.h>
 #include <lib/zx/channel.h>
 #include <zircon/errors.h>
@@ -236,6 +237,11 @@ class UsbPeripheral : public fdf::DriverBase2,
     SetStateLocked(state);
   }
 
+  bool HasPendingSetConfiguration() const {
+    fbl::AutoLock lock(&lock_);
+    return pending_set_configuration_.has_value();
+  }
+
   usb_mode_t SnapshotUsbMode() const {
     fbl::AutoLock lock(&lock_);
     return cur_usb_mode_;
@@ -334,6 +340,9 @@ class UsbPeripheral : public fdf::DriverBase2,
   // Begins the process of clearing the functions.
   void ClearFunctions(std::optional<fit::callback<void()>> callback = std::nullopt);
   void CheckAllFunctionsCleared();
+  void CompleteFunctionsTeardown(std::vector<std::shared_ptr<UsbFunction>> to_teardown,
+                                 std::optional<fit::callback<void()>> callback)
+      __TA_EXCLUDES(lock_);
 
   zx::result<std::string> GetSerialNumber();
   zx_status_t AddFunctionDevices() __TA_REQUIRES(lock_);
@@ -468,6 +477,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   UsbDciInterfaceServer intf_srv_{this};
 
   std::optional<async::Executor> executor_;
+  fpromise::scope scope_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_peripheral::Device> bindings_;
   fdf::OwnedChildNode child_;
@@ -488,6 +498,14 @@ class UsbPeripheral : public fdf::DriverBase2,
 
   size_t active_functions_count_ __TA_GUARDED(lock_) = 0;
   uint64_t config_generation_ __TA_GUARDED(lock_) = 0;
+  size_t in_flight_disconnect_unconfigures_ __TA_GUARDED(lock_) = 0;
+
+  struct PendingSetConfiguration {
+    uint8_t configuration;
+    fit::callback<void(zx_status_t)> completer;
+  };
+  std::optional<PendingSetConfiguration> pending_set_configuration_ __TA_GUARDED(lock_);
+  bool clearing_functions_ __TA_GUARDED(lock_) = false;
 };
 
 }  // namespace usb_peripheral

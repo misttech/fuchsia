@@ -6,8 +6,10 @@
 
 #include <assert.h>
 #include <fidl/fuchsia.hardware.usb.phy/cpp/fidl.h>
+#include <lib/async/default.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/metadata/cpp/metadata.h>
+#include <lib/fdf/dispatcher.h>
 #include <lib/fit/defer.h>
 #include <lib/stdcompat/span.h>
 #include <lib/trace/event.h>
@@ -1222,25 +1224,51 @@ void UsbPeripheral::SetConfiguration(uint8_t configuration,
 
   std::vector<std::shared_ptr<UsbFunction>> functions_to_configure;
 
+  fit::callback<void(zx_status_t)> canceled_completer;
+  bool deferred = false;
   {
     fbl::AutoLock lock(&lock_);
-
-    // Call SetConfigured for all functions, waiting for the completion in
-    // parallel for all of them.
-    //
-    // If any function fails to configure, we report the first error we see
-    // back to the caller via `completer`.
-    for (const auto& config : configurations_) {
-      for (auto function_index : config.functions) {
-        if (function_index >= functions_.size()) {
-          fdf::error("Function index {} out of bounds (size {})", function_index,
-                     functions_.size());
-          completer(ZX_ERR_INVALID_ARGS);
-          return;
+    if (state_ == DeviceState::kStopping || clearing_functions_) {
+      fdf::warn("SetConfiguration({}) rejected: peripheral is stopping or clearing functions.",
+                configuration);
+      completer(ZX_ERR_BAD_STATE);
+      return;
+    }
+    if (in_flight_disconnect_unconfigures_ > 0) {
+      fdf::info("SetConfiguration({}) deferred: disconnect unconfigure in flight.", configuration);
+      if (pending_set_configuration_.has_value()) {
+        canceled_completer = std::move(pending_set_configuration_->completer);
+      }
+      pending_set_configuration_ = PendingSetConfiguration{
+          .configuration = configuration,
+          .completer = std::move(completer),
+      };
+      deferred = true;
+    } else {
+      // Call SetConfigured for all functions, waiting for the completion in
+      // parallel for all of them.
+      //
+      // If any function fails to configure, we report the first error we see
+      // back to the caller via `completer`.
+      for (const auto& config : configurations_) {
+        for (auto function_index : config.functions) {
+          if (function_index >= functions_.size()) {
+            fdf::error("Function index {} out of bounds (size {})", function_index,
+                       functions_.size());
+            completer(ZX_ERR_INVALID_ARGS);
+            return;
+          }
+          functions_to_configure.push_back(functions_[function_index]);
         }
-        functions_to_configure.push_back(functions_[function_index]);
       }
     }
+  }
+
+  if (canceled_completer) {
+    canceled_completer(ZX_ERR_CANCELED);
+  }
+  if (deferred) {
+    return;
   }
 
   // Call SetConfigured for all functions in parallel and outside the lock.
@@ -1286,7 +1314,7 @@ void UsbPeripheral::SetConfiguration(uint8_t configuration,
             completer(final_status);
           });
 
-  executor_->schedule_task(std::move(join_task));
+  executor_->schedule_task(std::move(join_task).wrap_with(scope_));
 }
 
 void UsbPeripheral::SetInterface(uint8_t interface, uint8_t alt_setting,
@@ -1339,8 +1367,25 @@ zx::result<size_t> UsbPeripheral::AddFunction(UsbConfiguration& config, Function
   ZX_ASSERT(state_ == DeviceState::kNoConfiguration);
 
   auto function_index = functions_.size();
-  auto function = std::make_shared<UsbFunction>(function_index, this, desc, config.index,
-                                                config_generation_, dispatcher());
+  auto* func_ptr =
+      new UsbFunction(function_index, this, desc, config.index, config_generation_, dispatcher());
+  auto deleter = [dispatcher = dispatcher()](UsbFunction* ptr) {
+    fdf_dispatcher_t* current = fdf_dispatcher_get_current_dispatcher();
+    bool on_dispatcher = (current && fdf_dispatcher_get_async_dispatcher(current) == dispatcher) ||
+                         (!current && async_get_default_dispatcher() == dispatcher);
+    if (on_dispatcher) {
+      delete ptr;
+    } else {
+      auto task_ptr = std::unique_ptr<UsbFunction>(ptr);
+      if (zx_status_t status = async::PostTask(
+              dispatcher, [task_ptr = std::move(task_ptr)]() mutable { task_ptr.reset(); });
+          status != ZX_OK) {
+        // If PostTask fails, the callback closure is dropped and destroyed, which deletes the
+        // captured task_ptr on the current thread as fallback.
+      }
+    }
+  };
+  std::shared_ptr<UsbFunction> function(func_ptr, std::move(deleter));
   functions_.emplace_back(std::move(function));
 
   config.functions.push_back(function_index);
@@ -1353,11 +1398,9 @@ void UsbPeripheral::ClearFunctions(std::optional<fit::callback<void()>> callback
 
   std::vector<std::shared_ptr<UsbFunction>> to_teardown;
   bool already_stopping = false;
+  fit::callback<void(zx_status_t)> canceled_completer;
   {
     fbl::AutoLock lock(&lock_);
-    if (callback) {
-      on_all_functions_cleared_.push_back(UnlockedCallback(std::move(*callback), lock_));
-    }
     stalled_eps_.clear();
     if (state_ == DeviceState::kStopping) {
       fdf::info("Already in process of clearing the functions (state=kStopping)");
@@ -1366,38 +1409,97 @@ void UsbPeripheral::ClearFunctions(std::optional<fit::callback<void()>> callback
       fdf::info("UsbPeripheral::ClearFunctions: starting teardown (state from {} to kStopping)",
                 state_);
       SetStateLocked(DeviceState::kStopping);
+      clearing_functions_ = true;
+      if (pending_set_configuration_.has_value()) {
+        canceled_completer = std::move(pending_set_configuration_->completer);
+        pending_set_configuration_.reset();
+      }
+      // Prepare for function removal.
+      for (auto& function : functions_) {
+        if (function) {
+          to_teardown.push_back(function);
+          fdf::info("UsbPeripheral::ClearFunctions: tearing down function {}",
+                    function->function_index());
+        }
+      }
+      configuration_ = 0;
     }
   }
 
+  if (canceled_completer) {
+    canceled_completer(ZX_ERR_CANCELED);
+  }
+
   if (already_stopping) {
+    if (callback) {
+      fbl::AutoLock lock(&lock_);
+      on_all_functions_cleared_.push_back(UnlockedCallback(std::move(*callback), lock_));
+    }
+    CheckAllFunctionsCleared();
     return;
   }
 
-  // 1. Stop the controller OUTSIDE the lock.
+  if (to_teardown.empty()) {
+    fdf::info("No functions to teardown. Stopping controller immediately.");
+    CompleteFunctionsTeardown(std::move(to_teardown), std::move(callback));
+    return;
+  }
+
+  // Cooperative teardown: query each function to complete its logical teardown asynchronously.
+  std::vector<fpromise::promise<void, zx_status_t>> promises;
+  for (auto& function : to_teardown) {
+    fpromise::bridge<void, zx_status_t> bridge;
+    function->SetConfigured(
+        false, USB_SPEED_UNDEFINED,
+        [completer = std::move(bridge.completer),
+         name = function->name()](zx_status_t status) mutable {
+          if (status != ZX_OK) {
+            fdf::error("SetConfigured(false) during teardown failed for function {}: {}", name,
+                       zx_status_get_string(status));
+          }
+          completer.complete_ok();
+        });
+    promises.push_back(bridge.consumer.promise_or(fpromise::error(ZX_ERR_CANCELED)));
+  }
+
+  auto join_task = fpromise::join_promise_vector(std::move(promises))
+                       .then([this, to_teardown = std::move(to_teardown), cb = std::move(callback)](
+                                 fpromise::result<std::vector<fpromise::result<void, zx_status_t>>>&
+                                     results) mutable {
+                         fdf::info("All functions logical teardown complete. Stopping controller.");
+                         CompleteFunctionsTeardown(std::move(to_teardown), std::move(cb));
+                       });
+
+  executor_->schedule_task(std::move(join_task).wrap_with(scope_));
+}
+
+void UsbPeripheral::CompleteFunctionsTeardown(std::vector<std::shared_ptr<UsbFunction>> to_teardown,
+                                              std::optional<fit::callback<void()>> callback) {
   zx_status_t status = StopController();
   if (status != ZX_OK) {
     fdf::error("Failed to stop controller during teardown: {}", zx_status_get_string(status));
   }
 
+  std::vector<UsbConfiguration> old_configurations;
+  std::vector<StringDescriptor> old_strings;
+  fit::callback<void(zx_status_t)> canceled_completer;
   {
     fbl::AutoLock lock(&lock_);
-
-    // 2. Clear configurations and resources.
+    if (pending_set_configuration_.has_value()) {
+      canceled_completer = std::move(pending_set_configuration_->completer);
+      pending_set_configuration_.reset();
+    }
+    old_configurations = std::move(configurations_);
     configurations_.clear();
-    configuration_ = 0;
     for (size_t i = 0; i < std::size(endpoint_map_); i++) {
       endpoint_map_[i].reset();
     }
+    old_strings = std::move(strings_);
     strings_.clear();
+  }
 
-    // 3. Prepare for function removal.
-    for (auto& function : functions_) {
-      if (function) {
-        to_teardown.push_back(function);
-        fdf::info("UsbPeripheral::ClearFunctions: tearing down function {}",
-                  function->function_index());
-      }
-    }
+  if (canceled_completer) {
+    canceled_completer(ZX_ERR_CANCELED);
   }
 
   // USB endpoints reside at addresses 0x00-0x0F (OUT) and 0x80-0x8F (IN).
@@ -1408,14 +1510,29 @@ void UsbPeripheral::ClearFunctions(std::optional<fit::callback<void()>> callback
     UsbDciCancelAll(static_cast<uint8_t>(i | 0x80));
   }
 
-  // 4. Request removal (unlocked).
+  // Register callback before requesting removal to ensure that even if
+  // RequestRemoval() runs synchronously, callback is invoked during teardown.
+  if (callback) {
+    fbl::AutoLock lock(&lock_);
+    on_all_functions_cleared_.push_back(UnlockedCallback(std::move(*callback), lock_));
+  }
+
+  // Request removal (unlocked).
   for (auto& function : to_teardown) {
     fdf::info("UsbPeripheral: Requesting removal for function index {}",
               function->function_index());
     function->RequestRemoval();
   }
 
-  // Check if we are already done (if functions_ was empty).
+  // If no functions remain (e.g. to_teardown was empty or all functions were already unbound),
+  // trigger completion immediately.
+  {
+    fbl::AutoLock lock(&lock_);
+    clearing_functions_ = false;
+    if (!functions_.empty()) {
+      return;
+    }
+  }
   CheckAllFunctionsCleared();
 }
 
@@ -1424,17 +1541,25 @@ void UsbPeripheral::CheckAllFunctionsCleared() {
   bool send_event = false;
   {
     fbl::AutoLock lock(&lock_);
-    if (!functions_.empty()) {
+    if (!functions_.empty() || clearing_functions_) {
       return;
     }
     config_generation_++;  // Increment configuration generation fence.
-    if (!stopping_driver_ && state_ != DeviceState::kWaitForFunctionBind) {
-      SetStateLocked(DeviceState::kNoConfiguration);
+    if (!stopping_driver_) {
+      // If the device was put in kWaitForFunctionBind due to an unsolicited function unbind,
+      // it normally remains in kWaitForFunctionBind waiting for functions to re-bind.
+      // However, if ClearFunctions() was explicitly invoked (indicated by pending completion
+      // callbacks in on_all_functions_cleared_), the caller intended to reset the configuration,
+      // so we must transition to kNoConfiguration to allow subsequent SetConfiguration calls.
+      if (state_ != DeviceState::kWaitForFunctionBind || !on_all_functions_cleared_.empty()) {
+        SetStateLocked(DeviceState::kNoConfiguration);
+      }
     }
     if (listener_.is_valid()) {
       send_event = true;
     }
     callbacks = std::move(on_all_functions_cleared_);
+    on_all_functions_cleared_.clear();
   }
 
   if (send_event) {
@@ -1451,6 +1576,8 @@ void UsbPeripheral::CheckAllFunctionsCleared() {
 
 void UsbPeripheral::FunctionCleared(size_t function_index, uint64_t config_generation) {
   bool do_stop = false;
+  std::shared_ptr<UsbFunction> deferred_destroy;
+
   {
     fbl::AutoLock lock(&lock_);
 
@@ -1473,21 +1600,7 @@ void UsbPeripheral::FunctionCleared(size_t function_index, uint64_t config_gener
         do_stop = true;
       }
     }
-  }
 
-  if (do_stop) {
-    if (zx_status_t status = StopController(); status != ZX_OK) {
-      fdf::error("Failed to stop controller: {}", zx_status_get_string(status));
-    }
-  }
-
-  {
-    fbl::AutoLock lock(&lock_);
-    if (do_stop) {
-      SetStateLocked(DeviceState::kWaitForFunctionBind);
-    }
-
-    // We must find and remove the function from functions_ vector to prevent state leakage.
     auto it = std::find_if(functions_.begin(), functions_.end(),
                            [function_index](const std::shared_ptr<UsbFunction>& func) {
                              return func->function_index() == function_index;
@@ -1495,9 +1608,18 @@ void UsbPeripheral::FunctionCleared(size_t function_index, uint64_t config_gener
     if (it != functions_.end()) {
       fdf::info("UsbPeripheral: Removing function object for index {} from active list.",
                 function_index);
+      deferred_destroy = std::move(*it);
       functions_.erase(it);
       ReleaseResourcesLocked(function_index);
     }
+  }
+
+  if (do_stop) {
+    if (zx_status_t status = StopController(); status != ZX_OK) {
+      fdf::error("Failed to stop controller: {}", zx_status_get_string(status));
+    }
+    fbl::AutoLock lock(&lock_);
+    SetStateLocked(DeviceState::kWaitForFunctionBind);
   }
 
   CheckAllFunctionsCleared();
@@ -1771,59 +1893,164 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
 
 void UsbPeripheral::OnHostConnectionChanged(bool connected) {
   TRACE_DURATION("usb-peripheral", __func__);
-  fbl::AutoLock lock(&lock_);
 
-  fdf::info("OnHostConnectionChanged: current_state={} connected={}", state_, connected);
-  dci_inspect_.UpdateConnectionStatus(connected, speed_);
+  std::vector<std::shared_ptr<UsbFunction>> functions_to_unconfigure;
+  fit::callback<void(zx_status_t)> canceled_completer;
+  {
+    fbl::AutoLock lock(&lock_);
+    fdf::info("OnHostConnectionChanged: current_state={} connected={}", state_, connected);
+    dci_inspect_.UpdateConnectionStatus(connected, speed_);
 
-  if (connected) {
-    // We also allow transition from kStarting because the controller might report
-    // connection before we fully transition to kPeripheralReady in CheckAndStartController. This is
-    // not required once we move to a single dispatcher.
-    if (state_ == DeviceState::kPeripheralReady || state_ == DeviceState::kStarting) {
-      SetStateLocked(DeviceState::kHostConnected);
-    } else {
-      fdf::info("Host connected event ignored in state {}", state_);
+    connected_ = connected;
+
+    if (connected) {
+      // We also allow transition from kStarting because the controller might report
+      // connection before we fully transition to kPeripheralReady in CheckAndStartController. This
+      // is not required once we move to a single dispatcher.
+      if (state_ == DeviceState::kPeripheralReady || state_ == DeviceState::kStarting) {
+        SetStateLocked(DeviceState::kHostConnected);
+      } else if (state_ == DeviceState::kHostConnected && in_flight_disconnect_unconfigures_ > 0) {
+        fdf::info(
+            "Host reconnected while disconnect unconfigure is in flight; remaining connected.");
+      } else {
+        fdf::info("Host connected event ignored in state {}", state_);
+      }
+      return;
     }
+
+    // Disconnect event.
+    if (pending_set_configuration_.has_value()) {
+      canceled_completer = std::move(pending_set_configuration_->completer);
+      pending_set_configuration_.reset();
+    }
+    bool ignore_disconnect = false;
+    switch (state_) {
+      case DeviceState::kHostConnected:
+        // Keep the state in kHostConnected while unconfiguring to keep clocks and power active.
+        break;
+      case DeviceState::kPeripheralReady:
+      case DeviceState::kWaitForFunctionBind:
+      case DeviceState::kStarting:
+      case DeviceState::kStopping:
+        // This is a no-op for the state-machine.
+        // We still proceed to make sure the functions are not configured in case
+        // there's a race between host connection changing and peripheral state
+        // changing.
+        break;
+      case DeviceState::kNoConfiguration:
+        fdf::info("Host disconnected event ignored in state {}", state_);
+        ignore_disconnect = true;
+        break;
+    }
+
+    if (!ignore_disconnect) {
+      for (auto& function : functions_) {
+        if (function) {
+          functions_to_unconfigure.push_back(function);
+        }
+      }
+      configuration_ = 0;
+
+      if (functions_to_unconfigure.empty()) {
+        if (state_ == DeviceState::kHostConnected || state_ == DeviceState::kPeripheralReady) {
+          fdf::info(
+              "No functions to unconfigure on disconnect. Transitioning to kPeripheralReady.");
+          SetStateLocked(DeviceState::kPeripheralReady);
+        }
+      } else {
+        in_flight_disconnect_unconfigures_++;
+      }
+    }
+  }
+
+  if (canceled_completer) {
+    canceled_completer(ZX_ERR_CANCELED);
+  }
+
+  if (functions_to_unconfigure.empty()) {
     return;
   }
 
-  // Disconnect event.
-  switch (state_) {
-    case DeviceState::kHostConnected:
-      // Normal disconnect, go back to peripheral ready.
-      SetStateLocked(DeviceState::kPeripheralReady);
-      break;
-    case DeviceState::kPeripheralReady:
-    case DeviceState::kWaitForFunctionBind:
-    case DeviceState::kStarting:
-    case DeviceState::kStopping:
-      // This is a no-op for the state-machine.
-      // We still proceed to make sure the functions are not configured in case
-      // there's a race between host connection changing and peripheral state
-      // changing.
-      break;
-    case DeviceState::kNoConfiguration:
-      fdf::info("Host disconnected event ignored in state {}", state_);
-      return;
+  // When a host disconnects, we must NOT transition the state to kPeripheralReady immediately.
+  // If we do, parent regulator or PHY drivers are permitted to cut the controller power rails
+  // and gate internal bus and PHY clocks.
+  // To prevent unconfigure/endpoint-disable calls from executing on disabled hardware, we keep
+  // the driver state in kHostConnected while function unconfigurations are executing.
+  // This guarantees a powered, live core for a clean teardown. Once all unconfigure promises
+  // resolve, we cleanly transition to kPeripheralReady under the lock.
+  //
+  // We call SetConfigured(false) for all functions in parallel and outside the lock
+  // to avoid recursive lock deadlocks if Banjo fallback callbacks are synchronous.
+  std::vector<fpromise::promise<void, zx_status_t>> promises;
+  for (auto& function : functions_to_unconfigure) {
+    fpromise::bridge<void, zx_status_t> bridge;
+    function->SetConfigured(false, USB_SPEED_UNDEFINED,
+                            [completer = std::move(bridge.completer),
+                             name = function->name()](zx_status_t status) mutable {
+                              if (status != ZX_OK) {
+                                fdf::error(
+                                    "SetConfigured(false) on disconnect failed for function {}: {}",
+                                    name, zx_status_get_string(status));
+                              }
+                              completer.complete_ok();
+                            });
+    promises.push_back(bridge.consumer.promise_or(fpromise::error(ZX_ERR_CANCELED)));
   }
 
-  // Explicitly reset the active configuration value to 0 on host disconnect/reset
-  configuration_ = 0;
+  auto join_task =
+      fpromise::join_promise_vector(std::move(promises))
+          .then([this, functions = std::move(functions_to_unconfigure)](
+                    fpromise::result<std::vector<fpromise::result<void, zx_status_t>>>& results) {
+            std::optional<PendingSetConfiguration> pending_set_config;
+            fit::callback<void(zx_status_t)> canceled_task_completer;
+            {
+              fbl::AutoLock lock(&lock_);
+              ZX_ASSERT(in_flight_disconnect_unconfigures_ > 0);
+              in_flight_disconnect_unconfigures_--;
+              if (in_flight_disconnect_unconfigures_ > 0) {
+                fdf::info(
+                    "Disconnect unconfigure task completed, but {} unconfigure task(s) are "
+                    "still in-flight; maintaining state.",
+                    in_flight_disconnect_unconfigures_);
+                return;
+              }
 
-  // When a host disconnects, it's a good practice to unconfigure the functions.
-  for (auto& config : configurations_) {
-    for (auto func_index : config.functions) {
-      auto& function = GetFunction(func_index);
-      function.SetConfigured(
-          false, USB_SPEED_UNDEFINED, [name = function.name()](zx_status_t status) {
-            if (status != ZX_OK) {
-              fdf::error("Setconfigured on disconnect failed for function {}: {}", name,
-                         zx_status_get_string(status));
+              // Verify the driver isn't actively tearing down the whole topology.
+              if (state_ == DeviceState::kHostConnected ||
+                  state_ == DeviceState::kPeripheralReady) {
+                if (!connected_) {
+                  fdf::info(
+                      "All functions unconfigured on disconnect. Transitioning to kPeripheralReady.");
+                  SetStateLocked(DeviceState::kPeripheralReady);
+                } else {
+                  fdf::info("Host reconnected during async teardown. Remaining in kHostConnected.");
+                  SetStateLocked(DeviceState::kHostConnected);
+                }
+              }
+
+              if (pending_set_configuration_.has_value()) {
+                if (state_ == DeviceState::kHostConnected && connected_) {
+                  pending_set_config = std::move(pending_set_configuration_);
+                } else {
+                  canceled_task_completer = std::move(pending_set_configuration_->completer);
+                }
+                pending_set_configuration_.reset();
+              }
+            }
+
+            if (canceled_task_completer) {
+              canceled_task_completer(ZX_ERR_CANCELED);
+            }
+
+            if (pending_set_config.has_value()) {
+              fdf::info("Executing deferred SetConfiguration({}) after disconnect teardown.",
+                        pending_set_config->configuration);
+              SetConfiguration(pending_set_config->configuration,
+                               std::move(pending_set_config->completer));
             }
           });
-    }
-  }
+
+  executor_->schedule_task(std::move(join_task).wrap_with(scope_));
 }
 
 // This is called by management components to define the initial configuration of the
@@ -1927,10 +2154,8 @@ void UsbPeripheral::ClearFunctions(ClearFunctionsCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
 
   fdf::debug("{}", __func__);
-  ClearFunctions();
-
   auto on_complete = [completer = completer.ToAsync()]() mutable { completer.Reply(); };
-  WaitForFunctionsCleared(std::move(on_complete));
+  ClearFunctions(std::move(on_complete));
 }
 
 void UsbPeripheral::GetConfiguration(GetConfigurationCompleter::Sync& completer) {
@@ -2016,6 +2241,7 @@ void UsbPeripheral::Stop(fdf::StopCompleter completer) {
 
   fit::callback<void()> on_complete;
   bool call_clear = false;
+  bool wait_clear = false;
   {
     fbl::AutoLock lock(&lock_);
     stopping_driver_ = true;
@@ -2035,9 +2261,10 @@ void UsbPeripheral::Stop(fdf::StopCompleter completer) {
       case DeviceState::kHostConnected:
         call_clear = true;
         break;
-      case DeviceState::kNoConfiguration:
-        [[fallthrough]];
       case DeviceState::kStopping:
+        wait_clear = true;
+        break;
+      case DeviceState::kNoConfiguration:
         break;
     }
   }
@@ -2045,6 +2272,9 @@ void UsbPeripheral::Stop(fdf::StopCompleter completer) {
   if (call_clear) {
     fdf::info("UsbPeripheral::Stop: proceeding to clear functions.");
     ClearFunctions(std::move(on_complete));
+  } else if (wait_clear) {
+    fdf::info("UsbPeripheral::Stop: already stopping, waiting for functions to clear.");
+    WaitForFunctionsCleared(std::move(on_complete));
   } else {
     on_complete();
   }
@@ -2183,7 +2413,7 @@ UsbPeripheral::ResourceAllocations UsbPeripheral::GetResourceAllocations(size_t 
 
 void UsbPeripheral::WaitForFunctionsCleared(fit::callback<void()> callback) {
   fbl::AutoLock lock(&lock_);
-  if (functions_.empty()) {
+  if (functions_.empty() && !clearing_functions_) {
     lock.release();
     callback();
     return;

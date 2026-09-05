@@ -845,6 +845,11 @@ class UsbPeripheralHarness : public ::testing::Test {
     });
   }
 
+  void ExpectStateEventual(UsbPeripheral::DeviceState state) {
+    WaitUntilState(state);
+    ExpectState(state);
+  }
+
   void WaitUntilState(UsbPeripheral::DeviceState state) {
     dut().runtime().RunUntil([&]() {
       bool matched = false;
