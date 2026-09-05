@@ -235,24 +235,6 @@ cc_test_executable("encode_unittest_exe") {
   ]
 }
 
-cc_test_executable("fidl_provider_hlcpp_unittest_exe") {
-  testonly = true
-
-  sources = [ "fidl_provider_hlcpp_unittest.cc" ]
-
-  deps = [
-    "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_hlcpp",
-    "//src/developer/forensics/feedback/annotations:fidl_provider_hlcpp",
-    "//src/developer/forensics/testing:backoff",
-    "//src/developer/forensics/testing:gtest_with_syslog_main",
-    "//src/developer/forensics/testing:unit_test_fixture",
-    "//src/developer/forensics/testing/stubs:channel_control",
-    "//src/developer/forensics/testing/stubs:device_id_provider",
-    "//third_party/googletest:gmock",
-    "//third_party/googletest:gtest",
-  ]
-}
-
 cc_test_executable("fidl_provider_unittest_exe") {
   testonly = true
 
@@ -722,10 +704,6 @@ fuchsia_unittest_component("encode_unittest") {
   deps = [ ":encode_unittest_exe" ]
 }
 
-fuchsia_unittest_component("fidl_provider_hlcpp_unittest") {
-  deps = [ ":fidl_provider_hlcpp_unittest_exe" ]
-}
-
 fuchsia_unittest_component("fidl_provider_unittest") {
   deps = [ ":fidl_provider_unittest_exe" ]
 }
@@ -859,7 +837,6 @@ fuchsia_test_package("feedback-tests") {
     ":device_id_provider_unittest",
     ":disk_backed_system_log_unittest",
     ":encode_unittest",
-    ":fidl_provider_hlcpp_unittest",
     ":fidl_provider_unittest",
     ":file_backed_provider_unittest",
     ":last_reboot_unittest",

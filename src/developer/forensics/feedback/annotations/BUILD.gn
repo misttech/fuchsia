@@ -133,20 +133,6 @@ source_set("device_id_provider") {
   ]
 }
 
-source_set("fidl_provider_hlcpp") {
-  sources = [ "fidl_provider_hlcpp.h" ]
-
-  public_deps = [
-    "//sdk/lib/async",
-    "//sdk/lib/fit",
-    "//sdk/lib/sys/cpp",
-    "//sdk/lib/syslog/cpp",
-    "//src/developer/forensics/feedback/annotations",
-    "//src/lib/backoff",
-    "//src/lib/fxl",
-  ]
-}
-
 source_set("fidl_provider") {
   sources = [ "fidl_provider.h" ]
 
