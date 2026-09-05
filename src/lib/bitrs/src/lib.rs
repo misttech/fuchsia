@@ -22,6 +22,12 @@ pub use ::zerocopy as __zerocopy;
 /// See the crate's `README.md` for details on syntax and behavior.
 pub use bitrs_macro::layout;
 
+/// Specifies a family of closely related bitfield layouts in one place,
+/// expanding to one [`layout!`]-equivalent type per declared struct.
+///
+/// See the crate's `README.md` for details on syntax and behavior.
+pub use bitrs_macro::multilayout;
+
 /// Syntax sugar for defining a layout representation that also auto-derives the
 /// traits required of a custom bitfield representation.
 ///
@@ -152,7 +158,7 @@ pub struct FieldMetadata<Base: Unsigned> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FieldMetadata, bitfield_repr, layout};
+    use super::{FieldMetadata, bitfield_repr, layout, multilayout};
 
     layout!({
         struct EmptyU8(u8);
@@ -431,5 +437,172 @@ mod tests {
         let val = Unshifted::from(0xffff_ffff);
         assert_eq!(val.unshifted_field(), 0xf000);
         assert_eq!(val.unshifted_bit(), 1 << 8);
+    }
+
+    multilayout!({
+        #[bitrs(m, rv32)]
+        pub struct Mstatus32(u32);
+        #[bitrs(m, rv64)]
+        pub struct Mstatus64(u64);
+        #[bitrs(rv32)]
+        pub struct Sstatus32(u32);
+        #[bitrs(rv64)]
+        pub struct Sstatus64(u64);
+
+        #[rv32]
+        {
+            let sd @ 31;
+        }
+        #[rv64]
+        {
+            let sd @ 63;
+        }
+        #[all(m, rv64)]
+        {
+            let mbe @ 37;
+            let sbe @ 36;
+            let sxl @ 35..34;
+        }
+        #[rv64]
+        {
+            let uxl @ 33..32;
+        }
+        #[m]
+        {
+            let tsr @ 22;
+            let tw @ 21;
+            let tvm @ 20;
+            let mprv @ 17;
+            let mpp @ 12..11;
+            let mpie @ 7;
+            let mie @ 3;
+        }
+        {
+            let mxr @ 19;
+            let sum @ 18;
+            let xs @ 16..15;
+            let fs @ 14..13;
+            let vs @ 10..9;
+            let spp @ 8;
+            let ube @ 6;
+            let spie @ 5;
+            let sie @ 1;
+        }
+    });
+
+    #[test]
+    fn sd_at_xlen_minus_1() {
+        // SD is at bit 31 on RV32 and bit 63 on RV64 — same name in every
+        // *status variant, position keyed on base width.
+        let m32 = *Mstatus32::new().set_sd(true);
+        let m64 = *Mstatus64::new().set_sd(true);
+        let s32 = *Sstatus32::new().set_sd(true);
+        let s64 = *Sstatus64::new().set_sd(true);
+        assert_eq!(m32.bits() & Mstatus32::SD_MASK, 1u32 << 31);
+        assert_eq!(m64.bits() & Mstatus64::SD_MASK, 1u64 << 63);
+        assert_eq!(s32.bits() & Sstatus32::SD_MASK, 1u32 << 31);
+        assert_eq!(s64.bits() & Sstatus64::SD_MASK, 1u64 << 63);
+    }
+
+    #[test]
+    fn mstatus_round_trip() {
+        // Behavioral check on shared low-half fields plus M-mode-only ones:
+        // set, then read back.
+        let m = *Mstatus64::new().set_tsr(true).set_mpp(0b11).set_mxr(true).set_mie(true);
+        assert!(m.tsr());
+        assert_eq!(m.mpp(), 0b11);
+        assert!(m.mxr());
+        assert!(m.mie());
+    }
+
+    #[test]
+    fn uxl_visible_in_both_modes() {
+        // UXL appears in mstatus64 and sstatus64 at the same position. SXL
+        // is M-mode-only — Sstatus64 doesn't have a set_sxl method.
+        let m = *Mstatus64::new().set_uxl(0b10);
+        let s = *Sstatus64::new().set_uxl(0b10);
+        assert_eq!(m.uxl(), 0b10);
+        assert_eq!(s.uxl(), 0b10);
+    }
+
+    #[test]
+    fn sstatus_shared_low_half_round_trip() {
+        // The shared low half (MXR/SUM/SPP/UBE/SPIE/SIE etc.) must work in
+        // the supervisor variants too — set and read back on both.
+        let s32 = *Sstatus32::new().set_mxr(true).set_sum(true).set_spp(true).set_sie(true);
+        let s64 = *Sstatus64::new().set_mxr(true).set_sum(true).set_spp(true).set_sie(true);
+        assert!(s32.mxr() && s32.sum() && s32.spp() && s32.sie());
+        assert!(s64.mxr() && s64.sum() && s64.spp() && s64.sie());
+    }
+
+    multilayout!({
+        #[bitrs(a, x)]
+        struct PredA(u32);
+        #[bitrs(b, x)]
+        struct PredB(u32);
+        #[bitrs(c, y)]
+        struct PredC(u32);
+
+        // Tests `any` and trailing comma
+        #[any(a, b)]
+        {
+            let ab_shared @ 0;
+        }
+
+        // Tests `not` with trailing comma
+        #[not(c)]
+        {
+            let not_c @ 1;
+        }
+
+        // Tests nested predicates with trailing comma in all
+        #[all(x, any(a, not(b)))]
+        {
+            let nested @ 2;
+        }
+
+        // Tests custom repr, unshifted field, reserved field with default
+        #[c]
+        {
+            let custom @ 6..3: CustomFieldRepr = CustomFieldRepr::Option1;
+            #[unshifted]
+            let unshifted @ 15..12;
+            let __ @ 19..16 = 0xa;
+        }
+    });
+
+    #[test]
+    fn any_not_and_nested_predicates() {
+        let a = *PredA::new().set_ab_shared(true).set_not_c(true).set_nested(true);
+        assert!(a.ab_shared());
+        assert!(a.not_c());
+        assert!(a.nested());
+
+        let b = *PredB::new().set_ab_shared(true).set_not_c(true);
+        assert!(b.ab_shared());
+        assert!(b.not_c());
+    }
+
+    #[test]
+    fn multilayout_feature_interactions() {
+        assert_eq!(PredC::new().bits(), PredC::RSVD1_MASK);
+        assert_eq!(PredC::RSVD1_MASK, 0xa << 16);
+
+        let mut c = PredC::default();
+        assert_eq!(c.custom(), CustomFieldRepr::Option1);
+        assert_eq!(c.bits(), PredC::DEFAULT);
+
+        c.set_custom(CustomFieldRepr::Option2);
+        assert_eq!(c.custom(), CustomFieldRepr::Option2);
+
+        c.set_unshifted(0x5000);
+        assert_eq!(c.unshifted(), 0x5000);
+
+        let fields: Vec<(&'static FieldMetadata<u32>, u32)> = c.iter().collect();
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].0.name, "unshifted");
+        assert_eq!(fields[0].1, 0x5);
+        assert_eq!(fields[1].0.name, "custom");
+        assert_eq!(fields[1].1, CustomFieldRepr::Option2 as u32);
     }
 }

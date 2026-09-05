@@ -21,10 +21,18 @@ rustc_binary("bitfield-repr-example") {
   ]
 }
 
+rustc_binary("multilayout-example") {
+  edition = "2024"
+  source_root = "multilayout.rs"
+  sources = [ source_root ]
+  deps = [ "//src/lib/bitrs" ]
+}
+
 group("examples") {
   testonly = true
   deps = [
     ":basic-example",
     ":bitfield-repr-example",
+    ":multilayout-example",
   ]
 }

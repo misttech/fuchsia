@@ -2,16 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use proc_macro::TokenStream;
-use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
+use proc_macro2::{Delimiter, Group, Literal, Span, TokenStream as TokenStream2};
 use quote::{ToTokens, format_ident, quote};
 use syn::parse::{Error, Parse, ParseStream, Result};
+use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    Attribute, Expr, ExprLit, ExprRange, Fields, Ident, ItemStruct, Lit, Pat, PatIdent,
-    RangeLimits, Stmt, Token, Type, braced, parse_macro_input,
+    Attribute, Expr, ExprLit, ExprRange, Fields, Ident, ItemStruct, Lit, Meta, Pat, PatIdent,
+    RangeLimits, Stmt, Token, Type, braced, bracketed, parenthesized, parse_macro_input, token,
 };
 
 #[proc_macro_attribute]
@@ -45,6 +46,11 @@ pub fn bitfield_repr(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn layout(item: TokenStream) -> TokenStream {
     parse_macro_input!(item as Layout).to_token_stream().into()
+}
+
+#[proc_macro]
+pub fn multilayout(item: TokenStream) -> TokenStream {
+    parse_macro_input!(item as Multilayout).to_token_stream().into()
 }
 
 //
@@ -105,11 +111,49 @@ impl TryFrom<Type> for BaseTypeDef {
 struct TypeDef {
     def: ItemStruct,
     base: BaseTypeDef,
+    tags: HashSet<Ident>,
 }
 
 impl Parse for TypeDef {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let strct: ItemStruct = input.parse()?;
+        let mut strct: ItemStruct = input.parse()?;
+
+        // Pull out any `#[bitrs(tag, ...)]` attribute. It's macro-internal: it
+        // declares the tag set the struct participates in for `multilayout!`'s
+        // contribution-predicate evaluation, and is stripped before the struct
+        // is forwarded (since `bitrs` is not a real Rust attribute).
+        let mut tags: HashSet<Ident> = HashSet::new();
+        for attr in &strct.attrs {
+            if !attr.path().is_ident("bitrs") {
+                continue;
+            }
+            let Meta::List(list) = &attr.meta else {
+                return Err(Error::new_spanned(
+                    attr,
+                    "`#[bitrs(...)]` takes a parenthesized list of tag identifiers",
+                ));
+            };
+            let parsed: Punctuated<Ident, Token![,]> =
+                list.parse_args_with(Punctuated::parse_terminated)?;
+            if parsed.is_empty() {
+                return Err(Error::new_spanned(
+                    list,
+                    "`#[bitrs(...)]` requires at least one tag identifier",
+                ));
+            }
+            for tag in parsed {
+                if tag == "all" || tag == "any" || tag == "not" {
+                    return Err(Error::new_spanned(
+                        &tag,
+                        format!("`{tag}` is reserved and cannot be used as a tag name"),
+                    ));
+                }
+                if !tags.insert(tag.clone()) {
+                    return Err(Error::new_spanned(&tag, format!("duplicate tag `{tag}`")));
+                }
+            }
+        }
+        strct.attrs.retain(|a| !a.path().is_ident("bitrs"));
 
         // Check for any redundant derives; all other derives are forwarded.
         for attr in &strct.attrs {
@@ -157,7 +201,7 @@ impl Parse for TypeDef {
             return Err(Error::new_spanned(where_clause, "generic parameters are not supported"));
         }
 
-        Ok(Self { def: strct, base: base_type })
+        Ok(Self { def: strct, base: base_type, tags })
     }
 }
 
@@ -165,6 +209,7 @@ impl Parse for TypeDef {
 // Parsing and binding for an individual bitfield.
 //
 
+#[derive(Clone)]
 struct Bitfield {
     span: Span,
     name: Option<Ident>,
@@ -876,7 +921,7 @@ impl Layout {
         // TODO(https://github.com/rust-lang/rust/issues/54725): For the
         // overlap diagnostic, it would be nice to Span::join() the two
         // spans, but that's still experimental.
-        let mut seen: HashMap<String, &Bitfield> = HashMap::new();
+        let mut seen: HashMap<&Ident, &Bitfield> = HashMap::new();
         let mut prev: Option<&Bitfield> = None;
         for field in &fields {
             if let Some(prev) = prev
@@ -896,12 +941,11 @@ impl Layout {
                 ));
             }
             if let Some(name) = &field.name {
-                let key = name.to_string();
-                if let Some(prev_named) = seen.get(&key) {
+                if let Some(prev_named) = seen.get(name) {
                     return Err(Error::new(
                         field.span,
                         format!(
-                            "field `{key}` declared twice ({} {} and {} {})",
+                            "field `{name}` declared twice ({} {} and {} {})",
                             prev_named.display_kind(),
                             prev_named.display_range(),
                             field.display_kind(),
@@ -909,7 +953,7 @@ impl Layout {
                         ),
                     ));
                 }
-                seen.insert(key, field);
+                seen.insert(name, field);
             }
             prev = Some(field);
         }
@@ -955,16 +999,21 @@ impl Parse for Layout {
         };
 
         let ty = input.parse::<TypeDef>()?;
-        let inner = {
-            let content;
-            braced!(content in input);
-            content
-        };
-        let mut fields = Vec::new();
-        while !inner.is_empty() {
-            fields.push(inner.parse::<Bitfield>()?);
+        if let Some(tag) = ty.tags.iter().next() {
+            return Err(Error::new_spanned(
+                tag,
+                "`#[bitrs(...)]` tags are only meaningful in `multilayout!`",
+            ));
         }
-        Self::from_parts(ty, fields)
+
+        let set = input.parse::<BitfieldSet>()?;
+        if let Some(pred) = set.predicate {
+            return Err(Error::new(
+                pred.span(),
+                "tag predicates are only meaningful in `multilayout!`",
+            ));
+        }
+        Self::from_parts(ty, set.fields)
     }
 }
 
@@ -1037,5 +1086,285 @@ impl ToTokens for Layout {
             #fmt_impls
         }
         .to_tokens(tokens);
+    }
+}
+
+//
+// `multilayout!`: a family of layouts in one place. Parses one or more struct
+// heads — each optionally annotated with `#[bitrs(tag, ...)]` to declare its
+// tag set — followed by a sequence of bitfield sets. Each set is
+// either bare (`{ ... }` — applies to every struct) or predicated
+// (`#[<predicate>] { ... }`). A predicate is a boolean expression over the
+// declared tags: a bare tag identifier, `all(<predicate>, ...)`,
+// `any(<predicate>, ...)`, or `not(<predicate>)`, freely nested. A
+// bitfield set applies to a struct iff its predicate evaluates true against
+// that struct's tag set; an unannotated set always applies. Set order is
+// irrelevant; each set's fields union into the matching per-struct
+// field lists. Emits one `Layout`-equivalent stream per declared struct.
+//
+
+#[derive(Clone)]
+enum Predicate {
+    Tag(Ident),
+    All(Vec<Predicate>, Span),
+    Any(Vec<Predicate>, Span),
+    Not(Box<Predicate>, Span),
+}
+
+impl Predicate {
+    fn span(&self) -> Span {
+        match self {
+            Predicate::Tag(tag) => tag.span(),
+            Predicate::All(_, span) | Predicate::Any(_, span) | Predicate::Not(_, span) => *span,
+        }
+    }
+
+    /// Validates that any tag in the predicate exists in `all_tags`.
+    fn validate(&self, all_tags: &HashSet<Ident>) -> Result<()> {
+        match self {
+            Predicate::Tag(tag) => {
+                if !all_tags.contains(tag) {
+                    return Err(Error::new_spanned(tag, format!("unknown tag `{tag}`")));
+                }
+                Ok(())
+            }
+            Predicate::All(preds, _) | Predicate::Any(preds, _) => {
+                for pred in preds {
+                    pred.validate(all_tags)?;
+                }
+                Ok(())
+            }
+            Predicate::Not(pred, _) => pred.validate(all_tags),
+        }
+    }
+
+    /// Evaluates the predicate against a struct's `tags`.
+    fn eval(&self, tags: &HashSet<Ident>) -> bool {
+        match self {
+            Predicate::Tag(tag) => tags.contains(tag),
+            Predicate::All(preds, _) => preds.iter().all(|pred| pred.eval(tags)),
+            Predicate::Any(preds, _) => preds.iter().any(|pred| pred.eval(tags)),
+            Predicate::Not(pred, _) => !pred.eval(tags),
+        }
+    }
+}
+
+impl Parse for Predicate {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let ident: Ident = input.parse()?;
+        let has_paren = input.peek(token::Paren);
+        if ident == "all" || ident == "any" {
+            if !has_paren {
+                return Err(Error::new_spanned(
+                    &ident,
+                    format!("`{ident}` requires a parenthesized argument list"),
+                ));
+            }
+            let content;
+            parenthesized!(content in input);
+            let preds: Punctuated<Predicate, Token![,]> = Punctuated::parse_terminated(&content)?;
+            let preds = preds.into_iter().collect();
+            let span = ident.span();
+            if ident == "all" {
+                return Ok(Predicate::All(preds, span));
+            }
+            return Ok(Predicate::Any(preds, span));
+        }
+
+        if ident == "not" {
+            if !has_paren {
+                return Err(Error::new_spanned(&ident, "`not` requires a parenthesized argument"));
+            }
+            let content;
+            parenthesized!(content in input);
+            let inner: Predicate = content.parse()?;
+            let _ = content.parse::<Option<Token![,]>>()?;
+            if !content.is_empty() {
+                return Err(Error::new(content.span(), "`not(...)` takes exactly one argument"));
+            }
+            return Ok(Predicate::Not(Box::new(inner), ident.span()));
+        }
+        if has_paren {
+            return Err(Error::new_spanned(
+                &ident,
+                format!(
+                    "unknown predicate function `{ident}`; expected \
+                         `all`, `any`, or `not`"
+                ),
+            ));
+        }
+        Ok(Predicate::Tag(ident))
+    }
+}
+
+/// A block of bitfields, optionally gated by a predicate attribute.
+struct BitfieldSet {
+    predicate: Option<Predicate>,
+    fields: Vec<Bitfield>,
+}
+
+impl Parse for BitfieldSet {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let mut predicate: Option<Predicate> = None;
+        while input.peek(Token![#]) {
+            let hash: Token![#] = input.parse()?;
+            let content;
+            bracketed!(content in input);
+            if predicate.is_some() {
+                return Err(Error::new(
+                    hash.span,
+                    "only one predicate attribute is permitted per \
+                     bitfield set; combine with `all(...)` / \
+                     `any(...)` if you need a compound predicate",
+                ));
+            }
+            let pred: Predicate = content.parse()?;
+            if !content.is_empty() {
+                return Err(Error::new(
+                    content.span(),
+                    "invalid predicate attribute; expected a bare tag identifier, \
+                     `all(...)`, `any(...)`, or `not(...)`",
+                ));
+            }
+            predicate = Some(pred);
+        }
+
+        let block;
+        braced!(block in input);
+        let mut fields = Vec::new();
+        while !block.is_empty() {
+            fields.push(block.parse::<Bitfield>()?);
+        }
+
+        Ok(Self { predicate, fields })
+    }
+}
+
+struct Multilayout {
+    layouts: Vec<Layout>,
+}
+
+/// Returns `true` if the next item in `input` looks like a bitfield set (i.e.,
+/// a bare `{ ... }` or one prefixed by predicate attributes). Pure lookahead:
+/// peels any outer attributes on a fork and reports whether the next
+/// significant token is `{`. If the fork's attribute parse fails (malformed
+/// attribute), we report "not a bitfield set" and let the main parser surface
+/// the syntax error through `TypeDef::parse`.
+fn looks_like_bitfield_set(input: ParseStream<'_>) -> bool {
+    if input.peek(token::Brace) {
+        return true;
+    }
+    if !input.peek(Token![#]) {
+        return false;
+    }
+    let fork = input.fork();
+    while fork.peek(Token![#]) {
+        let _ = fork.parse::<Token![#]>();
+        let Ok(group) = fork.parse::<Group>() else {
+            return false;
+        };
+        if group.delimiter() != Delimiter::Bracket {
+            return false;
+        }
+    }
+    fork.peek(token::Brace)
+}
+
+impl Parse for Multilayout {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let input = {
+            let content;
+            braced!(content in input);
+            content
+        };
+
+        // Phase 1: struct heads.
+        let mut types: Vec<TypeDef> = Vec::new();
+        while !looks_like_bitfield_set(&input) {
+            if input.is_empty() {
+                return Err(Error::new(
+                    input.span(),
+                    "expected at least one bitfield set after the struct declarations",
+                ));
+            }
+            types.push(input.parse::<TypeDef>()?);
+        }
+        if types.is_empty() {
+            return Err(Error::new(
+                input.span(),
+                "expected at least one `struct Name(base);` declaration",
+            ));
+        }
+
+        // The union of all declared tags.
+        let mut all_tags: HashSet<Ident> = HashSet::new();
+        for ty in &types {
+            for t in &ty.tags {
+                all_tags.insert(t.clone());
+            }
+        }
+
+        // Phase 2: bitfield sets.
+        let mut bitfield_sets: Vec<BitfieldSet> = Vec::new();
+        while !input.is_empty() {
+            bitfield_sets.push(input.parse::<BitfieldSet>()?);
+        }
+
+        // Validate that all predicates reference declared tags.
+        for set in &bitfield_sets {
+            if let Some(pred) = &set.predicate {
+                pred.validate(&all_tags)?;
+            }
+        }
+
+        // Fan out: per declared struct, union every bitfield set whose
+        // predicate is satisfied by the struct's tag set and build its
+        // Layout. Set coverage is validated below.
+        let mut matched = vec![false; bitfield_sets.len()];
+        let mut layouts: Vec<Layout> = Vec::new();
+        for ty in types {
+            let mut fields: Vec<Bitfield> = Vec::new();
+            for (i, set) in bitfield_sets.iter().enumerate() {
+                let belongs = match &set.predicate {
+                    None => true,
+                    Some(pred) => {
+                        let belongs = pred.eval(&ty.tags);
+                        if belongs {
+                            matched[i] = true;
+                        }
+                        belongs
+                    }
+                };
+                if belongs {
+                    fields.extend(set.fields.iter().cloned());
+                }
+            }
+            let ident = ty.def.ident.clone();
+            let layout = Layout::from_parts(ty, fields)
+                .map_err(|err| Error::new(err.span(), format!("in struct `{ident}`: {err}")))?;
+            layouts.push(layout);
+        }
+
+        // Every bitfield set must match at least one declared struct.
+        for (set, matched) in bitfield_sets.iter().zip(matched) {
+            if let Some(pred) = &set.predicate {
+                if !matched {
+                    return Err(Error::new(
+                        pred.span(),
+                        "bitfield set predicate matches no declared structs",
+                    ));
+                }
+            }
+        }
+
+        Ok(Self { layouts })
+    }
+}
+
+impl ToTokens for Multilayout {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        for layout in &self.layouts {
+            layout.to_tokens(tokens);
+        }
     }
 }
