@@ -539,9 +539,25 @@ std::optional<fuchsia_hardware_gpio::BufferMode> ConvertBufferMode(
   }
 }
 
+std::optional<fuchsia_hardware_pin::DriveType> ConvertDriveType(
+    std::optional<gpio_metadata::DriveType> drive_type) {
+  if (!drive_type)
+    return std::nullopt;
+  switch (*drive_type) {
+    case gpio_metadata::DriveType::kPushPull:
+      return fuchsia_hardware_pin::DriveType::kPushPull;
+    case gpio_metadata::DriveType::kOpenDrain:
+      return fuchsia_hardware_pin::DriveType::kOpenDrain;
+    case gpio_metadata::DriveType::kOpenSource:
+      return fuchsia_hardware_pin::DriveType::kOpenSource;
+  }
+}
+
 std::optional<fuchsia_hardware_pinimpl::InitCall> ConvertInitCall(
     const gpio_metadata::InitCall& gc) {
-  if (gc.pin_config) {
+  if (gc.pin_config &&
+      (gc.pin_config->pull || gc.pin_config->function || gc.pin_config->function_name ||
+       gc.pin_config->drive_strength_ua || gc.pin_config->drive_type)) {
     fuchsia_hardware_pin::Configuration config;
     if (auto pull = ConvertPull(gc.pin_config->pull)) {
       config.pull(*pull);
@@ -549,8 +565,14 @@ std::optional<fuchsia_hardware_pinimpl::InitCall> ConvertInitCall(
     if (gc.pin_config->function) {
       config.function(*gc.pin_config->function);
     }
+    if (gc.pin_config->function_name) {
+      config.function_name(*gc.pin_config->function_name);
+    }
     if (gc.pin_config->drive_strength_ua) {
       config.drive_strength_ua(*gc.pin_config->drive_strength_ua);
+    }
+    if (auto drive_type = ConvertDriveType(gc.pin_config->drive_type)) {
+      config.drive_type(*drive_type);
     }
     return fuchsia_hardware_pinimpl::InitCall::WithPinConfig(std::move(config));
   } else if (auto mode = ConvertBufferMode(gc.buffer_mode)) {
@@ -621,12 +643,20 @@ std::optional<fuchsia_hardware_pinimpl::Metadata> ConvertMetadata(
       config.function(*p.function);
       has_config = true;
     }
+    if (p.function_name) {
+      config.function_name(*p.function_name);
+      has_config = true;
+    }
     if (p.drive_strength_ua) {
       config.drive_strength_ua(*p.drive_strength_ua);
       has_config = true;
     }
     if (auto pull = ConvertPull(p.pull)) {
       config.pull(*pull);
+      has_config = true;
+    }
+    if (auto drive_type = ConvertDriveType(p.drive_type)) {
+      config.drive_type(*drive_type);
       has_config = true;
     }
 

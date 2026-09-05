@@ -53,6 +53,14 @@
                 "Down"
               ]
             },
+            DriveType: {
+              type: "string",
+              enum: [
+                "PushPull",
+                "OpenDrain",
+                "OpenSource"
+              ]
+            },
             BufferMode: {
               type: "string",
               enum: [
@@ -79,9 +87,15 @@
                   type: "integer",
                   fuchsia_type: "uint32"
                 },
+                function_name: {
+                  type: "string"
+                },
                 drive_strength_ua: {
                   type: "integer",
                   fuchsia_type: "uint32"
+                },
+                drive_type: {
+                  "$ref": "#/definitions/DriveType"
                 },
                 pull: {
                   "$ref": "#/definitions/Pull"
@@ -104,9 +118,15 @@
                   type: "integer",
                   fuchsia_type: "uint64"
                 },
+                function_name: {
+                  type: "string"
+                },
                 drive_strength_ua: {
                   type: "integer",
                   fuchsia_type: "uint64"
+                },
+                drive_type: {
+                  "$ref": "#/definitions/DriveType"
                 }
               }
             },
