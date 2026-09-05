@@ -177,6 +177,30 @@ impl State {
     }
 }
 
+impl std::fmt::Display for LinkState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LinkState::None => "None",
+            LinkState::Removed => "Removed",
+            LinkState::Down => "Down",
+            LinkState::Up => "Up",
+            LinkState::Local => "Local",
+            LinkState::Gateway => "Gateway",
+            LinkState::Internet => "Internet",
+        })
+    }
+}
+
+impl std::fmt::Display for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} (dns: {}, http: {})",
+            self.link, self.application.dns_resolved, self.application.http_fetch_succeeded
+        )
+    }
+}
+
 impl std::str::FromStr for LinkState {
     type Err = ();
 
@@ -201,10 +225,10 @@ pub enum Proto {
 }
 impl std::fmt::Display for Proto {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Proto::IPv4 => write!(f, "IPv4"),
-            Proto::IPv6 => write!(f, "IPv6"),
-        }
+        f.write_str(match self {
+            Proto::IPv4 => "IPv4",
+            Proto::IPv6 => "IPv6",
+        })
     }
 }
 
@@ -241,6 +265,12 @@ impl StateEvent {
 impl StateEq for StateEvent {
     fn compare_state(&self, &Self { state, time: _ }: &Self) -> bool {
         self.state == state
+    }
+}
+
+impl std::fmt::Display for StateEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.state, f)
     }
 }
 
@@ -339,6 +369,12 @@ impl SystemState {
 impl StateEq for SystemState {
     fn compare_state(&self, &Self { id, state: StateEvent { state, time: _ } }: &Self) -> bool {
         self.id == id && self.state.state == state
+    }
+}
+
+impl std::fmt::Display for SystemState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} via Interface [{}]", self.state, self.id)
     }
 }
 
@@ -1037,11 +1073,11 @@ impl<Time: TimeProvider> Monitor<Time> {
                 let &Delta { previous, current } = delta;
                 if let Some(previous) = previous {
                     info!(
-                        "interface updated {:?} {:?} current: {:?} previous: {:?}",
+                        "Interface [{}] updated --> {} current: {}, previous: {}",
                         id, proto, current, previous
                     );
                 } else {
-                    info!("new interface {:?} {:?}: {:?}", id, proto, current);
+                    info!("New interface [{}] --> {}: {}", id, proto, current);
                 }
                 let () = log_state(self.interface_node(id, name), proto, current.state);
                 *self.stats.state_updates.entry(id).or_insert(0) += 1;
@@ -1053,11 +1089,11 @@ impl<Time: TimeProvider> Monitor<Time> {
                 let &Delta { previous, current } = delta;
                 if let Some(previous) = previous {
                     info!(
-                        "system updated {:?} current: {:?}, previous: {:?}",
-                        proto, current, previous,
+                        "System reachability updated --> {} current: {}, previous: {}",
+                        proto, current, previous
                     );
                 } else {
-                    info!("initial system state {:?}: {:?}", proto, current);
+                    info!("Initial system reachability --> {}: {}", proto, current);
                 }
                 let () = log_state(self.system_node.as_mut(), proto, current.state.state);
             }
@@ -1190,7 +1226,7 @@ impl<Time: TimeProvider> NetworkChecker for Monitor<Time> {
                 // Update the Properties for the TelemetryContext so that the LinkProperties can
                 // be reported properly.
                 ctx.persistent_context.telemetry = telemetry_context;
-                return Err(anyhow!("skipped, non-idle state found on interface {id}"));
+                return Err(anyhow!("skipped, non-idle state found on Interface [{id}]"));
             }
         }
 
@@ -1701,6 +1737,93 @@ mod tests {
                 "30": "Internet",
             }
         })
+    }
+
+    #[fuchsia::test]
+    fn test_display() {
+        assert_eq!(Proto::IPv4.to_string(), "IPv4");
+        assert_eq!(Proto::IPv6.to_string(), "IPv6");
+
+        let system_state = SystemState {
+            id: 2,
+            state: StateEvent {
+                state: State {
+                    link: LinkState::Local,
+                    application: ApplicationState {
+                        dns_resolved: false,
+                        http_fetch_succeeded: false,
+                    },
+                },
+                time: fasync::MonotonicInstant::from_nanos(1_000_000_000),
+            },
+        };
+        assert_eq!(system_state.to_string(), "Local (dns: false, http: false) via Interface [2]");
+
+        let system_state_zero = SystemState {
+            id: 0,
+            state: StateEvent {
+                state: State {
+                    link: LinkState::Down,
+                    application: ApplicationState {
+                        dns_resolved: false,
+                        http_fetch_succeeded: false,
+                    },
+                },
+                time: fasync::MonotonicInstant::from_nanos(1_000_000_000),
+            },
+        };
+        assert_eq!(
+            system_state_zero.to_string(),
+            "Down (dns: false, http: false) via Interface [0]"
+        );
+
+        let system_state_internet = SystemState {
+            id: 42,
+            state: StateEvent {
+                state: State {
+                    link: LinkState::Internet,
+                    application: ApplicationState {
+                        dns_resolved: true,
+                        http_fetch_succeeded: true,
+                    },
+                },
+                time: fasync::MonotonicInstant::from_nanos(1_000_000_000),
+            },
+        };
+        assert_eq!(
+            system_state_internet.to_string(),
+            "Internet (dns: true, http: true) via Interface [42]"
+        );
+
+        let system_state_max_id = SystemState {
+            id: u64::MAX,
+            state: StateEvent {
+                state: State {
+                    link: LinkState::Gateway,
+                    application: ApplicationState {
+                        dns_resolved: true,
+                        http_fetch_succeeded: false,
+                    },
+                },
+                time: fasync::MonotonicInstant::from_nanos(1_000_000_000),
+            },
+        };
+        assert_eq!(
+            system_state_max_id.to_string(),
+            "Gateway (dns: true, http: false) via Interface [18446744073709551615]"
+        );
+
+        // Verify that no internal types or compiler artifacts leak into formatted strings.
+        for formatted in [
+            system_state.to_string(),
+            system_state_zero.to_string(),
+            system_state_internet.to_string(),
+            system_state_max_id.to_string(),
+        ] {
+            assert!(!formatted.contains("PhantomData"));
+            assert!(!formatted.contains("Instant"));
+            assert!(!formatted.contains("MonotonicTimeline"));
+        }
     }
 
     #[test_case(NetworkCheckState::PingGateway, &[std_socket_addr!("1.2.3.0:8080")];
