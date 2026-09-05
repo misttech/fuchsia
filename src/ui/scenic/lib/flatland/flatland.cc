@@ -186,6 +186,7 @@ Flatland::Flatland(
       layer_handles_(&pool_),
       layer_objects_(&pool_),
       layer_stacks_(&pool_),
+      layer_stack_handles_(&pool_),
       error_reporter_(scenic_impl::ErrorReporter::DefaultUnique()),
       images_to_release_(std::make_shared<std::unordered_set<allocation::GlobalImageId>>()),
       import_tokens_(
@@ -2681,14 +2682,28 @@ void Flatland::CreateLayerStack(CreateLayerStackRequestView request,
   CreateLayerStack(LayerStackId(request->stack_id.value));
 }
 
-void Flatland::CreateLayerStack(LayerStackId stack_id) {
+void Flatland::CreateLayerStack(LayerStackId layer_stack_id) {
   if (!config_.use_flatland2) {
     error_reporter_->ERROR() << "CreateLayerStack called, but Flatland2 not enabled";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
-  error_reporter_->ERROR() << "CreateLayerStack: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+
+  if (layer_stack_id == kInvalidLayerStackId) {
+    error_reporter_->ERROR() << "CreateLayerStack called with id zero";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (layer_stack_handles_.contains(layer_stack_id)) {
+    error_reporter_->ERROR() << "CreateLayerStack: layer stack " << layer_stack_id
+                             << " already exists";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  TransformHandle handle = CreateLayerStackData();
+  layer_stack_handles_[layer_stack_id] = handle;
 }
 
 void Flatland::ReleaseLayerStack(ReleaseLayerStackRequestView request,
@@ -2696,14 +2711,31 @@ void Flatland::ReleaseLayerStack(ReleaseLayerStackRequestView request,
   ReleaseLayerStack(LayerStackId(request->stack_id.value));
 }
 
-void Flatland::ReleaseLayerStack(LayerStackId stack_id) {
+void Flatland::ReleaseLayerStack(LayerStackId layer_stack_id) {
   if (!config_.use_flatland2) {
     error_reporter_->ERROR() << "ReleaseLayerStack called, but Flatland2 not enabled";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
-  error_reporter_->ERROR() << "ReleaseLayerStack: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+
+  if (layer_stack_id == kInvalidLayerStackId) {
+    error_reporter_->ERROR() << "ReleaseLayerStack called with layer_stack_id zero";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto stack_it = layer_stack_handles_.find(layer_stack_id);
+  if (stack_it == layer_stack_handles_.end()) {
+    error_reporter_->ERROR() << "ReleaseLayerStack: layer stack " << layer_stack_id << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  TransformHandle handle = stack_it->second;
+  layer_stack_handles_.erase(stack_it);
+
+  bool erased_from_graph = transform_graph_.ReleaseTransform(handle);
+  FX_DCHECK(erased_from_graph);
 }
 
 void Flatland::SetStackLayers(SetStackLayersRequestView request,
@@ -2722,7 +2754,8 @@ void Flatland::SetStackLayers(SetStackLayersRequestView request,
                  std::span<const LayerId>(stack_layers.data(), num_layers));
 }
 
-void Flatland::SetStackLayers(LayerStackId stack_id, std::span<const flatland::LayerId> layers) {
+void Flatland::SetStackLayers(LayerStackId layer_stack_id,
+                              std::span<const flatland::LayerId> layers) {
   if (!config_.use_flatland2) {
     error_reporter_->ERROR() << "SetStackLayers called, but Flatland2 not enabled";
     CloseConnection(FlatlandError::kBadOperation);
@@ -2733,8 +2766,51 @@ void Flatland::SetStackLayers(LayerStackId stack_id, std::span<const flatland::L
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
-  error_reporter_->ERROR() << "SetStackLayers: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+
+  if (layer_stack_id == kInvalidLayerStackId) {
+    error_reporter_->ERROR() << "SetStackLayers called with layer_stack_id zero";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto stack_it = layer_stack_handles_.find(layer_stack_id);
+  if (stack_it == layer_stack_handles_.end()) {
+    error_reporter_->ERROR() << "SetStackLayers failed, layer_stack_id " << layer_stack_id
+                             << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  // Stack array and linear scan avoid all dynamic allocations (heap/PMR) and outperform
+  // hash tables for small, bounded inputs (N <= kMaxStackLayers = 32).
+  std::array<LayerHandle, fuchsia_ui_composition::kMaxStackLayers> new_layer_handles;
+  for (size_t i = 0; i < layers.size(); ++i) {
+    const auto& layer_id = layers[i];
+    if (layer_id == kInvalidLayerId) {
+      error_reporter_->ERROR() << "SetStackLayers failed, layer_id is zero";
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+
+    if (std::find(layers.begin(), layers.begin() + i, layer_id) != layers.begin() + i) {
+      error_reporter_->ERROR() << "SetStackLayers failed, duplicate layer_id " << layer_id
+                               << " in vector";
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+
+    auto layer_it = layer_handles_.find(layer_id);
+    if (layer_it == layer_handles_.end()) {
+      error_reporter_->ERROR() << "SetStackLayers failed, layer_id " << layer_id << " not found";
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+
+    new_layer_handles[i] = layer_it->second;
+  }
+
+  SetLayerStackData(stack_it->second,
+                    std::span<const LayerHandle>(new_layer_handles.data(), layers.size()));
 }
 
 // TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
@@ -3234,6 +3310,15 @@ LayerHandle Flatland::GetLayerHandleForTest(LayerId layer_id) {
   auto it = layer_handles_.find(layer_id);
   if (it == layer_handles_.end()) {
     return LayerHandle();
+  }
+  return it->second;
+}
+
+std::optional<TransformHandle> Flatland::GetLayerStackHandleForTest(
+    LayerStackId layer_stack_id) const {
+  auto it = layer_stack_handles_.find(layer_stack_id);
+  if (it == layer_stack_handles_.end()) {
+    return std::nullopt;
   }
   return it->second;
 }

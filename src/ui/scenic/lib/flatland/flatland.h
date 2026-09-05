@@ -343,17 +343,20 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   // |fuchsia_ui_composition::Flatland2|
   void CreateLayerStack(CreateLayerStackRequestView request,
                         CreateLayerStackCompleter::Sync& completer) override;
-  void CreateLayerStack(LayerStackId stack_id);
+  void CreateLayerStack(LayerStackId layer_stack_id);
 
   // |fuchsia_ui_composition::Flatland2|
   void ReleaseLayerStack(ReleaseLayerStackRequestView request,
                          ReleaseLayerStackCompleter::Sync& completer) override;
-  void ReleaseLayerStack(LayerStackId stack_id);
+  void ReleaseLayerStack(LayerStackId layer_stack_id);
 
   // |fuchsia_ui_composition::Flatland2|
   void SetStackLayers(SetStackLayersRequestView request,
                       SetStackLayersCompleter::Sync& completer) override;
-  void SetStackLayers(LayerStackId stack_id, std::span<const flatland::LayerId> layers);
+  void SetStackLayers(LayerStackId layer_stack_id, std::span<const LayerId> layers);
+  void SetStackLayers(LayerStackId layer_stack_id, std::initializer_list<LayerId> layers) {
+    SetStackLayers(layer_stack_id, std::span<const LayerId>(layers.begin(), layers.end()));
+  }
 
   // |fuchsia_ui_composition::Flatland2|
   void SetLayerImage(SetLayerImageRequestView request,
@@ -391,6 +394,10 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   // For validating properties associated with content in tests only. If |content_id| does not
   // exist for this Flatland instance, returns std::nullopt.
   std::optional<TransformHandle> GetContentHandle(ContentId content_id) const;
+
+  // For validating properties associated with layer stacks in tests only. If |layer_stack_id| does
+  // not exist for this Flatland instance, returns std::nullopt.
+  std::optional<TransformHandle> GetLayerStackHandleForTest(LayerStackId layer_stack_id) const;
 
   // For validating properties associated with transforms in tests only. If |transform_id| does not
   // exist for this Flatland instance, returns std::nullopt.
@@ -546,6 +553,8 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   // single-layer stack.
   std::pmr::unordered_map<LayerHandle, LayerObject> layer_objects_;
   std::pmr::unordered_map<TransformHandle, LayerStackData> layer_stacks_;
+  std::pmr::unordered_map<LayerStackId, TransformHandle> layer_stack_handles_;
+
   // Supplies the session-unique suffix for new LayerHandles.
   uint64_t next_layer_handle_ = 1;
 

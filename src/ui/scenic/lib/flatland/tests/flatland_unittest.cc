@@ -6174,6 +6174,308 @@ TEST_F(Flatland2Test, ReleaseLayerFailsWhenDisabled) {
   Present(flatland, false);
 }
 
+TEST_F(Flatland2Test, CreateLayerStackZeroIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  flatland->CreateLayerStack(LayerStackId(0));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, CreateLayerStackDuplicateIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerStackId kId(1);
+  flatland->CreateLayerStack(kId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->CreateLayerStack(kId);
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, CreateLayerAndStackSameIdSucceeds) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  flatland->CreateLayer(LayerId(7));
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->CreateLayerStack(LayerStackId(7));
+  EXPECT_FALSE(error_log.has_value());
+}
+
+TEST_F(Flatland2Test, CreateLayerStackFailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+  flatland->CreateLayerStack(LayerStackId(1));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseLayerStackZeroIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  flatland->ReleaseLayerStack(LayerStackId(0));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseLayerStackUnknownIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  flatland->ReleaseLayerStack(LayerStackId(1));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseLayerStackUnknownIdEvenIfLayerExists) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  flatland->CreateLayer(LayerId(1));
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->ReleaseLayerStack(LayerStackId(1));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ReleaseLayerStackFailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+  flatland->ReleaseLayerStack(LayerStackId(1));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetStackLayersZeroStackIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  flatland->SetStackLayers(LayerStackId(0), {});
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetStackLayersUnknownStackIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  flatland->SetStackLayers(LayerStackId(1), {});
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetStackLayersUnknownStackIdEvenIfLayerExists) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  flatland->CreateLayer(LayerId(1));
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetStackLayers(LayerStackId(1), {});
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetStackLayersZeroLayerIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerStackId kStackId(1);
+  flatland->CreateLayerStack(kStackId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetStackLayers(kStackId, {LayerId(0)});
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetStackLayersUnknownLayerIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerStackId kStackId(1);
+  flatland->CreateLayerStack(kStackId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetStackLayers(kStackId, {LayerId(2)});
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetStackLayersUnknownLayerIdEvenIfStackExists) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerStackId kStackId1(1);
+  const LayerStackId kStackId2(2);
+  flatland->CreateLayerStack(kStackId1);
+  flatland->CreateLayerStack(kStackId2);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetStackLayers(kStackId1, {LayerId(2)});
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetStackLayersDuplicateLayerIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerStackId kStackId(1);
+  const LayerId kLayerId(2);
+  flatland->CreateLayerStack(kStackId);
+  flatland->CreateLayer(kLayerId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetStackLayers(kStackId, {kLayerId, kLayerId});
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetStackLayersFailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+  flatland->SetStackLayers(LayerStackId(1), {});
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetStackLayersAdjustsRefCounts) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kLayerA(1);
+  const LayerId kLayerB(2);
+  const LayerId kLayerC(3);
+  const LayerStackId kStack(10);
+
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayer(kLayerB);
+  flatland->CreateLayer(kLayerC);
+  flatland->CreateLayerStack(kStack);
+
+  flatland->SetStackLayers(kStack, {kLayerA, kLayerB});
+  EXPECT_FALSE(error_log.has_value());
+
+  LayerHandle handle_a = flatland->GetLayerHandleForTest(kLayerA);
+  LayerHandle handle_b = flatland->GetLayerHandleForTest(kLayerB);
+  LayerHandle handle_c = flatland->GetLayerHandleForTest(kLayerC);
+
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_a)->ref_count, 2);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_b)->ref_count, 2);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_c)->ref_count, 1);
+
+  flatland->SetStackLayers(kStack, {kLayerB, kLayerC});
+  EXPECT_FALSE(error_log.has_value());
+
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_a)->ref_count, 1);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_b)->ref_count, 2);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_c)->ref_count, 2);
+}
+
+TEST_F(Flatland2Test, ReleasedLayerKeptAliveByStack) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kLayerA(1);
+  const LayerStackId kStack(10);
+
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayerA});
+
+  LayerHandle handle_a = flatland->GetLayerHandleForTest(kLayerA);
+  EXPECT_NE(flatland->GetLayerObjectForTest(handle_a), nullptr);
+
+  flatland->ReleaseLayer(kLayerA);
+  EXPECT_FALSE(error_log.has_value());
+
+  // Object still alive because stack holds reference.
+  EXPECT_NE(flatland->GetLayerObjectForTest(handle_a), nullptr);
+
+  flatland->SetStackLayers(kStack, {});
+  EXPECT_FALSE(error_log.has_value());
+
+  // Destroyed after stack reference dropped.
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_a), nullptr);
+}
+
+TEST_F(Flatland2Test, ReleaseStackWithLayers) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kLayerA(1);
+  const LayerId kLayerB(2);
+  const LayerStackId kStack(10);
+
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayer(kLayerB);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayerA, kLayerB});
+
+  LayerHandle handle_a = flatland->GetLayerHandleForTest(kLayerA);
+  LayerHandle handle_b = flatland->GetLayerHandleForTest(kLayerB);
+
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_a)->ref_count, 2);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_b)->ref_count, 2);
+
+  flatland->ReleaseLayerStack(kStack);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(flatland, true);
+
+  // Stack handle dead-transform GC freed the stack's layer references, so client refs remain.
+  EXPECT_NE(flatland->GetLayerObjectForTest(handle_a), nullptr);
+  EXPECT_NE(flatland->GetLayerObjectForTest(handle_b), nullptr);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_a)->ref_count, 1);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_b)->ref_count, 1);
+}
+
+TEST_F(Flatland2Test, NoPartialApplicationOnBadLayerId) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kLayerA(1);
+  const LayerId kLayerB(2);
+  const LayerId kBogusLayer(999);
+  const LayerStackId kStack(10);
+
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayer(kLayerB);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayerA});
+
+  LayerHandle handle_a = flatland->GetLayerHandleForTest(kLayerA);
+  LayerHandle handle_b = flatland->GetLayerHandleForTest(kLayerB);
+  auto stack_handle = flatland->GetLayerStackHandleForTest(kStack);
+  ASSERT_TRUE(stack_handle.has_value());
+
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_a)->ref_count, 2);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_b)->ref_count, 1);
+
+  flatland->SetStackLayers(kStack, {kLayerA, kBogusLayer, kLayerB});
+  ASSERT_TRUE(error_log.has_value());
+
+  // Stack contents and ref counts remain unchanged.
+  const auto* stack_data = flatland->GetLayerStackDataForTest(*stack_handle);
+  ASSERT_NE(stack_data, nullptr);
+  EXPECT_THAT(stack_data->layers, ::testing::ElementsAre(handle_a));
+
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_a)->ref_count, 2);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_b)->ref_count, 1);
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, UnattachedStackNotSnapshotted) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kLayerId(1);
+  const LayerStackId kStackId(2);
+
+  flatland->CreateLayer(kLayerId);
+  flatland->CreateLayerStack(kStackId);
+  flatland->SetStackLayers(kStackId, {kLayerId});
+
+  Present(flatland, true);
+
+  auto uber_struct = GetUberStruct(flatland.get());
+  ASSERT_NE(uber_struct, nullptr);
+  EXPECT_TRUE(uber_struct->layer_stacks.empty());
+}
+
 // These tests exercise the legacy bridging logic where Flatland1 mutator calls
 // are converted into Flatland2 UberStructLayer properties. They will be removed
 // when the Flatland1 FIDL API is finally deleted.

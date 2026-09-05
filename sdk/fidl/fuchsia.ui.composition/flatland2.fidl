@@ -407,7 +407,8 @@ closed protocol Flatland2 {
     /// with the first element being the back-most and the last element being the front-most.
     ///
     /// `stack_id` must refer to a valid, unreleased LayerStack. Each element of `layers`
-    /// must refer to a valid, unreleased Layer.
+    /// must refer to a valid, unreleased Layer. Duplicate layers within `layers` are
+    /// disallowed.
     strict SetStackLayers(struct {
         stack_id LayerStackId;
         layers vector<LayerId>:MAX_STACK_LAYERS;
