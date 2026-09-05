@@ -51,6 +51,8 @@
 #include <vector>
 
 #include <fbl/algorithm.h>
+#include <fbl/string.h>
+#include <fbl/string_printf.h>
 #include <fbl/unique_fd.h>
 #include <zxtest/zxtest.h>
 
