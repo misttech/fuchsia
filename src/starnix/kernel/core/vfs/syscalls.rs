@@ -55,18 +55,17 @@ use starnix_uapi::{
     CLOCK_REALTIME_ALARM, CLOSE_RANGE_CLOEXEC, CLOSE_RANGE_UNSHARE, EFD_CLOEXEC, EFD_NONBLOCK,
     EFD_SEMAPHORE, EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLL_CTL_DEL, EPOLL_CTL_MOD, F_ADD_SEALS,
     F_DUPFD, F_DUPFD_CLOEXEC, F_GET_SEALS, F_GETFD, F_GETFL, F_GETLEASE, F_GETLK, F_GETLK64,
-    F_GETOWN, F_GETOWN_EX, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_OWNER_PGRP, F_OWNER_PID,
-    F_OWNER_TID, F_SETFD, F_SETFL, F_SETLEASE, F_SETLK, F_SETLK64, F_SETLKW, F_SETLKW64, F_SETOWN,
-    F_SETOWN_EX, F_SETSIG, FIOCLEX, FIONCLEX, MFD_ALLOW_SEALING, MFD_CLOEXEC, MFD_EXEC,
-    MFD_HUGE_MASK, MFD_HUGE_SHIFT, MFD_HUGETLB, MFD_NOEXEC_SEAL, NAME_MAX, O_CLOEXEC, O_CREAT,
-    O_NOFOLLOW, O_PATH, O_TMPFILE, PIDFD_NONBLOCK, POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI,
-    POLLRDBAND, POLLRDNORM, POLLWRBAND, POLLWRNORM, POSIX_FADV_DONTNEED, POSIX_FADV_NOREUSE,
-    POSIX_FADV_NORMAL, POSIX_FADV_RANDOM, POSIX_FADV_SEQUENTIAL, POSIX_FADV_WILLNEED,
-    RWF_SUPPORTED, TFD_CLOEXEC, TFD_NONBLOCK, TFD_TIMER_ABSTIME, TFD_TIMER_CANCEL_ON_SET,
-    XATTR_CREATE, XATTR_NAME_MAX, XATTR_REPLACE, aio_context_t, errno, error, f_owner_ex, io_event,
-    iocb, off_t, pid_t, pollfd, pselect6_sigmask, sigset_t, statx, timespec, uapi, uid_t,
+    F_GETOWN, F_GETOWN_EX, F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW, F_SETFD, F_SETFL, F_SETLEASE,
+    F_SETLK, F_SETLK64, F_SETLKW, F_SETLKW64, F_SETOWN, F_SETOWN_EX, F_SETSIG, FIOCLEX, FIONCLEX,
+    MFD_ALLOW_SEALING, MFD_CLOEXEC, MFD_EXEC, MFD_HUGE_MASK, MFD_HUGE_SHIFT, MFD_HUGETLB,
+    MFD_NOEXEC_SEAL, NAME_MAX, O_CLOEXEC, O_CREAT, O_NOFOLLOW, O_PATH, O_TMPFILE, PIDFD_NONBLOCK,
+    POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI, POLLRDBAND, POLLRDNORM, POLLWRBAND, POLLWRNORM,
+    POSIX_FADV_DONTNEED, POSIX_FADV_NOREUSE, POSIX_FADV_NORMAL, POSIX_FADV_RANDOM,
+    POSIX_FADV_SEQUENTIAL, POSIX_FADV_WILLNEED, RWF_SUPPORTED, TFD_CLOEXEC, TFD_NONBLOCK,
+    TFD_TIMER_ABSTIME, TFD_TIMER_CANCEL_ON_SET, XATTR_CREATE, XATTR_NAME_MAX, XATTR_REPLACE,
+    aio_context_t, errno, error, io_event, iocb, off_t, pid_t, pollfd, pselect6_sigmask, sigset_t,
+    statx, timespec, uapi, uid_t,
 };
-use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -292,38 +291,16 @@ pub fn sys_fcntl(
             )?;
             Ok(newfd.into())
         }
-        F_GETOWN => match file.get_async_owner() {
-            FileAsyncOwner::Unowned => Ok(0.into()),
-            FileAsyncOwner::Thread(tid) => Ok(tid.into()),
-            FileAsyncOwner::Process(pid) => Ok(pid.into()),
-            FileAsyncOwner::ProcessGroup(pgid) => Ok((-pgid).into()),
-        },
+        F_GETOWN => Ok(file.get_async_owner().get_owner().into()),
         F_GETOWN_EX => {
-            let owner = match file.get_async_owner() {
-                FileAsyncOwner::Unowned => uapi::f_owner_ex { type_: F_OWNER_TID as i32, pid: 0 },
-                FileAsyncOwner::Thread(tid) => {
-                    uapi::f_owner_ex { type_: F_OWNER_TID as i32, pid: tid }
-                }
-                FileAsyncOwner::Process(pid) => uapi::f_owner_ex { type_: F_OWNER_PID as i32, pid },
-                FileAsyncOwner::ProcessGroup(pgid) => {
-                    uapi::f_owner_ex { type_: F_OWNER_PGRP as i32, pid: pgid }
-                }
-            };
-            let user_owner: UserRef<f_owner_ex> =
-                UserRef::<uapi::f_owner_ex>::new(UserAddress::from(arg));
+            let owner = file.get_async_owner().get_owner_ex();
+            let user_owner = UserRef::<uapi::f_owner_ex>::new(UserAddress::from(arg));
             current_task.write_object(user_owner, &owner)?;
             Ok(SUCCESS)
         }
         F_SETOWN => {
             let pid = (arg as u32) as i32;
-            let owner = match pid.cmp(&0) {
-                Ordering::Equal => FileAsyncOwner::Unowned,
-                Ordering::Greater => FileAsyncOwner::Process(pid),
-                Ordering::Less => {
-                    FileAsyncOwner::ProcessGroup(pid.checked_neg().ok_or_else(|| errno!(EINVAL))?)
-                }
-            };
-            owner.validate(current_task)?;
+            let owner = FileAsyncOwner::new(current_task, pid)?;
             // TODO: https://fxbug.dev/364569860 - Integrate with LSM file_setfowner hook.
             file.set_async_owner(owner);
             Ok(SUCCESS)
@@ -331,13 +308,7 @@ pub fn sys_fcntl(
         F_SETOWN_EX => {
             let user_owner = UserRef::<uapi::f_owner_ex>::new(UserAddress::from(arg));
             let requested_owner = current_task.read_object(user_owner)?;
-            let owner = match requested_owner.type_ as u32 {
-                F_OWNER_TID => FileAsyncOwner::Thread(requested_owner.pid),
-                F_OWNER_PID => FileAsyncOwner::Process(requested_owner.pid),
-                F_OWNER_PGRP => FileAsyncOwner::ProcessGroup(requested_owner.pid),
-                _ => return error!(EINVAL),
-            };
-            owner.validate(current_task)?;
+            let owner = FileAsyncOwner::new_ex(current_task, requested_owner)?;
             file.set_async_owner(owner);
             Ok(SUCCESS)
         }

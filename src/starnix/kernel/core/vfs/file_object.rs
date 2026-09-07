@@ -47,12 +47,12 @@ use starnix_uapi::seal_flags::SealFlags;
 use starnix_uapi::user_address::{UserAddress, UserRef};
 use starnix_uapi::vfs::FdEvents;
 use starnix_uapi::{
-    FIBMAP, FIGETBSZ, FIONBIO, FIONREAD, FIOQSIZE, FS_CASEFOLD_FL, FS_IOC_ADD_ENCRYPTION_KEY,
-    FS_IOC_ENABLE_VERITY, FS_IOC_FSGETXATTR, FS_IOC_FSSETXATTR, FS_IOC_MEASURE_VERITY,
-    FS_IOC_READ_VERITY_METADATA, FS_IOC_REMOVE_ENCRYPTION_KEY, FS_IOC_SET_ENCRYPTION_POLICY,
-    FS_VERITY_FL, FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_POLICY_V2, SEEK_CUR, SEEK_DATA,
-    SEEK_END, SEEK_HOLE, SEEK_SET, errno, error, fscrypt_add_key_arg, fscrypt_identifier, fsxattr,
-    off_t, pid_t, uapi,
+    F_OWNER_PGRP, F_OWNER_PID, F_OWNER_TID, FIBMAP, FIGETBSZ, FIONBIO, FIONREAD, FIOQSIZE,
+    FS_CASEFOLD_FL, FS_IOC_ADD_ENCRYPTION_KEY, FS_IOC_ENABLE_VERITY, FS_IOC_FSGETXATTR,
+    FS_IOC_FSSETXATTR, FS_IOC_MEASURE_VERITY, FS_IOC_READ_VERITY_METADATA,
+    FS_IOC_REMOVE_ENCRYPTION_KEY, FS_IOC_SET_ENCRYPTION_POLICY, FS_VERITY_FL,
+    FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_POLICY_V2, SEEK_CUR, SEEK_DATA, SEEK_END, SEEK_HOLE,
+    SEEK_SET, errno, error, fscrypt_add_key_arg, fscrypt_identifier, fsxattr, off_t, pid_t, uapi,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -1291,31 +1291,85 @@ impl FileOps for ProxyFileOps {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum FileAsyncOwner {
     #[default]
     Unowned,
-    Thread(pid_t),
-    Process(pid_t),
-    ProcessGroup(pid_t),
+    Thread(Option<Pid>),
+    Process(Option<Pid>),
+    ProcessGroup(Option<Pid>),
 }
 
 impl FileAsyncOwner {
-    pub fn validate(self, current_task: &CurrentTask) -> Result<(), Errno> {
-        match self {
-            FileAsyncOwner::Unowned => (),
-            FileAsyncOwner::Thread(id) | FileAsyncOwner::Process(id) => {
-                if id != 0 {
-                    current_task.get_task(id)?;
-                }
-            }
-            FileAsyncOwner::ProcessGroup(pgid) => {
-                if pgid != 0 {
-                    current_task.kernel().pids.read().get(pgid)?.get_process_group()?;
-                }
-            }
+    pub fn new(current_task: &CurrentTask, pid: pid_t) -> Result<Self, Errno> {
+        if pid == 0 {
+            Ok(Self::Unowned)
+        } else if pid > 0 {
+            let pids = current_task.kernel().pids.read();
+            let entry = pids.get(pid)?;
+            entry.get_task()?;
+            Ok(Self::Process(Some(entry.clone())))
+        } else {
+            let pgid = pid.checked_neg().ok_or_else(|| errno!(EINVAL))?;
+            let pids = current_task.kernel().pids.read();
+            let entry = pids.get(pgid)?;
+            entry.get_process_group()?;
+            Ok(Self::ProcessGroup(Some(entry.clone())))
         }
-        Ok(())
+    }
+
+    pub fn new_ex(
+        current_task: &CurrentTask,
+        requested_owner: uapi::f_owner_ex,
+    ) -> Result<Self, Errno> {
+        let pids = current_task.kernel().pids.read();
+        let get_pid = |lookup_pg: bool| -> Result<Option<Pid>, Errno> {
+            if requested_owner.pid == 0 {
+                Ok(None)
+            } else {
+                let entry = pids.get(requested_owner.pid)?;
+                if lookup_pg {
+                    entry.get_process_group()?;
+                } else {
+                    entry.get_task()?;
+                }
+                Ok(Some(entry.clone()))
+            }
+        };
+        match requested_owner.type_ as u32 {
+            F_OWNER_TID => Ok(Self::Thread(get_pid(false)?)),
+            F_OWNER_PID => Ok(Self::Process(get_pid(false)?)),
+            F_OWNER_PGRP => Ok(Self::ProcessGroup(get_pid(true)?)),
+            _ => error!(EINVAL),
+        }
+    }
+
+    pub fn get_owner(&self) -> pid_t {
+        match self {
+            Self::Unowned | Self::Thread(None) | Self::Process(None) | Self::ProcessGroup(None) => {
+                0
+            }
+            Self::Thread(Some(pid)) | Self::Process(Some(pid)) => pid.id,
+            Self::ProcessGroup(Some(pid)) => -pid.id,
+        }
+    }
+
+    pub fn get_owner_ex(&self) -> uapi::f_owner_ex {
+        match self {
+            Self::Unowned => uapi::f_owner_ex { type_: F_OWNER_TID as i32, pid: 0 },
+            Self::Thread(pid) => uapi::f_owner_ex {
+                type_: F_OWNER_TID as i32,
+                pid: pid.as_ref().map_or(0, |p| p.id),
+            },
+            Self::Process(pid) => uapi::f_owner_ex {
+                type_: F_OWNER_PID as i32,
+                pid: pid.as_ref().map_or(0, |p| p.id),
+            },
+            Self::ProcessGroup(pid) => uapi::f_owner_ex {
+                type_: F_OWNER_PGRP as i32,
+                pid: pid.as_ref().map_or(0, |p| p.id),
+            },
+        }
     }
 }
 
@@ -1936,7 +1990,7 @@ impl FileObject {
     ///
     /// See fcntl(F_GETOWN)
     pub fn get_async_owner(&self) -> FileAsyncOwner {
-        *self.async_owner.lock()
+        self.async_owner.lock().clone()
     }
 
     /// Set the async owner of this file.
