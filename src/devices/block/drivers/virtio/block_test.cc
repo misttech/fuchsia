@@ -585,6 +585,33 @@ TEST_F(BlockDriverTest, MapperService) {
   ASSERT_OK(open_result);
 }
 
+TEST_F(BlockDriverTest, ConnectMapper) {
+  StartDriver();
+
+  auto [volume_client, volume_server] = fidl::Endpoints<fuchsia_storage_block::Block>::Create();
+  driver_test().RunInDriverContext([&](TestBlockDriver& driver) {
+    driver.block_device().ServeRequests(std::move(volume_server));
+  });
+
+  fidl::SyncClient<fuchsia_storage_block::Block> block_client(std::move(volume_client));
+  auto [mapper_client, mapper_server] = fidl::Endpoints<fuchsia_storage_block::Mapper>::Create();
+  auto connect_result = block_client->ConnectMapper(std::move(mapper_server));
+  ASSERT_OK(connect_result);
+
+  auto [session_client, session_server] =
+      fidl::Endpoints<fuchsia_storage_block::MapperSession>::Create();
+
+  zx::vmo mapping_vmo;
+  ASSERT_OK(zx::vmo::create(512 * 1024, 0, &mapping_vmo));
+
+  fidl::SyncClient<fuchsia_storage_block::Mapper> sync_mapper_client(std::move(mapper_client));
+  fuchsia_storage_block::MapperOpenSessionRequest request;
+  request.session(std::move(session_server));
+  request.mapping_vmo(std::move(mapping_vmo));
+  auto open_result = sync_mapper_client->OpenSession(std::move(request));
+  ASSERT_OK(open_result);
+}
+
 FUCHSIA_DRIVER_EXPORT2(TestBlockDriver);
 
 }  // anonymous namespace

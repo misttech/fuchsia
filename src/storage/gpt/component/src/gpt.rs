@@ -512,6 +512,18 @@ impl GptManager {
         let block_count = client.block_count();
         let gpt = gpt::Gpt::open(client).await.context("Failed to load GPT")?;
 
+        let mapper_proxy = match mapper_proxy {
+            Some(proxy) => Some(proxy),
+            None => {
+                let (proxy, server) = fidl::endpoints::create_proxy::<fblock::MapperMarker>();
+                if block_proxy.connect_mapper(server).await.is_ok_and(|res| res.is_ok()) {
+                    Some(proxy)
+                } else {
+                    None
+                }
+            }
+        };
+
         let this = Arc::new(Self {
             config,
             block_proxy,
@@ -2656,9 +2668,9 @@ mod tests {
 
         let (_session_proxy, session_server_end) =
             fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
-        let mapping_vmo = zx::Vmo::create(4096).unwrap();
+        let mapping_vmo = zx::Vmo::create(mapping::MAPPING_VMO_SIZE).unwrap();
         let port = zx::Port::create();
-        let delivery_queue = zx::Vmo::create(4096).unwrap();
+        let delivery_queue = zx::Vmo::create(mapping::DELIVERY_VMO_SIZE).unwrap();
 
         part_mapper
             .open_session(session_server_end, mapping_vmo, Some(port), Some(delivery_queue))

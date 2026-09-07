@@ -442,6 +442,17 @@ closed protocol Block {
         mappings vector<BlockOffsetMapping>:MAX_MAPPINGS;
     });
 
+    /// Connects to the device's Mapper protocol, allowing read-only mapped page-in.
+    /// Since the caller already holds a handle to Block (which grants full read/write access
+    /// to the device), this method provides a direct way to obtain the corresponding Mapper
+    /// protocol without requiring an out-of-band channel or separate capability routing.
+    ///
+    /// If the device or driver does not support the Mapper protocol, ZX_ERR_NOT_SUPPORTED
+    /// is returned.
+    strict ConnectMapper(resource struct {
+        server_end server_end:Mapper;
+    }) -> () error zx.Status;
+
     // partition-specific methods
 
     /// Gets the type GUID of the partition (if one exists).

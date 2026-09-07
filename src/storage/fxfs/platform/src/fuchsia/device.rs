@@ -320,6 +320,9 @@ impl BlockServer {
             BlockRequest::OpenSessionWithOptions { session, mappings: _, control_handle: _ } => {
                 session.close_with_epitaph(zx::Status::NOT_SUPPORTED)?;
             }
+            BlockRequest::ConnectMapper { server_end: _, responder } => {
+                responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+            }
             // TODO(https://fxbug.dev/293970391)
             BlockRequest::GetTypeGuid { responder } => {
                 responder.send(zx::sys::ZX_ERR_NOT_SUPPORTED, None)?;

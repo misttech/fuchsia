@@ -77,6 +77,8 @@ class BlockDevice : public BlockDeviceType,
   void OpenSession(OpenSessionRequestView request, OpenSessionCompleter::Sync& completer) override;
   void OpenSessionWithOptions(OpenSessionWithOptionsRequestView request,
                               OpenSessionWithOptionsCompleter::Sync& completer) override;
+  void ConnectMapper(ConnectMapperRequestView request,
+                     ConnectMapperCompleter::Sync& completer) override;
 
   void GetTypeGuid(GetTypeGuidCompleter::Sync& completer) override;
   void GetInstanceGuid(GetInstanceGuidCompleter::Sync& completer) override;

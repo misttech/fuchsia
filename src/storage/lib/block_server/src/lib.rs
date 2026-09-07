@@ -587,7 +587,7 @@ impl<SM: SessionManager> BlockServer<SM> {
         loop {
             match requests.try_next().await {
                 Ok(Some(request)) => {
-                    if let Some(session) = self.handle_request(request).await? {
+                    if let Some(session) = self.handle_request(request, &scope).await? {
                         scope.spawn(session.map(|_| ()));
                     }
                 }
@@ -602,20 +602,51 @@ impl<SM: SessionManager> BlockServer<SM> {
     /// Called to process requests for fuchsia.storage.block.Mapper.
     pub async fn handle_mapper_requests(
         &self,
+        requests: fblock::MapperRequestStream,
+    ) -> Result<(), Error> {
+        Self::handle_mapper_requests_impl(self.orchestrator.clone(), self.block_size, requests)
+            .await
+    }
+
+    async fn handle_mapper_requests_impl(
+        orchestrator: Arc<SM::Orchestrator>,
+        block_size: u32,
         mut requests: fblock::MapperRequestStream,
     ) -> Result<(), Error> {
         let scope = fasync::Scope::new();
         loop {
             match requests.try_next().await {
-                Ok(Some(request)) => {
-                    if let Some(session) = self.handle_mapper_request(request).await? {
-                        scope.spawn(async move {
-                            if let Err(error) = session.await {
-                                log::warn!(error:?; "Mapper session failed");
+                Ok(Some(request)) => match request {
+                    fblock::MapperRequest::OpenSession {
+                        session,
+                        mapping_vmo,
+                        port,
+                        delivery_queue,
+                        responder,
+                    } => {
+                        match SM::open_mapper_session(
+                            orchestrator.clone(),
+                            session,
+                            mapping_vmo,
+                            block_size,
+                            port,
+                            delivery_queue,
+                        ) {
+                            Ok(fut) => {
+                                responder.send(Ok(()))?;
+                                scope.spawn(async move {
+                                    if let Err(error) = fut.await {
+                                        log::warn!(error:?; "Mapper session failed");
+                                    }
+                                });
                             }
-                        });
+                            Err(status) => {
+                                responder.send(Err(status.into_raw()))?;
+                            }
+                        }
                     }
-                }
+                    fblock::MapperRequest::_UnknownMethod { .. } => {}
+                },
                 Ok(None) => break,
                 Err(error) => log::warn!(error:?; "Invalid mapper request"),
             }
@@ -624,47 +655,12 @@ impl<SM: SessionManager> BlockServer<SM> {
         Ok(())
     }
 
-    /// Processes a Mapper request. If a new session task is created, it is
-    /// returned.
-    async fn handle_mapper_request(
-        &self,
-        request: fblock::MapperRequest,
-    ) -> Result<Option<impl Future<Output = Result<(), Error>> + Send + use<SM>>, Error> {
-        match request {
-            fblock::MapperRequest::OpenSession {
-                session,
-                mapping_vmo,
-                port,
-                delivery_queue,
-                responder,
-            } => {
-                match SM::open_mapper_session(
-                    self.orchestrator.clone(),
-                    session,
-                    mapping_vmo,
-                    self.block_size,
-                    port,
-                    delivery_queue,
-                ) {
-                    Ok(fut) => {
-                        responder.send(Ok(()))?;
-                        return Ok(Some(fut));
-                    }
-                    Err(status) => {
-                        responder.send(Err(status.into_raw()))?;
-                        return Ok(None);
-                    }
-                }
-            }
-            fblock::MapperRequest::_UnknownMethod { .. } => Ok(None),
-        }
-    }
-
     /// Processes a Block request.  If a new session task is created in response to the request,
     /// it is returned.
     async fn handle_request(
         &self,
         request: fblock::BlockRequest,
+        scope: &fasync::Scope,
     ) -> Result<Option<impl Future<Output = Result<(), Error>> + Send + use<SM>>, Error> {
         match request {
             fblock::BlockRequest::GetInfo { responder } => {
@@ -731,6 +727,22 @@ impl<SM: SessionManager> BlockServer<SM> {
                     offset_map,
                     self.block_size,
                 )));
+            }
+            fblock::BlockRequest::ConnectMapper { server_end, responder } => {
+                let orchestrator = self.orchestrator.clone();
+                let block_size = self.block_size;
+                scope.spawn(async move {
+                    if let Err(e) = Self::handle_mapper_requests_impl(
+                        orchestrator,
+                        block_size,
+                        server_end.into_stream(),
+                    )
+                    .await
+                    {
+                        log::warn!(e:?; "Error serving mapper requests");
+                    }
+                });
+                let _ = responder.send(Ok(()));
             }
             fblock::BlockRequest::GetTypeGuid { responder } => {
                 match self.device_info().type_guid() {

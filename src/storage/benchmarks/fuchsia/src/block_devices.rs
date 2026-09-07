@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use async_trait::async_trait;
-use block_matcher::{BlockDeviceMatcher, Guid, create_random_guid, find_block_device};
+use block_matcher::{Guid, create_random_guid};
 use fidl::endpoints::{
     DiscoverableProtocolMarker as _, Proxy, create_proxy, create_request_stream,
 };
@@ -14,9 +14,6 @@ use fidl_fuchsia_storage_partitions as fpartitions;
 use fs_management::Fvm;
 use fs_management::filesystem::{
     BlockConnector, DirBasedBlockConnector, ServingMultiVolumeFilesystem,
-};
-use fs_management::format::constants::{
-    BENCHMARK_FVM_TYPE_GUID, BENCHMARK_FVM_VOLUME_NAME, PAD_RW_PARTITION_LABEL,
 };
 use fuchsia_async as fasync;
 use fuchsia_component::client::{Service, connect_to_protocol, connect_to_protocol_at_dir_root};
@@ -183,71 +180,13 @@ impl BenchmarkVolumeFactory {
         service: Service<fpartitions::PartitionServiceMarker>,
         manager: fpartitions::PartitionsManagerProxy,
     ) -> Option<BenchmarkVolumeFactory> {
-        let connector = if let Some(connector) = find_block_device(
-            &[
-                BlockDeviceMatcher::Name(BENCHMARK_FVM_VOLUME_NAME),
-                BlockDeviceMatcher::TypeGuid(&BENCHMARK_FVM_TYPE_GUID),
-            ],
-            service.clone().enumerate().await.expect("Failed to enumerate partitions").into_iter(),
+        let connector = block_matcher::find_or_create_test_partition(
+            service,
+            manager,
+            BENCHMARK_FVM_SIZE_BYTES,
         )
         .await
-        .expect("Error while searching for benchmark-fvm")
-        {
-            // If the test partition already exists, just use it.
-            connector
-        } else if let Some(connector) = find_block_device(
-            &[BlockDeviceMatcher::Name(PAD_RW_PARTITION_LABEL)],
-            service.clone().enumerate().await.expect("Failed to enumerate partitions").into_iter(),
-        )
-        .await
-        .expect("Error while searching for pad_rw")
-        {
-            // New partitions can't be created on sorrel but we can use the pad_rw partition.
-            connector
-        } else {
-            // Otherwise, create the test partition in the GPT.
-            let info =
-                manager.get_block_info().await.expect("FIDL error").expect("get_block_info failed");
-            let transaction = manager
-                .create_transaction()
-                .await
-                .expect("FIDL error")
-                .map_err(zx::Status::err_from_raw)
-                .expect("create_transaction failed");
-            let request = fpartitions::PartitionsManagerAddPartitionRequest {
-                transaction: Some(transaction.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
-                name: Some(BENCHMARK_FVM_VOLUME_NAME.to_string()),
-                type_guid: Some(fidl_fuchsia_storage_block::Guid {
-                    value: BENCHMARK_FVM_TYPE_GUID.clone(),
-                }),
-                num_blocks: Some(BENCHMARK_FVM_SIZE_BYTES / info.1 as u64),
-                ..Default::default()
-            };
-            manager
-                .add_partition(request)
-                .await
-                .expect("FIDL error")
-                .map_err(zx::Status::err_from_raw)
-                .expect("add_partition failed");
-            manager
-                .commit_transaction(transaction)
-                .await
-                .expect("FIDL error")
-                .map_err(zx::Status::err_from_raw)
-                .expect("add_partition failed");
-            let service_instances =
-                service.enumerate().await.expect("Failed to enumerate partitions");
-            log::info!("len {}", service_instances.len());
-            find_block_device(
-                &[
-                    BlockDeviceMatcher::Name(BENCHMARK_FVM_VOLUME_NAME),
-                    BlockDeviceMatcher::TypeGuid(&BENCHMARK_FVM_TYPE_GUID),
-                ],
-                service_instances.into_iter(),
-            )
-            .await
-            .expect("Failed to find block device")?
-        };
+        .expect("Failed to find or create test partition");
 
         Some(BenchmarkVolumeFactory::SystemGpt(Arc::new(connector)))
     }

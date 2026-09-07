@@ -108,6 +108,9 @@ impl DeliveryQueueProvider for TestVmoProvider {
         let vmos = self.vmos.lock();
         if let Some(target_vmo) = vmos.get(&key) {
             let length = unverified_pages.len_in_bytes() as u64;
+            if length == 0 {
+                return Ok(());
+            }
             self.pager.supply_pages(
                 target_vmo,
                 target_offset..target_offset + length,

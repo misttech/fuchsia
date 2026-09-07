@@ -512,10 +512,12 @@ impl Gpt {
         let slot_idx = slot_idx.ok_or(AddPartitionError::NoSpace)?;
         allocated_ranges.sort_by_key(|range| range.start);
 
+        let alignment = (4096 / self.client.block_size() as u64).max(1);
         let mut start_block = None;
         for [a, b] in allocated_ranges.array_windows() {
-            if b.start - a.end >= info.num_blocks {
-                start_block = Some(a.end);
+            let candidate = a.end.next_multiple_of(alignment);
+            if candidate <= b.start && b.start - candidate >= info.num_blocks {
+                start_block = Some(candidate);
                 break;
             }
         }

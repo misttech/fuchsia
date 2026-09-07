@@ -124,3 +124,85 @@ where
     }
     Ok(None)
 }
+
+pub const DEFAULT_BENCHMARK_FVM_SIZE_BYTES: u64 = 160 * 1024 * 1024;
+
+/// Finds a partition reserved for testing/benchmarks in GPT, or creates it if absent.
+pub async fn find_or_create_test_partition(
+    service: fuchsia_component::client::Service<fpartitions::PartitionServiceMarker>,
+    manager: fpartitions::PartitionsManagerProxy,
+    partition_size_bytes: u64,
+) -> Result<fpartitions::PartitionServiceProxy> {
+    if let Some(connector) = find_block_device(
+        &[
+            BlockDeviceMatcher::Name(fs_management::format::constants::BENCHMARK_FVM_VOLUME_NAME),
+            BlockDeviceMatcher::TypeGuid(
+                &fs_management::format::constants::BENCHMARK_FVM_TYPE_GUID,
+            ),
+        ],
+        service.clone().enumerate().await.context("Failed to enumerate partitions")?.into_iter(),
+    )
+    .await
+    .context("Error while searching for benchmark-fvm")?
+    {
+        return Ok(connector);
+    }
+
+    if let Some(connector) = find_block_device(
+        &[BlockDeviceMatcher::Name(fs_management::format::constants::PAD_RW_PARTITION_LABEL)],
+        service.clone().enumerate().await.context("Failed to enumerate partitions")?.into_iter(),
+    )
+    .await
+    .context("Error while searching for pad_rw")?
+    {
+        return Ok(connector);
+    }
+
+    // Otherwise, create the test partition in the GPT.
+    let info = manager
+        .get_block_info()
+        .await
+        .context("FIDL error on get_block_info")?
+        .map_err(zx::Status::err_from_raw)
+        .context("get_block_info failed")?;
+    let transaction = manager
+        .create_transaction()
+        .await
+        .context("FIDL error on create_transaction")?
+        .map_err(zx::Status::err_from_raw)
+        .context("create_transaction failed")?;
+    let request = fpartitions::PartitionsManagerAddPartitionRequest {
+        transaction: Some(transaction.duplicate_handle(zx::Rights::SAME_RIGHTS)?),
+        name: Some(fs_management::format::constants::BENCHMARK_FVM_VOLUME_NAME.to_string()),
+        type_guid: Some(fidl_fuchsia_storage_block::Guid {
+            value: fs_management::format::constants::BENCHMARK_FVM_TYPE_GUID,
+        }),
+        num_blocks: Some(partition_size_bytes / info.1 as u64),
+        ..Default::default()
+    };
+    manager
+        .add_partition(request)
+        .await
+        .context("FIDL error on add_partition")?
+        .map_err(zx::Status::err_from_raw)
+        .context("add_partition failed")?;
+    manager
+        .commit_transaction(transaction)
+        .await
+        .context("FIDL error on commit_transaction")?
+        .map_err(zx::Status::err_from_raw)
+        .context("commit_transaction failed")?;
+
+    let service_instances = service.enumerate().await.context("Failed to enumerate partitions")?;
+    find_block_device(
+        &[
+            BlockDeviceMatcher::Name(fs_management::format::constants::BENCHMARK_FVM_VOLUME_NAME),
+            BlockDeviceMatcher::TypeGuid(
+                &fs_management::format::constants::BENCHMARK_FVM_TYPE_GUID,
+            ),
+        ],
+        service_instances.into_iter(),
+    )
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("Failed to find newly created test partition"))
+}

@@ -197,7 +197,7 @@ async fn test_overlay(overlay_enabled: bool) {
         entries.sort();
         if overlay_enabled && partition_info.name.as_deref() == Some("super_and_userdata") {
             // Ensure that the original partition information can be queried
-            assert_eq!(entries, vec!["overlay", "volume"]);
+            assert_eq!(entries, vec!["mapper", "overlay", "volume"]);
             let overlay = fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
                 fpartitions::OverlayPartitionMarker,
             >(&dir, "overlay")
@@ -242,7 +242,7 @@ async fn test_overlay(overlay_enabled: bool) {
                 .expect("read failed");
             assert_eq!(b"userdata", &buf[..8]);
         } else {
-            assert_eq!(entries, vec!["partition", "volume"]);
+            assert_eq!(entries, vec!["mapper", "partition", "volume"]);
         }
         found_partitions.push(partition_info);
     }

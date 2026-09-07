@@ -135,6 +135,7 @@ async fn run_mapper_session_loop<
                         responder.send(Ok(()))?;
                     }
                     Err(status) => {
+                        log::warn!(status:?; "serve_mapper_session failed for child session");
                         responder.send(Err(status.into_raw()))?;
                     }
                 }

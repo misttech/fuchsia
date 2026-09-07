@@ -73,6 +73,9 @@ impl DataBuffer for Buffer {
     }
 
     fn commit(&mut self, size: usize) -> Result<(), ChunkedArchiveError> {
+        if size == 0 {
+            return Ok(());
+        }
         // TODO(https://fxbug.dev/530494057): Add support for verification and optimize buffer
         // management / payload reservations.
         let chunk_data = &self.data[self.committed_len..self.committed_len + size];
@@ -81,10 +84,11 @@ impl DataBuffer for Buffer {
         let mut sender_guard = self.verifier.sender.lock();
         if let Some(sender) = sender_guard.as_mut() {
             let page_size = zx::system_get_page_size() as usize;
-            let aligned_size = size.div_ceil(page_size) * page_size;
-            let mut payload = sender
-                .reserve_payload(aligned_size)
-                .map_err(|_| ChunkedArchiveError::IntegrityError)?;
+            let aligned_size = size.next_multiple_of(page_size);
+            let mut payload = sender.reserve_payload(aligned_size).map_err(|e| {
+                log::error!(e:?; "Verifier::commit: reserve_payload failed");
+                ChunkedArchiveError::IntegrityError
+            })?;
 
             let payload_data = payload.data();
             payload_data.subslice_mut(0..size).copy_from_slice(chunk_data);

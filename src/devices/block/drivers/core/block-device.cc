@@ -134,6 +134,11 @@ void BlockDevice::OpenSessionWithOptions(OpenSessionWithOptionsRequestView reque
   CreateSession(std::move(request->session), request->mappings);
 }
 
+void BlockDevice::ConnectMapper(ConnectMapperRequestView request,
+                                ConnectMapperCompleter::Sync& completer) {
+  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
+}
+
 void BlockDevice::CreateSession(
     fidl::ServerEnd<fuchsia_storage_block::Session> session,
     fidl::VectorView<fuchsia_storage_block::wire::BlockOffsetMapping> mappings) {

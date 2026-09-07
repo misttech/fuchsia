@@ -406,6 +406,7 @@ group("tests") {
     ":lib_test($host_toolchain)",
     ":lsm_tree_bench($host_toolchain)",
     "//src/storage/fxfs:type_fingerprints_golden_test",
+    "//src/storage/fxfs/test:tests",
     "//src/storage/fxfs/tools:tests",
     "//src/storage/fxfs/trace:tests",
     "//src/storage/fxfs/unicode:tests",
