@@ -18,8 +18,4 @@ extern "C" {
 
 FFI_ALWAYS_INLINE void cpp_pmm_node_destroy(PmmNode* node) { node->~PmmNode(); }
 
-FFI_ALWAYS_INLINE void cpp_pmm_node_add_free_pages(PmmNode* node, VmPageDoublyLinkedList* list) {
-  node->AddFreePages(list);
-}
-
 }  // extern "C"

@@ -194,8 +194,6 @@ impl PmmArena {
         // add all pages that aren't part of the page array to the free list
         // pages part of the free array go to the WIRED state.
         pin_init::stack_pin_init!(let list = fbl::DoublyLinkedList::<*mut VmPage>::new());
-        // SAFETY: `list` is pinned on stack; obtaining mutable reference to the list is safe.
-        let list = unsafe { list.get_unchecked_mut() };
         let base = self.base().0;
 
         for (index, p) in self.as_slice_mut().iter_mut().enumerate() {
@@ -203,10 +201,15 @@ impl PmmArena {
             if index >= array_start_index && index < array_end_index {
                 p.set_state(VmPageState(vm_page_state::WIRED));
             } else {
-                unsafe { list.push_back_raw(p) };
+                // SAFETY: `list` is pinned on stack; obtaining mutable reference to the list is safe.
+                unsafe { list.as_mut().get_unchecked_mut().push_back_raw(p) };
             }
         }
-        node.add_free_pages(list);
+
+        // SAFETY: These pages are freshly constructed and therefore owned by us.
+        unsafe {
+            node.add_free_pages(list);
+        }
     }
 
     /// Initializes the arena for testing with the given info and page array.

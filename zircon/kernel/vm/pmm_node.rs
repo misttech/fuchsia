@@ -12,10 +12,14 @@ use crate::vm::page::{VmPage, VmPagePtr};
 use crate::vm::page_queues::PageQueues;
 use crate::vm::pmm_arena::PmmArena;
 use crate::vm::pmm_checker::PmmChecker;
-use core::sync::atomic::{AtomicBool, AtomicU64};
+use core::pin::Pin;
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use debug::ltracef;
 use ksync::{KMutex, LockToken, RawMutex, guarded, kcell_init};
 use pin_init::{PinInit, pin_data, pin_init};
 use pmm_node_bindings as bindings;
+
+const LOCAL_TRACE: u32 = 0;
 
 pub type AllocFailureType = bindings::PmmNode_AllocFailure_Type;
 
@@ -591,14 +595,53 @@ impl PmmNode {
     }
 
     /// Add new pages to the free queue. Used when bootstrapping a PmmArena.
-    pub fn add_free_pages(&mut self, list: &mut fbl::DoublyLinkedList<*mut VmPage>) {
-        unsafe {
-            bindings::cpp_pmm_node_add_free_pages(
-                self.as_raw(),
-                (list as *mut fbl::DoublyLinkedList<*mut VmPage>).cast(),
-            )
+    ///
+    /// # Safety
+    ///
+    /// Caller guarantees that all pages in |list| are valid and owned by them.
+    pub unsafe fn add_free_pages(
+        &mut self,
+        mut list: Pin<&mut fbl::DoublyLinkedList<*mut VmPage>>,
+    ) {
+        ltracef!("list {:p}\n", list.as_ref().get_ref() as *const _);
+
+        // SAFETY: called at boot time as arenas are brought online, no locks are acquired
+        let mut token = unsafe { LockToken::new() };
+
+        let mut free_count = 0u64;
+        // SAFETY: pop_front does not move data outside the list and therefore the Pin invariants
+        // are upheld.
+        while let Some(page) = unsafe { list.as_mut().get_unchecked_mut().pop_front() } {
+            // SAFETY: `page` comes from the list of valid `VmPage` pointers constructed during
+            // arena initialization.
+            unsafe {
+                debug_assert!(!(*page).is_loaned());
+                debug_assert!(!(*page).is_loan_cancelled());
+                debug_assert!((*page).is_free());
+                self.free_list.get_mut(&mut token).push_back_raw(page);
+            }
+            free_count += 1;
         }
+        // SAFETY: called at boot time as arenas are brought online, no locks are acquired
+        unsafe { self.free_count.get(&token) }.fetch_add(free_count, Ordering::Relaxed);
+        // SAFETY: called at boot time as arenas are brought online, no locks are acquired
+        assert!(unsafe { self.free_count.get(&token) }.load(Ordering::Relaxed) != 0);
+        self.may_allocate_evt.signal();
+
+        ltracef!(
+            "free count now {}\n",
+            unsafe { self.free_count.get(&token) }.load(Ordering::Relaxed)
+        );
     }
+}
+
+#[unsafe(no_mangle)]
+unsafe extern "C" fn rust_pmm_node_add_free_pages(
+    node: *mut PmmNode,
+    list: *mut fbl::DoublyLinkedList<*mut VmPage>,
+) {
+    // SAFETY: Caller guarantees these are not null and are pinned.
+    unsafe { node.as_mut_unchecked().add_free_pages(Pin::new_unchecked(list.as_mut_unchecked())) }
 }
 
 /// Unit tests for PmmNode.

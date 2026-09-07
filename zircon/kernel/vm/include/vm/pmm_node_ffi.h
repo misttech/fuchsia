@@ -18,7 +18,6 @@
 __BEGIN_CDECLS
 
 FFI_ALWAYS_INLINE void cpp_pmm_node_destroy(PmmNode* node);
-FFI_ALWAYS_INLINE void cpp_pmm_node_add_free_pages(PmmNode* node, VmPageDoublyLinkedList* list);
 
 __END_CDECLS
 

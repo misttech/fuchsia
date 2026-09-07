@@ -380,10 +380,7 @@ kernel_bindgen_crate("pmm-node-bindings") {
   cpp = true
 
   notice_year = 2026
-  function_allowlist = [
-    "cpp_pmm_node_add_free_pages",
-    "cpp_pmm_node_destroy",
-  ]
+  function_allowlist = [ "cpp_pmm_node_destroy" ]
   type_allowlist = [
     "PmmOptDelayReuse",
     "PmmNode",

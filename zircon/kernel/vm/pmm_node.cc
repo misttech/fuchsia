@@ -39,6 +39,11 @@
 KCOUNTER(pmm_alloc_failed, "vm.pmm.alloc.failed")
 KCOUNTER(pmm_alloc_delayed, "vm.pmm.alloc.delayed")
 
+extern "C" {
+
+void rust_pmm_node_add_free_pages(PmmNode* node, VmPageDoublyLinkedList* list);
+}
+
 namespace {
 
 // Poison a page |p| with value |value|. Accesses to a poisoned page via the physmap are not
@@ -178,21 +183,7 @@ zx_status_t PmmNode::GetArenaInfo(size_t count, uint64_t i, pmm_arena_info_t* bu
 
 // called at boot time as arenas are brought online, no locks are acquired
 void PmmNode::AddFreePages(VmPageDoublyLinkedList* list) TA_NO_THREAD_SAFETY_ANALYSIS {
-  LTRACEF("list %p\n", list);
-
-  uint64_t free_count = 0;
-  while (vm_page_t* page = list->pop_front()) {
-    DEBUG_ASSERT(!page->is_loaned());
-    DEBUG_ASSERT(!page->is_loan_cancelled());
-    DEBUG_ASSERT(page->is_free());
-    free_list_.push_back(page);
-    ++free_count;
-  }
-  free_count_.fetch_add(free_count);
-  ASSERT(free_count_);
-  may_allocate_evt_.Signal();
-
-  LTRACEF("free count now %" PRIu64 "\n", free_count_.load(ktl::memory_order_relaxed));
+  rust_pmm_node_add_free_pages(this, list);
 }
 
 void PmmNode::FillFreePagesAndArm() {
