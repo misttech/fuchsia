@@ -66,7 +66,7 @@ rustc_binary(
 ## Common Pitfalls and Best Practices
 
 ### 1. Preventing Redundant Binary Syncs
-Add `# @bazel2gn:skip` on the line immediately preceding `rustc_binary` in `BUILD.bazel` to prevent `bazel2gn` from generating conflicting GN targets.
+When `BUILD.gn` is retained (due to unmigrated targets), add `# @bazel2gn:skip` on the line immediately preceding `rustc_binary` in `BUILD.bazel` to prevent `bazel2gn` from generating conflicting GN targets. If all targets in `BUILD.gn` are migrated and `BUILD.gn` is deleted, omit `# @bazel2gn:skip`.
 
 ### 2. Preserving GN Target Shape for Unit Tests
 Match the GN test structure exactly to ensure correct `bazel2gn` sync:

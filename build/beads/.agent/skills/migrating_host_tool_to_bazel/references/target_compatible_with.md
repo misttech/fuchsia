@@ -4,9 +4,13 @@ If a target in the BUILD.gn file is guarded by `is_host`, (e.g.
 `assert(is_host)` or `if (is_host)`), its equivalent target in the BUILD.bazel
 file must specify the `target_compatible_with` attribute to:
 
-* `HOST_OS_CONSTRAINTS`, if the target is a tool included in IDK or a library.
-* `HOST_CONSTRAINTS`, if the target is a tool not included in the IDK or is
-  a test of a host tool.
+**For tools not in the IDK:**
+* Add `load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")` to `BUILD.bazel`.
+* Set `target_compatible_with` to `HOST_CONSTRAINTS`.
+
+**For tools in the IDK:**
+* Add `load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")` to `BUILD.bazel`.
+* Set `target_compatible_with` to ` HOST_OS_CONSTRAINTS`.
 
 **NOTE:** In the BUILD.gn file, if the target is associated with a
 `sdk_host_tool()` target or is defined using the template which invokes
