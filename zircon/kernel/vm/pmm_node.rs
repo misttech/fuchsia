@@ -817,8 +817,8 @@ impl PmmNode {
         unsafe { bindings::cpp_pmm_node_has_alloc_failed_no_mem(self.as_raw()) }
     }
 
-    /// Retrieves information given to |ReportAllocFailure|. Due to book keeping limitations this will
-    /// only return information from the first failure.
+    /// Retrieves information given to |ReportAllocFailure|. Due to book keeping limitations this
+    /// will only return information from the first failure.
     pub fn get_first_alloc_failure(&self) -> AllocFailure {
         let mut failure = AllocFailure::default();
         // SAFETY: FFI call passing valid stack pointer.
@@ -843,8 +843,8 @@ impl PmmNode {
         }
     }
 
-    /// Frees all pages in the given list and places them in the loaned state available to be returned
-    /// from AllocLoanedPage.
+    /// Frees all pages in the given list and places them in the loaned state available to be
+    /// returned from AllocLoanedPage.
     ///
     /// |delay_reuse| controls whether the newly loaned pages are eligile for immediate or delayed
     /// reuse.
@@ -867,14 +867,14 @@ impl PmmNode {
         }
     }
 
-    /// Marks a page that had been previously provided to BeginLoan as cancelled. This page may be in
-    /// the FREE_LOANED state, or presently in use.
+    /// Marks a page that had been previously provided to BeginLoan as cancelled. This page may be
+    /// in the FREE_LOANED state, or presently in use.
     ///
     /// This call prevents the page from being reused for any new purpose until EndLoan(). For
-    /// presently-FREE_LOANED pages, this removes the pages from free_loaned_list_. For presently-used
-    /// pages, this specifies that the page will not be added to free_loaned_list_ when later freed.
-    /// Once this page is FREE_LOANED (to be ensured by the caller via PhysicalPageProvider reclaim of
-    /// the pages), the loan can be ended with EndLoan().
+    /// presently-FREE_LOANED pages, this removes the pages from free_loaned_list_. For
+    /// presently-used pages, this specifies that the page will not be added to free_loaned_list_
+    /// when later freed. Once this page is FREE_LOANED (to be ensured by the caller via
+    /// PhysicalPageProvider reclaim of the pages), the loan can be ended with EndLoan().
     ///
     /// # Safety
     ///
@@ -901,8 +901,8 @@ impl PmmNode {
     /// is_loaned() being true, and must be returned by either FreeLoanedPage or FreeLoanedList. If
     /// there are not loaned pages available ZX_ERR_UNAVAILABLE is returned, as an absence of loaned
     /// pages does not constitute an out of memory scenario.
-    /// The provided callback must transition the page into a state such that it has a valid backlink,
-    /// i.e. it is in the OBJECT state with an owner set, prior to returning.
+    /// The provided callback must transition the page into a state such that it has a valid
+    /// backlink, i.e. it is in the OBJECT state with an owner set, prior to returning.
     /// During the execution of the callback the page contents must *not* be modified.
     pub fn alloc_loaned_page<F: FnOnce(VmPagePtr)>(
         &self,
@@ -937,12 +937,12 @@ impl PmmNode {
     }
 
     /// Begins freeing a loaned page that was previously allocated by AllocLoanPage by moving into a
-    /// holding object. It is an error to attempt to free a non loaned page. When this method is called
-    /// the |page| must have a valid backlink (i.e. be in the OBJECT state with an owner set). This
-    /// backlink should be removed by the |release_page| callback, which is invoked under the loaned
-    /// pages lock, prior to transition the page into the holding state. The caller *must*, at some
-    /// point in the future, complete the page freeing process by passing the provided |flph| into a
-    /// |FinishFreeLoanedPages| call.
+    /// holding object. It is an error to attempt to free a non loaned page. When this method is
+    /// called the |page| must have a valid backlink (i.e. be in the OBJECT state with an owner
+    /// set). This backlink should be removed by the |release_page| callback, which is invoked
+    /// under the loaned pages lock, prior to transition the page into the holding state. The caller
+    /// *must*, at some point in the future, complete the page freeing process by passing the
+    /// provided |flph| into a |FinishFreeLoanedPages| call.
     ///
     /// # Safety
     ///
@@ -967,7 +967,8 @@ impl PmmNode {
 
         let mut closure = Some(release_page);
         let flph_ptr: *mut FreeLoanedPagesHolder = unsafe { flph.get_unchecked_mut() };
-        // SAFETY: FFI call passing valid node, page, function pointer, cookie pointer, and flph pointer.
+        // SAFETY: FFI call passing valid node, page, function pointer, cookie pointer, and flph
+        // pointer.
         unsafe {
             bindings::cpp_pmm_node_begin_free_loaned_page(
                 self.as_raw(),
@@ -980,8 +981,8 @@ impl PmmNode {
     }
 
     /// Completes the freeing of any loaned pages in |flph|, after which |flph| is allowed to be
-    /// destructed. Once this method is called on a given |flph| that object is effectively 'dead' and
-    /// is not allowed to be passed to any PmmNode methods.
+    /// destructed. Once this method is called on a given |flph| that object is effectively 'dead'
+    /// and is not allowed to be passed to any PmmNode methods.
     pub fn finish_free_loaned_pages(&self, flph: Pin<&mut FreeLoanedPagesHolder>) {
         let flph_ptr: *mut FreeLoanedPagesHolder = unsafe { flph.get_unchecked_mut() };
         // SAFETY: FFI call passing valid node and flph pointer.
@@ -1049,10 +1050,1141 @@ unsafe extern "C" fn rust_pmm_node_add_free_pages(
 #[cfg(ktest)]
 #[unittest::suite(name = "pmm_node_rust")]
 mod pmm_node_rust {
-    use pin_init::stack_pin_init;
-    /// Tests simple creation and destruction
+    use super::{
+        ALLOC_FLAG_ANY, ALLOC_FLAG_CAN_WAIT, AllocFailure, AllocFailureType, PmmNode,
+        PmmOptDelayReuse,
+    };
+    use crate::kernel::deadline::{Deadline, DurationMono, TimerSlack};
+    use crate::kernel::thread;
+    use crate::platform_rs::timer::InstantMono;
+    use crate::vm::page::{VmPage, VmPagePtr};
+    use crate::vm::page_state::VmPageState;
+    use crate::vm::page_state::bindings::vm_page_state;
+    use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
+    use crate::vm::physmap::paddr_to_physmap;
+    use core::ptr::NonNull;
+    use core::sync::atomic::{AtomicI32, Ordering};
+    use fbl::DoublyLinkedList;
+    use page::SIZE as PAGE_SIZE;
+    use pin_init::{stack_pin_init, stack_try_pin_init};
+    use unittest::{
+        assert_gt, assert_ok, assert_true, expect_eq, expect_false, expect_ne, expect_ok,
+        expect_true, unwrap_ok,
+    };
+    use zx_status::Status;
+
+    /// Helper class for managing a PmmNode with real pages. alloc_range and alloc_contiguous are
+    /// not supported by the managed PmmNode object. Only a single instance can exist at a time.
+    #[pin_data(PinnedDrop)]
+    pub struct ManagedPmmNode {
+        #[pin]
+        node: PmmNode,
+        #[pin]
+        event: Event,
+        /// VMO that we will use to have a valid backlink for any loaned pages that get allocated.
+        vmo: fbl::RefPtr<crate::vm::vm_object_paged::VmObjectPaged>,
+        /// An optional scanner disable that is instantiated should any loaned pages get allocated.
+        /// This is needed as our backlinks, while valid pointers, will confuse reclamation if it
+        /// tries to reclaim using them.
+        scanner_disable: core::cell::RefCell<Option<crate::vm::scanner::AutoVmScannerDisable>>,
+    }
+
+    impl ManagedPmmNode {
+        pub const NUM_PAGES: usize = 64;
+        pub const DEFAULT_MEM_EVENT_LOWER_BOUND: u64 = (Self::NUM_PAGES / 2) as u64;
+        pub const DEFAULT_SHOULD_WAIT_LEVEL: u64 = (Self::NUM_PAGES / 4) as u64;
+
+        pub const DEFAULT_LOW_MEM_ALLOC: usize =
+            Self::NUM_PAGES - Self::DEFAULT_SHOULD_WAIT_LEVEL as usize + 1;
+        pub const DEFAULT_MEM_EVENT_ALLOC: usize =
+            Self::NUM_PAGES - Self::DEFAULT_MEM_EVENT_LOWER_BOUND as usize + 1;
+
+        pub fn init() -> impl PinInit<Self, Status> {
+            pin_init!(&_this in Self {
+                node <- PmmNode::init(),
+                event <- Event::init_unsignaled(),
+                vmo: crate::vm::vm_object_paged::VmObjectPaged::create(0, 0, 0)?,
+                scanner_disable: core::cell::RefCell::new(None),
+            }? Status)
+        }
+
+        pub fn setup(self: Pin<&mut Self>) -> Result<(), Status> {
+            pin_init::stack_pin_init!(let list = fbl::DoublyLinkedList::<*mut VmPage>::new());
+            crate::vm::pmm::alloc_pages(Self::NUM_PAGES, 0, list.as_mut())?;
+            for page in list.iter() {
+                // TODO: Prevent this page state from allowing AllocContiguous() to potentially find
+                // run of FREE pages involving some of these pages.
+                // SAFETY: Setting page state for initialized test pages.
+                unsafe {
+                    page_bindings::cpp_vm_page_set_state(
+                        page as *const _ as *mut _,
+                        page_bindings::vm_page_state::FREE,
+                    );
+                };
+            }
+            // SAFETY: Destructuring pinned ManagedPmmNode during setup.
+            let this = unsafe { self.get_unchecked_mut() };
+            // SAFETY: Pages were allocated and transitioned to FREE state above.
+            unsafe { this.node.add_free_pages(list.as_mut()) };
+
+            assert!(this.node.enable_free_page_filling(
+                page::SIZE,
+                crate::vm::pmm_checker::CheckFailAction::Panic
+            ));
+            this.node.fill_free_pages_and_arm();
+
+            let result = this.reset_default_mem_event();
+            assert!(result);
+
+            Ok(())
+        }
+
+        pub fn is_event_signaled(&self) -> bool {
+            self.event.wait(&crate::kernel::deadline::Deadline::infinite_past()).is_ok()
+        }
+
+        pub fn unsignal_event(&self) {
+            let _ = self.event.unsignal();
+        }
+
+        pub fn reset_default_mem_event(&self) -> bool {
+            self.set_free_memory_signal(
+                Self::DEFAULT_MEM_EVENT_LOWER_BOUND,
+                u64::MAX,
+                Self::DEFAULT_SHOULD_WAIT_LEVEL,
+            )
+        }
+
+        pub fn set_free_memory_signal(
+            &self,
+            lower_bound: u64,
+            higher_bound: u64,
+            delay_pages: u64,
+        ) -> bool {
+            // SAFETY: event has same lifetime as node.
+            unsafe {
+                self.node.set_free_memory_signal(
+                    lower_bound,
+                    higher_bound,
+                    delay_pages,
+                    (&self.event).into(),
+                )
+            }
+        }
+
+        pub fn node(&self) -> &PmmNode {
+            &self.node
+        }
+
+        pub fn alloc_loaned_pages(
+            &self,
+            count: usize,
+            pages: &mut [Option<VmPagePtr>],
+        ) -> Result<(), Status> {
+            let mut scanner_disable = self.scanner_disable.borrow_mut();
+            if scanner_disable.is_none() {
+                *scanner_disable = Some(crate::vm::scanner::AutoVmScannerDisable::new());
+            }
+            let cow = self.vmo.debug_get_cow_pages().ok_or(Status::INTERNAL)?;
+            for i in 0..count {
+                let result = self.node.alloc_loaned_page(|mut page| {
+                    // SAFETY: Initializing loaned page backlink and state for test.
+                    unsafe {
+                        page.set_state(VmPageState(vm_page_state::OBJECT));
+                        page.as_mut().set_object(core::ptr::null_mut());
+                        page.as_mut().set_page_offset(0);
+                        crate::vm::pmm::node().page_queues().set_reclaim(page, &cow, 0);
+                    }
+                });
+                match result {
+                    Ok(page) => {
+                        pages[i] = Some(page);
+                    }
+                    Err(status) => {
+                        for p in pages.iter().take(i).flatten() {
+                            self.free_loaned_page(*p);
+                        }
+                        return Err(status);
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        pub fn free_loaned_page(&self, page: VmPagePtr) {
+            pin_init::stack_pin_init!(let flph = FreeLoanedPagesHolder::init());
+            // SAFETY: page was allocated as loaned and flph is a valid pinned holder.
+            unsafe {
+                self.node.begin_free_loaned_page(
+                    page,
+                    |p| crate::vm::pmm::node().page_queues().remove(p),
+                    flph.as_mut(),
+                );
+            }
+            self.node.finish_free_loaned_pages(flph.as_mut());
+        }
+    }
+
+    #[pin_init::pinned_drop]
+    impl PinnedDrop for ManagedPmmNode {
+        fn drop(self: core::pin::Pin<&mut Self>) {
+            // SAFETY: Destructuring pinned ManagedPmmNode during drop.
+            let this = unsafe { self.get_unchecked_mut() };
+            pin_init::stack_pin_init!(let list = fbl::DoublyLinkedList::<*mut VmPage>::new());
+            let status = this.node.alloc_pages(Self::NUM_PAGES, 0, list.as_mut());
+            assert_eq!(status, Ok(()));
+            for page in list.iter() {
+                // SAFETY: Resetting page state to ALLOC so they can be freed to pmm.
+                unsafe {
+                    page_bindings::cpp_vm_page_set_state(
+                        page as *const _ as *mut _,
+                        page_bindings::vm_page_state::ALLOC,
+                    );
+                };
+            }
+            // SAFETY: list contains valid allocated pages to return to pmm.
+            unsafe { crate::vm::pmm::free_list(list) };
+        }
+    }
+
+    /// Tests simple creation and destruction.
     #[test]
     fn smoke() {
         stack_pin_init!(let _pmm = PmmNode::init());
+    }
+
+    /// Allocates more than one page and frees them.
+    #[test]
+    fn node_multi_alloc() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+        let alloc_count = ManagedPmmNode::NUM_PAGES / 2;
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+
+        let status = node.node().alloc_pages(alloc_count, 0, list.as_mut());
+        expect_ok!(status, "pmm_alloc_pages a few pages");
+        expect_eq!(alloc_count, list.iter().count(), "pmm_alloc_pages a few pages list count");
+
+        let status = node.node().alloc_pages(alloc_count, 0, list.as_mut());
+        expect_ok!(status, "pmm_alloc_pages a few pages");
+        expect_eq!(2 * alloc_count, list.iter().count(), "pmm_alloc_pages a few pages list count");
+
+        // SAFETY: list contains pages allocated from node.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+    }
+
+    /// Allocates one page from the bulk allocation api.
+    #[test]
+    fn node_singleton_list() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+
+        let status = node.node().alloc_pages(1, 0, list.as_mut());
+        expect_ok!(status, "pmm_alloc_pages a few pages");
+        expect_eq!(1, list.iter().count(), "pmm_alloc_pages a few pages list count");
+
+        // SAFETY: list contains pages allocated from node.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+    }
+
+    /// Loans pages, borrows, cancels, reclaims, and ends the loan.
+    #[test]
+    fn node_loan_borrow_cancel_reclaim_end() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        let _cleanup = ScopedLoaningEnabled::new(true);
+
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+
+        const LOAN_COUNT: usize = ManagedPmmNode::NUM_PAGES * 3 / 4;
+        const NOT_LOAN_COUNT: usize = ManagedPmmNode::NUM_PAGES - LOAN_COUNT;
+        let mut paddr = [crate::kernel::types::PAddr(0); LOAN_COUNT];
+
+        let status = node.node().alloc_pages(LOAN_COUNT, 0, list.as_mut());
+        expect_ok!(status, "pmm_alloc_pages a few pages");
+        expect_eq!(LOAN_COUNT, list.iter().count(), "pmm_alloc_pages correct # pages");
+
+        for (i, page) in list.iter().enumerate() {
+            paddr[i] = page.paddr();
+        }
+
+        for page in list.iter() {
+            expect_false!(page.is_loaned());
+            expect_false!(page.is_loan_cancelled());
+        }
+        // SAFETY: list contains valid allocated pages to loan.
+        unsafe {
+            node.node().begin_loan(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+        for page in list.iter() {
+            expect_true!(page.is_loaned());
+            expect_false!(page.is_loan_cancelled());
+        }
+
+        expect_eq!(LOAN_COUNT as u64, node.node().count_loaned_pages());
+        expect_eq!(NOT_LOAN_COUNT as u64, node.node().count_free_pages());
+        expect_eq!(LOAN_COUNT as u64, node.node().count_loaned_free_pages());
+        expect_eq!(0, node.node().count_loan_cancelled_pages());
+        expect_eq!(0, node.node().count_loaned_not_free_pages());
+
+        expect_eq!(0, list.iter().count());
+        let mut loaned_pages = [None; LOAN_COUNT];
+        let status = node.alloc_loaned_pages(LOAN_COUNT, &mut loaned_pages);
+        expect_ok!(status, "pmm_alloc_pages PMM_ALLOC_FLAG_LOANED");
+
+        for p in loaned_pages.iter() {
+            let p = p.unwrap();
+            let mut i = 0;
+            while i < LOAN_COUNT {
+                // SAFETY: p is a valid loaned page pointer.
+                if paddr[i] == unsafe { p.paddr() } {
+                    break;
+                }
+                i += 1;
+            }
+            expect_ne!(LOAN_COUNT, i);
+        }
+
+        for p in loaned_pages.iter() {
+            let p = p.unwrap();
+            // SAFETY: p is a valid loaned page pointer.
+            expect_true!(unsafe { p.is_loaned() });
+            // SAFETY: p is a valid loaned page pointer.
+            expect_false!(unsafe { p.is_loan_cancelled() });
+            // SAFETY: p is a valid loaned page pointer.
+            unsafe {
+                node.node().cancel_loan(p);
+            }
+            // SAFETY: p is a valid loaned page pointer.
+            expect_true!(unsafe { p.is_loaned() });
+            // SAFETY: p is a valid loaned page pointer.
+            expect_true!(unsafe { p.is_loan_cancelled() });
+        }
+
+        expect_eq!(LOAN_COUNT as u64, node.node().count_loaned_pages());
+        expect_eq!(NOT_LOAN_COUNT as u64, node.node().count_free_pages());
+        expect_eq!(0, node.node().count_loaned_free_pages());
+        expect_eq!(LOAN_COUNT as u64, node.node().count_loan_cancelled_pages());
+        expect_eq!(LOAN_COUNT as u64, node.node().count_loaned_not_free_pages());
+
+        for p in loaned_pages.iter() {
+            node.free_loaned_page(p.unwrap());
+        }
+
+        expect_eq!(LOAN_COUNT as u64, node.node().count_loaned_pages());
+        expect_eq!(NOT_LOAN_COUNT as u64, node.node().count_free_pages());
+        expect_eq!(0, node.node().count_loaned_free_pages());
+        expect_eq!(LOAN_COUNT as u64, node.node().count_loan_cancelled_pages());
+        expect_eq!(LOAN_COUNT as u64, node.node().count_loaned_not_free_pages());
+
+        expect_eq!(0, list.iter().count());
+        let mut extra_loaned = [None; NOT_LOAN_COUNT + 1];
+        let status = node.alloc_loaned_pages(NOT_LOAN_COUNT + 1, &mut extra_loaned);
+        expect_true!(status == Err(Status::NO_RESOURCES), "try to allocate a loan_cancelled page");
+
+        expect_eq!(0, list.iter().count());
+        let status = node.node().alloc_pages(NOT_LOAN_COUNT, ALLOC_FLAG_ANY, list.as_mut());
+        expect_ok!(status, "allocate all the not-loaned pages");
+
+        for page in list.iter() {
+            let paddr_page = page.paddr();
+            expect_false!(page.is_loaned());
+            let mut i = 0;
+            while i < LOAN_COUNT {
+                if paddr[i] == paddr_page {
+                    break;
+                }
+                i += 1;
+            }
+            expect_eq!(LOAN_COUNT, i);
+        }
+
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+
+        expect_eq!(0, list.iter().count());
+        for j in 0..LOAN_COUNT {
+            let page = loaned_pages[j].unwrap();
+            // SAFETY: page is a valid loaned page pointer.
+            expect_eq!(paddr[j].0, unsafe { page.paddr() }.0);
+            // SAFETY: page is a valid loaned page pointer.
+            unsafe {
+                node.node().end_loan(page);
+            }
+            // SAFETY: page is a valid page pointer.
+            expect_false!(unsafe { page.is_loaned() });
+            // SAFETY: page is a valid page pointer.
+            expect_false!(unsafe { page.is_loan_cancelled() });
+            // SAFETY: list is pinned on stack, push_back_raw does not move list.
+            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_raw()) };
+        }
+
+        // SAFETY: list contains unloaned allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+
+        expect_eq!(0, node.node().count_loaned_pages());
+        expect_eq!(ManagedPmmNode::NUM_PAGES as u64, node.node().count_free_pages());
+        expect_eq!(0, node.node().count_loaned_free_pages());
+        expect_eq!(0, node.node().count_loan_cancelled_pages());
+        expect_eq!(0, node.node().count_loaned_not_free_pages());
+
+        expect_eq!(0, list.iter().count());
+        let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
+        expect_ok!(status, "allocate all pages");
+        expect_eq!(ManagedPmmNode::NUM_PAGES, list.iter().count());
+
+        for page in list.iter() {
+            expect_false!(page.is_loaned());
+            expect_false!(page.is_loan_cancelled());
+        }
+
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+
+        expect_eq!(0, node.node().count_loaned_pages());
+        expect_eq!(ManagedPmmNode::NUM_PAGES as u64, node.node().count_free_pages());
+        expect_eq!(0, node.node().count_loaned_free_pages());
+        expect_eq!(0, node.node().count_loan_cancelled_pages());
+        expect_eq!(0, node.node().count_loaned_not_free_pages());
+    }
+
+    /// Allocates too many pages and makes sure it fails nicely.
+    #[test]
+    fn node_oversized_alloc() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+
+        let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES + 1, 0, list.as_mut());
+        expect_true!(status == Err(Status::NO_MEMORY), "pmm_alloc_pages failed to alloc");
+        expect_true!(list.is_empty(), "pmm_alloc_pages list is empty");
+    }
+
+    /// Check that free memory events work correctly.
+    #[test]
+    fn node_free_mem_event() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        let free_count = node.node().count_free_pages();
+        assert_gt!(free_count, 0);
+
+        // Setting an event range that does not include the current free count should be invalid.
+        expect_false!(node.set_free_memory_signal(free_count + 1, u64::MAX, 0));
+        expect_false!(node.set_free_memory_signal(0, free_count - 1, 0));
+
+        // The range can be inclusive of the current free count.
+        expect_true!(node.set_free_memory_signal(free_count, u64::MAX, 0));
+        expect_true!(node.set_free_memory_signal(0, free_count, 0));
+
+        // Reset back to the default event.
+        expect_true!(node.reset_default_mem_event());
+
+        // Should never have triggered the event up to this point.
+        expect_false!(node.is_event_signaled());
+
+        // Allocate all but 1 of the pages to trigger the event.
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+
+        for _i in 1..ManagedPmmNode::DEFAULT_MEM_EVENT_ALLOC {
+            let page = unwrap_ok!(node.node().alloc_page(0));
+            // SAFETY: mutating pinned list without moving it.
+            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_raw()) };
+        }
+        // Should not have triggered the event yet.
+        expect_false!(node.is_event_signaled());
+
+        // Allocate the last page, this should put us over the limit and set the event.
+        {
+            let page = unwrap_ok!(node.node().alloc_page(0));
+            // SAFETY: mutating pinned list without moving it.
+            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_raw()) };
+        }
+        expect_true!(node.is_event_signaled());
+        node.unsignal_event();
+
+        // Events are one-shot, and so putting a page back and allocating it again should not
+        // re-trigger the event.
+        // SAFETY: popping from pinned list without moving list.
+        let pop_page = unsafe { list.as_mut().get_unchecked_mut().pop_front().unwrap() };
+        // SAFETY: pop_page is a valid pointer.
+        unsafe {
+            node.node().free_page(
+                VmPagePtr::new(NonNull::new_unchecked(pop_page)),
+                PmmOptDelayReuse::Default,
+            );
+        }
+        {
+            let page = unwrap_ok!(node.node().alloc_page(0));
+            // SAFETY: mutating pinned list without moving it.
+            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_raw()) };
+        }
+        expect_false!(node.is_event_signaled());
+
+        // Set a new free range that should trip as we return the pages back.
+        expect_true!(node.set_free_memory_signal(0, (ManagedPmmNode::NUM_PAGES - 1) as u64, 0));
+
+        // Take one page off the list as our final page.
+        // SAFETY: popping from pinned list without moving list.
+        let page_raw = unsafe { list.as_mut().get_unchecked_mut().pop_front().unwrap() };
+        // SAFETY: page_raw is a non-null pointer popped from list.
+        let page = unsafe { VmPagePtr::new(NonNull::new_unchecked(page_raw)) };
+
+        // Return the rest of the list.
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+        // Event should not have tripped yet.
+        expect_false!(node.is_event_signaled());
+
+        // Return the last page, should trip.
+        // SAFETY: page was allocated and is owned by this test.
+        unsafe {
+            node.node().free_page(page, PmmOptDelayReuse::Default);
+        }
+        expect_true!(node.is_event_signaled());
+    }
+
+    /// Checks sync allocation failure when the node crosses a threshold.
+    #[test]
+    fn node_low_mem_alloc_failure() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+
+        // Put the node in an oom state and make sure allocation fails.
+        let status =
+            node.node().alloc_pages(ManagedPmmNode::DEFAULT_LOW_MEM_ALLOC, 0, list.as_mut());
+        expect_ok!(status);
+        // Should also have been signaled.
+        expect_true!(node.is_event_signaled());
+
+        let result = node.node().alloc_page(ALLOC_FLAG_CAN_WAIT);
+        expect_true!(result == Err(Status::SHOULD_WAIT));
+
+        // Waiting for an allocation should block.
+        expect_true!(
+            node.node().wait_for_single_page_allocation(
+                Deadline::after_mono(DurationMono::from_millis(10), TimerSlack::none()),
+                true
+            ) == Err(Status::TIMED_OUT)
+        );
+
+        // Free the list.
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+
+        // Allocations will still be delayed until we reset the trigger.
+        let result = node.node().alloc_page(ALLOC_FLAG_CAN_WAIT);
+        expect_true!(result == Err(Status::SHOULD_WAIT));
+
+        expect_true!(node.reset_default_mem_event());
+
+        // Allocations should work again.
+        {
+            let alloc_page =
+                node.node().wait_for_single_page_allocation(Deadline::infinite_past(), true);
+            assert_true!(alloc_page != Err(Status::TIMED_OUT));
+            if let Ok(page) = alloc_page {
+                // SAFETY: page was allocated and is owned by this test.
+                unsafe {
+                    node.node().free_page(page, PmmOptDelayReuse::Default);
+                }
+            }
+        }
+
+        // Reset the signal.
+        node.unsignal_event();
+        // Set a threshold such that a single allocation should trip into the low mem state.
+        expect_true!(node.set_free_memory_signal(
+            ManagedPmmNode::NUM_PAGES as u64,
+            u64::MAX,
+            ManagedPmmNode::NUM_PAGES as u64
+        ));
+
+        // Signal should not yet be set, and allocations should not be delayed.
+        expect_false!(node.is_event_signaled());
+        {
+            let alloc_page =
+                node.node().wait_for_single_page_allocation(Deadline::infinite_past(), true);
+            assert_true!(alloc_page != Err(Status::TIMED_OUT));
+            if let Ok(page) = alloc_page {
+                // SAFETY: page was allocated and is owned by this test.
+                unsafe {
+                    node.node().free_page(page, PmmOptDelayReuse::Default);
+                }
+            }
+        }
+
+        // Allocate a single page and validate that allocations are now delayed.
+        assert_ok!(node.node().alloc_pages(1, 0, list.as_mut()));
+        let result = node.node().alloc_page(ALLOC_FLAG_CAN_WAIT);
+        expect_true!(result == Err(Status::SHOULD_WAIT));
+        expect_true!(
+            node.node().wait_for_single_page_allocation(
+                Deadline::after_mono(DurationMono::from_millis(10), TimerSlack::none()),
+                true
+            ) == Err(Status::TIMED_OUT)
+        );
+
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+    }
+
+    /// Test reporting allocation failures and latching the first failure.
+    #[test]
+    fn node_alloc_failure_reporting() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        // Initially, no allocation failure should be recorded.
+        expect_false!(node.node().has_alloc_failed_no_mem());
+        let initial_failure = node.node().get_first_alloc_failure();
+        expect_true!(initial_failure.r#type == AllocFailureType::None);
+        expect_eq!(0, initial_failure.size);
+
+        // Report a first allocation failure.
+        let failure1 = AllocFailure { r#type: AllocFailureType::Heap, size: 1024, free_count: 10 };
+        node.node().report_alloc_failure(failure1);
+
+        expect_true!(node.node().has_alloc_failed_no_mem());
+        let recorded_failure = node.node().get_first_alloc_failure();
+        expect_true!(recorded_failure.r#type == AllocFailureType::Heap);
+        expect_eq!(1024, recorded_failure.size);
+        expect_eq!(ManagedPmmNode::NUM_PAGES as u64, recorded_failure.free_count);
+
+        // Report a second allocation failure with different parameters.
+        let failure2 = AllocFailure { r#type: AllocFailureType::Pmm, size: 4096, free_count: 5 };
+        node.node().report_alloc_failure(failure2);
+
+        // The node should still retain the first recorded failure.
+        let latched_failure = node.node().get_first_alloc_failure();
+        expect_true!(latched_failure.r#type == AllocFailureType::Heap);
+        expect_eq!(1024, latched_failure.size);
+        expect_eq!(ManagedPmmNode::NUM_PAGES as u64, latched_failure.free_count);
+    }
+
+    /// Test that deliberately putting into a no alloc state (and back out) works.
+    #[test]
+    fn node_explicit_should_wait() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        // Place the node directly into a state that forbids allocations.
+        expect_true!(node.set_free_memory_signal(0, ManagedPmmNode::NUM_PAGES as u64, u64::MAX));
+
+        // Allocations that can wait should be blocked.
+        let result = node.node().alloc_page(ALLOC_FLAG_CAN_WAIT);
+        expect_true!(result == Err(Status::SHOULD_WAIT));
+        expect_true!(
+            node.node().wait_for_single_page_allocation(
+                Deadline::after_mono(DurationMono::from_millis(10), TimerSlack::none()),
+                true
+            ) == Err(Status::TIMED_OUT)
+        );
+
+        // A regular allocation should work.
+        let result = unwrap_ok!(node.node().alloc_page(0));
+        // SAFETY: result is a valid allocated page.
+        unsafe {
+            node.node().free_page(result, PmmOptDelayReuse::Default);
+        }
+
+        // Changing the delayed threshold should re-enable allocations.
+        expect_true!(node.reset_default_mem_event());
+
+        {
+            let alloc_page =
+                node.node().wait_for_single_page_allocation(Deadline::infinite_past(), true);
+            assert_true!(alloc_page != Err(Status::TIMED_OUT));
+            if let Ok(page) = alloc_page {
+                // SAFETY: page was allocated and is owned by this test.
+                unsafe {
+                    node.node().free_page(page, PmmOptDelayReuse::Default);
+                }
+            }
+        }
+    }
+
+    struct PmmWaiterArgs {
+        node: *const PmmNode,
+        timeout_count: *const AtomicI32,
+        no_memory_count: *const AtomicI32,
+    }
+
+    // SAFETY: Raw pointers point to valid test data living for the test duration.
+    unsafe impl Send for PmmWaiterArgs {}
+    // SAFETY: Raw pointers point to valid test data living for the test duration.
+    unsafe impl Sync for PmmWaiterArgs {}
+
+    extern "C" fn pmm_waiter_thread(arg: *mut core::ffi::c_void) -> i32 {
+        // SAFETY: arg is a valid pointer to PmmWaiterArgs passed during thread spawn.
+        let args = unsafe { &*(arg as *const PmmWaiterArgs) };
+        // SAFETY: PmmWaiterArgs fields point to valid objects living for the test duration.
+        let node = unsafe { &*args.node };
+        // SAFETY: PmmWaiterArgs fields point to valid objects living for the test duration.
+        let timeout_count = unsafe { &*args.timeout_count };
+        // SAFETY: PmmWaiterArgs fields point to valid objects living for the test duration.
+        let no_memory_count = unsafe { &*args.no_memory_count };
+
+        let result = node.wait_for_single_page_allocation(
+            Deadline::after_mono(DurationMono::from_seconds(2), TimerSlack::none()),
+            true,
+        );
+        match result {
+            Err(Status::TIMED_OUT) => {
+                timeout_count.fetch_add(1, Ordering::Relaxed);
+            }
+            Err(Status::NO_MEMORY) => {
+                no_memory_count.fetch_add(1, Ordering::Relaxed);
+            }
+            // SAFETY: page was allocated by wait_for_single_page_allocation.
+            Ok(page) => unsafe {
+                node.free_page(page, PmmOptDelayReuse::Default);
+            },
+            _ => {}
+        }
+        0
+    }
+
+    /// Verifies that WaitForSinglePageAllocation does not block after StopReturningShouldWait.
+    #[test]
+    fn node_stop_returning_should_wait() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
+        expect_ok!(status);
+
+        // Place the node directly into a state that forbids allocations.
+        expect_true!(node.set_free_memory_signal(0, ManagedPmmNode::NUM_PAGES as u64, u64::MAX));
+
+        let timeout_count = AtomicI32::new(0);
+        let no_memory_count = AtomicI32::new(0);
+        let args = PmmWaiterArgs {
+            node: node.node() as *const _,
+            timeout_count: &timeout_count as *const _,
+            no_memory_count: &no_memory_count as *const _,
+        };
+
+        // Start a thread that will wait.
+        // SAFETY: args outlives the spawned thread which is joined before test exit.
+        let thread = unwrap_ok!(unsafe {
+            thread::spawn(
+                c"pmm waiter".as_ptr(),
+                pmm_waiter_thread,
+                &args as *const _ as *mut core::ffi::c_void,
+            )
+        });
+
+        // Give the thread time to block.
+        let _ = thread::sleep_relative(DurationMono::from_millis(100));
+
+        // Stop returning should wait. This should wake up the thread.
+        node.node().stop_returning_should_wait();
+
+        // Wait for the thread to complete.
+        // SAFETY: thread is a valid Thread handle.
+        let _ = unsafe { thread.join(InstantMono::INFINITE) };
+
+        // Verify that the thread did not time out.
+        expect_eq!(timeout_count.load(Ordering::Relaxed), 0);
+        // Verify that the thread failed with NO_MEMORY.
+        expect_eq!(no_memory_count.load(Ordering::Relaxed), 1);
+
+        // Second call: may_allocate_evt_ might be unsignaled but since should_wait_ is Never, it
+        // should not wait.
+        let alloc_page2 = node.node().wait_for_single_page_allocation(
+            Deadline::after_mono(DurationMono::from_millis(10), TimerSlack::none()),
+            true,
+        );
+        expect_true!(alloc_page2 == Err(Status::NO_MEMORY));
+
+        // Clean up.
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+    }
+
+    /// Verifies that all threads blocked on WaitForSinglePageAllocation are woken up.
+    #[test]
+    fn node_stop_returning_should_wait_concurrent() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
+        expect_ok!(status);
+
+        // Place the node directly into a state that forbids allocations.
+        expect_true!(node.set_free_memory_signal(0, ManagedPmmNode::NUM_PAGES as u64, u64::MAX));
+
+        let timeout_count = AtomicI32::new(0);
+        let no_memory_count = AtomicI32::new(0);
+        let args = PmmWaiterArgs {
+            node: node.node() as *const _,
+            timeout_count: &timeout_count as *const _,
+            no_memory_count: &no_memory_count as *const _,
+        };
+
+        const NUM_WAITERS: usize = 3;
+        let mut threads = [None; NUM_WAITERS];
+
+        for t in threads.iter_mut() {
+            // SAFETY: args outlives the spawned threads which are joined before test exit.
+            let thread = unwrap_ok!(unsafe {
+                thread::spawn(
+                    c"pmm waiter".as_ptr(),
+                    pmm_waiter_thread,
+                    &args as *const _ as *mut core::ffi::c_void,
+                )
+            });
+            *t = Some(thread);
+        }
+
+        // Give threads time to block.
+        let _ = thread::sleep_relative(DurationMono::from_millis(100));
+
+        // Stop returning should wait.
+        node.node().stop_returning_should_wait();
+
+        // Wait for all threads to complete.
+        for t in threads.iter() {
+            // SAFETY: t contains a valid Thread handle.
+            let _ = unsafe { t.unwrap().join(InstantMono::INFINITE) };
+        }
+
+        // Verify that NO threads timed out.
+        expect_eq!(timeout_count.load(Ordering::Relaxed), 0);
+        // Verify that all threads failed with NO_MEMORY.
+        expect_eq!(no_memory_count.load(Ordering::Relaxed), NUM_WAITERS as i32);
+
+        // Clean up.
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+    }
+
+    struct PmmSuspendKillWaiterArgs {
+        node: *const PmmNode,
+        suspendable: bool,
+        timeout: DurationMono,
+        result: *const AtomicI32,
+    }
+
+    // SAFETY: Raw pointers point to valid test data living for the test duration.
+    unsafe impl Send for PmmSuspendKillWaiterArgs {}
+    // SAFETY: Raw pointers point to valid test data living for the test duration.
+    unsafe impl Sync for PmmSuspendKillWaiterArgs {}
+
+    extern "C" fn pmm_suspend_kill_waiter_thread(arg: *mut core::ffi::c_void) -> i32 {
+        // SAFETY: arg is a valid pointer to PmmSuspendKillWaiterArgs passed during thread spawn.
+        let args = unsafe { &*(arg as *const PmmSuspendKillWaiterArgs) };
+        // SAFETY: PmmSuspendKillWaiterArgs fields point to valid objects living for the test
+        // duration.
+        let node = unsafe { &*args.node };
+        // SAFETY: PmmSuspendKillWaiterArgs fields point to valid objects living for the test
+        // duration.
+        let result = unsafe { &*args.result };
+
+        let res = node.wait_for_single_page_allocation(
+            Deadline::after_mono(args.timeout, TimerSlack::none()),
+            args.suspendable,
+        );
+        // SAFETY: page was allocated by wait_for_single_page_allocation.
+        let res = res.map(|page| unsafe {
+            node.free_page(page, PmmOptDelayReuse::Default);
+        });
+        let status = Status::result_into_raw(res);
+        result.store(status, Ordering::Relaxed);
+        0
+    }
+
+    /// Verifies that suspendable WaitForSinglePageAllocation is interrupted by suspension.
+    #[test]
+    fn node_suspendable_wait() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
+        expect_ok!(status);
+
+        // Place the node directly into a state that forbids allocations.
+        expect_true!(node.set_free_memory_signal(0, ManagedPmmNode::NUM_PAGES as u64, u64::MAX));
+
+        let result = AtomicI32::new(zx_types::ZX_OK);
+        let args = PmmSuspendKillWaiterArgs {
+            node: node.node() as *const _,
+            suspendable: true,
+            timeout: DurationMono::from_seconds(5),
+            result: &result as *const _,
+        };
+
+        // Start a thread that will wait in a suspendable state.
+        // SAFETY: args outlives the spawned thread which is joined before test exit.
+        let thread = unwrap_ok!(unsafe {
+            thread::spawn(
+                c"pmm suspendable waiter".as_ptr(),
+                pmm_suspend_kill_waiter_thread,
+                &args as *const _ as *mut core::ffi::c_void,
+            )
+        });
+
+        // Give the thread time to block.
+        let _ = thread::sleep_relative(DurationMono::from_millis(100));
+
+        // Suspend the thread.
+        // SAFETY: thread is a valid Thread handle.
+        let _ = unsafe { thread.suspend() };
+
+        // Wait for the thread to complete (it should exit immediately due to suspension).
+        // SAFETY: thread is a valid Thread handle.
+        let _ = unsafe { thread.join(InstantMono::INFINITE) };
+
+        // Verify that the thread returned ZX_ERR_INTERNAL_INTR_RETRY.
+        expect_eq!(result.load(Ordering::Relaxed), Status::INTERRUPTED_RETRY.into_raw());
+
+        // Clean up.
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+    }
+
+    /// Verifies that non-suspendable WaitForSinglePageAllocation ignores suspend signals.
+    #[test]
+    fn node_non_suspendable_wait() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
+        expect_ok!(status);
+
+        // Place the node directly into a state that forbids allocations.
+        expect_true!(node.set_free_memory_signal(0, ManagedPmmNode::NUM_PAGES as u64, u64::MAX));
+
+        // Use a short 200ms timeout so the test completes quickly.
+        let result = AtomicI32::new(zx_types::ZX_OK);
+        let args = PmmSuspendKillWaiterArgs {
+            node: node.node() as *const _,
+            suspendable: false,
+            timeout: DurationMono::from_millis(200),
+            result: &result as *const _,
+        };
+
+        // Start a thread that will wait in a non-suspendable state.
+        // SAFETY: args outlives the spawned thread which is joined before test exit.
+        let thread = unwrap_ok!(unsafe {
+            thread::spawn(
+                c"pmm non-suspendable waiter".as_ptr(),
+                pmm_suspend_kill_waiter_thread,
+                &args as *const _ as *mut core::ffi::c_void,
+            )
+        });
+
+        // Give the thread time to block.
+        let _ = thread::sleep_relative(DurationMono::from_millis(50));
+
+        // Suspend the thread (which should be ignored by the Wait loop).
+        // SAFETY: thread is a valid Thread handle.
+        let _ = unsafe { thread.suspend() };
+
+        // Wait for the thread to complete (it should wait out the full 200ms timeout).
+        // SAFETY: thread is a valid Thread handle.
+        let _ = unsafe { thread.join(InstantMono::INFINITE) };
+
+        // Verify that the thread returned ZX_ERR_TIMED_OUT instead of ZX_ERR_INTERNAL_INTR_RETRY.
+        expect_eq!(result.load(Ordering::Relaxed), Status::TIMED_OUT.into_raw());
+
+        // Clean up.
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+    }
+
+    /// Verifies that WaitForSinglePageAllocation is interrupted when the thread is killed.
+    #[test]
+    fn node_killed_wait() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
+        expect_ok!(status);
+
+        // Place the node directly into a state that forbids allocations.
+        expect_true!(node.set_free_memory_signal(0, ManagedPmmNode::NUM_PAGES as u64, u64::MAX));
+
+        // Use a long timeout so the test doesn't time out.
+        let result = AtomicI32::new(zx_types::ZX_OK);
+        let args = PmmSuspendKillWaiterArgs {
+            node: node.node() as *const _,
+            suspendable: true,
+            timeout: DurationMono::from_seconds(5),
+            result: &result as *const _,
+        };
+
+        // Start a thread that will wait.
+        // SAFETY: args outlives the spawned thread which is joined before test exit.
+        let thread = unwrap_ok!(unsafe {
+            thread::spawn(
+                c"pmm killed waiter".as_ptr(),
+                pmm_suspend_kill_waiter_thread,
+                &args as *const _ as *mut core::ffi::c_void,
+            )
+        });
+
+        // Give the thread time to block.
+        let _ = thread::sleep_relative(DurationMono::from_millis(100));
+
+        // Kill the thread.
+        // SAFETY: thread is a valid Thread handle.
+        unsafe { thread.kill() };
+
+        // Wait for the thread to complete.
+        // SAFETY: thread is a valid Thread handle.
+        let _ = unsafe { thread.join(InstantMono::INFINITE) };
+
+        // Verify that the thread returned ZX_ERR_INTERNAL_INTR_KILLED.
+        expect_eq!(result.load(Ordering::Relaxed), zx_types::ZX_ERR_INTERNAL_INTR_KILLED);
+
+        // Clean up.
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+    }
+
+    /// Verifies that non-suspendable WaitForSinglePageAllocation is interrupted when killed.
+    #[test]
+    fn node_suspend_then_killed_wait() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
+        expect_ok!(status);
+
+        // Place the node directly into a state that forbids allocations.
+        expect_true!(node.set_free_memory_signal(0, ManagedPmmNode::NUM_PAGES as u64, u64::MAX));
+
+        // Use a long timeout so the test doesn't time out naturally.
+        let result = AtomicI32::new(zx_types::ZX_OK);
+        let args = PmmSuspendKillWaiterArgs {
+            node: node.node() as *const _,
+            suspendable: false,
+            timeout: DurationMono::from_seconds(5),
+            result: &result as *const _,
+        };
+
+        // Start a thread that will wait in a non-suspendable state.
+        // SAFETY: args outlives the spawned thread which is joined before test exit.
+        let thread = unwrap_ok!(unsafe {
+            thread::spawn(
+                c"pmm suspend-then-killed waiter".as_ptr(),
+                pmm_suspend_kill_waiter_thread,
+                &args as *const _ as *mut core::ffi::c_void,
+            )
+        });
+
+        // Give the thread time to block.
+        let _ = thread::sleep_relative(DurationMono::from_millis(100));
+
+        // Suspend the thread (which should be ignored).
+        // SAFETY: thread is a valid Thread handle.
+        let _ = unsafe { thread.suspend() };
+
+        // Give it some time to ensure it's still blocked.
+        let _ = thread::sleep_relative(DurationMono::from_millis(50));
+
+        // Now kill the thread.
+        // SAFETY: thread is a valid Thread handle.
+        unsafe { thread.kill() };
+
+        // Wait for the thread to complete.
+        // SAFETY: thread is a valid Thread handle.
+        let _ = unsafe { thread.join(InstantMono::INFINITE) };
+
+        // Verify that the thread returned ZX_ERR_INTERNAL_INTR_KILLED.
+        expect_eq!(result.load(Ordering::Relaxed), zx_types::ZX_ERR_INTERNAL_INTR_KILLED);
+
+        // Clean up.
+        // SAFETY: list contains allocated pages.
+        unsafe {
+            node.node().free_list(list.as_mut(), PmmOptDelayReuse::Default);
+        }
+    }
+
+    /// Verifies that AllocPages appends to an existing list without re-running the checker.
+    #[test]
+    fn alloc_append() {
+        stack_try_pin_init!(let node = ManagedPmmNode::init());
+        let mut node = unwrap_ok!(node);
+        assert_ok!(node.as_mut().setup());
+
+        stack_pin_init!(let alloc_list = DoublyLinkedList::<*mut VmPage>::new());
+
+        // Allocate a single page into the list first.
+        assert_ok!(node.node().alloc_pages(1, 0, alloc_list.as_mut()));
+
+        // Zero the page as a modification.
+        let front_pa = alloc_list.front().unwrap().paddr();
+        let p_vaddr = paddr_to_physmap(front_pa);
+        // SAFETY: front_pa is a valid page allocated from PMM, so its physmap mapping is valid for
+        // PAGE_SIZE bytes.
+        let p = unsafe { core::slice::from_raw_parts_mut(p_vaddr.0 as *mut u8, PAGE_SIZE) };
+        p.fill(0);
+
+        // Now append more pages to the list. If this runs the checker on the page already in the
+        // list that we modified then it will panic.
+        expect_ok!(node.node().alloc_pages(ManagedPmmNode::NUM_PAGES / 2, 0, alloc_list.as_mut()));
+
+        // SAFETY: alloc_list contains allocated pages.
+        unsafe {
+            node.node().free_list(alloc_list.as_mut(), PmmOptDelayReuse::Default);
+        }
     }
 }

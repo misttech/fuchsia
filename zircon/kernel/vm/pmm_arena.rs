@@ -632,3 +632,110 @@ pub unsafe extern "C" fn rust_print_page_state_counts(state_count: *const usize)
     let counts = unsafe { &*(state_count as *const PmmStateCount) };
     print_page_state_counts(counts);
 }
+
+/// Unit tests for PmmArena.
+#[cfg(ktest)]
+#[unittest::suite(name = "pmm_arena_rust")]
+mod pmm_arena_rust {
+    use super::{PmmArena, PmmArenaInfo};
+    use crate::kernel::types::PAddr;
+    use crate::vm::page::VmPage;
+    use crate::vm::page_state::VmPageState;
+    use ::page as kernel_page;
+    use core::ptr::NonNull;
+    use page_bindings::vm_page_state;
+    use unittest::{assert_true, unwrap_ok};
+    use zx_status::Status;
+
+    unsafe fn set_page_state_range(state: vm_page_state, start: NonNull<VmPage>, count: usize) {
+        for i in 0..count {
+            // SAFETY: Caller guarantees start points to an array with at least count elements.
+            let page = unsafe { &mut *start.as_ptr().add(i) };
+            page.set_state(VmPageState(state));
+        }
+    }
+
+    /// Tests finding free contiguous pages in arena.
+    #[test]
+    fn find_free_contiguous() {
+        const K_NUM_PAGES: usize = 8;
+        let base = 0x1001000;
+        let mut name = [0u8; 16];
+        name[..10].copy_from_slice(b"test arena");
+        let info = PmmArenaInfo {
+            name,
+            flags: 0,
+            base: PAddr(base),
+            size: K_NUM_PAGES * kernel_page::SIZE,
+        };
+
+        let mut page_array: [VmPage; K_NUM_PAGES] = core::array::from_fn(|_| VmPage::default());
+        let mut arena = PmmArena::new();
+        // SAFETY: page_array is valid for K_NUM_PAGES elements.
+        unsafe { arena.init_for_test(&info, page_array.as_mut_ptr()) };
+
+        // page_array is as follow (0 == free, 1 == allocated):
+        //
+        // [00000000]
+        //
+        // Ask for some sizes and alignments that can't possibly succeed.
+        let k_page_shift = kernel_page::SHIFT as u8;
+        assert_true!(arena.find_free_contiguous(K_NUM_PAGES + 1, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(K_NUM_PAGES + 2, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(K_NUM_PAGES + 3, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(K_NUM_PAGES + 4, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(1, 24).is_none()); // 16MB aligned
+        assert_true!(arena.find_free_contiguous(1, 25).is_none()); // 32MB aligned
+        assert_true!(arena.find_free_contiguous(1, 26).is_none()); // 64MB aligned
+        assert_true!(arena.find_free_contiguous(1, 27).is_none()); // 128MB aligned
+
+        // [00000000]
+        //
+        // Ask for 4 pages, aligned on a 2-page boundary. See that the first page is skipped.
+        let result = arena.find_free_contiguous(4, k_page_shift + 1);
+        assert_true!(result.map(|p| p.as_ptr()) == Some(core::ptr::addr_of_mut!(page_array[1])));
+        let result = unwrap_ok!(result.ok_or(Status::NO_MEMORY));
+        // SAFETY: result points to page_array[1] with 4 elements available.
+        unsafe { set_page_state_range(vm_page_state::ALLOC, result, 4) };
+
+        // [01111000]
+        //
+        // Ask for various sizes and see that they all fail.
+        assert_true!(arena.find_free_contiguous(4, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(5, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(6, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(7, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(8, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(9, k_page_shift).is_none());
+
+        // [01111000]
+        //
+        // Ask for 3 pages.
+        let result = arena.find_free_contiguous(3, k_page_shift);
+        let result = unwrap_ok!(result.ok_or(Status::NO_MEMORY));
+        assert_true!(result.as_ptr() == core::ptr::addr_of_mut!(page_array[5]));
+        // SAFETY: result points to page_array[5] with 3 elements available.
+        unsafe { set_page_state_range(vm_page_state::ALLOC, result, 3) };
+
+        // [01111111]
+        //
+        // Ask for various sizes and see that they all fail.
+        assert_true!(arena.find_free_contiguous(2, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(3, k_page_shift).is_none());
+        assert_true!(arena.find_free_contiguous(4, k_page_shift).is_none());
+
+        // [01111111]
+        //
+        // Ask for the last remaining page.
+        let result = arena.find_free_contiguous(1, k_page_shift);
+        assert_true!(result.map(|p| p.as_ptr()) == Some(core::ptr::addr_of_mut!(page_array[0])));
+        let result = unwrap_ok!(result.ok_or(Status::NO_MEMORY));
+        // SAFETY: result points to page_array[0] with 1 element available.
+        unsafe { set_page_state_range(vm_page_state::ALLOC, result, 1) };
+
+        // [11111111]
+        //
+        // See there are none left.
+        assert_true!(arena.find_free_contiguous(1, k_page_shift).is_none());
+    }
+}

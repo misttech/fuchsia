@@ -33,7 +33,8 @@ unsafe extern "C" {
 pub fn alloc_page(flags: u32) -> Result<(VmPagePtr, PAddr), Status> {
     let mut page = core::ptr::null_mut();
     let mut paddr: bindings::zx_paddr_t = 0;
-    // SAFETY: FFI call passing valid stack addresses to store the page pointer and physical address.
+    // SAFETY: FFI call passing valid stack addresses to store the page pointer and physical
+    // address.
     let status = unsafe { bindings::cpp_pmm_alloc_page(flags, &mut page, &mut paddr) };
     Status::ok(status)?;
     // SAFETY: `page` is a valid page pointer returned by the PMM on success.
@@ -169,4 +170,120 @@ pub fn page_queues() -> &'static PageQueues {
 /// Returns a reference to the global `PmmNode` instance.
 pub fn node() -> &'static PmmNode {
     unsafe { &PMM_NODE }
+}
+
+/// Unit tests for PMM.
+#[cfg(ktest)]
+#[unittest::suite(name = "pmm_rust")]
+mod pmm_rust {
+    use super::{
+        alloc_contiguous, alloc_page, free_list, free_page, node, num_arenas, paddr_to_vm_page,
+    };
+    use crate::kernel::types::PAddr;
+    use crate::vm::page::VmPage;
+    use crate::vm::physmap::paddr_to_physmap;
+    use crate::vm::pmm_arena::PmmArenaInfo;
+    use fbl::DoublyLinkedList;
+    use pin_init::stack_pin_init;
+    use unittest::{
+        assert_eq, assert_err, assert_ge, assert_gt, assert_ne, assert_true, unwrap_ok,
+    };
+    use zx_status::Status;
+
+    /// Allocates a single page, translates it to a vm_page_t and frees it.
+    #[test]
+    fn smoke() {
+        let (page, pa) = unwrap_ok!(alloc_page(0), "pmm_alloc single page");
+        assert_ne!(pa.0, 0, "pmm_alloc single page");
+
+        let page2 = paddr_to_vm_page(pa);
+        assert_true!(page2 == Some(page), "paddr_to_vm_page on single page");
+
+        unsafe { free_page(page) };
+    }
+
+    /// Allocates one page and frees it.
+    #[test]
+    fn alloc_contiguous_one() {
+        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        let count = 1usize;
+        let pa = unwrap_ok!(
+            alloc_contiguous(count, 0, page::SHIFT as u8, list.as_mut()),
+            "pmm_alloc_contiguous returned failure\n"
+        );
+        assert_eq!(count, list.iter().count(), "pmm_alloc_contiguous list size is wrong");
+        assert_ne!(paddr_to_physmap(pa).0, 0);
+        unsafe { free_list(list) };
+    }
+
+    /// Tests getting arena info.
+    #[test]
+    fn get_arena_info() {
+        let n_arenas = num_arenas();
+        assert_gt!(n_arenas, 0);
+
+        let mut oversize_buffer = unwrap_ok!(
+            kalloc::Box::<[PmmArenaInfo]>::try_new_uninit_slice(n_arenas + 1)
+                .map_err(|_| Status::NO_MEMORY)
+        );
+        let mut buffer = unwrap_ok!(
+            kalloc::Box::<[PmmArenaInfo]>::try_new_uninit_slice(n_arenas)
+                .map_err(|_| Status::NO_MEMORY)
+        );
+
+        // Asking for none.
+        let result = super::get_arena_info(0, &mut buffer[0..0]);
+        assert_err!(result, Status::OUT_OF_RANGE);
+
+        // Asking for more than exist.
+        let result = super::get_arena_info(0, &mut oversize_buffer[..]);
+        assert_err!(result, Status::OUT_OF_RANGE);
+
+        // Attempting to skip them all.
+        let result = super::get_arena_info(n_arenas, &mut buffer[0..1]);
+        assert_err!(result, Status::OUT_OF_RANGE);
+
+        // Asking for one.
+        let result = super::get_arena_info(0, &mut buffer[0..1]);
+        let _ = unwrap_ok!(result);
+
+        // Asking for them all.
+        let result = super::get_arena_info(0, &mut buffer[..]);
+        let buffer = unwrap_ok!(result);
+
+        // See they are in ascending order by base.
+        let mut prev = PAddr(0);
+        for (i, arena) in buffer.iter().enumerate() {
+            if i == 0 {
+                assert_ge!(arena.base.0, prev.0);
+            } else {
+                assert_gt!(arena.base.0, prev.0);
+            }
+            prev = arena.base;
+            assert_gt!(arena.size, 0);
+        }
+    }
+
+    /// Tests converting between pages and indexes.
+    #[test]
+    fn page_to_from_index() {
+        // Assert that indexes have zero bits, can roundtrip and are distinct for distinct pages.
+        let (page0, _pa0) = unwrap_ok!(alloc_page(0), "pmm_alloc single page");
+        let index0 = node().page_to_index(page0);
+        assert_ne!(0, index0);
+        let zero_bits_mask = (1u32 << PmmNode::INDEX_ZERO_BITS) - 1;
+        assert_eq!(0, index0 & zero_bits_mask);
+        let same_page = unsafe { node().index_to_page(index0) };
+        assert_true!(page0 == same_page);
+        assert_eq!(unsafe { page0.paddr() }.0, unsafe { node().index_to_paddr(index0).0 });
+
+        let (page1, _pa1) = unwrap_ok!(alloc_page(0), "pmm_alloc single page");
+        let index1 = node().page_to_index(page1);
+        assert_ne!(0, index1);
+
+        assert_ne!(index0, index1);
+
+        unsafe { free_page(page0) };
+        unsafe { free_page(page1) };
+    }
 }
