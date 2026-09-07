@@ -2,30 +2,24 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_binary.gni")
-import("//build/go/go_library.gni")
-import("//build/host.gni")
+import("//build/bazel/bazel_host_tool.gni")
 
-go_library("main") {
-  deps = [
-    "config",
-    "fidl",
-    "gidl",
-    "types",
-  ]
-  sources = [
-    "file_fidl.go",
-    "file_gidl.go",
-    "format.go",
-    "main.go",
-  ]
+if (is_host) {
+  bazel_host_tool("regen_fidl_benchmark_suite") {
+    bazel_target = ":regen_fidl_benchmark_suite"
+    bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/regen_fidl_benchmark_suite_/regen_fidl_benchmark_suite"
+  }
+} else {
+  # If "regen_fidl_benchmark_suite" is not referenced in host toolchain, provide
+  # forwarding group so that both "host" and "regen_fidl_benchmark_suite" are
+  # redirected to host toolchain.
+  group("regen_fidl_benchmark_suite") {
+    public_deps = [ ":regen_fidl_benchmark_suite($host_toolchain)" ]
+  }
 }
 
-go_binary("regen_fidl_benchmark_suite") {
-  embed = [ ":main" ]
-}
-
-install_host_tools("host") {
-  deps = [ ":regen_fidl_benchmark_suite" ]
-  outputs = [ "regen_fidl_benchmark_suite" ]
+# "host" target is referenced by `//bundles/fidl:tools` without specifying
+# the toolchain. GN evaluates in the default toolchain.
+group("host") {
+  public_deps = [ ":regen_fidl_benchmark_suite($host_toolchain)" ]
 }
