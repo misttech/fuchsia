@@ -16,17 +16,21 @@ This skill defines the standard 6-phase framework for migrating host tools (Go a
 
 1. **Confirm Host Tool Target:**
    Verify that the target is a host tool target:
+
    ```bash
    fx build --host //{directory_path}:{target_name}
    ```
 
 2. **Inspect Dependency Tree:**
    Get the full dependency tree of the host tool target:
+
    ```bash
    # <target_label> e.g. "//path/to/directory:target_name"
    fx gn desc $(fx get-build-dir) "<target_label>(//build/toolchain:host_x64)" deps --tree
    ```
+
    Ensure all dependencies of the host tool target are buildable in Bazel. If not, recursively migrate missing dependencies first using this skill:
+
    ```bash
    # Keep the @ prefix when building Bazel targets with `fx build`.
    fx build --host @//{dependency_path}:{dependency_name}
@@ -34,7 +38,6 @@ This skill defines the standard 6-phase framework for migrating host tools (Go a
 
 3. **Check Existing Bazel Targets:**
    If `BUILD.bazel` already exists, check if the actual binary targets have already been migrated. If so, warn the user and stop the migration process.
-
 
 ## Phase 2: Author BUILD.bazel Targets
 
@@ -48,22 +51,22 @@ This skill defines the standard 6-phase framework for migrating host tools (Go a
    - [Go Migration Guide](references/go_migration.md)
    - [Rust](references/rust_migration.md)
 
-
 ## Phase 3: Add bazel_host_tool() target
 
 In `BUILD.gn`, define a `bazel_host_tool()` target using the same name as the `go_binary()` target.
 
 The parameters of the `bazel_host_tool()` target should be set as below.
-* Set `bazel_target` to a string formatted as `":<target_name>"`.
-* Set `bazel_output_path` based on the underlying language-specific Bazel rule:
-   * C/C++ or Rust : `"{{BAZEL_TARGET_OUT_DIR}}/<target_name>"`.
-   * Go : `"{{BAZEL_TARGET_OUT_DIR}}/<target_name>_/<target_name>"`.
-* If the migrated target was previously wrapped in an `install_host_tools` target, set the `install_host_tool` attribute to `true`.
 
+- Set `bazel_target` to a string formatted as `":<target_name>"`.
+- Set `bazel_output_path` based on the underlying language-specific Bazel rule:
+  - C/C++ or Rust : `"{{BAZEL_TARGET_OUT_DIR}}/<target_name>"`.
+  - Go : `"{{BAZEL_TARGET_OUT_DIR}}/<target_name>_/<target_name>"`.
+- If the migrated target was previously wrapped in an `install_host_tools` target, set the `install_host_tool` attribute to `true`.
 
 ## Phase 4: Evaluate GN Cleanup & Verification Targets
 
 Check remaining GN references in `{directory_path}`:
+
 ```bash
 fx gn refs $(fx get-build-dir) "//{directory_path}/*"
 ```
@@ -74,12 +77,11 @@ fx gn refs $(fx get-build-dir) "//{directory_path}/*"
 
 - **Case 2: Unmigrated GN targets remain or external GN targets still depend on libraries in `{directory_path}`:**
   1. Remove the migrated targets from `{directory_path}/BUILD.gn`.
-  2. **Prevent redundant binary syncs:** Add `# @bazel2gn:skip` on the line immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel`.
+  2. **Prevent redundant binary syncs:** Add `# @bazel2gn:skip` on the line immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel` so they aren't generated in GN (see language guides for exceptions like `ffx_tool`).
   3. **Sync back to GN:** Sync required library targets back from Bazel to GN using `syncing-bazel-to-gn` (see `../syncing_bazel_to_gn/SKILL.md`).
   4. **Add verification target:** Add `"//{directory_path}:verify_bazel2gn"` to the `bazel2gn_verification_targets` list in `//build/bazel2gn_verification_targets.gni` (or `//sdk/fidl/bazel2gn_verification_targets.gni` for FIDL).
   5. Run `fx gen` to validate the GN build graph.
   6. **Clean up redundant GN targets:** In the synced `BUILD.gn`, remove library targets that are not referenced by other GN targets. If no targets are referenced by external targets, remove `# @bazel2gn:skip` from `BUILD.bazel`, and remove `"//{directory_path}:verify_bazel2gn"` from `bazel2gn_verification_targets.gni`.
-
 
 ## Phase 5: Verification, Formatting & Full Build Check
 
@@ -109,5 +111,10 @@ fx format-code --parallel
 
 # 8. Final full build check across repository graph
 fx set fuchsia.x64 --main-pb //products/core:product_bundle.x64 && fx build
-```
 
+# 9. Build direct Bazel target (__ONLY__ for cross-toolchain libraries)
+fx bazel build --config=fuchsia_platform //{directory_path}:{target_name}
+
+# 10. Verify all bazel2gn drift check targets across the tree
+fx build --host //build:bazel2gn_verifications
+```
