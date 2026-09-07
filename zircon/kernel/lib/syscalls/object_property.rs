@@ -198,10 +198,8 @@ pub fn sys_object_set_property(
 
     match property {
         ZX_PROP_NAME => {
-            let max_len = ZX_MAX_NAME_LEN - 1;
-            let len = core::cmp::min(size, max_len);
-            let mut name_buf = [MaybeUninit::uninit(); ZX_MAX_NAME_LEN - 1];
-            let name_slice = value.copy_slice_from_user(&mut name_buf[..len])?;
+            let mut name_buf = [MaybeUninit::uninit(); ZX_MAX_NAME_LEN];
+            let name_slice = value.copy_user_string(size, &mut name_buf)?;
             dispatcher.set_name(name_slice)
         }
         #[cfg(target_arch = "x86_64")]

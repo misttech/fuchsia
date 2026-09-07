@@ -43,4 +43,18 @@ impl UserStringView {
         }
         self.data.copy_slice_from_user(&mut dst[..self.length])
     }
+
+    /// Copies a string from userspace into `buf`, ensuring null termination.
+    ///
+    /// Copies at most `min(self.length, buf.len().saturating_sub(1))` bytes from userspace,
+    /// avoiding copying extra bytes beyond what can fit in the buffer.
+    ///
+    /// If `self.length == 0`, no bytes are read from userspace and an empty slice `&[]` is
+    /// returned.
+    pub fn copy_user_string<'a>(
+        &self,
+        buf: &'a mut [core::mem::MaybeUninit<u8>],
+    ) -> Result<&'a [u8], Status> {
+        self.data.copy_user_string(self.length, buf)
+    }
 }

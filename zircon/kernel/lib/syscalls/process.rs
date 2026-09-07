@@ -20,31 +20,6 @@ const LOCAL_TRACE: u32 = 0;
 const MAX_DEBUG_READ_BLOCK: usize = 64 * 1024 * 1024;
 const MAX_DEBUG_WRITE_BLOCK: usize = 64 * 1024 * 1024;
 
-// TODO(https://fxbug.dev/42105890): copy_user_string may truncate the incoming string,
-// and may copy extra data past the NUL.
-fn copy_user_string(
-    src: UserInPtr<u8>,
-    src_len: usize,
-    buf: &mut [core::mem::MaybeUninit<u8>; ZX_MAX_NAME_LEN],
-) -> Result<&[u8], Status> {
-    // Disallow 0 buf_len (since we are copying into it), but allow 0 src_len (to allow
-    // "", src_len doesn't include '\0'). With the check for buf_len, we won't underflow
-    // src_len below. Also, 0 src_len is valid input (for "" src strings).
-    if src.is_null() || src_len > buf.len() {
-        return Err(Status::INVALID_ARGS);
-    }
-    if src_len > 0 {
-        src.copy_slice_from_user(&mut buf[..src_len]).map_err(|_| Status::INVALID_ARGS)?;
-    }
-
-    // ensure zero termination
-    let str_len = if src_len == buf.len() { src_len - 1 } else { src_len };
-    buf[str_len].write(0);
-    // SAFETY: elements 0..=str_len in `buf` have been initialized (0..src_len by copy_slice_from_user
-    // and str_len explicitly written to 0).
-    Ok(unsafe { core::slice::from_raw_parts(buf.as_ptr() as *const u8, str_len) })
-}
-
 #[syscall]
 pub fn sys_process_create(
     job_handle: HandleValue,
@@ -68,9 +43,7 @@ pub fn sys_process_create(
 
     // copy out the name
     let mut buf = [core::mem::MaybeUninit::<u8>::uninit(); ZX_MAX_NAME_LEN];
-    // Silently truncate the given name.
-    let name_len = core::cmp::min(name_len, buf.len());
-    let sp = copy_user_string(name_ptr, name_len, &mut buf)?;
+    let sp = name_ptr.copy_user_string(name_len, &mut buf)?;
     ltracef!("name {}\n", zr::from_utf8_lossy(sp));
 
     let job = Dispatcher::get_with_rights::<JobDispatcher>(job_handle, ZX_RIGHT_MANAGE_PROCESS)?;
@@ -122,9 +95,7 @@ pub fn sys_process_create_shared(
 
     // copy out the name
     let mut buf = [core::mem::MaybeUninit::<u8>::uninit(); ZX_MAX_NAME_LEN];
-    // Silently truncate the given name.
-    let name_len = core::cmp::min(name_len, buf.len());
-    let sp = copy_user_string(name_ptr, name_len, &mut buf)?;
+    let sp = name_ptr.copy_user_string(name_len, &mut buf)?;
     ltracef!("name {}\n", zr::from_utf8_lossy(sp));
 
     // create a new process dispatcher

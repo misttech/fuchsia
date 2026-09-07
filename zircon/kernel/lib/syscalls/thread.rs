@@ -58,16 +58,7 @@ pub fn sys_thread_create(
 
     // copy out the name
     let mut name_buf = [MaybeUninit::<u8>::uninit(); ZX_MAX_NAME_LEN];
-    // Silently truncate the given name.
-    let len = name_len.min(ZX_MAX_NAME_LEN);
-    if len > 0 {
-        name_ptr.copy_slice_from_user(&mut name_buf[..len]).map_err(|_| Status::INVALID_ARGS)?;
-    }
-    let str_len = if len == ZX_MAX_NAME_LEN { len - 1 } else { len };
-    name_buf[str_len].write(0);
-    // SAFETY: elements 0..=str_len in `name_buf` have been initialized.
-    let slice: &[u8] =
-        unsafe { core::slice::from_raw_parts(name_buf.as_ptr() as *const u8, str_len) };
+    let slice = name_ptr.copy_user_string(name_len, &mut name_buf)?;
 
     ltracef!("name {}\n", core::str::from_utf8(slice).unwrap_or("<non-utf8>"));
 

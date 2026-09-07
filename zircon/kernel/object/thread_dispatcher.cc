@@ -56,7 +56,7 @@ zx_status_t ThreadDispatcher::Create(fbl::RefPtr<ProcessDispatcher> process, uin
   const SchedulerState::BaseProfile profile{DEFAULT_PRIORITY, false};
 
   // Create the lower level thread and attach it to the scheduler.
-  Thread* core_thread = Thread::Create(name.data(), StartRoutine, user_thread.get(), profile);
+  Thread* core_thread = Thread::Create(name, StartRoutine, user_thread.get(), profile);
   if (!core_thread) {
     return ZX_ERR_NO_MEMORY;
   }

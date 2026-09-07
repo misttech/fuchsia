@@ -235,6 +235,24 @@ mod tests {
         // Buffer too small should return INVALID_ARGS
         let mut small_buf = [MaybeUninit::uninit(); 5];
         assert_true!(sv.copy_slice_from_user(&mut small_buf).err() == Some(Status::INVALID_ARGS));
+
+        // Test copy_user_string
+        let str_slice = unwrap_ok!(sv.copy_user_string(&mut buf));
+        assert_true!(str_slice == k_string);
+        assert_eq!(unsafe { buf[k_string.len()].assume_init() }, 0);
+
+        // copy_user_string truncates to small_buf.len() - 1 and null terminates
+        let str_trunc = unwrap_ok!(sv.copy_user_string(&mut small_buf));
+        assert_true!(str_trunc == &k_string[..4]);
+        assert_eq!(unsafe { small_buf[4].assume_init() }, 0);
+
+        // Empty string view returns empty slice without error
+        let empty_sv = UserStringView { data: in_ptr, length: 0 };
+        let empty_slice = unwrap_ok!(empty_sv.copy_user_string(&mut buf));
+        assert_true!(empty_slice.is_empty());
+        let slice_ptr = empty_slice.as_ptr();
+        assert_eq!(unsafe { buf[0].assume_init() }, 0);
+        assert_eq!(slice_ptr, buf.as_ptr() as *const u8);
     }
 
     /// Test IovecCopyToSlice.
@@ -287,5 +305,57 @@ mod tests {
         // Destination slice too small should return INVALID_ARGS
         let mut small_out = [MaybeUninit::uninit(); 1];
         assert_true!(iovec.copy_to_slice(&mut small_out).err() == Some(Status::INVALID_ARGS));
+    }
+
+    /// Test UserInPtr copy_user_string.
+    #[test]
+    fn user_string() {
+        let user = UserMemory::create(4096).unwrap();
+        unwrap_ok!(user.commit_and_map(0..4096));
+
+        let test_name = b"my_resource_name";
+        unwrap_ok!(user.vmo_write(test_name, 0));
+
+        let in_ptr = UserInPtr::<u8>::new(user.base() as *const u8);
+        let null_ptr = UserInPtr::<u8>::new(core::ptr::null());
+
+        // Empty buffer returns INVALID_ARGS
+        let mut empty_buf: [MaybeUninit<u8>; 0] = [];
+        assert_true!(
+            in_ptr.copy_user_string(test_name.len(), &mut empty_buf).err()
+                == Some(Status::INVALID_ARGS)
+        );
+
+        // src_len == 0 returns Ok(&[]) without reading user memory (works even with null pointer)
+        let mut buf = [MaybeUninit::uninit(); 32];
+        let empty_slice = unwrap_ok!(null_ptr.copy_user_string(0, &mut buf));
+        assert_true!(empty_slice.is_empty());
+        let slice_ptr = empty_slice.as_ptr();
+        assert_eq!(unsafe { buf[0].assume_init() }, 0);
+        assert_eq!(slice_ptr, buf.as_ptr() as *const u8);
+
+        // src_len > 0 with null pointer returns INVALID_ARGS
+        assert_true!(
+            null_ptr.copy_user_string(test_name.len(), &mut buf).err()
+                == Some(Status::INVALID_ARGS)
+        );
+
+        // Valid string copy
+        let str_slice = unwrap_ok!(in_ptr.copy_user_string(test_name.len(), &mut buf));
+        assert_true!(str_slice == &test_name[..]);
+        // verify null-termination byte
+        assert_eq!(unsafe { buf[test_name.len()].assume_init() }, 0);
+
+        // Large src_len truncates to buf.len() - 1, copying the minimum amount of bytes
+        let mut small_buf = [MaybeUninit::uninit(); 5];
+        let trunc_slice = unwrap_ok!(in_ptr.copy_user_string(test_name.len(), &mut small_buf));
+        assert_true!(trunc_slice == &test_name[..4]);
+        assert_eq!(unsafe { small_buf[4].assume_init() }, 0);
+
+        // src_len == buf.len() also truncates to buf.len() - 1 to leave room for null terminator
+        let mut exact_buf = [MaybeUninit::uninit(); 6];
+        let str_trunc = unwrap_ok!(in_ptr.copy_user_string(6, &mut exact_buf));
+        assert_true!(str_trunc == &test_name[..5]);
+        assert_eq!(unsafe { exact_buf[5].assume_init() }, 0);
     }
 }

@@ -108,6 +108,35 @@ impl<T> UserInPtr<T> {
     }
 }
 
+impl UserInPtr<u8> {
+    /// Copies a string from userspace into `buf`, ensuring null termination.
+    ///
+    /// Copies at most `min(src_len, buf.len().saturating_sub(1))` bytes from userspace,
+    /// avoiding copying extra bytes beyond what can fit in the buffer.
+    ///
+    /// If `src_len == 0`, no bytes are read from userspace and an empty slice `&[]` is returned.
+    pub fn copy_user_string<'a>(
+        &self,
+        src_len: usize,
+        buf: &'a mut [MaybeUninit<u8>],
+    ) -> Result<&'a [u8], Status> {
+        if buf.is_empty() {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        let copy_len = src_len.min(buf.len() - 1);
+        if copy_len > 0 {
+            self.copy_slice_from_user(&mut buf[..copy_len]).map_err(|_| Status::INVALID_ARGS)?;
+        }
+        buf[copy_len].write(0);
+
+        // SAFETY: elements 0..copy_len in `buf` have been initialized by `copy_slice_from_user`
+        // (if copy_len > 0) or are empty (if copy_len == 0), and `buf[copy_len]` has been
+        // initialized to 0.
+        Ok(unsafe { core::slice::from_raw_parts(buf.as_ptr().cast(), copy_len) })
+    }
+}
+
 /// A wrapper around a mutable pointer to user memory (write-only).
 #[repr(transparent)]
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
