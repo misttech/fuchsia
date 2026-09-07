@@ -10,12 +10,13 @@ use crate::security::SecurityServer;
 use crate::task::CurrentTask;
 use crate::task::loader::ResolvedElf;
 use crate::testing::spawn_kernel_with_selinux_and_run;
-use crate::vfs::{FileWriteGuardMode, FsStr, NamespaceNode};
+use crate::vfs::{FileMapping, FileWriteGuardMode, FsStr, NamespaceNode, OpenAccessCheck};
 use selinux::TaskAttrs;
 use starnix_types::arch::ArchWidth;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::file_mode::FileMode;
+use starnix_uapi::open_flags::OpenFlags;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -103,16 +104,24 @@ pub(in crate::security) fn mutate_attrs_for_test(
     current_task.set_creds(creds)
 }
 
+/// Opens a node as a [`FileMapping`] with an execution write guard for testing.
+pub(in crate::security) fn open_test_file(
+    current_task: &CurrentTask,
+    node: &NamespaceNode,
+) -> Arc<FileMapping> {
+    let file = node.open(current_task, OpenAccessCheck::skip(OpenFlags::RDONLY)).unwrap();
+    file.to_mapping(Some(FileWriteGuardMode::ExecMapping)).unwrap()
+}
+
+/// Creates a mock [`ResolvedElf`] from an opened [`FileMapping`] for testing.
 pub(in crate::security) fn make_resolved_elf(
     current_task: &CurrentTask,
-    executable: NamespaceNode,
+    file: Arc<FileMapping>,
 ) -> ResolvedElf {
-    let file_mapping =
-        executable.into_active().into_mapping(Some(FileWriteGuardMode::ExecMapping)).unwrap();
     let vmo = zx::Vmo::create(4096).unwrap();
     let memory = Arc::new(MemoryObject::from(vmo));
     ResolvedElf {
-        file: file_mapping,
+        file,
         memory,
         headers: elf_parse::Elf64Headers::new_for_test(&Default::default(), None),
         interp: None,

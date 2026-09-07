@@ -350,7 +350,7 @@ pub(in crate::security) fn file_mprotect(
     }
     let fs_node = match mapping.name() {
         MappingNameRef::File(file) => {
-            let node: &FsNode = &file.name.entry.node;
+            let node: &FsNode = file.node();
             Some(node)
         }
         _ => None,
@@ -382,33 +382,6 @@ pub(in crate::security) fn mmap_file(
     }
     let fs_node = file.map(|file| -> &FsNode { file.node() });
     file_map_prot_check(security_server, current_task, fs_node, protection_flags, mapping_options)
-}
-
-/// Checks whether [`CurrentTask`] is allowed to mmap [`FsNode`] using the given
-/// [`ProtectionFlags`] and [`MappingOptions`].
-pub(in crate::security) fn mmap_file_node(
-    security_server: &SecurityServer,
-    current_task: &CurrentTask,
-    fs_node: &FsNode,
-    protection_flags: ProtectionFlags,
-    mapping_options: MappingOptions,
-) -> Result<(), Errno> {
-    let current_sid = current_task_state(current_task).current_sid;
-    has_fs_node_permissions(
-        &build_permission_check(current_task, security_server),
-        current_task,
-        current_sid,
-        fs_node,
-        &[CommonFsNodePermission::Map],
-        current_task.into(),
-    )?;
-    file_map_prot_check(
-        security_server,
-        current_task,
-        Some(fs_node),
-        protection_flags,
-        mapping_options,
-    )
 }
 
 /// Checks if `current_task` has the permission to set `prot` on a mapping

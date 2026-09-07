@@ -15,8 +15,8 @@ use crate::task::{
     SyslogAccess, Task, ThreadGroup, max_priority_for_sched_policy, min_priority_for_sched_policy,
 };
 use crate::vfs::{
-    FdNumber, FileHandle, MountNamespaceFile, OpenAccessCheck, PidFdFileObject,
-    UserBuffersOutputBuffer, VecOutputBuffer,
+    FdNumber, FileHandle, FileMapping, FileWriteGuardMode, MountNamespaceFile, OpenAccessCheck,
+    PidFdFileObject, UserBuffersOutputBuffer, VecOutputBuffer,
 };
 use starnix_logging::{log_error, log_info, log_trace, track_stub};
 use starnix_syscalls::SyscallResult;
@@ -282,7 +282,8 @@ pub fn sys_execveat(
         //          interpreter.
         //
         //   EACCES The filesystem is mounted noexec.
-        file.name.open(current_task, OpenAccessCheck::for_exec())?
+        let file = file.name.open(current_task, OpenAccessCheck::for_exec())?;
+        FileMapping::new(file, Some(FileWriteGuardMode::ExecMapping))?
     } else {
         current_task.open_file_for_exec(dir_fd, path.as_ref(), open_flags)?
     };

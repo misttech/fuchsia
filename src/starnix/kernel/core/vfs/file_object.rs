@@ -1831,11 +1831,6 @@ impl FileObject {
         self.ops().mmap(self, current_task, addr, memory_offset, length, prot_flags, options)
     }
 
-    /// Creates a [`FileMapping`] for this file.
-    pub fn to_mapping(&self, mode: Option<FileWriteGuardMode>) -> Result<Arc<FileMapping>, Errno> {
-        self.name.to_mapping(mode)
-    }
-
     pub fn readdir(
         &self,
         current_task: &CurrentTask,
@@ -1948,6 +1943,18 @@ impl FileObject {
 
     pub fn as_pid(&self) -> Result<Pid, Errno> {
         self.ops().as_pid(self)
+    }
+
+    /// Upgrades the weak reference to return the strong [`FileHandle`] referencing this
+    /// [`FileObject`].
+    pub fn to_file_handle(&self) -> FileHandle {
+        self.weak_handle.upgrade().expect("FileObject is alive, so weak_handle must upgrade")
+    }
+
+    /// Creates a [`FileMapping`] for this file, acquiring the specified write guard mode on the
+    /// node if any.
+    pub fn to_mapping(&self, mode: Option<FileWriteGuardMode>) -> Result<Arc<FileMapping>, Errno> {
+        FileMapping::new(self.to_file_handle(), mode)
     }
 
     /// Update the file flags.

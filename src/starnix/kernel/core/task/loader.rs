@@ -10,7 +10,7 @@ use crate::mm::{
 use crate::security;
 use crate::task::CurrentTask;
 use crate::vdso::vdso_loader::ZX_TIME_VALUES_MEMORY;
-use crate::vfs::{FdNumber, FileHandle, FileMapping, FileWriteGuardMode};
+use crate::vfs::{FdNumber, FileMapping};
 use process_builder::elf_load;
 use starnix_logging::{log_error, log_warn};
 use starnix_types::arch::ArchWidth;
@@ -285,9 +285,9 @@ fn load_elf(
     mm: &Arc<MemoryManager>,
     usage: LoadElfUsage,
 ) -> Result<LoadedElf, Errno> {
-    security::mmap_file_node(
+    security::mmap_file(
         current_task,
-        &elf_file.name.entry.node,
+        Some(elf_file.file()),
         ProtectionFlags::READ | ProtectionFlags::EXEC,
         MappingOptions::ELF_BINARY,
     )?;
@@ -362,7 +362,7 @@ const MAX_RECURSION_DEPTH: usize = 5;
 /// recursion depth. `argv` may change due to script interpreter logic.
 pub fn resolve_executable(
     current_task: &CurrentTask,
-    file: FileHandle,
+    file: Arc<FileMapping>,
     path: CString,
     argv: Vec<CString>,
     environ: Vec<CString>,
@@ -374,7 +374,7 @@ pub fn resolve_executable(
 /// recursion depth.
 fn resolve_executable_impl(
     current_task: &CurrentTask,
-    file: FileHandle,
+    file: Arc<FileMapping>,
     path: CString,
     argv: Vec<CString>,
     environ: Vec<CString>,
@@ -384,6 +384,7 @@ fn resolve_executable_impl(
         return error!(ELOOP);
     }
     let memory = file
+        .file()
         .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
         .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
     let header = match memory.read_to_array::<u8, HASH_BANG_SIZE>(0) {
@@ -485,14 +486,13 @@ fn parse_interpreter_line(line: &[u8]) -> Result<Vec<CString>, Errno> {
 /// Resolves a file handle into a validated executable ELF.
 fn resolve_elf(
     current_task: &CurrentTask,
-    file: FileHandle,
+    file: Arc<FileMapping>,
     memory: Arc<MemoryObject>,
     argv: Vec<CString>,
     environ: Vec<CString>,
 ) -> Result<ResolvedElf, Errno> {
     let vmo = memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
     let headers = parse_elf_headers(vmo)?;
-    let file = file.to_mapping(Some(FileWriteGuardMode::ExecMapping))?;
     let arch_width = get_arch_width(&headers);
     let creds = Credentials::clone(&current_task.current_creds());
     let secure_exec = false;
@@ -509,8 +509,7 @@ fn resolve_elf(
     })
 }
 
-/// Resolves and loads the ELF dynamic linker (PT_INTERP) for a `ResolvedElf`, if present,
-/// using the post-transition target credentials in `resolved_elf.creds`.
+/// Resolves and loads the ELF dynamic linker (PT_INTERP) for a `ResolvedElf`, if present.
 pub fn resolve_elf_interpreter(
     current_task: &CurrentTask,
     resolved_elf: &mut ResolvedElf,
@@ -526,23 +525,17 @@ pub fn resolve_elf_interpreter(
             .map_err(|status| from_status_like_fdio!(status))?;
         let interp = CStr::from_bytes_until_nul(&interp).map_err(|_| errno!(EINVAL))?;
 
-        let interp_resolved = current_task.override_creds(
-            Arc::new(resolved_elf.creds.clone()),
-            || -> Result<ResolvedInterpElf, Errno> {
-                let interp_file = current_task.open_file_for_exec(
-                    FdNumber::AT_FDCWD,
-                    interp.to_bytes().into(),
-                    OpenFlags::empty(),
-                )?;
-                let interp_memory = interp_file
-                    .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
-                    .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
-                let interp_file = interp_file.to_mapping(Some(FileWriteGuardMode::ExecMapping))?;
-                Ok(ResolvedInterpElf { file: interp_file, memory: interp_memory })
-            },
+        let interp_file = current_task.open_file_for_exec(
+            FdNumber::AT_FDCWD,
+            interp.to_bytes().into(),
+            OpenFlags::empty(),
         )?;
+        let interp_memory = interp_file
+            .file()
+            .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+            .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
 
-        resolved_elf.interp = Some(interp_resolved);
+        resolved_elf.interp = Some(ResolvedInterpElf { file: interp_file, memory: interp_memory });
     }
 
     Ok(())

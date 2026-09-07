@@ -18,9 +18,9 @@ use crate::task::{
     TaskFlags, TaskRunningState, ThreadState, Waiter,
 };
 use crate::vfs::{
-    AccessCheck, FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsStr, LookupContext,
-    LookupVec, MAX_SYMLINK_FOLLOWS, NamespaceNode, OpenAccessCheck, ResolveBase, SymlinkMode,
-    SymlinkTarget, new_pidfd,
+    AccessCheck, FdFlags, FdNumber, FdTable, FileHandle, FileMapping, FileWriteGuardMode,
+    FsContext, FsStr, LookupContext, LookupVec, MAX_SYMLINK_FOLLOWS, NamespaceNode,
+    OpenAccessCheck, ResolveBase, SymlinkMode, SymlinkTarget, new_pidfd,
 };
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
@@ -652,16 +652,16 @@ impl CurrentTask {
     /// [`EACCES`] if the target is not a regular file, or [`ELOOP`] if [`OpenFlags::NOFOLLOW`] was
     /// specified and the target is a symbolic link.
     ///
-    /// The opened [`FileHandle`] is checked for [`Access::EXEC`], verifying DAC execute permissions
-    /// and filesystem mount `MS_NOEXEC`.
+    /// Opens the file for execution, verifying DAC execute permissions and filesystem mount
+    /// `MS_NOEXEC`.
     ///
-    /// Returns a [`FileHandle`] without installing it into the task's [`FdTable`].
+    /// Returns an [`Arc<FileMapping>`] with an execution write guard.
     pub fn open_file_for_exec(
         &self,
         dir_fd: FdNumber,
         path: &FsStr,
         flags: OpenFlags,
-    ) -> Result<FileHandle, Errno> {
+    ) -> Result<Arc<FileMapping>, Errno> {
         debug_assert!(
             (flags & !(OpenFlags::RDONLY | OpenFlags::NOFOLLOW)).is_empty(),
             "unexpected flags passed to open_file_for_exec: {flags:?}"
@@ -701,7 +701,8 @@ impl CurrentTask {
         //          interpreter.
         //
         //   EACCES The filesystem is mounted noexec.
-        name.open(self, OpenAccessCheck::for_exec())
+        let file = name.open(self, OpenAccessCheck::for_exec())?;
+        FileMapping::new(file, Some(FileWriteGuardMode::ExecMapping))
     }
 
     /// Resolves a path for open.
@@ -1051,7 +1052,7 @@ impl CurrentTask {
 
     pub fn exec(
         &mut self,
-        executable: FileHandle,
+        executable: Arc<FileMapping>,
         path: CString,
         argv: Vec<CString>,
         environ: Vec<CString>,
@@ -1078,9 +1079,9 @@ impl CurrentTask {
         security::bprm_creds_from_file(self, &mut resolved_elf)?;
 
         // LSM hook: Perform access checks and allow LSM to update credentials.
-        security::bprm_creds_for_exec(self, &executable.name, &mut resolved_elf)?;
+        security::bprm_creds_for_exec(self, executable.name(), &mut resolved_elf)?;
 
-        // Resolve the ELF interpreter using the post-transition target credentials.
+        // Resolve the ELF interpreter.
         resolve_elf_interpreter(self, &mut resolved_elf)?;
 
         if self.thread_group().read().tasks_count() > 1 {
@@ -1122,7 +1123,7 @@ impl CurrentTask {
             let new_mm = MemoryManager::exec(
                 self.thread_group().root_vmar.unowned(),
                 self.mm().ok(),
-                resolved_elf.file.name.to_passive(),
+                resolved_elf.file.name().to_passive(),
                 resolved_elf.arch_width,
             )?;
             self.running_state().mm.update(Some(new_mm.clone()));

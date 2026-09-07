@@ -8,6 +8,7 @@
 #include <lib/stdcompat/string_view.h>
 #include <string.h>
 #include <sys/auxv.h>
+#include <sys/inotify.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/syscall.h>
@@ -1868,6 +1869,57 @@ TEST(MmapTest, MmapMinAddr) {
 
   // mmap at 5MB should succeed now.
   EXPECT_EQ(try_mmap_unprivileged(k5Mb), 0);
+}
+
+// Verifies that closing a file descriptor while it remains mapped defers the
+// close event until the memory mapping is unmapped.
+//
+// When a file is mapped and its file descriptor is closed, the underlying file
+// description remains open for the lifetime of the mapping.
+//
+// An inotify watch is used to observe this deferred-close behavior: closing the
+// file descriptor does not trigger an IN_CLOSE_* event while the mapping is
+// active; the event is delivered only after unmapping the memory.
+TEST(MmapTest, FileCloseDeferredWhileMapped) {
+  test_helper::ScopedTempDir temp_dir;
+  const std::string test_file_path = temp_dir.path() + "/mapped_file";
+
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+  std::string file_contents(page_size, 'a');
+  ASSERT_TRUE(files::WriteFile(test_file_path, file_contents));
+
+  // Use an inotify watch to observe when the close event occurs.
+  fbl::unique_fd inotify_fd(inotify_init1(IN_NONBLOCK | IN_CLOEXEC));
+  ASSERT_THAT(inotify_fd.get(), SyscallSucceeds());
+
+  int wd = inotify_add_watch(inotify_fd.get(), test_file_path.c_str(),
+                             IN_CLOSE_NOWRITE | IN_CLOSE_WRITE);
+  ASSERT_THAT(wd, SyscallSucceeds());
+
+  // Open the file and map it into memory.
+  fbl::unique_fd file_fd(open(test_file_path.c_str(), O_RDONLY));
+  ASSERT_THAT(file_fd.get(), SyscallSucceeds());
+
+  void* mapped_addr = mmap(nullptr, page_size, PROT_READ, MAP_SHARED, file_fd.get(), 0);
+  ASSERT_NE(mapped_addr, MAP_FAILED) << strerror(errno);
+
+  // Close the file descriptor while the mapping is still active.
+  file_fd.reset();
+
+  // No close event should be emitted yet while the mapping exists.
+  char event_buf[sizeof(struct inotify_event) + NAME_MAX + 1];
+  EXPECT_THAT(read(inotify_fd.get(), event_buf, sizeof(event_buf)), SyscallFailsWithErrno(EAGAIN));
+
+  // Unmap the memory.
+  ASSERT_THAT(munmap(mapped_addr, page_size), SyscallSucceeds());
+
+  // The close event should now be delivered.
+  ssize_t bytes_read = read(inotify_fd.get(), event_buf, sizeof(event_buf));
+  ASSERT_THAT(bytes_read, SyscallSucceeds());
+  ASSERT_GE(bytes_read, static_cast<ssize_t>(sizeof(struct inotify_event)));
+  const auto* event = reinterpret_cast<const struct inotify_event*>(event_buf);
+  EXPECT_EQ(event->wd, wd);
+  EXPECT_TRUE(event->mask & IN_CLOSE_NOWRITE);
 }
 
 }  // namespace

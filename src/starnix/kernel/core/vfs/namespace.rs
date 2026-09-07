@@ -1940,18 +1940,6 @@ impl ActiveNamespaceNode {
     pub fn to_passive(&self) -> NamespaceNode {
         self.deref().clone()
     }
-
-    /// Creates a [`FileMapping`] for this node.
-    pub fn to_mapping(&self, mode: Option<FileWriteGuardMode>) -> Result<Arc<FileMapping>, Errno> {
-        self.clone().into_mapping(mode)
-    }
-
-    pub fn into_mapping(self, mode: Option<FileWriteGuardMode>) -> Result<Arc<FileMapping>, Errno> {
-        if let Some(mode) = mode {
-            self.entry.node.write_guard_state.lock().acquire(mode)?;
-        }
-        Ok(Arc::new(FileMapping { name: self, mode }))
-    }
 }
 
 impl Deref for ActiveNamespaceNode {
@@ -1974,17 +1962,52 @@ impl Hash for ActiveNamespaceNode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Mapping of a file into memory, holding a reference to the [`FileHandle`] and an optional
+/// write guard on the underlying node.
+#[derive(Debug, Clone)]
 #[must_use]
 pub struct FileMapping {
-    pub name: ActiveNamespaceNode,
+    file: FileHandle,
     mode: Option<FileWriteGuardMode>,
 }
+
+impl FileMapping {
+    /// Creates a new [`FileMapping`], acquiring the specified write guard mode on the node if any.
+    pub fn new(file: FileHandle, mode: Option<FileWriteGuardMode>) -> Result<Arc<Self>, Errno> {
+        if let Some(mode) = mode {
+            file.name.entry.node.write_guard_state.lock().acquire(mode)?;
+        }
+        Ok(Arc::new(Self { file, mode }))
+    }
+
+    /// File backing this mapping.
+    pub fn file(&self) -> &FileHandle {
+        &self.file
+    }
+
+    /// Active namespace node associated with the underlying file.
+    pub fn name(&self) -> &ActiveNamespaceNode {
+        &self.file.name
+    }
+
+    /// Filesystem node associated with the underlying file.
+    pub fn node(&self) -> &FsNodeHandle {
+        self.file.node()
+    }
+}
+
+impl PartialEq for FileMapping {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.file, &other.file) && self.mode == other.mode
+    }
+}
+
+impl Eq for FileMapping {}
 
 impl Drop for FileMapping {
     fn drop(&mut self) {
         if let Some(mode) = self.mode {
-            self.name.entry.node.write_guard_state.lock().release(mode);
+            self.file.name.entry.node.write_guard_state.lock().release(mode);
         }
     }
 }

@@ -1041,7 +1041,9 @@ mod tests {
 
     use super::*;
 
-    use crate::security::selinux_hooks::testing::{create_test_executable, mutate_attrs_for_test};
+    use crate::security::selinux_hooks::testing::{
+        create_test_executable, mutate_attrs_for_test, open_test_file,
+    };
     use crate::security::selinux_hooks::{InitialSid, TaskAttrs, testing};
     use crate::signals::SignalInfo;
     use crate::testing::create_task_with_security_context;
@@ -1112,7 +1114,8 @@ mod tests {
                 attrs.exec_sid = Some(exec_sid);
             });
 
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
             assert_eq!(
                 bprm_creds_for_exec(
                     &security_server,
@@ -1151,7 +1154,8 @@ mod tests {
                 attrs.exec_sid = Some(exec_sid);
             });
 
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
             assert_eq!(
                 bprm_creds_for_exec(
                     &security_server,
@@ -1188,7 +1192,8 @@ mod tests {
                 attrs.exec_sid = Some(exec_sid);
             });
 
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
             assert_eq!(
                 bprm_creds_for_exec(
                     &security_server,
@@ -1226,7 +1231,8 @@ mod tests {
                 attrs.exec_sid = Some(exec_sid);
             });
 
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
             assert_eq!(
                 bprm_creds_for_exec(
                     &security_server,
@@ -1259,7 +1265,8 @@ mod tests {
 
             // Since the security domain is not changing, the `noatsecure` permission is not
             // checked and secure-mode exec is not required.
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
             assert_eq!(
                 bprm_creds_for_exec(
                     &security_server,
@@ -1296,7 +1303,8 @@ mod tests {
 
             // There is no `execute_no_trans` allow statement from `current_sid` to `executable_sid`,
             // expect access denied.
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
             assert_eq!(
                 bprm_creds_for_exec(
                     &security_server,
@@ -1345,7 +1353,8 @@ mod tests {
                 *attrs = initial_state.clone();
             });
 
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
 
             bprm_creds_for_exec(&security_server, &current_task, &executable, &mut resolved_elf)
                 .expect("bprm_creds_for_exec failed");
@@ -1412,7 +1421,8 @@ mod tests {
             assert_ne!(previous_sid, new_sid);
 
             let executable = testing::create_test_file(&grandchild_task);
-            let mut resolved_elf = testing::make_resolved_elf(&grandchild_task, executable.clone());
+            let file = open_test_file(&grandchild_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(&grandchild_task, file);
             resolved_elf.creds.security_state = TaskAttrs::for_transition(
                 new_sid,
                 grandchild_task.real_creds().security_state.current_sid,
@@ -1438,7 +1448,8 @@ mod tests {
             // rlimits are not reset when the task SID does not change.
             let same_domain_task = child_task.clone_task_for_test(0, Some(SIGCHLD));
 
-            let mut resolved_elf = testing::make_resolved_elf(&same_domain_task, executable);
+            let file = open_test_file(&same_domain_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(&same_domain_task, file);
             resolved_elf.creds.security_state = TaskAttrs::for_transition(
                 previous_sid,
                 same_domain_task.real_creds().security_state.current_sid,
@@ -1489,7 +1500,8 @@ mod tests {
                 .expect("invalid security context");
             assert_ne!(old_sid, new_sid);
             let executable = testing::create_test_file(&child_task);
-            let mut resolved_elf = testing::make_resolved_elf(&child_task, executable);
+            let file = open_test_file(&child_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(&child_task, file);
             resolved_elf.creds.security_state = TaskAttrs::for_transition(
                 new_sid,
                 child_task.real_creds().security_state.current_sid,
@@ -1529,7 +1541,8 @@ mod tests {
                 .expect("invalid security context");
             assert_ne!(old_sid, new_sid);
             let executable = testing::create_test_file(&child_task);
-            let mut resolved_elf = testing::make_resolved_elf(&child_task, executable);
+            let file = open_test_file(&child_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(&child_task, file);
             resolved_elf.creds.security_state = TaskAttrs::for_transition(
                 new_sid,
                 child_task.real_creds().security_state.current_sid,

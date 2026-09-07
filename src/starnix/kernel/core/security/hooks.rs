@@ -390,28 +390,6 @@ pub fn mmap_file(
     })
 }
 
-/// Checks whether [`CurrentTask`] is allowed to mmap [`FsNode`] using the given
-/// [`ProtectionFlags`] and [`MappingOptions`].
-///
-/// Corresponds to the `mmap_file()` LSM hook for an [`FsNode`].
-pub fn mmap_file_node(
-    current_task: &CurrentTask,
-    fs_node: &FsNode,
-    protection_flags: ProtectionFlags,
-    options: MappingOptions,
-) -> Result<(), Errno> {
-    track_hook_duration!("security.hooks.mmap_file_node");
-    if_selinux_else_default_ok(current_task, |security_server| {
-        selinux_hooks::file::mmap_file_node(
-            security_server,
-            current_task,
-            fs_node,
-            protection_flags,
-            options,
-        )
-    })
-}
-
 /// Checks whether `current_task` is allowed to request setting the memory protection of
 /// `mapping` to `prot`.
 /// Corresponds to the `file_mprotect` LSM hook.
@@ -1401,7 +1379,7 @@ pub fn bprm_creds_from_file(
 
     let enable_suid = current_task.kernel().features.enable_suid && !no_new_privs && !is_ptraced;
     if enable_suid {
-        elf_state.file.name.apply_suid_and_sgid(&mut elf_state.creds);
+        elf_state.file.name().apply_suid_and_sgid(&mut elf_state.creds);
     }
 
     // On exec, the filesystem UIDs are always reset to the effective UIDs.
@@ -2295,7 +2273,8 @@ mod tests {
         spawn_kernel_and_run(async |current_task| {
             assert!(current_task.kernel().security_state.state.is_none());
             let executable = testing::create_test_file(current_task);
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = testing::open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
             assert_eq!(bprm_creds_for_exec(current_task, &executable, &mut resolved_elf), Ok(()));
         })
         .await;
@@ -2306,7 +2285,8 @@ mod tests {
         spawn_kernel_with_selinux_hooks_test_policy_and_run(|current_task, security_server| {
             security_server.set_enforcing(false);
             let executable = testing::create_test_file(current_task);
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = testing::open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
             // Expect that access is granted.
             let result = bprm_creds_for_exec(current_task, &executable, &mut resolved_elf);
             assert!(result.is_ok());
@@ -2327,7 +2307,8 @@ mod tests {
             });
 
             let executable = testing::create_test_file(current_task);
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = testing::open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
 
             let before_hook_sid = selinux_hooks::current_task_state(current_task).current_sid;
 
@@ -2353,7 +2334,8 @@ mod tests {
             });
 
             let executable = testing::create_test_file(current_task);
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = testing::open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
 
             bprm_creds_for_exec(current_task, &executable, &mut resolved_elf).unwrap();
 
@@ -2378,7 +2360,8 @@ mod tests {
             });
 
             let executable = testing::create_test_file(current_task);
-            let mut resolved_elf = testing::make_resolved_elf(current_task, executable.clone());
+            let file = testing::open_test_file(current_task, &executable);
+            let mut resolved_elf = testing::make_resolved_elf(current_task, file);
 
             bprm_creds_for_exec(current_task, &executable, &mut resolved_elf).unwrap();
             assert_eq!(resolved_elf.creds.security_state.current_sid, elf_sid);

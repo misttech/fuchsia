@@ -3904,7 +3904,7 @@ impl MemoryManager {
 
                 if flags.contains(MsyncFlags::SYNC) {
                     if let MappingNameRef::File(file_mapping) = mapping.name() {
-                        nodes.push(file_mapping.name.entry.node.clone());
+                        nodes.push(file_mapping.node().clone());
                     }
                 }
             }
@@ -4001,7 +4001,7 @@ impl MemoryManager {
                         log_warn!("Task {} is not running", task.get_tid());
                         continue;
                     };
-                    String::from_utf8_lossy(&file.name.path(&running_state.fs())).into_owned()
+                    String::from_utf8_lossy(&file.name().path(&running_state.fs())).into_owned()
                 }
                 MappingNameRef::None | MappingNameRef::AioContext(_) => {
                     if map.flags().contains(MappingFlags::SHARED)
@@ -4586,7 +4586,7 @@ fn write_map(
             MappingBacking::Memory(backing) => backing.address_to_offset(range.start),
             MappingBacking::PrivateAnonymous => 0,
         },
-        if let MappingNameRef::File(file) = &map.name() { file.name.entry.node.ino } else { 0 }
+        if let MappingNameRef::File(file) = &map.name() { file.node().ino } else { 0 }
     )?;
     let fill_to_name = |sink: &mut DynamicFileBuf| {
         // The filename goes at >= the 74th column (73rd when zero indexed)
@@ -4625,7 +4625,7 @@ fn write_map(
             // File names can have newlines that need to be escaped before printing.
             // According to https://man7.org/linux/man-pages/man5/proc.5.html the only
             // escaping applied to paths is replacing newlines with an octal sequence.
-            let path = file.name.path(&task.running_state()?.fs());
+            let path = file.name().path(&task.running_state()?.fs());
             sink.write_iter(
                 path.iter()
                     .flat_map(|b| if *b == b'\n' { b"\\012" } else { std::slice::from_ref(b) })
