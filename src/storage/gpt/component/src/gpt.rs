@@ -340,7 +340,7 @@ impl Inner {
             block_count: mappings.total_blocks(),
             ..Default::default()
         };
-        log::trace!(
+        log::debug!(
             "GPT merged parts {:?} + {:?} -> {info:?}",
             super_partition.1,
             userdata_partition.1
@@ -417,28 +417,51 @@ impl Inner {
 
 /// Encodes partition `offset_map` into raw extent bytes for the mapping VMO FIFO.
 ///
-/// Returns the encoded payload bytes, total uncompressed size, and extent count.
-fn offset_map_to_extents(offset_map: &OffsetMap, block_size: u32) -> (Vec<u8>, u64, u32) {
-    let mappings: Vec<fblock::BlockOffsetMapping> = offset_map.into();
+/// Returns the encoded payload bytes, total uncompressed size, extent count, and base device
+/// offset.
+fn offset_map_to_extents(
+    offset_map: &OffsetMap,
+    block_size: u32,
+) -> Result<(Vec<u8>, u64, u32, u64), Error> {
+    let mappings = offset_map.mappings();
     let block_size = block_size as u64;
+    let base_device_offset =
+        mappings.iter().map(|m| m.target_block_offset * block_size).min().unwrap_or(0);
     let mut running_logical = 0u64;
-    let extents = mappings.iter().map(|m| {
-        let len_bytes = m.length * block_size;
+    let mut extents = Vec::with_capacity(mappings.len());
+    let num_mappings = mappings.len();
+    for (i, m) in mappings.iter().enumerate() {
+        let is_last = i == num_mappings - 1;
+        let total_bytes = m.length * block_size;
+        let len_bytes = if is_last {
+            // Because we only support 4 KiB mappings, we can support misalignment if it's the last
+            // range (because the unaligned tail wouldn't be usable anyway).
+            total_bytes - (total_bytes % mapping::BLOCK_SIZE)
+        } else {
+            // Because we only support 4 KiB mappings, we cannot handle misalignment across two
+            // adjacent ranges.
+            ensure!(total_bytes % mapping::BLOCK_SIZE == 0, zx::Status::NOT_SUPPORTED);
+            total_bytes
+        };
+        if len_bytes == 0 {
+            continue;
+        }
         let dev_offset_bytes = m.target_block_offset * block_size;
         let extent = mapping::Extent::new(
             running_logical..running_logical + len_bytes,
             Some(dev_offset_bytes),
         );
         running_logical += len_bytes;
-        extent
-    });
-    let mut payload_bytes = Vec::new();
+        extents.push(extent);
+    }
+    let extents = mapping::Extents::try_new(extents, base_device_offset)?;
+    let mut payload_bytes = Vec::with_capacity(mappings.len() * std::mem::size_of::<u64>());
     let mut blob_count = 0u32;
-    for w in mapping::Extents::encode_extents(extents) {
+    for w in mapping::Extents::encode_extents_with_base_offset(&extents) {
         payload_bytes.extend_from_slice(&w.to_le_bytes());
         blob_count += 1;
     }
-    (payload_bytes, running_logical, blob_count)
+    Ok((payload_bytes, running_logical, blob_count, base_device_offset))
 }
 
 struct MapperSessionState {
@@ -613,14 +636,15 @@ impl GptManager {
         let state = self.mapper_state().await;
         let mut sender = state.sender.lock().await;
 
-        let (payload_bytes, stored_size, blob_count) =
-            offset_map_to_extents(offset_map, self.block_size);
+        let (payload_bytes, stored_size, blob_count, device_offset) =
+            offset_map_to_extents(offset_map, self.block_size)?;
         let mut payload_buf = sender.reserve_payload(payload_bytes.len()).await?;
         let cmd = mapping::RawMappingCommand {
             opcode: mapping::MAPPINGS_COMMAND,
             offset: payload_buf.offset(),
             key,
             stored_size,
+            device_offset,
             metadata_count: 0,
             blob_count,
         };
@@ -905,7 +929,7 @@ mod tests {
         BlockClient as _, BlockDeviceFlag, BufferSlice, MutableBufferSlice, RemoteBlockClient,
         WriteFlags,
     };
-    use block_server::{BlockInfo, DeviceInfo, WriteOptions};
+    use block_server::{BlockInfo, DeviceInfo, OffsetMap, WriteOptions};
     use fidl_fuchsia_io as fio;
     use fidl_fuchsia_storage_block as fblock;
     use fidl_fuchsia_storage_partitions as fpartitions;
@@ -2738,13 +2762,86 @@ mod tests {
         assert_eq!(cmd1.key, 1);
         assert_eq!(cmd2.key, 2);
 
-        let (expected_payload1, _, _) =
-            super::offset_map_to_extents(&offset_map1, runner.block_size());
-        let (expected_payload2, _, _) =
-            super::offset_map_to_extents(&offset_map2, runner.block_size());
+        let (expected_payload1, _, _, expected_device_offset1) =
+            super::offset_map_to_extents(&offset_map1, runner.block_size()).unwrap();
+        let (expected_payload2, _, _, expected_device_offset2) =
+            super::offset_map_to_extents(&offset_map2, runner.block_size()).unwrap();
+        assert_eq!(cmd1.device_offset, expected_device_offset1);
+        assert_eq!(cmd2.device_offset, expected_device_offset2);
         assert_eq!(payload1, expected_payload1);
         assert_eq!(payload2, expected_payload2);
 
         runner.shutdown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_offset_map_to_extents_unaligned_length() {
+        let offset_map = OffsetMap::new(vec![block_server::BlockOffsetMapping {
+            target_block_offset: 34,
+            length: 114654,
+        }])
+        .unwrap();
+
+        let (payload, logical_len, count, base_offset) =
+            super::offset_map_to_extents(&offset_map, 512).unwrap();
+
+        assert_eq!(base_offset, 34 * 512);
+        // 114654 * 512 = 58702848 bytes, rounded down to nearest 4KB is 58699776 bytes.
+        assert_eq!(logical_len, 58699776);
+        assert_eq!(count, 1);
+        assert_eq!(payload.len(), 8);
+    }
+
+    #[fuchsia::test]
+    async fn test_offset_map_to_extents_multiple_mappings() {
+        // First mapping is 4 KiB aligned (8 blocks of 512 = 4096 bytes).
+        // Second mapping is unaligned (11 blocks of 512 = 5632 bytes -> rounded down to 4096
+        // bytes).
+        let offset_map = OffsetMap::new(vec![
+            block_server::BlockOffsetMapping { target_block_offset: 34, length: 8 },
+            block_server::BlockOffsetMapping { target_block_offset: 50, length: 11 },
+        ])
+        .unwrap();
+
+        let (payload, logical_len, count, base_offset) =
+            super::offset_map_to_extents(&offset_map, 512).unwrap();
+
+        assert_eq!(base_offset, 34 * 512);
+        assert_eq!(logical_len, 8192);
+        assert_eq!(count, 2);
+        assert_eq!(payload.len(), 16);
+    }
+
+    #[fuchsia::test]
+    async fn test_offset_map_to_extents_earlier_mapping_unaligned_fails() {
+        // First mapping is not 4 KiB aligned (7 blocks of 512 = 3584 bytes).
+        // Second mapping is 8 blocks (4096 bytes).
+        let offset_map = OffsetMap::new(vec![
+            block_server::BlockOffsetMapping { target_block_offset: 34, length: 7 },
+            block_server::BlockOffsetMapping { target_block_offset: 50, length: 8 },
+        ])
+        .unwrap();
+
+        let err = super::offset_map_to_extents(&offset_map, 512).unwrap_err();
+        assert_eq!(err.root_cause().downcast_ref::<zx::Status>(), Some(&zx::Status::NOT_SUPPORTED));
+    }
+
+    #[fuchsia::test]
+    async fn test_offset_map_to_extents_lowest_physical_block_base_offset() {
+        // First logical mapping is at a higher physical block (50 * 512).
+        // Second logical mapping is at a lower physical block (34 * 512).
+        let offset_map = OffsetMap::new(vec![
+            block_server::BlockOffsetMapping { target_block_offset: 50, length: 8 },
+            block_server::BlockOffsetMapping { target_block_offset: 34, length: 8 },
+        ])
+        .unwrap();
+
+        let (payload, logical_len, count, base_offset) =
+            super::offset_map_to_extents(&offset_map, 512).unwrap();
+
+        assert_eq!(base_offset, 34 * 512);
+        assert_eq!(logical_len, 8192);
+        assert_eq!(count, 2);
+        assert_eq!(payload.len(), 16);
     }
 }

@@ -45,8 +45,10 @@ fuchsia_test_component("fxfs-mapper-integration-test-component") {
 fuchsia_test_package("fxfs-mapper-integration-test") {
   test_components = [ ":fxfs-mapper-integration-test-component" ]
   test_specs = {
-    # This test runs on emulators with virtio-block.
-    environments = [ emu_env ]
+    environments = [
+      emu_env,
+      sorrel_env,
+    ]
   }
   deps = [
     "//src/storage/crypt/fxfs",

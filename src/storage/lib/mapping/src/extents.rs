@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::BLOCK_SIZE;
-use anyhow::{Error, anyhow};
+use anyhow::{Error, ensure};
 use std::borrow::Borrow;
 use std::ops::Range;
 
@@ -13,8 +13,9 @@ const SPARSE: u64 = 0x80000000_00000000;
 
 // Regular extents are densely bit-packed into a single 64-bit hardware command (LSB 0):
 //   Bits 62-63 (2 most significant bits): Type identifier (`REGULAR`)
-//   Bits 32-61 (30 bits): Extent length in blocks
-//   Bits 0-31  (32 least significant bits): Target physical device offset block address
+//   Bits 32-61 (30 bits): Extent length in `BLOCK_SIZE` units (4096 bytes)
+//   Bits 0-31  (32 least significant bits): Target device offset block address (in `BLOCK_SIZE`
+//               units), relative to `base_device_offset`
 // Therefore, the maximum contiguous chunk that can fit into a single regular command is 30 bits.
 const MAX_REGULAR_EXTENT_BLOCKS: u64 = 0x3fff_ffff;
 
@@ -64,42 +65,28 @@ impl Extent {
 
     /// Creates a new `Extent`, returning an `Error` if the alignment is invalid.
     pub fn try_new(logical_range: Range<u64>, device_offset: Option<u64>) -> Result<Self, Error> {
-        if logical_range.start % BLOCK_SIZE != 0 || logical_range.end % BLOCK_SIZE != 0 {
-            return Err(anyhow!(
-                "logical_range boundaries must be a multiple of BLOCK_SIZE (4096 bytes), got {:?}",
-                logical_range
-            ));
-        }
-        if logical_range.start > logical_range.end {
-            return Err(anyhow!(
-                "logical_range.start must be <= logical_range.end, got {:?}",
-                logical_range
-            ));
-        }
+        ensure!(
+            logical_range.start % BLOCK_SIZE == 0 && logical_range.end % BLOCK_SIZE == 0,
+            "logical_range boundaries must be a multiple of BLOCK_SIZE (4096 bytes), got {:?}",
+            logical_range
+        );
+        ensure!(
+            logical_range.start <= logical_range.end,
+            "logical_range.start must be <= logical_range.end, got {:?}",
+            logical_range
+        );
 
         let length_blocks = (logical_range.end - logical_range.start) / BLOCK_SIZE;
-        if let Some(dev_offset) = device_offset {
-            if dev_offset % BLOCK_SIZE != 0 {
-                return Err(anyhow!(
-                    "device_offset must be a multiple of BLOCK_SIZE (4096 bytes), got {}",
-                    dev_offset
-                ));
-            }
-
-            if length_blocks > MAX_REGULAR_EXTENT_BLOCKS {
-                // TODO(https://fxbug.dev/535489428): Handle large extents if needed.
-                return Err(anyhow!("Extent length bounds exceed maximum encodeable length"));
-            }
-
-            let target_block = dev_offset / BLOCK_SIZE;
-            if u32::try_from(target_block).is_err() {
-                return Err(anyhow!("Extent device_offset block index exceeds u32::MAX"));
-            }
+        if device_offset.is_some() {
+            ensure!(
+                length_blocks <= MAX_REGULAR_EXTENT_BLOCKS,
+                "Extent length bounds exceed maximum encodeable length"
+            );
         } else {
-            if length_blocks > MAX_SPARSE_EXTENT_BLOCKS {
-                // TODO(https://fxbug.dev/535489428): Handle large extents if needed.
-                return Err(anyhow!("Extent length bounds exceed maximum encodeable length"));
-            }
+            ensure!(
+                length_blocks <= MAX_SPARSE_EXTENT_BLOCKS,
+                "Extent length bounds exceed maximum encodeable length"
+            );
         }
         Ok(Self { logical_range, device_offset })
     }
@@ -156,44 +143,140 @@ impl<'a> Iterator for ExtentsIterator<'a> {
 /// sorted by ascending `end_logical_offset` to support clean O(log N) binary search lookups.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Extents {
+    base_device_offset: u64,
     entries: Box<[ExtentEntry]>,
 }
 
 impl Extents {
-    /// Encodes an iterator of `Extent`s into 64-bit mapping descriptors.
-    pub fn encode_extents<I>(extents: I) -> impl Iterator<Item = u64>
-    where
-        I: IntoIterator,
-        I::Item: std::borrow::Borrow<Extent>,
-    {
-        extents.into_iter().map(|extent| {
+    /// Returns the base device offset of this container.
+    pub fn base_device_offset(&self) -> u64 {
+        self.base_device_offset
+    }
+
+    /// Creates an `Extents` container from an iterator of `Extent`s, returning an `Error`
+    /// if validation fails.
+    pub fn try_new(
+        extents: impl IntoIterator<Item = impl Borrow<Extent>>,
+        base_device_offset: u64,
+    ) -> Result<Self, Error> {
+        let iter = extents.into_iter();
+        let (lower_bound, _) = iter.size_hint();
+        let mut entries = Vec::with_capacity(lower_bound);
+        let mut current_logical_offset = 0u64;
+
+        for extent in iter {
             let extent = extent.borrow();
+            ensure!(
+                extent.logical_range.start == current_logical_offset,
+                "Extents must be contiguous and start at 0: expected start \
+                 {current_logical_offset}, got {}",
+                extent.logical_range.start
+            );
+            ensure!(
+                extent.logical_range.start < extent.logical_range.end,
+                "Extent logical range must be non-empty, got {:?}",
+                extent.logical_range
+            );
+            ensure!(
+                extent.logical_range.start % BLOCK_SIZE == 0
+                    && extent.logical_range.end % BLOCK_SIZE == 0,
+                "logical_range boundaries must be a multiple of BLOCK_SIZE ({BLOCK_SIZE} bytes), \
+                 got {:?}",
+                extent.logical_range
+            );
             let length_blocks = extent.len() / BLOCK_SIZE;
-            match extent.device_offset() {
-                Some(dev_offset) => {
-                    let target_block = dev_offset / BLOCK_SIZE;
-                    encode_regular(length_blocks as u32, target_block as u32)
-                }
-                None => encode_sparse(length_blocks),
+            if let Some(dev_offset) = extent.device_offset {
+                ensure!(
+                    dev_offset >= base_device_offset,
+                    "device_offset ({dev_offset}) must be >= base_device_offset \
+                     ({base_device_offset})"
+                );
+                let relative_offset = dev_offset - base_device_offset;
+                ensure!(
+                    relative_offset % BLOCK_SIZE == 0,
+                    "Relative device offset ({dev_offset} - {base_device_offset} = \
+                     {relative_offset}) must be a multiple of BLOCK_SIZE ({BLOCK_SIZE} bytes)"
+                );
+                let target_block = relative_offset / BLOCK_SIZE;
+                ensure!(
+                    target_block <= u32::MAX as u64,
+                    "Relative device offset block index exceeds u32::MAX"
+                );
+                ensure!(
+                    length_blocks <= MAX_REGULAR_EXTENT_BLOCKS,
+                    "Extent length bounds exceed maximum encodeable length"
+                );
+                current_logical_offset = extent.logical_range.end;
+                entries.push(ExtentEntry {
+                    end_logical_offset: current_logical_offset,
+                    device_offset: dev_offset,
+                });
+            } else {
+                ensure!(
+                    length_blocks <= MAX_SPARSE_EXTENT_BLOCKS,
+                    "Extent length bounds exceed maximum encodeable length"
+                );
+                current_logical_offset = extent.logical_range.end;
+                entries.push(ExtentEntry {
+                    end_logical_offset: current_logical_offset,
+                    device_offset: ExtentEntry::SPARSE_DEVICE_OFFSET,
+                });
+            }
+        }
+
+        Ok(Self { base_device_offset, entries: entries.into_boxed_slice() })
+    }
+
+    /// Encodes this `Extents` container into 64-bit mapping descriptors relative to its base
+    /// device offset.
+    pub fn encode(&self) -> impl Iterator<Item = u64> + '_ {
+        let mut prev_logical = 0u64;
+        self.entries.iter().map(move |entry| {
+            let length_blocks = (entry.end_logical_offset - prev_logical) / BLOCK_SIZE;
+            prev_logical = entry.end_logical_offset;
+            if entry.is_sparse() {
+                encode_sparse(length_blocks)
+            } else {
+                let relative_offset = entry.device_offset - self.base_device_offset;
+                let target_block = (relative_offset / BLOCK_SIZE) as u32;
+                encode_regular(length_blocks as u32, target_block)
             }
         })
     }
 
-    /// Decodes a sequence of 64-bit mapping descriptors into a compact `Extents` container.
+    /// Encodes an `Extents` container into 64-bit mapping descriptors.
+    pub fn encode_extents(extents: &Extents) -> impl Iterator<Item = u64> + '_ {
+        extents.encode()
+    }
+
+    /// Encodes an `Extents` container into 64-bit mapping descriptors relative to its base
+    /// device offset.
+    pub fn encode_extents_with_base_offset(extents: &Extents) -> impl Iterator<Item = u64> + '_ {
+        extents.encode()
+    }
+
+    /// Decodes a sequence of 64-bit mapping descriptors into a compact `Extents` container,
+    /// offsetting regular extents by `base_device_offset`.
     /// Returns `None` if an unknown mapping descriptor type is encountered or if an arithmetic
     /// overflow occurs while decoding.
-    pub fn from_encoded(encoded: impl IntoIterator<Item = u64>) -> Option<Self> {
-        let mut entries = Vec::new();
+    pub fn from_encoded(
+        encoded: impl IntoIterator<Item = u64>,
+        base_device_offset: u64,
+    ) -> Option<Self> {
+        let iter = encoded.into_iter();
+        let (lower_bound, _) = iter.size_hint();
+        let mut entries = Vec::with_capacity(lower_bound);
         let mut current_logical_offset = 0u64;
 
-        for val in encoded {
+        for val in iter {
             let kind = val & TYPE_MASK;
             if kind == REGULAR {
                 let length_blocks = ((val & !TYPE_MASK) >> 32) as u64;
                 let target_block = (val & 0xffff_ffff) as u64;
                 let length_bytes = length_blocks.checked_mul(BLOCK_SIZE)?;
                 current_logical_offset = current_logical_offset.checked_add(length_bytes)?;
-                let device_offset = target_block.checked_mul(BLOCK_SIZE)?;
+                let device_offset =
+                    base_device_offset.checked_add(target_block.checked_mul(BLOCK_SIZE)?)?;
                 entries.push(ExtentEntry {
                     end_logical_offset: current_logical_offset,
                     device_offset,
@@ -211,7 +294,7 @@ impl Extents {
             }
         }
 
-        Some(Self { entries: entries.into_boxed_slice() })
+        Some(Self { base_device_offset, entries: entries.into_boxed_slice() })
     }
 
     /// Returns an iterator over all extents whose logical range ends after `start_offset`,
@@ -275,12 +358,16 @@ mod tests {
 
     #[test]
     fn test_encode_decode_regular() {
-        let extents = vec![
-            Extent::new(0..(4 * BLOCK_SIZE), Some(10 * BLOCK_SIZE)),
-            Extent::new((4 * BLOCK_SIZE)..(6 * BLOCK_SIZE), Some(100 * BLOCK_SIZE)),
-        ];
-        let extents_container =
-            Extents::from_encoded(Extents::encode_extents(extents)).expect("from_encoded failed");
+        let extents = Extents::try_new(
+            [
+                Extent::new(0..(4 * BLOCK_SIZE), Some(10 * BLOCK_SIZE)),
+                Extent::new((4 * BLOCK_SIZE)..(6 * BLOCK_SIZE), Some(100 * BLOCK_SIZE)),
+            ],
+            0,
+        )
+        .unwrap();
+        let encoded = Extents::encode_extents(&extents);
+        let extents_container = Extents::from_encoded(encoded, 0).expect("from_encoded failed");
 
         let decoded = extents_container.mappings();
         assert_eq!(decoded.len(), 2);
@@ -294,13 +381,17 @@ mod tests {
 
     #[test]
     fn test_encode_decode_sparse() {
-        let extents = vec![
-            Extent::new(0..(2 * BLOCK_SIZE), Some(50 * BLOCK_SIZE)),
-            Extent::new((2 * BLOCK_SIZE)..(5 * BLOCK_SIZE), None),
-            Extent::new((5 * BLOCK_SIZE)..(6 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
-        ];
-        let extents_container =
-            Extents::from_encoded(Extents::encode_extents(extents)).expect("from_encoded failed");
+        let extents = Extents::try_new(
+            [
+                Extent::new(0..(2 * BLOCK_SIZE), Some(50 * BLOCK_SIZE)),
+                Extent::new((2 * BLOCK_SIZE)..(5 * BLOCK_SIZE), None),
+                Extent::new((5 * BLOCK_SIZE)..(6 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
+            ],
+            0,
+        )
+        .unwrap();
+        let encoded = Extents::encode_extents(&extents);
+        let extents_container = Extents::from_encoded(encoded, 0).expect("from_encoded failed");
 
         let decoded = extents_container.mappings();
         assert_eq!(decoded.len(), 3);
@@ -316,14 +407,92 @@ mod tests {
     }
 
     #[test]
-    fn test_binary_search_map_logical_offset() {
-        let extents = vec![
-            Extent::new(0..(10 * BLOCK_SIZE), Some(100 * BLOCK_SIZE)),
-            Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
-            Extent::new((20 * BLOCK_SIZE)..(30 * BLOCK_SIZE), Some(300 * BLOCK_SIZE)),
-        ];
+    fn test_encode_decode_non_aligned_start() {
+        let base_device_offset = 17408u64; // e.g. LBA 34 on 512-byte sector disk
+        let extents = Extents::try_new(
+            [
+                Extent::new(0..(4 * BLOCK_SIZE), Some(base_device_offset)),
+                Extent::new(
+                    (4 * BLOCK_SIZE)..(6 * BLOCK_SIZE),
+                    Some(base_device_offset + 100 * BLOCK_SIZE),
+                ),
+            ],
+            base_device_offset,
+        )
+        .unwrap();
+        let encoded = Extents::encode_extents_with_base_offset(&extents);
         let extents_container =
-            Extents::from_encoded(Extents::encode_extents(extents)).expect("from_encoded failed");
+            Extents::from_encoded(encoded, base_device_offset).expect("from_encoded failed");
+
+        let decoded = extents_container.mappings();
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].logical_range, 0..(4 * BLOCK_SIZE));
+        assert_eq!(decoded[0].device_offset, Some(base_device_offset));
+        assert_eq!(decoded[1].logical_range, (4 * BLOCK_SIZE)..(6 * BLOCK_SIZE));
+        assert_eq!(decoded[1].device_offset, Some(base_device_offset + 100 * BLOCK_SIZE));
+
+        let mapped = extents_container.map(0).expect("should map at 0");
+        assert_eq!(mapped.device_offset, Some(base_device_offset));
+
+        let mapped_next = extents_container.map(4 * BLOCK_SIZE).expect("should map next");
+        assert_eq!(mapped_next.device_offset, Some(base_device_offset + 100 * BLOCK_SIZE));
+    }
+
+    #[test]
+    fn test_extents_validation_relative_offset_unaligned_fails() {
+        let base_device_offset = 17408u64;
+        // 17408 + 500 is not aligned to BLOCK_SIZE relative to base_device_offset
+        let result = Extents::try_new(
+            [Extent::new(0..BLOCK_SIZE, Some(base_device_offset + 500))],
+            base_device_offset,
+        );
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("Relative device offset"),
+            "Error should mention relative device offset"
+        );
+    }
+
+    #[test]
+    fn test_extents_validation_device_offset_smaller_than_base_fails() {
+        let base_device_offset = 17408u64;
+        let result = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], base_device_offset);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("must be >= base_device_offset"),
+            "Error should mention dev_offset >= base_device_offset"
+        );
+    }
+
+    #[test]
+    fn test_extents_validation_non_contiguous_logical_fails() {
+        let result = Extents::try_new(
+            [
+                Extent::new(0..BLOCK_SIZE, Some(0)),
+                Extent::new((2 * BLOCK_SIZE)..(3 * BLOCK_SIZE), Some(BLOCK_SIZE)),
+            ],
+            0,
+        );
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("must be contiguous and start at 0"),
+            "Error should mention non-contiguous start"
+        );
+    }
+
+    #[test]
+    fn test_binary_search_map_logical_offset() {
+        let extents = Extents::try_new(
+            [
+                Extent::new(0..(10 * BLOCK_SIZE), Some(100 * BLOCK_SIZE)),
+                Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
+                Extent::new((20 * BLOCK_SIZE)..(30 * BLOCK_SIZE), Some(300 * BLOCK_SIZE)),
+            ],
+            0,
+        )
+        .unwrap();
+        let encoded = Extents::encode_extents(&extents);
+        let extents_container = Extents::from_encoded(encoded, 0).expect("from_encoded failed");
 
         let mapped = extents_container.map(0).expect("should map at offset 0");
         assert_eq!(mapped.logical_range, 0..(10 * BLOCK_SIZE));
@@ -338,9 +507,10 @@ mod tests {
 
     #[test]
     fn test_map_out_of_bounds() {
-        let extents = vec![Extent::new(0..(2 * BLOCK_SIZE), Some(10 * BLOCK_SIZE))];
+        let extents =
+            Extents::try_new([Extent::new(0..(2 * BLOCK_SIZE), Some(10 * BLOCK_SIZE))], 0).unwrap();
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded, 0).expect("from_encoded failed");
 
         assert!(extents_container.map(2 * BLOCK_SIZE).is_none());
         assert!(extents_container.map(100 * BLOCK_SIZE).is_none());
@@ -348,13 +518,17 @@ mod tests {
 
     #[test]
     fn test_binary_search_iter_extents() {
-        let extents = vec![
-            Extent::new(0..(2 * BLOCK_SIZE), Some(10 * BLOCK_SIZE)),
-            Extent::new((2 * BLOCK_SIZE)..(4 * BLOCK_SIZE), Some(20 * BLOCK_SIZE)),
-            Extent::new((4 * BLOCK_SIZE)..(6 * BLOCK_SIZE), Some(30 * BLOCK_SIZE)),
-        ];
+        let extents = Extents::try_new(
+            [
+                Extent::new(0..(2 * BLOCK_SIZE), Some(10 * BLOCK_SIZE)),
+                Extent::new((2 * BLOCK_SIZE)..(4 * BLOCK_SIZE), Some(20 * BLOCK_SIZE)),
+                Extent::new((4 * BLOCK_SIZE)..(6 * BLOCK_SIZE), Some(30 * BLOCK_SIZE)),
+            ],
+            0,
+        )
+        .unwrap();
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded, 0).expect("from_encoded failed");
 
         let results: Vec<_> = extents_container.iter_extents(3 * BLOCK_SIZE).collect();
         assert_eq!(results.len(), 2);
@@ -364,12 +538,16 @@ mod tests {
 
     #[test]
     fn test_exact_boundary_queries() {
-        let extents = vec![
-            Extent::new(0..(10 * BLOCK_SIZE), Some(100 * BLOCK_SIZE)),
-            Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
-        ];
+        let extents = Extents::try_new(
+            [
+                Extent::new(0..(10 * BLOCK_SIZE), Some(100 * BLOCK_SIZE)),
+                Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
+            ],
+            0,
+        )
+        .unwrap();
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded, 0).expect("from_encoded failed");
 
         let mapped = extents_container.map(10 * BLOCK_SIZE).expect("should map at exact boundary");
         assert_eq!(mapped.logical_range, (10 * BLOCK_SIZE)..(20 * BLOCK_SIZE));
@@ -394,37 +572,25 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "multiple of BLOCK_SIZE")]
-    fn test_extent_new_unaligned_device_offset_panics() {
-        Extent::new(0..(2 * BLOCK_SIZE), Some(10 * BLOCK_SIZE + 500));
-    }
-
-    #[test]
-    #[should_panic(expected = "multiple of BLOCK_SIZE")]
     fn test_map_unaligned_offset_panics() {
         Extents::default().map(500);
     }
 
     #[test]
     fn test_iter_extents_unaligned_start_offset() {
-        let extents = vec![
-            Extent::new(0..(10 * BLOCK_SIZE), Some(100 * BLOCK_SIZE)),
-            Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
-        ];
+        let extents = Extents::try_new(
+            [
+                Extent::new(0..(10 * BLOCK_SIZE), Some(100 * BLOCK_SIZE)),
+                Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
+            ],
+            0,
+        )
+        .unwrap();
         let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
+        let extents_container = Extents::from_encoded(encoded, 0).expect("from_encoded failed");
         let results: Vec<_> = extents_container.iter_extents(500).collect();
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].logical_range, 0..(10 * BLOCK_SIZE));
-    }
-
-    #[test]
-    fn test_encode_extents_device_offset_overflow_errors() {
-        let result = Extent::try_new(0..BLOCK_SIZE, Some((u32::MAX as u64 + 1) * BLOCK_SIZE));
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Extent device_offset block index exceeds u32::MAX"
-        );
     }
 
     #[test]
@@ -443,6 +609,6 @@ mod tests {
     #[test]
     fn test_from_encoded_unknown_kind_returns_none() {
         let unknown_descriptor = 0x40000000_00000000;
-        assert!(Extents::from_encoded([unknown_descriptor]).is_none());
+        assert!(Extents::from_encoded([unknown_descriptor], 0).is_none());
     }
 }

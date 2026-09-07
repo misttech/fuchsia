@@ -1079,7 +1079,7 @@ mod tests {
         );
 
         let encoded = (1u64 << 32) | 0u64;
-        let extents = Extents::from_encoded([encoded]).unwrap();
+        let extents = Extents::from_encoded([encoded], 0).unwrap();
         let service = block_service.clone();
         let (send, recv) = futures::channel::oneshot::channel();
         let send = std::sync::Mutex::new(Some(send));
@@ -1123,7 +1123,7 @@ mod tests {
         ));
 
         let encoded = (16u64 << 32) | 0u64;
-        let extents = Arc::new(Extents::from_encoded([encoded]).unwrap());
+        let extents = Arc::new(Extents::from_encoded([encoded], 0).unwrap());
 
         // Spawn 4 concurrent read requests on background threads, each requesting 16384 bytes.
         let ranges = [0..16384, 16384..32768, 32768..49152, 49152..65536];
@@ -1186,8 +1186,9 @@ mod tests {
         let root_mapping_vmo = zx::Vmo::create(65536).unwrap();
 
         let partition_key = 500u64;
-        let partition_extents: Vec<u64> =
-            mapping::Extents::encode_extents([mapping::Extent::new(0..4096, Some(4096))]).collect();
+        let extents =
+            mapping::Extents::try_new([mapping::Extent::new(0..4096, Some(4096))], 0).unwrap();
+        let partition_extents: Vec<u64> = mapping::Extents::encode_extents(&extents).collect();
         let mut payload_bytes = Vec::new();
         for w in &partition_extents {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
@@ -1197,6 +1198,7 @@ mod tests {
             offset: 0,
             key: partition_key,
             stored_size: 4096,
+            device_offset: 0,
             metadata_count: 0,
             blob_count: partition_extents.len() as u32,
         };
@@ -1242,8 +1244,9 @@ mod tests {
         )
         .unwrap();
 
-        let child_extents: Vec<u64> =
-            mapping::Extents::encode_extents([mapping::Extent::new(0..4096, Some(0))]).collect();
+        let extents =
+            mapping::Extents::try_new([mapping::Extent::new(0..4096, Some(0))], 0).unwrap();
+        let child_extents: Vec<u64> = mapping::Extents::encode_extents(&extents).collect();
         let mut child_payload_bytes = Vec::new();
         for w in &child_extents {
             child_payload_bytes.extend_from_slice(&w.to_le_bytes());
@@ -1253,6 +1256,7 @@ mod tests {
             offset: 0,
             key: child_key,
             stored_size: 4096,
+            device_offset: 0,
             metadata_count: 0,
             blob_count: child_extents.len() as u32,
         };
@@ -1323,8 +1327,9 @@ mod tests {
         let root_mapping_vmo = zx::Vmo::create(65536).unwrap();
 
         let partition_key = 500u64;
-        let partition_extents: Vec<u64> =
-            mapping::Extents::encode_extents([mapping::Extent::new(0..4096, Some(4096))]).collect();
+        let extents =
+            mapping::Extents::try_new([mapping::Extent::new(0..4096, Some(4096))], 0).unwrap();
+        let partition_extents: Vec<u64> = mapping::Extents::encode_extents(&extents).collect();
         let mut payload_bytes = Vec::new();
         for w in &partition_extents {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
@@ -1334,6 +1339,7 @@ mod tests {
             offset: 0,
             key: partition_key,
             stored_size: 4096,
+            device_offset: 0,
             metadata_count: 0,
             blob_count: partition_extents.len() as u32,
         };

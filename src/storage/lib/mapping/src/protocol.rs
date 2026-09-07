@@ -52,6 +52,7 @@ pub struct RawMappingCommand {
     pub offset: u32,
     pub key: u64,
     pub stored_size: u64,
+    pub device_offset: u64,
     pub metadata_count: u32,
     pub blob_count: u32,
 }
@@ -68,6 +69,8 @@ pub enum MappingCommand {
         offset: u32,
         /// Total stored size of the blob's data (compressed size if compressed, or byte size).
         stored_size: u64,
+        /// Base physical device byte offset on the underlying storage device.
+        device_offset: u64,
         /// Number of Merkle tree metadata extent mappings.
         metadata_count: u32,
         /// Number of Blob data extent mappings.
@@ -83,21 +86,28 @@ pub enum MappingCommand {
 impl From<MappingCommand> for RawMappingCommand {
     fn from(cmd: MappingCommand) -> Self {
         match cmd {
-            MappingCommand::Mappings { key, offset, stored_size, metadata_count, blob_count } => {
-                RawMappingCommand {
-                    opcode: MAPPINGS_COMMAND,
-                    offset,
-                    key,
-                    stored_size,
-                    metadata_count,
-                    blob_count,
-                }
-            }
+            MappingCommand::Mappings {
+                key,
+                offset,
+                stored_size,
+                device_offset,
+                metadata_count,
+                blob_count,
+            } => RawMappingCommand {
+                opcode: MAPPINGS_COMMAND,
+                offset,
+                key,
+                stored_size,
+                device_offset,
+                metadata_count,
+                blob_count,
+            },
             MappingCommand::CloseBlob { key } => RawMappingCommand {
                 opcode: CLOSE_BLOB_COMMAND,
                 offset: 0,
                 key,
                 stored_size: 0,
+                device_offset: 0,
                 metadata_count: 0,
                 blob_count: 0,
             },
@@ -114,6 +124,7 @@ impl TryFrom<RawMappingCommand> for MappingCommand {
                 key: cmd.key,
                 offset: cmd.offset,
                 stored_size: cmd.stored_size,
+                device_offset: cmd.device_offset,
                 metadata_count: cmd.metadata_count,
                 blob_count: cmd.blob_count,
             }),

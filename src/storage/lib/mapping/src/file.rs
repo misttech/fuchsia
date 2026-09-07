@@ -465,7 +465,14 @@ pub fn process_mapping_command<
 ) -> Result<(), Error> {
     let cmd = **msg;
     match MappingCommand::try_from(cmd)? {
-        MappingCommand::Mappings { key, offset, stored_size, metadata_count, blob_count } => {
+        MappingCommand::Mappings {
+            key,
+            offset,
+            stored_size,
+            device_offset,
+            metadata_count,
+            blob_count,
+        } => {
             let blob_bytes_len = (blob_count as usize)
                 .checked_mul(8)
                 .ok_or_else(|| anyhow!("Overflow calculating blob extent byte length"))?;
@@ -482,10 +489,11 @@ pub fn process_mapping_command<
             let payload_bytes = msg.payload_slice(offset, payload_len);
             let data_bytes = payload_bytes.subslice(0..blob_bytes_len);
             let metadata_bytes = payload_bytes.subslice(blob_bytes_len..total_bytes_len);
-            let data_extents = Extents::from_encoded(data_bytes.iter_as::<u64>())
+            let data_extents = Extents::from_encoded(data_bytes.iter_as::<u64>(), device_offset)
                 .ok_or_else(|| anyhow!("Failed to decode data extents"))?;
-            let metadata_extents = Extents::from_encoded(metadata_bytes.iter_as::<u64>())
-                .ok_or_else(|| anyhow!("Failed to decode metadata extents"))?;
+            let metadata_extents =
+                Extents::from_encoded(metadata_bytes.iter_as::<u64>(), device_offset)
+                    .ok_or_else(|| anyhow!("Failed to decode metadata extents"))?;
 
             files.begin_loading(key);
             let service = files.service().clone();
@@ -542,8 +550,7 @@ mod tests {
         }
         let service = FakeBlockService::new(expected_data.clone());
 
-        let extents = Extents::encode_extents([Extent::new(0..(8 * BLOCK_SIZE), Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+        let extents = Extents::try_new([Extent::new(0..(8 * BLOCK_SIZE), Some(0))], 0).unwrap();
         let file = Arc::new(File::new(extents, 8 * BLOCK_SIZE, None));
 
         let (page_request, rx) = TestVecBuffer::new_with_range(0..(8 * BLOCK_SIZE));
@@ -582,8 +589,7 @@ mod tests {
         let service = FakeBlockService::new(device_data);
 
         let extents =
-            Extents::encode_extents([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+            Extents::try_new([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))], 0).unwrap();
         let compression_info = CompressionInfo::new(
             chunk_size as u64,
             stored_size,
@@ -641,8 +647,7 @@ mod tests {
         let service = FakeBlockService::new_with_cap(device_data, Some(4096));
 
         let extents =
-            Extents::encode_extents([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+            Extents::try_new([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))], 0).unwrap();
         let compression_info = CompressionInfo::new(
             chunk_size as u64,
             stored_size,
@@ -662,8 +667,7 @@ mod tests {
     #[test]
     fn test_read_range_invalid_range_noop() {
         let service = FakeBlockService::new(vec![0u8; 8192]);
-        let extents = Extents::encode_extents([Extent::new(0..8192, Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+        let extents = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
         let file = Arc::new(File::new(extents, 8192, None));
 
         let (page_request, rx) = TestVecBuffer::new_with_range(4096..4096);
@@ -674,9 +678,7 @@ mod tests {
 
     #[test]
     fn test_file_getters() {
-        let extents_raw: Vec<u64> =
-            Extents::encode_extents([Extent::new(0..8192, Some(0))]).collect();
-        let extents = Extents::from_encoded(extents_raw.clone()).unwrap();
+        let extents = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
         let uncompressed_size = 8192u64;
 
         let file_uncompressed = File::new(extents, uncompressed_size, None);
@@ -686,7 +688,7 @@ mod tests {
         let compression_info =
             CompressionInfo::new(32768, 4096, &[0], CompressionAlgorithm::Zstd).unwrap();
         let file_compressed = File::new(
-            Extents::from_encoded(extents_raw).unwrap(),
+            Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap(),
             uncompressed_size,
             Some(compression_info),
         );
@@ -712,8 +714,7 @@ mod tests {
             }
         }
 
-        let extents = Extents::encode_extents([Extent::new(0..8192, Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+        let extents = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
         let file = File::new(extents, 8192, None);
 
         let (page_request, rx) = TestVecBuffer::new_with_range(0..8192);
@@ -734,8 +735,7 @@ mod tests {
         let service = FakeBlockService::new_with_cap(expected_data.clone(), Some(4096));
 
         let extents =
-            Extents::encode_extents([Extent::new(0..(block_count * BLOCK_SIZE), Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+            Extents::try_new([Extent::new(0..(block_count * BLOCK_SIZE), Some(0))], 0).unwrap();
         let file = File::new(extents, block_count * BLOCK_SIZE, None);
 
         let (page_request, rx) = TestVecBuffer::new_with_range(0..(block_count * BLOCK_SIZE));
@@ -754,8 +754,7 @@ mod tests {
         }
         let service = FakeBlockService::new(expected_data.clone());
 
-        let extents = Extents::encode_extents([Extent::new(0..8192, Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+        let extents = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
         let file = File::new(extents, uncompressed_size, None);
 
         let (page_request, rx) = TestVecBuffer::new_with_range(0..8192);
@@ -775,8 +774,7 @@ mod tests {
         let service = FakeBlockService::new(expected_data.clone());
 
         let extents =
-            Extents::encode_extents([Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+            Extents::try_new([Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))], 0).unwrap();
         let file = File::new(extents, total_blocks * BLOCK_SIZE, None);
 
         // Request 1 block at offset 4096. Readahead should expand to 0..128 KiB.
@@ -800,8 +798,7 @@ mod tests {
         let service = FakeBlockService::new(expected_data.clone());
 
         let extents =
-            Extents::encode_extents([Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+            Extents::try_new([Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))], 0).unwrap();
         let file = File::new(extents, total_blocks * BLOCK_SIZE, None);
 
         // Request 1 block at offset 132 KiB (135168..139264).
@@ -827,8 +824,7 @@ mod tests {
         let service = FakeBlockService::new(expected_data.clone());
 
         let extents =
-            Extents::encode_extents([Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+            Extents::try_new([Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))], 0).unwrap();
         let file = File::new(extents, uncompressed_size, None);
 
         // Request 1 block at offset 132 KiB (135168..139264).
@@ -881,8 +877,7 @@ mod tests {
         let service = FakeBlockService::new(device_data);
 
         let extents =
-            Extents::encode_extents([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+            Extents::try_new([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))], 0).unwrap();
         let compression_info = CompressionInfo::new(
             chunk_size as u64,
             stored_size,
@@ -938,8 +933,7 @@ mod tests {
         let service = FakeBlockService::new(device_data);
 
         let extents =
-            Extents::encode_extents([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+            Extents::try_new([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))], 0).unwrap();
         let compression_info = CompressionInfo::new(
             chunk_size as u64,
             stored_size,
@@ -962,8 +956,7 @@ mod tests {
 
     #[test]
     fn test_files_registry() {
-        let extents = Extents::encode_extents([Extent::new(0..4096, Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+        let extents = Extents::try_new([Extent::new(0..4096, Some(0))], 0).unwrap();
         let file = Arc::new(File::new(extents, 4096, None));
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
         let files = Files::new(service, |_key, _range| TestVecBuffer::new(4096).0);
@@ -980,8 +973,7 @@ mod tests {
 
     #[test]
     fn test_files_new_without_pager() {
-        let extents = Extents::encode_extents([Extent::new(0..4096, Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+        let extents = Extents::try_new([Extent::new(0..4096, Some(0))], 0).unwrap();
         let file = Arc::new(File::new(extents, 4096, None));
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
         let files = Files::new_without_pager(service);
@@ -1056,9 +1048,7 @@ mod tests {
         device_data[..encoded_metadata.len()].copy_from_slice(&encoded_metadata);
 
         let service = DelayedBlockService::new(device_data);
-        let metadata_extents =
-            Extents::from_encoded(Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(0))]))
-                .unwrap();
+        let metadata_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
 
         let (tx, rx) = std::sync::mpsc::channel();
         read_blob_metadata(service.as_ref(), &metadata_extents, 2400, move |res| {
@@ -1089,9 +1079,7 @@ mod tests {
         device_data[..encoded_metadata.len()].copy_from_slice(&encoded_metadata);
 
         let service = DelayedBlockService::new(device_data);
-        let metadata_extents =
-            Extents::from_encoded(Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(0))]))
-                .unwrap();
+        let metadata_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
 
         let (tx, rx) = std::sync::mpsc::channel();
         read_blob_metadata(service.as_ref(), &metadata_extents, 1200, move |res| {
@@ -1109,9 +1097,7 @@ mod tests {
         // Corrupt random bytes that cannot be deserialized as BlobMetadata
         let device_data = vec![0xFFu8; BLOCK_SIZE as usize];
         let service = DelayedBlockService::new(device_data);
-        let metadata_extents =
-            Extents::from_encoded(Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(0))]))
-                .unwrap();
+        let metadata_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
 
         let (tx, rx) = std::sync::mpsc::channel();
         read_blob_metadata(service.as_ref(), &metadata_extents, 1200, move |res| {
@@ -1142,11 +1128,13 @@ mod tests {
         let service = DelayedBlockService::new(device_data);
         let files = Arc::new(Files::new(service.clone(), |_k, _r| TestVecBuffer::new(4096).0));
 
-        let data_extent_words = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
-        let meta_extent_words =
-            Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
+        let data_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
+        let meta_extents =
+            Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))], 0).unwrap();
         let mut payload_bytes = Vec::new();
-        for w in data_extent_words.chain(meta_extent_words) {
+        for w in
+            Extents::encode_extents(&data_extents).chain(Extents::encode_extents(&meta_extents))
+        {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
@@ -1164,6 +1152,7 @@ mod tests {
             offset: payload_buf.offset(),
             key: 99,
             stored_size: 4096,
+            device_offset: 0,
             metadata_count: 1,
             blob_count: 1,
         };
@@ -1238,11 +1227,13 @@ mod tests {
             dropped: dropped_clone.clone(),
         }));
 
-        let data_extent_words = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
-        let meta_extent_words =
-            Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
+        let data_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
+        let meta_extents =
+            Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))], 0).unwrap();
         let mut payload_bytes = Vec::new();
-        for w in data_extent_words.chain(meta_extent_words) {
+        for w in
+            Extents::encode_extents(&data_extents).chain(Extents::encode_extents(&meta_extents))
+        {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
@@ -1260,6 +1251,7 @@ mod tests {
             offset: payload_buf.offset(),
             key: 99,
             stored_size: 4096,
+            device_offset: 0,
             metadata_count: 1,
             blob_count: 1,
         };
@@ -1318,11 +1310,13 @@ mod tests {
         let vmo_blob_clone = vmo_blob.duplicate_handle(Rights::SAME_RIGHTS).unwrap();
 
         // Encode mapping command with 1 data extent and 1 metadata extent
-        let data_extent_words = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
-        let meta_extent_words =
-            Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
+        let data_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
+        let meta_extents =
+            Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))], 0).unwrap();
         let mut payload_bytes = Vec::new();
-        for w in data_extent_words.chain(meta_extent_words) {
+        for w in
+            Extents::encode_extents(&data_extents).chain(Extents::encode_extents(&meta_extents))
+        {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
@@ -1331,6 +1325,7 @@ mod tests {
             offset: 0,
             key: 42,
             stored_size: BLOCK_SIZE,
+            device_offset: 0,
             metadata_count: 1,
             blob_count: 1,
         };
@@ -1413,11 +1408,13 @@ mod tests {
         let vmo_blob_clone = vmo_blob.duplicate_handle(Rights::SAME_RIGHTS).unwrap();
 
         // Encode mapping command with 1 data extent and 1 metadata extent
-        let data_extent_words = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
-        let meta_extent_words =
-            Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
+        let data_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
+        let meta_extents =
+            Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))], 0).unwrap();
         let mut payload_bytes = Vec::new();
-        for w in data_extent_words.chain(meta_extent_words) {
+        for w in
+            Extents::encode_extents(&data_extents).chain(Extents::encode_extents(&meta_extents))
+        {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
@@ -1426,6 +1423,7 @@ mod tests {
             offset: 0,
             key: 42,
             stored_size: BLOCK_SIZE,
+            device_offset: 0,
             metadata_count: 1,
             blob_count: 1,
         };
@@ -1483,9 +1481,9 @@ mod tests {
         .unwrap();
 
         // 1. Send Mappings command with 0 metadata extents (uncompressed file, loads immediately).
-        let data_extent_words = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
+        let data_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
         let mut payload_bytes = Vec::new();
-        for w in data_extent_words {
+        for w in Extents::encode_extents(&data_extents) {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
         let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
@@ -1495,6 +1493,7 @@ mod tests {
             offset: payload_buf.offset(),
             key: 123,
             stored_size: 4096,
+            device_offset: 0,
             metadata_count: 0,
             blob_count: 1,
         };
@@ -1514,6 +1513,7 @@ mod tests {
                 offset: 0,
                 key: 123,
                 stored_size: 0,
+                device_offset: 0,
                 metadata_count: 0,
                 blob_count: 0,
             })
@@ -1566,8 +1566,7 @@ mod tests {
         let service = Arc::new(FakeBlockService::new(vec![]));
         let files = Arc::new(Files::new_without_pager(service));
 
-        let extents = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
-        let extents = Extents::from_encoded(extents).unwrap();
+        let extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
         let file = Arc::new(File::new(extents, BLOCK_SIZE, None));
 
         // Wait before insert.

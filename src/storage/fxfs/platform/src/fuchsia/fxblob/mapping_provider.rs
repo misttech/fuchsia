@@ -122,9 +122,12 @@ impl BlobMappingSession {
             let mut payload = self.sender.reserve_payload(allocation_size).await?;
             let offset_in_vmo = payload.offset();
 
+            let data_extents = Extents::try_new(&extents.data, 0)?;
+            let merkle_extents = Extents::try_new(&extents.merkle, 0)?;
+
             for (mut chunk, val_res) in payload.data().chunks_mut(std::mem::size_of::<u64>()).zip(
-                Extents::encode_extents(&extents.data)
-                    .chain(Extents::encode_extents(&extents.merkle)),
+                Extents::encode_extents(&data_extents)
+                    .chain(Extents::encode_extents(&merkle_extents)),
             ) {
                 chunk.copy_from_slice(&val_res.to_le_bytes());
             }
@@ -133,6 +136,7 @@ impl BlobMappingSession {
                 key: key as u64,
                 offset: offset_in_vmo as u32,
                 stored_size,
+                device_offset: 0,
                 metadata_count,
                 blob_count,
             };
@@ -264,6 +268,7 @@ mod tests {
                     key,
                     offset,
                     stored_size: _,
+                    device_offset: _,
                     metadata_count,
                     blob_count,
                 } => {
@@ -279,9 +284,11 @@ mod tests {
             let total_extents = cmd1_blob_count + cmd1_metadata_count;
             let buffer = cmd1_raw.payload_slice(cmd1_offset, total_extents * 8).to_vec();
 
+            let data_extents_container = Extents::try_new(&data_extents, 0).unwrap();
+            let merkle_extents_container = Extents::try_new(&merkle_extents, 0).unwrap();
             let mut expected_payload = Vec::new();
-            for val in Extents::encode_extents(&data_extents)
-                .chain(Extents::encode_extents(&merkle_extents))
+            for val in Extents::encode_extents(&data_extents_container)
+                .chain(Extents::encode_extents(&merkle_extents_container))
             {
                 expected_payload.extend_from_slice(&val.to_le_bytes());
             }

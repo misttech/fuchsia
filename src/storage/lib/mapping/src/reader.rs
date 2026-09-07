@@ -459,9 +459,9 @@ pub(crate) mod tests {
             on_complete: Box<dyn FnOnce(Result<OwnedBuffer, Error>) + Send>,
         ) -> Result<(), Error> {
             assert_eq!(
-                device_offset % BLOCK_SIZE,
+                device_offset % 512,
                 0,
-                "FakeBlockService::read_blocks: device_offset ({device_offset}) must be block \
+                "FakeBlockService::read_blocks: device_offset ({device_offset}) must be 512-byte \
                  aligned"
             );
             let len = dest_buffer.len();
@@ -483,9 +483,7 @@ pub(crate) mod tests {
     #[should_panic(expected = "must be block aligned")]
     fn test_read_aligned_range_unaligned_panics() {
         let service = Arc::new(FakeBlockService::new(vec![0u8; 8192]));
-        let extents = vec![Extent::new(0..8192, Some(0))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
 
         read_aligned_range(&mappings, 1000..5000, &*service, |_| ControlFlow::Continue(()));
     }
@@ -494,9 +492,7 @@ pub(crate) mod tests {
     #[allow(clippy::reversed_empty_ranges)]
     fn test_read_aligned_range_empty_range_errors() {
         let service = FakeBlockService::new(vec![0u8; 8192]);
-        let extents = vec![Extent::new(0..8192, Some(0))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
 
         let err_count = Arc::new(AtomicUsize::new(0));
         let err_count_clone = err_count.clone();
@@ -520,9 +516,7 @@ pub(crate) mod tests {
     fn test_read_aligned_range_beyond_extents_errors() {
         let service = FakeBlockService::new(vec![0u8; 16384]);
         // extents only cover 0..8192, but we request 0..16384.
-        let extents = vec![Extent::new(0..8192, Some(0))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
 
         let err_occurred = Arc::new(AtomicBool::new(false));
         let err_occurred_clone = err_occurred.clone();
@@ -541,9 +535,7 @@ pub(crate) mod tests {
         device_data[4096..8192].copy_from_slice(&[42u8; 4096]);
         let service = Arc::new(FakeBlockService::new(device_data));
 
-        let extents = vec![Extent::new(0..4096, Some(4096))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..4096, Some(4096))], 0).unwrap();
 
         let completed = Arc::new(AtomicBool::new(false));
         let completed_clone = completed.clone();
@@ -566,9 +558,11 @@ pub(crate) mod tests {
         device_data[8192..12288].fill(2);
         let service = Arc::new(FakeBlockService::new(device_data));
 
-        let extents = vec![Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new(
+            [Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))],
+            0,
+        )
+        .unwrap();
 
         let completed = Arc::new(AtomicBool::new(false));
         let completed_clone = completed.clone();
@@ -592,9 +586,7 @@ pub(crate) mod tests {
     fn test_read_aligned_range_sparse_extent() {
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
 
-        let extents = vec![Extent::new(0..4096, None)];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..4096, None)], 0).unwrap();
 
         let completed = Arc::new(AtomicBool::new(false));
         let completed_clone = completed.clone();
@@ -618,9 +610,7 @@ pub(crate) mod tests {
         // Request up to 8192 bytes, but cap allocator to 4096 bytes per round.
         let service = Arc::new(FakeBlockService::new_with_cap(device_data, Some(4096)));
 
-        let extents = vec![Extent::new(0..8192, Some(0))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
 
         let completed = Arc::new(AtomicBool::new(false));
         let completed_clone = completed.clone();
@@ -696,13 +686,15 @@ pub(crate) mod tests {
         let inner = FakeBlockService::new_with_cap(device_data, Some(4096));
         let service = Arc::new(OutOfOrderBlockService { inner, delayed: Mutex::new(Vec::new()) });
 
-        let extents = vec![
-            Extent::new(0..4096, Some(0)),
-            Extent::new(4096..8192, Some(4096)),
-            Extent::new(8192..12288, Some(8192)),
-        ];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new(
+            [
+                Extent::new(0..4096, Some(0)),
+                Extent::new(4096..8192, Some(4096)),
+                Extent::new(8192..12288, Some(8192)),
+            ],
+            0,
+        )
+        .unwrap();
 
         let completed = Arc::new(AtomicBool::new(false));
         let completed_clone = completed.clone();
@@ -770,9 +762,7 @@ pub(crate) mod tests {
         let inner = FakeBlockService::new_with_pool_size(device_data, 8192, Some(4096));
         let service = Arc::new(ThreadedBlockService { inner });
 
-        let extents = vec![Extent::new(0..16384, Some(0))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..16384, Some(0))], 0).unwrap();
 
         let completed = Arc::new(AtomicBool::new(false));
         let completed_clone = completed.clone();
@@ -826,8 +816,9 @@ pub(crate) mod tests {
 
         let inner = FakeBlockService::new(vec![0u8; MAX_READ_BUFFER_SIZE + 8192]);
         let service = CapturingBlockService { inner, requested_lens: Mutex::new(Vec::new()) };
-        let extents = vec![Extent::new(0..(MAX_READ_BUFFER_SIZE + 8192) as u64, Some(0))];
-        let mappings = Extents::from_encoded(Extents::encode_extents(&extents)).unwrap();
+        let mappings =
+            Extents::try_new([Extent::new(0..(MAX_READ_BUFFER_SIZE + 8192) as u64, Some(0))], 0)
+                .unwrap();
 
         read_aligned_range(&mappings, 0..(MAX_READ_BUFFER_SIZE + 8192) as u64, &service, |_| {
             ControlFlow::Continue(())
@@ -853,8 +844,7 @@ pub(crate) mod tests {
             }
         }
         let service = SyncErrorBlockService(FakeBlockService::new(vec![0u8; 4096]));
-        let extents = vec![Extent::new(0..4096, Some(0))];
-        let mappings = Extents::from_encoded(Extents::encode_extents(&extents)).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..4096, Some(0))], 0).unwrap();
 
         let err_received = Arc::new(AtomicBool::new(false));
         let err_clone = err_received.clone();
@@ -890,8 +880,7 @@ pub(crate) mod tests {
 
         // Test in-order error on chunk 0.
         let service = AsyncErrorBlockService(FakeBlockService::new(vec![0u8; 8192]), 0);
-        let extents = vec![Extent::new(0..8192, Some(0))];
-        let mappings = Extents::from_encoded(Extents::encode_extents(&extents)).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
         let err_count = Arc::new(AtomicUsize::new(0));
         let err_clone = err_count.clone();
         read_aligned_range(&mappings, 0..8192, &service, move |res| {
@@ -968,8 +957,7 @@ pub(crate) mod tests {
             }
         }
         let service = DroppingBlockService(Mutex::new(Vec::new()));
-        let extents = vec![Extent::new(0..4096, Some(0))];
-        let mappings = Extents::from_encoded(Extents::encode_extents(&extents)).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..4096, Some(0))], 0).unwrap();
 
         let err_msg = Arc::new(Mutex::new(String::new()));
         let err_msg_clone = err_msg.clone();
@@ -1005,8 +993,7 @@ pub(crate) mod tests {
         }
         let inner = FakeBlockService::new_with_cap(vec![0u8; 8192], Some(4096));
         let service = FirstIterSyncErrorService(inner);
-        let extents = vec![Extent::new(0..8192, Some(0))];
-        let mappings = Extents::from_encoded(Extents::encode_extents(&extents)).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
 
         let err_received = Arc::new(AtomicBool::new(false));
         let err_clone = err_received.clone();
@@ -1022,8 +1009,11 @@ pub(crate) mod tests {
     #[test]
     fn test_read_aligned_range_extent_beyond_actual_end_break() {
         let inner = FakeBlockService::new_with_cap(vec![0u8; 8192], Some(4096));
-        let extents = vec![Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(4096))];
-        let mappings = Extents::from_encoded(Extents::encode_extents(&extents)).unwrap();
+        let mappings = Extents::try_new(
+            [Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(4096))],
+            0,
+        )
+        .unwrap();
 
         let count = Arc::new(AtomicUsize::new(0));
         let count_clone = count.clone();
@@ -1043,8 +1033,11 @@ pub(crate) mod tests {
         device_data[8192..20480].fill(0xBB);
         let service = Arc::new(FakeBlockService::new(device_data));
 
-        let extents = vec![Extent::new(0..4096, Some(4096)), Extent::new(4096..16384, Some(8192))];
-        let mappings = Extents::from_encoded(Extents::encode_extents(&extents)).unwrap();
+        let mappings = Extents::try_new(
+            [Extent::new(0..4096, Some(4096)), Extent::new(4096..16384, Some(8192))],
+            0,
+        )
+        .unwrap();
 
         let count = Arc::new(AtomicUsize::new(0));
         let count_clone = count.clone();
@@ -1068,9 +1061,7 @@ pub(crate) mod tests {
     #[test]
     fn test_read_aligned_range_callback_error_propagation() {
         let service = Arc::new(FakeBlockService::new(vec![0u8; 8192]));
-        let extents = vec![Extent::new(0..8192, Some(0))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap();
 
         let call_count = Arc::new(AtomicUsize::new(0));
         let call_count_clone = call_count.clone();
@@ -1089,9 +1080,7 @@ pub(crate) mod tests {
         let service = Arc::new(FakeBlockService::new(device_data));
 
         // Logical 0..4096 maps to device 4096..8192.
-        let extents = vec![Extent::new(0..4096, Some(4096))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..4096, Some(4096))], 0).unwrap();
 
         let dest = service.allocate_buffer(4096);
         let (tx, rx) = std::sync::mpsc::channel();
@@ -1110,9 +1099,7 @@ pub(crate) mod tests {
         let service = Arc::new(FakeBlockService::new(vec![0u8; 16384]));
 
         // Logical 0..4096 is a sparse hole (None).
-        let extents = vec![Extent::new(0..4096, None)];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..4096, None)], 0).unwrap();
 
         let dest = service.allocate_buffer(4096);
         let (tx, rx) = std::sync::mpsc::channel();
@@ -1137,13 +1124,15 @@ pub(crate) mod tests {
         // 0..4096 -> device 0..4096 (0x11)
         // 4096..8192 -> hole (0x00)
         // 8192..12288 -> device 8192..12288 (0x22)
-        let extents = vec![
-            Extent::new(0..4096, Some(0)),
-            Extent::new(4096..8192, None),
-            Extent::new(8192..12288, Some(8192)),
-        ];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new(
+            [
+                Extent::new(0..4096, Some(0)),
+                Extent::new(4096..8192, None),
+                Extent::new(8192..12288, Some(8192)),
+            ],
+            0,
+        )
+        .unwrap();
 
         let dest = service.allocate_buffer(12288);
         let (tx, rx) = std::sync::mpsc::channel();
@@ -1186,9 +1175,11 @@ pub(crate) mod tests {
         let service = Arc::new(SecondChunkSyncErrorService { inner });
 
         // Two extents: 0..4096 (offset 0) and 4096..8192 (offset 8192).
-        let extents = vec![Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new(
+            [Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))],
+            0,
+        )
+        .unwrap();
 
         let dest = service.allocate_buffer(8192);
         let completed = Arc::new(AtomicBool::new(false));
@@ -1240,9 +1231,11 @@ pub(crate) mod tests {
             Arc::new(InFlightFirstChunkService { inner, pending_first_chunk: Mutex::new(None) });
 
         // Two extents: 0..4096 (offset 0) and 4096..8192 (offset 8192).
-        let extents = vec![Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new(
+            [Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))],
+            0,
+        )
+        .unwrap();
 
         let dest = service.allocate_buffer(8192);
         let completed = Arc::new(AtomicBool::new(false));
@@ -1289,9 +1282,11 @@ pub(crate) mod tests {
         let inner = FakeBlockService::new(vec![0u8; 32768]);
         let service = Arc::new(AsyncErrorService { inner, pending_chunks: Mutex::new(Vec::new()) });
 
-        let extents = vec![Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new(
+            [Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))],
+            0,
+        )
+        .unwrap();
 
         let dest = service.allocate_buffer(8192);
         let err_count = Arc::new(AtomicUsize::new(0));
@@ -1333,9 +1328,7 @@ pub(crate) mod tests {
         device_data[4096..8192].fill(0x55);
         let parent_service = Arc::new(FakeBlockService::new(device_data));
 
-        let extents = vec![Extent::new(0..4096, Some(4096))];
-        let encoded = Extents::encode_extents(&extents);
-        let mappings = Extents::from_encoded(encoded).unwrap();
+        let mappings = Extents::try_new([Extent::new(0..4096, Some(4096))], 0).unwrap();
         let file = Arc::new(File::new(mappings, 4096, None));
 
         let child_service = ChildBlockService::new(parent_service.clone(), file.clone());
@@ -1356,5 +1349,28 @@ pub(crate) mod tests {
         let buffer = rx.recv().unwrap().unwrap();
         assert_eq!(buffer.len(), 4096);
         assert!(buffer.as_ptr_slice().iter_as::<u8>().all(|b| b == 0x55));
+    }
+
+    #[test]
+    fn test_read_buffer_from_extents_non_aligned_start() {
+        let base_device_offset = 17408u64; // e.g. LBA 34 on 512-byte sector disk
+        let mut device_data = vec![0u8; 32768];
+        device_data[base_device_offset as usize..(base_device_offset as usize + 4096)].fill(0x77);
+        let service = Arc::new(FakeBlockService::new(device_data));
+
+        let mappings =
+            Extents::try_new([Extent::new(0..4096, Some(base_device_offset))], base_device_offset)
+                .unwrap();
+
+        let dest = service.allocate_buffer(4096);
+        let (tx, rx) = std::sync::mpsc::channel();
+        read_buffer_from_extents(&mappings, 0, dest, service.as_ref(), move |res| {
+            tx.send(res).unwrap();
+        })
+        .unwrap();
+
+        let buffer = rx.recv().unwrap().unwrap();
+        assert_eq!(buffer.len(), 4096);
+        assert!(buffer.as_ptr_slice().iter_as::<u8>().all(|b| b == 0x77));
     }
 }
