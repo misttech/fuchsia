@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::mm::MemoryManager;
 use crate::task::{
-    CurrentTask, EventHandler, Pid, SignalHandler, SignalHandlerInner, ThreadGroup, WaitCanceler,
-    Waiter,
+    CurrentTask, EventHandler, Pid, ProcessEntryRef, SignalHandler, SignalHandlerInner,
+    WaitCanceler, Waiter,
 };
 use crate::vfs::{
     Anon, FileHandle, FileObject, FileOps, fileops_impl_dataless, fileops_impl_nonseekable,
@@ -17,11 +16,12 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
 
 pub struct PidFdFileObject {
-    /// The key of the task represented by this file.
-    tg: Pid,
+    /// The process represented by this file.
+    pid: Pid,
 
-    // Receives a notification when the tracked process terminates.
-    terminated_event: zx::EventPair,
+    /// Receives a notification when the tracked process terminates.
+    /// `None` if the process was already terminated when the pidfd was created.
+    terminated_event: Option<zx::EventPair>,
 }
 
 impl PidFdFileObject {
@@ -46,26 +46,38 @@ impl PidFdFileObject {
 
 pub fn new_pidfd(
     current_task: &CurrentTask,
-    proc: &ThreadGroup,
-    mm: &MemoryManager,
+    pid: Pid,
     flags: OpenFlags,
-) -> FileHandle {
-    // We should really be monitoring the ThreadGroup's drop_notifier instead, but we also need to
-    // ensure that we're not signalling the pidfd until after all memory resources associated with
-    // the process are released. In the current Starnix codebase, there is a 1:1 correspondence
-    // between ThreadGroups (i.e. processes) and MemoryManagers, and the MemoryManager of a process
-    // may outlive the ThreadGroup in some circumstances. Therefore, as a temporary workaround, here
-    // we monitor the MemoryManager's drop_notifier, which is guaranteed to only fire when all the
-    // memory mappings associated with the process have been released. To be revisited once Starnix
-    // implements explicit cleanup of resources on process exit.
-    let terminated_event = mm.drop_notifier.event();
+) -> Result<FileHandle, Errno> {
+    let terminated_event = match pid.get_process() {
+        Some(ProcessEntryRef::Process(proc)) => {
+            // Ideally monitor the ThreadGroup's drop_notifier instead, but the pidfd must not be
+            // signalled until after all memory resources associated with the process are
+            // released. In the current Starnix codebase, there is a 1:1 correspondence between
+            // ThreadGroups (i.e. processes) and MemoryManagers, and the MemoryManager of a process
+            // may outlive the ThreadGroup in some circumstances. Therefore, as a temporary
+            // workaround, monitor the MemoryManager's drop_notifier, which is guaranteed to only
+            // fire when all the memory mappings associated with the process have been released.
+            // To be revisited once Starnix implements explicit cleanup of resources on process exit.
+            let task = pid.get_task().or_else(|_| proc.read().get_running_task());
+            let mm = task.and_then(|task| task.mm());
+            mm.ok().map(|mm| mm.drop_notifier.event())
+        }
+        Some(ProcessEntryRef::Zombie) => None,
+        None => {
+            if pid.get_task().is_ok() {
+                return error!(EINVAL);
+            }
+            return error!(ESRCH);
+        }
+    };
 
-    Anon::new_private_file(
+    Ok(Anon::new_private_file(
         current_task,
-        Box::new(PidFdFileObject { tg: proc.leader.clone(), terminated_event }),
+        Box::new(PidFdFileObject { pid, terminated_event }),
         flags,
         "[pidfd]",
-    )
+    ))
 }
 
 impl FileOps for PidFdFileObject {
@@ -74,7 +86,7 @@ impl FileOps for PidFdFileObject {
     fileops_impl_noop_sync!();
 
     fn as_pid(&self, _file: &FileObject) -> Result<Pid, Errno> {
-        Ok(self.tg.clone())
+        Ok(self.pid.clone())
     }
 
     fn wait_async(
@@ -85,6 +97,7 @@ impl FileOps for PidFdFileObject {
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
+        let terminated_event = self.terminated_event.as_ref()?;
         let signal_handler = SignalHandler {
             inner: SignalHandlerInner::ZxHandle(PidFdFileObject::get_events_from_signals),
             event_handler: handler,
@@ -92,7 +105,7 @@ impl FileOps for PidFdFileObject {
         };
         let canceler = waiter
             .wake_on_zircon_signals(
-                &self.terminated_event,
+                terminated_event,
                 PidFdFileObject::get_signals_from_events(events),
                 signal_handler,
             )
@@ -105,8 +118,10 @@ impl FileOps for PidFdFileObject {
         _file: &FileObject,
         _current_task: &CurrentTask,
     ) -> Result<FdEvents, Errno> {
-        match self
-            .terminated_event
+        let Some(terminated_event) = &self.terminated_event else {
+            return Ok(FdEvents::POLLIN);
+        };
+        match terminated_event
             .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::ZERO)
             .to_result()
         {
@@ -114,42 +129,5 @@ impl FileOps for PidFdFileObject {
             Ok(zx::Signals::EVENTPAIR_PEER_CLOSED) => Ok(FdEvents::POLLIN),
             result => unreachable!("unexpected result: {result:?}"),
         }
-    }
-}
-
-pub fn new_zombie_pidfd(current_task: &CurrentTask, flags: OpenFlags) -> FileHandle {
-    Anon::new_private_file(current_task, Box::new(ZombiePidFdFileObject {}), flags, "[pidfd]")
-}
-
-struct ZombiePidFdFileObject {}
-
-impl FileOps for ZombiePidFdFileObject {
-    fileops_impl_nonseekable!();
-    fileops_impl_dataless!();
-    fileops_impl_noop_sync!();
-
-    fn as_pid(&self, _file: &FileObject) -> Result<Pid, Errno> {
-        // There's nothing really reasonable to return here?
-        error!(EINVAL)
-    }
-
-    fn wait_async(
-        &self,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
-        _waiter: &Waiter,
-        _events: FdEvents,
-        _handler: EventHandler,
-    ) -> Option<WaitCanceler> {
-        // There's nothing to wait on; is denying blocking sufficient?
-        None
-    }
-
-    fn query_events(
-        &self,
-        _file: &FileObject,
-        _current_task: &CurrentTask,
-    ) -> Result<FdEvents, Errno> {
-        Ok(FdEvents::POLLIN)
     }
 }

@@ -1792,7 +1792,7 @@ impl CurrentTask {
             }
 
             if clone_pidfd {
-                let file = new_pidfd(self, child.thread_group(), &*child.mm()?, OpenFlags::empty());
+                let file = new_pidfd(self, child.pid.clone(), OpenFlags::empty())?;
                 let pidfd = self.add_file(file, FdFlags::CLOEXEC)?;
                 self.write_object(user_pidfd, &pidfd)?;
             }

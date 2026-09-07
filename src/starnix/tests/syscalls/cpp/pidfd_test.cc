@@ -38,6 +38,10 @@ namespace {
 #endif
 #endif
 
+#ifndef P_PIDFD
+#define P_PIDFD static_cast<idtype_t>(3)
+#endif
+
 pid_t ForkUsingClone3(const clone_args* cl_args, size_t size) {
   return static_cast<pid_t>(syscall(SYS_clone3, cl_args, size));
 }
@@ -184,6 +188,12 @@ TEST(PidFdTest, PidFdOpenAfterZombification) {
     ASSERT_TRUE(new_pid_fd.is_valid()) << strerror(errno);
     pfd = {.fd = new_pid_fd.get(), .events = POLLIN};
     EXPECT_THAT(HANDLE_EINTR(poll(&pfd, 1, 0)), SyscallSucceedsWithValue(1));
+
+    // Verify that the zombie child can be queried with waitid using the new PID-FD.
+    siginfo_t info = {};
+    ASSERT_THAT(HANDLE_EINTR(waitid(P_PIDFD, new_pid_fd.get(), &info, WEXITED | WNOWAIT)),
+                SyscallSucceeds());
+    EXPECT_EQ(info.si_pid, child_pid);
 
     // Now reap the zombie child process.
     int wait_status = 0;

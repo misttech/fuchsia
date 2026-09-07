@@ -5,7 +5,7 @@
 use crate::mm::{IOVecPtr, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use crate::security;
 use crate::syscalls::time::{ITimerSpecPtr, TimeSpecPtr, TimeValPtr};
-use crate::task::{CurrentTask, EventHandler, ProcessEntryRef, ReadyItem, ReadyItemKey, Waiter};
+use crate::task::{CurrentTask, EventHandler, ReadyItem, ReadyItemKey, Waiter};
 use crate::time::{Timeline, TimerWakeup};
 use crate::vfs::aio::AioContext;
 use crate::vfs::buffers::{UserBuffersInputBuffer, UserBuffersOutputBuffer};
@@ -19,7 +19,7 @@ use crate::vfs::{
     FileHandle, FileSystemOptions, FlockOperation, FsStr, FsString, LookupContext, Mount,
     NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget, StatxFlags,
     SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind, ValueOrSize,
-    WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, new_zombie_pidfd, splice,
+    WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, splice,
 };
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{EventHandlerReadyQueueLock, LockDepMutex};
@@ -1912,27 +1912,11 @@ pub fn sys_pidfd_open(
         return error!(EINVAL);
     }
 
-    let file = {
-        let pid_table = current_task.kernel().pids.read();
+    let blocking = (flags & PIDFD_NONBLOCK) == 0;
+    let open_flags = if blocking { OpenFlags::empty() } else { OpenFlags::NONBLOCK };
 
-        let blocking = (flags & PIDFD_NONBLOCK) == 0;
-        let open_flags = if blocking { OpenFlags::empty() } else { OpenFlags::NONBLOCK };
-
-        // Validate that a process (and not just a task) entry exists for the PID.
-        let pid_entry = pid_table.get(pid)?;
-        let task = pid_entry.get_task().ok();
-        let process = pid_entry.get_process();
-        let file = match (process, task) {
-            (Some(ProcessEntryRef::Process(proc)), Some(task)) => {
-                new_pidfd(current_task, &proc, &*task.mm()?, open_flags)
-            }
-            (Some(ProcessEntryRef::Zombie), _) => new_zombie_pidfd(current_task, open_flags),
-            (None, Some(_)) => return error!(EINVAL),
-            _ => return error!(ESRCH),
-        };
-        file
-    };
-
+    let pid_entry = current_task.kernel().pids.read().get(pid)?.clone();
+    let file = new_pidfd(current_task, pid_entry, open_flags)?;
     current_task.add_file(file, FdFlags::CLOEXEC)
 }
 
