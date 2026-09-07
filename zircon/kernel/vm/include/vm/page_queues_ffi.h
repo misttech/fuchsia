@@ -40,6 +40,9 @@ FFI_ALWAYS_INLINE void cpp_page_queues_queue_counts(const PageQueues* queues,
 FFI_ALWAYS_INLINE bool cpp_page_queues_reclaim_is_only_pager_backed(const PageQueues* queues);
 FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_anonymous(const PageQueues* queues,
                                                                const vm_page_t* page);
+FFI_ALWAYS_INLINE void cpp_page_queues_set_reclaim(PageQueues* queues, vm_page_t* page,
+                                                   VmCowPages* cow, uint64_t offset);
+FFI_ALWAYS_INLINE void cpp_page_queues_remove(PageQueues* queues, vm_page_t* page);
 
 __END_CDECLS
 

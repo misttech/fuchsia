@@ -18,6 +18,7 @@ use debug::ltracef;
 use ksync::{KMutex, LockToken, RawMutex, guarded, kcell_init};
 use pin_init::{PinInit, pin_data, pin_init};
 use pmm_node_bindings as bindings;
+use zx_status::Status;
 
 const LOCAL_TRACE: u32 = 0;
 
@@ -594,6 +595,401 @@ impl PmmNode {
         }
     }
 
+    /// Allocates a single physical page from this node.
+    pub fn alloc_page(&self, alloc_flags: u32) -> Result<VmPagePtr, Status> {
+        let mut page = core::ptr::null_mut();
+        // SAFETY: FFI call passing valid stack pointer.
+        let status =
+            unsafe { bindings::cpp_pmm_node_alloc_page(self.as_raw(), alloc_flags, &mut page) };
+        Status::ok(status)?;
+        // SAFETY: page returned from PMM on success is valid.
+        unsafe { VmPagePtr::from_ffi(page) }.ok_or(Status::NO_MEMORY)
+    }
+
+    /// Allocates `count` physical pages, adding them to the tail of `list`.
+    pub fn alloc_pages(
+        &self,
+        count: usize,
+        alloc_flags: u32,
+        list: Pin<&mut fbl::DoublyLinkedList<*mut VmPage>>,
+    ) -> Result<(), Status> {
+        // SAFETY: FFI call passing pointer to `list`.
+        let status = unsafe {
+            bindings::cpp_pmm_node_alloc_pages(
+                self.as_raw(),
+                count,
+                alloc_flags,
+                (list.get_unchecked_mut() as *mut fbl::DoublyLinkedList<*mut VmPage>).cast(),
+            )
+        };
+        Status::ok(status)
+    }
+
+    /// Frees a single physical page back to this node.
+    ///
+    /// # Safety
+    ///
+    /// Caller guarantees that page is valid and they are the owner.
+    pub unsafe fn free_page(&self, page: VmPagePtr, delay_reuse: PmmOptDelayReuse) {
+        // SAFETY: FFI call with valid page pointer.
+        unsafe { bindings::cpp_pmm_node_free_page(self.as_raw(), page.as_ffi(), delay_reuse) }
+    }
+
+    /// Frees every page on `list` back to this node.
+    ///
+    /// # Safety
+    ///
+    /// Caller guarantees that all pages in list are valid and they are the owner.
+    pub unsafe fn free_list(
+        &self,
+        list: Pin<&mut fbl::DoublyLinkedList<*mut VmPage>>,
+        delay_reuse: PmmOptDelayReuse,
+    ) {
+        if list.is_empty() {
+            return;
+        }
+        // SAFETY: FFI call with valid list pointer.
+        unsafe {
+            bindings::cpp_pmm_node_free_list(
+                self.as_raw(),
+                (list.get_unchecked_mut() as *mut fbl::DoublyLinkedList<*mut VmPage>).cast(),
+                delay_reuse,
+            )
+        }
+    }
+
+    /// Return count of unallocated physical pages in this node.
+    pub fn count_free_pages(&self) -> u64 {
+        // SAFETY: No preconditions.
+        unsafe { bindings::cpp_pmm_node_count_free_pages(self.as_raw()) }
+    }
+
+    /// Return count of unallocated loaned physical pages in this node.
+    pub fn count_loaned_free_pages(&self) -> u64 {
+        // SAFETY: No preconditions.
+        unsafe { bindings::cpp_pmm_node_count_loaned_free_pages(self.as_raw()) }
+    }
+
+    /// Return count of pages which are presently loaned with the loan cancelled.
+    pub fn count_loan_cancelled_pages(&self) -> u64 {
+        // SAFETY: No preconditions.
+        unsafe { bindings::cpp_pmm_node_count_loan_cancelled_pages(self.as_raw()) }
+    }
+
+    /// Return count of loaned pages that are not free.
+    pub fn count_loaned_not_free_pages(&self) -> u64 {
+        // SAFETY: No preconditions.
+        unsafe { bindings::cpp_pmm_node_count_loaned_not_free_pages(self.as_raw()) }
+    }
+
+    /// Return count of loaned pages in this node.
+    pub fn count_loaned_pages(&self) -> u64 {
+        // SAFETY: No preconditions.
+        unsafe { bindings::cpp_pmm_node_count_loaned_pages(self.as_raw()) }
+    }
+
+    /// Return amount of physical memory in this node, in bytes.
+    pub fn count_total_bytes(&self) -> u64 {
+        // SAFETY: No preconditions.
+        unsafe { bindings::cpp_pmm_node_count_total_bytes(self.as_raw()) }
+    }
+
+    /// Enable the free fill checker with the specified fill size and action, and begin filling
+    /// freed pages (including freed loaned pages) going forward.  See |PmmChecker| for definition
+    /// of fill size.
+    ///
+    /// Note, pages freed piror to calling this method will remain unfilled.  To fill them, call
+    /// |FillFreePagesAndArm|.
+    ///
+    /// Returns true if the checker was enabled with the requested fill_size, or |false| otherwise.
+    pub fn enable_free_page_filling(
+        &self,
+        fill_size: usize,
+        action: crate::vm::pmm_checker::CheckFailAction,
+    ) -> bool {
+        // SAFETY: No preconditions.
+        unsafe {
+            bindings::cpp_pmm_node_enable_free_page_filling(self.as_raw(), fill_size, action as u8)
+        }
+    }
+
+    /// Fill all free pages (both non-loaned and loaned) with a pattern and arm the checker.  See
+    /// |PmmChecker|.
+    ///
+    /// This is a no-op if the checker is not enabled.  See |EnableFreePageFilling|
+    pub fn fill_free_pages_and_arm(&self) {
+        // SAFETY: No preconditions.
+        unsafe { bindings::cpp_pmm_node_fill_free_pages_and_arm(self.as_raw()) }
+    }
+
+    /// Configures the free memory bounds and allows for setting a one shot signal as well as a
+    /// level where allocations should start being delayed.
+    ///
+    /// The event is signaled once the number of PMM free pages falls outside of the range given by
+    /// |free_lower_bound| and |free_upper_bound|. As the event is one shot, one signaled this must
+    /// be called again to configure a new range. If the number of free pages is already outside the
+    /// requested bound then this method fails (returns false) and no event is setup. In this case
+    /// the caller should recalculate a correct bounds and try again.
+    ///
+    /// In addition to exiting the provided memory bounds, the event will also get signaled on the
+    /// first time an allocation fails (i.e. the first time at which has_alloc_failed_no_mem would
+    /// return true).
+    ///
+    /// |delay_allocations_level| is the number of PMM free pages below which the PMM will
+    /// transition to delaying allocations that can wait, i.e. those with PMM_ALLOC_FLAG_CAN_WAIT.
+    /// This transition is sticky, and even if pages are freed to go back above this line,
+    /// allocations will remain delayed until this method is called again to re-set the level. For
+    /// this reason, and since there is only a single common Event, the |delay_allocations_level|
+    /// must either be <= the |free_lower_bound|, ensuring that the caller will have been notified
+    /// and can respond by freeing memory and/or setting a new level, or |delay_allocations_level|
+    /// can be UINT64_MAX, indicating allocations should start and remain delayed.
+    ///
+    /// # Safety
+    ///
+    /// Caller ensures that `event` lives either until this method is called again or the PmmNode is
+    /// destroyed.
+    pub unsafe fn set_free_memory_signal(
+        &self,
+        lower_bound: u64,
+        upper_bound: u64,
+        delay_allocations_pages: u64,
+        event: core::ptr::NonNull<Event>,
+    ) -> bool {
+        // SAFETY: `event.as_raw()` returns a valid Event pointer.
+        unsafe {
+            bindings::cpp_pmm_node_set_free_memory_signal(
+                self.as_raw(),
+                lower_bound,
+                upper_bound,
+                delay_allocations_pages,
+                event.as_ptr().cast(),
+            )
+        }
+    }
+
+    /// Waits the system to exit low memory state and then attempts to allocate.
+    ///
+    /// To prevent herding problem, and because allocation compete for the `PmmNode::lock_` anyway,
+    /// only one thread is woken up a time, only if the previous thread successfully allocated.
+    ///
+    /// In normal conditions,  when the system is in low memory state, this method will return
+    /// `ZX_ERR_TIMED_OUT` if the system didn't transition fast enough. If we run into a TOC to TOU,
+    /// for the system race `ZX_ERR_SHOULD_WAIT` will be returned, that is the system transitioned
+    /// out and back into low memory state before we managed to perform the allocation.
+    ///
+    /// If `BootOptions::Get()->pmm_alloc_random_wait` is true, then the system
+    /// may return spurious `ZX_ERR_SHOULD_WAIT`, in such cases, if the system is
+    /// not in a low memory state, a thread is woken up anyway, so forward
+    /// progress can be made.
+    ///
+    /// If |suspendable| is true, the wait will terminate early with
+    /// `ZX_ERR_INTERNAL_INTR_RETRY` if the thread is suspended. If false, suspension is ignored and
+    /// the wait continues.
+    pub fn wait_for_single_page_allocation(
+        &self,
+        deadline: crate::kernel::deadline::Deadline,
+        suspendable: bool,
+    ) -> Result<VmPagePtr, Status> {
+        let mut page = core::ptr::null_mut();
+        // SAFETY: FFI call passing valid stack pointer.
+        let status = unsafe {
+            bindings::cpp_pmm_node_wait_for_single_page_allocation(
+                self.as_raw(),
+                deadline.when().0,
+                suspendable,
+                &mut page,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: page pointer is valid on success.
+        unsafe { VmPagePtr::from_ffi(page) }.ok_or(Status::NO_MEMORY)
+    }
+
+    /// Tells the node to stop returning SHOULD_WAIT.
+    pub fn stop_returning_should_wait(&self) {
+        // SAFETY: No preconditions.
+        unsafe { bindings::cpp_pmm_node_stop_returning_should_wait(self.as_raw()) }
+    }
+
+    /// Returns whether an allocation has failed with NO_MEMORY.
+    pub fn has_alloc_failed_no_mem(&self) -> bool {
+        // SAFETY: No preconditions.
+        unsafe { bindings::cpp_pmm_node_has_alloc_failed_no_mem(self.as_raw()) }
+    }
+
+    /// Retrieves information given to |ReportAllocFailure|. Due to book keeping limitations this will
+    /// only return information from the first failure.
+    pub fn get_first_alloc_failure(&self) -> AllocFailure {
+        let mut failure = AllocFailure::default();
+        // SAFETY: FFI call passing valid stack pointer.
+        unsafe {
+            bindings::cpp_pmm_node_get_first_alloc_failure(
+                self.as_raw(),
+                &mut failure as *mut AllocFailure as *mut bindings::PmmNode_AllocFailure,
+            )
+        };
+        failure
+    }
+
+    /// This method should be called when the PMM fails to allocate in a user-visible way and will
+    /// (optionally) trigger an asynchronous OOM response.
+    pub fn report_alloc_failure(&self, failure: AllocFailure) {
+        // SAFETY: FFI call passing valid reference pointer.
+        unsafe {
+            bindings::cpp_pmm_node_report_alloc_failure(
+                self.as_raw(),
+                &failure as *const AllocFailure as *const bindings::PmmNode_AllocFailure,
+            )
+        }
+    }
+
+    /// Frees all pages in the given list and places them in the loaned state available to be returned
+    /// from AllocLoanedPage.
+    ///
+    /// |delay_reuse| controls whether the newly loaned pages are eligile for immediate or delayed
+    /// reuse.
+    ///
+    /// # Safety
+    ///
+    /// Caller guarantees that all pages in list are valid and they are the owner.
+    pub unsafe fn begin_loan(
+        &self,
+        list: Pin<&mut fbl::DoublyLinkedList<*mut VmPage>>,
+        delay_reuse: PmmOptDelayReuse,
+    ) {
+        // SAFETY: FFI call passing valid list pointer.
+        unsafe {
+            bindings::cpp_pmm_node_begin_loan(
+                self.as_raw(),
+                (list.get_unchecked_mut() as *mut fbl::DoublyLinkedList<*mut VmPage>).cast(),
+                delay_reuse,
+            )
+        }
+    }
+
+    /// Marks a page that had been previously provided to BeginLoan as cancelled. This page may be in
+    /// the FREE_LOANED state, or presently in use.
+    ///
+    /// This call prevents the page from being reused for any new purpose until EndLoan(). For
+    /// presently-FREE_LOANED pages, this removes the pages from free_loaned_list_. For presently-used
+    /// pages, this specifies that the page will not be added to free_loaned_list_ when later freed.
+    /// Once this page is FREE_LOANED (to be ensured by the caller via PhysicalPageProvider reclaim of
+    /// the pages), the loan can be ended with EndLoan().
+    ///
+    /// # Safety
+    ///
+    /// Caller guarantees that page is valid
+    pub unsafe fn cancel_loan(&self, page: VmPagePtr) {
+        // SAFETY: FFI call passing valid page pointer.
+        unsafe { bindings::cpp_pmm_node_cancel_loan(self.as_raw(), page.as_ffi()) }
+    }
+
+    /// Allocates the page to the caller as a regular non-loaned page. Must currently be:
+    ///  * Loaned (via BeginLoan).
+    ///  * Have had its loan cancelled (via CancelLoan).
+    ///  * Be in the FREE_LOANED state.
+    ///
+    /// # Safety
+    ///
+    /// Caller guarantees that page is valid
+    pub unsafe fn end_loan(&self, page: VmPagePtr) {
+        // SAFETY: FFI call passing valid page pointer.
+        unsafe { bindings::cpp_pmm_node_end_loan(self.as_raw(), page.as_ffi()) }
+    }
+
+    /// Allocates a single page from the loaned pages list. The allocated page will always have
+    /// is_loaned() being true, and must be returned by either FreeLoanedPage or FreeLoanedList. If
+    /// there are not loaned pages available ZX_ERR_UNAVAILABLE is returned, as an absence of loaned
+    /// pages does not constitute an out of memory scenario.
+    /// The provided callback must transition the page into a state such that it has a valid backlink,
+    /// i.e. it is in the OBJECT state with an owner set, prior to returning.
+    /// During the execution of the callback the page contents must *not* be modified.
+    pub fn alloc_loaned_page<F: FnOnce(VmPagePtr)>(
+        &self,
+        allocated: F,
+    ) -> Result<VmPagePtr, Status> {
+        unsafe extern "C" fn trampoline<F: FnOnce(VmPagePtr)>(
+            page: *mut page_bindings::vm_page_t,
+            cookie: *mut core::ffi::c_void,
+        ) {
+            // SAFETY: cookie is a valid pointer to Option<F> on the stack.
+            let closure = unsafe { &mut *(cookie.cast::<Option<F>>()) }
+                .take()
+                .expect("Callback should only be invoked once");
+            // SAFETY: page is a valid allocated vm_page_t pointer passed by PmmNode.
+            closure(unsafe { VmPagePtr::from_ffi(page) }.expect("Expected value page"));
+        }
+
+        let mut closure = Some(allocated);
+        let mut out_page = core::ptr::null_mut();
+        // SAFETY: FFI call passing valid node, function pointer, cookie pointer, and out pointer.
+        let status = unsafe {
+            bindings::cpp_pmm_node_alloc_loaned_page(
+                self.as_raw(),
+                Some(trampoline::<F>),
+                core::ptr::from_mut(&mut closure).cast(),
+                &mut out_page,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: `out_page` is a non-null valid page pointer returned on success.
+        unsafe { Ok(VmPagePtr::from_ffi(out_page).expect("null page on success")) }
+    }
+
+    /// Begins freeing a loaned page that was previously allocated by AllocLoanPage by moving into a
+    /// holding object. It is an error to attempt to free a non loaned page. When this method is called
+    /// the |page| must have a valid backlink (i.e. be in the OBJECT state with an owner set). This
+    /// backlink should be removed by the |release_page| callback, which is invoked under the loaned
+    /// pages lock, prior to transition the page into the holding state. The caller *must*, at some
+    /// point in the future, complete the page freeing process by passing the provided |flph| into a
+    /// |FinishFreeLoanedPages| call.
+    ///
+    /// # Safety
+    ///
+    /// Caller guarantees that page is valid, loaned and owned by them.
+    pub unsafe fn begin_free_loaned_page<F: FnOnce(VmPagePtr)>(
+        &self,
+        page: VmPagePtr,
+        release_page: F,
+        flph: Pin<&mut FreeLoanedPagesHolder>,
+    ) {
+        unsafe extern "C" fn trampoline<F: FnOnce(VmPagePtr)>(
+            page: *mut page_bindings::vm_page_t,
+            cookie: *mut core::ffi::c_void,
+        ) {
+            // SAFETY: cookie is a valid pointer to Option<F> on the stack.
+            let closure = unsafe { &mut *(cookie.cast::<Option<F>>()) }
+                .take()
+                .expect("Callback should only be called once");
+            // SAFETY: page is a valid allocated vm_page_t pointer passed by PmmNode.
+            closure(unsafe { VmPagePtr::from_ffi(page) }.expect("Expected value page"));
+        }
+
+        let mut closure = Some(release_page);
+        let flph_ptr: *mut FreeLoanedPagesHolder = unsafe { flph.get_unchecked_mut() };
+        // SAFETY: FFI call passing valid node, page, function pointer, cookie pointer, and flph pointer.
+        unsafe {
+            bindings::cpp_pmm_node_begin_free_loaned_page(
+                self.as_raw(),
+                page.as_ffi(),
+                Some(trampoline::<F>),
+                core::ptr::from_mut(&mut closure).cast(),
+                flph_ptr.cast(),
+            );
+        }
+    }
+
+    /// Completes the freeing of any loaned pages in |flph|, after which |flph| is allowed to be
+    /// destructed. Once this method is called on a given |flph| that object is effectively 'dead' and
+    /// is not allowed to be passed to any PmmNode methods.
+    pub fn finish_free_loaned_pages(&self, flph: Pin<&mut FreeLoanedPagesHolder>) {
+        let flph_ptr: *mut FreeLoanedPagesHolder = unsafe { flph.get_unchecked_mut() };
+        // SAFETY: FFI call passing valid node and flph pointer.
+        unsafe {
+            bindings::cpp_pmm_node_finish_free_loaned_pages(self.as_raw(), flph_ptr.cast());
+        }
+    }
+
     /// Add new pages to the free queue. Used when bootstrapping a PmmArena.
     ///
     /// # Safety
@@ -632,6 +1028,11 @@ impl PmmNode {
             "free count now {}\n",
             unsafe { self.free_count.get(&token) }.load(Ordering::Relaxed)
         );
+    }
+
+    /// Retrieve access to the page queues.
+    pub fn page_queues(&self) -> &PageQueues {
+        &self.page_queues
     }
 }
 

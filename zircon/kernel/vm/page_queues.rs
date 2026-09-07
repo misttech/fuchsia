@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::vm::page::VmPagePtr;
+use crate::vm::vm_cow_pages::VmCowPages;
 use core::marker::{PhantomData, PhantomPinned};
 use page_queues_bindings as bindings;
 use pin_init::{PinInit, pin_data};
@@ -93,6 +94,39 @@ impl PageQueues {
     /// Domain-specific conversion: returns raw pointer for `PageQueues`.
     pub fn as_raw(&self) -> *mut bindings::PageQueues {
         self.raw.get()
+    }
+
+    // All Set operations places a page, which must not currently be in a page queue, into the
+    // specified queue. The backlink information of |object| and |page_offset| must be specified and
+    // valid. If the page is either removed from the referenced object, or moved to a different
+    // offset, the backlink information must be updated either by calling ChangeObjectOffsetLocked,
+    // or removing the page completely from the queues.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee `page` is not attached to a VM object.
+    pub unsafe fn set_reclaim(&self, page: VmPagePtr, cow: &VmCowPages, offset: u64) {
+        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
+        // attached to a VM object per function safety preconditions.
+        unsafe {
+            bindings::cpp_page_queues_set_reclaim(
+                self.as_raw(),
+                page.as_ffi(),
+                cow.as_raw().cast(),
+                offset,
+            )
+        }
+    }
+
+    /// Removes the page from any page list and returns ownership of the queue_node.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee `page` is attached to a VM object.
+    pub unsafe fn remove(&self, page: VmPagePtr) {
+        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
+        // attached to a VM object per function safety preconditions.
+        unsafe { bindings::cpp_page_queues_remove(self.as_raw(), page.as_ffi()) }
     }
 
     /// Returns whether `page` is in the wired queue.

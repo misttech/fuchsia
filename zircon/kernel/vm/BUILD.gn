@@ -313,8 +313,12 @@ kernel_bindgen_crate("pmm-bindings") {
   function_allowlist = [
     "cpp_pmm_page_queues",
     "cpp_pmm_alloc_page",
+    "cpp_pmm_alloc_pages",
+    "cpp_pmm_alloc_contiguous",
     "cpp_pmm_free_page",
     "cpp_pmm_free_list",
+    "cpp_pmm_num_arenas",
+    "cpp_pmm_get_arena_info",
     "cpp_paddr_to_vm_page",
   ]
   type_allowlist = []
@@ -323,6 +327,9 @@ kernel_bindgen_crate("pmm-bindings") {
     "PageQueues",
     "PmmNode",
     "VmPageDoublyLinkedList",
+    "pmm_arena_info",
+    "pmm_arena_info_t",
+    "uint",
     "vm_page_t",
     "zx_paddr_t",
     "zx_status_t",
@@ -331,6 +338,7 @@ kernel_bindgen_crate("pmm-bindings") {
   deps = [
     ":page-bindings",
     ":page-queues-bindings",
+    ":pmm-arena-bindings",
     ":pmm-node-bindings",
     "//sdk/rust/zx-types",
   ]
@@ -340,6 +348,7 @@ kernel_bindgen_crate("pmm-bindings") {
     "#![no_std]",
     "use page_bindings::vm_page_t;",
     "use page_queues_bindings::PageQueues;",
+    "pub use pmm_arena_bindings::{pmm_arena_info, pmm_arena_info_t};",
     "pub use zx_types::{zx_paddr_t, zx_status_t};",
     "pub use pmm_node_bindings::PmmOptDelayReuse;",
     "pub type PmmNode = pmm_node_bindings::PmmNode;",
@@ -361,14 +370,31 @@ kernel_bindgen_crate("pmm-checker-bindings") {
   function_allowlist = [
     "cpp_pmm_checker_destroy",
     "cpp_pmm_checker_init",
+    "cpp_pmm_checker_is_valid_fill_size",
+    "cpp_pmm_checker_set_fill_size",
+    "cpp_pmm_checker_get_fill_size",
+    "cpp_pmm_checker_set_action",
+    "cpp_pmm_checker_get_action",
+    "cpp_pmm_checker_is_armed",
+    "cpp_pmm_checker_arm",
+    "cpp_pmm_checker_fill_pattern",
+    "cpp_pmm_checker_validate_pattern",
+    "cpp_pmm_checker_assert_pattern",
   ]
   type_allowlist = [ "PmmChecker" ]
   opaque_types = [ "PmmChecker" ]
   function_blocklist = [ "PmmChecker_.*" ]
-  type_blocklist = [ "PmmChecker_.*" ]
+  type_blocklist = [
+    "PmmChecker_.*",
+    "vm_page_t",
+  ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [ ":page-bindings" ]
 
-  raw_lines = [ "#![no_std]" ]
+  raw_lines = [
+    "#![no_std]",
+    "use page_bindings::vm_page_t;",
+  ]
   expect_lints = []
 }
 
@@ -380,7 +406,33 @@ kernel_bindgen_crate("pmm-node-bindings") {
   cpp = true
 
   notice_year = 2026
-  function_allowlist = [ "cpp_pmm_node_destroy" ]
+  function_allowlist = [
+    "cpp_pmm_node_destroy",
+    "cpp_pmm_node_alloc_page",
+    "cpp_pmm_node_alloc_pages",
+    "cpp_pmm_node_free_page",
+    "cpp_pmm_node_free_list",
+    "cpp_pmm_node_count_free_pages",
+    "cpp_pmm_node_count_loaned_free_pages",
+    "cpp_pmm_node_count_loan_cancelled_pages",
+    "cpp_pmm_node_count_loaned_not_free_pages",
+    "cpp_pmm_node_count_loaned_pages",
+    "cpp_pmm_node_count_total_bytes",
+    "cpp_pmm_node_enable_free_page_filling",
+    "cpp_pmm_node_fill_free_pages_and_arm",
+    "cpp_pmm_node_set_free_memory_signal",
+    "cpp_pmm_node_wait_for_single_page_allocation",
+    "cpp_pmm_node_stop_returning_should_wait",
+    "cpp_pmm_node_has_alloc_failed_no_mem",
+    "cpp_pmm_node_get_first_alloc_failure",
+    "cpp_pmm_node_report_alloc_failure",
+    "cpp_pmm_node_begin_loan",
+    "cpp_pmm_node_cancel_loan",
+    "cpp_pmm_node_end_loan",
+    "cpp_pmm_node_alloc_loaned_page",
+    "cpp_pmm_node_begin_free_loaned_page",
+    "cpp_pmm_node_finish_free_loaned_pages",
+  ]
   type_allowlist = [
     "PmmOptDelayReuse",
     "PmmNode",
@@ -394,13 +446,17 @@ kernel_bindgen_crate("pmm-node-bindings") {
     "vm_page_t",
     "zx_paddr_t",
     "zx_status_t",
+    "zx_instant_mono_t",
+    "zx_duration_mono_t",
+    "uint",
     "PmmArena",
     "PageQueues",
     "Evictor",
     "PmmChecker",
     "AutounsignalEvent",
     "Event",
-    "VmPageDoublyLInkedList",
+    "VmCowPages",
+    "VmPageDoublyLinkedList",
   ]
   opaque_types = [
     "VmCompression",
@@ -438,7 +494,8 @@ kernel_bindgen_crate("pmm-node-bindings") {
     "pub use page_queues_bindings::PageQueues;",
     "pub use pmm_arena_bindings::PmmArena;",
     "pub use pmm_checker_bindings::PmmChecker;",
-    "pub use zx_types::{zx_paddr_t, zx_status_t};",
+    "pub use zx_types::{zx_duration_mono_t, zx_instant_mono_t, zx_paddr_t, zx_status_t};",
+    "pub type VmCowPages = *const core::ffi::c_void;",
     "pub type VmPageDoublyLinkedList = usize;",
   ]
   expect_lints = [
@@ -504,6 +561,8 @@ kernel_bindgen_crate("page-queues-bindings") {
     "cpp_page_queues_debug_page_is_pager_backed_dirty",
     "cpp_page_queues_debug_page_is_reclaim_isolate",
     "cpp_page_queues_debug_page_is_anonymous",
+    "cpp_page_queues_set_reclaim",
+    "cpp_page_queues_remove",
     "cpp_page_queues_mark_accessed",
     "cpp_page_queues_rotate_reclaim_queues",
     "cpp_page_queues_reclaim_is_only_pager_backed",
@@ -544,6 +603,7 @@ kernel_bindgen_crate("page-queues-bindings") {
     "use page_bindings::vm_page_t;",
     "pub use zx_types::zx_duration_mono_t;",
     "pub use zx_types::zx_paddr_t;",
+    "pub type VmCowPages = *const core::ffi::c_void;",
   ]
   expect_lints = [
     "non_camel_case_types",

@@ -4,10 +4,13 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::pmm_arena::PmmArenaInfo;
 use super::pmm_node::PmmNode;
 use crate::kernel::types::PAddr;
 use crate::vm::page::{VmPage, VmPagePtr};
 use crate::vm::page_queues::PageQueues;
+use core::mem::MaybeUninit;
+use core::pin::Pin;
 use fbl::DoublyLinkedList;
 use pmm_bindings as bindings;
 use zx_status::Status;
@@ -55,14 +58,18 @@ pub unsafe fn free_page(page: VmPagePtr) {
 ///
 /// Caller must ensure every page on the list is a valid allocated PMM page that
 /// has not already been freed.
-pub unsafe fn free_list(list: &mut DoublyLinkedList<*mut VmPage>) {
+pub unsafe fn free_list(list: Pin<&mut DoublyLinkedList<*mut VmPage>>) {
     if list.is_empty() {
         return;
     }
     // SAFETY: `DoublyLinkedList` is `repr(C)` and mirrors `VmPageDoublyLinkedList`
     // -- a bare head pointer with the same sentinel encoding -- so C++ can drain it
     // in place.  The caller guarantees the pages.
-    unsafe { bindings::cpp_pmm_free_list((list as *mut DoublyLinkedList<*mut VmPage>).cast()) };
+    unsafe {
+        bindings::cpp_pmm_free_list(
+            (list.get_unchecked_mut() as *mut DoublyLinkedList<*mut VmPage>).cast(),
+        )
+    };
 }
 
 /// Converts a physical address to a `VmPagePtr`.
@@ -70,6 +77,83 @@ pub fn paddr_to_vm_page(paddr: PAddr) -> Option<VmPagePtr> {
     let raw = unsafe { bindings::cpp_paddr_to_vm_page(paddr.0) };
     // SAFETY: cpp_paddr_to_vm_page returns a valid VmPagePtr, or null.
     unsafe { VmPagePtr::from_ffi(raw) }
+}
+
+/// Allocate count pages of physical memory, adding to the tail of the passed list.
+/// The list must be initialized.
+/// Note that if PMM_ALLOC_FLAG_CAN_WAIT is passed in then this could always return
+/// ZX_ERR_SHOULD_WAIT. Since there is no way to wait until an arbitrary number of pages can be
+/// allocated (see comment on |pmm_wait_till_should_retry_single_alloc|) passing
+/// PMM_ALLOC_FLAG_CAN_WAIT here should be used as an optimistic fast path, and the caller should
+/// have a fallback of allocating single pages.
+pub fn alloc_pages(
+    count: usize,
+    flags: u32,
+    list: Pin<&mut DoublyLinkedList<*mut VmPage>>,
+) -> Result<(), Status> {
+    // SAFETY: FFI call passing pointer to `list`.
+    let status = unsafe {
+        bindings::cpp_pmm_alloc_pages(
+            count,
+            flags,
+            (list.get_unchecked_mut() as *mut DoublyLinkedList<*mut VmPage>).cast(),
+        )
+    };
+    Status::ok(status)
+}
+
+/// Allocate a run of contiguous pages, aligned on log2 byte boundary (0-31).
+/// Return the base address of the run in the physical address pointer and
+/// append the allocate page structures to the tail of the passed in list.
+pub fn alloc_contiguous(
+    count: usize,
+    flags: u32,
+    align_log2: u8,
+    list: Pin<&mut DoublyLinkedList<*mut VmPage>>,
+) -> Result<PAddr, Status> {
+    let mut pa: bindings::zx_paddr_t = 0;
+    // SAFETY: FFI call passing stack pointer for `pa` and pointer to `list`.
+    let status = unsafe {
+        bindings::cpp_pmm_alloc_contiguous(
+            count,
+            flags,
+            align_log2,
+            &mut pa,
+            (list.get_unchecked_mut() as *mut DoublyLinkedList<*mut VmPage>).cast(),
+        )
+    };
+    Status::ok(status)?;
+    Ok(PAddr(pa))
+}
+
+/// Returns the number of physical memory arenas.
+pub fn num_arenas() -> usize {
+    // SAFETY: No preconditions.
+    unsafe { bindings::cpp_pmm_num_arenas() }
+}
+
+// Fills |buffer| with PmmArenaInfo objects starting at |offset| arena, ordered by base address.
+// For example, passing an |offset| of 1 would skip the 1st arena.
+//
+// Returns OUT_OF_RANGE if |offset| would yield an invalid range or |buffer| is too large.
+//
+// Returns BUFFER_TOO_SMALL if the |buffer| is too small.
+pub fn get_arena_info(
+    offset: usize,
+    buffer: &mut [MaybeUninit<PmmArenaInfo>],
+) -> Result<&mut [PmmArenaInfo], Status> {
+    // SAFETY: FFI call passing point to |buffer|.
+    let status = unsafe {
+        bindings::cpp_pmm_get_arena_info(
+            buffer.len(),
+            offset as u64,
+            buffer.as_mut_ptr().cast(),
+            buffer.len() * core::mem::size_of::<PmmArenaInfo>(),
+        )
+    };
+    Status::ok(status)?;
+    // SAFETY: cpp_pmm_get_arena_info fully initializes this buffer on success.
+    unsafe { Ok(buffer.assume_init_mut()) }
 }
 
 /// Returns the static `PageQueues` instance associated with the PMM.

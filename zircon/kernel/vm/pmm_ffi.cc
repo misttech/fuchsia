@@ -31,8 +31,29 @@ FFI_ALWAYS_INLINE zx_status_t cpp_pmm_alloc_page(uint32_t flags, vm_page_t** out
   return status;
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_pmm_alloc_pages(size_t count, uint32_t flags,
+                                                  VmPageDoublyLinkedList* list) {
+  return pmm_alloc_pages(count, flags, list);
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_pmm_alloc_contiguous(size_t count, uint32_t flags,
+                                                       uint8_t align_log2, zx_paddr_t* out_pa,
+                                                       VmPageDoublyLinkedList* list) {
+  paddr_t pa = 0;
+  zx_status_t status = pmm_alloc_contiguous(count, flags, align_log2, &pa, list);
+  *out_pa = pa;
+  return status;
+}
+
 FFI_ALWAYS_INLINE void cpp_pmm_free_page(vm_page_t* page) { pmm_free_page(page); }
 
 FFI_ALWAYS_INLINE void cpp_pmm_free_list(VmPageDoublyLinkedList* list) { pmm_free(list); }
+
+FFI_ALWAYS_INLINE size_t cpp_pmm_num_arenas() { return pmm_num_arenas(); }
+
+FFI_ALWAYS_INLINE zx_status_t cpp_pmm_get_arena_info(size_t count, uint64_t i,
+                                                     pmm_arena_info_t* buffer, size_t buffer_size) {
+  return pmm_get_arena_info(count, i, buffer, buffer_size);
+}
 
 }  // extern "C"

@@ -80,4 +80,13 @@ FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_anonymous(const PageQueues*
   return queues->DebugPageIsAnonymous(page);
 }
 
+FFI_ALWAYS_INLINE void cpp_page_queues_set_reclaim(PageQueues* queues, vm_page_t* page,
+                                                   VmCowPages* cow, uint64_t offset) {
+  queues->SetReclaim(page, cow, offset);
+}
+
+FFI_ALWAYS_INLINE void cpp_page_queues_remove(PageQueues* queues, vm_page_t* page) {
+  queues->Remove(page);
+}
+
 }  // extern "C"
