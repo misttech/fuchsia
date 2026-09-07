@@ -92,7 +92,6 @@ impl FileOps for DevZero {
         length: usize,
         prot_flags: ProtectionFlags,
         mut options: MappingOptions,
-        filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
         // All /dev/zero mappings behave as anonymous mappings.
         //
@@ -119,7 +118,7 @@ impl FileOps for DevZero {
             // functionally equivalent to an anonymous mapping. Doing so affects
             // the output of `/proc/self/maps` and identifies this mapping as
             // file-based.
-            MappingName::File(filename.into_mapping(None)?),
+            MappingName::File(file.to_mapping(None)?),
         )
     }
 

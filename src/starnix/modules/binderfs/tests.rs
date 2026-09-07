@@ -33,15 +33,13 @@ pub mod tests {
     use starnix_core::fs::fuchsia::sync_file::{SyncFence, SyncFile, SyncPoint, Timeline};
     use starnix_core::mm::memory::MemoryObject;
     use starnix_core::mm::{
-        DesiredAddress, MappingOptions, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE,
+        DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE,
         ProtectionFlags,
     };
     use starnix_core::security;
     use starnix_core::task::{CurrentTask, ExitStatus, Kernel, SimpleWaiter, Waiter};
     use starnix_core::testing::*;
-    use starnix_core::vfs::{
-        Anon, FdFlags, FdNumber, FileHandle, FileObject, NamespaceNode, anon_fs,
-    };
+    use starnix_core::vfs::{Anon, FdFlags, FdNumber, FileHandle, FileObject, anon_fs};
     use starnix_logging::log_warn;
     use starnix_sync::InterruptibleEvent;
     use starnix_types::convert::IntoFidl;
@@ -191,8 +189,6 @@ pub mod tests {
     /// Simulates an mmap call on the binder driver, setting up shared memory between the driver and
     /// `proc`.
     fn mmap_shared_memory(driver: &BinderDriver, current_task: &CurrentTask, proc: &BinderProcess) {
-        let fs = create_testfs(&current_task.kernel());
-        let node = create_fs_node_for_testing(&fs, PanickingFsNode);
         let prot_flags = ProtectionFlags::READ;
         driver
             .mmap(
@@ -202,7 +198,7 @@ pub mod tests {
                 VMO_LENGTH,
                 prot_flags,
                 MappingOptions::empty(),
-                NamespaceNode::new_anonymous_unrooted(current_task, node),
+                MappingName::None,
             )
             .expect("mmap");
     }

@@ -160,7 +160,7 @@ pub mod ioctl {
         let mut descriptor = fsverity_descriptor_from_enable_arg(task, block_size, &args)?;
         descriptor.data_size = file.node().fetch_and_refresh_info(task)?.size as u64;
         // The "Exec" writeguard mode means 'no writers'.
-        let _mapping = file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
+        let _mapping = file.to_mapping(Some(FileWriteGuardMode::ExecMapping))?;
         {
             let mut fsverity = file.node().fsverity.lock();
             match *fsverity {

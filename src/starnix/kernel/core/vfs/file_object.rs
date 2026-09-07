@@ -15,7 +15,7 @@ use crate::vfs::fsverity::{
     FsVerityState, {self},
 };
 use crate::vfs::{
-    ActiveNamespaceNode, DirentSink, EpollFileObject, EpollKey, FallocMode, FdTableId,
+    ActiveNamespaceNode, DirentSink, EpollFileObject, EpollKey, FallocMode, FdTableId, FileMapping,
     FileSystemHandle, FileWriteGuardMode, FsNodeHandle, FsString, NamespaceNode, RecordLockCommand,
     RecordLockOwner,
 };
@@ -221,9 +221,8 @@ pub trait FileOps: Send + Sync + AsAny + 'static {
         length: usize,
         prot_flags: ProtectionFlags,
         options: MappingOptions,
-        filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
-        default_mmap(file, current_task, addr, memory_offset, length, prot_flags, options, filename)
+        default_mmap(file, current_task, addr, memory_offset, length, prot_flags, options)
     }
 
     /// Respond to a `getdents` or `getdents64` calls.
@@ -432,18 +431,8 @@ impl<T: FileOps + CloseFreeSafe, P: Deref<Target = T> + Send + Sync + 'static> F
         length: usize,
         prot_flags: ProtectionFlags,
         options: MappingOptions,
-        filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
-        self.deref().mmap(
-            file,
-            current_task,
-            addr,
-            memory_offset,
-            length,
-            prot_flags,
-            options,
-            filename,
-        )
+        self.deref().mmap(file, current_task, addr, memory_offset, length, prot_flags, options)
     }
 
     fn readdir(
@@ -1026,7 +1015,6 @@ pub fn default_mmap(
     length: usize,
     prot_flags: ProtectionFlags,
     options: MappingOptions,
-    filename: NamespaceNode,
 ) -> Result<UserAddress, Errno> {
     fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "FileOpsDefaultMmap");
     let min_memory_size = (memory_offset as usize)
@@ -1086,7 +1074,7 @@ pub fn default_mmap(
         prot_flags,
         file.max_access_for_memory_mapping(),
         options,
-        MappingName::File(filename.into_mapping(file_write_guard)?),
+        MappingName::File(file.to_mapping(file_write_guard)?),
     )
 }
 
@@ -1267,18 +1255,8 @@ impl FileOps for ProxyFileOps {
         length: usize,
         prot_flags: ProtectionFlags,
         options: MappingOptions,
-        filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
-        self.0.ops.mmap(
-            &self.0,
-            current_task,
-            addr,
-            memory_offset,
-            length,
-            prot_flags,
-            options,
-            filename,
-        )
+        self.0.ops.mmap(&self.0, current_task, addr, memory_offset, length, prot_flags, options)
     }
     fn seek(
         &self,
@@ -1837,7 +1815,6 @@ impl FileObject {
         length: usize,
         prot_flags: ProtectionFlags,
         options: MappingOptions,
-        filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
         if !self.can_read() {
             return error!(EACCES);
@@ -1851,16 +1828,12 @@ impl FileObject {
         if prot_flags.contains(ProtectionFlags::EXEC) && !self.can_exec() {
             return error!(EPERM);
         }
-        self.ops().mmap(
-            self,
-            current_task,
-            addr,
-            memory_offset,
-            length,
-            prot_flags,
-            options,
-            filename,
-        )
+        self.ops().mmap(self, current_task, addr, memory_offset, length, prot_flags, options)
+    }
+
+    /// Creates a [`FileMapping`] for this file.
+    pub fn to_mapping(&self, mode: Option<FileWriteGuardMode>) -> Result<Arc<FileMapping>, Errno> {
+        self.name.to_mapping(mode)
     }
 
     pub fn readdir(

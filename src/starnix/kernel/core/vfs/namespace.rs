@@ -1268,10 +1268,6 @@ impl NamespaceNode {
         ActiveNamespaceNode::new(self)
     }
 
-    pub fn into_mapping(self, mode: Option<FileWriteGuardMode>) -> Result<Arc<FileMapping>, Errno> {
-        self.into_active().into_mapping(mode)
-    }
-
     /// Create a node in the file system.
     ///
     /// Works for any type of node other than a symlink.
@@ -1943,6 +1939,11 @@ impl ActiveNamespaceNode {
 
     pub fn to_passive(&self) -> NamespaceNode {
         self.deref().clone()
+    }
+
+    /// Creates a [`FileMapping`] for this node.
+    pub fn to_mapping(&self, mode: Option<FileWriteGuardMode>) -> Result<Arc<FileMapping>, Errno> {
+        self.clone().into_mapping(mode)
     }
 
     pub fn into_mapping(self, mode: Option<FileWriteGuardMode>) -> Result<Arc<FileMapping>, Errno> {

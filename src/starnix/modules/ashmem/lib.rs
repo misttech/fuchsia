@@ -163,7 +163,6 @@ impl FileOps for Ashmem {
         length: usize,
         prot_flags: ProtectionFlags,
         mapping_options: MappingOptions,
-        _filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
         let state = self.state.lock();
         let size_paged_aligned = round_up_to_increment(state.size, *PAGE_SIZE as usize)?;

@@ -175,15 +175,7 @@ pub fn do_mmap(
         fuchsia_trace::duration!(CATEGORY_STARNIX_MM, "FileBackedMmap");
         // TODO(tbodt): maximize protection flags so that mprotect works
         let file = file.expect("file retrieved above for file-backed mapping");
-        file.mmap(
-            current_task,
-            addr,
-            memory_offset,
-            length,
-            prot_flags,
-            options,
-            file.name.to_passive(),
-        )
+        file.mmap(current_task, addr, memory_offset, length, prot_flags, options)
     }
 }
 

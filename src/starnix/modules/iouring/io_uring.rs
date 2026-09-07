@@ -20,7 +20,7 @@ use starnix_core::vfs::syscalls::{
     sys_pread64, sys_preadv2, sys_pwrite64, sys_pwritev2, sys_read, sys_write,
 };
 use starnix_core::vfs::{
-    Anon, FdNumber, FileHandle, FileObject, FileOps, NamespaceNode, fileops_impl_dataless,
+    Anon, FdNumber, FileHandle, FileObject, FileOps, fileops_impl_dataless,
     fileops_impl_nonseekable, fileops_impl_noop_sync,
 };
 use starnix_logging::{set_zx_name, track_stub};
@@ -1169,14 +1169,13 @@ impl FileOps for IoUringFileObject {
 
     fn mmap(
         &self,
-        _file: &FileObject,
+        file: &FileObject,
         current_task: &CurrentTask,
         addr: DesiredAddress,
         memory_offset: u64,
         length: usize,
         prot_flags: ProtectionFlags,
         options: MappingOptions,
-        filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
         if !options.contains(MappingOptions::SHARED) {
             return error!(EINVAL);
@@ -1195,7 +1194,7 @@ impl FileOps for IoUringFileObject {
             prot_flags,
             Access::rwx(),
             options,
-            MappingName::File(filename.into_mapping(None)?),
+            MappingName::File(file.to_mapping(None)?),
         )
     }
 }

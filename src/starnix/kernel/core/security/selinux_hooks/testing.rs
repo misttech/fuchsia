@@ -107,7 +107,8 @@ pub(in crate::security) fn make_resolved_elf(
     current_task: &CurrentTask,
     executable: NamespaceNode,
 ) -> ResolvedElf {
-    let file_mapping = executable.into_mapping(Some(FileWriteGuardMode::ExecMapping)).unwrap();
+    let file_mapping =
+        executable.into_active().into_mapping(Some(FileWriteGuardMode::ExecMapping)).unwrap();
     let vmo = zx::Vmo::create(4096).unwrap();
     let memory = Arc::new(MemoryObject::from(vmo));
     ResolvedElf {

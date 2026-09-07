@@ -263,16 +263,16 @@ impl FileOps for BinderConnection {
 
     fn mmap(
         &self,
-        _file: &FileObject,
+        file: &FileObject,
         current_task: &CurrentTask,
         addr: DesiredAddress,
         _memory_offset: u64,
         length: usize,
         prot_flags: ProtectionFlags,
         mapping_options: MappingOptions,
-        filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
         let binder_process = self.proc(current_task)?;
+        let mapping_name = MappingName::File(file.to_mapping(None)?);
         release_after!(binder_process, current_task.kernel(), {
             self.device.mmap(
                 current_task,
@@ -281,7 +281,7 @@ impl FileOps for BinderConnection {
                 length,
                 prot_flags,
                 mapping_options,
-                filename,
+                mapping_name,
             )
         })
     }
@@ -1893,7 +1893,7 @@ impl BinderDriver {
         length: usize,
         prot_flags: ProtectionFlags,
         mapping_options: MappingOptions,
-        filename: NamespaceNode,
+        mapping_name: MappingName,
     ) -> Result<UserAddress, Errno> {
         // Do not support mapping shared memory more than once.
         let mut shared_memory = binder_proc.shared_memory.lock();
@@ -1931,7 +1931,7 @@ impl BinderDriver {
             prot_flags,
             prot_flags.to_access(),
             mapping_options,
-            MappingName::File(filename.into_mapping(None)?),
+            mapping_name,
         )?;
 
         // Map the VMO into the driver's address space.

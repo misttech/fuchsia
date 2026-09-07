@@ -678,7 +678,6 @@ impl FileOps for KgslFile {
         length: usize,
         prot_flags: starnix_core::mm::ProtectionFlags,
         mapping_options: starnix_core::mm::MappingOptions,
-        _filename: starnix_core::vfs::NamespaceNode,
     ) -> Result<UserAddress, Errno> {
         kgsl_debug!("mmap {:?} {:?} {:?} {:?}", addr, memory_offset, length, prot_flags);
         let id = (memory_offset / *PAGE_SIZE) as u32;

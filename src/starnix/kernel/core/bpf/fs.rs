@@ -168,7 +168,6 @@ impl FileOps for BpfHandle {
         length: usize,
         prot_flags: ProtectionFlags,
         options: MappingOptions,
-        filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
         let BpfHandle::Map(bpf_map) = &self else {
             return error!(EINVAL);
@@ -178,7 +177,7 @@ impl FileOps for BpfHandle {
             &bpf_map.security_state,
             PermissionFlags::READ | PermissionFlags::WRITE,
         )?;
-        default_mmap(file, current_task, addr, memory_offset, length, prot_flags, options, filename)
+        default_mmap(file, current_task, addr, memory_offset, length, prot_flags, options)
     }
 
     fn wait_async(

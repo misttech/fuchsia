@@ -142,7 +142,6 @@ impl FileOps for RemoteBinderFileOps {
         _length: usize,
         _prot_flags: ProtectionFlags,
         _mapping_options: MappingOptions,
-        _filename: NamespaceNode,
     ) -> Result<UserAddress, Errno> {
         error!(EOPNOTSUPP)
     }

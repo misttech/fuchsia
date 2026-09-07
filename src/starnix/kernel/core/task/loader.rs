@@ -492,7 +492,7 @@ fn resolve_elf(
 ) -> Result<ResolvedElf, Errno> {
     let vmo = memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
     let headers = parse_elf_headers(vmo)?;
-    let file = file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
+    let file = file.to_mapping(Some(FileWriteGuardMode::ExecMapping))?;
     let arch_width = get_arch_width(&headers);
     let creds = Credentials::clone(&current_task.current_creds());
     let secure_exec = false;
@@ -537,8 +537,7 @@ pub fn resolve_elf_interpreter(
                 let interp_memory = interp_file
                     .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
                     .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
-                let interp_file =
-                    interp_file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
+                let interp_file = interp_file.to_mapping(Some(FileWriteGuardMode::ExecMapping))?;
                 Ok(ResolvedInterpElf { file: interp_file, memory: interp_memory })
             },
         )?;
