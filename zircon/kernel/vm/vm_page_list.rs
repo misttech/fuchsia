@@ -501,9 +501,7 @@ impl VmPageOrMarker {
     pub fn page(&self) -> VmPagePtr {
         debug_assert!(self.is_page());
         // SAFETY: `self.raw` is guaranteed to be a valid page index when `self` is a page.
-        unsafe {
-            pmm_node().index_to_page(self.raw).expect("VmPageOrMarker contains invalid page index")
-        }
+        unsafe { pmm_node().index_to_page(self.raw) }
     }
 
     /// Returns the physical address of the page. Is only valid to call if `is_page` is true.
@@ -537,11 +535,7 @@ impl VmPageOrMarker {
         debug_assert!(self.is_page());
         let raw = self.release();
         // SAFETY: `raw` is guaranteed to be a valid page index when `self` was a page.
-        unsafe {
-            pmm_node()
-                .index_to_page(raw)
-                .expect("VmPageOrMarker release contains invalid page index")
-        }
+        unsafe { pmm_node().index_to_page(raw) }
     }
 
     /// If this is a reference, moves the underlying reference out and returns it. After this,

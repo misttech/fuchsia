@@ -476,6 +476,11 @@ impl fbl::DoublyLinkedListContainable<VmPage> for VmPage {
 pub struct VmPagePtr(NonNull<VmPage>);
 
 impl VmPagePtr {
+    /// Construct a `VmPagePtr` from an existing `NonNull<VmPage>`
+    pub fn new(ptr: NonNull<VmPage>) -> Self {
+        VmPagePtr(ptr)
+    }
+
     /// Creates a `VmPagePtr` from a raw pointer.
     ///
     /// # Safety

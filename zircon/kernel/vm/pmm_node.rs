@@ -533,16 +533,14 @@ impl PmmNode {
     /// # Safety
     ///
     /// The `index` must be a valid PMM page index.
-    pub unsafe fn index_to_page(&self, index: u32) -> Option<VmPagePtr> {
+    pub unsafe fn index_to_page(&self, index: u32) -> VmPagePtr {
         let index = index >> Self::INDEX_ZERO_BITS;
         let arena_ix = (index & Self::ARENA_MASK) as usize;
         let page_ix = (index >> Self::ARENA_BITS) as usize;
         // SAFETY: The arena is only modified during initialization so its safe to synthesize a
         // a lock token.
         unsafe {
-            VmPagePtr::from_raw(
-                self.active_arenas(&LockToken::new())[arena_ix].get_page(page_ix - 1),
-            )
+            VmPagePtr::new(self.active_arenas(&LockToken::new())[arena_ix].get_page(page_ix - 1))
         }
     }
 

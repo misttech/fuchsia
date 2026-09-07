@@ -268,9 +268,9 @@ impl PmmArena {
     /// # Safety
     ///
     /// `index` must be within bounds (`index < size() / PAGE_SIZE`).
-    pub unsafe fn get_page(&self, index: usize) -> *mut VmPage {
+    pub unsafe fn get_page(&self, index: usize) -> NonNull<VmPage> {
         // SAFETY: The caller ensures index is within bounds of page_array.
-        unsafe { self.page_array.add(index) }
+        unsafe { NonNull::new_unchecked(self.page_array.add(index)) }
     }
 
     /// Returns the index of `page` in the arena's page array.
@@ -335,7 +335,7 @@ impl PmmArena {
                         // Candidate region is free.  We're done.
                         self.search_hint = (candidate + count as u64) % arena_count;
                         // SAFETY: `candidate` is within `arena_count`.
-                        result = NonNull::new(unsafe { self.get_page(candidate as usize) });
+                        result = Some(unsafe { self.get_page(candidate as usize) });
                         debug_assert!(
                             candidate < arena_count,
                             "candidate={candidate} arena_count={arena_count}"
@@ -364,7 +364,7 @@ impl PmmArena {
         let index = (pa.0 - self.base().0) / kernel_page::SIZE;
         debug_assert!(index < self.size() / kernel_page::SIZE);
         // SAFETY: index is within bounds of page_array.
-        NonNull::new(unsafe { self.get_page(index) })
+        Some(unsafe { self.get_page(index) })
     }
 
     /// Returns whether `page` belongs to this arena.
