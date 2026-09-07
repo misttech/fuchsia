@@ -381,9 +381,6 @@ kernel_bindgen_crate("pmm-node-bindings") {
 
   notice_year = 2026
   function_allowlist = [
-    "cpp_pmm_node_page_to_index",
-    "cpp_pmm_node_index_to_page",
-    "cpp_pmm_node_index_to_paddr",
     "cpp_pmm_node_add_free_pages",
     "cpp_pmm_node_destroy",
   ]

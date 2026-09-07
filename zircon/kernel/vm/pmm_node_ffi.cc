@@ -18,18 +18,6 @@ extern "C" {
 
 FFI_ALWAYS_INLINE void cpp_pmm_node_destroy(PmmNode* node) { node->~PmmNode(); }
 
-FFI_ALWAYS_INLINE uint32_t cpp_pmm_node_page_to_index(PmmNode* node, const vm_page_t* page) {
-  return node->PageToIndex(page);
-}
-
-FFI_ALWAYS_INLINE vm_page_t* cpp_pmm_node_index_to_page(PmmNode* node, uint32_t index) {
-  return node->IndexToPage(index);
-}
-
-FFI_ALWAYS_INLINE zx_paddr_t cpp_pmm_node_index_to_paddr(PmmNode* node, uint32_t index) {
-  return node->IndexToPaddr(index);
-}
-
 FFI_ALWAYS_INLINE void cpp_pmm_node_add_free_pages(PmmNode* node, VmPageDoublyLinkedList* list) {
   node->AddFreePages(list);
 }

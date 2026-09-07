@@ -13,7 +13,7 @@ use crate::vm::page_queues::PageQueues;
 use crate::vm::pmm_arena::PmmArena;
 use crate::vm::pmm_checker::PmmChecker;
 use core::sync::atomic::{AtomicBool, AtomicU64};
-use ksync::{KMutex, RawMutex, guarded, kcell_init};
+use ksync::{KMutex, LockToken, RawMutex, guarded, kcell_init};
 use pin_init::{PinInit, pin_data, pin_init};
 use pmm_node_bindings as bindings;
 
@@ -516,33 +516,80 @@ impl PmmNode {
         (self as *const Self).cast_mut().cast()
     }
 
-    /// Converts a page index back to a `VmPagePtr`.
+    /// Return the slice of arenas from the built-in array that are known to be active. Used in
+    /// loops that iterate across all arenas.
+    fn active_arenas<'a>(&'a self, token: &'a LockToken<'_, PmmNodeLockClass>) -> &'a [PmmArena] {
+        // SAFETY: The lock token proves that either the lock protecting these fields is held, or
+        // the caller has determined it is safe.
+        unsafe { &self.arenas.get(token)[..*self.used_arena_count.get(token)] }
+    }
+
+    /// Converts the number returned by page_to_index() back to a VmPagePtr pointer.
+    /// It does not check for invalid indexes such as 0.
+    ///
+    /// Note: This method is faster than page_to_index, about the cost of some basic math
+    ///       and bit manipulation.
     ///
     /// # Safety
     ///
     /// The `index` must be a valid PMM page index.
     pub unsafe fn index_to_page(&self, index: u32) -> Option<VmPagePtr> {
-        // SAFETY: The caller guarantees `index` is a valid page index.
-        let ptr = unsafe { bindings::cpp_pmm_node_index_to_page(self.as_raw(), index) };
-        // SAFETY: `ptr` is guaranteed to be a valid pointer to a kernel page if it is not null
-        // because `index` was valid.
-        unsafe { VmPagePtr::from_ffi(ptr) }
+        let index = index >> Self::INDEX_ZERO_BITS;
+        let arena_ix = (index & Self::ARENA_MASK) as usize;
+        let page_ix = (index >> Self::ARENA_BITS) as usize;
+        // SAFETY: The arena is only modified during initialization so its safe to synthesize a
+        // a lock token.
+        unsafe {
+            VmPagePtr::from_raw(
+                self.active_arenas(&LockToken::new())[arena_ix].get_page(page_ix - 1),
+            )
+        }
     }
 
-    /// Converts a `VmPagePtr` to a page index.
+    /// Returns compressed representation a page_t*, with the following characteristics:
+    /// - zeros in the last INDEZ_ZERO_BITS bits, used by clients to store metadata.
+    /// - The value 0 is never returned, it can be used as "no page" marker.
+    ///
+    /// Note: This method needs to traverse (up to) all the memory pools so it's cost is
+    ///       low but not trivial.
+    ///
     pub fn page_to_index(&self, page: VmPagePtr) -> u32 {
-        // SAFETY: `page.as_raw()` is guaranteed to be a valid pointer to a kernel page.
-        unsafe { bindings::cpp_pmm_node_page_to_index(self.as_raw(), page.as_ffi()) }
+        let page_raw = page.as_raw();
+        // SAFETY: The arena is only modified during initialization so its safe to synthesize a
+        // lock token.
+        let token = unsafe { LockToken::new() };
+        for (arena_ix, a) in self.active_arenas(&token).iter().enumerate() {
+            // SAFETY: `page` is a valid VmPagePtr so `page_raw` is a valid pointer.
+            if unsafe { a.page_belongs_to_arena(page_raw) } {
+                // SAFETY: `page_raw` belongs to this arena's `page_array`.
+                let page_ix = (unsafe { a.get_index(page_raw) } + 1) as u32;
+                return ((page_ix << Self::ARENA_BITS) | (arena_ix as u32))
+                    << Self::INDEX_ZERO_BITS;
+            }
+        }
+        0
     }
 
-    /// Converts a page index to a physical address.
+    /// Converts the number returned by page_to_index() back to a PAddr.
+    /// It does not check for invalid indexes such as 0 or kIndexReserved0.
+    ///
+    /// Note: This method is faster than page_to_index().paddr() as the VmPagePtr itself does not
+    /// have to be de-referenced, saving a memory load.
     ///
     /// # Safety
     ///
     /// The `index` must be a valid PMM page index.
     pub unsafe fn index_to_paddr(&self, index: u32) -> PAddr {
-        // SAFETY: The caller guarantees `index` is a valid page index.
-        unsafe { PAddr(bindings::cpp_pmm_node_index_to_paddr(self.as_raw(), index)) }
+        let index = index >> Self::INDEX_ZERO_BITS;
+        let arena_ix = (index & Self::ARENA_MASK) as usize;
+        let page_ix = (index >> Self::ARENA_BITS) as usize;
+        // SAFETY: The arena is only modified during initialization so its safe to synthesize a
+        // lock token.
+        unsafe {
+            let token = LockToken::new();
+            let base = self.active_arenas(&token)[arena_ix].base().0;
+            PAddr(base + (page_ix - 1) * page::SIZE)
+        }
     }
 
     /// Add new pages to the free queue. Used when bootstrapping a PmmArena.
