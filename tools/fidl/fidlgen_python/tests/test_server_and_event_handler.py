@@ -449,6 +449,11 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         server_task = asyncio.create_task(t_server.serve())
         t_client.strict_one_way_union(value=1)
         await asyncio.wait_for(strict_one_way_union_called.wait(), timeout=5.0)
+        with self.assertRaises(FcTransportStatus) as cm:
+            client.read()
+        self.assertEqual(
+            cm.exception.code(), FcTransportStatus.FC_ERR_SHOULD_WAIT
+        )
         server_task.cancel()
 
     async def test_strict_two_way_union(self) -> None:
@@ -484,6 +489,11 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         t_client.flexible_one_way_union(value=1)
         await asyncio.wait_for(
             flexible_one_way_union_called.wait(), timeout=5.0
+        )
+        with self.assertRaises(FcTransportStatus) as cm:
+            client.read()
+        self.assertEqual(
+            cm.exception.code(), FcTransportStatus.FC_ERR_SHOULD_WAIT
         )
         server_task.cancel()
 

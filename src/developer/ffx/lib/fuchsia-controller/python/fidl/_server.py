@@ -126,6 +126,9 @@ class ServerBase(
                 f"{self} method {info.name} returned "
                 + "None when a response was expected"
             )
+        if not info.requires_response:
+            return True
+
         if info.has_result:
             _LOGGER.debug(f"{self} received method response {res}")
             method_reg = get_registered_method(ordinal)
