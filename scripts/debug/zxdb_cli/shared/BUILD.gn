@@ -22,6 +22,7 @@ if (is_host) {
     sources = [
       "__init__.py",
       "protocol/__init__.py",
+      "protocol/async_backtrace.py",
       "protocol/attach.py",
       "protocol/base.py",
       "protocol/break_request.py",
@@ -43,6 +44,7 @@ if (is_host) {
     ]
     library_deps = [
       "//src/lib/debug/dap/python:lib",
+      "//src/lib/debug/dap/python/zxdb:zxdb_dap",
       "//third_party/pylibs/pydantic",
     ]
   }

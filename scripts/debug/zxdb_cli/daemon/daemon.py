@@ -16,6 +16,7 @@ import package_server
 from async_utils.command import AsyncCommand
 from daemon.constants import UDS_PATH
 from daemon.handlers import (
+    async_backtrace,
     attach,
     break_req,
     continue_req,
@@ -210,6 +211,7 @@ class Daemon:
         # Statically register handlers.
         handlers = [
             # keep-sorted start
+            async_backtrace,
             attach,
             break_req,
             continue_req,

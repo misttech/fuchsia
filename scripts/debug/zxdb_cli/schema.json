@@ -2,9 +2,58 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 15,
+    "version": 16,
     "requests": {
         "$defs": {
+            "AsyncBacktraceRequest": {
+                "description": "Request asynchronous backtrace (cached async task tree) for a process.",
+                "properties": {
+                    "command": {
+                        "const": "async-backtrace",
+                        "default": "async-backtrace",
+                        "title": "Command",
+                        "type": "string"
+                    },
+                    "last_seen_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Last Seen Seq"
+                    },
+                    "ack_seq": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Ack Seq"
+                    },
+                    "pid": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Pid"
+                    }
+                },
+                "title": "AsyncBacktraceRequest",
+                "type": "object"
+            },
             "AttachRequest": {
                 "description": "Request to attach to a process.",
                 "properties": {
@@ -920,6 +969,7 @@
         },
         "discriminator": {
             "mapping": {
+                "async-backtrace": "#/$defs/AsyncBacktraceRequest",
                 "attach": "#/$defs/AttachRequest",
                 "break": "#/$defs/BreakRequest",
                 "continue": "#/$defs/ContinueRequest",
@@ -941,6 +991,9 @@
             "propertyName": "command"
         },
         "oneOf": [
+            {
+                "$ref": "#/$defs/AsyncBacktraceRequest"
+            },
             {
                 "$ref": "#/$defs/AttachRequest"
             },
@@ -996,6 +1049,89 @@
     },
     "responses": {
         "$defs": {
+            "AsyncBacktraceResponse": {
+                "description": "Response containing cached async tasks for a process.",
+                "properties": {
+                    "process_id": {
+                        "title": "Process Id",
+                        "type": "integer"
+                    },
+                    "tasks": {
+                        "items": {
+                            "$ref": "#/$defs/AsyncTaskNode"
+                        },
+                        "title": "Tasks",
+                        "type": "array"
+                    }
+                },
+                "required": [
+                    "process_id"
+                ],
+                "title": "AsyncBacktraceResponse",
+                "type": "object"
+            },
+            "AsyncTaskNode": {
+                "description": "Represents a node in the async task tree.",
+                "properties": {
+                    "id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Id"
+                    },
+                    "name": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Name"
+                    },
+                    "file": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "File"
+                    },
+                    "line": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "default": null,
+                        "title": "Line"
+                    },
+                    "children": {
+                        "items": {
+                            "$ref": "#/$defs/AsyncTaskNode"
+                        },
+                        "title": "Children",
+                        "type": "array"
+                    }
+                },
+                "title": "AsyncTaskNode",
+                "type": "object"
+            },
             "EvaluateResponse": {
                 "additionalProperties": false,
                 "description": "Unified response containing the evaluation result and optional children.",
@@ -1285,6 +1421,9 @@
                     },
                     {
                         "$ref": "#/$defs/ProcessStackTraceResponse"
+                    },
+                    {
+                        "$ref": "#/$defs/AsyncBacktraceResponse"
                     },
                     {
                         "additionalProperties": true,

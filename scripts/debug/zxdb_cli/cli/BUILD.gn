@@ -18,6 +18,7 @@ if (is_host) {
       "__init__.py",
       "cli.py",
       "commands/__init__.py",
+      "commands/async_backtrace.py",
       "commands/attach.py",
       "commands/base.py",
       "commands/break_cmd.py",

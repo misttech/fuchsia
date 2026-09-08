@@ -23,6 +23,7 @@ if (is_host) {
       "constants.py",
       "daemon.py",
       "handlers/__init__.py",
+      "handlers/async_backtrace.py",
       "handlers/attach.py",
       "handlers/break_req.py",
       "handlers/continue_req.py",

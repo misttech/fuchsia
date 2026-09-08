@@ -11,6 +11,10 @@ from shared.protocol import (
     deserialize_response,
     make_request,
 )
+from shared.protocol.async_backtrace import (
+    AsyncBacktraceRequest,
+    AsyncBacktraceResponse,
+)
 from shared.protocol.attach import AttachRequest
 from shared.protocol.break_request import BreakRequest
 from shared.protocol.continue_request import ContinueRequest
@@ -32,6 +36,44 @@ from shared.protocol.stop import StopRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
+from zxdb_dap import AsyncTaskNode
+
+
+class TestAsyncBacktraceRequestSchema(unittest.TestCase):
+    def test_valid_request_explicit_pid(self) -> None:
+        req = AsyncBacktraceRequest(pid=1234)
+        self.assertEqual(req.command, "async-backtrace")
+        self.assertEqual(req.pid, 1234)
+
+    def test_valid_request_no_pid(self) -> None:
+        req = AsyncBacktraceRequest()
+        self.assertEqual(req.command, "async-backtrace")
+        self.assertIsNone(req.pid)
+
+
+class TestAsyncBacktraceResponseSchema(unittest.TestCase):
+    def test_response_serialization_with_tasks(self) -> None:
+        child = AsyncTaskNode(
+            id="task-2", name="child_task", file="bar.rs", line=20
+        )
+        parent = AsyncTaskNode(
+            id="task-1",
+            name="parent_task",
+            file="foo.rs",
+            line=10,
+            children=[child],
+        )
+        resp = AsyncBacktraceResponse(
+            process_id=1234,
+            tasks=[parent],
+        )
+        dumped = resp.model_dump(by_alias=True)
+        self.assertEqual(dumped["process_id"], 1234)
+        self.assertEqual(len(dumped["tasks"]), 1)
+        self.assertEqual(dumped["tasks"][0]["id"], "task-1")
+        self.assertEqual(dumped["tasks"][0]["name"], "parent_task")
+        self.assertEqual(len(dumped["tasks"][0]["children"]), 1)
+        self.assertEqual(dumped["tasks"][0]["children"][0]["id"], "task-2")
 
 
 class TestStackTraceRequestSchema(unittest.TestCase):
@@ -191,6 +233,12 @@ class TestPolymorphicParsing(unittest.TestCase):
         with self.assertRaises(ValidationError):
             make_request(data)
 
+    def test_parse_async_backtrace(self) -> None:
+        data = {"command": "async-backtrace", "pid": 1234}
+        req = make_request(data)
+        self.assertTrue(isinstance(req, AsyncBacktraceRequest))
+        self.assertEqual(req.pid, 1234)
+
     def test_parse_unknown_command(self) -> None:
         data = {"command": "unknown-cmd"}
         with self.assertRaises(ValidationError):
@@ -199,6 +247,9 @@ class TestPolymorphicParsing(unittest.TestCase):
 
 class TestResponseTypeAndDeserialization(unittest.TestCase):
     def test_response_types_defined(self) -> None:
+        self.assertEqual(
+            AsyncBacktraceRequest.response_type, AsyncBacktraceResponse
+        )
         self.assertEqual(GetStateRequest.response_type, GetStateResponse)
         self.assertEqual(EvaluateRequest.response_type, EvaluateResponse)
         self.assertEqual(
@@ -219,6 +270,19 @@ class TestResponseTypeAndDeserialization(unittest.TestCase):
         self.assertEqual(ThreadsRequest.response_type, dict[str, Any])
         self.assertEqual(VariablesRequest.response_type, dict[str, Any])
         self.assertIsNone(WaitForEventRequest.response_type)
+
+    def test_deserialize_async_backtrace_response(self) -> None:
+        req = AsyncBacktraceRequest(pid=1234)
+        json_line = (
+            '{"success": true, "message": null, "events": null, "body": '
+            '{"process_id": 1234, "tasks": []}}'
+        )
+        resp = deserialize_response(json_line, req)
+        self.assertTrue(resp.success)
+        self.assertIsInstance(resp.body, AsyncBacktraceResponse)
+        assert resp.body is not None
+        self.assertEqual(resp.body.process_id, 1234)
+        self.assertEqual(resp.body.tasks, [])
 
     def test_deserialize_typed_response(self) -> None:
         req = GetStateRequest()

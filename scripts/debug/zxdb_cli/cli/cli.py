@@ -9,6 +9,7 @@ import sys
 from typing import Any, Final
 
 from cli.commands import (
+    async_backtrace,
     attach,
     break_cmd,
     continue_cmd,
@@ -62,6 +63,7 @@ async def main(args: list[str]) -> int:
     commands: dict[str, type[BaseCommand]] = {}
     command_classes = [
         # keep-sorted start
+        async_backtrace.Command,
         attach.Command,
         break_cmd.Command,
         continue_cmd.Command,

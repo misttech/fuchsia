@@ -19,6 +19,10 @@ from shared.protocol import (
     GetStateResponse,
     Response,
 )
+from shared.protocol.async_backtrace import (
+    AsyncBacktraceRequest,
+    AsyncBacktraceResponse,
+)
 from shared.protocol.attach import AttachRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
@@ -1670,6 +1674,138 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.body.stacks[1].thread_id, 102)
         self.assertEqual(len(resp.body.stacks[1].stack_frames), 0)
         self.assertEqual(resp.body.stacks[1].total_frames, 0)
+
+    def test_async_backtrace_registration(self) -> None:
+        daemon = Daemon(port=15678)
+        self.assertIn("async-backtrace", daemon.registry.handlers)
+
+    async def test_handle_async_backtrace_not_connected(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = None
+        resp = await daemon.registry.handle(
+            "async-backtrace", AsyncBacktraceRequest()
+        )
+        self.assertFalse(resp.success)
+        self.assertIn("Not connected to zxdb DAP server", resp.message or "")
+
+    async def test_handle_async_backtrace_no_processes(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        resp = await daemon.registry.handle(
+            "async-backtrace", AsyncBacktraceRequest()
+        )
+        self.assertFalse(resp.success)
+        self.assertIn("No active processes found", resp.message or "")
+
+    async def test_handle_async_backtrace_ambiguous_processes(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_process(1001, name="proc1")
+        daemon.get_or_create_process(1002, name="proc2")
+        resp = await daemon.registry.handle(
+            "async-backtrace", AsyncBacktraceRequest()
+        )
+        self.assertFalse(resp.success)
+        self.assertIn(
+            "Multiple processes active; please specify a PID with --pid / -p",
+            resp.message or "",
+        )
+
+    async def test_handle_async_backtrace_pid_not_found(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_process(1001, name="proc1")
+        resp = await daemon.registry.handle(
+            "async-backtrace", AsyncBacktraceRequest(pid=9999)
+        )
+        self.assertFalse(resp.success)
+        self.assertIn("Process 9999 not found", resp.message or "")
+
+    async def test_handle_async_backtrace_no_cache(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        daemon.get_or_create_process(1001, name="proc1")
+        resp = await daemon.registry.handle(
+            "async-backtrace", AsyncBacktraceRequest(pid=1001)
+        )
+        self.assertFalse(resp.success)
+        self.assertIn(
+            "No async backtrace cached for process 1001", resp.message or ""
+        )
+
+    async def test_handle_async_backtrace_success_explicit_pid(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        proc = daemon.get_or_create_process(1001, name="proc1")
+        proc.async_backtrace = [
+            AsyncTaskNode(
+                id="t1",
+                name="root_task",
+                file="main.rs",
+                line=42,
+                children=[],
+            )
+        ]
+        resp = await daemon.registry.handle(
+            "async-backtrace", AsyncBacktraceRequest(pid=1001)
+        )
+        self.assertTrue(resp.success)
+        self.assertIsNotNone(resp.body)
+        assert isinstance(resp.body, AsyncBacktraceResponse)
+        self.assertEqual(resp.body.process_id, 1001)
+        self.assertEqual(len(resp.body.tasks), 1)
+        self.assertEqual(resp.body.tasks[0].id, "t1")
+        self.assertEqual(resp.body.tasks[0].name, "root_task")
+
+    async def test_handle_async_backtrace_success_default_single_process(
+        self,
+    ) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        proc = daemon.get_or_create_process(1001, name="proc1")
+        proc.async_backtrace = []
+        resp = await daemon.registry.handle(
+            "async-backtrace", AsyncBacktraceRequest()
+        )
+        self.assertTrue(resp.success)
+        assert isinstance(resp.body, AsyncBacktraceResponse)
+        self.assertEqual(resp.body.process_id, 1001)
+        self.assertEqual(resp.body.tasks, [])
+
+    async def test_handle_async_backtrace_nested_nodes(self) -> None:
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+        proc = daemon.get_or_create_process(1001, name="proc1")
+        proc.async_backtrace = [
+            AsyncTaskNode(
+                id="t1",
+                name="parent_task",
+                file="foo.rs",
+                line=10,
+                children=[
+                    AsyncTaskNode(
+                        id="t2",
+                        name="child_task",
+                        file="bar.rs",
+                        line=20,
+                        children=[],
+                    )
+                ],
+            )
+        ]
+        resp = await daemon.registry.handle(
+            "async-backtrace", AsyncBacktraceRequest(pid=1001)
+        )
+        self.assertTrue(resp.success)
+        assert isinstance(resp.body, AsyncBacktraceResponse)
+        self.assertEqual(len(resp.body.tasks), 1)
+        parent = resp.body.tasks[0]
+        self.assertIsInstance(parent, AsyncTaskNode)
+        self.assertEqual(parent.name, "parent_task")
+        self.assertEqual(len(parent.children), 1)
+        child = parent.children[0]
+        self.assertIsInstance(child, AsyncTaskNode)
+        self.assertEqual(child.name, "child_task")
 
 
 if __name__ == "__main__":

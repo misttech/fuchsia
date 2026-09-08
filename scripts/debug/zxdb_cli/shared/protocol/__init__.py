@@ -5,7 +5,6 @@
 from typing import Annotated, Any
 
 from pydantic import Field, TypeAdapter, create_model
-from shared.protocol.attach import AttachRequest
 from shared.protocol.base import (
     PROTOCOL_VERSION,
     BaseRequest,
@@ -18,6 +17,13 @@ from shared.protocol.base import (
     make_request,
     serialize,
 )
+
+# isort: split
+from shared.protocol.async_backtrace import (
+    AsyncBacktraceRequest,
+    AsyncBacktraceResponse,
+)
+from shared.protocol.attach import AttachRequest
 from shared.protocol.break_request import BreakRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.detach import DetachRequest
@@ -45,7 +51,8 @@ from shared.protocol.variables import VariablesRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
 
 RequestType = Annotated[
-    AttachRequest
+    AsyncBacktraceRequest
+    | AttachRequest
     | BreakRequest
     | ContinueRequest
     | DetachRequest
@@ -70,6 +77,7 @@ ResponseType = (
     | EvaluateResponse
     | ThreadStackTraceResponse
     | ProcessStackTraceResponse
+    | AsyncBacktraceResponse
     | dict[str, Any]
     | None
 )
@@ -83,6 +91,7 @@ __all__ = [
     "ProcessStackTraceResponse",
     "ThreadStackTraceResponse",
     "StackFrame",
+    "AsyncBacktraceResponse",
     "PROTOCOL_VERSION",
     "serialize",
     "make_request",
@@ -91,6 +100,7 @@ __all__ = [
     "get_schema",
     "RequestType",
     "ResponseType",
+    "AsyncBacktraceRequest",
     "AttachRequest",
     "BreakRequest",
     "ContinueRequest",

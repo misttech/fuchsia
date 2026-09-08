@@ -17,6 +17,7 @@ from daemon_manager.manager import (
     DaemonHandshakeError,
     DaemonStartupTimeoutError,
 )
+from shared.protocol.async_backtrace import AsyncBacktraceRequest
 from shared.protocol.attach import AttachRequest
 from shared.protocol.break_request import BreakRequest
 from shared.protocol.continue_request import ContinueRequest
@@ -808,6 +809,60 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             mock_send.assert_called_once_with(
                 EvaluateRequest(thread_id=1, expression="x")
             )
+
+    @patch("cli.cli.send_command")
+    async def test_async_backtrace_command_default(
+        self, mock_send: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["async-backtrace"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(AsyncBacktraceRequest(pid=None))
+
+    @patch("cli.cli.send_command")
+    async def test_async_backtrace_command_with_pid(
+        self, mock_send: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["async-backtrace", "-p", "1234"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(AsyncBacktraceRequest(pid=1234))
+
+        mock_send.reset_mock()
+        exit_code = await main(["async-backtrace", "--pid", "5678"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(AsyncBacktraceRequest(pid=5678))
+
+    @patch("cli.cli.send_command")
+    async def test_async_backtrace_command_aliases(
+        self, mock_send: Mock
+    ) -> None:
+        mock_send.return_value = 0
+        for alias in [
+            "abt",
+            "async_backtrace",
+            "asyncBacktrace",
+            "async-tasks",
+            "async_tasks",
+            "asyncTasks",
+            "tasks",
+        ]:
+            mock_send.reset_mock()
+            exit_code = await main([alias, "-p", "1234"])
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(AsyncBacktraceRequest(pid=1234))
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_async_backtrace(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            [
+                "--json",
+                '{"command": "async-backtrace", "pid": 1234}',
+            ]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(AsyncBacktraceRequest(pid=1234))
 
 
 class TestSendCommand(unittest.IsolatedAsyncioTestCase):
