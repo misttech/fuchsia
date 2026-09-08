@@ -1495,7 +1495,7 @@ TEST_F(UsbCdcTest, ControlAndNotifications) {
 // Validates that I/O completion errors on the bulk OUT endpoint are recorded in Inspect failed byte
 // counters and the request is re-queued. Requires Inspect failure tracking and error re-queue logic
 // in CdcRxComplete.
-TEST_F(UsbCdcTest, DISABLED_RxCompletionFailure) {
+TEST_F(UsbCdcTest, RxCompletionFailure) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1539,7 +1539,7 @@ TEST_F(UsbCdcTest, DISABLED_RxCompletionFailure) {
 // Validates that physical hardware disconnect errors (ZX_ERR_IO_NOT_PRESENT) return RX requests to
 // the free pool without re-queuing. Requires CdcRxComplete to detect hardware disconnect status and
 // halt re-queuing.
-TEST_F(UsbCdcTest, DISABLED_RxCompletionHardwareDisconnected) {
+TEST_F(UsbCdcTest, RxCompletionHardwareDisconnected) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1560,6 +1560,9 @@ TEST_F(UsbCdcTest, DISABLED_RxCompletionHardwareDisconnected) {
       },
       zx::sec(5)));
 
+  // Flush driver dispatcher to ensure CdcRxComplete has processed the completion.
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+
   // Verify no packets were delivered to the network interface.
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     auto rx = env.fake_ifc_.PopCompleteRx();
@@ -1569,7 +1572,7 @@ TEST_F(UsbCdcTest, DISABLED_RxCompletionHardwareDisconnected) {
 
 // Validates that cancelled RX requests (ZX_ERR_CANCELED) during teardown return to the pool without
 // delivering packets. Requires CdcRxComplete to handle ZX_ERR_CANCELED cleanly.
-TEST_F(UsbCdcTest, DISABLED_RxCompletionCanceled) {
+TEST_F(UsbCdcTest, RxCompletionCanceled) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1590,6 +1593,9 @@ TEST_F(UsbCdcTest, DISABLED_RxCompletionCanceled) {
       },
       zx::sec(5)));
 
+  // Flush driver dispatcher to ensure CdcRxComplete has processed the completion.
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+
   // Verify no packets were delivered to the network interface.
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     auto rx = env.fake_ifc_.PopCompleteRx();
@@ -1600,7 +1606,7 @@ TEST_F(UsbCdcTest, DISABLED_RxCompletionCanceled) {
 // Validates that RX completions arriving while the driver is transitioning to offline are safely
 // discarded and returned to the pool. Requires CdcRxComplete to verify online state before
 // forwarding packets.
-TEST_F(UsbCdcTest, DISABLED_RxDiscardedWhenOffline) {
+TEST_F(UsbCdcTest, RxDiscardedWhenOffline) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1629,6 +1635,10 @@ TEST_F(UsbCdcTest, DISABLED_RxDiscardedWhenOffline) {
   auto set_interface_complete = std::make_shared<libsync::Completion>();
   std::shared_ptr<fidl::Client<fuchsia_hardware_usb_function::UsbFunctionInterface>>
       async_function_client;
+  auto cleanup_client = fit::defer([&]() {
+    driver_test_.RunInEnvironmentTypeContext(
+        [&](Environment& env) { async_function_client.reset(); });
+  });
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     async_function_client =
         std::make_shared<fidl::Client<fuchsia_hardware_usb_function::UsbFunctionInterface>>(
@@ -1671,6 +1681,9 @@ TEST_F(UsbCdcTest, DISABLED_RxDiscardedWhenOffline) {
       },
       zx::sec(5)));
 
+  // Flush driver dispatcher to ensure CdcRxComplete has processed the completion.
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) {});
+
   // Verify that the packet was NOT delivered to the network interface.
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     auto rx = env.fake_ifc_.PopCompleteRx();
@@ -1681,13 +1694,12 @@ TEST_F(UsbCdcTest, DISABLED_RxDiscardedWhenOffline) {
   cleanup_hold.call();
 
   ASSERT_OK(set_interface_complete->Wait(zx::deadline_after(zx::sec(5))));
-  driver_test_.RunInEnvironmentTypeContext(
-      [&](Environment& env) { async_function_client.reset(); });
+  cleanup_client.call();
 }
 
 // Validates that setting alternate setting 0 disables the data plane and drains all bulk endpoint
 // requests. Requires asynchronous SetInterface alt setting transition support.
-TEST_F(UsbCdcTest, DISABLED_SetInterfaceAltSettingZero) {
+TEST_F(UsbCdcTest, SetInterfaceAltSettingZero) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1737,9 +1749,7 @@ TEST_F(UsbCdcTest, DISABLED_SetInterfaceAltSettingZero) {
       zx::sec(5)));
 }
 
-// Validates that buffered RX completions are cleanly discarded and returned to the free pool when
-// switching to alternate setting 0. Requires alt setting 0 teardown to drain rx_completion_queue_.
-TEST_F(UsbCdcTest, DISABLED_SetInterfaceAltSettingZeroWithBufferedRxCompletions) {
+TEST_F(UsbCdcTest, SetInterfaceAltSettingZeroWithBufferedRxCompletions) {
   StartNetworkDevice();
   ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
 
@@ -1769,6 +1779,10 @@ TEST_F(UsbCdcTest, DISABLED_SetInterfaceAltSettingZeroWithBufferedRxCompletions)
   auto set_interface_complete = std::make_shared<libsync::Completion>();
   std::shared_ptr<fidl::Client<fuchsia_hardware_usb_function::UsbFunctionInterface>>
       async_function_client;
+  auto cleanup_client = fit::defer([&]() {
+    driver_test_.RunInEnvironmentTypeContext(
+        [&](Environment& env) { async_function_client.reset(); });
+  });
   driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
     async_function_client =
         std::make_shared<fidl::Client<fuchsia_hardware_usb_function::UsbFunctionInterface>>(
@@ -1809,8 +1823,92 @@ TEST_F(UsbCdcTest, DISABLED_SetInterfaceAltSettingZeroWithBufferedRxCompletions)
         return out_pending == 0;
       },
       zx::sec(5)));
+  cleanup_client.call();
+}
+
+// Validates that calling SetInterface(alt_setting = 1) while requests are in-flight
+// cleanly isolates the data plane, cancels and waits for in-flight requests without
+// re-queueing completions during reconfiguration, and successfully reconfigures
+// and re-arms all RX requests.
+TEST_F(UsbCdcTest, SetInterfaceAltSettingOneReconfiguresSafelyWhilePending) {
+  StartNetworkDevice();
+  ASSERT_NO_FATAL_FAILURE(SetConfiguredAndEnable());
+
+  // 1. Initially configured and online.
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) { EXPECT_TRUE(driver.online()); });
+
+  // 2. Hold cancellations on the Bulk Out endpoint to simulate in-flight delay.
   driver_test_.RunInEnvironmentTypeContext(
-      [&](Environment& env) { async_function_client.reset(); });
+      [](Environment& env) { env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).set_hold_cancel(true); });
+  auto cleanup_hold = fit::defer([&]() {
+    driver_test_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).set_hold_cancel(false);
+      if (env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).has_delayed_cancel()) {
+        env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).ReleaseCancelAll();
+      }
+    });
+  });
+
+  // 3. Trigger SetInterface(alt_setting = 1) asynchronously.
+  ASSERT_TRUE(function_client_.is_valid());
+  auto client_end = function_client_.TakeClientEnd();
+
+  auto set_interface_complete = std::make_shared<libsync::Completion>();
+  std::shared_ptr<fidl::Client<fuchsia_hardware_usb_function::UsbFunctionInterface>>
+      async_function_client;
+  auto cleanup_client = fit::defer([&]() {
+    driver_test_.RunInEnvironmentTypeContext(
+        [&](Environment& env) { async_function_client.reset(); });
+  });
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    async_function_client =
+        std::make_shared<fidl::Client<fuchsia_hardware_usb_function::UsbFunctionInterface>>(
+            std::move(client_end), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+    (*async_function_client)
+        ->SetInterface({{
+            .interface = kDataInterface,
+            .alt_setting = 1,
+        }})
+        .Then([set_interface_complete](auto& result) {
+          EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+          set_interface_complete->Signal();
+        });
+  });
+
+  // 4. Verify that data plane is immediately isolated (online_ is false).
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool online = true;
+        driver_test_.RunInDriverContext([&](UsbCdcFunction& driver) { online = driver.online(); });
+        return !online;
+      },
+      zx::sec(5)));
+
+  // 5. Trigger an RX completion with error while reconfiguration barrier is waiting.
+  // The driver must NOT attempt to re-queue it, but return it to the free pool.
+  driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).RequestComplete(ZX_ERR_IO, 0);
+  });
+
+  // 6. Release the hold on cancellation so the barrier passes and reconfiguration completes.
+  cleanup_hold.call();
+
+  ASSERT_OK(set_interface_complete->Wait(zx::deadline_after(zx::sec(5))));
+
+  // 7. Verify driver is online again and all kRxDepth requests are queued.
+  driver_test_.RunInDriverContext([](UsbCdcFunction& driver) { EXPECT_TRUE(driver.online()); });
+
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        size_t out_pending = 0;
+        driver_test_.RunInEnvironmentTypeContext([&](Environment& env) {
+          out_pending = env.fake_usb_fidl_.fake_endpoint(kBulkOutEp).pending_request_count();
+        });
+        return out_pending == UsbCdcFunction::kRxDepth;
+      },
+      zx::sec(5)));
+
+  cleanup_client.call();
 }
 
 // Validates that expected peer closed errors (ZX_ERR_PEER_CLOSED) during endpoint disabling are

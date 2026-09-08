@@ -153,6 +153,8 @@ class UsbCdcFunction : public fdf::DriverBase2,
 
  private:
   struct SetConfiguredSharedState;
+  struct SetInterfaceSharedState;
+  void CancelSetInterface();
   zx_status_t AddNetworkDevice();
   fuchsia_hardware_network::PortStatus ReadStatus() const;
   void UpdatePortStatus();
@@ -222,6 +224,7 @@ class UsbCdcFunction : public fdf::DriverBase2,
   void DrainRxCompletionQueue();
   void CheckStopComplete();
   void CheckSetConfiguredDone();
+  void CheckSetInterfaceDone();
 
   std::atomic_bool unbound_ = false;  // set to true when device is going away.
   bool deconfigure_called_ = false;
@@ -230,6 +233,7 @@ class UsbCdcFunction : public fdf::DriverBase2,
   bool bulk_in_cancelled_ = false;
   bool bulk_out_cancelled_ = false;
   std::shared_ptr<SetConfiguredSharedState> set_configured_state_;
+  std::shared_ptr<SetInterfaceSharedState> set_interface_state_;
 
   // Device attributes
   std::array<uint8_t, ETH_MAC_SIZE> mac_addr_;

@@ -320,6 +320,7 @@ void UsbCdcFunction::CdcRxComplete(std::vector<fendpoint::Completion> completion
   }
   ProcessRxCompletions(std::move(completions));
   CheckSetConfiguredDone();
+  CheckSetInterfaceDone();
 }
 
 void UsbCdcFunction::ProcessRxCompletions(std::vector<fendpoint::Completion> completions) {
@@ -478,6 +479,7 @@ void UsbCdcFunction::CdcTxComplete(std::vector<fendpoint::Completion> completion
   }
   bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
   CheckSetConfiguredDone();
+  CheckSetInterfaceDone();
 }
 
 void UsbCdcFunction::Control(ControlRequest &request, ControlCompleter::Sync &completer) {
@@ -668,11 +670,12 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
     return;
   }
 
-  // Cancel any prior in-flight SetConfigured transition.
+  // Cancel any prior in-flight SetConfigured and SetInterface transitions.
   if (set_configured_state_) {
     set_configured_state_->Cancel();
     set_configured_state_.reset();
   }
+  CancelSetInterface();
 
   // Instantly isolate the data plane from new packets
   online_ = false;
@@ -794,6 +797,290 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
   state->CheckDone();
 }
 
+struct UsbCdcFunction::SetInterfaceSharedState
+    : public std::enable_shared_from_this<SetInterfaceSharedState> {
+  uint8_t target_alt_setting = 0;
+  bool bulk_in_cancelled = false;
+  bool bulk_out_cancelled = false;
+  bool transition_started = false;
+  std::optional<UsbCdcFunction::SetInterfaceCompleter::Async> completer;
+  UsbCdcFunction *self = nullptr;
+
+  ~SetInterfaceSharedState() { Reply(zx::error(ZX_ERR_INTERNAL)); }
+
+  void Reply(zx::result<> result) {
+    if (completer.has_value()) {
+      auto c = std::move(*completer);
+      completer.reset();
+      c.Reply(result);
+    }
+  }
+
+  void Cancel() {
+    self = nullptr;
+    Reply(zx::error(ZX_ERR_CANCELED));
+  }
+
+  bool IsActive() const {
+    return self && !self->unbound_.load() && self->configured_ && !self->set_configured_state_ &&
+           self->set_interface_state_.get() == this;
+  }
+
+  void CheckDone() {
+    // CheckDone() is serialized on the driver dispatcher loop.
+    if (!self || !completer.has_value() || transition_started) {
+      return;
+    }
+    if (!IsActive()) {
+      Cancel();
+      return;
+    }
+    self->DrainRxCompletionQueue();
+
+    bool bulk_in_full = self->bulk_in_ep_.RequestsFull();
+    bool bulk_out_full = self->bulk_out_ep_.RequestsFull();
+
+    if (!bulk_in_cancelled || !bulk_in_full) {
+      return;
+    }
+    if (!bulk_out_cancelled || !bulk_out_full) {
+      return;
+    }
+
+    transition_started = true;
+    auto self_shared = shared_from_this();
+
+    if (!self->async_function_.is_valid()) {
+      fdf::error("async_function_ is not valid in SetInterface");
+      if (self->set_interface_state_ == self_shared) {
+        self->set_interface_state_.reset();
+      }
+      Reply(zx::error(ZX_ERR_BAD_STATE));
+      return;
+    }
+
+    if (target_alt_setting == 0) {
+      struct DisableState {
+        int pending_calls = 2;
+        zx_status_t status = ZX_OK;
+      };
+      auto disable_state = std::make_shared<DisableState>();
+
+      for (const uint8_t ep_addr : {self->BulkOutAddress(), self->BulkInAddress()}) {
+        self->async_function_->DisableEndpoint({ep_addr}).Then(
+            [ep_addr, disable_state,
+             self_shared](fidl::Result<fuchsia_hardware_usb_function::UsbFunction::DisableEndpoint>
+                              &result) mutable {
+              if (result.is_error()) {
+                if (!IsExpectedFidlDisconnect(result.error_value())) {
+                  fdf::error("Failed to disable endpoint {}: {}", ep_addr,
+                             result.error_value().FormatDescription());
+                  if (disable_state->status == ZX_OK) {
+                    disable_state->status = ZX_ERR_INTERNAL;
+                  }
+                }
+              }
+              if (!self_shared->IsActive()) {
+                self_shared->Reply(zx::error(ZX_ERR_CANCELED));
+                return;
+              }
+              disable_state->pending_calls--;
+              if (disable_state->pending_calls == 0) {
+                self_shared->self->DiscardPendingTxBuffers(ZX_ERR_CANCELED);
+                self_shared->self->ReturnPendingRxSpace();
+                self_shared->self->DrainRxCompletionQueue();
+                zx_status_t reply_status = disable_state->status;
+                if (self_shared->self->set_interface_state_ == self_shared) {
+                  self_shared->self->set_interface_state_.reset();
+                }
+                self_shared->Reply(zx::make_result(reply_status));
+              }
+            });
+      }
+    } else {
+      self->DiscardPendingTxBuffers(ZX_ERR_CANCELED);
+      self->ReturnPendingRxSpace();
+      self->DrainRxCompletionQueue();
+
+      StepDisableBulkOut();
+    }
+  }
+
+  void StepDisableBulkOut() {
+    ffunction::EndpointConfiguration bulk_out_config;
+    {
+      ffunction::EndpointDescriptor desc;
+      desc.bm_attributes(self->descriptors_.bulk_out_ep.bm_attributes);
+      desc.w_max_packet_size(le16toh(self->descriptors_.bulk_out_ep.w_max_packet_size));
+      desc.b_interval(self->descriptors_.bulk_out_ep.b_interval);
+      bulk_out_config.descriptor(std::move(desc));
+    }
+
+    auto self_shared = shared_from_this();
+    self->async_function_->DisableEndpoint({self->BulkOutAddress()})
+        .Then([self_shared, bulk_out_config = std::move(bulk_out_config)](
+                  fidl::Result<fuchsia_hardware_usb_function::UsbFunction::DisableEndpoint>
+                      &result) mutable {
+          if (!self_shared->IsActive()) {
+            self_shared->Reply(zx::error(ZX_ERR_CANCELED));
+            return;
+          }
+          if (result.is_error() && !IsExpectedFidlDisconnect(result.error_value())) {
+            fdf::error("Failed to disable endpoint {}: {}", self_shared->self->BulkOutAddress(),
+                       result.error_value().FormatDescription());
+          }
+          self_shared->StepConfigureBulkOut(std::move(bulk_out_config));
+        });
+  }
+
+  void StepConfigureBulkOut(ffunction::EndpointConfiguration bulk_out_config) {
+    auto self_shared = shared_from_this();
+    self->async_function_->ConfigureEndpoint({self->BulkOutAddress(), std::move(bulk_out_config)})
+        .Then([self_shared](
+                  fidl::Result<fuchsia_hardware_usb_function::UsbFunction::ConfigureEndpoint>
+                      &result) mutable {
+          if (!self_shared->IsActive()) {
+            self_shared->Reply(zx::error(ZX_ERR_CANCELED));
+            return;
+          }
+          if (result.is_error()) {
+            if (!IsExpectedFidlDisconnect(result.error_value())) {
+              fdf::error("[bug] ConfigureEndpoint(bulk_out) failed: {}",
+                         result.error_value().FormatDescription());
+            }
+            if (self_shared->self->set_interface_state_ == self_shared) {
+              self_shared->self->set_interface_state_.reset();
+            }
+            self_shared->Reply(zx::error(ZX_ERR_INTERNAL));
+            return;
+          }
+          self_shared->StepDisableBulkIn();
+        });
+  }
+
+  void StepDisableBulkIn() {
+    auto self_shared = shared_from_this();
+    self->async_function_->DisableEndpoint({self->BulkInAddress()})
+        .Then(
+            [self_shared](fidl::Result<fuchsia_hardware_usb_function::UsbFunction::DisableEndpoint>
+                              &result) mutable {
+              if (!self_shared->IsActive()) {
+                self_shared->Reply(zx::error(ZX_ERR_CANCELED));
+                return;
+              }
+              if (result.is_error() && !IsExpectedFidlDisconnect(result.error_value())) {
+                fdf::error("Failed to disable endpoint {}: {}", self_shared->self->BulkInAddress(),
+                           result.error_value().FormatDescription());
+              }
+              self_shared->StepConfigureBulkIn();
+            });
+  }
+
+  void StepConfigureBulkIn() {
+    ffunction::EndpointConfiguration bulk_in_config;
+    {
+      ffunction::EndpointDescriptor desc;
+      desc.bm_attributes(self->descriptors_.bulk_in_ep.bm_attributes);
+      desc.w_max_packet_size(le16toh(self->descriptors_.bulk_in_ep.w_max_packet_size));
+      desc.b_interval(self->descriptors_.bulk_in_ep.b_interval);
+      bulk_in_config.descriptor(std::move(desc));
+    }
+
+    auto self_shared = shared_from_this();
+    self->async_function_->ConfigureEndpoint({self->BulkInAddress(), std::move(bulk_in_config)})
+        .Then([self_shared](
+                  fidl::Result<fuchsia_hardware_usb_function::UsbFunction::ConfigureEndpoint>
+                      &result) mutable {
+          if (!self_shared->IsActive()) {
+            self_shared->Reply(zx::error(ZX_ERR_CANCELED));
+            return;
+          }
+          if (result.is_error()) {
+            if (!IsExpectedFidlDisconnect(result.error_value())) {
+              fdf::error("[bug] ConfigureEndpoint(bulk_in) failed: {}",
+                         result.error_value().FormatDescription());
+            }
+            if (self_shared->self->set_interface_state_ == self_shared) {
+              self_shared->self->set_interface_state_.reset();
+            }
+            self_shared->Reply(zx::error(ZX_ERR_INTERNAL));
+            return;
+          }
+          self_shared->StepCompleteAltSetting1();
+        });
+  }
+
+  void StepCompleteAltSetting1() {
+    // Set online and update port status BEFORE queueing rx requests so that any
+    // completions that fire immediately are processed normally rather than dropped.
+    self->online_ = true;
+    self->online_property_.Set(true);
+    self->UpdatePortStatus();
+    self->CdcSendNotifications();
+
+    fdf::Arena arena(kArenaTag);
+    std::vector<usb::FidlRequest> popped_reqs;
+    popped_reqs.reserve(kRxDepth);
+    while (!self->bulk_out_ep_.RequestsEmpty()) {
+      auto req = self->bulk_out_ep_.GetRequest();
+      if (!req.has_value()) {
+        fdf::error("Expected available bulk out request but none found");
+        break;
+      }
+      popped_reqs.push_back(std::move(*req));
+    }
+    const size_t count = popped_reqs.size();
+    fidl::VectorView<frequest::wire::Request> reqs(arena, count);
+    for (size_t i = 0; i < count; ++i) {
+      popped_reqs[i].reset_buffers(self->bulk_out_ep_.GetMapped());
+      reqs[i] = fidl::ToWire(arena, popped_reqs[i].take_request());
+    }
+    auto self_shared = shared_from_this();
+    if (count > 0) {
+      if (!self->bulk_out_ep_.client().is_valid()) {
+        fdf::error("bulk_out_ep_ client is invalid when queueing rx requests");
+        for (size_t i = 0; i < count; ++i) {
+          self->bulk_out_ep_.PutRequest(usb::FidlRequest(fidl::ToNatural(reqs[i])));
+        }
+        if (self->set_interface_state_ == self_shared) {
+          self->set_interface_state_.reset();
+        }
+        Reply(zx::error(ZX_ERR_INTERNAL));
+        return;
+      }
+      fidl::OneWayStatus queue_status = self->bulk_out_ep_.client().wire()->QueueRequests(reqs);
+      if (!queue_status.ok()) {
+        fdf::error("Failed to queue rx requests: {}", queue_status.FormatDescription());
+        for (size_t i = 0; i < count; ++i) {
+          self->bulk_out_ep_.PutRequest(usb::FidlRequest(fidl::ToNatural(reqs[i])));
+        }
+        if (self->set_interface_state_ == self_shared) {
+          self->set_interface_state_.reset();
+        }
+        Reply(zx::error(ZX_ERR_INTERNAL));
+        return;
+      }
+    }
+    if (self->set_interface_state_ == self_shared) {
+      self->set_interface_state_.reset();
+    }
+    Reply(zx::ok());
+  }
+};
+
+void UsbCdcFunction::CancelSetInterface() {
+  if (set_interface_state_) {
+    set_interface_state_->Cancel();
+    set_interface_state_.reset();
+  }
+}
+
+void UsbCdcFunction::CheckSetInterfaceDone() {
+  if (set_interface_state_) {
+    set_interface_state_->CheckDone();
+  }
+}
+
 void UsbCdcFunction::SetInterface(SetInterfaceRequest &request,
                                   SetInterfaceCompleter::Sync &completer) {
   uint8_t interface = request.interface();
@@ -801,6 +1088,11 @@ void UsbCdcFunction::SetInterface(SetInterfaceRequest &request,
 
   if (unbound_.load()) {
     completer.Reply(zx::error(ZX_ERR_CANCELED));
+    return;
+  }
+
+  if (!configured_ || set_configured_state_) {
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
     return;
   }
 
@@ -820,66 +1112,51 @@ void UsbCdcFunction::SetInterface(SetInterfaceRequest &request,
     return;
   }
 
-  if (alt_setting) {
-    for (const auto *ep_desc : {&descriptors_.bulk_out_ep, &descriptors_.bulk_in_ep}) {
-      ffunction::EndpointConfiguration ep_config;
-      ffunction::EndpointDescriptor desc;
-      desc.bm_attributes(ep_desc->bm_attributes);
-      desc.w_max_packet_size(le16toh(ep_desc->w_max_packet_size));
-      desc.b_interval(ep_desc->b_interval);
-      ep_config.descriptor(std::move(desc));
+  // Cancel any prior in-flight SetInterface transition.
+  CancelSetInterface();
 
-      fidl::Result result =
-          function_->ConfigureEndpoint({ep_desc->b_endpoint_address, std::move(ep_config)});
-      if (result.is_error()) {
-        fdf::error("[bug] ConfigureEndpoint: {}", result.error_value().FormatDescription());
-        completer.Reply(zx::error(ZX_ERR_INTERNAL));
-        return;
-      }
-    }
-  } else {
-    for (const uint8_t ep_addr : {BulkOutAddress(), BulkInAddress()}) {
-      fidl::Result result = function_->DisableEndpoint({ep_addr});
-      if (!result.is_ok()) {
-        fdf::error("Failed to disable endpoint {}: {}", ep_addr,
-                   result.error_value().FormatDescription());
-      }
-    }
-  }
-
-  bool online = (alt_setting != 0);
-  fdf::info("online = {}", online);
-
-  if (alt_setting) {
-    fdf::Arena arena(kArenaTag);
-    std::vector<usb::FidlRequest> popped_reqs;
-    while (!bulk_out_ep_.RequestsEmpty()) {
-      popped_reqs.push_back(std::move(*bulk_out_ep_.GetRequest()));
-    }
-    const size_t count = popped_reqs.size();
-    fidl::VectorView<frequest::wire::Request> reqs(arena, count);
-    for (size_t i = 0; i < count; ++i) {
-      popped_reqs[i].reset_buffers(bulk_out_ep_.GetMapped());
-      reqs[i] = fidl::ToWire(arena, popped_reqs[i].take_request());
-    }
-
-    if (count > 0) {
-      fidl::OneWayStatus queue_status = bulk_out_ep_.client().wire()->QueueRequests(reqs);
-      if (!queue_status.ok()) {
-        fdf::error("Failed to queue rx requests: {}", queue_status.FormatDescription());
-        for (size_t i = 0; i < count; ++i) {
-          bulk_out_ep_.PutRequest(usb::FidlRequest(fidl::ToNatural(reqs[i])));
-        }
-      }
-    }
-  }
-
-  online_ = online;
-  online_property_.Set(online);
+  // Instantly isolate the data plane from new packets!
+  online_ = false;
+  online_property_.Set(false);
   UpdatePortStatus();
-  CdcSendNotifications();
+  if (alt_setting == 0) {
+    CdcSendNotifications();
+  }
 
-  completer.Reply(zx::ok());
+  auto async_completer = completer.ToAsync();
+  auto state = std::make_shared<SetInterfaceSharedState>();
+  state->target_alt_setting = alt_setting;
+  state->completer = std::move(async_completer);
+  state->self = this;
+  set_interface_state_ = state;
+
+  if (!bulk_out_ep_.client().is_valid() || bulk_out_ep_.RequestsFull()) {
+    state->bulk_out_cancelled = true;
+  } else {
+    bulk_out_ep_.client()->CancelAll().Then(
+        [state](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
+          if (!result.is_ok() && !IsExpectedFidlDisconnect(result.error_value())) {
+            fdf::warn("bulk out ep CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          state->bulk_out_cancelled = true;
+          state->CheckDone();
+        });
+  }
+
+  if (!bulk_in_ep_.client().is_valid() || bulk_in_ep_.RequestsFull()) {
+    state->bulk_in_cancelled = true;
+  } else {
+    bulk_in_ep_.client()->CancelAll().Then(
+        [state](fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::CancelAll> &result) mutable {
+          if (!result.is_ok() && !IsExpectedFidlDisconnect(result.error_value())) {
+            fdf::warn("bulk in ep CancelAll failed: {}", result.error_value().FormatDescription());
+          }
+          state->bulk_in_cancelled = true;
+          state->CheckDone();
+        });
+  }
+
+  state->CheckDone();
 }
 
 void UsbCdcFunction::handle_unknown_method(
@@ -900,6 +1177,7 @@ zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
   bulk_in_cancelled_ = false;
   bulk_out_cancelled_ = false;
   set_configured_state_.reset();
+  set_interface_state_.reset();
   stop_completer_.reset();
 
   inspector_ = context.CreateInspector(this);
@@ -1110,6 +1388,8 @@ void UsbCdcFunction::Stop(fdf::StopCompleter completer) {
     set_configured_state_->Cancel();
     set_configured_state_.reset();
   }
+
+  CancelSetInterface();
 
   // Reset cancellation and deconfigure flags
   intr_cancelled_ = false;
