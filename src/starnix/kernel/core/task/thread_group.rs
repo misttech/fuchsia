@@ -1359,24 +1359,19 @@ impl ThreadGroup {
         &self,
         current_task: &CurrentTask,
         terminal: &Terminal,
-        pgid: pid_t,
+        pgid: &Pid,
     ) -> Result<(), Errno> {
         let process_group;
         let send_ttou;
         {
             // Keep locks to ensure atomicity.
-            let pids = self.kernel.pids.read();
+            let _pids = self.kernel.pids.read();
             let state = self.read();
             process_group = Arc::clone(&state.process_group);
             let terminal_state = terminal.read();
             Self::check_terminal_controller(&process_group.session, &terminal_state.controller)?;
 
-            // pgid must be positive.
-            if pgid < 0 {
-                return error!(EINVAL);
-            }
-
-            let new_process_group = pids.get(pgid)?.get_process_group()?;
+            let new_process_group = pgid.get_process_group()?;
             if new_process_group.session != process_group.session {
                 return error!(EPERM);
             }
@@ -1390,7 +1385,7 @@ impl ThreadGroup {
                 && self.signal_actions.get(SIGTTOU).sa_handler != SIG_IGN;
 
             if !send_ttou {
-                session_state.set_foreground_process_group(&new_process_group);
+                session_state.set_foreground_process_group(pgid);
             }
         }
 

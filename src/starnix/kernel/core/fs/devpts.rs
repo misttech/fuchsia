@@ -597,10 +597,14 @@ fn shared_ioctl(
         TIOCSPGRP => {
             // Set the foreground process group.
             let pgid = current_task.read_object(UserRef::<pid_t>::new(user_addr))?;
+            if pgid < 0 {
+                return error!(EINVAL);
+            }
+            let pgid = current_task.kernel().pids.read().get(pgid)?.clone();
             current_task.thread_group().set_foreground_process_group(
                 current_task,
                 terminal,
-                pgid,
+                &pgid,
             )?;
             Ok(SUCCESS)
         }

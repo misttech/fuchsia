@@ -131,8 +131,8 @@ impl SessionMutableState {
         self.foreground_process_group.get_process_group()
     }
 
-    pub fn set_foreground_process_group(&mut self, process_group: &Arc<ProcessGroup>) {
-        self.foreground_process_group = process_group.leader.clone();
+    pub fn set_foreground_process_group(&mut self, pgid: &Pid) {
+        self.foreground_process_group = pgid.clone();
     }
 }
 
