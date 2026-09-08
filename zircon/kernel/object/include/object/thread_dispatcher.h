@@ -403,8 +403,6 @@ class ThreadDispatcher final : public SoloDispatcher<ThreadDispatcher, ZX_DEFAUL
   // requirements when blocking a thread in a futex and declaring a new owner in
   // the process.
   DECLARE_SPINLOCK(ThreadDispatcher) core_thread_lock_;
-
-  DECLARE_SPINLOCK(ThreadDispatcher) scheduler_stats_writer_exclusion_lock_;
 };
 
 extern "C" {
