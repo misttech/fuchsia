@@ -7,7 +7,7 @@ use super::signalfd::SignalFd;
 use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::signals::{
-    IntoSignalInfoOptions, SI_MAX_SIZE_AS_USIZE, SignalDetail, SignalInfo, UncheckedSignalInfo,
+    IntoSignalInfoOptions, SignalDetail, SignalInfo, UncheckedSignalInfo,
     restore_from_signal_handler, send_signal,
 };
 use crate::task::{
@@ -441,24 +441,22 @@ fn send_unchecked_signal_info(
     unchecked_signal: UncheckedSignal,
     siginfo_ref: UserAddress,
 ) -> Result<(), Errno> {
-    current_task.can_signal(&target, unchecked_signal)?;
-
-    // 0 is a sentinel value used to do permission checks.
-    if unchecked_signal.is_zero() {
-        // Check we can read siginfo.
-        current_task.read_memory_to_array::<SI_MAX_SIZE_AS_USIZE>(siginfo_ref)?;
-        return Ok(());
-    }
-
-    let signal = Signal::try_from(unchecked_signal)?;
-    security::check_signal_access(current_task, &target, signal)?;
-
     let siginfo = UncheckedSignalInfo::read_from_siginfo(current_task, siginfo_ref)?;
     if target.get_pid() != current_task.get_pid()
         && (siginfo.code() >= 0 || siginfo.code() == SI_TKILL)
     {
         return error!(EINVAL);
     }
+
+    current_task.can_signal(&target, unchecked_signal)?;
+
+    // 0 is a sentinel value used to do permission checks.
+    if unchecked_signal.is_zero() {
+        return Ok(());
+    }
+
+    let signal = Signal::try_from(unchecked_signal)?;
+    security::check_signal_access(current_task, &target, signal)?;
 
     send_signal(&target, siginfo.into_signal_info(signal, IntoSignalInfoOptions::None)?)
 }
@@ -1108,7 +1106,9 @@ mod tests {
     use super::*;
     use crate::mm::{MemoryAccessor, PAGE_SIZE};
     use crate::signals::testing::dequeue_signal_for_test;
-    use crate::signals::{SI_HEADER_SIZE, SignalInfoHeader, send_standard_signal};
+    use crate::signals::{
+        SI_HEADER_SIZE, SI_MAX_SIZE_AS_USIZE, SignalInfoHeader, send_standard_signal,
+    };
     use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
     use crate::task::{EventHandler, ExitStatus, ProcessExitInfo};
     use crate::testing::*;

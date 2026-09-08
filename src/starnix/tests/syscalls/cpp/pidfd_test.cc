@@ -261,4 +261,37 @@ TEST(PidFdTest, PidFdSendSiginfoMismatchedSignoFails) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+TEST(PidFdTest, PidFdSendSignalInvalidFlagsFails) {
+  fbl::unique_fd pid_fd(DoPidFdOpen(getpid()));
+  ASSERT_THAT(pid_fd.get(), SyscallSucceeds());
+
+  EXPECT_THAT(syscall(SYS_pidfd_send_signal, pid_fd.get(), SIGTERM, nullptr, 1),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(PidFdTest, PidFdSendSiginfoInvalidAddressFails) {
+  fbl::unique_fd pid_fd(DoPidFdOpen(getpid()));
+  ASSERT_THAT(pid_fd.get(), SyscallSucceeds());
+
+  EXPECT_THAT(
+      syscall(SYS_pidfd_send_signal, pid_fd.get(), SIGTERM, reinterpret_cast<void*>(0x1), 0),
+      SyscallFailsWithErrno(EFAULT));
+}
+
+TEST(PidFdTest, PidFdSendSignalZeroSignal) {
+  fbl::unique_fd pid_fd(DoPidFdOpen(getpid()));
+  ASSERT_THAT(pid_fd.get(), SyscallSucceeds());
+
+  EXPECT_THAT(syscall(SYS_pidfd_send_signal, pid_fd.get(), 0, nullptr, 0), SyscallSucceeds());
+
+  siginfo_t info_send = {};
+  info_send.si_signo = 0;
+  info_send.si_code = SI_USER;
+  EXPECT_THAT(syscall(SYS_pidfd_send_signal, pid_fd.get(), 0, &info_send, 0), SyscallSucceeds());
+
+  info_send.si_signo = SIGCHLD;
+  EXPECT_THAT(syscall(SYS_pidfd_send_signal, pid_fd.get(), 0, &info_send, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 }  // namespace

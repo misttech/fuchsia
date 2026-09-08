@@ -1852,14 +1852,20 @@ impl ThreadGroup {
         siginfo_ref: UserAddress,
         options: IntoSignalInfoOptions,
     ) -> Result<(), Errno> {
-        if let Some(signal) = self.check_signal_access(current_task, unchecked_signal)? {
-            let siginfo = UncheckedSignalInfo::read_from_siginfo(current_task, siginfo_ref)?;
-            if self.leader.id != current_task.get_pid()
-                && (siginfo.code() >= 0 || siginfo.code() == SI_TKILL)
-            {
-                return error!(EPERM);
-            }
+        let siginfo = UncheckedSignalInfo::read_from_siginfo(current_task, siginfo_ref)?;
+        if self.leader.id != current_task.get_pid()
+            && (siginfo.code() >= 0 || siginfo.code() == SI_TKILL)
+        {
+            return error!(EPERM);
+        }
 
+        if matches!(options, IntoSignalInfoOptions::CheckSigno)
+            && siginfo.signo() as u64 != unchecked_signal.raw()
+        {
+            return error!(EINVAL);
+        }
+
+        if let Some(signal) = self.check_signal_access(current_task, unchecked_signal)? {
             self.write().send_signal(siginfo.into_signal_info(signal, options)?);
         }
 
