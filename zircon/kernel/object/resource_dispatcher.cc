@@ -121,16 +121,10 @@ zx_status_t ResourceDispatcher::Create(KernelHandle<ResourceDispatcher>* handle,
   // itself. The constructor will handle adding itself to the shared list if
   // necessary.
   fbl::AllocChecker ac;
-  KernelHandle new_handle(fbl::AdoptRef(
-      new (&ac) ResourceDispatcher(kind, base, size, flags, ktl::move(region_uptr), storage)));
+  KernelHandle new_handle(fbl::AdoptRef(new (&ac) ResourceDispatcher(
+      kind, base, size, flags, name, ktl::move(region_uptr), storage)));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
-  }
-
-  if (name != nullptr) {
-    [[maybe_unused]] zx_status_t name_status =
-        new_handle.dispatcher()->set_name(name, ZX_MAX_NAME_LEN);
-    DEBUG_ASSERT(name_status == ZX_OK);
   }
 
   *rights = default_rights();
@@ -170,14 +164,9 @@ zx_status_t ResourceDispatcher::CreateRangedRoot(KernelHandle<ResourceDispatcher
   // necessary.
   fbl::AllocChecker ac;
   KernelHandle new_handle(
-      fbl::AdoptRef(new (&ac) ResourceDispatcher(kind, 0, 0, 0, nullptr, storage)));
+      fbl::AdoptRef(new (&ac) ResourceDispatcher(kind, 0, 0, 0, name, nullptr, storage)));
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
-  }
-
-  if (name != nullptr) {
-    [[maybe_unused]] zx_status_t status = new_handle.dispatcher()->set_name(name, ZX_MAX_NAME_LEN);
-    DEBUG_ASSERT(status == ZX_OK);
   }
 
   *rights = default_rights();
@@ -187,8 +176,9 @@ zx_status_t ResourceDispatcher::CreateRangedRoot(KernelHandle<ResourceDispatcher
   return ZX_OK;
 }
 
-ResourceDispatcher::ResourceDispatcher(zx_rsrc_kind_t kind, uint64_t base, uint64_t size,
-                                       uint32_t flags, RegionAllocator::Region::UPtr&& region,
+ResourceDispatcher::ResourceDispatcher(zx_rsrc_kind_t kind, uint64_t base, size_t size,
+                                       uint32_t flags, const char name[ZX_MAX_NAME_LEN],
+                                       RegionAllocator::Region::UPtr&& region,
                                        ResourceStorage* storage)
     : kind_(kind),
       base_(base),
@@ -196,6 +186,10 @@ ResourceDispatcher::ResourceDispatcher(zx_rsrc_kind_t kind, uint64_t base, uint6
       flags_(flags),
       resource_list_(&storage->resource_list) {
   kcounter_add(dispatcher_resource_create_count, 1);
+
+  if (name != nullptr) {
+    strlcpy(name_, name, sizeof(name_));
+  }
 
   if (flags_ & ZX_RSRC_FLAG_EXCLUSIVE) {
     exclusive_region_ = ktl::move(region);

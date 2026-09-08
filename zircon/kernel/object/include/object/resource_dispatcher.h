@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_RESOURCE_DISPATCHER_H_
 
 #include <lib/zircon-internal/thread_annotations.h>
+#include <string.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
 #include <zircon/rights.h>
@@ -16,7 +17,6 @@
 #include <zircon/types.h>
 
 #include <fbl/intrusive_double_list.h>
-#include <fbl/name.h>
 #include <kernel/lockdep.h>
 #include <kernel/mutex.h>
 #include <object/dispatcher.h>
@@ -77,17 +77,10 @@ class ResourceDispatcher final
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_RESOURCE; }
 
-  // Returns a null-terminated name, or the empty string if set_name() has not
-  // been called.
+  // Returns a null-terminated name.
   [[nodiscard]] zx_status_t get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const final {
-    name_.get(ZX_MAX_NAME_LEN, out_name);
+    memcpy(out_name, name_, ZX_MAX_NAME_LEN);
     return ZX_OK;
-  }
-
-  // Sets the name of the object. May truncate internally. |size| is the size
-  // of the buffer pointed to by |name|.
-  [[nodiscard]] zx_status_t set_name(const char* name, size_t size) final {
-    return name_.set(name, size);
   }
 
   zx_info_resource_t GetInfo() const;
@@ -100,7 +93,8 @@ class ResourceDispatcher final
 
  private:
   ResourceDispatcher(zx_rsrc_kind_t kind, uint64_t base, size_t size, uint32_t flags,
-                     RegionAllocator::Region::UPtr&& region, ResourceStorage* storage);
+                     const char name[ZX_MAX_NAME_LEN], RegionAllocator::Region::UPtr&& region,
+                     ResourceStorage* storage);
 
   template <typename T>
   static zx_status_t ForEachResourceLocked(T callback, ResourceStorage* storage)
@@ -119,7 +113,7 @@ class ResourceDispatcher final
   const size_t size_;
   const uint32_t flags_;
   ResourceList* resource_list_;
-  fbl::Name<ZX_MAX_NAME_LEN> name_;
+  char name_[ZX_MAX_NAME_LEN] = {};
   RegionAllocator::Region::UPtr exclusive_region_;
 
   // Static tracking data structures for physical address space allocations.
