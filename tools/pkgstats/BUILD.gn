@@ -51,6 +51,7 @@ if (is_host) {
       "src/types.rs",
     ]
   }
+
   install_host_tools("install") {
     deps = [ ":bin" ]
     outputs = [ "pkgstats" ]

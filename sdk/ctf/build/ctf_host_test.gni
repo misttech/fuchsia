@@ -18,6 +18,7 @@ template("ctf_host_test") {
   }
 
   copy_target_name = target_name + "_copy"
+
   copy(copy_target_name) {
     testonly = true
     sources = [ invoker.binary_path ]

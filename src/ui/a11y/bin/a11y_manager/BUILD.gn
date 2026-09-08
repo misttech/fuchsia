@@ -136,6 +136,7 @@ l10n_resource_deps = []
 foreach(file, l10n_files) {
   language = file.language
   name = "resource_$language"
+
   resource(name) {
     sources = [ file.path ]
     outputs = [ file.dest ]

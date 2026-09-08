@@ -7,9 +7,11 @@ import("//build/toolchain/clang_toolchain_suite.gni")
 clang_host_toolchain_suite("host_x64") {
   toolchain_cpu = "x64"
 }
+
 clang_host_toolchain_suite("host_arm64") {
   toolchain_cpu = "arm64"
 }
+
 clang_host_toolchain_suite("host_riscv64") {
   toolchain_cpu = "riscv64"
 }

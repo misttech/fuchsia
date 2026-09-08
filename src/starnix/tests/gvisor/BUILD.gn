@@ -83,6 +83,7 @@ all_benchmark_targets = []
 all_benchmark_packages = []
 foreach(benchmark_name, gvisor_benchmarks) {
   _package_label = "starnix_gvisor_${benchmark_name}_benchmark"
+
   gvisor_test_package(_package_label) {
     is_benchmark = true
     run_as_root = false
@@ -99,6 +100,7 @@ foreach(benchmark_name, gvisor_benchmarks) {
   # The "starnix_host_benchmark_gvisor_" prefix is useful for running all
   # benchmarks with `fx test`.
   _host_label = "starnix_host_benchmark_gvisor_${benchmark_name}"
+
   fuchsia_component_perf_test(_host_label) {
     package = ":${_package_label}"
     component_name = "${benchmark_name}_benchmark"

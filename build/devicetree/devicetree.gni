@@ -92,6 +92,7 @@ template("devicetree_fragment") {
 
   if (extension == "S") {
     processed_dts_target = "_devicetree_fragment.$target_name.preprocessed"
+
     _preprocessed_dts(processed_dts_target) {
       forward_variables_from(invoker,
                              [
@@ -191,6 +192,7 @@ template("dtb") {
 
   # This actually compiles the DTB.
   dtc_path = "//prebuilt/third_party/dtc/${host_platform}/dtc"
+
   python_action(target_name) {
     binary_label = "//build/devicetree:dtc_py"
     forward_variables_from(invoker,
@@ -262,6 +264,7 @@ template("dtb") {
 #
 template("dts") {
   dtc_path = "//prebuilt/third_party/dtc/${host_platform}/dtc"
+
   python_action(target_name) {
     binary_label = "//build/devicetree:dtc_py"
     forward_variables_from(invoker,

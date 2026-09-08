@@ -55,6 +55,7 @@ template("audio_core_component") {
 
   # Merge the manifest shards into a single manifest file.
   manifest_merge_target = "${target_name}_audio_core_manifest_merge"
+
   cmc_merge(manifest_merge_target) {
     sources = manifest_shards
     output_name = "${manifest_merge_target}.cml"
@@ -150,6 +151,7 @@ template("audio_core_test_component") {
 #       Type: bool
 template("audio_core_package") {
   component_target = "${target_name}_audio_core_component"
+
   audio_core_component(component_target) {
     forward_variables_from(invoker,
                            [
@@ -202,6 +204,7 @@ template("audio_core_package") {
 #
 template("audio_core_test_package") {
   component_target = "${target_name}_audio_core_component"
+
   audio_core_test_component(component_target) {
     forward_variables_from(invoker, [ "use_prebuilt_coefficient_tables" ])
     visibility = [

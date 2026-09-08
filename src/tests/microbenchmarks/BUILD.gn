@@ -321,6 +321,7 @@ if (is_linux && is_host) {
       ":runtime_deps",
     ]
   }
+
   host_test_data("runtime_deps") {
     sources = [ "$root_out_dir/no_op_executable" ]
     deps = [ ":no_op_executable" ]

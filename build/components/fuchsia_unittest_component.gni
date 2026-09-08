@@ -120,6 +120,7 @@ template("fuchsia_unittest_component") {
         "cannot specify both deprecated_legacy_test_execution and an explicit manifest")
     if (!defined(invoker.manifest)) {
       generated_target = "${target_name}_generated_manifest"
+
       fuchsia_test_component_manifest(generated_target) {
         forward_variables_from(invoker, [ "deps" ])
         metadata = {

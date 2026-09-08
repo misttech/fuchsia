@@ -384,6 +384,7 @@ template("libc_source_set") {
             ]) {
       foreach(target, compile_targets) {
         target = target_name + target
+
         user_basic_redirect("$target.basic$suffix") {
           visibility = [ ":*" ]
           public_deps = [ ":$target$suffix" ]
@@ -854,6 +855,7 @@ template("llvm_libc_group") {
     if (suffix != "") {
       subtarget += ".$suffix"
     }
+
     group(subtarget) {
       if (suffix != "") {
         testonly = true

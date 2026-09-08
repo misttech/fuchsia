@@ -65,6 +65,7 @@ template("host_script_test_data") {
     assert(defined(set.target_base_dir),
            "Error: target_base_dir not found for dataset entry $set")
     assert(defined(set.files), "Error: files not found for dataset entry $set")
+
     host_script_test_data_impl_data_set_copy("dataset_set$set_count") {
       data_path = invoker.data_path
       data = set
@@ -72,6 +73,7 @@ template("host_script_test_data") {
     dep_target_list += [ ":dataset_set$set_count" ]
     set_count = set_count + 1
   }
+
   group(target_name) {
     forward_variables_from(invoker,
                            [
@@ -115,6 +117,7 @@ template("host_script_test") {
                  "data_deps",
                  "test_root",
                ])
+
     group(target_name) {
     }
   } else {

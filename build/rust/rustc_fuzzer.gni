@@ -107,6 +107,7 @@ template("rustc_fuzzer") {
   ignored_parameters = []
   if (is_fuchsia) {
     ignored_parameters += [ "test_inputs" ]
+
     fuchsia_library_fuzzer(target_name) {
       forward_variables_from(invoker, "*", staticlib_vars + ignored_parameters)
       deps = [ ":$fuzzer_lib" ]

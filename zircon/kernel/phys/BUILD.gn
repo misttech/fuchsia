@@ -112,10 +112,13 @@ if (toolchain_environment == "kernel.phys" ||
       "//src/lib/trivial-allocator:panic-delete",
     ]
   }
+
   group("phys_config_executable_deps") {
   }
+
   group("phys_config_link_deps") {
   }
+
   group("phys_config_source_deps") {
   }
 

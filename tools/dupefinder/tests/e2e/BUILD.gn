@@ -21,6 +21,7 @@ group("host_tests") {
 
 if (is_host) {
   _dupefinder_path = "$root_out_dir/dupefinder"
+
   host_test_data("verify_dupefinder_data") {
     sources = [ _dupefinder_path ]
     deps = [ "//tools/dupefinder:bin" ]

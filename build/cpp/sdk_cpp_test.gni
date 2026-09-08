@@ -28,6 +28,7 @@ template("sdk_cpp_test") {
   foreach(cxx_version, invoker.cxx_versions) {
     _test_target = "${target_name}-cxx${cxx_version}"
     _test_deps += [ ":${_test_target}" ]
+
     test(_test_target) {
       forward_variables_from(invoker,
                              "*",

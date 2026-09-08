@@ -18,6 +18,7 @@ visibility = []
 
 template("idk_category_marker_template") {
   marker_name = "marker-${target_name}"
+
   group(marker_name) {
     visibility = invoker.visibility + [
                    ":test_all_marker_lists",

@@ -45,6 +45,7 @@ go_library("flagmisc") {
   sources = [ "flagmisc.go" ]
   visibility = [ "*" ]
 }
+
 go_test("flagmisc_tests") {
   sources = [ "flagmisc_test.go" ]
   embed = [ ":flagmisc" ]

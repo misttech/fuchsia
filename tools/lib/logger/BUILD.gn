@@ -37,6 +37,7 @@ go_library("logger") {
   sources = [ "logger.go" ]
   deps = [ "//tools/lib/color" ]
 }
+
 go_test("logger_tests") {
   sources = [ "logger_test.go" ]
   embed = [ ":logger" ]

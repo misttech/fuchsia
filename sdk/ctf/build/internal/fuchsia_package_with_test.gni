@@ -13,6 +13,7 @@ import("lacewing_fidl_wrapper.gni")
 template("fuchsia_package_with_test") {
   if (target_cpu != host_cpu) {
     not_needed(invoker, "*")
+
     group(target_name) {
       testonly = true
     }
@@ -53,6 +54,7 @@ template("fuchsia_package_with_test") {
 
     if (do_fidl_coverage) {
       host_test_target_name = "${target_name}_host_fidl_test"
+
       lacewing_fidl_wrapper(host_test_target_name) {
         device_test_target_name = "$device_test_target_name($default_toolchain)"
         device_test_url = _package_url
@@ -63,6 +65,7 @@ template("fuchsia_package_with_test") {
                                  "test_specs",
                                ])
       }
+
       group(target_name) {
         testonly = true
         deps = [
@@ -70,6 +73,7 @@ template("fuchsia_package_with_test") {
           ":${main_target_name}_package",
         ]
       }
+
       group(device_test_target_name) {
         testonly = true
         forward_variables_from(invoker,
@@ -81,6 +85,7 @@ template("fuchsia_package_with_test") {
       }
     } else {
       not_needed(invoker, [ "device_test_realm" ])
+
       test_spec(device_test_target_name) {
         if (defined(invoker.test_specs)) {
           forward_variables_from(invoker.test_specs, "*")
@@ -97,6 +102,7 @@ template("fuchsia_package_with_test") {
         component_label =
             get_label_info(invoker.test_component, "label_with_toolchain")
       }
+
       group(target_name) {
         testonly = true
         deps = [

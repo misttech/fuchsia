@@ -14,6 +14,7 @@ fuchsia_component("client") {
     "//examples/fidl/new/key_value_store/data:resources",
   ]
 }
+
 fuchsia_component("server") {
   component_name = "keyvaluestore_baseline_server"
   manifest = "//examples/fidl/new/key_value_store/baseline/meta/server.cml"

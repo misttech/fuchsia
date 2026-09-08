@@ -86,6 +86,7 @@ if (is_host) {
     main_source = "output_cacher_test.py"
     sources = [ "output_cacher.py" ]
   }
+
   python_host_test("restat_cacher_test") {
     # TODO(https://fxbug.dev/346606208): Resolve mypy errors and enable type checking
     enable_mypy = false

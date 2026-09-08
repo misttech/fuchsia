@@ -32,6 +32,7 @@ template("ffx") {
   suite_name = ffx_name + "_lib"
 
   _original_target_name = target_name
+
   ffx_plugin(suite_name) {
     original_target_name = _original_target_name
     forward_variables_from(invoker, "*", [ "test_deps" ])

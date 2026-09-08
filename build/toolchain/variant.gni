@@ -47,6 +47,7 @@ template("variant") {
                              "source_deps",
                            ])
   }
+
   group("${target_name}_deps") {
     # Propagate it as public_deps so that targets in deps can have
     # public_configs that will be applied to variant executables.
@@ -54,6 +55,7 @@ template("variant") {
       public_deps = invoker.deps
     }
   }
+
   group("${target_name}_executable_deps") {
     # Propagate it as public_deps so that targets in deps can have
     # public_configs that will be applied to variant executables.
@@ -61,6 +63,7 @@ template("variant") {
       public_deps = invoker.executable_deps
     }
   }
+
   group("${target_name}_link_deps") {
     # Propagate it as public_deps so that targets in deps can have
     # public_configs that will be applied to variant linking targets.
@@ -68,6 +71,7 @@ template("variant") {
       public_deps = invoker.link_deps
     }
   }
+
   group("${target_name}_source_deps") {
     # Propagate it as public_deps so that targets in deps can have
     # public_configs that will be applied to variant targets with sources.

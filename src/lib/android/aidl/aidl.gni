@@ -625,6 +625,7 @@ template("aidl") {
   }
   foreach(backend, backends) {
     backend_target_name = "${target_name}_${backend}"
+
     target("aidl_${backend}", backend_target_name) {
       forward_variables_from(invoker,
                              "*",

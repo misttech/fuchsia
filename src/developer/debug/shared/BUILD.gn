@@ -54,6 +54,7 @@ static_library("test_support") {
     "//third_party/googletest:gtest",
   ]
 }
+
 static_library("tests") {
   testonly = true
   sources = []
@@ -77,6 +78,7 @@ static_library("tests") {
     "//third_party/googletest:gtest",
   ]
 }
+
 source_set("shared") {
   sources = []
   sources += [

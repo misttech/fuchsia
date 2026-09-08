@@ -32,6 +32,7 @@ template("_fidl_rust_crate") {
 
   if (is_fidl_toolchain) {
     filename = "${file_stem}.rs"
+
     compiled_action(generation_target) {
       forward_variables_from(invoker,
                              [

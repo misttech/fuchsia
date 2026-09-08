@@ -77,6 +77,7 @@ cc_test_executable("clang_coverage_test_bin") {
 
 clang_coverage_test_rspfile_on_host =
     "$target_gen_dir/clang_coverage_test_bin_on_host.rsp"
+
 link_output_rspfile("clang_coverage_test_bin_on_host.rsp") {
   testonly = true
   outputs = [ clang_coverage_test_rspfile_on_host ]
@@ -85,6 +86,7 @@ link_output_rspfile("clang_coverage_test_bin_on_host.rsp") {
 
 clang_coverage_test_binary_path_on_host =
     "$target_out_dir/clang_coverage_test_bin_on_host"
+
 action("copy_clang_coverage_test_binary_on_host") {
   testonly = true
   sources = [ clang_coverage_test_rspfile_on_host ]
@@ -109,6 +111,7 @@ fuchsia_unittest_package("clang_coverage_test_package_on_target") {
 
 clang_coverage_test_rspfile_on_target =
     "$target_gen_dir/clang_coverage_test_bin_on_target.rsp"
+
 link_output_rspfile("clang_coverage_test_bin_on_target.rsp") {
   testonly = true
   outputs = [ clang_coverage_test_rspfile_on_target ]
@@ -117,6 +120,7 @@ link_output_rspfile("clang_coverage_test_bin_on_target.rsp") {
 
 clang_coverage_test_binary_path_on_target =
     "$target_out_dir/clang_coverage_test_bin_on_target"
+
 action("copy_clang_coverage_test_binary_on_target") {
   testonly = true
   sources = [ clang_coverage_test_rspfile_on_target ]
@@ -153,6 +157,7 @@ rustc_binary("rust_coverage_test_bin") {
 
 rust_coverage_test_rspfile_on_host =
     "$target_gen_dir/rust_coverage_test_bin_on_host.rsp"
+
 link_output_rspfile("rust_coverage_test_bin_on_host.rsp") {
   testonly = true
   outputs = [ rust_coverage_test_rspfile_on_host ]
@@ -161,6 +166,7 @@ link_output_rspfile("rust_coverage_test_bin_on_host.rsp") {
 
 rust_coverage_test_binary_path_on_host =
     "$target_out_dir/rust_coverage_test_bin_on_host"
+
 action("copy_rust_coverage_test_binary_on_host") {
   testonly = true
   sources = [ rust_coverage_test_rspfile_on_host ]
@@ -185,6 +191,7 @@ fuchsia_unittest_package("rust_coverage_test_package_on_target") {
 
 rust_coverage_test_rspfile_on_target =
     "$target_gen_dir/rust_coverage_test_bin_on_target.rsp"
+
 link_output_rspfile("rust_coverage_test_bin_on_target.rsp") {
   testonly = true
   outputs = [ rust_coverage_test_rspfile_on_target ]
@@ -193,6 +200,7 @@ link_output_rspfile("rust_coverage_test_bin_on_target.rsp") {
 
 rust_coverage_test_binary_path_on_target =
     "$target_out_dir/rust_coverage_test_bin_on_target"
+
 action("copy_rust_coverage_test_binary_on_target") {
   testonly = true
   sources = [ rust_coverage_test_rspfile_on_target ]

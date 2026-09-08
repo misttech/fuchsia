@@ -47,6 +47,7 @@ rustc_test("compat-node-group-test") {
     "//third_party/rust_crates:futures",
   ]
 }
+
 fuchsia_unittest_package("package") {
   package_name = "compat-node-group-test"
   deps = [

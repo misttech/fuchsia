@@ -58,6 +58,7 @@ template("fidl_ir") {
   main_target_deps = []
 
   fidlc_target_name = "${target_name}_fidlc"
+
   fidlc(fidlc_target_name) {
     forward_variables_from(invoker,
                            "*",
@@ -74,6 +75,7 @@ template("fidl_ir") {
   if (defined(invoker.out_json_summary)) {
     fidl_summary_json_target_name = "${target_name}_summary_json"
     main_target_deps += [ ":$fidl_summary_json_target_name" ]
+
     fidl_summary_json(fidl_summary_json_target_name) {
       forward_variables_from(invoker,
                              [

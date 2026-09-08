@@ -81,6 +81,7 @@ template("rustc_test_internal") {
     # directory using a copy of the test binary.
     if (use_unstripped_binary_for_host_tests) {
       unstripped_copy_target_name = "${target_name}_copy_unstripped"
+
       copy(unstripped_copy_target_name) {
         testonly = true
         sources = [ "${root_out_dir}/exe.unstripped/${_crate_name}" ]
@@ -111,6 +112,7 @@ template("rustc_test_internal") {
       # For asan targets use the normal binary path.
       crate_binary_path = "${root_out_dir}/${_crate_name}"
     }
+
     host_test_data(_test_data_target) {
       sources = [ crate_binary_path ]
       deps = [ ":${exe_target_name}" ]

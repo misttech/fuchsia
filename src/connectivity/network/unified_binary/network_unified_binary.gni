@@ -70,6 +70,7 @@ template("network_unified_binary") {
     _library_deps += invoker.non_test_deps
   }
   library_target_name = target_name + "_gub_lib"
+
   rustc_library(library_target_name) {
     forward_variables_from(invoker,
                            "*",
@@ -99,6 +100,7 @@ template("network_unified_binary") {
 
   gub_target_name = target_name + "_gub"
   bin_target_name = target_name
+
   renamed_binary(gub_target_name) {
     forward_variables_from(invoker,
                            [

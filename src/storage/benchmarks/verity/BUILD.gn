@@ -140,6 +140,7 @@ if (is_linux) {
 
 _setup_verity_label = ":setup_verity_bin($target_linux_toolchain)"
 _verity_outdir = get_label_info(_setup_verity_label, "root_out_dir")
+
 resource("setup_verity_resource") {
   testonly = true
   sources = [ "${_verity_outdir}/setup_verity_bin" ]
@@ -155,6 +156,7 @@ fuchsia_component("setup_verity") {
 
 _read_verified_file_label = ":read_verified_file_bin($target_linux_toolchain)"
 _read_verity_outdir = get_label_info(_read_verified_file_label, "root_out_dir")
+
 resource("read_verified_file_resource") {
   testonly = true
   sources = [ "${_read_verity_outdir}/read_verified_file_bin" ]

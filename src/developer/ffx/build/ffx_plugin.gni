@@ -176,12 +176,14 @@ template("ffx_plugin") {
       }
 
       sub_cmd_gen = _crate_name + "_sub_command_gen"
+
       command(sub_cmd_gen) {
         output_name = "cmd_args.rs"
         plugin_deps = invoker.plugin_deps
       }
 
       sub_cmd = _crate_name + "_sub_command"
+
       rustc_library(sub_cmd) {
         edition = "2024"
         source_root = "$target_gen_dir/cmd_args.rs"
@@ -332,6 +334,7 @@ template("ffx_plugin") {
     suite_target_additional_deps += _plugins_rs_deps
 
     plugins_name = _crate_name + "_plugins"
+
     plugins(plugins_name) {
       visibility = [ ":*" ]
       output_name = "plugins.rs"

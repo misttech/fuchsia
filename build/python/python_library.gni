@@ -144,6 +144,7 @@ template("python_library") {
   if (defined(invoker.library_name)) {
     _library_name = invoker.library_name
   }
+
   group_with_inputs(_labels.input_group) {
     forward_variables_from(invoker,
                            [

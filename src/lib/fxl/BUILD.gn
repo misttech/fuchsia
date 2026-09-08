@@ -107,6 +107,7 @@ source_set("common") {
     "//src/lib/fsl/tasks:*",
   ]
 }
+
 source_set("memory") {
   sources = [ "memory/weak_ptr_internal.cc" ]
   public = [
@@ -129,6 +130,7 @@ source_set("memory") {
     "//sdk/lib/zircon-assert",
   ]
 }
+
 source_set("functional") {
   public = [
     "functional/apply.h",
@@ -140,12 +142,14 @@ source_set("functional") {
     ":memory",
   ]
 }
+
 source_set("third_party") {
   sources = [ "third_party/icu/icu_utf.cc" ]
   public = [ "third_party/icu/icu_utf.h" ]
   configs += [ "//build/config:Wno-implicit-fallthrough" ]
   visibility = [ ":*" ]
 }
+
 source_set("string_printf") {
   sources = [ "strings/string_printf.cc" ]
   public = [ "strings/string_printf.h" ]
@@ -156,6 +160,7 @@ source_set("string_printf") {
   ]
   public_deps = [ ":common" ]
 }
+
 source_set("strings") {
   sources = [
     "strings/ascii.cc",
@@ -187,6 +192,7 @@ source_set("strings") {
     ":third_party",
   ]
 }
+
 source_set("fxl") {
   public = [ "observer_list.h" ]
   public_deps = [
@@ -198,6 +204,7 @@ source_set("fxl") {
     "//src/lib/files",
   ]
 }
+
 source_set("cli") {
   sources = [ "log_settings_command_line.cc" ]
   public = [ "log_settings_command_line.h" ]
@@ -206,6 +213,7 @@ source_set("cli") {
     "//sdk/lib/syslog/cpp",
   ]
 }
+
 source_set("cli_no_logging") {
   sources = [ "command_line.cc" ]
   public = [

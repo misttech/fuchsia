@@ -136,6 +136,7 @@ template("fuchsia_sharded_test_package") {
 
         _testshard_config_resource_target =
             "${_target_prefix}_generated_resource"
+
         generated_resource(_testshard_config_resource_target) {
           outputs = [ _testshard_config_filepath ]
           output_conversion = "json"
@@ -154,6 +155,7 @@ template("fuchsia_sharded_test_package") {
             "${_target_prefix}_offer_cml_shard"
         _testshard_config_offer_cml_shard_file =
             "${target_gen_dir}/${_target_prefix}_config_offer.shard.cml"
+
         generated_file(_testshard_config_offer_cml_shard_target) {
           outputs = [ _testshard_config_offer_cml_shard_file ]
           output_conversion = "json"

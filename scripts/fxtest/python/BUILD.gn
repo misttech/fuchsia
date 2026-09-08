@@ -100,6 +100,7 @@ if (is_host) {
   foreach(test_name, main_module_tests) {
     target = "${test_name}_test"
     main_source = "tests/${test_name}_test.py"
+
     python_host_test(target) {
       # TODO(https://fxbug.dev/329239255): Re-enable when flake is addressed
       if (test_name != "main") {

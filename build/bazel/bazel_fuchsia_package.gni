@@ -62,6 +62,7 @@ template("bazel_fuchsia_package") {
   }
 
   bazel_build_target = "$target_name.bazel_build"
+
   bazel_build_action(bazel_build_target) {
     forward_variables_from(invoker,
                            [

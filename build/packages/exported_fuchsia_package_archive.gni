@@ -31,6 +31,7 @@ template("exported_fuchsia_package_archive") {
     }
 
     _archive_label = ":${target_name}_archive"
+
     fuchsia_package_archive("${target_name}_archive") {
       forward_variables_from(invoker, "*")
     }
@@ -49,6 +50,7 @@ template("exported_fuchsia_package_archive") {
     # LINT.ThenChange(//build/components/fuchsia_package.gni)
 
     _output_metadata = "$target_out_dir/${target_name}_metadata.json"
+
     action(target_name) {
       forward_variables_from(invoker, "*", [ "package" ])
 
@@ -86,6 +88,7 @@ template("exported_fuchsia_package_archive") {
     }
   } else {
     not_needed(invoker, "*")
+
     group(target_name) {
       public_deps = [ ":${target_name}($default_toolchain)" ]
     }

@@ -235,6 +235,7 @@ if (is_host) {
   # Copies the test libraries for zxdb tests to use when run on Linux or Mac.
   default_shared_out_dir =
       get_label_info("//anything(${default_toolchain}-shared)", "root_out_dir")
+
   host_test_data("test_so") {
     sources = [
       "$default_shared_out_dir/lib.unstripped/libzxdb_symbol_test.so",

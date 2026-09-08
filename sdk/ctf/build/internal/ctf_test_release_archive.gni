@@ -73,6 +73,7 @@ template("ctf_test_release_archive") {
   assert(defined(invoker.component_name), "component_name is required")
 
   fuchsia_package_archive_target = "${target_name}_archive"
+
   fuchsia_package_archive(fuchsia_package_archive_target) {
     testonly = true
     package = invoker.package
@@ -80,6 +81,7 @@ template("ctf_test_release_archive") {
   }
 
   copy_target = "${target_name}_copy"
+
   copy(copy_target) {
     testonly = true
     sources = get_target_outputs(":$fuchsia_package_archive_target")

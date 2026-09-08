@@ -66,6 +66,7 @@ import("//build/cpp/sdk_cpp_unittest_component.gni")
 #
 template("sdk_cpp_unittest_package") {
   _component_target = "_sdk_cpp_unittest_package.${target_name}.component"
+
   sdk_cpp_unittest_component(_component_target) {
     forward_variables_from(invoker, "*", [ "package_name" ])
     visibility = [ ":*" ]

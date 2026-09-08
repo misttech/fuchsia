@@ -23,6 +23,7 @@ import("//build/rust/rust_auxiliary_args.gni")
 template("rust_aux_deps") {
   _deps_target = "${target_name}.deps"
   _deps_output = "${target_gen_dir}/${_deps_target}"
+
   generated_file(_deps_target) {
     forward_variables_from(invoker,
                            [
@@ -47,6 +48,7 @@ template("rust_aux_deps") {
   }
 
   _transdeps_target = "${target_name}.transdeps"
+
   generated_file(_transdeps_target) {
     forward_variables_from(invoker,
                            [
@@ -172,6 +174,7 @@ template("rust_auxiliary") {
     _aux_deps_target = "${target_name}.deps"
     _deps_rmeta_output = "${target_gen_dir}/${_aux_deps_target}.deps"
     _transdeps_output = "${target_gen_dir}/${_aux_deps_target}.transdeps"
+
     rust_aux_deps(_aux_deps_target) {
       forward_variables_from(invoker,
                              [

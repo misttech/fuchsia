@@ -347,6 +347,7 @@ template("bazel_build_group") {
     # This holds the label of the driver, so that we know it's been included.
     driver_label_metadata_target =
         "${_prebuilt.prebuilt_package_target_name}.driver_label_metadata"
+
     group(driver_label_metadata_target) {
       metadata = _prebuilt.metadata
     }

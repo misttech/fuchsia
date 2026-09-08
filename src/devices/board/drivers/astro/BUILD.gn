@@ -11,6 +11,7 @@ import("//build/testing/environments.gni")
 
 if (internal_access) {
   config_tas2770 = "audio/config/tas2770/tas2770_config.h"
+
   copy("config-tas2770-copy") {
     sources = [ "//prebuilt/$config_tas2770" ]
     outputs = [ "$root_out_dir/$config_tas2770" ]

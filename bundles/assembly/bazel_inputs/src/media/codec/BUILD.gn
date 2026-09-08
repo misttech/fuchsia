@@ -14,6 +14,7 @@ if (current_cpu != "riscv64") {
     outputs = [ "$target_out_dir/codec_factory.placeholder.txt" ]
     contents = ""
   }
+
   bazel_input_file("codec_factory") {
     generator = ":codec_factory.placeholder"
     outputs = [ "$target_out_dir/codec_factory.placeholder.txt" ]

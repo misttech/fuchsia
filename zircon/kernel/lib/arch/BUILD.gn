@@ -112,6 +112,7 @@ asm_headers = [
 gen_asm_deps = []
 foreach(header, asm_headers) {
   gen_asm_deps += [ ":gen-${header.arch}-${header.name}-asm" ]
+
   hwreg_asm_header("gen-${header.arch}-${header.name}-asm") {
     visibility = [ ":*" ]
     output_name = "lib/arch/${header.arch}/${header.name}-asm.h"

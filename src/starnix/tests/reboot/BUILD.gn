@@ -61,6 +61,7 @@ fuchsia_test_component("reboot_no_args") {
   manifest = "meta/reboot_no_args.cml"
   deps = [ ":reboot_resource($target_linux_toolchain)" ]
 }
+
 fuchsia_test_component("reboot_ota_update") {
   manifest = "meta/reboot_ota_update.cml"
   deps = [ ":reboot_resource($target_linux_toolchain)" ]

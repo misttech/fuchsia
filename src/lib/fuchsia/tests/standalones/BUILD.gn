@@ -50,6 +50,7 @@ template("standalone_test") {
 
   _manifest_name = _test_name + "_manifest"
   _manifest_path = "${target_gen_dir}/${_manifest_name}.cml"
+
   generated_file(_manifest_name) {
     testonly = true
     outputs = [ _manifest_path ]
@@ -68,6 +69,7 @@ template("standalone_test") {
   }
 
   _package_name = _test_name + "_package"
+
   fuchsia_unittest_package(_package_name) {
     package_name = _test_name
     manifest = _manifest_path
@@ -89,147 +91,189 @@ template("standalone_test") {
 standalone_test("async_component_with_thread_role") {
   type = "binary"
 }
+
 standalone_test("async_multithreaded_component_with_thread_role") {
   type = "binary"
 }
+
 standalone_test("component_with_const_thread_role") {
   type = "binary"
 }
+
 standalone_test("component_with_empty_logging_tags") {
   type = "binary"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("component_with_logging_tags") {
   type = "binary"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("component_with_minimum_severity") {
   type = "binary"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("component_with_single_logging_tag") {
   type = "binary"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_allow_stalls_test_with_result") {
   type = "test"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_allow_stalls_test") {
   type = "test"
 }
+
 standalone_test("empty_async_component_test_with_argument_and_result") {
   type = "binary"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_async_component_test_with_argument") {
   type = "binary"
 }
+
 standalone_test("empty_async_component_test_with_result") {
   type = "binary"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_async_component_test") {
   type = "binary"
 }
+
 standalone_test(
     "empty_async_multithreaded_component_test_with_argument_and_result") {
   type = "binary"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_async_multithreaded_component_test_with_argument") {
   type = "binary"
 }
+
 standalone_test("empty_async_multithreaded_component_test_with_result") {
   type = "binary"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_async_multithreaded_component_test") {
   type = "binary"
 }
+
 standalone_test("empty_async_test_with_result") {
   type = "test"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_async_test") {
   type = "test"
 }
+
 standalone_test("empty_component_test_with_argument_and_result") {
   type = "binary"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_component_test_with_argument") {
   type = "binary"
 }
+
 standalone_test("empty_component_test_with_result") {
   type = "binary"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_component_test") {
   type = "binary"
 }
+
 standalone_test("empty_multithreaded_test_with_result") {
   type = "test"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_multithreaded_test") {
   type = "test"
 }
+
 standalone_test("empty_not_allow_stalls_test_with_result") {
   type = "test"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_not_allow_stalls_test") {
   type = "test"
 }
+
 standalone_test("empty_test") {
   type = "test"
 }
+
 standalone_test("empty_test_with_add_test_attr") {
   type = "test"
 }
+
 standalone_test("empty_test_with_empty_logging_tags") {
   type = "test"
 }
+
 standalone_test("empty_test_with_logging") {
   type = "test"
 }
+
 standalone_test("empty_test_with_logging_tags") {
   type = "test"
 }
+
 standalone_test("empty_test_with_minimum_severity") {
   type = "test"
 }
+
 standalone_test("empty_test_with_result") {
   type = "test"
   deps = [ "//third_party/rust_crates:anyhow" ]
 }
+
 standalone_test("empty_test_with_single_logging_tag") {
   type = "test"
 }
+
 standalone_test(
     "empty_test_without_add_test_attr_with_explicit_test_attr_after") {
   type = "test"
 }
+
 standalone_test(
     "empty_test_without_add_test_attr_with_explicit_test_attr_before") {
   type = "test"
 }
+
 standalone_test("empty_test_without_add_test_attr") {
   type = "test"
 }
+
 standalone_test("empty_test_without_logging") {
   type = "test"
 }
+
 standalone_test("empty_very_allow_stalls_test") {
   type = "test"
 }
+
 standalone_test("empty_very_singlethreaded_allow_stalls_test") {
   type = "test"
 }
+
 standalone_test("should_panic_tests_do_not_trigger_lsan_on_panic") {
   type = "test"
 }
+
 standalone_test("sync_component_with_thread_role") {
   type = "binary"
 }
@@ -243,12 +287,14 @@ standalone_test("instrumentation_default") {
     ]
   }
 }
+
 standalone_test("instrumentation_disabled") {
   type = "binary"
   if (is_fuchsia) {
     deps = [ "//third_party/rust_crates:anyhow" ]
   }
 }
+
 standalone_test("instrumentation_multithreaded_default") {
   type = "binary"
   if (is_fuchsia) {

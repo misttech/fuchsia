@@ -115,6 +115,7 @@ zbi_deps = []
 foreach(file, test_files) {
   name = "zbi_$file"
   zbi_deps += [ ":$name" ]
+
   resource(name) {
     testonly = true
     sources = [ "testdata/input/$file" ]
@@ -126,6 +127,7 @@ test_file_resources = []
 foreach(file, test_files) {
   name = "test_resource_$file"
   test_file_resources += [ ":$name" ]
+
   resource(name) {
     testonly = true
     sources = [ "testdata/input/$file" ]

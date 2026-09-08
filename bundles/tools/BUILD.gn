@@ -54,6 +54,7 @@ _host_tools = [
   "//build/bazel/host:bazel_root_host_tools.check-licenses.host_tool",
   "//build/bazel/host:bazel_root_host_tools.whereiscl.host_tool",
 ]
+
 group("host_tools") {
   testonly = true
   public_deps = []

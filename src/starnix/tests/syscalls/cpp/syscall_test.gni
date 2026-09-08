@@ -16,6 +16,7 @@ template("_resource_from_executables") {
         get_label_info("${_executable}($_toolchain)", "root_out_dir")
     _executable_name = get_label_info("${_executable}($_toolchain)", "name")
     _resource_name = "${target_name}_${_executable_name}"
+
     resource(_resource_name) {
       testonly = true
       sources = [ "${_executable_out_dir}/${_executable_name}" ]
@@ -25,6 +26,7 @@ template("_resource_from_executables") {
     _resources += [ ":${_resource_name}" ]
   }
   not_needed([ _toolchain ])
+
   group(target_name) {
     testonly = true
     deps = _resources
@@ -85,12 +87,14 @@ template("syscall_test") {
   }
 
   _container_config_component = "${target_name}_config"
+
   starnix_container_config_component(_container_config_component) {
     config = _container_config
   }
 
   _container_config_shard_label = "${_container_config_component}_shard"
   _container_config_shard = "${target_gen_dir}/${target_name}_config.shard.cml"
+
   starnix_container_config_offers(_container_config_shard_label) {
     output = _container_config_shard
     offer_from = "#config"
@@ -104,6 +108,7 @@ template("syscall_test") {
   # Generate the manifest
   _manifest_label = "${target_name}.cml"
   _manifest_file = "$target_gen_dir/${_manifest_label}"
+
   generated_file(_manifest_label) {
     outputs = [ _manifest_file ]
     output_conversion = "json"
@@ -193,6 +198,7 @@ template("syscall_test") {
 
   if (is_host) {
     _host_test_runtime_deps_label = "starnix_${target_name}_host_test_data"
+
     host_test_data(_host_test_runtime_deps_label) {
       sources = []
       deps = _test_resources
@@ -221,6 +227,7 @@ template("syscall_test") {
 
   _resource_from_executables_target_name =
       "${target_name}_resource_from_executables"
+
   _resource_from_executables(_resource_from_executables_target_name) {
     executables = _test_executables
     toolchain = target_linux_toolchain
@@ -250,6 +257,7 @@ template("syscall_test") {
   if (current_cpu == "arm64") {
     _resource_from_executables_target_name_arch32 =
         "${target_name}_resource_from_executables_arch32"
+
     _resource_from_executables(_resource_from_executables_target_name_arch32) {
       executables = _test_executables
       toolchain = target_linux_arch32_toolchain

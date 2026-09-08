@@ -695,6 +695,7 @@ _vp9_file_conformance_tests_group_deps = []
 # Test amlogic-video vp9 decode.  This uses the same test executable as VP9
 # decode conformance tests.
 package_name = "vp9-decoder-conformance-test--bear-vp9"
+
 vp9_file_decoder_conformance_test(package_name) {
   ivf_file = "//prebuilt/test_data/media/third_party/chromium_media_test_data/bear-vp9.ivf"
   md5_file = "use_media_decoder/test/bear-vp9.i420.md5"
@@ -775,6 +776,7 @@ if (build_all_vp9_file_decoder_conformance_tests) {
 
     # Avoid any "_" in the package name.
     package_name = string_replace(package_name, "_", "-")
+
     vp9_file_decoder_conformance_test(package_name) {
       ivf_file = "//prebuilt/test_data/media/third_party/webm_vp9_conformance_streams/processed/" + testcase_partial_path + ".webm.ivf"
       md5_file = "//prebuilt/test_data/media/third_party/webm_vp9_conformance_streams/decompressed_md5/" + testcase_partial_path + ".md5"
@@ -811,6 +813,7 @@ template("vp9_decoder_canary_conformance_test") {
     md5_file = "//prebuilt/test_data/media/third_party/webm_vp9_canary_conformance_stream/decompressed_md5/Profile_0_8bit/${invoker.test_rel_path}.md5"
   }
 }
+
 template("vp9_decoder_tiled_canary_conformance_test") {
   vp9_file_decoder_conformance_test(target_name) {
     forward_variables_from(invoker, [ "test_specs" ])

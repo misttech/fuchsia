@@ -199,6 +199,7 @@ fuchsia_unittest_package("driver_runtime_scheduler_role_tests") {
 fuchsia_unittest_package("driver_runtime_death_tests") {
   deps = [ ":driver_runtime_death_test" ]
 }
+
 fuchsia_unittest_package("driver_runtime_dispatcher_death_tests") {
   deps = [ ":driver_runtime_dispatcher_death_test" ]
 }

@@ -72,14 +72,17 @@ if (is_host) {
     testonly = true
     public_deps = [ ":binder_test($host_toolchain)" ]
   }
+
   group("cpu_test") {
     testonly = true
     public_deps = [ ":cpu_test($host_toolchain)" ]
   }
+
   group("perf_analyze_test") {
     testonly = true
     public_deps = [ ":perf_analyze_test($host_toolchain)" ]
   }
+
   group("result_formatter_test") {
     testonly = true
     public_deps = [ ":result_formatter_test($host_toolchain)" ]

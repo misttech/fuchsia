@@ -15,6 +15,7 @@ host_test_data("test_ext4_image") {
 }
 
 relative_root_out_dir = rebase_path(root_out_dir, root_build_dir)
+
 rustc_library("starnix_container") {
   name = "starnix_container"
   edition = "2024"

@@ -108,6 +108,7 @@ template("fuchsia_structured_config_values") {
       _generated_values_label = "${target_name}_generated_values"
       _value_file_deps = [ ":$_generated_values_label" ]
       _value_file = "$target_gen_dir/${target_name}_values_from_literal.json"
+
       generated_file(_generated_values_label) {
         output_conversion = "json"
         contents = invoker.values
@@ -147,6 +148,7 @@ template("fuchsia_structured_config_values") {
     # compile the value file
     resource_target = "${target_name}"
     cvf_target = "${target_name}_cvf"
+
     cvf(cvf_target) {
       forward_variables_from(invoker, [ "testonly" ])
       cm = compiled_manifest
@@ -327,6 +329,7 @@ template("fuchsia_structured_config_values2") {
       _generated_values_label = "${target_name}_generated_values"
       _value_file_deps = [ ":$_generated_values_label" ]
       _value_file = "$target_gen_dir/${target_name}_values_from_literal.json"
+
       generated_file(_generated_values_label) {
         output_conversion = "json"
         contents = invoker.values
@@ -366,6 +369,7 @@ template("fuchsia_structured_config_values2") {
     # compile the value file
     resource_target = "${target_name}"
     cvf_target = "${target_name}_cvf"
+
     component_value_manifest(cvf_target) {
       forward_variables_from(invoker, [ "testonly" ])
       cm = compiled_manifest
@@ -548,6 +552,7 @@ template("fuchsia_structured_config_rust_lib") {
       forward_variables_from(invoker, [ "testonly" ])
       deps = [ ":${fidl_source_target}($default_toolchain)" ]
     }
+
     group(rust_source_target) {
       forward_variables_from(invoker, [ "testonly" ])
       deps = [ ":${rust_source_target}($default_toolchain)" ]
@@ -725,6 +730,7 @@ template("fuchsia_structured_config_cpp_elf_lib") {
       forward_variables_from(invoker, [ "testonly" ])
       deps = [ ":${fidl_source_target}($default_toolchain)" ]
     }
+
     group(cpp_elf_source_target) {
       forward_variables_from(invoker, [ "testonly" ])
       deps = [ ":${cpp_elf_source_target}($default_toolchain)" ]

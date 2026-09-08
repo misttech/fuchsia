@@ -158,6 +158,7 @@ test_fvm_sparse_image_label = ":test-fvm-sparse-image-gen($default_toolchain)"
 test_fvm_sparse_image_path =
     get_label_info(test_fvm_sparse_image_label, "target_out_dir") +
     "/test_fvm.sparse.blk"
+
 compiled_action("test-fvm-sparse-image-gen") {
   testonly = true
   visibility = [ ":*" ]
@@ -199,6 +200,7 @@ test_fvm_sparse_small_image_label =
 test_fvm_sparse_small_image_path =
     get_label_info(test_fvm_sparse_small_image_label, "target_out_dir") +
     "/test_fvm_small.sparse.blk"
+
 compiled_action("test-fvm-sparse-small-image-gen") {
   testonly = true
   visibility = [ ":*" ]

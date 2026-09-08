@@ -24,6 +24,7 @@ template("test_case_binary") {
 
   test_case = invoker.test_case
   library_name = "prints_to_${test_case}_go_lib"
+
   go_library(library_name) {
     source_dir = "src/${test_case}"
     sources = [ "main.go" ]

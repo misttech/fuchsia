@@ -414,12 +414,14 @@ template("_test_link") {
     abi_outputs = get_target_outputs("${invoker.verify_abi}.ifs")
     ifs_file = "$target_gen_dir/$main_target.ifs"
     extract_target = "$main_target.ifs"
+
     ifs_extract(extract_target) {
       visibility = [ ":*" ]
       testonly = true
       deps = [ ":$link_target" ]
       outputs = [ ifs_file ]
     }
+
     verify_public_symbols("$main_target.verify-abi") {
       visibility = [ ":*" ]
       testonly = true
@@ -471,6 +473,7 @@ template("test_ifs_shared_library") {
                              "needed_libs",
                            ])
   }
+
   ifs_shared_library(target_name) {
     visibility = [ ":*" ]
     testonly = true
@@ -732,6 +735,7 @@ foreach(suffix,
       outputs = [ "$root_out_dir/partial-page-bss-garbage-at-eof$suffix" ]
       args = rebase_path(sources + outputs, root_build_dir)
     }
+
     resource("partial-page-bss-garbage-at-eof$suffix") {
       testonly = true
       deps = [ ":gen-partial-page-bss-garbage-at-eof$suffix" ]
@@ -746,6 +750,7 @@ foreach(suffix,
       # Bring along the original just as a way of getting its deps.
       data_deps = [ ":partial-page-bss$suffix" ]
     }
+
     _test_data("partial-page-bss-garbage-at-eof$suffix") {
       deps = [ ":partial-page-bss-garbage-at-eof$suffix" ]
     }
@@ -1938,6 +1943,7 @@ foreach(case, init_fini_array_tests) {
       contents += [ "[[gnu::destructor$prio_attr]] void dtor${prio_suffix}_${dtor.value}() { Callback(${dtor.value}); }" ]
     }
   }
+
   target(case.type, case.name) {
     deps = [ ":$target_name.cc" ]
     sources = get_target_outputs(deps[0])

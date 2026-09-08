@@ -166,6 +166,7 @@ template("fuchsia_driver_dml_cpp_parser") {
   _gen_dir = get_label_info(invoker.dml_label, "target_gen_dir")
 
   _config_name = "${target_name}_config"
+
   config(_config_name) {
     include_dirs = [ _gen_dir ]
   }

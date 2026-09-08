@@ -14,6 +14,7 @@ if (is_host) {
   python_library("fuchsia_fortunes") {
     sources = [ "fuchsia_fortunes.py" ]
   }
+
   python_host_test("fuchsia_fortunes_test") {
     main_source = "fuchsia_fortunes_test.py"
     sources = [ "fuchsia_fortunes.py" ]

@@ -48,6 +48,7 @@ template("starnix_linux_rustc_binary") {
 
   _bin_label = ":${_bin_label}($target_linux_toolchain)"
   _bin_out_dir = get_label_info(_bin_label, "root_out_dir")
+
   resource(_resource_label) {
     forward_variables_from(invoker,
                            "*",

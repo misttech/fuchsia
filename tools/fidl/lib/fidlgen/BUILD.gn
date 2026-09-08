@@ -27,6 +27,7 @@ if (current_toolchain == default_toolchain) {
     validate_target = "validate.${info.name}"
 
     output_json = "$target_gen_dir/${info.name}.json"
+
     compiled_action(roundtrip_target) {
       testonly = true
       visibility = [ ":$validate_target" ]

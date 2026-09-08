@@ -49,6 +49,7 @@ template("generate_package_flavors") {
          "Custom package names are not supported")
 
   _base_target_name = target_name
+
   prebuilt_package_with_flavors("${target_name}_pkg") {
     forward_variables_from(invoker,
                            [

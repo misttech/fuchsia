@@ -28,6 +28,7 @@ template("go_binary") {
         !defined(invoker.gopackage) && !defined(invoker.embed),
         "gopackage and embed can't be used when sources for this go_binary are explicitly listed")
     lib_target = "_${target_name}_go_lib"
+
     go_library(lib_target) {
       forward_variables_from(invoker,
                              [

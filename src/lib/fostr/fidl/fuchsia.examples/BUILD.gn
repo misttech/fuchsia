@@ -4,6 +4,7 @@
 
 # [START contents]
 import("//src/lib/fostr/build/fostr_fidl.gni")
+
 fostr_fidl("fuchsia.examples") {
   fidl_target = "//examples/fidl/fuchsia.examples"
 }

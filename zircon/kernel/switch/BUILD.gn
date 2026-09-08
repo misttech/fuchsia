@@ -310,10 +310,13 @@ compiler_config("abi") {
 # These are referenced because :abi is listed in the toolchain definition.
 group("abi_deps") {
 }
+
 group("abi_executable_deps") {
 }
+
 group("abi_link_deps") {
 }
+
 group("abi_source_deps") {
 }
 

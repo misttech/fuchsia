@@ -14,6 +14,7 @@ fuchsia_component("client") {
     "//examples/fidl/new/key_value_store/data:resources",
   ]
 }
+
 fuchsia_component("server") {
   component_name = "keyvaluestore_additerator_server"
   manifest = "//examples/fidl/new/key_value_store/add_iterator/meta/server.cml"
@@ -42,6 +43,7 @@ fuchsia_component("test") {
     "//examples/fidl/new/key_value_store/add_iterator/test/goldens:resources",
   ]
 }
+
 fuchsia_test_package("examples_fidl_keyvaluestore_additerator_rust_tests") {
   deps = [
     ":client",
@@ -51,6 +53,7 @@ fuchsia_test_package("examples_fidl_keyvaluestore_additerator_rust_tests") {
   ]
   test_components = [ ":test" ]
 }
+
 group("tests") {
   testonly = true
   deps = [ ":examples_fidl_keyvaluestore_additerator_rust_tests" ]

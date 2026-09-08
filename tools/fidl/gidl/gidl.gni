@@ -92,6 +92,7 @@ template("_gidl_cc_source_set") {
   output_filename = "${target_gen_dir}/gidl_generated_${target_name}.cc"
 
   gidl_target = "${target_name}_gidl"
+
   gidl(gidl_target) {
     type = invoker.type
     language = invoker.language

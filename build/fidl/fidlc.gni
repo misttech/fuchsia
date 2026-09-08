@@ -48,6 +48,7 @@ template("fidlc") {
   libraries_file = "${invoker.gen_dir}/${fidl_target_name}.libraries"
   response_file = "${invoker.gen_dir}/${fidl_target_name}.args"
   response_file_target_name = "${main_target_name}_response_file"
+
   action(response_file_target_name) {
     forward_variables_from(invoker,
                            [

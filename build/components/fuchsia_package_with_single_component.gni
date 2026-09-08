@@ -145,6 +145,7 @@ template("fuchsia_package_with_single_component") {
   }
 
   component_target = "${target_name}_component"
+
   fuchsia_component(component_target) {
     forward_variables_from(invoker,
                            [

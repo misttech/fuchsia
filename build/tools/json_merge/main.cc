@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <getopt.h>
+
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -13,24 +14,23 @@
 #include "build/tools/json_merge/json_merge.h"
 
 static void usage(const char* exe_name) {
-  fprintf(
-      stderr,
-      "Usage: %s --input [infile] [--output outfile] [--minify]\n"
-      "\n"
-      "Merge one or more JSON files to a single JSON file.\n"
-      "If any input is not a valid JSON, the merge operation will fail.\n"
-      "Consequently you can \"merge\" one JSON file to perform validation.\n"
-      "If any two inputs overlap in the top-level key space, the merge "
-      "operation will fail.\n"
-      "Optionally the merged output can be minified.\n"
-      "Consequently you can \"merge\" one JSON file to perform "
-      "minification.\n"
-      "\n"
-      "Example usages:\n"
-      "%s --input in1.json --input in2.json            # merges to STDOUT\n"
-      "%s --input in1.json --minify --output out.json  # minifies to out.json\n"
-      "%s --help                                       # prints this message\n",
-      exe_name, exe_name, exe_name, exe_name);
+  fprintf(stderr,
+          "Usage: %s --input [infile] [--output outfile] [--minify]\n"
+          "\n"
+          "Merge one or more JSON files to a single JSON file.\n"
+          "If any input is not a valid JSON, the merge operation will fail.\n"
+          "Consequently you can \"merge\" one JSON file to perform validation.\n"
+          "If any two inputs overlap in the top-level key space, the merge "
+          "operation will fail.\n"
+          "Optionally the merged output can be minified.\n"
+          "Consequently you can \"merge\" one JSON file to perform "
+          "minification.\n"
+          "\n"
+          "Example usages:\n"
+          "%s --input in1.json --input in2.json            # merges to STDOUT\n"
+          "%s --input in1.json --minify --output out.json  # minifies to out.json\n"
+          "%s --help                                       # prints this message\n",
+          exe_name, exe_name, exe_name, exe_name);
 }
 
 int main(int argc, char** argv) {

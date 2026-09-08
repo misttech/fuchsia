@@ -5,6 +5,7 @@
 import("//build/python/python_library.gni")
 
 assert(is_host, "fuchsia_base_test only supported on a host toolchain")
+
 group("fuchsia_base_test") {
   testonly = true
   deps = [ ":fuchsia_base_test_no_testonly" ]

@@ -173,6 +173,7 @@ template("golden_files") {
             extensions == []) {
           format_golden_target = "_golden_files.$target_name.format.$golden"
           formatted_golden = "$formatted_goldens_dir/$golden"
+
           action(format_golden_target) {
             forward_variables_from(invoker, [ "testonly" ])
             visibility = [ ":$main_target" ]
@@ -229,6 +230,7 @@ template("golden_files") {
     }
 
     comparison_manifest = "$target_gen_dir/$target_name.comparisons.json"
+
     generated_file(comparison_json_target) {
       output_conversion = "json"
       contents = processed_comparisons

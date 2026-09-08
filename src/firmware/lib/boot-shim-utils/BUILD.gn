@@ -29,6 +29,7 @@ source_set("boot-shim-utils") {
 
 template("embedded_dtb") {
   dtb_target = target_name + "_dtb"
+
   dtb(dtb_target) {
     sources = [ invoker.dts ]
   }

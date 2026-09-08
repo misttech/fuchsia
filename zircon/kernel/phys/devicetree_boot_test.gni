@@ -32,6 +32,7 @@ template("devicetree_boot_test") {
   }
 
   executable_target = "_devicetree_phys_test.$test_target.executable"
+
   phys_executable(executable_target) {
     testonly = true
     visibility = [ ":*" ]

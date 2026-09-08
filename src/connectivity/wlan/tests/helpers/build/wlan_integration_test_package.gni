@@ -75,6 +75,7 @@ template("wlan_integration_test_package") {
 
   # Create test-root using generated component manifest.
   test_root_component = "${test_root_name}-component"
+
   fuchsia_test_component(test_root_component) {
     testonly = true
     manifest = test_root_manifest

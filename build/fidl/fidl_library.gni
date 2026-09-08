@@ -516,6 +516,7 @@ template("fidl_library") {
       json_summary_file = "${level_gen_dir}/${library_name}.api_summary.json"
 
       fidl_ir_target_name_for_level = "${compilation_target_name}_${level}"
+
       fidl_ir(fidl_ir_target_name_for_level) {
         forward_variables_from(invoker, invoker_variables_to_forward_to_fidl_ir)
         testonly = testonly
@@ -545,6 +546,7 @@ template("fidl_library") {
       if (level != "HEAD") {
         test_target_name_for_level =
             "${main_target_name}_${level}_compatibility_test"
+
         fidl_api_compatibility_test(test_target_name_for_level) {
           testonly = testonly
           target_api_level = level

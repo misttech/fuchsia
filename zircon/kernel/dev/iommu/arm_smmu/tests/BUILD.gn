@@ -60,6 +60,7 @@ group("tests") {
 if (is_host) {
   binary_dir = get_label_info(":arm_smmu_tests_binary($linux_x64_toolchain)",
                               "root_out_dir")
+
   host_test("arm_smmu_tests") {
     binary_path = "${binary_dir}/arm_smmu_tests_binary"
     deps = [ ":arm_smmu_tests_binary($linux_x64_toolchain)" ]

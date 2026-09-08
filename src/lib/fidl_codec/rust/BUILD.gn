@@ -80,6 +80,7 @@ template("fidl_codec_lib") {
       "//third_party/rust_crates:thiserror",
     ]
   }
+
   rustc_library(target_name) {
     forward_variables_from(_common, "*")
 

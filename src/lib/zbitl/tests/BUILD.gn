@@ -70,6 +70,7 @@ copy_test_deps = []
 foreach(src, src_storage_types) {
   foreach(dest, dest_storage_types) {
     source_set_name = "copy_tests.${src}-to-${dest}"
+
     source_set(source_set_name) {
       testonly = true
       sources = [ "copy-tests.cc" ]
@@ -173,6 +174,7 @@ if (is_fuchsia) {
     ]
   }
 }
+
 cpp_fuzzer("append-fuzzer") {
   sources = [ "append-fuzzer.cc" ]
   deps = [ ".." ]

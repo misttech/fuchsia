@@ -57,6 +57,7 @@ if (is_host) {
     ]
   }
 }
+
 rustc_macro("lib") {
   sources = [ "src/lib.rs" ]
   crate_name = "core_macros"

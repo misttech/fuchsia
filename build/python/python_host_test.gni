@@ -140,6 +140,7 @@ template("python_host_test") {
       "//scripts/fxtest/list_host_test:list_host_python_unittests_data"
   _test_lister_target_out_dir =
       get_label_info(_test_lister_target_label, "target_out_dir")
+
   host_test_data(_host_test_data_target) {
     testonly = true
     visibility = [ ":*" ]

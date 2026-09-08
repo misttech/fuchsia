@@ -458,6 +458,7 @@ template("assembly_input_bundle") {
         ]
       }
     }
+
     group_with_inputs(labels.config_data_with_verification) {
       deps = _config_data_deps
       sources = _config_data_sources
@@ -913,6 +914,7 @@ template("assembly_input_bundle") {
             # visibility group.
             _features_group_name = "${target_name}.compiled_package.${package.name}.${entry.component_name}.cmc_features"
             _deps += [ ":${_features_group_name}" ]
+
             group(_features_group_name) {
               deps = []
               foreach(feature, entry.cmc_features) {
@@ -948,6 +950,7 @@ template("assembly_input_bundle") {
       # to make sure that all input files are either source, or an output that's
       # accounted for by one of the deps.
       group_name = "${target_name}.compiled_package.${package.name}.inputs"
+
       group_with_inputs(group_name) {
         deps = _deps
         inputs = _inputs

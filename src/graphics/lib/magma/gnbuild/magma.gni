@@ -55,6 +55,7 @@ template("magma_vulkan_icd") {
   has_allowlist = defined(invoker.imported_symbols_allowlist)
 
   shared_library_target_name = "${target_name}__shlib"
+
   shared_library(shared_library_target_name) {
     forward_variables_from(invoker,
                            "*",
@@ -101,6 +102,7 @@ template("magma_vulkan_icd") {
 
     generated_imported_symbols_file =
         "$target_gen_dir/${invoker.output_name}.imported_symbols.list"
+
     extract_imported_symbols(extract_imported_symbols_target_name) {
       # IMPORTANT: Always use the shared library built in the "base" toolchain
       # to extract imported symbols. Because when the build is configured to
@@ -173,6 +175,7 @@ template("icd_config_data") {
       manifest_file = "$target_gen_dir/vulkan/icd.d/${entry.manifest_name}"
     }
     manifest_target = "${target_name}_${entry.lib}_gen"
+
     action(manifest_target) {
       script = "//src/graphics/lib/magma/scripts/gen_icd_manifest.sh"
       args = [
@@ -188,6 +191,7 @@ template("icd_config_data") {
   if (defined(invoker.resource_path)) {
     resource_path = invoker.resource_path
   }
+
   resource(target_name) {
     sources = manifest_files
     outputs = [ "${resource_path}/{{source_file_part}}" ]

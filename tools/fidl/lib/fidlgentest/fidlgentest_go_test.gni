@@ -19,6 +19,7 @@ template("fidlgentest_go_test") {
   fidlc_binary = get_label_info(fidlc_target, "root_out_dir") + "/fidlc"
 
   test_data_target = "${target_name}_test_data"
+
   host_test_data(test_data_target) {
     visibility = [ ":*" ]
     sources = [ fidlc_binary ]

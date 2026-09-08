@@ -72,6 +72,7 @@ template("rustc_embed_files") {
     }
     _inputs += [ file.source ]
   }
+
   generated_file(labels.rust_source) {
     contents = []
 

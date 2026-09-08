@@ -54,6 +54,7 @@ template("starnix_linux_executable") {
 
   _bin_label = ":${_bin_label}($target_linux_toolchain)"
   _bin_out_dir = get_label_info(_bin_label, "root_out_dir")
+
   resource(_resource_label) {
     forward_variables_from(invoker,
                            "*",
@@ -118,6 +119,7 @@ template("starnix_linux_arch32_executable") {
 
   _bin_label = ":${_bin_label}($target_linux_arch32_toolchain)"
   _bin_out_dir = get_label_info(_bin_label, "root_out_dir")
+
   resource(_resource_label) {
     forward_variables_from(invoker,
                            "*",

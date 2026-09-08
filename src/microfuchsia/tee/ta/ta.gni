@@ -59,6 +59,7 @@ template("fuchsia_ta_package") {
   # seeing what subset of the TEE internal API is being used by a particular TA
   # (especially during 'bring-up').
   ifs_file = "$target_out_dir/$main_target.ifs"
+
   ifs_extract(ifs_target) {
     forward_variables_from(invoker, [ "testonly" ])
     visibility = [ ":*" ]

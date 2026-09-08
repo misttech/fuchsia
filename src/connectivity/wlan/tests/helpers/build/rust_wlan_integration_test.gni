@@ -62,6 +62,7 @@ template("rust_wlan_integration_test") {
   component_name = "test-suite"
 
   component = "${target_name}-component"
+
   wlan_integration_test_component(component) {
     test_suite_binary = "${test_binary_name}"
     component_name = component_name

@@ -41,6 +41,7 @@ source_set("test_settings") {
     "//src/lib/fxl:cli",
   ]
 }
+
 source_set("gtest_main_no_testonly") {
   sources = [ "run_all_unittests.cc" ]
   deps = [
@@ -52,6 +53,7 @@ source_set("gtest_main_no_testonly") {
     "//third_party/googletest:gtest_no_testonly",
   ]
 }
+
 static_library("gtest_main") {
   testonly = true
   public_deps = [ ":gtest_main_no_testonly" ]

@@ -38,6 +38,7 @@ if (is_linux) {
   # gets its own binary and therefore own timeout.
   template("split_go_test") {
     split_name = invoker.target_name
+
     go_library(target_name) {
       testonly = true
       source_dir = "//src/tests/reboot/$split_name"
@@ -59,12 +60,15 @@ if (is_linux) {
   split_go_test("power_reboot") {
     sources = [ "power_reboot_test.go" ]
   }
+
   split_go_test("power_reboot_recovery") {
     sources = [ "power_reboot_recovery_test.go" ]
   }
+
   split_go_test("power_reboot_bootloader") {
     sources = [ "power_reboot_bootloader_test.go" ]
   }
+
   split_go_test("kill_critical_process") {
     sources = [ "kill_critical_process_test.go" ]
   }

@@ -21,13 +21,12 @@ void GetLines(std::istream* in, std::vector<std::string>* out_lines) {
 
 int main(int argc, char** argv) {
   if (argc != 4) {
-    std::cerr
-        << "usage: " << argv[0] << " LIST OUTPUT DEPFILE\n"
-        << "Reads LIST, which is a file containing one path per line.\n"
-        << "Reads all the lines from those files, sorts them, and removes "
-           "duplicates.\n"
-        << "Writes the result to OUTPUT.\n"
-        << "Writes a depfile to DEPFILE.\n";
+    std::cerr << "usage: " << argv[0] << " LIST OUTPUT DEPFILE\n"
+              << "Reads LIST, which is a file containing one path per line.\n"
+              << "Reads all the lines from those files, sorts them, and removes "
+                 "duplicates.\n"
+              << "Writes the result to OUTPUT.\n"
+              << "Writes a depfile to DEPFILE.\n";
     return 1;
   }
 

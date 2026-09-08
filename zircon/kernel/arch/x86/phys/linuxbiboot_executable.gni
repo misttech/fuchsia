@@ -100,6 +100,7 @@ template("linuxbiboot_executable") {
 
     # Collect the path to the .linuxbiboot64 subtarget's unstripped ELF file.
     rsp_target = "$fat_target.linuxbiboot64.rsp"
+
     link_output_rspfile(rsp_target) {
       visibility = [ ":*" ]
       forward_variables_from(invoker, [ "testonly" ])
@@ -109,6 +110,7 @@ template("linuxbiboot_executable") {
 
     # Use that file to generate the embed64.ld linker script.
     ld_target = "$fat_target.embed64.ld"
+
     toolchain_utils_action(ld_target) {
       visibility = [ ":*" ]
       forward_variables_from(invoker, [ "testonly" ])

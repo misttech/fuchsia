@@ -89,6 +89,7 @@ rustc_library("fidl") {
     deps += [ "//sdk/rust/zx" ]
   }
 }
+
 rustc_test("fidl_rust_lib_tests_bin") {
   sources = SRCS
   edition = "2024"

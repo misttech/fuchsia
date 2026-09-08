@@ -354,6 +354,7 @@ template("emboss_rust_library") {
   } else {
     _crate_source_root = "$target_gen_dir/${target_name}_lib.rs"
     _crate_sources = [ _crate_source_root ] + _compiled_rust_paths
+
     generated_file("${target_name}_module_index") {
       outputs = [ _crate_source_root ]
       contents = _module_lines

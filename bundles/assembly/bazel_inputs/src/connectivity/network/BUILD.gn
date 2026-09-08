@@ -22,6 +22,7 @@ if (current_cpu != "riscv64") {
     outputs = [ "$target_out_dir/netstack_migration.placeholder.txt" ]
     contents = ""
   }
+
   bazel_input_file("netstack-migration") {
     generator = ":netstack_migration.placeholder"
     outputs = [ "$target_out_dir/netstack_migration.placeholder.txt" ]
@@ -32,6 +33,7 @@ if (current_cpu != "riscv64") {
     outputs = [ "$target_out_dir/netstack_migration_gub.placeholder.txt" ]
     contents = ""
   }
+
   bazel_input_file("netstack-migration_gub") {
     generator = ":netstack_migration_gub.placeholder"
     outputs = [ "$target_out_dir/netstack_migration_gub.placeholder.txt" ]
@@ -42,6 +44,7 @@ if (current_cpu != "riscv64") {
     outputs = [ "$target_out_dir/netstack2.placeholder.txt" ]
     contents = ""
   }
+
   bazel_input_file("netstack2") {
     generator = ":netstack2.placeholder"
     outputs = [ "$target_out_dir/netstack2.placeholder.txt" ]

@@ -5,6 +5,7 @@
 import("//build/components.gni")
 import("//build/fidl/fidl.gni")
 import("//build/test.gni")
+
 group("test") {
   testonly = true
   deps = [ ":service-proxy-dir" ]

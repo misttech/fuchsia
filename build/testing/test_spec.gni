@@ -508,6 +508,7 @@ template("test_spec") {
       _manifest_entries += [ _manifest_path_rebased ]
       _manifest_inputs += [ _manifest_path ]
     }
+
     generated_file(pkg_manifest_deps_target_name) {
       forward_variables_from(invoker, [ "testonly" ])
       deps = _package_deps_with_toolchain
@@ -516,6 +517,7 @@ template("test_spec") {
       contents = _manifest_entries
     }
     pkg_manifest_deps_inputs_name = "${target_name}.pkg_manifest_deps.inputs"
+
     group_with_inputs(pkg_manifest_deps_inputs_name) {
       deps = _package_deps_with_toolchain
       inputs = _manifest_inputs

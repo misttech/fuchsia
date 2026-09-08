@@ -36,6 +36,7 @@ template("preprocess_expectations") {
 
   _base_target_name = target_name
   _preprocessed_target_name = "${_base_target_name}-preprocessed"
+
   compiled_action(_preprocessed_target_name) {
     forward_variables_from(invoker,
                            [

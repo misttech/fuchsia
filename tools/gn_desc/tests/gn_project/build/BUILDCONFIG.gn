@@ -27,12 +27,15 @@ set_defaults("executable") {
   # Executables get this additional configuration.
   configs += [ "//build:executable_ldconfig" ]
 }
+
 set_defaults("static_library") {
   configs = _shared_binary_target_configs
 }
+
 set_defaults("shared_library") {
   configs = _shared_binary_target_configs
 }
+
 set_defaults("source_set") {
   configs = _shared_binary_target_configs
 }

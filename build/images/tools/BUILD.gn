@@ -8,6 +8,7 @@ import("//build/images/tools/fastboot.gni")
 _board_tools_deps = []
 foreach(tool_path, board_tools) {
   basename = get_path_info(tool_path, "file")
+
   copy("board_tool_$basename") {
     sources = [ tool_path ]
     outputs = [ "$root_out_dir/board_tools/$basename" ]

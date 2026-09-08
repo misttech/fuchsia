@@ -61,6 +61,7 @@ if (is_host) {
     environments = [ sorrel_env ]
     timeout_secs = 900
   }
+
   python_mobly_test("usb_fastboot_loop_test") {
     main_source = "test_usb_disconnect.py"
     libraries = [
@@ -120,6 +121,7 @@ if (is_host) {
     testonly = true
     public_deps = [ ":cdc_stress_test($host_toolchain)" ]
   }
+
   group("usb_fastboot_loop_test") {
     testonly = true
     public_deps = [ ":usb_fastboot_loop_test($host_toolchain)" ]
@@ -144,6 +146,7 @@ if (is_host) {
     testonly = true
     public_deps = [ ":adb_fastboot_stress_test($host_toolchain)" ]
   }
+
   group("tests") {
     testonly = true
     public_deps = [

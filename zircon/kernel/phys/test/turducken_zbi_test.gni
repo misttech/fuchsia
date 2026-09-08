@@ -95,6 +95,7 @@ template("turducken_zbi_test") {
                  "deps",
                  "sources",
                ])
+
     group(duck) {
       visibility = [ ":*" ]
       testonly = true
@@ -155,6 +156,7 @@ template("turducken_cuckoo_test") {
   assert(next_zbi_file != "")
 
   packed_next_zbi = "$target_name.next.zbi.input"
+
   zbi_input(packed_next_zbi) {
     testonly = true
     sources = [ next_zbi_file ]

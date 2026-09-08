@@ -548,6 +548,7 @@ template("bazel_action") {
 
     # A group to depend on all bazel_input_xxx() dependencies.
     _bazel_inputs_group_target = "$target_name.bazel_inputs"
+
     group(_bazel_inputs_group_target) {
       forward_variables_from(invoker,
                              [
@@ -572,6 +573,7 @@ template("bazel_action") {
     _gn_targets_repository_manifest =
         "$target_out_dir/${target_name}.gn_targets_manifest.json"
     _gn_targets_repository_manifest_target = "${target_name}.gn_targets"
+
     generate_gn_targets_repository_manifest(
         _gn_targets_repository_manifest_target) {
       forward_variables_from(invoker, [ "testonly" ])

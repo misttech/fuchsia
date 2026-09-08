@@ -24,6 +24,7 @@ template("library_fuzzer") {
   if (defined(invoker.target_type)) {
     target_type = invoker.target_type
   }
+
   target(target_type, target_name) {
     # Library fuzzers include the engine in-process.
     variant_selector_target_type = "fuzzer_engine"

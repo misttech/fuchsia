@@ -166,6 +166,7 @@ verify_public_symbols("magma_verify_exported_symbols") {
 }
 
 generated_imported_symbols_file = "$target_gen_dir/magma.imported_symbols.list"
+
 extract_imported_symbols("magma_extract_imported_symbols") {
   library_target = shared_lib_target
   symbols = generated_imported_symbols_file

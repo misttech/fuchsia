@@ -57,6 +57,7 @@ if (is_host) {
     "src/ir.rs",
     "src/main.rs",
   ]
+
   rustc_binary("abi_compat_bin") {
     name = "abi_compat"
     edition = "2024"
@@ -202,6 +203,7 @@ if (is_host) {
     api_levels = platform_version.frozen_api_levels + [ "NEXT" ]
     external_label = "report_external"
     reports += [ ":${external_label}" ]
+
     abi_compat(external_label) {
       tear_off = true
       enforce = false

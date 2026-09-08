@@ -316,6 +316,7 @@ generate_package_metadata("discoverable_packages.list") {
 # publish after building a test package.
 discoverable_manifests_from_metadata =
     "$root_build_dir/package_manifests_from_metadata.list"
+
 generate_package_metadata("discoverable_manifests_from_metadata.list") {
   testonly = true
   outputs = [ discoverable_manifests_from_metadata ]

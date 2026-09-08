@@ -251,6 +251,7 @@ test_subprograms = []
 test_resources = []
 foreach(executable_name, test_subprogram_names) {
   test_subprograms += [ ":${executable_name}" ]
+
   executable("${executable_name}") {
     testonly = true
 
@@ -456,6 +457,7 @@ if (is_host) {
   foreach(name, test_subprogram_names) {
     target_name = "${name}_host"
     host_test_data_targets += [ ":$target_name" ]
+
     host_test_data(target_name) {
       testonly = true
       out_dir =
@@ -468,6 +470,7 @@ if (is_host) {
   foreach(name, test_names) {
     target_name = "${name}_bin_host"
     host_test_data_targets += [ ":$target_name" ]
+
     host_test_data(target_name) {
       testonly = true
       out_dir = get_label_info(":${name}_bin($target_linux_toolchain)",

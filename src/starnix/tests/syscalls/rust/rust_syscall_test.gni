@@ -51,6 +51,7 @@ template("rust_syscall_test") {
   # Generate the component manifest
   _manifest_label = "${target_name}.cml"
   _manifest_file = "$target_gen_dir/${_manifest_label}"
+
   generated_file(_manifest_label) {
     outputs = [ _manifest_file ]
     output_conversion = "json"

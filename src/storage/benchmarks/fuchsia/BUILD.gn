@@ -202,6 +202,7 @@ foreach(fs,
         ]) {
   target_name = "storage_${fs}_benchmarks"
   benchmarks += [ ":${target_name}" ]
+
   storage_benchmark(target_name) {
     fs = fs
     excluded_environments = [
@@ -225,6 +226,7 @@ foreach(fs,
         ]) {
   target_name = "storage_${fs}_benchmarks"
   benchmarks += [ ":${target_name}" ]
+
   storage_benchmark(target_name) {
     fs = fs
     excluded_environments = [

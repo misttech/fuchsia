@@ -20,6 +20,7 @@ template("starnix_container_config_component") {
 
   _config_as_json_label = "${target_name}_overrides"
   _config_as_json_path = "${target_gen_dir}/${_config_as_json_label}.json"
+
   generated_file(_config_as_json_label) {
     outputs = [ _config_as_json_path ]
     output_conversion = "json"
@@ -28,6 +29,7 @@ template("starnix_container_config_component") {
 
   _generator_label = "${target_name}_generated"
   _generated_manifest = "${target_gen_dir}/${_generator_label}.cml"
+
   python_action(_generator_label) {
     binary_label = "//src/starnix/build:generate_container_config_component"
     inputs = [
@@ -83,6 +85,7 @@ template("starnix_container_config_offers") {
       one_offer,
     ]
   }
+
   python_action(target_name) {
     binary_label = "//src/starnix/build:generate_container_config_shard"
     inputs = [ _config_schema ]

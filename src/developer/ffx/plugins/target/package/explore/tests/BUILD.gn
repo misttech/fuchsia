@@ -12,6 +12,7 @@ if (is_host) {
     testonly = true
     deps = [ ":verify_ffx_target_package_explore" ]
   }
+
   ffx_e2e_test("verify_ffx_target_package_explore") {
     testonly = true
     edition = "2024"

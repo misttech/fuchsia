@@ -93,6 +93,7 @@ dtb_synthetic = []
 dtb_synthetic_deps = []
 foreach(dts_file, dts_synthetic) {
   dtb_target = get_path_info(dts_file, "name")
+
   dtb(dtb_target) {
     sources = [ dts_file ]
   }

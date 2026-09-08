@@ -6,6 +6,7 @@ import("//build/host.gni")
 import("//build/rust/rustc_library.gni")
 
 assert(is_host, "Assembly libraries are host-only")
+
 rustc_library("update_package") {
   edition = "2024"
   name = "assembly_update_package"

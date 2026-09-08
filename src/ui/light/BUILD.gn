@@ -6,6 +6,7 @@ group("drivers") {
   testonly = true
   deps = [ "drivers/aml-light" ]
 }
+
 group("tests") {
   testonly = true
 

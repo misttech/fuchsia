@@ -332,6 +332,7 @@ template("fuchsia_test_package") {
         config_file_label = "$package_name.$manifest_name.test_config_partial"
         output_config =
             "$root_out_dir/test_configs_partial/$config_file_label.json"
+
         generated_file(config_file_label) {
           outputs = [ output_config ]
           contents = _test_config
@@ -349,6 +350,7 @@ template("fuchsia_test_package") {
             rebase_path(final_output_config_path, root_build_dir)
 
         test_script_generator_target_name = "${test_target}_script_gen"
+
         compiled_action(test_script_generator_target_name) {
           testonly = true
           tool = "//build/components:test_component_host_helper"
@@ -385,6 +387,7 @@ template("fuchsia_test_package") {
             get_target_outputs(test_script_generator_target)
 
         runtime_deps_group_target_name = "${test_target}_runtime_deps_group"
+
         group(runtime_deps_group_target_name) {
           testonly = true
           data_deps = [

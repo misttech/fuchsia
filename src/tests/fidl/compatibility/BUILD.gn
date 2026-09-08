@@ -149,6 +149,7 @@ foreach(test, fidl_compatibility_tests_categories) {
   generate_harness_output = generate_harness_output[0]
 
   generate_harness_manifest_compile = "${generate_harness_label}_compile"
+
   fuchsia_component_manifest(generate_harness_manifest_compile) {
     testonly = true
     component_name = "harness"

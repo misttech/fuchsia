@@ -622,6 +622,7 @@ template("sdk_prebuilt_library_impl") {
   }
   if (generate_plasa_artifacts) {
     _plasa_artifacts_target_name = "${main_target_name}_plasa"
+
     plasa_fragment_cc(_plasa_artifacts_target_name) {
       forward_variables_from(invoker,
                              [
@@ -643,6 +644,7 @@ template("sdk_prebuilt_library_impl") {
 
   runtime_deps_target_name = "${target_name}_runtime_deps"
   runtime_deps_file_name = "${target_gen_dir}/${target_name}.runtime_deps"
+
   generate_runtime_deps(runtime_deps_target_name) {
     atom_target = main_lib_target
     runtime_deps_file = runtime_deps_file_name
@@ -679,12 +681,14 @@ template("sdk_prebuilt_library_impl") {
   should_verify_pragma = !is_internal
   if (should_verify_pragma) {
     verify_pragma_target_name = "${main_target_name}_sdk_pragma"
+
     verify_pragma_once(verify_pragma_target_name) {
       headers = all_headers
     }
   }
 
   verify_public_headers_target = "${main_target_name}.verify_public_headers"
+
   verify_public_headers(verify_public_headers_target) {
     forward_variables_from(invoker, [ "testonly" ])
     target_label = main_lib_target
@@ -698,6 +702,7 @@ template("sdk_prebuilt_library_impl") {
   if (verify_public_symbols) {
     verify_public_symbols_target_name =
         "${main_target_name}_sdk_verify_public_symbols"
+
     verify_public_symbols(verify_public_symbols_target_name) {
       current = generated_ifs_file
       reference = ifs_golden_file

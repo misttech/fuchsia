@@ -4,6 +4,7 @@
 
 # [START fidl_echo]
 import("//build/fidl/fidl.gni")
+
 fidl("echo") {
   name = "fidl.examples.routing.echo"
 

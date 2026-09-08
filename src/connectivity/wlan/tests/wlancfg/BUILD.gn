@@ -54,6 +54,7 @@ antlion_host_test("connection_stress_test") {
     "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
   ]
 }
+
 antlion_host_test("hidden_networks_test") {
   main_source = "//src/connectivity/wlan/tests/wlancfg/HiddenNetworksTest.py"
   libraries = [

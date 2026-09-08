@@ -154,6 +154,7 @@ if (is_fuchsia) {
     sdk = "shared"
   }
 }
+
 source_set("constants") {
   public = [
     "include/lib/fdio/limits.h",

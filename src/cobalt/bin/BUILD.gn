@@ -93,6 +93,7 @@ template("testapp_cobalt_components") {
 testapp_cobalt_components("variants_networked_components") {
   name = "networked"
 }
+
 testapp_cobalt_components("variants_no_network_components") {
   name = "no_network"
 }

@@ -60,6 +60,7 @@ if (magma_openvx_package != "") {
   i = 0
   foreach(src_dst_pair, openvx_data) {
     resource_target = "vxcopy_resource_$i"
+
     resource(resource_target) {
       sources = [ rebase_path(src_dst_pair[0]) ]
       outputs = [ src_dst_pair[1] ]

@@ -44,6 +44,7 @@ template("triage_config_test") {
   }
 
   config_target_name = target_name + "_configs"
+
   host_test_data(config_target_name) {
     sources = []
     foreach(config, invoker.sources) {

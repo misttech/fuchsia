@@ -17,26 +17,33 @@ if (is_host) {
     # For access to google.protobuf.Struct type.
     import_protobuf_full = true
   }
+
   golden_python_proto("build_artifacts_py") {
     sources = [ "proto/build_artifacts.proto" ]
     import_protobuf_full = true
   }
+
   golden_go_proto("context") {
     sources = [ "proto/context.proto" ]
   }
+
   golden_python_proto("context_py") {
     sources = [ "proto/context.proto" ]
   }
+
   golden_go_proto("set_artifacts") {
     sources = [ "proto/set_artifacts.proto" ]
   }
+
   golden_python_proto("set_artifacts_py") {
     sources = [ "proto/set_artifacts.proto" ]
   }
+
   golden_go_proto("static") {
     sources = [ "proto/static.proto" ]
     generate_descriptor_set = true
   }
+
   golden_python_proto("static_py") {
     sources = [ "proto/static.proto" ]
   }

@@ -23,6 +23,7 @@ if (is_host) {
     extra_args =
         [ rebase_path("$target_gen_dir/november.doc.zip.copy", root_build_dir) ]
   }
+
   host_test_data("host-test-data") {
     sources = [ "$target_gen_dir/november.doc.zip" ]
     public_deps = [
@@ -48,6 +49,7 @@ rustc_library("charlie") {
   rustdoc_args = [ "--enable-index-page" ]
   zip_rustdoc_to = "$target_gen_dir/charlie.doc.zip"
 }
+
 rustc_macro("march") {
   edition = "2024"
   define_rustdoc_test_override = true
@@ -62,6 +64,7 @@ rustc_macro("march") {
   rustdoc_args = [ "--enable-index-page" ]
   zip_rustdoc_to = "$target_gen_dir/march.doc.zip"
 }
+
 rustc_library("november") {
   edition = "2024"
   define_rustdoc_test_override = true

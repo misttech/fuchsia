@@ -131,6 +131,7 @@ template("user_basic_redirect") {
     # will redirect to this target to do generic variant selection in the right
     # environment context.
     select_target = "$target_name.select"
+
     variant_target("group") {
       target_name = select_target
       variant_selector_target_type = "loadable_module"

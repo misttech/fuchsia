@@ -108,6 +108,7 @@ template("run_target_test_and_host_script") {
     _script_bin_name = invoker.host_script_bin_name
   }
   _script_src = "${root_out_dir}/${_script_bin_name}"
+
   host_test_data("host_script_for_${target_name}") {
     sources = [ _script_src ]
     deps = [ invoker.host_script ]

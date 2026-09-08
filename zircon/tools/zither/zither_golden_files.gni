@@ -71,6 +71,7 @@ template("zither_golden_files") {
       dynamic_goldens_target =
           "_zither_golden_files.${main_target}.dynamic_manifest"
       golden_comparisons = "$target_gen_dir/$main_target.goldens.json"
+
       action(dynamic_goldens_target) {
         forward_variables_from(invoker,
                                [

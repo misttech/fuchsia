@@ -21,6 +21,7 @@ source_set("avcc_processor") {
     "//src/media/third_party/chromium_media",
   ]
 }
+
 source_set("vaapi_utils") {
   sources = [ "vaapi_utils.cc" ]
   public = [ "vaapi_utils.h" ]

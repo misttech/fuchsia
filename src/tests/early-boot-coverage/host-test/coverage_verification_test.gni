@@ -13,6 +13,7 @@ template("coverage_verification_test") {
       "${target_name}.instrumented_binary_link_rsp"
   instrumented_binary_rsp_file =
       "${target_out_dir}/${target_name}.binary-instrumented.rsp"
+
   link_output_rspfile(instrumented_binary_link_rsp_action) {
     testonly = true
     deps = [ "${invoker.instrumented_target}" ]
@@ -22,6 +23,7 @@ template("coverage_verification_test") {
   instrumented_binary_path =
       "$target_out_dir/${target_name}.binary-instrumented"
   instrumented_binary_copy_action = "${target_name}.instrumented_binary_copy"
+
   action(instrumented_binary_copy_action) {
     testonly = true
     sources = [ instrumented_binary_rsp_file ]
@@ -57,6 +59,7 @@ template("coverage_verification_test") {
 
   # Host test data for the product bundle.
   system_image_label = "${target_name}.system-images"
+
   host_test_data(system_image_label) {
     sources = [ product_bundle_dir ]
     deps = [ invoker.product_bundle ]
@@ -81,6 +84,7 @@ template("coverage_verification_test") {
   # List of sources to be provided to the test, such that they can be provided
   # to llvm-cov invocations.
   expectation_sources_label = "${target_name}.expectation_sources_label"
+
   host_test_data(expectation_sources_label) {
     sources = expectation_sources_path
   }
@@ -119,6 +123,7 @@ template("coverage_verification_test") {
   # Config file to be embedded as host test data for the generated test target.
   config_file_label = "$target_name.test_config"
   output_config = "$root_out_dir/$config_file_label.json"
+
   generated_file(config_file_label) {
     outputs = [ output_config ]
     contents = test_config
@@ -126,6 +131,7 @@ template("coverage_verification_test") {
   }
 
   test_config_host_label = "$config_file_label.host-test-data"
+
   host_test_data(test_config_host_label) {
     sources = [ output_config ]
     deps = [ ":$config_file_label" ]

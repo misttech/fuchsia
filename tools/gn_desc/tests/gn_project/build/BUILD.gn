@@ -5,6 +5,7 @@
 config("compiler_defaults") {
   cflags = [ "-Os" ]
 }
+
 config("executable_ldconfig") {
   ldflags = [ "-some_ld_flag" ]
 }

@@ -51,6 +51,7 @@ template("driver_manifest") {
   distribution_manifest_target = "${target_name}_distribution_manifest"
   distribution_manifest_file =
       "${target_gen_dir}/${target_name}.distribution_manifest"
+
   distribution_manifest(distribution_manifest_target) {
     forward_variables_from(invoker,
                            [

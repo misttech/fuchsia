@@ -8,6 +8,7 @@ import("//build/testing/host_test_data.gni")
 
 if (is_host) {
   relative_root_out_dir = rebase_path(root_out_dir, root_build_dir)
+
   rustc_library("package-tool") {
     version = "0.1.0"
     edition = "2024"

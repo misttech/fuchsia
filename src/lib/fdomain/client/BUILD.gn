@@ -128,6 +128,7 @@ rustc_library("client") {
     "//third_party/rust_crates:rand",
   ]
 }
+
 rustc_library("flex_fdomain") {
   sources = [ "src/flex.rs" ]
   features = [ "fdomain" ]
@@ -141,6 +142,7 @@ rustc_library("flex_fdomain") {
     "//src/lib/fidl/rust/fidl",
   ]
 }
+
 rustc_library("flex_fidl") {
   sources = [ "src/flex.rs" ]
   crate_name = "flex_client"

@@ -27,12 +27,14 @@ import("//build/testing/environments.gni")
 #
 template("h264_file_decoder_conformance_test") {
   h264_resource_name = "${invoker.target_name}_h264"
+
   resource(h264_resource_name) {
     sources = [ invoker.h264_file ]
     outputs = [ "data/foo.h264" ]
   }
 
   md5_resource_name = "${invoker.target_name}_md5"
+
   resource(md5_resource_name) {
     sources = [ invoker.md5_file ]
     outputs = [ "data/foo.md5" ]

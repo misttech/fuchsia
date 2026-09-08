@@ -65,6 +65,7 @@ template("component_id_index_config") {
   component_id_index_input_manifest_path =
       "${target_gen_dir}/${target_name}_merge_input_manifest"
   component_id_index_merged_inputs = "${target_name}_merged_inputs"
+
   generated_file(component_id_index_merged_inputs) {
     forward_variables_from(invoker,
                            [

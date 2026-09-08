@@ -48,6 +48,7 @@ if (is_host) {
 # TODO(https://fxbug.dev/407117303): Remove once all callers have been migrated
 # to use the list from base_deps.gni instead.
 import("base_deps.gni")
+
 group("chromium_test_base_deps") {
   testonly = true
   visibility += [

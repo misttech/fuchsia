@@ -274,12 +274,14 @@ template("sdk_source_set") {
   should_verify_pragma = !is_internal
   if (should_verify_pragma) {
     verify_pragma_target_name = "${target_name}_sdk_pragma"
+
     verify_pragma_once(verify_pragma_target_name) {
       headers = all_headers
     }
   }
 
   verify_public_headers_target = "${target_name}_verify_public_headers"
+
   verify_public_headers(verify_public_headers_target) {
     forward_variables_from(invoker, [ "testonly" ])
     target_label = ":${target_name}"
@@ -288,6 +290,7 @@ template("sdk_source_set") {
 
   if (generate_plasa_artifacts) {
     _plasa_artifacts_target_name = "${main_target_name}_plasa"
+
     plasa_fragment_cc(_plasa_artifacts_target_name) {
       forward_variables_from(invoker,
                              [

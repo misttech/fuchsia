@@ -44,6 +44,7 @@ template("extract_imported_symbols") {
     # Generate a response file that will contain the path to the library file.
     _library_rsp_target = "${target_name}_library.rsp"
     _library_rsp_file = "$target_gen_dir/${target_name}_library.rsp"
+
     link_output_rspfile(_library_rsp_target) {
       deps = [ invoker.library_target ]
       outputs = [ _library_rsp_file ]

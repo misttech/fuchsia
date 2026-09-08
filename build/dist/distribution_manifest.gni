@@ -141,6 +141,7 @@ template("distribution_manifest") {
 #   visibility
 template("distribution_entries_file") {
   assert(defined(invoker.file), "Must specify file")
+
   group(target_name) {
     forward_variables_from(invoker,
                            [

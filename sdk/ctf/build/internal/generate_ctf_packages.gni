@@ -28,6 +28,7 @@ template("generate_ctf_package") {
   # Without this the build fails with an error that
   # ${target_name}_meta_package.txt is missing.
   meta_package_target = "${target_name}_meta_package"
+
   generate_meta_package(meta_package_target) {
     package_name = invoker.package_name
   }
@@ -65,6 +66,7 @@ template("generate_ctf_packages") {
     actual_package_name = item.package_name
     package_target_name = "${actual_package_name}_ctf${api_level}"
     packages += [ ":$package_target_name" ]
+
     generate_ctf_package(package_target_name) {
       package_name = actual_package_name
       archive_path = "$root_dir/${item.archive_name}.far"

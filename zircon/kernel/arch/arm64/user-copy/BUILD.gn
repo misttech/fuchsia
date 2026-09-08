@@ -53,6 +53,7 @@ if (is_fuchsia) {
     }
 
     benchmark_name = "$target_name-bench"
+
     executable(benchmark_name) {
       output_name = main_target_name
       visibility = [ ":*" ]

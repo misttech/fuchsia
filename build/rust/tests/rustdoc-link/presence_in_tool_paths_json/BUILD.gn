@@ -18,6 +18,7 @@ group("presence_in_tool_paths_json") {
 if (is_host) {
   # test tool paths
   _tool_paths = "$target_gen_dir/tool_paths.json"
+
   generated_file("tool_paths") {
     outputs = [ _tool_paths ]
     testonly = true
@@ -28,6 +29,7 @@ if (is_host) {
   }
 
   _fake_build_dir = "${target_gen_dir}/fake/build/dir"
+
   host_test_data("tool_paths_copy") {
     testonly = true
     deps = [ ":tool_paths($host_toolchain)" ]

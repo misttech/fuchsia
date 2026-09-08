@@ -123,6 +123,7 @@ if (internal_access) {
       input = "//prebuilt/camera/camera_gym_assets/$file"
       output = "$target_out_dir/${file}"
     }
+
     resource("${file}_resource") {
       sources = get_target_outputs(":$file")
       outputs = [ "data/$file" ]

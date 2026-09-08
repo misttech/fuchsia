@@ -20,6 +20,7 @@ template("create_all_drivers_doc") {
   main_target = target_name
   all_doc_target = "${target_name}_all_doc"
   all_doc_output = "${target_gen_dir}/${target_name}_all_doc"
+
   generated_file(all_doc_target) {
     forward_variables_from(invoker,
                            [

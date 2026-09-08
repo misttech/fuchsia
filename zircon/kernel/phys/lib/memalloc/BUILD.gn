@@ -139,6 +139,7 @@ if (!is_kernel) {
       ]
     }
   }
+
   cpp_fuzzer("find-fuzzer") {
     sources = [ "find-fuzzer.cc" ]
     deps = [

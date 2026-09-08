@@ -309,6 +309,7 @@ template("python_mobly_test") {
   #
   _test_binary_name = "${_test_name}.pyz"
   _test_binary_target = "${_test_name}_python_binary"
+
   python_binary(_test_binary_target) {
     forward_variables_from(invoker,
                            [
@@ -348,6 +349,7 @@ template("python_mobly_test") {
   # Define Mobly test host_test_data().
   #
   _mobly_test_data_target = "${_test_name}_test_data"
+
   host_test_data(_mobly_test_data_target) {
     visibility = [ ":*" ]
     testonly = _testonly
@@ -369,6 +371,7 @@ template("python_mobly_test") {
   # iperf servers) interactions when running wlan end-to-end tests.
 
   _ssh_binary_test_data_target = "${_test_name}_test_data_ssh"
+
   host_test_data(_ssh_binary_test_data_target) {
     testonly = true
     visibility = [ ":*" ]
@@ -412,6 +415,7 @@ template("python_mobly_test") {
   _additional_deps = []
   if (defined(invoker.ssh_key_path)) {
     _ssh_key_data_target = "${_test_name}_ssh_key_data"
+
     host_test_data(_ssh_key_data_target) {
       sources = [ invoker.ssh_key_path ]
       outputs = [ "${_test_dir}/ssh_key" ]
@@ -432,6 +436,7 @@ template("python_mobly_test") {
   } else if (defined(invoker.params)) {
     _generated_params_target = "${target_name}_generated_params"
     _params_source = "${target_gen_dir}/${target_name}_params.json"
+
     generated_file(_generated_params_target) {
       output_conversion = "json"
       contents = invoker.params
@@ -442,6 +447,7 @@ template("python_mobly_test") {
 
   if (defined(_params_source)) {
     _param_yaml_data_target = "${_test_name}_params_data"
+
     host_test_data(_param_yaml_data_target) {
       testonly = _testonly
       sources = [ _params_source ]
@@ -478,6 +484,7 @@ template("python_mobly_test") {
         "${target_name}_generated_honeydew_config"
     _honeydew_config_source =
         "${target_gen_dir}/${target_name}_honeydew_config.json"
+
     generated_file(_generated_honeydew_config_target) {
       output_conversion = "json"
       contents = invoker.honeydew_config
@@ -486,6 +493,7 @@ template("python_mobly_test") {
     _honeydew_config_deps = [ ":${_generated_honeydew_config_target}" ]
 
     _honeydew_config_json_data_target = "${_test_name}_honeydew_config_data"
+
     host_test_data(_honeydew_config_json_data_target) {
       testonly = _testonly
       sources = [ _honeydew_config_source ]
@@ -504,6 +512,7 @@ template("python_mobly_test") {
   # If specified, define test config data target and add data path to host args.
   if (defined(invoker.local_config_source)) {
     _config_yaml_data_target = "${_test_name}_config_data"
+
     host_test_data(_config_yaml_data_target) {
       testonly = _testonly
       sources = [ invoker.local_config_source ]
@@ -538,9 +547,11 @@ template("python_mobly_test") {
   # Define the Mobly host_test().
   #
   _python_exe_data_target = "${_test_name}_python_exe_data"
+
   host_test_data(_python_exe_data_target) {
     sources = [ python_exe_src ]
   }
+
   host_test(_test_name) {
     forward_variables_from(invoker,
                            [
@@ -723,6 +734,7 @@ template("python_mobly_test") {
     #
     _hermetic_mobly_test_data_target =
         "${_test_name}_hermetic_python_binary_test_data"
+
     host_test_data(_hermetic_mobly_test_data_target) {
       visibility = [ ":*" ]
       testonly = _testonly

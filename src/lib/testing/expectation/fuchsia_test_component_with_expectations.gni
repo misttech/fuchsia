@@ -51,6 +51,7 @@ template("fuchsia_test_component_with_expectations") {
              ])
 
   _expectations_target = "${target_name}_preprocessed_expectations"
+
   preprocess_expectations(_expectations_target) {
     testonly = true
     if (defined(invoker.generated_expectations)) {
@@ -83,6 +84,7 @@ template("fuchsia_test_component_with_expectations") {
   _expectations_offer_cml_shard_target = "${target_name}_offer_cml_shard"
   _expectations_offer_cml_shard_file =
       "${target_gen_dir}/${_test_component_name}_expectations_offer.shard.cml"
+
   generated_file(_expectations_offer_cml_shard_target) {
     contents = {
       offer = [
@@ -101,6 +103,7 @@ template("fuchsia_test_component_with_expectations") {
 
   _merged_cml_target = "${target_name}_merged_cml"
   _merged_cml_file_name = "${_test_component_name}_merged.cml"
+
   cmc_merge(_merged_cml_target) {
     testonly = true
     deps = [ ":${_expectations_offer_cml_shard_target}" ]
@@ -135,6 +138,7 @@ template("fuchsia_test_component_with_expectations") {
   #
   # Thus, the following generates a JSON file of that format.
   _manifest_json_singleton_target = "${target_name}_manifest_json_singleton"
+
   generated_file(_manifest_json_singleton_target) {
     testonly = true
     outputs = [ "$target_out_dir/$_manifest_json_singleton_target.json" ]
@@ -154,6 +158,7 @@ template("fuchsia_test_component_with_expectations") {
   # `cmc_check_includes` by having the `cmc_check_includes` invocation dep on
   # a target whose metadata specifies the `cmc_expected_includes_cml` like so:
   _expected_includes_metadata_target = "${target_name}-expected-includes"
+
   group(_expected_includes_metadata_target) {
     metadata = {
       cmc_expected_includes_cml =
@@ -166,6 +171,7 @@ template("fuchsia_test_component_with_expectations") {
   # will fail if `invoker.manifest` does not include the expectation client
   # shard.
   _include_check_target = "${target_name}-check-includes"
+
   cmc_check_includes(_include_check_target) {
     testonly = true
     _json_singleton_outputs =

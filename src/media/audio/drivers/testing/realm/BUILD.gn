@@ -10,10 +10,12 @@ fuchsia_driver_dml("test-dai_dml") {
   dml = "meta/test-dai.dml"
   driver_name = "test-dai"
 }
+
 fuchsia_driver_dml("test-codec_dml") {
   dml = "meta/test-codec.dml"
   driver_name = "test-codec"
 }
+
 fuchsia_driver_dml("test-codec2_dml") {
   dml = "meta/test-codec2.dml"
   driver_name = "test-codec2"
@@ -29,11 +31,13 @@ driver_bind_rules("codec_test-bind") {
   bind_output = "test-codec.bindbc"
   deps = [ ":fuchsia.test.audio" ]
 }
+
 driver_bind_rules("codec_test2-bind") {
   dml_label = ":test-codec2_dml"
   bind_output = "test-codec2.bindbc"
   deps = [ ":fuchsia.test.audio" ]
 }
+
 driver_bind_rules("dai_test-bind") {
   dml_label = ":test-dai_dml"
   bind_output = "test-dai.bindbc"
@@ -78,6 +82,7 @@ fuchsia_cc_driver("codec-test-driver") {
     "//zircon/system/ulib/zxtest",
   ]
 }
+
 fuchsia_cc_driver("codec-test-driver2") {
   legacy = true
   output_name = "codec-test-driver2"
@@ -93,6 +98,7 @@ fuchsia_cc_driver("codec-test-driver2") {
     "//zircon/system/ulib/zxtest",
   ]
 }
+
 fuchsia_cc_driver("dai-test-driver") {
   legacy = true
   output_name = "dai-test-driver"

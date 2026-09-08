@@ -29,6 +29,7 @@ fuchsia_cc_driver("aml-hrtimer-driver") {
     ":common",
   ]
 }
+
 fuchsia_component_manifest("aml-hrtimer-manifest") {
   component_name = "aml-hrtimer"
   manifest = "meta/aml-hrtimer.cml"

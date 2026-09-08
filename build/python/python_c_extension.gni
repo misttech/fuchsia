@@ -52,6 +52,7 @@ template("python_c_extension") {
 
   main_target_name = target_name
   shlib_target_name = "lib${target_name}"
+
   python_c_extension_shared_lib(shlib_target_name) {
     forward_variables_from(invoker,
                            [
@@ -79,6 +80,7 @@ template("python_c_extension") {
       stub_output = "${target_gen_dir}/${main_target_name}/" +
                     rebase_path(stub, invoker.stubs_root)
       stub_outputs += [ stub_output ]
+
       copy(stub_target_name) {
         sources = [ stub ]
         outputs = [ stub_output ]

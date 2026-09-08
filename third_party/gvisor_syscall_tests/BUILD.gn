@@ -392,6 +392,7 @@ template("syscall_test_suite") {
     if (defined(invoker.test_srcs_target)) {
       test_srcs_target = invoker.test_srcs_target
     }
+
     test(test_target_label) {
       deps = [
         "${test_srcs_target}",
@@ -409,6 +410,7 @@ template("syscall_test_suite") {
     }
 
     expectations_target_name = "${component_label}_expectations"
+
     generated_expectations_file(expectations_target_name) {
       includes = []
       if (stack.label == ns3_label) {
@@ -463,6 +465,7 @@ template("syscall_test_suite") {
     testonly = true
     public_deps = ns3_test_deps
   }
+
   group("${suite_label}_ns2") {
     testonly = true
     public_deps = ns2_test_deps
@@ -471,6 +474,7 @@ template("syscall_test_suite") {
 
 syscall_test_suite(generic_test_label) {
 }
+
 syscall_test_suite(loopback_test_label) {
   # The loopback suite was previously manually sharded into multiple different
   # suites because it is longer-running and has more cases than many of the
@@ -483,24 +487,31 @@ syscall_test_suite(loopback_test_label) {
   debug_netstack2 = false
   log_less = true
 }
+
 syscall_test_suite(loopback_isolated_test_label) {
   # The loopback_isolated suite was previously manually sharded into multiple
   # different suites because it is longer-running and has more cases than many
   # of the other suites. To compensate for this, use additional shards.
   num_shards = 10
 }
+
 syscall_test_suite(raw_packet_test_label) {
 }
+
 syscall_test_suite(udp_test_label) {
   with_distinct_fast_udp_expectations = true
 }
+
 syscall_test_suite(udp_raw_test_label) {
 }
+
 syscall_test_suite(udp_unbound_test_label) {
 }
+
 syscall_test_suite(tcp_blocking_test_label) {
   run_with_fast_udp = false
 }
+
 syscall_test_suite(tcp_test_label) {
   run_with_fast_udp = false
 

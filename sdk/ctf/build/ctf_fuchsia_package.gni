@@ -38,6 +38,7 @@ template("ctf_fuchsia_package_archive") {
   }
 
   copy_target = "${target_name}_copy"
+
   copy(copy_target) {
     testonly = true
     sources = get_target_outputs(":$archive_target")

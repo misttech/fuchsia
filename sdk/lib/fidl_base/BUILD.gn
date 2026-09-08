@@ -45,6 +45,7 @@ source_set("fidl_txn_header") {
   visibility = [ "//zircon/system/ulib/ldmsg/*" ]
   public_deps = [ "//src/zircon/lib/zircon" ]
 }
+
 sdk_source_set("fidl_base") {
   sources = [
     "decoding_and_validating.cc",
