@@ -14,18 +14,20 @@
 //!   under an [`RcuReadScope`], ensuring memory reclamation safety without blocking or
 //!   interfering with writers.
 //! - **Writers (`alloc`, `alloc_cyclic`, `reserve_id`, `remove`)**: Mutations are serialized
-//!   internally via a mutex, while atomic pointer updates and memory barriers allow concurrent
-//!   readers to proceed in parallel without interruption.
+//!   via an [`IdrGuard`] acquired with [`Idr::lock`], while atomic pointer updates and memory
+//!   barriers allow concurrent readers to proceed in parallel without interruption.
 //!
 //! # Key Operations
 //!
-//! - [`Idr::alloc`]: Allocates the lowest available ID starting from 0.
-//! - [`Idr::alloc_cyclic`]: Allocates IDs sequentially starting from the previous cursor position,
-//!   wrapping around to 0 when hitting upper bounds (matching Linux PID allocation behavior).
+//! - [`Idr::lock`]: Acquires the writer lock, returning an [`IdrGuard`] for mutating operations.
 //! - [`Idr::lookup`]: Retrieves the object for a given ID without locking.
-//! - [`Idr::reserve_id`]: Marks a specific ID as occupied without inserting an element.
-//! - [`Idr::remove`]: Removes an item and restores slot availability.
 //! - [`Idr::iter`]: Iterates over all active `(u32, &Arc<T>)` entries under an RCU scope.
+//! - [`IdrGuard::alloc`]: Allocates the lowest available ID starting from 0.
+//! - [`IdrGuard::alloc_cyclic`]: Allocates IDs sequentially starting from the previous cursor
+//!   position, wrapping around to 0 when hitting upper bounds (matching Linux PID allocation
+//!   behavior).
+//! - [`IdrGuard::reserve_id`]: Marks a specific ID as occupied without inserting an element.
+//! - [`IdrGuard::remove`]: Removes an item and restores slot availability.
 //!
 //! # Structural Architecture
 //!
@@ -39,7 +41,7 @@
 use fuchsia_rcu::{RcuDroppable, RcuDroppableArc, RcuOptionBox};
 use smallvec::SmallVec;
 use starnix_rcu::RcuReadScope;
-use starnix_sync::Mutex;
+use starnix_sync::{Mutex, MutexGuard};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -73,6 +75,11 @@ impl<T: RcuDroppable + Send + Sync + 'static> Default for Idr<T> {
 }
 
 impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
+    /// Acquires the writer lock, returning an [`IdrGuard`] that provides mutating operations.
+    pub fn lock(&self) -> IdrGuard<'_, T> {
+        IdrGuard { idr: self, cursor: self.writer_lock.lock() }
+    }
+
     /// RCU protected lock-free lookup for readers
     pub fn lookup(&self, id: u32, scope: &RcuReadScope) -> Option<Arc<T>> {
         let mut current_node = self.root.as_ref(scope);
@@ -96,180 +103,12 @@ impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
         }
     }
 
-    /// Allocates the next available ID by calling a factory providing the newly
-    /// acquired ID
-    pub fn alloc<F>(&self, factory: F) -> Option<(u32, Arc<T>)>
-    where
-        F: FnOnce(u32) -> Arc<T>,
-    {
-        self.alloc_inner(false, factory)
-    }
-
-    /// Allocates the next available ID cyclically, wrapping around when hitting
-    /// the current tree capacity limit.
-    pub fn alloc_cyclic<F>(&self, factory: F) -> Option<(u32, Arc<T>)>
-    where
-        F: FnOnce(u32) -> Arc<T>,
-    {
-        self.alloc_inner(true, factory)
-    }
-
-    /// Marks a specific ID as unavailable so the allocator will never return it.
-    /// Does not populate the tree with an item.
-    pub fn reserve_id(&self, id: u32) {
-        let _guard = self.writer_lock.lock();
-        let mut root_arc = self.root.to_arc();
-
-        loop {
-            let capacity = root_arc.capacity();
-            if (id as u64) < capacity {
-                break;
-            }
-            if let Some(new_root) = self.grow_tree_by_one_layer(&root_arc) {
-                root_arc = new_root;
-            } else {
-                return; // Exceeded max depth
-            }
-        }
-
-        let scope = RcuReadScope::new();
-        let mut current_node = root_arc.as_ref();
-        let mut path = SmallVec::<[(&IdrNode<T>, usize); MAX_DEPTH as usize]>::new();
-
-        loop {
-            let index = current_node.index_for_id(id);
-
-            path.push((current_node, index));
-
-            // Reached a leaf node. Claim the slot.
-            if current_node.layer == 0 {
-                // If it was previously free, and this clears the last free bit, propagate fullness
-                if current_node.mark_allocated(index) {
-                    self.propagate_fullness(&path);
-                }
-                return;
-            }
-
-            // Descend to the next layer.
-            current_node = current_node.get_or_create_child(index, &scope);
-        }
-    }
-
-    /// Removes an item by ID
-    pub fn remove(&self, id: u32) {
-        let _guard = self.writer_lock.lock();
-
-        let scope = RcuReadScope::new();
-
-        let mut current_node = self.root.as_ref(&scope);
-
-        if (id as u64) >= current_node.capacity() {
-            return;
-        }
-
-        let mut path = SmallVec::<[(&IdrNode<T>, usize); MAX_DEPTH as usize]>::new();
-
-        loop {
-            let index = current_node.index_for_id(id);
-
-            path.push((current_node, index));
-
-            let Some(child) = current_node.children[index].as_ref(&scope) else {
-                // Nothing to remove
-                return;
-            };
-
-            if current_node.layer == 0 {
-                current_node.children[index].update(None);
-                current_node.mark_absent(index);
-                if current_node.mark_freed(index) {
-                    self.propagate_availability(&path);
-                }
-                return;
-            } else {
-                current_node = match child {
-                    IdrEntry::Node(n) => &**n,
-                    _ => unreachable!("Tree corruption: expected a Node entry here"),
-                };
-            }
-        }
-    }
-
     /// Returns a lock-free RCU iterator over all entries
     pub fn iter<'a>(&'a self, scope: &'a RcuReadScope) -> IdrIterator<'a, T> {
         let mut stack = SmallVec::new();
         let root = self.root.as_ref(scope);
         stack.push((root, 0, 0));
         IdrIterator { scope, stack }
-    }
-
-    /// Core allocation logic supporting both linear and cyclic allocation modes.
-    ///
-    /// If `is_cyclic` is false, allocation starts at ID 0 and selects the lowest available slot.
-    /// If `is_cyclic` is true, allocation starts at the cursor saved in `writer_lock` from
-    /// the previous cyclic allocation. If no free slot exists at or above the cursor, it wraps
-    /// around to ID 0 to search the remainder of the tree.
-    fn alloc_inner<F>(&self, is_cyclic: bool, factory: F) -> Option<(u32, Arc<T>)>
-    where
-        F: FnOnce(u32) -> Arc<T>,
-    {
-        let mut next_id_guard = self.writer_lock.lock();
-        let mut root_arc = self.root.to_arc();
-
-        let start_id = if is_cyclic { *next_id_guard } else { 0 };
-
-        // Ensure the tree is large enough:
-        // 1. If the root free bitmap is 0, the entire current tree capacity is exhausted,
-        //    requiring a new root layer on top.
-        // 2. If `start_id` exceeds current tree capacity (e.g. after wrapping or initial placement),
-        //    grow the tree until capacity covers `start_id` or until MAX_DEPTH is reached.
-        while root_arc.free_bitmap.load(Ordering::Relaxed) == 0
-            || (start_id as u64) >= root_arc.capacity()
-        {
-            if let Some(new_root) = self.grow_tree_by_one_layer(&root_arc) {
-                root_arc = new_root;
-            } else {
-                // Tree reached maximum allowable depth and free_bitmap is 0,
-                // meaning it is completely full across all possible 32-bit IDs.
-                return None;
-            }
-        }
-
-        let scope = RcuReadScope::new();
-        let mut path = SmallVec::<[(&IdrNode<T>, usize); MAX_DEPTH as usize]>::new();
-        // First attempt: search for a free slot >= `start_id`.
-        let id_opt = self.find_free_slot(start_id, &mut path, &scope).or_else(|| {
-            // If cyclic allocation failed to find a slot between `start_id`
-            // and the tree capacity limit, wrap around to search from ID 0 up
-            // to `start_id - 1`.
-            if is_cyclic && start_id > 0 {
-                path.clear();
-                self.find_free_slot(0, &mut path, &scope)
-            } else {
-                None
-            }
-        });
-
-        let id = id_opt?;
-        let (leaf_node, leaf_index) = path.last().expect("path should not be empty");
-        let leaf_index = *leaf_index;
-        let item = factory(id);
-
-        // Install the newly constructed leaf item at the target slot.
-        leaf_node.children[leaf_index].update(Some(IdrEntry::Leaf(item.clone())));
-        leaf_node.mark_present(leaf_index);
-
-        // Mark the leaf slot as allocated in its free bitmap. If this clears the final free bit
-        // in the leaf node, propagate the full state up the ancestor chain via `propagate_fullness`.
-        if leaf_node.mark_allocated(leaf_index) {
-            self.propagate_fullness(&path);
-        }
-
-        // For cyclic allocations, advance the cursor to `id + 1`, wrapping to 0 on u32 overflow.
-        if is_cyclic {
-            *next_id_guard = id.wrapping_add(1);
-        }
-        Some((id, item))
     }
 
     /// Iteratively searches for the lowest available free ID >= `start_id`.
@@ -403,6 +242,201 @@ impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
         new_root.children[0].update(Some(IdrEntry::Node(root_arc.clone())));
         self.root.update(new_root.clone());
         Some(new_root)
+    }
+}
+
+/// An RAII guard representing exclusive writer access to an [`Idr`].
+///
+/// Holding this guard serializes mutations (allocations, reservations, removals)
+/// to the radix tree while allowing concurrent lock-free reads.
+pub struct IdrGuard<'a, T: RcuDroppable + Send + Sync + 'static> {
+    idr: &'a Idr<T>,
+    cursor: MutexGuard<'a, u32>,
+}
+
+impl<'a, T: RcuDroppable + Send + Sync + 'static> std::ops::Deref for IdrGuard<'a, T> {
+    type Target = Idr<T>;
+
+    fn deref(&self) -> &Self::Target {
+        self.idr
+    }
+}
+
+impl<'a, T: RcuDroppable + Send + Sync + 'static> IdrGuard<'a, T> {
+    /// Allocates the next available ID by calling a factory providing the newly
+    /// acquired ID.
+    pub fn alloc<F>(&mut self, factory: F) -> Option<(u32, Arc<T>)>
+    where
+        F: FnOnce(u32) -> Arc<T>,
+    {
+        self.alloc_inner(false, factory)
+    }
+
+    /// Allocates the next available ID cyclically, wrapping around when hitting
+    /// the current tree capacity limit.
+    pub fn alloc_cyclic<F>(&mut self, factory: F) -> Option<(u32, Arc<T>)>
+    where
+        F: FnOnce(u32) -> Arc<T>,
+    {
+        self.alloc_inner(true, factory)
+    }
+
+    /// Marks a specific ID as unavailable so the allocator will never return it.
+    /// Does not populate the tree with an item.
+    pub fn reserve_id(&mut self, id: u32) {
+        let mut root_arc = self.idr.root.to_arc();
+
+        loop {
+            let capacity = root_arc.capacity();
+            if (id as u64) < capacity {
+                break;
+            }
+            if let Some(new_root) = self.idr.grow_tree_by_one_layer(&root_arc) {
+                root_arc = new_root;
+            } else {
+                return; // Exceeded max depth
+            }
+        }
+
+        let scope = RcuReadScope::new();
+        let mut current_node = root_arc.as_ref();
+        let mut path = SmallVec::<[(&IdrNode<T>, usize); MAX_DEPTH as usize]>::new();
+
+        loop {
+            let index = current_node.index_for_id(id);
+
+            path.push((current_node, index));
+
+            // Reached a leaf node. Claim the slot.
+            if current_node.layer == 0 {
+                // If it was previously free, and this clears the last free bit, propagate fullness
+                if current_node.mark_allocated(index) {
+                    self.idr.propagate_fullness(&path);
+                }
+                return;
+            }
+
+            // Descend to the next layer.
+            current_node = current_node.get_or_create_child(index, &scope);
+        }
+    }
+
+    /// Removes an item by ID.
+    pub fn remove(&mut self, id: u32) {
+        let scope = RcuReadScope::new();
+
+        let mut current_node = self.idr.root.as_ref(&scope);
+
+        if (id as u64) >= current_node.capacity() {
+            return;
+        }
+
+        let mut path = SmallVec::<[(&IdrNode<T>, usize); MAX_DEPTH as usize]>::new();
+
+        loop {
+            let index = current_node.index_for_id(id);
+
+            path.push((current_node, index));
+
+            let Some(child) = current_node.children[index].as_ref(&scope) else {
+                // Nothing to remove
+                return;
+            };
+
+            if current_node.layer == 0 {
+                current_node.children[index].update(None);
+                current_node.mark_absent(index);
+                if current_node.mark_freed(index) {
+                    self.idr.propagate_availability(&path);
+                }
+                return;
+            } else {
+                current_node = match child {
+                    IdrEntry::Node(n) => &**n,
+                    _ => unreachable!("Tree corruption: expected a Node entry here"),
+                };
+            }
+        }
+    }
+
+    /// Returns the current cursor position for cyclic allocations.
+    #[cfg(test)]
+    fn cursor(&self) -> u32 {
+        *self.cursor
+    }
+
+    /// Sets the cursor position for cyclic allocations.
+    #[cfg(test)]
+    fn set_cursor(&mut self, cursor: u32) {
+        *self.cursor = cursor;
+    }
+
+    /// Core allocation logic supporting both linear and cyclic allocation modes.
+    ///
+    /// If `is_cyclic` is false, allocation starts at ID 0 and selects the lowest available slot.
+    /// If `is_cyclic` is true, allocation starts at the cursor saved from
+    /// the previous cyclic allocation. If no free slot exists at or above the cursor, it wraps
+    /// around to ID 0 to search the remainder of the tree.
+    fn alloc_inner<F>(&mut self, is_cyclic: bool, factory: F) -> Option<(u32, Arc<T>)>
+    where
+        F: FnOnce(u32) -> Arc<T>,
+    {
+        let mut root_arc = self.idr.root.to_arc();
+
+        let start_id = if is_cyclic { *self.cursor } else { 0 };
+
+        // Ensure the tree is large enough:
+        // 1. If the root free bitmap is 0, the entire current tree capacity is exhausted,
+        //    requiring a new root layer on top.
+        // 2. If `start_id` exceeds current tree capacity (e.g. after wrapping or initial placement),
+        //    grow the tree until capacity covers `start_id` or until MAX_DEPTH is reached.
+        while root_arc.free_bitmap.load(Ordering::Relaxed) == 0
+            || (start_id as u64) >= root_arc.capacity()
+        {
+            if let Some(new_root) = self.idr.grow_tree_by_one_layer(&root_arc) {
+                root_arc = new_root;
+            } else {
+                // Tree reached maximum allowable depth and free_bitmap is 0,
+                // meaning it is completely full across all possible 32-bit IDs.
+                return None;
+            }
+        }
+
+        let scope = RcuReadScope::new();
+        let mut path = SmallVec::<[(&IdrNode<T>, usize); MAX_DEPTH as usize]>::new();
+        // First attempt: search for a free slot >= `start_id`.
+        let id_opt = self.idr.find_free_slot(start_id, &mut path, &scope).or_else(|| {
+            // If cyclic allocation failed to find a slot between `start_id`
+            // and the tree capacity limit, wrap around to search from ID 0 up
+            // to `start_id - 1`.
+            if is_cyclic && start_id > 0 {
+                path.clear();
+                self.idr.find_free_slot(0, &mut path, &scope)
+            } else {
+                None
+            }
+        });
+
+        let id = id_opt?;
+        let (leaf_node, leaf_index) = path.last().expect("path should not be empty");
+        let leaf_index = *leaf_index;
+        let item = factory(id);
+
+        // Install the newly constructed leaf item at the target slot.
+        leaf_node.children[leaf_index].update(Some(IdrEntry::Leaf(item.clone())));
+        leaf_node.mark_present(leaf_index);
+
+        // Mark the leaf slot as allocated in its free bitmap. If this clears the final free bit
+        // in the leaf node, propagate the full state up the ancestor chain via `propagate_fullness`.
+        if leaf_node.mark_allocated(leaf_index) {
+            self.idr.propagate_fullness(&path);
+        }
+
+        // For cyclic allocations, advance the cursor to `id + 1`, wrapping to 0 on u32 overflow.
+        if is_cyclic {
+            *self.cursor = id.wrapping_add(1);
+        }
+        Some((id, item))
     }
 }
 
@@ -590,10 +624,10 @@ mod tests {
     fn test_basic_alloc_lookup() {
         let idr = Idr::default();
 
-        let (id1, _item1) = idr.alloc(|id| Arc::new(MockItem { value: id * 10 })).unwrap();
+        let (id1, _item1) = idr.lock().alloc(|id| Arc::new(MockItem { value: id * 10 })).unwrap();
         assert_eq!(id1, 0);
 
-        let (id2, _item2) = idr.alloc(|id| Arc::new(MockItem { value: id * 10 })).unwrap();
+        let (id2, _item2) = idr.lock().alloc(|id| Arc::new(MockItem { value: id * 10 })).unwrap();
         assert_eq!(id2, 1);
 
         let scope = RcuReadScope::new();
@@ -603,7 +637,7 @@ mod tests {
         let lookup2 = idr.lookup(1, &scope).unwrap();
         assert_eq!(lookup2.value, 10);
 
-        idr.remove(0);
+        idr.lock().remove(0);
         assert!(idr.lookup(0, &scope).is_none());
 
         // Second item remains completely untouched and safely addressable
@@ -619,7 +653,7 @@ mod tests {
         // NODE_CAPACITY is natively 64. Allocating 150 structurally guarantees forcing the tree to
         // grow at least once.
         for i in 0..150 {
-            let (id, item) = idr.alloc(|id| Arc::new(MockItem { value: id })).unwrap();
+            let (id, item) = idr.lock().alloc(|id| Arc::new(MockItem { value: id })).unwrap();
             _items.push(item);
             assert_eq!(id, i);
         }
@@ -637,23 +671,21 @@ mod tests {
         let mut _items = Vec::new();
 
         for i in 0..30 {
-            let (id, item) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+            let (id, item) =
+                idr.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
             _items.push(item);
             assert_eq!(id, i);
         }
 
         // Manually bump the cursor.
-        {
-            let mut state = idr.writer_lock.lock();
-            *state = 100;
-        }
+        idr.lock().set_cursor(100);
 
         // Allocation formally continues from new cursor.
-        let (id, item1) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        let (id, item1) = idr.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
         _items.push(item1);
         assert_eq!(id, 100);
 
-        let (id, item2) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        let (id, item2) = idr.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
         _items.push(item2);
         assert_eq!(id, 101);
 
@@ -668,12 +700,9 @@ mod tests {
         let mut _items = Vec::new();
 
         // Immediately bump start_id above the initial layer 0 capacity (64)
-        {
-            let mut state = idr.writer_lock.lock();
-            *state = 256;
-        }
+        idr.lock().set_cursor(256);
 
-        let (id, item) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        let (id, item) = idr.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
         _items.push(item);
 
         // It should have assigned exactly 256, successfully growing the tree.
@@ -686,19 +715,19 @@ mod tests {
         let mut _items = Vec::new();
 
         // Reserve an ID within initial layer
-        idr.reserve_id(10);
+        idr.lock().reserve_id(10);
 
-        let (id1, item1) = idr.alloc(|id| Arc::new(MockItem { value: id })).unwrap();
+        let (id1, item1) = idr.lock().alloc(|id| Arc::new(MockItem { value: id })).unwrap();
         _items.push(item1);
         assert_eq!(id1, 0);
 
         // Reserve an ID requiring tree growth
-        idr.reserve_id(200);
+        idr.lock().reserve_id(200);
 
         // Fill up to 10
         let mut allocated_10 = false;
         for _ in 1..15 {
-            let (id, item) = idr.alloc(|id| Arc::new(MockItem { value: id })).unwrap();
+            let (id, item) = idr.lock().alloc(|id| Arc::new(MockItem { value: id })).unwrap();
             _items.push(item);
             if id == 10 {
                 allocated_10 = true;
@@ -707,14 +736,12 @@ mod tests {
         assert!(!allocated_10, "ID 10 was allocated despite being reserved");
 
         // Verify ID 200 is skipped when allocating near it using alloc_cyclic
-        {
-            let mut state = idr.writer_lock.lock();
-            *state = 199;
-        }
+        idr.lock().set_cursor(199);
 
         let mut allocated_200 = false;
         for _ in 0..5 {
-            let (id, item) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+            let (id, item) =
+                idr.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
             _items.push(item);
             if id == 200 {
                 allocated_200 = true;
@@ -728,8 +755,8 @@ mod tests {
         assert!(idr.lookup(200, &scope).is_none());
 
         // Remove should not panic or corrupt it
-        idr.remove(10);
-        idr.remove(200);
+        idr.lock().remove(10);
+        idr.lock().remove(200);
         assert!(idr.lookup(10, &scope).is_none());
     }
 
@@ -739,14 +766,14 @@ mod tests {
         let mut _items = Vec::new();
 
         // Assigned cleanly to 0
-        _items.push(idr.alloc(|_| Arc::new(MockItem { value: 10 })).unwrap().1);
+        _items.push(idr.lock().alloc(|_| Arc::new(MockItem { value: 10 })).unwrap().1);
         // Assigned cleanly to 1
-        _items.push(idr.alloc(|_| Arc::new(MockItem { value: 20 })).unwrap().1);
+        _items.push(idr.lock().alloc(|_| Arc::new(MockItem { value: 20 })).unwrap().1);
         // Assigned cleanly to 2
-        _items.push(idr.alloc(|_| Arc::new(MockItem { value: 30 })).unwrap().1);
+        _items.push(idr.lock().alloc(|_| Arc::new(MockItem { value: 30 })).unwrap().1);
 
         // Eliminate middle ID freeing slot 1.
-        idr.remove(1);
+        idr.lock().remove(1);
 
         let scope = RcuReadScope::new();
         let mut iter = idr.iter(&scope);
@@ -767,7 +794,7 @@ mod tests {
     fn test_iter_minimal() {
         let idr = Idr::default();
         let mut _items = Vec::new();
-        _items.push(idr.alloc(|value| Arc::new(MockItem { value })).unwrap().1);
+        _items.push(idr.lock().alloc(|value| Arc::new(MockItem { value })).unwrap().1);
         let scope = RcuReadScope::new();
         let mut iter = idr.iter(&scope);
         let next_a = iter.next();
@@ -781,31 +808,30 @@ mod tests {
 
         // Allocate 100 items (0..99) across layer 0 and layer 1.
         for i in 0..100 {
-            let (id, item) = idr.alloc(|id| Arc::new(MockItem { value: id })).unwrap();
+            let (id, item) = idr.lock().alloc(|id| Arc::new(MockItem { value: id })).unwrap();
             assert_eq!(id, i);
             _items.push(item);
         }
 
         // Create holes in child 0 (0..63) below 50, but keep 50..63 allocated.
         for id in 40..50 {
-            idr.remove(id);
+            idr.lock().remove(id);
         }
 
         // Advance cursor to 50.
-        {
-            let mut state = idr.writer_lock.lock();
-            *state = 50;
-        }
+        idr.lock().set_cursor(50);
 
         // Cyclic allocation should find next free slot >= 50, which is slot 100 in child 1,
         // rather than prematurely wrapping to 40 in child 0.
-        let (id_100, item_100) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        let (id_100, item_100) =
+            idr.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
         assert_eq!(id_100, 100);
         _items.push(item_100);
 
         // Subsequent allocations should continue forward monotonically across child boundaries (101..130).
         for expected in 101..130 {
-            let (id, item) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+            let (id, item) =
+                idr.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
             assert_eq!(id, expected);
             _items.push(item);
         }
@@ -818,7 +844,7 @@ mod tests {
 
         // Pre-populate some items
         for _i in 0..50 {
-            idr.alloc(|id| Arc::new(MockItem { value: id })).unwrap();
+            idr.lock().alloc(|id| Arc::new(MockItem { value: id })).unwrap();
         }
 
         let mut reader_handles = Vec::new();
@@ -857,9 +883,9 @@ mod tests {
         let writer_handle = std::thread::spawn(move || {
             for _ in 0..200 {
                 let (id, _) =
-                    idr_clone.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+                    idr_clone.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
                 if id > 50 && id % 3 == 0 {
-                    idr_clone.remove(id);
+                    idr_clone.lock().remove(id);
                 }
             }
         });
@@ -876,17 +902,14 @@ mod tests {
     #[fuchsia::test]
     fn test_u32_max_wrap_around() {
         let idr = Idr::<MockItem>::default();
-        {
-            let mut state = idr.writer_lock.lock();
-            *state = u32::MAX;
-        }
+        idr.lock().set_cursor(u32::MAX);
 
         // First allocation is at u32::MAX
-        let (id1, _item1) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        let (id1, _item1) = idr.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
         assert_eq!(id1, u32::MAX);
 
         // Next allocation correctly wraps around to 0
-        let (id2, _item2) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        let (id2, _item2) = idr.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
         assert_eq!(id2, 0);
 
         // Validating they are safely addressable
@@ -899,28 +922,63 @@ mod tests {
     fn test_overflow_bug_at_u32_max() {
         let idr = Idr::<MockItem>::default();
 
-        // We reserve 0 so that if the allocator does its job and wraps around safely,
+        // Reserve 0 so that if the allocator wraps around safely,
         // it assigns 1 (acting as a dual check).
-        idr.reserve_id(0);
+        idr.lock().reserve_id(0);
 
-        // We MUST reserve `u32::MAX` to trigger this bug! If `u32::MAX` is free, an
+        // Reserving `u32::MAX` is required to trigger this bug. If `u32::MAX` is free, an
         // allocation starting at `u32::MAX` simply takes it, and the cursor wraps cleanly to `0`.
-        // By making it occupied, we force `find_free_slot` to descend to the bottom of
-        // subtree 3, discover there is absolutely no space left at or above the cursor,
-        // and backtrack all the way up to layer 5.
+        // By making it occupied, `find_free_slot` descends to the bottom of
+        // subtree 3, discovers there is no space left at or above the cursor,
+        // and backtracks all the way up to layer 5.
         // If layer 5's free_bitmap is not properly masked, this backtracking causes the
         // allocator to erroneously spill over into the invalid index 4.
-        idr.reserve_id(u32::MAX);
+        idr.lock().reserve_id(u32::MAX);
 
-        {
-            let mut state = idr.writer_lock.lock();
-            *state = u32::MAX;
-        }
+        idr.lock().set_cursor(u32::MAX);
 
-        let (id, _) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        let (id, _) = idr.lock().alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
         assert_eq!(id, 1);
 
         let scope = RcuReadScope::new();
         assert!(idr.lookup(1, &scope).is_some());
+    }
+
+    #[fuchsia::test]
+    fn test_lock_held_across_operations() {
+        let idr = Idr::<MockItem>::default();
+
+        // Acquire the lock outside the class and perform multiple operations while holding it.
+        let mut guard = idr.lock();
+        assert_eq!(guard.cursor(), 0);
+
+        guard.reserve_id(0);
+        let (id1, item1) = guard.alloc(|value| Arc::new(MockItem { value })).unwrap();
+        assert_eq!(id1, 1);
+        assert_eq!(item1.value, 1);
+
+        let (id2, item2) = guard.alloc(|value| Arc::new(MockItem { value })).unwrap();
+        assert_eq!(id2, 2);
+        assert_eq!(item2.value, 2);
+
+        guard.remove(1);
+
+        // The slot for ID 1 is now available again.
+        let (id3, item3) = guard.alloc(|value| Arc::new(MockItem { value })).unwrap();
+        assert_eq!(id3, 1);
+        assert_eq!(item3.value, 1);
+
+        // Readers can still access items through Deref on the lock.
+        let scope = RcuReadScope::new();
+        assert_eq!(guard.lookup(1, &scope).unwrap().value, 1);
+        assert_eq!(guard.lookup(2, &scope).unwrap().value, 2);
+
+        // Cyclic allocation updates the cursor.
+        let (id4, _) = guard.alloc_cyclic(|value| Arc::new(MockItem { value })).unwrap();
+        assert_eq!(id4, 3);
+        assert_eq!(guard.cursor(), 4);
+
+        guard.set_cursor(50);
+        assert_eq!(guard.cursor(), 50);
     }
 }
