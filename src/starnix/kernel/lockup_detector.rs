@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Context as _;
 use fidl_fuchsia_feedback as ffeedback;
 use fidl_fuchsia_mem as fmem;
 use fuchsia_async as fasync;
@@ -94,18 +93,22 @@ struct LockupDetectorContext {
     active_rcu_reads: HashMap<zx::Koid, ActiveRcuRead>,
 }
 
-fn format_thread_names(thread_names: BTreeSet<String>) -> String {
-    let mut names_str = thread_names.into_iter().collect::<Vec<_>>().join(", ");
+fn truncate_annotation_value(mut value: String) -> String {
     let max_annotation_len = ffeedback::MAX_ANNOTATION_VALUE_LENGTH as usize;
-    if names_str.len() > max_annotation_len {
-        let mut limit = max_annotation_len - 3;
-        while !names_str.is_char_boundary(limit) {
+    if value.len() > max_annotation_len {
+        let mut limit = max_annotation_len.saturating_sub(3);
+        while !value.is_char_boundary(limit) {
             limit -= 1;
         }
-        names_str.truncate(limit);
-        names_str.push_str("...");
+        value.truncate(limit);
+        value.push_str("...");
     }
-    names_str
+    value
+}
+
+fn format_thread_names(thread_names: BTreeSet<String>) -> String {
+    let names_str = thread_names.into_iter().collect::<Vec<_>>().join(", ");
+    truncate_annotation_value(names_str)
 }
 
 fn build_annotations(lockups: &Lockups, rcu_stalls: &Vec<RcuStall>) -> Vec<ffeedback::Annotation> {
@@ -134,14 +137,17 @@ fn build_annotations(lockups: &Lockups, rcu_stalls: &Vec<RcuStall>) -> Vec<ffeed
     }
 
     vec![
-        ffeedback::Annotation { key: "starnix.lockup_thread_koids".to_string(), value: koids_str },
+        ffeedback::Annotation {
+            key: "starnix.lockup_thread_koids".to_string(),
+            value: truncate_annotation_value(koids_str),
+        },
         ffeedback::Annotation {
             key: "starnix.lockup_thread_names".to_string(),
             value: format_thread_names(thread_names),
         },
         ffeedback::Annotation {
             key: "starnix.rcu_lockup_thread_koids".to_string(),
-            value: rcu_koids_str,
+            value: truncate_annotation_value(rcu_koids_str),
         },
         ffeedback::Annotation {
             key: "starnix.rcu_lockup_thread_names".to_string(),
@@ -160,8 +166,14 @@ async fn report_lockups(
         .map_err(|e| anyhow::anyhow!("Failed to create CFileBuffer: {}", e))?;
 
     let reporter =
-        fuchsia_component::client::connect_to_protocol::<ffeedback::CrashReporterMarker>()
-            .context("Failed to connect to CrashReporter")?;
+        fuchsia_component::client::connect_to_protocol::<ffeedback::CrashReporterMarker>();
+    let reporter = match reporter {
+        Ok(reporter) => Some(reporter),
+        Err(e) => {
+            log_warn!("Failed to connect to CrashReporter: {:?}", e);
+            None
+        }
+    };
 
     let annotations = build_annotations(&lockups, &rcu_stalls);
     let threads: BTreeSet<_> = lockups
@@ -171,18 +183,39 @@ async fn report_lockups(
         .chain(rcu_stalls.iter().map(|stall| (stall.thread.unowned(), stall.koid)))
         .collect();
     for (thread, koid) in threads {
-        let bt = dump_thread_backtrace(
+        let bt = match dump_thread_backtrace(
             &thread,
             &mut file_buffer,
             zx::MonotonicDuration::from_seconds(1),
         )
         .await
-        .with_context(|| format!("Failed to dump backtrace for thread {}", koid.raw_koid()))?;
+        {
+            Ok(bt) => bt,
+            Err(e) => {
+                log_warn!("Failed to dump backtrace for thread {}: {:?}", koid.raw_koid(), e);
+                continue;
+            }
+        };
         log_error!("Locked thread backtrace:\n{}", bt);
 
+        context.reported_lockup_koids.insert(koid);
+
+        let Some(reporter) = &reporter else {
+            continue;
+        };
+
         let size = bt.len() as u64;
-        let vmo = zx::Vmo::create(size).context("Failed to create VMO")?;
-        vmo.write(bt.as_bytes(), 0).context("Failed to write backtrace to VMO")?;
+        let vmo = match zx::Vmo::create(size) {
+            Ok(vmo) => vmo,
+            Err(e) => {
+                log_warn!("Failed to create VMO for thread {}: {:?}", koid.raw_koid(), e);
+                continue;
+            }
+        };
+        if let Err(e) = vmo.write(bt.as_bytes(), 0) {
+            log_warn!("Failed to write backtrace to VMO for thread {}: {:?}", koid.raw_koid(), e);
+            continue;
+        }
 
         let report = ffeedback::CrashReport {
             program_name: Some("starnix_kernel".to_string()),
@@ -201,12 +234,17 @@ async fn report_lockups(
             ..Default::default()
         };
 
-        reporter.file_report(report).await.context("Failed to call file_report")?.map_err(|e| {
-            anyhow::anyhow!("Failed to file crash report for thread {}: {:?}", koid.raw_koid(), e)
-        })?;
-
-        log_debug!("Filed crash report for thread lockup (thread {}).", koid.raw_koid());
-        context.reported_lockup_koids.insert(koid);
+        match reporter.file_report(report).await {
+            Ok(Ok(_)) => {
+                log_debug!("Filed crash report for thread lockup (thread {}).", koid.raw_koid());
+            }
+            Ok(Err(e)) => {
+                log_warn!("Failed to file crash report for thread {}: {:?}", koid.raw_koid(), e);
+            }
+            Err(e) => {
+                log_warn!("FIDL error calling file_report for thread {}: {:?}", koid.raw_koid(), e);
+            }
+        }
     }
 
     Ok(())
@@ -398,5 +436,65 @@ mod tests {
         let candidates = check_rcu_stalls(&mut context);
         assert!(candidates.is_empty());
         assert!(context.active_rcu_reads.is_empty());
+    }
+
+    #[test]
+    fn test_truncate_annotation_value() {
+        let max_len = ffeedback::MAX_ANNOTATION_VALUE_LENGTH as usize;
+
+        // Under limit: unaffected.
+        let short_str = "hello world".to_string();
+        assert_eq!(truncate_annotation_value(short_str.clone()), short_str);
+
+        // Exactly at limit: unaffected.
+        let exact_str = "a".repeat(max_len);
+        assert_eq!(truncate_annotation_value(exact_str.clone()), exact_str);
+
+        // Over limit by 1 byte: truncated to max_len and ends with "...".
+        let over_by_one = "a".repeat(max_len + 1);
+        let truncated = truncate_annotation_value(over_by_one);
+        assert_eq!(truncated.len(), max_len);
+        assert!(truncated.ends_with("..."));
+
+        // Large string: truncated to max_len and ends with "...".
+        let large_str = "a".repeat(5000);
+        let truncated = truncate_annotation_value(large_str);
+        assert_eq!(truncated.len(), max_len);
+        assert!(truncated.ends_with("..."));
+
+        // Multi-byte characters: characters do not get split across UTF-8 boundaries.
+        // The character '🦀' is 4 bytes.
+        let crab_str = "🦀".repeat(500); // 2000 bytes
+        let truncated = truncate_annotation_value(crab_str);
+        assert!(truncated.len() <= max_len);
+        assert!(truncated.ends_with("..."));
+    }
+
+    #[test]
+    fn test_build_annotations_truncation() {
+        let max_len = ffeedback::MAX_ANNOTATION_VALUE_LENGTH as usize;
+
+        // Populate hundreds of KOIDs so that the formatted string exceeds 1024 bytes.
+        let mut current_koids = BTreeSet::new();
+        for i in 10000..10500 {
+            current_koids.insert(zx::Koid::from_raw(i));
+        }
+
+        let lockups = Lockups { current_koids, long_running: vec![], newly_locked: vec![] };
+        let rcu_stalls = vec![];
+
+        let annotations = build_annotations(&lockups, &rcu_stalls);
+        for annotation in annotations {
+            assert!(
+                annotation.value.len() <= max_len,
+                "Annotation '{}' length {} exceeds max {}",
+                annotation.key,
+                annotation.value.len(),
+                max_len
+            );
+            if annotation.key == "starnix.lockup_thread_koids" {
+                assert!(annotation.value.ends_with("..."));
+            }
+        }
     }
 }
