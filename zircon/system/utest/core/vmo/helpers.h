@@ -12,23 +12,26 @@
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
 
+#include <cstdint>
+#include <vector>
+
 #include <zxtest/zxtest.h>
 
 namespace vmo_test {
 
-static inline void VmoWrite(const zx::vmo& vmo, uint32_t data, uint64_t offset = 0) {
+inline void VmoWrite(const zx::vmo& vmo, uint32_t data, uint64_t offset = 0) {
   zx_status_t status = vmo.write(static_cast<void*>(&data), offset, sizeof(data));
   ASSERT_OK(status, "write failed");
 }
 
-static inline uint32_t VmoRead(const zx::vmo& vmo, uint64_t offset = 0) {
+inline uint32_t VmoRead(const zx::vmo& vmo, uint64_t offset = 0) {
   uint32_t val = 0;
   zx_status_t status = vmo.read(&val, offset, sizeof(val));
   EXPECT_OK(status, "read failed");
   return val;
 }
 
-static inline void VmoCheck(const zx::vmo& vmo, uint32_t expected, uint64_t offset = 0) {
+inline void VmoCheck(const zx::vmo& vmo, uint32_t expected, uint64_t offset = 0) {
   uint32_t data;
   zx_status_t status = vmo.read(static_cast<void*>(&data), offset, sizeof(data));
   ASSERT_OK(status, "read failed");
@@ -36,7 +39,7 @@ static inline void VmoCheck(const zx::vmo& vmo, uint32_t expected, uint64_t offs
 }
 
 // Creates a vmo with |page_count| pages and writes (page_index + 1) to each page.
-static inline void InitPageTaggedVmo(uint32_t page_count, zx::vmo* vmo) {
+inline void InitPageTaggedVmo(uint32_t page_count, zx::vmo* vmo) {
   zx_status_t status;
   status = zx::vmo::create(page_count * zx_system_get_page_size(), ZX_VMO_RESIZABLE, vmo);
   ASSERT_OK(status, "create failed");
@@ -64,7 +67,7 @@ bool PollVmoInfoUntil(const zx::vmo& vmo, Predicate&& predicate) {
   }
 }
 
-static inline size_t VmoNumChildren(const zx::vmo& vmo) {
+inline size_t VmoNumChildren(const zx::vmo& vmo) {
   zx_info_vmo_t info;
   if (vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr) != ZX_OK) {
     return UINT64_MAX;
@@ -75,7 +78,7 @@ static inline size_t VmoNumChildren(const zx::vmo& vmo) {
 // Repeatedly poll |vmo| until the |expected_num_children| is observed.
 //
 // Returns true on success, false on error.
-static inline bool PollVmoNumChildren(const zx::vmo& vmo, size_t expected_num_children) {
+inline bool PollVmoNumChildren(const zx::vmo& vmo, size_t expected_num_children) {
   return PollVmoInfoUntil(vmo, [&](const zx_info_vmo_t& info) {
     if (info.num_children == expected_num_children) {
       return true;
@@ -86,7 +89,7 @@ static inline bool PollVmoNumChildren(const zx::vmo& vmo, size_t expected_num_ch
   });
 }
 
-static inline size_t VmoPopulatedBytes(const zx::vmo& vmo) {
+inline size_t VmoPopulatedBytes(const zx::vmo& vmo) {
   zx_info_vmo_t info;
   if (vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr) != ZX_OK) {
     return UINT64_MAX;
@@ -95,7 +98,7 @@ static inline size_t VmoPopulatedBytes(const zx::vmo& vmo) {
                                                               : info.populated_scaled_bytes;
 }
 
-static inline size_t VmoPopulatedFractionalBytes(const zx::vmo& vmo) {
+inline size_t VmoPopulatedFractionalBytes(const zx::vmo& vmo) {
   zx_info_vmo_t info;
   if (vmo.get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr) != ZX_OK) {
     return UINT64_MAX;
@@ -106,7 +109,7 @@ static inline size_t VmoPopulatedFractionalBytes(const zx::vmo& vmo) {
 // Repeatedly poll |vmo| until the |expected_populated_bytes| is observed.
 //
 // Returns true on success, false on error.
-static inline bool PollVmoPopulatedBytes(const zx::vmo& vmo, size_t expected_populated_bytes) {
+inline bool PollVmoPopulatedBytes(const zx::vmo& vmo, size_t expected_populated_bytes) {
   return PollVmoInfoUntil(vmo, [&](const zx_info_vmo_t& info) {
     if (info.populated_fractional_scaled_bytes == UINT64_MAX) {
       if (info.populated_bytes == expected_populated_bytes) {
@@ -130,7 +133,7 @@ static inline bool PollVmoPopulatedBytes(const zx::vmo& vmo, size_t expected_pop
 // Create a fit::defer which will check a BTI to make certain that it has no
 // pinned or quarantined pages when it goes out of scope, and fail the test if
 // it does.
-static inline auto CreateDeferredBtiCheck(const zx::bti& bti) {
+inline auto CreateDeferredBtiCheck(const zx::bti& bti) {
   return fit::defer([&bti]() {
     if (bti.is_valid()) {
       zx_info_bti_t info;
@@ -241,6 +244,18 @@ class TestLimiter {
   const zx::duration time_limit_;
   const zx::time_monotonic start_time_{zx::clock::get_monotonic()};
 };
+
+// For the given number of pages and fill byte value, return a
+// permanently-usable, read-only buffer.  The first call for each page count
+// and byte value will allocate and fill the buffer, and subsequent calls will
+// just reuse the same one.  All these buffers live forever once they are used,
+// but there is a limited number of PageCount, FillByte combinations used in
+// each test and the page counts are not huge.
+template <size_t PageCount, uint8_t FillByte = 0>
+inline std::span<const uint8_t> TestFillPages() {
+  static const std::vector<uint8_t> kData(PageCount * zx_system_get_page_size(), FillByte);
+  return std::span{kData};
+}
 
 }  // namespace vmo_test
 

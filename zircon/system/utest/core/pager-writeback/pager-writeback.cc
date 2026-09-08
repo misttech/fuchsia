@@ -10,6 +10,8 @@
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/iommu.h>
 
+#include <ranges>
+
 #include <zxtest/zxtest.h>
 
 #include "../needs-next.h"
@@ -19,6 +21,7 @@
 
 NEEDS_NEXT_SYSCALL(zx_pager_query_dirty_ranges);
 
+namespace pager_tests {
 namespace {
 
 class ThreadedPagePinner {
@@ -103,7 +106,7 @@ class ThreadedPagePinner {
   }
 
  private:
-  friend typename std::unique_ptr<ThreadedPagePinner>::deleter_type;
+  friend std::unique_ptr<ThreadedPagePinner>::deleter_type;
 
   enum class ThreadState {
     kInitial,
@@ -136,7 +139,7 @@ class ThreadedPagePinner {
     return bti_.pin(perms_, *vmo_to_pin_, offset_, amt_, addrs.get(), pages_to_pin, &pmt_) == ZX_OK;
   }
 
-  pager_tests::TestThread thread_;
+  TestThread thread_;
   ThreadState thread_state_{ThreadState::kInitial};
   zx::iommu iommu_;
   zx::bti bti_;
@@ -146,9 +149,8 @@ class ThreadedPagePinner {
   uint64_t offset_{0};
   uint64_t amt_{0};
 };
-}  // namespace
 
-namespace pager_tests {
+}  // namespace
 
 // This value corresponds to `VmObjectPaged::ReadWriteInternal::kMaxWriteWaitPages`
 static constexpr uint64_t kMaxWriteWaitPages = 256;
@@ -156,10 +158,10 @@ static constexpr uint64_t kMaxWriteWaitPages = 256;
 // Convenience macro for tests that want to create VMOs both with and without the ZX_VMO_TRAP_DIRTY
 // flag. |base_create_option| specifies the common create options to be used for both cases. The
 // test body must use the local variable |create_option| to create VMOs.
-#define TEST_WITH_AND_WITHOUT_TRAP_DIRTY(fn_name, base_create_option)                           \
-  void fn_name(uint32_t create_option);                                                         \
-  TEST(PagerWriteback, fn_name##TrapDirty) { fn_name(base_create_option | ZX_VMO_TRAP_DIRTY); } \
-  TEST(PagerWriteback, fn_name##NoTrapDirty) { fn_name(base_create_option); }                   \
+#define TEST_WITH_AND_WITHOUT_TRAP_DIRTY(fn_name, base_create_option)                             \
+  void fn_name(uint32_t create_option);                                                           \
+  TEST(PagerWriteback, fn_name##TrapDirty) { fn_name((base_create_option) | ZX_VMO_TRAP_DIRTY); } \
+  TEST(PagerWriteback, fn_name##NoTrapDirty) { fn_name(base_create_option); }                     \
   void fn_name(uint32_t create_option)
 
 // Tests that a VMO created with TRAP_DIRTY can be supplied, and generates VMO_DIRTY requests when
@@ -291,11 +293,11 @@ TEST(PagerWriteback, DirtyRequestsOnVmoWrite) {
     if (vmo->vmo().write(&data, 3 * zx_system_get_page_size(), sizeof(data)) != ZX_OK) {
       return false;
     }
-    uint8_t buf[5 * zx_system_get_page_size()];
-    memset(buf, 0, 5 * zx_system_get_page_size());
+    const auto kZeroFill = vmo_test::TestFillPages<5>();
     memset(&expected[11 * zx_system_get_page_size()], 0, 5 * zx_system_get_page_size());
     // pages written are [11, 16).
-    return vmo->vmo().write(&buf, 11 * zx_system_get_page_size(), sizeof(buf)) == ZX_OK;
+    return vmo->vmo().write(kZeroFill.data(), 11 * zx_system_get_page_size(),
+                            kZeroFill.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t.Start());
 
@@ -448,8 +450,8 @@ TEST(PagerWriteback, NoDirtyRequestsOnRead) {
   ASSERT_FALSE(pager.GetPageDirtyRequest(vmo, 0, &offset, &length));
 
   // Should be able to read from the VMO without faulting now.
-  uint8_t buf[kNumPages * zx_system_get_page_size()];
-  ASSERT_TRUE(vmo->vmo().read(buf, 0, kNumPages * zx_system_get_page_size()) == ZX_OK);
+  std::vector<uint8_t> buf(kNumPages * zx_system_get_page_size());
+  ASSERT_TRUE(vmo->vmo().read(buf.data(), 0, buf.size()) == ZX_OK);
 
   // No dirty requests should be seen as none of the pages were dirtied.
   ASSERT_FALSE(pager.GetPageDirtyRequest(vmo, 0, &offset, &length));
@@ -624,9 +626,8 @@ TEST(PagerWriteback, NoDirtyRequestsForClones) {
 
   // Write to the clone.
   TestThread t1([vmo_clone = clone.get()]() -> bool {
-    uint8_t data[kNumPages * zx_system_get_page_size()];
-    memset(data, 0xc, kNumPages * zx_system_get_page_size());
-    return vmo_clone->vmo().write(data, 0, kNumPages * zx_system_get_page_size()) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<kNumPages, 0xc>();
+    return vmo_clone->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t1.Start());
 
@@ -644,20 +645,18 @@ TEST(PagerWriteback, NoDirtyRequestsForClones) {
   ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, nullptr, 0));
 
   for (uint64_t i = 0; i < kNumPages; i++) {
-    uint8_t expected[zx_system_get_page_size()];
-    memset(expected, 0xc, zx_system_get_page_size());
-    uint8_t data[zx_system_get_page_size()];
-    ASSERT_OK(clone->vmo().read(data, i * zx_system_get_page_size(), zx_system_get_page_size()));
-    ASSERT_EQ(0, memcmp(expected, data, zx_system_get_page_size()));
+    const auto kExpected = vmo_test::TestFillPages<1, 0xc>();
+    std::vector<uint8_t> data(zx_system_get_page_size());
+    ASSERT_OK(clone->vmo().read(data.data(), i * zx_system_get_page_size(), data.size()));
+    ASSERT_EQ(0, memcmp(kExpected.data(), data.data(), kExpected.size_bytes()));
   }
 
   ASSERT_TRUE(check_buffer_data(vmo, 0, kNumPages, expected.data(), true));
 
   // Write to the parent now. This should trigger dirty requests.
   TestThread t2([vmo]() -> bool {
-    uint8_t data[kNumPages * zx_system_get_page_size()];
-    memset(data, 0xd, kNumPages * zx_system_get_page_size());
-    return vmo->vmo().write(data, 0, kNumPages * zx_system_get_page_size()) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<kNumPages, 0xd>();
+    return vmo->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t2.Start());
 
@@ -711,9 +710,9 @@ TEST(PagerWriteback, DirtyRequestsOverlap) {
 
   TestThread t1([vmo]() -> bool {
     // write pages [4,9).
-    uint8_t data[5 * zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write((void*)&data, 4 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<5, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 4 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t1.Start());
 
@@ -725,10 +724,10 @@ TEST(PagerWriteback, DirtyRequestsOverlap) {
 
   TestThread t2([vmo, &expected]() -> bool {
     // write pages [2,9).
-    uint8_t data[7 * zx_system_get_page_size()];
-    memset(data, 0xbb, sizeof(data));
-    memset(expected.data() + 2 * zx_system_get_page_size(), 0xbb, sizeof(data));
-    return vmo->vmo().write((void*)&data, 2 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<7, 0xbb>();
+    memset(expected.data() + 2 * zx_system_get_page_size(), 0xbb, kFillData.size_bytes());
+    return vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t2.Start());
 
@@ -756,20 +755,20 @@ TEST(PagerWriteback, DirtyRequestsOverlap) {
 
   TestThread t3([vmo, &expected]() -> bool {
     // write pages [11,16).
-    uint8_t data[5 * zx_system_get_page_size()];
-    memset(data, 0xcc, sizeof(data));
-    memset(expected.data() + 11 * zx_system_get_page_size(), 0xcc, sizeof(data));
-    return vmo->vmo().write((void*)&data, 11 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<5, 0xcc>();
+    memset(expected.data() + 11 * zx_system_get_page_size(), 0xcc, kFillData.size_bytes());
+    return vmo->vmo().write(kFillData.data(), 11 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t3.Start());
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 11, 5, ZX_TIME_INFINITE));
 
   TestThread t4([vmo, &expected]() -> bool {
     // write pages [15,19).
-    uint8_t data[4 * zx_system_get_page_size()];
-    memset(data, 0xdd, sizeof(data));
-    memset(expected.data() + 15 * zx_system_get_page_size(), 0xdd, sizeof(data));
-    return vmo->vmo().write((void*)&data, 15 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<4, 0xdd>();
+    memset(expected.data() + 15 * zx_system_get_page_size(), 0xdd, kFillData.size_bytes());
+    return vmo->vmo().write(kFillData.data(), 15 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t4.Start());
   ASSERT_TRUE(t4.WaitForBlocked());
@@ -839,8 +838,8 @@ TEST(PagerWriteback, DirtyRequestsRandomOffsets) {
 
   // Now write to the entire range. We should see a combination of read and dirty requests.
   TestThread t([vmo]() -> bool {
-    uint8_t data[kNumPages * zx_system_get_page_size()];
-    return vmo->vmo().write(data, 0, kNumPages * zx_system_get_page_size()) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<kNumPages>();
+    return vmo->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t.Start());
 
@@ -2152,8 +2151,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeSupplyZero, ZX_VMO_RESIZABLE) {
   // Now try to access all the pages. The first two should result in read requests, but the last
   // two should be supplied with zeros without any read requests.
   TestThread t([vmo]() -> bool {
-    uint8_t data[kNumPagesAfterResize * zx_system_get_page_size()];
-    return vmo->vmo().read(&data[0], 0, sizeof(data)) == ZX_OK;
+    std::vector<uint8_t> data(kNumPagesAfterResize * zx_system_get_page_size());
+    return vmo->vmo().read(data.data(), 0, data.size()) == ZX_OK;
   });
   ASSERT_TRUE(t.Start());
 
@@ -2191,16 +2190,16 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeSupplyZero, ZX_VMO_RESIZABLE) {
   }
 
   // Write to the last two pages now.
-  uint8_t data[2 * zx_system_get_page_size()];
-  memset(data, 0xaa, sizeof(data));
-  ASSERT_OK(vmo->vmo().write(data, 2 * zx_system_get_page_size(), sizeof(data)));
+  const auto kFillData = vmo_test::TestFillPages<2, 0xaa>();
+  ASSERT_OK(
+      vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(), kFillData.size_bytes()));
 
   // All four pages should be committed now.
   ASSERT_OK(vmo->vmo().get_info(ZX_INFO_VMO, &info, sizeof(info), nullptr, nullptr));
   EXPECT_EQ(4 * zx_system_get_page_size(), info.committed_bytes);
 
   // Verify the contents.
-  memset(expected.data() + 2 * zx_system_get_page_size(), 0xaa, sizeof(data));
+  memset(expected.data() + 2 * zx_system_get_page_size(), 0xaa, kFillData.size_bytes());
   ASSERT_TRUE(check_buffer_data(vmo, 0, 4, expected.data(), true));
 
   // The last two pages should be dirty.
@@ -2239,9 +2238,9 @@ TEST(PagerWriteback, ResizeDirtyRequest) {
 
   // Now try to write pages 1 and 2. We should see dirty requests for both.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[2 * zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data[0], zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<2, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), zx_system_get_page_size(), kFillData.size_bytes()) ==
+           ZX_OK;
   });
   ASSERT_TRUE(t1.Start());
   ASSERT_TRUE(t1.WaitForBlocked());
@@ -2273,10 +2272,10 @@ TEST(PagerWriteback, ResizeDirtyRequest) {
   ASSERT_TRUE(vmo->Resize(6));
 
   TestThread t2([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xbb, sizeof(data));
+    const auto kFillData = vmo_test::TestFillPages<1, 0xbb>();
     // Write to page 4.
-    return vmo->vmo().write(&data[0], 4 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    return vmo->vmo().write(kFillData.data(), 4 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t2.Start());
   ASSERT_TRUE(t2.WaitForBlocked());
@@ -2303,9 +2302,8 @@ TEST(PagerWriteback, ResizeDirtyRequest) {
   ASSERT_TRUE(vmo->Resize(8));
 
   TestThread t3([vmo]() -> bool {
-    uint8_t data[8 * zx_system_get_page_size()];
-    memset(data, 0xcc, sizeof(data));
-    return vmo->vmo().write(&data[0], 0, sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<8, 0xcc>();
+    return vmo->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t3.Start());
   ASSERT_TRUE(t3.WaitForBlocked());
@@ -2356,12 +2354,12 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWriteback, ZX_VMO_RESIZABLE) {
 
   // Write to the first and the last page, leaving a gap in between.
   TestThread t([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    if (vmo->vmo().write(&data[0], 0, sizeof(data)) != ZX_OK) {
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    if (vmo->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) != ZX_OK) {
       return false;
     }
-    return vmo->vmo().write(&data[0], 2 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    return vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t.Start());
 
@@ -2511,9 +2509,9 @@ TEST(PagerWriteback, ResizeWritebackWithOutstandingDirtyRequests) {
 
   // Write to a page leaving a gap beyond the old size.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data[0], 4 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 4 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t1.Start());
 
@@ -2536,9 +2534,8 @@ TEST(PagerWriteback, ResizeWritebackWithOutstandingDirtyRequests) {
 
   // Try to write to pages 1 and 2. This will trigger a DIRTY request.
   TestThread t2([vmo]() -> bool {
-    uint8_t data[2 * zx_system_get_page_size()];
-    memset(data, 0xbb, sizeof(data));
-    return vmo->vmo().write(&data[0], zx_system_get_page_size(), sizeof(data)) ==
+    const auto kFillData = vmo_test::TestFillPages<2, 0xbb>();
+    return vmo->vmo().write(kFillData.data(), zx_system_get_page_size(), kFillData.size_bytes()) ==
            ZX_ERR_OUT_OF_RANGE;
   });
   ASSERT_TRUE(t2.Start());
@@ -2546,10 +2543,9 @@ TEST(PagerWriteback, ResizeWritebackWithOutstandingDirtyRequests) {
 
   // Try to write to pages 3 and 4. This will also trigger a DIRTY request.
   TestThread t3([vmo]() -> bool {
-    uint8_t data[2 * zx_system_get_page_size()];
-    memset(data, 0xcc, sizeof(data));
-    return vmo->vmo().write(&data[0], 3 * zx_system_get_page_size(), sizeof(data)) ==
-           ZX_ERR_OUT_OF_RANGE;
+    const auto kFillData = vmo_test::TestFillPages<2, 0xcc>();
+    return vmo->vmo().write(kFillData.data(), 3 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_ERR_OUT_OF_RANGE;
   });
   ASSERT_TRUE(t3.Start());
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 3, 2, ZX_TIME_INFINITE));
@@ -2601,9 +2597,9 @@ TEST(PagerWriteback, ResizeWritebackNewDirtyRequestsInterleaved) {
 
   // Write to a page leaving a gap.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data[0], 2 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t1.Start());
 
@@ -2625,18 +2621,18 @@ TEST(PagerWriteback, ResizeWritebackNewDirtyRequestsInterleaved) {
 
   // Try to write to page 1. This will trigger a DIRTY request.
   TestThread t2([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xbb, sizeof(data));
-    return vmo->vmo().write(&data[0], zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xbb>();
+    return vmo->vmo().write(kFillData.data(), zx_system_get_page_size(), kFillData.size_bytes()) ==
+           ZX_OK;
   });
   ASSERT_TRUE(t2.Start());
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 1, 1, ZX_TIME_INFINITE));
 
   // Try to write to page 2. This will trigger a DIRTY request.
   TestThread t3([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xcc, sizeof(data));
-    return vmo->vmo().write(&data[0], 2 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xcc>();
+    return vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t3.Start());
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 2, 1, ZX_TIME_INFINITE));
@@ -2662,9 +2658,8 @@ TEST(PagerWriteback, ResizeWritebackNewDirtyRequestsInterleaved) {
   ASSERT_TRUE(check_buffer_data(vmo, 0, 3, expected.data(), true));
 
   // Should be able to write to the two dirty pages again without blocking.
-  uint8_t data[2 * zx_system_get_page_size()];
-  memset(data, 0xdd, sizeof(data));
-  ASSERT_OK(vmo->vmo().write(&data[0], zx_system_get_page_size(), sizeof(data)));
+  const auto kFillData = vmo_test::TestFillPages<2, 0xdd>();
+  ASSERT_OK(vmo->vmo().write(kFillData.data(), zx_system_get_page_size(), kFillData.size_bytes()));
 
   // Verify dirty ranges and VMO contents again.
   ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, &range, 1));
@@ -2693,9 +2688,9 @@ TEST(PagerWriteback, ResizeWritebackNewDirtyRequests) {
 
   // Write to a page leaving a gap.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data[0], 2 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t1.Start());
 
@@ -2721,9 +2716,9 @@ TEST(PagerWriteback, ResizeWritebackNewDirtyRequests) {
 
   // Try to write to page 1. This will trigger a DIRTY request.
   TestThread t2([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xbb, sizeof(data));
-    return vmo->vmo().write(&data[0], zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xbb>();
+    return vmo->vmo().write(kFillData.data(), zx_system_get_page_size(), kFillData.size_bytes()) ==
+           ZX_OK;
   });
   ASSERT_TRUE(t2.Start());
   // This was a gap that we've written back. So we'll first need to supply the page.
@@ -2733,9 +2728,9 @@ TEST(PagerWriteback, ResizeWritebackNewDirtyRequests) {
 
   // Try to write to page 2. This will trigger a DIRTY request.
   TestThread t3([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xcc, sizeof(data));
-    return vmo->vmo().write(&data[0], 2 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xcc>();
+    return vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t3.Start());
   ASSERT_TRUE(pager.WaitForPageDirty(vmo, 2, 1, ZX_TIME_INFINITE));
@@ -2783,9 +2778,9 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWritebackIntersectingWrite, ZX_VMO_RESIZA
 
   // Write to a page in the range.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data[0], 2 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
 
   ASSERT_TRUE(t1.Start());
@@ -2853,9 +2848,9 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWritebackNonIntersectingWrite, ZX_VMO_RES
 
   // Write to a page following the awaiting clean range.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data[0], 3 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 3 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
 
   ASSERT_TRUE(t1.Start());
@@ -2867,9 +2862,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWritebackNonIntersectingWrite, ZX_VMO_RES
 
   // Write to a page preceding the awaiting clean range.
   TestThread t2([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xbb, sizeof(data));
-    return vmo->vmo().write(&data[0], 0, sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xbb>();
+    return vmo->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) == ZX_OK;
   });
 
   ASSERT_TRUE(t2.Start());
@@ -2964,10 +2958,9 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWritebackIntersectingRandomWrites, ZX_VMO
 
   TestThread t1([&vmo, &offsets, &lengths]() -> bool {
     for (size_t i = 0; i < offsets.size(); i++) {
-      uint8_t data[lengths[i] * zx_system_get_page_size()];
-      memset(data, 0xaa, sizeof(data));
-      zx_status_t status =
-          vmo->vmo().write(&data[0], offsets[i] * zx_system_get_page_size(), sizeof(data));
+      const std::vector<uint8_t> kFillData(lengths[i] * zx_system_get_page_size(), 0xaa);
+      zx_status_t status = vmo->vmo().write(
+          kFillData.data(), offsets[i] * zx_system_get_page_size(), kFillData.size());
       if (status != ZX_OK) {
         return false;
       }
@@ -2989,14 +2982,18 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWritebackIntersectingRandomWrites, ZX_VMO
 
   // We should not have been able to clean the dirties pages but we should be able to clean the zero
   // ranges remaining.
-  zx_vmo_dirty_range_t ranges[offsets.size()];
-  for (size_t i = 0; i < offsets.size(); i++) {
-    ranges[i].offset = offsets[i];
-    ranges[i].length = lengths[i];
-    // No dirty range will be a zero range.
-    ranges[i].options = 0;
-  }
-  ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, ranges, sizeof(ranges) / sizeof(zx_vmo_dirty_range_t)));
+  std::vector<zx_vmo_dirty_range_t> ranges(
+      std::from_range,
+      std::views::transform(std::views::zip(offsets, lengths), [](const auto& elt) {
+        const auto& [offset, length] = elt;
+        return zx_vmo_dirty_range_t{
+            .offset = offset,
+            .length = length,
+            // No dirty range will be a zero range.
+            .options = 0,
+        };
+      }));
+  ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, ranges.data(), ranges.size()));
 
   // Now attempt a writeback again for the entire VMO.
   ASSERT_TRUE(pager.WritebackBeginPages(vmo, 0, kExtendedLen + 1));
@@ -3061,10 +3058,9 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizePartialWritebackIntersectingRandomWrites,
 
   TestThread t1([&vmo, &offsets, &lengths]() -> bool {
     for (size_t i = 0; i < offsets.size(); i++) {
-      uint8_t data[lengths[i] * zx_system_get_page_size()];
-      memset(data, 0xaa, sizeof(data));
-      zx_status_t status =
-          vmo->vmo().write(&data[0], offsets[i] * zx_system_get_page_size(), sizeof(data));
+      const std::vector<uint8_t> kFillData(lengths[i] * zx_system_get_page_size(), 0xaa);
+      zx_status_t status = vmo->vmo().write(
+          kFillData.data(), offsets[i] * zx_system_get_page_size(), kFillData.size());
       if (status != ZX_OK) {
         return false;
       }
@@ -3302,9 +3298,9 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWritebackAfterGap, ZX_VMO_RESIZABLE) {
 
   // Write to page 2 leaving a gap.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data[0], 2 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
 
   ASSERT_TRUE(t1.Start());
@@ -3334,9 +3330,9 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWritebackAfterGap, ZX_VMO_RESIZABLE) {
 
   // Since we cleaned the page, we should see a DIRTY request on another write (if applicable).
   TestThread t2([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xbb, sizeof(data));
-    return vmo->vmo().write(&data[0], 2 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xbb>();
+    return vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
 
   ASSERT_TRUE(t2.Start());
@@ -3379,12 +3375,13 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWritebackMulipleGaps, ZX_VMO_RESIZABLE) {
 
   // Write to pages 2 and 4, leaving gaps at 1, 3, and 5.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    if (vmo->vmo().write(&data[0], 2 * zx_system_get_page_size(), sizeof(data)) != ZX_OK) {
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    if (vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(), kFillData.size_bytes()) !=
+        ZX_OK) {
       return false;
     }
-    return vmo->vmo().write(&data[0], 4 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    return vmo->vmo().write(kFillData.data(), 4 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
 
   ASSERT_TRUE(t1.Start());
@@ -3418,9 +3415,9 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWritebackMulipleGaps, ZX_VMO_RESIZABLE) {
   // Writing to the AwaitingClean pages should trigger DIRTY requests, and so should writing to
   // gaps.
   TestThread t2([vmo]() -> bool {
-    uint8_t data[2 * zx_system_get_page_size()];
-    memset(data, 0xbb, sizeof(data));
-    return vmo->vmo().write(&data[0], 3 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<2, 0xbb>();
+    return vmo->vmo().write(kFillData.data(), 3 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
 
   ASSERT_TRUE(t2.Start());
@@ -3466,12 +3463,13 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ResizeWritebackSequential, ZX_VMO_RESIZABLE) {
 
   // Write to pages 2 and 4, leaving gaps at 1, 3, and 5.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    if (vmo->vmo().write(&data[0], 2 * zx_system_get_page_size(), sizeof(data)) != ZX_OK) {
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    if (vmo->vmo().write(kFillData.data(), 2 * zx_system_get_page_size(), kFillData.size_bytes()) !=
+        ZX_OK) {
       return false;
     }
-    return vmo->vmo().write(&data[0], 4 * zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    return vmo->vmo().write(kFillData.data(), 4 * zx_system_get_page_size(),
+                            kFillData.size_bytes()) == ZX_OK;
   });
 
   ASSERT_TRUE(t1.Start());
@@ -4917,9 +4915,9 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(OpZeroUnblocksReadRequest, 0) {
   ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, nullptr, 0));
 
   // Read from the second (and last) page.
-  uint8_t data[zx_system_get_page_size()];
+  std::vector<uint8_t> data(zx_system_get_page_size());
   TestThread t([vmo, &data]() -> bool {
-    return vmo->vmo().read(data, zx_system_get_page_size(), sizeof(data)) == ZX_OK;
+    return vmo->vmo().read(data.data(), zx_system_get_page_size(), data.size()) == ZX_OK;
   });
   ASSERT_TRUE(t.Start());
 
@@ -4943,8 +4941,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(OpZeroUnblocksReadRequest, 0) {
   ASSERT_TRUE(pager.VerifyDirtyRanges(vmo, &range, 1));
 
   // The last page should have read as zeroes.
-  ASSERT_EQ(0,
-            memcmp(data, expected.data() + zx_system_get_page_size(), zx_system_get_page_size()));
+  ASSERT_EQ(0, memcmp(data.data(), expected.data() + zx_system_get_page_size(),
+                      zx_system_get_page_size()));
 
   // No other page requests seen.
   uint64_t offset, length;
@@ -5868,9 +5866,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ModifiedOnPartialVmoWrite, 0) {
 
   // Try to write to the VMO.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[2 * zx_system_get_page_size()];
-    memset(data, 0xaa, 2 * zx_system_get_page_size());
-    return vmo->vmo().write(&data, 0, sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<2, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t1.Start());
 
@@ -5920,9 +5917,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(NotModifiedCloneWrite, 0) {
   ASSERT_NOT_NULL(clone);
 
   // Write to the clone.
-  uint8_t data[zx_system_get_page_size()];
-  memset(data, 0xcc, zx_system_get_page_size());
-  ASSERT_OK(clone->vmo().write(&data, 0, sizeof(data)));
+  const auto kFillData = vmo_test::TestFillPages<1, 0xcc>();
+  ASSERT_OK(clone->vmo().write(kFillData.data(), 0, kFillData.size_bytes()));
 
   // The VMO should not be modified.
   ASSERT_FALSE(pager.VerifyModified(vmo));
@@ -5936,7 +5932,7 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(NotModifiedCloneWrite, 0) {
   ASSERT_FALSE(pager.VerifyModified(clone.get()));
 
   // Verify clone contents.
-  memcpy(expected.data(), data, sizeof(data));
+  memcpy(expected.data(), kFillData.data(), kFillData.size_bytes());
   ASSERT_TRUE(check_buffer_data(clone.get(), 0, 1, expected.data(), true));
   ASSERT_FALSE(pager.VerifyDirtyRanges(clone.get(), nullptr, 0));
 
@@ -6227,9 +6223,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(ReadPinAwaitingClean, 0) {
 
   // Write to the VMO.
   TestThread t([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data, 0, sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t.Start());
 
@@ -6314,9 +6309,8 @@ TEST_WITH_AND_WITHOUT_TRAP_DIRTY(WritePinAwaitingClean, 0) {
 
   // Write to the VMO.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data, 0, sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t1.Start());
 
@@ -6415,9 +6409,8 @@ TEST(PagerWriteback, DelayedPinAwaitingClean) {
 
   // Write to the VMO.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data[0], 0, sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t1.Start());
 
@@ -6509,9 +6502,8 @@ TEST(PagerWriteback, FailedPinAwaitingClean) {
 
   // Write to the VMO.
   TestThread t1([vmo]() -> bool {
-    uint8_t data[zx_system_get_page_size()];
-    memset(data, 0xaa, sizeof(data));
-    return vmo->vmo().write(&data[0], 0, sizeof(data)) == ZX_OK;
+    const auto kFillData = vmo_test::TestFillPages<1, 0xaa>();
+    return vmo->vmo().write(kFillData.data(), 0, kFillData.size_bytes()) == ZX_OK;
   });
   ASSERT_TRUE(t1.Start());
 
@@ -7886,10 +7878,10 @@ TEST(PagerWriteback, Unbounded) {
 TEST(PagerWriteback, UntrackedBeyondStreamSize) {
   NEEDS_NEXT_SKIP(zx_pager_query_dirty_ranges);
 
-  pager_tests::UserPager pager;
+  UserPager pager;
   ASSERT_TRUE(pager.Init());
 
-  pager_tests::Vmo* vmo;
+  Vmo* vmo;
   ASSERT_TRUE(pager.CreateUnboundedVmo(2 * zx_system_get_page_size(), ZX_VMO_TRAP_DIRTY, &vmo));
 
   // Nothing dirty yet.
@@ -7947,10 +7939,10 @@ TEST(PagerWriteback, UntrackedBeyondStreamSize) {
 TEST(PagerWriteback, UntrackedAbsorbsIntervalSlots) {
   NEEDS_NEXT_SKIP(zx_pager_query_dirty_ranges);
 
-  pager_tests::UserPager pager;
+  UserPager pager;
   ASSERT_TRUE(pager.Init());
 
-  pager_tests::Vmo* vmo;
+  Vmo* vmo;
   ASSERT_TRUE(pager.CreateVmoWithOptions(3, ZX_VMO_TRAP_DIRTY, &vmo));
   // Create a single page untracked zero interval at page 2.
   ASSERT_OK(vmo->vmo().set_stream_size(2 * zx_system_get_page_size()));
@@ -8029,10 +8021,10 @@ TEST(PagerWriteback, UntrackedAbsorbsIntervalSlots) {
 TEST(PagerWriteback, UntrackedAbsorbsPages) {
   NEEDS_NEXT_SKIP(zx_pager_query_dirty_ranges);
 
-  pager_tests::UserPager pager;
+  UserPager pager;
   ASSERT_TRUE(pager.Init());
 
-  pager_tests::Vmo* vmo;
+  Vmo* vmo;
   ASSERT_TRUE(pager.CreateUnboundedVmo(2 * zx_system_get_page_size(), ZX_VMO_TRAP_DIRTY, &vmo));
 
   // Nothing dirty yet.
