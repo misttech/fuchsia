@@ -12,7 +12,7 @@ sestarnix_test_policy("anon_inode_policy") {
 }
 
 sestarnix_test_policy("append_policy") {
-  fragments = [ "composite_policies/new_file/append.conf" ]
+  fragments = [ "composite_policies/new_file/append_policy.conf" ]
 }
 
 sestarnix_test_policy("audit_access_policy") {
@@ -20,7 +20,7 @@ sestarnix_test_policy("audit_access_policy") {
 }
 
 sestarnix_test_policy("binder_policy") {
-  fragments = [ "composite_policies/new_file/binder.conf" ]
+  fragments = [ "composite_policies/new_file/binder_policy.conf" ]
 }
 
 sestarnix_test_policy("bpf_policy") {
@@ -32,6 +32,7 @@ sestarnix_test_policy("capabilities_policy") {
 }
 
 sestarnix_test_policy("conditional_policy") {
+  test_policy = false
   fragments = [ "composite_policies/new_file/conditional_policy.conf" ]
 }
 
@@ -44,14 +45,15 @@ sestarnix_test_policy("file_transition_policy") {
 }
 
 sestarnix_test_policy("fs_test_policy") {
-  fragments = [ "composite_policies/new_file/fs_test.conf" ]
+  fragments = [ "composite_policies/new_file/fs_test_policy.conf" ]
 }
 
 sestarnix_test_policy("genfscon_create_policy") {
-  fragments = [ "composite_policies/new_file/genfscon_create.conf" ]
+  fragments = [ "composite_policies/new_file/genfscon_create_policy.conf" ]
 }
 
 sestarnix_test_policy("genfscon_policy") {
+  test_policy = false
   fragments = [ "composite_policies/new_file/genfscon_policy.conf" ]
 }
 
@@ -68,11 +70,11 @@ sestarnix_test_policy("ioctl_policy") {
 }
 
 sestarnix_test_policy("memfd_class_policy") {
-  fragments = [ "composite_policies/new_file/memfd_class.conf" ]
+  fragments = [ "composite_policies/new_file/memfd_class_policy.conf" ]
 }
 
 sestarnix_test_policy("memfd_transition_policy") {
-  fragments = [ "composite_policies/new_file/memfd_transition.conf" ]
+  fragments = [ "composite_policies/new_file/memfd_transition_policy.conf" ]
 }
 
 sestarnix_test_policy("minimal_policy") {
@@ -84,11 +86,11 @@ sestarnix_test_policy("mount_policy") {
 }
 
 sestarnix_test_policy("mprotect_policy") {
-  fragments = [ "composite_policies/new_file/mprotect.conf" ]
+  fragments = [ "composite_policies/new_file/mprotect_policy.conf" ]
 }
 
 sestarnix_test_policy("netlink_audit_policy") {
-  fragments = [ "composite_policies/new_file/netlink_audit.conf" ]
+  fragments = [ "composite_policies/new_file/netlink_audit_policy.conf" ]
 }
 
 sestarnix_test_policy("netlink_xperms_policy") {
@@ -96,7 +98,7 @@ sestarnix_test_policy("netlink_xperms_policy") {
 }
 
 sestarnix_test_policy("open_perms_policy") {
-  fragments = [ "composite_policies/new_file/open_perms.conf" ]
+  fragments = [ "composite_policies/new_file/open_perms_policy.conf" ]
 }
 
 sestarnix_test_policy("overlayfs_policy") {
@@ -104,7 +106,7 @@ sestarnix_test_policy("overlayfs_policy") {
 }
 
 sestarnix_test_policy("perf_event_policy") {
-  fragments = [ "composite_policies/new_file/perf_event.conf" ]
+  fragments = [ "composite_policies/new_file/perf_event_policy.conf" ]
 }
 
 sestarnix_test_policy("pipe_policy") {
@@ -124,7 +126,7 @@ sestarnix_test_policy("invalidated_sid_reloaded_policy") {
 }
 
 sestarnix_test_policy("sched_policy") {
-  fragments = [ "composite_policies/new_file/sched.conf" ]
+  fragments = [ "composite_policies/new_file/sched_policy.conf" ]
 }
 
 sestarnix_test_policy("selinuxfs_policy") {
@@ -136,11 +138,11 @@ sestarnix_test_policy("socket_policy") {
 }
 
 sestarnix_test_policy("syslog_policy") {
-  fragments = [ "composite_policies/new_file/syslog.conf" ]
+  fragments = [ "composite_policies/new_file/syslog_policy.conf" ]
 }
 
 sestarnix_test_policy("timerslack_policy") {
-  fragments = [ "composite_policies/new_file/timerslack.conf" ]
+  fragments = [ "composite_policies/new_file/timerslack_policy.conf" ]
 }
 
 sestarnix_test_policy("tun_policy") {
@@ -148,10 +150,12 @@ sestarnix_test_policy("tun_policy") {
 }
 
 sestarnix_test_policy("userspace_initial_context_policy") {
-  fragments = [ "composite_policies/new_file/userspace_initial_context.conf" ]
+  fragments =
+      [ "composite_policies/new_file/userspace_initial_context_policy.conf" ]
 }
 
 sestarnix_test_policy("with_additional_domain_policy") {
+  test_policy = false
   fragments = [
     "composite_policies/new_file/minimal_policy.conf",
     "composite_policies/new_file/with_unlabeled_access_domain_policy.conf",
@@ -160,6 +164,7 @@ sestarnix_test_policy("with_additional_domain_policy") {
 }
 
 sestarnix_test_policy("with_unlabeled_access_domain_policy") {
+  test_policy = false
   fragments = [
     "composite_policies/new_file/minimal_policy.conf",
     "composite_policies/new_file/with_unlabeled_access_domain_policy.conf",
@@ -176,7 +181,7 @@ sestarnix_test_policy("allow_fork_policy") {
   test_policy = false
   fragments = [
     "composite_policies/new_file/minimal_policy.conf",
-    "composite_policies/new_file/allow_fork.conf",
+    "composite_policies/new_file/allow_fork_policy.conf",
   ]
 }
 

@@ -47,15 +47,15 @@ TEST(AnonInodeTest, PrivateFdIsUnchecked) {
 
     uint64_t event_buf = 1;
 
-    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:anon_inode_use_fd_and_perms:s0", [&] {
+    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:anon_inode_use_fd_and_perms_t:s0", [&] {
       EXPECT_THAT(write(fd.get(), &event_buf, sizeof(event_buf)), SyscallSucceeds())
           << "Domain granted FD-use and permissions should have access";
     }));
-    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:anon_inode_use_fd_no_perms:s0", [&] {
+    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:anon_inode_use_fd_no_perms_t:s0", [&] {
       EXPECT_THAT(write(fd.get(), &event_buf, sizeof(event_buf)), SyscallSucceeds())
           << "Domain granted FD-use but no file node permissions should have access";
     }));
-    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:anon_inode_no_use_fd:s0", [&] {
+    ASSERT_TRUE(RunSubprocessAs("test_u:test_r:anon_inode_no_use_fd_t:s0", [&] {
       EXPECT_THAT(write(fd.get(), &event_buf, sizeof(event_buf)), SyscallFailsWithErrno(EACCES))
           << "Domain not granted FD-use should not have access";
     }));
