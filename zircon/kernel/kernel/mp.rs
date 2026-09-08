@@ -12,6 +12,11 @@ pub use super::types::{cpu_mask_t, cpu_num_t};
 use zx_status::Status;
 use zx_types::zx_instant_mono_t;
 
+/// Maximum number of CPUs the kernel is built to support; the Rust view of the
+/// C++ `SMP_MAX_CPUS` build parameter.
+pub const SMP_MAX_CPUS: usize =
+    zr::parse_usize(env!("SMP_MAX_CPUS")).expect("SMP_MAX_CPUS invalid");
+
 pub const INVALID_CPU: cpu_num_t = super::types::INVALID_CPU;
 pub const CPU_MASK_ALL: cpu_mask_t = super::types::CPU_MASK_ALL;
 

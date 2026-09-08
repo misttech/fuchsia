@@ -8,6 +8,7 @@ pub mod arch;
 pub mod cache;
 pub mod feature;
 pub mod fpu;
+pub mod mp;
 pub mod sbi;
 pub mod spinlock;
 pub mod thread;
@@ -48,9 +49,6 @@ const RISCV64_CSR_SSTATUS_SPIE: u64 = 1u64 << 5;
 const RISCV64_CSR_SSTATUS_UXL_64BIT: u64 = 2u64 << 32;
 
 unsafe extern "C" {
-    fn cpp_riscv64_curr_hart_id() -> u32;
-    fn cpp_riscv64_boot_hart_id() -> u32;
-    fn cpp_riscv64_ints_disabled() -> bool;
     fn cpp_riscv64_get_sstatus_fp_v() -> u64;
     fn cpp_riscv64_enter_uspace(iframe: *const Iframe) -> !;
     fn cpp_riscv64_get_general_regs(regs: *mut zx_thread_state_general_regs_t) -> zx_status_t;
@@ -59,22 +57,19 @@ unsafe extern "C" {
 
 #[inline(always)]
 fn ints_disabled() -> bool {
-    // SAFETY: Reads interrupt status for the current CPU.
-    unsafe { cpp_riscv64_ints_disabled() }
+    arch::arch_ints_disabled()
 }
 
 /// Returns the HART ID of the currently executing hardware thread.
 #[inline(always)]
 pub fn curr_hart_id() -> u32 {
-    // SAFETY: cpp_riscv64_curr_hart_id is a read-only FFI call returning the current HART ID with no side effects.
-    unsafe { cpp_riscv64_curr_hart_id() }
+    mp::riscv64_curr_hart_id()
 }
 
 /// Returns the HART ID of the boot hardware thread.
 #[inline(always)]
 pub fn boot_hart_id() -> u32 {
-    // SAFETY: cpp_riscv64_boot_hart_id is a read-only FFI call returning the boot HART ID with no side effects.
-    unsafe { cpp_riscv64_boot_hart_id() }
+    mp::riscv64_boot_hart_id()
 }
 
 #[repr(C, align(16))]

@@ -46,7 +46,7 @@ void arch_sync_cache_range(vaddr_t start, size_t len);
 // must not re-enter the scheduler.
 // flush_done should be signaled after state is flushed.
 class MpUnplugEvent;
-void arch_flush_state_and_halt(MpUnplugEvent *flush_done) __NO_RETURN;
+extern "C" void arch_flush_state_and_halt(MpUnplugEvent *flush_done) __NO_RETURN;
 
 // Arch optimized version of a page zero routine against a page aligned buffer.
 // Usually implemented in or called from assembly.

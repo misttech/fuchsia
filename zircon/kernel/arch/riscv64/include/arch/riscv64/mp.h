@@ -116,9 +116,6 @@ template <typename T, size_t Offset>
   (riscv64_write_percpu_field<decltype(riscv64_percpu::field), offsetof(riscv64_percpu, field)>( \
       value))
 
-// Setup the high-level percpu struct pointer for |cpu_num|.
-void arch_setup_percpu(cpu_num_t cpu_num, percpu* percpu);
-
 // Return a pointer to the high-level percpu struct for the calling CPU.
 inline struct percpu* arch_get_curr_percpu() { return READ_PERCPU_FIELD(high_level_percpu); }
 
@@ -128,28 +125,33 @@ extern uint riscv64_num_cpus;
 inline void arch_set_num_cpus(uint cpu_count) { riscv64_num_cpus = cpu_count; }
 inline uint arch_max_num_cpus() { return riscv64_num_cpus; }
 
-void riscv64_mp_early_init_percpu(uint32_t hart_id, uint cpu_num);
-
 inline cpu_num_t arch_curr_cpu_num() { return READ_PERCPU_FIELD(cpu_num); }
 inline uint32_t riscv64_curr_hart_id() { return READ_PERCPU_FIELD(hart_id); }
-
-// Translate a bitmap of cpu ids to a bitmap of harts, which may not be 1:1
-arch::HartMask riscv64_cpu_mask_to_hart_mask(cpu_mask_t cmask);
 
 inline bool arch_get_restricted_flag() { return READ_PERCPU_FIELD(in_restricted_mode); }
 inline void arch_set_restricted_flag(bool restricted) {
   WRITE_PERCPU_FIELD(in_restricted_mode, restricted ? 1 : 0);
 }
 
+extern "C" {
+// Setup the high-level percpu struct pointer for |cpu_num|.
+void arch_setup_percpu(cpu_num_t cpu_num, percpu* percpu);
+
+void riscv64_mp_early_init_percpu(uint32_t hart_id, uint cpu_num);
+
+// Translate a bitmap of cpu ids to a bitmap of harts, which may not be 1:1
+arch::HartMask riscv64_cpu_mask_to_hart_mask(cpu_mask_t cmask);
+
 uint32_t riscv64_boot_hart_id();
 zx_status_t riscv64_start_cpu(cpu_num_t cpu_num, uint32_t hart_id);
 
 // The start-up routine for secondary CPUs, which in turn calls the kernel
 // entrypoint of riscv64_secondary_entry().
-extern "C" void riscv64_secondary_start();
+void riscv64_secondary_start();
 
 // Translate a CPU number to the hart ID of the CPU.
 uint32_t arch_cpu_num_to_hart_id(cpu_num_t cpu_num);
+}
 
 #endif  // !__ASSEMBLER__
 

@@ -92,7 +92,6 @@ pub struct ArchPhysHandoff {
 
 unsafe extern "C" {
     pub fn cpp_riscv64_handoff_boot_hart_id(handoff: *const ArchPhysHandoff) -> u64;
-    fn cpp_riscv64_mp_early_init_percpu(hart_id: u32, cpu_num: u32);
     fn cpp_riscv64_mmu_early_init();
     fn cpp_riscv64_mmu_prevm_init();
     fn cpp_riscv64_mmu_init();
@@ -242,10 +241,7 @@ pub unsafe extern "C" fn riscv64_boot_cpu_init(arch_handoff: *const ArchPhysHand
     // SAFETY: Caller guarantees `arch_handoff` is non-null and valid.
     let hart_id = unsafe { cpp_riscv64_handoff_boot_hart_id(arch_handoff) } as u32;
     riscv64_init_percpu();
-    // SAFETY: Boot CPU early MP initialization.
-    unsafe {
-        cpp_riscv64_mp_early_init_percpu(hart_id, 0);
-    }
+    super::mp::riscv64_mp_early_init_percpu(hart_id, 0);
     // SAFETY: Caller guarantees `arch_handoff` is non-null and valid.
     unsafe { super::feature::riscv64_feature_early_init(arch_handoff) };
 }

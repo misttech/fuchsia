@@ -16,14 +16,6 @@ void rust_arch_spin_lock_non_instrumented(uint32_t* lock);
 bool rust_arch_spin_trylock(uint32_t* lock);
 void rust_arch_spin_unlock(uint32_t* lock);
 
-FFI_ALWAYS_INLINE void cpp_percpu_inc_num_spinlocks() {
-  WRITE_PERCPU_FIELD(num_spinlocks, READ_PERCPU_FIELD(num_spinlocks) + 1);
-}
-
-FFI_ALWAYS_INLINE void cpp_percpu_dec_num_spinlocks() {
-  WRITE_PERCPU_FIELD(num_spinlocks, READ_PERCPU_FIELD(num_spinlocks) - 1);
-}
-
 }  // extern "C"
 
 namespace {

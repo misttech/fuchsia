@@ -233,6 +233,43 @@ if (toolchain_base_environment == "kernel") {
     expect_lints = [ "non_camel_case_types" ]
   }
 
+  kernel_bindgen_crate("riscv64-mp-bindings") {
+    headers = [ "include/arch/riscv64/mp.h" ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    notice_year = 2026
+    raw_lines = [
+      "#![no_std]",
+      "use core::sync::atomic::AtomicU32;",
+    ]
+    explicit_padding = false
+    replacements = [
+      [
+        "#\\[derive\\(Debug, Copy, Clone\\)\\]\npub struct riscv64_percpu",
+        "#[derive(Debug)]\npub struct riscv64_percpu",
+      ],
+      [
+        "pub ipi_data: std_atomic,",
+        "pub ipi_data: AtomicU32,",
+      ],
+    ]
+    type_blocklist = [
+      "std_atomic.*",
+      "std___.*",
+      "zx_.*",
+    ]
+    type_allowlist = [
+      "riscv64_percpu",
+      "cpu_num_t",
+      "percpu",
+    ]
+    var_allowlist = [
+      "PERCPU_IN_RESTRICTED_MODE",
+      "SECONDARY_STACK_.*",
+    ]
+    expect_lints = [ "non_camel_case_types" ]
+  }
+
   kernel_rust_mod("arch-riscv64-rs") {
     output_name = "arch_riscv64"
     source_root = "src/mod.rs"
@@ -242,6 +279,7 @@ if (toolchain_base_environment == "kernel") {
       "src/feature.rs",
       "src/fpu.rs",
       "src/mod.rs",
+      "src/mp.rs",
       "src/sbi.rs",
       "src/spinlock.rs",
       "src/thread.rs",
@@ -250,6 +288,7 @@ if (toolchain_base_environment == "kernel") {
     ]
     deps = [
       ":riscv-sbi-bindings",
+      ":riscv64-mp-bindings",
       ":riscv64-regs-bindings",
       ":riscv64-thread-bindings",
       "//sdk/rust/zbi",

@@ -39,12 +39,6 @@ extern "C" {
 
 bool cpp_boot_options_riscv64_enable_asid() { return BootOptions::Get()->riscv64_enable_asid; }
 
-uint32_t cpp_riscv64_curr_hart_id() { return riscv64_curr_hart_id(); }
-uint32_t cpp_riscv64_boot_hart_id() { return riscv64_boot_hart_id(); }
-
-void cpp_riscv64_mp_early_init_percpu(uint32_t hart_id, uint32_t cpu_num) {
-  riscv64_mp_early_init_percpu(hart_id, cpu_num);
-}
 void cpp_riscv64_mmu_early_init() { riscv64_mmu_early_init(); }
 void cpp_riscv64_mmu_prevm_init() { riscv64_mmu_prevm_init(); }
 void cpp_riscv64_mmu_init() { riscv64_mmu_init(); }

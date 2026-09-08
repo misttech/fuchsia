@@ -10,33 +10,28 @@
 //! number + 1 for debugging purposes, so that 0 means unheld.
 
 use super::arch::arch_yield;
+use super::mp::{percpu_dec_num_spinlocks, percpu_inc_num_spinlocks};
 use core::sync::atomic::{AtomicU32, Ordering};
-
-unsafe extern "C" {
-    fn cpp_arch_curr_cpu_num() -> u32;
-    fn cpp_percpu_inc_num_spinlocks();
-    fn cpp_percpu_dec_num_spinlocks();
-}
 
 /// Acquire a spinlock without lock trace instrumentation.
 fn arch_spin_lock_non_instrumented(lock: &AtomicU32) {
-    let new_val = (unsafe { cpp_arch_curr_cpu_num() }) + 1;
+    let new_val = super::mp::arch_curr_cpu_num() + 1;
     loop {
         if lock.compare_exchange_weak(0, new_val, Ordering::Acquire, Ordering::Relaxed).is_ok() {
             break;
         }
         arch_yield();
     }
-    unsafe { cpp_percpu_inc_num_spinlocks() };
+    percpu_inc_num_spinlocks();
 }
 
 /// Try to acquire a spinlock without blocking.
 ///
 /// Returns `true` if the lock was acquired, or `false` if it was already held.
 fn arch_spin_trylock(lock: &AtomicU32) -> bool {
-    let new_val = (unsafe { cpp_arch_curr_cpu_num() }) + 1;
+    let new_val = super::mp::arch_curr_cpu_num() + 1;
     if lock.compare_exchange(0, new_val, Ordering::Acquire, Ordering::Relaxed).is_ok() {
-        unsafe { cpp_percpu_inc_num_spinlocks() };
+        percpu_inc_num_spinlocks();
         true
     } else {
         false
@@ -45,7 +40,7 @@ fn arch_spin_trylock(lock: &AtomicU32) -> bool {
 
 /// Release a previously held spinlock.
 fn arch_spin_unlock(lock: &AtomicU32) {
-    unsafe { cpp_percpu_dec_num_spinlocks() };
+    percpu_dec_num_spinlocks();
     lock.store(0, Ordering::Release);
 }
 
