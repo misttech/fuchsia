@@ -11,15 +11,17 @@ pub mod registers;
 #[cfg(test)]
 pub mod testing;
 
+use crate::hardware_units::controller::Controller;
 use crate::hardware_units::i2c::MessageInterfaceUnitI2c;
 use crate::registers::product_info::ProductIdentification;
 use crate::registers::status::FirmwareStatus;
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl_next_fuchsia_hardware_i2c as fidl_i2c;
+use std::sync::Mutex;
 
 struct GoodixGt6853Driver {
     _node: Node,
-    _i2c: MessageInterfaceUnitI2c,
+    controller_task: Mutex<Option<fuchsia_async::Task<()>>>,
 }
 
 driver_register!(GoodixGt6853Driver);
@@ -94,11 +96,18 @@ impl Driver for GoodixGt6853Driver {
 
         let _node = context.take_node()?;
 
+        let controller = Controller::new(i2c);
+        let controller_task = fuchsia_async::Task::spawn(controller.run());
+
         log::info!("goodix_gt6853 driver initialized successfully");
-        Ok(Self { _node, _i2c: i2c })
+        Ok(Self { _node, controller_task: Mutex::new(Some(controller_task)) })
     }
 
     async fn stop(&self) {
         log::info!("Stopping goodix_gt6853 driver");
+        let controller_task = self.controller_task.lock().unwrap().take();
+        if let Some(task) = controller_task {
+            task.abort().await;
+        }
     }
 }
