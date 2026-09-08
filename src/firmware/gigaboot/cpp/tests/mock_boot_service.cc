@@ -153,7 +153,7 @@ void BlockDevice::AddGptPartition(const gpt_entry_t& new_entry) {
 }
 
 Tcg2Device::Tcg2Device() : Device({}) {
-  memset(&tcg2_protocol_, 0, sizeof(tcg2_protocol_));
+  tcg2_protocol_.protocol_ = {};
   tcg2_protocol_.protocol_.GetCapability = Tcg2Device::GetCapability;
   tcg2_protocol_.protocol_.SubmitCommand = Tcg2Device::SubmitCommand;
 }
