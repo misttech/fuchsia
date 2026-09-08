@@ -12,12 +12,9 @@ from itertools import zip_longest
 # Root directory of the Fuchsia source tree.
 _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
 
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/api"))
-import ninja_artifacts
-
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
 import bazel_build_args
-import build_utils
+from build_utils import BazelLauncher, NinjaRunner
 
 _DEBUG = False
 
@@ -33,7 +30,7 @@ def debug(s: T.Any) -> None:
 
 
 def query_ninja_commands(
-    ninja_runner: ninja_artifacts.NinjaRunner,
+    ninja_runner: NinjaRunner,
     ninja_outputs_path: pathlib.Path,
     gn_labels: list[str],
 ) -> dict[str, str]:
@@ -103,7 +100,7 @@ def query_ninja_commands(
 
 
 def query_ninja_command(
-    ninja_runner: ninja_artifacts.NinjaRunner,
+    ninja_runner: NinjaRunner,
     ninja_outputs_path: pathlib.Path,
     gn_label: str,
 ) -> str:
@@ -125,7 +122,7 @@ def query_ninja_command(
 
 
 def query_bazel_commands(
-    bazel_launcher: build_utils.BazelLauncher,
+    bazel_launcher: BazelLauncher,
     bazel_execroot: str | pathlib.Path,
     bazel_labels: list[str],
     read_response_files: bool = False,
@@ -206,7 +203,7 @@ def query_bazel_commands(
 
 
 def query_bazel_command(
-    bazel_launcher: build_utils.BazelLauncher,
+    bazel_launcher: BazelLauncher,
     bazel_execroot: str | pathlib.Path,
     bazel_label: str,
     read_response_files: bool = False,

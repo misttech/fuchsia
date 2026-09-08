@@ -3,16 +3,30 @@
 # found in the LICENSE file.
 
 import("//build/python/python_binary.gni")
+import("//build/python/python_library.gni")
 import("//build/testing/python_build_time_tests.gni")
 
 if (is_host) {
+  python_library("gn_runner") {
+    sources = [ "gn_runner.py" ]
+    library_deps = [ "//build/bazel/scripts:build_utils" ]
+  }
+  python_library("normalize_rustc_args") {
+    sources = [ "normalize_rustc_args.py" ]
+  }
+  python_library("discover_migration_candidates") {
+    sources = [ "discover_migration_candidates.py" ]
+    deps = [ ":gn_runner" ]
+  }
+
+  python_library("shell_utils") {
+    sources = [ "shell_utils.py" ]
+  }
+
   python_build_time_tests("discover_migration_candidates_test") {
     tests = [ "discover_migration_candidates_test.py" ]
-    inputs = [
-      "discover_migration_candidates.py",
-      "gn_runner.py",
-      "shell_utils.py",
-    ]
+    deps = [ ":discover_migration_candidates" ]
+    inputs = [ "shell_utils.py" ]
   }
 
   python_build_time_tests("shell_utils_test") {
@@ -22,32 +36,31 @@ if (is_host) {
 
   python_build_time_tests("normalize_rustc_args_test") {
     tests = [ "normalize_rustc_args_test.py" ]
-    inputs = [ "normalize_rustc_args.py" ]
+    deps = [ ":normalize_rustc_args" ]
   }
 
   python_build_time_tests("gn_runner_test") {
     tests = [ "gn_runner_test.py" ]
-    inputs = [
-      "gn_runner.py",
-      "//build/bazel/scripts:build_utils.py",
+    deps = [ ":gn_runner" ]
+  }
+
+  python_library("build_command_query_utils") {
+    sources = [ "build_command_query_utils.py" ]
+    library_deps = [
+      "//build/bazel/scripts:bazel_build_args",
+      "//build/bazel/scripts:build_utils",
     ]
   }
 
   python_build_time_tests("build_command_query_utils_test") {
     tests = [ "build_command_query_utils_test.py" ]
-    inputs = [
-      "build_command_query_utils.py",
-      "//build/api/ninja_artifacts.py",
-      "//build/bazel/scripts/bazel_build_args.py",
-      "//build/bazel/scripts/build_utils.py",
-    ]
+    deps = [ ":build_command_query_utils" ]
   }
 
   python_binary("compare_rustc_commands") {
     testonly = true
     main_source = "compare_rustc_commands.py"
     sources = [
-      "//build/api/ninja_artifacts.py",
       "//build/bazel/scripts/bazel_build_args.py",
       "//build/bazel/scripts/build_utils.py",
       "build_command_query_utils.py",

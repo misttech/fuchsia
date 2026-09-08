@@ -8,15 +8,15 @@ import("//build/testing/python_build_time_tests.gni")
 if (is_host) {
   python_library("affected_tests") {
     sources = [ "affected_tests.py" ]
-    library_deps = [
-      ":ninja_artifacts",
-      "//build/bazel/scripts:build_utils",
-    ]
+    library_deps = [ "//build/bazel/scripts:build_utils" ]
   }
 
   python_build_time_tests("affected_tests_test") {
     tests = [ "affected_tests_test.py" ]
-    deps = [ ":affected_tests" ]
+    deps = [
+      ":affected_tests",
+      ":ninja_artifacts",
+    ]
   }
 
   python_library("build_api_filter") {

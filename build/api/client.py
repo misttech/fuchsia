@@ -26,6 +26,8 @@ _SCRIPT_DIR = _SCRIPT_FILE.parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 from script_commands import ScriptCommandBase, ScriptCommandList
 
+sys.path.insert(0, str(_SCRIPT_DIR / "../bazel/scripts"))
+
 if T.TYPE_CHECKING:
     import gn_labels
     import gn_ninja_outputs
@@ -225,10 +227,11 @@ class LastBuildApiFilter(object):
 
     @staticmethod
     def generate_filter(ninja: Path, build_dir: Path) -> T.Any:
+        import build_utils
         import ninja_artifacts
         from build_api_filter import BuildApiFilter
 
-        ninja_runner = ninja_artifacts.NinjaRunner(ninja, build_dir)
+        ninja_runner = build_utils.NinjaRunner(ninja, build_dir)
         last_build_artifacts = ninja_artifacts.get_last_build_artifacts(
             ninja_runner
         )
@@ -638,10 +641,11 @@ class LastNinjaArtifactsCommand(ScriptCommandBase):
 
     @staticmethod
     def run(args: argparse.Namespace) -> int:
+        import build_utils
         import ninja_artifacts
 
         ninja = get_ninja_path(args.fuchsia_dir, args.host_tag)
-        ninja_runner = ninja_artifacts.NinjaRunner(ninja, args.build_dir)
+        ninja_runner = build_utils.NinjaRunner(ninja, args.build_dir)
 
         last_artifacts = ninja_artifacts.get_last_build_artifacts(ninja_runner)
 
@@ -1042,6 +1046,7 @@ return correct results, as depfile dependencies will be missing.
         if args.files_list:
             changed_files += args.files_list.read_text().splitlines()
 
+        import build_utils
         import ninja_artifacts
 
         root_targets: list[str] = []
@@ -1066,7 +1071,7 @@ return correct results, as depfile dependencies will be missing.
                 root_targets.append(target)
 
         ninja_path = get_ninja_path(args.fuchsia_dir, args.host_tag)
-        ninja_runner = ninja_artifacts.NinjaRunner(ninja_path, args.build_dir)
+        ninja_runner = build_utils.NinjaRunner(ninja_path, args.build_dir)
         result, reason = ninja_artifacts.should_file_changes_trigger_build(
             changed_files,
             args.fuchsia_dir,
@@ -1112,13 +1117,12 @@ where each line is in the format <test_label>,<test_env>, where
         changed_files = args.files_list.read_text().splitlines()
         # Lazy imports, see technical note at the top of this file.
         import affected_tests
-        import ninja_artifacts
 
         sys.path.insert(0, f"{_SCRIPT_DIR}/../bazel/scripts")
         import build_utils
 
         ninja_path = get_ninja_path(args.fuchsia_dir, args.host_tag)
-        ninja_runner = ninja_artifacts.NinjaRunner(ninja_path, args.build_dir)
+        ninja_runner = build_utils.NinjaRunner(ninja_path, args.build_dir)
 
         bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, args.build_dir)
         bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)

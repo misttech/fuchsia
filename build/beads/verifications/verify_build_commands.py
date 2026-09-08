@@ -22,9 +22,6 @@ _DEBUG = False
 
 _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
 
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/api"))
-import ninja_artifacts
-
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
 import build_utils
 
@@ -121,7 +118,7 @@ def main() -> int:
     debug(f"GN labels: {gn_labels}")
     debug(f"Bazel labels: {bazel_labels}")
 
-    ninja_runner = ninja_artifacts.NinjaRunner(ninja_bin, paths.build_dir)
+    ninja_runner = build_utils.NinjaRunner(ninja_bin, paths.build_dir)
     gn_cmds_raw = build_command_query_utils.query_ninja_commands(
         ninja_runner, args.ninja_outputs_json, gn_labels
     )

@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 import sys
 import tempfile
 import typing as T
@@ -15,16 +16,14 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import affected_tests
 import ninja_artifacts
-from ninja_artifacts import MockNinjaRunner
 
 sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../bazel/scripts"))
-import re
-
 from build_utils import (
     BazelPaths,
     CommandResult,
     MockBazelLauncher,
     MockCommandRunner,
+    MockNinjaRunner,
 )
 
 

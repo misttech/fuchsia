@@ -10,13 +10,8 @@ import sys
 from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(__file__)
-sys.path.insert(0, _SCRIPT_DIR)
-from ninja_artifacts import NinjaRunner
-
-sys.path.insert(
-    0, os.path.join(_SCRIPT_DIR, "..", "..", "build", "bazel", "scripts")
-)
-from build_utils import BazelLauncher
+sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../../build/bazel/scripts"))
+from build_utils import BazelLauncher, NinjaRunner
 
 # Set this to True to debug operations locally in this script.
 _DEBUG = False

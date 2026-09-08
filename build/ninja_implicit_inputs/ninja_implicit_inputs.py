@@ -17,7 +17,9 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../api"))
 from gn_labels import GnLabelQualifier
 from gn_ninja_outputs import NinjaOutputsBase, NinjaOutputsJSON
-from ninja_artifacts import NinjaRunner
+
+sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../bazel/scripts"))
+from build_utils import NinjaRunner
 
 # A type representing a dictionary mapping Ninja target paths to a set of related path strings.
 # (which can represent inputs or outputs computed by walking the Ninja graph).

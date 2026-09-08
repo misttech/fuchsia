@@ -580,6 +580,56 @@ class TimeProfileTest(unittest.TestCase):
         )
 
 
+class NinjaRunnerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp_dir = Path(self._td.name)
+        self.ninja_bin = self.tmp_dir / "prebuilt/ninja"
+        self.ninja_bin.parent.mkdir()
+        self.ninja_bin.write_text('#!/usr/bin/env bash\necho test-ninja "$@"\n')
+        self.build_dir = self.tmp_dir / "build-out"
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def test_ninja_runner_instance(self) -> None:
+        mock_runner = build_utils.MockCommandRunner()
+        ninja_runner = build_utils.NinjaRunner(
+            ninja=self.ninja_bin,
+            build_dir=self.build_dir,
+            command_runner=mock_runner,
+        )
+
+        self.assertEqual(ninja_runner.ninja, self.ninja_bin)
+        self.assertEqual(ninja_runner.build_dir, self.build_dir)
+        self.assertEqual(
+            ninja_runner.generate_subprocess_run_command(
+                ["-t", "commands", "-s", "obj/binary"]
+            ),
+            [
+                str(self.ninja_bin),
+                "-C",
+                str(self.build_dir),
+                "-t",
+                "commands",
+                "-s",
+                "obj/binary",
+            ],
+        )
+
+        mock_runner.push_result(
+            0, "obj/binary was built\n", "Building obj/binary...\n"
+        )
+        output = ninja_runner.run_and_extract_output(["obj/binary"])
+        self.assertEqual(output, "obj/binary was built\n")
+        self.assertListEqual(
+            mock_runner.commands,
+            [
+                f"{self.ninja_bin} -C {self.build_dir} obj/binary",
+            ],
+        )
+
+
 class BazelBuildInvocationTest(unittest.TestCase):
     def test_new_instance(self) -> None:
         with self.assertRaises(ValueError) as cm:

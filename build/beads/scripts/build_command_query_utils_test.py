@@ -9,12 +9,11 @@ from unittest import mock
 
 import build_command_query_utils
 import build_utils
-import ninja_artifacts
 
 
 class TestBuildCommandQueryUtils(unittest.TestCase):
     def test_query_ninja_commands(self) -> None:
-        mock_ninja = ninja_artifacts.MockNinjaRunner(
+        mock_ninja = build_utils.MockNinjaRunner(
             pathlib.Path("/fuchsia/out/default"),
             "rustc --crate-name bar obj/foo/bar.o\n"
             + "rustc --crate-name baz obj/foo/baz.o\n",
@@ -79,7 +78,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                 )
 
     def test_query_ninja_commands_mismatch(self) -> None:
-        mock_ninja = ninja_artifacts.MockNinjaRunner(
+        mock_ninja = build_utils.MockNinjaRunner(
             pathlib.Path("/fuchsia/out/default"),
             "rustc --crate-name bar obj/foo/BLOOP.o\n"
             + "rustc --crate-name baz obj/foo/baz.o\n",
@@ -104,7 +103,7 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                 )
 
     def test_query_ninja_commands_missing_command(self) -> None:
-        mock_ninja = ninja_artifacts.MockNinjaRunner(
+        mock_ninja = build_utils.MockNinjaRunner(
             pathlib.Path("/fuchsia/out/default"),
             "rustc --crate-name bar obj/foo/bar.o\n",
         )

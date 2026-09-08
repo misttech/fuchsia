@@ -1128,6 +1128,97 @@ class MockCommandRunner(CommandRunner):
         return result
 
 
+class NinjaRunner(object):
+    """Wrapper class to invoke Ninja.
+
+    Usage is:
+       1) Create instance
+
+       2) Call run_and_extract_output() to launch a command and
+          get its output.
+
+       3) Alternatively, use generate_subprocess_run_command() to
+          generate the full command to use for a subprocess.run() call.
+    """
+
+    def __init__(
+        self,
+        ninja: Path,
+        build_dir: Path,
+        command_runner: T.Optional[CommandRunner] = None,
+    ):
+        """Create instance.
+
+        Args:
+            ninja: Path to Ninja binary.
+            build_dir: Path to Ninja build directory.
+            command_runner: Optional CommandRunner instance. If None, a default instance will be created.
+        """
+        self._ninja = ninja.resolve()
+        self._build_dir = build_dir.resolve()
+        self._cmd_runner = command_runner or CommandRunner()
+
+    @property
+    def ninja(self) -> Path:
+        """Absolute Path to Ninja binary."""
+        return self._ninja
+
+    @property
+    def build_dir(self) -> Path:
+        """Absolute path to Ninja build directory."""
+        return self._build_dir
+
+    def generate_subprocess_run_command(self, cmd: list[str]) -> list[str]:
+        """Generate full command for invocation.
+
+        This is useful to call subprocess.run() directly, for example to
+        handle stdout / stderr differently.
+
+        Args:
+            cmd: list of Ninja options and command flags, without
+               "-C <build_dir> which will be prepended to the result.
+        Returns:
+            A new list of command-line arguments to pass to subprocess.run()
+        """
+        return [str(self.ninja), "-C", str(self.build_dir)] + cmd
+
+    def run_and_extract_output(self, cmd: list[str]) -> str:
+        """Run a given Ninja command and return its output.
+
+        Args:
+            cmd: list of Ninja options, note that "-C <build_dir>" will be
+               prepended to it before invoking Ninja.
+
+        Returns:
+           The command's stdout in case of success. stderr is captured but never returned
+           unless the command fails (in which case it will be available from the corresponding
+           exception object).
+
+        Raises:
+           subprocess.CalledProcessError if the command failed.
+        """
+        ret = self._cmd_runner.run_command(
+            self.generate_subprocess_run_command(cmd),
+            **self._cmd_runner.CAPTURE_KWARGS,
+            check=True,
+        )
+        return ret.stdout
+
+
+class MockNinjaRunner(NinjaRunner):
+    """A mock NinjaRunner instance that can be used in tests."""
+
+    def __init__(self, build_dir: Path, mock_output: str) -> None:
+        self._mock_runner = MockCommandRunner()
+        super().__init__(Path("/mock-ninja"), build_dir, self._mock_runner)
+        self._mock_runner.push_result(0, mock_output, "")
+
+    def last_ninja_args(self) -> list[str]:
+        last_args = self._mock_runner.results[-1].args
+        assert last_args[0:3] == ["/mock-ninja", "-C", str(self.build_dir)]
+        return [str(c) for c in last_args[3:]]
+
+
 class BazelLauncher(object):
     """Convenience class to launch Bazel invocations.
 

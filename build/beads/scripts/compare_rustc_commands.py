@@ -26,11 +26,7 @@ _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
 # Path to the default Ninja binary.
 _DEFAULT_NINJA_BIN = _FUCHSIA_DIR / "prebuilt/third_party/ninja/linux-x64/ninja"
 
-sys.path.insert(0, str(_FUCHSIA_DIR / "build/api"))
-import ninja_artifacts
-
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
-import build_utils
 
 
 def debug(s: T.Any) -> None:
@@ -109,6 +105,7 @@ def main() -> int:
 
     bazel_paths = build_utils.BazelPaths(paths.fuchsia_dir, paths.build_dir)
     bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
+
     bazel_cmd_raw = build_command_query_utils.query_bazel_command(
         bazel_launcher,
         bazel_paths.execroot,

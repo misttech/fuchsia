@@ -10,9 +10,10 @@ from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(_SCRIPT_DIR))
-sys.path.insert(1, str(_SCRIPT_DIR / "../bazel/scripts"))
 import ninja_artifacts
-from ninja_artifacts import MockNinjaRunner
+
+sys.path.insert(1, str(_SCRIPT_DIR / "../bazel/scripts"))
+from build_utils import MockNinjaRunner
 
 
 class NinjaArtifactsTest(unittest.TestCase):
