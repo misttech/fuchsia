@@ -162,7 +162,10 @@ def compile_text_policy_to_binary_policy(
 
 
 def merge_text_policies(
-    initial_sids_path: str, input_file_paths: list[str], output_file_path: str
+    initial_sids_path: str,
+    input_file_paths: list[str],
+    output_file_path: str,
+    handle_unknown: str = "deny",
 ) -> None:
     # Accumulate lines of input from all `input_file_paths` and sort them.
     unsorted_input_lines = set()
@@ -224,7 +227,7 @@ def merge_text_policies(
     with open(output_file_path, mode="wt") as output_file:
         # All policies must begin with a `# handle_unknown ...` clause. Tests
         # usually implement "default deny" and allow what is necessary.
-        output_file.write(f"# handle_unknown deny\n")
+        output_file.write(f"# handle_unknown {handle_unknown}\n")
 
         for line in policy_lines_from_input_files:
             output_file.write(f"{line}\n")
