@@ -22,6 +22,8 @@
 //! - [`Idr::lock`]: Acquires the writer lock, returning an [`IdrGuard`] for mutating operations.
 //! - [`Idr::lookup`]: Retrieves the object for a given ID without locking.
 //! - [`Idr::iter`]: Iterates over all active `(u32, &Arc<T>)` entries under an RCU scope.
+//! - [`Idr::max`]: Returns the maximal value allowed for allocation in this `Idr`.
+//! - [`Idr::set_max`]: Sets the maximal value allowed for allocation in this `Idr`.
 //! - [`IdrGuard::alloc`]: Allocates an ID using the configured allocation policy (linear from 0
 //!   or cyclic from cursor).
 //! - [`IdrGuard::reserve_id`]: Marks a specific ID as occupied without inserting an element.
@@ -41,7 +43,7 @@ use smallvec::SmallVec;
 use starnix_rcu::RcuReadScope;
 use starnix_sync::{Mutex, MutexGuard};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 /// The number of bits consumed per layer of the tree structure.
 /// Chosen as 6 because 2^6 = 64, mapping perfectly to a 64-bit word (`u64`)
@@ -80,6 +82,8 @@ pub struct Idr<T: RcuDroppable + Send + Sync + 'static> {
     root: RcuDroppableArc<IdrNode<T>>,
     /// The allocation mode determining whether IDs are allocated linearly or cyclically.
     alloc_mode: IdrAllocMode,
+    /// The maximal value allowed for allocation in this `Idr`.
+    max: AtomicU32,
 }
 
 impl<T: RcuDroppable + Send + Sync + 'static> Default for Idr<T> {
@@ -95,12 +99,23 @@ impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
             writer_lock: Mutex::new(0),
             root: RcuDroppableArc::new(Arc::new(IdrNode::new(0))),
             alloc_mode,
+            max: AtomicU32::new(u32::MAX),
         }
     }
 
     /// Creates a new cyclic `Idr` radix tree with an optional minimum ID after wrapping.
     pub fn new_cyclic(min_after_wrap: Option<u32>) -> Self {
         Self::new(IdrAllocMode::Cyclic { min_after_wrap })
+    }
+
+    /// Returns the maximal value allowed for allocation in this `Idr`.
+    pub fn max(&self) -> u32 {
+        self.max.load(Ordering::Relaxed)
+    }
+
+    /// Sets the maximal value allowed for allocation in this `Idr`.
+    pub fn set_max(&self, max: u32) {
+        self.max.store(max, Ordering::Relaxed);
     }
 
     /// Acquires the writer lock, returning an [`IdrGuard`] that provides mutating operations.
@@ -139,14 +154,19 @@ impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
         IdrIterator { scope, stack }
     }
 
-    /// Iteratively searches for the lowest available free ID >= `start_id`.
+    /// Iteratively searches for the lowest available free ID >= `start_id` and <= `max_id`.
     /// Populates `path` with the `(node, child_index)` sequence from root to leaf.
     fn find_free_slot<'a>(
         &self,
         start_id: u32,
+        max_id: u32,
         path: &mut SmallVec<[(&'a IdrNode<T>, usize); MAX_DEPTH as usize]>,
         scope: &'a RcuReadScope,
     ) -> Option<u32> {
+        if start_id > max_id {
+            return None;
+        }
+
         // Traversal stack storing the path from root and unexplored sibling candidates per
         // layer. Enables iterative backtracking without recursion or heap allocations.
         struct StackEntry<'a, T: RcuDroppable + Send + Sync + 'static> {
@@ -154,7 +174,9 @@ impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
             // Unexplored candidate slots at this level with open capacity.
             free_bits: u64,
             // True if slot selection at this level is restricted to indices >= start_id.
-            constrained: bool,
+            min_constrained: bool,
+            // True if slot selection at this level is restricted to indices <= max_id.
+            max_constrained: bool,
             // The child slot index selected when descending to the next layer.
             chosen_index: usize,
         }
@@ -164,13 +186,21 @@ impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
 
         // When constrained by start_id, mask out slots below the cursor index.
         let mut initial_free_bits = root.free_bitmap.load(Ordering::Relaxed);
-        let constrained = start_id > 0;
-        if constrained {
+        let min_constrained = start_id > 0;
+        if min_constrained {
             let cursor_index = root.index_for_id(start_id);
             initial_free_bits &= !((1u64 << cursor_index) - 1);
         }
 
-        // No candidate slots >= start_id at the root level.
+        // When constrained by max_id, mask out slots above the max index.
+        let max_constrained = (max_id as u64) < root.capacity() - 1;
+        if max_constrained {
+            let max_index = root.index_for_id(max_id);
+            let max_mask = if max_index >= 63 { !0 } else { (1u64 << (max_index + 1)) - 1 };
+            initial_free_bits &= max_mask;
+        }
+
+        // No candidate slots in [start_id, max_id] at the root level.
         if initial_free_bits == 0 {
             return None;
         }
@@ -178,7 +208,8 @@ impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
         stack.push(StackEntry {
             node: root,
             free_bits: initial_free_bits,
-            constrained,
+            min_constrained,
+            max_constrained,
             chosen_index: 0,
         });
 
@@ -203,14 +234,20 @@ impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
                 return Some(id);
             }
 
-            // Deeper layers stay constrained only if descending into the exact start_id slot.
-            let is_constrained = top.constrained && (index == node.index_for_id(start_id));
+            // Deeper layers stay constrained only if descending into the exact boundary slot.
+            let is_min_constrained = top.min_constrained && (index == node.index_for_id(start_id));
+            let is_max_constrained = top.max_constrained && (index == node.index_for_id(max_id));
 
             let child = node.get_or_create_child(index, scope);
             let mut child_free_bits = child.free_bitmap.load(Ordering::Relaxed);
-            if is_constrained {
+            if is_min_constrained {
                 let child_cursor = child.index_for_id(start_id);
                 child_free_bits &= !((1u64 << child_cursor) - 1);
+            }
+            if is_max_constrained {
+                let child_max = child.index_for_id(max_id);
+                let max_mask = if child_max >= 63 { !0 } else { (1u64 << (child_max + 1)) - 1 };
+                child_free_bits &= max_mask;
             }
 
             // Skip child subtree if constraints left no open slots.
@@ -221,7 +258,8 @@ impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
             stack.push(StackEntry {
                 node: child,
                 free_bits: child_free_bits,
-                constrained: is_constrained,
+                min_constrained: is_min_constrained,
+                max_constrained: is_max_constrained,
                 chosen_index: 0,
             });
         }
@@ -300,41 +338,51 @@ impl<'a, T: RcuDroppable + Send + Sync + 'static> IdrGuard<'a, T> {
     where
         F: FnOnce(u32) -> Arc<T>,
     {
+        let max_id = self.idr.max.load(Ordering::Relaxed);
+
         let (is_cyclic, wrap_min) = match self.idr.alloc_mode {
             IdrAllocMode::Linear => (false, 0),
             IdrAllocMode::Cyclic { min_after_wrap } => (true, min_after_wrap.unwrap_or(0)),
         };
-        let start_id = if is_cyclic { *self.cursor } else { 0 };
+
+        let (start_id, wrapped) = if is_cyclic {
+            if *self.cursor > max_id { (wrap_min, true) } else { (*self.cursor, false) }
+        } else {
+            (0, false)
+        };
+
+        if start_id > max_id {
+            return None;
+        }
 
         let mut root_arc = self.idr.root.to_arc();
 
         // Ensure the tree is large enough:
         // 1. If the root free bitmap is 0, the entire current tree capacity is exhausted,
-        //    requiring a new root layer on top.
+        //    requiring a new root layer on top if capacity <= max_id.
         // 2. If `start_id` exceeds current tree capacity (e.g. after wrapping or initial placement),
         //    grow the tree until capacity covers `start_id` or until MAX_DEPTH is reached.
-        while root_arc.free_bitmap.load(Ordering::Relaxed) == 0
-            || (start_id as u64) >= root_arc.capacity()
+        while (start_id as u64) >= root_arc.capacity()
+            || (root_arc.free_bitmap.load(Ordering::Relaxed) == 0
+                && root_arc.capacity() <= (max_id as u64))
         {
             if let Some(new_root) = self.idr.grow_tree_by_one_layer(&root_arc) {
                 root_arc = new_root;
             } else {
-                // Tree reached maximum allowable depth and free_bitmap is 0,
-                // meaning it is completely full across all possible 32-bit IDs.
+                // Tree reached maximum allowable depth and cannot grow further.
                 return None;
             }
         }
 
         let scope = RcuReadScope::new();
         let mut path = SmallVec::<[(&IdrNode<T>, usize); MAX_DEPTH as usize]>::new();
-        // First attempt: search for a free slot >= `start_id`.
-        let id_opt = self.idr.find_free_slot(start_id, &mut path, &scope).or_else(|| {
+        // First attempt: search for a free slot >= `start_id` and <= `max_id`.
+        let id_opt = self.idr.find_free_slot(start_id, max_id, &mut path, &scope).or_else(|| {
             // If cyclic allocation failed to find a slot between `start_id`
-            // and the tree capacity limit, wrap around to search from `wrap_min` up
-            // to `start_id - 1`.
-            if is_cyclic && start_id > wrap_min {
+            // and `max_id`, wrap around to search from `wrap_min` up to `max_id`.
+            if is_cyclic && !wrapped && start_id > wrap_min && wrap_min <= max_id {
                 path.clear();
-                self.idr.find_free_slot(wrap_min, &mut path, &scope)
+                self.idr.find_free_slot(wrap_min, max_id, &mut path, &scope)
             } else {
                 None
             }
@@ -355,10 +403,15 @@ impl<'a, T: RcuDroppable + Send + Sync + 'static> IdrGuard<'a, T> {
             self.idr.propagate_fullness(&path);
         }
 
-        // For cyclic allocations, advance the cursor to `id + 1`, wrapping to `wrap_min` on u32 overflow.
+        // For cyclic allocations, advance the cursor to `id + 1`, wrapping to `wrap_min` when
+        // exceeding `max_id` or on u32 overflow.
         if is_cyclic {
             let next_cursor = id.wrapping_add(1);
-            *self.cursor = if next_cursor == 0 && wrap_min > 0 { wrap_min } else { next_cursor };
+            *self.cursor = if next_cursor > max_id || (next_cursor == 0 && wrap_min > 0) {
+                wrap_min
+            } else {
+                next_cursor
+            };
         }
         Some((id, item))
     }
@@ -544,15 +597,12 @@ impl<T: RcuDroppable + Send + Sync + 'static> Default for IdrNode<T> {
 impl<T: RcuDroppable + Send + Sync + 'static> IdrNode<T> {
     fn new(layer: u32) -> Self {
         let children = std::array::from_fn(|_| RcuOptionBox::new(None));
-
-        let free_bitmap = if layer == MAX_DEPTH - 1 {
-            let max_index = (u32::MAX >> (layer * BITS_PER_LEVEL)) as usize;
-            AtomicU64::new((1 << (max_index + 1)) - 1)
-        } else {
-            AtomicU64::new(!0) // all 1s means all free
-        };
-
-        Self { layer, free_bitmap, presence_bitmap: AtomicU64::new(0), children }
+        Self {
+            layer,
+            free_bitmap: AtomicU64::new(!0), // all 1s means all free
+            presence_bitmap: AtomicU64::new(0),
+            children,
+        }
     }
 
     /// Computes the total capacity underneath this specific node.
@@ -942,8 +992,8 @@ mod tests {
         // By making it occupied, `find_free_slot` descends to the bottom of
         // subtree 3, discovers there is no space left at or above the cursor,
         // and backtracks all the way up to layer 5.
-        // If layer 5's free_bitmap is not properly masked, this backtracking causes the
-        // allocator to erroneously spill over into the invalid index 4.
+        // If layer 5 is not properly constrained by the maximal value, this backtracking
+        // causes the allocator to erroneously spill over into the invalid index 4.
         idr.lock().reserve_id(u32::MAX);
 
         idr.lock().set_cursor(u32::MAX);
@@ -1085,5 +1135,139 @@ mod tests {
         assert!(guard.lookup(1, &scope).is_none());
         assert!(guard.lookup(2, &scope).is_some());
         assert!(guard.lookup(u32::MAX, &scope).is_some());
+    }
+
+    #[fuchsia::test]
+    fn test_linear_alloc_max() {
+        let idr = Idr::<MockItem>::default();
+        idr.set_max(3);
+        assert_eq!(idr.max(), 3);
+
+        let mut guard = idr.lock();
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 0);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 1);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 2);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 3);
+
+        // All IDs <= max are allocated; subsequent allocation fails.
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
+
+        // Free ID 1 below max.
+        guard.remove(1);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 1);
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
+    }
+
+    #[fuchsia::test]
+    fn test_update_max() {
+        let idr = Idr::<MockItem>::default();
+        idr.set_max(2);
+        let mut guard = idr.lock();
+
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 0);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 1);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 2);
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
+
+        // Increase maximal value to 5.
+        guard.set_max(5);
+        assert_eq!(guard.max(), 5);
+
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 3);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 4);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 5);
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
+
+        // Lower maximal value to 4. Existing ID 5 remains readable.
+        guard.set_max(4);
+        let scope = RcuReadScope::new();
+        assert!(guard.lookup(5, &scope).is_some());
+
+        // Removing 5 does not allow reallocating it because 5 > max (4).
+        guard.remove(5);
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
+
+        // Removing 2 allows reallocating it because 2 <= max (4).
+        guard.remove(2);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 2);
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
+    }
+
+    #[fuchsia::test]
+    fn test_cyclic_alloc_max_wrapping() {
+        let idr = Idr::<MockItem>::new_cyclic(Some(2));
+        idr.set_max(5);
+        let mut guard = idr.lock();
+
+        // Initial sequential allocations.
+        for expected in 0..=5 {
+            assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, expected);
+        }
+
+        // Cursor should wrap to min_after_wrap (2).
+        assert_eq!(guard.cursor(), 2);
+
+        // Slots 2..=5 are full, so allocation returns None.
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
+
+        // Free slot 3. Allocation should reuse it and advance cursor to 4.
+        guard.remove(3);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 3);
+        assert_eq!(guard.cursor(), 4);
+
+        // Free slots 0 and 1. Allocation returns None because wrapping stays >= 2.
+        guard.remove(0);
+        guard.remove(1);
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
+    }
+
+    #[fuchsia::test]
+    fn test_cyclic_cursor_above_new_max() {
+        let idr = Idr::<MockItem>::new_cyclic(None);
+        let mut guard = idr.lock();
+
+        // Advance cursor to 80 and allocate.
+        guard.set_cursor(80);
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 80);
+        assert_eq!(guard.cursor(), 81);
+
+        // Lower max below current cursor.
+        guard.set_max(50);
+
+        // Next allocation resets cursor to wrap_min (0) and allocates slot 0.
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 0);
+        assert_eq!(guard.cursor(), 1);
+    }
+
+    #[fuchsia::test]
+    fn test_max_across_tree_layers() {
+        // 70 exceeds layer 0 capacity (64), requiring the tree to grow to layer 1.
+        let idr = Idr::<MockItem>::default();
+        idr.set_max(70);
+        let mut guard = idr.lock();
+
+        for expected in 0..=70 {
+            assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, expected);
+        }
+
+        // Exhausted up to 70.
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
+
+        // Update maximal value to 75.
+        guard.set_max(75);
+        for expected in 71..=75 {
+            assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, expected);
+        }
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
+    }
+
+    #[fuchsia::test]
+    fn test_max_zero() {
+        let idr = Idr::<MockItem>::default();
+        idr.set_max(0);
+        let mut guard = idr.lock();
+
+        assert_eq!(guard.alloc(|value| Arc::new(MockItem { value })).unwrap().0, 0);
+        assert!(guard.alloc(|value| Arc::new(MockItem { value })).is_none());
     }
 }
