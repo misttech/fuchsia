@@ -61,14 +61,14 @@ exit 0
         )
 
         merged, hash1 = verify_or_compile_policy._compute_policy_hash(
-            None, [str(source)], "deny"
+            str(source), "deny"
         )
         self.assertEqual(merged, "class file\nallow s0 s1:file read;\n")
         self.assertEqual(len(hash1), 64)
 
         # Same input yields identical hash
         _, hash2 = verify_or_compile_policy._compute_policy_hash(
-            None, [str(source)], "deny"
+            str(source), "deny"
         )
         self.assertEqual(hash1, hash2)
 
@@ -77,10 +77,10 @@ exit 0
         source.write_text("class file\n", encoding="utf-8")
 
         _, hash_deny = verify_or_compile_policy._compute_policy_hash(
-            None, [str(source)], "deny"
+            str(source), "deny"
         )
         _, hash_allow = verify_or_compile_policy._compute_policy_hash(
-            None, [str(source)], "allow"
+            str(source), "allow"
         )
         self.assertNotEqual(hash_deny, hash_allow)
 
@@ -117,21 +117,18 @@ exit 0
         depfile = str(self.test_dir / "target.stamp.d")
         hash_file = self.test_dir / "policy.hash"
         prebuilt = self.test_dir / "policy.bin"
-        initial_sids = self.test_dir / "initial_sids"
-        fragment = self.test_dir / "fragment.conf"
+        source = self.test_dir / "source.conf"
 
         hash_file.touch()
         prebuilt.touch()
-        initial_sids.touch()
-        fragment.touch()
+        source.touch()
 
         verify_or_compile_policy._write_depfile(
             depfile,
             target,
             str(hash_file),
             str(prebuilt),
-            str(initial_sids),
-            [str(fragment)],
+            str(source),
         )
 
         self.assertTrue(os.path.exists(depfile))
@@ -139,14 +136,13 @@ exit 0
         self.assertTrue(content.startswith(f"{target}: "))
         self.assertIn(str(hash_file), content)
         self.assertIn(str(prebuilt), content)
-        self.assertIn(str(initial_sids), content)
-        self.assertIn(str(fragment), content)
+        self.assertIn(str(source), content)
 
     def test_fast_path_when_hash_matches_and_prebuilt_exists(self) -> None:
         source = self.test_dir / "policy.conf"
         source.write_text("class file\n", encoding="utf-8")
         _, hash_val = verify_or_compile_policy._compute_policy_hash(
-            None, [str(source)], "deny"
+            str(source), "deny"
         )
 
         hash_file = self.test_dir / "policy.hash"
@@ -163,7 +159,7 @@ exit 0
             [
                 "--policy-name",
                 "test_policy",
-                "--inputs",
+                "--source",
                 str(source),
                 "--prebuilt",
                 str(prebuilt),
@@ -202,7 +198,7 @@ exit 0
                 [
                     "--policy-name",
                     "test_policy",
-                    "--inputs",
+                    "--source",
                     str(source),
                     "--prebuilt",
                     str(prebuilt),
@@ -219,7 +215,7 @@ exit 0
         source = self.test_dir / "policy.conf"
         source.write_text("class file new\n", encoding="utf-8")
         _, expected_hash = verify_or_compile_policy._compute_policy_hash(
-            None, [str(source)], "deny"
+            str(source), "deny"
         )
 
         hash_file = self.test_dir / "policy.hash"
@@ -237,7 +233,7 @@ exit 0
             [
                 "--policy-name",
                 "test_policy",
-                "--inputs",
+                "--source",
                 str(source),
                 "--prebuilt",
                 str(prebuilt),
@@ -277,7 +273,7 @@ exit 0
             [
                 "--policy-name",
                 "test_policy",
-                "--inputs",
+                "--source",
                 str(source),
                 "--prebuilt",
                 str(prebuilt),
@@ -310,7 +306,7 @@ exit 0
             [
                 "--policy-name",
                 "test_policy",
-                "--inputs",
+                "--source",
                 str(source),
                 "--prebuilt",
                 str(prebuilt),

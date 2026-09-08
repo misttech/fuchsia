@@ -7,40 +7,25 @@ import argparse
 import hashlib
 import os
 import shutil
+import subprocess
 import sys
-import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-import merge_policies
-
 
 def _compute_policy_hash(
-    initial_sids_path: str | None,
-    input_paths: list[str],
+    source_path: str,
     handle_unknown: str,
 ) -> tuple[str, str]:
-    """Merges source fragments and returns (merged_text, sha256_hash)."""
-    if initial_sids_path is not None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            merged_path = os.path.join(temp_dir, "policy.conf")
-            merge_policies.merge_text_policies(
-                initial_sids_path, input_paths, merged_path, handle_unknown
-            )
-            with open(merged_path, "rt", encoding="utf-8") as f:
-                merged_content = f.read()
-    else:
-        assert (
-            len(input_paths) == 1
-        ), f"Expected exactly 1 input path when initial_sids is not provided, got {len(input_paths)}"
-        with open(input_paths[0], "rt", encoding="utf-8") as f:
-            merged_content = f.read()
+    """Reads source text and returns (source_text, sha256_hash)."""
+    with open(source_path, mode="rt", encoding="utf-8") as f:
+        source_content = f.read()
 
     hasher = hashlib.sha256()
     hasher.update(f"handle_unknown={handle_unknown}\n".encode("utf-8"))
     hasher.update(b"mls=33\n")
-    hasher.update(merged_content.encode("utf-8"))
-    return merged_content, hasher.hexdigest()
+    hasher.update(source_content.encode("utf-8"))
+    return source_content, hasher.hexdigest()
 
 
 def _get_fuchsia_dir() -> str:
@@ -84,8 +69,7 @@ def _write_depfile(
     target: str,
     hash_file: str,
     prebuilt: str,
-    initial_sids: str | None,
-    inputs: list[str],
+    source: str,
 ) -> None:
     if depfile is None:
         return
@@ -94,13 +78,10 @@ def _write_depfile(
         deps.append(hash_file)
     if os.path.exists(prebuilt):
         deps.append(prebuilt)
-    if initial_sids is not None and os.path.exists(initial_sids):
-        deps.append(initial_sids)
-    for fragment in inputs:
-        if os.path.exists(fragment):
-            deps.append(fragment)
-    os.makedirs(os.path.dirname(depfile), exist_ok=True)
-    with open(depfile, "wt", encoding="utf-8") as f:
+    if os.path.exists(source):
+        deps.append(source)
+    os.makedirs(os.path.dirname(os.path.abspath(depfile)), exist_ok=True)
+    with open(depfile, mode="wt", encoding="utf-8") as f:
         f.write(f"{target}: {' '.join(deps)}\n")
 
 
@@ -114,22 +95,30 @@ def _to_source_rel(path: str, source_root: str) -> str:
 
 def _compile_policy(
     checkpolicy_bin: str,
-    policy_name: str,
-    merged_text: str,
+    source_path: str,
     output_path: str,
     handle_unknown: str,
 ) -> None:
     """Compiles text policy to binary using checkpolicy."""
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_conf = os.path.join(temp_dir, f"{policy_name}.conf")
-        with open(temp_conf, "wt", encoding="utf-8") as f:
-            f.write(f"# handle_unknown {handle_unknown}\n")
-            f.write(merged_text)
-
-        merge_policies.compile_text_policy_to_binary_policy(
-            checkpolicy_bin, temp_conf, output_path, handle_unknown
-        )
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    subprocess.run(
+        [
+            checkpolicy_bin,
+            "--mls",
+            "--sort",
+            "--optimize",
+            "-c",
+            "33",
+            "--output",
+            output_path,
+            "--handle-unknown",
+            handle_unknown,
+            "-t",
+            "selinux",
+            source_path,
+        ],
+        check=True,
+    )
 
 
 def _verify_prebuilt(
@@ -155,7 +144,9 @@ def _verify_prebuilt(
         print("=" * 70 + "\n", file=sys.stderr)
         return False
 
-    with open(output_path, "rb") as f_out, open(prebuilt_path, "rb") as f_pre:
+    with open(output_path, mode="rb") as f_out, open(
+        prebuilt_path, mode="rb"
+    ) as f_pre:
         candidate_bytes = f_out.read()
         prebuilt_bytes = f_pre.read()
         if candidate_bytes != prebuilt_bytes or stored_hash != current_hash:
@@ -179,7 +170,7 @@ def _verify_prebuilt(
 
 def _read_stored_hash(hash_file: str) -> str | None:
     if os.path.exists(hash_file):
-        with open(hash_file, "rt", encoding="utf-8") as f:
+        with open(hash_file, mode="rt", encoding="utf-8") as f:
             return f.read().strip()
     return None
 
@@ -224,12 +215,11 @@ def _record_success(
     target: str,
     hash_file: str,
     prebuilt: str,
-    initial_sids: str | None,
-    inputs: list[str],
+    source: str,
 ) -> None:
     if stamp is not None:
         Path(stamp).touch()
-    _write_depfile(depfile, target, hash_file, prebuilt, initial_sids, inputs)
+    _write_depfile(depfile, target, hash_file, prebuilt, source)
 
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -239,9 +229,8 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--policy-name", required=True, help="Name of the policy"
     )
-    parser.add_argument("--initial-sids", help="Path to initial_sids file")
     parser.add_argument(
-        "--inputs", nargs="+", required=True, help="Input policy fragments"
+        "--source", required=True, help="Path to input policy .conf file"
     )
     parser.add_argument(
         "--prebuilt", required=True, help="Path to checked-in prebuilt binary"
@@ -278,9 +267,7 @@ def main(argv: Sequence[str]) -> int:
     target = args.stamp if args.stamp is not None else args.output
 
     # 1. Compute current source hash and read stored hash
-    merged_text, current_hash = _compute_policy_hash(
-        args.initial_sids, args.inputs, args.handle_unknown
-    )
+    _, current_hash = _compute_policy_hash(args.source, args.handle_unknown)
     stored_hash = _read_stored_hash(args.hash_file)
 
     # 2. Fast path: sources unchanged & prebuilt exists
@@ -297,8 +284,7 @@ def main(argv: Sequence[str]) -> int:
             target,
             args.hash_file,
             args.prebuilt,
-            args.initial_sids,
-            args.inputs,
+            args.source,
         )
         return 0
 
@@ -311,14 +297,13 @@ def main(argv: Sequence[str]) -> int:
     # 4. Compile candidate binary in out-dir
     _compile_policy(
         checkpolicy_bin,
-        args.policy_name,
-        merged_text,
+        args.source,
         args.output,
         args.handle_unknown,
     )
 
     # Write candidate hash file in out-dir for manual copy workflows
-    with open(args.output + ".hash", "wt", encoding="utf-8") as f:
+    with open(args.output + ".hash", mode="wt", encoding="utf-8") as f:
         f.write(f"{current_hash}\n")
 
     # 5. Bless or verify
@@ -345,8 +330,7 @@ def main(argv: Sequence[str]) -> int:
         target,
         args.hash_file,
         args.prebuilt,
-        args.initial_sids,
-        args.inputs,
+        args.source,
     )
     return 0
 

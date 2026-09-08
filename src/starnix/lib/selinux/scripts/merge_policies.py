@@ -14,6 +14,8 @@
 # - Conditionals are supported, assuming standard formatting where `if (...) {`
 #   begins on the initial line and matching `}` closes the statement block.
 
+import argparse
+import os
 import re
 import subprocess
 import sys
@@ -231,3 +233,69 @@ def merge_text_policies(
 
         for line in policy_lines_from_input_files:
             output_file.write(f"{line}\n")
+
+
+def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Merge SELinux policy fragments."
+    )
+    parser.add_argument(
+        "--initial-sids", required=True, help="Path to initial_sids file"
+    )
+    parser.add_argument(
+        "--fragments-manifest",
+        help="Path to manifest file containing list of fragment paths (one per line)",
+    )
+    parser.add_argument(
+        "--inputs",
+        nargs="*",
+        default=[],
+        help="Direct policy fragment files",
+    )
+    parser.add_argument(
+        "--output",
+        required=True,
+        help="Path to write the merged policy .conf",
+    )
+    parser.add_argument(
+        "--handle-unknown",
+        default="deny",
+        choices=["allow", "deny", "reject"],
+        help="handle_unknown setting",
+    )
+    parser.add_argument("--depfile", help="Path to write Ninja depfile")
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str]) -> int:
+    args = parse_args(argv)
+
+    fragments = list(args.inputs)
+    if args.fragments_manifest is not None:
+        with open(args.fragments_manifest, mode="rt", encoding="utf-8") as f:
+            for line in f:
+                path = line.strip()
+                if path:
+                    fragments.append(path)
+
+    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+    merge_text_policies(
+        args.initial_sids,
+        fragments,
+        args.output,
+        handle_unknown=args.handle_unknown,
+    )
+
+    if args.depfile:
+        os.makedirs(
+            os.path.dirname(os.path.abspath(args.depfile)), exist_ok=True
+        )
+        all_deps = [args.initial_sids] + sorted(set(fragments))
+        with open(args.depfile, mode="wt", encoding="utf-8") as f:
+            f.write(f"{args.output}: {' '.join(all_deps)}\n")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
