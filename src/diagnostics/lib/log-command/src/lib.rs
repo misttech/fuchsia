@@ -637,7 +637,30 @@ impl LogCommand {
 
 impl FromArgs for LogCommand {
     fn from_args(command_name: &[&str], args: &[&str]) -> Result<Self, argh::EarlyExit> {
-        let cli = RawLogCommand::from_args(command_name, args)?;
+        let cli = match RawLogCommand::from_args(command_name, args) {
+            Ok(cli) => cli,
+            Err(mut early_exit) => {
+                if early_exit.status.is_err() {
+                    if args.iter().any(|arg| arg.starts_with("--dump")) {
+                        early_exit.output.push_str(
+                            "\nNote: 'dump' is a sub-command of 'ffx log', not a flag. Use: ffx log dump [options]\n",
+                        );
+                    } else if args.contains(&"dump") {
+                        if args.iter().any(|arg| arg.starts_with("--limit")) {
+                            early_exit.output.push_str(
+                                "\nNote: 'ffx log dump' does not take --limit. To limit output lines, use '--tail <count>' or pipe to head/tail.\n",
+                            );
+                        }
+                        if args.iter().any(|arg| arg.starts_with("--grep")) {
+                            early_exit.output.push_str(
+                                "\nNote: 'ffx log dump' does not take --grep. To filter log snapshot output, use '--filter <pattern>' or pipe to grep: ffx log dump | grep <pattern>\n",
+                            );
+                        }
+                    }
+                }
+                return Err(early_exit);
+            }
+        };
         let mut cmd = cli.into_log_command();
         cmd.merge_subcommand();
         Ok(cmd)
@@ -2053,5 +2076,35 @@ ffx log --force-set-severity.
         assert!(cmd.case_sensitive());
         #[cfg(not(target_os = "fuchsia"))]
         assert!(cmd.disable_reconnect());
+    }
+
+    #[test]
+    fn test_dump_diagnostics_unsupported_flags() {
+        let err = LogCommand::from_args(&["ffx", "log"], &["--dump"]).unwrap_err();
+        assert!(err.status.is_err());
+        assert!(err.output.contains("Unrecognized argument: --dump"));
+        assert!(err.output.contains(
+            "Note: 'dump' is a sub-command of 'ffx log', not a flag. Use: ffx log dump [options]"
+        ));
+
+        let err = LogCommand::from_args(&["ffx", "log"], &["dump", "--limit", "100"]).unwrap_err();
+        assert!(err.status.is_err());
+        assert!(err.output.contains("Unrecognized argument: --limit"));
+        assert!(err.output.contains(
+            "Note: 'ffx log dump' does not take --limit. To limit output lines, use '--tail <count>' or pipe to head/tail."
+        ));
+
+        let err =
+            LogCommand::from_args(&["ffx", "log"], &["dump", "--limit", "100", "--limit", "200"])
+                .unwrap_err();
+        assert!(err.status.is_err());
+        assert_eq!(err.output.matches("Note: 'ffx log dump' does not take --limit.").count(), 1);
+
+        let err = LogCommand::from_args(&["ffx", "log"], &["dump", "--grep", "hello"]).unwrap_err();
+        assert!(err.status.is_err());
+        assert!(err.output.contains("Unrecognized argument: --grep"));
+        assert!(err.output.contains(
+            "Note: 'ffx log dump' does not take --grep. To filter log snapshot output, use '--filter <pattern>' or pipe to grep: ffx log dump | grep <pattern>"
+        ));
     }
 }
