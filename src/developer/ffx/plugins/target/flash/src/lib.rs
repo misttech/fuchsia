@@ -667,6 +667,17 @@ fn handle_fidl_connection_err(e: Error) -> fho::Result<()> {
             log::debug!("{:?}", e);
             Ok(())
         }
+        Error::ClientRead(_) => {
+            // Under FDomain (direct target connections over SSH or VSOCK), when the
+            // target initiates reboot the remote transport drops abruptly without
+            // sending an in-band PEER_CLOSED epitaph. The resulting transport error
+            // (e.g. Broken Pipe / StreamingAborted) surfaces as a ClientRead error
+            // while awaiting the FIDL response, indicating the target shut down as
+            // expected.
+            log::info!("Target reboot succeeded (transport closed).");
+            log::debug!("{:?}", e);
+            Ok(())
+        }
         _ => {
             log::error!("Target communication error: {:?}", e);
             return_bug!("Target communication error: {:?}", e)
@@ -1393,5 +1404,26 @@ mod test {
             <FlashTool as FfxMain>::Writer::verify_schema(&json)
                 .unwrap_or_else(|e| panic!("Schema verification failed for {json:?}: {e}"));
         }
+    }
+
+    #[fuchsia::test]
+    fn test_handle_fidl_connection_err() {
+        assert!(
+            handle_fidl_connection_err(Error::ClientChannelClosed {
+                epitaph: fidl::Epitaph::PeerClosed,
+                protocol_name: "fuchsia.hardware.power.statecontrol.Admin",
+                reason: None,
+            })
+            .is_ok()
+        );
+
+        assert!(
+            handle_fidl_connection_err(Error::ClientRead(fidl::TransportError::Status(
+                fidl::Status::PEER_CLOSED
+            )))
+            .is_ok()
+        );
+
+        assert!(handle_fidl_connection_err(Error::InvalidHeader).is_err());
     }
 }

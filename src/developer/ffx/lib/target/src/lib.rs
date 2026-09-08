@@ -573,20 +573,18 @@ pub async fn discover_fastboot_target(
     query: TargetInfoQuery,
     timeout: Option<u64>,
 ) -> Result<TargetHandle> {
-    let mut builder = crate::resolve::build_discovery_builder(DiscoverySources::all(), ctx);
+    let mut builder = crate::resolve::build_discovery_builder(DiscoverySources::all(), ctx)
+        .with_state_filter(discovery::TargetStateFilter::FASTBOOT)
+        .with_short_circuit_on_first(true);
     if let Some(ms) = timeout {
         builder = builder.with_timeout_msecs(Some(ms));
     };
     let disco = builder.build(&ctx);
 
     let discovered_devices = disco.discover_devices(query.clone()).await?;
-    let filtered: Vec<_> = discovered_devices
-        .into_iter()
-        .filter(|h| matches!(h.state, discovery::TargetState::Fastboot(_)))
-        .collect();
 
     let source = target_source_for_query(&query, ctx);
-    resolve::expect_single_target(&query, filtered, source).map_err(|e| e.into())
+    resolve::expect_single_target(&query, discovered_devices, source).map_err(|e| e.into())
 }
 
 #[cfg(test)]
@@ -633,6 +631,13 @@ mod test {
 
         let target_spec = get_target_specifier(&env.context).unwrap();
         assert_eq!(target_spec, Some("device-addr-default".into()));
+    }
+
+    #[fuchsia::test]
+    async fn test_discover_fastboot_target_not_found() {
+        let env = test_init().unwrap();
+        let res = discover_fastboot_target(&env.context, TargetInfoQuery::First, Some(1)).await;
+        assert!(res.is_err());
     }
 
     #[fuchsia::test]

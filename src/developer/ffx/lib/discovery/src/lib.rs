@@ -171,6 +171,8 @@ pub struct DiscoveryBuilder {
     usb_vsock_driver_socket_path: Option<PathBuf>,
     sources: DiscoverySources,
     timeout: Option<Duration>,
+    state_filter: TargetStateFilter,
+    short_circuit_on_first: bool,
 }
 
 impl DiscoveryBuilder {
@@ -223,6 +225,19 @@ impl DiscoveryBuilder {
         self
     }
 
+    /// Filter discovered targets by target state.
+    pub fn with_state_filter(mut self, state_filter: TargetStateFilter) -> Self {
+        self.state_filter = state_filter;
+        self
+    }
+
+    /// Control whether `TargetInfoQuery::First` short-circuits on the first match.
+    /// By default (`false`), `First` waits for the discovery window to complete to detect ambiguity.
+    pub fn with_short_circuit_on_first(mut self, short_circuit_on_first: bool) -> Self {
+        self.short_circuit_on_first = short_circuit_on_first;
+        self
+    }
+
     pub fn build(self, context: &EnvironmentContext) -> Discovery {
         Discovery {
             emulator_instance_root: self.emulator_instance_root,
@@ -230,6 +245,8 @@ impl DiscoveryBuilder {
             usb_vsock_driver_socket_path: self.usb_vsock_driver_socket_path,
             sources: self.sources,
             timeout: self.timeout,
+            state_filter: self.state_filter,
+            short_circuit_on_first: self.short_circuit_on_first,
             stream: Mutex::new(None),
             context: context.clone(),
         }
@@ -266,6 +283,35 @@ impl Default for DiscoveryBuilder {
             usb_vsock_driver_socket_path: None,
             sources: DiscoverySources::default(),
             timeout: Some(DEFAULT_TIMEOUT),
+            state_filter: TargetStateFilter::default(),
+            short_circuit_on_first: false,
+        }
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct TargetStateFilter: u8 {
+        const PRODUCT = 1 << 0;
+        const FASTBOOT = 1 << 1;
+        const ZEDBOOT = 1 << 2;
+        const UNKNOWN = 1 << 3;
+    }
+}
+
+impl Default for TargetStateFilter {
+    fn default() -> Self {
+        TargetStateFilter::all()
+    }
+}
+
+impl TargetStateFilter {
+    pub fn matches(&self, state: &TargetState) -> bool {
+        match state {
+            TargetState::Product { .. } => self.contains(TargetStateFilter::PRODUCT),
+            TargetState::Fastboot(_) => self.contains(TargetStateFilter::FASTBOOT),
+            TargetState::Zedboot => self.contains(TargetStateFilter::ZEDBOOT),
+            TargetState::Unknown => self.contains(TargetStateFilter::UNKNOWN),
         }
     }
 }
@@ -276,6 +322,8 @@ pub struct Discovery {
     usb_vsock_driver_socket_path: Option<PathBuf>,
     sources: DiscoverySources,
     timeout: Option<Duration>,
+    state_filter: TargetStateFilter,
+    short_circuit_on_first: bool,
     // For testing purposes, we can provide an arbitrary stream.
     // For example, in the testing module `setup_test()` uses this to store
     // a `Vec<_>` stream iterator.
@@ -318,8 +366,8 @@ impl Discovery {
     }
 
     // Create a stream that is limited by a timer, and will short-circuit query matches:
-    // If the match is not "First", then close the stream on the first match. Otherwise,
-    // close the stream when the timer runs out.
+    // If the match is not "First" (or short_circuit_on_first is true), then close the stream on the first match.
+    // Otherwise, close the stream when the timer runs out.
     pub fn discovery_stream(
         &self,
         query: TargetInfoQuery,
@@ -337,18 +385,20 @@ impl Discovery {
         let (single_target_tx, single_target_rx) = futures::channel::oneshot::channel();
         let single_target_tx = Arc::new(Mutex::new(Some(single_target_tx)));
         let is_indefinite = self.timeout.is_none();
+        let state_filter = self.state_filter;
+        let short_circuit_on_first = self.short_circuit_on_first || is_indefinite;
         Ok(stream
             .filter_map(move |ev| {
                 let query = query.clone();
                 let sender = Arc::clone(&single_target_tx);
                 async move {
                     let th = ev.target_handle();
-                    // Only match against the query
-                    if query.match_handle(th) {
+                    // Only match against the query and state filter
+                    if state_filter.matches(&th.state) && query.match_handle(th) {
                         // When we add a handle that matches our query, fire the oneshot if not First
-                        // or if timeout is indefinite (since indefinite streams will not end otherwise).
+                        // or if short_circuit_on_first is true.
                         if matches!(ev, TargetEvent::Added(_))
-                            && (!matches!(query, TargetInfoQuery::First) || is_indefinite)
+                            && (!matches!(query, TargetInfoQuery::First) || short_circuit_on_first)
                         {
                             // We'll only need the oneshot once
                             if let Some(s) = sender.lock().unwrap().take() {
@@ -666,6 +716,104 @@ pub mod test {
 
         // Under indefinite timeout, First should short-circuit on the first added device.
         assert_eq!(stream.next().await.unwrap().target_handle(), &handle1);
+        assert!(stream.next().await.is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_discovery_stream_with_state_filter_ignores_product_and_finds_fastboot() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let product_handle = TargetHandle {
+            node_name: Some("test-target".to_string()),
+            state: TargetState::Product { addrs: vec![], serial: Some("fb-123".to_string()) },
+            manual: false,
+        };
+        let fastboot_handle = TargetHandle {
+            node_name: Some("".to_string()),
+            state: TargetState::Fastboot(FastbootTargetState {
+                serial_number: "fb-123".to_string(),
+                connection_state: FastbootConnectionState::Usb,
+            }),
+            manual: false,
+        };
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
+        sender.unbounded_send(TargetEvent::Added(product_handle.clone())).unwrap();
+        sender.unbounded_send(TargetEvent::Added(fastboot_handle.clone())).unwrap();
+        let discovery = DiscoveryBuilder::default()
+            .with_state_filter(TargetStateFilter::FASTBOOT)
+            .with_timeout_msecs(None)
+            .build_with_stream(&env.context, receiver);
+        let mut stream =
+            discovery.discovery_stream(TargetInfoQuery::Id("fb-123".to_string())).unwrap();
+
+        // The Product handle must be ignored; the Fastboot handle must be returned.
+        assert_eq!(stream.next().await.unwrap().target_handle(), &fastboot_handle);
+        assert!(stream.next().await.is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_discovery_stream_with_state_filter_matches_nodename_ignores_product() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let product_handle = TargetHandle {
+            node_name: Some("test-target".to_string()),
+            state: TargetState::Product { addrs: vec![], serial: None },
+            manual: false,
+        };
+        let fastboot_handle = TargetHandle {
+            node_name: Some("test-target".to_string()),
+            state: TargetState::Fastboot(FastbootTargetState {
+                serial_number: "fb-456".to_string(),
+                connection_state: FastbootConnectionState::Usb,
+            }),
+            manual: false,
+        };
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
+        sender.unbounded_send(TargetEvent::Added(product_handle.clone())).unwrap();
+        sender.unbounded_send(TargetEvent::Added(fastboot_handle.clone())).unwrap();
+        let discovery = DiscoveryBuilder::default()
+            .with_state_filter(TargetStateFilter::FASTBOOT)
+            .with_timeout_msecs(None)
+            .build_with_stream(&env.context, receiver);
+        let mut stream = discovery
+            .discovery_stream(TargetInfoQuery::NodenameOrId("test-target".to_string()))
+            .unwrap();
+
+        // The Product handle matching nodename must NOT trigger short-circuit;
+        // only the Fastboot handle must be returned.
+        assert_eq!(stream.next().await.unwrap().target_handle(), &fastboot_handle);
+        assert!(stream.next().await.is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_discovery_stream_first_short_circuits_when_configured() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let fastboot_handle1 = TargetHandle {
+            node_name: Some("".to_string()),
+            state: TargetState::Fastboot(FastbootTargetState {
+                serial_number: "fb-1".to_string(),
+                connection_state: FastbootConnectionState::Usb,
+            }),
+            manual: false,
+        };
+        let fastboot_handle2 = TargetHandle {
+            node_name: Some("".to_string()),
+            state: TargetState::Fastboot(FastbootTargetState {
+                serial_number: "fb-2".to_string(),
+                connection_state: FastbootConnectionState::Usb,
+            }),
+            manual: false,
+        };
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
+        sender.unbounded_send(TargetEvent::Added(fastboot_handle1.clone())).unwrap();
+        sender.unbounded_send(TargetEvent::Added(fastboot_handle2.clone())).unwrap();
+        // Even with a long timeout (100 seconds), First must short-circuit when configured.
+        let discovery = DiscoveryBuilder::default()
+            .with_state_filter(TargetStateFilter::FASTBOOT)
+            .with_short_circuit_on_first(true)
+            .with_timeout_msecs(Some(100000))
+            .build_with_stream(&env.context, receiver);
+        let mut stream = discovery.discovery_stream(TargetInfoQuery::First).unwrap();
+
+        assert_eq!(stream.next().await.unwrap().target_handle(), &fastboot_handle1);
         assert!(stream.next().await.is_none());
     }
 
