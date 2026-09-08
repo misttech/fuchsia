@@ -111,7 +111,7 @@ FFI_ALWAYS_INLINE void* cpp_vm_page_list_btree_insert(VmPageListBtree* tree, uin
 FFI_ALWAYS_INLINE void cpp_vm_page_list_btree_erase_at(VmPageListBtree* tree,
                                                        VmPageListBtreeCursor* cursor) {
   DEBUG_ASSERT(cursor->iter.IsValid());
-  tree->erase(cursor->iter);
+  cursor->iter = tree->erase(cursor->iter);
 }
 
 FFI_ALWAYS_INLINE void cpp_vm_page_list_btree_cursor_init(VmPageListBtreeCursor* cursor,

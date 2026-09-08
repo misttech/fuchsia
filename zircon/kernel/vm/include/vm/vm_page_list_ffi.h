@@ -85,6 +85,7 @@ void* cpp_vm_page_list_btree_insert(VmPageListBtree* tree, uint64_t node_offset,
                                     VmPageListBtreeCursor* cursor);
 
 // Erases the node at the cursor position in O(1) amortized time without re-searching the tree.
+// Updates `cursor` to point to the next node in the B-Tree.
 // The cursor must have been initialized by a prior call (e.g., `cpp_vm_page_list_btree_find`).
 void cpp_vm_page_list_btree_erase_at(VmPageListBtree* tree, VmPageListBtreeCursor* cursor);
 
