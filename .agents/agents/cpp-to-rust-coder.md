@@ -49,9 +49,14 @@ When tasked with implementing or updating a port:
    - Understand object layouts, synchronization primitives, concurrency tokens, preemption
      disabling, and FFI boundaries before writing code.
 
-3. **Adhere to the Zircon C++ to Rust Rubric**:
+3. **Adhere to the Zircon C++ to Rust Rubric & Port In-Body Comments**:
    - Strictly follow every rule in `zircon/skills/cpp-to-rust-rubric/SKILL.md` and
      `zircon/skills/cpp-to-rust-dispatcher/SKILL.md`:
+     - Preserve all in-body inline comments (`// ...`) from C++ source and header files
+       (`.cc` and `.h`) documenting behavior in the corresponding `.rs` functions during
+       implementation, updating identifiers that have changed names so comments make sense with the
+       Rust code.  Automated linters cannot detect missing inline comments; conduct a side-by-side
+       audit of C++ source and header files (`.cc` and `.h`) against the corresponding `.rs` files.
      - Token-based locking with `ksync` (`RawCriticalMutex`, `RawSpinlock`), matching C++ thread
        safety annotations.
      - Preemption disabling via `AutoPreemptDisabler` matching C++ `AutoPreemptDisabler`.
@@ -66,6 +71,9 @@ When tasked with implementing or updating a port:
    - Read compiler diagnostics and address all errors and Clippy warnings.
    - Run relevant tests (`fx test`, `fx core-tests`, or `fx run-boot-test`).
    - Run `./scripts/fx format-code` from the repository root.
+   - Perform a side-by-side self-check of C++ source and header files (`.cc` and `.h`) vs `.rs`
+     files against the Common Pitfalls Checklist (especially Pitfall 22 on in-body inline comment
+     parity and adapting changed identifier names) before reporting back.
 
 5. **Report Verifiable In-Tree Changes**:
    - When reporting back to the orchestrator via `send_message`, provide:

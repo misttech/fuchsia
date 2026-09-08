@@ -47,7 +47,15 @@ When tasked with reviewing a port:
    - If reviewing a dispatcher port, also evaluate against the patterns in
      `zircon/skills/cpp-to-rust-dispatcher/SKILL.md`.
 
-2. **Scrutinize `unsafe` Code**:
+2. **Audit In-Body Inline Comment Parity**:
+   - Perform a side-by-side comparative audit of C++ source and header files (`.cc` and `.h`)
+     against the corresponding `.rs` files.
+   - Verify that all inner inline comments (`// ...`) documenting behavior are preserved and
+     that identifiers that have changed names are updated to match the Rust code.
+   - Public Rustdoc alone does NOT satisfy comment parity; automated linters cannot detect
+     missing in-body implementation comments.
+
+3. **Scrutinize `unsafe` Code**:
    - Actively question every single `unsafe` block and function.
    - Insist on safe Rust alternatives where possible (e.g., `zerocopy` instead of manual pointer
      casts, RAII wrappers, derive macros).
@@ -56,13 +64,13 @@ When tasked with reviewing a port:
    - Verify that all `unsafe` functions include a `# Safety` section in their doc comments
      detailing caller requirements.
 
-3. **Evaluate Against the Rubric**:
+4. **Evaluate Against the Rubric**:
    - Verify every requirement in the **Zircon C++ to Rust Porting Rubric** below (Core Principles,
      Machinery, Detailed Guidelines, and Common Pitfalls Checklist).
    - Verify that the port does not violate any item in the Common Pitfalls & Anti-Patterns
      Checklist (items 1-29).
 
-4. **Generate Structured Review Report**:
+5. **Generate Structured Review Report**:
    - Always produce your review as a structured markdown report following the exact format
      specified in the **Structured Review Report Format** section below.
    - In the **Actionable Instructions** section, provide numbered, unambiguous, concrete
@@ -130,11 +138,16 @@ Use the following markdown template when generating your review report:
     `core::ptr::with_exposed_provenance` when converting integer addresses back
     to pointers.
 7.  **Documentation & Comment Parity**: Port architectural notes, safety
-    rationale, and doc comments. All public traits, structs, enums, methods, and
-    functions (except for #[syscall] definitions) MUST have Rustdoc (`///`)
-    comments. `unsafe` functions must include a `# Safety` section. All
-    `unsafe` blocks must have `// SAFETY:` comments. Inline documentation in C++
-    must be ported over to equivalent Rust code.
+    rationale, doc comments, and inline implementation comments. Clearly
+    distinguish between outer documentation and inner inline comments:
+    * **Outer documentation**: All public traits, structs, enums, methods, and
+      functions (except for `#[syscall]` definitions) MUST have Rustdoc (`///`)
+      comments. `unsafe` functions must include a `# Safety` section, and all
+      `unsafe` blocks must have `// SAFETY:` explanations.
+    * **Inner inline comments**: All inline comments (`// ...`) within C++
+      source and header files (`.cc` and `.h`) documenting behavior MUST be
+      preserved in the corresponding Rust code, updating identifiers that have
+      changed names to make sense in Rust.
 8.  **Ergonomic Design & DRY**: Apply idiomatic Rust practices (derive macros,
     `Deref`/`DerefMut`, `Default`, `Option`/`Result`, `?` operator) without
     breaking layout or safety requirements. Keep visibility as tight as possible
@@ -442,6 +455,23 @@ cleanup.cancel();
 Ok(())
 ```
 
+### 3.15. In-Body Implementation & Inline Comment Parity
+- **Linter Blind Spot**: Automated tools (`clippy`, rustdoc `missing_docs`) only
+  enforce outer documentation on public items; they cannot detect missing
+  in-body implementation comments.
+- **Preserve Comments Documenting Behavior**: Preserve all inline comments (`//
+  ...`) from C++ source and header files (`.cc` and `.h`) documenting behavior
+  in the corresponding Rust code. It does not matter what behavior is being
+  described; if it documents behavior, preserve it.
+- **Adapt Identifiers for Rust**: Update ported comments so they make sense with
+  the Rust port of the code. Identifiers that have changed names (e.g., methods
+  in snake_case, field names without trailing underscores, struct/type names,
+  lock guards, or state fields) MUST be updated to match the Rust code rather
+  than referencing obsolete C++ names.
+- **Side-by-Side Audit**: Coders and reviewers MUST conduct a side-by-side audit
+  of C++ source and header files (`.cc` and `.h`) against the corresponding
+  `.rs` files to ensure complete inline comment parity.
+
 ## 4. Common Pitfalls & Anti-Patterns Checklist
 
 Reviewers must audit code against this checklist:
@@ -496,9 +526,12 @@ Reviewers must audit code against this checklist:
     initialization routines receiving uninitialized storage from Rust do not
     take raw `T*`; they take `ffi::Uninitialized<T>*` and initialize in-place
     via `Initialize(...)`.
-22. [ ] **Documentation parity**: Code, datastructure and other comments in the
-    C++ are copied over to Rust with the minimal required updates for changes
-    to symbols names.
+22. [ ] **Documentation and Inline Comment Parity**: Both outer documentation
+    (Rustdoc `///`) and inner inline comments (`// ...`) within function and
+    method bodies documenting behavior are ported over from C++ source and
+    header files (.cc and .h) to Rust, with identifiers that have changed names
+    updated to match the Rust port. Reviewers must perform a side-by-side diff
+    of method bodies to verify.
 23. [ ] **Assertions**: Assertions are copied over and correctly use assert! or
     debug_assert! as matching the C++ use of ASSERT or DEBUG_ASSERT.
 24. [ ] **Canary assertions**: Canary assertions are copied over to Rust and
