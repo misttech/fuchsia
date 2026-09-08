@@ -171,8 +171,8 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
 
   void DisableEndpoint(DisableEndpointRequestView req,
                        DisableEndpointCompleter::Sync& completer) override {
-    if (fail_disable_.load()) {
-      completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
+    if (zx_status_t status = fail_disable_status_.load(); status != ZX_OK) {
+      completer.ReplyError(status);
       return;
     }
     {
@@ -209,7 +209,11 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   }
 
   void CancelAll(CancelAllRequestView req, CancelAllCompleter::Sync& completer) override {
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+    if (zx_status_t status = fail_cancel_all_status_.load(); status != ZX_OK) {
+      completer.ReplyError(status);
+      return;
+    }
+    completer.ReplySuccess();
   }
 
   void GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) override {
@@ -386,7 +390,8 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   std::atomic<bool> fail_start_{false};
   std::atomic<bool> fail_stop_{false};
   std::atomic<bool> fail_configure_{false};
-  std::atomic<bool> fail_disable_{false};
+  std::atomic<zx_status_t> fail_disable_status_{ZX_OK};
+  std::atomic<zx_status_t> fail_cancel_all_status_{ZX_ERR_NOT_SUPPORTED};
 
   bool alloc_called() const {
     std::lock_guard lock(lock_);

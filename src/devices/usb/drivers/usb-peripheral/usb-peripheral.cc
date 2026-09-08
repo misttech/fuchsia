@@ -90,10 +90,18 @@ zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
     return result.status();
   }
   if (result->is_error()) {
-    if (result->error_value() != ZX_ERR_NOT_SUPPORTED) {
-      fdf::error("CancelAll failed (DCI error): {}", zx_status_get_string(result->error_value()));
+    zx_status_t status = result->error_value();
+    // In CompleteFunctionsTeardown, UsbDciCancelAll is called across all 32 possible
+    // endpoint addresses. Endpoints that are not configured/allocated in the DCI driver
+    // return ZX_ERR_NOT_FOUND or ZX_ERR_BAD_STATE, while disconnected or unpowered
+    // hardware returns ZX_ERR_IO_NOT_PRESENT, and DCI drivers without CancelAll support
+    // return ZX_ERR_NOT_SUPPORTED. These are expected during teardown and cleanup,
+    // so suppress spurious error logs for them.
+    if (status != ZX_ERR_NOT_SUPPORTED && status != ZX_ERR_IO_NOT_PRESENT &&
+        status != ZX_ERR_NOT_FOUND && status != ZX_ERR_BAD_STATE) {
+      fdf::error("CancelAll failed (DCI error): {}", zx_status_get_string(status));
     }
-    return result->error_value();
+    return status;
   }
   dci_inspect_.RecordEvent(std::format("endpoint 0x{:02x} cancelled all requests", ep_address));
   return ZX_OK;

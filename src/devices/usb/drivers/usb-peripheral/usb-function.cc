@@ -686,8 +686,16 @@ zx_status_t UsbFunction::CommonEndpointDisable(uint8_t ep_address) {
     return result.status();
   }
   if (result->is_error()) {
-    fdf::error("Failed to disable endpoint: {}", zx_status_get_string(result->error_value()));
-    return result->error_value();
+    // When the USB peripheral is disconnected or the DCI controller transitions
+    // to an unpowered/stopped state, hardware endpoints are no longer present,
+    // and the DCI driver returns ZX_ERR_IO_NOT_PRESENT. Because the endpoint
+    // is already disabled/inaccessible in hardware, treating this as a success (ZX_OK)
+    // allows teardown and disconnect cleanups to complete cleanly without logging
+    // spurious errors, while recording the inspect event.
+    if (result->error_value() != ZX_ERR_IO_NOT_PRESENT) {
+      fdf::error("Failed to disable endpoint: {}", zx_status_get_string(result->error_value()));
+      return result->error_value();
+    }
   }
   peripheral_->dci_inspect().RecordEvent(std::format("endpoint 0x{:02x} disabled", ep_address));
   return ZX_OK;

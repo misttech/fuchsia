@@ -1233,12 +1233,27 @@ TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
   ASSERT_TRUE(res2.ok()) << res2.FormatDescription();
   EXPECT_STATUS(res2.value(), ZX_ERR_NOT_FOUND);
 
-  // Test failing disable from DCI
-  dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_disable_.store(true); });
+  // Test failing disable from DCI when controller is unpowered/stopped.
+  // ZX_ERR_IO_NOT_PRESENT is treated as success because the endpoint is already
+  // effectively disabled in hardware when the DCI controller is disconnected or unpowered.
+  auto fail_cleanup = fit::defer([&]() {
+    dut().RunInEnvironmentTypeContext(
+        [](UsbPeripheralTestEnvironment& env) { env.dci().fail_disable_status_.store(ZX_OK); });
+  });
+  dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
+    env.dci().fail_disable_status_.store(ZX_ERR_IO_NOT_PRESENT);
+  });
   auto res3 = function_client->DisableEndpoint(ep_addr);
   ASSERT_TRUE(res3.ok()) << res3.FormatDescription();
-  EXPECT_STATUS(res3.value(), ZX_ERR_IO_NOT_PRESENT);
+  EXPECT_OK(res3.value());
+
+  // Test failing disable from DCI with an unexpected error status.
+  dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
+    env.dci().fail_disable_status_.store(ZX_ERR_INTERNAL);
+  });
+  auto res4 = function_client->DisableEndpoint(ep_addr);
+  ASSERT_TRUE(res4.ok()) << res4.FormatDescription();
+  EXPECT_STATUS(res4.value(), ZX_ERR_INTERNAL);
 }
 
 TEST_F(UsbPeripheralFunctionTest, StateTransitionErrors) {
@@ -1872,6 +1887,88 @@ TEST_F(UsbPeripheralFunctionTest, SetInterfaceStallsEp0OnError) {
   ASSERT_TRUE(control_res.ok()) << control_res.FormatDescription();
   ASSERT_TRUE(control_res->is_error());
   EXPECT_STATUS(control_res->error_value(), ZX_ERR_NOT_SUPPORTED);
+}
+
+TEST_F(UsbPeripheralFunctionTest, SetFeatureEndpointHaltCancelsAll) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  zx::result<uint8_t> ep_addr_result = ConfigureDefaultFunction(function_client, arena);
+  ASSERT_OK(ep_addr_result);
+  uint8_t ep_addr = ep_addr_result.value();
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Configure first to make the peripheral active.
+  fdescriptor::wire::UsbSetup config_setup;
+  config_setup.bm_request_type = USB_DIR_OUT | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  config_setup.b_request = USB_REQ_SET_CONFIGURATION;
+  config_setup.w_value = 1;  // Configuration 1
+  config_setup.w_index = 0;
+  config_setup.w_length = 0;
+
+  std::vector<uint8_t> unused;
+  fidl::WireUnownedResult config_res =
+      dci().buffer(arena)->Control(config_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  EXPECT_TRUE(config_res.ok()) << config_res.FormatDescription();
+  ASSERT_OK(config_res.value());
+
+  auto cleanup = fit::defer([&]() {
+    dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
+      env.dci().fail_cancel_all_status_.store(ZX_ERR_NOT_SUPPORTED);
+    });
+  });
+
+  // Verify SET_FEATURE ENDPOINT_HALT cleanly succeeds when DCI CancelAll returns ZX_OK.
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_cancel_all_status_.store(ZX_OK); });
+
+  fdescriptor::wire::UsbSetup halt_setup;
+  halt_setup.bm_request_type = USB_DIR_OUT | USB_RECIP_ENDPOINT | USB_TYPE_STANDARD;
+  halt_setup.b_request = USB_REQ_SET_FEATURE;
+  halt_setup.w_value = USB_ENDPOINT_HALT;
+  halt_setup.w_index = ep_addr;
+  halt_setup.w_length = 0;
+
+  auto res1 =
+      dci().buffer(arena)->Control(halt_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(res1.ok()) << res1.FormatDescription();
+  ASSERT_OK(res1.value());
+
+  // Verify SET_FEATURE ENDPOINT_HALT cleanly succeeds when DCI CancelAll returns
+  // ZX_ERR_IO_NOT_PRESENT (e.g. disconnected or unpowered controller during teardown).
+  dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
+    env.dci().fail_cancel_all_status_.store(ZX_ERR_IO_NOT_PRESENT);
+  });
+
+  auto res2 =
+      dci().buffer(arena)->Control(halt_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(res2.ok()) << res2.FormatDescription();
+  ASSERT_OK(res2.value());
+
+  // Verify SET_FEATURE ENDPOINT_HALT cleanly succeeds when DCI CancelAll returns ZX_ERR_NOT_FOUND
+  // or ZX_ERR_BAD_STATE (unconfigured or inactive endpoint during teardown sweep).
+  dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
+    env.dci().fail_cancel_all_status_.store(ZX_ERR_NOT_FOUND);
+  });
+
+  auto res3 =
+      dci().buffer(arena)->Control(halt_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(res3.ok()) << res3.FormatDescription();
+  ASSERT_OK(res3.value());
+
+  dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
+    env.dci().fail_cancel_all_status_.store(ZX_ERR_BAD_STATE);
+  });
+
+  auto res4 =
+      dci().buffer(arena)->Control(halt_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(res4.ok()) << res4.FormatDescription();
+  ASSERT_OK(res4.value());
 }
 
 TEST_F(UsbPeripheralFunctionTest, DISABLED_RejectConfigureWhileStopping) {
