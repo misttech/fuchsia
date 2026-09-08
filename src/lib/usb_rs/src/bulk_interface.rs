@@ -10,18 +10,17 @@ use std::sync::Arc;
 use std::task::Poll;
 use tokio::sync::RwLock;
 
-/// Maximum size of a single bulk URB submitted to Linux usbfs (256 KiB).
+/// Maximum size of a single bulk URB submitted to Linux usbfs (512 KiB).
 ///
-/// This is an engineering heuristic matching upstream fastboot/adb conventions:
-/// it maximizes xHCI DMA burst throughput while avoiding kernel scatter-gather
-/// memory allocation failures or fragmentation issues on host systems.
-const MAX_USBFS_BULK_WRITE_SIZE: usize = 256 * 1024;
+/// This is an engineering heuristic: it maximizes xHCI DMA burst throughput
+/// while remaining safely under kernel memory limits.
+const MAX_USBFS_BULK_WRITE_SIZE: usize = 512 * 1024;
 
-/// Maximum number of bulk URBs queued in flight concurrently (16 URBs = 4 MiB).
+/// Maximum number of bulk URBs queued in flight concurrently (16 URBs = 8 MiB).
 ///
 /// This heuristic keeps the host controller's DMA hardware ring continuously saturated
 /// without stalling between chunks, while remaining well within the Linux usbfs memory
-/// budget (`usbfs_memory_mb`, default 16 MiB) and the interface URB pool limit.
+/// budget (`usbfs_memory_mb`, default 16 MiB) and the interface URB pool limit (32).
 const MAX_IN_FLIGHT_URBS: usize = 16;
 const MAX_WRITE_BUFFER_SIZE: usize = MAX_USBFS_BULK_WRITE_SIZE * MAX_IN_FLIGHT_URBS;
 
