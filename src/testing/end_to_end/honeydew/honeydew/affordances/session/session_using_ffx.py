@@ -239,5 +239,7 @@ class SessionUsingFfx(session.Session):
             # TODO(b/406501041): Handle potential "NotFound" error. If multiple components share the
             # same URL, removing one will implicitly remove all others with that URL. Subsequent
             # attempts to remove components with the same URL will result in a "NotFound" error.
-            if "Error: NotFound" not in str(err):
+            if "Error: NotFound" not in str(
+                err
+            ) and "Element not found" not in str(err):
                 raise session_errors.SessionError(err)
