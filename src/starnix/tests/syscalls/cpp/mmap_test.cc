@@ -1455,6 +1455,49 @@ TEST(Mremap, RemapMayMoveSpanningMappings) {
   SAFE_SYSCALL(munmap(mapping, 2 * page_size));
 }
 
+TEST(Mremap, BadAddressReturnsEfault) {
+  const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
+  // Map and immediately unmap a 2-page region so we can obtain two guaranteed
+  // unmapped, non-overlapping addresses (`addr` and `dst`).
+  void* base = mmap(nullptr, 2 * page_size, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(base, MAP_FAILED);
+  SAFE_SYSCALL(munmap(base, 2 * page_size));
+
+  void* addr = base;
+  void* dst = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(base) + page_size);
+
+  // Expanding unmapped address should return EFAULT.
+  EXPECT_EQ(mremap(addr, page_size, 2 * page_size, 0), MAP_FAILED);
+  EXPECT_EQ(errno, EFAULT);
+
+  EXPECT_EQ(mremap(addr, page_size, 2 * page_size, MREMAP_MAYMOVE), MAP_FAILED);
+  EXPECT_EQ(errno, EFAULT);
+
+  // Shrinking unmapped address should return EFAULT.
+  EXPECT_EQ(mremap(addr, 2 * page_size, page_size, 0), MAP_FAILED);
+  EXPECT_EQ(errno, EFAULT);
+
+  // Remapping with the same size on unmapped address should return EFAULT.
+  EXPECT_EQ(mremap(addr, page_size, page_size, 0), MAP_FAILED);
+  EXPECT_EQ(errno, EFAULT);
+
+  // Moving unmapped address to a non-overlapping destination with FIXED should return EFAULT.
+  EXPECT_EQ(mremap(addr, page_size, page_size, MREMAP_MAYMOVE | MREMAP_FIXED, dst), MAP_FAILED);
+  EXPECT_EQ(errno, EFAULT);
+
+  // Remapping with old_length == 0 on unmapped address should return EFAULT.
+  EXPECT_EQ(mremap(addr, 0, page_size, MREMAP_MAYMOVE), MAP_FAILED);
+  EXPECT_EQ(errno, EFAULT);
+
+  EXPECT_EQ(mremap(addr, 0, page_size, 0), MAP_FAILED);
+  EXPECT_EQ(errno, EFAULT);
+
+  // Unaligned address should return EINVAL, not EFAULT (alignment check happens first).
+  void* unaligned_addr = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(addr) + 1);
+  EXPECT_EQ(mremap(unaligned_addr, page_size, 2 * page_size, 0), MAP_FAILED);
+  EXPECT_EQ(errno, EINVAL);
+}
+
 TEST(Mremap, RemapPartOfMapping) {
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
   void* mapping =

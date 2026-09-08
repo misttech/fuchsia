@@ -916,11 +916,6 @@ impl MemoryManagerState {
             return error!(EINVAL);
         }
 
-        // In-place copies are invalid.
-        if !flags.contains(MremapFlags::MAYMOVE) && old_length == 0 {
-            return error!(ENOMEM);
-        }
-
         if new_length == 0 {
             return error!(EINVAL);
         }
@@ -932,6 +927,16 @@ impl MemoryManagerState {
 
         let old_length = round_up_to_system_page_size(old_length)?;
         let new_length = round_up_to_system_page_size(new_length)?;
+
+        // Make sure old_addr is mapped.
+        if self.mappings.get(old_addr).is_none() {
+            return error!(EFAULT);
+        }
+
+        // In-place copies are invalid.
+        if !flags.contains(MremapFlags::MAYMOVE) && old_length == 0 {
+            return error!(ENOMEM);
+        }
 
         if self.check_has_unauthorized_splits(old_addr, old_length) {
             return error!(EINVAL);
@@ -1002,7 +1007,7 @@ impl MemoryManagerState {
 
         // There is space to grow in-place. The old range must be one contiguous mapping.
         let (original_range, mapping) =
-            self.mappings.get(old_addr).ok_or_else(|| errno!(EINVAL))?;
+            self.mappings.get(old_addr).ok_or_else(|| errno!(EFAULT))?;
 
         if old_range.end > original_range.end {
             return error!(EFAULT);
@@ -1065,7 +1070,7 @@ impl MemoryManagerState {
     ) -> Result<UserAddress, Errno> {
         let src_range = src_addr..src_addr.checked_add(src_length).ok_or_else(|| errno!(EINVAL))?;
         let (original_range, src_mapping) =
-            self.mappings.get(src_addr).ok_or_else(|| errno!(EINVAL))?;
+            self.mappings.get(src_addr).ok_or_else(|| errno!(EFAULT))?;
         let original_range = original_range.clone();
         let src_mapping = src_mapping.clone();
 
