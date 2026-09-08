@@ -115,62 +115,95 @@ impl AsyncWrite for BulkInterface {
         }
 
         if self.write_future.is_none() {
+            let Ok(guard) = self.guard.clone().try_write_owned() else {
+                let guard_ref = self.guard.clone();
+                let wait_lock = async move {
+                    let _g = guard_ref.write_owned().await;
+                    Ok(0)
+                };
+                return match self.write_future.insert(Box::pin(wait_lock)).as_mut().poll(cx) {
+                    Poll::Ready(Ok(0)) => {
+                        self.write_future = None;
+                        cx.waker().wake_by_ref();
+                        Poll::Pending
+                    }
+                    Poll::Ready(Ok(s)) => Poll::Ready(Ok(s)),
+                    Poll::Ready(Err(e)) => {
+                        self.write_future = None;
+                        Poll::Ready(Err(e))
+                    }
+                    Poll::Pending => Poll::Pending,
+                };
+            };
+
+            let Some(boe) = self.inner.endpoints().into_iter().find_map(|endpoint| {
+                if let Endpoint::BulkOut(boe) = endpoint { Some(boe) } else { None }
+            }) else {
+                return Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "No bulk out endpoint found",
+                )));
+            };
+
             let to_write = std::cmp::min(buf.len(), MAX_WRITE_BUFFER_SIZE);
-            let buffer = buf[..to_write].to_vec();
-            let inner_ref = self.inner.clone();
-            let guard_ref = self.guard.clone();
-            let write_future = async move {
-                // Get the bulk out interface
-                for endpoint in inner_ref.endpoints() {
-                    if let Endpoint::BulkOut(boe) = endpoint {
-                        log::debug!(
-                            "Breaking write of {} bytes into pipelined URB chunks of up to {}",
-                            buffer.len(),
-                            MAX_USBFS_BULK_WRITE_SIZE
-                        );
-                        let _guard = guard_ref.write().await;
-                        let mut in_flight = std::collections::VecDeque::new();
-                        for chunk in buffer.chunks(MAX_USBFS_BULK_WRITE_SIZE) {
-                            let wait_fut = boe
-                                .write_defer_wait(chunk, ZeroPacket::DoNotSend)
-                                .await
-                                .map_err(|e| {
-                                    log::warn!("Error submitting bulk URB: {}", e);
-                                    std::io::Error::new(
-                                        std::io::ErrorKind::Other,
-                                        format!("Error submitting to bulk endpoint: {}", e),
-                                    )
-                                })?;
-                            in_flight.push_back(wait_fut);
+            let mut in_flight = std::collections::VecDeque::new();
+            let mut bytes_submitted = 0;
 
-                            if in_flight.len() >= MAX_IN_FLIGHT_URBS {
-                                if let Some(fut) = in_flight.pop_front() {
-                                    fut.await.map_err(|e| {
-                                        log::warn!("Error awaiting bulk URB completion: {}", e);
-                                        std::io::Error::new(
-                                            std::io::ErrorKind::Other,
-                                            format!("Error writing to bulk endpoint: {}", e),
-                                        )
-                                    })?;
-                                }
-                            }
+            // Pipeline up to MAX_IN_FLIGHT_URBS (or until the interface URB pool is
+            // exhausted) directly from `buf` into kernel URBs without intermediate copies.
+            // If the buffer is larger than this batch or the pool runs out of URBs, we stop
+            // submitting and await the in-flight requests. Returning `Poll::Ready(Ok(bytes_submitted))`
+            // fulfills standard `AsyncWrite::poll_write` partial-write semantics, allowing
+            // the caller (e.g. `write_all`) to re-invoke `poll_write` for subsequent chunks.
+            for chunk in buf[..to_write].chunks(MAX_USBFS_BULK_WRITE_SIZE) {
+                match boe.try_write_defer_wait(chunk, ZeroPacket::DoNotSend) {
+                    Ok(Some(wait_fut)) => {
+                        in_flight.push_back(wait_fut);
+                        bytes_submitted += chunk.len();
+                        if in_flight.len() >= MAX_IN_FLIGHT_URBS {
+                            break;
                         }
-
-                        while let Some(fut) = in_flight.pop_front() {
-                            fut.await.map_err(|e| {
-                                log::warn!("Error draining bulk URB: {}", e);
-                                std::io::Error::new(
-                                    std::io::ErrorKind::Other,
-                                    format!("Error writing to bulk endpoint: {}", e),
-                                )
-                            })?;
-                        }
-
-                        return Ok(buffer.len());
+                    }
+                    Ok(None) => {
+                        // Pool has no free URBs right now.
+                        break;
+                    }
+                    Err(e) => {
+                        log::warn!("Error submitting bulk URB: {}", e);
+                        return Poll::Ready(Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Error submitting to bulk endpoint: {}", e),
+                        )));
                     }
                 }
-                Err(std::io::Error::new(std::io::ErrorKind::NotFound, "No bulk out endpoint found"))
+            }
+
+            if in_flight.is_empty() {
+                // All URBs are in flight; yield so reaper thread can reap completed ones
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+
+            log::debug!(
+                "Submitted {} bytes across {} pipelined URBs directly from buffer",
+                bytes_submitted,
+                in_flight.len()
+            );
+
+            let write_future = async move {
+                let _guard = guard;
+                while let Some(fut) = in_flight.pop_front() {
+                    fut.await.map_err(|e| {
+                        log::warn!("Error awaiting bulk URB completion: {}", e);
+                        std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Error writing to bulk endpoint: {}", e),
+                        )
+                    })?;
+                }
+                Ok(bytes_submitted)
             };
+
             self.write_future = Some(Box::pin(write_future));
         }
 

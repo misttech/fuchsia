@@ -350,6 +350,26 @@ impl std::ops::Deref for UrbRef<'_> {
     }
 }
 
+/// Owned reference to an allocated Urb that releases it when dropped.
+struct OwnedUrbRef(Arc<InterfaceInner>, usize);
+
+impl Drop for OwnedUrbRef {
+    fn drop(&mut self) {
+        self.0.cancel_urb_by_id(self.1);
+        if self.0.urbs[self.1].refs.fetch_sub(1, Ordering::Relaxed) == 1 {
+            self.0.free_urb_by_id(self.1);
+        }
+    }
+}
+
+impl std::ops::Deref for OwnedUrbRef {
+    type Target = Urb;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0.urbs[self.1]
+    }
+}
+
 /// What to do with the buffer associated with a URB when submitting.
 enum BufferAction<'i, 'o> {
     /// Copy data into the buffer before submission
@@ -500,7 +520,7 @@ impl InterfaceInner {
         }
 
         // Leak self so that our Urbs will not be free'd prematurely.
-        let _ = Arc::into_raw(Arc::clone(self));
+        std::mem::forget(Arc::clone(self));
         self.pending_urbs.fetch_add(1, Ordering::Release);
         self.reaper_thread.thread().unpark();
 
@@ -534,6 +554,99 @@ impl InterfaceInner {
                     buf[..actual_length].copy_from_slice(&(&(*urb.buf.get()))[..actual_length]);
                 }
             }
+
+            if status == 0 {
+                Ok(actual_length as usize)
+            } else {
+                Err(std::io::Error::from_raw_os_error(-status).into())
+            }
+        })
+    }
+
+    /// Attempt to allocate a Urb from the pool synchronously without waiting.
+    fn try_alloc_urb_owned(
+        self: &Arc<Self>,
+        action: &BufferAction<'_, '_>,
+    ) -> Result<Option<OwnedUrbRef>> {
+        let got = {
+            let mut queue = self.urb_queue.lock();
+            queue.free_urbs.pop_back()
+        };
+
+        if let Some(got) = got {
+            self.urbs[got].refs.store(1, Ordering::Relaxed);
+            // Construct OwnedUrbRef before fill_buffer so that if fill_buffer fails,
+            // the URB is safely returned to the free pool on drop rather than leaked.
+            let urb = OwnedUrbRef(Arc::clone(self), got);
+
+            // SAFETY: This URB was just retrieved from the free pool, ensuring its buffer is not
+            // in use or in flight. Setting `refs` to 1 guarantees we are the sole user.
+            unsafe {
+                urb.fill_buffer(action)?;
+            }
+            return Ok(Some(urb));
+        }
+
+        Ok(None)
+    }
+
+    /// Submit a previously allocated Urb transaction.
+    fn submit_allocated_urb_owned(
+        self: &Arc<Self>,
+        urb: OwnedUrbRef,
+        address: u8,
+        ty: u8,
+        zero_packet: ZeroPacket,
+    ) -> Result<impl Future<Output = Result<usize>> + Send + 'static> {
+        {
+            // SAFETY: As the sole holder of `OwnedUrbRef` (refs == 1), no other thread or kernel
+            // access is occurring. Scoping `urb_inner` ensures the mutable reference drops before
+            // the raw pointer is submitted to the kernel below.
+            let urb_inner = unsafe { &mut *urb.urb.get() };
+
+            urb_inner.type_ = ty;
+            urb_inner.endpoint = address;
+            urb_inner.flags =
+                if zero_packet == ZeroPacket::Send && (address & USB_ENDPOINT_DIR_MASK) == 0 {
+                    USBDEVFS_URB_ZERO_PACKET
+                } else {
+                    0
+                };
+            urb_inner.status = -1;
+
+            let got = urb.refs.fetch_add(1, Ordering::Relaxed);
+            debug_assert!(got == 1);
+        }
+
+        // Leak self so that our Urbs will not be free'd prematurely.
+        std::mem::forget(Arc::clone(self));
+        self.pending_urbs.fetch_add(1, Ordering::Release);
+        self.reaper_thread.thread().unpark();
+
+        if let Some(stubs) = self.stubs.as_ref() {
+            stubs.submit(self.file.as_raw_fd(), urb.urb.get())?;
+        } else {
+            // SAFETY: We leaked an `Arc` reference to `Self` above, ensuring our pool of Urbs and
+            // file descriptor remain valid while held by the kernel until reaped via USBDEVFS_REAPURB.
+            unsafe {
+                ioctl!(self.file.as_raw_fd(), USBDEVFS_SUBMITURB, urb.urb.get())?;
+            }
+        }
+
+        Ok(async move {
+            poll_fn(|ctx| {
+                urb.waker.register(ctx.waker());
+                if urb.refs.load(Ordering::Relaxed) != 1 { Poll::Pending } else { Poll::Ready(()) }
+            })
+            .await;
+
+            // SAFETY: The poll_fn above waited until the reaper thread observed kernel completion
+            // and decremented refs back to 1. The kernel no longer accesses this URB, so reading
+            // the status and actual_length fields is sound.
+            let (status, actual_length) = unsafe {
+                let urb_linux = &*urb.urb.get();
+                (urb_linux.status, urb_linux.actual_length as usize)
+            };
 
             if status == 0 {
                 Ok(actual_length as usize)
@@ -856,6 +969,31 @@ impl BulkOutEndpoint {
         Ok(async move {
             fut.await.and_then(|x| if x == len { Ok(()) } else { Err(Error::ShortWrite(len, x)) })
         })
+    }
+
+    /// Attempt to submit a write request immediately using an available URB from the pool.
+    /// Returns `Ok(None)` if no URB is currently free in the pool.
+    ///
+    /// Copies `buf` directly into the allocated URB and submits it to the kernel.
+    /// The returned future completes when the kernel reaps the URB.
+    pub fn try_write_defer_wait(
+        &self,
+        buf: &[u8],
+        zero_packet: ZeroPacket,
+    ) -> Result<Option<impl Future<Output = Result<()>> + Send + 'static>> {
+        let Some(urb) = self.inner.try_alloc_urb_owned(&BufferAction::CopyIn(buf))? else {
+            return Ok(None);
+        };
+        let len = buf.len();
+        let fut = self.inner.submit_allocated_urb_owned(
+            urb,
+            self.descriptor.address,
+            USBDEVFS_URB_TYPE_BULK as u8,
+            zero_packet,
+        )?;
+        Ok(Some(async move {
+            fut.await.and_then(|x| if x == len { Ok(()) } else { Err(Error::ShortWrite(len, x)) })
+        }))
     }
 }
 
