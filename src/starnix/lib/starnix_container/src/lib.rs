@@ -507,6 +507,7 @@ impl StarnixContainerRepackager {
                         mode: None,
                         uid: None,
                         gid: None,
+                        seclabel: Some("u:object_r:vendor_configs_file:s0".to_string()),
                     });
                 }
                 if let Some(blob) = hal_manifest.vintf_manifest {
@@ -520,6 +521,7 @@ impl StarnixContainerRepackager {
                         mode: None,
                         uid: None,
                         gid: None,
+                        seclabel: Some("u:object_r:vendor_configs_file:s0".to_string()),
                     });
                 }
             }
@@ -818,6 +820,7 @@ mod tests {
             mode: None,
             uid: None,
             gid: None,
+            seclabel: None,
         }];
 
         let result = apply_overrides(metadata, overrides, "system").unwrap();
@@ -879,6 +882,7 @@ mod tests {
                 mode: None,
                 uid: None,
                 gid: None,
+                seclabel: None,
             }],
         };
 
@@ -920,6 +924,7 @@ mod tests {
                 mode: None,
                 uid: None,
                 gid: None,
+                seclabel: None,
             }],
         };
 
@@ -961,6 +966,7 @@ mod tests {
                 mode: Some(0o100000 | 0o755),
                 uid: Some(1000),
                 gid: Some(1000),
+                seclabel: None,
             }],
         };
         let mut deps = Depfile::new();
@@ -1015,6 +1021,7 @@ mod tests {
                 mode: Some(0o100000 | 0o644), // Force file mode
                 uid: None,
                 gid: None,
+                seclabel: None,
             }],
         };
         let mut deps = Depfile::new();
@@ -1064,6 +1071,7 @@ mod tests {
                 mode: None,
                 uid: None,
                 gid: None,
+                seclabel: None,
             }],
         };
 
@@ -1121,6 +1129,7 @@ mod tests {
                     mode: None,
                     uid: None,
                     gid: None,
+                    seclabel: None,
                 },
                 FileOverride {
                     image_name: "system".into(),
@@ -1129,6 +1138,7 @@ mod tests {
                     mode: None,
                     uid: None,
                     gid: None,
+                    seclabel: None,
                 },
             ],
         };
@@ -1680,6 +1690,39 @@ tmpfs   /data       tmpfs   defaults            wait
         let init_node = m.get(init).expect("test.rc not found");
         assert_matches!(init_node.info(), NodeInfo::File(_));
         let selinux_attr = init_node
+            .extended_attributes
+            .get(b"security.selinux".as_slice())
+            .expect("selinux xattr missing");
+        assert_eq!(selinux_attr, &b"u:object_r:vendor_configs_file:s0"[..]);
+    }
+
+    #[test]
+    fn test_file_override_seclabel() {
+        let mut original = Metadata::new();
+        original.insert_directory(ROOT_INODE_NUM, 0o040000 | 0o755, 0, 0, Default::default());
+        let tmp = TempDir::new().unwrap();
+        let src_file = tmp.path().join("foo.rc");
+        std::fs::write(&src_file, "on boot\n").unwrap();
+        let src_file_utf8 = Utf8PathBuf::from_path_buf(src_file).unwrap();
+
+        let overrides = vec![StarnixFileOverride {
+            image_name: "odm".to_string(),
+            file_path: "etc/init/foo.rc".to_string(),
+            operation: StarnixFileOperation::Create(src_file_utf8),
+            mode: None,
+            uid: None,
+            gid: None,
+            seclabel: Some("u:object_r:vendor_configs_file:s0".to_string()),
+        }];
+
+        let result = crate::remote_bundle::apply_overrides(original, overrides, "odm").unwrap();
+        let m = result.metadata;
+        let etc = m.lookup(ROOT_INODE_NUM, "etc").expect("etc not found");
+        let etc_init = m.lookup(etc, "init").expect("init dir not found");
+        let foo_inode = m.lookup(etc_init, "foo.rc").expect("foo.rc not found");
+        let foo_node = m.get(foo_inode).expect("foo.rc node not found");
+
+        let selinux_attr = foo_node
             .extended_attributes
             .get(b"security.selinux".as_slice())
             .expect("selinux xattr missing");

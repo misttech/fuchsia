@@ -228,7 +228,11 @@ pub fn apply_overrides(
                 let path_components: Vec<&str> = path.iter().collect();
                 let mut current_inode = ext4_metadata::ROOT_INODE_NUM;
 
-                let xattrs = ext4_metadata::ExtendedAttributes::default();
+                let xattrs = if let Some(ref label) = o.seclabel {
+                    [((*b"security.selinux").into(), label.as_bytes().into())].into()
+                } else {
+                    ext4_metadata::ExtendedAttributes::default()
+                };
 
                 // Create missing parent directories.
                 for i in 0..path_components.len() - 1 {
@@ -284,4 +288,73 @@ pub fn apply_overrides(
         skipped_inodes: ctx.skipped_inodes,
         new_files: ctx.new_files,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use camino::Utf8PathBuf;
+    use ext4_metadata::{Metadata, ROOT_INODE_NUM};
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_apply_overrides_with_seclabel() {
+        let mut original = Metadata::new();
+        original.insert_directory(ROOT_INODE_NUM, 0o040000 | 0o755, 0, 0, Default::default());
+        let tmp = TempDir::new().unwrap();
+        let src_file = tmp.path().join("test.rc");
+        std::fs::write(&src_file, "on boot\n").unwrap();
+        let src_file_utf8 = Utf8PathBuf::from_path_buf(src_file).unwrap();
+
+        let overrides = vec![StarnixFileOverride {
+            image_name: "odm".to_string(),
+            file_path: "etc/init/test.rc".to_string(),
+            operation: StarnixFileOperation::Create(src_file_utf8),
+            mode: None,
+            uid: None,
+            gid: None,
+            seclabel: Some("u:object_r:vendor_configs_file:s0".to_string()),
+        }];
+
+        let result = apply_overrides(original, overrides, "odm").unwrap();
+        let m = result.metadata;
+        let etc = m.lookup(ROOT_INODE_NUM, "etc").expect("etc not found");
+        let etc_init = m.lookup(etc, "init").expect("init dir not found");
+        let test_inode = m.lookup(etc_init, "test.rc").expect("test.rc not found");
+        let test_node = m.get(test_inode).expect("test.rc node not found");
+
+        let selinux_attr = test_node
+            .extended_attributes
+            .get(b"security.selinux".as_slice())
+            .expect("selinux xattr missing");
+        assert_eq!(selinux_attr, &b"u:object_r:vendor_configs_file:s0"[..]);
+    }
+
+    #[test]
+    fn test_apply_overrides_without_seclabel() {
+        let mut original = Metadata::new();
+        original.insert_directory(ROOT_INODE_NUM, 0o040000 | 0o755, 0, 0, Default::default());
+        let tmp = TempDir::new().unwrap();
+        let src_file = tmp.path().join("plain.txt");
+        std::fs::write(&src_file, "hello\n").unwrap();
+        let src_file_utf8 = Utf8PathBuf::from_path_buf(src_file).unwrap();
+
+        let overrides = vec![StarnixFileOverride {
+            image_name: "odm".to_string(),
+            file_path: "etc/plain.txt".to_string(),
+            operation: StarnixFileOperation::Create(src_file_utf8),
+            mode: None,
+            uid: None,
+            gid: None,
+            seclabel: None,
+        }];
+
+        let result = apply_overrides(original, overrides, "odm").unwrap();
+        let m = result.metadata;
+        let etc = m.lookup(ROOT_INODE_NUM, "etc").expect("etc not found");
+        let plain_inode = m.lookup(etc, "plain.txt").expect("plain.txt not found");
+        let plain_node = m.get(plain_inode).expect("plain.txt node not found");
+
+        assert!(plain_node.extended_attributes.get(b"security.selinux".as_slice()).is_none());
+    }
 }

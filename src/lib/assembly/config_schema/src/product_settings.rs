@@ -240,6 +240,10 @@ pub struct StarnixFileOverride {
     /// GID for the file (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gid: Option<u16>,
+
+    /// Security label (SELinux context) for the file (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seclabel: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
