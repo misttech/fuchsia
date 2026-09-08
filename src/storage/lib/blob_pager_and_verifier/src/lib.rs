@@ -139,10 +139,9 @@ impl Drop for CachedBlob {
             // clean up this expiring mapping.
             let session = cache.mapping_session.clone();
             let vmo_key = self.vmo_key;
-            fasync::Task::spawn(async move {
+            cache.scope.spawn(async move {
                 let _ = session.close(vmo_key).await;
-            })
-            .detach();
+            });
         }
     }
 }
@@ -202,6 +201,7 @@ struct PagerVmoCache {
     mapping_session: fmapping::MappingSessionProxy,
     pager: Arc<zx::Pager>,
     delivery_vmo: zx::Vmo,
+    scope: fasync::ScopeHandle,
 }
 
 impl PagerVmoCache {
@@ -209,6 +209,7 @@ impl PagerVmoCache {
         mapping_session: fmapping::MappingSessionProxy,
         pager: Arc<zx::Pager>,
         delivery_vmo: zx::Vmo,
+        scope: fasync::ScopeHandle,
     ) -> Self {
         Self {
             map: Mutex::new(HashMap::new()),
@@ -216,6 +217,7 @@ impl PagerVmoCache {
             mapping_session,
             pager,
             delivery_vmo,
+            scope,
         }
     }
 
@@ -448,6 +450,7 @@ pub struct BlobPagerAndVerifier {
     port: zx::Port,
     pager: Arc<zx::Pager>,
     vmo_cache: Arc<PagerVmoCache>,
+    _scope: fasync::Scope,
 }
 
 impl BlobPagerAndVerifier {
@@ -506,15 +509,24 @@ impl BlobPagerAndVerifier {
             .context("FIDL error calling Mapper.OpenSession")?
             .map_err(|e| anyhow!("Mapper.OpenSession failed: {e:?}"))?;
 
+        let scope = fasync::Scope::new();
         let vmo_cache = Arc::new(PagerVmoCache::new(
             mapping_session,
             pager.clone(),
             delivery_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?,
+            scope.to_handle(),
         ));
         let _delivery_processor =
             delivery::DeliveryQueueProcessor::spawn(receiver, vmo_cache.clone(), delivery_vmo)?;
 
-        Ok(Self { _mapper_session: mapper_session, port, pager, vmo_cache, _delivery_processor })
+        Ok(Self {
+            _delivery_processor,
+            _mapper_session: mapper_session,
+            port,
+            pager,
+            vmo_cache,
+            _scope: scope,
+        })
     }
 
     /// Create pager owned VMO for the blob identified by its Merkle Root Hash.
