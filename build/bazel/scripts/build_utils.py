@@ -11,6 +11,7 @@ not depend on any other non-standard module, and the logic to create that worksp
 should stay in workspace_utils.bzl instead.
 """
 
+import argparse
 import dataclasses
 import errno
 import hashlib
@@ -23,6 +24,10 @@ import time
 import typing as T
 from collections.abc import Sequence
 from pathlib import Path
+
+if T.TYPE_CHECKING:
+    import argparse
+
 
 # A type that describes either a path string of a Path instance.
 FilePath: T.TypeAlias = str | os.PathLike[T.Any]
@@ -71,6 +76,11 @@ def get_host_tag() -> str:
     return "%s-%s" % (get_host_platform(), get_host_arch())
 
 
+def is_fuchsia_dir(path: FilePath) -> bool:
+    """Return true if input path is a Fuchsia source directory."""
+    return (Path(path) / ".jiri_manifest").exists()
+
+
 def find_fuchsia_dir(from_path: T.Optional[FilePath] = None) -> Path:
     """Find the Fuchsia checkout from a specific path.
 
@@ -84,7 +94,7 @@ def find_fuchsia_dir(from_path: T.Optional[FilePath] = None) -> Path:
     start_path = Path(from_path).resolve() if from_path else Path.cwd()
     cur_path = start_path
     while True:
-        if (cur_path / ".jiri_manifest").exists():
+        if is_fuchsia_dir(cur_path):
             return cur_path
         prev_path = cur_path
         cur_path = cur_path.parent
@@ -601,7 +611,166 @@ def cmd_args_to_string(cmd_args: Sequence[FilePath]) -> str:
     return " ".join(shlex.quote(str(c)) for c in cmd_args)
 
 
-class BazelPaths(object):
+class BuildPaths(object):
+    """Convenience class used to access important build-related paths."""
+
+    @staticmethod
+    def add_parser_arguments(
+        parser: argparse.ArgumentParser,
+        add_fuchsia_dir: bool = True,
+        add_build_dir: bool = True,
+    ) -> None:
+        """Add path-related arguments to an ArgumentParser instance.
+
+        Best used with the from_parser_args() method to create a new
+        BuildPaths from the result. Example usage:
+
+        ```
+        def main():
+            parser = argparse.ArgumentParser()
+            BuildPaths.add_parser_arguments(parser)
+            ...
+            args = parser.parse_args()
+            paths = BuildPaths.from_parser_args(args)
+        ```
+
+        Args:
+            parser: An argparse.ArgumentParser instance.
+            add_fuchsia_dir: Optional, set to False to omit a --fuchsia-dir argument.
+            add_build_dir: Optional, set to False to omit a --build-dir argument.
+        """
+        if add_fuchsia_dir:
+            parser.add_argument(
+                "--fuchsia-dir",
+                type=Path,
+                help="Path to Fuchsia source directory (auto-detected).",
+            )
+        if add_build_dir:
+            parser.add_argument(
+                "--build-dir",
+                type=Path,
+                help="Path to Ninja build directory (auto-detected for local development only).",
+            )
+
+    @staticmethod
+    def from_parser_args(args: argparse.Namespace) -> "BuildPaths":
+        """Create new instance from a parse_args() value.
+
+        Args:
+            args: An argparse.Namespace value returned by
+                argparse.ArgumentParser.parse_args()
+        Returns:
+            A new BuildPaths instance.
+        Raises:
+            ValueError if auto-detection didn't work or if one of the
+            provided paths is invalid.
+        """
+        fuchsia_dir = args.fuchsia_dir if hasattr(args, "fuchsia_dir") else None
+        build_dir = args.build_dir if hasattr(args, "build_dir") else None
+        return BuildPaths(fuchsia_dir, build_dir)
+
+    def __init__(
+        self,
+        fuchsia_dir: None | FilePath = None,
+        build_dir: None | FilePath = None,
+    ) -> None:
+        """Create new instance.
+
+        Arguments are optional and will be auto-detected according to the
+        behavior described below. This is done mostly for the benefit of
+        invoking build scripts manually during development, without having
+        to add too many command-line arguments. All build-time actions are
+        expected to provide explicit values.
+
+        Args:
+           fuchsia_dir: Optional Path to the Fuchsia source directory.
+             If None, auto-detected by walking up from build_dir, or from
+             the current work directory if the latter is None.
+
+           build_dir: Optional Path to Ninja build directory.
+             If None, auto-detected from fuchsia_dir using the .fx-build
+             file (and if it doesn't exist, such as for infra builds, ValueError
+             will be raised).
+
+        Raises:
+          ValueError if auto-detection failed to find fuchsia_dir or
+          build_dir when these are not provided explicitly.
+        """
+        if fuchsia_dir:
+            self._fuchsia_dir = Path(fuchsia_dir).resolve()
+            if not is_fuchsia_dir(self._fuchsia_dir):
+                raise ValueError(
+                    f"Not a Fuchsia source directory: {fuchsia_dir}"
+                )
+        else:
+            self._fuchsia_dir = find_fuchsia_dir(from_path=build_dir)
+
+        final_build_dir = (
+            Path(build_dir).resolve()
+            if build_dir
+            else find_fx_build_dir(self._fuchsia_dir)
+        )
+        if not final_build_dir:
+            raise ValueError(
+                f"Could not detect current build directory from Fuchsia directory: {self._fuchsia_dir}"
+            )
+        if not final_build_dir.is_dir():
+            raise ValueError(
+                f"Not a valid Fuchsia build directory: {build_dir}"
+            )
+        self._build_dir: Path = final_build_dir
+
+        self._host_os = get_host_platform()
+        self._host_cpu = get_host_arch()
+        self._host_tag = f"{self._host_os}-{self._host_cpu}"
+
+    @property
+    def fuchsia_dir(self) -> Path:
+        """Return absolute Path to Fuchsia source directory."""
+        return self._fuchsia_dir
+
+    @property
+    def build_dir(self) -> Path:
+        """Return absolute Path to Ninja build directory."""
+        return self._build_dir
+
+    @property
+    def ninja_path(self) -> Path:
+        """Return absolute path to Ninja binary."""
+        return (
+            self._fuchsia_dir
+            / f"prebuilt/third_party/ninja/{self._host_tag}/ninja"
+        )
+
+    @property
+    def gn_path(self) -> Path:
+        """Return absolute path to GN binary."""
+        return (
+            self._fuchsia_dir / f"prebuilt/third_party/gn/{self._host_tag}/gn"
+        )
+
+    @property
+    def python3_path(self) -> Path:
+        """Return absolute path to python3 binary."""
+        return (
+            self._fuchsia_dir
+            / f"prebuilt/third_party/python3/{self._host_tag}/bin/python3"
+        )
+
+    @property
+    def bazel_binary_path(self) -> Path:
+        """Return absolute path to Bazel binary.
+
+        As opposed to BazelPaths.launcher which returns the path to a wrapper script
+        that injects critical Fuchia-specific flags into the call.
+        """
+        return (
+            self._fuchsia_dir
+            / f"prebuilt/third_party/bazel/{self._host_tag}/bazel"
+        )
+
+
+class BazelPaths(BuildPaths):
     """Convenience class used to access important Bazel-related paths."""
 
     WORKSPACE_FROM_TOP_DIR = "workspace"
@@ -646,11 +815,12 @@ class BazelPaths(object):
         return BazelPaths(fuchsia_dir, build_dir)
 
     def __init__(self, fuchsia_dir: Path, build_dir: Path) -> None:
+        super().__init__(fuchsia_dir, build_dir)
         """Construct new instance. Requires explicit fuchsia_dir and build_dir paths."""
-        bazel_topdir, self._input_files = get_bazel_relative_topdir(fuchsia_dir)
-        self._build_dir = build_dir.resolve()
+        bazel_topdir, self._input_files = get_bazel_relative_topdir(
+            self._fuchsia_dir
+        )
         self._top_dir = self._build_dir / bazel_topdir
-        self._fuchsia_dir = fuchsia_dir.resolve()
 
     @property
     def top_dir(self) -> Path:
@@ -674,13 +844,7 @@ class BazelPaths(object):
         return config_file
 
     @property
-    def fuchsia_dir(self) -> Path:
-        """Return Path to the Fuchsia source directory."""
-        return self._fuchsia_dir
-
-    @property
     def ninja_build_dir(self) -> Path:
-        """Return Path to the Ninja build directory."""
         return self._build_dir
 
     @property

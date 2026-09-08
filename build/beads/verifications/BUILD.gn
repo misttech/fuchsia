@@ -32,9 +32,9 @@ if (is_host) {
     _ninja_outputs_json = "${root_build_dir}/ninja_outputs.json"
     _manifest = "//build/beads/verifications/targets_to_compare.json"
     args = [
-      "--fuchsia_dir",
+      "--fuchsia-dir",
       rebase_path("//", root_build_dir),
-      "--build_dir",
+      "--build-dir",
       rebase_path(root_build_dir, root_build_dir),
       "--ninja_outputs_json",
       rebase_path(_ninja_outputs_json, root_build_dir),

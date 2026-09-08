@@ -46,6 +46,7 @@ class ClientTestBase(unittest.TestCase):
         """Common setup for all test classes."""
         self._temp_dir = tempfile.TemporaryDirectory()
         self._top_dir = Path(self._temp_dir.name)
+        (self._top_dir / ".jiri_manifest").write_text("")
 
         self._build_gn_path = self._top_dir / "BUILD.gn"
         self._build_gn_path.write_text("# EMPTY\n")

@@ -50,16 +50,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify GN and Bazel build commands for a list of targets."
     )
-    parser.add_argument(
-        "--fuchsia_dir",
-        type=pathlib.Path,
-        help="Path to Fuchsia directory (auto-detected).",
-    )
-    parser.add_argument(
-        "--build_dir",
-        type=pathlib.Path,
-        help="Path to GN build directory (auto-detected)",
-    )
+    build_utils.BuildPaths.add_parser_arguments(parser)
     parser.add_argument(
         "--ninja_outputs_json",
         type=pathlib.Path,
@@ -99,29 +90,15 @@ def main() -> int:
     global _DEBUG
     _DEBUG = args.verbose
 
-    if not args.fuchsia_dir:
-        try:
-            args.fuchsia_dir = build_utils.find_fuchsia_dir()
-        except ValueError as e:
-            parser.error(str(e))
+    try:
+        paths = build_utils.BuildPaths.from_parser_args(args)
+    except ValueError as e:
+        parser.error(str(e))
 
-    if not args.build_dir:
-        args.build_dir = build_utils.find_fx_build_dir(args.fuchsia_dir)
-        if not args.build_dir:
-            parser.error(
-                "Could not find Fuchsia build directory, please use --build_dir=DIR"
-            )
-
-    if not args.ninja_bin:
-        args.ninja_bin = (
-            args.fuchsia_dir
-            / "prebuilt/third_party/ninja/{}/ninja".format(
-                build_utils.get_host_tag()
-            )
-        )
+    ninja_bin = args.ninja_bin.resolve() if args.ninja_bin else paths.ninja_path
 
     if not args.ninja_outputs_json:
-        args.ninja_outputs_json = args.build_dir / "ninja_outputs.json"
+        args.ninja_outputs_json = paths.build_dir / "ninja_outputs.json"
 
     build_command_query_utils.set_debug(args.verbose)
 
@@ -136,20 +113,20 @@ def main() -> int:
         print("No targets to compare.")
         return 0
 
-    debug(f"Fuchsia Dir: {args.fuchsia_dir}")
-    debug(f"Build Dir: {args.build_dir}")
+    debug(f"Fuchsia Dir: {paths.fuchsia_dir}")
+    debug(f"Build Dir: {paths.build_dir}")
     debug(f"Ninja Outputs JSON: {args.ninja_outputs_json}")
-    debug(f"Ninja Path: {args.ninja_bin}")
+    debug(f"Ninja Path: {ninja_bin}")
     debug(f"Manifest Path: {args.manifest}")
     debug(f"GN labels: {gn_labels}")
     debug(f"Bazel labels: {bazel_labels}")
 
-    ninja_runner = ninja_artifacts.NinjaRunner(args.ninja_bin, args.build_dir)
+    ninja_runner = ninja_artifacts.NinjaRunner(ninja_bin, paths.build_dir)
     gn_cmds_raw = build_command_query_utils.query_ninja_commands(
         ninja_runner, args.ninja_outputs_json, gn_labels
     )
 
-    bazel_paths = build_utils.BazelPaths(args.fuchsia_dir, args.build_dir)
+    bazel_paths = build_utils.BazelPaths(paths.fuchsia_dir, paths.build_dir)
     bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
 
     bazel_cmds_raw = build_command_query_utils.query_bazel_commands(

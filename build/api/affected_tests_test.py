@@ -68,6 +68,7 @@ class CreateTestArtifactsMappingTest(unittest.TestCase):
     def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
         self.root = Path(self._td.name)
+        (self.root / ".jiri_manifest").write_text("")
         self.build_dir = self.root / "out/build"
         self.build_dir.mkdir(parents=True)
         self.tests_json_path = self.build_dir / "tests.json"
@@ -256,6 +257,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
     def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
         self.root = Path(self._td.name)
+        (self.root / ".jiri_manifest").write_text("")
         self.build_dir = self.root / "out/build"
         self.build_dir.mkdir(parents=True)
         BazelPaths.write_topdir_config_for_test(self.root, "bazel_topdir")

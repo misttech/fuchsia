@@ -393,21 +393,15 @@ def main() -> int:
             log("CMD: %s" % " ".join(shlex.quote(str(a)) for a in args))
         return subprocess.run(args, text=True, **kwd)
 
-    fuchsia_dir = args.fuchsia_dir
-    if fuchsia_dir:
-        fuchsia_dir = fuchsia_dir.resolve()
-    else:
-        fuchsia_dir = build_utils.find_fuchsia_dir(_SCRIPT_DIR)
+    try:
+        build_paths = build_utils.BuildPaths(
+            args.fuchsia_dir, args.fuchsia_build_dir
+        )
+    except ValueError as e:
+        parser.error(str(e))
 
-    build_dir = args.fuchsia_build_dir
-    if build_dir:
-        build_dir = build_dir.resolve()
-    else:
-        build_dir = build_utils.find_fx_build_dir(fuchsia_dir)
-        if not build_dir:
-            parser.error(
-                "Cannot auto-detect build directory, please use --fuchsia-build-dir=DIR option!"
-            )
+    fuchsia_dir = build_paths.fuchsia_dir
+    build_dir = build_paths.build_dir
 
     if not build_dir.is_dir():
         parser.error(f"Build directory missing or invalid: {build_dir}")
