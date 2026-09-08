@@ -950,17 +950,13 @@ impl<'a> Iterator for NodeIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // SAFETY: `self.cursor.get()` is a valid initialized cursor pointer.
-        let node_ptr = unsafe {
-            bindings::cpp_vm_page_list_btree_const_cursor_next(
-                self.cursor.get(),
-                core::ptr::null_mut(),
-            )
-        };
-        if node_ptr.is_null() {
+        let entry =
+            unsafe { bindings::cpp_vm_page_list_btree_const_cursor_next(self.cursor.get()) };
+        if entry.node.is_null() {
             None
         } else {
-            // SAFETY: `node_ptr` is verified non-null and valid for lifetime `'a`.
-            Some(unsafe { node_ptr.cast::<VmPageListNode>().as_ref_unchecked() })
+            // SAFETY: `entry.node` is verified non-null and valid for lifetime `'a`.
+            Some(unsafe { entry.node.cast::<VmPageListNode>().as_ref_unchecked() })
         }
     }
 }
@@ -975,15 +971,117 @@ impl<'a> Iterator for NodeIterMut<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // SAFETY: `self.cursor.get()` is a valid initialized cursor pointer.
-        let node_ptr = unsafe {
-            bindings::cpp_vm_page_list_btree_cursor_next(self.cursor.get(), core::ptr::null_mut())
-        };
-        if node_ptr.is_null() {
+        let entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(self.cursor.get()) };
+        if entry.node.is_null() {
             None
         } else {
-            // SAFETY: `node_ptr` is verified non-null and valid for lifetime `'a`.
-            Some(unsafe { node_ptr.cast::<VmPageListNode>().as_mut_unchecked() })
+            // SAFETY: `entry.node` is verified non-null and valid for lifetime `'a`.
+            Some(unsafe { entry.node.cast::<VmPageListNode>().as_mut_unchecked() })
         }
+    }
+}
+
+/// Helper object for performing repeated `lookup_or_allocate` operations that are likely to be
+/// close to each other. While using this object other (modifying) methods on this `VmPageList` must
+/// not be performed, if they are the `reset` method needs to be used before continuing.
+pub struct BatchInserter<'a> {
+    list: &'a mut VmPageList,
+    node: Opaque<bindings::VmPageListBtreeCursor>,
+}
+
+const _: () = {
+    assert!(core::mem::size_of::<BatchInserter<'_>>() == 24);
+    assert!(core::mem::align_of::<BatchInserter<'_>>() == 8);
+};
+
+impl<'a> BatchInserter<'a> {
+    /// Construct a `BatchInserter` for the specified `VmPageList`. The list must be kept alive for
+    /// the duration of this object.
+    pub fn new(list: &'a mut VmPageList) -> Self {
+        Self { list, node: Opaque::uninit() }
+    }
+
+    /// Similar to `VmPageList::lookup_or_allocate` but is implicitly `NoIntervals`. If repeated
+    /// offsets are 'near' each other (in the same node, or in following nodes) then this will be
+    /// more efficient than `VmPageList::lookup_or_allocate`. However, regardless of the `offset`
+    /// pattern this will always return correct results.
+    pub fn lookup_or_allocate(&mut self, offset: u64) -> Option<&mut VmPageOrMarker> {
+        let target_offset = VmPageListNode::node_offset(offset);
+        let index = VmPageListNode::node_index(offset);
+
+        // Assume we're going to need to search for a new iterator.
+        let mut search = true;
+
+        // First check if the currently saved iterator is valid and for the correct node.
+        // SAFETY: `self.node.get()` is a valid pointer.
+        let mut entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(self.node.get()) };
+        if !entry.node.is_null() {
+            if entry.offset == target_offset {
+                // SAFETY: `entry.node` is verified non-null and valid.
+                let node = unsafe { entry.node.cast::<VmPageListNode>().as_mut_unchecked() };
+                return Some(node.lookup_mut(index));
+            }
+            // Under the assumption of contiguous insertion, check if incrementing the iterator
+            // helps.
+            if entry.offset < target_offset {
+                // Advance the cursor to the next node.
+                // SAFETY: `self.node.get()` is a valid pointer.
+                let _ = unsafe { bindings::cpp_vm_page_list_btree_cursor_next(self.node.get()) };
+                // Peek at the new node.
+                // SAFETY: `self.node.get()` is a valid pointer.
+                entry = unsafe { bindings::cpp_vm_page_list_btree_cursor_get(self.node.get()) };
+                if entry.node.is_null() {
+                    // If we hit the end then we know a new node is needed, so skip the search and
+                    // go straight to new node creation.
+                    search = false;
+                } else if entry.offset == target_offset {
+                    // SAFETY: `entry.node` is verified non-null and valid.
+                    let node = unsafe { entry.node.cast::<VmPageListNode>().as_mut_unchecked() };
+                    return Some(node.lookup_mut(index));
+                }
+            }
+        }
+
+        // Unless we know that the node we want isn't in the tree we must do a search for it to
+        // avoid duplicate insertion.
+        if search {
+            // Even if this is not our target node, we stash the result to use to optimize the
+            // insertion later.
+            // SAFETY: `self.list.list.get()` and `self.node.get()` are valid pointers.
+            entry = unsafe {
+                bindings::cpp_vm_page_list_btree_lower_bound(
+                    self.list.list.get(),
+                    target_offset,
+                    self.node.get(),
+                )
+            };
+            if !entry.node.is_null() && entry.offset == target_offset {
+                // SAFETY: `entry.node` is verified non-null and valid.
+                let node = unsafe { entry.node.cast::<VmPageListNode>().as_mut_unchecked() };
+                return Some(node.lookup_mut(index));
+            }
+        }
+
+        // SAFETY: `self.list.list.get()` and `self.node.get()` are valid pointers.
+        let node_ptr = unsafe {
+            bindings::cpp_vm_page_list_btree_insert(
+                self.list.list.get(),
+                target_offset,
+                self.node.get(),
+            )
+        };
+        if node_ptr.is_null() {
+            return None;
+        }
+        // SAFETY: `node_ptr` was allocated by `VmPageListNode::Create()` and inserted into BTree.
+        let node = unsafe { node_ptr.cast::<VmPageListNode>().as_mut_unchecked() };
+        Some(node.lookup_mut(index))
+    }
+
+    /// Reset the batch inserter. This makes it safe to use again if other `VmPageList` operations
+    /// had been performed.
+    pub fn reset(&mut self) {
+        self.node = Opaque::uninit();
     }
 }
 
@@ -1162,15 +1260,27 @@ impl VmPageList {
             return None;
         }
 
-        // SAFETY: `self.list.get()` is a valid initialized VmPageListBtree pointer.
+        let cursor = Opaque::<bindings::VmPageListBtreeCursor>::uninit();
+        // lookup the tree node that holds this page. Use lower_bound instead of find to optimize
+        // later insertion in case of failed lookup.
+        // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
+        let entry = unsafe {
+            bindings::cpp_vm_page_list_btree_lower_bound(self.list.get(), node_offset, cursor.get())
+        };
+        if !entry.node.is_null() && entry.offset == node_offset {
+            // SAFETY: `entry.node` is verified non-null and points to a valid `VmPageListNode`.
+            let node = unsafe { entry.node.cast::<VmPageListNode>().as_mut_unchecked() };
+            return Some(node.lookup_mut(index));
+        }
+
+        // SAFETY: `self.list.get()` and `cursor.get()` are valid pointers.
         let node_ptr = unsafe {
-            bindings::cpp_vm_page_list_btree_find_or_allocate(self.list.get(), node_offset)
+            bindings::cpp_vm_page_list_btree_insert(self.list.get(), node_offset, cursor.get())
         };
         if node_ptr.is_null() {
             return None;
         }
-        // SAFETY: `node_ptr` is non-null and was allocated/found by
-        // `cpp_vm_page_list_btree_find_or_allocate`.
+        // SAFETY: `node_ptr` was allocated by `VmPageListNode::Create()` and inserted into BTree.
         let node_ref: &mut VmPageListNode =
             unsafe { node_ptr.cast::<VmPageListNode>().as_mut_unchecked() };
         Some(node_ref.lookup_mut(index))
@@ -1362,8 +1472,8 @@ impl VmPageSpliceList {
 /// Unit tests for VmPageOrMarker.
 mod vm_page_list_rs {
     use super::{
-        IntervalHandling, ReferenceValue, SentinelType, Status, VmPageList, VmPageListNode,
-        VmPageOrMarker, VmPageOrMarkerRef, ZeroRangeDirtyState,
+        BatchInserter, IntervalHandling, ReferenceValue, SentinelType, Status, VmPageList,
+        VmPageListNode, VmPageOrMarker, VmPageOrMarkerRef, ZeroRangeDirtyState,
     };
     use unittest::{expect_eq, expect_false, expect_true};
 
@@ -1756,5 +1866,63 @@ mod vm_page_list_rs {
         expect_false!(pl.is_empty());
         pl.clear();
         expect_true!(pl.is_empty());
+    }
+
+    /// Tests BatchInserter sequential allocation and multi-node leaf traversal.
+    #[test]
+    fn test_batch_inserter_sequential() {
+        let mut pl = VmPageList::new();
+        let page_size = page::SIZE as u64;
+        {
+            let mut inserter = BatchInserter::new(&mut pl);
+            // Sequentially insert pages across 3 nodes (48 pages)
+            for i in 0..(VmPageListNode::PAGE_FAN_OUT * 3) {
+                let offset = (i as u64) * page_size;
+                let slot = inserter.lookup_or_allocate(offset).unwrap();
+                expect_true!(slot.is_empty());
+                *slot = VmPageOrMarker::marker();
+            }
+        }
+
+        // Verify all pages are populated
+        for i in 0..(VmPageListNode::PAGE_FAN_OUT * 3) {
+            let offset = (i as u64) * page_size;
+            let slot = pl.lookup(offset).unwrap();
+            expect_true!(slot.is_marker());
+        }
+
+        pl.remove_all_content(|_| {});
+    }
+
+    /// Tests BatchInserter non-sequential insertions and reset.
+    #[test]
+    fn test_batch_inserter_out_of_order() {
+        let mut pl = VmPageList::new();
+        let page_size = page::SIZE as u64;
+
+        {
+            let mut inserter = BatchInserter::new(&mut pl);
+            // Insert at high offset
+            let high_offset = VmPageListNode::NODE_SPAN_BYTES * 10;
+            let slot = inserter.lookup_or_allocate(high_offset).unwrap();
+            expect_true!(slot.is_empty());
+            *slot = VmPageOrMarker::marker();
+
+            // Insert out-of-order at lower offset
+            let slot_low = inserter.lookup_or_allocate(page_size).unwrap();
+            expect_true!(slot_low.is_empty());
+            *slot_low = VmPageOrMarker::marker();
+
+            // Test reset
+            inserter.reset();
+        }
+
+        // Test MAX_SIZE bounds check on VmPageList::lookup_or_allocate
+        expect_true!(
+            pl.lookup_or_allocate(VmPageList::MAX_SIZE, IntervalHandling::NoIntervals).0.is_none()
+        );
+        expect_true!(pl.lookup_or_allocate(u64::MAX, IntervalHandling::NoIntervals).0.is_none());
+
+        pl.remove_all_content(|_| {});
     }
 }

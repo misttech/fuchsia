@@ -21,6 +21,17 @@ using VmPageListBtree = btree::BTree<uint64_t, VmPlnOwner>;
 
 static_assert(sizeof(VmPageListBtree) == sizeof(VmPageList));
 
+// Represents a node and its key in the VmPageList B-Tree (key first, value second).
+typedef struct VmPageListBtreeNodeEntry {
+  uint64_t offset;
+  void* node;
+} VmPageListBtreeNodeEntry;
+
+typedef struct VmPageListBtreeConstNodeEntry {
+  uint64_t offset;
+  const void* node;
+} VmPageListBtreeConstNodeEntry;
+
 // Cursor types for iterating over B-Tree nodes in ascending order.
 struct VmPageListBtreeCursor {
   VmPageListBtree::iterator iter;
@@ -57,9 +68,21 @@ void* cpp_vm_page_list_btree_find(VmPageListBtree* tree, uint64_t node_offset,
                                   VmPageListBtreeCursor* out_cursor);
 const void* cpp_vm_page_list_btree_find_const(const VmPageListBtree* tree, uint64_t node_offset);
 
-// Finds or allocates and inserts a VmPageListNode at node_offset using lower_bound hint.
-// Returns the node pointer, or nullptr if allocation failed.
-void* cpp_vm_page_list_btree_find_or_allocate(VmPageListBtree* tree, uint64_t node_offset);
+// Queries the B-Tree with lower_bound(node_offset), storing the resulting iterator in
+// `out_cursor` (if non-null).
+// Returns the found node pointer and its offset.
+VmPageListBtreeNodeEntry cpp_vm_page_list_btree_lower_bound(VmPageListBtree* tree,
+                                                            uint64_t node_offset,
+                                                            VmPageListBtreeCursor* out_cursor);
+
+// Returns the node pointer and offset at `cursor`.
+VmPageListBtreeNodeEntry cpp_vm_page_list_btree_cursor_get(const VmPageListBtreeCursor* cursor);
+
+// Allocates a new VmPageListNode and inserts it at `node_offset` using `cursor` as an iterator
+// hint. Updates `cursor` to point to the newly inserted node.
+// Returns the newly allocated node pointer, or nullptr on allocation failure.
+void* cpp_vm_page_list_btree_insert(VmPageListBtree* tree, uint64_t node_offset,
+                                    VmPageListBtreeCursor* cursor);
 
 // Erases the node at the cursor position in O(1) amortized time without re-searching the tree.
 // The cursor must have been initialized by a prior call (e.g., `cpp_vm_page_list_btree_find`).
@@ -67,12 +90,12 @@ void cpp_vm_page_list_btree_erase_at(VmPageListBtree* tree, VmPageListBtreeCurso
 
 // Cursors for iterating over nodes in the B-Tree in ascending key order.
 void cpp_vm_page_list_btree_cursor_init(VmPageListBtreeCursor* cursor, VmPageListBtree* tree);
-void* cpp_vm_page_list_btree_cursor_next(VmPageListBtreeCursor* cursor, uint64_t* out_offset);
+VmPageListBtreeNodeEntry cpp_vm_page_list_btree_cursor_next(VmPageListBtreeCursor* cursor);
 
 void cpp_vm_page_list_btree_const_cursor_init(VmPageListBtreeConstCursor* cursor,
                                               const VmPageListBtree* tree);
-const void* cpp_vm_page_list_btree_const_cursor_next(VmPageListBtreeConstCursor* cursor,
-                                                     uint64_t* out_offset);
+VmPageListBtreeConstNodeEntry cpp_vm_page_list_btree_const_cursor_next(
+    VmPageListBtreeConstCursor* cursor);
 
 __END_CDECLS
 
