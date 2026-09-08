@@ -125,21 +125,24 @@ pub struct NextFuture<'a, 's, T, Cfg: BroadcastCfg> {
 }
 
 impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
-    fn force_push_back(&mut self, payload: Payload<T>) -> Option<Payload<T>> {
-        let prev = self.queue.force_push_back(payload);
-        if prev.is_some() {
+    fn force_publish(&mut self, payload: T, not_full: &Notification<Cfg::Mtx>) {
+        if self.queue.force_push_back(Payload { payload, remaining_subs: 0 }).is_some() {
+            // Eviction happened, must increment head index
             self.head_global_idx += 1;
         }
         self.next_global_idx += 1;
-        prev
+        self.finish_publish(not_full);
     }
 
     /// Attempts to push a payload to the back of the queue, incrementing `next_global_idx` on success.
     ///
     /// Returns `Err(payload)` if the queue is full and cannot grow.
-    fn push_back(&mut self, payload: Payload<T>) -> Result<(), Payload<T>> {
-        self.queue.try_push_back(payload)?;
+    fn try_publish(&mut self, payload: T, not_full: &Notification<Cfg::Mtx>) -> Result<(), T> {
+        self.queue
+            .try_push_back(Payload { payload, remaining_subs: 0 })
+            .map_err(|payload| payload.payload)?;
         self.next_global_idx += 1;
+        self.finish_publish(not_full);
         Ok(())
     }
 
@@ -152,6 +155,37 @@ impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
         if reclaimed > 0 {
             not_full.notify_many(reclaimed);
         }
+    }
+
+    fn finish_publish(&mut self, not_full: &Notification<Cfg::Mtx>) {
+        let payload = self
+            .queue
+            .peek_back_mut()
+            .expect("notify publish must be called after publishing a message");
+        let msg_idx = self.next_global_idx - 1;
+        let mut interested = 0;
+        for sub in self.subscribers.values_mut() {
+            let interest = (sub.filter)(&payload.payload);
+            if interest.is_interested() {
+                interested += 1;
+            }
+            if sub.next_global_idx == msg_idx {
+                if interest.is_interested() {
+                    if let Some(waker) = sub.waker.take() {
+                        waker.wake();
+                    }
+                } else {
+                    sub.next_global_idx += 1;
+                }
+            } else {
+                assert!(
+                    sub.waker.is_none(),
+                    "Subscriber is not up to date but unexpectedly has a registered waker"
+                );
+            }
+        }
+        payload.remaining_subs = interested;
+        self.reclaim_space(not_full);
     }
 }
 
@@ -211,35 +245,10 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
         self.not_full
             .when(guard, |state| {
                 let item = payload.take().expect("Payload not refreshed");
-                let msg_idx = state.next_global_idx;
-                match state.push_back(Payload { payload: item, remaining_subs: 0 }) {
-                    Ok(()) => {
-                        let mut interested = 0;
-                        for sub in state.subscribers.values_mut() {
-                            let interest = (sub.filter)(&state.queue.peek_back().unwrap().payload);
-                            if interest.is_interested() {
-                                interested += 1;
-                            }
-                            if sub.next_global_idx == msg_idx {
-                                if interest.is_interested() {
-                                    if let Some(waker) = sub.waker.take() {
-                                        waker.wake();
-                                    }
-                                } else {
-                                    sub.next_global_idx += 1;
-                                }
-                            } else {
-                                assert!(
-                                    sub.waker.is_none(),
-                                    "Subscriber is not up to date but unexpectedly has a registered waker");
-                            }
-                        }
-                        state.queue.peek_back_mut().unwrap().remaining_subs = interested;
-                        state.reclaim_space(&self.not_full);
-                        Poll::Ready(())
-                    }
+                match state.try_publish(item, &self.not_full) {
+                    Ok(()) => Poll::Ready(()),
                     Err(item) => {
-                        payload.replace(item.payload);
+                        payload.replace(item);
                         Poll::Pending
                     }
                 }
@@ -249,33 +258,8 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
 
     /// Publishes a payload, evicting the oldest message if full.
     pub fn force_publish(&self, payload: T) {
-        let mut state = self.state.lock();
-
-        let msg_idx = state.next_global_idx;
-        state.force_push_back(Payload { payload: payload.clone(), remaining_subs: 0 });
-        let mut interested = 0;
-        for sub in state.subscribers.values_mut() {
-            let interest = (sub.filter)(&payload);
-            if interest.is_interested() {
-                interested += 1;
-            }
-            if sub.next_global_idx == msg_idx {
-                if interest.is_interested() {
-                    if let Some(waker) = sub.waker.take() {
-                        waker.wake();
-                    }
-                } else {
-                    sub.next_global_idx += 1;
-                }
-            } else {
-                assert!(
-                    sub.waker.is_none(),
-                    "Subscriber is not up to date but unexpectedly has a registered waker"
-                );
-            }
-        }
-        state.queue.peek_back_mut().unwrap().remaining_subs = interested;
-        state.reclaim_space(&self.not_full);
+        let state = &mut *self.state.lock();
+        state.force_publish(payload, &self.not_full);
     }
 }
 
