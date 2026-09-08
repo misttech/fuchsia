@@ -1431,6 +1431,9 @@ TEST(Madvise, SetDontForkThenRemap) {
 }
 
 TEST(Mremap, RemapMayMoveSpanningMappings) {
+  if (test_helper::IsKernelVersionAtLeast(6, 17)) {
+    GTEST_SKIP() << "Moving multiple mappings is supported in Linux 6.17 and newer, skipping.";
+  }
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
   void* mapping =
       mmap(nullptr, 2 * page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
