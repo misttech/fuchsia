@@ -24,3 +24,10 @@ json_merge(
     ],
     deep_merge = True,
 )
+
+test_suite(
+    name = "tests",
+    tests = [
+        "//src/developer/ffx/lib/compat_info:lib_test",
+    ],
+)
