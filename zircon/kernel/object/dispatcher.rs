@@ -202,6 +202,71 @@ macro_rules! impl_dispatcher_facade_with_state {
             );
         }
     };
+    (
+        @no_lock
+        $(#[$meta:meta])* $vis:vis struct $type:ident,
+        $state:ident,
+        $obj_type:expr,
+        $offset_const:expr
+    ) => {
+        paste::paste! {
+            $crate::object::dispatcher::impl_dispatcher_facade!($(#[$meta])* $vis struct $type, $obj_type, ());
+
+            impl $type {
+                /// Returns a reference to the underlying state object.
+                pub fn state(&self) -> &$state {
+                    // SAFETY: The state object is located at a verified offset within the
+                    // same allocation as the facade.
+                    unsafe {
+                        let ptr = (self as *const Self)
+                            .cast::<u8>()
+                            .add($offset_const as usize)
+                            .cast::<$state>();
+                        &*ptr
+                    }
+                }
+            }
+
+            /// Returns null since `$state` has no internal lock.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn [<rust_ $type:snake _state_get_lock>](
+                _ptr: *const $state,
+            ) -> *mut core::ffi::c_void {
+                core::ptr::null_mut()
+            }
+
+            /// Destroys a `$state` in-place.
+            ///
+            /// # Safety
+            ///
+            /// The caller must ensure `state` is a valid reference to an initialized `$state`, and
+            /// must not use the state (or the enclosing dispatcher) after this function returns.
+            #[unsafe(no_mangle)]
+            pub unsafe extern "C" fn [<rust_ $type:snake _state_destroy>](
+                state: &mut $state,
+            ) {
+                // SAFETY: The caller is destroying the dispatcher and will not use it again.
+                unsafe {
+                    core::ptr::drop_in_place(state);
+                }
+            }
+        }
+    };
+    (
+        $(#[$meta:meta])* $vis:vis struct $type:ident,
+        $state:ident,
+        $obj_type:expr,
+        $offset_const:expr,
+        no_lock $(,)?
+    ) => {
+        $crate::object::dispatcher::impl_dispatcher_facade_with_state!(
+            @no_lock
+            $(#[$meta])* $vis struct $type,
+            $state,
+            $obj_type,
+            $offset_const
+        );
+    };
 }
 pub(crate) use impl_dispatcher_facade_with_state;
 
