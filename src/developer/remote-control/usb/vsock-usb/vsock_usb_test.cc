@@ -1061,7 +1061,9 @@ TEST_F(VsockUsbTest, ShortFlagOnTxRequest) {
   UnconfigureDevice();
 }
 
-TEST_F(VsockUsbTest, DISABLED_TeardownRaceTDD) {
+// Tests re-entrant handling when UnconfigureEndpoints() is called while the driver is already
+// in the ShuttingDown state (e.g. from an incoming FIDL call during teardown).
+TEST_F(VsockUsbTest, TeardownRace) {
   ConfigureDevice();
 
   auto shutdown_done = std::make_shared<std::atomic<bool>>(false);
@@ -1079,10 +1081,7 @@ TEST_F(VsockUsbTest, DISABLED_TeardownRaceTDD) {
 
 // Tests that multiple concurrent or post-shutdown callbacks registered with Shutdown() are all
 // invoked reliably without dropping completers.
-//
-// Disabled until the driver's ShuttingDown state supports multi-callback teardown synchronization
-// and retains concurrent shutdown callbacks instead of overwriting them.
-TEST_F(VsockUsbTest, DISABLED_MultipleShutdownCallbacks) {
+TEST_F(VsockUsbTest, MultipleShutdownCallbacks) {
   ConfigureDevice();
 
   auto shutdown_done_1 = std::make_shared<std::atomic<bool>>(false);

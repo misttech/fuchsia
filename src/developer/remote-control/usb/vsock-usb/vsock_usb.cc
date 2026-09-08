@@ -196,6 +196,11 @@ void VsockUsb::Control(ControlRequest& request, ControlCompleter::Sync& complete
 }
 
 zx_status_t VsockUsb::ConfigureEndpoints() {
+  // Reject configuration requests if the driver is in the process of shutting down.
+  if (std::holds_alternative<ShuttingDown>(state_)) {
+    return ZX_ERR_BAD_STATE;
+  }
+
   if (!std::holds_alternative<Unconfigured>(state_)) {
     FDF_LOG(DEBUG, "ConfigureEndpoints: endpoints already configured");
     return ZX_OK;
@@ -230,12 +235,7 @@ zx_status_t VsockUsb::ConfigureEndpoints() {
     FDF_SLOG(FATAL, "Failed to create socket", KV("status", zx_status_get_string(status)));
   }
   state_ = Running(std::move(socket), this);
-  if (state_property_) {
-    state_property_.Set("Running");
-  }
-  if (online_property_) {
-    online_property_.Set(true);
-  }
+  SyncInspectState();
   HandleSocketAvailable();
   ProcessReadsFromSocket();
 
@@ -254,6 +254,8 @@ zx_status_t VsockUsb::ConfigureEndpoints() {
   if (result.is_error()) {
     FDF_SLOG(ERROR, "Failed to QueueRequests",
              KV("status", result.error_value().FormatDescription()));
+    // Note: `requests` was moved into QueueRequests and consumed by the FIDL transport.
+    // If QueueRequests fails, these requests cannot be reclaimed at this layer.
     return result.error_value().status();
   }
 
@@ -261,6 +263,15 @@ zx_status_t VsockUsb::ConfigureEndpoints() {
 }
 
 zx_status_t VsockUsb::UnconfigureEndpoints() {
+  // Defense-in-depth: If the driver is shutting down, unconfiguration is already
+  // in progress and endpoints are being torn down. Return ZX_OK without
+  // clobbering the ShuttingDown state (which holds completion callbacks). While
+  // SetConfigured() already checks for ShuttingDown before calling here, this
+  // guard ensures direct or re-entrant invocations safely no-op during teardown.
+  if (std::holds_alternative<ShuttingDown>(state_)) {
+    return ZX_OK;
+  }
+
   if (std::holds_alternative<Unconfigured>(state_)) {
     FDF_LOG(DEBUG, "UnconfigureEndpoints: Endpoint already unconfigured");
     return ZX_OK;
@@ -268,12 +279,7 @@ zx_status_t VsockUsb::UnconfigureEndpoints() {
 
   FDF_LOG(TRACE, "UnconfigureEndpoints: Setting endpoint state to unconfigured");
   state_ = Unconfigured();
-  if (state_property_) {
-    state_property_.Set("Unconfigured");
-  }
-  if (online_property_) {
-    online_property_.Set(false);
-  }
+  SyncInspectState();
   callback_ = std::nullopt;
 
   for (const uint8_t ep_addr : {BulkInAddress(), BulkOutAddress()}) {
@@ -315,9 +321,7 @@ void VsockUsb::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter:
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
-  if (std::holds_alternative<Running>(state_)) {
-    state_ = Unconfigured();
-  }
+  ResetState();
   completer.Reply(zx::make_result(ConfigureEndpoints()));
 }
 
@@ -368,17 +372,23 @@ void VsockUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_st
 
   if (!addr.has_value()) {
     FDF_LOG(ERROR, "Failed to map request");
+    bulk_in_ep_.PutRequest(std::move(*request));
+    bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
     return;
   }
 
   size_t actual;
 
+  const size_t old_index = state_.index();
   std::visit(
       [this, &addr, &actual, &status](auto&& state) {
         state_ = std::forward<decltype(state)>(state).SendData(reinterpret_cast<uint8_t*>(*addr),
                                                                kMtu, &actual, &status);
       },
       std::move(state_));
+  if (state_.index() != old_index) {
+    SyncInspectState();
+  }
 
   if (status == ZX_OK) {
     (*request)->data()->at(0).size(actual);
@@ -386,24 +396,22 @@ void VsockUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_st
     status = request->CacheFlush(bulk_in_ep_.GetMapped());
     if (status != ZX_OK) {
       FDF_SLOG(ERROR, "Cache flush failed", KV("status", zx_status_get_string(status)));
-      bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(*request)));
-      return;
-    }
-    std::vector<fuchsia_hardware_usb_request::Request> requests;
-    requests.emplace_back(request->take_request());
-    FDF_LOG(DEBUG, "Queuing write request (data)");
-    auto result = bulk_in_ep_->QueueRequests(std::move(requests));
-    if (result.is_error()) {
-      FDF_SLOG(ERROR, "Failed to QueueRequests",
-               KV("status", result.error_value().FormatDescription()));
-      for (auto& req_wire : requests) {
-        bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(req_wire)));
+      bulk_in_ep_.PutRequest(std::move(*request));
+    } else {
+      std::vector<fuchsia_hardware_usb_request::Request> requests;
+      requests.emplace_back(request->take_request());
+      FDF_LOG(DEBUG, "Queuing write request (data)");
+      auto result = bulk_in_ep_->QueueRequests(std::move(requests));
+      if (result.is_error()) {
+        FDF_SLOG(ERROR, "Failed to QueueRequests",
+                 KV("status", result.error_value().FormatDescription()));
+        // Note: `requests` was moved into QueueRequests and consumed by the FIDL transport.
       }
     }
   } else {
     FDF_LOG(WARNING, "SendData failed, returning request to pool");
     ZX_ASSERT(!bulk_in_ep_.RequestsFull());
-    bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(*request)));
+    bulk_in_ep_.PutRequest(std::move(*request));
   }
 
   std::visit(
@@ -444,8 +452,12 @@ void VsockUsb::HandleSocketWritable(async_dispatcher_t*, async::WaitBase*, zx_st
     return;
   }
 
+  const size_t old_index = state_.index();
   std::visit([this](auto&& state) { state_ = std::forward<decltype(state)>(state).Writable(); },
              std::move(state_));
+  if (state_.index() != old_index) {
+    SyncInspectState();
+  }
   std::visit(
       [this](auto& state) {
         if (state.WritesWaiting()) {
@@ -469,7 +481,7 @@ VsockUsb::State VsockUsb::Running::Writable() && {
                             socket_out_queue_.begin() + static_cast<ssize_t>(actual));
   } else if (status != ZX_ERR_SHOULD_WAIT) {
     if (status != ZX_ERR_PEER_CLOSED) {
-      FDF_SLOG(ERROR, "Failed to read from socket", KV("status", zx_status_get_string(status)));
+      FDF_SLOG(ERROR, "Failed to write to socket", KV("status", zx_status_get_string(status)));
     }
     FDF_LOG(INFO, "Client socket closed, returning to ready state");
     return Unconfigured();
@@ -523,7 +535,7 @@ VsockUsb::State VsockUsb::Unconfigured::ReceiveData(uint8_t*, size_t len,
                                                     std::optional<zx::socket>*,
                                                     VsockUsb* owner) && {
   FDF_SLOG(WARNING, "Dropped incoming data (device not configured)", KV("bytes", len));
-  return *this;
+  return std::move(*this);
 }
 
 VsockUsb::State VsockUsb::ShuttingDown::ReceiveData(uint8_t*, size_t len,
@@ -589,12 +601,14 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
         "Device disconnected from host or requires reconfiguration. Unconfiguring endpoints and returning request to pool");
     ZX_ASSERT(!bulk_out_ep_.RequestsFull());
     bulk_out_ep_.PutRequest(std::move(request));
+    bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
     if (std::holds_alternative<ShuttingDown>(state_)) {
       if (!HasPendingRequests()) {
         ShutdownComplete();
       }
     } else {
       state_ = Unconfigured();
+      SyncInspectState();
     }
     return;
   }
@@ -603,29 +617,30 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
     if (zx_status_t status = request.CacheFlushInvalidate(bulk_out_ep_.GetMapped());
         status != ZX_OK) {
       FDF_SLOG(ERROR, "Cache flush invalidate failed", KV("status", zx_status_get_string(status)));
-      bulk_out_ep_.PutRequest(std::move(request));
-      return;
-    }
-    // This should always be true because when we registered VMOs, we only registered one per
-    // request.
-    ZX_ASSERT(request->data()->size() == 1);
-    auto addr = bulk_out_ep_.GetMappedAddr(request.request(), 0);
-    if (!addr.has_value()) {
-      FDF_SLOG(ERROR, "Failed to map RX data");
-      bulk_out_ep_.PutRequest(std::move(request));
-      return;
-    }
+    } else {
+      // This should always be true because when we registered VMOs, we only registered one per
+      // request.
+      ZX_ASSERT(request->data()->size() == 1);
+      auto addr = bulk_out_ep_.GetMappedAddr(request.request(), 0);
+      if (!addr.has_value()) {
+        FDF_SLOG(ERROR, "Failed to map RX data");
+      } else {
+        uint8_t* data = reinterpret_cast<uint8_t*>(*addr);
+        size_t data_length = *completion.transfer_size();
+        bulk_out_inspect_.AddRxBytes(data_length);
 
-    uint8_t* data = reinterpret_cast<uint8_t*>(*addr);
-    size_t data_length = *completion.transfer_size();
-    bulk_out_inspect_.AddRxBytes(data_length);
-
-    std::visit(
-        [this, data, data_length](auto&& state) {
-          state_ = std::forward<decltype(state)>(state).ReceiveData(data, data_length,
-                                                                    &peer_socket_, this);
-        },
-        std::move(state_));
+        const size_t old_index = state_.index();
+        std::visit(
+            [this, data, data_length](auto&& state) {
+              state_ = std::forward<decltype(state)>(state).ReceiveData(data, data_length,
+                                                                        &peer_socket_, this);
+            },
+            std::move(state_));
+        if (state_.index() != old_index) {
+          SyncInspectState();
+        }
+      }
+    }
   } else if (*completion.status() != ZX_ERR_CANCELED) {
     FDF_SLOG(ERROR, "Read failed", KV("status", zx_status_get_string(*completion.status())));
     bulk_out_inspect_.AddFailedRxBytes(request.length());
@@ -634,6 +649,10 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
   if (Online()) {
     request.reset_buffers(bulk_out_ep_.GetMapped());
 
+    // Only extract the underlying FIDL request when we are actively online and
+    // re-queueing to the endpoint. If the driver is offline or shutting down,
+    // `request` must remain intact so it can be returned to `bulk_out_ep_` in
+    // the else branch below.
     std::vector<fuchsia_hardware_usb_request::Request> requests;
     requests.emplace_back(request.take_request());
     FDF_LOG(TRACE, "Re-queuing read request");
@@ -641,20 +660,20 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
     if (result.is_error()) {
       FDF_SLOG(ERROR, "Failed to QueueRequests",
                KV("status", result.error_value().FormatDescription()));
-      for (auto& req_wire : requests) {
-        bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(req_wire)));
-      }
+      // Note: `requests` was moved into QueueRequests and consumed by the FIDL transport.
     }
   } else {
+    ZX_ASSERT(!bulk_out_ep_.RequestsFull());
+    bulk_out_ep_.PutRequest(std::move(request));
     if (std::holds_alternative<ShuttingDown>(state_)) {
+      FDF_LOG(DEBUG, "Shutting down from ReadComplete");
+      bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
       if (!HasPendingRequests()) {
         ShutdownComplete();
       }
       return;
     }
-    FDF_LOG(DEBUG, "ReadComplete while unconnected, returning request to pool");
-    ZX_ASSERT(!bulk_out_ep_.RequestsFull());
-    bulk_out_ep_.PutRequest(std::move(request));
+    FDF_LOG(DEBUG, "ReadComplete while unconnected");
   }
   bulk_out_inspect_.UpdateRxQueue(bulk_out_ep_.GetInFlightCount());
 }
@@ -675,24 +694,28 @@ void VsockUsb::WriteComplete(fendpoint::Completion completion) {
   } else {
     bulk_in_inspect_.AddFailedTxBytes(size);
   }
+  ZX_ASSERT(!bulk_in_ep_.RequestsFull());
+  bulk_in_ep_.PutRequest(std::move(request));
   if (std::holds_alternative<ShuttingDown>(state_)) {
-    FDF_LOG(DEBUG, "Shutting down from WriteComplete and returning request to pool");
-    ZX_ASSERT(!bulk_in_ep_.RequestsFull());
-    bulk_in_ep_.PutRequest(std::move(request));
+    FDF_LOG(DEBUG, "Shutting down from WriteComplete");
+    bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
     if (!HasPendingRequests()) {
       ShutdownComplete();
     }
     return;
   }
 
-  FDF_LOG(DEBUG, "Write completed, returning request to pool");
-  ZX_ASSERT(!bulk_in_ep_.RequestsFull());
-  bulk_in_ep_.PutRequest(std::move(request));
+  FDF_LOG(DEBUG, "Write completed");
   ProcessReadsFromSocket();
   bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
 }
 
 void VsockUsb::Shutdown(fit::function<void()> callback) {
+  if (auto* state = std::get_if<ShuttingDown>(&state_)) {
+    state->AddCallback(std::move(callback));
+    return;
+  }
+
   if (throughput_tracker_) {
     throughput_tracker_->Stop();
   }
@@ -714,6 +737,7 @@ void VsockUsb::Shutdown(fit::function<void()> callback) {
     }
   });
   state_ = ShuttingDown(std::move(callback));
+  SyncInspectState();
 
   if (!HasPendingRequests()) {
     ShutdownComplete();

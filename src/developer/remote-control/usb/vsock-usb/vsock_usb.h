@@ -22,11 +22,14 @@
 #include <lib/zx/socket.h>
 #include <zircon/compiler.h>
 #include <zircon/errors.h>
+#include <zircon/status.h>
 #include <zircon/types.h>
 
 #include <memory>
 #include <optional>
+#include <utility>
 #include <variant>
+#include <vector>
 
 #include <bind/fuchsia/google/platform/usb/cpp/bind.h>
 #include <fbl/mutex.h>
@@ -130,9 +133,9 @@ class VsockUsb : public fdf::DriverBase2,
     // Called when we are asked to send data from this state. Should never be called.
     State SendData(uint8_t*, size_t, size_t*, zx_status_t* status) && {
       *status = ZX_ERR_SHOULD_WAIT;
-      return *this;
+      return std::move(*this);
     }
-    State Writable() && { return *this; }
+    State Writable() && { return std::move(*this); }
   };
 
   // Running. We will send any data we get from the RCS socket. Data we receive will be queued
@@ -185,10 +188,12 @@ class VsockUsb : public fdf::DriverBase2,
       async::PostTask(owner_->dispatcher_,
                       [read_waiter = std::move(read_waiter_),
                        write_waiter = std::move(write_waiter_), socket = std::move(socket_)]() {
-                        if (read_waiter)
+                        if (read_waiter) {
                           read_waiter->Cancel();
-                        if (write_waiter)
+                        }
+                        if (write_waiter) {
                           write_waiter->Cancel();
+                        }
                         (void)socket;
                       });
     }
@@ -203,7 +208,11 @@ class VsockUsb : public fdf::DriverBase2,
   };
   class ShuttingDown : public BaseNoSocketState {
    public:
-    explicit ShuttingDown(fit::function<void()> callback) : callback_(std::move(callback)) {}
+    explicit ShuttingDown(fit::function<void()> callback) {
+      if (callback) {
+        callbacks_.push_back(std::move(callback));
+      }
+    }
     // Called when we receive data from the host while in this state. Warns and discards it.
     State ReceiveData(uint8_t* data, size_t len, std::optional<zx::socket>* peer_socket,
                       VsockUsb* owner) &&;
@@ -215,10 +224,32 @@ class VsockUsb : public fdf::DriverBase2,
     // Called when a socket is writable. Shouldn't happen.
     State Writable() && { return std::move(*this); }
     // Called when shutdown has been successful.
-    void FinishWithCallback() { callback_(); }
+    void FinishWithCallback() {
+      if (finished_) {
+        return;
+      }
+      finished_ = true;
+      std::vector<fit::function<void()>> callbacks;
+      callbacks.swap(callbacks_);
+      for (auto& callback : callbacks) {
+        callback();
+      }
+    }
+
+    void AddCallback(fit::function<void()> callback) {
+      if (!callback) {
+        return;
+      }
+      if (finished_) {
+        callback();
+      } else {
+        callbacks_.push_back(std::move(callback));
+      }
+    }
 
    private:
-    fit::function<void()> callback_;
+    std::vector<fit::function<void()>> callbacks_;
+    bool finished_ = false;
   };
 
   // Callback called when we start a new connection. Dispatches the other end of the socket we
@@ -233,16 +264,47 @@ class VsockUsb : public fdf::DriverBase2,
     fidl::WireSharedClient<fuchsia_hardware_vsockbridge::Callback> fidl_;
   };
 
+  template <class... Ts>
+  struct Overloaded : Ts... {
+    using Ts::operator()...;
+  };
+
   // Whether we are in a state that is actively receiving data.
   bool Online() const {
-    return !std::holds_alternative<Unconfigured>(state_) &&
-           !std::holds_alternative<ShuttingDown>(state_);
+    return std::visit(Overloaded{
+                          [](const Running&) { return true; },
+                          [](const ShuttingDown&) { return false; },
+                          [](const Unconfigured&) { return false; },
+                      },
+                      state_);
+  }
+
+  // Synchronize inspect metrics with current driver state.
+  void SyncInspectState() {
+    auto [name, online] = std::visit(
+        Overloaded{
+            [](const Running&) -> std::pair<const char*, bool> { return {"Running", true}; },
+            [](const ShuttingDown&) -> std::pair<const char*, bool> {
+              return {"ShuttingDown", false};
+            },
+            [](const Unconfigured&) -> std::pair<const char*, bool> {
+              return {"Unconfigured", false};
+            },
+        },
+        state_);
+    if (state_property_) {
+      state_property_.Set(name);
+    }
+    if (online_property_) {
+      online_property_.Set(online);
+    }
   }
 
   // Transition from Running to Unconfigured, usually due to a connection error.
   void ResetState() {
     if (std::holds_alternative<Running>(state_)) {
       state_ = Unconfigured();
+      SyncInspectState();
     }
   }
 
