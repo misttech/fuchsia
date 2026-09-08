@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::fmt;
+
 use fidl_fuchsia_time_external::TimeSample;
 
 use fuchsia_runtime::{UtcDuration, UtcInstant};
@@ -22,6 +24,24 @@ pub struct HttpsSample {
     pub final_bound_size: UtcDuration,
     /// Metrics for individual polls used to produce this sample.
     pub polls: Vec<Poll>,
+}
+
+impl fmt::Display for HttpsSample {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "UTC {} (bound: {:.1}ms, polls: [",
+            self.utc.into_nanos(),
+            self.final_bound_size.into_micros() as f64 / 1000.0,
+        )?;
+        for (i, poll) in self.polls.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", poll)?;
+        }
+        write!(f, "])")
+    }
 }
 
 impl Into<TimeSample> for HttpsSample {
@@ -46,6 +66,12 @@ impl Into<Update> for HttpsSample {
 pub struct Poll {
     /// The round trip latency observed during this poll.
     pub round_trip_time: zx::BootDuration,
+}
+
+impl fmt::Display for Poll {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.1}ms", self.round_trip_time.into_micros() as f64 / 1000.0)
+    }
 }
 
 #[cfg(test)]
@@ -107,5 +133,26 @@ mod test {
                 ..Default::default()
             }))
         );
+    }
+
+    #[fuchsia::test]
+    fn test_https_sample_display() {
+        let sample = HttpsSample {
+            utc: UtcInstant::from_nanos(1_788_306_697_968_401_192),
+            reference: zx::BootInstant::from_nanos(100),
+            standard_deviation: UtcDuration::from_nanos(200),
+            final_bound_size: UtcDuration::from_nanos(64_500_000),
+            polls: vec![
+                Poll { round_trip_time: zx::BootDuration::from_nanos(10_000_000) },
+                Poll { round_trip_time: zx::BootDuration::from_nanos(1_600_000) },
+            ],
+        };
+        assert_eq!(
+            sample.to_string(),
+            "UTC 1788306697968401192 (bound: 64.5ms, polls: [10.0ms, 1.6ms])"
+        );
+
+        let empty_polls = HttpsSample { polls: vec![], ..sample };
+        assert_eq!(empty_polls.to_string(), "UTC 1788306697968401192 (bound: 64.5ms, polls: [])");
     }
 }

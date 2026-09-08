@@ -70,10 +70,7 @@ where
 {
     async fn handle_produce_sample(&self, sample_fut: BoxFuture<'_, HttpsSample>) -> HttpsSample {
         let sample = sample_fut.await;
-        info!(
-            "Got a time sample - UTC {:?}, bound size {:?}, and polls {:?}",
-            sample.utc, sample.final_bound_size, sample.polls
-        );
+        info!("Got a time sample: {sample}");
         self.diagnostics.record(Event::Success(&sample));
         sample
     }
