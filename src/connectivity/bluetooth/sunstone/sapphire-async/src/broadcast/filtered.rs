@@ -55,12 +55,11 @@ impl Interest {
 ///     type Mtx = SingleThreadMutex;
 /// }
 ///
-/// # ;
 /// let channel = FilteredBroadcastChannel::<i32, MyBroadcastCfg>::new();
-/// let sub_evens = channel
+/// let mut sub_evens = channel
 ///     .subscribe(|&x| if x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
 ///     .unwrap();
-/// let sub_all = channel.subscribe(|_| Interest::Interested).unwrap();
+/// let mut sub_all = channel.subscribe(|_| Interest::Interested).unwrap();
 ///
 /// # BoundedExecutor::new(TestExecutor::new(), |s| {
 /// #     s.block_on(async {
@@ -122,7 +121,7 @@ pub struct FilteredSubscriber<'a, T, Cfg: BroadcastCfg> {
 
 /// A custom future returned by [`FilteredSubscriber::next`].
 pub struct NextFuture<'a, 's, T, Cfg: BroadcastCfg> {
-    subscriber: &'s FilteredSubscriber<'a, T, Cfg>,
+    subscriber: &'s mut FilteredSubscriber<'a, T, Cfg>,
 }
 
 impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
@@ -282,7 +281,7 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
 
 impl<'a, T: Clone, Cfg: BroadcastCfg> FilteredSubscriber<'a, T, Cfg> {
     /// Asynchronously polls and retrieves the next broadcasted message that matched the filter.
-    pub fn next<'s>(&'s self) -> NextFuture<'a, 's, T, Cfg> {
+    pub fn next<'s>(&'s mut self) -> NextFuture<'a, 's, T, Cfg> {
         NextFuture { subscriber: self }
     }
 }
@@ -414,11 +413,11 @@ mod tests {
         type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<10, 2>>;
         let channel = TestFilteredChannel::new();
 
-        let sub1 = channel
+        let mut sub1 = channel
             .subscribe(|x| if x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
 
-        let sub2 = channel
+        let mut sub2 = channel
             .subscribe(|x| if x % 2 != 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
 
@@ -443,7 +442,7 @@ mod tests {
         type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<10, 2>>;
         let channel = TestFilteredChannel::new();
 
-        let sub1 = channel
+        let mut sub1 = channel
             .subscribe(|x| if *x == 42 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
 
@@ -472,7 +471,7 @@ mod tests {
         type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<1, 2>>;
         let channel = TestFilteredChannel::new();
 
-        let sub1 = channel
+        let mut sub1 = channel
             .subscribe(|x| if x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
 
@@ -496,10 +495,10 @@ mod tests {
         type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<1, 2>>;
         let channel = TestFilteredChannel::new();
 
-        let sub1 = channel
+        let mut sub1 = channel
             .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
-        let sub2 = channel.subscribe(|_| Interest::Interested).unwrap();
+        let mut sub2 = channel.subscribe(|_| Interest::Interested).unwrap();
 
         BoundedExecutor::new(TestExecutor::new(), |s| {
             s.block_on(async {
@@ -535,10 +534,10 @@ mod tests {
         type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<2, 2>>;
         let channel = TestFilteredChannel::new();
 
-        let sub1 = channel
+        let mut sub1 = channel
             .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
-        let sub2 = channel
+        let mut sub2 = channel
             .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
 
@@ -606,7 +605,7 @@ mod tests {
         type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<1, 2>>;
         let channel = TestFilteredChannel::new();
 
-        let sub1 = channel.subscribe(|_| Interest::Interested).unwrap();
+        let mut sub1 = channel.subscribe(|_| Interest::Interested).unwrap();
         let sub2 = channel.subscribe(|_| Interest::Interested).unwrap();
 
         BoundedExecutor::new(TestExecutor::new(), |s| {
@@ -669,26 +668,28 @@ mod tests {
         type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<5, 2>>;
         let channel = TestFilteredChannel::new();
 
-        let sub = channel
+        let mut sub = channel
             .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
 
+        // 1. Spawn a task that polls sub.next() while channel is empty.
         BoundedExecutor::new(TestExecutor::new(), |s| {
-            // 1. Spawn a task that polls sub.next() while channel is empty.
             let handle = s.spawn(async { sub.next().await });
             s.run_until_stalled();
             assert!(!handle.is_finished(), "NextFuture should be pending");
 
             // 2. Cancel/drop the task while NextFuture is pending.
             handle.cancel();
+        });
 
-            // 3. Verify sub.waker was cleared by checking internal state.
-            {
-                let state = channel.state.lock();
-                let sub_state = state.subscribers.get(&sub.id).unwrap();
-                assert!(sub_state.waker.is_none(), "Waker should be cleared on NextFuture drop");
-            }
+        // 3. Verify sub.waker was cleared by checking internal state.
+        {
+            let state = channel.state.lock();
+            let sub_state = state.subscribers.get(&sub.id).unwrap();
+            assert!(sub_state.waker.is_none(), "Waker should be cleared on NextFuture drop");
+        }
 
+        BoundedExecutor::new(TestExecutor::new(), |s| {
             // 4. Spawn a new task polling sub.next().
             let handle2 = s.spawn(async { sub.next().await });
             s.run_until_stalled();
@@ -719,7 +720,7 @@ mod tests {
         type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<5, 2>>;
         let channel = TestFilteredChannel::new();
 
-        let sub = channel
+        let mut sub = channel
             .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
 
@@ -736,7 +737,9 @@ mod tests {
 
             // Cancel the future
             handle.cancel();
+        });
 
+        BoundedExecutor::new(TestExecutor::new(), |s| {
             // Publish another odd and an even
             s.block_on(async {
                 channel.publish(5).await;
@@ -764,10 +767,10 @@ mod tests {
         type StdBroadcast<T> = FilteredBroadcastChannel<T, StdCfg>;
 
         let channel = StdBroadcast::<i32>::new();
-        let sub1 = channel
+        let mut sub1 = channel
             .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
-        let sub2 = channel
+        let mut sub2 = channel
             .subscribe(|x| if *x % 2 != 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
 
@@ -790,8 +793,10 @@ mod tests {
     mod proptests {
         use super::*;
         use crate::executor::BoundedExecutor;
+        use crate::semaphore::Semaphore;
         use crate::testing::TestExecutor;
         use proptest::prelude::*;
+        use sapphire_sync::mutex::raw::SingleThreadMutex;
 
         #[derive(Debug, Clone)]
         enum BroadcastOp {
@@ -825,11 +830,39 @@ mod tests {
                 type TestChannel = FilteredBroadcastChannel<i32, StackCfg<4, 2>>;
                 let channel = TestChannel::new();
 
-                let sub1 = channel.subscribe(filter1).unwrap();
-                let sub2 = channel.subscribe(filter2).unwrap();
+                let mut sub1 = channel.subscribe(filter1).unwrap();
+                let mut sub2 = channel.subscribe(filter2).unwrap();
+
+                let sem1 = Semaphore::<SingleThreadMutex>::new(0);
+                let sem2 = Semaphore::<SingleThreadMutex>::new(0);
 
                 let chan = &channel;
+                let s1 = &sem1;
+                let s2 = &sem2;
                 BoundedExecutor::new(TestExecutor::new(), |s| {
+                    let h1 = s.spawn(async move {
+                        loop {
+                            s1.down().await;
+                            match sub1.next().await {
+                                Ok(val) => {
+                                    assert_eq!(filter1(&val), Interest::Interested, "sub1 received uninterested message: {val}");
+                                }
+                                Err(MissedMessages { .. }) => {}
+                            }
+                        }
+                    });
+                    let h2 = s.spawn(async move {
+                        loop {
+                            s2.down().await;
+                            match sub2.next().await {
+                                Ok(val) => {
+                                    assert_eq!(filter2(&val), Interest::Interested, "sub2 received uninterested message: {val}");
+                                }
+                                Err(MissedMessages { .. }) => {}
+                            }
+                        }
+                    });
+
                     for op in ops {
                         match op {
                             BroadcastOp::Publish(val) => {
@@ -843,29 +876,18 @@ mod tests {
                                 s.run_until_stalled();
                             }
                             BroadcastOp::RecvSub1 => {
-                                let handle = s.spawn(async { sub1.next().await });
+                                sem1.up();
                                 s.run_until_stalled();
-                                if handle.is_finished() {
-                                    if let Ok(val) = s.block_on(handle.join()) {
-                                        assert_eq!(filter1(&val), Interest::Interested);
-                                    }
-                                } else {
-                                    handle.cancel();
-                                }
                             }
                             BroadcastOp::RecvSub2 => {
-                                let handle = s.spawn(async { sub2.next().await });
+                                sem2.up();
                                 s.run_until_stalled();
-                                if handle.is_finished() {
-                                    if let Ok(val) = s.block_on(handle.join()) {
-                                        assert_eq!(filter2(&val), Interest::Interested);
-                                    }
-                                } else {
-                                    handle.cancel();
-                                }
                             }
                         }
                     }
+
+                    h1.cancel();
+                    h2.cancel();
                 });
             }
 
@@ -883,11 +905,39 @@ mod tests {
                 type TestChannel = FilteredBroadcastChannel<i32, StackCfg<1, 2>>;
                 let channel = TestChannel::new();
 
-                let sub1 = channel.subscribe(filter1).unwrap();
-                let sub2 = channel.subscribe(filter2).unwrap();
+                let mut sub1 = channel.subscribe(filter1).unwrap();
+                let mut sub2 = channel.subscribe(filter2).unwrap();
+
+                let sem1 = Semaphore::<SingleThreadMutex>::new(0);
+                let sem2 = Semaphore::<SingleThreadMutex>::new(0);
 
                 let chan = &channel;
+                let s1 = &sem1;
+                let s2 = &sem2;
                 BoundedExecutor::new(TestExecutor::new(), |s| {
+                    let h1 = s.spawn(async move {
+                        loop {
+                            s1.down().await;
+                            match sub1.next().await {
+                                Ok(_) => {}
+                                Err(MissedMessages { count }) => {
+                                    panic!("Up-to-date sub1 should never receive MissedMessages, missed {count}");
+                                }
+                            }
+                        }
+                    });
+                    let h2 = s.spawn(async move {
+                        loop {
+                            s2.down().await;
+                            match sub2.next().await {
+                                Ok(_) => {}
+                                Err(MissedMessages { count }) => {
+                                    panic!("Up-to-date sub2 should never receive MissedMessages, missed {count}");
+                                }
+                            }
+                        }
+                    });
+
                     for (is_force, val) in ops {
                         if is_force {
                             chan.force_publish(val);
@@ -896,31 +946,13 @@ mod tests {
                                 chan.publish(val).await;
                             });
                         }
-
-                        // Poll sub1 after publish
-                        let h1 = s.spawn(async { sub1.next().await });
+                        sem1.up();
+                        sem2.up();
                         s.run_until_stalled();
-                        if filter1(&val).is_interested() {
-                            assert!(h1.is_finished(), "Up-to-date sub1 should have matching message ready");
-                            let res = s.block_on(h1.join());
-                            assert_eq!(res, Ok(val), "Up-to-date sub1 must never receive MissedMessages");
-                        } else {
-                            assert!(!h1.is_finished(), "sub1 should be pending for non-matching message");
-                            h1.cancel();
-                        }
-
-                        // Poll sub2 after publish
-                        let h2 = s.spawn(async { sub2.next().await });
-                        s.run_until_stalled();
-                        if filter2(&val).is_interested() {
-                            assert!(h2.is_finished(), "Up-to-date sub2 should have matching message ready");
-                            let res = s.block_on(h2.join());
-                            assert_eq!(res, Ok(val), "Up-to-date sub2 must never receive MissedMessages");
-                        } else {
-                            assert!(!h2.is_finished(), "sub2 should be pending for non-matching message");
-                            h2.cancel();
-                        }
                     }
+
+                    h1.cancel();
+                    h2.cancel();
                 });
             }
 
@@ -938,11 +970,39 @@ mod tests {
                 type TestChannel = FilteredBroadcastChannel<i32, StackCfg<2, 2>>;
                 let channel = TestChannel::new();
 
-                let sub1 = channel.subscribe(filter1).unwrap();
-                let sub2 = channel.subscribe(filter2).unwrap();
+                let mut sub1 = channel.subscribe(filter1).unwrap();
+                let mut sub2 = channel.subscribe(filter2).unwrap();
+
+                let sem1 = Semaphore::<SingleThreadMutex>::new(0);
+                let sem2 = Semaphore::<SingleThreadMutex>::new(0);
 
                 let chan = &channel;
+                let s1 = &sem1;
+                let s2 = &sem2;
                 BoundedExecutor::new(TestExecutor::new(), |s| {
+                    let h1 = s.spawn(async move {
+                        loop {
+                            s1.down().await;
+                            match sub1.next().await {
+                                Ok(_) => {}
+                                Err(MissedMessages { count }) => {
+                                    panic!("Without force_publish, sub1 must never receive MissedMessages, missed {count}");
+                                }
+                            }
+                        }
+                    });
+                    let h2 = s.spawn(async move {
+                        loop {
+                            s2.down().await;
+                            match sub2.next().await {
+                                Ok(_) => {}
+                                Err(MissedMessages { count }) => {
+                                    panic!("Without force_publish, sub2 must never receive MissedMessages, missed {count}");
+                                }
+                            }
+                        }
+                    });
+
                     for op in ops {
                         match op {
                             BroadcastOp::Publish(val) => {
@@ -952,36 +1012,19 @@ mod tests {
                                 s.run_until_stalled();
                             }
                             BroadcastOp::RecvSub1 => {
-                                let handle = s.spawn(async { sub1.next().await });
+                                sem1.up();
                                 s.run_until_stalled();
-                                if handle.is_finished() {
-                                    let res = s.block_on(handle.join());
-                                    assert!(
-                                        matches!(res, Ok(_)),
-                                        "Without force_publish, sub1 must never receive MissedMessages: got {:?}",
-                                        res
-                                    );
-                                } else {
-                                    handle.cancel();
-                                }
                             }
                             BroadcastOp::RecvSub2 => {
-                                let handle = s.spawn(async { sub2.next().await });
+                                sem2.up();
                                 s.run_until_stalled();
-                                if handle.is_finished() {
-                                    let res = s.block_on(handle.join());
-                                    assert!(
-                                        matches!(res, Ok(_)),
-                                        "Without force_publish, sub2 must never receive MissedMessages: got {:?}",
-                                        res
-                                    );
-                                } else {
-                                    handle.cancel();
-                                }
                             }
                             BroadcastOp::ForcePublish(_) => {}
                         }
                     }
+
+                    h1.cancel();
+                    h2.cancel();
                 });
             }
         }
@@ -1002,14 +1045,32 @@ mod tests {
                 type TestChannel = FilteredBroadcastChannel<i32, StackCfg<4, 2>>;
                 let channel = TestChannel::new();
 
-                let sub1 = channel.subscribe(filter1).unwrap();
-                let sub2 = channel.subscribe(filter2).unwrap();
+                let mut sub1 = channel.subscribe(filter1).unwrap();
+                let mut sub2 = channel.subscribe(filter2).unwrap();
 
                 let sub1_id = sub1.id;
                 let sub2_id = sub2.id;
 
+                let sem1 = Semaphore::<SingleThreadMutex>::new(0);
+                let sem2 = Semaphore::<SingleThreadMutex>::new(0);
+
                 let chan = &channel;
+                let s1 = &sem1;
+                let s2 = &sem2;
                 BoundedExecutor::new(TestExecutor::new(), |s| {
+                    let h1 = s.spawn(async move {
+                        loop {
+                            s1.down().await;
+                            let _ = sub1.next().await;
+                        }
+                    });
+                    let h2 = s.spawn(async move {
+                        loop {
+                            s2.down().await;
+                            let _ = sub2.next().await;
+                        }
+                    });
+
                     for op in ops {
                         match op {
                             BroadcastOp::Publish(val) => {
@@ -1019,21 +1080,16 @@ mod tests {
                                 s.run_until_stalled();
                             }
                             BroadcastOp::RecvSub1 => {
-                                let handle = s.spawn(async { sub1.next().await });
+                                sem1.up();
                                 s.run_until_stalled();
-                                if !handle.is_finished() {
-                                    handle.cancel();
-                                }
                             }
                             BroadcastOp::RecvSub2 => {
-                                let handle = s.spawn(async { sub2.next().await });
+                                sem2.up();
                                 s.run_until_stalled();
-                                if !handle.is_finished() {
-                                    handle.cancel();
-                                }
                             }
                             BroadcastOp::ForcePublish(val) => {
                                 chan.force_publish(val);
+                                s.run_until_stalled();
                             }
                         }
 
@@ -1055,6 +1111,9 @@ mod tests {
 
                         assert_eq!(state.queue.len(), expected_used_capacity);
                     }
+
+                    h1.cancel();
+                    h2.cancel();
                 });
             }
         }

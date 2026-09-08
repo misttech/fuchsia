@@ -41,10 +41,9 @@ use super::{BroadcastCfg, MissedMessages, Payload, SubId};
 ///     type Mtx = SingleThreadMutex;
 /// }
 ///
-/// # ;
 /// let channel = UnfilteredBroadcastChannel::<i32, MyBroadcastCfg>::new();
-/// let sub1 = channel.subscribe().unwrap();
-/// let sub2 = channel.subscribe().unwrap();
+/// let mut sub1 = channel.subscribe().unwrap();
+/// let mut sub2 = channel.subscribe().unwrap();
 ///
 /// # BoundedExecutor::new(TestExecutor::new(), |s| {
 /// #     s.block_on(async {
@@ -233,7 +232,7 @@ impl<T: Clone, Cfg: BroadcastCfg> UnfilteredBroadcastChannel<T, Cfg> {
 
 impl<'a, T: Clone, Cfg: BroadcastCfg> Subscriber<'a, T, Cfg> {
     /// Asynchronously polls and retrieves the next broadcasted message.
-    pub async fn next(&self) -> Result<T, MissedMessages> {
+    pub async fn next(&mut self) -> Result<T, MissedMessages> {
         let guard = self.channel.state.lock();
 
         let res = self
@@ -326,8 +325,8 @@ mod tests {
     fn test_broadcast_basic() {
         let channel = StackBroadcast::<i32, 10, 2>::new();
 
-        let sub1 = channel.subscribe().unwrap();
-        let sub2 = channel.subscribe().unwrap();
+        let mut sub1 = channel.subscribe().unwrap();
+        let mut sub2 = channel.subscribe().unwrap();
 
         BoundedExecutor::new(TestExecutor::new(), |s| {
             s.block_on(async {
@@ -363,7 +362,7 @@ mod tests {
             // Now subscribe and verify the channel functions normally with capacity 1.
 
             let t = s.spawn(async {
-                let sub = channel.subscribe().unwrap();
+                let mut sub = channel.subscribe().unwrap();
                 channel.publish(1).await;
                 // Actually added to the queue since we have subscribers
                 assert!(channel.state.lock().used() == 1);
@@ -388,7 +387,7 @@ mod tests {
     fn test_broadcast_blocking_publisher() {
         // Capacity 1, max 2 subscribers
         let channel = StackBroadcast::<i32, 1, 2>::new();
-        let sub = channel.subscribe().unwrap();
+        let mut sub = channel.subscribe().unwrap();
 
         BoundedExecutor::new(TestExecutor::new(), |s| {
             s.block_on(async {
@@ -416,8 +415,8 @@ mod tests {
     fn test_broadcast_force_publish() {
         // Capacity 1, max 2 subscribers
         let channel = StackBroadcast::<i32, 1, 2>::new();
-        let sub1 = channel.subscribe().unwrap();
-        let sub2 = channel.subscribe().unwrap();
+        let mut sub1 = channel.subscribe().unwrap();
+        let mut sub2 = channel.subscribe().unwrap();
 
         BoundedExecutor::new(TestExecutor::new(), |s| {
             s.block_on(async {
@@ -459,7 +458,7 @@ mod tests {
         type StdBroadcast<T> = UnfilteredBroadcastChannel<T, StdCfg>;
 
         let channel = StdBroadcast::<i32>::new();
-        let sub = channel.subscribe().unwrap();
+        let mut sub = channel.subscribe().unwrap();
 
         BoundedExecutor::new(TestExecutor::new(), |s| {
             s.block_on(async {
@@ -506,8 +505,8 @@ mod tests {
                 )
             ) {
                 let channel = TestBroadcast::new();
-                let sub1 = channel.subscribe().unwrap();
-                let sub2 = channel.subscribe().unwrap();
+                let mut sub1 = channel.subscribe().unwrap();
+                let mut sub2 = channel.subscribe().unwrap();
 
                 let mut expected_vals = VecDeque::new();
                 let mut next_global_idx = 0;
@@ -614,8 +613,8 @@ mod tests {
                 )
             ) {
                 let channel = GrowableBroadcast::new();
-                let sub1 = channel.subscribe().unwrap();
-                let sub2 = channel.subscribe().unwrap();
+                let mut sub1 = channel.subscribe().unwrap();
+                let mut sub2 = channel.subscribe().unwrap();
 
                 let mut expected_vals = VecDeque::new();
                 let mut next_global_idx = 0;
