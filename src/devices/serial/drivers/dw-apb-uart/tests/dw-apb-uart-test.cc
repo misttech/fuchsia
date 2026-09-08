@@ -6,6 +6,7 @@
 
 #include <fidl/fuchsia.hardware.clock/cpp/wire.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.platform.device/cpp/wire_test_base.h>
 #include <fidl/fuchsia.hardware.powerdomain/cpp/wire.h>
 #include <fidl/fuchsia.hardware.reset/cpp/wire.h>
 #include <fidl/fuchsia.hardware.serial/cpp/fidl.h>
@@ -1252,6 +1253,93 @@ TEST_F(DwApbUartHarness, RxFifoErrorOnlyInLsr) {
   auto read_data = read_future.get();
   ASSERT_EQ(read_data.size(), sizeof(input_data));
   ASSERT_EQ(memcmp(read_data.data(), input_data, sizeof(input_data)), 0);
+}
+
+class AlreadyBoundPDevServer final
+    : public fidl::testing::WireTestBase<fuchsia_hardware_platform_device::Device> {
+ public:
+  fuchsia_hardware_platform_device::Service::InstanceHandler GetInstanceHandler(
+      async_dispatcher_t* dispatcher) {
+    return fuchsia_hardware_platform_device::Service::InstanceHandler({
+        .device = binding_group_.CreateHandler(
+            this, dispatcher ? dispatcher : async_get_default_dispatcher(),
+            fidl::kIgnoreBindingClosure),
+    });
+  }
+
+  void GetInterruptById(GetInterruptByIdRequestView request,
+                        GetInterruptByIdCompleter::Sync& completer) override {
+    completer.ReplyError(ZX_ERR_ALREADY_BOUND);
+  }
+
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+
+ private:
+  fidl::ServerBindingGroup<fuchsia_hardware_platform_device::Device> binding_group_;
+};
+
+class AlreadyBoundEnvironment : public fdf_testing::Environment {
+ public:
+  zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+    constexpr std::string_view kInstanceName = "pdev";
+    zx::result add_service_result =
+        to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
+            pdev_server_.GetInstanceHandler(dispatcher), kInstanceName);
+    ZX_ASSERT(add_service_result.is_ok());
+
+    fake_clock_.set_rate(200000000);
+
+    auto add_clock_apb = to_driver_vfs.AddService<fuchsia_hardware_clock::Service>(
+        fake_clock_.CreateInstanceHandler(dispatcher), "apb_pclk");
+    ZX_ASSERT(add_clock_apb.is_ok());
+    auto add_clock_baud = to_driver_vfs.AddService<fuchsia_hardware_clock::Service>(
+        fake_clock_.CreateInstanceHandler(dispatcher), "baudclk");
+    ZX_ASSERT(add_clock_baud.is_ok());
+
+    auto add_reset = to_driver_vfs.AddService<fuchsia_hardware_reset::Service>(
+        fake_reset_.CreateInstanceHandler(), "reset");
+    ZX_ASSERT(add_reset.is_ok());
+
+    auto add_power = to_driver_vfs.AddService<fuchsia_hardware_powerdomain::Service>(
+        fake_power_domain_.CreateInstanceHandler(), "power-domain");
+    ZX_ASSERT(add_power.is_ok());
+
+    return zx::ok();
+  }
+
+  fdf_fake::FakeClock& fake_clock() { return fake_clock_; }
+  fdf_fake::FakeReset& fake_reset() { return fake_reset_; }
+  fdf_fake::FakePowerDomain& fake_power_domain() { return fake_power_domain_; }
+
+ private:
+  AlreadyBoundPDevServer pdev_server_;
+  fdf_fake::FakeClock fake_clock_;
+  fdf_fake::FakeReset fake_reset_;
+  fdf_fake::FakePowerDomain fake_power_domain_;
+};
+
+class AlreadyBoundConfig {
+ public:
+  using DriverType = serial::DwApbUartDriver;
+  using EnvironmentType = AlreadyBoundEnvironment;
+};
+
+TEST(DwApbUartStartTest, StartFailsGracefullyWhenInterruptAlreadyBound) {
+  fdf_testing::BackgroundDriverTest<AlreadyBoundConfig> driver_test;
+  zx::result result = driver_test.StartDriver();
+  ASSERT_TRUE(result.is_error());
+  ASSERT_EQ(result.status_value(), ZX_ERR_ALREADY_BOUND);
+
+  // Verify that clocks, power domain, and reset lines were completely untouched.
+  driver_test.RunInEnvironmentTypeContext([](AlreadyBoundEnvironment& env) {
+    EXPECT_FALSE(env.fake_power_domain().is_enabled());
+    EXPECT_FALSE(env.fake_clock().enabled());
+    EXPECT_FALSE(env.fake_reset().take_asserted());
+    EXPECT_FALSE(env.fake_reset().take_deasserted());
+  });
 }
 
 }  // namespace

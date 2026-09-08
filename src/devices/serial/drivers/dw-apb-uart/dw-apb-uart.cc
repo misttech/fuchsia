@@ -564,6 +564,22 @@ zx::result<> DwApbUartDriver::Start(fdf::DriverContext context) {
   }
   fdf::PDev pdev{std::move(pdev_client_end.value())};
 
+  // Acquire the interrupt before enabling power, clocks, or deasserting reset.
+  // If the interrupt is already claimed (e.g., by the early Zircon kernel serial console),
+  // starting the userspace driver must fail without resetting or reconfiguring the
+  // hardware actively owned by the kernel console.
+  zx::result irq = pdev.GetInterrupt(0, 0);
+  if (irq.is_error()) {
+    if (irq.status_value() == ZX_ERR_ALREADY_BOUND) {
+      fdf::info(
+          "UART interrupt is already bound (kernel serial console active). "
+          "Skipping userspace driver initialization.");
+    } else {
+      fdf::error("Failed to get interrupt: {}", irq.status_string());
+    }
+    return irq.take_error();
+  }
+
   auto power_client =
       incoming_->Connect<fuchsia_hardware_powerdomain::Service::Domain>("power-domain");
   if (power_client.is_error()) {
@@ -699,12 +715,6 @@ zx::result<> DwApbUartDriver::Start(fdf::DriverContext context) {
   if (mmio.is_error()) {
     fdf::error("Failed to map mmio: {}", mmio.status_string());
     return mmio.take_error();
-  }
-
-  zx::result irq = pdev.GetInterrupt(0, 0);
-  if (irq.is_error()) {
-    fdf::error("Failed to get interrupt: {}", irq.status_string());
-    return irq.take_error();
   }
 
   dw_apb_uart_.emplace(serial_port_info_, std::move(mmio.value()), std::move(irq.value()),
