@@ -34,7 +34,6 @@ if (is_linux) {
   # need to be split into multiple binaries.
   template("split_go_test") {
     split_name = invoker.target_name
-
     go_library(target_name) {
       testonly = true
       source_dir = "//src/recovery/simulator/$split_name"
@@ -55,7 +54,6 @@ if (is_linux) {
   split_go_test("boot_test") {
     sources = [ "boot_test.go" ]
   }
-
   split_go_test("serial_test") {
     sources = [ "serial_test.go" ]
   }

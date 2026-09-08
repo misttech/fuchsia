@@ -7,7 +7,6 @@ import("//build/dist/resource.gni")
 
 # Provides the additional_restricted_cpu variable.
 import("//src/bringup/lib/restricted-machine/loadable.gni")
-
 library_headers("headers") {
   headers = [
     "bringup/lib/restricted-machine/environment.h",

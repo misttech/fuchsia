@@ -52,7 +52,6 @@ template("host_script_test_data_impl_data_set_copy") {
     # make sure the file is under the source base directory.
     if (last_dir != sub_dir && file_set != []) {
       copy_target_name = "${target_name}_dir${dir_count}"
-
       _host_script_test_data_impl_data_copy(copy_target_name) {
         dest_path = "${root_out_dir}/${data_path}/${base_dir}/${last_dir}"
         source_files = file_set
@@ -74,7 +73,6 @@ template("host_script_test_data_impl_data_set_copy") {
   # write out the last copy
   if (file_set != []) {
     copy_target_name = "${target_name}_dir${dir_count}"
-
     _host_script_test_data_impl_data_copy(copy_target_name) {
       dest_path = "${root_out_dir}/${data_path}/${base_dir}/${last_dir}"
       source_files = file_set

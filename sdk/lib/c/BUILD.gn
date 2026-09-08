@@ -309,10 +309,8 @@ if (current_toolchain == default_toolchain) {
 
   group("libc_config_deps") {
   }
-
   group("libc_config_link_deps") {
   }
-
   group("libc_config_source_deps") {
     public_deps = [ "include:headers" ]
   }
@@ -508,7 +506,6 @@ if (current_toolchain == libc_toolchain) {
     "dlopen_vmo_vmar",
     "dlsym",
   ]
-
   toolchain_utils_action("new-libc.ifs") {
     visibility = [ ":*" ]
     testonly = true

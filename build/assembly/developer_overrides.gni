@@ -650,7 +650,6 @@ template("developer_overrides_list") {
     }
   } else {
     _outputs = invoker.outputs
-
     generated_file(target_name) {
       testonly = true
       outputs = [ _outputs[0] + ".empty" ]

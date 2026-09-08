@@ -104,7 +104,6 @@ template("ffx_action") {
     # Generate a list of hermetic inputs for any additional inputs if necessary.
     hermetic_inputs_label = "${target_name}_all_inputs"
     hermetic_inputs_path = "${target_out_dir}/${target_name}_all_inputs"
-
     hermetic_inputs_action(hermetic_inputs_label) {
       forward_variables_from(invoker,
                              [

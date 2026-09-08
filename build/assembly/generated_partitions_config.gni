@@ -135,7 +135,6 @@ template("generated_partitions_config") {
   cwd_relative_partitions_label = "$target_name.cwd_relative_partitions_config"
   cwd_relative_partitions_config =
       "$target_out_dir/${target_name}_intermediate.json"
-
   generated_file(cwd_relative_partitions_label) {
     forward_variables_from(invoker,
                            [

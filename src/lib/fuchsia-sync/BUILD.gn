@@ -132,7 +132,6 @@ rustc_library("fuchsia-sync") {
     deps += DETECT_LOCK_CYCLE_DEPS
   }
 }
-
 rustc_test("fuchsia-sync-tests-detect-cycles") {
   sources = FUCHSIA_SYNC_SRCS
   edition = "2024"
@@ -147,7 +146,6 @@ rustc_test("fuchsia-sync-tests-detect-cycles") {
     deps += FUCHSIA_SYNC_DEPS_HOST
   }
 }
-
 rustc_test("fuchsia-sync-tests-no-detect-cycles") {
   sources = FUCHSIA_SYNC_SRCS
   edition = "2024"

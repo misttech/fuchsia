@@ -186,7 +186,6 @@ template("kernel_executable") {
   }
 
   rspfile = "$target_gen_dir/$main_target.rsp"
-
   link_output_rspfile(rsp_target) {
     forward_variables_from(invoker,
                            [

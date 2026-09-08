@@ -131,7 +131,6 @@ template("test_assembly_config") {
     }
 
     product_config_label = "${target_name}_product_config"
-
     product_assembly_configuration(product_config_label) {
       testonly = true
       forward_variables_from(invoker,
@@ -168,7 +167,6 @@ template("test_assembly_config") {
     outdir = "$target_out_dir/outdir"
     gendir = "$target_out_dir/gendir"
     image_assembly_config = "$outdir/image_assembly.json"
-
     python_action(target_name) {
       forward_variables_from(invoker, [ "deps" ])
       if (!defined(deps)) {

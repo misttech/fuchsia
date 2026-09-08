@@ -22,7 +22,6 @@ template("fuchsia_test_component_manifest") {
 
   if (defined(invoker.metadata)) {
     metadata_target = "${target_name}_metadata"
-
     group(metadata_target) {
       forward_variables_from(invoker, [ "metadata" ])
       testonly = true
@@ -34,7 +33,6 @@ template("fuchsia_test_component_manifest") {
   # Collect `program` part with its own barrier,
   # since executables may depend on other executables.
   program_target = "${target_name}_program"
-
   generated_file(program_target) {
     deps = invoker_deps
     data_keys = [ "test_component_manifest_program" ]
@@ -47,7 +45,6 @@ template("fuchsia_test_component_manifest") {
 
   # Collect any other manifest elements
   other_target = "${target_name}_other"
-
   generated_file(other_target) {
     deps = invoker_deps
     data_keys = [ "test_component_manifest_cml" ]

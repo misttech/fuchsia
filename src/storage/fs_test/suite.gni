@@ -14,7 +14,6 @@ import("//src/storage/testing/driver_test_realm.gni")
 #     Additional dependencies to be included with the config
 template("fs_test_config") {
   name = target_name
-
   generated_resource("${name}_fs_test_config") {
     testonly = true
     if (defined(invoker.data_deps)) {

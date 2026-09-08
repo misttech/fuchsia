@@ -181,7 +181,6 @@ template("devicetree_visitor") {
 #
 template("devicetree_visitor_collection") {
   _sdk_target_name = "${target_name}_sdk"
-
   group(target_name) {
     deps = invoker.deps
   }

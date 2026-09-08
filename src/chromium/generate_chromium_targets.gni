@@ -129,7 +129,6 @@ if (current_cpu == "riscv64") {
   template("generate_test_targets") {
     not_needed([ "target_name" ])
     not_needed(invoker, "*")
-
     group("tests") {
       visibility = [
         ":*",

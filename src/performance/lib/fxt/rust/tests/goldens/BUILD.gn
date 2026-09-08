@@ -40,7 +40,6 @@ golden_comparisons = []
 foreach(golden_test, golden_test_defs) {
   _action_name = "convert_${golden_test.name}_to_txt"
   _text_output = "${target_out_dir}/${golden_test.name}.txt"
-
   compiled_action(_action_name) {
     testonly = true
     tool = ":fxt_pretty_printer"

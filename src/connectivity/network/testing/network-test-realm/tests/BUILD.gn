@@ -73,7 +73,6 @@ package_deps = [
 
 name = "network-test-realm-integration-test"
 no_err_logs_name = "${name}-no-err-logs"
-
 fuchsia_test_with_expectations_package("${no_err_logs_name}") {
   test_components = [ ":${name}" ]
   expectations = "expects/network-test-realm.json5"
@@ -85,7 +84,6 @@ fuchsia_test_with_expectations_package("${no_err_logs_name}") {
 }
 
 with_err_logs_name = "${name}-with-err-logs"
-
 fuchsia_test_with_expectations_package("${with_err_logs_name}") {
   test_components = [ ":${name}" ]
   expectations = "expects/network-test-realm.json5"

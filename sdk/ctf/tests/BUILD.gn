@@ -56,7 +56,6 @@ group("e2e_tests") {
 }
 
 ctf_unstripped_binaries_file = "$root_out_dir/ctf_unstripped_binaries.list"
-
 link_output_rspfile("ctf_unstripped_binaries_list") {
   testonly = true
   outputs = [ ctf_unstripped_binaries_file ]

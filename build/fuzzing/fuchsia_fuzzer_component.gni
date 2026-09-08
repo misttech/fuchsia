@@ -19,7 +19,6 @@ template("fuchsia_fuzzer_component") {
     assert(
         defined(invoker.manifest),
         "A `manifest` argument was missing when calling fuchsia_fuzzer_component($target_name)")
-
     fuchsia_test_component(target_name) {
       manifest = invoker.manifest
       forward_variables_from(invoker,

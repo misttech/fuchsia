@@ -184,7 +184,6 @@ foreach(entry, sysroot_entries) {
             file_target = "include." + string_replace(file, "/", "-")
             sysroot_include_files += [ file ]
             sysroot_include_deps += [ ":$file_target" ]
-
             generated_file(file_target) {
               visibility = [ ":*" ]
               output_conversion = "list lines"

@@ -139,7 +139,6 @@ input_test("zbi-input-chrdev-test") {
 }
 
 bootfs_entry = "$target_gen_dir/bootfs-entry.txt"
-
 generated_file("bootfs-entry") {
   output_conversion = "list lines"
   contents = []
@@ -147,7 +146,6 @@ generated_file("bootfs-entry") {
 }
 
 bootfs_manifest = "$target_gen_dir/bootfs-manifest.txt"
-
 generated_file("bootfs-manifest") {
   output_conversion = "list lines"
   contents = [ "DEST=" + rebase_path(bootfs_entry, root_build_dir) ]

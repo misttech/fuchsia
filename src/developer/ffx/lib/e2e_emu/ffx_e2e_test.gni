@@ -106,7 +106,6 @@ template("ffx_e2e_test") {
       configs += invoker.configs
     }
   }
-
   host_test_data(_host_test_data_label) {
     sources = [
       _package_repo_path,
@@ -225,7 +224,6 @@ template("ffx_e2e_package_repository") {
   }
 
   _manifests_list_path = "$target_out_dir/$target_name/package_manifests.list"
-
   generated_file(_manifest_list_label) {
     testonly = true
     outputs = [ _manifests_list_path ]

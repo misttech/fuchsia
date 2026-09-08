@@ -32,7 +32,6 @@ template("icu_rustc_library") {
   foreach(icu_flavor, icu_flavors) {
     _icu_target_name =
         "${target_name}.icu_${icu_flavor.name}_${icu_flavor.commit_id}"
-
     rustc_library(_icu_target_name) {
       # All flavored crates must have the same name as the unflavored crate.
       # However, their output files will have flavored names.

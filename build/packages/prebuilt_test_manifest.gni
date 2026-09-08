@@ -88,7 +88,6 @@ template("prebuilt_test_manifest") {
     }
     if (!test_disabled) {
       prebuilt_test_package_label = "${target_name}_${test_package}"
-
       prebuilt_test_package(prebuilt_test_package_label) {
         package = test_package
         archive = "${invoker.archive_dir}/${archive_name}.far"

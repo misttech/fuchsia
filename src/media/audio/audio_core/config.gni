@@ -41,7 +41,6 @@ template("audio_core_config_test") {
   }
 
   test_config_resource = "${target_name}_config_resource"
-
   resource(test_config_resource) {
     visibility = [ ":*" ]
     testonly = true
@@ -51,7 +50,6 @@ template("audio_core_config_test") {
 
   if (defined(invoker.policy_sources)) {
     test_policy_resource = "${target_name}_policy_resource"
-
     resource(test_policy_resource) {
       visibility = [ ":*" ]
       testonly = true
@@ -110,7 +108,6 @@ template("audio_core_config") {
       outputs = "data/audio_policy.json"
     }
   }
-
   group(target_name) {
     deps = [ ":${target_name}-config" ]
     if (defined(invoker.policy)) {

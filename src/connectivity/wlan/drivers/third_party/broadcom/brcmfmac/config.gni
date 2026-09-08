@@ -38,12 +38,10 @@ template("brcmfmac_driver") {
   if (internal_access) {
     broadcom_firmware_dir =
         "prebuilt/connectivity/wlan/firmware/broadcom/brcmfmac"
-
     resource("brcmfmac-firmware-${orig_target_name}") {
       sources = [ "//${broadcom_firmware_dir}/${chip}-${bus}-${board}.bin" ]
       outputs = [ "lib/firmware/brcmfmac/${chip}-${bus}.bin" ]
     }
-
     resource("brcmfmac-nvram-${orig_target_name}") {
       sources = [ "//${broadcom_firmware_dir}/${chip}-${bus}-${board}.txt" ]
       outputs = [ "lib/firmware/brcmfmac/${chip}-${bus}.txt" ]

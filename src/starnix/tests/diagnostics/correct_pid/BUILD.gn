@@ -48,7 +48,6 @@ if (is_linux) {
 
 _hello_world_bin_label = ":${_bin_name}($target_linux_toolchain)"
 _hello_world_out_dir = get_label_info(_hello_world_bin_label, "root_out_dir")
-
 resource("linux_kmsg_hello_world_resource") {
   testonly = true
   sources = [ "${_hello_world_out_dir}/${_bin_name}" ]

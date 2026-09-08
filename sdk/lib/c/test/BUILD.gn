@@ -81,7 +81,6 @@ fdio_config = [ "//build/config/fuchsia:fdio_config" ]
 # This is particularly useful to verify that a variant works correctly
 # (i.e. all runtime dependencies are installed and loaded properly).
 libc_component_tests += [ ":noop-test" ]
-
 test("noop-test") {
   configs += fdio_config
   configs -= fdio_config
@@ -102,7 +101,6 @@ source_set("noop-test.common") {
 
 # The same code but built as a static PIE to exercise the static libc.a case.
 libc_component_tests += [ ":static-pie-noop-test" ]
-
 test("static-pie-noop-test") {
   configs += fdio_config
   configs -= fdio_config
@@ -118,7 +116,6 @@ test("static-pie-noop-test") {
 }
 
 libc_component_tests += [ ":rust-static-pie-noop-test" ]
-
 rustc_binary("rust-static-pie-noop-test") {
   testonly = true
   edition = "2024"
@@ -155,7 +152,6 @@ default_stack_size_cases = [
 
 foreach(case, default_stack_size_cases) {
   libc_component_tests += [ ":default-stack-size-${case.name}" ]
-
   test("default-stack-size-${case.name}") {
     if (is_fuchsia) {
       configs += fdio_config
@@ -204,7 +200,6 @@ executable("static-pie-custom-startup-test") {
 # system program launcher, but interposing the test's bespoke protocol.
 libc_component_tests += [ ":custom-startup-test" ]
 libc_test_manifests += [ "custom-startup-test" ]
-
 test("custom-startup-test") {
   sources = [ "custom-startup-test.cc" ]
   deps = [
@@ -222,7 +217,6 @@ test("custom-startup-test") {
 }
 
 libc_component_tests += [ ":posix-clocks-test" ]
-
 test("posix-clocks-test") {
   if (is_fuchsia) {
     configs += fdio_config
@@ -238,7 +232,6 @@ test("posix-clocks-test") {
 }
 
 libc_component_tests += [ ":pthread-detach-idempotent-test" ]
-
 test("pthread-detach-idempotent-test") {
   if (is_fuchsia) {
     configs += fdio_config
@@ -254,7 +247,6 @@ test("pthread-detach-idempotent-test") {
 }
 
 libc_component_tests += [ ":atexit-test" ]
-
 test("atexit-test") {
   if (is_fuchsia) {
     configs += [ "//build/config:all_source" ]
@@ -272,7 +264,6 @@ test("atexit-test") {
 
 libc_component_tests += [ ":gwp-asan-test" ]
 libc_test_manifests += [ "gwp-asan-test" ]
-
 test("gwp-asan-test") {
   # Whether GWP-ASan is enabled.
   has_gwp_asan = !variant_replaces_allocator
@@ -292,7 +283,6 @@ test("gwp-asan-test") {
 
 if (current_cpu == "arm64") {
   libc_component_tests += [ ":ldso-xom-test" ]
-
   test("ldso-xom-test") {
     sources = [ "ldso-xom-test.c" ]
     deps = [
@@ -315,7 +305,6 @@ if (current_cpu == "arm64") {
 
 libc_component_tests += [ ":last-thread-exit-test" ]
 libc_test_manifests += [ "last-thread-exit-test" ]
-
 test("last-thread-exit-test") {
   sources = [ "last-thread-exit-test.cc" ]
   deps = [ "//src/lib/fxl/test:gtest_main" ]
@@ -348,7 +337,6 @@ test("libc-unittests") {
 }
 
 libc_test_components = [ ":libc-unittests-test" ]
-
 fuchsia_unittest_component("libc-unittests-test") {
   deps = [ ":libc-unittests" ]
 }
@@ -356,7 +344,6 @@ fuchsia_unittest_component("libc-unittests-test") {
 foreach(test_label, libc_component_tests) {
   test = get_label_info(test_label, "name")
   libc_test_components += [ ":libc-$test" ]
-
   fuchsia_unittest_component("libc-$test") {
     deps = [ test_label ]
     if (libc_test_manifests + [ test ] - [ test ] != libc_test_manifests) {

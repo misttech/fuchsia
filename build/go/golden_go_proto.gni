@@ -110,7 +110,6 @@ template("golden_go_proto") {
 
     _output = "${_name}.pb.go"
     _golden_name = "${_name}_pb_go_diff"
-
     _golden_go_proto_file(_golden_name) {
       golden = "${_dir}/${_output}"
       candidate = "${_proto_dir}/${golden}"
@@ -126,7 +125,6 @@ template("golden_go_proto") {
       _target_name += "_grpc"
     }
     _golden_name = "${_target_name}_desc_pb_diff"
-
     golden_files(_golden_name) {
       binary = true
       comparisons = [

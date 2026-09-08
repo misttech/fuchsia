@@ -28,7 +28,6 @@ template("pkvm_test_product_bundle") {
       "_pkvm_test_product_bundle.${target_name}.assembled_system"
 
   assembled_system_namespace = "${target_name}.assembled_system"
-
   assembled_system(assembled_system_target) {
     visibility = [ ":*" ]
     testonly = true

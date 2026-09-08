@@ -107,7 +107,6 @@ source_set("testable_internals") {
     "//src/lib/uuid",
   ]
 }
-
 static_library("core_dev_tools") {
   sources = [
     "analytics_executor.cc",

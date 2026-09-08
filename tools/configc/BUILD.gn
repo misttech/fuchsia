@@ -98,7 +98,6 @@ cpp_config_client_lib_source("cpp_elf_config_lib") {
 
 _cm = get_target_outputs(":config_manifest")
 _cm = _cm[0]
-
 cvf("example_values") {
   cm = _cm
   value_file = "goldens/config_values.json5"
@@ -108,7 +107,6 @@ cvf("example_values") {
 _cvf = get_target_outputs(":example_values")
 _cvf = _cvf[0]
 _dumped_values = "$target_out_dir/dumped_values.json"
-
 dump_structured_config("dump_example_values") {
   cm = _cm
   cvf = _cvf

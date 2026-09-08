@@ -25,7 +25,6 @@ foreach(gidl_file, conformance_suite_gidl_files) {
   gidl_name = get_path_info(gidl_file, "name")
   target = "${gidl_output_prefix}${gidl_name}"
   gidl_deps += [ ":" + target ]
-
   gidl_llcpp_conformance(target) {
     testonly = true
     inputs = [ gidl_file ]

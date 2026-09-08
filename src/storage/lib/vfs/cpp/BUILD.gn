@@ -195,7 +195,6 @@ source_set("vfs_headers") {
     ]
   }
 }
-
 source_set("connection") {
   if (is_fuchsia) {
     sources = [
@@ -234,7 +233,6 @@ source_set("connection") {
   visibility = [ ":*" ]
   public_deps = [ ":vfs_headers" ]
 }
-
 static_library("cpp") {
   sources = []
   sources += [

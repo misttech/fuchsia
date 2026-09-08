@@ -25,12 +25,10 @@ if (internal_access) {
     sources = [ "//prebuilt/touch/$config_9364_path" ]
     outputs = [ "lib/firmware/$config_9364_path" ]
   }
-
   resource("config-9365") {
     sources = [ "//prebuilt/touch/$config_9365_path" ]
     outputs = [ "lib/firmware/$config_9365_path" ]
   }
-
   resource("firmware") {
     sources = [ "//prebuilt/touch/$firmware_path" ]
     outputs = [ "lib/firmware/$firmware_path" ]

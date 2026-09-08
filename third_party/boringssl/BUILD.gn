@@ -196,7 +196,6 @@ if (!is_kernel) {
   crypto_tests = []
 
   crypto_test_main = "src/crypto/test/gtest_main.cc"
-
   source_set("crypto_test_main") {
     visibility = [ ":*" ]
     testonly = true
@@ -228,7 +227,6 @@ if (!is_kernel) {
     name = get_path_info(crypto_test_source, "name")
     target_name = "${name}_crypto_test"
     crypto_tests += [ target_name ]
-
     test(target_name) {
       visibility = [ ":*" ]
       sources = [ crypto_test_source ]
@@ -259,7 +257,6 @@ if (!is_kernel) {
   test_data_deps = []
   foreach(test_data, crypto_test_data) {
     target_name = "test_data.${test_data}"
-
     resource(target_name) {
       sources = [ test_data ]
       outputs = [ "data/" + rebase_path(test_data, "src") ]
@@ -285,7 +282,6 @@ if (!is_kernel) {
     foreach(crypto_test, crypto_tests) {
       _component_name = "${crypto_test}_component"
       crypto_test_components += [ ":${_component_name}" ]
-
       fuchsia_unittest_component(_component_name) {
         if (needs_custom_component_manifest + [ crypto_test ] -
             [ crypto_test ] != needs_custom_component_manifest) {
@@ -301,7 +297,6 @@ if (!is_kernel) {
         }
       }
     }
-
     fuchsia_unittest_component("ssl_test_component") {
       deps = [
         ":ssl_test",
@@ -309,7 +304,6 @@ if (!is_kernel) {
         "//src/sys/test_runners/gtest:death_test",
       ]
     }
-
     fuchsia_test_package("boringssl_tests") {
       test_components = crypto_test_components + [ ":ssl_test_component" ]
       deps = [

@@ -125,7 +125,6 @@ template("graphics_compute_single_component_package") {
       manifest_deps = [ ":${_component_manifest_target}" ]
       test_type = "system"
     }
-
     fuchsia_test_package(target_name) {
       test_components = [ ":$_component_target" ]
       if (defined(invoker.test_environments)) {
@@ -141,7 +140,6 @@ template("graphics_compute_single_component_package") {
       deps = [ ":${_binary_target}" ]
       manifest_deps = [ ":${_component_manifest_target}" ]
     }
-
     group(target_name) {
       deps = [ ":$_binary_target" ]
     }

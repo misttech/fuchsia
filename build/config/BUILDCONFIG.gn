@@ -1651,7 +1651,6 @@ set_defaults("rustc_wasm_library") {
 set_defaults("rustc_cdylib") {
   configs = default_shared_library_configs
 }
-
 set_defaults("rustc_dylib") {
   configs = default_shared_library_configs
 }
@@ -1870,7 +1869,6 @@ foreach(_target_type,
            "An hermetic_inputs_action() script should have a single output!")
     assert(!defined(invoker.depfile),
            "An hermetic_inputs_action() cannot have a depfile!")
-
     target("_${_target_type}_internal_wrapper", target_name) {
       forward_variables_from(invoker,
                              "*",
@@ -2102,7 +2100,6 @@ foreach(_target_type,
         _hermetic_inputs_target_name = "${target_name}__hermetic_inputs"
         _hermetic_inputs_target = ":${_hermetic_inputs_target_name}"
         _main_target_name = target_name
-
         target("hermetic_inputs_" + _target_type,
                _hermetic_inputs_target_name) {
           forward_variables_from(invoker,
@@ -2151,7 +2148,6 @@ foreach(_target_type,
     if (defined(invoker.response_file_contents)) {
       _gen_response_file_target = "${invoker.target_name}__response_file"
       _response_file_path = "$target_gen_dir/response_file"
-
       generated_file(_gen_response_file_target) {
         contents = invoker.response_file_contents
         outputs = [ _response_file_path ]
@@ -3581,7 +3577,6 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
       #
       template("shared_library") {
         _target_name = target_name
-
         _common_cxx_target_wrapper("shared_library") {
           cxx_target_type = "variant_target"
           forward_variables_from(invoker,
@@ -3651,7 +3646,6 @@ if (toolchain_variant.with_shared || toolchain_variant.is_pic_default) {
       #     !defined(invoker.crate_type),
       #     "Rust libraries should not be expanded in the -shared toolchain, see https://fxbug.dev/387208039")
       not_needed(invoker, [ "exclude_toolchain_tags" ])
-
       _common_cxx_target_wrapper(target_name) {
         cxx_target_type = "_fuchsia_shared_library"
         forward_variables_from(invoker, "*")

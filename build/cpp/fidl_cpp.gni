@@ -152,7 +152,6 @@ template("_fidl_cpp_library_impl") {
 
   if (defined(invoker.generated_headers)) {
     config_target_name = "${target_name}__config"
-
     config(config_target_name) {
       include_dirs = [ root ]
     }
@@ -265,7 +264,6 @@ template("fidl_cpp_library") {
     if (invoker.library_name == "zx") {
       # The zx FIDL library isn't generated with C++ fidlgens.
       not_needed(invoker, "*")
-
       group(target_name) {
       }
     } else {
@@ -426,7 +424,6 @@ template("fidl_cpp_family") {
   #
   if (enable_cpp) {
     _cpp_target = "${target_name}_cpp"
-
     fidl_cpp_library(_cpp_target) {
       forward_variables_from(invoker,
                              [
@@ -537,7 +534,6 @@ template("fidl_cpp_family") {
           forward_variables_from(invoker, [ "testonly" ])
           atom = ":$sdk_target_name($fidl_toolchain)"
         }
-
         sdk_atom_alias("${_cpp_target}_testing_sdk") {
           forward_variables_from(invoker, [ "testonly" ])
           atom = ":$sdk_target_name($fidl_toolchain)"

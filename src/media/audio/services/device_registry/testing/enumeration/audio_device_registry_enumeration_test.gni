@@ -50,7 +50,6 @@ template("audio_device_registry_enumeration_test") {
   }
 
   _test_package_name = "audio_device_registry_enumeration_test_${target_name}"
-
   fuchsia_test_package(_test_package_name) {
     test_components = [ ":${_test_component_target}" ]
     if (defined(invoker.test_specs)) {

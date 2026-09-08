@@ -76,7 +76,6 @@ template("fuchsia_test_with_expectations_package") {
              ])
 
   _expectations_target = "${target_name}_preprocessed_expectations"
-
   preprocess_expectations(_expectations_target) {
     if (defined(invoker.treatment_of_cases_with_error_logs)) {
       assert(
@@ -116,7 +115,6 @@ template("fuchsia_test_with_expectations_package") {
   # as part of determining the set of shards that must be included in the
   # checked manifest.
   _expected_includes_metadata_target = "${_base_target_name}-expected-includes"
-
   group(_expected_includes_metadata_target) {
     metadata = {
       cmc_expected_includes_cml =
@@ -135,7 +133,6 @@ template("fuchsia_test_with_expectations_package") {
     # that are transitively reachable along GN `deps` edges starting from
     # test_component.
     _find_manifest_target = "${_prefix}_locate_manifest"
-
     generated_file(_find_manifest_target) {
       outputs = [ "$target_out_dir/$_find_manifest_target.json" ]
       data_keys = [ "component_manifest_path" ]
@@ -154,7 +151,6 @@ template("fuchsia_test_with_expectations_package") {
     # includes the expectation_comparer client shard.
     # (See `fx gn help generated_file` which documents the postorder guarantee.)
     _get_last_manifest_target = "${_prefix}_last_manifest"
-
     action(_get_last_manifest_target) {
       _jq_prebuilt = "//prebuilt/third_party/jq/${host_platform}/bin/jq"
       script = "//src/lib/testing/expectation/get_last_manifest.sh"
@@ -172,7 +168,6 @@ template("fuchsia_test_with_expectations_package") {
     _get_last_manifest_target = ":$_get_last_manifest_target"
 
     _include_check_target = "${_prefix}-check-includes"
-
     cmc_check_includes(_include_check_target) {
       _get_last_manifest_outputs = get_target_outputs(_get_last_manifest_target)
       assert(

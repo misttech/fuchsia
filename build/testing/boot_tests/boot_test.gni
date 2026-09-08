@@ -247,7 +247,6 @@ template("boot_test") {
   if (defined(invoker.efi_disk)) {
     efi_disk_manifest_target = "_boot_test.${target_name}.efi_disk_manifest"
     efi_disk_manifest = "${target_gen_dir}/${main_target}.efi_disks.json"
-
     generated_file(efi_disk_manifest_target) {
       testonly = true
 
@@ -263,7 +262,6 @@ template("boot_test") {
         "${target_out_dir}/${main_target}.partition_config_intermediate.json"
     partition_config_intermediate_target =
         "_boot_test.${target_name}.create_efi_partition_config_intermediate"
-
     action(partition_config_intermediate_target) {
       testonly = true
 
@@ -285,7 +283,6 @@ template("boot_test") {
 
     partition_config_path = "${target_out_dir}/${main_target}.partitions_config"
     partition_config_target = "${main_target}.partitions_config"
-
     compiled_action(partition_config_target) {
       testonly = true
 
@@ -321,12 +318,10 @@ template("boot_test") {
     # Take the existing board, and shove the new partitions config in.
     board_config_target = "_boot_test.${target_name}.create_board_config"
     recovery_board_config_target = "${board_config_target}.recovery"
-
     hybrid_board_configuration(board_config_target) {
       board_config = board_configuration_label
       replace_partitions_config = ":$partition_config_target"
     }
-
     hybrid_board_configuration(recovery_board_config_target) {
       board_config = recovery_board_configuration_label
       replace_partitions_config = ":$partition_config_target"
@@ -413,7 +408,6 @@ template("boot_test") {
                  "_board_config_label",
                  "_recovery_board_config_label",
                ])
-
     group(product_bundle_target) {
       testonly = true
       deps = [ ":${product_bundle_target}($default_toolchain)" ]

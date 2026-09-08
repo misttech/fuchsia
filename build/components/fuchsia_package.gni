@@ -263,7 +263,6 @@ template("fuchsia_package") {
 
     # Generate the "meta/package" file
     meta_package_target = "${target_name}.meta_package"
-
     generate_meta_package(meta_package_target) {
       forward_variables_from(invoker,
                              [
@@ -309,7 +308,6 @@ template("fuchsia_package") {
 
       # Generate the "meta/fuchsia.pkg/subpackages" file
       meta_subpackages_target = "${target_name}.meta_subpackages"
-
       generate_meta_subpackages(meta_subpackages_target) {
         forward_variables_from(invoker, [ "testonly" ])
         visibility = [ ":*" ]
@@ -343,7 +341,6 @@ template("fuchsia_package") {
     }
 
     metadata_target_name = "${target_name}.metadata"
-
     define_package_metadata(metadata_target_name) {
       package_name = package_name
       snapshot_entry = "$package_name/0=" +

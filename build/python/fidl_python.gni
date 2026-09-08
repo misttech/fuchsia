@@ -56,7 +56,6 @@ template("fidl_python") {
                  "visibility",
                  "fidl_target",
                ])
-
     compiled_action(generation_target) {
       forward_variables_from(invoker,
                              [

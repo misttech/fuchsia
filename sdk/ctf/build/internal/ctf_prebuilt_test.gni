@@ -37,7 +37,6 @@ template("ctf_prebuilt_test") {
   }
 
   prebuilt_test_package_target = "${target_name}_prebuilt"
-
   prebuilt_test_package(prebuilt_test_package_target) {
     forward_variables_from(invoker,
                            [
@@ -52,7 +51,6 @@ template("ctf_prebuilt_test") {
 
   # This wrapper package just provides the test realms in a subpackage.
   fuchsia_package_target = "${target_name}_package"
-
   fuchsia_package(fuchsia_package_target) {
     deps = [ ":$prebuilt_test_package_target" ]
     testonly = true
@@ -108,7 +106,6 @@ template("ctf_prebuilt_tests_from_manifest") {
       }
 
       tests += [ ":${test.package_name}" ]
-
       ctf_prebuilt_test(test.package_name) {
         forward_variables_from(invoker, "*")
       }

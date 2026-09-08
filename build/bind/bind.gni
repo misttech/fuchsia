@@ -437,7 +437,6 @@ template("driver_bind_rules") {
   }
 
   bytecode_file_target = "${target_name}_bytecode"
-
   bindc(bytecode_file_target) {
     forward_variables_from(invoker,
                            [
@@ -493,7 +492,6 @@ template("_bind_library_cpp") {
   cpp_header_file_gen_target = "${target_name}_cpp_header_gen"
   cpp_header_file_target = "${target_name}_cpp"
   include_config = "${target_name}_include_config"
-
   config(include_config) {
     include_dirs = [ "${target_gen_dir}/${target_name}/bind_cpp" ]
   }
@@ -532,7 +530,6 @@ template("_bind_library_cpp") {
 
   if (defined(invoker.cpp_golden_file)) {
     cpp_header_golden_action = "${target_name}_cpp_golden"
-
     golden_files(cpp_header_golden_action) {
       forward_variables_from(invoker,
                              [
@@ -624,7 +621,6 @@ template("_bind_library_rust") {
 
   if (defined(invoker.rust_golden_file)) {
     rust_file_golden_action = "${target_name}_rust_golden"
-
     golden_files(rust_file_golden_action) {
       forward_variables_from(invoker,
                              [

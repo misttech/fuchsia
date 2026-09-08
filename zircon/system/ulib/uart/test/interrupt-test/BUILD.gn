@@ -23,7 +23,6 @@ if (toolchain_variant.base == default_toolchain) {
   _target_out_dir =
       get_label_info(":anything($default_toolchain)", "target_out_dir")
   zbi = "$_target_out_dir/uart-interrupt-test-zbi.${default_kernel_test_image}.zbi"
-
   zbi_test_executable("uart-interrupt-test") {
     sources = [ "uart-interrupt-test.cc" ]
     deps = [

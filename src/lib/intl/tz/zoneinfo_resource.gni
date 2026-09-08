@@ -58,7 +58,6 @@ template("zoneinfo_resource") {
 
   revision_target_label = "_${target_name}_revision_txt"
   sub_targets += [ ":${revision_target_label}" ]
-
   resource(revision_target_label) {
     forward_variables_from(invoker, [ "testonly" ])
     sources = [ "//prebuilt/third_party/zoneinfo/version.txt" ]

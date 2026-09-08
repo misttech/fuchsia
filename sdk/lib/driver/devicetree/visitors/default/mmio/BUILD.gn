@@ -63,7 +63,6 @@ resource("ranges-dtb-file") {
 dtb("not-mmio-dtb") {
   sources = [ "test/dts/not-mmio.dts.S" ]
 }
-
 resource("not-mmio-dtb-file") {
   sources = get_target_outputs(":not-mmio-dtb")
   outputs = [ "test-data/{{source_file_part}}" ]

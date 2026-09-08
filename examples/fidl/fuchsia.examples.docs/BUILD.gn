@@ -4,7 +4,6 @@
 
 # Import the fidl GN template.
 import("//build/fidl/fidl.gni")
-
 group("all") {
   testonly = true
   deps = [
@@ -67,7 +66,6 @@ fidl("fuchsia.examples.docs") {
     "//zircon/vdso/zx",
   ]
 }
-
 fidl("versioning") {
   testonly = true
   sources = [ "versioning.test.fidl" ]

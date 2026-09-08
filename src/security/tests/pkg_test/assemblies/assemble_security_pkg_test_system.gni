@@ -432,17 +432,14 @@ template("assemble_security_pkg_test_system") {
       testonly = true
       public_deps = [ ":${labels.root_ssl_certificates}($target_toolchain)" ]
     }
-
     group(labels.system_resources) {
       testonly = true
       public_deps = [ ":${labels.system_resources}($target_toolchain)" ]
     }
-
     group(labels.tuf_repo_resources) {
       testonly = true
       public_deps = [ ":${labels.tuf_repo_resources}($target_toolchain)" ]
     }
-
     group(labels.update_package_resource) {
       testonly = true
       public_deps = [ "${labels.update_package_resource}($target_toolchain)" ]

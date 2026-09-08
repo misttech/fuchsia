@@ -130,7 +130,6 @@ static_library("headers") {
   }
   public_deps = [ "//sdk/lib/fit" ]
 }
-
 static_library("internal_headers") {
   public = [
     "arm_ehabi_parser.h",
@@ -139,7 +138,6 @@ static_library("internal_headers") {
   visibility = [ ":*" ]
   public_deps = [ ":headers" ]
 }
-
 static_library("unwinder") {
   sources = []
   sources += [

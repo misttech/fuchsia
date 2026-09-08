@@ -33,7 +33,6 @@ if (is_host) {
   # Mobly Driver Python binary definition.
   _md_bin_target = "mobly_driver_binary_target"
   _md_bin_name = "mobly_driver.pyz"
-
   python_binary(_md_bin_target) {
     testonly = true
     main_source = "main.py"

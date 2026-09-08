@@ -36,7 +36,6 @@ group("netstack-for-tests") {
   testonly = true
   deps = [ "netstack3:component-dropin" ]
 }
-
 group("netstack-debug-for-tests") {
   testonly = true
   deps = [ "netstack3:component-debug-dropin" ]

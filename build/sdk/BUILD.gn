@@ -266,7 +266,6 @@ group("partner_idk_source_sets") {
   testonly = false
   deps = _partner_idk_source_sets_list
 }
-
 group("partner_idk_unstable_source_sets") {
   visibility = [ ":*" ]
   testonly = false
@@ -293,12 +292,10 @@ group("all_partner_idk_source_sets") {
 group("partner_idk_source_sets_allowlist") {
   visibility = _partner_idk_source_sets_list
 }
-
 group("partner_idk_unstable_source_sets_allowlist") {
   visibility = _partner_idk_unstable_source_sets_list +
                _partner_idk_unstable_source_sets_list_testonly
 }
-
 group("internal_source_sets_allowlist") {
   visibility = _internal_source_sets_list
 }
@@ -371,7 +368,6 @@ group("sdk_versioned_source_sets") {
   # Some of the allowed libraries are marked testonly.
   testonly = true
 }
-
 group("sdk_versioned_shared_libraries") {
   visibility = [ "//:root_targets" ]
   deps = [

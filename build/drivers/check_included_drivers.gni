@@ -23,7 +23,6 @@ import("//build/drivers/assert_driver_components.gni")
 #   testonly
 template("check_included_drivers") {
   assert_driver_components_target = "${target_name}_assert_driver_components"
-
   assert_driver_components(assert_driver_components_target) {
     forward_variables_from(invoker,
                            [
@@ -34,7 +33,6 @@ template("check_included_drivers") {
 
   metadata_check_target = "${target_name}_metadata_check"
   metadata_check_output = "${target_gen_dir}/${target_name}_metadata_output"
-
   generated_file(metadata_check_target) {
     forward_variables_from(invoker, [ "testonly" ])
     visibility = [

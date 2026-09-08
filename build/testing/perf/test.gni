@@ -93,7 +93,6 @@ template("python_perf_test") {
       # host_test_data()'s internals require non-empty `sources`
       _runtime_deps_target = "${_test_target_name}_runtime_deps"
       _runtime_deps_dir = "${target_out_dir}/${_test_target_name}/runtime_deps"
-
       host_test_data(_runtime_deps_target) {
         sources = invoker.expected_metric_names_filepaths
 

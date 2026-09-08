@@ -102,7 +102,6 @@ if (is_fuchsia) {
     ]
   }
 }
-
 sdk_source_set("hlcpp_conversion") {
   public = [ "include/lib/fidl/cpp/hlcpp_conversion.h" ]
   sdk_area = "FIDL"
@@ -113,7 +112,6 @@ sdk_source_set("hlcpp_conversion") {
   visibility = [ "//*" ]
   public_deps = [ ":cpp_base" ]
 }
-
 sdk_source_set("natural_ostream") {
   public = [ "include/lib/fidl/cpp/natural_ostream.h" ]
   sdk_area = "FIDL"

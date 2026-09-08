@@ -11,11 +11,9 @@ import("//src/graphics/lib/compute/radix_sort/platforms/vk/" +
 radix_sort_vk_target_u64_outputs(
     "radix_sort_vk_google_swiftshader_u64_outputs") {
 }
-
 radix_sort_vk_target_u64_resource(
     "radix_sort_vk_google_swiftshader_u64_resource") {
 }
-
 radix_sort_vk_target_u64_linkable(
     "radix_sort_vk_google_swiftshader_u64_linkable") {
 }

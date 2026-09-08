@@ -63,7 +63,6 @@ fuchsia_unittest_package("fdf_rust_fidl_tests") {
 fuchsia_unittest_package("fdf_rust_fidl_integration_tests") {
   deps = [ ":fdf_rust_fidl_integration_test" ]
 }
-
 group("tests") {
   testonly = true
   deps = [

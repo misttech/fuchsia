@@ -23,7 +23,6 @@ if (is_host) {
     extra_args =
         [ rebase_path("$target_gen_dir/sierra.doc.zip.copy", root_build_dir) ]
   }
-
   host_test_data("host-test-data") {
     sources = [ "$target_gen_dir/sierra.doc.zip" ]
     public_deps = [
@@ -49,7 +48,6 @@ rustc_library("quebec") {
   rustdoc_args = [ "--enable-index-page" ]
   zip_rustdoc_to = "$target_gen_dir/quebec.doc.zip"
 }
-
 rustc_library("tango") {
   edition = "2024"
   define_rustdoc_test_override = true
@@ -64,7 +62,6 @@ rustc_library("tango") {
   rustdoc_args = [ "--enable-index-page" ]
   zip_rustdoc_to = "$target_gen_dir/tango.doc.zip"
 }
-
 rustc_library("sierra") {
   edition = "2024"
   define_rustdoc_test_override = true

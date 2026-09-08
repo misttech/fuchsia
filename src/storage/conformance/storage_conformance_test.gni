@@ -21,7 +21,6 @@ template("storage_conformance_test") {
 
   harness_component_target_name =
       "${target_name}_storage_conformance_hanress_component"
-
   fuchsia_component(harness_component_target_name) {
     component_name = "harness"
     manifest = invoker.harness_manifest
@@ -30,7 +29,6 @@ template("storage_conformance_test") {
   }
 
   test_component_target_name = "${test_name}_component"
-
   fuchsia_component(test_component_target_name) {
     component_name = "${test_name}"
     manifest = "//src/storage/conformance/meta/conformance_test.cml"

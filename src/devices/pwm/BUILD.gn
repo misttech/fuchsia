@@ -10,7 +10,6 @@ group("drivers") {
     "drivers/pwm",
   ]
 }
-
 group("tests") {
   testonly = true
 

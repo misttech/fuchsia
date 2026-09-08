@@ -16,7 +16,6 @@ guest_packages = [
 ]
 
 linux_tests_label = "//src/virtualization/packages/debian_guest:tests"
-
 resource("debian_tests_img") {
   sources = [ get_label_info(linux_tests_label, "target_out_dir") +
               "/debian/tests.romfs" ]

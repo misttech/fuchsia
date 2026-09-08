@@ -26,7 +26,6 @@ if (is_linux) {
 
   template("split_go_test") {
     split_name = invoker.target_name
-
     go_library(target_name) {
       testonly = true
       source_dir = "//src/tests/disable_shell/$split_name"
@@ -48,11 +47,9 @@ if (is_linux) {
   split_go_test("shell_disabled") {
     sources = [ "shell_disabled_test.go" ]
   }
-
   split_go_test("shell_enabled") {
     sources = [ "shell_enabled_test.go" ]
   }
-
   split_go_test("shell_default") {
     sources = [ "shell_default_test.go" ]
   }

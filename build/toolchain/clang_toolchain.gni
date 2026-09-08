@@ -1153,7 +1153,6 @@ template("clang_toolchain") {
       command = stamp_command
       description = stamp_description
     }
-
     tool("copy") {
       command = copy_command
       description = copy_description

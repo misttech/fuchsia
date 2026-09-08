@@ -146,7 +146,6 @@ foreach(board_info, _boards) {
   test_env = {
   }
   test_env = board_info[1]
-
   test("device-enumeration-test-${board}-bin") {
     configs += [ ":include_packaged_drivers" ]
 

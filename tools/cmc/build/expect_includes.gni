@@ -106,7 +106,6 @@ template("cmc_check_includes") {
          "must provide manifest to cmc_check_includes")
 
   _expected_includes_label = "${target_name}_expected_includes"
-
   collect_expected_includes(_expected_includes_label) {
     forward_variables_from(invoker,
                            [

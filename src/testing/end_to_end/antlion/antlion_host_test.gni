@@ -52,7 +52,6 @@ template("antlion_host_test") {
   #
   _python_binary_name = "${target_name}.pyz"
   _python_binary_target = "${target_name}_python_binary"
-
   python_binary(_python_binary_target) {
     forward_variables_from(invoker,
                            [
@@ -84,7 +83,6 @@ template("antlion_host_test") {
   # Define antlion test host_test_data().
   #
   _host_test_data_target = "${target_name}_test_data"
-
   host_test_data(_host_test_data_target) {
     testonly = true
     visibility = [ ":*" ]
@@ -101,7 +99,6 @@ template("antlion_host_test") {
   # Define SSH binary host_test_data().
   #
   _host_test_data_ssh = "${target_name}_test_data_ssh"
-
   host_test_data(_host_test_data_ssh) {
     testonly = true
     visibility = [ ":*" ]
@@ -116,7 +113,6 @@ template("antlion_host_test") {
   #
   if (defined(invoker.test_params)) {
     _host_test_data_test_params = "${target_name}_test_data_test_params"
-
     host_test_data(_host_test_data_test_params) {
       testonly = true
       visibility = [ ":*" ]
@@ -129,7 +125,6 @@ template("antlion_host_test") {
   # Define FFX binary host_test_data().
   #
   _host_test_data_ffx = "${target_name}_test_data_ffx"
-
   host_test_data(_host_test_data_ffx) {
     testonly = true
     visibility = [ ":*" ]
@@ -156,7 +151,6 @@ template("antlion_host_test") {
   # Define antlion-runner host_test_data().
   #
   _host_test_data_antlion_runner = "${target_name}_test_data_antlion_runner"
-
   host_test_data(_host_test_data_antlion_runner) {
     testonly = true
     visibility = [ ":*" ]

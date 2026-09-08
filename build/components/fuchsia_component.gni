@@ -286,7 +286,6 @@ template("fuchsia_component") {
     if (defined(invoker.manifest)) {
       # Compile the manifest from source
       cm_target = "${target_name}_manifest_compile"
-
       fuchsia_component_manifest(cm_target) {
         forward_variables_from(invoker, forwarded)
         if (defined(metadata) && defined(metadata.test_components)) {
@@ -348,7 +347,6 @@ template("fuchsia_component") {
       #
       _find_manifest_target = "${target_name}.find_manifest"
       _find_manifest_file = "${target_out_dir}/${_find_manifest_target}.json"
-
       generated_file(_find_manifest_target) {
         forward_variables_from(invoker,
                                [
@@ -366,7 +364,6 @@ template("fuchsia_component") {
 
       _expected_includes_target = "${target_name}.expected_includes"
       _expected_includes_file = "${target_out_dir}/${_expected_includes_target}"
-
       generated_file(_expected_includes_target) {
         forward_variables_from(invoker,
                                [
@@ -391,7 +388,6 @@ template("fuchsia_component") {
       # The distribution manifest
       _component_dist_target = "${target_name}.dist"
       _component_dist_manifest = "${target_out_dir}/${target_name}.dist"
-
       distribution_manifest_generated_file(_component_dist_target) {
         forward_variables_from(invoker,
                                [

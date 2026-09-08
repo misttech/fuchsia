@@ -134,7 +134,6 @@ template("bad_signature_update") {
         # TODO: Add params to specify what target to poison.
       ]
     }
-
     zip_resource("${test_name}_poisoned_v1_tuf_repo_resources") {
       testonly = true
       deps = [ ":${test_name}_poisoned_v1_publish_archive" ]
@@ -153,12 +152,10 @@ template("bad_signature_update") {
       public_deps =
           [ ":${test_name}_v1-pkg_server-tls_resources($target_toolchain)" ]
     }
-
     group("${test_name}_test-resources") {
       testonly = true
       public_deps = [ ":${test_name}_test-resources($target_toolchain)" ]
     }
-
     group("${test_name}_poisoned_v1_tuf_repo_resources") {
       testonly = true
       public_deps =

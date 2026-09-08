@@ -107,7 +107,6 @@ template("fshost_integration_test_component") {
   _fshost_component_name = get_label_info(invoker.fshost_target, "name")
   _test_bin = string_replace(target_name, "-", "_")
   _test_bin = "${_test_bin}_bin"
-
   rustc_test(_test_bin) {
     edition = "2024"
     source_root = invoker.source_root
@@ -134,7 +133,6 @@ template("fshost_integration_test_component") {
   }
 
   _shard_target = "${target_name}-shard"
-
   generated_file(_shard_target) {
     testonly = true
     contents = {
@@ -150,7 +148,6 @@ template("fshost_integration_test_component") {
   _shard = _shard[0]
 
   _manifest_target = "${target_name}-manifest.cml"
-
   cmc_merge("$_manifest_target") {
     testonly = true
     sources = [
@@ -226,7 +223,6 @@ template("fshost_integration_test_package") {
   }
 
   _fshost_target = "test-fshost-${target_name}"
-
   fshost_component_and_config(_fshost_target) {
     testonly = true
     options = invoker.options
@@ -239,7 +235,6 @@ template("fshost_integration_test_package") {
   #
   _integration_component_target = "${target_name}_general"
   _test_components = [ ":$_integration_component_target" ]
-
   fshost_integration_test_component(_integration_component_target) {
     fshost_target = _fshost_target
     data_filesystem_format = fshost_options.data_filesystem_format
@@ -288,7 +283,6 @@ template("fshost_integration_test_package") {
   if (fshost_options.data_filesystem_format == "fxfs") {
     _inline_encryption_component_target = "${target_name}_inline_encryption"
     _test_components += [ ":$_inline_encryption_component_target" ]
-
     fshost_integration_test_component(_inline_encryption_component_target) {
       fshost_target = _fshost_target
       data_filesystem_format = fshost_options.data_filesystem_format
@@ -311,7 +305,6 @@ template("fshost_integration_test_package") {
     assert(invoker.data_filesystem_variant == "fxblob")
     _system_volume_manipulation_component_target =
         "${target_name}_system_volume_manipulation"
-
     fshost_integration_test_component(
         _system_volume_manipulation_component_target) {
       fshost_target = _fshost_target
@@ -346,7 +339,6 @@ template("fshost_integration_test_package") {
     _system_volume_manipulation_test_package =
         "${target_name}_system_volume_manipulation_package"
     _test_packages += [ ":$_system_volume_manipulation_test_package" ]
-
     fuchsia_test_package(_system_volume_manipulation_test_package) {
       package_name = "$_system_volume_manipulation_component_target"
       test_specs = {
@@ -368,7 +360,6 @@ template("fshost_integration_test_package") {
   #
   _write_data_file_component_target = "${target_name}_write_data_file"
   _test_components += [ ":$_write_data_file_component_target" ]
-
   fshost_integration_test_component(_write_data_file_component_target) {
     fshost_target = _fshost_target
     data_filesystem_format = fshost_options.data_filesystem_format
@@ -387,7 +378,6 @@ template("fshost_integration_test_package") {
   #
   if (invoker.enable_corruption_tests) {
     _corrupt_component_target = "${target_name}_corrupt"
-
     fshost_integration_test_component(_corrupt_component_target) {
       fshost_target = _fshost_target
       data_filesystem_format = fshost_options.data_filesystem_format
@@ -399,7 +389,6 @@ template("fshost_integration_test_package") {
     # specs
     _corrupt_test_package = "${target_name}_corrupt_package"
     _test_packages += [ ":$_corrupt_test_package" ]
-
     fuchsia_test_package(_corrupt_test_package) {
       package_name = "$_corrupt_component_target"
       test_specs = {
@@ -419,7 +408,6 @@ template("fshost_integration_test_package") {
   #
   if (invoker.enable_shred_keys_tests) {
     _shred_keys_component_target = "${target_name}_shred_keys"
-
     fshost_integration_test_component(_shred_keys_component_target) {
       fshost_target = _fshost_target
       data_filesystem_format = fshost_options.data_filesystem_format
@@ -447,7 +435,6 @@ template("fshost_integration_test_package") {
     # specs
     _shred_keys_test_package = "${target_name}_shred_keys_package"
     _test_packages += [ ":$_shred_keys_test_package" ]
-
     fuchsia_test_package(_shred_keys_test_package) {
       package_name = "$_shred_keys_component_target"
       test_specs = {
@@ -468,7 +455,6 @@ template("fshost_integration_test_package") {
   if (defined(invoker.enable_bad_provision_fxfs_tests) &&
       invoker.enable_bad_provision_fxfs_tests) {
     _bad_provision_fxfs_component_target = "${target_name}_bad_provision_fxfs"
-
     fshost_integration_test_component(_bad_provision_fxfs_component_target) {
       fshost_target = _fshost_target
       data_filesystem_format = fshost_options.data_filesystem_format
@@ -487,7 +473,6 @@ template("fshost_integration_test_package") {
     _bad_provision_fxfs_test_package =
         "${target_name}_bad_provision_fxfs_package"
     _test_packages += [ ":$_bad_provision_fxfs_test_package" ]
-
     fuchsia_test_package(_bad_provision_fxfs_test_package) {
       package_name = "$_bad_provision_fxfs_component_target"
       test_specs = {
@@ -505,7 +490,6 @@ template("fshost_integration_test_package") {
 
   if (invoker.enable_volume_death_tests) {
     _volume_death_component_target = "${target_name}_volume_death"
-
     fshost_integration_test_component(_volume_death_component_target) {
       fshost_target = _fshost_target
       data_filesystem_format = fshost_options.data_filesystem_format
@@ -527,7 +511,6 @@ template("fshost_integration_test_package") {
     # max_severity = "ERROR"
     _volume_death_test_package = "${target_name}_volume_death_package"
     _test_packages += [ ":$_volume_death_test_package" ]
-
     fuchsia_test_package(_volume_death_test_package) {
       package_name = "$_volume_death_component_target"
       test_specs = {
@@ -545,7 +528,6 @@ template("fshost_integration_test_package") {
   _main_test_package = "${target_name}_test_package"
   _main_test_package_name = "$target_name"
   _test_packages += [ ":$_main_test_package" ]
-
   fuchsia_test_package(_main_test_package) {
     package_name = _main_test_package_name
     test_specs = {

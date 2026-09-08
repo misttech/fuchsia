@@ -241,7 +241,6 @@ if (current_toolchain == default_toolchain) {
           where.source_path = rebase_path(redirect.source, where.root_dir)
           where.relative_source_path =
               rebase_path(redirect.source, where.redirect_dir)
-
           generated_file(where.label) {
             visibility = [ ":*" ]
             output_conversion = "list lines"
@@ -555,7 +554,6 @@ foreach(version, header_test_stdc) {
             "gnu",
           ]) {
     unittest_deps += [ ":header-tests.$prefix$version" ]
-
     libc_test("header-tests.$prefix$version") {
       sources = header_test_c_sources
       deps = header_test_c_deps
@@ -603,7 +601,6 @@ foreach(version, header_test_stdcxx) {
               "-libcxx",
             ]) {
       unittest_deps += [ ":header-tests.${prefix}xx$version$libcxx" ]
-
       libc_test("header-tests.${prefix}xx$version$libcxx") {
         sources = header_test_cxx_sources
         deps = header_test_cxx_deps

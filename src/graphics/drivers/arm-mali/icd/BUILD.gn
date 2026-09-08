@@ -23,7 +23,6 @@ foreach(icd, icd_list) {
   icd_name = icd.name
   if (!disable_prebuilt_arm_mali_vulkan) {
     hardware_id = icd.hardware_id
-
     prebuilt_package(icd_name) {
       package_name = "libvulkan_arm_mali_${hardware_id}"
       archive =

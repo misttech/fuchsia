@@ -61,7 +61,6 @@ config("enable_tracing") {
 
 template("cpp_storage_trace") {
   lib_name = target_name
-
   source_set(lib_name) {
     public = [ "trace.h" ]
     public_configs = []

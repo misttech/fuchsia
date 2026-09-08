@@ -8,7 +8,6 @@ import("//build/compiled_action.gni")
 template("romfs_image") {
   image_target = "_${target_name}_image"
   check_target = "_${target_name}_check"
-
   compiled_action(image_target) {
     assert(defined(invoker.output), "output must be defined for $target_name")
     assert(defined(invoker.inputs), "inputs must be defined for $target_name")
@@ -20,7 +19,6 @@ template("romfs_image") {
       args += [ rebase_path(input, root_out_dir) ]
     }
   }
-
   action(check_target) {
     forward_variables_from(invoker, [ "testonly" ])
     deps = [ ":${image_target}" ]
@@ -32,7 +30,6 @@ template("romfs_image") {
       rebase_path("${invoker.output}.verify", root_out_dir),
     ]
   }
-
   group("${target_name}") {
     forward_variables_from(invoker, [ "testonly" ])
     public_deps = [ ":${image_target}" ]

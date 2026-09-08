@@ -34,7 +34,6 @@ foreach(release, ctf_releases) {
   level = string_replace("##${release}", "##f", "")
   assert(level != "##${release}",
          "Unexpected release name (does not begin with 'f'): ${release}")
-
   compatibility_test_suite(target_name) {
     api_level = level
     path = "//prebuilt/ctf/$release/$host_platform/cts"

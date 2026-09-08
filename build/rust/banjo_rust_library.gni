@@ -70,7 +70,6 @@ template("banjo_dummy_rust_library") {
              ])
 
   rustc_target_name = "${target_name}_rust"
-
   group(rustc_target_name) {
     forward_variables_from(invoker,
                            [

@@ -148,7 +148,6 @@ template("guest_package") {
   }
 
   guest_resource_target_name = "${target_name}_guest_resource"
-
   resource(guest_resource_target_name) {
     deps = [ ":$guest_config_target_name" ]
     sources = [ guest_config_file ]
@@ -163,7 +162,6 @@ template("guest_package") {
   }
   if (defined(kernel)) {
     kernel_resource_target_name = "${target_name}_kernel_resource"
-
     resource(kernel_resource_target_name) {
       forward_variables_from(invoker,
                              [
@@ -179,7 +177,6 @@ template("guest_package") {
 
   if (defined(invoker.ramdisk)) {
     ramdisk_resource_target_name = "${target_name}_ramdisk_resource"
-
     resource(ramdisk_resource_target_name) {
       forward_variables_from(invoker,
                              [
@@ -195,7 +192,6 @@ template("guest_package") {
 
   if (defined(invoker.dtb_overlay)) {
     dtb_resource_target_name = "${target_name}_dtb_resource"
-
     resource(dtb_resource_target_name) {
       forward_variables_from(invoker,
                              [
@@ -215,7 +211,6 @@ template("guest_package") {
     foreach(invoker_resource, invoker.resources) {
       invoker_resource_target_name =
           "${target_name}_invoker_resource_${invoker_resource.dest}"
-
       resource(invoker_resource_target_name) {
         forward_variables_from(invoker,
                                [
@@ -232,7 +227,6 @@ template("guest_package") {
 
   component_target_name = "${target_name}_component"
   component_name = target_name
-
   fuchsia_component(component_target_name) {
     forward_variables_from(invoker,
                            [
@@ -263,7 +257,6 @@ template("guest_package") {
 template("guest_prebuilt") {
   assert(defined(invoker.source), "")
   assert(defined(invoker.output), "")
-
   action(target_name) {
     script = "//src/virtualization/packages/check_image.sh"
 

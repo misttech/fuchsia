@@ -72,7 +72,6 @@ if (is_fuchsia) {
 
 if (is_host) {
   cuckoo_system = "standalone-coverage-zbi.${default_kernel_test_image}.cuckoo"
-
   coverage_verification_test("standalone-coverage-verification-test") {
     instrumented_target = ":standalone-main-bin($target_toolchain)"
     product_bundle = ":${cuckoo_system}($default_toolchain)"

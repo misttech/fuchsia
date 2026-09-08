@@ -429,7 +429,6 @@ template("sdk_atom") {
     }
 
     verify_api_target_name = "${target_name}_verify_api"
-
     golden_files(verify_api_target_name) {
       forward_variables_from(invoker, _default_forward_from_invoker)
       comparisons = [

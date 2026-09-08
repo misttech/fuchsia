@@ -13,7 +13,6 @@ fdio_config = [ "//build/config/fuchsia:fdio_config" ]
 sanitizer_tests = []
 
 sanitizer_tests += [ "sanitizer-utils-test" ]
-
 test("sanitizer-utils-test") {
   deps = [
     ":debugdata",
@@ -175,7 +174,6 @@ shared_library("sanitizer-memory-snapshot-test-dlopen-dso") {
 
 # TODO(https://fxbug.dev/408003053): This should be replaced in dlfcn/dl/test.
 sanitizer_tests += [ "hwasan-ctor-order-test" ]
-
 test("hwasan-ctor-order-test") {
   visibility = [ ":*" ]
   testonly = true
@@ -300,7 +298,6 @@ rustc_binary("rust-sanitizer-log-test-helper") {
 }
 
 sanitizer_tests += [ "sanitizer-allocator-test" ]
-
 test("sanitizer-allocator-test") {
   sources = [ "sanitizer-allocator-test.cc" ]
   deps = [
@@ -332,7 +329,6 @@ if (toolchain_variant.tags + [ "lsan" ] - [ "lsan" ] !=
 
 if (lsan_configs != false) {
   sanitizer_tests += [ "lsan-test" ]
-
   test("lsan-test") {
     configs += fp_related_configs
     configs -= fp_related_configs

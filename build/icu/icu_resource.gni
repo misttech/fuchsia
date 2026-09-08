@@ -23,7 +23,6 @@ template("icu_resource") {
   foreach(icu_flavor, icu_flavors) {
     _flavored_resource_name =
         "${target_name}.icu_${icu_flavor.name}_${icu_flavor.commit_id}"
-
     resource(_flavored_resource_name) {
       forward_variables_from(invoker,
                              "*",

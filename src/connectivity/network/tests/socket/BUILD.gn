@@ -198,7 +198,6 @@ template("posix_socket_test_component") {
     assert(
         defined(invoker.manifest),
         "`manifest` must be specified when calling posix_socket_test_component($target_name) with expectations")
-
     fuchsia_test_component_with_expectations("${_component_name}_component") {
       component_name = _component_name
       deps = [ test_target ]
@@ -273,7 +272,6 @@ netstack2_syncudp_tests = [
 
 foreach(test, netstack2_syncudp_tests) {
   _component_name = "netstack2_syncudp_${test.label}_test"
-
   posix_socket_test_component(test.label) {
     component_name = _component_name
     if (defined(test.expects) && test.expects) {
@@ -308,7 +306,6 @@ netstack2_fastudp_tests = [
 
 foreach(test, netstack2_fastudp_tests) {
   _component_name = "netstack2_fastudp_${test.label}_test"
-
   posix_socket_test_component(test.label) {
     component_name = _component_name
     if (defined(test.expects) && test.expects) {
@@ -369,7 +366,6 @@ ns3_packages = []
 foreach(test, netstack3_tests) {
   _component_name = "netstack3_${test.label}_test"
   _expects_path = "expects/netstack3/${test.label}.json5"
-
   posix_socket_test_component(test.label) {
     component_name = _component_name
     if (defined(test.expects) && test.expects) {
@@ -381,7 +377,6 @@ foreach(test, netstack3_tests) {
     no_err_logs_package_name = "${_component_name}_no_err_logs"
     _test_components = []
     _test_components = [ ":${_component_name}_component" ]
-
     fuchsia_test_with_expectations_package(no_err_logs_package_name) {
       test_components = _test_components
       expectations = _expects_path
@@ -392,7 +387,6 @@ foreach(test, netstack3_tests) {
     ns3_packages += [ ":${no_err_logs_package_name}" ]
 
     err_logs_package_name = "${_component_name}_with_err_logs"
-
     fuchsia_test_with_expectations_package(err_logs_package_name) {
       test_components = _test_components
       expectations = _expects_path
@@ -433,7 +427,6 @@ ns2_packages = []
 
 foreach(stack, stacks) {
   package_name = "${stack.name}-c-api-tests"
-
   fuchsia_test_package("${stack.name}-c-api-tests") {
     test_components = []
     foreach(test, stack.tests) {

@@ -18,7 +18,6 @@ import("//build/python/python_action.gni")
 template("gzip") {
   assert(defined(invoker.input), "Must specify input")
   assert(defined(invoker.output), "Must specify output")
-
   python_action(target_name) {
     forward_variables_from(invoker,
                            [

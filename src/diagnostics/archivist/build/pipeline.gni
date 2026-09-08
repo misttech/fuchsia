@@ -77,7 +77,6 @@ template("archive_pipeline") {
     }
 
     component_action = "${invoker.target_name}_pipeline_test_component"
-
     fuchsia_component(component_action) {
       testonly = true
       component_name = "${invoker.target_name}_pipeline_test"

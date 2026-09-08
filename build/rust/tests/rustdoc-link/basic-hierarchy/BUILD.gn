@@ -83,7 +83,6 @@ if (is_host) {
   }
 
   _rustdoc_link_output = "${target_gen_dir}/doc.zip"
-
   action("rustdoc-link") {
     testonly = true
     deps = [
@@ -120,7 +119,6 @@ if (is_host) {
   }
 
   _copy_doc_zip = "$target_gen_dir/doc.copy.zip"
-
   host_test_data("copy-doc-zip") {
     testonly = true
     sources = [ _rustdoc_link_output ]

@@ -146,7 +146,6 @@ template("go_build") {
   hermetic_inputs_target_name = "${main_target_name}_hermetic_inputs"
   hermetic_inputs_target_output =
       "${target_gen_dir}/${output_name}.hermetic_inputs"
-
   hermetic_inputs_action(hermetic_inputs_target_name) {
     visibility = [ ":${main_target_name}" ]
     forward_variables_from(invoker,

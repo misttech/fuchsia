@@ -274,7 +274,6 @@ template("fidl") {
   if (is_fidl_toolchain) {
     # Only import the fidl_library template when in the fidl toolchain
     import("//build/fidl/fidl_library.gni")
-
     fidl_library(target_name) {
       forward_variables_from(invoker,
                              fidl_only + [
@@ -620,7 +619,6 @@ template("fidl") {
       if (enable_rust) {
         # Define conversion crates
         rust_dep = "${target_name}_rust"
-
         fidl_rust_next_convert("${target_name}_rust_next_convert") {
           forward_variables_from(invoker,
                                  [

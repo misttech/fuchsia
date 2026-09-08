@@ -45,7 +45,6 @@ template("host_library_fuzzer") {
       test_inputs += invoker.test_inputs
     }
     corpus_target = "${fuzzer_name}_corpus"
-
     host_test_data(corpus_target) {
       visibility = [ ":*" ]
       sources = test_inputs
@@ -55,7 +54,6 @@ template("host_library_fuzzer") {
 
     test_target = "${fuzzer_name}_test"
     target = get_label_info(":${target_name}", "label_with_toolchain")
-
     host_test(test_target) {
       visibility = [ ":*" ]
       target = target
@@ -77,7 +75,6 @@ template("host_library_fuzzer") {
     # as a host tool and allow users to fuzz by calling it via `fx host-tool`
     if (is_fuzzer) {
       tool_target = "${fuzzer_name}_tool"
-
       install_host_tools(tool_target) {
         testonly = true
         visibility = [ ":*" ]
@@ -86,7 +83,6 @@ template("host_library_fuzzer") {
       }
       group_deps += [ ":$tool_target" ]
     }
-
     group(target_name) {
       testonly = true
       forward_variables_from(invoker, [ "visibility" ])

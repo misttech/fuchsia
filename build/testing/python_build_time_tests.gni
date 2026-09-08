@@ -43,7 +43,6 @@ template("python_build_time_tests") {
   if (_need_library_infos) {
     _library_infos_target = "${target_name}.library_infos"
     _library_infos_json = "${target_gen_dir}/${target_name}.library_infos.json"
-
     generated_file(_library_infos_target) {
       testonly = true
       visibility = [ ":*" ]
@@ -59,7 +58,6 @@ template("python_build_time_tests") {
 
   if (_enable_mypy) {
     _mypy_target = "${target_name}_mypy"
-
     validate_python_binary(_mypy_target) {
       testonly = true
       visibility = [ ":*" ]

@@ -42,7 +42,6 @@ template("prebuilt_test_package") {
   }
 
   spec_target_name = "${target_name}_${invoker.component_name}_spec"
-
   test_spec(spec_target_name) {
     target = get_label_info(":${invoker.target_name}", "label_with_toolchain")
     build_rule = "prebuilt_test_package"

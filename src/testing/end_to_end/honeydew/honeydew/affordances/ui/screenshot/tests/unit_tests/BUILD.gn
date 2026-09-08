@@ -14,7 +14,6 @@ if (is_host) {
     main_callable = "unittest.main"
     extra_args = [ "-v" ]
   }
-
   python_host_test("types_test") {
     main_source = "types_test.py"
     libraries = [

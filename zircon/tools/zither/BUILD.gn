@@ -268,7 +268,6 @@ template("zither_golden_test") {
         suffix = "cc"
       }
       source = "$case_output_dir/compile-check.$suffix"
-
       action(create_source_target) {
         visibility = [ ":*" ]
         testonly = true
@@ -303,7 +302,6 @@ template("zither_golden_test") {
       # equivalent of `source_set()` in our go build.
       create_main_target = "${compilation_check_target}.create_main"
       main_file = "$case_output_dir/main.go"
-
       generated_file(create_main_target) {
         visibility = [ ":*" ]
         testonly = true
@@ -325,7 +323,6 @@ template("zither_golden_test") {
       # The generated main file now needs to be declared in a package/library.
       main_library_target = "${compilation_check_target}.main_library"
       main_pkg_name = rebase_path(case_output_dir, root_build_dir)
-
       go_library(main_library_target) {
         visibility = [ ":*" ]
         testonly = true
@@ -351,7 +348,6 @@ template("zither_golden_test") {
             ifs = output
           }
         }
-
         ifs_shared_library(compilation_check_target) {
           abi = ifs
           deps = [ backend_label ]

@@ -41,7 +41,6 @@ template("bazel_driver_package") {
   bazel_target = invoker.bazel_target
   package_name = invoker.package_name
   bazel_build_target = "$target_name.bazel_build"
-
   bazel_build_action(bazel_build_target) {
     forward_variables_from(invoker,
                            [
@@ -80,7 +79,6 @@ template("bazel_driver_package") {
   # From the perspective of GN/Ninja, this package is a prebuilt
   # even though we just built it ourselves.
   package_target = target_name
-
   prebuilt_package(package_target) {
     forward_variables_from(invoker,
                            [
@@ -102,7 +100,6 @@ template("bazel_driver_package") {
   }
 
   archive_target = target_name + "-archive"
-
   exported_fuchsia_package_archive(archive_target) {
     forward_variables_from(invoker, [ "testonly" ])
     package = ":${package_target}"

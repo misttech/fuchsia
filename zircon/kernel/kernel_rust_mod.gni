@@ -591,7 +591,6 @@ template("kernel_rust_mod_crate_root") {
   foreach(gen, gen_rsp_files) {
     gen.target = "${targets.main}.${gen.key}.rsp"
     gen.label = ":${gen.target}"
-
     generated_file(gen.target) {
       visibility = [ ":*" ]
       forward_variables_from(invoker, [ "testonly" ])

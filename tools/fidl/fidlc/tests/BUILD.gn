@@ -39,7 +39,6 @@ host_test_data("errcat_other") {
 }
 
 relative_root_out_dir = rebase_path(root_out_dir, root_build_dir)
-
 test("fidlc-test") {
   defines = [ "TEST_DATA_ROOT=\"${relative_root_out_dir}\"" ]
   sources = [

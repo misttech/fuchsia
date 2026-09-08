@@ -50,7 +50,6 @@ template("golden_python_proto") {
     _copyrighted_candidate = "${target_out_dir}/${_golden}"
 
     _add_copyright_name = "${_name}_py_add_copyright"
-
     action(_add_copyright_name) {
       script = "//build/python/add_proto_copyright.py"
       inputs = [

@@ -30,7 +30,6 @@ if (is_host) {
   }
 
   _rust_target_mapping = "$target_gen_dir/rust_target_mapping.json"
-
   generated_file("gen_rust_target_mapping") {
     outputs = [ _rust_target_mapping ]
     output_conversion = "json"
@@ -44,7 +43,6 @@ if (is_host) {
   }
 
   _rustdoc_link_output = "${target_gen_dir}/output_base/actions.json"
-
   action("rustdoc-link") {
     testonly = true
     public_deps = [
@@ -75,7 +73,6 @@ if (is_host) {
   }
 
   _copy_rustdoc_actions = "$target_gen_dir/rustdoc_actions.copy.json"
-
   host_test_data("copy-rustdoc-actions") {
     testonly = true
     sources = [ _rustdoc_link_output ]

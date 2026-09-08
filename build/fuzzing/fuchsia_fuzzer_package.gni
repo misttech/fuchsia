@@ -87,7 +87,6 @@ template("fuchsia_fuzzer_package") {
 
     # Step 2: Assemble a package and add both fuzzers and fuzzer tests to it.
     package_target = "${package_name}_package"
-
     fuchsia_package(package_target) {
       testonly = true
       visibility = [ ":*" ]
@@ -106,7 +105,6 @@ template("fuchsia_fuzzer_package") {
       foreach(component, component_set.components) {
         component_name = get_label_info(component, "name")
         test_target = "${component_name}_test"
-
         fuchsia_test(test_target) {
           package = ":$package_target"
           package_name = package_name

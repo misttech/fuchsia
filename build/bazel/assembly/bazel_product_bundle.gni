@@ -242,7 +242,6 @@ template("bazel_product_bundle") {
   }
 
   _product_assembly_target = "${target_name}_product_assembly"
-
   bazel_build_action(_product_assembly_target) {
     forward_variables_from(invoker,
                            [
@@ -272,7 +271,6 @@ template("bazel_product_bundle") {
         defined(invoker.bazel_product_config_name),
         "bazel_product_config_name must be supplied if bazel_product_config_target is given")
     _product_config_target = "${target_name}_product_config"
-
     bazel_product_configuration(_product_config_target) {
       forward_variables_from(invoker,
                              [
@@ -435,7 +433,6 @@ template("bazel_product_bundle") {
 
   if (defined(invoker.bazel_license_review_target)) {
     _license_review_bazel_action_target = "${target_name}_license_review"
-
     bazel_build_action(_license_review_bazel_action_target) {
       forward_variables_from(invoker,
                              [

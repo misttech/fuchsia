@@ -39,7 +39,6 @@ component_deps = []
 foreach(comp, components) {
   comp_target_name = "${comp}_comp"
   component_deps += [ ":$comp_target_name" ]
-
   fuchsia_component(comp_target_name) {
     component_name = comp
     manifest = "meta/${comp}.cml"

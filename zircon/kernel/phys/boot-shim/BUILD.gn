@@ -29,7 +29,6 @@ group("boot-shim") {
 
 template("devicetree_zbi_test") {
   test_target = "devicetree-shim-$target_name"
-
   zbi_test(test_target) {
     qemu_kernel = "//zircon/kernel/arch/$zircon_cpu/phys/boot-shim:linux-$zircon_cpu-boot-shim(${phys_toolchain})"
 

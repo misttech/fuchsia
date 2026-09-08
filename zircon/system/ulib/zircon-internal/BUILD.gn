@@ -112,7 +112,6 @@ library_headers("headers") {
   ]
   visibility = [ "*" ]
 }
-
 source_set("zircon-internal") {
   visibility = [ "*" ]
   public_deps = [ ":headers" ]

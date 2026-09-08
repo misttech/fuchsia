@@ -10,7 +10,6 @@ import("//build/cpp/sdk_prebuilt_library_impl.gni")
 # `prebuilt_library_type` is already set.
 template("sdk_shared_library") {
   assert(!defined(invoker.prebuilt_library_type))
-
   sdk_prebuilt_library_impl(target_name) {
     prebuilt_library_type = "shared"
     forward_variables_from(invoker, "*")

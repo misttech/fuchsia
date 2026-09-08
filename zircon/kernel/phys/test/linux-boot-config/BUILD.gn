@@ -293,7 +293,6 @@ tests = []
 if (have_devicetree) {
   foreach(test_case, boot_config_test_cases) {
     test_target = "devicetree-linux-boot-config-$test_case-test"
-
     devicetree_boot_test(test_target) {
       ramdisk = ":$test_case.ramdisk"
       sources = [

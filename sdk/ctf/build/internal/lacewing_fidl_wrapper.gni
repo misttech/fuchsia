@@ -19,7 +19,6 @@ template("lacewing_fidl_wrapper") {
   if (is_host) {
     assert(defined(invoker.device_test_target_name),
            "device_test_target_name should be defined")
-
     python_mobly_test(target_name) {
       testonly = true
       main_source = "//sdk/ctf/build/scripts/snoop_fidl.py"

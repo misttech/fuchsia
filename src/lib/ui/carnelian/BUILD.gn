@@ -513,7 +513,6 @@ template("carnelian_example") {
 
   example_component_target = "$target_name" + "_component"
   component_name = "$target_name"
-
   fuchsia_component(example_component_target) {
     component_name = component_name
     manifest = invoker.manifest

@@ -355,7 +355,6 @@ template("bazel_input_directory") {
          "Missing output_directory argument.")
   assert("${invoker.output_directory}" == invoker.output_directory,
          "output_directory argument must be a path string.")
-
   _bazel_input_entry(target_name) {
     entry_type = "directory"
     forward_variables_from(invoker, "*")

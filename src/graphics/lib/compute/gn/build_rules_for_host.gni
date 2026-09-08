@@ -78,7 +78,6 @@ template("graphics_compute_test_rule") {
   # For Fuchsia, ensure the test is visible for 'fx run-host-tests <test_name>'
   if (_is_fuchsia_tree) {
     _test_spec_target_name = "${target_name}__test_spec"
-
     test_spec(_test_spec_target_name) {
       target = get_label_info(":${invoker.target_name}", "label_with_toolchain")
       path = "${root_out_dir}/${invoker.target_name}"

@@ -108,11 +108,9 @@ if (target_cpu == "riscv64" || data_filesystem_format == "minfs") {
   group("io-stress-test") {
     testonly = true
   }
-
   group("io_stress_perf_test") {
     testonly = true
   }
-
   group("io-stress-unittests") {
     testonly = true
   }
@@ -131,7 +129,6 @@ if (target_cpu == "riscv64" || data_filesystem_format == "minfs") {
     test_type = "system"
     environments = performance_testing_environments
   }
-
   fuchsia_unittest_package("io-stress-unittests") {
     deps = [ ":lib_test" ]
   }

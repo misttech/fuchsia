@@ -24,7 +24,6 @@ foreach(test_name, _golden_tests) {
   _candidate_path = "${target_out_dir}/${test_name}.html"
 
   _render_label = test_name + ".render"
-
   compiled_action(_render_label) {
     testonly = true
     tool = ":render_html_for_goldens"

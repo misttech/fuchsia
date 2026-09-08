@@ -51,7 +51,6 @@ template("test") {
 
   if (is_host) {
     _exe_target_name = "${target_name}_executable"
-
     host_test(target_name) {
       binary_path = "${_output_dir}/${_output_file}"
       deps = [ ":${_exe_target_name}" ]

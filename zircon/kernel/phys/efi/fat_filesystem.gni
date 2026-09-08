@@ -42,7 +42,6 @@ template("fat_filesystem") {
   main_target = target_name
 
   manifest = "$target_gen_dir/$target_name.fat_filesystem.json"
-
   distribution_manifest(manifest_target) {
     forward_variables_from(invoker,
                            [

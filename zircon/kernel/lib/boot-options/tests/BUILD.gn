@@ -69,7 +69,6 @@ if (is_kernel) {
       deps = [ ":boot-options-basic-fuzzer" ]
     }
   }
-
   resource("boot-options-basic-fuzzer-dictionary") {
     sources = [ "fuzzer-dictionary.txt" ]
     outputs = [ "data/{{source_file_part}}" ]

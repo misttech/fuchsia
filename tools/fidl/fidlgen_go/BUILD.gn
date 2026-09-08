@@ -51,7 +51,6 @@ template("fidlgen_go_golden_compilation_test") {
 
   # Something like "fidl/test/foobar"
   go_package_under_test = "fidl/" + string_replace(info.library, ".", "/")
-
   generated_file(create_main_target) {
     visibility = [ ":*" ]
     testonly = true
@@ -80,7 +79,6 @@ template("fidlgen_go_golden_compilation_test") {
   # The generated main file now needs to be declared in a package/library.
   main_library_target = "${compilation_check_target}.main_library"
   main_pkg_name = rebase_path(output_dir, root_build_dir)
-
   go_library(main_library_target) {
     visibility = [ ":*" ]
     testonly = true
@@ -106,7 +104,6 @@ if (is_fuchsia) {
     if (testdata_info.build_denylist + [ "fidlgen_go" ] - [ "fidlgen_go" ] ==
         testdata_info.build_denylist) {
       compilation_check_target = "${testdata_info.name}_go_compilation_test"
-
       fidlgen_go_golden_compilation_test(compilation_check_target) {
         info = testdata_info
       }

@@ -64,7 +64,6 @@ zx_library("async") {
   ]
   sdk = "source"
 }
-
 zx_library("async-cpp") {
   sources = [
     "executor.cc",
@@ -104,7 +103,6 @@ zx_library("async-cpp") {
   ]
   sdk = "source"
 }
-
 group("tests") {
   deps = [ "//sdk/lib/async/test" ]
   visibility = [ "*" ]

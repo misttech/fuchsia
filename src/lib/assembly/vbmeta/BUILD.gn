@@ -59,7 +59,6 @@ salt = "56ebac2038b220d37b9b27e91c9e7afb3d7b7910c03775812c7a16cc01a8b380"
 
 vbmeta_descriptor = "${target_out_dir}/expected_descriptor.vbmeta"
 test_image = "${target_out_dir}/test_image"
-
 action("expected_descriptor") {
   testonly = true
   script = "gen_expected_descriptor.py"

@@ -44,7 +44,6 @@ source_set("test_support") {
     "//src/developer/debug/shared:test_support",
   ]
 }
-
 source_set("tests") {
   testonly = true
   sources = [
@@ -70,7 +69,6 @@ source_set("tests") {
     "//zircon/system/ulib/fbl",
   ]
 }
-
 source_set("perf_test") {
   testonly = true
   sources = [
@@ -80,7 +78,6 @@ source_set("perf_test") {
   deps = [ "//src/lib/fxl" ]
   public_deps = [ "//third_party/googletest:gtest" ]
 }
-
 source_set("common") {
   sources = [
     "address_ranges.cc",

@@ -37,7 +37,6 @@ go_library("color") {
   sources = [ "color.go" ]
   deps = [ "//tools/lib/isatty" ]
 }
-
 go_test("color_tests") {
   sources = [ "color_test.go" ]
   embed = [ ":color" ]

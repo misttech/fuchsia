@@ -29,7 +29,6 @@ template("clang_doc") {
   _output_compdb_dir =
       "${target_gen_dir}/${_filter_compdb_target_name}.compdb.d"
   _output_compdb = "${_output_compdb_dir}/compile_commands.json"
-
   action(_filter_compdb_target_name) {
     check_for_output_dir_leaks = false
 
@@ -59,7 +58,6 @@ template("clang_doc") {
   _stamp_file = "${target_gen_dir}/${_clang_doc_invocation_target}.stamp"
   _out_path = "${target_gen_dir}/${_filter_compdb_target_name}.api.d"
   _clang_diagnosis_file = "${_output_compdb_dir}/stdout"
-
   action(_clang_doc_invocation_target) {
     check_for_output_dir_leaks = false
 

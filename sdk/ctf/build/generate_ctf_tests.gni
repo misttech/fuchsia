@@ -64,7 +64,6 @@ IGNORED_CTF_TESTS = [
 template("pre_packaged_test_with_names") {
   if (target_cpu != host_cpu) {
     not_needed(invoker, "*")
-
     group(target_name) {
       testonly = true
     }
@@ -85,7 +84,6 @@ template("pre_packaged_test_with_names") {
       # Generate a simple manifest for this test that offers all diagnostics
       # capabilities and simply exposes the test suite itself.
       generated_manifest = "${target_name}_${test_name}_generated_manifest"
-
       fuchsia_test_component_manifest(generated_manifest) {
         metadata = {
           test_component_manifest_cml = [
@@ -114,7 +112,6 @@ template("pre_packaged_test_with_names") {
       manifest = get_target_outputs(":$generated_manifest")
       manifest = manifest[0]
       generated_component = "${target_name}_${test_name}_generated_component"
-
       fuchsia_test_component(generated_component) {
         component_name = test_name
         manifest = manifest
@@ -175,7 +172,6 @@ template("generate_archivist_integration_test_cases") {
                  "test_info",
                  "fidl_coverage",
                ])
-
     group(target_name) {
     }
   } else {
@@ -217,7 +213,6 @@ template("generate_fuchsia-diagnostics-log-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     subpackages = [
       test_info.target_label,
@@ -235,7 +230,6 @@ template("generate_fidl-hlcpp-unit-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     subpackages = [
       test_info.target_label,
@@ -253,7 +247,6 @@ template("generate_fidl-hlcpp-conformance-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     subpackages = [
       test_info.target_label,
@@ -272,7 +265,6 @@ template("generate_svc-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     subpackages = [
       test_info.target_label,
@@ -290,7 +282,6 @@ template("generate_vulkan-loader-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     subpackages = [
       test_info.target_label,
@@ -314,7 +305,6 @@ template("generate_fuchsia-intl-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//sdk/ctf/tests/fidl/fuchsia.intl:test-root"
     test_component_name = "test-root.cm"
@@ -338,7 +328,6 @@ template("generate_timekeeper-integration") {
                "test_info",
                "fidl_coverage",
              ])
-
   group(target_name) {
   }
 }
@@ -356,7 +345,6 @@ template("generate_faketime-integration") {
                "test_info",
                "fidl_coverage",
              ])
-
   group(target_name) {
   }
 }
@@ -368,7 +356,6 @@ template("generate_fdio-spawn-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//sdk/ctf/tests/pkg/fdio:test-root"
     test_component_name = "test-root.cm"
@@ -386,7 +373,6 @@ template("generate_fuchsia-driver-test_tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     subpackages = [
       test_info.target_label,
@@ -408,7 +394,6 @@ template("generate_fuchsia-settings-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//sdk/ctf/tests/fidl/fuchsia.settings:test-root"
     test_component_name = "test-root.cm"
@@ -426,7 +411,6 @@ template("generate_fuchsia-element-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     subpackages = [
       test_info.target_label,
@@ -444,7 +428,6 @@ template("generate_fuchsia-hwinfo-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     subpackages = [ test_info.target_label ]
     test_component = "//sdk/ctf/tests/fidl/fuchsia.hwinfo:test-root"
@@ -459,7 +442,6 @@ template("generate_pkgdir-tests") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     subpackages = [
       test_info.target_label,
@@ -477,7 +459,6 @@ template("generate_basic-driver-test") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component =
         "//src/devices/tests/ctf/basic_driver:basic-driver-test-root"
@@ -496,7 +477,6 @@ template("generate_nodegroup_test") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//src/devices/tests/v2/node_group:nodegroup_test_root"
     test_component_name = "nodegroup_test_root.cm"
@@ -520,7 +500,6 @@ template("generate_touch-test-suite") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//src/ui/tests/conformance_input_tests:touch-conformance-test-component"
     test_component_name = "touch-conformance-test.cm"
@@ -551,7 +530,6 @@ template("generate_mouse-test-suite") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//src/ui/tests/conformance_input_tests:mouse-conformance-test-component"
     test_component_name = "mouse-conformance-test.cm"
@@ -582,7 +560,6 @@ template("generate_key-test-suite") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component =
         "//src/ui/tests/conformance_input_tests:key-conformance-test-component"
@@ -614,7 +591,6 @@ template("generate_focus-test-suite") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//src/ui/tests/conformance_input_tests:focus-conformance-test-component"
     test_component_name = "focus-conformance-test.cm"
@@ -645,7 +621,6 @@ template("generate_media-button-test-suite") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//src/ui/tests/conformance_input_tests:media-button-conformance-test-component"
     test_component_name = "media-button-conformance-test.cm"
@@ -675,7 +650,6 @@ template("generate_flatland-allocation-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component = "//src/ui/scenic/tests:flatland-allocation-test-component"
     test_component_name = "flatland-allocation-test.cm"
@@ -690,7 +664,6 @@ template("generate_flatland-touch-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-touch-integration-test-component"
@@ -706,7 +679,6 @@ template("generate_flatland-focus-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-focus-integration-test-component"
@@ -723,7 +695,6 @@ template("generate_flatland-view-ref-installed-integration-test-suite") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//src/ui/scenic/tests:flatland-view-ref-installed-integration-test-component"
     test_component_name = "flatland-view-ref-installed-integration-test.cm"
@@ -750,7 +721,6 @@ template("generate_flatland-view-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-view-integration-test-component"
@@ -770,7 +740,6 @@ template("generate_cpu-renderer-integration-test-suite") {
                "test_info",
                "fidl_coverage",
              ])
-
   group(target_name) {
   }
 }
@@ -782,7 +751,6 @@ template("generate_null-renderer-integration-test-suite") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component =
         "//src/ui/scenic/tests:null-renderer-integration-test-component"
@@ -805,7 +773,6 @@ template("generate_observer-registry-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:observer-registry-integration-test-component"
@@ -821,7 +788,6 @@ template("generate_scoped-observer-registry-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component = "//src/ui/scenic/tests:scoped-observer-registry-integration-test-component"
     test_component_name = "scoped-observer-registry-integration-test.cm"
@@ -837,7 +803,6 @@ template("generate_flatland-protected-memory-integration-test-suite") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//src/ui/scenic/tests:flatland-protected-memory-integration-test-component"
     test_component_name = "flatland-protected-memory-integration-test.cm"
@@ -864,7 +829,6 @@ template("generate_screen-capture-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:screen-capture-integration-test-component"
@@ -880,7 +844,6 @@ template("generate_screen-capture2-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:screen-capture2-integration-test-component"
@@ -896,7 +859,6 @@ template("generate_display-ownership-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:display-ownership-integration-test-component"
@@ -912,7 +874,6 @@ template("generate_singleton-display-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:singleton-display-integration-test-component"
@@ -928,7 +889,6 @@ template("generate_flatland-mouse-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-mouse-integration-test-component"
@@ -944,7 +904,6 @@ template("generate_flatland-pixeltest-general-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-pixeltest-general-component"
@@ -960,7 +919,6 @@ template("generate_flatland-pixeltest-flip-and-orientation-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component = "//src/ui/scenic/tests:flatland-pixeltest-flip-and-orientation-component"
     test_component_name = "flatland-pixeltest-flip-and-orientation.cm"
@@ -975,7 +933,6 @@ template("generate_flatland-pixeltest-flip-and-orientation-rgba-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component = "//src/ui/scenic/tests:flatland-pixeltest-flip-and-orientation-rgba-component"
     test_component_name = "flatland-pixeltest-flip-and-orientation-rgba.cm"
@@ -990,7 +947,6 @@ template("generate_flatland-pixeltest-opacity-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-pixeltest-opacity-component"
@@ -1006,7 +962,6 @@ template("generate_flatland-pixeltest-screenshot-format-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component =
         "//src/ui/scenic/tests:flatland-pixeltest-screenshot-format-component"
@@ -1022,7 +977,6 @@ template("generate_flatland-pixeltest-srgb-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component = "//src/ui/scenic/tests:flatland-pixeltest-srgb-component"
     test_component_name = "flatland-pixeltest-srgb.cm"
@@ -1038,7 +992,6 @@ template("generate_flatland-pixeltest-yuv-suite") {
                            "fidl_coverage",
                          ])
   not_needed([ "fidl_coverage" ])
-
   fuchsia_package_with_test(target_name) {
     test_component = "//src/ui/scenic/tests:flatland-pixeltest-yuv-component"
     test_component_name = "flatland-pixeltest-yuv.cm"
@@ -1064,7 +1017,6 @@ template("generate_trusted-flatland-factory-integration-test-suite") {
                            "test_info",
                            "fidl_coverage",
                          ])
-
   generate_scenic_test_base(target_name) {
     test_component = "//src/ui/scenic/tests:trusted-flatland-factory-integration-test-component"
     test_component_name = "trusted-flatland-factory-integration-test.cm"
@@ -1085,7 +1037,6 @@ template("generate_disabled-ctf-test-suite") {
                "test_info",
                "fidl_coverage",
              ])
-
   group(target_name) {
     deps = []
   }
@@ -1180,7 +1131,6 @@ template("generate_ctf_tests") {
 
   foreach(prebuilt_package, read_file(manifest, "json")) {
     test_name = "${prebuilt_package.package_name}_ctf${invoker.api_level}"
-
     generate_ctf_test(test_name) {
       forward_variables_from(invoker,
                              [

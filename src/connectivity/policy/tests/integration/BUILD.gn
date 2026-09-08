@@ -20,7 +20,6 @@ tests_with_err_logs = [
 
 foreach(test, tests) {
   name = "policy-${test}-integration-test"
-
   fuchsia_test_component_with_expectations(name) {
     expectations = "expects/${name}.json5"
     manifest = "meta/${name}.cml"
@@ -124,7 +123,6 @@ foreach(test, tests_with_err_logs) {
       deps = package_deps_for_tests +
              [ "//src/lib/testing/expectation:expectation_comparer" ]
     }
-
     fuchsia_sharded_test_package(_with_err_logs_name) {
       test_components = [
         {
@@ -143,7 +141,6 @@ foreach(test, tests_with_err_logs) {
     }
   } else {
     _component_label = "${_name}"
-
     fuchsia_test_component(_component_label) {
       component_name = _name
       manifest = "meta/${_name}.cml"
@@ -157,7 +154,6 @@ foreach(test, tests_with_err_logs) {
       deps = package_deps_for_tests +
              [ "//src/lib/testing/expectation:expectation_comparer" ]
     }
-
     fuchsia_test_with_expectations_package(_with_err_logs_name) {
       test_components = [ ":${_component_label}" ]
       expectations = "expects/${_name}.json5"

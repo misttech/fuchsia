@@ -16,7 +16,6 @@ foreach(release, ctf_releases) {
   level = string_replace("##${release}", "##f", "")
   assert(level != "##${release}",
          "Unexpected release name (does not begin with 'f'): ${release}")
-
   generate_ctf_packages(target_name) {
     api_level = level
     manifest =

@@ -217,7 +217,6 @@ source_set("previous_boot_data_provider") {
     "//sdk/fidl/fuchsia.diagnostics.persistence:fuchsia.diagnostics.persistence_hlcpp",
   ]
 }
-
 source_set("system_activity_governor") {
   testonly = true
 

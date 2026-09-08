@@ -38,7 +38,6 @@ if (is_fuchsia) {
     board_config_label = board_configuration_label
     generate_vbmeta = use_vbmeta
   }
-
   product_bundle("limited_netsvc_product_bundle") {
     testonly = true
     name = "limited_netsvc_product_bundle"

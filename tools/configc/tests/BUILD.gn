@@ -18,7 +18,6 @@ bin_output = bin_output[0]
 configc_label = "//tools/configc:install"
 configc_path = "$root_build_dir/host-tools/configc"
 configc_output = "$target_out_dir/configc"
-
 host_test_data("test_configc") {
   testonly = true
   sources = [ configc_path ]

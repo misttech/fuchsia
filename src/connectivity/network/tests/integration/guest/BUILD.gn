@@ -14,7 +14,6 @@ guest_tests = [
 
 foreach(test, guest_tests) {
   name = "netstack-${test}-guest-integration-test"
-
   fuchsia_test_component(name) {
     manifest = "meta/${name}.cml"
     deps = [ "${test}" ]

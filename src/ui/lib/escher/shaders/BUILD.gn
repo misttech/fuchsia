@@ -60,7 +60,6 @@ if (is_linux) {
   foreach(shader, shader_files) {
     target_name = get_path_info(shader, "file")
     shader_host_test_data_targets += [ ":$target_name" ]
-
     host_test_data(target_name) {
       sources = [ shader ]
       outputs = [ "$root_out_dir/test_data/escher/shaders/$shader" ]

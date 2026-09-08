@@ -35,7 +35,6 @@ rustc_library("lib") {
 group("symbol-index") {
   public_deps = [ ":lib" ]
 }
-
 group("tests") {
   testonly = true
 

@@ -51,7 +51,6 @@ template("icu_tzdata_resource") {
          "Unsupported data version or format")
 
   _resources_label = "_${target_name}_resources"
-
   resource(_resources_label) {
     forward_variables_from(invoker, [ "testonly" ])
 
@@ -66,7 +65,6 @@ template("icu_tzdata_resource") {
   }
 
   _revision_label = "_${target_name}_revision"
-
   resource(_revision_label) {
     forward_variables_from(invoker, [ "testonly" ])
 
@@ -83,7 +81,6 @@ template("icu_tzdata_resource") {
   }
 
   _revision_versioned_label = "_${target_name}_revision_versioned"
-
   resource(_revision_versioned_label) {
     forward_variables_from(invoker, [ "testonly" ])
 
@@ -101,7 +98,6 @@ template("icu_tzdata_resource") {
 
   _revision_tzdata_icu_versioned_label =
       "_${target_name}_tzdata_icu_revision_versioned"
-
   resource(_revision_tzdata_icu_versioned_label) {
     forward_variables_from(invoker, [ "testonly" ])
 
@@ -115,7 +111,6 @@ template("icu_tzdata_resource") {
 
   # Includes a placeholder file only for test targets.
   _test_marker_label = "_${target_name}_test_marker"
-
   resource(_test_marker_label) {
     forward_variables_from(invoker, [ "testonly" ])
     sources = [ "//src/lib/icu/tzdata/testing/FUCHSIA_IN_TREE_TEST" ]

@@ -41,7 +41,6 @@ go_library("mdns") {
     "//tools/lib/logger",
   ]
 }
-
 go_test("mdns_tests") {
   sources = [ "mdns_test.go" ]
   embed = [ ":mdns" ]

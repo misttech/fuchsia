@@ -45,7 +45,6 @@ go_library("netboot") {
     "//tools/lib/logger",
   ]
 }
-
 go_test("netboot_tests") {
   sources = [
     "common_test.go",

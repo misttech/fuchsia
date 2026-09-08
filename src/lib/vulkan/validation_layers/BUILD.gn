@@ -16,7 +16,6 @@ _all_resources = []
 foreach(resource, vulkan_validation_layers.resources) {
   _resource_filename = get_path_info(resource.dest, "file")
   _resource_target = "vulkan_validation_layers.resource.${_resource_filename}"
-
   resource(_resource_target) {
     sources = [ "//" + rebase_path(resource.path, "//", root_build_dir) ]
     outputs = [ "data/${resource.dest}" ]

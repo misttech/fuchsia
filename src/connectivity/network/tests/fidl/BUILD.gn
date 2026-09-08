@@ -139,7 +139,6 @@ foreach(test, non_sharded_tests) {
     }
 
     _no_err_logs_package_name = "${_name}-no-err-logs"
-
     fuchsia_test_with_expectations_package(_no_err_logs_package_name) {
       test_components = [ ":${_component_label}" ]
       expectations = _expect
@@ -147,7 +146,6 @@ foreach(test, non_sharded_tests) {
       deps = _package_deps
     }
     _with_err_logs_package_name = "${_name}-with-err-logs"
-
     fuchsia_test_with_expectations_package(_with_err_logs_package_name) {
       test_components = [ ":${_component_label}" ]
       expectations = _expect

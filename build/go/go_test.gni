@@ -64,12 +64,10 @@ template("go_test") {
   if (is_host) {
     _go_build_target_name = "${target_name}_go_build"
     _test_data_target = "${target_name}_go_test_data"
-
     host_test_data(_test_data_target) {
       sources = [ "$root_out_dir/$_output_name" ]
       deps = [ ":${_go_build_target_name}" ]
     }
-
     host_test(target_name) {
       # LINT.IfChange(go_test_wrapper)
       binary_path =
@@ -119,7 +117,6 @@ template("go_test") {
   go_sources = []
   if (!defined(invoker.embed) && !defined(invoker.gopackages)) {
     lib_target = "_${target_name}_go_lib"
-
     go_library(lib_target) {
       testonly = true
       forward_variables_from(invoker,

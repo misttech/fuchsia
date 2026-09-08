@@ -270,7 +270,6 @@ template("_fidl_banjo_cpp") {
     # the original library.
     sdk_target_name = "${cpp_target_name}_sdk"
     original_library_name = "${target_name}_sdk"
-
     sdk_atom_alias(sdk_target_name) {
       atom = ":$original_library_name($fidl_toolchain)"
     }

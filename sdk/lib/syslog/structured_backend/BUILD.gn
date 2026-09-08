@@ -59,7 +59,6 @@ sdk_source_set("structured_backend") {
     "//zircon/system/ulib/zx",
   ]
 }
-
 source_set("host_cpp") {
   public = [ "fuchsia_syslog.h" ]
   visibility = [ "*" ]

@@ -10,7 +10,6 @@ template("_weavestack_package_v2") {
   cml_name = get_path_info(invoker_manifest_v2, "name")
   if (defined(invoker.extra_cml)) {
     manifest_merge_target_v2 = "${target_name}_${cml_name}_merge_v2"
-
     cmc_merge(manifest_merge_target_v2) {
       sources = [ invoker_manifest_v2 ] + invoker.extra_cml
       output_name = "$manifest_merge_target_v2.cml"
@@ -20,7 +19,6 @@ template("_weavestack_package_v2") {
   }
 
   component_target_v2 = "${target_name}_${cml_name}_component_v2"
-
   fuchsia_component(component_target_v2) {
     forward_variables_from(invoker, [ "testonly" ])
     component_name = cml_name

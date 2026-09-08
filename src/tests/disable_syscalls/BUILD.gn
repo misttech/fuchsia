@@ -44,7 +44,6 @@ if (is_linux) {
 
   template("split_go_test") {
     split_name = invoker.target_name
-
     go_library(target_name) {
       testonly = true
       source_dir = "//src/tests/disable_syscalls/$split_name"
@@ -68,19 +67,15 @@ if (is_linux) {
   split_go_test("disable_debugging_disable_serial") {
     sources = [ "disable_debugging_disable_serial_test.go" ]
   }
-
   split_go_test("disable_debugging_enable_serial") {
     sources = [ "disable_debugging_enable_serial_test.go" ]
   }
-
   split_go_test("disable_debugging_output_only_serial") {
     sources = [ "disable_debugging_output_only_serial_test.go" ]
   }
-
   split_go_test("enable_debugging") {
     sources = [ "enable_debugging_test.go" ]
   }
-
   split_go_test("invalid_serial_setting") {
     sources = [ "invalid_serial_setting_test.go" ]
   }

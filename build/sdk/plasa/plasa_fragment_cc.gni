@@ -70,7 +70,6 @@ template("plasa_fragment_cc") {
         "Headers for internal use must also be in the list of public headers.")
     _includable_headers -= sdk_headers_for_internal_use
   }
-
   source_set(_stub_cc_target_name) {
     forward_variables_from(invoker, [ "testonly" ])
 
@@ -96,7 +95,6 @@ template("plasa_fragment_cc") {
 
   # Currently we use clang-doc to extract the C++ API.
   _clang_doc_target_name = "${main_target_name}_api"
-
   clang_doc(_clang_doc_target_name) {
     forward_variables_from(invoker, [ "testonly" ])
     stub_file = _cc_stub_file
@@ -109,7 +107,6 @@ template("plasa_fragment_cc") {
   _plasa_api_output_file =
       "${target_gen_dir}/${main_target_name}.fragment.plasa.json"
   _plasa_target_name = "${main_target_name}_plasa_api"
-
   compiled_action(_plasa_target_name) {
     forward_variables_from(invoker, [ "testonly" ])
     tool = "//build/bazel/host:bazel_root_host_tools.clang_doc_filter"

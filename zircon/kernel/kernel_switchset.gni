@@ -96,7 +96,6 @@ template("kernel_switchset") {
 
   foreach(cpu, standard_fuchsia_cpus) {
     tc_name = "kernel_${cpu}.${target_name}"
-
     zircon_toolchain_suite(tc_name) {
       cpu = cpu
       os = "fuchsia"

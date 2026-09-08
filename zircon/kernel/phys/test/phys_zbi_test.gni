@@ -36,7 +36,6 @@ template("phys_zbi_test") {
     test_deps = invoker.test_deps
   } else {
     test_deps = [ ":$test_target.executable" ]
-
     zbi_executable("$test_target.executable") {
       testonly = true
       deps = []

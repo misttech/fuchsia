@@ -37,7 +37,6 @@ if (is_host) {
   # we need to copy the GN binary from the builder into the test output
   # directory so we can run it on a different bot than does the builds.
   gn_tool_dir = "${target_out_dir}/gn_dir"
-
   host_test_data("gn_tool") {
     sources = [ "//prebuilt/third_party/gn/${host_platform}/gn" ]
     outputs = [ "$gn_tool_dir/{{source_file_part}}" ]

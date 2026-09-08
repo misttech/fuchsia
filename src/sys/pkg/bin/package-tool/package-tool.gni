@@ -56,7 +56,6 @@ template("package_tool_package_archive_extract") {
   pkg_output_manifest = "$package_out_dir/package_manifest.json"
 
   metadata_target_name = "${target_name}_metadata"
-
   define_package_metadata(metadata_target_name) {
     package_name = package_name
     snapshot_entry = "$package_name/0=" +
@@ -211,7 +210,6 @@ template("package_tool_repository_publish") {
   # Expose build-time package publishing arguments to devshell commands. (`fx
   # publish`)
   publish_tool_opts_dep = "${target_name}_tool_opts"
-
   generated_file(publish_tool_opts_dep) {
     outputs = [ "${_output_repository_dir}/publish_tool_opts" ]
     contents = _publish_opts

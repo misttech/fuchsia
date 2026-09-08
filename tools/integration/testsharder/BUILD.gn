@@ -48,7 +48,6 @@ if (is_host) {
   ]
 
   _golden_dir = "${target_gen_dir}/goldens"
-
   host_test_data("copy_golden_files") {
     sources = []
     foreach(test_name, _golden_tests) {
@@ -187,7 +186,6 @@ if (is_host) {
     ]
   }
 }
-
 go_test("testsharder_lib_tests") {
   sources = [
     "durations_test.go",
@@ -205,7 +203,6 @@ go_test("testsharder_lib_tests") {
     "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
   ]
 }
-
 go_test("testsharder_metadata_tests") {
   sources = [ "metadata/metadata_test.go" ]
   embed = [ ":metadata" ]

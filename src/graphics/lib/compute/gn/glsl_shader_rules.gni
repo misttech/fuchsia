@@ -152,7 +152,6 @@ template("graphics_compute_compile_glsl_shader_foreach") {
   }
   if (_gen_debug_shaders) {
     _gen_debug_target_name = "gen_debug_${target_name}"
-
     graphics_compute_generate_debug_glsl_shader_foreach(
         _gen_debug_target_name) {
       forward_variables_from(invoker,
@@ -241,7 +240,6 @@ template("graphics_compute_compile_glsl_shader_foreach") {
     # Optimize the modules
     #
     _gen_opt_target_name = "gen_opt_${target_name}"
-
     compiled_action_foreach(_gen_opt_target_name) {
       tool = "//third_party/spirv-tools/src:spirv-opt"
       sources = get_target_outputs(":${_gen_spv_target_name}")

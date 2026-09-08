@@ -309,7 +309,6 @@ fuchsia_structured_config_rust_lib("config_lib") {
 template("ns3_test_component") {
   _manifest_target = "${target_name}_manifest"
   _config_target = "${target_name}_config"
-
   fuchsia_component_manifest(_manifest_target) {
     forward_variables_from(invoker,
                            [

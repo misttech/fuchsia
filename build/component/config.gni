@@ -74,7 +74,6 @@ template("component_config") {
 
   generate_target = "${target_name}_generate"
   output = "$target_gen_dir/$target_name"
-
   compiled_action(generate_target) {
     forward_variables_from(invoker,
                            [

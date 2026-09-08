@@ -231,7 +231,6 @@ foreach(test, tests) {
         deps = _package_deps
         subpackages = _subpackages
       }
-
       fuchsia_sharded_test_package(_with_err_logs_name) {
         test_components = [
           {
@@ -263,7 +262,6 @@ foreach(test, tests) {
         deps = _package_deps
         subpackages = _subpackages
       }
-
       fuchsia_test_with_expectations_package(_with_err_logs_name) {
         test_components = [ ":${_component_label}" ]
         expectations = "expects/${_name}.json5"

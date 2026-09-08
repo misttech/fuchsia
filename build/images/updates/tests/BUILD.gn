@@ -23,7 +23,6 @@ if (is_fuchsia) {
     image_has_fxfs_blob = true
     generate_image_metadata = false
   }
-
   packages_from_product_assembler("bazel_assembly_cache_packages.list") {
     assembly_label = ":bazel_pb($default_toolchain)"
     package_set = "cache"
@@ -72,7 +71,6 @@ if (is_host) {
     # Create a empty repository for `//tools/devshell:fx_publish_test`.
     # This way, the test can inherit the publish options from the build system.
     _amber_files_target = "${target_name}_amber_files"
-
     devhost_repository_publish(_amber_files_target) {
       testonly = true
 

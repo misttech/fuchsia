@@ -139,7 +139,6 @@ if (is_host) {
   }
 
   _rust_target_mapping = "$target_gen_dir/rust_target_mapping.json"
-
   host_test_data("copy_rust_target_mapping") {
     sources = [ _rust_target_mapping ]
     deps = [ ":gen_rust_target_mapping" ]

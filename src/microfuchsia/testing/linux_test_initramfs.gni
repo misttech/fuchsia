@@ -39,7 +39,6 @@ template("linux_test_initramfs") {
         "_linux_initramfs.${main_target}.product_bundle_manifest"
 
     dist_manifest = "${target_gen_dir}/${main_target}.manifest.json"
-
     distribution_manifest(dist_manifest_target) {
       testonly = true
       forward_variables_from(invoker,
@@ -57,7 +56,6 @@ template("linux_test_initramfs") {
 
     product_bundle_manifest =
         "$target_gen_dir/$main_target.product_bundles.json"
-
     generated_file(product_bundle_manifest_target) {
       testonly = true
       forward_variables_from(invoker,

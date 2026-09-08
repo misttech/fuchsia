@@ -50,7 +50,6 @@ template("efi_test") {
 
   efi_label = get_label_info(":$executable_target($efi_toolchain)",
                              "label_with_toolchain")
-
   efi_executable(executable_target) {
     testonly = true
 

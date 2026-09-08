@@ -67,7 +67,6 @@ template("camera_controller_driver") {
   }
 
   driver_component_target = "${package_name}_driver_component"
-
   fuchsia_driver_component(driver_component_target) {
     deps = [ ":${driver_target}" ]
     info = "meta/${driver_target}-info.json"

@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 import("//build/components.gni")
 import("//build/rust/rustc_binary.gni")
-
 rustc_binary("bin") {
   name = "trace_session_manager"
   with_unit_tests = true
@@ -28,13 +27,11 @@ rustc_binary("bin") {
     "src/tracing_protocol.rs",
   ]
 }
-
 fuchsia_component("component") {
   component_name = "trace_session_manager"
   manifest = "meta/trace_session_manager.cml"
   deps = [ ":bin" ]
 }
-
 fuchsia_package("trace_session_manager") {
   deps = [ ":component" ]
 }

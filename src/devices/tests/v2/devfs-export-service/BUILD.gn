@@ -79,7 +79,6 @@ test("devfs_topological_test") {
     "//src/lib/fxl/test:gtest_main",
   ]
 }
-
 fuchsia_unittest_package("devfs_services_test_cpp") {
   deps = [
     ":devfs_topological_test",

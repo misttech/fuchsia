@@ -34,7 +34,6 @@ template("remotevol_test_package") {
     _debian_container_component_name =
         "debian_container_with_user_volume_inline_encrypted"
   }
-
   generated_file(_debian_container_shard_label) {
     outputs = [ _debian_container_shard_file ]
     output_conversion = "json"
@@ -53,7 +52,6 @@ template("remotevol_test_package") {
   _kernel_manifest_label = "${target_name}_kernel_with_container.cml"
   _kernel_manifest_file =
       "${target_gen_dir}/${target_name}_kernel_with_container.cml"
-
   generated_file(_kernel_manifest_label) {
     outputs = [ _kernel_manifest_file ]
     output_conversion = "json"
@@ -67,7 +65,6 @@ template("remotevol_test_package") {
   }
 
   _kernel_component_target = "${target_name}_kernel_with_container"
-
   fuchsia_component(_kernel_component_target) {
     testonly = true
     manifest = _kernel_manifest_file

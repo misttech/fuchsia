@@ -204,7 +204,6 @@ template("dart_tool") {
   # dart_library above, it can incorrectly read this package config if it's in
   # the same directory.
   _dart_package_config_output = "${target_gen_dir}/packages/${_dart_package_config_target_name}_package_config.json"
-
   dart_package_config(_dart_package_config_target_name) {
     forward_variables_from(invoker,
                            [
@@ -311,7 +310,6 @@ template("dart_tool") {
 template("dart_prebuilt_tool") {
   assert(defined(invoker.snapshot),
          "Must specify the path to the dart snapshot")
-
   _dart_snapshot_invocation(target_name) {
     dart = prebuilt_dart
     forward_variables_from(invoker, "*")

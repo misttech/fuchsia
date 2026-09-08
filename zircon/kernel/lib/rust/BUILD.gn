@@ -161,13 +161,10 @@ stages = [
 # normal target-defining templates and so don't get these injected.
 group("target_deps") {
 }
-
 group("target_executable_deps") {
 }
-
 group("target_link_deps") {
 }
-
 group("target_source_deps") {
   # This needs to be in public_deps so that it counts among "direct" deps for
   # all the Rust compilation targets that have its outputs (the `target.json`

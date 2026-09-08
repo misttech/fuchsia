@@ -57,7 +57,6 @@ if (is_host) {
   }
 
   relative_root_out_dir = rebase_path(root_out_dir, root_build_dir)
-
   rustc_binary("gen_android_starnix_container_bin") {
     name = "gen-android-starnix-container"
     edition = "2024"

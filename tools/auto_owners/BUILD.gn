@@ -24,7 +24,6 @@ if (is_host) {
   ]
 
   relative_root_out_dir = rebase_path(root_out_dir, root_build_dir)
-
   rustc_binary("auto_owners_bin") {
     edition = "2024"
     output_name = "auto_owners"
@@ -112,7 +111,6 @@ if (is_host) {
   # we need to copy the GN binary from the builder into the test output
   # directory so we can run it on a different bot than does the builds.
   auto_owners_gn_out_dir = "${test_output_dir}/runfiles/gn"
-
   copy("auto_owners_gn_copy") {
     sources = [ "//prebuilt/third_party/gn/${host_platform}/gn" ]
     outputs = [ "$auto_owners_gn_out_dir/{{source_file_part}}" ]

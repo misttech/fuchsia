@@ -109,7 +109,6 @@ fuchsia_unittest_package_parameters = [
 template("fuchsia_unittest_package") {
   if (current_toolchain == default_toolchain) {
     component_target = "${target_name}_component"
-
     fuchsia_unittest_component(component_target) {
       forward_variables_from(invoker, fuchsia_unittest_component_parameters)
       if (!defined(component_name)) {

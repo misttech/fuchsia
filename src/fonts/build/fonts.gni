@@ -80,7 +80,6 @@ template("local_font_bundle") {
 
   # Same as above, except bundled as regular assets.
   assets_label = "_${target_name}_assets"
-
   resource(assets_label) {
     sources = local_asset_paths
     outputs = [ "${_assets_relative_path}/{{source_file_part}}" ]
@@ -181,7 +180,6 @@ template("font_collection") {
 
   if (defined(local_asset_names)) {
     bundle_name = "_${target_name}_local_font_bundle"
-
     local_font_bundle(bundle_name) {
       asset_names = local_asset_names
     }
@@ -198,7 +196,6 @@ template("font_collection") {
   ##############################################################################
   _local_fonts_json_path = "${target_gen_dir}/${target_name}_local_fonts.json"
   _local_fonts_json_label = "${target_name}_local_fonts.json"
-
   generated_file(_local_fonts_json_label) {
     forward_variables_from(invoker, [ "testonly" ])
     deps = local_font_bundles
@@ -213,7 +210,6 @@ template("font_collection") {
   ##############################################################################
   manifest_file_label = "${target_name}_manifest_file"
   manifest_file_path = "${target_out_dir}/${target_name}_all.font_manifest.json"
-
   font_manifest(manifest_file_label) {
     forward_variables_from(invoker, [ "testonly" ])
     local_fonts_path = _local_fonts_json_path
@@ -228,7 +224,6 @@ template("font_collection") {
   asset_font_manifest_label = "${target_name}_asset_manifest_file"
   asset_font_manifest_path =
       "${target_out_dir}/${target_name}_all.hermetic_assets.font_manifest.json"
-
   font_manifest(asset_font_manifest_label) {
     forward_variables_from(invoker,
                            [
@@ -244,7 +239,6 @@ template("font_collection") {
   }
 
   font_assets_label = "${target_name}_font_assets"
-
   resource(font_assets_label) {
     forward_variables_from(invoker,
                            [

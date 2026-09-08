@@ -6,12 +6,10 @@ import("//build/components.gni")
 
 template("ext4_test_server") {
   _image_resource = "${target_name}_image"
-
   resource(_image_resource) {
     sources = [ invoker.image ]
     outputs = [ "data/ext4_image.img" ]
   }
-
   fuchsia_package(target_name) {
     package_name = "ext4_test_pkg"
     testonly = true

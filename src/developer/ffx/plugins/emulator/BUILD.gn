@@ -56,7 +56,6 @@ if (is_host) {
       prebuilt_path = "//prebuilt/third_party/qemu/${current_os}-${current_cpu}"
       sdk_dest_path = "tools/${current_cpu}/qemu_internal"
     }
-
     emu_companion("uefi_internal_x64") {
       prebuilt_path = "//prebuilt/third_party/edk2/qemu-x64"
       sdk_dest_path = "tools/qemu_uefi_internal/x64"
@@ -66,7 +65,6 @@ if (is_host) {
         "//prebuilt/third_party/edk2/qemu-x64/OVMF_VARS.fd",
       ]
     }
-
     emu_companion("uefi_internal_arm64") {
       prebuilt_path = "//prebuilt/third_party/edk2/qemu-arm64"
       sdk_dest_path = "tools/qemu_uefi_internal/arm64"
@@ -81,12 +79,10 @@ if (is_host) {
       id = "sdk://tools/$current_cpu/qemu_internal"
       category = "partner"
     }
-
     sdk_noop_atom("uefi_internal_x64") {
       id = "sdk://tools/qemu_uefi_internal/x64"
       category = "partner"
     }
-
     sdk_noop_atom("uefi_internal_arm64") {
       id = "sdk://tools/qemu_uefi_internal/arm64"
       category = "partner"

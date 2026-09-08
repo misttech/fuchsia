@@ -164,7 +164,6 @@ template("virtual_device_specification") {
   }
 
   validator_target = "${target_name}_json_validator"
-
   validate_json(validator_target) {
     visibility = [ ":*" ]
     forward_variables_from(invoker, [ "testonly" ])
