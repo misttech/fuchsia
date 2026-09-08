@@ -86,6 +86,7 @@ group("test") {
     "//src/storage/benchmarks/fuchsia:benchmarks",
     "//src/storage/benchmarks/starnix:benchmarks",
     "//src/storage/benchmarks/verity:benchmarks",
+    "//src/storage/fxfs/benches:benchmarks",
     "//src/storage/io_stress:io_stress_perf_test",
     "//src/sys/component_manager/tests:benchmarks",
     "//src/tests/benchmarks",

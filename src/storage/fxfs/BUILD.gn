@@ -205,7 +205,7 @@ rustc_library("benchmark") {
   edition = "2024"
   name = "fxfs"
   features = [ "benchmark" ]
-  visibility = [ ":*" ]
+  visibility = [ "//src/storage/fxfs/*" ]
 
   deps = fxfs_deps
   sources = fxfs_sources
@@ -238,6 +238,7 @@ fuchsia_test_package("fxfs-tests") {
     ":fxfs-make-blob-image-test",
     ":fxfs-platform-test",
   ]
+
   test_specs = {
     log_settings = {
       # We expect some tests to produce ERROR logs
@@ -380,20 +381,6 @@ golden_files("type_fingerprints_golden_test") {
   deps = [ ":generate_type_fingerprints" ]
   comparisons = "$target_gen_dir/type_fingerprints_golden_test.comparisons.json"
 }
-if (is_host) {
-  rustc_binary("lsm_tree_bench") {
-    testonly = true
-    edition = "2024"
-    name = "lsm_tree_bench"
-    source_root = "benches/lsm_tree_bench.rs"
-    sources = [ "benches/lsm_tree_bench.rs" ]
-    deps = [
-      ":benchmark",
-      "//src/developer/fuchsia-criterion",
-      "//third_party/rust_crates:futures",
-    ]
-  }
-}
 
 group("tests") {
   testonly = true
@@ -404,8 +391,8 @@ group("tests") {
     ":fxfs-tests",
     ":fxfs_component",
     ":lib_test($host_toolchain)",
-    ":lsm_tree_bench($host_toolchain)",
     "//src/storage/fxfs:type_fingerprints_golden_test",
+    "//src/storage/fxfs/benches:tests",
     "//src/storage/fxfs/test:tests",
     "//src/storage/fxfs/tools:tests",
     "//src/storage/fxfs/trace:tests",
