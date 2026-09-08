@@ -58,6 +58,10 @@ fit::result<int, std::string> GetLinkLabel(int fd);
 /// The trailing NUL, if any, will be stripped before the label is returned.
 fit::result<int, std::string> GetLabel(const std::string& path);
 
+/// Reads the peer security label of the specified socket `fd`, returning the `errno` on failure.
+/// The trailing NUL, if any, will be stripped before the label is returned.
+fit::result<int, std::string> GetPeerSec(int fd);
+
 /// Sets the security `label` of the specified `path`.
 fit::result<int> SetLabel(const std::string& path, std::string_view label);
 

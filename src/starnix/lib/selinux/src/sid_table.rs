@@ -116,21 +116,17 @@ impl SidTable {
         Ok(SecurityId(NonZeroU32::new(index as u32).unwrap()))
     }
 
-    /// Returns the `SecurityContext` associated with `sid`.
+    /// Returns the [`SecurityContext`] associated with `sid`.
+    ///
     /// If `sid` was invalidated by a policy reload then the "unlabeled"
     /// context is returned instead.
     pub fn sid_to_security_context(&self, sid: SecurityId) -> &SecurityContext {
-        &self.try_sid_to_security_context(sid).unwrap_or_else(|| {
-            self.try_sid_to_security_context(InitialSid::Unlabeled.into()).unwrap()
-        })
-    }
-
-    /// Returns the `SecurityContext` associated with `sid`, unless `sid` was invalidated by a
-    /// policy reload. Query implementations should use `sid_to_security_context()`.
-    pub fn try_sid_to_security_context(&self, sid: SecurityId) -> Option<&SecurityContext> {
         match &self.entries[sid.0.get() as usize] {
-            Entry::Valid { security_context } => Some(&security_context),
-            Entry::Invalid { .. } => None,
+            Entry::Valid { security_context } => security_context,
+            Entry::Invalid { .. } => match &self.entries[InitialSid::Unlabeled as usize] {
+                Entry::Valid { security_context } => security_context,
+                Entry::Invalid { .. } => unreachable!("initial SID unlabeled must be valid"),
+            },
         }
     }
 

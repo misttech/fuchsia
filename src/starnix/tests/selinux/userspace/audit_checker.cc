@@ -102,6 +102,7 @@ void ExpectationsToJSON(std::vector<std::string> logs, const std::string& test_n
 
 void SendStartSentinel() {
   auto fork_helper = test_helper::ForkHelper();
+  fork_helper.OnlyWaitForForkedChildren();
   pid_t child_pid = fork_helper.RunInForkedProcess([&] {
     fbl::unique_fd fd = OpenNetlinkAuditSocket();
     if (!fd.is_valid()) {
@@ -121,6 +122,7 @@ void SendStartSentinel() {
 
 void SendEndSentinel() {
   auto fork_helper = test_helper::ForkHelper();
+  fork_helper.OnlyWaitForForkedChildren();
   pid_t child_pid = fork_helper.RunInForkedProcess([&] {
     fbl::unique_fd fd = OpenNetlinkAuditSocket();
     if (!fd.is_valid()) {
@@ -211,7 +213,8 @@ bool AuditChecker::ParseExpectationsFile(const std::string& file_path) {
     expected_failure_tests_.push_back(failing_test.GetString());
   }
   if (!std::is_sorted(expected_failure_tests_.begin(), expected_failure_tests_.end())) {
-    fprintf(stderr, "AuditChecker Error: %s is not sorted lexicographically.\n", kExpectedFailureKey);
+    fprintf(stderr, "AuditChecker Error: %s is not sorted lexicographically.\n",
+            kExpectedFailureKey);
     return false;
   }
 

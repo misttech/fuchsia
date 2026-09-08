@@ -6,6 +6,7 @@
 
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/xattr.h>
 
 #include <string>
@@ -157,6 +158,15 @@ fit::result<int, std::string> GetLabel(const std::string& path) {
     return fit::error(errno);
   }
   return RemoveTrailingNul(std::string(buf, result));
+}
+
+fit::result<int, std::string> GetPeerSec(int fd) {
+  char label_buf[256]{};
+  socklen_t label_len = sizeof(label_buf);
+  if (getsockopt(fd, SOL_SOCKET, SO_PEERSEC, label_buf, &label_len) == -1) {
+    return fit::error(errno);
+  }
+  return RemoveTrailingNul(std::string(label_buf, label_len));
 }
 
 fit::result<int> SetLabel(const std::string& path, const std::string_view label) {

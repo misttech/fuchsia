@@ -53,6 +53,9 @@
                 "ProcAttrTest.ZombieProcPid",
                 "ProcAttrTest.ZombieCurrentAttr",
 
+                // TODO: Support reading pre-policy procattrs in Starnix.
+                "ProcAttrTest.PrePolicyAttrs",
+
                 // TODO: https://fxbug.dev/361552580 - Fix SELinuxFS API handling of unknown policy class Ids.
                 "SeLinuxFsCreate.InvalidComputeCreateClassId",
                 "SeLinuxFsAccess.UnknownClassIdIsAccepted",

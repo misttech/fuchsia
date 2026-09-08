@@ -226,13 +226,15 @@ impl SecurityServer {
     }
 
     /// Returns the Security Context string for the requested `sid`.
-    /// This is used only where Contexts need to be stringified to expose to userspace, as
+    ///
+    /// This is used where Contexts need to be stringified to expose to userspace, as
     /// is the case for e.g. the `/proc/*/attr/` filesystem and `security.selinux` extended
-    /// attribute values.
+    /// attribute values, and for audit logging. If `sid` was invalidated by a policy
+    /// reload then the "unlabeled" context is returned instead.
     pub fn sid_to_security_context(&self, sid: SecurityId) -> Option<Vec<u8>> {
         let locked_state = self.backend.state.read();
         let active_policy = locked_state.active_policy.as_ref()?;
-        let context = active_policy.sid_table.try_sid_to_security_context(sid)?;
+        let context = active_policy.sid_table.sid_to_security_context(sid);
         Some(active_policy.parsed.serialize_security_context(context))
     }
 
@@ -1359,8 +1361,14 @@ mod tests {
                 .granted
         );
 
-        // We also verify that we do not get a serialization for unrecognized "additional_t"...
-        assert!(security_server.sid_to_security_context(additional_type_sid).is_none());
+        // When "additional_t" is unrecognized, looking up its context string returns
+        // the effective (unlabeled) context.
+        let unlabeled_context =
+            security_server.sid_to_security_context(InitialSid::Unlabeled.into()).unwrap();
+        assert_eq!(
+            unlabeled_context,
+            security_server.sid_to_security_context(additional_type_sid).unwrap()
+        );
 
         // ... but if we flip forward to the policy that recognizes "additional_t", then we see
         // the serialization succeed and return the original context string.

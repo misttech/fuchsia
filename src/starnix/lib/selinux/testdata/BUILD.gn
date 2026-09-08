@@ -115,6 +115,14 @@ sestarnix_test_policy("ptrace_policy") {
   fragments = [ "composite_policies/new_file/ptrace_policy.conf" ]
 }
 
+sestarnix_test_policy("invalidated_sid_initial_policy") {
+  fragments = [ "composite_policies/new_file/invalidated_sid_initial.conf" ]
+}
+
+sestarnix_test_policy("invalidated_sid_reloaded_policy") {
+  fragments = [ "composite_policies/new_file/invalidated_sid_reloaded.conf" ]
+}
+
 sestarnix_test_policy("sched_policy") {
   fragments = [ "composite_policies/new_file/sched.conf" ]
 }
@@ -287,6 +295,8 @@ group("test_policies") {
     ":handle_unknown_policy-deny",
     ":handle_unknown_policy-reject",
     ":inherit_policy",
+    ":invalidated_sid_initial_policy",
+    ":invalidated_sid_reloaded_policy",
     ":io_uring_policy",
     ":ioctl_policy",
     ":memfd_class_policy",

@@ -674,15 +674,6 @@ TEST(SocketTest, AcceptDenied) {
   }));
 }
 
-fit::result<int, std::string> GetPeerSec(int fd) {
-  char label_buf[256]{};
-  socklen_t label_len = sizeof(label_buf);
-  if (getsockopt(fd, SOL_SOCKET, SO_PEERSEC, label_buf, &label_len) == -1) {
-    return fit::error(errno);
-  }
-  return RemoveTrailingNul(std::string(label_buf, label_len));
-}
-
 TEST(SocketPeerSecTest, UnixDomainStream) {
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:socket_test_t:s0", [&] {
     auto listen_fd =

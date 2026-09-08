@@ -4,6 +4,8 @@
 
 #include <fcntl.h>
 
+#include <optional>
+
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
@@ -17,9 +19,21 @@ constexpr char kTestInvalidSecurityXattr[] = "not a valid context";
 constexpr char kTestFileWithoutXattr[] = "/tmp/test-file-without-xattr";
 constexpr char kTestFileWithXattr[] = "/tmp/test-file-with-xattr";
 constexpr char kTestFileWithInvalidXattr[] = "/tmp/test-file-with-invalid-xattr";
+
+struct PrePolicyProcFsLabels {
+  fit::result<int, std::string> meminfo;
+  fit::result<int, std::string> stat;
+};
+
+std::optional<PrePolicyProcFsLabels> g_pre_policy_procfs_labels;
 }  // namespace
 
 extern std::string DoPrePolicyLoadWork() {
+  g_pre_policy_procfs_labels = PrePolicyProcFsLabels{
+      .meminfo = GetLabel("/proc/meminfo"),
+      .stat = GetLabel("/proc/self/stat"),
+  };
+
   // Create a file in "tmpfs" without explicitly setting the "security.selinux" attribute.
   auto fd = fbl::unique_fd(open(kTestFileWithoutXattr, O_CREAT | O_RDWR, 0644));
   EXPECT_TRUE(fd.is_valid()) << "Failed to create test file:" << strerror(errno);
@@ -37,6 +51,8 @@ extern std::string DoPrePolicyLoadWork() {
   return "minimal_policy";
 }
 
+namespace {
+
 TEST(PolicyLoadTest, TasksUseKernelSid) {
   // All processes created prior to policy loading are labeled with the kernel SID.
   EXPECT_THAT(ReadTaskAttr("current"), IsOk("system_u:unconfined_r:unconfined_t:s0"));
@@ -48,3 +64,16 @@ TEST(PolicyLoadTest, TmpFsFsUseTransIgnoresSecurityXattr) {
   EXPECT_THAT(GetLabel(kTestFileWithXattr), IsOk(kDefaultTmpFsNodeLabel));
   EXPECT_THAT(GetLabel(kTestFileWithInvalidXattr), IsOk(kDefaultTmpFsNodeLabel));
 }
+
+TEST(PolicyLoadTest, ProcFsLabels) {
+  ASSERT_TRUE(g_pre_policy_procfs_labels.has_value());
+  // Procfs does not support xattrs prior to policy load.
+  EXPECT_EQ(g_pre_policy_procfs_labels->meminfo, fit::error(EOPNOTSUPP));
+  EXPECT_EQ(g_pre_policy_procfs_labels->stat, fit::error(EOPNOTSUPP));
+
+  // After policy load, non-PID nodes use the genfscon label and PID nodes use the task label.
+  EXPECT_THAT(GetLabel("/proc/meminfo"), IsOk("system_u:object_r:unconfined_t:s0"));
+  EXPECT_THAT(GetLabel("/proc/self/stat"), IsOk("system_u:unconfined_r:unconfined_t:s0"));
+}
+
+}  // namespace

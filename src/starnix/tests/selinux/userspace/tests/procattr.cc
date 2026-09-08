@@ -5,6 +5,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <optional>
+
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
@@ -12,9 +14,44 @@
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
 
-extern std::string DoPrePolicyLoadWork() { return "minimal_policy"; }
+namespace {
+
+struct PrePolicyProcAttrs {
+  fit::result<int, std::string> current;
+  fit::result<int, std::string> exec;
+  fit::result<int, std::string> fscreate;
+  fit::result<int, std::string> keycreate;
+  fit::result<int, std::string> prev;
+  fit::result<int, std::string> sockcreate;
+};
+
+std::optional<PrePolicyProcAttrs> g_pre_policy_procattrs;
+
+}  // namespace
+
+extern std::string DoPrePolicyLoadWork() {
+  g_pre_policy_procattrs = PrePolicyProcAttrs{
+      .current = ReadTaskAttr("current"),
+      .exec = ReadTaskAttr("exec"),
+      .fscreate = ReadTaskAttr("fscreate"),
+      .keycreate = ReadTaskAttr("keycreate"),
+      .prev = ReadTaskAttr("prev"),
+      .sockcreate = ReadTaskAttr("sockcreate"),
+  };
+  return "minimal_policy";
+}
 
 namespace {
+
+TEST(ProcAttrTest, PrePolicyAttrs) {
+  ASSERT_TRUE(g_pre_policy_procattrs.has_value());
+  EXPECT_EQ(g_pre_policy_procattrs->current, fit::ok("kernel"));
+  EXPECT_EQ(g_pre_policy_procattrs->prev, fit::ok("kernel"));
+  EXPECT_EQ(g_pre_policy_procattrs->exec, fit::ok(""));
+  EXPECT_EQ(g_pre_policy_procattrs->fscreate, fit::ok(""));
+  EXPECT_EQ(g_pre_policy_procattrs->keycreate, fit::ok(""));
+  EXPECT_EQ(g_pre_policy_procattrs->sockcreate, fit::ok(""));
+}
 
 // Attempting to read the process' current context should return a value.
 TEST(ProcAttrTest, Current) {
