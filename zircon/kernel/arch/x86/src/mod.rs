@@ -211,6 +211,26 @@ pub fn is_vaddr_canonical(va: u64) -> bool {
         || ((va & X86_CANONICAL_ADDRESS_MASK) == X86_CANONICAL_ADDRESS_MASK)
 }
 
+/// Base address of the kernel address space.
+pub const KERNEL_ASPACE_BASE: usize = 0xffff_ff80_0000_0000;
+/// Size of the kernel address space.
+pub const KERNEL_ASPACE_SIZE: usize = 0x0000_0080_0000_0000;
+
+/// Returns whether `va` is within the kernel address space.
+#[inline]
+pub fn is_kernel_address(va: usize) -> bool {
+    va >= KERNEL_ASPACE_BASE && va.wrapping_sub(KERNEL_ASPACE_BASE) < KERNEL_ASPACE_SIZE
+}
+
+/// Userspace threads can only set an entry point to userspace addresses, or
+/// the null pointer (for testing a thread that will always fail).
+///
+/// See docs/concepts/kernel/sysret_problem.md for more details.
+#[inline]
+pub fn is_valid_user_pc(pc: usize) -> bool {
+    (pc == 0) || (is_user_accessible(pc) && is_vaddr_canonical(pc as u64))
+}
+
 /// Validates the x86_64 register state before entering restricted mode.
 pub fn validate_state_pre_restricted_entry(state: &zx_restricted_state_t) -> Result<(), Status> {
     // validate that RIP is within user space
@@ -603,5 +623,30 @@ mod tests {
     fn test_dump() {
         let state = zx_restricted_state_t::default();
         dump(&state);
+    }
+
+    #[test]
+    fn test_is_kernel_address() {
+        assert!(is_kernel_address(KERNEL_ASPACE_BASE));
+        assert!(is_kernel_address(KERNEL_ASPACE_BASE + 0x1000));
+        assert!(is_kernel_address(usize::MAX));
+        assert!(!is_kernel_address(0));
+        assert!(!is_kernel_address(0x1000));
+        assert!(!is_kernel_address(0x0000_7fff_ffff_ffff));
+        assert!(!is_kernel_address(KERNEL_ASPACE_BASE - 1));
+    }
+
+    #[test]
+    fn test_is_valid_user_pc() {
+        // Null pointer is valid (used for threads intended to fault).
+        assert!(is_valid_user_pc(0));
+        // Valid userspace addresses.
+        assert!(is_valid_user_pc(0x1000));
+        assert!(is_valid_user_pc(0x0000_7fff_ffff_0000));
+        // Non-canonical address.
+        assert!(!is_valid_user_pc(0x0000_8000_0000_0000));
+        // Kernel address.
+        assert!(!is_valid_user_pc(KERNEL_ASPACE_BASE));
+        assert!(!is_valid_user_pc(0xffff_8000_0000_0000));
     }
 }

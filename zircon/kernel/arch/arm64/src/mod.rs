@@ -99,6 +99,24 @@ pub fn is_user_accessible(va: usize) -> bool {
     (va & USER_BIT_MASK) == 0
 }
 
+/// Base address of the kernel address space.
+pub const KERNEL_ASPACE_BASE: usize = 0xffff_0000_0000_0000;
+/// Size of the kernel address space.
+pub const KERNEL_ASPACE_SIZE: usize = 0x0001_0000_0000_0000;
+
+/// Returns whether `va` is within the kernel address space.
+#[inline]
+pub fn is_kernel_address(va: usize) -> bool {
+    va >= KERNEL_ASPACE_BASE && va.wrapping_sub(KERNEL_ASPACE_BASE) < KERNEL_ASPACE_SIZE
+}
+
+/// Userspace threads can only set an entry point to userspace addresses, or
+/// the null pointer (for testing a thread that will always fail).
+#[inline]
+pub fn is_valid_user_pc(pc: usize) -> bool {
+    (pc == 0) || (is_user_accessible(pc) && !is_kernel_address(pc))
+}
+
 /// Validate that the restricted state is safe and well-formed before entering restricted mode.
 ///
 /// Ensures that the program counter (`pc`) is within user address space, verifies alignment
@@ -481,6 +499,31 @@ mod tests {
         assert!(is_user_accessible(0x0000_7fff_ffff_ffff));
         assert!(!is_user_accessible(0x0080_0000_0000_0000));
         assert!(!is_user_accessible(0xffff_ffff_8000_0000));
+    }
+
+    #[test]
+    fn test_is_kernel_address() {
+        assert!(is_kernel_address(KERNEL_ASPACE_BASE));
+        assert!(is_kernel_address(KERNEL_ASPACE_BASE + 0x1000));
+        assert!(is_kernel_address(usize::MAX));
+        assert!(!is_kernel_address(0));
+        assert!(!is_kernel_address(0x1000));
+        assert!(!is_kernel_address(0x0000_7fff_ffff_ffff));
+        assert!(!is_kernel_address(KERNEL_ASPACE_BASE - 1));
+    }
+
+    #[test]
+    fn test_is_valid_user_pc() {
+        // Null pointer is valid (used for threads intended to fault).
+        assert!(is_valid_user_pc(0));
+        // Valid userspace addresses.
+        assert!(is_valid_user_pc(0x1000));
+        assert!(is_valid_user_pc(0x0000_7fff_ffff_0000));
+        // Inaccessible user address (bit 55 set).
+        assert!(!is_valid_user_pc(0x0080_0000_0000_0000));
+        // Kernel address.
+        assert!(!is_valid_user_pc(KERNEL_ASPACE_BASE));
+        assert!(!is_valid_user_pc(0xffff_ffff_8000_0000));
     }
 
     #[test]
