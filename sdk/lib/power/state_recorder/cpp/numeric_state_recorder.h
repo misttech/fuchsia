@@ -6,7 +6,6 @@
 #define LIB_POWER_STATE_RECORDER_CPP_NUMERIC_STATE_RECORDER_H_
 
 #include <lib/inspect/component/cpp/component.h>
-#include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/power/state_recorder/cpp/common.h>
 #include <lib/power/state_recorder/cpp/common_internal.h>
@@ -164,10 +163,10 @@ class NumericStateRecorder final {
       : name_(std::make_unique<std::string>(metadata.name)),
         trace_category_literal_(metadata.trace_category_literal),
         root_node_(std::move(root_node)),
-        history_(options.lazy_record ? History(internal::NumericLazyInspectRecorder<T>::Create(
-                                           options.capacity, root_node_))
-                                     : History(inspect::BoundedListNode(
-                                           root_node_.CreateChild("history"), options.capacity))),
+        history_(options.lazy_record
+                     ? History(internal::NumericLazyInspectRecorder<T>::Create(options.capacity,
+                                                                               root_node_))
+                     : History(internal::EagerShardedBuffer<T>(root_node_, options.capacity))),
         trace_id_(TRACE_NONCE()),
         trace_name_ref_(trace_make_inline_string_ref(name_->c_str(), name_->length())),
         manager_(&manager),
@@ -181,6 +180,7 @@ class NumericStateRecorder final {
     }
 
     root_node_.RecordChild("metadata", [&](inspect::Node& metadata_node) {
+      metadata_node.RecordString("format_version", "2.0");
       metadata_node.RecordString("name", *name_);
       metadata_node.RecordString("type", "numeric");
       metadata_node.RecordString("units", metadata.units.ToString());
@@ -210,7 +210,7 @@ class NumericStateRecorder final {
   const char* trace_category_literal_;
   inspect::Node root_node_;
 
-  using History = std::variant<inspect::BoundedListNode,
+  using History = std::variant<internal::EagerShardedBuffer<T>,
                                std::unique_ptr<internal::NumericLazyInspectRecorder<T>>>;
   History history_;
 
@@ -245,19 +245,9 @@ void NumericStateRecorder<T>::Record(T value, std::optional<zx::time_boot> event
 
   std::visit(
       [&](auto& history) {
-        if constexpr (std::is_same_v<std::decay_t<decltype(history)>, inspect::BoundedListNode>) {
-          history.CreateEntry([&](inspect::Node& node) {
-            node.RecordInt("@time", current_timestamp.get());
-            if constexpr (WidensToUint64<T>) {
-              node.RecordUint("value", static_cast<uint64_t>(value));
-            } else if constexpr (WidensToInt64<T>) {
-              node.RecordInt("value", static_cast<int64_t>(value));
-            } else if constexpr (WidensToDouble<T>) {
-              node.RecordDouble("value", static_cast<double>(value));
-            } else {
-              static_assert(!IsRecordableNumericType<T>, "Unsupported type");
-            }
-          });
+        if constexpr (std::is_same_v<std::decay_t<decltype(history)>,
+                                     internal::EagerShardedBuffer<T>>) {
+          history.Record(current_timestamp.get(), value);
         } else {
           history->AddEntry(value, internal::to_msecs(current_timestamp));
         }

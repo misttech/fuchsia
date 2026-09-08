@@ -71,14 +71,9 @@ class EnumLazyInspectRecorder : public LazyInspectRecorderBase<T> {
         new EnumLazyInspectRecorder(name_lookup, capacity, parent_node));
   }
 
- protected:
-  virtual void RecordToNode(inspect::Node& node, T value) const {
-    node.RecordString("value", *name_lookup_->GetStateName(value)->inspect_name);
-  }
-
   EnumLazyInspectRecorder(std::shared_ptr<StateNameLookup<T>> name_lookup, size_t capacity,
                           inspect::Node& parent_node)
-      : LazyInspectRecorderBase<T>(capacity, parent_node), name_lookup_(name_lookup) {}
+      : LazyInspectRecorderBase<T>(capacity, parent_node), name_lookup_(std::move(name_lookup)) {}
 
  private:
   std::shared_ptr<StateNameLookup<T>> name_lookup_;
