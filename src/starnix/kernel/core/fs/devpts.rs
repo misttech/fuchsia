@@ -1338,7 +1338,7 @@ mod tests {
             let task1 = init.clone_task_for_test(0, Some(SIGCHLD));
             task1.thread_group().setsid().expect("setsid");
             let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
-            task2.thread_group().setpgid(&task2, &task2, 0).expect("setpgid");
+            task2.thread_group().setpgid(&task2, &task2, &task2.pid).expect("setpgid");
             let task2_pgid = task2.thread_group().read().process_group.leader.clone();
 
             assert_ne!(task2_pgid, task1.thread_group().read().process_group.leader);

@@ -380,10 +380,17 @@ pub fn sys_getpgid(current_task: &CurrentTask, pid: pid_t) -> Result<pid_t, Errn
 }
 
 pub fn sys_setpgid(current_task: &CurrentTask, pid: pid_t, pgid: pid_t) -> Result<(), Errno> {
+    if pgid < 0 {
+        return error!(EINVAL);
+    }
     let task = get_task_or_current(current_task, pid)?;
+    let pgid = if pgid == 0 {
+        task.pid.clone()
+    } else {
+        current_task.kernel().pids.read().get(pgid).map_err(|_| errno!(EPERM))?.clone()
+    };
 
-    current_task.thread_group().setpgid(current_task, &task, pgid)?;
-    Ok(())
+    current_task.thread_group().setpgid(current_task, &task, &pgid)
 }
 
 impl CurrentTask {

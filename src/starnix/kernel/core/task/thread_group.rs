@@ -1167,7 +1167,7 @@ impl ThreadGroup {
         &self,
         current_task: &CurrentTask,
         target: &Task,
-        pgid: pid_t,
+        pgid: &Pid,
     ) -> Result<(), Errno> {
         let mut pids = self.kernel.pids.write();
 
@@ -1180,7 +1180,7 @@ impl ThreadGroup {
                 .parent
                 .as_ref()
                 .is_some_and(|tg| tg.upgrade().leader == self.leader);
-            if target_thread_group.leader() != self.leader.id && !is_target_current_process_child {
+            if target_thread_group.base.leader != self.leader && !is_target_current_process_child {
                 return error!(ESRCH);
             }
 
@@ -1201,22 +1201,14 @@ impl ThreadGroup {
                     return error!(EPERM);
                 }
 
-                let target_pgid = if pgid == 0 { target_thread_group.leader() } else { pgid };
-                if target_pgid < 0 {
-                    return error!(EINVAL);
-                }
-
-                if target_pgid == target_process_group.leader.id {
+                if *pgid == target_process_group.leader {
                     return Ok(());
                 }
 
                 // If pgid is not equal to the target process id, the associated process group must exist
                 // and be in the same session as the target process.
-                if target_pgid != target_thread_group.leader() {
-                    new_process_group = pids
-                        .get(target_pgid)
-                        .and_then(|p| p.get_process_group())
-                        .map_err(|_| errno!(EPERM))?;
+                if *pgid != target_thread_group.base.leader {
+                    new_process_group = pgid.get_process_group().map_err(|_| errno!(EPERM))?;
                     if new_process_group.session != target_process_group.session {
                         return error!(EPERM);
                     }
@@ -2516,39 +2508,50 @@ mod test {
             assert_eq!(other_session_child_task.thread_group().setsid(), Ok(()));
 
             assert_eq!(
-                child_task1.thread_group().setpgid(&current_task, &current_task, 0),
+                child_task1.thread_group().setpgid(&current_task, &current_task, &current_task.pid),
                 error!(ESRCH)
             );
             assert_eq!(
-                current_task.thread_group().setpgid(&current_task, &execd_child_task, 0),
+                current_task.thread_group().setpgid(
+                    &current_task,
+                    &execd_child_task,
+                    &execd_child_task.pid
+                ),
                 error!(EACCES)
             );
             assert_eq!(
-                current_task.thread_group().setpgid(&current_task, &current_task, 0),
+                current_task.thread_group().setpgid(
+                    &current_task,
+                    &current_task,
+                    &current_task.pid
+                ),
                 error!(EPERM)
             );
             assert_eq!(
-                current_task.thread_group().setpgid(&current_task, &other_session_child_task, 0),
+                current_task.thread_group().setpgid(
+                    &current_task,
+                    &other_session_child_task,
+                    &other_session_child_task.pid
+                ),
                 error!(EPERM)
             );
             assert_eq!(
-                current_task.thread_group().setpgid(&current_task, &child_task1, -1),
-                error!(EINVAL)
-            );
-            assert_eq!(
-                current_task.thread_group().setpgid(&current_task, &child_task1, 255),
+                current_task.thread_group().setpgid(&current_task, &child_task1, &child_task2.pid),
                 error!(EPERM)
             );
             assert_eq!(
                 current_task.thread_group().setpgid(
                     &current_task,
                     &child_task1,
-                    other_session_child_task.tid.id
+                    &other_session_child_task.pid
                 ),
                 error!(EPERM)
             );
 
-            assert_eq!(child_task1.thread_group().setpgid(&current_task, &child_task1, 0), Ok(()));
+            assert_eq!(
+                child_task1.thread_group().setpgid(&current_task, &child_task1, &child_task1.pid),
+                Ok(())
+            );
             assert_eq!(
                 child_task1.thread_group().read().process_group.session.leader,
                 current_task.tid
@@ -2557,15 +2560,20 @@ mod test {
 
             let old_process_group = child_task2.thread_group().read().process_group.clone();
             assert_eq!(
-                current_task.thread_group().setpgid(
-                    &current_task,
-                    &child_task2,
-                    child_task1.tid.id
-                ),
+                current_task.thread_group().setpgid(&current_task, &child_task2, &child_task1.pid),
                 Ok(())
             );
             assert_eq!(child_task2.thread_group().read().process_group.leader, child_task1.tid);
             assert!(!old_process_group.read().thread_groups().contains(child_task2.thread_group()));
+
+            assert_eq!(
+                crate::task::syscalls::sys_setpgid(&current_task, child_task1.pid.id, -1),
+                error!(EINVAL)
+            );
+            assert_eq!(
+                crate::task::syscalls::sys_setpgid(&current_task, child_task1.pid.id, 255),
+                error!(EPERM)
+            );
         })
         .await;
     }
