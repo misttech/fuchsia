@@ -8,9 +8,6 @@
 
 #include <lk/init.h>
 #include <vm/physical_page_borrowing_config.h>
-#include <vm/pmm.h>
-
-PhysicalPageBorrowingConfig PhysicalPageBorrowingConfig::instance_;
 
 static void ppb_init_func(uint level) {
   // One option per potential borrowing site.
