@@ -5,13 +5,13 @@
 use core::task::Poll;
 
 use sapphire_collections::deque::Deque;
-use sapphire_collections::vec::Vec;
+use sapphire_collections::map::HashMap;
 use sapphire_sync::mutex::Mutex;
 
 use crate::global_index::GlobalIndex;
 use crate::notification::Notification;
 
-use super::{BroadcastCfg, MissedMessages};
+use super::{BroadcastCfg, MissedMessages, SubId};
 
 /// An asynchronous multi-subscriber Unfiltered Broadcast Channel.
 ///
@@ -37,7 +37,7 @@ use super::{BroadcastCfg, MissedMessages};
 /// struct MyBroadcastCfg;
 /// impl BroadcastCfg for MyBroadcastCfg {
 ///     type Buffer = ArrayStorage<3>;
-///     type SubscriptionList = ArrayStorage<2>;
+///     type SubscriptionStore = ArrayStorage<2>;
 ///     type Mtx = SingleThreadMutex;
 /// }
 ///
@@ -66,7 +66,7 @@ use super::{BroadcastCfg, MissedMessages};
 ///
 /// impl BroadcastCfg for SingleThreadedCfg {
 ///     type Buffer = ArrayStorage<3>;
-///     type SubscriptionList = ArrayStorage<2>;
+///     type SubscriptionStore = ArrayStorage<2>;
 ///     type Mtx = SingleThreadMutex;
 /// }
 ///
@@ -87,15 +87,12 @@ struct UnfilteredBroadcastChannelState<T, Cfg: BroadcastCfg> {
     head_global_idx: GlobalIndex,
     next_global_idx: GlobalIndex, // Where the next message will be written
 
-    // TODO(529758875): This is not the best datastructure for this. We want something with
-    // fast insertion and deletion anywhere and a `Cursor`-like API
-    subscribers: Vec<SubscriberState, Cfg::SubscriptionList>,
+    subscribers: HashMap<SubId, SubscriberState, Cfg::SubscriptionStore>,
     next_sub_id: usize,
 }
 
 /// The trackable state of an active subscriber enqueued in the channel state.
 struct SubscriberState {
-    id: usize,
     next_global_idx: GlobalIndex,
 }
 
@@ -104,7 +101,7 @@ struct SubscriberState {
 /// Receives cloned broadcasted messages. Can be polled asynchronously via [`Subscriber::next`].
 pub struct Subscriber<'a, T, Cfg: BroadcastCfg> {
     channel: &'a UnfilteredBroadcastChannel<T, Cfg>,
-    id: usize,
+    id: SubId,
 }
 
 impl<T, Cfg: BroadcastCfg> UnfilteredBroadcastChannelState<T, Cfg> {
@@ -112,7 +109,7 @@ impl<T, Cfg: BroadcastCfg> UnfilteredBroadcastChannelState<T, Cfg> {
     ///
     /// If there are no active subscribers, returns `next_global_idx`.
     fn slowest_reader(&self) -> GlobalIndex {
-        self.subscribers.iter().map(|s| s.next_global_idx).min().unwrap_or(self.next_global_idx)
+        self.subscribers.values().map(|s| s.next_global_idx).min().unwrap_or(self.next_global_idx)
     }
 
     fn force_push_back(&mut self, payload: T) -> Option<T> {
@@ -157,7 +154,7 @@ impl<T, Cfg: BroadcastCfg> UnfilteredBroadcastChannelState<T, Cfg> {
 
 impl<T, Cfg: BroadcastCfg> Default for UnfilteredBroadcastChannel<T, Cfg>
 where
-    Vec<SubscriberState, Cfg::SubscriptionList>: Default,
+    HashMap<SubId, SubscriberState, Cfg::SubscriptionStore>: Default,
     Deque<T, Cfg::Buffer>: Default,
 {
     fn default() -> Self {
@@ -166,7 +163,7 @@ where
                 queue: Deque::default(),
                 head_global_idx: GlobalIndex::new(0),
                 next_global_idx: GlobalIndex::new(0),
-                subscribers: Vec::default(),
+                subscribers: HashMap::default(),
                 next_sub_id: 0,
             }),
             not_full: Notification::new(),
@@ -186,15 +183,15 @@ impl<T: Clone, Cfg: BroadcastCfg> UnfilteredBroadcastChannel<T, Cfg> {
 
     /// Subscribes to the channel, returning a [`Subscriber`] endpoint if there is slot capacity.
     ///
-    /// Returns `None` if the maximum number of subscribers (defined by `SubscriptionList` capacity)
+    /// Returns `None` if the maximum number of subscribers (defined by `SubscriptionStore` capacity)
     /// has been reached.
     pub fn subscribe(&self) -> Option<Subscriber<'_, T, Cfg>> {
         let mut state = self.state.lock();
-        let id = state.next_sub_id;
+        let id = SubId::new(state.next_sub_id);
         state.next_sub_id += 1;
 
         let next_global_idx = state.next_global_idx;
-        state.subscribers.try_push(SubscriberState { id, next_global_idx }).ok()?;
+        state.subscribers.try_insert(id, SubscriberState { next_global_idx }).ok()?;
 
         Some(Subscriber { channel: self, id })
     }
@@ -247,11 +244,7 @@ impl<'a, T: Clone, Cfg: BroadcastCfg> Subscriber<'a, T, Cfg> {
             .channel
             .not_empty
             .when(guard, |state| {
-                let sub = state
-                    .subscribers
-                    .iter_mut()
-                    .find(|s| s.id == self.id)
-                    .expect("Subscriber not found");
+                let sub = state.subscribers.get_mut(&self.id).expect("Subscriber not found");
 
                 if sub.next_global_idx < state.head_global_idx {
                     let missed = (state.head_global_idx - sub.next_global_idx) as usize;
@@ -289,9 +282,7 @@ impl<'a, T: Clone, Cfg: BroadcastCfg> Subscriber<'a, T, Cfg> {
 impl<'a, T, Cfg: BroadcastCfg> Drop for Subscriber<'a, T, Cfg> {
     fn drop(&mut self) {
         let mut state = self.channel.state.lock();
-        if let Some(idx) = state.subscribers.iter().position(|s| s.id == self.id) {
-            state.subscribers.remove(idx);
-        }
+        state.subscribers.remove(&self.id);
         state.reclaim_space(&self.channel.not_full);
     }
 }
@@ -307,7 +298,7 @@ mod tests {
     struct StackCfg<const B: usize, const S: usize>;
     impl<const B: usize, const S: usize> BroadcastCfg for StackCfg<B, S> {
         type Buffer = ArrayStorage<B>;
-        type SubscriptionList = ArrayStorage<S>;
+        type SubscriptionStore = ArrayStorage<S>;
         type Mtx = SingleThreadMutex;
     }
 
@@ -403,7 +394,7 @@ mod tests {
         struct StdCfg;
         impl BroadcastCfg for StdCfg {
             type Buffer = Global;
-            type SubscriptionList = Global;
+            type SubscriptionStore = Global;
             type Mtx = SingleThreadMutex;
         }
         type StdBroadcast<T> = UnfilteredBroadcastChannel<T, StdCfg>;
@@ -542,7 +533,7 @@ mod tests {
         #[cfg(feature = "std")]
         impl BroadcastCfg for GrowableCfg {
             type Buffer = Global;
-            type SubscriptionList = Global;
+            type SubscriptionStore = Global;
             type Mtx = SingleThreadMutex;
         }
 

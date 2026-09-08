@@ -7,13 +7,13 @@ use core::pin::Pin;
 use core::task::{Context, Poll, Waker};
 
 use sapphire_collections::deque::Deque;
-use sapphire_collections::vec::Vec;
+use sapphire_collections::map::HashMap;
 use sapphire_sync::mutex::Mutex;
 
 use crate::global_index::GlobalIndex;
 use crate::notification::Notification;
 
-use super::{BroadcastCfg, MissedMessages};
+use super::{BroadcastCfg, MissedMessages, SubId};
 
 /// The outcome of evaluating a subscriber's interest in a broadcast payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +51,7 @@ impl Interest {
 /// struct MyBroadcastCfg;
 /// impl BroadcastCfg for MyBroadcastCfg {
 ///     type Buffer = ArrayStorage<3>;
-///     type SubscriptionList = ArrayStorage<2>;
+///     type SubscriptionStore = ArrayStorage<2>;
 ///     type Mtx = SingleThreadMutex;
 /// }
 ///
@@ -84,7 +84,7 @@ impl Interest {
 ///
 /// impl BroadcastCfg for SingleThreadedCfg {
 ///     type Buffer = ArrayStorage<3>;
-///     type SubscriptionList = ArrayStorage<2>;
+///     type SubscriptionStore = ArrayStorage<2>;
 ///     type Mtx = SingleThreadMutex;
 /// }
 ///
@@ -103,13 +103,12 @@ struct FilteredBroadcastChannelState<T, Cfg: BroadcastCfg> {
     queue: Deque<T, Cfg::Buffer>,
     head_global_idx: GlobalIndex,
     next_global_idx: GlobalIndex,
-    subscribers: Vec<FilteredSubscriberState<T>, Cfg::SubscriptionList>,
+    subscribers: HashMap<SubId, FilteredSubscriberState<T>, Cfg::SubscriptionStore>,
     next_sub_id: usize,
 }
 
 /// The trackable state of an active subscriber in a [`FilteredBroadcastChannel`].
 struct FilteredSubscriberState<T> {
-    id: usize,
     next_global_idx: GlobalIndex,
     filter: fn(&T) -> Interest,
     waker: Option<Waker>,
@@ -118,7 +117,7 @@ struct FilteredSubscriberState<T> {
 /// An active subscriber endpoint to a [`FilteredBroadcastChannel`].
 pub struct FilteredSubscriber<'a, T, Cfg: BroadcastCfg> {
     channel: &'a FilteredBroadcastChannel<T, Cfg>,
-    id: usize,
+    id: SubId,
 }
 
 /// A custom future returned by [`FilteredSubscriber::next`].
@@ -128,7 +127,7 @@ pub struct NextFuture<'a, 's, T, Cfg: BroadcastCfg> {
 
 impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
     fn slowest_reader(&self) -> GlobalIndex {
-        self.subscribers.iter().map(|s| s.next_global_idx).min().unwrap_or(self.next_global_idx)
+        self.subscribers.values().map(|s| s.next_global_idx).min().unwrap_or(self.next_global_idx)
     }
 
     fn force_push_back(&mut self, payload: T) -> Option<T> {
@@ -167,7 +166,7 @@ impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
 
 impl<T, Cfg: BroadcastCfg> Default for FilteredBroadcastChannel<T, Cfg>
 where
-    Vec<FilteredSubscriberState<T>, Cfg::SubscriptionList>: Default,
+    HashMap<SubId, FilteredSubscriberState<T>, Cfg::SubscriptionStore>: Default,
     Deque<T, Cfg::Buffer>: Default,
 {
     fn default() -> Self {
@@ -176,7 +175,7 @@ where
                 queue: Deque::default(),
                 head_global_idx: GlobalIndex::new(0),
                 next_global_idx: GlobalIndex::new(0),
-                subscribers: Vec::default(),
+                subscribers: HashMap::default(),
                 next_sub_id: 0,
             }),
             not_full: Notification::new(),
@@ -201,13 +200,13 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
     /// while still enabling a fixed-allocation scheme.
     pub fn subscribe(&self, filter: fn(&T) -> Interest) -> Option<FilteredSubscriber<'_, T, Cfg>> {
         let mut state = self.state.lock();
-        let id = state.next_sub_id;
+        let id = SubId::new(state.next_sub_id);
         state.next_sub_id += 1;
 
         let next_global_idx = state.next_global_idx;
         state
             .subscribers
-            .try_push(FilteredSubscriberState { id, next_global_idx, filter, waker: None })
+            .try_insert(id, FilteredSubscriberState { next_global_idx, filter, waker: None })
             .ok()?;
 
         Some(FilteredSubscriber { channel: self, id })
@@ -226,7 +225,7 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
                 let msg_idx = state.next_global_idx;
                 match state.push_back(item.clone()) {
                     Ok(()) => {
-                        for sub in state.subscribers.iter_mut() {
+                        for sub in state.subscribers.values_mut() {
                             if sub.next_global_idx == msg_idx {
                                 if (sub.filter)(&item).is_interested() {
                                     if let Some(waker) = sub.waker.take() {
@@ -259,7 +258,7 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
 
         let msg_idx = state.next_global_idx;
         state.force_push_back(payload.clone());
-        for sub in state.subscribers.iter_mut() {
+        for sub in state.subscribers.values_mut() {
             // If the subscriber is caught up and ready to read this specific message,
             // apply the filter. If uninterested, skip it silently. If interested, notify it.
             // If the subscriber is behind (not caught up), we notify it unconditionally so
@@ -298,11 +297,7 @@ impl<'a, 's, T: Clone, Cfg: BroadcastCfg> Future for NextFuture<'a, 's, T, Cfg> 
         let next = state.next_global_idx;
 
         let state = &mut *state;
-        let sub = state
-            .subscribers
-            .iter_mut()
-            .find(|s| s.id == self.subscriber.id)
-            .expect("Subscriber not found");
+        let sub = state.subscribers.get_mut(&self.subscriber.id).expect("Subscriber not found");
 
         if sub.next_global_idx < head {
             let missed = (head - sub.next_global_idx) as usize;
@@ -350,7 +345,7 @@ impl<'a, 's, T: Clone, Cfg: BroadcastCfg> Future for NextFuture<'a, 's, T, Cfg> 
 impl<'a, 's, T, Cfg: BroadcastCfg> Drop for NextFuture<'a, 's, T, Cfg> {
     fn drop(&mut self) {
         let mut state = self.subscriber.channel.state.lock();
-        if let Some(sub) = state.subscribers.iter_mut().find(|s| s.id == self.subscriber.id) {
+        if let Some(sub) = state.subscribers.get_mut(&self.subscriber.id) {
             sub.waker = None;
         }
     }
@@ -359,9 +354,7 @@ impl<'a, 's, T, Cfg: BroadcastCfg> Drop for NextFuture<'a, 's, T, Cfg> {
 impl<'a, T, Cfg: BroadcastCfg> Drop for FilteredSubscriber<'a, T, Cfg> {
     fn drop(&mut self) {
         let mut state = self.channel.state.lock();
-        if let Some(idx) = state.subscribers.iter().position(|s| s.id == self.id) {
-            state.subscribers.remove(idx);
-        }
+        state.subscribers.remove(&self.id);
         state.reclaim_space(&self.channel.not_full);
     }
 }
@@ -377,7 +370,7 @@ mod tests {
     struct StackCfg<const B: usize, const S: usize>;
     impl<const B: usize, const S: usize> BroadcastCfg for StackCfg<B, S> {
         type Buffer = ArrayStorage<B>;
-        type SubscriptionList = ArrayStorage<S>;
+        type SubscriptionStore = ArrayStorage<S>;
         type Mtx = SingleThreadMutex;
     }
 
@@ -649,7 +642,7 @@ mod tests {
             // 3. Verify sub.waker was cleared by checking internal state.
             {
                 let state = channel.state.lock();
-                let sub_state = state.subscribers.iter().find(|s| s.id == sub.id).unwrap();
+                let sub_state = state.subscribers.get(&sub.id).unwrap();
                 assert!(sub_state.waker.is_none(), "Waker should be cleared on NextFuture drop");
             }
 
@@ -722,7 +715,7 @@ mod tests {
         struct StdCfg;
         impl BroadcastCfg for StdCfg {
             type Buffer = Global;
-            type SubscriptionList = Global;
+            type SubscriptionStore = Global;
             type Mtx = SingleThreadMutex;
         }
         type StdBroadcast<T> = FilteredBroadcastChannel<T, StdCfg>;
@@ -901,7 +894,7 @@ mod tests {
         #[cfg(feature = "std")]
         impl BroadcastCfg for GrowableCfg {
             type Buffer = Global;
-            type SubscriptionList = Global;
+            type SubscriptionStore = Global;
             type Mtx = SingleThreadMutex;
         }
 
