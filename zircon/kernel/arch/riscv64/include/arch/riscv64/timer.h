@@ -9,6 +9,6 @@
 
 #include <lib/boot-options/boot-options.h>
 
-void riscv_generic_timer_init_early(const zbi_dcfg_riscv_generic_timer_driver_t& config);
+extern "C" void riscv_generic_timer_init_early(const zbi_dcfg_riscv_generic_timer_driver_t& config);
 
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_TIMER_H_

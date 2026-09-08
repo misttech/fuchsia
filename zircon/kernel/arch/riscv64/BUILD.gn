@@ -245,12 +245,14 @@ if (toolchain_base_environment == "kernel") {
       "src/sbi.rs",
       "src/spinlock.rs",
       "src/thread.rs",
+      "src/timer.rs",
       "src/vector.rs",
     ]
     deps = [
       ":riscv-sbi-bindings",
       ":riscv64-regs-bindings",
       ":riscv64-thread-bindings",
+      "//sdk/rust/zbi",
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
       "//zircon/kernel/arch:arch-types-bindings",

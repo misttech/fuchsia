@@ -219,7 +219,7 @@ extern "C" Riscv64ExceptionFn Riscv64UserException, Riscv64KernelException,
 extern "C" void riscv64_context_switch(vaddr_t* old_sp, vaddr_t new_sp);
 extern "C" syscall_result riscv64_syscall_dispatcher(iframe_t* frame);
 
-extern void riscv64_timer_exception();
+extern "C" void riscv64_timer_exception();
 extern void riscv64_software_exception();
 
 extern "C" void platform_irq(iframe_t* frame);

@@ -11,6 +11,7 @@ pub mod fpu;
 pub mod sbi;
 pub mod spinlock;
 pub mod thread;
+pub mod timer;
 pub mod vector;
 
 /// Architecture-specific saved normal mode state for riscv64.
