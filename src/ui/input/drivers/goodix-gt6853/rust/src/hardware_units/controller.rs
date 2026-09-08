@@ -9,21 +9,83 @@ use crate::data_types::reports::{
     EventStatus, InitialTouchReport, RemainingTouchContacts, TouchContact,
 };
 use crate::hardware_units::i2c::MessageInterfaceUnitI2c;
-use fuchsia_async as fasync;
-use fuchsia_async::DurationExt;
+use fidl_next_fuchsia_hardware_gpio as fidl_gpio;
+use fuchsia_async::OnInterrupt;
+use futures::StreamExt;
+use std::pin::Pin;
+use std::sync::Arc;
 
 /// Touch controller managing the GT6853 touch IC state and coordinate reporting.
-pub struct Controller {
+pub struct Controller<K: zx::InterruptKind = zx::RealInterruptKind> {
     i2c: MessageInterfaceUnitI2c,
+    attention_interrupt: Pin<Box<OnInterrupt<K, zx::MonotonicTimeline>>>,
+    /// Duplicated handle of [`Self::attention_interrupt`] used to acknowledge
+    /// the interrupt.
+    attention_interrupt_ack: Arc<zx::Interrupt<K, zx::MonotonicTimeline>>,
+    #[expect(unused)]
+    interrupt_gpio: Option<fidl_next::Client<fidl_gpio::Gpio>>,
 }
 
-impl Controller {
-    /// Polling interval for reading touch coordinates.
-    pub const POLL_INTERVAL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(10);
+impl Controller<zx::RealInterruptKind> {
+    /// Creates a new [`Controller`] using real hardware interrupts from the platform GPIO.
+    pub async fn new(
+        i2c: MessageInterfaceUnitI2c,
+        interrupt_gpio: fidl_next::Client<fidl_gpio::Gpio>,
+    ) -> Result<Self, zx::Status> {
+        map_fidl_result(
+            interrupt_gpio.set_buffer_mode(fidl_gpio::BufferMode::Input).await,
+            "setting interrupt GPIO buffer mode to input",
+        )?;
 
-    /// Creates a new [`Controller`] wrapping the given [`i2c`] interface unit.
-    pub fn new(i2c: MessageInterfaceUnitI2c) -> Self {
-        Self { i2c }
+        let initial_pin =
+            map_fidl_result(interrupt_gpio.read().await, "reading initial interrupt GPIO level")?;
+        log::debug!("Initial touch interrupt GPIO level: {:?}", initial_pin.value);
+
+        map_fidl_result(
+            interrupt_gpio
+                .configure_interrupt(&fidl_gpio::InterruptConfiguration {
+                    mode: Some(fidl_gpio::InterruptMode::EdgeLow),
+                    ..Default::default()
+                })
+                .await,
+            "configuring interrupt GPIO to EdgeLow",
+        )?;
+
+        let interrupt_result = map_fidl_result(
+            interrupt_gpio.get_interrupt(fidl_gpio::InterruptOptions::TIMESTAMP_MONO).await,
+            "getting interrupt from GPIO",
+        )?;
+
+        let interrupt_handle: zx::NullableHandle = interrupt_result.interrupt.into();
+        let interrupt =
+            zx::Interrupt::<zx::RealInterruptKind, zx::MonotonicTimeline>::from(interrupt_handle);
+
+        // Clear any leftover event status from boot to release the active-low INT line
+        // back to HIGH.
+        i2c.write_reg(&EventStatus::CLEAR).await.map_err(|status| {
+            log::warn!("Failed to clear initial EventStatus: {status:?}");
+            status
+        })?;
+        log::debug!("GT6853 initial buffer cleared and INT line released HIGH");
+
+        Ok(Self::new_with_interrupt(i2c, interrupt, Some(interrupt_gpio)))
+    }
+}
+
+impl<K: zx::InterruptKind> Controller<K> {
+    /// Creates a new [`Controller`] wrapping the given [`i2c`] interface unit and interrupt handle.
+    pub fn new_with_interrupt(
+        i2c: MessageInterfaceUnitI2c,
+        attention_interrupt: zx::Interrupt<K, zx::MonotonicTimeline>,
+        interrupt_gpio: Option<fidl_next::Client<fidl_gpio::Gpio>>,
+    ) -> Self {
+        let attention_interrupt_ack = Arc::new(
+            attention_interrupt
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("Failed to duplicate attention interrupt for ACK Arc"),
+        );
+        let attention_interrupt = Box::pin(OnInterrupt::new(attention_interrupt));
+        Self { i2c, attention_interrupt, attention_interrupt_ack, interrupt_gpio }
     }
 
     async fn read_remaining_contacts(
@@ -51,6 +113,35 @@ impl Controller {
         }
 
         match_remaining!(1, 2, 3, 4, 5, 6, 7, 8, 9)
+    }
+
+    /// Awaits a single hardware attention interrupt and processes the touch report.
+    ///
+    /// Always acknowledges the interrupt before returning, ensuring the interrupt line
+    /// is unmasked even if touch report processing encounters errors.
+    pub async fn process_interrupt(&mut self) -> Result<bool, zx::Status> {
+        let _event_time = match self.attention_interrupt.next().await {
+            Some(Ok(timestamp)) => timestamp,
+            Some(Err(error)) => {
+                log::warn!("Error waiting for touch interrupt: {error:?}");
+                return Err(error);
+            }
+            None => {
+                log::debug!("Touch interrupt stream closed");
+                return Err(zx::Status::CANCELED);
+            }
+        };
+
+        log::debug!("Touch interrupt triggered");
+
+        let attention_interrupt_ack = Arc::clone(&self.attention_interrupt_ack);
+        scopeguard::defer! {
+            if let Err(error) = attention_interrupt_ack.ack() {
+                log::warn!("Failed to acknowledge touch interrupt: {error:?}");
+            }
+        }
+
+        self.process_touch_report().await
     }
 
     /// Reads and processes coordinate data from the hardware touch buffer.
@@ -101,17 +192,66 @@ impl Controller {
         Ok(true)
     }
 
-    /// Runs the polling loop asynchronously.
-    ///
-    /// Periodically calls [`Self::process_touch_report`] every [`Self::POLL_INTERVAL`].
-    /// Transient hardware errors are logged as warnings and retried on subsequent ticks
-    /// to maintain task resilience.
+    /// Runs the interrupt-driven touch event loop indefinitely.
     pub async fn run(mut self) {
         loop {
-            if let Err(error) = self.process_touch_report().await {
-                log::warn!("Hardware error during touch poll: {error:?}");
+            match self.process_interrupt().await {
+                Ok(_) => {}
+                Err(zx::Status::CANCELED) => {
+                    log::info!("Touch interrupt stream closed, exiting controller run loop");
+                    break;
+                }
+                Err(error) => {
+                    log::warn!("Error during touch interrupt handling: {error:?}");
+                }
             }
-            fasync::Timer::new(Self::POLL_INTERVAL.after_now()).await;
+        }
+    }
+}
+
+trait IntoStatus {
+    fn into_status(self) -> zx::Status;
+}
+
+impl IntoStatus for zx::Status {
+    fn into_status(self) -> zx::Status {
+        self
+    }
+}
+
+impl IntoStatus for Result<(), zx::Status> {
+    fn into_status(self) -> zx::Status {
+        self.err().unwrap_or(zx::Status::INTERNAL)
+    }
+}
+
+/// Converts a `fidl_next` IPC result into a flat `Result<T, zx::Status>`.
+fn map_fidl_result<T, E: IntoStatus>(
+    result: Result<Result<T, E>, fidl_next::Error>,
+    operation_name: &str,
+) -> Result<T, zx::Status> {
+    match result {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => {
+            let status = error.into_status();
+            log::warn!("{operation_name} failed: {status}");
+            Err(status)
+        }
+        Err(error) => {
+            log::error!("FIDL error calling {operation_name}: {error:?}");
+            let status = match error {
+                fidl_next::Error::Protocol(fidl_next::ProtocolError::TransportError(status)) => {
+                    status
+                }
+                fidl_next::Error::Protocol(fidl_next::ProtocolError::PeerClosed) => {
+                    zx::Status::PEER_CLOSED
+                }
+                fidl_next::Error::Protocol(fidl_next::ProtocolError::PeerClosedWithEpitaph(
+                    status,
+                )) => zx::Status::err_from_raw(status),
+                _ => zx::Status::IO,
+            };
+            Err(status)
         }
     }
 }
@@ -122,10 +262,22 @@ mod tests {
     use crate::data_types::traits::AddressableRegister;
     use crate::testing::mock_i2c::MockI2cDevice;
     use fidl_next_fuchsia_hardware_i2c as fidl_i2c;
+    use fuchsia_async as fasync;
+
+    /// Runs a future to completion on a single-threaded executor whose port supports
+    /// binding interrupts (`BIND_TO_INTERRUPT`).
+    // TODO(https://fxbug.dev/539658337): Use #[fuchsia::test] directly once it supports enabling
+    // BIND_TO_INTERRUPT on the underlying executor port.
+    fn run_test_with_interrupts<F: std::future::Future<Output = ()>>(fut: F) {
+        let port = zx::Port::create_with_opts(zx::PortOptions::BIND_TO_INTERRUPT);
+        let mut exec = fasync::TestExecutor::builder().port(port).build();
+        exec.run_singlethreaded(fut);
+    }
 
     struct TestFixture {
         mock: MockI2cDevice,
-        controller: Controller,
+        controller: Controller<zx::VirtualInterruptKind>,
+        interrupt: zx::Interrupt<zx::VirtualInterruptKind, zx::MonotonicTimeline>,
         // The background server task must be kept alive for the lifetime of the test fixture.
         #[expect(dead_code)]
         i2c_server_task: fasync::Task<()>,
@@ -142,8 +294,14 @@ mod tests {
                 let _ = server_task.await;
             });
             let unit = MessageInterfaceUnitI2c::new(client);
-            let controller = Controller::new(unit);
-            Self { mock, controller, i2c_server_task }
+            let interrupt =
+                zx::Interrupt::<zx::VirtualInterruptKind, zx::MonotonicTimeline>::create_virtual()
+                    .expect("Failed to create virtual interrupt");
+            let interrupt_dup = interrupt
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("Failed to duplicate virtual interrupt");
+            let controller = Controller::new_with_interrupt(unit, interrupt_dup, None);
+            Self { mock, controller, interrupt, i2c_server_task }
         }
     }
 
@@ -274,6 +432,7 @@ mod tests {
         let mut fixture = TestFixture::new();
         // EventStatus: coordinates_ready = true (0x80), ContactCount = 1 (0x01)
         let mut report_bytes = vec![0x80, 0x01];
+        // contact0: id=0, x=530 (0x0212), y=940 (0x03AC), pressure=40 (0x28)
         let contact0 = [0x00, 0x12, 0x02, 0xAC, 0x03, 0x28, 0x00, 0x00];
         report_bytes.extend_from_slice(&contact0);
 
@@ -283,5 +442,111 @@ mod tests {
         let result = fixture.controller.process_touch_report().await;
         assert_eq!(result.err(), Some(zx::Status::IO_REFUSED));
         fixture.mock.check_all_expectations_replayed();
+    }
+
+    #[test]
+    fn test_process_interrupt_idle() {
+        run_test_with_interrupts(async {
+            let mut fixture = TestFixture::new();
+            let idle_report = vec![0x00; 10];
+            fixture.mock.expect_read(InitialTouchReport::ADDRESS, 10, Ok(idle_report));
+
+            let interrupt_trigger =
+                fixture.interrupt.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+
+            interrupt_trigger.trigger(zx::MonotonicInstant::get()).unwrap();
+
+            let has_event =
+                fixture.controller.process_interrupt().await.expect("process_interrupt failed");
+            assert!(!has_event);
+
+            // Trigger again to verify interrupt was acknowledged and remains functional.
+            let idle_report2 = vec![0x00; 10];
+            fixture.mock.expect_read(InitialTouchReport::ADDRESS, 10, Ok(idle_report2));
+            interrupt_trigger.trigger(zx::MonotonicInstant::get()).unwrap();
+            let has_event2 = fixture
+                .controller
+                .process_interrupt()
+                .await
+                .expect("second process_interrupt failed");
+            assert!(!has_event2);
+
+            fixture.mock.check_all_expectations_replayed();
+        });
+    }
+
+    #[test]
+    fn test_process_interrupt_single_touch() {
+        run_test_with_interrupts(async {
+            let mut fixture = TestFixture::new();
+
+            // EventStatus: coordinates_ready = true (0x80), ContactCount = 1 (0x01)
+            let mut report_bytes = vec![0x80, 0x01];
+            // contact0: id=0, x=530 (0x0212), y=940 (0x03AC), pressure=40 (0x28)
+            let contact0 = [0x00, 0x12, 0x02, 0xAC, 0x03, 0x28, 0x00, 0x00];
+            report_bytes.extend_from_slice(&contact0);
+
+            fixture.mock.expect_read(InitialTouchReport::ADDRESS, 10, Ok(report_bytes));
+            fixture.mock.expect_write(EventStatus::ADDRESS, &[0x00], Ok(()));
+
+            let interrupt_trigger =
+                fixture.interrupt.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+
+            interrupt_trigger.trigger(zx::MonotonicInstant::get()).unwrap();
+
+            let has_event =
+                fixture.controller.process_interrupt().await.expect("process_interrupt failed");
+            assert!(has_event);
+
+            fixture.mock.check_all_expectations_replayed();
+        });
+    }
+
+    #[test]
+    fn test_process_interrupt_ack_on_i2c_error() {
+        run_test_with_interrupts(async {
+            let mut fixture = TestFixture::new();
+
+            // The first read returns an `IO_REFUSED` error.
+            fixture.mock.expect_read(InitialTouchReport::ADDRESS, 10, Err(zx::Status::IO_REFUSED));
+
+            // Second read returns a valid touch report:
+            // EventStatus: coordinates_ready = true (0x80), ContactCount = 1 (0x01)
+            let mut report_bytes = vec![0x80, 0x01];
+            // contact0: id=0, x=530 (0x0212), y=940 (0x03AC), pressure=40 (0x28)
+            let contact0 = [0x00, 0x12, 0x02, 0xAC, 0x03, 0x28, 0x00, 0x00];
+            report_bytes.extend_from_slice(&contact0);
+            fixture.mock.expect_read(InitialTouchReport::ADDRESS, 10, Ok(report_bytes));
+            fixture.mock.expect_write(EventStatus::ADDRESS, &[0x00], Ok(()));
+
+            let interrupt_trigger =
+                fixture.interrupt.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+
+            interrupt_trigger.trigger(zx::MonotonicInstant::get()).unwrap();
+            let err = fixture.controller.process_interrupt().await.unwrap_err();
+            assert_eq!(err, zx::Status::IO_REFUSED);
+
+            interrupt_trigger.trigger(zx::MonotonicInstant::get()).unwrap();
+            let has_event =
+                fixture.controller.process_interrupt().await.expect("second event failed");
+            assert!(has_event);
+
+            fixture.mock.check_all_expectations_replayed();
+        });
+    }
+
+    #[test]
+    fn test_run_interrupt_stream_cancellation() {
+        run_test_with_interrupts(async {
+            let fixture = TestFixture::new();
+
+            // Destroying the interrupt handle cancels pending waits and closes the
+            // OnInterrupt stream (yielding zx::Status::CANCELED), simulating driver
+            // unbind/shutdown.
+            fixture.interrupt.destroy().unwrap();
+
+            fixture.controller.run().await;
+            fixture.mock.check_all_expectations_replayed();
+        });
     }
 }

@@ -119,13 +119,16 @@ fuchsia_rust_driver("driver-rust") {
   deps = [
     ":goodix-gt6853-bind",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_rust_next",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust_next",
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust_next/fidl_next",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:bitfield",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:scopeguard",
     "//third_party/rust_crates:zerocopy",
   ]
   test_deps = [ "//src/lib/fuchsia" ]
