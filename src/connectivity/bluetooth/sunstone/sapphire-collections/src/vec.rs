@@ -56,6 +56,24 @@ impl<T, A: StorageFamily> Vec<T, A> {
         self.inner.capacity()
     }
 
+    /// Reserves capacity for at least `additional` more elements to be inserted in the given `Vec`.
+    ///
+    /// # Errors
+    /// Returns `Err(AllocError)` if the buffer is full and cannot be grown.
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), crate::AllocError> {
+        let needed_capacity = self.len.checked_add(additional).ok_or(crate::AllocError)?;
+        self.inner.grow_at_least(needed_capacity)
+    }
+
+    /// Reserves the minimum capacity for exactly `additional` more elements to be inserted in the given `Vec`.
+    ///
+    /// # Errors
+    /// Returns `Err(AllocError)` if the buffer is full and cannot be grown.
+    pub fn try_reserve_exact(&mut self, additional: usize) -> Result<(), crate::AllocError> {
+        let needed_capacity = self.len.checked_add(additional).ok_or(crate::AllocError)?;
+        self.inner.grow_exactly(needed_capacity)
+    }
+
     /// Attempts to push a value to the back of the vector.
     ///
     /// Returns `Err(value)` if the buffer is full and cannot be grown.

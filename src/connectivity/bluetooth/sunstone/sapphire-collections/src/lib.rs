@@ -5,6 +5,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod deque;
+pub mod map;
 pub mod storage;
 pub mod vec;
 
