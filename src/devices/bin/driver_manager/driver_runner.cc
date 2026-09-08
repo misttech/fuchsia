@@ -1023,57 +1023,72 @@ void DriverRunner::RequestRebindFromDriverIndex(std::string spec,
 zx::result<> DriverRunner::CreateDriverHostComponent(
     std::string moniker, fidl::ServerEnd<fuchsia_io::Directory> exposed_dir,
     std::shared_ptr<bool> exposed_dir_connected, bool use_next_vdso) {
-  constexpr std::string_view kUrl = "fuchsia-boot:///driver_host#meta/driver_host.cm";
-  constexpr std::string_view kNextUrl = "fuchsia-boot:///driver_host#meta/driver_host_next.cm";
-  fidl::Arena arena;
-  auto child_decl_builder = fdecl::wire::Child::Builder(arena)
-                                .name(moniker)
-                                .url(use_next_vdso ? kNextUrl : kUrl)
-                                .startup(fdecl::wire::StartupMode::kLazy);
-  auto child_args_builder = fcomponent::wire::CreateChildArgs::Builder(arena);
-  auto open_callback =
-      [moniker](fidl::WireUnownedResult<fcomponent::Realm::OpenExposedDir>& result) {
-        if (!result.ok()) {
-          fdf_log::error("Failed to open exposed directory for driver host: '{}': {}", moniker,
-                         result.FormatDescription());
-          return;
-        }
-        if (result->is_error()) {
-          fdf_log::error("Failed to open exposed directory for driver host: '{}': {}", moniker,
-                         static_cast<uint32_t>(result->error_value()));
-        }
-      };
-  auto create_callback =
-      [this, moniker, exposed_dir = std::move(exposed_dir),
-       exposed_dir_connected = std::move(exposed_dir_connected),
-       open_callback = std::move(open_callback)](
-          fidl::WireUnownedResult<fcomponent::Realm::CreateChild>& result) mutable {
-        if (!result.ok()) {
-          fdf_log::error("Failed to create driver host '{}': {}", moniker,
-                         result.error().FormatDescription());
-          return;
-        }
-        if (result->is_error()) {
-          fdf_log::error("Failed to create driver host '{}': {}", moniker,
-                         static_cast<uint32_t>(result->error_value()));
-          return;
-        }
-        fdecl::wire::ChildRef child_ref{
-            .name = fidl::StringView::FromExternal(moniker),
-            .collection = "driver-hosts",
+  auto do_create = [this, moniker, exposed_dir = std::move(exposed_dir),
+                    exposed_dir_connected = std::move(exposed_dir_connected),
+                    use_next_vdso]() mutable {
+    constexpr std::string_view kUrl = "fuchsia-boot:///driver_host#meta/driver_host.cm";
+    constexpr std::string_view kNextUrl = "fuchsia-boot:///driver_host#meta/driver_host_next.cm";
+    fidl::Arena arena;
+    auto child_decl_builder = fdecl::wire::Child::Builder(arena)
+                                  .name(moniker)
+                                  .url(use_next_vdso ? kNextUrl : kUrl)
+                                  .startup(fdecl::wire::StartupMode::kLazy);
+    auto child_args_builder = fcomponent::wire::CreateChildArgs::Builder(arena);
+    auto open_callback =
+        [moniker](fidl::WireUnownedResult<fcomponent::Realm::OpenExposedDir>& result) {
+          if (!result.ok()) {
+            fdf_log::error("Failed to open exposed directory for driver host: '{}': {}", moniker,
+                           result.FormatDescription());
+            return;
+          }
+          if (result->is_error()) {
+            fdf_log::error("Failed to open exposed directory for driver host: '{}': {}", moniker,
+                           static_cast<uint32_t>(result->error_value()));
+          }
         };
-        runner_.realm()
-            ->OpenExposedDir(child_ref, std::move(exposed_dir))
-            .ThenExactlyOnce(std::move(open_callback));
-        *exposed_dir_connected = true;
-      };
-  runner_.realm()
-      ->CreateChild(
-          fdecl::wire::CollectionRef{
-              .name = "driver-hosts",
-          },
-          child_decl_builder.Build(), child_args_builder.Build())
-      .Then(std::move(create_callback));
+    auto create_callback =
+        [this, moniker, exposed_dir = std::move(exposed_dir),
+         exposed_dir_connected = std::move(exposed_dir_connected),
+         open_callback = std::move(open_callback)](
+            fidl::WireUnownedResult<fcomponent::Realm::CreateChild>& result) mutable {
+          if (!result.ok()) {
+            fdf_log::error("Failed to create driver host '{}': {}", moniker,
+                           result.error().FormatDescription());
+            return;
+          }
+          if (result->is_error()) {
+            fdf_log::error("Failed to create driver host '{}': {}", moniker,
+                           static_cast<uint32_t>(result->error_value()));
+            return;
+          }
+          fdecl::wire::ChildRef child_ref{
+              .name = fidl::StringView::FromExternal(moniker),
+              .collection = "driver-hosts",
+          };
+          runner_.realm()
+              ->OpenExposedDir(child_ref, std::move(exposed_dir))
+              .ThenExactlyOnce(std::move(open_callback));
+          *exposed_dir_connected = true;
+        };
+    runner_.realm()
+        ->CreateChild(
+            fdecl::wire::CollectionRef{
+                .name = "driver-hosts",
+            },
+            child_decl_builder.Build(), child_args_builder.Build())
+        .Then(std::move(create_callback));
+  };
+
+  auto it = pending_driver_host_destructions_.find(moniker);
+  if (it != pending_driver_host_destructions_.end()) {
+    it->second.push_back([do_create = std::move(do_create)](zx::result<> result) mutable {
+      if (result.is_ok()) {
+        do_create();
+      }
+    });
+  } else {
+    do_create();
+  }
   return zx::ok();
 }
 
@@ -1090,33 +1105,60 @@ void DriverRunner::DestroyDriverHostComponent(std::string_view driver_host_name_
     return;
   }
 
+  // Clear name_for_colocation on the dying host so GetDriverHost will not match it.
+  for (auto& host : driver_hosts_) {
+    if (host.name_for_colocation() == driver_host_name_for_colocation) {
+      host.set_name_for_colocation("");
+    }
+  }
+
+  // If destruction is already in flight for this moniker, coalesce callbacks.
+  auto it = pending_driver_host_destructions_.find(name);
+  if (it != pending_driver_host_destructions_.end()) {
+    if (completion_cb) {
+      it->second.push_back(std::move(completion_cb));
+    }
+    return;
+  }
+
+  auto& callbacks = pending_driver_host_destructions_[name];
+  if (completion_cb) {
+    callbacks.push_back(std::move(completion_cb));
+  }
+
   fdecl::wire::ChildRef child_ref{
       .name = fidl::StringView::FromExternal(name),
       .collection = "driver-hosts",
   };
   runner_.realm()->DestroyChild(child_ref).Then(
-      [completion_cb = std::move(completion_cb), moniker = std::move(name)](
-          fidl::WireUnownedResult<fcomponent::Realm::DestroyChild>& result) mutable {
+      [this,
+       moniker = name](fidl::WireUnownedResult<fcomponent::Realm::DestroyChild>& result) mutable {
+        zx::result<> final_status = zx::ok();
         if (!result.ok()) {
           fdf_log::error("Failed to destroy driver host '{}': {}", moniker,
                          result.FormatDescription());
-          completion_cb(zx::error(result.status()));
-          return;
-        }
-        if (result->is_error()) {
+          final_status = zx::error(result.status());
+        } else if (result->is_error()) {
           // If the component has already been cleaned up by component_manager
           // or is not found, we treat it as success.
           if (result->error_value() == fcomponent::wire::Error::kInstanceNotFound ||
               result->error_value() == fcomponent::wire::Error::kInstanceDied) {
-            completion_cb(zx::ok());
+            final_status = zx::ok();
           } else {
             fdf_log::error("Failed to destroy driver host '{}': {}", moniker,
                            static_cast<uint32_t>(result->error_value()));
-            completion_cb(zx::error(ZX_ERR_INTERNAL));
+            final_status = zx::error(ZX_ERR_INTERNAL);
           }
-          return;
         }
-        completion_cb(zx::ok());
+
+        auto it = pending_driver_host_destructions_.find(moniker);
+        if (it != pending_driver_host_destructions_.end()) {
+          auto pending = std::move(it->second);
+          pending_driver_host_destructions_.erase(it);
+          for (auto& cb : pending) {
+            cb(final_status);
+          }
+        }
       });
 }
 

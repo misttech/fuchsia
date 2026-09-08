@@ -24,7 +24,9 @@
 #include <lib/zircon-internal/thread_annotations.h>
 
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <fbl/intrusive_double_list.h>
 
@@ -369,6 +371,8 @@ class DriverRunner : public fidl::WireServer<fuchsia_driver_framework::Composite
   MemoryAttributor memory_attributor_;
 
   fidl::Client<fuchsia_hardware_power_statecontrol::Admin> statecontrol_admin_;
+  std::unordered_map<std::string, std::vector<fit::callback<void(zx::result<>)>>>
+      pending_driver_host_destructions_;
 };
 
 Collection ToCollection(const Node& node, fuchsia_driver_framework::DriverPackageType package_type);

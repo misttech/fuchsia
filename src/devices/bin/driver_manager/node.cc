@@ -977,6 +977,11 @@ void Node::FinishRestart() {
 
   // Store previous url before we reset the state_.
   std::string previous_url = driver_url();
+  if (previous_url == kUnboundUrl || previous_url.empty()) {
+    fdf_log::error("Node {}: Refusing to restart with invalid driver URL '{}'", name(),
+                   previous_url);
+    return;
+  }
 
   // Perform cleanups for previous driver before we try to start the next driver.
   if (auto* driver_component = std::get_if<DriverComponent>(&state_); driver_component) {
@@ -1042,6 +1047,19 @@ void Node::Remove(RemovalSet removal_set, NodeRemovalTracker* removal_tracker) {
 void Node::RestartNode() {
   GetNodeShutdownCoordinator().set_shutdown_intent(ShutdownIntent::kRestart);
   Remove(RemovalSet::kAll, nullptr);
+}
+
+void Node::RestartNodeOnCrash() {
+  std::string driver_host_name = driver_host_name_for_colocation_;
+  if (node_manager_.has_value() && !driver_host_name.empty()) {
+    node_manager_.value()->DestroyDriverHostComponent(driver_host_name, [](zx::result<> result) {
+      if (result.is_error()) {
+        fdf_log::error("Failed to destroy old driver host during restart: {}",
+                       result.status_string());
+      }
+    });
+  }
+  RestartNode();
 }
 
 void Node::QuarantineNode() {
@@ -1692,6 +1710,10 @@ void Node::OnNodeServerUnbound(fidl::UnbindInfo info) {
     return;
   }
 
+  if (GetNodeShutdownCoordinator().IsShuttingDown()) {
+    return;
+  }
+
   // If the driver fails to bind to the node, don't remove the node.
   if (IsPendingBind()) {
     fdf_log::warn("The driver for node {} failed to bind.", name());
@@ -1703,7 +1725,7 @@ void Node::OnNodeServerUnbound(fidl::UnbindInfo info) {
     // the node if it has the host_restart_on_crash_ enabled on it.
     if (host_restart_on_crash_) {
       fdf_log::info("Restarting node {} due to node closure while running.", name());
-      RestartNode();
+      RestartNodeOnCrash();
       return;
     }
 
@@ -3004,23 +3026,13 @@ void Node::OnDriverHostFidlError(fidl::UnbindInfo info) {
 
   // Unexpected driver host closure.
 
+  if (GetNodeShutdownCoordinator().IsShuttingDown()) {
+    return;
+  }
+
   if (host_restart_on_crash_) {
     fdf_log::warn("Restarting node {} because of unexpected driver channel shutdown.", name());
-    if (node_manager_.has_value()) {
-      node_manager_.value()->DestroyDriverHostComponent(
-          driver_host_name_for_colocation_, [weak_self = weak_from_this()](zx::result<> result) {
-            if (result.is_error()) {
-              // We log the error but still attempt the restart so we don't hang indefinitely.
-              fdf_log::error("Failed to destroy old driver host during restart. Status: {}",
-                             result.status_string());
-            }
-            if (auto self = weak_self.lock()) {
-              self->RestartNode();
-            }
-          });
-    } else {
-      RestartNode();
-    }
+    RestartNodeOnCrash();
     return;
   }
 

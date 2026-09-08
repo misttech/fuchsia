@@ -621,6 +621,7 @@ class Node : public fidl::WireServer<fuchsia_driver_framework::NodeController>,
 
   void OnDriverHostFidlError(fidl::UnbindInfo info);
   void OnComponentControllerFidlError(fidl::UnbindInfo info);
+  void RestartNodeOnCrash();
 
   // fidl::WireServer<fuchsia_component_runner::ComponentController>
   void handle_unknown_method(
