@@ -86,13 +86,13 @@ impl Writer {
 }
 
 /// Result of applying overrides to an image's metadata.
-pub(crate) struct ApplyOverridesResult {
-    pub(crate) metadata: ext4_metadata::Metadata,
-    pub(crate) skipped_inodes: std::collections::HashSet<u64>,
-    pub(crate) new_files: Vec<(u64, Utf8PathBuf)>,
+pub struct ApplyOverridesResult {
+    pub metadata: ext4_metadata::Metadata,
+    pub skipped_inodes: std::collections::HashSet<u64>,
+    pub new_files: Vec<(u64, Utf8PathBuf)>,
 }
 
-pub(crate) fn apply_overrides(
+pub fn apply_overrides(
     original_metadata: ext4_metadata::Metadata,
     overrides: Vec<StarnixFileOverride>,
     image_name: &str,
@@ -123,7 +123,8 @@ pub(crate) fn apply_overrides(
                     ctx.skipped_inodes.insert(inode);
                     return Ok(()); // Drop this node.
                 }
-                StarnixFileOperation::Overwrite(src_path) => {
+                StarnixFileOperation::Overwrite(src_path)
+                | StarnixFileOperation::Create(src_path) => {
                     ctx.skipped_inodes.insert(inode);
                     ctx.new_files.push((inode, src_path));
 
@@ -143,13 +144,6 @@ pub(crate) fn apply_overrides(
                         ctx.new_metadata.add_child(&path_components, inode);
                     }
                     return Ok(());
-                }
-                StarnixFileOperation::Create(_) => {
-                    anyhow::bail!(
-                        "File to create already exists in image {}: {}",
-                        image_name,
-                        current_path
-                    );
                 }
             }
         }
@@ -234,6 +228,8 @@ pub(crate) fn apply_overrides(
                 let path_components: Vec<&str> = path.iter().collect();
                 let mut current_inode = ext4_metadata::ROOT_INODE_NUM;
 
+                let xattrs = ext4_metadata::ExtendedAttributes::default();
+
                 // Create missing parent directories.
                 for i in 0..path_components.len() - 1 {
                     let component = path_components[i];
@@ -255,7 +251,7 @@ pub(crate) fn apply_overrides(
                             DEFAULT_NEW_DIR_MODE,
                             0,
                             0,
-                            ext4_metadata::ExtendedAttributes::default(),
+                            xattrs.clone(),
                         );
                         ctx.new_metadata.add_child(&path_components[0..=i], new_dir_inode);
                         current_inode = new_dir_inode;
@@ -269,7 +265,7 @@ pub(crate) fn apply_overrides(
                     o.mode.unwrap_or(DEFAULT_NEW_FILE_MODE),
                     o.uid.unwrap_or(0),
                     o.gid.unwrap_or(0),
-                    ext4_metadata::ExtendedAttributes::default(),
+                    xattrs,
                 );
                 ctx.new_metadata.add_child(&path_components, ctx.max_inode);
                 ctx.new_files.push((ctx.max_inode, src_path));

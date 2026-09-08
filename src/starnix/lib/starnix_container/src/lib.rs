@@ -17,12 +17,12 @@ use fuchsia_url::{FuchsiaPkgAbsoluteComponentUrl, RelativeComponentUrl, Relative
 
 use ext4_extract::remote_bundle as rb;
 
-mod hal_manifest;
-mod remote_bundle;
+pub mod hal_manifest;
+pub mod remote_bundle;
 pub mod repackage;
 
 use crate::remote_bundle::{Writer, apply_overrides};
-use assembly_config_schema::product_settings::StarnixFileOverride;
+use assembly_config_schema::product_settings::{StarnixFileOperation, StarnixFileOverride};
 use depfile::Depfile;
 pub use repackage::repackage_starnix_containers;
 
@@ -451,7 +451,7 @@ impl StarnixContainerRepackager {
         // Track inputs early so we don't forget.
         deps.add_inputs(new_base_package_manifest.blobs().iter().map(|b| b.source_path.clone()));
 
-        let mut builder = PackageBuilder::from_manifest(container_manifest, &self.outdir)
+        let mut builder = PackageBuilder::from_manifest(container_manifest.clone(), &self.outdir)
             .context("Parsing container package for repackaging")?;
 
         builder.overwrite_files(true);
@@ -469,15 +469,91 @@ impl StarnixContainerRepackager {
         }
 
         // Add HALs.
-        if !self.skip_subpackages {
+        if !self.hals.is_empty() {
+            let mut overrides = Vec::new();
+
             for hal in &self.hals {
-                let hal_manifest = PackageManifest::try_load_from(hal)?;
-                let name = hal_manifest
-                    .name()
-                    .to_string()
-                    .parse::<RelativePackageUrl>()
-                    .with_context(|| format!("parsing hal name: {}", hal_manifest.name()))?;
-                builder.add_subpackage(&name, hal_manifest.hash(), hal.clone().into())?;
+                let hal_package_manifest = PackageManifest::try_load_from(hal)?;
+                if !self.skip_subpackages {
+                    let name = hal_package_manifest
+                        .name()
+                        .to_string()
+                        .parse::<RelativePackageUrl>()
+                        .with_context(|| {
+                            format!("parsing hal name: {}", hal_package_manifest.name())
+                        })?;
+                    builder.add_subpackage(
+                        &name,
+                        hal_package_manifest.hash(),
+                        hal.clone().into(),
+                    )?;
+                }
+
+                let hal_package_name = hal_package_manifest.name().to_string();
+                let (hal_manifest, hal_manifest_source_path) =
+                    hal_manifest::load_from_package(&hal_package_manifest)
+                        .with_context(|| format!("Reading hal manifest from package: {}", hal))?;
+                if let Some(src_path) = hal_manifest_source_path {
+                    deps.add_input(src_path);
+                }
+                if let Some(blob) = hal_manifest.init_rc {
+                    deps.add_input(blob.source_path.clone());
+                    overrides.push(StarnixFileOverride {
+                        image_name: "odm".to_string(),
+                        file_path: format!("etc/init/{hal_package_name}.rc"),
+                        operation: StarnixFileOperation::Create(Utf8PathBuf::from(
+                            blob.source_path,
+                        )),
+                        mode: None,
+                        uid: None,
+                        gid: None,
+                    });
+                }
+                if let Some(blob) = hal_manifest.vintf_manifest {
+                    deps.add_input(blob.source_path.clone());
+                    overrides.push(StarnixFileOverride {
+                        image_name: "odm".to_string(),
+                        file_path: format!("etc/vintf/manifest/{hal_package_name}.xml"),
+                        operation: StarnixFileOperation::Create(Utf8PathBuf::from(
+                            blob.source_path,
+                        )),
+                        mode: None,
+                        uid: None,
+                        gid: None,
+                    });
+                }
+            }
+
+            if !overrides.is_empty() {
+                let original_metadata = if let Some(blob) =
+                    container_manifest.blobs().iter().find(|b| b.path == "data/odm/metadata.v1")
+                {
+                    let metadata_bytes = std::fs::read(&blob.source_path).with_context(|| {
+                        format!("reading base ODM metadata from {}", blob.source_path)
+                    })?;
+                    ext4_metadata::Metadata::deserialize(&metadata_bytes)
+                        .context("deserializing base ODM metadata")?
+                } else {
+                    ext4_metadata::Metadata::new()
+                };
+
+                let result = apply_overrides(original_metadata, overrides, "odm")
+                    .context("applying HAL overrides to ODM")?;
+
+                let metadata_bytes = result.metadata.serialize();
+
+                let metadata_path = self.outdir.join("odm_metadata.v1");
+                std::fs::write(&metadata_path, &metadata_bytes)
+                    .with_context(|| format!("writing metadata to {metadata_path}"))?;
+
+                builder.add_file_as_blob("data/odm/metadata.v1", &metadata_path)?;
+                deps.add_output(&metadata_path);
+
+                for (inode, src_path) in result.new_files {
+                    let dst = format!("data/odm/{inode}");
+                    builder.add_file_as_blob(dst, &src_path)?;
+                    deps.add_input(&src_path);
+                }
             }
         }
 
@@ -1601,8 +1677,13 @@ tmpfs   /data       tmpfs   defaults            wait
         let etc = m.lookup(ROOT_INODE_NUM, "etc").expect("etc not found");
         let etc_init = m.lookup(etc, "init").expect("init dir not found");
         let init = m.lookup(etc_init, "test.rc").expect("test.rc not found");
-        let init = m.get(init).expect("test.rc not found");
-        assert_matches!(init.info(), NodeInfo::File(_));
+        let init_node = m.get(init).expect("test.rc not found");
+        assert_matches!(init_node.info(), NodeInfo::File(_));
+        let selinux_attr = init_node
+            .extended_attributes
+            .get(b"security.selinux".as_slice())
+            .expect("selinux xattr missing");
+        assert_eq!(selinux_attr, &b"u:object_r:vendor_configs_file:s0"[..]);
     }
 
     #[test]
