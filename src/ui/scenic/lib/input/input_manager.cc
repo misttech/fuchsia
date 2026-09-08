@@ -21,15 +21,16 @@ InputManager::InputManager(async_dispatcher_t* input_dispatcher,
       scoped_observer_registry_(geometry_provider_),
       view_ref_installed_impl_(snapshot_holder),
       input_(input_dispatcher, snapshot_holder, inspect_node_,
-             [this](zx_koid_t koid, const view_tree::Snapshot& snapshot) {
+             [this](zx_koid_t requester, zx_koid_t koid, const view_tree::Snapshot& snapshot) {
                if (!use_auto_focus_)
                  return;
 
-               const auto& focus_chain = focus_manager_.GetFocusChain(snapshot);
-               if (!focus_chain.empty()) {
-                 const zx_koid_t requester = focus_chain[0];
-                 const zx_koid_t request = koid != ZX_KOID_INVALID ? koid : requester;
-                 focus_manager_.RequestFocus(requester, request, snapshot);
+               const zx_koid_t request = koid != ZX_KOID_INVALID ? koid : requester;
+               auto status = focus_manager_.RequestFocus(requester, request, snapshot);
+               if (status != focus::FocusChangeStatus::kAccept) {
+                 FX_LOGS(WARNING) << "RequestFocus failed (status: " << static_cast<int>(status)
+                                  << ", requester: " << requester << ", request: " << request
+                                  << ")";
                }
              }) {
   // Constructed and executed entirely on the dedicated input thread.

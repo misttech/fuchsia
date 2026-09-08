@@ -466,6 +466,80 @@ TEST_F(FocusManagerTest, AutoFocus_LoopShouldLandOnTopMostNode) {
   EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
+// Tree topology:
+//      A                      A
+//    /   \                  /   \
+//   B     C        ->      B     C
+//   |                            |
+//   D                            D
+// Focus moved due to RequestFocus() evaluates auto focus targets against the new view tree
+// topology. If the target is no longer a descendant of the requester, it should be ignored.
+TEST_F(FocusManagerTest, AutoFocus_ShouldIgnoreTargetIfNoLongerDescendant) {
+  snapshot_holder_->SetSnapshot(FourNodeSnapshot());
+  // B requests auto focus to D. D is currently a descendant of B in FourNodeSnapshot (A->B->D and
+  // A->C).
+  focus_manager_.SetAutoFocusForTest(kNodeB, kNodeD);
+
+  // Focus remains on A.
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA));
+
+  // Now change the topology so that D is completely moved under C.
+  // Thus, D is no longer a descendant of B.
+  auto snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
+  {
+    snapshot->root = kNodeA;
+    auto& view_tree = snapshot->view_tree;
+    view_tree[kNodeA] = ViewNode{.parent = ZX_KOID_INVALID, .children = {kNodeB, kNodeC}};
+    view_tree[kNodeB] = ViewNode{.parent = kNodeA};
+    view_tree[kNodeC] = ViewNode{.parent = kNodeA, .children = {kNodeD}};
+    view_tree[kNodeD] = ViewNode{.parent = kNodeC};
+  }
+  snapshot_holder_->SetSnapshot(snapshot);
+
+  // Now request focus to B.
+  // B's auto-focus target D is evaluated. Since D is no longer a descendant, it is ignored,
+  // and focus resolves on B.
+  focus_manager_.RequestFocusForTest(kNodeA, kNodeB);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
+}
+
+// Tree topology:
+//      A                      A
+//    /   \                  /   \
+//   B     C        ->      B     C
+//   |                            |
+//   D                            D
+// This tests that when focus is actively on an auto-focused target (D via B), and a view tree
+// topology change severs the target from the requester's subtree, the repairing process drops
+// the invalid auto-focus rule and safely falls back to the original requester.
+TEST_F(FocusManagerTest, AutoFocus_ShouldIgnoreTargetDuringRepairIfNoLongerDescendant) {
+  snapshot_holder_->SetSnapshot(FourNodeSnapshot());
+  focus_manager_.SetAutoFocusForTest(kNodeB, kNodeD);
+
+  // Request focus to B. B automatically delegates to D.
+  focus_manager_.RequestFocusForTest(kNodeA, kNodeB);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
+
+  // Now change the topology so that D is completely moved under C.
+  auto snapshot = std::make_shared<view_tree::Snapshot>();
+  snapshot->sequence_number = g_next_sequence_number++;
+  {
+    snapshot->root = kNodeA;
+    auto& view_tree = snapshot->view_tree;
+    view_tree[kNodeA] = ViewNode{.parent = ZX_KOID_INVALID, .children = {kNodeB, kNodeC}};
+    view_tree[kNodeB] = ViewNode{.parent = kNodeA};
+    view_tree[kNodeC] = ViewNode{.parent = kNodeA, .children = {kNodeD}};
+    view_tree[kNodeD] = ViewNode{.parent = kNodeC};
+  }
+
+  // Triggering the snapshot update causes RepairFocus to run.
+  // The chain [A, B, D] is severed between B and D. Focus falls back to B.
+  // B evaluates auto-focus to D, but rejects it because D is no longer a descendant.
+  // Therefore, focus remains securely on B.
+  snapshot_holder_->SetSnapshot(snapshot);
+  EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
+}
 class FocusChainTest : public gtest::TestLoopFixture,
                        public fidl::Server<fuchsia_ui_focus::FocusChainListener> {
  public:

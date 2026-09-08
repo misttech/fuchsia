@@ -534,6 +534,83 @@ TEST_F(FlatlandMouseIntegrationTest, ChildReceivesFocus_OnMouseLatch) {
   EXPECT_TRUE(is_child_focused->focused());
 }
 
+TEST_F(FlatlandMouseIntegrationTest, MouseRejectsFocus_OnMouseLatchWithInvalidContext) {
+  FlatlandPtr child_instance;
+  MouseSourcePtr child_mouse_source;
+  ViewRefFocusedPtr child_focused;
+
+  child_instance.set_error_handler([](zx_status_t status) {
+    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
+  });
+  child_mouse_source.set_error_handler([](zx_status_t status) {
+    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
+  });
+  child_focused.set_error_handler([](zx_status_t status) {
+    FAIL("ViewRefFocused closed with status: %s", zx_status_get_string(status));
+  });
+
+  auto child_view_ref =
+      CreateAndAddChildView(root_instance_,
+                            /*viewport_transform_id*/ {.value = 2},
+                            /*parent_of_viewport_transform*/ kRootTransform,
+                            /*parent_content_id*/ {.value = 1}, child_instance,
+                            child_mouse_source.NewRequest(), child_focused.NewRequest());
+
+  // Create a sibling view to act as the invalid injection context.
+  FlatlandPtr sibling_instance;
+  MouseSourcePtr sibling_mouse_source;
+  ViewRefFocusedPtr sibling_focused;
+  auto sibling_view_ref =
+      CreateAndAddChildView(root_instance_,
+                            /*viewport_transform_id*/ {.value = 3},
+                            /*parent_of_viewport_transform*/ kRootTransform,
+                            /*parent_content_id*/ {.value = 2}, sibling_instance,
+                            sibling_mouse_source.NewRequest(), sibling_focused.NewRequest());
+
+  // Create a child of the sibling view to act as the injection target.
+  FlatlandPtr child_of_sibling_instance;
+  MouseSourcePtr child_of_sibling_mouse_source;
+  ViewRefFocusedPtr child_of_sibling_focused;
+  child_of_sibling_instance.set_error_handler([](zx_status_t status) {
+    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
+  });
+  child_of_sibling_mouse_source.set_error_handler([](zx_status_t status) {
+    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
+  });
+  child_of_sibling_focused.set_error_handler([](zx_status_t status) {
+    FAIL("ViewRefFocused closed with status: %s", zx_status_get_string(status));
+  });
+  auto child_of_sibling_view_ref = CreateAndAddChildView(
+      sibling_instance,
+      /*viewport_transform_id*/ {.value = 2},
+      /*parent_of_viewport_transform*/ kRootTransform,
+      /*parent_content_id*/ {.value = 1}, child_of_sibling_instance,
+      child_of_sibling_mouse_source.NewRequest(), child_of_sibling_focused.NewRequest());
+
+  // Listen for input events on the injection target.
+  std::vector<MouseEvent> child_of_sibling_events;
+  StartWatchLoop(child_of_sibling_mouse_source, child_of_sibling_events);
+
+  // Setup an injector where sibling is context, and child of sibling is target.
+  // This passes the pointerinjector registry validation (target is strict descendant of context).
+  const std::vector<uint8_t> button_vec = {1};
+  RegisterInjector(fidl::Clone(sibling_view_ref), fidl::Clone(child_of_sibling_view_ref),
+                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
+  Inject(0, 0, EventPhase::ADD, button_vec);
+
+  // Target should receive the mouse input events.
+  RunLoopUntil([&child_of_sibling_events] { return child_of_sibling_events.size() == 1u; });
+
+  // Sibling view should NOT receive focus because `sibling` is the context (and thus the
+  // requester), but `sibling` is not currently in the focus chain. It has no authority to request
+  // focus.
+  std::optional<FocusState> is_sibling_focused;
+  sibling_focused->Watch(
+      [&is_sibling_focused](auto update) { is_sibling_focused = std::move(update); });
+  RunLoopWithTimeout(zx::msec(50));
+  EXPECT_FALSE(is_sibling_focused.has_value());
+}
+
 // Send wheel events to scenic ensure client receives wheel events.
 TEST_F(FlatlandMouseIntegrationTest, Wheel) {
   FlatlandPtr child_instance;

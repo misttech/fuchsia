@@ -234,9 +234,14 @@ zx_koid_t FocusManager::FindNextAutoFocusTarget(zx_koid_t koid,
                                                 const view_tree::Snapshot& snapshot) const {
   const auto it = auto_focus_targets_.find(koid);
   if (it != auto_focus_targets_.end() && snapshot.view_tree.contains(it->second)) {
-    koid = it->second;
-    while (koid != snapshot.root && !snapshot.view_tree.at(koid).is_focusable) {
-      koid = snapshot.view_tree.at(koid).parent;
+    const zx_koid_t target = it->second;
+    // Transfer policy: target must be a descendant of requester (koid)
+    if (snapshot.IsDescendant(/*descendant_koid*/ target, /*ancestor_koid*/ koid) ||
+        target == koid) {
+      koid = target;
+      while (koid != snapshot.root && !snapshot.view_tree.at(koid).is_focusable) {
+        koid = snapshot.view_tree.at(koid).parent;
+      }
     }
   }
   return koid;

@@ -14,11 +14,12 @@ class Snapshot;
 
 namespace scenic_impl::input {
 
-// RequestFocusFunc should attempt to move focus to the passed in zx_koid_t.
-// If the passed in koid is ZX_KOID_INVALID, then focus should be moved to
-// the current root of the focus chain. If there is no root, then the call should
-// silently fail.
-using RequestFocusFunc = fit::function<void(zx_koid_t, const view_tree::Snapshot&)>;
+// RequestFocusFunc should attempt to move focus to the passed in zx_koid_t `request`,
+// initiated by `requester`.
+// If the passed in `request` koid is ZX_KOID_INVALID, then focus should be moved to
+// the `requester` instead. If there is no root, then the call should silently fail.
+using RequestFocusFunc =
+    fit::function<void(zx_koid_t requester, zx_koid_t request, const view_tree::Snapshot&)>;
 
 }  // namespace scenic_impl::input
 

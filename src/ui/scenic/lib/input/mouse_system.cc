@@ -113,7 +113,7 @@ void MouseSystem::InjectMouseEventHitTested(InternalMouseEvent event, const Stre
     // Button down on an unlatched stream -> latch it to the top-most view.
     if (button_down) {
       mouse_receiver.latched = true;
-      request_focus_(mouse_receiver.view_koid, snapshot);
+      request_focus_(/*requester*/ event.context, /*request*/ mouse_receiver.view_koid, snapshot);
     }
   }
 
