@@ -135,6 +135,105 @@ class StationStatus:
     auth: bool
     assoc: bool
     authorized: bool
+    rssi: int | None = None
+    tx_rate_mbps: float | None = None
+    rx_rate_mbps: float | None = None
+
+
+def parse_iwinfo_ubus_assoclist(
+    output: object, mac: MacAddress
+) -> tuple[int, float, float]:
+    """Parses RSSI (dBm), TX rate (Mbps), and RX rate (Mbps) from `ubus call iwinfo assoclist` output."""
+    if hasattr(output, "stdout"):
+        output = output.stdout
+    if isinstance(output, bytes):
+        output = output.decode("utf-8", errors="replace")
+    if isinstance(output, str):
+        output = json.loads(output)
+
+    if not isinstance(output, (dict, list)):
+        raise ValueError(
+            f"Unexpected ubus iwinfo assoclist output format: {output}"
+        )
+
+    mac_str = str(mac).lower()
+    sta_entry: dict[str, Json] | None = None
+
+    if isinstance(output, list):
+        for entry in output:
+            if (
+                isinstance(entry, dict)
+                and str(entry.get("mac", "")).lower() == mac_str
+            ):
+                sta_entry = entry
+                break
+    elif isinstance(output, dict):
+        if "results" in output:
+            results = output["results"]
+            if isinstance(results, list):
+                for entry in results:
+                    if (
+                        isinstance(entry, dict)
+                        and str(entry.get("mac", "")).lower() == mac_str
+                    ):
+                        sta_entry = entry
+                        break
+            elif isinstance(results, dict):
+                for k, v in results.items():
+                    if k.lower() == mac_str or (
+                        isinstance(v, dict)
+                        and str(v.get("mac", "")).lower() == mac_str
+                    ):
+                        sta_entry = v if isinstance(v, dict) else None
+                        break
+        elif str(output.get("mac", "")).lower() == mac_str:
+            sta_entry = output
+
+    if not sta_entry:
+        raise ValueError(
+            f"Station {mac} not found in ubus iwinfo assoclist output"
+        )
+
+    sig = sta_entry.get("signal")
+    if sig is None:
+        sig = sta_entry.get("signal_avg")
+    if sig is None or not isinstance(sig, (int, float, str)):
+        raise ValueError(
+            f"No signal information for station {mac} in {sta_entry}"
+        )
+
+    sig_val = int(sig)
+    if sig_val > 0x7FFFFFFF:
+        sig_val -= 0x100000000
+    elif sig_val > 128:
+        sig_val -= 256
+    rssi = sig_val
+
+    tx_info = sta_entry.get("tx")
+    if isinstance(tx_info, dict):
+        tx_raw = tx_info.get("rate")
+    else:
+        tx_raw = sta_entry.get("tx_rate")
+    if tx_raw is None or not isinstance(tx_raw, (int, float, str)):
+        raise ValueError(f"No valid TX rate for station {mac} in {sta_entry}")
+    tx_val = float(tx_raw)
+    if tx_val <= 0:
+        raise ValueError(f"No valid TX rate for station {mac} in {sta_entry}")
+    tx_rate_mbps = round(tx_val / 1000.0, 2)
+
+    rx_info = sta_entry.get("rx")
+    if isinstance(rx_info, dict):
+        rx_raw = rx_info.get("rate")
+    else:
+        rx_raw = sta_entry.get("rx_rate")
+    if rx_raw is None or not isinstance(rx_raw, (int, float, str)):
+        raise ValueError(f"No valid RX rate for station {mac} in {sta_entry}")
+    rx_val = float(rx_raw)
+    if rx_val <= 0:
+        raise ValueError(f"No valid RX rate for station {mac} in {sta_entry}")
+    rx_rate_mbps = round(rx_val / 1000.0, 2)
+
+    return rssi, tx_rate_mbps, rx_rate_mbps
 
 
 class OpenWrtAP:
@@ -520,32 +619,47 @@ class OpenWrtAP:
         except Exception:
             return False, status_map
 
-    def get_sta_status(
-        self, mac: MacAddress, band: Band
-    ) -> dict[str, StationStatus]:
+    def get_sta_status(self, mac: MacAddress, band: Band) -> StationStatus:
         """Get station status for a specific band on OpenWrt."""
         result: dict[str, StationStatus] = {}
-        try:
-            interfaces = self._get_hostapd_interfaces(band)
-            for iface in interfaces:
-                clients_res = self.ssh.run(
-                    f"ubus call hostapd.{iface} get_clients"
-                ).stdout.decode()
-                clients_data = json.loads(clients_res)
-                clients = clients_data.get("clients", {})
-                for client_mac, status in clients.items():
-                    if client_mac.lower() == str(mac).lower():
-                        result[iface] = StationStatus(
-                            auth=status.get("auth", False),
-                            assoc=status.get("assoc", False),
-                            authorized=status.get("authorized", False),
+        interfaces = self._get_hostapd_interfaces(band)
+        for iface in interfaces:
+            clients_res = self.ssh.run(f"ubus call hostapd.{iface} get_clients")
+            clients_out = clients_res.stdout.decode("utf-8", errors="replace")
+            clients_data = json.loads(clients_out)
+            clients = clients_data.get("clients", {})
+            for client_mac, status in clients.items():
+                if client_mac.lower() == str(mac).lower():
+                    rssi = tx_rate_mbps = rx_rate_mbps = None
+                    try:
+                        ubus_res = self.ssh.run(
+                            f'ubus call iwinfo assoclist \'{{"device": "{iface}", "mac": "{mac}"}}\''
                         )
-        except Exception as e:
-            error_msg = (
-                f"Failed to get status for station {mac} on band {band}: {e}"
+                        (
+                            rssi,
+                            tx_rate_mbps,
+                            rx_rate_mbps,
+                        ) = parse_iwinfo_ubus_assoclist(ubus_res.stdout, mac)
+                    except (ValueError, json.JSONDecodeError):
+                        pass
+                    result[iface] = StationStatus(
+                        auth=status.get("auth", False),
+                        assoc=status.get("assoc", False),
+                        authorized=status.get("authorized", False),
+                        rssi=rssi,
+                        tx_rate_mbps=tx_rate_mbps,
+                        rx_rate_mbps=rx_rate_mbps,
+                    )
+        if len(result) == 0:
+            raise RuntimeError(
+                f"Station {mac} not found on any interface {interfaces} for band {band}"
             )
-            raise RuntimeError(error_msg) from e
-        return result
+        if len(result) > 1:
+            raise RuntimeError(
+                f"Expected exactly one station status for {mac} on band {band}, "
+                f"but found {len(result)} on interfaces {list(result.keys())}"
+            )
+        return list(result.values())[0]
 
     def _is_ap_broadcasting(
         self, interface: str, expected_ssids: list[str]

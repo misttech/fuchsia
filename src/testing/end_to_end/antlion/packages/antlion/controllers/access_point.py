@@ -24,7 +24,11 @@ from antlion.controllers.ap_lib.dhcp_server import DhcpServer, NoInterfaceError
 from antlion.controllers.ap_lib.extended_capabilities import (
     ExtendedCapabilities,
 )
-from antlion.controllers.ap_lib.hostapd import Hostapd
+from antlion.controllers.ap_lib.hostapd import Error as HostapdError
+from antlion.controllers.ap_lib.hostapd import (
+    Hostapd,
+    StationStatus,
+)
 from antlion.controllers.ap_lib.hostapd_ap_preset import create_ap_preset
 from antlion.controllers.ap_lib.hostapd_config import HostapdConfig
 from antlion.controllers.ap_lib.hostapd_security import Security
@@ -844,6 +848,55 @@ class AccessPoint:
         if instance is None:
             raise ValueError(f"Invalid identifier {identifier} given")
         return instance.hostapd.sta_authorized(sta_mac)
+
+    def get_sta_status(
+        self,
+        identifier_or_mac: str | MacAddress,
+        sta_mac: MacAddress | None = None,
+    ) -> StationStatus:
+        """Get station status for the given STA, as seen by the AP.
+
+        Args:
+            identifier_or_mac: The AP interface identifier, or STA MAC if single arg.
+            sta_mac: The STA MAC address if identifier was provided as first arg.
+        """
+        if sta_mac is None:
+            sta_mac = MacAddress(str(identifier_or_mac))
+            if not self._aps:
+                raise ValueError("No AP instances running")
+            for iface, inst in self._aps.items():
+                try:
+                    status = inst.hostapd.get_sta_status(sta_mac)
+                except HostapdError:
+                    continue
+                if status.assoc:
+                    if (
+                        status.rssi is None
+                        or status.tx_rate_mbps is None
+                        or status.rx_rate_mbps is None
+                    ):
+                        raise ValueError(
+                            f"Missing station telemetry on {iface} for {sta_mac}: {status}"
+                        )
+                    return status
+            raise ValueError(
+                f"Station {sta_mac} is not associated on any running AP instance"
+            )
+
+        identifier = str(identifier_or_mac)
+        instance = self._aps.get(identifier)
+        if instance is None:
+            raise ValueError(f"Invalid identifier {identifier} given")
+        status = instance.hostapd.get_sta_status(sta_mac)
+        if (
+            status.rssi is None
+            or status.tx_rate_mbps is None
+            or status.rx_rate_mbps is None
+        ):
+            raise ValueError(
+                f"Missing station telemetry on {identifier} for {sta_mac}: {status}"
+            )
+        return status
 
     def get_sta_extended_capabilities(
         self, identifier: str, sta_mac: MacAddress

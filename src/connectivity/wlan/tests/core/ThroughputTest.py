@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import asyncio
 import json
 import logging
 import os
@@ -14,6 +15,9 @@ import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
 from antlion.controllers import iperf_server
 from antlion.controllers.access_point import AccessPoint, setup_ap
+from antlion.controllers.ap_lib.hostapd import (
+    StationStatus as HostapdStationStatus,
+)
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
 )
@@ -22,8 +26,10 @@ from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
 )
+from honeydew.typing.custom_types import MacAddress
 from mobly import asserts, signals, test_runner
 from mobly.config_parser import TestRunConfig
+from openwrt_access_point import StationStatus as OpenWrtStationStatus
 from openwrt_access_point.lib.access_point_config import (
     AccessPointConfig,
     Band,
@@ -40,7 +46,19 @@ from openwrt_access_point.lib.access_point_config_mapper import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_IPERF_DURATION: timedelta = timedelta(seconds=10)
+IPERF_DURATION: timedelta = timedelta(seconds=10)
+
+
+@dataclass
+class LinkMetrics:
+    """Represents link quality and rate metrics perceived by AP and DUT."""
+
+    ap_rssi: int | None = None
+    ap_tx_rate_mbps: float | None = None
+    ap_rx_rate_mbps: float | None = None
+    dut_rssi: int | None = None
+    dut_tx_rate_mbps: float | None = None
+    dut_rx_rate_mbps: float | None = None
 
 
 class IperfUdpResult(TypedDict):
@@ -140,7 +158,9 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         with open(self.csv_file_path, "w", encoding="utf-8") as csv_file:
             csv_file.write(
-                "security,channel,channel_bandwidth,tcp_tx_mbps,tcp_rx_mbps,udp_tx_mbps,udp_rx_mbps\n"
+                "security,channel,channel_bandwidth,"
+                + "ap_rssi,ap_tx_rate_mbps,ap_rx_rate_mbps,dut_rssi,dut_tx_rate_mbps,dut_rx_rate_mbps,"
+                + "tcp_tx_mbps,tcp_rx_mbps,udp_tx_mbps,udp_rx_mbps\n"
             )
 
     async def setup_test(self) -> None:
@@ -152,14 +172,97 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             self.access_point.stop_all_aps()
         await super().teardown_test()
 
+    async def _measure_link_metrics(
+        self, iface: wlan_core.ClientIface, dut_mac: MacAddress, band: Band
+    ) -> LinkMetrics:
+        metrics = LinkMetrics()
+
+        # 1. Query AP perspective
+        ap_status: OpenWrtStationStatus | HostapdStationStatus
+        if self.openwrt_ap is not None:
+            ap_status = await asyncio.to_thread(
+                self.openwrt_ap.get_sta_status, dut_mac, band
+            )
+        elif isinstance(self.access_point, AccessPoint):
+            ap_iface = (
+                self.access_point.wlan_2g
+                if band == Band.BAND_2G
+                else self.access_point.wlan_5g
+            )
+            ap_status = await asyncio.to_thread(
+                self.access_point.get_sta_status, ap_iface, dut_mac
+            )
+        else:
+            raise RuntimeError(
+                "No AP controller available to query station status"
+            )
+        if ap_status.rssi is None:
+            raise signals.TestFailure(
+                f"Expected AP RSSI to be present for {dut_mac}: {ap_status}"
+            )
+        if ap_status.tx_rate_mbps is None:
+            raise signals.TestFailure(
+                f"Expected AP TX PHY rate to be present for {dut_mac}: {ap_status}"
+            )
+        asserts.assert_greater(
+            ap_status.tx_rate_mbps,
+            0,
+            f"Expected positive AP TX PHY rate for {dut_mac}: {ap_status}",
+        )
+        if ap_status.rx_rate_mbps is None:
+            raise signals.TestFailure(
+                f"Expected AP RX PHY rate to be present for {dut_mac}: {ap_status}"
+            )
+        asserts.assert_greater(
+            ap_status.rx_rate_mbps,
+            0,
+            f"Expected positive AP RX PHY rate for {dut_mac}: {ap_status}",
+        )
+        metrics.ap_rssi = ap_status.rssi
+        metrics.ap_tx_rate_mbps = ap_status.tx_rate_mbps
+        metrics.ap_rx_rate_mbps = ap_status.rx_rate_mbps
+
+        # 2. Query DUT perspective
+        signal_report = await iface.get_signal_report()
+        conn_report = getattr(signal_report, "connection_signal_report", None)
+        if conn_report is None:
+            raise signals.TestFailure(
+                f"DUT signal report missing connection_signal_report: {signal_report}"
+            )
+        dut_rssi = getattr(conn_report, "rssi_dbm", None)
+        if dut_rssi is None:
+            raise signals.TestFailure(
+                f"DUT connection signal report missing rssi_dbm: {conn_report}"
+            )
+        metrics.dut_rssi = dut_rssi
+
+        tx_rate_500kbps = getattr(conn_report, "tx_rate_500kbps", None)
+        if tx_rate_500kbps is None:
+            raise signals.TestFailure(
+                f"DUT connection signal report missing tx_rate_500kbps: {conn_report}"
+            )
+        asserts.assert_greater(
+            tx_rate_500kbps,
+            0,
+            f"DUT connection signal report non-positive tx_rate_500kbps: {tx_rate_500kbps}",
+        )
+        metrics.dut_tx_rate_mbps = round(tx_rate_500kbps * 0.5, 2)
+        # Note: ConnectionSignalReport does not include an RX rate, so
+        # metrics.dut_rx_rate_mbps remains None.
+
+        return metrics
+
     @overload
     async def get_iperf_throughput_bps(
         self,
         iperf_server_address: str,
         reverse: bool,
         udp: Literal[False],
+        iface: wlan_core.ClientIface,
+        dut_mac: MacAddress,
+        band: Band,
         bandwidth: None = None,
-    ) -> IperfTcpResult:
+    ) -> tuple[IperfTcpResult, LinkMetrics]:
         ...
 
     @overload
@@ -168,8 +271,11 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         iperf_server_address: str,
         reverse: bool,
         udp: Literal[True],
+        iface: wlan_core.ClientIface,
+        dut_mac: MacAddress,
+        band: Band,
         bandwidth: str | None = None,
-    ) -> IperfUdpResult:
+    ) -> tuple[IperfUdpResult, LinkMetrics]:
         ...
 
     async def get_iperf_throughput_bps(
@@ -177,13 +283,16 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         iperf_server_address: str,
         reverse: bool,
         udp: bool,
+        iface: wlan_core.ClientIface,
+        dut_mac: MacAddress,
+        band: Band,
         bandwidth: str | None = None,
-    ) -> IperfUdpResult | IperfTcpResult:
+    ) -> tuple[IperfUdpResult | IperfTcpResult, LinkMetrics]:
         args = [
             "--client",
             iperf_server_address,
             "--time",
-            str(int(DEFAULT_IPERF_DURATION.total_seconds())),
+            str(int(IPERF_DURATION.total_seconds())),
             "--format",
             "m",  # 'm' = Mbits/sec
             "--json",
@@ -193,9 +302,32 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         if reverse:
             args.append("--reverse")
 
-        output = self.dut.ffx.run_ssh_cmd(
-            cmd=f"iperf3 {' '.join(args)}",
+        # Launch iperf3 in a background thread so link measurements can be taken mid-test
+        cmd = f"iperf3 {' '.join(args)}"
+        iperf_task = asyncio.create_task(
+            asyncio.to_thread(self.dut.ffx.run_ssh_cmd, cmd=cmd)
         )
+
+        # Wait for the middle of the throughput measurement
+        half_duration = IPERF_DURATION.total_seconds() / 2.0
+        try:
+            await asyncio.sleep(half_duration)
+
+            # Take measurements in the middle of each throughput measurement
+            if iperf_task.done():
+                output = await iperf_task
+                raise RuntimeError(
+                    f"iperf3 terminated prematurely before mid-test sampling: {output}"
+                )
+
+            metrics = await self._measure_link_metrics(iface, dut_mac, band)
+
+            # Wait for iperf3 to complete
+            output = await iperf_task
+        except Exception:
+            if not iperf_task.done():
+                iperf_task.cancel()
+            raise
 
         try:
             data = json.loads(output)
@@ -233,7 +365,7 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     "udp_loss_percent": lost_percent,
                     "server_cpu_utilization_percent": server_cpu_utilization_percent,
                 }
-                return res_udp
+                return res_udp, metrics
             else:
                 bps = end_data.get("sum_received", {}).get("bits_per_second")
                 if bps is None:
@@ -248,12 +380,38 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     "tcp_bps": bps,
                     "server_cpu_utilization_percent": server_cpu_utilization_percent,
                 }
-                return res_tcp
+                return res_tcp, metrics
 
         except json.JSONDecodeError as e:
             logger.error("Failed to parse data from command output:")
             logger.error(output)
             raise signals.TestError(f"Invalid JSON from iperf3: {e}") from e
+
+    def _log_measurement_result(
+        self, test_label: str, mbps: float, metrics: LinkMetrics
+    ) -> None:
+        logger.info(
+            f"{test_label} Result: {mbps} Mbps | "
+            f"AP PHY (RSSI: {self._fmt_metric(metrics.ap_rssi, 'dBm')}, "
+            f"TX: {self._fmt_metric(metrics.ap_tx_rate_mbps, 'Mbps')}, "
+            f"RX: {self._fmt_metric(metrics.ap_rx_rate_mbps, 'Mbps')}), "
+            f"DUT PHY (RSSI: {self._fmt_metric(metrics.dut_rssi, 'dBm')}, "
+            f"TX: {self._fmt_metric(metrics.dut_tx_rate_mbps, 'Mbps')}, "
+            f"RX: {self._fmt_metric(metrics.dut_rx_rate_mbps, 'Mbps')})"
+        )
+
+    def _log_udp_correction(
+        self, test_label: str, udp_res: IperfUdpResult, tested_send_speed: str
+    ) -> None:
+        uncorrected_mbps = self.bps_to_mbps(udp_res["udp_bps_uncorrected"])
+        corrected_mbps = self.bps_to_mbps(udp_res["udp_bps_corrected"])
+        loss_percent = round(udp_res["udp_loss_percent"], 2)
+        logger.info(
+            f"{test_label} UDP Correction: tested send speed: {tested_send_speed}, "
+            f"loss: {loss_percent}%, "
+            f"uncorrected: {uncorrected_mbps} Mbps, "
+            f"corrected: {corrected_mbps} Mbps"
+        )
 
     async def run_channel_performance(self, test: TestParams) -> None:
         iface = await self.phy.create_client_iface()
@@ -315,36 +473,89 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         netstack_iface = await self.dut.netstack.wait_for_interface(
             PortClass.WLAN_CLIENT
         )
-        asserts.assert_equal(netstack_iface.mac, await iface.get_mac_address())
+        dut_mac = await iface.get_mac_address()
+        asserts.assert_equal(netstack_iface.mac, dut_mac)
         await self.dut.netstack.wait_for_ipv4_addr(netstack_iface.id_)
 
         udp_bandwidth = self.get_target_udp_bandwidth(test.channel_bandwidth)
-        tcp_tx = await self.get_iperf_throughput_bps(
-            iperf_server_address, reverse=False, udp=False
+        tcp_tx, tcp_tx_metrics = await self.get_iperf_throughput_bps(
+            iperf_server_address,
+            reverse=False,
+            udp=False,
+            iface=iface,
+            dut_mac=dut_mac,
+            band=band,
         )
-        tcp_rx = await self.get_iperf_throughput_bps(
-            iperf_server_address, reverse=True, udp=False
+        tcp_tx_mbps = self.bps_to_mbps(tcp_tx["tcp_bps"])
+        self._log_measurement_result("TCP TX", tcp_tx_mbps, tcp_tx_metrics)
+
+        tcp_rx, tcp_rx_metrics = await self.get_iperf_throughput_bps(
+            iperf_server_address,
+            reverse=True,
+            udp=False,
+            iface=iface,
+            dut_mac=dut_mac,
+            band=band,
         )
-        udp_tx = await self.get_iperf_throughput_bps(
+        tcp_rx_mbps = self.bps_to_mbps(tcp_rx["tcp_bps"])
+        self._log_measurement_result("TCP RX", tcp_rx_mbps, tcp_rx_metrics)
+
+        udp_tx, udp_tx_metrics = await self.get_iperf_throughput_bps(
             iperf_server_address,
             reverse=False,
             udp=True,
+            iface=iface,
+            dut_mac=dut_mac,
+            band=band,
             bandwidth=udp_bandwidth,
         )
-        udp_rx = await self.get_iperf_throughput_bps(
+        udp_tx_mbps = self.bps_to_mbps(udp_tx["udp_bps_corrected"])
+        self._log_udp_correction("UDP TX", udp_tx, udp_bandwidth)
+        self._log_measurement_result("UDP TX", udp_tx_mbps, udp_tx_metrics)
+
+        udp_rx, udp_rx_metrics = await self.get_iperf_throughput_bps(
             iperf_server_address,
             reverse=True,
             udp=True,
+            iface=iface,
+            dut_mac=dut_mac,
+            band=band,
             bandwidth=udp_bandwidth,
         )
-
-        tcp_tx_mbps = self.bps_to_mbps(tcp_tx["tcp_bps"])
-        tcp_rx_mbps = self.bps_to_mbps(tcp_rx["tcp_bps"])
-        udp_tx_mbps = self.bps_to_mbps(udp_tx["udp_bps_corrected"])
         udp_rx_mbps = self.bps_to_mbps(udp_rx["udp_bps_corrected"])
+        self._log_udp_correction("UDP RX", udp_rx, udp_bandwidth)
+        self._log_measurement_result("UDP RX", udp_rx_mbps, udp_rx_metrics)
+
+        all_metrics = [
+            tcp_tx_metrics,
+            tcp_rx_metrics,
+            udp_tx_metrics,
+            udp_rx_metrics,
+        ]
+        avg_ap_rssi = self._calc_avg([m.ap_rssi for m in all_metrics])
+        avg_ap_tx_rate_mbps = self._calc_avg(
+            [m.ap_tx_rate_mbps for m in all_metrics]
+        )
+        avg_ap_rx_rate_mbps = self._calc_avg(
+            [m.ap_rx_rate_mbps for m in all_metrics]
+        )
+        avg_dut_rssi = self._calc_avg([m.dut_rssi for m in all_metrics])
+        avg_dut_tx_rate_mbps = self._calc_avg(
+            [m.dut_tx_rate_mbps for m in all_metrics]
+        )
+        avg_dut_rx_rate_mbps = self._calc_avg(
+            [m.dut_rx_rate_mbps for m in all_metrics]
+        )
 
         logger.info(
-            f"Throughput Result (Channel {test.channel}/{test.channel_bandwidth}MHz) "
+            f"Throughput Result "
+            + f"(Channel {test.channel}/{test.channel_bandwidth}MHz, "
+            + f"AP avg [RSSI: {self._fmt_metric(avg_ap_rssi, 'dBm')}, "
+            + f"TX phy rate: {self._fmt_metric(avg_ap_tx_rate_mbps, 'Mbps')}, "
+            + f"RX phy rate: {self._fmt_metric(avg_ap_rx_rate_mbps, 'Mbps')}], "
+            + f"DUT avg [RSSI: {self._fmt_metric(avg_dut_rssi, 'dBm')}, "
+            + f"TX phy rate: {self._fmt_metric(avg_dut_tx_rate_mbps, 'Mbps')}, "
+            + f"RX phy rate: {self._fmt_metric(avg_dut_rx_rate_mbps, 'Mbps')}]) "
             + f"TCP TX: {tcp_tx_mbps} Mbps, TCP RX: {tcp_rx_mbps} Mbps, "
             + f"UDP TX: {udp_tx_mbps} Mbps, UDP RX: {udp_rx_mbps} Mbps"
         )
@@ -353,6 +564,8 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         with open(self.csv_file_path, "a", encoding="utf-8") as csv_file:
             csv_file.write(
                 f"{sec_name},{test.channel},{test.channel_bandwidth},"
+                + f"{self._fmt_csv(avg_ap_rssi)},{self._fmt_csv(avg_ap_tx_rate_mbps)},{self._fmt_csv(avg_ap_rx_rate_mbps)},"
+                + f"{self._fmt_csv(avg_dut_rssi)},{self._fmt_csv(avg_dut_tx_rate_mbps)},{self._fmt_csv(avg_dut_rx_rate_mbps)},"
                 + f"{tcp_tx_mbps},{tcp_rx_mbps},{udp_tx_mbps},{udp_rx_mbps}\n"
             )
 
@@ -398,6 +611,29 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     def bps_to_mbps(bps: int | float) -> float:
         throughput_mbps = float(bps) / 1_000_000
         return round(throughput_mbps, 2)
+
+    @staticmethod
+    def _calc_avg(values: list[int | float | None]) -> float | None:
+        valid = [v for v in values if v is not None]
+        if not valid:
+            return None
+        return round(sum(valid) / len(valid), 2)
+
+    @staticmethod
+    def _fmt_csv(val: int | float | None) -> str:
+        if val is None:
+            return ""
+        if isinstance(val, float) and val.is_integer():
+            return str(int(val))
+        return str(val)
+
+    @staticmethod
+    def _fmt_metric(val: int | float | None, unit: str) -> str:
+        if val is None:
+            return "N/A"
+        if isinstance(val, float) and val.is_integer():
+            return f"{int(val)} {unit}"
+        return f"{val} {unit}"
 
 
 if __name__ == "__main__":

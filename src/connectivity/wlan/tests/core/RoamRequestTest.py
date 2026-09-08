@@ -24,7 +24,6 @@ from honeydew.affordances.connectivity.wlan.core import (
 )
 from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
-    MacAddress,
 )
 from mobly import signals, test_runner
 from mobly.asserts import (
@@ -34,7 +33,6 @@ from mobly.asserts import (
     assert_true,
     fail,
 )
-from openwrt_access_point import StationStatus
 from openwrt_access_point.lib.access_point_config import (
     DEFAULT_2G_CHANNEL,
     DEFAULT_5G_CHANNEL,
@@ -238,17 +236,6 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             test_params.target_security_mode.uci_encryption
         )
         return f"test_roam_request_{dut_security_mode}_dut_from_{origin_security_mode}_{test_params.origin_band.name}_to_{target_security_mode}_{test_params.target_band.name}_{expected_result}"
-
-    def get_single_sta_status(
-        self, mac: MacAddress, band: Band
-    ) -> StationStatus:
-        """Gets station status and asserts there is only one interface."""
-        assert self.openwrt_ap, "Expected OpenWrtAP"
-        sta_dict = self.openwrt_ap.get_sta_status(mac, band)
-        assert (
-            len(sta_dict) == 1
-        ), f"Expected station on exactly one interface, but found: {list(sta_dict.keys())}"
-        return list(sta_dict.values())[0]
 
     async def setup_aps(self, test_params: TestParams) -> RoamTestParameters:
         ssid = utils.rand_ascii_str(hostapd_constants.AP_SSID_LENGTH_2G)
@@ -542,7 +529,7 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             target_iface = None
             client_mac = await iface.get_mac_address()
             if self.openwrt_ap:
-                sta_status = self.get_single_sta_status(
+                sta_status = self.openwrt_ap.get_sta_status(
                     client_mac, band=origin_band
                 )
                 if not sta_status.auth:
@@ -658,7 +645,7 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                             )
                             # Verify DUT is connected to the AP using the target interface
                             if self.openwrt_ap:
-                                status = self.get_single_sta_status(
+                                status = self.openwrt_ap.get_sta_status(
                                     client_mac, band=target_band
                                 )
                                 assert_true(

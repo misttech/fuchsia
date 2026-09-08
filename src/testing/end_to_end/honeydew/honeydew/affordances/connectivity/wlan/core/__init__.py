@@ -6,18 +6,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import timedelta
-from typing import Any, Sequence
 
 import fidl_fuchsia_wlan_common as f_wlan_common
 import fidl_fuchsia_wlan_device_service as f_wlan_device_service
 import fidl_fuchsia_wlan_ieee80211 as f_wlan_ieee80211
 import fidl_fuchsia_wlan_internal as f_wlan_internal
 import fidl_fuchsia_wlan_sme as f_wlan_sme
+import fidl_fuchsia_wlan_stats as f_wlan_stats
 from fidl._client import FidlClient
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
-from honeydew import affordances_capable, errors
+from honeydew import affordances_capable
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
@@ -27,7 +27,6 @@ from honeydew.affordances.connectivity.wlan.utils.types import (
     CountryCode,
 )
 from honeydew.transports.ffx import ffx as ffx_transport
-from honeydew.transports.ffx import types as ffx_types
 from honeydew.transports.fuchsia_controller import (
     fuchsia_controller as fc_transport,
 )
@@ -248,6 +247,17 @@ class ClientIface:
 
     async def get_mac_address(self) -> MacAddress:
         return MacAddress(bytes((await self.query()).sta_addr))
+
+    async def get_signal_report(
+        self,
+    ) -> f_wlan_stats.SignalReport:
+        client, server = self._fc_transport.channel_create()
+        telemetry_client = f_wlan_sme.TelemetryClient(client)
+        res = await self._device_monitor.get_sme_telemetry(
+            iface_id=self.id, telemetry_server=server.take()
+        )
+        res.unwrap()
+        return (await telemetry_client.get_signal_report()).unwrap().stats
 
     async def destroy(self) -> None:
         req = f_wlan_device_service.DestroyIfaceRequest(iface_id=self.id)

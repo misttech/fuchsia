@@ -277,7 +277,6 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         # Verify that DUT is actually associated (as seen from AP).
         client_mac = await self.client_iface.get_mac_address()
-        iface_status = None
 
         # Verify that DUT is actually associated (as seen from AP).
         original_identifier = ""
@@ -295,11 +294,13 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 original_identifier = self.access_point.wlan_5g
 
         if self.openwrt_ap:
-            status = self.openwrt_ap.get_sta_status(
-                client_mac, test.original_channel.band
-            )
-            iface_status = status.get(original_identifier)
-            is_assoc = iface_status and iface_status.assoc
+            try:
+                status = self.openwrt_ap.get_sta_status(
+                    client_mac, test.original_channel.band
+                )
+                is_assoc = status.assoc
+            except RuntimeError:
+                is_assoc = False
         else:
             assert self.access_point is not None
             is_assoc = self.access_point.sta_associated(
@@ -377,11 +378,13 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 # Check for STA on destination, and if it has roamed, end the test.
                 if test.expect_roam:
                     if self.openwrt_ap:
-                        status = self.openwrt_ap.get_sta_status(
-                            client_mac, test.target_channel.band
-                        )
-                        iface_status = status.get(target_identifier)
-                        is_authorized = iface_status and iface_status.authorized
+                        try:
+                            status = self.openwrt_ap.get_sta_status(
+                                client_mac, test.target_channel.band
+                            )
+                            is_authorized = status.authorized
+                        except RuntimeError:
+                            is_authorized = False
                     else:
                         assert self.access_point is not None
                         is_authorized = self.access_point.sta_authorized(
@@ -401,11 +404,13 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     # way to detect this scenario.
                     # TODO(https://fxbug.dev/359966771): Surface intermediate states to Antlion.
                     if self.openwrt_ap:
-                        status = self.openwrt_ap.get_sta_status(
-                            client_mac, test.original_channel.band
-                        )
-                        iface_status = status.get(original_identifier)
-                        is_assoc = iface_status and iface_status.assoc
+                        try:
+                            status = self.openwrt_ap.get_sta_status(
+                                client_mac, test.original_channel.band
+                            )
+                            is_assoc = status.assoc
+                        except RuntimeError:
+                            is_assoc = False
                     else:
                         assert self.access_point is not None
                         is_assoc = self.access_point.sta_associated(
@@ -421,13 +426,17 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         if test.expect_roam:
             # Verify that DUT roamed (as seen from AP).
             if self.openwrt_ap:
-                status = self.openwrt_ap.get_sta_status(
-                    client_mac, test.target_channel.band
-                )
-                iface_status = status.get(target_identifier)
-                is_auth = iface_status and iface_status.auth
-                is_assoc = iface_status and iface_status.assoc
-                is_authorized = iface_status and iface_status.authorized
+                try:
+                    status = self.openwrt_ap.get_sta_status(
+                        client_mac, test.target_channel.band
+                    )
+                    is_auth = status.auth
+                    is_assoc = status.assoc
+                    is_authorized = status.authorized
+                except RuntimeError:
+                    is_auth = False
+                    is_assoc = False
+                    is_authorized = False
             else:
                 assert self.access_point is not None
                 is_auth = self.access_point.sta_authenticated(
@@ -454,11 +463,13 @@ class WlanPolicyInitiatedRoamTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         else:
             # DUT should have stayed on the original BSS.
             if self.openwrt_ap:
-                status = self.openwrt_ap.get_sta_status(
-                    client_mac, test.original_channel.band
-                )
-                iface_status = status.get(original_identifier)
-                is_auth = iface_status and iface_status.auth
+                try:
+                    status = self.openwrt_ap.get_sta_status(
+                        client_mac, test.original_channel.band
+                    )
+                    is_auth = status.auth
+                except RuntimeError:
+                    is_auth = False
             else:
                 assert self.access_point is not None
                 is_auth = self.access_point.sta_authenticated(

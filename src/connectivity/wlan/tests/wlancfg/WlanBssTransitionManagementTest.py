@@ -140,17 +140,6 @@ class WlanBssTransitionManagementTest(
             self.access_point.stop_all_aps()
         await super().teardown_test()
 
-    def get_single_sta_status(
-        self, mac: MacAddress, band: Band
-    ) -> StationStatus:
-        """Gets station status and asserts there is only one interface."""
-        assert self.openwrt_ap is not None, "openwrt_ap is not initialized"
-        sta_dict = self.openwrt_ap.get_sta_status(mac, band)
-        assert (
-            len(sta_dict) == 1
-        ), f"Expected station on exactly one interface, but found: {list(sta_dict.keys())}"
-        return list(sta_dict.values())[0]
-
     def get_single_sta_ext_capabilities(
         self, mac: MacAddress, band: Band
     ) -> ExtendedCapabilities:
@@ -375,14 +364,14 @@ class WlanBssTransitionManagementTest(
         ROAM_DEADLINE = datetime.now(timezone.utc) + timedelta(seconds=15)
         while datetime.now(timezone.utc) < ROAM_DEADLINE:
             if self.openwrt_ap:
-                sta_status = next(
-                    iter(
-                        self.openwrt_ap.get_sta_status(
-                            client_mac, band=Band.BAND_5G
-                        ).values()
-                    ),
-                    StationStatus(auth=False, assoc=False, authorized=False),
-                )
+                try:
+                    sta_status = self.openwrt_ap.get_sta_status(
+                        client_mac, band=Band.BAND_5G
+                    )
+                except RuntimeError:
+                    sta_status = StationStatus(
+                        auth=False, assoc=False, authorized=False
+                    )
                 if sta_status.authorized:
                     break
                 else:
@@ -397,7 +386,7 @@ class WlanBssTransitionManagementTest(
 
         # Verify that DUT roamed (as seen from AP).
         if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
+            sta_status = self.openwrt_ap.get_sta_status(
                 client_mac, band=Band.BAND_5G
             )
             asserts.assert_true(
@@ -548,10 +537,14 @@ class WlanBssTransitionManagementTest(
         while datetime.now(timezone.utc) < ROAM_DEADLINE:
             # Check that DUT has not reassociated to 5 GHz AP (as seen from AP).
             if self.openwrt_ap:
-                sta_status = self.get_single_sta_status(
-                    client_mac, band=Band.BAND_5G
-                )
-                if sta_status.assoc:
+                try:
+                    sta_status = self.openwrt_ap.get_sta_status(
+                        client_mac, band=Band.BAND_5G
+                    )
+                    is_assoc = sta_status.assoc
+                except RuntimeError:
+                    is_assoc = False
+                if is_assoc:
                     raise signals.TestFailure(
                         "DUT unexpectedly roamed to 5GHz band"
                     )

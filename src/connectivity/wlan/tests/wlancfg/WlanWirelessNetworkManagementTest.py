@@ -78,17 +78,6 @@ class WlanWirelessNetworkManagementTest(
         else:
             raise signals.TestAbortClass("Requires at least one access point")
 
-    def get_single_sta_status(
-        self, mac: MacAddress, band: Band
-    ) -> StationStatus:
-        """Gets station status and asserts there is only one interface."""
-        assert self.openwrt_ap is not None, "openwrt_ap is not initialized"
-        sta_dict = self.openwrt_ap.get_sta_status(mac, band)
-        assert (
-            len(sta_dict) == 1
-        ), f"Expected station on exactly one interface, but found: {list(sta_dict.keys())}"
-        return list(sta_dict.values())[0]
-
     def get_single_sta_ext_capabilities(
         self, mac: MacAddress, band: Band
     ) -> ExtendedCapabilities:
@@ -191,7 +180,7 @@ class WlanWirelessNetworkManagementTest(
         # Verify that DUT is actually associated (as seen from AP).
 
         if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
+            sta_status = self.openwrt_ap.get_sta_status(
                 client_mac, band=Band.BAND_2G
             )
             asserts.assert_true(
@@ -261,7 +250,7 @@ class WlanWirelessNetworkManagementTest(
         client_mac = await self.client_iface.get_mac_address()
         # Verify that DUT is actually associated (as seen from AP).
         if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
+            sta_status = self.openwrt_ap.get_sta_status(
                 client_mac, band=Band.BAND_2G
             )
             asserts.assert_true(
@@ -348,7 +337,7 @@ class WlanWirelessNetworkManagementTest(
         # Verify that DUT is actually associated (as seen from AP).
         client_mac = await self.client_iface.get_mac_address()
         if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
+            sta_status = self.openwrt_ap.get_sta_status(
                 client_mac, band=Band.BAND_2G
             )
             asserts.assert_true(
@@ -411,14 +400,14 @@ class WlanWirelessNetworkManagementTest(
         while datetime.now(timezone.utc) < ROAM_DEADLINE:
             # Fail if DUT has reassociated to 5 GHz AP (as seen from AP).
             if self.openwrt_ap:
-                sta_status = next(
-                    iter(
-                        self.openwrt_ap.get_sta_status(
-                            client_mac, band=Band.BAND_5G
-                        ).values()
-                    ),
-                    StationStatus(auth=False, assoc=False, authorized=False),
-                )
+                try:
+                    sta_status = self.openwrt_ap.get_sta_status(
+                        client_mac, band=Band.BAND_5G
+                    )
+                except RuntimeError:
+                    sta_status = StationStatus(
+                        auth=False, assoc=False, authorized=False
+                    )
                 if sta_status.authorized:
                     raise signals.TestFailure(
                         "DUT unexpectedly roamed to target BSS after BTM request"
@@ -437,7 +426,7 @@ class WlanWirelessNetworkManagementTest(
 
         # DUT should have stayed associated to original AP.
         if self.openwrt_ap:
-            sta_status = self.get_single_sta_status(
+            sta_status = self.openwrt_ap.get_sta_status(
                 client_mac, band=Band.BAND_2G
             )
             asserts.assert_true(

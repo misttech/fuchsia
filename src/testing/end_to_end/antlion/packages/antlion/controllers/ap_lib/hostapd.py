@@ -7,6 +7,7 @@ import itertools
 import logging
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from subprocess import CalledProcessError
 from typing import Any, Iterable
@@ -35,6 +36,107 @@ class Error(Exception):
 
 class InterfaceInitError(Error):
     """Interface initialization failed during hostapd start."""
+
+
+@dataclass
+class StationStatus:
+    """Represents the connection status of a station on an AP."""
+
+    auth: bool
+    assoc: bool
+    authorized: bool
+    rssi: int | None = None
+    tx_rate_mbps: float | None = None
+    rx_rate_mbps: float | None = None
+
+
+def _parse_bitrate(val: float, unit: str) -> float:
+    unit_upper = unit.upper()
+    if "G" in unit_upper:
+        return round(val * 1000.0, 2)
+    elif "M" in unit_upper:
+        return round(val, 2)
+    elif "K" in unit_upper:
+        return round(val / 1000.0, 2)
+    else:
+        return round(val / 1000000.0, 2)
+
+
+def parse_station_output(
+    output: object,
+) -> tuple[int | None, float | None, float | None]:
+    """Parses RSSI (dBm), TX rate (Mbps), and RX rate (Mbps) from station details (hostapd_cli or iw)."""
+    if hasattr(output, "stdout"):
+        output = output.stdout
+    if isinstance(output, bytes):
+        output = output.decode("utf-8", errors="replace")
+    elif not isinstance(output, str):
+        output = str(output)
+
+    rssi: int | None = None
+    tx_rate_mbps: float | None = None
+    rx_rate_mbps: float | None = None
+
+    m_sig = re.search(
+        r"signal(?:\s+avg|_avg)?\s*[:=]\s*(-?\d+)", output, re.IGNORECASE
+    )
+    if m_sig:
+        try:
+            rssi = int(m_sig.group(1))
+        except ValueError:
+            pass
+
+    m_tx = re.search(
+        r"\btx[ _]?(?:bi?t?rate|rate)\s*[:=]\s*([0-9.]+)\s*([KMGT]?(?:Bit/s|bps|b/s))?",
+        output,
+        re.IGNORECASE,
+    )
+    if m_tx:
+        try:
+            val = float(m_tx.group(1))
+            unit = m_tx.group(2)
+            tx_rate_mbps = _parse_bitrate(val, unit) if unit else round(val, 2)
+        except ValueError:
+            pass
+
+    if tx_rate_mbps is None:
+        m_tx_info = re.search(
+            r"tx_rate_info\s*[:=]\s*(\d+)", output, re.IGNORECASE
+        )
+        if m_tx_info:
+            try:
+                v = int(m_tx_info.group(1))
+                if v > 0:
+                    tx_rate_mbps = round(v / 10.0, 2)
+            except ValueError:
+                pass
+
+    m_rx = re.search(
+        r"\brx[ _]?(?:bi?t?rate|rate)\s*[:=]\s*([0-9.]+)\s*([KMGT]?(?:Bit/s|bps|b/s))?",
+        output,
+        re.IGNORECASE,
+    )
+    if m_rx:
+        try:
+            val = float(m_rx.group(1))
+            unit = m_rx.group(2)
+            rx_rate_mbps = _parse_bitrate(val, unit) if unit else round(val, 2)
+        except ValueError:
+            pass
+
+    if rx_rate_mbps is None:
+        m_rx_info = re.search(
+            r"rx_rate_info\s*[:=]\s*(\d+)", output, re.IGNORECASE
+        )
+        if m_rx_info:
+            try:
+                v = int(m_rx_info.group(1))
+                if v > 0:
+                    rx_rate_mbps = round(v / 10.0, 2)
+            except ValueError:
+                pass
+
+    return rssi, tx_rate_mbps, rx_rate_mbps
 
 
 class Hostapd(object):
@@ -249,6 +351,44 @@ class Hostapd(object):
         sta_result = self._sta(sta_mac)
         m = re.search(r"flags=.*\[AUTHORIZED\]", sta_result, re.MULTILINE)
         return bool(m)
+
+    def get_sta_status(self, sta_mac: MacAddress) -> StationStatus:
+        """Get station status for the given STA, as seen by hostapd.
+
+        Args:
+            sta_mac: MAC address of the STA in question.
+        Returns:
+            StationStatus for the given STA.
+        Raises:
+            Error if station status cannot be obtained.
+        """
+        sta_result = self._sta(sta_mac)
+        if hasattr(sta_result, "stdout"):
+            sta_result = sta_result.stdout
+        if isinstance(sta_result, bytes):
+            sta_result = sta_result.decode("utf-8", errors="replace")
+        elif not isinstance(sta_result, str):
+            sta_result = str(sta_result)
+
+        auth = bool(re.search(r"flags=.*\[AUTH\]", sta_result, re.MULTILINE))
+        assoc = bool(re.search(r"flags=.*\[ASSOC\]", sta_result, re.MULTILINE))
+        authorized = bool(
+            re.search(r"flags=.*\[AUTHORIZED\]", sta_result, re.MULTILINE)
+        )
+        rssi, tx_rate_mbps, rx_rate_mbps = parse_station_output(sta_result)
+        if rssi is None or tx_rate_mbps is None or rx_rate_mbps is None:
+            raise Error(
+                f"Failed to obtain station telemetry for {sta_mac} from hostapd: "
+                f"rssi={rssi}, tx_rate_mbps={tx_rate_mbps}, rx_rate_mbps={rx_rate_mbps}"
+            )
+        return StationStatus(
+            auth=auth,
+            assoc=assoc,
+            authorized=authorized,
+            rssi=rssi,
+            tx_rate_mbps=tx_rate_mbps,
+            rx_rate_mbps=rx_rate_mbps,
+        )
 
     def _bss_tm_req(
         self, client_mac: MacAddress, request: BssTransitionManagementRequest
