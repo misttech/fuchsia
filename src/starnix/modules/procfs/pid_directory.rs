@@ -115,13 +115,15 @@ pub struct TaskDirectory {
 }
 
 #[derive(Clone)]
-struct TaskDirectoryNode(Arc<TaskDirectory>);
+struct TaskDirectoryNode {
+    task_directory: Arc<TaskDirectory>,
+}
 
 impl Deref for TaskDirectoryNode {
     type Target = TaskDirectory;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.task_directory
     }
 }
 
@@ -130,11 +132,13 @@ impl TaskDirectory {
         let creds = task.real_creds().euid_as_fscred();
         let task_weak = Arc::downgrade(task);
         fs.create_node_and_allocate_node_id(
-            TaskDirectoryNode(Arc::new(TaskDirectory {
-                task_weak,
-                scope,
-                inode_range: fs.allocate_ino_range(task_entries(scope).len()),
-            })),
+            TaskDirectoryNode {
+                task_directory: Arc::new(TaskDirectory {
+                    task_weak,
+                    scope,
+                    inode_range: fs.allocate_ino_range(task_entries(scope).len()),
+                }),
+            },
             FsNodeInfo::new(mode!(IFDIR, 0o555), creds),
         )
     }
@@ -702,10 +706,12 @@ impl FsNodeOps for TaskListDirectory {
 }
 
 #[derive(Clone)]
-struct CgroupFile(Weak<Task>);
+struct CgroupFile {
+    task: Weak<Task>,
+}
 impl CgroupFile {
     pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        DynamicFile::new_node(Self(task))
+        DynamicFile::new_node(Self { task })
     }
 }
 impl DynamicFileSource for CgroupFile {
@@ -714,7 +720,7 @@ impl DynamicFileSource for CgroupFile {
         _current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
-        let task = Task::from_weak(&self.0)?;
+        let task = Task::from_weak(&self.task)?;
         let cgroup1 = task.kernel().cgroups.cgroup1.lock();
         for (key, root) in &cgroup1.hierarchies {
             let mut parts: Vec<&str> = key.controllers.iter().map(|c| c.as_str()).collect();
@@ -934,10 +940,12 @@ impl DynamicFileSource for IoFile {
 
 /// `LimitsFile` implements `proc/<pid>/limits` file.
 #[derive(Clone)]
-pub struct LimitsFile(Weak<Task>);
+pub struct LimitsFile {
+    task: Weak<Task>,
+}
 impl LimitsFile {
     pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        DynamicFile::new_node(Self(task))
+        DynamicFile::new_node(Self { task })
     }
 }
 impl DynamicFileSource for LimitsFile {
@@ -946,7 +954,7 @@ impl DynamicFileSource for LimitsFile {
         _current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
-        let task = Task::from_weak(&self.0)?;
+        let task = Task::from_weak(&self.task)?;
         let limits = task.thread_group().limits.lock();
 
         let write_limit = |sink: &mut DynamicFileBuf, value| {
@@ -1298,17 +1306,19 @@ impl DynamicFileSource for StatmFile {
 }
 
 #[derive(Clone)]
-pub struct StatusFile(Weak<Task>);
+pub struct StatusFile {
+    task: Weak<Task>,
+}
 impl StatusFile {
     pub fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        DynamicFile::new_node(Self(task))
+        DynamicFile::new_node(Self { task })
     }
 }
 impl DynamicFileSource for StatusFile {
     fn generate(&self, current_task: &CurrentTask, sink: &mut DynamicFileBuf) -> Result<(), Errno> {
         let start_monotonic = zx::MonotonicInstant::get();
         let start_boot = zx::BootInstant::get();
-        let task = &self.0.upgrade();
+        let task = &self.task.upgrade();
         let (tgid, pid, creds_string) = {
             if let Some(task) = task {
                 track_stub!(TODO("https://fxbug.dev/297440106"), "/proc/pid/status zombies");
@@ -1445,17 +1455,19 @@ impl DynamicFileSource for StatusFile {
     }
 }
 
-struct OomScoreFile(Weak<Task>);
+struct OomScoreFile {
+    task: Weak<Task>,
+}
 
 impl OomScoreFile {
     fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        BytesFile::new_node(Self(task))
+        BytesFile::new_node(Self { task })
     }
 }
 
 impl BytesFileOps for OomScoreFile {
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let _task = Task::from_weak(&self.0)?;
+        let _task = Task::from_weak(&self.task)?;
         track_stub!(TODO("https://fxbug.dev/322873459"), "/proc/pid/oom_score");
         Ok(serialize_for_file(0).into())
     }
@@ -1465,10 +1477,12 @@ impl BytesFileOps for OomScoreFile {
 const OOM_ADJUST_MAX: i32 = uapi::OOM_ADJUST_MAX as i32;
 const OOM_SCORE_ADJ_MAX: i32 = uapi::OOM_SCORE_ADJ_MAX as i32;
 
-struct OomAdjFile(Weak<Task>);
+struct OomAdjFile {
+    task: Weak<Task>,
+}
 impl OomAdjFile {
     fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        BytesFile::new_node(Self(task))
+        BytesFile::new_node(Self { task })
     }
 }
 
@@ -1485,13 +1499,13 @@ impl BytesFileOps for OomAdjFile {
             fraction * (OOM_SCORE_ADJ_MAX - OOM_SCORE_ADJ_MIN) + OOM_SCORE_ADJ_MIN
         };
         security::check_task_capable(current_task, CAP_SYS_RESOURCE)?;
-        let task = Task::from_weak(&self.0)?;
+        let task = Task::from_weak(&self.task)?;
         task.write().oom_score_adj = oom_score_adj;
         Ok(())
     }
 
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let task = Task::from_weak(&self.0)?;
+        let task = Task::from_weak(&self.task)?;
         let oom_score_adj = task.read().oom_score_adj;
         let oom_adj = if oom_score_adj == OOM_SCORE_ADJ_MIN {
             OOM_DISABLE
@@ -1504,11 +1518,13 @@ impl BytesFileOps for OomAdjFile {
     }
 }
 
-struct OomScoreAdjFile(Weak<Task>);
+struct OomScoreAdjFile {
+    task: Weak<Task>,
+}
 
 impl OomScoreAdjFile {
     fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        BytesFile::new_node(Self(task))
+        BytesFile::new_node(Self { task })
     }
 }
 
@@ -1519,29 +1535,31 @@ impl BytesFileOps for OomScoreAdjFile {
             return error!(EINVAL);
         }
         security::check_task_capable(current_task, CAP_SYS_RESOURCE)?;
-        let task = Task::from_weak(&self.0)?;
+        let task = Task::from_weak(&self.task)?;
         task.write().oom_score_adj = value;
         Ok(())
     }
 
     fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let task = Task::from_weak(&self.0)?;
+        let task = Task::from_weak(&self.task)?;
         let oom_score_adj = task.read().oom_score_adj;
         Ok(serialize_for_file(oom_score_adj).into())
     }
 }
 
-struct TimerslackNsFile(Weak<Task>);
+struct TimerslackNsFile {
+    task: Weak<Task>,
+}
 
 impl TimerslackNsFile {
     fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        BytesFile::new_node(Self(task))
+        BytesFile::new_node(Self { task })
     }
 }
 
 impl BytesFileOps for TimerslackNsFile {
     fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
-        let target_task = Task::from_weak(&self.0)?;
+        let target_task = Task::from_weak(&self.task)?;
         let same_task = current_task.task.pid == target_task.pid;
         if !same_task {
             security::check_task_capable(current_task, CAP_SYS_NICE)?;
@@ -1554,7 +1572,7 @@ impl BytesFileOps for TimerslackNsFile {
     }
 
     fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
-        let target_task = Task::from_weak(&self.0)?;
+        let target_task = Task::from_weak(&self.task)?;
         let same_task = current_task.task.pid == target_task.pid;
         if !same_task {
             security::check_task_capable(current_task, CAP_SYS_NICE)?;
@@ -1566,17 +1584,19 @@ impl BytesFileOps for TimerslackNsFile {
     }
 }
 
-struct ClearRefsFile(Weak<Task>);
+struct ClearRefsFile {
+    task: Weak<Task>,
+}
 
 impl ClearRefsFile {
     fn new_node(task: Weak<Task>) -> impl FsNodeOps {
-        BytesFile::new_node(Self(task))
+        BytesFile::new_node(Self { task })
     }
 }
 
 impl BytesFileOps for ClearRefsFile {
     fn write(&self, _current_task: &CurrentTask, _data: Vec<u8>) -> Result<(), Errno> {
-        let _task = Task::from_weak(&self.0)?;
+        let _task = Task::from_weak(&self.task)?;
         track_stub!(TODO("https://fxbug.dev/396221597"), "/proc/pid/clear_refs");
         Ok(())
     }
