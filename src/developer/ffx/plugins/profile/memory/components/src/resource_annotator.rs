@@ -97,6 +97,7 @@ mod tests {
     use super::*;
     use attribution_processing::{InflatedResource, ProcessedAttributionData, Resource};
     use fdomain_fuchsia_memory_attribution_plugin as fplugin;
+    use rustc_hash::FxHashMap;
 
     #[test]
     fn test_get_blob_hash() {
@@ -119,7 +120,7 @@ mod tests {
             })],
         );
 
-        let mut resources = HashMap::new();
+        let mut resources = FxHashMap::default();
         // VMO with a blob name
         resources.insert(
             1,
@@ -150,8 +151,11 @@ mod tests {
         let resource_names =
             vec![ZXName::from_string_lossy("blob-12345678"), ZXName::from_string_lossy("other")];
 
-        let attribution_data =
-            ProcessedAttributionData { principals: HashMap::new(), resources, resource_names };
+        let attribution_data = ProcessedAttributionData {
+            principals: FxHashMap::default(),
+            resources,
+            resource_names,
+        };
 
         let result = annotator.annotate(attribution_data);
         let resource = result.resources.get(&1).unwrap();

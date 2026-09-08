@@ -19,7 +19,9 @@ rustc_library("processing") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:regex-lite",
+    "//third_party/rust_crates:rustc-hash",
     "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:smallvec",
     "//third_party/rust_crates:zerocopy",
   ]
 
@@ -38,6 +40,7 @@ rustc_library("processing") {
     "src/fkernel_serde.rs",
     "src/fplugin_serde.rs",
     "src/lib.rs",
+    "src/macros.rs",
     "src/name.rs",
     "src/summary.rs",
   ]

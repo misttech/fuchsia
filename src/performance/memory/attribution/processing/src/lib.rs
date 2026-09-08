@@ -4,17 +4,18 @@
 use core::cell::RefCell;
 use core::convert::Into;
 use fidl_fuchsia_memory_attribution_plugin_common as fplugin;
+use rustc_hash::FxHashMap;
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt::Debug;
 use summary::MemorySummary;
 
 mod name;
 pub use name::ZXName;
-
 pub mod digest;
 pub mod fkernel_serde;
 pub mod fplugin_serde;
+mod macros;
 pub mod summary;
 
 #[cfg(target_os = "fuchsia")]
@@ -23,7 +24,7 @@ use {fuchsia_trace::duration, std::ffi::CStr};
 const CATEGORY_MEMORY_CAPTURE: &CStr = c"memory:capture";
 
 /// Unique principal identifier across the whole system.
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug, Serialize)]
 pub struct GlobalPrincipalIdentifier(pub std::num::NonZeroU64);
 
 impl GlobalPrincipalIdentifier {
@@ -40,9 +41,9 @@ impl From<fplugin::PrincipalIdentifier> for GlobalPrincipalIdentifier {
     }
 }
 
-impl Into<fplugin::PrincipalIdentifier> for GlobalPrincipalIdentifier {
-    fn into(self) -> fplugin::PrincipalIdentifier {
-        fplugin::PrincipalIdentifier { id: self.0.get() }
+impl From<GlobalPrincipalIdentifier> for fplugin::PrincipalIdentifier {
+    fn from(value: GlobalPrincipalIdentifier) -> fplugin::PrincipalIdentifier {
+        fplugin::PrincipalIdentifier { id: value.0.get() }
     }
 }
 
@@ -84,9 +85,9 @@ impl From<fplugin::Description> for PrincipalDescription {
     }
 }
 
-impl Into<fplugin::Description> for PrincipalDescription {
-    fn into(self) -> fplugin::Description {
-        match self {
+impl From<PrincipalDescription> for fplugin::Description {
+    fn from(value: PrincipalDescription) -> fplugin::Description {
+        match value {
             PrincipalDescription::Component(s) => fplugin::Description::Component(s),
             PrincipalDescription::Part(s) => fplugin::Description::Part(s),
         }
@@ -110,9 +111,9 @@ impl From<fplugin::PrincipalType> for PrincipalType {
     }
 }
 
-impl Into<fplugin::PrincipalType> for PrincipalType {
-    fn into(self) -> fplugin::PrincipalType {
-        match self {
+impl From<PrincipalType> for fplugin::PrincipalType {
+    fn from(value: PrincipalType) -> fplugin::PrincipalType {
+        match value {
             PrincipalType::Runnable => fplugin::PrincipalType::Runnable,
             PrincipalType::Part => fplugin::PrincipalType::Part,
         }
@@ -146,13 +147,13 @@ impl From<fplugin::Principal> for Principal {
     }
 }
 
-impl Into<fplugin::Principal> for Principal {
-    fn into(self) -> fplugin::Principal {
+impl From<Principal> for fplugin::Principal {
+    fn from(value: Principal) -> fplugin::Principal {
         fplugin::Principal {
-            identifier: Some(self.identifier.into()),
-            description: self.description.map(Into::into),
-            principal_type: Some(self.principal_type.into()),
-            parent: self.parent.map(Into::into),
+            identifier: Some(value.identifier.into()),
+            description: value.description.map(Into::into),
+            principal_type: Some(value.principal_type.into()),
+            parent: value.parent.map(Into::into),
             ..Default::default()
         }
     }
@@ -165,19 +166,19 @@ pub struct InflatedPrincipal {
     principal: Principal,
 
     // These fields are computed from the rest of the [fplugin::Snapshot] data.
-    /// Map of attribution claims made about this Principal (this Principal is the subject of the
-    /// claim). This map goes from the source Principal to the attribution claim.
-    attribution_claims: HashMap<GlobalPrincipalIdentifier, Attribution>,
+    /// KOIDs of processes that have mapped regions attributed to this principal.
+    mapped_processes: Vec<u64>,
+
     /// KOIDs of resources attributed to this principal, after resolution of sharing and
     /// reattributions.
-    resources: HashSet<u64>,
+    resources: Vec<u64>,
 }
 
 impl InflatedPrincipal {
     fn new(principal: Principal) -> InflatedPrincipal {
         InflatedPrincipal {
             principal,
-            attribution_claims: Default::default(),
+            mapped_processes: Default::default(),
             resources: Default::default(),
         }
     }
@@ -222,10 +223,10 @@ impl From<u64> for Koid {
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug, Serialize)]
 pub struct Claim {
     /// Principal to which the resources are attributed.
-    subject: GlobalPrincipalIdentifier,
+    pub(crate) subject: GlobalPrincipalIdentifier,
     /// Principal making the attribution claim.
-    source: GlobalPrincipalIdentifier,
-    claim_type: ClaimType,
+    pub(crate) source: GlobalPrincipalIdentifier,
+    pub(crate) claim_type: ClaimType,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -246,12 +247,12 @@ impl From<fplugin::Resource> for Resource {
     }
 }
 
-impl Into<fplugin::Resource> for Resource {
-    fn into(self) -> fplugin::Resource {
+impl From<Resource> for fplugin::Resource {
+    fn from(value: Resource) -> fplugin::Resource {
         fplugin::Resource {
-            koid: Some(self.koid),
-            name_index: Some(self.name_index as u64),
-            resource_type: Some(self.resource_type),
+            koid: Some(value.koid),
+            name_index: Some(value.name_index as u64),
+            resource_type: Some(value.resource_type),
             ..Default::default()
         }
     }
@@ -311,7 +312,7 @@ impl InflatedResource {
     /// (i)  preserving all self claims, and
     /// (ii) preserving only leaves in the DAG following claim.source to claim.subject edges.
     fn process_claims(&mut self) {
-        let mut claims_by_source: HashMap<GlobalPrincipalIdentifier, RefCell<Vec<TaggedClaim>>> =
+        let mut claims_by_source: FxHashMap<GlobalPrincipalIdentifier, RefCell<Vec<TaggedClaim>>> =
             Default::default();
         let mut self_claims = Vec::new();
 
@@ -344,7 +345,7 @@ impl InflatedResource {
     /// Recursively look at claims to find the ones that are not reassigned.
     fn process_claims_recursive(
         tagged_claim: &mut TaggedClaim,
-        claims: &HashMap<GlobalPrincipalIdentifier, RefCell<Vec<TaggedClaim>>>,
+        claims: &FxHashMap<GlobalPrincipalIdentifier, RefCell<Vec<TaggedClaim>>>,
     ) -> Vec<Claim> {
         let claim = match tagged_claim.1 {
             true => {
@@ -401,12 +402,12 @@ impl From<fplugin::Attribution> for Attribution {
     }
 }
 
-impl Into<fplugin::Attribution> for Attribution {
-    fn into(self) -> fplugin::Attribution {
+impl From<Attribution> for fplugin::Attribution {
+    fn from(value: Attribution) -> fplugin::Attribution {
         fplugin::Attribution {
-            source: Some(self.source.into()),
-            subject: Some(self.subject.into()),
-            resources: Some(self.resources.into_iter().map(|r| r.into()).collect()),
+            source: Some(value.source.into()),
+            subject: Some(value.subject.into()),
+            resources: Some(value.resources.into_iter().map(|r| r.into()).collect()),
             ..Default::default()
         }
     }
@@ -454,9 +455,9 @@ impl From<fplugin::ResourceReference> for ResourceReference {
     }
 }
 
-impl Into<fplugin::ResourceReference> for ResourceReference {
-    fn into(self) -> fplugin::ResourceReference {
-        match self {
+impl From<ResourceReference> for fplugin::ResourceReference {
+    fn from(value: ResourceReference) -> fplugin::ResourceReference {
+        match value {
             ResourceReference::KernelObject(ko) => fplugin::ResourceReference::KernelObject(ko),
             ResourceReference::ProcessMapped { process, base, len, hint_skip_handle_table } => {
                 fplugin::ResourceReference::ProcessMapped(fplugin::ProcessMapped {
@@ -487,15 +488,15 @@ pub trait AttributionDataProvider: Send + Sync {
 /// Processed snapshot of the memory usage of a device, with attribution of memory resources to
 /// Principals resolved.
 pub struct ProcessedAttributionData {
-    pub principals: HashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
-    pub resources: HashMap<u64, InflatedResource>,
+    pub principals: FxHashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
+    pub resources: FxHashMap<u64, InflatedResource>,
     pub resource_names: Vec<ZXName>,
 }
 
 impl ProcessedAttributionData {
     fn new(
-        principals: HashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
-        resources: HashMap<u64, InflatedResource>,
+        principals: FxHashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
+        resources: FxHashMap<u64, InflatedResource>,
         resource_names: Vec<ZXName>,
     ) -> Self {
         Self { principals, resources, resource_names }
@@ -514,37 +515,38 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
     #[cfg(target_os = "fuchsia")]
     duration!(CATEGORY_MEMORY_CAPTURE, c"attribute_vmos");
 
-    // Map from moniker token ID to Principal struct.
-    let principals: HashMap<GlobalPrincipalIdentifier, RefCell<InflatedPrincipal>> =
-        attribution_data
-            .principals_vec
-            .into_iter()
-            .map(|p| (p.identifier.clone(), RefCell::new(InflatedPrincipal::new(p))))
-            .collect();
+    // We use a vector + map of indexes instead of a single map to avoid using RefCells to allow
+    // modification while iterating. This improves performance.
 
-    // Map from kernel resource koid to Resource struct.
-    let mut resources: HashMap<u64, RefCell<InflatedResource>> = attribution_data
-        .resources_vec
-        .into_iter()
-        .map(|r| (r.koid, RefCell::new(InflatedResource::new(r))))
-        .collect();
+    // Vector of principals with dense integer indexing.
+    let mut principals: Vec<InflatedPrincipal> =
+        attribution_data.principals_vec.into_iter().map(InflatedPrincipal::new).collect();
+
+    let principal_by_id: FxHashMap<GlobalPrincipalIdentifier, usize> =
+        principals.iter().enumerate().map(|(idx, p)| (p.principal.identifier, idx)).collect();
+
+    // Vector of resources with dense integer indexing.
+    let mut resources: Vec<InflatedResource> =
+        attribution_data.resources_vec.into_iter().map(InflatedResource::new).collect();
+
+    let resource_by_koid: FxHashMap<u64, usize> =
+        resources.iter().enumerate().map(|(idx, r)| (r.resource.koid, idx)).collect();
+
+    // Cache used to avoid repeated heap allocations.
+    let mut matched_vmo_indices: Vec<usize> = Vec::new();
 
     // Add direct claims to resources.
     for attribution in attribution_data.attributions {
-        principals.get(&attribution.subject.clone().into()).map(|p| {
-            p.borrow_mut().attribution_claims.insert(attribution.source.into(), attribution.clone())
-        });
         for resource in attribution.resources {
             match resource {
                 ResourceReference::KernelObject(koid) => {
-                    if !resources.contains_key(&koid) {
-                        continue;
+                    if let Some(&r_idx) = resource_by_koid.get(&koid) {
+                        resources[r_idx].claims.insert(Claim {
+                            source: attribution.source,
+                            subject: attribution.subject,
+                            claim_type: ClaimType::Direct,
+                        });
                     }
-                    resources.get_mut(&koid).unwrap().get_mut().claims.insert(Claim {
-                        source: attribution.source.into(),
-                        subject: attribution.subject.into(),
-                        claim_type: ClaimType::Direct,
-                    });
                 }
                 ResourceReference::ProcessMapped {
                     process,
@@ -552,39 +554,52 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
                     len,
                     hint_skip_handle_table: _,
                 } => {
-                    if !resources.contains_key(&process) {
+                    if let Some(&principal_idx) = principal_by_id.get(&attribution.subject) {
+                        principals[principal_idx].mapped_processes.push(process);
+                    }
+                    let Some(&process_idx) = resource_by_koid.get(&process) else {
                         continue;
-                    }
-                    let mut matched_vmos = Vec::new();
+                    };
+                    matched_vmo_indices.clear();
                     if let fplugin::ResourceType::Process(process_data) =
-                        &resources.get(&process).unwrap().borrow().resource.resource_type
+                        &resources[process_idx].resource.resource_type
                     {
-                        for mapping in process_data.mappings.iter().flatten() {
-                            // We consider an entire VMO to be matched if it has a mapping
-                            // within the claimed region.
-                            if mapping.address_base.unwrap() >= base
-                                && mapping.address_base.unwrap() + mapping.size.unwrap()
-                                    <= base + len
-                            {
-                                matched_vmos.push(mapping.vmo.unwrap());
+                        if let Some(mappings) = &process_data.mappings {
+                            // Process mappings in Zircon are sorted in ascending order by
+                            // address_base. We use partition_point to binary search for the first
+                            // mapping in O(log M).
+                            let start_idx =
+                                mappings.partition_point(|m| m.address_base.unwrap_or(0) < base);
+                            let end_bound = base.saturating_add(len);
+                            for mapping in &mappings[start_idx..] {
+                                let Some(mapping_base) = mapping.address_base else {
+                                    continue;
+                                };
+                                // A mapping has a non-zero size, so we know it is out of bounds.
+                                if mapping_base >= end_bound {
+                                    break;
+                                }
+                                let Some(mapping_size) = mapping.size else {
+                                    continue;
+                                };
+                                // We consider an entire VMO to be matched if it has a mapping
+                                // within the claimed region.
+                                if mapping_base.saturating_add(mapping_size) <= end_bound {
+                                    if let Some(vmo_koid) = mapping.vmo {
+                                        if let Some(&vmo_idx) = resource_by_koid.get(&vmo_koid) {
+                                            matched_vmo_indices.push(vmo_idx);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                    for vmo_koid in matched_vmos {
-                        match resources.get_mut(&vmo_koid) {
-                            Some(resource) => {
-                                resource.get_mut().claims.insert(Claim {
-                                    source: attribution.source.into(),
-                                    subject: attribution.subject.into(),
-                                    claim_type: ClaimType::Direct,
-                                });
-                            }
-                            None => {
-                                // The VMO is unknown. This can happen when a VMO is created between
-                                // the collection of the list of VMOs and the collection of the
-                                // process mappings.
-                            }
-                        }
+                    for &vmo_idx in &matched_vmo_indices {
+                        resources[vmo_idx].claims.insert(Claim {
+                            source: attribution.source,
+                            subject: attribution.subject,
+                            claim_type: ClaimType::Direct,
+                        });
                     }
                 }
             }
@@ -595,25 +610,16 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
     // resource that is directly claimed: this is because we consider that attributors deeper in the
     // principal hierarchy will not attribute resources higher in the resource hierarchy than the
     // ones attributed by their ancestors (ie. attribution is always more precise as we go deeper).
-    for (_, resource_refcell) in &resources {
-        let resource = resource_refcell.borrow_mut();
-        // Extract the list of direct claims to propagate.
-        let direct_claims: Vec<&Claim> = resource
-            .claims
-            .iter()
-            .filter(|claim| match claim.claim_type {
-                ClaimType::Direct => true,
-                _ => false,
-            })
-            .collect();
-
-        if direct_claims.is_empty() {
+    for res_idx in 0..resources.len() {
+        if !resources[res_idx].claims.iter().any(|c| c.claim_type == ClaimType::Direct) {
             // There is no direct claim to propagate, we can skip this resource.
             continue;
         }
 
-        let propagated_claims: Vec<Claim> = direct_claims
-            .into_iter()
+        let propagated_claims: Vec<Claim> = resources[res_idx]
+            .claims
+            .iter()
+            .filter(|c| c.claim_type == ClaimType::Direct)
             .map(|claim| Claim {
                 source: claim.source,
                 subject: claim.subject,
@@ -621,38 +627,39 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
             })
             .collect();
         let mut frontier = Vec::new();
-        frontier.extend(resource.children());
-        while !frontier.is_empty() {
-            let child = frontier.pop().unwrap();
-            let mut child_resource = match resources.get(&child) {
-                Some(resource) => resource.borrow_mut(),
-                None => {
-                    // This can happen if a resource is created or disappears while we were
-                    // collecting information about all the resources in the system. This should
-                    // remain a rare event.
-                    continue;
-                }
+        frontier.extend(resources[res_idx].children());
+        while let Some(child) = frontier.pop() {
+            let Some(&child_idx) = resource_by_koid.get(&child) else {
+                // This can happen if a resource is created or disappears while we were
+                // collecting information about all the resources in the system. This should
+                // remain a rare event.
+                continue;
             };
-            if child_resource.claims.iter().any(|c| c.claim_type == ClaimType::Direct) {
+            if resources[child_idx].claims.iter().any(|c| c.claim_type == ClaimType::Direct) {
                 // If there is a direct claim on the resource, don't propagate.
                 continue;
             }
-            child_resource.claims.extend(propagated_claims.clone().iter());
-            frontier.extend(child_resource.children().iter());
+            resources[child_idx].claims.extend(propagated_claims.iter().cloned());
+            frontier.extend(resources[child_idx].children());
         }
     }
 
-    for (_, resource_refcell) in &resources {
-        let mut resource = resource_refcell.borrow_mut();
+    for resource in &mut resources {
         resource.process_claims();
     }
 
+    // Reusable buffers to avoid heap allocations per VMO.
+    let mut ancestors_buf: Vec<u64> = Vec::with_capacity(8);
+    let mut child_claims_buf: Vec<Claim> = Vec::new();
+
     // Push claimed resources to principals. We are interested in VMOs as the VMOs are the resources
     // actually holding memory. We also keep track of the process to display its name in the output.
-    for (resource_id, resource_refcell) in &resources {
-        let resource = resource_refcell.borrow();
-        if let fplugin::ResourceType::Vmo(vmo) = &resource.resource.resource_type {
-            let mut ancestors = vec![*resource_id];
+    for res_idx in 0..resources.len() {
+        let resource_koid = resources[res_idx].resource.koid;
+        if let fplugin::ResourceType::Vmo(vmo) = &resources[res_idx].resource.resource_type {
+            ancestors_buf.clear();
+            ancestors_buf.push(resource_koid);
+
             // VMOs created by reference don't behave like COW-clones; their byte count is always
             // zero, and all pages are attributed to their parent. This is not what we want here,
             // as we prefer to acknowledge that the pages are shared between the parent and its
@@ -661,6 +668,14 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
             // report they are always empty.
             if vmo.total_populated_bytes.unwrap_or_default() == 0 {
                 let mut current_parent = vmo.parent;
+                child_claims_buf.clear();
+                for c in &resources[res_idx].claims {
+                    child_claims_buf.push(Claim {
+                        subject: c.subject,
+                        source: c.source,
+                        claim_type: ClaimType::Child,
+                    });
+                }
                 // Add the parents of a VMO as "Child" claims. This is done so that slices of VMOs,
                 // with possibly no memory of their own, get attributed the resources of their
                 // parent.
@@ -671,20 +686,15 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
                     // Some VMOs' ancestry is self referential: their parent's koid is set to their
                     // own koid. We want to detect this case and break early to avoid getting
                     // stuck in an infinite loop.
-                    if parent_koid == resource.resource.koid {
+                    if parent_koid == resource_koid {
                         break;
                     }
-                    ancestors.push(parent_koid);
-                    let mut current_resource = match resources.get(&parent_koid) {
-                        Some(res) => res.borrow_mut(),
-                        None => break,
+                    ancestors_buf.push(parent_koid);
+                    let Some(&parent_idx) = resource_by_koid.get(&parent_koid) else {
+                        break;
                     };
-                    current_resource.claims.extend(resource.claims.iter().map(|c| Claim {
-                        subject: c.subject,
-                        source: c.source,
-                        claim_type: ClaimType::Child,
-                    }));
-                    current_parent = match &current_resource.resource.resource_type {
+                    resources[parent_idx].claims.extend(child_claims_buf.iter().cloned());
+                    current_parent = match &resources[parent_idx].resource.resource_type {
                         fplugin::ResourceType::Job(_) => panic!("This should not happen"),
                         fplugin::ResourceType::Process(_) => panic!("This should not happen"),
                         fplugin::ResourceType::Vmo(current_vmo) => current_vmo.parent,
@@ -693,31 +703,33 @@ pub fn attribute_vmos(attribution_data: AttributionData) -> ProcessedAttribution
                 }
             }
 
-            for claim in &resource.claims {
-                principals
-                    .get(&claim.subject)
-                    .unwrap()
-                    .borrow_mut()
-                    .resources
-                    .extend(ancestors.iter());
+            for claim in &resources[res_idx].claims {
+                if let Some(&p_idx) = principal_by_id.get(&claim.subject) {
+                    principals[p_idx].resources.extend_from_slice(&ancestors_buf);
+                }
             }
-        } else if let fplugin::ResourceType::Process(_) = &resource.resource.resource_type {
-            for claim in &resource.claims {
-                principals
-                    .get(&claim.subject)
-                    .unwrap()
-                    .borrow_mut()
-                    .resources
-                    .insert(resource.resource.koid);
+        } else if let fplugin::ResourceType::Process(_) = &resources[res_idx].resource.resource_type
+        {
+            for claim in &resources[res_idx].claims {
+                if let Some(&p_idx) = principal_by_id.get(&claim.subject) {
+                    principals[p_idx].resources.push(resource_koid);
+                }
             }
         }
     }
 
-    ProcessedAttributionData::new(
-        principals.into_iter().map(|(k, v)| (k, v.into_inner())).collect(),
-        resources.into_iter().map(|(k, v)| (k, v.into_inner())).collect(),
-        attribution_data.resource_names,
-    )
+    // Sort, deduplicate, and populate principal resource sets once per principal.
+    for p in &mut principals {
+        if !p.resources.is_empty() {
+            p.resources.sort_unstable();
+            p.resources.dedup();
+        }
+    }
+
+    let principals_map = principals.into_iter().map(|p| (p.principal.identifier, p)).collect();
+    let resources_map = resources.into_iter().map(|r| (r.resource.koid, r)).collect();
+
+    ProcessedAttributionData::new(principals_map, resources_map, attribution_data.resource_names)
 }
 
 #[cfg(test)]
@@ -2118,5 +2130,349 @@ mod tests {
         assert_eq!(p1.resources.len(), 2);
         assert!(p1.resources.contains(&5002));
         assert!(p1.resources.contains(&5003));
+    }
+
+    /// What is tested: Multi-level VMO ancestry chain resolution and principal resource set
+    /// accumulation with multiple principals and overlapping claims.
+    ///
+    /// Expectations verified:
+    /// - Deep ancestry chain: Root VMO 8001 -> Child VMO 8002 (0 bytes) -> Leaf VMO 8003 (0 bytes).
+    /// - Leaf VMO 8004 (0 bytes) also shares parent 8002.
+    /// - P1 claims Leaf VMO 8003 and Process 8000; P2 claims Leaf VMO 8004.
+    /// - Verifies P1 gets {8000, 8001, 8002, 8003} and P2 gets {8001, 8002, 8004}.
+    /// - Verifies Child claims are correctly propagated to ancestors 8001 and 8002.
+    #[test]
+    fn test_vmo_ancestry_and_principal_resource_accumulation() {
+        let resource_names = vec![
+            name::ZXName::from_string_lossy("proc"),
+            name::ZXName::from_string_lossy("root_vmo"),
+            name::ZXName::from_string_lossy("mid_vmo"),
+            name::ZXName::from_string_lossy("leaf_vmo1"),
+            name::ZXName::from_string_lossy("leaf_vmo2"),
+        ];
+        let principals = vec![make_principal_def(1, "p1"), make_principal_def(2, "p2")];
+        let resources = vec![
+            fplugin::Resource {
+                koid: Some(8000),
+                name_index: Some(0),
+                resource_type: Some(fplugin::ResourceType::Process(fplugin::Process {
+                    vmos: Some(vec![8001, 8002, 8003, 8004]),
+                    mappings: None,
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(8001),
+                name_index: Some(1),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    parent: None,
+                    total_populated_bytes: Some(8192),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(8002),
+                name_index: Some(2),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    parent: Some(8001),
+                    total_populated_bytes: Some(0),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(8003),
+                name_index: Some(3),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    parent: Some(8002),
+                    total_populated_bytes: Some(0),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(8004),
+                name_index: Some(4),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    parent: Some(8002),
+                    total_populated_bytes: Some(0),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        ];
+        let attributions = vec![
+            make_attribution_def(
+                1,
+                1,
+                vec![
+                    fplugin::ResourceReference::KernelObject(8000),
+                    fplugin::ResourceReference::KernelObject(8003),
+                ],
+            ),
+            make_attribution_def(1, 2, vec![fplugin::ResourceReference::KernelObject(8004)]),
+        ];
+
+        let processed = attribute_vmos(make_test_attribution_data(
+            principals,
+            resources,
+            resource_names,
+            attributions,
+        ));
+
+        let p1 = processed.principals.get(&GlobalPrincipalIdentifier::new_for_test(1)).unwrap();
+        assert_eq!(p1.resources.len(), 4);
+        assert!(p1.resources.contains(&8000));
+        assert!(p1.resources.contains(&8001));
+        assert!(p1.resources.contains(&8002));
+        assert!(p1.resources.contains(&8003));
+
+        let p2 = processed.principals.get(&GlobalPrincipalIdentifier::new_for_test(2)).unwrap();
+        assert_eq!(p2.resources.len(), 3);
+        assert!(p2.resources.contains(&8001));
+        assert!(p2.resources.contains(&8002));
+        assert!(p2.resources.contains(&8004));
+
+        let mid_vmo = processed.resources.get(&8002).unwrap();
+        assert!(
+            mid_vmo
+                .claims
+                .iter()
+                .any(|c| c.claim_type == ClaimType::Child && c.subject.0.get() == 1)
+        );
+        assert!(
+            mid_vmo
+                .claims
+                .iter()
+                .any(|c| c.claim_type == ClaimType::Child && c.subject.0.get() == 2)
+        );
+
+        let root_vmo = processed.resources.get(&8001).unwrap();
+        assert!(
+            root_vmo
+                .claims
+                .iter()
+                .any(|c| c.claim_type == ClaimType::Child && c.subject.0.get() == 1)
+        );
+        assert!(
+            root_vmo
+                .claims
+                .iter()
+                .any(|c| c.claim_type == ClaimType::Child && c.subject.0.get() == 2)
+        );
+    }
+
+    /// What is tested: `ResourceReference::ProcessMapped` binary search (`partition_point`) over
+    /// sorted process address mappings and boundary conditions.
+    ///
+    /// Expectations verified:
+    /// - Given 6 mappings sorted by address base across a process address space:
+    ///   - mapping 0: `[0x1000, 0x2000]` (VMO 6001) - before range `[0x3000, 0x7000]` -> skipped
+    ///   - mapping 1: `[0x3000, 0x4000]` (VMO 6002) - fully inside range -> matched
+    ///   - mapping 2: `[0x4000, 0x6000]` (VMO 6003) - fully inside range -> matched
+    ///   - mapping 3: `[0x6000, 0x8000]` (VMO 6004) - exceeds upper bound (0x8000 > 0x7000)
+    ///                 -> not matched
+    ///   - mapping 4: `[0x7000, 0x8000]` (VMO 6005) - base == 0x7000 == end_bound
+    ///                 -> triggers early loop break (mapping_base >= end_bound)
+    ///   - mapping 5: `[0xa000, 0xb000]` (VMO 6006) - after break -> never visited
+    /// - Verifies that only VMO 6002 and VMO 6003 are attributed, and `PrincipalSummary.processes`
+    ///   correctly contains the mapped process.
+    #[test]
+    fn test_process_mapped_binary_search_and_boundaries() {
+        let resource_names = vec![
+            name::ZXName::from_string_lossy("test_proc"),
+            name::ZXName::from_string_lossy("vmo1"),
+            name::ZXName::from_string_lossy("vmo2"),
+            name::ZXName::from_string_lossy("vmo3"),
+            name::ZXName::from_string_lossy("vmo4"),
+            name::ZXName::from_string_lossy("vmo5"),
+            name::ZXName::from_string_lossy("vmo6"),
+        ];
+        let principals = vec![make_principal_def(1, "vmar_principal")];
+        let resources = vec![
+            fplugin::Resource {
+                koid: Some(6000),
+                name_index: Some(0),
+                resource_type: Some(fplugin::ResourceType::Process(fplugin::Process {
+                    vmos: Some(vec![6001, 6002, 6003, 6004, 6005, 6006]),
+                    mappings: Some(vec![
+                        fplugin::Mapping {
+                            vmo: Some(6001),
+                            address_base: Some(0x1000),
+                            size: Some(0x1000),
+                            ..Default::default()
+                        },
+                        fplugin::Mapping {
+                            vmo: Some(6002),
+                            address_base: Some(0x3000),
+                            size: Some(0x1000),
+                            ..Default::default()
+                        },
+                        fplugin::Mapping {
+                            vmo: Some(6003),
+                            address_base: Some(0x4000),
+                            size: Some(0x2000),
+                            ..Default::default()
+                        },
+                        fplugin::Mapping {
+                            vmo: Some(6004),
+                            address_base: Some(0x6000),
+                            size: Some(0x2000),
+                            ..Default::default()
+                        },
+                        fplugin::Mapping {
+                            vmo: Some(6005),
+                            address_base: Some(0x7000),
+                            size: Some(0x1000),
+                            ..Default::default()
+                        },
+                        fplugin::Mapping {
+                            vmo: Some(6006),
+                            address_base: Some(0xa000),
+                            size: Some(0x1000),
+                            ..Default::default()
+                        },
+                    ]),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(6001),
+                name_index: Some(1),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    private_committed_bytes: Some(4096),
+                    private_populated_bytes: Some(4096),
+                    scaled_committed_bytes: Some(4096),
+                    scaled_populated_bytes: Some(4096),
+                    total_committed_bytes: Some(4096),
+                    total_populated_bytes: Some(4096),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(6002),
+                name_index: Some(2),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    private_committed_bytes: Some(4096),
+                    private_populated_bytes: Some(4096),
+                    scaled_committed_bytes: Some(4096),
+                    scaled_populated_bytes: Some(4096),
+                    total_committed_bytes: Some(4096),
+                    total_populated_bytes: Some(4096),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(6003),
+                name_index: Some(3),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    private_committed_bytes: Some(8192),
+                    private_populated_bytes: Some(8192),
+                    scaled_committed_bytes: Some(8192),
+                    scaled_populated_bytes: Some(8192),
+                    total_committed_bytes: Some(8192),
+                    total_populated_bytes: Some(8192),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(6004),
+                name_index: Some(4),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    private_committed_bytes: Some(8192),
+                    private_populated_bytes: Some(8192),
+                    scaled_committed_bytes: Some(8192),
+                    scaled_populated_bytes: Some(8192),
+                    total_committed_bytes: Some(8192),
+                    total_populated_bytes: Some(8192),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(6005),
+                name_index: Some(5),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    private_committed_bytes: Some(4096),
+                    private_populated_bytes: Some(4096),
+                    scaled_committed_bytes: Some(4096),
+                    scaled_populated_bytes: Some(4096),
+                    total_committed_bytes: Some(4096),
+                    total_populated_bytes: Some(4096),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            fplugin::Resource {
+                koid: Some(6006),
+                name_index: Some(6),
+                resource_type: Some(fplugin::ResourceType::Vmo(fplugin::Vmo {
+                    private_committed_bytes: Some(4096),
+                    private_populated_bytes: Some(4096),
+                    scaled_committed_bytes: Some(4096),
+                    scaled_populated_bytes: Some(4096),
+                    total_committed_bytes: Some(4096),
+                    total_populated_bytes: Some(4096),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        ];
+        let attributions = vec![make_attribution_def(
+            1,
+            1,
+            vec![fplugin::ResourceReference::ProcessMapped(fplugin::ProcessMapped {
+                process: 6000,
+                base: 0x3000,
+                len: 0x4000,
+                hint_skip_handle_table: false,
+            })],
+        )];
+
+        let processed = attribute_vmos(make_test_attribution_data(
+            principals,
+            resources,
+            resource_names,
+            attributions,
+        ));
+
+        // VMO 6002 and 6003 should have claims from Principal 1
+        assert_eq!(
+            processed
+                .resources
+                .get(&6002)
+                .unwrap()
+                .claims
+                .iter()
+                .map(|c| c.subject.0.get())
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+        assert_eq!(
+            processed
+                .resources
+                .get(&6003)
+                .unwrap()
+                .claims
+                .iter()
+                .map(|c| c.subject.0.get())
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+        // VMO 6001, 6004, 6005, 6006 should have no claims
+        assert!(processed.resources.get(&6001).unwrap().claims.is_empty());
+        assert!(processed.resources.get(&6004).unwrap().claims.is_empty());
+        assert!(processed.resources.get(&6005).unwrap().claims.is_empty());
+        assert!(processed.resources.get(&6006).unwrap().claims.is_empty());
+
+        let summary = processed.summary();
+        assert_eq!(summary.principals.len(), 1);
+        assert_eq!(summary.principals[0].processes, vec!["test_proc (6000)".to_owned()]);
     }
 }

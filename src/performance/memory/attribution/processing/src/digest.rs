@@ -8,9 +8,10 @@ use bstr::ByteSlice;
 use fidl_fuchsia_kernel_common as fkernel;
 use fidl_fuchsia_memory_attribution_plugin_common as fplugin;
 use regex_lite::Regex;
+use rustc_hash::FxHashMap;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::HashMap;
+use smallvec::SmallVec;
 use std::collections::hash_map::Entry::Occupied;
 #[cfg(target_os = "fuchsia")]
 use {crate::CATEGORY_MEMORY_CAPTURE, fuchsia_trace::duration};
@@ -65,7 +66,7 @@ impl BucketDefinition {
     }
 
     /// Tests whether any of the specified principal names match this bucket's definition.
-    fn principals_match(&self, principals: &Vec<&str>) -> bool {
+    fn principals_match(&self, principals: &[&str]) -> bool {
         self.principal.as_ref().is_none_or(|a| principals.iter().any(|name| a.is_match(name)))
     }
 }
@@ -114,7 +115,7 @@ struct UndigestedVmo<'a> {
     populated_size: u64,
     committed_size: u64,
     name: &'a ZXName,
-    principals: &'a Vec<&'a str>,
+    principals: &'a [&'a str],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -142,23 +143,33 @@ impl Digest {
         // Maps resources' (VMO, Process, Job. See Resource) ids
         // to their owner, i.e. the principal they have been
         // attributed to.
-        let owners: HashMap<u64, Vec<&str>> = {
-            let koid_to_principal = attribution_data
-                .principals
-                .iter()
-                .flat_map(|(_, p)| p.resources.iter().map(|r| (*r, p.name())));
-
-            let mut owners: HashMap<u64, Vec<_>> = HashMap::new();
-            for (koid, principal) in koid_to_principal {
-                let principals = owners.entry(koid).or_default();
-                principals.push(principal);
+        //
+        // On a test run (2026-08), we found that the number of VMOs for each number of owners
+        // distributes as follows:
+        // # of owners : # of VMOs
+        // - 01 : 62072
+        // - 02 :  3112
+        // - 03 :  0096
+        // - 04 :  0011
+        // - 05 :  0002
+        // - 06 :  0001
+        // - .... (each subsequent entry has 1 VMO at most)
+        let owners: FxHashMap<u64, SmallVec<[&str; 1]>> = {
+            // `owners` are only needed when detailed_vmos is true, or when one bucket definition
+            // uses a principal matcher, which is the case on all the products where memory monitor
+            // 2 is deployed. Therefore we always compute it.
+            let mut owners: FxHashMap<u64, SmallVec<[&str; 1]>> = FxHashMap::default();
+            for (_, p) in &attribution_data.principals {
+                let p_name = p.name();
+                for r in &p.resources {
+                    owners.entry(*r).or_default().push(p_name);
+                }
             }
             owners
         };
 
-        let no_principals = vec![];
         let mut populated_reclaimable_bytes = 0;
-        let mut undigested_vmos: HashMap<u64, UndigestedVmo<'_>> = attribution_data
+        let mut undigested_vmos: FxHashMap<u64, UndigestedVmo<'_>> = attribution_data
             .resources
             .iter()
             .filter_map(|(koid, r)| match &r.resource.resource_type {
@@ -180,7 +191,7 @@ impl Digest {
                                 name,
                                 populated_size,
                                 committed_size,
-                                principals: owners.get(koid).unwrap_or(&no_principals),
+                                principals: owners.get(koid).map_or(&[], |v| v.as_slice()),
                             },
                         ))
                     })

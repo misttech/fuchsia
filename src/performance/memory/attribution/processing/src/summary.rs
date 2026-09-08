@@ -3,9 +3,10 @@
 // found in the LICENSE file.
 
 use crate::digest::Digest;
+use crate::macros::vmo_digests;
 use crate::{
-    GlobalPrincipalIdentifier, InflatedPrincipal, InflatedResource, PrincipalType,
-    ResourceReference, ZXName, fplugin_serde,
+    Claim, GlobalPrincipalIdentifier, InflatedPrincipal, InflatedResource, PrincipalType, ZXName,
+    fplugin_serde,
 };
 use bstr::ByteSlice;
 use core::default::Default;
@@ -13,9 +14,11 @@ use fidl_fuchsia_memory_attribution_plugin_common as fplugin;
 use fplugin::Vmo;
 #[cfg(target_os = "fuchsia")]
 use fuchsia_trace::duration;
+use rustc_hash::FxHashMap;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
+
 /// Consider that two floats are equals if they differ less than [FLOAT_COMPARISON_EPSILON].
 const FLOAT_COMPARISON_EPSILON: f64 = 1e-10;
 
@@ -42,14 +45,47 @@ pub struct MemorySummary {
     pub unclaimed: u64,
 }
 
+fn compute_share_count(
+    claims: &HashSet<Claim>,
+    subjects_buf: &mut Vec<GlobalPrincipalIdentifier>,
+) -> usize {
+    match claims.len() {
+        0 => 0,
+        1 => 1,
+        2 => {
+            let mut iter = claims.iter();
+            let s1 = iter.next().unwrap().subject;
+            let s2 = iter.next().unwrap().subject;
+            if s1 == s2 { 1 } else { 2 }
+        }
+        _ => {
+            subjects_buf.clear();
+            subjects_buf.extend(claims.iter().map(|c| c.subject));
+            subjects_buf.sort_unstable();
+            subjects_buf.dedup();
+            subjects_buf.len()
+        }
+    }
+}
+
 impl MemorySummary {
     pub(crate) fn build(
-        principals: &HashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
-        resources: &HashMap<u64, InflatedResource>,
+        principals: &FxHashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
+        resources: &FxHashMap<u64, InflatedResource>,
         resource_names: &Vec<ZXName>,
     ) -> MemorySummary {
         #[cfg(target_os = "fuchsia")]
         duration!(crate::CATEGORY_MEMORY_CAPTURE, c"MemorySummary::build");
+        let digested_names: Vec<&ZXName> =
+            resource_names.iter().map(vmo_name_to_digest_zxname).collect();
+        let mut subjects_buf = Vec::new();
+        let share_counts: FxHashMap<u64, usize> = resources
+            .iter()
+            .map(|(&koid, resource)| {
+                (koid, compute_share_count(&resource.claims, &mut subjects_buf))
+            })
+            .collect();
+
         let mut output = MemorySummary { principals: Default::default(), unclaimed: 0 };
         for principal in principals.values() {
             output.principals.push(MemorySummary::build_one_principal(
@@ -57,10 +93,12 @@ impl MemorySummary {
                 &principals,
                 &resources,
                 &resource_names,
+                &digested_names,
+                &share_counts,
             ));
         }
 
-        output.principals.sort_unstable_by_key(|p| -(p.populated_total as i64));
+        output.principals.sort_unstable_by(|a, b| b.populated_total.cmp(&a.populated_total));
 
         let mut unclaimed = 0;
         for (_, resource) in resources {
@@ -80,9 +118,11 @@ impl MemorySummary {
 
     fn build_one_principal(
         principal: &InflatedPrincipal,
-        principals: &HashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
-        resources: &HashMap<u64, InflatedResource>,
+        principals: &FxHashMap<GlobalPrincipalIdentifier, InflatedPrincipal>,
+        resources: &FxHashMap<u64, InflatedResource>,
         resource_names: &Vec<ZXName>,
+        digested_names: &[&ZXName],
+        share_counts: &FxHashMap<u64, usize>,
     ) -> PrincipalSummary {
         let mut output = PrincipalSummary {
             name: principal.name().to_owned(),
@@ -109,23 +149,16 @@ impl MemorySummary {
         };
 
         for resource_id in &principal.resources {
-            if !resources.contains_key(resource_id) {
+            let Some(resource) = resources.get(resource_id) else {
                 continue;
-            }
-
-            let resource = resources.get(resource_id).unwrap();
-            let share_count = resource
-                .claims
-                .iter()
-                .map(|c| c.subject)
-                .collect::<HashSet<GlobalPrincipalIdentifier>>()
-                .len();
+            };
+            let share_count = *share_counts.get(resource_id).unwrap();
             match &resource.resource.resource_type {
                 fplugin::ResourceType::Job(_) => todo!(),
                 fplugin::ResourceType::Process(_) => {
                     output.processes.push(format!(
                         "{} ({})",
-                        resource_names.get(resource.resource.name_index).unwrap().clone(),
+                        resource_names.get(resource.resource.name_index).unwrap(),
                         resource.resource.koid
                     ));
                 }
@@ -140,38 +173,28 @@ impl MemorySummary {
                         output.committed_private += vmo_info.private_committed_bytes.unwrap();
                         output.populated_private += vmo_info.private_populated_bytes.unwrap();
                     }
-                    output
-                        .vmos
-                        .entry(
-                            vmo_name_to_digest_zxname(
-                                &resource_names.get(resource.resource.name_index).unwrap(),
-                            )
-                            .clone(),
-                        )
-                        .or_default()
-                        .merge(vmo_info, share_count);
+                    let digest_name = digested_names[resource.resource.name_index];
+                    // This avoids using .entry(), which forces us to clone the key even when the
+                    // entry already exists.
+                    if let Some(summary) = output.vmos.get_mut(digest_name) {
+                        summary.merge(vmo_info, share_count);
+                    } else {
+                        let mut summary = VmoSummary::default();
+                        summary.merge(vmo_info, share_count);
+                        output.vmos.insert(digest_name.clone(), summary);
+                    }
                 }
                 _ => todo!(),
             }
         }
 
-        for (_source, attribution) in &principal.attribution_claims {
-            for resource in &attribution.resources {
-                if let ResourceReference::ProcessMapped {
-                    process: process_mapped,
-                    base: _,
-                    len: _,
-                    hint_skip_handle_table: _,
-                } = resource
-                {
-                    if let Some(process) = resources.get(&process_mapped) {
-                        output.processes.push(format!(
-                            "{} ({})",
-                            resource_names.get(process.resource.name_index).unwrap().clone(),
-                            process.resource.koid
-                        ));
-                    }
-                }
+        for process_mapped in &principal.mapped_processes {
+            if let Some(process) = resources.get(process_mapped) {
+                output.processes.push(format!(
+                    "{} ({})",
+                    resource_names.get(process.resource.name_index).unwrap(),
+                    process.resource.koid
+                ));
             }
         }
 
@@ -285,6 +308,38 @@ impl PartialEq for VmoSummary {
             && self.populated_total == other.populated_total
     }
 }
+vmo_digests! {
+    (
+        ProcessBootstrap,
+        "[process-bootstrap]",
+        or(contains("ld.so.1-internal-heap"), starts_with("stack: msg of"))
+    ),
+    (Blobs, "[blobs]", exact("blob-", hex())),
+    (InactiveBlobs, "[inactive blobs]", exact("inactive-blob-", hex())),
+    (
+        Stacks,
+        "[stacks]",
+        or(
+            starts_with("thrd_t:0x"),
+            contains("initial-thread"),
+            contains("pthread_t:0x"),
+            contains("pthread_create:0x")
+        )
+    ),
+    (Data, "[data]", starts_with("data", digits(), ":")),
+    (Bss, "[bss]", starts_with("bss", digits(), ":")),
+    (Relro, "[relro]", starts_with("relro:")),
+    (Unnamed, "[unnamed]", exact("")),
+    (Scudo, "[scudo]", starts_with("scudo:")),
+    (BootfsLibraries, "[bootfs-libraries]", contains(".so")),
+    (BionicStack, "[bionic-stack]", starts_with("stack_and_tls:")),
+    (Ext4, "[ext4]", starts_with("ext4!")),
+    (Dalvik, "[dalvik]", starts_with("dalvik-")),
+    (Bootfs, "[bootfs]", or(exact("bootfs"), starts_with("bootfs:"))),
+    (RestrictedStateVmo, "[restricted_state_vmo]", exact("restricted_state_vmo:", digits())),
+}
+
+#[cfg(test)]
 const VMO_DIGEST_NAME_MAPPING: [(&str, &str); 15] = [
     ("ld\\.so\\.1-internal-heap|(^stack: msg of.*)", "[process-bootstrap]"),
     ("^blob-[0-9a-f]+$", "[blobs]"),
@@ -300,42 +355,22 @@ const VMO_DIGEST_NAME_MAPPING: [(&str, &str); 15] = [
     ("^ext4!.*$", "[ext4]"),
     ("^dalvik-.*$", "[dalvik]"),
     ("^bootfs(:.*)?$", "[bootfs]"),
-    ("^restricted_state_vmo:[0-9]*$", "[restricted_state_vmo]"),
+    ("^restricted_state_vmo:[0-9]+$", "[restricted_state_vmo]"),
 ];
 
-/// Returns the name of a VMO category when the name match on of the rules.
+/// Returns the name of a VMO category when the name matches one of the rules.
 /// This is used for presentation and aggregation.
 pub fn vmo_name_to_digest_name(name: &str) -> &str {
-    static RULES: std::sync::LazyLock<Vec<(regex_lite::Regex, &'static str)>> =
-        std::sync::LazyLock::new(|| {
-            VMO_DIGEST_NAME_MAPPING
-                .iter()
-                .map(|&(pattern, replacement)| {
-                    (regex_lite::Regex::new(pattern).unwrap(), replacement)
-                })
-                .collect()
-        });
-    RULES.iter().find(|(regex, _)| regex.is_match(name.trim())).map_or(name, |rule| rule.1)
+    if let Some(category) = match_vmo_digest(name.trim()) { category.as_str() } else { name }
 }
 
 pub fn vmo_name_to_digest_zxname(name: &ZXName) -> &ZXName {
-    static RULES: std::sync::LazyLock<Vec<(regex_lite::Regex, ZXName)>> =
-        std::sync::LazyLock::new(|| {
-            VMO_DIGEST_NAME_MAPPING
-                .iter()
-                .map(|&(pattern, replacement)| {
-                    (
-                        regex_lite::Regex::new(pattern).unwrap(),
-                        ZXName::try_from_bytes(replacement.as_bytes()).unwrap(),
-                    )
-                })
-                .collect()
-        });
     if let Ok(name_str) = name.as_bstr().to_str() {
-        RULES.iter().find(|(regex, _)| regex.is_match(name_str)).map_or(name, |rule| &rule.1)
-    } else {
-        name
+        if let Some(category) = match_vmo_digest(name_str) {
+            return category.as_zxname();
+        }
     }
+    name
 }
 
 #[cfg(test)]
@@ -403,6 +438,96 @@ mod tests {
         );
     }
 
+    // Verifies that the fast string matching rules match the regex rules.
+    #[test]
+    fn test_vmo_digest_rules_match_regex() {
+        let test_strings = [
+            "ld.so.1-internal-heap",
+            "prefix-ld.so.1-internal-heap",
+            "stack: msg of something",
+            "stack: msg of",
+            "stack: msg",
+            "blob-1234",
+            "blob-abcdef",
+            "blob-0123456789abcdef",
+            "blob-",
+            "blob-123g",
+            "blob-ABC",
+            "inactive-blob-1234",
+            "inactive-blob-abcdef",
+            "inactive-blob-",
+            "inactive-blob-xyz",
+            "thrd_t:0x123",
+            "thrd_t:0x",
+            "prefix-thrd_t:0x123",
+            "initial-thread",
+            "prefix-initial-thread-suffix",
+            "pthread_t:0x123",
+            "pthread_create:0xfa124714",
+            "data:",
+            "data0:",
+            "data123:foo",
+            "data:bar",
+            "data_foo:",
+            "data",
+            "bss:",
+            "bss99:",
+            "bss456:bar",
+            "bss_foo:",
+            "bss",
+            "relro:",
+            "relro:foo",
+            "relro_other",
+            "",
+            "scudo:",
+            "scudo:primary",
+            "scudo_other",
+            "libfoo.so.1",
+            "test.so",
+            ".so",
+            "stack_and_tls:123",
+            "stack_and_tls:",
+            "ext4!foobar",
+            "ext4!",
+            "dalvik-data",
+            "dalvik-",
+            "bootfs",
+            "bootfs:",
+            "bootfs:bin",
+            "bootfs_other",
+            "restricted_state_vmo:",
+            "restricted_state_vmo:0",
+            "restricted_state_vmo:12345",
+            "restricted_state_vmo:abc",
+            "restricted_state_vmo:12a",
+            "foobar",
+            "random_string_123",
+            "other-blob-1234",
+        ];
+
+        static RULES: std::sync::LazyLock<Vec<(regex_lite::Regex, &'static str)>> =
+            std::sync::LazyLock::new(|| {
+                VMO_DIGEST_NAME_MAPPING
+                    .iter()
+                    .map(|&(pattern, replacement)| {
+                        (regex_lite::Regex::new(pattern).unwrap(), replacement)
+                    })
+                    .collect()
+            });
+
+        for s in test_strings {
+            let expected =
+                RULES.iter().find(|(regex, _)| regex.is_match(s)).map_or(s, |rule| rule.1);
+            let actual = vmo_name_to_digest_name(s);
+            assert_eq!(actual, expected, "Mismatch for string: {:?}", s);
+
+            let zx_in = ZXName::from_string_lossy(s);
+            let zx_expected = ZXName::from_string_lossy(expected);
+            let zx_actual = vmo_name_to_digest_zxname(&zx_in);
+            assert_eq!(zx_actual, &zx_expected, "ZXName mismatch for string: {:?}", s);
+        }
+    }
+
     fn make_test_principal(id: u64, name: &str) -> InflatedPrincipal {
         InflatedPrincipal::new(
             fplugin::Principal {
@@ -460,18 +585,18 @@ mod tests {
     ///   sorting comparator logic is refactored.
     #[test]
     fn test_memory_summary_build_sorting_and_overflow() {
-        let mut principals = HashMap::new();
+        let mut principals = FxHashMap::default();
         let mut p1 = make_test_principal(1, "small_principal");
-        p1.resources.insert(101);
+        p1.resources.push(101);
         let mut p2 = make_test_principal(2, "large_principal");
-        p2.resources.insert(102);
+        p2.resources.push(102);
         let mut p3 = make_test_principal(3, "medium_principal");
-        p3.resources.insert(103);
+        p3.resources.push(103);
         principals.insert(GlobalPrincipalIdentifier::new_for_test(1), p1);
         principals.insert(GlobalPrincipalIdentifier::new_for_test(2), p2);
         principals.insert(GlobalPrincipalIdentifier::new_for_test(3), p3);
 
-        let mut resources = HashMap::new();
+        let mut resources = FxHashMap::default();
         resources
             .insert(101, make_test_vmo_resource(101, 0, 100_000_000, 100_000_000, vec![(1, 1)]));
         resources.insert(
@@ -507,13 +632,13 @@ mod tests {
     ///   private) are accurately summed across the aggregated VMOs.
     #[test]
     fn test_memory_summary_vmo_digest_aggregation() {
-        let mut principals = HashMap::new();
+        let mut principals = FxHashMap::default();
         let mut p1 = make_test_principal(1, "blob_owner");
-        p1.resources.insert(1001);
-        p1.resources.insert(1002);
+        p1.resources.push(1001);
+        p1.resources.push(1002);
         principals.insert(GlobalPrincipalIdentifier::new_for_test(1), p1);
 
-        let mut resources = HashMap::new();
+        let mut resources = FxHashMap::default();
         resources.insert(1001, make_test_vmo_resource(1001, 0, 100, 200, vec![(1, 1)]));
         resources.insert(1002, make_test_vmo_resource(1002, 1, 300, 400, vec![(1, 1)]));
 
@@ -538,17 +663,18 @@ mod tests {
     /// `PrincipalSummary.processes`.
     ///
     /// Expectations verified:
-    /// - Multiple distinct process resources attributed to a principal are formatted as `"name (koid)"`
-    ///   and sorted alphabetically (`"alpha_process (2002)"` before `"zeta_process (2001)"`).
+    /// - Multiple distinct process resources attributed to a principal are formatted as `"name
+    ///   (koid)"` and sorted alphabetically (`"alpha_process (2002)"` before `"zeta_process (2001)
+    ///   "`).
     #[test]
     fn test_memory_summary_process_formatting_and_sorting() {
-        let mut principals = HashMap::new();
+        let mut principals = FxHashMap::default();
         let mut p1 = make_test_principal(1, "proc_owner");
-        p1.resources.insert(2001);
-        p1.resources.insert(2002);
+        p1.resources.push(2001);
+        p1.resources.push(2002);
         principals.insert(GlobalPrincipalIdentifier::new_for_test(1), p1);
 
-        let mut resources = HashMap::new();
+        let mut resources = FxHashMap::default();
         let r1 = InflatedResource::new(
             fplugin::Resource {
                 koid: Some(2001),
@@ -601,15 +727,15 @@ mod tests {
     ///   both sharing principals.
     #[test]
     fn test_memory_summary_share_count_calculation() {
-        let mut principals = HashMap::new();
+        let mut principals = FxHashMap::default();
         let mut p1 = make_test_principal(1, "owner1");
         let mut p2 = make_test_principal(2, "owner2");
-        p1.resources.insert(3001);
-        p2.resources.insert(3001);
+        p1.resources.push(3001);
+        p2.resources.push(3001);
         principals.insert(GlobalPrincipalIdentifier::new_for_test(1), p1);
         principals.insert(GlobalPrincipalIdentifier::new_for_test(2), p2);
 
-        let mut resources = HashMap::new();
+        let mut resources = FxHashMap::default();
         resources.insert(3001, make_test_vmo_resource(3001, 0, 1000, 2000, vec![(1, 1), (2, 2)]));
 
         let resource_names = vec![ZXName::from_string_lossy("shared_mem")];
@@ -634,12 +760,138 @@ mod tests {
     ///   unclaimed`.
     #[test]
     fn test_memory_summary_unclaimed_vmos() {
-        let principals = HashMap::new();
-        let mut resources = HashMap::new();
+        let principals = FxHashMap::default();
+        let mut resources = FxHashMap::default();
         resources.insert(4001, make_test_vmo_resource(4001, 0, 500, 1234, vec![]));
 
         let resource_names = vec![ZXName::from_string_lossy("unclaimed_vmo")];
         let summary = MemorySummary::build(&principals, &resources, &resource_names);
         assert_eq!(summary.unclaimed, 1234);
+    }
+
+    /// What is tested: `compute_share_count` properly deduplicates subjects.
+    #[test]
+    fn test_compute_share_count() {
+        let mut subjects_buf = Vec::new();
+
+        let empty_claims = HashSet::new();
+        assert_eq!(compute_share_count(&empty_claims, &mut subjects_buf), 0);
+
+        let mut single_claim = HashSet::new();
+        single_claim.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(1),
+            subject: GlobalPrincipalIdentifier::new_for_test(1),
+            claim_type: ClaimType::Direct,
+        });
+        assert_eq!(compute_share_count(&single_claim, &mut subjects_buf), 1);
+
+        let mut two_same_subject = HashSet::new();
+        two_same_subject.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(1),
+            subject: GlobalPrincipalIdentifier::new_for_test(10),
+            claim_type: ClaimType::Direct,
+        });
+        two_same_subject.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(2),
+            subject: GlobalPrincipalIdentifier::new_for_test(10),
+            claim_type: ClaimType::Indirect,
+        });
+        assert_eq!(compute_share_count(&two_same_subject, &mut subjects_buf), 1);
+
+        let mut two_diff_subject = HashSet::new();
+        two_diff_subject.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(1),
+            subject: GlobalPrincipalIdentifier::new_for_test(10),
+            claim_type: ClaimType::Direct,
+        });
+        two_diff_subject.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(2),
+            subject: GlobalPrincipalIdentifier::new_for_test(20),
+            claim_type: ClaimType::Direct,
+        });
+        assert_eq!(compute_share_count(&two_diff_subject, &mut subjects_buf), 2);
+
+        let mut multi_claims = HashSet::new();
+        multi_claims.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(1),
+            subject: GlobalPrincipalIdentifier::new_for_test(10),
+            claim_type: ClaimType::Direct,
+        });
+        multi_claims.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(2),
+            subject: GlobalPrincipalIdentifier::new_for_test(10),
+            claim_type: ClaimType::Indirect,
+        });
+        multi_claims.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(3),
+            subject: GlobalPrincipalIdentifier::new_for_test(20),
+            claim_type: ClaimType::Direct,
+        });
+        multi_claims.insert(Claim {
+            source: GlobalPrincipalIdentifier::new_for_test(4),
+            subject: GlobalPrincipalIdentifier::new_for_test(30),
+            claim_type: ClaimType::Direct,
+        });
+        assert_eq!(compute_share_count(&multi_claims, &mut subjects_buf), 3);
+    }
+
+    /// What is tested: `MemorySummary::build` scaling when a VMO has multiple claims from the same
+    /// principal as well as distinct principals.
+    ///
+    /// Expectations verified:
+    /// - 3 claims across 2 distinct principals -> `share_count == 2`.
+    /// - Scaled bytes are divided by 2.0.
+    #[test]
+    fn test_memory_summary_share_count_multi_and_duplicate_claims() {
+        let mut principals = FxHashMap::default();
+        let mut p1 = make_test_principal(1, "principal1");
+        let mut p2 = make_test_principal(2, "principal2");
+        p1.resources.push(5001);
+        p2.resources.push(5001);
+        principals.insert(GlobalPrincipalIdentifier::new_for_test(1), p1);
+        principals.insert(GlobalPrincipalIdentifier::new_for_test(2), p2);
+
+        let mut resources = FxHashMap::default();
+        // 3 claims: (1, 1), (2, 1), (2, 2) -> subjects: 1, 1, 2 -> unique subjects: 1, 2 -> share_count = 2
+        resources
+            .insert(5001, make_test_vmo_resource(5001, 0, 600, 1200, vec![(1, 1), (2, 1), (2, 2)]));
+
+        let resource_names = vec![ZXName::from_string_lossy("multi_claim_vmo")];
+        let summary = MemorySummary::build(&principals, &resources, &resource_names);
+
+        assert_eq!(summary.principals.len(), 2);
+        for p_sum in &summary.principals {
+            assert_eq!(p_sum.committed_total, 600);
+            assert_eq!(p_sum.populated_total, 1200);
+            assert_eq!(p_sum.committed_scaled, 300.0);
+            assert_eq!(p_sum.populated_scaled, 600.0);
+            assert_eq!(p_sum.committed_private, 0);
+            assert_eq!(p_sum.populated_private, 0);
+        }
+    }
+
+    /// What is tested: `MemorySummary::build` gracefully skips resource IDs in a principal's
+    /// resource list that do not exist in the `resources` map.
+    ///
+    /// Expectations verified:
+    /// - A principal referencing valid resource 5001 and non-existent resource 99999
+    ///   does not panic and attributes only 5001.
+    #[test]
+    fn test_memory_summary_skips_missing_resource_id() {
+        let mut principals = FxHashMap::default();
+        let mut p1 = make_test_principal(1, "principal_with_missing_res");
+        p1.resources.push(5001);
+        p1.resources.push(99999);
+        principals.insert(GlobalPrincipalIdentifier::new_for_test(1), p1);
+
+        let mut resources = FxHashMap::default();
+        resources.insert(5001, make_test_vmo_resource(5001, 0, 400, 800, vec![(1, 1)]));
+
+        let resource_names = vec![ZXName::from_string_lossy("valid_vmo")];
+        let summary = MemorySummary::build(&principals, &resources, &resource_names);
+
+        assert_eq!(summary.principals.len(), 1);
+        assert_eq!(summary.principals[0].committed_total, 400);
+        assert_eq!(summary.principals[0].populated_total, 800);
     }
 }

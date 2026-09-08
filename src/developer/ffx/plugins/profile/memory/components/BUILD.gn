@@ -44,7 +44,10 @@ ffx_plugin("ffx_profile_memory_components") {
     "//third_party/zstd",
   ]
 
-  test_deps = [ "//third_party/rust_crates:pretty_assertions" ]
+  test_deps = [
+    "//third_party/rust_crates:pretty_assertions",
+    "//third_party/rust_crates:rustc-hash",
+  ]
   args_sources = [ "src/args.rs" ]
   args_deps = [
     "//src/developer/ffx/core:lib",
