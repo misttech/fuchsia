@@ -11,7 +11,7 @@ use sapphire_sync::mutex::Mutex;
 use crate::global_index::GlobalIndex;
 use crate::notification::Notification;
 
-use super::{BroadcastCfg, MissedMessages, SubId};
+use super::{BroadcastCfg, MissedMessages, Payload, SubId};
 
 /// An asynchronous multi-subscriber Unfiltered Broadcast Channel.
 ///
@@ -83,7 +83,7 @@ pub struct UnfilteredBroadcastChannel<T, Cfg: BroadcastCfg> {
 
 /// The synchronized internal state of an [`UnfilteredBroadcastChannel`].
 struct UnfilteredBroadcastChannelState<T, Cfg: BroadcastCfg> {
-    queue: Deque<T, Cfg::Buffer>,
+    queue: Deque<Payload<T>, Cfg::Buffer>,
     head_global_idx: GlobalIndex,
     next_global_idx: GlobalIndex, // Where the next message will be written
 
@@ -105,14 +105,7 @@ pub struct Subscriber<'a, T, Cfg: BroadcastCfg> {
 }
 
 impl<T, Cfg: BroadcastCfg> UnfilteredBroadcastChannelState<T, Cfg> {
-    /// Returns the lowest monotonic global index read by any active subscriber.
-    ///
-    /// If there are no active subscribers, returns `next_global_idx`.
-    fn slowest_reader(&self) -> GlobalIndex {
-        self.subscribers.values().map(|s| s.next_global_idx).min().unwrap_or(self.next_global_idx)
-    }
-
-    fn force_push_back(&mut self, payload: T) -> Option<T> {
+    fn force_push_back(&mut self, payload: Payload<T>) -> Option<Payload<T>> {
         let prev = self.queue.force_push_back(payload);
         if prev.is_some() {
             self.head_global_idx += 1;
@@ -124,38 +117,35 @@ impl<T, Cfg: BroadcastCfg> UnfilteredBroadcastChannelState<T, Cfg> {
     /// Attempts to push a payload to the back of the queue, incrementing `next_global_idx` on success.
     ///
     /// Returns `Err(payload)` if the queue is full and cannot grow.
-    fn push_back(&mut self, payload: T) -> Result<(), T> {
+    fn push_back(&mut self, payload: Payload<T>) -> Result<(), Payload<T>> {
         self.queue.try_push_back(payload)?;
         self.next_global_idx += 1;
         Ok(())
     }
 
-    /// Pops and returns the oldest payload from the front of the queue, incrementing
-    /// `head_global_idx` on success.
-    fn pop_front(&mut self) -> Option<T> {
-        let item = self.queue.pop_front()?;
-        self.head_global_idx += 1;
-        Some(item)
-    }
-
-    /// Pops and discards all elements in the queue that have been read by all active subscribers.
-    fn reclaim_space(&mut self, waker: &Notification<Cfg::Mtx>) {
-        let slowest = self.slowest_reader();
+    fn reclaim_space(&mut self, not_full: &Notification<Cfg::Mtx>) {
         let mut reclaimed = 0;
-        while self.head_global_idx < slowest {
-            self.pop_front();
+        while self.queue.pop_front_if(|payload| payload.remaining_subs == 0).is_some() {
+            self.head_global_idx += 1;
             reclaimed += 1;
         }
+
         if reclaimed > 0 {
-            waker.notify_many(reclaimed);
+            not_full.notify_many(reclaimed);
         }
+    }
+
+    pub fn used(&self) -> usize {
+        (self.next_global_idx - self.head_global_idx)
+            .try_into()
+            .expect("Next index should be ahead of head")
     }
 }
 
 impl<T, Cfg: BroadcastCfg> Default for UnfilteredBroadcastChannel<T, Cfg>
 where
     HashMap<SubId, SubscriberState, Cfg::SubscriptionStore>: Default,
-    Deque<T, Cfg::Buffer>: Default,
+    Deque<Payload<T>, Cfg::Buffer>: Default,
 {
     fn default() -> Self {
         Self {
@@ -206,12 +196,17 @@ impl<T: Clone, Cfg: BroadcastCfg> UnfilteredBroadcastChannel<T, Cfg> {
 
         self.not_full
             .when(guard, |state| {
-                state.reclaim_space(&self.not_full);
-
-                match state.push_back(payload.take().expect("Payload not refreshed")) {
-                    Ok(()) => Poll::Ready(()),
+                let remaining_subs = state.subscribers.len();
+                match state.push_back(Payload {
+                    payload: payload.take().expect("Payload not refreshed"),
+                    remaining_subs,
+                }) {
+                    Ok(()) => {
+                        state.reclaim_space(&self.not_full);
+                        Poll::Ready(())
+                    }
                     Err(item) => {
-                        payload.replace(item);
+                        payload.replace(item.payload);
                         Poll::Pending
                     }
                 }
@@ -227,9 +222,10 @@ impl<T: Clone, Cfg: BroadcastCfg> UnfilteredBroadcastChannel<T, Cfg> {
     /// and slow readers will miss it, returning `Err(MissedMessages)` on their next poll.
     pub fn force_publish(&self, payload: T) {
         let mut state = self.state.lock();
-        state.reclaim_space(&self.not_full);
+        let remaining_subs = state.subscribers.len();
 
-        state.force_push_back(payload);
+        state.force_push_back(Payload { payload, remaining_subs });
+        state.reclaim_space(&self.not_full);
         // Notify all consumers that a message is enqueued
         self.not_empty.notify_all();
     }
@@ -258,15 +254,18 @@ impl<'a, T: Clone, Cfg: BroadcastCfg> Subscriber<'a, T, Cfg> {
                     // wrapped around (or if logical_idx is out of bounds), queue.get will return None.
                     // Instead of panicking, reset the subscriber to head_global_idx and report
                     // usize::MAX missed messages since the exact count is unbounded.
-                    let item = match state.queue.get(logical_idx) {
+                    let item = match state.queue.get_mut(logical_idx) {
                         Some(item) => item,
                         None => {
                             sub.next_global_idx = state.head_global_idx;
                             return Poll::Ready(Err(MissedMessages { count: usize::MAX }));
                         }
                     };
-                    let payload = item.clone();
+                    let payload = item.payload.clone();
+                    item.remaining_subs =
+                        item.remaining_subs.checked_sub(1).expect("remaining_subs underflow");
                     sub.next_global_idx += 1;
+
                     state.reclaim_space(&self.channel.not_full);
                     Poll::Ready(Ok(payload))
                 } else {
@@ -282,8 +281,26 @@ impl<'a, T: Clone, Cfg: BroadcastCfg> Subscriber<'a, T, Cfg> {
 impl<'a, T, Cfg: BroadcastCfg> Drop for Subscriber<'a, T, Cfg> {
     fn drop(&mut self) {
         let mut state = self.channel.state.lock();
-        state.subscribers.remove(&self.id);
-        state.reclaim_space(&self.channel.not_full);
+        if let Some(mut sub) = state.subscribers.remove(&self.id) {
+            if sub.next_global_idx < state.head_global_idx {
+                sub.next_global_idx = state.head_global_idx;
+            }
+            while sub.next_global_idx < state.next_global_idx {
+                let logical_idx = (sub.next_global_idx - state.head_global_idx) as usize;
+
+                match state.queue.get_mut(logical_idx) {
+                    Some(item) => {
+                        item.remaining_subs =
+                            item.remaining_subs.checked_sub(1).expect("remaining_subs underflow");
+                        sub.next_global_idx += 1;
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
+            state.reclaim_space(&self.channel.not_full);
+        }
     }
 }
 
@@ -322,6 +339,48 @@ mod tests {
                 assert_eq!(v1, 42);
                 assert_eq!(v2, 42);
             });
+        });
+    }
+
+    #[test]
+    fn test_broadcast_publish_zero_subscribers() {
+        // Channel with buffer capacity 1 and max 2 subscribers
+        let channel = StackBroadcast::<i32, 1, 2>::new();
+
+        BoundedExecutor::new(TestExecutor::new(), |s| {
+            assert!(channel.state.lock().used() == 0);
+            let t = s.spawn(async {
+                for _ in 0..10 {
+                    channel.publish(0).await;
+                }
+            });
+            s.run_until_stalled();
+            assert!(t.is_finished());
+
+            // No subscribers so the slots should be reclaimed
+            assert!(channel.state.lock().used() == 0);
+
+            // Now subscribe and verify the channel functions normally with capacity 1.
+
+            let t = s.spawn(async {
+                let sub = channel.subscribe().unwrap();
+                channel.publish(1).await;
+                // Actually added to the queue since we have subscribers
+                assert!(channel.state.lock().used() == 1);
+                assert_eq!(sub.next().await.unwrap(), 1);
+            });
+            s.run_until_stalled();
+            assert!(t.is_finished());
+
+            let t = s.spawn(async {
+                for _ in 0..10 {
+                    channel.publish(2).await;
+                }
+            });
+            s.run_until_stalled();
+            assert!(t.is_finished());
+            // subscriber is now gone, so publishign should not use up a slot
+            assert!(channel.state.lock().used() == 0);
         });
     }
 

@@ -13,7 +13,7 @@ use sapphire_sync::mutex::Mutex;
 use crate::global_index::GlobalIndex;
 use crate::notification::Notification;
 
-use super::{BroadcastCfg, MissedMessages, SubId};
+use super::{BroadcastCfg, MissedMessages, Payload, SubId};
 
 /// The outcome of evaluating a subscriber's interest in a broadcast payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,7 +100,7 @@ pub struct FilteredBroadcastChannel<T, Cfg: BroadcastCfg> {
 
 /// The synchronized internal state of a [`FilteredBroadcastChannel`].
 struct FilteredBroadcastChannelState<T, Cfg: BroadcastCfg> {
-    queue: Deque<T, Cfg::Buffer>,
+    queue: Deque<Payload<T>, Cfg::Buffer>,
     head_global_idx: GlobalIndex,
     next_global_idx: GlobalIndex,
     subscribers: HashMap<SubId, FilteredSubscriberState<T>, Cfg::SubscriptionStore>,
@@ -126,11 +126,7 @@ pub struct NextFuture<'a, 's, T, Cfg: BroadcastCfg> {
 }
 
 impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
-    fn slowest_reader(&self) -> GlobalIndex {
-        self.subscribers.values().map(|s| s.next_global_idx).min().unwrap_or(self.next_global_idx)
-    }
-
-    fn force_push_back(&mut self, payload: T) -> Option<T> {
+    fn force_push_back(&mut self, payload: Payload<T>) -> Option<Payload<T>> {
         let prev = self.queue.force_push_back(payload);
         if prev.is_some() {
             self.head_global_idx += 1;
@@ -139,27 +135,23 @@ impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
         prev
     }
 
-    fn push_back(&mut self, payload: T) -> Result<(), T> {
+    /// Attempts to push a payload to the back of the queue, incrementing `next_global_idx` on success.
+    ///
+    /// Returns `Err(payload)` if the queue is full and cannot grow.
+    fn push_back(&mut self, payload: Payload<T>) -> Result<(), Payload<T>> {
         self.queue.try_push_back(payload)?;
         self.next_global_idx += 1;
         Ok(())
     }
 
-    fn pop_front(&mut self) -> Option<T> {
-        let item = self.queue.pop_front()?;
-        self.head_global_idx += 1;
-        Some(item)
-    }
-
-    fn reclaim_space(&mut self, waker: &Notification<Cfg::Mtx>) {
-        let slowest = self.slowest_reader();
+    fn reclaim_space(&mut self, not_full: &Notification<Cfg::Mtx>) {
         let mut reclaimed = 0;
-        while self.head_global_idx < slowest {
-            self.pop_front();
+        while self.queue.pop_front_if(|payload| payload.remaining_subs == 0).is_some() {
+            self.head_global_idx += 1;
             reclaimed += 1;
         }
         if reclaimed > 0 {
-            waker.notify_many(reclaimed);
+            not_full.notify_many(reclaimed);
         }
     }
 }
@@ -167,7 +159,7 @@ impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
 impl<T, Cfg: BroadcastCfg> Default for FilteredBroadcastChannel<T, Cfg>
 where
     HashMap<SubId, FilteredSubscriberState<T>, Cfg::SubscriptionStore>: Default,
-    Deque<T, Cfg::Buffer>: Default,
+    Deque<Payload<T>, Cfg::Buffer>: Default,
 {
     fn default() -> Self {
         Self {
@@ -219,15 +211,18 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
 
         self.not_full
             .when(guard, |state| {
-                state.reclaim_space(&self.not_full);
-
                 let item = payload.take().expect("Payload not refreshed");
                 let msg_idx = state.next_global_idx;
-                match state.push_back(item.clone()) {
+                match state.push_back(Payload { payload: item, remaining_subs: 0 }) {
                     Ok(()) => {
+                        let mut interested = 0;
                         for sub in state.subscribers.values_mut() {
+                            let interest = (sub.filter)(&state.queue.peek_back().unwrap().payload);
+                            if interest.is_interested() {
+                                interested += 1;
+                            }
                             if sub.next_global_idx == msg_idx {
-                                if (sub.filter)(&item).is_interested() {
+                                if interest.is_interested() {
                                     if let Some(waker) = sub.waker.take() {
                                         waker.wake();
                                     }
@@ -235,15 +230,17 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
                                     sub.next_global_idx += 1;
                                 }
                             } else {
-                                if let Some(waker) = sub.waker.take() {
-                                    waker.wake();
-                                }
+                                assert!(
+                                    sub.waker.is_none(),
+                                    "Subscriber is not up to date but unexpectedly has a registered waker");
                             }
                         }
+                        state.queue.peek_back_mut().unwrap().remaining_subs = interested;
+                        state.reclaim_space(&self.not_full);
                         Poll::Ready(())
                     }
                     Err(item) => {
-                        payload.replace(item);
+                        payload.replace(item.payload);
                         Poll::Pending
                     }
                 }
@@ -254,17 +251,17 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
     /// Publishes a payload, evicting the oldest message if full.
     pub fn force_publish(&self, payload: T) {
         let mut state = self.state.lock();
-        state.reclaim_space(&self.not_full);
 
         let msg_idx = state.next_global_idx;
-        state.force_push_back(payload.clone());
+        state.force_push_back(Payload { payload: payload.clone(), remaining_subs: 0 });
+        let mut interested = 0;
         for sub in state.subscribers.values_mut() {
-            // If the subscriber is caught up and ready to read this specific message,
-            // apply the filter. If uninterested, skip it silently. If interested, notify it.
-            // If the subscriber is behind (not caught up), we notify it unconditionally so
-            // it can wake up and process its backlog in the queue.
+            let interest = (sub.filter)(&payload);
+            if interest.is_interested() {
+                interested += 1;
+            }
             if sub.next_global_idx == msg_idx {
-                if (sub.filter)(&payload).is_interested() {
+                if interest.is_interested() {
                     if let Some(waker) = sub.waker.take() {
                         waker.wake();
                     }
@@ -272,11 +269,14 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
                     sub.next_global_idx += 1;
                 }
             } else {
-                if let Some(waker) = sub.waker.take() {
-                    waker.wake();
-                }
+                assert!(
+                    sub.waker.is_none(),
+                    "Subscriber is not up to date but unexpectedly has a registered waker"
+                );
             }
         }
+        state.queue.peek_back_mut().unwrap().remaining_subs = interested;
+        state.reclaim_space(&self.not_full);
     }
 }
 
@@ -315,21 +315,34 @@ impl<'a, 's, T: Clone, Cfg: BroadcastCfg> Future for NextFuture<'a, 's, T, Cfg> 
             // wrapped around (or if logical_idx is out of bounds), queue.get will return None.
             // Instead of panicking, reset the subscriber to head_global_idx and report
             // usize::MAX missed messages since the exact count is unbounded.
-            let Some(item) = state.queue.get(logical_idx) else {
+            let Some(item) = state.queue.get_mut(logical_idx) else {
                 sub.next_global_idx = head;
-                state.reclaim_space(&self.subscriber.channel.not_full);
                 return Poll::Ready(Err(MissedMessages { count: usize::MAX }));
             };
-            let is_interested = filter(item).is_interested();
+            let is_interested = filter(&item.payload).is_interested();
             current_idx += 1;
 
             if is_interested {
-                found_payload = Some(item.clone());
+                item.remaining_subs =
+                    item.remaining_subs.checked_sub(1).expect("remaining_subs underflow");
+                found_payload = Some(item.payload.clone());
                 break;
             }
         }
 
         if let Some(payload) = found_payload {
+            // Fast-forward current_idx past any subsequent uninterested messages in the queue
+            while current_idx < next {
+                let logical_idx = (current_idx - head) as usize;
+                let Some(item) = state.queue.get(logical_idx) else {
+                    break;
+                };
+                if filter(&item.payload).is_interested() {
+                    break;
+                }
+                current_idx += 1;
+            }
+
             sub.next_global_idx = current_idx;
             state.reclaim_space(&self.subscriber.channel.not_full);
             return Poll::Ready(Ok(payload));
@@ -354,8 +367,30 @@ impl<'a, 's, T, Cfg: BroadcastCfg> Drop for NextFuture<'a, 's, T, Cfg> {
 impl<'a, T, Cfg: BroadcastCfg> Drop for FilteredSubscriber<'a, T, Cfg> {
     fn drop(&mut self) {
         let mut state = self.channel.state.lock();
-        state.subscribers.remove(&self.id);
-        state.reclaim_space(&self.channel.not_full);
+        if let Some(mut sub) = state.subscribers.remove(&self.id) {
+            let head = state.head_global_idx;
+            if sub.next_global_idx < head {
+                sub.next_global_idx = head;
+            }
+            while sub.next_global_idx < state.next_global_idx {
+                let logical_idx = (sub.next_global_idx - head) as usize;
+                match state.queue.get_mut(logical_idx) {
+                    Some(item) => {
+                        if (sub.filter)(&item.payload).is_interested() {
+                            item.remaining_subs = item
+                                .remaining_subs
+                                .checked_sub(1)
+                                .expect("remaining_subs underflow");
+                        }
+                        sub.next_global_idx += 1;
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
+            state.reclaim_space(&self.channel.not_full);
+        }
     }
 }
 
@@ -520,39 +555,47 @@ mod tests {
             s.run_until_stalled();
             assert!(!handle1.is_finished(), "Publisher should block when queue is full");
 
-            // sub1 and sub2 read 2
+            // sub1 and sub2 read 2. In NextFuture::poll, reading 2 also fast-forwards past 3.
+            // When sub2 finishes, both slots for 2 and 3 are reclaimed.
             s.block_on(async {
                 assert_eq!(sub1.next().await, Ok(2));
                 assert_eq!(sub2.next().await, Ok(2));
             });
 
-            // Space for 2 is reclaimed; publisher unblocks and publishes 4.
+            // Space for 2 and 3 is reclaimed; publisher unblocks and publishes 4.
+            // Queue now has [4] (len 1, capacity 2).
             s.run_until_stalled();
-            assert!(handle1.is_finished(), "Publisher should unblock after reading 2");
+            assert!(
+                handle1.is_finished(),
+                "Publisher should unblock after reading 2 and skipping 3"
+            );
 
-            // Queue now has [3, 4] and is full (capacity 2). Both subscribers are at idx 1 (pointing to 3).
-            let handle2 = s.spawn(async {
+            // Since capacity is 2 and queue only contains [4], publishing 6 succeeds immediately.
+            s.block_on(async {
                 channel.publish(6).await;
+            });
+
+            // Queue now has [4, 6] and is full (capacity 2).
+            let handle2 = s.spawn(async {
+                channel.publish(8).await;
             });
             s.run_until_stalled();
             assert!(!handle2.is_finished(), "Publisher should block when queue is full again");
 
-            // sub1 and sub2 call next(), which skips 3 (uninterested) and reads 4 (interested)
+            // sub1 and sub2 read 4, which reclaims slot 4 and unblocks the publisher for 8.
             s.block_on(async {
                 assert_eq!(sub1.next().await, Ok(4));
                 assert_eq!(sub2.next().await, Ok(4));
             });
 
-            // Space for 3 and 4 is reclaimed by subscribers skipping 3 and reading 4; publisher unblocks and publishes 6.
             s.run_until_stalled();
-            assert!(
-                handle2.is_finished(),
-                "Publisher should unblock after subscribers skip 3 and read 4"
-            );
+            assert!(handle2.is_finished(), "Publisher should unblock after reading 4");
 
             s.block_on(async {
                 assert_eq!(sub1.next().await, Ok(6));
                 assert_eq!(sub2.next().await, Ok(6));
+                assert_eq!(sub1.next().await, Ok(8));
+                assert_eq!(sub2.next().await, Ok(8));
             });
         });
     }
@@ -750,8 +793,6 @@ mod tests {
         use crate::testing::TestExecutor;
         use proptest::prelude::*;
 
-        use std::collections::VecDeque;
-
         #[derive(Debug, Clone)]
         enum BroadcastOp {
             Publish(i32),
@@ -759,8 +800,6 @@ mod tests {
             RecvSub1,
             RecvSub2,
         }
-
-        type TestBroadcast = FilteredBroadcastChannel<i32, StackCfg<2, 2>>;
 
         fn filter1(x: &i32) -> Interest {
             if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested }
@@ -772,7 +811,7 @@ mod tests {
 
         proptest! {
             #[test]
-            fn test_filtered_broadcast_proptest(
+            fn test_filtered_broadcast_only_receives_interested(
                 ops in prop::collection::vec(
                     prop_oneof![
                         any::<i32>().prop_map(BroadcastOp::Publish),
@@ -780,131 +819,176 @@ mod tests {
                         Just(BroadcastOp::RecvSub1),
                         Just(BroadcastOp::RecvSub2),
                     ],
-                    0..50
+                    0..100
                 )
             ) {
-                let channel = TestBroadcast::new();
+                type TestChannel = FilteredBroadcastChannel<i32, StackCfg<4, 2>>;
+                let channel = TestChannel::new();
+
                 let sub1 = channel.subscribe(filter1).unwrap();
                 let sub2 = channel.subscribe(filter2).unwrap();
 
-                let mut expected_vals = VecDeque::new();
-                let mut next_global_idx = 0;
-                let mut head_global_idx = 0;
-                let mut sub1_next = 0;
-                let mut sub2_next = 0;
-
+                let chan = &channel;
                 BoundedExecutor::new(TestExecutor::new(), |s| {
                     for op in ops {
-                        head_global_idx = std::cmp::max(head_global_idx, std::cmp::min(sub1_next, sub2_next));
-                        while expected_vals.front().map(|(idx, _)| *idx < head_global_idx).unwrap_or(false) {
-                            expected_vals.pop_front();
-                        }
-                        let cur_len = next_global_idx - head_global_idx;
-
                         match op {
                             BroadcastOp::Publish(val) => {
-                                if cur_len < 2 {
-                                    s.block_on(channel.publish(val));
-                                    if sub1_next == next_global_idx && !filter1(&val).is_interested() {
-                                        sub1_next += 1;
-                                    }
-                                    if sub2_next == next_global_idx && !filter2(&val).is_interested() {
-                                        sub2_next += 1;
-                                    }
-                                    expected_vals.push_back((next_global_idx, val));
-                                    next_global_idx += 1;
-                                }
+                                s.spawn(async move {
+                                    chan.publish(val).await;
+                                });
+                                s.run_until_stalled();
                             }
                             BroadcastOp::ForcePublish(val) => {
-                                channel.force_publish(val);
-                                if cur_len == 2 {
-                                    expected_vals.pop_front();
-                                    head_global_idx += 1;
-                                }
-                                if sub1_next == next_global_idx && !filter1(&val).is_interested() {
-                                    sub1_next += 1;
-                                }
-                                if sub2_next == next_global_idx && !filter2(&val).is_interested() {
-                                    sub2_next += 1;
-                                }
-                                expected_vals.push_back((next_global_idx, val));
-                                next_global_idx += 1;
+                                chan.force_publish(val);
+                                s.run_until_stalled();
                             }
                             BroadcastOp::RecvSub1 => {
-                                if sub1_next < head_global_idx {
-                                    let res = s.block_on(sub1.next());
-                                    let missed = head_global_idx - sub1_next;
-                                    assert_eq!(res, Err(MissedMessages { count: missed }));
-                                    sub1_next = head_global_idx;
-                                    head_global_idx = std::cmp::max(head_global_idx, std::cmp::min(sub1_next, sub2_next));
-                                    while expected_vals.front().map(|(idx, _)| *idx < head_global_idx).unwrap_or(false) {
-                                        expected_vals.pop_front();
+                                let handle = s.spawn(async { sub1.next().await });
+                                s.run_until_stalled();
+                                if handle.is_finished() {
+                                    if let Ok(val) = s.block_on(handle.join()) {
+                                        assert_eq!(filter1(&val), Interest::Interested);
                                     }
-                                } else if sub1_next < next_global_idx {
-                                    let matching = expected_vals
-                                        .iter()
-                                        .find(|(idx, val)| *idx >= sub1_next && filter1(val).is_interested());
-                                    if let Some(&(match_idx, match_val)) = matching {
-                                        let res = s.block_on(sub1.next());
-                                        assert_eq!(res, Ok(match_val));
-                                        sub1_next = match_idx + 1;
-                                        head_global_idx = std::cmp::max(head_global_idx, std::cmp::min(sub1_next, sub2_next));
-                                        while expected_vals.front().map(|(idx, _)| *idx < head_global_idx).unwrap_or(false) {
-                                            expected_vals.pop_front();
-                                        }
-                                    }
+                                } else {
+                                    handle.cancel();
                                 }
                             }
                             BroadcastOp::RecvSub2 => {
-                                if sub2_next < head_global_idx {
-                                    let res = s.block_on(sub2.next());
-                                    let missed = head_global_idx - sub2_next;
-                                    assert_eq!(res, Err(MissedMessages { count: missed }));
-                                    sub2_next = head_global_idx;
-                                    head_global_idx = std::cmp::max(head_global_idx, std::cmp::min(sub1_next, sub2_next));
-                                    while expected_vals.front().map(|(idx, _)| *idx < head_global_idx).unwrap_or(false) {
-                                        expected_vals.pop_front();
+                                let handle = s.spawn(async { sub2.next().await });
+                                s.run_until_stalled();
+                                if handle.is_finished() {
+                                    if let Ok(val) = s.block_on(handle.join()) {
+                                        assert_eq!(filter2(&val), Interest::Interested);
                                     }
-                                } else if sub2_next < next_global_idx {
-                                    let matching = expected_vals
-                                        .iter()
-                                        .find(|(idx, val)| *idx >= sub2_next && filter2(val).is_interested());
-                                    if let Some(&(match_idx, match_val)) = matching {
-                                        let res = s.block_on(sub2.next());
-                                        assert_eq!(res, Ok(match_val));
-                                        sub2_next = match_idx + 1;
-                                        head_global_idx = std::cmp::max(head_global_idx, std::cmp::min(sub1_next, sub2_next));
-                                        while expected_vals.front().map(|(idx, _)| *idx < head_global_idx).unwrap_or(false) {
-                                            expected_vals.pop_front();
-                                        }
-                                    }
+                                } else {
+                                    handle.cancel();
                                 }
                             }
                         }
                     }
                 });
             }
+
+            #[test]
+            fn test_filtered_broadcast_up_to_date_subscribers_never_miss(
+                ops in prop::collection::vec(
+                    prop_oneof![
+                        any::<i32>().prop_map(|v| (false, v)),
+                        any::<i32>().prop_map(|v| (true, v)),
+                    ],
+                    0..100
+                )
+            ) {
+                // Use minimum capacity 1 to strictly test boundary eviction/backpressure conditions
+                type TestChannel = FilteredBroadcastChannel<i32, StackCfg<1, 2>>;
+                let channel = TestChannel::new();
+
+                let sub1 = channel.subscribe(filter1).unwrap();
+                let sub2 = channel.subscribe(filter2).unwrap();
+
+                let chan = &channel;
+                BoundedExecutor::new(TestExecutor::new(), |s| {
+                    for (is_force, val) in ops {
+                        if is_force {
+                            chan.force_publish(val);
+                        } else {
+                            s.spawn(async move {
+                                chan.publish(val).await;
+                            });
+                        }
+
+                        // Poll sub1 after publish
+                        let h1 = s.spawn(async { sub1.next().await });
+                        s.run_until_stalled();
+                        if filter1(&val).is_interested() {
+                            assert!(h1.is_finished(), "Up-to-date sub1 should have matching message ready");
+                            let res = s.block_on(h1.join());
+                            assert_eq!(res, Ok(val), "Up-to-date sub1 must never receive MissedMessages");
+                        } else {
+                            assert!(!h1.is_finished(), "sub1 should be pending for non-matching message");
+                            h1.cancel();
+                        }
+
+                        // Poll sub2 after publish
+                        let h2 = s.spawn(async { sub2.next().await });
+                        s.run_until_stalled();
+                        if filter2(&val).is_interested() {
+                            assert!(h2.is_finished(), "Up-to-date sub2 should have matching message ready");
+                            let res = s.block_on(h2.join());
+                            assert_eq!(res, Ok(val), "Up-to-date sub2 must never receive MissedMessages");
+                        } else {
+                            assert!(!h2.is_finished(), "sub2 should be pending for non-matching message");
+                            h2.cancel();
+                        }
+                    }
+                });
+            }
+
+            #[test]
+            fn test_filtered_broadcast_no_force_publish_never_misses(
+                ops in prop::collection::vec(
+                    prop_oneof![
+                        any::<i32>().prop_map(BroadcastOp::Publish),
+                        Just(BroadcastOp::RecvSub1),
+                        Just(BroadcastOp::RecvSub2),
+                    ],
+                    0..100
+                )
+            ) {
+                type TestChannel = FilteredBroadcastChannel<i32, StackCfg<2, 2>>;
+                let channel = TestChannel::new();
+
+                let sub1 = channel.subscribe(filter1).unwrap();
+                let sub2 = channel.subscribe(filter2).unwrap();
+
+                let chan = &channel;
+                BoundedExecutor::new(TestExecutor::new(), |s| {
+                    for op in ops {
+                        match op {
+                            BroadcastOp::Publish(val) => {
+                                s.spawn(async move {
+                                    chan.publish(val).await;
+                                });
+                                s.run_until_stalled();
+                            }
+                            BroadcastOp::RecvSub1 => {
+                                let handle = s.spawn(async { sub1.next().await });
+                                s.run_until_stalled();
+                                if handle.is_finished() {
+                                    let res = s.block_on(handle.join());
+                                    assert!(
+                                        matches!(res, Ok(_)),
+                                        "Without force_publish, sub1 must never receive MissedMessages: got {:?}",
+                                        res
+                                    );
+                                } else {
+                                    handle.cancel();
+                                }
+                            }
+                            BroadcastOp::RecvSub2 => {
+                                let handle = s.spawn(async { sub2.next().await });
+                                s.run_until_stalled();
+                                if handle.is_finished() {
+                                    let res = s.block_on(handle.join());
+                                    assert!(
+                                        matches!(res, Ok(_)),
+                                        "Without force_publish, sub2 must never receive MissedMessages: got {:?}",
+                                        res
+                                    );
+                                } else {
+                                    handle.cancel();
+                                }
+                            }
+                            BroadcastOp::ForcePublish(_) => {}
+                        }
+                    }
+                });
+            }
         }
 
-        #[cfg(feature = "std")]
-        use sapphire_collections::storage::Global;
-
-        #[cfg(feature = "std")]
-        struct GrowableCfg;
-        #[cfg(feature = "std")]
-        impl BroadcastCfg for GrowableCfg {
-            type Buffer = Global;
-            type SubscriptionStore = Global;
-            type Mtx = SingleThreadMutex;
-        }
-
-        #[cfg(feature = "std")]
-        type GrowableBroadcast = FilteredBroadcastChannel<i32, GrowableCfg>;
-
-        #[cfg(feature = "std")]
         proptest! {
             #[test]
-            fn test_filtered_broadcast_growable_proptest(
+            fn test_filtered_broadcast_used_capacity_dictated_by_slowest_reader(
                 ops in prop::collection::vec(
                     prop_oneof![
                         any::<i32>().prop_map(BroadcastOp::Publish),
@@ -912,86 +996,64 @@ mod tests {
                         Just(BroadcastOp::RecvSub1),
                         Just(BroadcastOp::RecvSub2),
                     ],
-                    0..50
+                    0..100
                 )
             ) {
-                let channel = GrowableBroadcast::new();
+                type TestChannel = FilteredBroadcastChannel<i32, StackCfg<4, 2>>;
+                let channel = TestChannel::new();
+
                 let sub1 = channel.subscribe(filter1).unwrap();
                 let sub2 = channel.subscribe(filter2).unwrap();
 
-                let mut expected_vals = VecDeque::new();
-                let mut next_global_idx = 0;
-                let mut head_global_idx = 0;
-                let mut sub1_next = 0;
-                let mut sub2_next = 0;
+                let sub1_id = sub1.id;
+                let sub2_id = sub2.id;
 
+                let chan = &channel;
                 BoundedExecutor::new(TestExecutor::new(), |s| {
                     for op in ops {
-                        head_global_idx = std::cmp::max(head_global_idx, std::cmp::min(sub1_next, sub2_next));
-                        while expected_vals.front().map(|(idx, _)| *idx < head_global_idx).unwrap_or(false) {
-                            expected_vals.pop_front();
-                        }
-
                         match op {
                             BroadcastOp::Publish(val) => {
-                                s.block_on(channel.publish(val));
-                                if sub1_next == next_global_idx && !filter1(&val).is_interested() {
-                                    sub1_next += 1;
-                                }
-                                if sub2_next == next_global_idx && !filter2(&val).is_interested() {
-                                    sub2_next += 1;
-                                }
-                                expected_vals.push_back((next_global_idx, val));
-                                next_global_idx += 1;
-                            }
-                            BroadcastOp::ForcePublish(val) => {
-                                channel.force_publish(val);
-                                if sub1_next == next_global_idx && !filter1(&val).is_interested() {
-                                    sub1_next += 1;
-                                }
-                                if sub2_next == next_global_idx && !filter2(&val).is_interested() {
-                                    sub2_next += 1;
-                                }
-                                expected_vals.push_back((next_global_idx, val));
-                                next_global_idx += 1;
+                                s.spawn(async move {
+                                    chan.publish(val).await;
+                                });
+                                s.run_until_stalled();
                             }
                             BroadcastOp::RecvSub1 => {
-                                if sub1_next < next_global_idx {
-                                    assert!(sub1_next >= head_global_idx);
-                                    let matching = expected_vals
-                                        .iter()
-                                        .find(|(idx, val)| *idx >= sub1_next && filter1(val).is_interested());
-                                    if let Some(&(match_idx, match_val)) = matching {
-                                        let res = s.block_on(sub1.next());
-                                        assert_eq!(res, Ok(match_val));
-                                        sub1_next = match_idx + 1;
-
-                                        head_global_idx = std::cmp::max(head_global_idx, std::cmp::min(sub1_next, sub2_next));
-                                        while expected_vals.front().map(|(idx, _)| *idx < head_global_idx).unwrap_or(false) {
-                                            expected_vals.pop_front();
-                                        }
-                                    }
+                                let handle = s.spawn(async { sub1.next().await });
+                                s.run_until_stalled();
+                                if !handle.is_finished() {
+                                    handle.cancel();
                                 }
                             }
                             BroadcastOp::RecvSub2 => {
-                                if sub2_next < next_global_idx {
-                                    assert!(sub2_next >= head_global_idx);
-                                    let matching = expected_vals
-                                        .iter()
-                                        .find(|(idx, val)| *idx >= sub2_next && filter2(val).is_interested());
-                                    if let Some(&(match_idx, match_val)) = matching {
-                                        let res = s.block_on(sub2.next());
-                                        assert_eq!(res, Ok(match_val));
-                                        sub2_next = match_idx + 1;
-
-                                        head_global_idx = std::cmp::max(head_global_idx, std::cmp::min(sub1_next, sub2_next));
-                                        while expected_vals.front().map(|(idx, _)| *idx < head_global_idx).unwrap_or(false) {
-                                            expected_vals.pop_front();
-                                        }
-                                    }
+                                let handle = s.spawn(async { sub2.next().await });
+                                s.run_until_stalled();
+                                if !handle.is_finished() {
+                                    handle.cancel();
                                 }
                             }
+                            BroadcastOp::ForcePublish(val) => {
+                                chan.force_publish(val);
+                            }
                         }
+
+                        let state = chan.state.lock();
+                        let total_buffered = (state.next_global_idx - state.head_global_idx) as usize;
+                        let sub1_lag = state
+                            .subscribers
+                            .get(&sub1_id)
+                            .map(|s| (state.next_global_idx - s.next_global_idx) as usize)
+                            .unwrap_or(0);
+                        let sub2_lag = state
+                            .subscribers
+                            .get(&sub2_id)
+                            .map(|s| (state.next_global_idx - s.next_global_idx) as usize)
+                            .unwrap_or(0);
+
+                        let max_sub_lag = std::cmp::max(sub1_lag, sub2_lag);
+                        let expected_used_capacity = std::cmp::min(total_buffered, max_sub_lag);
+
+                        assert_eq!(state.queue.len(), expected_used_capacity);
                     }
                 });
             }

@@ -22,6 +22,12 @@ impl SubId {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Payload<T> {
+    pub payload: T,
+    pub remaining_subs: usize,
+}
+
 /// Configuration trait for configuring the types inside an [`UnfilteredBroadcastChannel`] or [`FilteredBroadcastChannel`].
 pub trait BroadcastCfg {
     /// The storage container family used for the internal message queue buffer.
