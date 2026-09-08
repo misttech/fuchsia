@@ -3,7 +3,7 @@
         {
             "name": "AnonInodeTest.PrivateFdIsUnchecked",
             "audit_expectations": [
-                "avc:  denied  { use } for path=\"anon_inode:[eventfd]\" dev=\"anon_inodefs\" ino=111 scontext=test_u:test_r:anon_inode_no_use_fd_t:s0 tcontext=test_u:test_r:anon_inode_test_t:s0 tclass=fd permissive=0"
+                "avc:  denied  { use } for path=\"anon_inode:[eventfd]\" dev=\"anon_inodefs\" ino=111 scontext=test_u:test_r:anon_inode_no_use_fd:s0 tcontext=test_u:test_r:anon_inode_test_t:s0 tclass=fd permissive=0"
             ]
         },
         {

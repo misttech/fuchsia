@@ -25,7 +25,7 @@ def _compute_policy_hash(
         with tempfile.TemporaryDirectory() as temp_dir:
             merged_path = os.path.join(temp_dir, "policy.conf")
             merge_policies.merge_text_policies(
-                initial_sids_path, input_paths, merged_path, handle_unknown
+                initial_sids_path, input_paths, merged_path
             )
             with open(merged_path, "rt", encoding="utf-8") as f:
                 merged_content = f.read()
