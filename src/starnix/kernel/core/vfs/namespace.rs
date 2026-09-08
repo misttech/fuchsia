@@ -2109,6 +2109,27 @@ impl Mounts {
         }
         Ok(())
     }
+
+    pub fn drop_caches(&self) {
+        let mut filesystems = Vec::new();
+        {
+            let scope = RcuReadScope::new();
+            let mut seen = HashSet::new();
+            for (_dir_entry, m_list) in self.mounts.iter(&scope) {
+                for m in m_list {
+                    if let Some(mount) = m.0.upgrade() {
+                        if seen.insert(Arc::as_ptr(&mount.fs)) {
+                            filesystems.push(mount.fs.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        for fs in filesystems {
+            fs.purge_all_entries();
+        }
+    }
 }
 
 impl Drop for Mount {

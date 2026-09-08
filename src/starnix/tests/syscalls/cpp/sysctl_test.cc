@@ -244,6 +244,23 @@ TEST_F(SysctlTest, DisableIpv6Default) {
   ASSERT_STREQ(disable_ipv6_str.c_str(), "1\n");
 }
 
+TEST_F(SysctlTest, DropCaches) {
+  if (!test_helper::HasCapability(CAP_SYS_ADMIN)) {
+    GTEST_SKIP() << "Need CAP_SYS_ADMIN to run DropCaches";
+  }
+  const char kDropCaches[] = "/proc/sys/vm/drop_caches";
+  ASSERT_TRUE(files::WriteFile(kDropCaches, "1"));
+  ASSERT_TRUE(files::WriteFile(kDropCaches, "2"));
+  ASSERT_TRUE(files::WriteFile(kDropCaches, "3"));
+  ASSERT_TRUE(files::WriteFile(kDropCaches, "4"));
+  EXPECT_FALSE(files::WriteFile(kDropCaches, "0"));
+  EXPECT_EQ(errno, EINVAL);
+  EXPECT_FALSE(files::WriteFile(kDropCaches, "5"));
+  EXPECT_EQ(errno, EINVAL);
+  EXPECT_FALSE(files::WriteFile(kDropCaches, "invalid"));
+  EXPECT_EQ(errno, EINVAL);
+}
+
 struct SysctlTestReadBackParam {
   std::string path;
   const char *value;

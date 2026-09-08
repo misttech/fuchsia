@@ -12,7 +12,7 @@ use starnix_core::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirecto
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, parse_unsigned_file};
 use starnix_core::vfs::pseudo::stub_bytes_file::StubBytesFile;
 use starnix_core::vfs::{FileSystemHandle, FsNodeHandle, FsNodeOps, FsString, fs_args};
-use starnix_logging::bug_ref;
+use starnix_logging::{bug_ref, track_stub};
 use starnix_uapi::auth::{CAP_LAST_CAP, CAP_SYS_ADMIN, CAP_SYS_RESOURCE, Capabilities};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
@@ -257,11 +257,7 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874237")),
             mode,
         );
-        dir.entry(
-            "drop_caches",
-            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874299")),
-            mode,
-        );
+        dir.entry("drop_caches", DropCachesFile::new_node(), mode!(IFREG, 0o200));
         dir.entry(
             "extra_free_kbytes",
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873761")),
@@ -735,6 +731,43 @@ impl AtomicLimit for InotifyMaxUserWatches {
             .inotify
             .max_user_watches
             .store(value, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+struct DropCachesFile;
+
+impl DropCachesFile {
+    fn new_node() -> impl FsNodeOps {
+        BytesFile::new_node(Self)
+    }
+}
+
+impl BytesFileOps for DropCachesFile {
+    fn write(&self, current_task: &CurrentTask, data: Vec<u8>) -> Result<(), Errno> {
+        security::check_task_capable(current_task, CAP_SYS_ADMIN)?;
+        let val = parse_unsigned_file::<u32>(&data)?;
+        match val {
+            // 1: Frees page cache.
+            1 => track_stub!(
+                TODO("https://fxbug.dev/322874299"),
+                "/proc/sys/vm/drop_caches pagecache"
+            ),
+            // 2: Frees dentries and inodes.
+            2 => current_task.kernel().mounts.drop_caches(),
+            // 3: Frees page cache, dentries, and inodes.
+            3 => {
+                track_stub!(
+                    TODO("https://fxbug.dev/322874299"),
+                    "/proc/sys/vm/drop_caches pagecache"
+                );
+                current_task.kernel().mounts.drop_caches();
+            }
+            // 4: Suppresses informational kernel logging of drop_caches; this
+            // is a no-op in Starnix.
+            4 => {}
+            _ => return error!(EINVAL),
+        }
         Ok(())
     }
 }

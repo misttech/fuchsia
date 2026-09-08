@@ -499,6 +499,21 @@ impl FileSystem {
     ) -> Result<(), Errno> {
         self.ops.update_flags(self, current_task, flags)
     }
+
+    pub fn purge_all_entries(&self) {
+        if let DirEntryCache::Lru(l) = &self.dcache {
+            let purged = {
+                let mut entries = l.entries.lock();
+                let mut purged = Vec::with_capacity(entries.len());
+                while let Some((entry, _)) = entries.pop_front() {
+                    purged.push(entry.0);
+                }
+                purged
+            };
+            // Entries will get dropped here outside of the lock.
+            std::mem::drop(purged);
+        }
+    }
 }
 
 /// The filesystem-implementation-specific data for FileSystem.

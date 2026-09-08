@@ -223,12 +223,6 @@
                 // quietly succeeds on writes instead of issuing EINVAL.
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_modules_disabled",
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_modules_disabled",
-
-                // drop_caches in Starnix currently has 0644 permissions instead of Linux's 0200
-                // write-only permissions (https://fxbug.dev/322874299).
-                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/vm_drop_caches",
-                "SysctlTest/SysctlNodeTest.NonRootWithCapNetAdminCanWriteProcSysNet/vm_drop_caches",
-                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/vm_drop_caches",
             ],
         },
     ],
