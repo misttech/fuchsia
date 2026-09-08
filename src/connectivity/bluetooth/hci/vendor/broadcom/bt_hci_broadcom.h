@@ -17,8 +17,6 @@
 #include <lib/async/cpp/wait.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
-#include <lib/driver/component/cpp/node_add_args.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/driver/power/cpp/element-description-builder.h>
 #include <lib/driver/power/cpp/power-support.h>
 #include <lib/driver/power/cpp/wake-lease.h>
@@ -48,12 +46,9 @@ enum class ActivityType : uint8_t {
   kReceivePacket,
 };
 
-class BtHciBroadcom final
-    : public fdf::DriverBase2,
-      public fidl::WireAsyncEventHandler<fuchsia_driver_framework::NodeController>,
-      public fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node>,
-      public fidl::WireServer<fuchsia_power_broker::ElementRunner>,
-      public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
+class BtHciBroadcom final : public fdf::DriverBase2,
+                            public fidl::WireServer<fuchsia_power_broker::ElementRunner>,
+                            public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
  public:
   inspect::ComponentInspector& inspector() { return *component_inspector_; }
 
@@ -63,11 +58,6 @@ class BtHciBroadcom final
 
   void Start(fdf::DriverContext context, fdf::StartCompleter completer) override;
   void Stop(fdf::StopCompleter completer) override;
-
-  void handle_unknown_event(
-      fidl::UnknownEventMetadata<fuchsia_driver_framework::NodeController> metadata) override {}
-  void handle_unknown_event(
-      fidl::UnknownEventMetadata<fuchsia_driver_framework::Node> metadata) override {}
 
   enum PowerLevel : uint8_t {
     kOff = 0,
@@ -103,7 +93,6 @@ class BtHciBroadcom final
       fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override;
 
-  void Connect(fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request);
   // Truly private, internal helper methods:
   zx_status_t ConnectToHciTransportFidlProtocol();
   zx_status_t ConnectToSerialFidlProtocol();
@@ -168,8 +157,6 @@ class BtHciBroadcom final
 
   fpromise::promise<void, zx_status_t> OnInitializeComplete(zx_status_t status);
 
-  fpromise::promise<void, zx_status_t> AddNode();
-
   void CompleteStart(zx_status_t status);
 
   zx_status_t Bind();
@@ -194,7 +181,6 @@ class BtHciBroadcom final
   fdf::WireSyncClient<fuchsia_hardware_serialimpl::Device> serial_client_;
 
   std::shared_ptr<fdf::Namespace> incoming_;
-  std::optional<fdf::OwnedChildNode> child_node_;
 
   PowerLevel power_level_ = PowerLevel::kBoot;
   async::TaskClosureMethod<BtHciBroadcom, &BtHciBroadcom::HandleWakeLeaseTimeout> drop_level_task_{
@@ -216,7 +202,6 @@ class BtHciBroadcom final
   std::optional<zx::time> last_core_dump_time_;
 
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Vendor> vendor_binding_group_;
-  driver_devfs::Connector<fuchsia_hardware_bluetooth::Vendor> devfs_connector_;
 };
 
 }  // namespace bt_hci_broadcom

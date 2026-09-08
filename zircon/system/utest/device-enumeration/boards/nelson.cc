@@ -91,7 +91,6 @@ TEST_F(DeviceEnumerationTest, NelsonTest) {
 
       // Bluetooth
       "bt-uart.bluetooth-composite-spec.aml-uart.serial.bt-transport-uart",
-      "bt-uart.bluetooth-composite-spec.aml-uart.serial.bt-transport-uart.bt-hci-broadcom",
 #endif
 
       "i2c-2.aml-i2c.i2c.i2c-2-45.tas58xx.TAS5805m.brownout_protection.nelson-brownout-protection",

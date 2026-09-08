@@ -272,8 +272,7 @@ class HciTransportPassthroughImpl : public fidl::Server<fhbt::HciTransport>,
 
 BtHciBroadcom::BtHciBroadcom()
     : DriverBase2("bt-hci-broadcom"),
-      hci_event_handler_([this](std::vector<uint8_t>& packet) { OnReceivePacket(packet); }),
-      devfs_connector_(fit::bind_member<&BtHciBroadcom::Connect>(this)) {}
+      hci_event_handler_([this](std::vector<uint8_t>& packet) { OnReceivePacket(packet); }) {}
 
 void BtHciBroadcom::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
   // BT_HOST_WAKE and BT_DEV_WAKE, when they are available, are used to
@@ -449,12 +448,6 @@ void BtHciBroadcom::handle_unknown_method(fidl::UnknownMethodMetadata<fhbt::Vend
                                           fidl::UnknownMethodCompleter::Sync& completer) {
   fdf::error("Unknown method in Vendor protocol, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
-}
-
-// driver_devfs::Connector<fhbt::Vendor>
-void BtHciBroadcom::Connect(fidl::ServerEnd<fhbt::Vendor> request) {
-  vendor_binding_group_.AddBinding(dispatcher(), std::move(request), this,
-                                   fidl::kIgnoreBindingClosure);
 }
 
 zx_status_t BtHciBroadcom::ConnectToHciTransportFidlProtocol() {
@@ -1200,7 +1193,6 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::Initialize() {
       .and_then([this]() {
         return EnableLowPowerMode(kDefaultHostIdleThreshold, kDefaultDevIdleThreshold);
       })
-      .and_then([this]() { return AddNode(); })
       .then([this](fpromise::result<void, zx_status_t>& result) {
         zx_status_t status = result.is_ok() ? ZX_OK : result.error();
         return OnInitializeComplete(status);
@@ -1216,32 +1208,20 @@ fpromise::promise<void, zx_status_t> BtHciBroadcom::OnInitializeComplete(zx_stat
     return fpromise::make_error_promise(status);
   }
 
+  fhbt::Service::InstanceHandler handler({
+      .vendor =
+          vendor_binding_group_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
+  });
+  zx::result add_service_result = outgoing()->AddService<fhbt::Service>(std::move(handler));
+  if (add_service_result.is_error()) {
+    fdf::error("Failed to add vendor service: {}", add_service_result.status_string());
+    return fpromise::make_error_promise(add_service_result.error_value());
+  }
+
   // We are done booting, we can drop our boot power needs.
   fdf::debug("dropping boot power lease");
   executor_->schedule_task(AssertLevel(PowerLevel::kOff));
   fdf::info("initialization completed successfully.");
-  return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
-}
-
-fpromise::promise<void, zx_status_t> BtHciBroadcom::AddNode() {
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector.status_string());
-    return fpromise::make_error_promise(connector.error_value());
-  }
-
-  auto devfs_args = fuchsia_driver_framework::DevfsAddArgs{{
-      .connector = std::move(connector.value()),
-      .class_name = "bt-hci",
-  }};
-
-  zx::result child = AddOwnedChild("bt-hci-broadcom", devfs_args);
-  if (child.is_error()) {
-    fdf::error("Failed to add child: {}", child);
-    return fpromise::make_error_promise(child.status_value());
-  }
-
-  child_node_ = std::move(child.value());
   return fpromise::make_result_promise<void, zx_status_t>(fpromise::ok());
 }
 

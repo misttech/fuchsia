@@ -23,8 +23,8 @@ use std::time::Duration;
 use crate::packet_logs::{append_pcap, write_pcap_header};
 use crate::{
     Args, ClientId, ClientRequest, ConcurrentClientRequestFutures, ConcurrentSnooperPacketFutures,
-    HCI_DEVICE_CLASS_PATH, IdGenerator, PacketLogs, SnoopConfig, SnoopPacket, SubscriptionManager,
-    chunk_packets, handle_client_request, register_new_client,
+    IdGenerator, PacketLogs, SnoopConfig, SnoopPacket, SubscriptionManager, chunk_packets,
+    handle_client_request, register_new_client,
 };
 
 use crate::core_dump::CRASH_REPORT_DEBOUNCE_DURATION;
@@ -216,7 +216,6 @@ async fn test_snoop_config_inspect() {
             log_time: 2u64,
             max_device_count: 3u64,
             truncate_payload: "4 bytes",
-            hci_dir: HCI_DEVICE_CLASS_PATH,
         }
     });
     drop(config);
@@ -852,4 +851,328 @@ fn test_chunk_packets_oversized_packet() {
     assert_eq!(chunks[0].len(), 1);
     assert_eq!(chunks[1].len(), 1);
     assert_eq!(chunks[2].len(), 1);
+}
+
+#[fuchsia::test]
+fn test_handle_packet_channel_closed() {
+    let inspect = Inspector::default();
+    let mut logs = PacketLogs::new(
+        10,
+        100_000,
+        100_000,
+        Duration::new(10, 0),
+        inspect.root().create_child("packet_log"),
+    );
+    let mut subscribers = SubscriptionManager::new();
+    let device_id = "test_device".to_string();
+    let mut crash_states = HashMap::new();
+    let _ = crash_states.insert(
+        device_id.clone(),
+        CrashState {
+            parameters: hardware_bt::VendorCrashParameters::default(),
+            last_report_local_time: None,
+            collector: None,
+            tentative_report_file_time: None,
+        },
+    );
+
+    let outcome =
+        handle_packet(&device_id, None, &mut subscribers, &mut logs, None, &mut crash_states);
+
+    assert!(matches!(outcome, HandlePacketOutcome::ChannelClosed));
+    assert!(!crash_states.contains_key(&device_id));
+}
+
+#[fuchsia::test(allow_stalls = false)]
+async fn test_handle_packet_truncate_payload() {
+    let inspect = Inspector::default();
+    let mut logs = PacketLogs::new(
+        10,
+        100_000,
+        100_000,
+        Duration::new(10, 0),
+        inspect.root().create_child("packet_log"),
+    );
+    let mut subscribers = SubscriptionManager::new();
+    let device_id = "test_device".to_string();
+    let mut crash_states = HashMap::new();
+    let _ = logs.add_device(device_id.clone());
+
+    let payload = vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+    let packet = SnoopPacket::new(
+        true,
+        PacketFormat::AclData,
+        fuchsia_async::MonotonicInstant::now().into(),
+        payload,
+    );
+
+    let outcome = handle_packet(
+        &device_id,
+        Some((device_id.clone(), packet)),
+        &mut subscribers,
+        &mut logs,
+        Some(3),
+        &mut crash_states,
+    );
+
+    assert!(matches!(outcome, HandlePacketOutcome::Processed));
+    let log = logs.get(&device_id).unwrap();
+    assert_eq!(log.lock().len(), 1);
+    assert_eq!(log.lock().iter_mut().next().unwrap().payload, vec![0x01, 0x02, 0x03]);
+}
+
+#[fuchsia::test(allow_stalls = false)]
+async fn test_process_vendor_connection_evicts_old_device() {
+    let inspect = Inspector::default();
+    let mut snoopers = ConcurrentSnooperPacketFutures::new();
+    // Capacity of 1 device log
+    let mut logs = PacketLogs::new(
+        1,
+        100_000,
+        100_000,
+        Duration::new(10, 0),
+        inspect.root().create_child("packet_log"),
+    );
+    let mut subscribers = SubscriptionManager::new();
+    let mut crash_states = HashMap::new();
+
+    let old_dev = "dev_0".to_string();
+    let _ = logs.add_device(old_dev.clone());
+    let _ = crash_states.insert(
+        old_dev.clone(),
+        CrashState {
+            parameters: hardware_bt::VendorCrashParameters::default(),
+            last_report_local_time: None,
+            collector: None,
+            tentative_report_file_time: None,
+        },
+    );
+
+    let (vendor_proxy, mut vendor_stream) =
+        fidl::endpoints::create_proxy_and_stream::<hardware_bt::VendorMarker>();
+
+    let new_dev = "dev_1";
+    let process_fut = crate::process_vendor_connection(
+        new_dev,
+        &vendor_proxy,
+        &mut snoopers,
+        &mut crash_states,
+        &mut logs,
+        &mut subscribers,
+    );
+
+    let stream_fut = async move {
+        let Some(Ok(hardware_bt::VendorRequest::GetCrashParameters { responder })) =
+            vendor_stream.next().await
+        else {
+            panic!("Expected GetCrashParameters");
+        };
+        responder
+            .send(Ok(&hardware_bt::VendorCrashParameters {
+                program_name: Some("test_new".to_string()),
+                ..Default::default()
+            }))
+            .unwrap();
+
+        let Some(Ok(hardware_bt::VendorRequest::OpenSnoop { responder })) =
+            vendor_stream.next().await
+        else {
+            panic!("Expected OpenSnoop");
+        };
+        let (snoop_client, _snoop_stream) =
+            fidl::endpoints::create_endpoints::<hardware_bt::SnoopMarker>();
+        responder.send(Ok(snoop_client)).unwrap();
+    };
+
+    futures::future::join(process_fut, stream_fut).await;
+
+    // Old device was evicted, new device is present
+    assert!(!crash_states.contains_key("dev_0"));
+    assert!(crash_states.contains_key("dev_1"));
+    assert_eq!(logs.device_ids().collect::<Vec<_>>(), vec![&"dev_1".to_string()]);
+}
+
+#[fuchsia::test(allow_stalls = false)]
+async fn test_handle_crash_timer_fired_no_device_or_no_time() {
+    let mut crash_states = HashMap::new();
+    let mut reporting_tasks = futures::stream::FuturesUnordered::new();
+    let mut crash_timers = futures::stream::FuturesUnordered::new();
+
+    // Device not in map
+    crate::handle_crash_timer_fired(
+        "unknown".to_string(),
+        &mut crash_states,
+        &mut reporting_tasks,
+        &mut crash_timers,
+    );
+    assert_eq!(reporting_tasks.len(), 0);
+    assert_eq!(crash_timers.len(), 0);
+
+    // Device in map but tentative_report_file_time is None
+    let _ = crash_states.insert(
+        "dev_0".to_string(),
+        CrashState {
+            parameters: hardware_bt::VendorCrashParameters::default(),
+            last_report_local_time: None,
+            collector: None,
+            tentative_report_file_time: None,
+        },
+    );
+    crate::handle_crash_timer_fired(
+        "dev_0".to_string(),
+        &mut crash_states,
+        &mut reporting_tasks,
+        &mut crash_timers,
+    );
+    assert_eq!(reporting_tasks.len(), 0);
+    assert_eq!(crash_timers.len(), 0);
+}
+
+#[fuchsia::test(allow_stalls = false)]
+async fn test_handle_crash_timer_fired_respawn_or_fire() {
+    let mut crash_states = HashMap::new();
+    let mut reporting_tasks = futures::stream::FuturesUnordered::new();
+    let mut crash_timers = futures::stream::FuturesUnordered::new();
+
+    let future_target =
+        fuchsia_async::MonotonicInstant::after(zx::MonotonicDuration::from_hours(1));
+    let _ = crash_states.insert(
+        "dev_0".to_string(),
+        CrashState {
+            parameters: hardware_bt::VendorCrashParameters::default(),
+            last_report_local_time: None,
+            collector: None,
+            tentative_report_file_time: Some(future_target),
+        },
+    );
+
+    // Target is in the future, so crash timer is respawned
+    crate::handle_crash_timer_fired(
+        "dev_0".to_string(),
+        &mut crash_states,
+        &mut reporting_tasks,
+        &mut crash_timers,
+    );
+    assert_eq!(crash_timers.len(), 1);
+    assert_eq!(reporting_tasks.len(), 0);
+
+    // Target is in the past, so tentative_report_file_time is cleared and reporting task is spawned
+    let past_target = fuchsia_async::MonotonicInstant::now();
+    let state = crash_states.get_mut("dev_0").unwrap();
+    state.tentative_report_file_time = Some(past_target);
+    state.collector = Some(
+        crate::core_dump::CoreDumpCollector::new("test_prog".to_string(), "test_sig".to_string())
+            .unwrap(),
+    );
+
+    crate::handle_crash_timer_fired(
+        "dev_0".to_string(),
+        &mut crash_states,
+        &mut reporting_tasks,
+        &mut crash_timers,
+    );
+    assert!(crash_states.get("dev_0").unwrap().tentative_report_file_time.is_none());
+    assert!(crash_states.get("dev_0").unwrap().collector.is_none());
+    assert_eq!(reporting_tasks.len(), 1);
+}
+
+#[fuchsia::test]
+fn test_handle_client_request_empty_client() {
+    let (mut exec, mut _snoopers, logs, mut subscribers, mut requests, _inspect) = setup();
+
+    let (proxy, mut request_stream) = fidl_endpoints();
+    let client_req = SnoopStartRequest {
+        follow: Some(true),
+        host_device: None,
+        client: None,
+        ..Default::default()
+    };
+    proxy.start(client_req).unwrap();
+    let request = pump_request_stream(&mut exec, &mut request_stream, ClientId(0));
+    pump_handle_client_request(
+        &mut exec,
+        request,
+        request_stream,
+        &mut requests,
+        &mut subscribers,
+        &logs,
+    );
+    // client was not added as a subscriber because client was None, but client_requests registered stream
+    assert_eq!(subscribers.number_of_subscribers(), 0);
+    assert_eq!(requests.len(), 1);
+}
+
+#[fuchsia::test(allow_stalls = false)]
+async fn test_handle_service_instance() {
+    let inspect = Inspector::default();
+    let mut snoopers = ConcurrentSnooperPacketFutures::new();
+    let mut logs = PacketLogs::new(
+        10,
+        100_000,
+        100_000,
+        Duration::new(10, 0),
+        inspect.root().create_child("packet_log"),
+    );
+    let mut subscribers = SubscriptionManager::new();
+    let mut crash_states = HashMap::new();
+    let (dir_proxy, mut dir_stream) =
+        fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_io::DirectoryMarker>();
+
+    let instance = fuchsia_component::client::connect_to_service_instance_at_dir::<
+        hardware_bt::ServiceMarker,
+    >(&dir_proxy, "000")
+    .unwrap();
+
+    let handle_fut = crate::handle_service_instance(
+        instance,
+        &mut snoopers,
+        &mut subscribers,
+        &mut logs,
+        &mut crash_states,
+    );
+
+    let dir_fut = async move {
+        let instance_server = match dir_stream.next().await {
+            Some(Ok(fidl_fuchsia_io::DirectoryRequest::Open { path, object, .. })) => {
+                assert_eq!(path, "fuchsia.hardware.bluetooth.Service/000");
+                object
+            }
+            other => panic!("Unexpected directory request: {other:?}"),
+        };
+        let mut instance_stream = fidl_fuchsia_io::DirectoryRequestStream::from_channel(
+            Channel::from_channel(zx::Channel::from(instance_server.into_handle())),
+        );
+        let vendor_server = match instance_stream.next().await {
+            Some(Ok(fidl_fuchsia_io::DirectoryRequest::Open { path, object, .. })) => {
+                assert_eq!(path, "vendor");
+                object
+            }
+            other => panic!("Unexpected instance directory request: {other:?}"),
+        };
+        let mut vendor_stream = hardware_bt::VendorRequestStream::from_channel(
+            Channel::from_channel(zx::Channel::from(vendor_server.into_handle())),
+        );
+        if let Some(Ok(hardware_bt::VendorRequest::GetCrashParameters { responder })) =
+            vendor_stream.next().await
+        {
+            responder
+                .send(Ok(&hardware_bt::VendorCrashParameters {
+                    program_name: Some("test_service_hci".to_string()),
+                    ..Default::default()
+                }))
+                .unwrap();
+        }
+        if let Some(Ok(hardware_bt::VendorRequest::OpenSnoop { responder })) =
+            vendor_stream.next().await
+        {
+            let (snoop_client, _snoop_stream) =
+                fidl::endpoints::create_endpoints::<hardware_bt::SnoopMarker>();
+            responder.send(Ok(snoop_client)).unwrap();
+        }
+    };
+
+    futures::future::join(handle_fut, dir_fut).await;
+
+    assert_eq!(snoopers.len(), 1);
+    assert!(crash_states.contains_key("000"));
 }

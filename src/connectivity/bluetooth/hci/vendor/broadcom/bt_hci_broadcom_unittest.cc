@@ -572,8 +572,8 @@ class BtHciBroadcomTest : public ::gtest::TestLoopFixture {
   }
 
   void OpenVendor() {
-    // Connect to Vendor protocol through devfs, get the channel handle from node server.
-    zx::result connect_result = driver_test().ConnectThroughDevfs<fhbt::Vendor>("bt-hci-broadcom");
+    // Connect to Vendor protocol through the Service.
+    zx::result connect_result = driver_test().Connect<fhbt::Service::Vendor>();
     ASSERT_EQ(ZX_OK, connect_result.status_value());
 
     // Bind the channel to a Vendor client end.
@@ -586,8 +586,8 @@ class BtHciBroadcomTest : public ::gtest::TestLoopFixture {
   }
 
   void OpenVendorWithHciTransportClient() {
-    // Connect to Vendor protocol through devfs, get the channel handle from node server.
-    zx::result connect_result = driver_test().ConnectThroughDevfs<fhbt::Vendor>("bt-hci-broadcom");
+    // Connect to Vendor protocol through the Service.
+    zx::result connect_result = driver_test().Connect<fhbt::Service::Vendor>();
     ASSERT_EQ(ZX_OK, connect_result.status_value());
 
     fidl::ClientEnd<fhbt::HciTransport> hci_transport_end(connect_result.value().TakeChannel());

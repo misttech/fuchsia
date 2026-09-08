@@ -11,17 +11,13 @@ use fidl_fuchsia_bluetooth_snoop::SnoopMarker;
 use fidl_fuchsia_bluetooth_sys::PairingMarker;
 use fidl_fuchsia_component::{CreateChildArgs, RealmMarker, RealmProxy};
 use fidl_fuchsia_component_decl::{
-    Child, CollectionRef, ConfigOverride, ConfigSingleValue, ConfigValue, DependencyType, Offer,
-    OfferDirectory, ParentRef, Ref, StartupMode,
+    Child, CollectionRef, ConfigOverride, ConfigSingleValue, ConfigValue, StartupMode,
 };
 use fidl_fuchsia_io as fio;
-use fidl_fuchsia_io::Operations;
 use fuchsia_async as fasync;
-use fuchsia_bluetooth::constants::{
-    BT_HOST, BT_HOST_COLLECTION, BT_HOST_URL, DEV_DIR, HCI_DEVICE_DIR,
-};
+use fuchsia_bluetooth::constants::{BT_HOST, BT_HOST_COLLECTION, BT_HOST_URL, BT_SERVICE_DIR};
 use fuchsia_component::{client, server};
-use futures::{StreamExt, TryStreamExt, future};
+use futures::{StreamExt, future};
 use log::{debug, error, info, warn};
 
 const BT_GAP_CHILD_NAME: &str = "bt-gap";
@@ -80,12 +76,13 @@ async fn open_childs_service_directory<C: ComponentClientAdapter>(
 }
 
 // Use the fuchsia.component.Realm protocol to create a dynamic child instance in the collection.
-async fn create_bt_host(realm: &RealmProxy, filename: String) -> Result<(), Error> {
-    let component_name = format!("{BT_HOST}_{filename}");
-    let device_path = format!("{DEV_DIR}/{HCI_DEVICE_DIR}/{filename}");
+async fn create_bt_host(realm: &RealmProxy, instance_name: &str) -> Result<(), Error> {
+    let component_name = format!("{BT_HOST}_{instance_name}");
     let collection_ref = CollectionRef { name: BT_HOST_COLLECTION.to_owned() };
 
-    info!("Creating component with device_path: {:?}", device_path);
+    let service_path = format!("{BT_SERVICE_DIR}/{instance_name}/vendor");
+
+    info!("Creating component: {component_name:?} with service path: {service_path:?}");
 
     // TODO(b/308664865): Structured config launches dynamic child component with InstanceCannotResolve error. See bug description for temporary hack.
     let child_decl = Child {
@@ -94,55 +91,43 @@ async fn create_bt_host(realm: &RealmProxy, filename: String) -> Result<(), Erro
         startup: Some(StartupMode::Lazy),
         config_overrides: Some(vec![ConfigOverride {
             key: Some("device_path".to_string()),
-            value: Some(ConfigValue::Single(ConfigSingleValue::String(
-                "/dev/class/bt-hci/default".to_owned(),
-            ))),
+            value: Some(ConfigValue::Single(ConfigSingleValue::String(service_path))),
             ..ConfigOverride::default()
         }]),
         ..Default::default()
     };
 
-    let bt_host_offer = Offer::Directory(OfferDirectory {
-        source: Some(Ref::Parent(ParentRef)),
-        source_name: Some("dev-bt-hci".to_owned()),
-        target_name: Some("dev-bt-hci-instance".to_owned()),
-        subdir: Some(filename),
-        dependency_type: Some(DependencyType::Strong),
-        rights: Some(
-            Operations::READ_BYTES
-                | Operations::CONNECT
-                | Operations::GET_ATTRIBUTES
-                | Operations::TRAVERSE
-                | Operations::ENUMERATE,
-        ),
-        ..Default::default()
-    });
     realm
-        .create_child(
-            &collection_ref,
-            &child_decl,
-            CreateChildArgs { dynamic_offers: Some(vec![bt_host_offer]), ..Default::default() },
-        )
+        .create_child(&collection_ref, &child_decl, CreateChildArgs::default())
         .await?
         .map_err(|e| format_err!("{e:?}"))?;
     Ok(())
 }
 
-/// Continuously watch the file system for bt vendor devices being added or removed
+/// Continuously watch for bt vendor devices being added via Service
 async fn run_device_watcher() -> Result<(), Error> {
-    let dir = format!("{}/{}", DEV_DIR, HCI_DEVICE_DIR);
-    let directory = fuchsia_fs::directory::open_in_namespace(&dir, fuchsia_fs::PERM_READABLE)?;
-    let mut stream = device_watcher::watch_for_files(&directory).await?;
-
     let realm = client::connect_to_protocol::<RealmMarker>()
         .expect("failed to connect to fuchsia.component.Realm");
 
-    while let Some(filename) =
-        stream.try_next().await.context("failed to watch vendor device drivers")?
-    {
-        let path = filename.to_str().expect("utf-8 path");
-        info!("Watching {DEV_DIR}/{HCI_DEVICE_DIR}. Filename: {path}");
-        create_bt_host(&realm, path.to_owned()).await?;
+    let service =
+        fuchsia_component::client::Service::open(fidl_fuchsia_hardware_bluetooth::ServiceMarker)
+            .with_context(|| format!("failed to open {BT_SERVICE_DIR}"))?;
+    let mut watcher =
+        service.watch().await.with_context(|| format!("failed to watch {BT_SERVICE_DIR}"))?;
+
+    while let Some(instance) = watcher.next().await {
+        match instance {
+            Ok(instance) => {
+                let name = instance.instance_name().to_string();
+                info!("Discovered bluetooth service instance: {name}");
+                if let Err(e) = create_bt_host(&realm, &name).await {
+                    warn!("Failed to create bt-host for service instance {name}: {e:?}");
+                }
+            }
+            Err(e) => {
+                warn!("Error watching bluetooth service instances: {:?}", e);
+            }
+        }
     }
     Ok(())
 }
@@ -340,5 +325,87 @@ mod tests {
         assert!(mock_client.bt_gap_channel.is_some());
         assert!(mock_client.bt_rfcomm_channel.is_none());
         assert!(mock_client.bt_fastpair_provider_channel.is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_create_bt_host_success() {
+        let (realm_proxy, mut realm_stream) =
+            fidl::endpoints::create_proxy_and_stream::<RealmMarker>();
+
+        let create_fut = create_bt_host(&realm_proxy, "instance-1");
+
+        let mock_fut = async move {
+            let Some(Ok(fidl_fuchsia_component::RealmRequest::CreateChild {
+                collection,
+                decl,
+                args,
+                responder,
+            })) = realm_stream.next().await
+            else {
+                panic!("Expected CreateChild request");
+            };
+
+            assert_eq!(collection.name, BT_HOST_COLLECTION);
+            assert_eq!(decl.name.as_deref(), Some("bt-host_instance-1"));
+            assert_eq!(decl.url.as_deref(), Some(BT_HOST_URL));
+            assert_eq!(decl.startup, Some(StartupMode::Lazy));
+            let overrides = decl.config_overrides.expect("config overrides present");
+            assert_eq!(overrides.len(), 1);
+            assert_eq!(overrides[0].key.as_deref(), Some("device_path"));
+            assert_eq!(
+                overrides[0].value,
+                Some(ConfigValue::Single(ConfigSingleValue::String(format!(
+                    "{BT_SERVICE_DIR}/instance-1/vendor"
+                ))))
+            );
+            assert_eq!(args, CreateChildArgs::default());
+
+            responder.send(Ok(())).unwrap();
+        };
+
+        let (result, ()) = futures::future::join(create_fut, mock_fut).await;
+        assert!(result.is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn test_create_bt_host_component_error() {
+        let (realm_proxy, mut realm_stream) =
+            fidl::endpoints::create_proxy_and_stream::<RealmMarker>();
+
+        let create_fut = create_bt_host(&realm_proxy, "instance-1");
+
+        let mock_fut = async move {
+            let Some(Ok(fidl_fuchsia_component::RealmRequest::CreateChild { responder, .. })) =
+                realm_stream.next().await
+            else {
+                panic!("Expected CreateChild request");
+            };
+
+            responder.send(Err(fidl_fuchsia_component::Error::InstanceAlreadyExists)).unwrap();
+        };
+
+        let (result, ()) = futures::future::join(create_fut, mock_fut).await;
+        assert!(result.is_err());
+    }
+
+    #[fuchsia::test]
+    async fn test_create_bt_host_fidl_error() {
+        let (realm_proxy, mut realm_stream) =
+            fidl::endpoints::create_proxy_and_stream::<RealmMarker>();
+
+        let create_fut = create_bt_host(&realm_proxy, "instance-1");
+
+        let mock_fut = async move {
+            let Some(Ok(fidl_fuchsia_component::RealmRequest::CreateChild { responder, .. })) =
+                realm_stream.next().await
+            else {
+                panic!("Expected CreateChild request");
+            };
+
+            drop(responder);
+        };
+
+        let (result, ()) = futures::future::join(create_fut, mock_fut).await;
+        assert!(result.is_err());
     }
 }

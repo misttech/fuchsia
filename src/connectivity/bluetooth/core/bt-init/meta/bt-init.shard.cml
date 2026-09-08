@@ -57,17 +57,7 @@
             from: "parent",
             availability: "optional",
         },
-        {
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have
-            // been migrated to services. The service capability has been added below.
-            directory: "dev-bt-hci",
-            rights: [ "r*" ],
-            path: "/dev/class/bt-hci",
-        },
-        {
-            // This service replaces the directory capability above.
-            service: "fuchsia.hardware.bluetooth.Service",
-        },
+        { service: "fuchsia.hardware.bluetooth.Service" },
         {
             config: "fuchsia.bluetooth.FastPairProvider",
             key: "fastpair_provider_enabled",
@@ -77,6 +67,11 @@
         },
     ],
     offer: [
+        {
+            service: "fuchsia.hardware.bluetooth.Service",
+            from: "parent",
+            to: "#bt-host-collection",
+        },
         {
             protocol: "fuchsia.power.system.ActivityGovernor",
             from: "parent",

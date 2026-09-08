@@ -72,7 +72,6 @@ TEST_F(DeviceEnumerationTest, AstroTest) {
       "astro-i2s-audio-out.aml_tdm.astro-audio-i2s-out",
       "astro-audio-pdm-in.aml_pdm.astro-audio-pdm-in",
       "bt-uart-ffd24000.aml-uart.serial.bt-transport-uart",
-      "bt-uart-ffd24000.aml-uart.serial.bt-transport-uart.bt-hci-broadcom",
       "mmc-ffe05000.aml-sd-emmc.sdmmc.sdmmc-sdio.sdmmc-sdio-1.wifi-1.brcmfmac-wlanphy",
       "aml-light.gpio-light",
       "video-decoder-ffd00000.amlogic_video",

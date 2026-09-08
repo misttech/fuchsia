@@ -64,7 +64,6 @@ TEST_F(DeviceEnumerationTest, SherlockTest) {
 #ifdef include_packaged_drivers
   static const char* kPackagedCommonNodeMonikers[] = {
       "bt-uart-ffd24000.aml-uart.serial.bt-transport-uart",
-      "bt-uart-ffd24000.aml-uart.serial.bt-transport-uart.bt-hci-broadcom",
       "mipi-csi-ff650000.aml-mipi",
       "mipi-csi-ff650000.aml-mipi.imx227",
       "mipi-csi-ff650000.aml-mipi.imx227.gdc",

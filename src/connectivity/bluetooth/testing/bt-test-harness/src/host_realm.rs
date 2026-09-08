@@ -218,16 +218,6 @@ pub async fn add_host_routes(
                 .to(to.clone()),
         )
         .await?;
-
-    // Add directory routing between components within CoreRealm
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::directory("dev-class").subdir("bt-hci").as_("dev-bt-hci"))
-                .from(Ref::child(fuchsia_driver_test::COMPONENT_NAME))
-                .to(to),
-        )
-        .await?;
     Ok(())
 }
 

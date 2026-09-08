@@ -35,9 +35,14 @@
             type: "bool",
         },
         {
+            service: "fuchsia.hardware.bluetooth.Service",
+            availability: "optional",
+        },
+        {
             directory: "dev-bt-hci-instance",
             rights: [ "r*" ],
             path: "/dev/class/bt-hci/default",
+            availability: "optional",
         },
         {
             protocol: [ "fuchsia.bluetooth.host.Receiver" ],

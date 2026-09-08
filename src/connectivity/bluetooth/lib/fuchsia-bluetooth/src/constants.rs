@@ -7,6 +7,7 @@ use zx::MonotonicDuration;
 pub const DEV_DIR: &str = "/dev";
 pub const HOST_DEVICE_DIR: &str = "class/bt-host";
 pub const HCI_DEVICE_DIR: &str = "class/bt-hci";
+pub const BT_SERVICE_DIR: &str = "/svc/fuchsia.hardware.bluetooth.Service";
 
 // Constants for creating bt-host component in bt-init and integration tests
 pub const BT_HOST_COLLECTION: &str = "bt-host-collection";

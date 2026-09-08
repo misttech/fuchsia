@@ -6,7 +6,9 @@ use anyhow::Error;
 use cm_rust::push_box;
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_bluetooth_bredr::{ProfileMarker, ProfileProxy};
+use fidl_fuchsia_bluetooth_gatt as fbgatt;
 use fidl_fuchsia_bluetooth_host::{ReceiverMarker, ReceiverProxy};
+use fidl_fuchsia_bluetooth_le as fble;
 use fidl_fuchsia_bluetooth_rfcomm_test::{RfcommTestMarker, RfcommTestProxy};
 use fidl_fuchsia_bluetooth_snoop::{SnoopMarker, SnoopRequestStream};
 use fidl_fuchsia_bluetooth_sys::{
@@ -24,14 +26,10 @@ use fuchsia_component_test::{
 use futures::channel::mpsc;
 use futures::{SinkExt, StreamExt};
 use log::info;
-use realmbuilder_mock_helpers::{add_fidl_service_handler, mock_dev, provide_bt_gap_uses};
+use realmbuilder_mock_helpers::{add_fidl_service_handler, mock_svc, provide_bt_gap_uses};
 use std::sync::Arc;
 use vfs::directory::entry_container::Directory;
 use vfs::pseudo_directory;
-use {
-    fidl_fuchsia_bluetooth_gatt as fbgatt, fidl_fuchsia_bluetooth_le as fble,
-    fidl_fuchsia_io as fio,
-};
 
 const BT_INIT_URL: &str = "fuchsia-pkg://fuchsia.com/bt-init-smoke-test#meta/test-bt-init.cm";
 
@@ -87,12 +85,10 @@ impl From<SecureStoreMarker> for Event {
     }
 }
 
-/// An empty dev/bt-hci pseudo-directory.
-fn dev_bt_hci() -> Arc<dyn Directory> {
+/// An empty fuchsia.hardware.bluetooth.Service pseudo-directory.
+fn bt_svc() -> Arc<dyn Directory> {
     pseudo_directory! {
-        "class" => pseudo_directory! {
-            "bt-hci" => pseudo_directory! {}
-        }
+        "fuchsia.hardware.bluetooth.Service" => pseudo_directory! {}
     }
 }
 
@@ -253,11 +249,11 @@ async fn bt_init_component_topology() {
     let mock_dev = builder
         .add_local_child(
             MOCK_DEV_MONIKER,
-            move |handles: LocalComponentHandles| Box::pin(mock_dev(handles, dev_bt_hci())),
+            move |handles: LocalComponentHandles| Box::pin(mock_svc(handles, bt_svc())),
             ChildOptions::new(),
         )
         .await
-        .expect("Failed adding mock /dev provider to topology");
+        .expect("Failed adding mock /svc provider to topology");
     // Mock bt-init client that will request all the service exposed by bt-init.
     let mock_client = builder
         .add_local_child(
@@ -311,17 +307,13 @@ async fn bt_init_component_topology() {
     builder
         .add_route(
             Route::new()
-                .capability(
-                    Capability::directory("dev-bt-hci")
-                        .path("/dev/class/bt-hci")
-                        .rights(fio::R_STAR_DIR),
-                )
+                .capability(Capability::service_by_name("fuchsia.hardware.bluetooth.Service"))
                 .from(&mock_dev)
                 .to(&bt_init)
                 .to(Ref::collection(BT_HOST_COLLECTION.to_string())),
         )
         .await
-        .expect("Failed adding route for bt-hci device directory");
+        .expect("Failed adding route for bluetooth service");
     // Proxy LogSink to children
     builder
         .add_route(

@@ -18,6 +18,9 @@
   },
   capabilities: [
     {
+      service: "fuchsia.hardware.bluetooth.Service",
+    },
+    {
       service: "fuchsia.hardware.power.PowerTokenService",
     },
   ],
@@ -60,6 +63,10 @@
     },
   ],
   expose: [
+    {
+      service: "fuchsia.hardware.bluetooth.Service",
+      from: "self",
+    },
     {
       service: "fuchsia.hardware.power.PowerTokenService",
       from: "self",

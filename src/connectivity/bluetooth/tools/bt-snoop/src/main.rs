@@ -4,7 +4,7 @@
 
 #![recursion_limit = "256"]
 
-use anyhow::{Context as _, Error, format_err};
+use anyhow::Error;
 use argh::FromArgs;
 use fidl::Error as FidlError;
 use fidl_fuchsia_bluetooth_snoop::{
@@ -13,10 +13,8 @@ use fidl_fuchsia_bluetooth_snoop::{
 };
 use fidl_fuchsia_feedback::CrashReporterMarker;
 
-use fidl_fuchsia_io::DirectoryProxy;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
-use fuchsia_fs::directory::{WatchEvent, WatchMessage, Watcher};
 use fuchsia_inspect as inspect;
 use fuchsia_trace as trace;
 use futures::future::{Join, Ready, join, ready};
@@ -40,13 +38,10 @@ mod subscription_manager;
 #[cfg(test)]
 mod tests;
 
-/// Root directory of all HCI devices
-const HCI_DEVICE_CLASS_PATH: &str = "/dev/class/bt-hci";
-
 /// Size of the standard HCI event header (Event Code + Length).
 pub(crate) const HCI_EVENT_HEADER_SIZE: usize = 2;
 
-/// A `DeviceId` represents the name of a host device within the HCI_DEVICE_CLASS_PATH.
+/// A `DeviceId` represents the name of a device (such as a service instance name).
 pub(crate) type DeviceId = String;
 
 /// A request is a tuple of the client id, and the next request or error from the stream, or None
@@ -183,36 +178,20 @@ fn handle_crash_timer_fired(
     }));
 }
 
-/// Handle an event on the virtual filesystem in the HCI device directory.
-async fn handle_hci_device_event(
-    message: WatchMessage,
-    directory: &DirectoryProxy,
+/// Handle a new service instance in the bluetooth service directory.
+async fn handle_service_instance(
+    instance: fidl_fuchsia_hardware_bluetooth::ServiceProxy,
     snoopers: &mut ConcurrentSnooperPacketFutures,
     subscribers: &mut SubscriptionManager,
     packet_logs: &mut PacketLogs,
     crash_states: &mut HashMap<DeviceId, CrashState>,
 ) {
-    let WatchMessage { event, filename } = message;
-
-    let path = filename.to_str().expect("utf-8 path");
-    match event {
-        WatchEvent::ADD_FILE | WatchEvent::EXISTING => {
-            if filename == std::path::Path::new(".") {
-                return;
-            }
-            info!(path; "Opening snoop channel");
-            let vendor = match fuchsia_component::client::connect_to_named_protocol_at_dir_root::<
-                fidl_fuchsia_hardware_bluetooth::VendorMarker,
-            >(directory, path)
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    warn!("failed to open bt-hci device: {e:?}");
-                    return;
-                }
-            };
+    let path = instance.instance_name().to_string();
+    info!("Opening snoop channel via service for \"{path}\"");
+    match instance.connect_to_vendor() {
+        Ok(vendor) => {
             process_vendor_connection(
-                path,
+                &path,
                 &vendor,
                 snoopers,
                 crash_states,
@@ -221,16 +200,7 @@ async fn handle_hci_device_event(
             )
             .await;
         }
-        WatchEvent::REMOVE_FILE => {
-            info!("Removing snoop channel for hci device: \"{path}\"");
-            let _ = crash_states.remove(path);
-            // TODO(https://fxbug.dev/319447676):
-            // What should be done with the logged packets in this case?
-            // Find out how to remove snooper from ConcurrentTask (perhaps cancel and wake)
-            // Can possibly reopen device logs for devices that are on disk that were evicted from
-            // the packet logs collection in the past.
-        }
-        _ => (),
+        Err(e) => warn!("Failed to connect to vendor on service instance {path}: {e:?}"),
     }
 }
 
@@ -446,7 +416,6 @@ struct SnoopConfig {
     _log_time_property: inspect::UintProperty,
     _max_device_count_property: inspect::UintProperty,
     _truncate_payload_property: inspect::StringProperty,
-    _hci_dir_property: inspect::StringProperty,
 }
 
 impl SnoopConfig {
@@ -474,7 +443,6 @@ impl SnoopConfig {
             .unwrap_or_else(|| "No Truncation".to_string());
         let _truncate_payload_property =
             config_inspect.create_string("truncate_payload", &truncate);
-        let _hci_dir_property = config_inspect.create_string("hci_dir", HCI_DEVICE_CLASS_PATH);
 
         SnoopConfig {
             log_size_soft_max_bytes,
@@ -488,7 +456,6 @@ impl SnoopConfig {
             _log_time_property,
             _max_device_count_property,
             _truncate_payload_property,
-            _hci_dir_property,
         }
     }
 }
@@ -521,11 +488,24 @@ async fn run(
     inspect: inspect::Node,
 ) -> Result<(), Error> {
     let mut id_gen = IdGenerator::new();
-    let directory =
-        fuchsia_fs::directory::open_in_namespace(HCI_DEVICE_CLASS_PATH, fuchsia_fs::PERM_READABLE)
-            .expect("Failed to open hci dev directory");
-    let mut hci_device_events =
-        Watcher::new(&directory).await.context("Cannot create device watcher")?;
+    let service_stream = match fuchsia_component::client::Service::open(
+        fidl_fuchsia_hardware_bluetooth::ServiceMarker,
+    ) {
+        Ok(service) => match service.watch().await {
+            Ok(watcher) => Some(watcher.boxed()),
+            Err(e) => {
+                warn!("Failed to watch bluetooth service: {:?}", e);
+                None
+            }
+        },
+        Err(e) => {
+            warn!("Failed to open bluetooth service: {:?}", e);
+            None
+        }
+    };
+    let mut service_stream =
+        service_stream.unwrap_or_else(|| futures::stream::empty().boxed()).fuse();
+
     let mut client_requests = ConcurrentClientRequestFutures::new();
     let mut subscribers = SubscriptionManager::new();
     let mut snoopers = ConcurrentSnooperPacketFutures::new();
@@ -552,16 +532,12 @@ async fn run(
                 register_new_client(request_stream, &mut client_requests, client_id);
             },
 
-            // A new filesystem event in the hci device watch directory has been received.
-            event = hci_device_events.next() => {
-                let message = event
-                    .ok_or_else(|| format_err!("Cannot reach watch server"))
-                    .and_then(|r| Ok(r?));
-                match message {
-                    Ok(message) => {
-                        handle_hci_device_event(
-                            message,
-                            &directory,
+            // A new service instance has appeared.
+            instance = service_stream.select_next_some() => {
+                match instance {
+                    Ok(instance) => {
+                        handle_service_instance(
+                            instance,
                             &mut snoopers,
                             &mut subscribers,
                             &mut packet_logs,
@@ -570,10 +546,7 @@ async fn run(
                         .await;
                     }
                     Err(e) => {
-                        // Attempt to recreate watcher in the event of an error.
-                        warn!("VFS Watcher has died with error: {:?}", e);
-                        hci_device_events = Watcher::new(&directory).await
-                            .context("Cannot create device watcher")?;
+                        warn!("Error watching bluetooth service instances: {:?}", e);
                     }
                 }
             },

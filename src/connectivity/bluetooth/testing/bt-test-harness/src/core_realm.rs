@@ -4,8 +4,15 @@
 
 use crate::emulator::EMULATOR_ROOT_DRIVER_URL;
 use anyhow::{Error, format_err};
+use fidl_fuchsia_bluetooth_bredr as fbredr;
+use fidl_fuchsia_bluetooth_gatt as fbgatt;
+use fidl_fuchsia_bluetooth_le as fble;
 use fidl_fuchsia_bluetooth_snoop::SnoopMarker;
+use fidl_fuchsia_bluetooth_sys as fbsys;
 use fidl_fuchsia_device::NameProviderMarker;
+use fidl_fuchsia_driver_test as fdt;
+use fidl_fuchsia_hardware_bluetooth as fhbt;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_logger::LogSinkMarker;
 use fidl_fuchsia_stash::SecureStoreMarker;
 use fuchsia_component_test::{
@@ -14,11 +21,6 @@ use fuchsia_component_test::{
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use futures::FutureExt;
 use realmbuilder_mock_helpers::stateless_mock_responder;
-use {
-    fidl_fuchsia_bluetooth_bredr as fbredr, fidl_fuchsia_bluetooth_gatt as fbgatt,
-    fidl_fuchsia_bluetooth_le as fble, fidl_fuchsia_bluetooth_sys as fbsys,
-    fidl_fuchsia_driver_test as fdt, fidl_fuchsia_io as fio,
-};
 
 pub const SHARED_STATE_INDEX: &str = "BT-CORE-REALM";
 pub const DEFAULT_TEST_DEVICE_NAME: &str = "fuchsia-bt-integration-test";
@@ -201,6 +203,18 @@ impl CoreRealm {
             )
             .await?;
 
+        let dtr_exposes = vec![Capability::service::<fhbt::ServiceMarker>().into()];
+        let _ = builder.driver_test_realm_add_dtr_exposes(&dtr_exposes).await?;
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::service::<fhbt::ServiceMarker>())
+                    .from(Ref::child(fuchsia_driver_test::COMPONENT_NAME))
+                    .to(&bt_init),
+            )
+            .await?;
+
         crate::host_realm::add_host_routes(&builder, &bt_init).await?;
         let instance = builder.build().await?;
 
@@ -212,6 +226,7 @@ impl CoreRealm {
                 device_id: bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_BT_HCI_EMULATOR,
             }]),
             test_component: Some(resolved_test_component),
+            dtr_exposes: Some(dtr_exposes),
             ..Default::default()
         };
         instance.driver_test_realm_start(args).await?;
