@@ -31,10 +31,33 @@ impl Interest {
     }
 }
 
+/// A synchronous filter trait for determining a subscriber's interest in a broadcasted item.
+///
+/// # Purity
+///
+/// The filtering logic is meant to be pure as both the publisher and subscriber
+/// will call the filter function on the same payload. Failure to implement the filter
+/// with a pure function will result in unexpected behavior and/or panics
+pub trait Filter {
+    /// The item type that this filter inspects.
+    type Item;
+
+    /// Evaluates the subscriber's interest in the given payload.
+    fn interest(&self, payload: &Self::Item) -> Interest;
+}
+
+impl<T> Filter for fn(&T) -> Interest {
+    type Item = T;
+
+    fn interest(&self, payload: &T) -> Interest {
+        (self)(payload)
+    }
+}
+
 /// An asynchronous multi-subscriber Broadcast Channel with per-subscriber synchronous message filtering.
 ///
 /// `FilteredBroadcastChannel` allows a publisher to broadcast messages to subscribers while invoking a
-/// synchronous filter `fn(&T) -> Interest` for each subscriber. If a subscriber filter returns `Interest::Uninterested`,
+/// synchronous [`Filter`] for each subscriber. If a subscriber filter returns `Interest::Uninterested`,
 /// the subscriber's global index is incremented to skip the message without waking the subscriber task.
 ///
 /// # Examples
@@ -57,7 +80,7 @@ impl Interest {
 ///
 /// let channel = FilteredBroadcastChannel::<i32, MyBroadcastCfg>::new();
 /// let mut sub_evens = channel
-///     .subscribe(|&x| if x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
+///     .subscribe(|x: &i32| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
 ///     .unwrap();
 /// let mut sub_all = channel.subscribe(|_| Interest::Interested).unwrap();
 ///
@@ -92,42 +115,41 @@ impl Interest {
 /// fn assert_sync<T: Sync>() {}
 /// assert_sync::<NonSyncBroadcast>(); // Correctly fails to compile because SingleThreadMutex is !Sync
 /// ```
-pub struct FilteredBroadcastChannel<T, Cfg: BroadcastCfg> {
-    state: Mutex<Cfg::Mtx, FilteredBroadcastChannelState<T, Cfg>>,
+pub struct FilteredBroadcastChannel<T, Cfg: BroadcastCfg, F = fn(&T) -> Interest> {
+    state: Mutex<Cfg::Mtx, FilteredBroadcastChannelState<T, Cfg, F>>,
     not_full: Notification<Cfg::Mtx>,
 }
 
 /// The synchronized internal state of a [`FilteredBroadcastChannel`].
-struct FilteredBroadcastChannelState<T, Cfg: BroadcastCfg> {
+struct FilteredBroadcastChannelState<T, Cfg: BroadcastCfg, F> {
     queue: Deque<Payload<T>, Cfg::Buffer>,
     head_global_idx: GlobalIndex,
     next_global_idx: GlobalIndex,
-    subscribers: HashMap<SubId, FilteredSubscriberState<T>, Cfg::SubscriptionStore>,
+    subscribers: HashMap<SubId, FilteredSubscriberState<F>, Cfg::SubscriptionStore>,
     next_sub_id: usize,
 }
 
 /// The trackable state of an active subscriber in a [`FilteredBroadcastChannel`].
-struct FilteredSubscriberState<T> {
+struct FilteredSubscriberState<F> {
     next_global_idx: GlobalIndex,
-    filter: fn(&T) -> Interest,
+    filter: F,
     waker: Option<Waker>,
 }
 
 /// An active subscriber endpoint to a [`FilteredBroadcastChannel`].
-pub struct FilteredSubscriber<'a, T, Cfg: BroadcastCfg> {
-    channel: &'a FilteredBroadcastChannel<T, Cfg>,
+pub struct FilteredSubscriber<'a, T, Cfg: BroadcastCfg, F: Filter<Item = T> = fn(&T) -> Interest> {
+    channel: &'a FilteredBroadcastChannel<T, Cfg, F>,
     id: SubId,
 }
 
 /// A custom future returned by [`FilteredSubscriber::next`].
-pub struct NextFuture<'a, 's, T, Cfg: BroadcastCfg> {
-    subscriber: &'s mut FilteredSubscriber<'a, T, Cfg>,
+pub struct NextFuture<'a, 's, T, Cfg: BroadcastCfg, F: Filter<Item = T>> {
+    subscriber: &'s mut FilteredSubscriber<'a, T, Cfg, F>,
 }
 
-impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
+impl<T, Cfg: BroadcastCfg, F: Filter<Item = T>> FilteredBroadcastChannelState<T, Cfg, F> {
     fn force_publish(&mut self, payload: T, not_full: &Notification<Cfg::Mtx>) {
         if self.queue.force_push_back(Payload { payload, remaining_subs: 0 }).is_some() {
-            // Eviction happened, must increment head index
             self.head_global_idx += 1;
         }
         self.next_global_idx += 1;
@@ -165,7 +187,7 @@ impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
         let msg_idx = self.next_global_idx - 1;
         let mut interested = 0;
         for sub in self.subscribers.values_mut() {
-            let interest = (sub.filter)(&payload.payload);
+            let interest = sub.filter.interest(&payload.payload);
             if interest.is_interested() {
                 interested += 1;
             }
@@ -189,9 +211,9 @@ impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
     }
 }
 
-impl<T, Cfg: BroadcastCfg> Default for FilteredBroadcastChannel<T, Cfg>
+impl<T, Cfg: BroadcastCfg, F: Filter<Item = T>> Default for FilteredBroadcastChannel<T, Cfg, F>
 where
-    HashMap<SubId, FilteredSubscriberState<T>, Cfg::SubscriptionStore>: Default,
+    HashMap<SubId, FilteredSubscriberState<F>, Cfg::SubscriptionStore>: Default,
     Deque<Payload<T>, Cfg::Buffer>: Default,
 {
     fn default() -> Self {
@@ -208,7 +230,7 @@ where
     }
 }
 
-impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
+impl<T: Clone, Cfg: BroadcastCfg, F: Filter<Item = T>> FilteredBroadcastChannel<T, Cfg, F> {
     /// Creates a new, empty `FilteredBroadcastChannel`.
     pub fn new() -> Self
     where
@@ -217,13 +239,8 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
         Self::default()
     }
 
-    /// Subscribes to the channel with a synchronous filter function.
-    ///
-    /// ## Why `fn()` and not `Fn()`
-    ///
-    /// We use `fn(&T) -> Interest` in order to support heterogenous filters accorss subscribers
-    /// while still enabling a fixed-allocation scheme.
-    pub fn subscribe(&self, filter: fn(&T) -> Interest) -> Option<FilteredSubscriber<'_, T, Cfg>> {
+    /// Subscribes to the channel with a synchronous filter.
+    pub fn subscribe(&self, filter: F) -> Option<FilteredSubscriber<'_, T, Cfg, F>> {
         let mut state = self.state.lock();
         let id = SubId::new(state.next_sub_id);
         state.next_sub_id += 1;
@@ -263,14 +280,16 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
     }
 }
 
-impl<'a, T: Clone, Cfg: BroadcastCfg> FilteredSubscriber<'a, T, Cfg> {
+impl<'a, T: Clone, Cfg: BroadcastCfg, F: Filter<Item = T>> FilteredSubscriber<'a, T, Cfg, F> {
     /// Asynchronously polls and retrieves the next broadcasted message that matched the filter.
-    pub fn next<'s>(&'s mut self) -> NextFuture<'a, 's, T, Cfg> {
+    pub fn next<'s>(&'s mut self) -> NextFuture<'a, 's, T, Cfg, F> {
         NextFuture { subscriber: self }
     }
 }
 
-impl<'a, 's, T: Clone, Cfg: BroadcastCfg> Future for NextFuture<'a, 's, T, Cfg> {
+impl<'a, 's, T: Clone, Cfg: BroadcastCfg, F: Filter<Item = T>> Future
+    for NextFuture<'a, 's, T, Cfg, F>
+{
     type Output = Result<T, MissedMessages>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -288,7 +307,6 @@ impl<'a, 's, T: Clone, Cfg: BroadcastCfg> Future for NextFuture<'a, 's, T, Cfg> 
             return Poll::Ready(Err(MissedMessages { count: missed }));
         }
 
-        let filter = sub.filter;
         let mut current_idx = sub.next_global_idx;
         let mut found_payload = None;
 
@@ -302,7 +320,7 @@ impl<'a, 's, T: Clone, Cfg: BroadcastCfg> Future for NextFuture<'a, 's, T, Cfg> 
                 sub.next_global_idx = head;
                 return Poll::Ready(Err(MissedMessages { count: usize::MAX }));
             };
-            let is_interested = filter(&item.payload).is_interested();
+            let is_interested = sub.filter.interest(&item.payload).is_interested();
             current_idx += 1;
 
             if is_interested {
@@ -320,7 +338,7 @@ impl<'a, 's, T: Clone, Cfg: BroadcastCfg> Future for NextFuture<'a, 's, T, Cfg> 
                 let Some(item) = state.queue.get(logical_idx) else {
                     break;
                 };
-                if filter(&item.payload).is_interested() {
+                if sub.filter.interest(&item.payload).is_interested() {
                     break;
                 }
                 current_idx += 1;
@@ -338,7 +356,7 @@ impl<'a, 's, T: Clone, Cfg: BroadcastCfg> Future for NextFuture<'a, 's, T, Cfg> 
     }
 }
 
-impl<'a, 's, T, Cfg: BroadcastCfg> Drop for NextFuture<'a, 's, T, Cfg> {
+impl<'a, 's, T, Cfg: BroadcastCfg, F: Filter<Item = T>> Drop for NextFuture<'a, 's, T, Cfg, F> {
     fn drop(&mut self) {
         let mut state = self.subscriber.channel.state.lock();
         if let Some(sub) = state.subscribers.get_mut(&self.subscriber.id) {
@@ -347,7 +365,7 @@ impl<'a, 's, T, Cfg: BroadcastCfg> Drop for NextFuture<'a, 's, T, Cfg> {
     }
 }
 
-impl<'a, T, Cfg: BroadcastCfg> Drop for FilteredSubscriber<'a, T, Cfg> {
+impl<'a, T, Cfg: BroadcastCfg, F: Filter<Item = T>> Drop for FilteredSubscriber<'a, T, Cfg, F> {
     fn drop(&mut self) {
         let mut state = self.channel.state.lock();
         if let Some(mut sub) = state.subscribers.remove(&self.id) {
@@ -359,7 +377,7 @@ impl<'a, T, Cfg: BroadcastCfg> Drop for FilteredSubscriber<'a, T, Cfg> {
                 let logical_idx = (sub.next_global_idx - head) as usize;
                 match state.queue.get_mut(logical_idx) {
                     Some(item) => {
-                        if (sub.filter)(&item.payload).is_interested() {
+                        if sub.filter.interest(&item.payload).is_interested() {
                             item.remaining_subs = item
                                 .remaining_subs
                                 .checked_sub(1)
@@ -770,6 +788,38 @@ mod tests {
 
                 assert_eq!(sub2.next().await.unwrap(), 1);
                 assert_eq!(sub2.next().await.unwrap(), 3);
+            });
+        });
+    }
+
+    #[test]
+    fn test_filtered_broadcast_custom_filter() {
+        struct ThresholdFilter {
+            min: i32,
+        }
+
+        impl Filter for ThresholdFilter {
+            type Item = i32;
+
+            fn interest(&self, payload: &i32) -> Interest {
+                if *payload >= self.min { Interest::Interested } else { Interest::Uninterested }
+            }
+        }
+
+        type TestChannel = FilteredBroadcastChannel<i32, StackCfg<10, 2>, ThresholdFilter>;
+        let channel = TestChannel::new();
+
+        let mut sub = channel.subscribe(ThresholdFilter { min: 25 }).unwrap();
+
+        BoundedExecutor::new(TestExecutor::new(), |s| {
+            s.block_on(async {
+                channel.publish(10).await;
+                channel.publish(20).await;
+                channel.publish(30).await;
+                channel.publish(40).await;
+
+                assert_eq!(sub.next().await, Ok(30));
+                assert_eq!(sub.next().await, Ok(40));
             });
         });
     }
