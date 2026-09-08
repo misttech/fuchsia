@@ -115,6 +115,15 @@ impl<T, Cfg: BroadcastCfg> UnfilteredBroadcastChannelState<T, Cfg> {
         self.subscribers.iter().map(|s| s.next_global_idx).min().unwrap_or(self.next_global_idx)
     }
 
+    fn force_push_back(&mut self, payload: T) -> Option<T> {
+        let prev = self.queue.force_push_back(payload);
+        if prev.is_some() {
+            self.head_global_idx += 1;
+        }
+        self.next_global_idx += 1;
+        prev
+    }
+
     /// Attempts to push a payload to the back of the queue, incrementing `next_global_idx` on success.
     ///
     /// Returns `Err(payload)` if the queue is full and cannot grow.
@@ -223,15 +232,7 @@ impl<T: Clone, Cfg: BroadcastCfg> UnfilteredBroadcastChannel<T, Cfg> {
         let mut state = self.state.lock();
         state.reclaim_space(&self.not_full);
 
-        match state.push_back(payload) {
-            Ok(()) => {}
-            Err(val) => {
-                if state.pop_front().is_some() {
-                    state.push_back(val).unwrap_or_else(|_| panic!("Should succeed after popping"));
-                }
-            }
-        }
-
+        state.force_push_back(payload);
         // Notify all consumers that a message is enqueued
         self.not_empty.notify_all();
     }

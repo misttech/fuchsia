@@ -131,6 +131,15 @@ impl<T, Cfg: BroadcastCfg> FilteredBroadcastChannelState<T, Cfg> {
         self.subscribers.iter().map(|s| s.next_global_idx).min().unwrap_or(self.next_global_idx)
     }
 
+    fn force_push_back(&mut self, payload: T) -> Option<T> {
+        let prev = self.queue.force_push_back(payload);
+        if prev.is_some() {
+            self.head_global_idx += 1;
+        }
+        self.next_global_idx += 1;
+        prev
+    }
+
     fn push_back(&mut self, payload: T) -> Result<(), T> {
         self.queue.try_push_back(payload)?;
         self.next_global_idx += 1;
@@ -249,35 +258,23 @@ impl<T: Clone, Cfg: BroadcastCfg> FilteredBroadcastChannel<T, Cfg> {
         state.reclaim_space(&self.not_full);
 
         let msg_idx = state.next_global_idx;
-        let success = match state.push_back(payload.clone()) {
-            Ok(()) => true,
-            Err(val) => {
-                if state.pop_front().is_some() {
-                    state.push_back(val).is_ok()
-                } else {
-                    false
-                }
-            }
-        };
-
-        if success {
-            for sub in state.subscribers.iter_mut() {
-                // If the subscriber is caught up and ready to read this specific message,
-                // apply the filter. If uninterested, skip it silently. If interested, notify it.
-                // If the subscriber is behind (not caught up), we notify it unconditionally so
-                // it can wake up and process its backlog in the queue.
-                if sub.next_global_idx == msg_idx {
-                    if (sub.filter)(&payload).is_interested() {
-                        if let Some(waker) = sub.waker.take() {
-                            waker.wake();
-                        }
-                    } else {
-                        sub.next_global_idx += 1;
-                    }
-                } else {
+        state.force_push_back(payload.clone());
+        for sub in state.subscribers.iter_mut() {
+            // If the subscriber is caught up and ready to read this specific message,
+            // apply the filter. If uninterested, skip it silently. If interested, notify it.
+            // If the subscriber is behind (not caught up), we notify it unconditionally so
+            // it can wake up and process its backlog in the queue.
+            if sub.next_global_idx == msg_idx {
+                if (sub.filter)(&payload).is_interested() {
                     if let Some(waker) = sub.waker.take() {
                         waker.wake();
                     }
+                } else {
+                    sub.next_global_idx += 1;
+                }
+            } else {
+                if let Some(waker) = sub.waker.take() {
+                    waker.wake();
                 }
             }
         }

@@ -110,46 +110,53 @@ impl<T, A: StorageFamily> Deque<T, A> {
     }
 
     /// Pushes an element to the front of the queue. If the queue is full,
-    /// the rearmost element is overwritten and dropped.
-    pub fn force_push_front(&mut self, value: T) {
+    ///
+    /// The rearmost element returned
+    pub fn force_push_front(&mut self, value: T) -> Option<T> {
         let _ = self.grow_if_at_capacity();
 
         if self.capacity() == 0 {
             panic!("Can't push to deque with ungrowable capacity of 0");
         }
-
-        if self.len == self.capacity() {
+        let out = if self.len == self.capacity() {
             let tail = (self.head + self.len - 1) % self.capacity();
             // SAFETY: `len == cap` and `cap > 0`, so the tail index is guaranteed initialized.
             let old = unsafe { self.inner.buffer_mut()[tail].assume_init_read() };
-            drop(old);
             self.len -= 1;
-        }
+            Some(old)
+        } else {
+            None
+        };
         self.head = (self.head + self.capacity() - 1) % self.capacity();
         self.inner.buffer_mut()[self.head].write(value);
         self.len += 1;
+        out
     }
 
     /// Pushes an element to the back of the queue. If the queue is full,
-    /// the frontmost element is overwritten and dropped.
-    pub fn force_push_back(&mut self, value: T) {
+    ///
+    /// The frontmost element is returned
+    pub fn force_push_back(&mut self, value: T) -> Option<T> {
         let _ = self.grow_if_at_capacity();
 
         if self.capacity() == 0 {
             panic!("Can't push to deque with ungrowable capacity of 0");
         }
 
-        if self.len == self.capacity() {
+        let out = if self.len == self.capacity() {
             let head = self.head;
             self.head = (self.head + 1) % self.capacity();
             // SAFETY: `len == cap` and `cap > 0`, so the head index is guaranteed initialized.
             let old = unsafe { self.inner.buffer_mut()[head].assume_init_read() };
-            drop(old);
             self.len -= 1;
-        }
+            Some(old)
+        } else {
+            None
+        };
         let tail = (self.head + self.len) % self.capacity();
         self.inner.buffer_mut()[tail].write(value);
         self.len += 1;
+        out
     }
 
     /// Removes and returns the element at the front of the queue, if any.
@@ -693,53 +700,40 @@ mod tests {
 
     #[test]
     fn test_deque_force_push() {
-        let counter = Rc::new(Cell::new(0));
-        #[derive(Debug)]
-        struct DropItem(Rc<Cell<i32>>, i32);
-        impl Drop for DropItem {
-            fn drop(&mut self) {
-                self.0.set(self.0.get() + 1);
-            }
-        }
-
         // Use a fixed-size StackDeque so it doesn't grow and we can test the "full" case.
-        let mut deque = StackDeque::<DropItem, 3>::new();
+        let mut deque = StackDeque::<i32, 3>::new();
 
         // 1. Test force_push_back on non-full deque (writing to uninitialized slot)
-        deque.force_push_back(DropItem(counter.clone(), 1));
-        deque.force_push_back(DropItem(counter.clone(), 2));
+        assert!(deque.force_push_back(1).is_none());
+        assert!(deque.force_push_back(2).is_none());
         assert_eq!(deque.len(), 2);
-        assert_eq!(counter.get(), 0); // No drops yet
-        assert_eq!(deque.get(0).unwrap().1, 1);
-        assert_eq!(deque.get(1).unwrap().1, 2);
+        assert_eq!(deque.get(0).unwrap(), &1);
+        assert_eq!(deque.get(1).unwrap(), &2);
 
         // 2. Test force_push_front on non-full deque (writing to uninitialized slot)
-        deque.force_push_front(DropItem(counter.clone(), 3));
+        assert!(deque.force_push_front(3).is_none());
         assert_eq!(deque.len(), 3);
-        assert_eq!(counter.get(), 0); // No drops yet
-        assert_eq!(deque.get(0).unwrap().1, 3);
-        assert_eq!(deque.get(1).unwrap().1, 1);
-        assert_eq!(deque.get(2).unwrap().1, 2);
+        assert_eq!(deque.get(0).unwrap(), &3);
+        assert_eq!(deque.get(1).unwrap(), &1);
+        assert_eq!(deque.get(2).unwrap(), &2);
 
         // Deque is now full: [3, 1, 2] (logical indices: 0->3, 1->1, 2->2)
 
         // 3. Test force_push_back on full deque (should overwrite and drop the frontmost element, which is 3)
-        deque.force_push_back(DropItem(counter.clone(), 4));
+        assert_eq!(deque.force_push_back(4), Some(3));
         assert_eq!(deque.len(), 3);
-        assert_eq!(counter.get(), 1); // One element (3) should be dropped
-        assert_eq!(deque.get(0).unwrap().1, 1);
-        assert_eq!(deque.get(1).unwrap().1, 2);
-        assert_eq!(deque.get(2).unwrap().1, 4);
+        assert_eq!(deque.get(0).unwrap(), &1);
+        assert_eq!(deque.get(1).unwrap(), &2);
+        assert_eq!(deque.get(2).unwrap(), &4);
 
         // Deque is: [1, 2, 4]
 
         // 4. Test force_push_front on full deque (should overwrite and drop the rearmost element, which is 4)
-        deque.force_push_front(DropItem(counter.clone(), 5));
+        assert_eq!(deque.force_push_front(5), Some(4));
         assert_eq!(deque.len(), 3);
-        assert_eq!(counter.get(), 2); // Another element (4) should be dropped
-        assert_eq!(deque.get(0).unwrap().1, 5);
-        assert_eq!(deque.get(1).unwrap().1, 1);
-        assert_eq!(deque.get(2).unwrap().1, 2);
+        assert_eq!(deque.get(0).unwrap(), &5);
+        assert_eq!(deque.get(1).unwrap(), &1);
+        assert_eq!(deque.get(2).unwrap(), &2);
     }
 
     mod proptests {
