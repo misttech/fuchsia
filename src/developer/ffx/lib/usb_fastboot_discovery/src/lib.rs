@@ -404,6 +404,21 @@ async fn find_serial_numbers() -> Vec<String> {
     return serials;
 }
 
+fn check_and_log_usb_speed(device: &usb_rs::DeviceHandle, target_serial: &str) {
+    if let Some(speed) = device.speed() {
+        log::info!("USB Fastboot device '{}' negotiated speed: {}", target_serial, speed);
+        if !speed.is_superspeed() {
+            log::warn!(
+                "USB Fastboot device '{}' is connected at {} (not SuperSpeed). \
+                 Flashing throughput will be severely bottlenecked by USB bus bandwidth (~35-40 MB/s). \
+                 For optimal flashing speed, connect to a USB 3.0 port with a SuperSpeed cable.",
+                target_serial,
+                speed
+            );
+        }
+    }
+}
+
 fn device_to_interface(device: &usb_rs::DeviceHandle) -> Result<Interface, UsbDiscoveryError> {
     device
         .scan_interfaces(URB_POOL_SIZE, |usb_device, interface| {
@@ -429,6 +444,7 @@ where
 
     // Fast path: find the device directly in sysfs without full bus enumeration
     if let Ok(Some(device)) = usb_rs::find_device_by_serial(target_serial) {
+        check_and_log_usb_speed(&device, target_serial);
         return device_to_interface(&device);
     }
 
@@ -437,6 +453,7 @@ where
         .into_iter()
         .find(|d| d.serial().as_deref() == Some(target_serial))
         .ok_or(UsbDiscoveryError::InterfaceNotFound)?;
+    check_and_log_usb_speed(&device, target_serial);
     device_to_interface(&device)
 }
 

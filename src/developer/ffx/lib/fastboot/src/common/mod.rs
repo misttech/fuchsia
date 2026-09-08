@@ -283,7 +283,11 @@ async fn flash_basic_impl<T: FastbootInterface>(
     // Get as a u32 because of fastboot protocol requirements.
     let max_download_size: u64 =
         get_hex_int::<u32>(MAX_DOWNLOAD_SIZE_VAR, fastboot_interface).await?.into();
-    log::trace!("Device Max Download Size: {}", max_download_size);
+    log::info!(
+        "Fastboot device max-download-size: {} bytes ({:.2} MiB)",
+        max_download_size,
+        max_download_size as f64 / (1024.0 * 1024.0)
+    );
     log::trace!("Override Max Download Size: {:?}", override_max_download_size);
     log::trace!("File size: {}", file_size);
 
@@ -418,6 +422,12 @@ async fn streaming_flash_impl<T: FastbootInterface>(
     )
     .ok_or_else(|| streaming_err_helper(format!("Max download size of 0")))?
     .into();
+
+    log::info!(
+        "Fastboot streaming download segment limit: {} bytes ({:.2} MiB)",
+        max_download_bytes,
+        max_download_bytes as f64 / (1024.0 * 1024.0)
+    );
 
     if max_download_bytes % U32_SIZE != 0 {
         return Err(streaming_err_helper(format!("Bad max download size: {max_download_bytes}")));

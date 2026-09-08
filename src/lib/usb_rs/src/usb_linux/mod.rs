@@ -103,6 +103,17 @@ where
     std::fs::read_to_string(serial_path).map(|s| s.trim().to_string()).ok()
 }
 
+/// Reads the negotiated speed from the 'speed' file in the given sysfs device path.
+/// Returns None if there is an error
+fn get_speed_from_sysfs<P>(sysfs_path: P) -> Option<crate::UsbSpeed>
+where
+    P: AsRef<std::path::Path>,
+{
+    let speed_path = sysfs_path.as_ref().join("speed");
+    let speed_str = std::fs::read_to_string(speed_path).ok()?;
+    Some(crate::UsbSpeed::from_sysfs_str(speed_str.trim()))
+}
+
 impl DeviceHandleInner {
     pub(crate) fn new(hdl: String) -> DeviceHandleInner {
         DeviceHandleInner { hdl, serial: std::sync::OnceLock::new() }
@@ -120,6 +131,11 @@ impl DeviceHandleInner {
                 get_serial_from_sysfs(&sysfs_path)
             })
             .clone()
+    }
+
+    pub fn speed(&self) -> Option<crate::UsbSpeed> {
+        let sysfs_path = self.sysfs_path()?;
+        get_speed_from_sysfs(&sysfs_path)
     }
 
     pub fn debug_name(&self) -> String {

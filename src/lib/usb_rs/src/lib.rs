@@ -62,6 +62,78 @@ impl DeviceHandle {
         self.0.sysfs_path()
     }
 
+    /// Returns the negotiated USB connection speed for this device, if available from sysfs.
+    pub fn speed(&self) -> Option<UsbSpeed> {
+        self.0.speed()
+    }
+}
+
+/// Negotiated USB connection speed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UsbSpeed {
+    /// Low speed (1.5 Mbps, USB 1.0)
+    Low,
+    /// Full speed (12 Mbps, USB 1.1)
+    Full,
+    /// High speed (480 Mbps, USB 2.0)
+    High,
+    /// SuperSpeed (5 Gbps, USB 3.0)
+    Super,
+    /// SuperSpeed+ (10 Gbps, USB 3.1)
+    SuperPlus,
+    /// SuperSpeed+ Gen 2x2 (20 Gbps, USB 3.2)
+    SuperPlusBy2,
+    /// Other or unknown speed
+    Other(String),
+}
+
+impl UsbSpeed {
+    pub fn from_sysfs_str(s: &str) -> Self {
+        match s {
+            "1.5" => Self::Low,
+            "12" => Self::Full,
+            "480" => Self::High,
+            "5000" => Self::Super,
+            "10000" => Self::SuperPlus,
+            "20000" => Self::SuperPlusBy2,
+            other => Self::Other(other.to_string()),
+        }
+    }
+
+    /// Theoretical maximum bus bandwidth in megabytes per second (MB/s).
+    pub fn theoretical_max_mbps(&self) -> u32 {
+        match self {
+            Self::Low => 0,
+            Self::Full => 1,
+            Self::High => 60,
+            Self::Super => 625,
+            Self::SuperPlus => 1250,
+            Self::SuperPlusBy2 => 2500,
+            Self::Other(_) => 0,
+        }
+    }
+
+    /// Returns true if this connection speed is at least SuperSpeed (USB 3.0, >= 5 Gbps).
+    pub fn is_superspeed(&self) -> bool {
+        matches!(self, Self::Super | Self::SuperPlus | Self::SuperPlusBy2)
+    }
+}
+
+impl std::fmt::Display for UsbSpeed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Low => write!(f, "LowSpeed (1.5 Mbps)"),
+            Self::Full => write!(f, "FullSpeed (12 Mbps)"),
+            Self::High => write!(f, "HighSpeed (480 Mbps, USB 2.0)"),
+            Self::Super => write!(f, "SuperSpeed (5 Gbps, USB 3.0)"),
+            Self::SuperPlus => write!(f, "SuperSpeed+ (10 Gbps, USB 3.1)"),
+            Self::SuperPlusBy2 => write!(f, "SuperSpeed+ (20 Gbps, USB 3.2)"),
+            Self::Other(s) => write!(f, "{} Mbps", s),
+        }
+    }
+}
+
+impl DeviceHandle {
     /// Given a path to a USB device, scan each interface available on the device. Each interface's
     /// descriptor is passed to the given callback, and the first descriptor for which the callback
     /// returns `true` will be opened and returned.
