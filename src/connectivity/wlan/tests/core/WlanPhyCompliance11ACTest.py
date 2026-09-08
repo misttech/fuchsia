@@ -32,8 +32,6 @@ from openwrt_access_point.lib.access_point_config import (
     BssSettings,
     CapabilitySelection,
     RadioConfig,
-    Security,
-    SecurityOpen,
     SecurityWpa2,
     VhtMode,
 )
@@ -101,19 +99,16 @@ N_CAPABS_20MHZ = [
     capabilities.N_CAPABILITY_HT20,
 ]
 
-SECURITY_MODES: list[Security] = [SecurityOpen(), SecurityWpa2()]
-
 
 @dataclass
 class TestParams:
-    security_mode: Security
     vht_bandwidth_mhz: Literal[20, 40, 80, 160]
     # TODO(http://b/290396383): Type AP capabilities as enums
     n_capabilities: list[str]
     ac_capabilities: list[str]
 
 
-# 6912 test cases
+# 3456 test cases
 class WlanPhyCompliance11ACTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     """Tests for validating 11ac PHYS.
 
@@ -169,12 +164,7 @@ class WlanPhyCompliance11ACTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                     )
 
             # Maintain legacy naming for BUILD.gn filters
-            security = (
-                "open"
-                if isinstance(params.security_mode, SecurityOpen)
-                else "wpa2"
-            )
-            return f"test_11ac_{params.vht_bandwidth_mhz}mhz_{security}{''.join(ret)}"
+            return f"test_11ac_{params.vht_bandwidth_mhz}mhz_wpa2{''.join(ret)}"
 
         self.generate_tests(
             test_logic=self.setup_and_connect,
@@ -191,25 +181,14 @@ class WlanPhyCompliance11ACTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         ssid = AccessPointConfig.random_string(
             hostapd_constants.AP_SSID_LENGTH_2G
         )
-        security: DeprecatedSecurity | None = None
-        password: str | None = None
-
-        match params.security_mode:
-            case SecurityOpen():
-                protocol = fidl_security.Protocol.OPEN
-            case SecurityWpa2():
-                password = AccessPointConfig.random_string()
-                security = DeprecatedSecurity(
-                    security_mode=DeprecatedSecurityMode.WPA2,
-                    password=password,
-                    wpa_cipher=hostapd_constants.WPA2_DEFAULT_CIPER,
-                    wpa2_cipher=hostapd_constants.WPA2_DEFAULT_CIPER,
-                )
-                protocol = fidl_security.Protocol.WPA2_PERSONAL
-            case _:
-                raise signals.TestError(
-                    f"unsupported security_mode {params.security_mode}"
-                )
+        password = AccessPointConfig.random_string()
+        security = DeprecatedSecurity(
+            security_mode=DeprecatedSecurityMode.WPA2,
+            password=password,
+            wpa_cipher=hostapd_constants.WPA2_DEFAULT_CIPER,
+            wpa2_cipher=hostapd_constants.WPA2_DEFAULT_CIPER,
+        )
+        protocol = fidl_security.Protocol.WPA2_PERSONAL
 
         if self.openwrt_ap:
             config = AccessPointConfig(
@@ -223,7 +202,7 @@ class WlanPhyCompliance11ACTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,
-                                security=params.security_mode,
+                                security=SecurityWpa2(),
                                 password=password,
                             )
                         ],
@@ -300,14 +279,11 @@ class WlanPhyCompliance11ACTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             f"got {got_channel}.",
         )
 
-    # 1728 tests
+    # 864 tests
     def _generate_20mhz_test_args(self) -> list[tuple[TestParams]]:
         test_args: list[tuple[TestParams]] = []
 
-        # 864 test cases for open security
-        # 864 test cases for wpa2 security
         for combination in itertools.product(
-            SECURITY_MODES,
             VHT_MAX_MPDU_LEN,
             RXLDPC,
             RX_STBC,
@@ -319,10 +295,34 @@ class WlanPhyCompliance11ACTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             test_args.append(
                 (
                     TestParams(
-                        security_mode=combination[0],
                         vht_bandwidth_mhz=20,
                         n_capabilities=N_CAPABS_20MHZ,
-                        ac_capabilities=list(combination[1:]),
+                        ac_capabilities=list(combination),
+                    ),
+                )
+            )
+
+        return test_args
+
+    # 864 tests
+    def _generate_40mhz_test_args(self) -> list[tuple[TestParams]]:
+        test_args: list[tuple[TestParams]] = []
+
+        for combination in itertools.product(
+            VHT_MAX_MPDU_LEN,
+            RXLDPC,
+            RX_STBC,
+            TX_STBC,
+            MAX_A_MPDU,
+            RX_ANTENNA,
+            TX_ANTENNA,
+        ):
+            test_args.append(
+                (
+                    TestParams(
+                        vht_bandwidth_mhz=40,
+                        n_capabilities=N_CAPABS_40MHZ,
+                        ac_capabilities=list(combination),
                     ),
                 )
             )
@@ -330,42 +330,10 @@ class WlanPhyCompliance11ACTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         return test_args
 
     # 1728 tests
-    def _generate_40mhz_test_args(self) -> list[tuple[TestParams]]:
-        test_args: list[tuple[TestParams]] = []
-
-        # 864 test cases for open security
-        # 864 test cases for wpa2 security
-        for combination in itertools.product(
-            SECURITY_MODES,
-            VHT_MAX_MPDU_LEN,
-            RXLDPC,
-            RX_STBC,
-            TX_STBC,
-            MAX_A_MPDU,
-            RX_ANTENNA,
-            TX_ANTENNA,
-        ):
-            test_args.append(
-                (
-                    TestParams(
-                        security_mode=combination[0],
-                        vht_bandwidth_mhz=40,
-                        n_capabilities=N_CAPABS_40MHZ,
-                        ac_capabilities=list(combination[1:]),
-                    ),
-                )
-            )
-
-        return test_args
-
-    # 3456 tests
     def _generate_80mhz_test_args(self) -> list[tuple[TestParams]]:
         test_args: list[tuple[TestParams]] = []
 
-        # 1728 test cases for open security
-        # 1728 test cases for wpa2 security
         for combination in itertools.product(
-            SECURITY_MODES,
             VHT_MAX_MPDU_LEN,
             RXLDPC,
             SHORT_GI_80,
@@ -378,10 +346,9 @@ class WlanPhyCompliance11ACTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             test_args.append(
                 (
                     TestParams(
-                        security_mode=combination[0],
                         vht_bandwidth_mhz=80,
                         n_capabilities=N_CAPABS_40MHZ,
-                        ac_capabilities=list(combination[1:]),
+                        ac_capabilities=list(combination),
                     ),
                 )
             )
