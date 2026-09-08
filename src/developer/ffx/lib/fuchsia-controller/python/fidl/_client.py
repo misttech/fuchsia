@@ -236,15 +236,13 @@ class FidlClient(metaclass=FidlMeta):
                 #    tasks in the task group, making cleanup predictable.
                 try:
                     async with asyncio.TaskGroup() as tg:
-                        read_ready_task = asyncio.create_task(
+                        read_ready_task = tg.create_task(
                             self._channel_waker.wait_ready(self._channel)
                         )
-                        staged_msg_task = asyncio.create_task(
+                        staged_msg_task = tg.create_task(
                             self._get_staged_message(txid)
                         )
-                        epitaph_task = asyncio.create_task(
-                            self.epitaph_event.wait()
-                        )
+                        epitaph_task = tg.create_task(self.epitaph_event.wait())
 
                         done, pending = await asyncio.wait(
                             [read_ready_task, staged_msg_task, epitaph_task],
