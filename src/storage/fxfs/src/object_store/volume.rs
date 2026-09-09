@@ -722,7 +722,6 @@ mod tests {
             let parent_store = store.parent_store().unwrap();
             let txn_options = Options {
                 skip_journal_checks: true,
-                skip_key_roll: true,
                 borrow_metadata_space: true,
                 allocator_reservation: Some(fs.object_manager().metadata_reservation()),
                 ..Default::default()

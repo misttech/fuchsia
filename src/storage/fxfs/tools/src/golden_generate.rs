@@ -4,14 +4,17 @@
 
 use crate::golden_common::{
     BLOB_LIST_PATH, DEFAULT_VOLUME, DELETED_FILE_PATH, EXPECTED_FILE_CONTENT, IMAGE_BLOCK_SIZE,
-    REGULAR_DIRECTORY_PATH, REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH,
-    WRAPPING_KEY_ID, latest_image_filename,
+    LARGE_ATTR_COUNT, LARGE_ATTR_PREFIX, MAX_INLINE_XATTR_SIZE, REGULAR_DIRECTORY_PATH,
+    REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH, WRAPPING_KEY_ID,
+    latest_image_filename,
 };
 use crate::ops;
 use anyhow::{Context, Error, bail};
 use chrono::Local;
+use fxfs::errors::FxfsError;
 use fxfs::filesystem::{FxFilesystem, OpenFxFilesystem, SyncOptions};
-use fxfs::object_store::{ObjectStore, ProjectId};
+use fxfs::object_store::transaction::{LockKey, Mutation, Options, lock_keys};
+use fxfs::object_store::{ObjectKey, ObjectStore, ObjectValue, ProjectId};
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::new_insecure_crypt;
 use fxfs_make_blob_image::{CompressionAlgorithm, FxBlobBuilder};
@@ -88,6 +91,29 @@ async fn activity_in_volume(fs: &OpenFxFilesystem, vol: &Arc<ObjectStore>) -> Re
         b"different value",
     )
     .await?;
+
+    // Create a large transaction with many extended attributes.
+    {
+        let reg_file_path = Path::new(REGULAR_FILE_PATH);
+        let dir = ops::walk_dir(vol, reg_file_path.parent().unwrap()).await?;
+        let filename = reg_file_path.file_name().unwrap().to_str().unwrap();
+        let (node_id, _, _) = dir.lookup(filename).await?.ok_or(FxfsError::NotFound)?;
+        let mut transaction = vol
+            .new_transaction(
+                lock_keys![LockKey::object(vol.store_object_id(), node_id)],
+                Options::default(),
+            )
+            .await?;
+        for i in 0..LARGE_ATTR_COUNT {
+            let name = format!("{LARGE_ATTR_PREFIX}{i}").into_bytes();
+            let mutation = Mutation::replace_or_insert_object(
+                ObjectKey::extended_attribute(node_id, name),
+                ObjectValue::inline_extended_attribute(vec![0u8; MAX_INLINE_XATTR_SIZE]),
+            );
+            transaction.add(vol.store_object_id(), mutation);
+        }
+        transaction.commit().await?;
+    }
 
     // Exercise fscrypt and casefold with unicode filenames.
     if vol.crypt().is_some() {

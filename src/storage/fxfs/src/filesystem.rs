@@ -90,11 +90,6 @@ pub struct Options {
     /// True if the filesystem is read-only.
     pub read_only: bool,
 
-    /// The metadata keys will be rolled after this many bytes.  This must be large enough such that
-    /// we can't end up with more than two live keys (so it must be bigger than the maximum possible
-    /// size of unflushed journal contents).  This is exposed for testing purposes.
-    pub roll_metadata_key_byte_count: u64,
-
     /// Hooks for filesystem events (e.g. pre_commit, before_commit).
     pub hooks: Arc<HooksHandle>,
 
@@ -144,7 +139,6 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Options {
-            roll_metadata_key_byte_count: 128 * 1024 * 1024,
             read_only: false,
             hooks: Arc::<HooksHandle>::default(),
             post_commit_hook: None,
@@ -341,12 +335,6 @@ impl FxFilesystemBuilder {
     /// superblock (as specified).
     pub fn image_builder_mode(mut self, mode: Option<SuperBlockInstance>) -> Self {
         self.options.image_builder_mode = mode;
-        self
-    }
-
-    /// Sets how often the metadata keys are rolled. See `Options::roll_metadata_key_byte_count`.
-    pub fn roll_metadata_key_byte_count(mut self, roll_metadata_key_byte_count: u64) -> Self {
-        self.options.roll_metadata_key_byte_count = roll_metadata_key_byte_count;
         self
     }
 

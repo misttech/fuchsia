@@ -8,8 +8,9 @@ mod golden_common;
 
 use crate::golden_common::{
     BLOB_LIST_PATH, DEFAULT_VOLUME, DELETED_FILE_PATH, EXPECTED_FILE_CONTENT, IMAGE_BLOCK_SIZE,
-    REGULAR_DIRECTORY_PATH, REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH,
-    WRAPPING_KEY_ID, latest_image_filename,
+    LARGE_ATTR_COUNT, LARGE_ATTR_PREFIX, MAX_INLINE_XATTR_SIZE, REGULAR_DIRECTORY_PATH,
+    REGULAR_FILE_PATH, UNENCRYPTED_VOLUME, VERITY_FILE_PATH, WRAPPING_KEY_ID,
+    latest_image_filename,
 };
 use anyhow::{Context, Error, ensure};
 use fidl::endpoints::create_proxy;
@@ -20,7 +21,7 @@ use fxfs::filesystem::FxFilesystem;
 use fxfs::fsck;
 use fxfs::log::*;
 use fxfs::object_store::volume::root_volume;
-use fxfs::serialized_types::{LATEST_VERSION, Version};
+use fxfs::serialized_types::{AES_JOURNAL_ENCRYPTION_VERSION, LATEST_VERSION, Version};
 use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::new_insecure_crypt;
 use fxfs_make_blob_image::BLOB_VOLUME_NAME;
@@ -52,7 +53,11 @@ fn load_device(path: &Path) -> Result<FakeDevice, Error> {
     Ok(FakeDevice::from_image(zstd::Decoder::new(std::fs::File::open(path)?)?, IMAGE_BLOCK_SIZE)?)
 }
 
-async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Result<(), Error> {
+async fn check_data_volume(
+    dir: fio::DirectoryProxy,
+    check_fscrypt: bool,
+    version: Version,
+) -> Result<(), Error> {
     let all_attributes = fio::NodeAttributesQuery::all();
 
     let (dir_mut_attrs, dir_imm_attrs) = dir
@@ -171,6 +176,22 @@ async fn check_data_volume(dir: fio::DirectoryProxy, check_fscrypt: bool) -> Res
         .map_err(Status::err_from_raw)
         .context("get_next on file xattrs")?;
     ensure!(entries.contains(&b"user.hash".to_vec()), "Expected user.hash in file xattrs list");
+
+    if version >= AES_JOURNAL_ENCRYPTION_VERSION {
+        for i in 0..LARGE_ATTR_COUNT {
+            let attr_name = format!("{LARGE_ATTR_PREFIX}{i}").into_bytes();
+            ensure!(
+                reg_file
+                    .get_extended_attribute(&attr_name)
+                    .await
+                    .context("FIDL call get_extended_attribute on file for large attr")?
+                    .map_err(Status::err_from_raw)
+                    .context("get_extended_attribute on file for large attr")?
+                    == fio::ExtendedAttributeValue::Bytes(vec![0u8; MAX_INLINE_XATTR_SIZE]),
+                "Expected large attribute {attr_name:?} on regular file"
+            );
+        }
+    }
 
     let verity_file = open_file(&dir, VERITY_FILE_PATH, fio::PERM_READABLE).await?;
     let (verity_mut_attrs, verity_imm_attrs) = verity_file
@@ -425,7 +446,7 @@ async fn check_image(path: &Path) -> Result<(), Error> {
                         blob_list.push(blob_hash.clone());
                     }
                 }
-                check_data_volume(dir, check_fscrypt)
+                check_data_volume(dir, check_fscrypt, version)
                     .await
                     .with_context(|| format!("Checking {}", vol_name))?;
             }

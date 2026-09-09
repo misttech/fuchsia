@@ -19,7 +19,7 @@ use crate::object_store::journal::super_block::{
 use crate::object_store::journal::{
     JournalRecord, JournalRecordV40, JournalRecordV41, JournalRecordV42, JournalRecordV43,
     JournalRecordV46, JournalRecordV47, JournalRecordV49, JournalRecordV50, JournalRecordV54,
-    JournalRecordV55, JournalRecordV56,
+    JournalRecordV55, JournalRecordV56, JournalRecordV57,
 };
 use crate::object_store::object_record::{
     FsverityMetadata, FsverityMetadataV33, FsverityMetadataV50, ObjectKey, ObjectKeyV40,
@@ -28,11 +28,11 @@ use crate::object_store::object_record::{
 };
 use crate::object_store::transaction::{
     Mutation, MutationV40, MutationV41, MutationV43, MutationV46, MutationV47, MutationV49,
-    MutationV50, MutationV54, MutationV55, MutationV56,
+    MutationV50, MutationV54, MutationV55, MutationV56, MutationV57,
 };
 use crate::object_store::{
-    EncryptedMutations, EncryptedMutationsV40, EncryptedMutationsV49, StoreInfo, StoreInfoV40,
-    StoreInfoV49, StoreInfoV52,
+    EncryptedMutations, EncryptedMutationsV40, EncryptedMutationsV49, EncryptedTransaction,
+    EncryptedTransactionV57, StoreInfo, StoreInfoV40, StoreInfoV49, StoreInfoV52,
 };
 use crate::serialized_types::{Version, Versioned, VersionedLatest, versioned_type};
 use std::collections::BTreeMap;
@@ -46,7 +46,7 @@ use std::collections::BTreeMap;
 ///
 /// IMPORTANT: When changing this (major or minor), update the list of possible versions at
 /// https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/cobalt_config/fuchsia/local_storage/versions.txt.
-pub const LATEST_VERSION: Version = Version { major: 56, minor: 0 };
+pub const LATEST_VERSION: Version = Version { major: 57, minor: 0 };
 
 /// From this version of the filesystem, the sequence number is removed from the Item struct.
 pub const REMOVE_ITEM_SEQUENCE_VERSION: u32 = 55;
@@ -69,11 +69,19 @@ pub const SMALL_SUPERBLOCK_VERSION: Version = Version { major: 44, minor: 0 };
 /// first extent. Prior to this, the first extent was assumed based on hard-coded location.
 pub const FIRST_EXTENT_IN_SUPERBLOCK_VERSION: Version = Version { major: 45, minor: 0 };
 
+// From this version forward, the journal encryption uses AES-256-XTS instead of Chacha20, as well
+// as chunking the mutations together for a transaction.
+pub const AES_JOURNAL_ENCRYPTION_VERSION: Version = Version { major: 57, minor: 0 };
+
 /// This trait prevents types from showing up in `versioned_types` multiple times. `versioned_types`
 /// implements this trait for every type passed to it. If a type is listed multiple times then this
 /// trait will be implemented for the type multiple times which will fail to compile.
 #[allow(dead_code)]
 trait UniqueVersionForType {}
+
+trait HasVersion {
+    const VERSION: u32;
+}
 
 macro_rules! versioned_types {
     ( $( $name:ident { $latest:literal.. => $latest_type:ty $(, $major:literal.. => $type:ty )* $(,)? } )+ ) => {
@@ -87,6 +95,11 @@ macro_rules! versioned_types {
 
             impl UniqueVersionForType for $latest_type {}
             $( impl UniqueVersionForType for $type {} )*
+
+            impl HasVersion for $latest_type {
+                const VERSION: u32 = $latest;
+            }
+
         )+
 
         pub fn get_type_fingerprints(version: Version) -> BTreeMap<String, String> {
@@ -129,11 +142,15 @@ versioned_types! {
         49.. => EncryptedMutationsV49,
         40.. => EncryptedMutationsV40,
     }
+    EncryptedTransaction {
+        57.. => EncryptedTransactionV57,
+    }
     FsverityMetadata {
         50.. => FsverityMetadataV50,
         33.. => FsverityMetadataV33,
     }
     JournalRecord {
+        57.. => JournalRecordV57,
         56.. => JournalRecordV56,
         55.. => JournalRecordV55,
         54.. => JournalRecordV54,
@@ -147,6 +164,7 @@ versioned_types! {
         40.. => JournalRecordV40,
     }
     Mutation {
+        57.. => MutationV57,
         56.. => MutationV56,
         55.. => MutationV55,
         54.. => MutationV54,
@@ -203,3 +221,10 @@ versioned_types! {
         53.. => BlobMetadataV53,
     }
 }
+
+// EncryptedTransaction is actually inside the Mutation type, but obscured by a layer of
+// encryption. This ensures that when the EncryptedTransaction type is incremented, so is the
+// Mutation and thus any types above that.
+static_assertions::const_assert!(
+    <EncryptedTransaction as HasVersion>::VERSION <= <Mutation as HasVersion>::VERSION
+);

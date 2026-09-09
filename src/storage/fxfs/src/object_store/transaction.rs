@@ -45,9 +45,6 @@ pub struct Options<'a> {
     /// might alleviate journal space (i.e. compaction).
     pub skip_journal_checks: bool,
 
-    /// If true, don't check if we need to roll the mutations key.
-    pub skip_key_roll: bool,
-
     /// If true, borrow metadata space from the metadata reservation.  This setting should be set to
     /// true for any transaction that will either not affect space usage after compaction
     /// (e.g. setting attributes), or reduce space usage (e.g. unlinking).  Otherwise, a transaction
@@ -78,13 +75,13 @@ pub struct TransactionLocks<'a>(pub WriteGuard<'a>);
 /// transaction, these are stored as a set which allows some mutations to be deduplicated and found
 /// (and we require custom comparison functions below).  For example, we need to be able to find
 /// object size changes.
-pub type Mutation = MutationV56;
+pub type Mutation = MutationV57;
 
 #[derive(
     Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, TypeFingerprint, Versioned,
 )]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum MutationV56 {
+pub enum MutationV57 {
     ObjectStore(ObjectStoreMutationV56),
     EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
     Allocator(AllocatorMutationV32),
@@ -94,6 +91,20 @@ pub enum MutationV56 {
     /// with compacted ones.
     EndFlush,
     /// Volume has been deleted. Requires we remove it from the set of managed ObjectStore.
+    DeleteVolume,
+    UpdateBorrowed(u64),
+    UpdateMutationsKey(UpdateMutationsKey),
+    CreateInternalDir(u64),
+}
+
+#[derive(Migrate, Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint, Versioned)]
+#[migrate_to_version(MutationV57)]
+pub enum MutationV56 {
+    ObjectStore(ObjectStoreMutationV56),
+    EncryptedObjectStore(#[serde(with = "crate::zerocopy_serialization")] Box<[u8]>),
+    Allocator(AllocatorMutationV32),
+    BeginFlush,
+    EndFlush,
     DeleteVolume,
     UpdateBorrowed(u64),
     UpdateMutationsKey(UpdateMutationsKey),
@@ -542,11 +553,6 @@ pub enum LockKey {
         store_object_id: u64,
     },
 
-    /// Used to lock mutations key roll.
-    MutationsKeyRoll {
-        store_object_id: u64,
-    },
-
     /// Used to serialize pre caching of keys.  The lock ordering is different for this: it is
     /// acquired in `Filesystem::commit_transaction` and happens *after* other keys have been
     /// promoted to write locks, but before the commit lock.
@@ -574,10 +580,6 @@ impl LockKey {
 
     pub const fn truncate(store_object_id: u64, object_id: u64) -> Self {
         LockKey::Truncate { store_object_id, object_id }
-    }
-
-    pub const fn mutations_key_roll(store_object_id: u64) -> Self {
-        LockKey::MutationsKeyRoll { store_object_id }
     }
 
     pub const fn pre_cache_keys(store_object_id: u64) -> Self {

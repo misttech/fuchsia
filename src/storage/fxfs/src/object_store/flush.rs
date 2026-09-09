@@ -122,10 +122,9 @@ impl ObjectStore {
             ) {
                 let mut store_info = self.store.store_info().unwrap();
 
-                // Capture the offset in the cipher stream.
                 let mutations_cipher = self.store.mutations_cipher.lock();
                 if let Some(cipher) = mutations_cipher.as_ref() {
-                    store_info.mutations_cipher_offset = cipher.offset();
+                    store_info.mutations_cipher_offset = cipher.sequence_number();
                 }
 
                 self.store_info.set(store_info).unwrap();
@@ -139,7 +138,6 @@ impl ObjectStore {
         let reservation = object_manager.metadata_reservation();
         let txn_options = Options {
             skip_journal_checks: true,
-            skip_key_roll: true,
             borrow_metadata_space: true,
             allocator_reservation: Some(reservation),
             ..Default::default()
@@ -357,7 +355,6 @@ impl ObjectStore {
         let reservation = object_manager.metadata_reservation();
         let txn_options = Options {
             skip_journal_checks: true,
-            skip_key_roll: true,
             borrow_metadata_space: true,
             allocator_reservation: Some(reservation),
             ..Default::default()
@@ -481,7 +478,7 @@ impl ObjectStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, JournalingObject, SyncOptions};
+    use crate::filesystem::{FxFilesystem, JournalingObject};
     use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle};
     use crate::object_store::directory::Directory;
     use crate::object_store::transaction::{Options, lock_keys};
@@ -494,143 +491,6 @@ mod tests {
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
-
-    async fn run_key_roll_test(flush_before_unlock: bool) {
-        let device = DeviceHolder::new(FakeDevice::new(8192, 1024));
-        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
-        let store_id = {
-            let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
-            root_volume
-                .new_volume(
-                    "test",
-                    NewChildStoreOptions {
-                        options: StoreOptions {
-                            crypt: Some(Arc::new(new_insecure_crypt())),
-                            ..StoreOptions::default()
-                        },
-                        ..NewChildStoreOptions::default()
-                    },
-                )
-                .await
-                .expect("new_volume failed")
-                .store_object_id()
-        };
-
-        fs.close().await.expect("close failed");
-        let device = fs.take_device().await;
-        device.reopen(false);
-
-        let fs = FxFilesystemBuilder::new()
-            .roll_metadata_key_byte_count(512 * 1024)
-            .open(device)
-            .await
-            .expect("open failed");
-
-        let (first_filename, last_filename) = {
-            let store = fs.object_manager().store(store_id).expect("store not found");
-            store.unlock(Arc::new(new_insecure_crypt())).await.expect("unlock failed");
-
-            // Keep writing until we notice the key has rolled.
-            let root_dir = Directory::open(&store, store.root_directory_object_id())
-                .await
-                .expect("open failed");
-
-            let mut last_mutations_cipher_offset = 0;
-            let mut i = 0;
-            let first_filename = format!("{:<200}", i);
-            loop {
-                let mut transaction = store
-                    .new_transaction(
-                        lock_keys![LockKey::object(store_id, root_dir.object_id())],
-                        Options::default(),
-                    )
-                    .await
-                    .expect("new_transaction failed");
-                root_dir
-                    .create_child_file(&mut transaction, &format!("{:<200}", i))
-                    .await
-                    .expect("create_child_file failed");
-                i += 1;
-                transaction.commit().await.expect("commit failed");
-                let cipher_offset = store.mutations_cipher.lock().as_ref().unwrap().offset();
-                if cipher_offset < last_mutations_cipher_offset {
-                    break;
-                }
-                last_mutations_cipher_offset = cipher_offset;
-            }
-
-            // Sync now, so that we can be fairly certain that the next transaction *won't* trigger
-            // a store flush (so we'll still have something to flush when we reopen the filesystem).
-            fs.sync(SyncOptions::default()).await.expect("sync failed");
-
-            // Write one more file to ensure the cipher has a non-zero offset.
-            let mut transaction = store
-                .new_transaction(
-                    lock_keys![LockKey::object(store_id, root_dir.object_id())],
-                    Options::default(),
-                )
-                .await
-                .expect("new_transaction failed");
-            let last_filename = format!("{:<200}", i);
-            root_dir
-                .create_child_file(&mut transaction, &last_filename)
-                .await
-                .expect("create_child_file failed");
-            transaction.commit().await.expect("commit failed");
-            (first_filename, last_filename)
-        };
-
-        fs.close().await.expect("close failed");
-
-        // Reopen and make sure replay succeeds.
-        let device = fs.take_device().await;
-        device.reopen(false);
-        let fs = FxFilesystemBuilder::new()
-            .roll_metadata_key_byte_count(512 * 1024)
-            .open(device)
-            .await
-            .expect("open failed");
-
-        if flush_before_unlock {
-            // Flush before unlocking the store which will see that the encrypted mutations get
-            // written to a file.
-            fs.object_manager().flush().await.expect("flush failed");
-        }
-
-        {
-            let store = fs.object_manager().store(store_id).expect("store not found");
-            store.unlock(Arc::new(new_insecure_crypt())).await.expect("unlock failed");
-
-            // The key should get rolled when we unlock.
-            assert_eq!(store.mutations_cipher.lock().as_ref().unwrap().offset(), 0);
-
-            let root_dir = Directory::open(&store, store.root_directory_object_id())
-                .await
-                .expect("open failed");
-            root_dir
-                .lookup(&first_filename)
-                .await
-                .expect("Lookup failed")
-                .expect("First created file wasn't present");
-            root_dir
-                .lookup(&last_filename)
-                .await
-                .expect("Lookup failed")
-                .expect("Last created file wasn't present");
-        }
-
-        fs.close().await.expect("close failed");
-    }
-
-    #[fuchsia::test(threads = 10)]
-    async fn test_metadata_key_roll() {
-        run_key_roll_test(/* flush_before_unlock: */ false).await;
-    }
-
-    #[fuchsia::test(threads = 10)]
-    async fn test_metadata_key_roll_with_flush_before_unlock() {
-        run_key_roll_test(/* flush_before_unlock: */ true).await;
-    }
 
     #[fuchsia::test]
     async fn test_flush_when_locked() {
