@@ -16,33 +16,26 @@
 #include "zircon/errors.h"
 
 using ::inspect::testing::ChildrenMatch;
-using ::inspect::testing::DoubleArrayIs;
 using ::inspect::testing::DoubleIs;
-using ::inspect::testing::IntArrayIs;
 using ::inspect::testing::IntIs;
 using ::inspect::testing::NameMatches;
 using ::inspect::testing::NodeMatches;
 using ::inspect::testing::PropertyList;
 using ::inspect::testing::StringIs;
-using ::inspect::testing::UintArrayIs;
 using ::inspect::testing::UintIs;
 using ::testing::AllOf;
-using ::testing::ElementsAre;
 using ::testing::UnorderedElementsAre;
 
 namespace power_observability {
 
-// Extracts timestamps from a "history" hierarchy in sharded format.
+// Extracts timestamps from a "history" hierarchy.
 std::vector<int64_t> GetTimestamps(const inspect::Hierarchy* history_hierarchy, size_t count) {
   std::vector<int64_t> timestamps;
   for (size_t i = 0; i < count; i++) {
-    size_t shard_idx = i / internal::kShardCapacity;
-    size_t slot_idx = i % internal::kShardCapacity;
-    auto h = history_hierarchy->GetByPath({"shards", std::to_string(shard_idx)});
+    auto h = history_hierarchy->GetByPath({std::format("{}", i)});
     EXPECT_NE(h, nullptr);
-    auto property = h->node().get_property<inspect::IntArrayValue>("times");
-    EXPECT_NE(property, nullptr);
-    timestamps.push_back(property->value()[slot_idx]);
+    auto property = h->node().get_property<inspect::IntPropertyValue>("@time");
+    timestamps.push_back(property->value());
   }
   return timestamps;
 }
@@ -132,8 +125,7 @@ TEST_P(OffOnTest, OffOn) {
   auto metadata_hierarchy = recorder_hierarchy->GetByPath({"metadata"});
   ASSERT_NE(metadata_hierarchy, nullptr);
   EXPECT_THAT(*metadata_hierarchy,
-              AllOf(NodeMatches(PropertyList(UnorderedElementsAre(StringIs("format_version", "2.0"),
-                                                                  StringIs("name", "my_switch"),
+              AllOf(NodeMatches(PropertyList(UnorderedElementsAre(StringIs("name", "my_switch"),
                                                                   StringIs("type", "enum")))),
                     ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("states"))))));
   auto states_hierarchy = metadata_hierarchy->GetByPath({"states"});
@@ -144,21 +136,22 @@ TEST_P(OffOnTest, OffOn) {
   auto history = recorder_hierarchy->GetByPath({"history"});
   ASSERT_NE(history, nullptr);
 
-  EXPECT_THAT(*history,
-              AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                        UintIs("current_index", lazy_record ? 0 : 4), UintIs("current_size", 4)))),
-                    ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
+  EXPECT_THAT(*history, ChildrenMatch(UnorderedElementsAre(
+                            NodeMatches(NameMatches("0")), NodeMatches(NameMatches("1")),
+                            NodeMatches(NameMatches("2")), NodeMatches(NameMatches("3")))));
 
-  auto shard_0 = history->GetByPath({"shards", "0"});
-  ASSERT_NE(shard_0, nullptr);
-  size_t expected_shard_size = lazy_record ? 4 : 10;
-  std::vector<uint64_t> expected_values = {0, 1, 0, 1};
-  if (!lazy_record) {
-    expected_values.resize(10, 0);
-  }
-  EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                            IntArrayIs("times", testing::SizeIs(expected_shard_size)),
-                            UintArrayIs("values", expected_values)))));
+  EXPECT_THAT(*history->GetByPath({"0"}),
+              NodeMatches(PropertyList(
+                  UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "OFF")))));
+  EXPECT_THAT(*history->GetByPath({"1"}),
+              NodeMatches(PropertyList(
+                  UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "ON")))));
+  EXPECT_THAT(*history->GetByPath({"2"}),
+              NodeMatches(PropertyList(
+                  UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "OFF")))));
+  EXPECT_THAT(*history->GetByPath({"3"}),
+              NodeMatches(PropertyList(
+                  UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "ON")))));
 
   // Make sure timestamps are non-decreasing.
   auto timestamps = GetTimestamps(history, 4);
@@ -203,15 +196,10 @@ TEST_F(StateRecorderTest, ResetCount) {
   auto history = recorder_hierarchy->GetByPath({"history"});
   ASSERT_NE(history, nullptr);
 
-  EXPECT_THAT(*history, AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                                  UintIs("current_index", 0), UintIs("current_size", 1)))),
-                              ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
-
-  auto shard_0 = history->GetByPath({"shards", "0"});
-  ASSERT_NE(shard_0, nullptr);
-  EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                            IntArrayIs("times", std::vector<int64_t>{kTime2.get()}),
-                            UintArrayIs("values", std::vector<uint64_t>{0})))));
+  EXPECT_THAT(*history, ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("0")))));
+  EXPECT_THAT(*history->GetByPath({"0"}),
+              NodeMatches(PropertyList(
+                  UnorderedElementsAre(IntIs("@time", kTime2.get()), StringIs("value", "OFF")))));
 
   auto reset_info =
       hierarchy.GetByPath({"power_observability_state_recorders", "my_switch", "reset_info"});
@@ -292,31 +280,25 @@ TEST_F(StateRecorderTest, MultipleRecorders) {
 
   auto history_0 = recorders_root_hierarchy->GetByPath({"switch_0", "history"});
   ASSERT_NE(history_0, nullptr);
-  EXPECT_THAT(*history_0, AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                                    UintIs("current_index", 2), UintIs("current_size", 2)))),
-                                ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
-  auto shard_0_0 = history_0->GetByPath({"shards", "0"});
-  ASSERT_NE(shard_0_0, nullptr);
-  std::vector<uint64_t> expected_values_0 = {0, 1};
-  expected_values_0.resize(10, 0);
-  EXPECT_THAT(
-      *shard_0_0,
-      NodeMatches(PropertyList(UnorderedElementsAre(IntArrayIs("times", testing::SizeIs(10)),
-                                                    UintArrayIs("values", expected_values_0)))));
+  EXPECT_THAT(*history_0, ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("0")),
+                                                             NodeMatches(NameMatches("1")))));
+  EXPECT_THAT(*history_0->GetByPath({"0"}),
+              NodeMatches(PropertyList(
+                  UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "OFF")))));
+  EXPECT_THAT(*history_0->GetByPath({"1"}),
+              NodeMatches(PropertyList(
+                  UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "ON")))));
 
   auto history_1 = recorders_root_hierarchy->GetByPath({"switch_1", "history"});
   ASSERT_NE(history_1, nullptr);
-  EXPECT_THAT(*history_1, AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                                    UintIs("current_index", 2), UintIs("current_size", 2)))),
-                                ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
-  auto shard_1_0 = history_1->GetByPath({"shards", "0"});
-  ASSERT_NE(shard_1_0, nullptr);
-  std::vector<uint64_t> expected_values_1 = {1, 0};
-  expected_values_1.resize(10, 0);
-  EXPECT_THAT(
-      *shard_1_0,
-      NodeMatches(PropertyList(UnorderedElementsAre(IntArrayIs("times", testing::SizeIs(10)),
-                                                    UintArrayIs("values", expected_values_1)))));
+  EXPECT_THAT(*history_1, ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("0")),
+                                                             NodeMatches(NameMatches("1")))));
+  EXPECT_THAT(*history_1->GetByPath({"0"}),
+              NodeMatches(PropertyList(
+                  UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "ENABLED")))));
+  EXPECT_THAT(*history_1->GetByPath({"1"}),
+              NodeMatches(PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
+                                                            StringIs("value", "DISABLED")))));
 }
 
 class ThreeStatesTest : public StateRecorderTest, public ::testing::WithParamInterface<bool> {};
@@ -368,21 +350,19 @@ TEST_P(ThreeStatesTest, ThreeStates) {
   auto history = recorder_hierarchy->GetByPath({"history"});
   ASSERT_NE(history, nullptr);
 
-  EXPECT_THAT(*history,
-              AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                        UintIs("current_index", lazy_record ? 0 : 3), UintIs("current_size", 3)))),
-                    ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
+  EXPECT_THAT(*history, ChildrenMatch(UnorderedElementsAre(NodeMatches(NameMatches("0")),
+                                                           NodeMatches(NameMatches("1")),
+                                                           NodeMatches(NameMatches("2")))));
 
-  auto shard_0 = history->GetByPath({"shards", "0"});
-  ASSERT_NE(shard_0, nullptr);
-  size_t expected_shard_size = lazy_record ? 3 : 10;
-  std::vector<uint64_t> expected_values = {0, 2, 1};
-  if (!lazy_record) {
-    expected_values.resize(10, 0);
-  }
-  EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                            IntArrayIs("times", testing::SizeIs(expected_shard_size)),
-                            UintArrayIs("values", expected_values)))));
+  EXPECT_THAT(*history->GetByPath({"0"}),
+              NodeMatches(PropertyList(
+                  UnorderedElementsAre(IntIs("@time", testing::_), StringIs("value", "OFF")))));
+  EXPECT_THAT(*history->GetByPath({"1"}),
+              NodeMatches(PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
+                                                            StringIs("value", "HIGH_SPEED")))));
+  EXPECT_THAT(*history->GetByPath({"2"}),
+              NodeMatches(PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
+                                                            StringIs("value", "LOW_SPEED")))));
 
   // Make sure timestamps are non-decreasing.
   auto timestamps = GetTimestamps(history, 3);
@@ -434,28 +414,24 @@ TEST_P(NumericStateRecorderSignedTest, SignedInt) {
 
     auto* metadata_node = recorder_node->GetByPath({"metadata"});
     ASSERT_NE(metadata_node, nullptr);
-    EXPECT_THAT(*metadata_node, NodeMatches(PropertyList(UnorderedElementsAre(
-                                    StringIs("format_version", "2.0"), StringIs("name", name),
-                                    StringIs("type", "numeric"), StringIs("units", "#")))));
+    EXPECT_THAT(*metadata_node,
+                NodeMatches(PropertyList(UnorderedElementsAre(
+                    StringIs("name", name), StringIs("type", "numeric"), StringIs("units", "#")))));
 
     auto* history_node = recorder_node->GetByPath({"history"});
     ASSERT_NE(history_node, nullptr);
     EXPECT_THAT(
         *history_node,
-        AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                  UintIs("current_index", lazy_record ? 0 : 3), UintIs("current_size", 3)))),
-              ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
-
-    auto* shard_0 = history_node->GetByPath({"shards", "0"});
-    ASSERT_NE(shard_0, nullptr);
-    size_t expected_shard_size = lazy_record ? 3 : 10;
-    std::vector<int64_t> expected_values = {0, 1, -1};
-    if (!lazy_record) {
-      expected_values.resize(10, 0);
-    }
-    EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                              IntArrayIs("times", testing::SizeIs(expected_shard_size)),
-                              IntArrayIs("values", expected_values)))));
+        ChildrenMatch(UnorderedElementsAre(
+            NodeMatches(AllOf(
+                NameMatches("0"),
+                PropertyList(UnorderedElementsAre(IntIs("@time", testing::_), IntIs("value", 0))))),
+            NodeMatches(AllOf(
+                NameMatches("1"),
+                PropertyList(UnorderedElementsAre(IntIs("@time", testing::_), IntIs("value", 1))))),
+            NodeMatches(
+                AllOf(NameMatches("2"), PropertyList(UnorderedElementsAre(
+                                            IntIs("@time", testing::_), IntIs("value", -1))))))));
 
     // Make sure timestamps are non-decreasing.
     auto timestamps = GetTimestamps(history_node, 3);
@@ -508,9 +484,9 @@ TEST_P(NumericStateRecorderUnsignedTest, UnsignedInt) {
 
     auto* metadata_node = recorder_node->GetByPath({"metadata"});
     ASSERT_NE(metadata_node, nullptr);
-    EXPECT_THAT(*metadata_node, NodeMatches(PropertyList(UnorderedElementsAre(
-                                    StringIs("format_version", "2.0"), StringIs("name", name),
-                                    StringIs("type", "numeric"), StringIs("units", "%")))));
+    EXPECT_THAT(*metadata_node,
+                NodeMatches(PropertyList(UnorderedElementsAre(
+                    StringIs("name", name), StringIs("type", "numeric"), StringIs("units", "%")))));
 
     auto* range_node = metadata_node->GetByPath({"range"});
     ASSERT_NE(range_node, nullptr);
@@ -519,22 +495,14 @@ TEST_P(NumericStateRecorderUnsignedTest, UnsignedInt) {
 
     auto* history_node = recorder_node->GetByPath({"history"});
     ASSERT_NE(history_node, nullptr);
-    EXPECT_THAT(
-        *history_node,
-        AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                  UintIs("current_index", lazy_record ? 0 : 2), UintIs("current_size", 2)))),
-              ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
-
-    auto* shard_0 = history_node->GetByPath({"shards", "0"});
-    ASSERT_NE(shard_0, nullptr);
-    size_t expected_shard_size = lazy_record ? 2 : 10;
-    std::vector<uint64_t> expected_values = {50, 100};
-    if (!lazy_record) {
-      expected_values.resize(10, 0);
-    }
-    EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                              IntArrayIs("times", testing::SizeIs(expected_shard_size)),
-                              UintArrayIs("values", expected_values)))));
+    EXPECT_THAT(*history_node,
+                ChildrenMatch(UnorderedElementsAre(
+                    NodeMatches(AllOf(NameMatches("0"),
+                                      PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
+                                                                        UintIs("value", 50))))),
+                    NodeMatches(AllOf(NameMatches("1"),
+                                      PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
+                                                                        UintIs("value", 100))))))));
 
     // Make sure timestamps are non-decreasing.
     auto timestamps = GetTimestamps(history_node, 2);
@@ -586,28 +554,21 @@ TEST_P(NumericStateRecorderFloatTest, FloatingPoint) {
 
     auto* metadata_node = recorder_node->GetByPath({"metadata"});
     ASSERT_NE(metadata_node, nullptr);
-    EXPECT_THAT(*metadata_node, NodeMatches(PropertyList(UnorderedElementsAre(
-                                    StringIs("format_version", "2.0"), StringIs("name", name),
-                                    StringIs("type", "numeric"), StringIs("units", "kHz")))));
+    EXPECT_THAT(
+        *metadata_node,
+        NodeMatches(PropertyList(UnorderedElementsAre(
+            StringIs("name", name), StringIs("type", "numeric"), StringIs("units", "kHz")))));
 
     auto* history_node = recorder_node->GetByPath({"history"});
     ASSERT_NE(history_node, nullptr);
-    EXPECT_THAT(
-        *history_node,
-        AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                  UintIs("current_index", lazy_record ? 0 : 2), UintIs("current_size", 2)))),
-              ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
-
-    auto* shard_0 = history_node->GetByPath({"shards", "0"});
-    ASSERT_NE(shard_0, nullptr);
-    size_t expected_shard_size = lazy_record ? 2 : 10;
-    std::vector<double> expected_values = {25.5, 26.0};
-    if (!lazy_record) {
-      expected_values.resize(10, 0.0);
-    }
-    EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                              IntArrayIs("times", testing::SizeIs(expected_shard_size)),
-                              DoubleArrayIs("values", expected_values)))));
+    EXPECT_THAT(*history_node,
+                ChildrenMatch(UnorderedElementsAre(
+                    NodeMatches(AllOf(NameMatches("0"),
+                                      PropertyList(UnorderedElementsAre(IntIs("@time", testing::_),
+                                                                        DoubleIs("value", 25.5))))),
+                    NodeMatches(AllOf(NameMatches("1"), PropertyList(UnorderedElementsAre(
+                                                            IntIs("@time", testing::_),
+                                                            DoubleIs("value", 26.0))))))));
 
     // Make sure timestamps are non-decreasing.
     auto timestamps = GetTimestamps(history_node, 2);
@@ -621,250 +582,6 @@ TEST_P(NumericStateRecorderFloatTest, FloatingPoint) {
 }
 
 INSTANTIATE_TEST_SUITE_P(NumericStateRecorderFloatTest, NumericStateRecorderFloatTest,
-                         ::testing::Bool());
-
-class MultiShardTest : public StateRecorderTest, public ::testing::WithParamInterface<bool> {};
-
-TEST_P(MultiShardTest, ExceedsSingleShardCapacity) {
-  bool lazy_record = GetParam();
-  EnumStateMetadata metadata = {
-      .name = "multi_shard_switch",
-      .states = kOffOn,
-      .trace_category_literal = "power_test",
-  };
-
-  const size_t capacity = internal::kShardCapacity + 50;  // 250
-  auto result = EnumStateRecorder<SwitchState>::Create(
-      metadata, {.capacity = capacity, .lazy_record = lazy_record}, *manager_);
-  ASSERT_TRUE(result.is_ok());
-  EnumStateRecorder recorder(std::move(result.value()));
-
-  // Record 220 items to cross kShardCapacity (200) into shard 1.
-  for (size_t i = 0; i < 220; ++i) {
-    recorder.Record(i % 2 == 0 ? SwitchState::kOff : SwitchState::kOn);
-  }
-
-  auto hierarchy = GetHierarchy();
-  auto* recorder_hierarchy =
-      hierarchy.GetByPath({"power_observability_state_recorders", "multi_shard_switch"});
-  ASSERT_NE(recorder_hierarchy, nullptr);
-
-  auto* history = recorder_hierarchy->GetByPath({"history"});
-  ASSERT_NE(history, nullptr);
-
-  EXPECT_THAT(
-      *history,
-      AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                UintIs("current_index", lazy_record ? 0 : 220), UintIs("current_size", 220)))),
-            ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
-
-  auto* shard_0 = history->GetByPath({"shards", "0"});
-  ASSERT_NE(shard_0, nullptr);
-  std::vector<uint64_t> expected_shard_0(internal::kShardCapacity);
-  for (size_t i = 0; i < internal::kShardCapacity; ++i) {
-    expected_shard_0[i] = (i % 2 == 0) ? 0 : 1;
-  }
-  EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                            IntArrayIs("times", testing::SizeIs(internal::kShardCapacity)),
-                            UintArrayIs("values", expected_shard_0)))));
-
-  auto* shard_1 = history->GetByPath({"shards", "1"});
-  ASSERT_NE(shard_1, nullptr);
-  size_t expected_shard_1_size = lazy_record ? 20 : 50;
-  std::vector<uint64_t> expected_shard_1(expected_shard_1_size, 0);
-  for (size_t i = 0; i < 20; ++i) {
-    size_t global_idx = internal::kShardCapacity + i;
-    expected_shard_1[i] = (global_idx % 2 == 0) ? 0 : 1;
-  }
-  EXPECT_THAT(*shard_1, NodeMatches(PropertyList(UnorderedElementsAre(
-                            IntArrayIs("times", testing::SizeIs(expected_shard_1_size)),
-                            UintArrayIs("values", expected_shard_1)))));
-}
-
-TEST_P(MultiShardTest, ExactShardCapacityBoundary) {
-  bool lazy_record = GetParam();
-  NumericStateMetadata<int64_t> metadata = {
-      .name = "exact_boundary",
-      .units = Units::Number(),
-      .trace_category_literal = "power_test",
-  };
-
-  const size_t capacity = internal::kShardCapacity;  // 200
-  auto result = NumericStateRecorder<int64_t>::Create(
-      metadata, {.capacity = capacity, .lazy_record = lazy_record}, *manager_);
-  ASSERT_TRUE(result.is_ok());
-  auto recorder = std::move(result.value());
-
-  for (size_t i = 0; i < capacity; ++i) {
-    recorder.Record(static_cast<int64_t>(i));
-  }
-
-  auto hierarchy = GetHierarchy();
-  auto* recorder_hierarchy =
-      hierarchy.GetByPath({"power_observability_state_recorders", "exact_boundary"});
-  ASSERT_NE(recorder_hierarchy, nullptr);
-
-  auto* history = recorder_hierarchy->GetByPath({"history"});
-  ASSERT_NE(history, nullptr);
-
-  EXPECT_THAT(*history, AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                                  UintIs("current_index", 0), UintIs("current_size", capacity)))),
-                              ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
-
-  auto* shards = history->GetByPath({"shards"});
-  ASSERT_NE(shards, nullptr);
-  // Verify there is exactly 1 shard: "0" (no empty shard "1" created).
-  EXPECT_THAT(*shards, ChildrenMatch(ElementsAre(NodeMatches(NameMatches("0")))));
-
-  auto* shard_0 = shards->GetByPath({"0"});
-  ASSERT_NE(shard_0, nullptr);
-  std::vector<int64_t> expected_values(capacity);
-  for (size_t i = 0; i < capacity; ++i) {
-    expected_values[i] = static_cast<int64_t>(i);
-  }
-  EXPECT_THAT(
-      *shard_0,
-      NodeMatches(PropertyList(UnorderedElementsAre(IntArrayIs("times", testing::SizeIs(capacity)),
-                                                    IntArrayIs("values", expected_values)))));
-}
-
-INSTANTIATE_TEST_SUITE_P(MultiShardTest, MultiShardTest, ::testing::Bool());
-
-class CircularBufferWrapAroundTest : public StateRecorderTest,
-                                     public ::testing::WithParamInterface<bool> {};
-
-TEST_P(CircularBufferWrapAroundTest, SingleShardWrapAround) {
-  bool lazy_record = GetParam();
-  NumericStateMetadata<int64_t> metadata = {
-      .name = "single_shard_wrap_around",
-      .units = Units::Number(),
-      .trace_category_literal = "power_test",
-  };
-
-  const size_t capacity = 4;
-  auto result = NumericStateRecorder<int64_t>::Create(
-      metadata, {.capacity = capacity, .lazy_record = lazy_record}, *manager_);
-  ASSERT_TRUE(result.is_ok());
-  auto recorder = std::move(result.value());
-
-  // Record 6 items: 10, 20, 30, 40, 50, 60 (exceeds capacity of 4)
-  for (int64_t val : {10, 20, 30, 40, 50, 60}) {
-    recorder.Record(val);
-  }
-
-  auto hierarchy = GetHierarchy();
-  auto* recorder_hierarchy =
-      hierarchy.GetByPath({"power_observability_state_recorders", "single_shard_wrap_around"});
-  ASSERT_NE(recorder_hierarchy, nullptr);
-
-  auto* history = recorder_hierarchy->GetByPath({"history"});
-  ASSERT_NE(history, nullptr);
-
-  // Size should saturate at capacity (4).
-  // Eager index wraps: 6 % 4 = 2. Lazy index is always 0 (linearized).
-  EXPECT_THAT(*history,
-              AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                        UintIs("current_index", lazy_record ? 0 : 2), UintIs("current_size", 4)))),
-                    ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
-
-  auto* shard_0 = history->GetByPath({"shards", "0"});
-  ASSERT_NE(shard_0, nullptr);
-
-  if (lazy_record) {
-    // Lazy mode linearizes the 4 most recent items: [30, 40, 50, 60]
-    EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                              IntArrayIs("times", testing::SizeIs(4)),
-                              IntArrayIs("values", std::vector<int64_t>{30, 40, 50, 60})))));
-  } else {
-    // Eager mode overwrote slots 0 and 1 with 50 and 60: [50, 60, 30, 40]
-    EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                              IntArrayIs("times", testing::SizeIs(4)),
-                              IntArrayIs("values", std::vector<int64_t>{50, 60, 30, 40})))));
-  }
-}
-
-TEST_P(CircularBufferWrapAroundTest, MultiShardWrapAround) {
-  bool lazy_record = GetParam();
-  NumericStateMetadata<int64_t> metadata = {
-      .name = "multi_shard_wrap_around",
-      .units = Units::Number(),
-      .trace_category_literal = "power_test",
-  };
-
-  const size_t capacity = internal::kShardCapacity + 10;  // 210
-  auto result = NumericStateRecorder<int64_t>::Create(
-      metadata, {.capacity = capacity, .lazy_record = lazy_record}, *manager_);
-  ASSERT_TRUE(result.is_ok());
-  auto recorder = std::move(result.value());
-
-  // Record 215 items (0..214) to exceed capacity (210) by 5 items.
-  for (size_t i = 0; i < 215; ++i) {
-    recorder.Record(static_cast<int64_t>(i));
-  }
-
-  auto hierarchy = GetHierarchy();
-  auto* recorder_hierarchy =
-      hierarchy.GetByPath({"power_observability_state_recorders", "multi_shard_wrap_around"});
-  ASSERT_NE(recorder_hierarchy, nullptr);
-
-  auto* history = recorder_hierarchy->GetByPath({"history"});
-  ASSERT_NE(history, nullptr);
-
-  EXPECT_THAT(
-      *history,
-      AllOf(NodeMatches(PropertyList(UnorderedElementsAre(
-                UintIs("current_index", lazy_record ? 0 : 5), UintIs("current_size", capacity)))),
-            ChildrenMatch(ElementsAre(NodeMatches(NameMatches("shards"))))));
-
-  auto* shard_0 = history->GetByPath({"shards", "0"});
-  ASSERT_NE(shard_0, nullptr);
-  auto* shard_1 = history->GetByPath({"shards", "1"});
-  ASSERT_NE(shard_1, nullptr);
-
-  if (lazy_record) {
-    // Lazy mode linearizes the last 210 items (5..214) in order across shard 0 and shard 1.
-    std::vector<int64_t> expected_shard_0(internal::kShardCapacity);
-    for (size_t i = 0; i < internal::kShardCapacity; ++i) {
-      expected_shard_0[i] = static_cast<int64_t>(5 + i);
-    }
-    EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                              IntArrayIs("times", testing::SizeIs(internal::kShardCapacity)),
-                              IntArrayIs("values", expected_shard_0)))));
-
-    std::vector<int64_t> expected_shard_1(10);
-    for (size_t i = 0; i < 10; ++i) {
-      expected_shard_1[i] = static_cast<int64_t>(205 + i);
-    }
-    EXPECT_THAT(
-        *shard_1,
-        NodeMatches(PropertyList(UnorderedElementsAre(IntArrayIs("times", testing::SizeIs(10)),
-                                                      IntArrayIs("values", expected_shard_1)))));
-  } else {
-    // Eager mode: items 210..214 wrapped around and overwrote slots 0..4 in shard 0.
-    std::vector<int64_t> expected_shard_0(internal::kShardCapacity);
-    for (size_t i = 0; i < 5; ++i) {
-      expected_shard_0[i] = static_cast<int64_t>(210 + i);
-    }
-    for (size_t i = 5; i < internal::kShardCapacity; ++i) {
-      expected_shard_0[i] = static_cast<int64_t>(i);
-    }
-    EXPECT_THAT(*shard_0, NodeMatches(PropertyList(UnorderedElementsAre(
-                              IntArrayIs("times", testing::SizeIs(internal::kShardCapacity)),
-                              IntArrayIs("values", expected_shard_0)))));
-
-    // Shard 1 retains items 200..209.
-    std::vector<int64_t> expected_shard_1(10);
-    for (size_t i = 0; i < 10; ++i) {
-      expected_shard_1[i] = static_cast<int64_t>(200 + i);
-    }
-    EXPECT_THAT(
-        *shard_1,
-        NodeMatches(PropertyList(UnorderedElementsAre(IntArrayIs("times", testing::SizeIs(10)),
-                                                      IntArrayIs("values", expected_shard_1)))));
-  }
-}
-
-INSTANTIATE_TEST_SUITE_P(CircularBufferWrapAroundTest, CircularBufferWrapAroundTest,
                          ::testing::Bool());
 
 }  // namespace power_observability

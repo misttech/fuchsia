@@ -4,10 +4,12 @@ This directory provides Rust and C++ libraries that support standardized
 reporting of time series data via Inspect and trace. It supports recording of
 **enum states** and **numeric states**.
 
-Currently, both the Rust and C++ APIs support enum and numeric states. The Rust
-API also provides an option to persist the states across component crashes and
-device reboots (populating Inspect nodes under `previous_boot_history`).
-There is no persistence option yet for the C++ API.
+Currently, the Rust API supports both enum and numeric states, with an option
+to persist the states. The persisted states are recovered if the component
+crashes and comes back. Or if the device reboots, the persisted states are
+used to populated inspects nodes under a previous_boot_history. The C++ API
+supports only enum states, but it will support numeric states soon. There is
+no persistence option yet for the C++ API.
 
 Enum states generally correspond to categorical observations. They are
 well-suited for scenarios in which the name of the state, rather than an
@@ -59,9 +61,11 @@ The key elements of the data are:
       If supporting exclusive bounds or API support for out-of-range values
       would be helpful to you, please [file a
       bug](https://issues.fuchsia.dev/issues?q=componentid:1585130).*
-* History of state values: Stored under a `history` (or `previous_boot_history`)
-  node containing `current_index`, `current_size`, and a `shards` child node
-  with numeric array properties (`times` and `values`).
+* History of state values:
+    * **Rust (Sharded Buffer)**: Stored under a `history` (or `previous_boot_history`) node containing `current_index`, `current_size`, and a `shards` child node with numeric array properties (`times` and `values`).
+    * **C++ (Legacy format)**: Stored as a sequence of child nodes under `history`, each with properties:
+        * `@time`: Boot clock timestamp in nanoseconds
+        * `value`: State value (string name for enum states, numeric value for numeric states)
 
 ### Trace
 
@@ -72,9 +76,7 @@ receiving a unique track. Numeric states are recorded as counters.
 
 #### Inspect
 
-Below are examples involving a battery, with charge recorded as an integer
-percentage once per minute, and charging state -- one of `Charging`,
-`FullyCharged`, or `Discharging` -- recorded on transition.
+Below are examples involving a battery, with charge recorded as an integer percentage once per minute, and charging state -- one of `Charging`, `FullyCharged`, or `Discharging` -- recorded on transition.
 
 The specifications in the table result in the Inspect data that follows:
 
@@ -83,6 +85,10 @@ The specifications in the table result in the Inspect data that follows:
 | 0          | Battery at 98% charge, and `Charging`; charges 1% per minute |
 | 120        | Charge increases to 100%; now `FullyCharged` |
 | 240        | Battery is `Discharging`; drains 1% per minute |
+
+##### Rust (Sharded Circular Buffer Format)
+
+In Rust, history samples are recorded into numeric arrays inside `shards` under `history` (and `previous_boot_history` when persistence is enabled):
 
 ```
     root:
@@ -128,28 +134,48 @@ The specifications in the table result in the Inspect data that follows:
                 values = [1, 2, 0]
 ```
 
-##### Interpreting the Circular Buffer
+###### Interpreting the Circular Buffer
 To reconstruct the chronological sequence of state samples:
 
 1. **Reconstructing Chronological Order**:
-   - `current_size`: Total number of valid elements currently recorded, up to
-     `capacity`.
+   - `current_size`: Total number of valid elements currently recorded, up to `capacity`.
    - `current_index`: The next insertion index (head) in the buffer.
    - **Before the buffer wraps (`current_size < capacity`)**:
-     Elements are located at indices `0` through `current_size - 1` in
-     chronological order.
+     Elements are located at indices `0` through `current_size - 1` in chronological order.
    - **After the buffer wraps (`current_size == capacity`)**:
-     `current_index` points to the oldest sample (which will be overwritten
-     next). The logical sample `i` (from oldest `0` to newest
-     `current_size - 1`) is located at circular index
-     `(current_index + i) % capacity`.
-   - Within `shards`, index `k` maps to shard `k / 200` at slot `k % 200`.
+     `current_index` points to the oldest sample (which will be overwritten next).
 
 2. **Interpreting Values**:
-   - **Numeric States**: Values are stored as array properties (`times` and
-     `values`).
-   - **Enum States**: Integer values in `values` are translated back to state
-     names using the reverse mapping of `metadata.states`.
+   - **Numeric States**: Values are read directly as numeric values (`u64`, `i64`, or `f64`).
+   - **Enum States**: Integer values in `values` are translated back to state names using the reverse mapping of `metadata.states`.
+   - **Unpopulated Slots**: Slots with timestamp `0` in pre-allocated buffers represent unused entries and can be ignored.
+
+##### C++ (Legacy Format)
+
+Until the C++ library is updated to support sharded circular buffers, C++ records each sample as an individual child node under `history`:
+
+```
+    root:
+      power_observability_state_recorders:
+        charging_state:
+          metadata:
+            name = charging_state
+            type = enum
+            states:
+              Charging = 1
+              Discharging = 0
+              FullyCharged = 2
+          history:
+            0:
+              @time = 0
+              value = Charging
+            1:
+              @time = 120000000000
+              value = FullyCharged
+            2:
+              @time = 240000000000
+              value = Discharging
+```
 
 #### Trace
 
