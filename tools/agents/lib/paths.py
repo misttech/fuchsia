@@ -8,12 +8,16 @@ from __future__ import annotations
 
 import os
 import pathlib
+import subprocess
 
 __all__ = [
     "find_checkout_git_repos",
     "find_config_dirs",
     "find_fuchsia_dir",
     "find_permission_dirs",
+    "get_git_dir",
+    "get_hooks_dir",
+    "get_repo_root",
 ]
 
 
@@ -103,3 +107,62 @@ def find_permission_dirs(fuchsia_dir: pathlib.Path) -> list[pathlib.Path]:
         if perm_dir.is_dir():
             candidates.append(perm_dir)
     return candidates
+
+
+def _git_rev_parse(repo_dir: pathlib.Path, *args: str) -> str:
+    res = subprocess.run(
+        ["git", "rev-parse", *args],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+    )
+    if res.returncode != 0 or not res.stdout.strip():
+        raise RuntimeError(f"Directory is not in a git repository: {repo_dir}")
+    return res.stdout.strip()
+
+
+def get_git_dir(repo_dir: pathlib.Path) -> pathlib.Path:
+    """Returns the .git directory path for the given repository or worktree.
+
+    Args:
+        repo_dir: Directory to check from.
+
+    Returns:
+        Path to the git directory (worktree-specific .git directory if in a worktree).
+
+    Raises:
+        RuntimeError: If repo_dir is not inside a git repository.
+    """
+    return (repo_dir / _git_rev_parse(repo_dir, "--git-dir")).resolve()
+
+
+def get_hooks_dir(repo_dir: pathlib.Path) -> pathlib.Path:
+    """Returns the git hooks directory path (resolving worktrees and common git dir).
+
+    Args:
+        repo_dir: Directory to check from.
+
+    Returns:
+        Path to the git hooks directory.
+
+    Raises:
+        RuntimeError: If repo_dir is not inside a git repository.
+    """
+    return (
+        repo_dir / _git_rev_parse(repo_dir, "--git-path", "hooks")
+    ).resolve()
+
+
+def get_repo_root(repo_dir: pathlib.Path) -> pathlib.Path:
+    """Returns the root directory of the git repository.
+
+    Args:
+        repo_dir: Directory to check from.
+
+    Returns:
+        Path to the repository root directory.
+
+    Raises:
+        RuntimeError: If repo_dir is not inside a git repository.
+    """
+    return pathlib.Path(_git_rev_parse(repo_dir, "--show-toplevel")).resolve()

@@ -10,11 +10,16 @@ import os
 import shutil
 import subprocess
 import tempfile
+import unittest
 from pathlib import Path
 
 from agents_testing.base import BaseTestCase
 
 
+@unittest.skipUnless(
+    shutil.which("git") is not None,
+    "git binary not available in test environment",
+)
 class GitWorkspaceTestCase(BaseTestCase):
     """Hermetic Git workspace test case using fast template repository caching."""
 
@@ -23,6 +28,10 @@ class GitWorkspaceTestCase(BaseTestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
+        if not shutil.which("git"):
+            raise unittest.SkipTest(
+                "git binary not available in test environment"
+            )
         super().setUpClass()
         cls._template_dir = tempfile.TemporaryDirectory()
         cls._template_path = Path(cls._template_dir.name)

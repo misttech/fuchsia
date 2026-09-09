@@ -12,6 +12,8 @@ if (is_host) {
     "commands/setup.py",
     "lib/__init__.py",
     "lib/config.py",
+    "lib/git_staging/__init__.py",
+    "lib/git_staging/engine.py",
     "lib/paths.py",
     "lib/permissions.py",
     "lib/services.py",
@@ -91,12 +93,21 @@ if (is_host) {
       ":agents_testing",
     ]
   }
+
+  python_host_test("agents_git_staging_test") {
+    main_source = "tests/git_staging_test.py"
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
+  }
 }
 
 group("tests") {
   testonly = true
   deps = [
     ":agents_config_test($host_toolchain)",
+    ":agents_git_staging_test($host_toolchain)",
     ":agents_main_test($host_toolchain)",
     ":agents_paths_test($host_toolchain)",
     ":agents_permissions_test($host_toolchain)",

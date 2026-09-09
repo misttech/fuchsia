@@ -7,7 +7,10 @@
 
 from __future__ import annotations
 
+import pathlib
+import subprocess
 import unittest
+from unittest import mock
 
 from agents.lib import paths
 from agents_testing.base import BaseTestCase
@@ -279,6 +282,135 @@ class PathsTest(BaseTestCase):
         self.assertEqual(
             repos,
             [fuchsia_dir, vendor_google, integration_dir],
+        )
+
+    @mock.patch("subprocess.run")
+    def test_git_rev_parse_success(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["git", "rev-parse", "--git-dir"],
+            returncode=0,
+            stdout=".git\n",
+            stderr="",
+        )
+        res = paths._git_rev_parse(self.mock_root, "--git-dir")
+        self.assertEqual(res, ".git")
+        mock_run.assert_called_once_with(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=self.mock_root,
+            capture_output=True,
+            text=True,
+        )
+
+    @mock.patch("subprocess.run")
+    def test_git_rev_parse_failure(self, mock_run: mock.MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["git", "rev-parse", "--git-dir"],
+            returncode=128,
+            stdout="",
+            stderr="fatal: not a git repo",
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            paths._git_rev_parse(self.mock_root, "--git-dir")
+        self.assertIn(
+            "Directory is not in a git repository", str(ctx.exception)
+        )
+
+    @mock.patch.object(paths, "_git_rev_parse")
+    def test_get_git_dir_and_hooks_dir(
+        self, mock_rev_parse: mock.MagicMock
+    ) -> None:
+        repo_dir = self.mock_root / "real_repo"
+        repo_dir.mkdir()
+
+        def side_effect(cwd: pathlib.Path, *args: str) -> str:
+            if args == ("--git-dir",):
+                return ".git"
+            if args == ("--git-path", "hooks"):
+                return ".git/hooks"
+            raise RuntimeError(f"Unexpected args: {args}")
+
+        mock_rev_parse.side_effect = side_effect
+
+        git_dir = paths.get_git_dir(repo_dir)
+        hooks_dir = paths.get_hooks_dir(repo_dir)
+
+        self.assertEqual(git_dir, (repo_dir / ".git").resolve())
+        self.assertEqual(hooks_dir, (repo_dir / ".git" / "hooks").resolve())
+
+    @mock.patch.object(paths, "_git_rev_parse")
+    def test_get_git_dir_and_hooks_dir_worktree(
+        self, mock_rev_parse: mock.MagicMock
+    ) -> None:
+        repo_dir = self.mock_root / "real_repo_wt"
+        repo_dir.mkdir()
+        wt_dir = self.mock_root / "worktree"
+        wt_dir.mkdir()
+
+        wt_git_dir = repo_dir / ".git" / "worktrees" / "wt"
+        common_hooks = repo_dir / ".git" / "hooks"
+
+        def side_effect(cwd: pathlib.Path, *args: str) -> str:
+            if args == ("--git-dir",):
+                return str(wt_git_dir)
+            if args == ("--git-path", "hooks"):
+                return str(common_hooks)
+            raise RuntimeError(f"Unexpected args: {args}")
+
+        mock_rev_parse.side_effect = side_effect
+
+        git_dir = paths.get_git_dir(wt_dir)
+        hooks_dir = paths.get_hooks_dir(wt_dir)
+
+        self.assertTrue(git_dir.is_absolute())
+        self.assertEqual(git_dir, wt_git_dir.resolve())
+        self.assertEqual(hooks_dir, common_hooks.resolve())
+
+    @mock.patch.object(paths, "_git_rev_parse")
+    def test_get_git_dir_and_hooks_dir_non_repo(
+        self, mock_rev_parse: mock.MagicMock
+    ) -> None:
+        non_repo = self.mock_root / "non_repo"
+        non_repo.mkdir()
+        mock_rev_parse.side_effect = RuntimeError(
+            f"Directory is not in a git repository: {non_repo}"
+        )
+
+        with self.assertRaises(RuntimeError) as ctx:
+            paths.get_git_dir(non_repo)
+        self.assertIn(
+            "Directory is not in a git repository", str(ctx.exception)
+        )
+
+        with self.assertRaises(RuntimeError) as ctx2:
+            paths.get_hooks_dir(non_repo)
+        self.assertIn(
+            "Directory is not in a git repository", str(ctx2.exception)
+        )
+
+    @mock.patch.object(paths, "_git_rev_parse")
+    def test_get_repo_root(self, mock_rev_parse: mock.MagicMock) -> None:
+        repo_dir = self.mock_root / "real_repo_for_root"
+        repo_dir.mkdir()
+        sub_dir = repo_dir / "subdir" / "nested"
+        sub_dir.mkdir(parents=True)
+        mock_rev_parse.return_value = str(repo_dir)
+
+        self.assertEqual(paths.get_repo_root(sub_dir), repo_dir.resolve())
+        mock_rev_parse.assert_called_once_with(sub_dir, "--show-toplevel")
+
+    @mock.patch.object(paths, "_git_rev_parse")
+    def test_get_repo_root_not_in_repo(
+        self, mock_rev_parse: mock.MagicMock
+    ) -> None:
+        non_repo = self.mock_root / "non_repo_root"
+        non_repo.mkdir()
+        mock_rev_parse.side_effect = RuntimeError(
+            f"Directory is not in a git repository: {non_repo}"
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            paths.get_repo_root(non_repo)
+        self.assertIn(
+            "Directory is not in a git repository", str(ctx.exception)
         )
 
 
