@@ -37,6 +37,7 @@ else
   # use any credential helpers.
   loas_type=skip
 fi
+use_gce_machine_credentials=false
 verbose=0
 
 function die() {
@@ -59,6 +60,7 @@ options:
   --loas-type TYPE: {skip,auto,restricted,unrestricted}, default [$loas_type]
     'skip' will bypass any preflight authentication checks
     'auto' will attempt to detect as restricted or unrestricted.
+  --use-machine-credentials: use GCE machine-credentials (bypasses LOAS/OAuth checks, takes absolute precedence)
   --log-dir DIR: rsproxy log dir
   -v | --verbose: print debug messages
 
@@ -100,6 +102,7 @@ do
     --loas-type) prev_opt=loas_type ;;
     --log-dir=*) log_dir="$optarg" ;;
     --log-dir) prev_opt=log_dir ;;
+    --use-machine-credentials) use_gce_machine_credentials=true ;;
     -v | --verbose) verbose=1 ;;
 
     --) got_ddash=1; shift; break ;;
@@ -155,6 +158,10 @@ rsproxy_options=()
 # an insecure local connection; if we use a credentialed LOAS type,
 # gRPC will refuse to send credentials over the insecure transport,
 # causing a deadlock.
+if [[ "$use_gce_machine_credentials" == "true" ]]; then
+  loas_type="skip"
+fi
+
 if [[ "$loas_type" == "auto" ]]; then
   loas_type="${FX_BUILD_LOAS_TYPE:-"auto"}"
 fi
@@ -244,6 +251,14 @@ else
 fi
 
 proxy_env=()
+if [[ "$use_gce_machine_credentials" == "true" ]]; then
+  proxy_env+=(
+    RS_use_application_default_credentials=false
+    RS_use_gce_credentials=true
+    RS_experimental_credentials_helper=""
+  )
+fi
+
 proxy_wrap_options=(
   --rsproxy "$rsproxy"
 )

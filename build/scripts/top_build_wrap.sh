@@ -55,6 +55,8 @@ options:
   --loas-type : LOAS type used to choose authentication method
       values: restricted, unrestricted, auto, skip
 
+  --use-machine-credentials : use GCE machine-credentials (bypasses LOAS/OAuth checks, takes absolute precedence)
+
   --profile[=0] : enable system profiling during build
 
   --rbe[=0] : enable support for remote execution
@@ -76,6 +78,7 @@ dry_run=0
 enable_resultstore=0
 needs_reproxy_rbe=0
 tui=0
+use_gce_machine_credentials=0
 
 ### Configuration.
 # Parse command-line arguments.
@@ -125,6 +128,8 @@ do
 
     --loas-type=*) loas_type="$optarg" ;;
     --loas-type) prev_opt=loas_type ;;
+
+    --use-machine-credentials) use_gce_machine_credentials=1 ;;
 
     --profile=*) collect_system_profile="$optarg" ;;
     --profile) collect_system_profile=1 ;;
@@ -342,6 +347,9 @@ then
     --logdir "$reproxy_logdir"
     --tmpdir "$reproxy_tmpdir"
     "${loas_type_arg[@]}"
+  )
+  [[ "$use_gce_machine_credentials" == 0 ]] || maybe_rbe_wrap+=( --use-machine-credentials )
+  maybe_rbe_wrap+=(
     "${reproxy_cfg_args[@]}"
     "${reproxy_shutdown_opts[@]}"
     --
@@ -386,6 +394,9 @@ then
   maybe_resultstore_wrap=(
     "$rsproxy_wrapper"
     "${rsproxy_loas_type_arg[@]}"
+  )
+  [[ "$use_gce_machine_credentials" == 0 ]] || maybe_resultstore_wrap+=( --use-machine-credentials )
+  maybe_resultstore_wrap+=(
     --log-dir "$rsproxy_logdir"
     "${rsproxy_options[@]}"
     --

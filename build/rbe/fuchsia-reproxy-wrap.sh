@@ -53,6 +53,7 @@ readonly fx_build_metrics_config_old="$project_root_rel"/.fx-build-metrics-confi
 readonly jq="$project_root/prebuilt/third_party/jq/"$PREBUILT_SUBDIR"/bin/jq"
 
 loas_type=auto
+use_gce_machine_credentials=false
 
 SIGNAL_POLICY="relay"
 
@@ -74,6 +75,7 @@ options:
   --bindir DIR: location of reproxy tools
   --logdir DIR: unique reproxy log dir
   --tmpdir DIR: reproxy temp dir
+  --use-machine-credentials: use GCE machine-credentials (bypasses LOAS/OAuth checks, takes absolute precedence)
   --loas-type TYPE: {skip,auto,restricted,unrestricted}, default [$loas_type]
     'skip' will bypass any preflight authentication checks
     'auto' will attempt to detect as restricted or unrestricted.
@@ -146,6 +148,7 @@ do
     --logdir) prev_opt=reproxy_logdir ;;
     --tmpdir=*) reproxy_tmpdir="$optarg" ;;
     --tmpdir) prev_opt=reproxy_tmpdir ;;
+    --use-machine-credentials) use_gce_machine_credentials=true ;;
     --loas-type=*) loas_type="$optarg" ;;
     --loas-type) prev_opt=loas_type ;;
     --signal-policy=*) SIGNAL_POLICY="$optarg" ;;
@@ -221,10 +224,18 @@ else _RBE_cache_dir="/tmp/.cache/reproxy/deps"
 fi
 mkdir -p "$_RBE_cache_dir"
 
-[[ "${USER-NOT_SET}" != "NOT_SET" ]] || {
-  echo "Error: USER must be set to authenticate using RBE."
-  exit 1
-}
+if [[ "$use_gce_machine_credentials" == "true" ]]
+then
+  loas_type="skip"
+fi
+
+if [[ "$loas_type" != "skip" ]]
+then
+  [[ "${USER-NOT_SET}" != "NOT_SET" ]] || {
+    echo "Error: USER must be set to authenticate using RBE."
+    exit 1
+  }
+fi
 
 # These environment variables take precedence over those found in --cfg.
 # These values are all dynamic and are short-lived, so it is better
@@ -240,6 +251,39 @@ bootstrap_env=(
   RBE_output_dir="$reproxy_logdir"
   RBE_cache_dir="$_RBE_cache_dir"
 )
+
+if [[ "$use_gce_machine_credentials" == "true" ]]
+then
+  bootstrap_env+=(
+    RBE_use_application_default_credentials=false
+    RBE_use_gce_credentials=true
+    RBE_credentials_helper=""
+  )
+fi
+
+# Automatically override TLS verification server name when routing over local Unix domain sockets.
+# The service proxy on the host will handle secure TLS transit over the internet.
+# Note: This checks $RBE_service in the environment and --service in the CLI
+# arguments, but cannot detect service locations specified inside .cfg files.
+is_unix_socket=false
+if [[ "$RBE_service" == unix://* ]]
+then
+  is_unix_socket=true
+fi
+for opt in "${bootstrap_options[@]}"
+do
+  if [[ "$opt" == --service=unix://* ]]
+  then
+    is_unix_socket=true
+  fi
+done
+
+if [[ "$is_unix_socket" == "true" ]]
+then
+  bootstrap_env+=(
+    RBE_tls_server_name=remotebuildexecution.googleapis.com
+  )
+fi
 
 if [[ "${FX_BUILD_UUID-NOT_SET}" == "NOT_SET" ]]
 then
@@ -467,6 +511,11 @@ function shutdown() {
     > "$reproxy_logdir"/shutdown.stdout 2>&1 || shutdown_status="$?"
   [[ "$shutdown_status" == 0 && "$verbose" != 1 ]] || {
     cat "$reproxy_logdir"/shutdown.stdout
+    if [[ -f "$reproxy_logdir/bootstrap.ERROR" &&
+          -s "$reproxy_logdir/bootstrap.ERROR" ]]; then
+      echo "=== reproxy bootstrap.ERROR ==="
+      cat "$reproxy_logdir/bootstrap.ERROR"
+    fi
   }
   _timetrace "Shutting down reproxy (done)"
 
