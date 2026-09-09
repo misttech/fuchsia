@@ -5,11 +5,9 @@ Version: android16-qpr1-release
 Revision: 4e8225a58e22e806fc3f7e188107541eca2ac784
 Security Critical: yes
 
+License: Apache-2.0, BSD-3-Clause
 License File: src/LICENSE
-  License: Apache-2.0
-
-Source File: src/include/bootimg/bootimg.h
-  License: BSD-3-Clause
+Generated Notice File: NOTICE.fuchsia
 
 Description:
   Android boot image tools and libraries

@@ -4,17 +4,9 @@ Version: vulkan-sdk-1.4.350
 Revision: b9d4f9ead8d97c1bb0d174ea07d8aed8273818a5
 Security Critical: yes
 
+License: Apache-2.0, BSD-2-Clause, BSL-1.0, MIT
 License File: src/LICENSE.txt
-  License: Apache-2.0, Copyright, MIT
-
-Source File: src/layers/external/inplace_function.h
-  License: BSL-1.0
-
-Source File: src/layers/external/parallel_hashmap/phmap_utils.h
-  License: BSL-1.0
-
-Source File: src/layers/external/xxhash.h
-  License: BSD-2-Clause
+Generated Notice File: NOTICE.fuchsia
 
 Description:
   Provides the Khronos official Vulkan validation layers.
