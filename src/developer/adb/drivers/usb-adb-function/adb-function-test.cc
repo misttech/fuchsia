@@ -184,6 +184,10 @@ class AdbFakeUsb
     fit::callback<void()> cb;
     {
       std::lock_guard<std::mutex> _(lock_);
+      if (configure_status_ != ZX_OK) {
+        completer.Reply(fit::error(configure_status_));
+        return;
+      }
       if (iface_client_.is_valid()) {
         completer.Reply(fit::error(ZX_ERR_ALREADY_BOUND));
         return;
@@ -287,6 +291,10 @@ class AdbFakeUsb
     std::lock_guard<std::mutex> _(lock_);
     alloc_resources_status_ = status;
   }
+  void set_configure_status(zx_status_t status) {
+    std::lock_guard<std::mutex> _(lock_);
+    configure_status_ = status;
+  }
   void set_omit_endpoints(bool omit) {
     std::lock_guard<std::mutex> _(lock_);
     omit_endpoints_ = omit;
@@ -299,6 +307,7 @@ class AdbFakeUsb
   fit::callback<void()> on_configured_ __TA_GUARDED(lock_);
   fit::callback<void()> on_deconfigured_ __TA_GUARDED(lock_);
   zx_status_t alloc_resources_status_ __TA_GUARDED(lock_) = ZX_OK;
+  zx_status_t configure_status_ __TA_GUARDED(lock_) = ZX_OK;
   bool omit_endpoints_ __TA_GUARDED(lock_) = false;
   bool hold_deconfigure_ __TA_GUARDED(lock_) = false;
   std::optional<fidl::internal::NaturalCompleter<
@@ -317,6 +326,7 @@ class UsbAdbEnvironment : public fdf_testing::Environment {
     fake_dev_.emplace(dispatcher);
 
     fake_dev_->set_alloc_resources_status(alloc_resources_status_);
+    fake_dev_->set_configure_status(configure_status_);
     fake_dev_->set_omit_endpoints(omit_endpoints_);
 
     fuchsia_hardware_usb_function::UsbFunctionService::InstanceHandler handler({
@@ -332,6 +342,7 @@ class UsbAdbEnvironment : public fdf_testing::Environment {
   }
 
   void set_alloc_resources_status(zx_status_t status) { alloc_resources_status_ = status; }
+  void set_configure_status(zx_status_t status) { configure_status_ = status; }
   void set_omit_endpoints(bool omit) { omit_endpoints_ = omit; }
 
   void CancelAllUsbRequests() {
@@ -349,6 +360,7 @@ class UsbAdbEnvironment : public fdf_testing::Environment {
   std::optional<AdbFakeUsb> fake_dev_;
   fidl::ServerBindingGroup<fuchsia_hardware_usb_function::UsbFunction> usb_function_bindings_;
   zx_status_t alloc_resources_status_ = ZX_OK;
+  zx_status_t configure_status_ = ZX_OK;
   bool omit_endpoints_ = false;
 };
 
@@ -1208,4 +1220,52 @@ TEST_F(UsbAdbTest, EarlyConnectRace) {
 
   SafeStopDriver();
 }
+
+TEST(UsbAdbStartTest, StartFailsGracefullyWhenConfigureFails) {
+  fdf_testing::BackgroundDriverTest<UsbAdbTestConfig> driver_test;
+  driver_test.RunInEnvironmentTypeContext(
+      [](UsbAdbEnvironment& env) { env.set_configure_status(ZX_ERR_BAD_STATE); });
+
+  // StartDriver must fail with ZX_ERR_BAD_STATE rather than crashing/panicking.
+  zx::result<> start_result = driver_test.StartDriver();
+  EXPECT_TRUE(start_result.is_error());
+  EXPECT_EQ(start_result.status_value(), ZX_ERR_BAD_STATE);
+  driver_test.runtime().RunUntilIdle();
+}
+
+TEST_F(UsbAdbTest, ReconnectHandlesConfigureFailureGracefully) {
+  auto usb_impl = NormalStartAdb();
+  EventHandler handler;
+  handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
+  ExpectHandleOneEventSafe(usb_impl, handler);
+
+  // Set the fake device to reject subsequent Configure calls (simulating peripheral
+  // stopping/tearing down).
+  driver_test_.RunInEnvironmentTypeContext(
+      [](UsbAdbEnvironment& env) { env.fake_dev_->set_configure_status(ZX_ERR_BAD_STATE); });
+
+  // Trigger disconnect by deconfiguring USB.
+  auto deconfig_result = iface_client_->SetConfigured({{
+      .configured = false,
+      .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+  }});
+  ASSERT_TRUE(deconfig_result.is_ok());
+
+  // Wait for requests to drain and unbind to process.
+  driver_test_.runtime().RunUntilIdle();
+
+  // Cancel any remaining USB endpoint requests.
+  driver_test_.RunInEnvironmentTypeContext(
+      [](UsbAdbEnvironment& env) { env.CancelAllUsbRequests(); });
+
+  // The driver should have attempted to restart USB, encountered ZX_ERR_BAD_STATE,
+  // transitioned cleanly to kAwaitingUsbConnection, and logged a warning without panicking.
+  // Verify that subsequent StopAdb() completes cleanly (returning zx::ok()) rather than hanging.
+  auto stop_res = client_->StopAdb();
+  ASSERT_TRUE(stop_res.ok());
+  EXPECT_TRUE(stop_res->is_ok());
+
+  ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
+}
+
 }  // namespace usb_adb_function

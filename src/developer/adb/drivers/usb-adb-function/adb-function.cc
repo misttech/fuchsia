@@ -606,7 +606,10 @@ void UsbAdbDevice::CheckUsbStopComplete() {
     }
   } else {
     zxlogf(INFO, "Restarting USB connection.");
-    StartUsb();
+    if (zx::result<> result = StartUsb(); result.is_error()) {
+      zxlogf(WARNING, "Restarting USB connection failed: %s", result.status_string());
+      SetState(State::kAwaitingUsbConnection);
+    }
   }
 }
 
@@ -690,6 +693,7 @@ zx::result<> UsbAdbDevice::Start(fdf::DriverContext context) {
   }
   status = InitEndpoint(std::move(bulk_in_endpoints->client), bulk_in_ep_, kBulkTxCount);
   if (status != ZX_OK) {
+    bulk_out_ep_.Close();
     zxlogf(ERROR, "InitEndpoint failed - %s.", zx_status_get_string(status));
     return zx::error(status);
   }
@@ -698,6 +702,8 @@ zx::result<> UsbAdbDevice::Start(fdf::DriverContext context) {
                                             fidl::kIgnoreBindingClosure),
   }));
   if (serve_result.is_error()) {
+    bulk_out_ep_.Close();
+    bulk_in_ep_.Close();
     zxlogf(ERROR, "Failed to add Device service %s", serve_result.status_string());
     return serve_result.take_error();
   }
@@ -721,21 +727,26 @@ zx::result<> UsbAdbDevice::Start(fdf::DriverContext context) {
     zxlogf(WARNING, "Failed to initialize inspector");
   }
 
-  StartUsb();
+  zx::result<> start_usb_result = StartUsb();
+  if (start_usb_result.is_error()) {
+    bulk_out_ep_.Close();
+    bulk_in_ep_.Close();
+    return start_usb_result.take_error();
+  }
   return zx::ok();
 }
 
-void UsbAdbDevice::StartUsb() {
+zx::result<> UsbAdbDevice::StartUsb() {
   zx::result iface_endpoints =
       fidl::CreateEndpoints<fuchsia_hardware_usb_function::UsbFunctionInterface>();
   if (iface_endpoints.is_error()) {
-    ZX_PANIC("CreateEndpoints failed %s", zx_status_get_string(iface_endpoints.error_value()));
+    zxlogf(ERROR, "CreateEndpoints failed %s", iface_endpoints.status_string());
+    return iface_endpoints.take_error();
   }
   usb_function_binding_.emplace(
-      dispatcher(), std::move(iface_endpoints->server), this, [this](fidl::UnbindInfo info) {
+      dispatcher(), std::move(iface_endpoints->server), this, [](fidl::UnbindInfo info) {
         zxlogf(INFO, "usb_function_binding_ successfully and fully unbound: %s",
                info.FormatDescription().c_str());
-        usb_function_binding_.reset();
       });
 
   std::vector<uint8_t> descriptors_buffer(sizeof(descriptors_));
@@ -747,12 +758,17 @@ void UsbAdbDevice::StartUsb() {
 
   fidl::Result config_res = function_->Configure(std::move(config_req));
   if (config_res.is_error()) {
-    ZX_PANIC("Configure failed: %s", config_res.error_value().FormatDescription().c_str());
+    zxlogf(WARNING, "Configure failed: %s", config_res.error_value().FormatDescription().c_str());
+    usb_function_binding_.reset();
+    return zx::error(config_res.error_value().is_framework_error()
+                         ? config_res.error_value().framework_error().status()
+                         : config_res.error_value().domain_error());
   }
 
   SetState(State::kAwaitingUsbConnection);
   bulk_in_cancelled_ = false;
   bulk_out_cancelled_ = false;
+  return zx::ok();
 }
 
 }  // namespace usb_adb_function
