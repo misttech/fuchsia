@@ -120,6 +120,12 @@ class CodecAdapter {
   // input and output.
   virtual uint32_t GetDynamicBuffersMax(CodecPort port) { return 0; }
 
+  // Whether the core codec supports mid-stream output constraints changes.
+  // CodecAdapter defaults to true. Subclasses such as DecryptorAdapter that do not
+  // implement self-pausing and buffer reconfiguration during mid-stream format changes
+  // can override this to return false.
+  virtual bool IsSupportsMidStreamOutputConstraintsChange() { return true; }
+
   // Any core codec that performs DMA that will potentially continue beyond the
   // lifetime of the process that holds open the VMO handles being DMA(ed)
   // should override this method to provide CodecImpl with the driver's BTI so

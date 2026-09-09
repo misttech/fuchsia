@@ -305,6 +305,8 @@ void CodecImpl::SetCoreCodecAdapter(std::unique_ptr<CodecAdapter> codec_adapter)
   ZX_DEBUG_ASSERT(!codec_adapter_);
   codec_adapter_ = std::move(codec_adapter);
   is_supports_dynamic_buffers_ = codec_adapter_->IsSupportsDynamicBuffers();
+  is_supports_mid_stream_output_constraints_change_ =
+      codec_adapter_->IsSupportsMidStreamOutputConstraintsChange();
   // If this assert fails, it means the CodecAdapter supports dynamic buffers but
   // !kEnableDynamicBuffers in this build. To support a CodecAdapter that supports dynamic buffers
   // use a CodecImpl build target with kEnableDynamicBuffers true.
@@ -6715,6 +6717,21 @@ void CodecImpl::onCoreCodecMidStreamOutputConstraintsChange(bool output_re_confi
 void CodecImpl::onCoreCodecMidStreamOutputConstraintsChangeInternal(
     std::optional<uint64_t> constraints_version) {
   VLOGF("CodecImpl::onCoreCodecMidStreamOutputConstraintsChangeInternal()");
+
+  // Mid-stream output constraints change requires that the caller/CodecAdapter (on the input
+  // processing / core codec thread) self-pauses and suspends processing operations before
+  // initiating re-configuration (not dequeuing any further input items or holding any output
+  // buffers/packets in flight). CodecImpl then tears down old buffers via
+  // CoreCodecEnsureBuffersNotConfigured(kOutputPort), negotiates and delivers new buffers via
+  // CoreCodecAddBuffer/CoreCodecConfigureBuffers, and finally signals completion via
+  // CoreCodecMidStreamOutputBufferReConfigFinish, at which point the CodecAdapter initializes the
+  // new buffer set and resumes input processing.
+  //
+  // Adapters such as DecryptorAdapter do not implement this self-pausing / resume sequencing. See
+  // b/525124400.
+  if (!is_supports_mid_stream_output_constraints_change_) {
+    ZX_PANIC("CodecAdapter does not support mid-stream output constraints changes");
+  }
 
   // For now, the core codec thread is the only thread this gets called from.
   ZX_DEBUG_ASSERT(IsCoreCodec());

@@ -65,6 +65,8 @@ bool DecryptorAdapter::IsCoreCodecMappedBufferUseful(CodecPort port) {
 
 bool DecryptorAdapter::IsCoreCodecHwBased(CodecPort port) { return false; }
 
+bool DecryptorAdapter::IsSupportsMidStreamOutputConstraintsChange() { return false; }
+
 void DecryptorAdapter::CoreCodecInit(
     const fuchsia::media::FormatDetails& initial_input_format_details) {
   zx_status_t result = input_processing_loop_.StartThread(
@@ -365,7 +367,8 @@ fuchsia::media::StreamOutputFormat DecryptorAdapter::CoreCodecGetOutputFormat(
 }
 
 void DecryptorAdapter::CoreCodecMidStreamOutputBufferReConfigPrepare() {
-  // For this adapter, nothing to do here.
+  // DecryptorAdapter does not support mid-stream output buffer reconfiguration (b/525124400).
+  ZX_PANIC("DecryptorAdapter does not support mid-stream output buffer reconfiguration");
 }
 
 void DecryptorAdapter::CoreCodecMidStreamOutputBufferReConfigFinish() {

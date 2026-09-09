@@ -1036,6 +1036,7 @@ class CodecImpl final : public fuchsia::media::StreamProcessor,
   // This matches codec_adapter_->IsSupportsDynamicBuffers(), but it's nice to
   // avoid calling IsSupportsDynamicBuffers under lock_, just in case.
   bool is_supports_dynamic_buffers_ = false;
+  bool is_supports_mid_stream_output_constraints_change_ = true;
 
   const StreamProcessorParams params_;
 
