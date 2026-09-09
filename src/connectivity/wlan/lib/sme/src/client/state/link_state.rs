@@ -81,6 +81,13 @@ enum RsnaProgressed {
 }
 
 impl EstablishingRsna {
+    pub fn into_protection(self) -> Protection {
+        match self.rsna.negotiated_protection.protection_type {
+            rsna::ProtectionType::LegacyWpa1 => Protection::LegacyWpa(self.rsna),
+            rsna::ProtectionType::Rsne => Protection::Rsna(self.rsna),
+        }
+    }
+
     fn on_rsna_progressed(
         mut self,
         ap_responsive: Option<EventHandle>,
@@ -111,7 +118,7 @@ impl EstablishingRsna {
             }));
 
             let now = now();
-            RsnaProgressed::Complete(LinkUp { protection: Protection::Rsna(self.rsna), since: now })
+            RsnaProgressed::Complete(LinkUp { protection: self.into_protection(), since: now })
         } else {
             RsnaProgressed::InProgress(self)
         }
@@ -136,57 +143,60 @@ impl EstablishingRsna {
     }
 }
 
+impl From<EstablishingRsna> for Protection {
+    fn from(state: EstablishingRsna) -> Self {
+        state.into_protection()
+    }
+}
+
 impl LinkState {
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255153)
     pub fn new(
         protection: Protection,
         context: &mut Context,
     ) -> Result<Self, EstablishRsnaFailureReason> {
-        match protection {
+        let mut rsna = match protection {
             Protection::Open | Protection::Wep(_) => {
                 let now = now();
-                Ok(State::new(Init)
-                    .transition_to(LinkUp { protection: Protection::Open, since: now })
-                    .into())
+                return Ok(State::new(Init)
+                    .transition_to(LinkUp { protection, since: now })
+                    .into());
             }
-            Protection::Rsna(mut rsna) | Protection::LegacyWpa(mut rsna) => {
-                let mut update_sink = rsna::UpdateSink::default();
-                rsna.supplicant.start(&mut update_sink).map_err(|e| {
-                    error!("could not start Supplicant: {}", e);
-                    EstablishRsnaFailureReason::StartSupplicantFailed
-                })?;
-                let state = State::new(Init).transition_to(EstablishingRsna {
-                    rsna,
-                    rsna_completion_timeout: Some(
-                        context.timer.schedule(event::RsnaCompletionTimeout),
-                    ),
-                    rsna_response_timeout: Some(context.timer.schedule(event::RsnaResponseTimeout)),
-                    rsna_retransmission_timeout: None,
-                    handshake_complete: false,
-                    pending_key_ids: Default::default(),
-                });
-                let (transition, state) = state.release_data();
-                match process_rsna_updates(context, None, update_sink, None) {
-                    RsnaStatus::Unchanged => Ok(transition.to(state).into()),
-                    // RSNA progress during start() should only be trivial.
-                    RsnaStatus::Progressed {
-                        ap_responsive: None,
-                        new_retransmission_timeout: None,
-                        handshake_complete: false,
-                        sent_keys,
-                    } if sent_keys.is_empty() => {
-                        // Normally, we call both on_rsna_progressed() and
-                        // try_establish(). Here, we omit try_establish() since it is not
-                        // possible to establish an RSNA without any EAPOL frames exchanged.
-                        let state = state.on_rsna_progressed(None, None, false, sent_keys);
-                        Ok(transition.to(state).into())
-                    }
-                    RsnaStatus::Failed(reason) => Err(reason),
-                    rsna_status => {
-                        error!("Unexpected RsnaStatus upon Supplicant::start(): {:?}", rsna_status);
-                        Err(EstablishRsnaFailureReason::StartSupplicantFailed)
-                    }
-                }
+            Protection::Rsna(rsna) | Protection::LegacyWpa(rsna) => rsna,
+        };
+        let mut update_sink = rsna::UpdateSink::default();
+        rsna.supplicant.start(&mut update_sink).map_err(|e| {
+            error!("could not start Supplicant: {}", e);
+            EstablishRsnaFailureReason::StartSupplicantFailed
+        })?;
+        let state = State::new(Init).transition_to(EstablishingRsna {
+            rsna,
+            rsna_completion_timeout: Some(context.timer.schedule(event::RsnaCompletionTimeout)),
+            rsna_response_timeout: Some(context.timer.schedule(event::RsnaResponseTimeout)),
+            rsna_retransmission_timeout: None,
+            handshake_complete: false,
+            pending_key_ids: Default::default(),
+        });
+        let (transition, state) = state.release_data();
+        match process_rsna_updates(context, None, update_sink, None) {
+            RsnaStatus::Unchanged => Ok(transition.to(state).into()),
+            // RSNA progress during start() should only be trivial.
+            RsnaStatus::Progressed {
+                ap_responsive: None,
+                new_retransmission_timeout: None,
+                handshake_complete: false,
+                sent_keys,
+            } if sent_keys.is_empty() => {
+                // Normally, we call both on_rsna_progressed() and
+                // try_establish(). Here, we omit try_establish() since it is not
+                // possible to establish an RSNA without any EAPOL frames exchanged.
+                let state = state.on_rsna_progressed(None, None, false, sent_keys);
+                Ok(transition.to(state).into())
+            }
+            RsnaStatus::Failed(reason) => Err(reason),
+            rsna_status => {
+                error!("Unexpected RsnaStatus upon Supplicant::start(): {:?}", rsna_status);
+                Err(EstablishRsnaFailureReason::StartSupplicantFailed)
             }
         }
     }
@@ -195,7 +205,7 @@ impl LinkState {
         match self {
             Self::EstablishingRsna(state) => {
                 let (_, state) = state.release_data();
-                (Protection::Rsna(state.rsna), None)
+                (state.into_protection(), None)
             }
             Self::LinkUp(state) => {
                 let (_, state) = state.release_data();
@@ -259,7 +269,8 @@ impl LinkState {
             Self::LinkUp(state) => {
                 let (transition, mut state) = state.release_data();
                 // Drop EAPOL frames if the BSS is not an RSN.
-                if let Protection::Rsna(rsna) = &mut state.protection {
+                if let Protection::Rsna(rsna) | Protection::LegacyWpa(rsna) = &mut state.protection
+                {
                     match process_eapol_event(context, rsna, &eapol_event) {
                         RsnaStatus::Unchanged => {}
                         // This can happen when there's a GTK rotation.

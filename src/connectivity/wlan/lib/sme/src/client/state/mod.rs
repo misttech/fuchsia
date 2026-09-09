@@ -705,7 +705,7 @@ impl Associated {
             });
 
             // Client is disassociating. The ESS-SA must be kept alive but reset.
-            if let Protection::Rsna(rsna) = &mut protection {
+            if let Protection::Rsna(rsna) | Protection::LegacyWpa(rsna) = &mut protection {
                 // Reset the state of the ESS-SA and its replay counter to zero per IEEE 802.11-2016 12.7.2.
                 rsna.supplicant.reset();
             }
@@ -1800,7 +1800,7 @@ fn roam_internal(
 ) -> Result<Roaming, Disconnecting> {
     // Reassociation is imminent, so consider client disassociated from original BSS. Need a new ESS-SA.
     let (mut orig_bss_protection, _connected_duration) = state.link_state.disconnect();
-    if let Protection::Rsna(rsna) = &mut orig_bss_protection {
+    if let Protection::Rsna(rsna) | Protection::LegacyWpa(rsna) = &mut orig_bss_protection {
         // Reset the state of the ESS-SA and its replay counter to zero per IEEE 802.11-2016 12.7.2.
         rsna.supplicant.reset();
     }
@@ -2464,7 +2464,7 @@ mod tests {
     }
 
     #[test]
-    fn connect_happy_path_protected() {
+    fn connect_happy_path_wpa2() {
         let mut h = TestHelper::new();
         let (supplicant, suppl_mock) = mock_psk_supplicant();
 
@@ -4254,7 +4254,7 @@ mod tests {
     }
 
     #[test]
-    fn fullmac_initiated_roam_happy_path_protected() {
+    fn fullmac_initiated_roam_happy_path_wpa2() {
         let mut h = TestHelper::new();
         let (supplicant, suppl_mock) = mock_psk_supplicant();
 
@@ -4310,7 +4310,7 @@ mod tests {
     }
 
     #[test]
-    fn policy_initiated_roam_happy_path_protected() {
+    fn policy_initiated_roam_happy_path_wpa2() {
         let mut h = TestHelper::new();
         let (supplicant, suppl_mock) = mock_psk_supplicant();
 
@@ -4354,6 +4354,85 @@ mod tests {
 
         // Note: because a new supplicant is created for the roam to the target, we can't easily
         // test the 802.1X portion of the roam.
+    }
+
+    #[test]
+    fn policy_initiated_roam_happy_path_wep() {
+        let mut h = TestHelper::new();
+        let (cmd, mut connect_txn_stream) = connect_command_wep();
+        let mut selected_bss = cmd.bss.clone();
+        let state = link_up_state(cmd);
+        let selected_bssid = [1, 2, 3, 4, 5, 6];
+        selected_bss.bssid = selected_bssid.into();
+
+        let fidl_selected_bss = fidl_ieee80211::BssDescription::from(*selected_bss.clone());
+        let state = state.roam(&mut h.context, fidl_selected_bss);
+
+        assert_roaming(&state);
+
+        let mut association_ies = vec![];
+        association_ies.extend_from_slice(selected_bss.ies());
+        let conf = fidl_mlme::RoamConfirm {
+            selected_bssid,
+            status_code: fidl_ieee80211::StatusCode::Success,
+            original_association_maintained: false,
+            target_bss_authenticated: true,
+            association_id: 42,
+            association_ies,
+        };
+        let roam_conf_event = MlmeEvent::RoamConf { conf: conf.clone() };
+        let state = state.on_mlme_event(roam_conf_event, &mut h.context);
+        assert_matches!(&state, ClientState::Associated(state) => {
+            assert_matches!(&state.link_state, LinkState::LinkUp { .. });
+        });
+
+        // User should be notified that the roam succeeded.
+        assert_matches!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnRoamResult {result})) => {
+            assert_eq!(result, RoamResult::Success(Box::new((*selected_bss).clone())));
+        });
+    }
+
+    #[test]
+    fn policy_initiated_roam_happy_path_wpa1() {
+        let mut h = TestHelper::new();
+        let (supplicant, suppl_mock) = mock_psk_supplicant();
+
+        let (cmd, _) = connect_command_wpa1(supplicant);
+        let mut selected_bss = (*cmd.bss).clone();
+        let selected_bssid = [1, 2, 3, 4, 5, 6];
+        selected_bss.bssid = selected_bssid.into();
+        let association_ies = selected_bss.ies().to_vec();
+
+        let state = link_up_state(cmd);
+        // Initiate a roam attempt.
+        let fidl_selected_bss = fidl_ieee80211::BssDescription::from(selected_bss.clone());
+        let state = state.roam(&mut h.context, fidl_selected_bss);
+
+        assert_roaming(&state);
+
+        // Real supplicant would be reset here. Reset the mock supplicant.
+        suppl_mock
+            .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
+
+        let conf = fidl_mlme::RoamConfirm {
+            selected_bssid,
+            status_code: fidl_ieee80211::StatusCode::Success,
+            original_association_maintained: false,
+            target_bss_authenticated: true,
+            association_id: 42,
+            association_ies,
+        };
+        let roam_conf_event = MlmeEvent::RoamConf { conf: conf.clone() };
+        let state = state.on_mlme_event(roam_conf_event, &mut h.context);
+
+        assert_matches!(&state, ClientState::Associated(state) => {
+            assert_matches!(&state.link_state, LinkState::EstablishingRsna { .. });
+        });
+
+        h.executor.run_singlethreaded(expect_state_events_link_up_roaming_rsna(
+            &h.inspector,
+            selected_bss,
+        ));
     }
 
     fn expect_roam_failure_emitted(
@@ -6033,7 +6112,12 @@ mod tests {
             bss: Box::new(fake_bss_description!(Wep, ssid: Ssid::try_from("wep").unwrap())),
             connect_txn_sink,
             protection: Protection::Wep(WepKey::Wep40([3; 5])),
-            authentication: Authentication { protocol: Protocol::Wep, credentials: None },
+            authentication: Authentication {
+                protocol: Protocol::Wep,
+                credentials: Some(Box::new(Credentials::Wep(fidl_internal::WepCredentials {
+                    key: vec![3; 5],
+                }))),
+            },
         };
         (cmd, connect_txn_stream)
     }
@@ -6051,7 +6135,12 @@ mod tests {
                     .expect("invalid NegotiatedProtection"),
                 supplicant: Box::new(supplicant),
             }),
-            authentication: Authentication { protocol: Protocol::Wpa1, credentials: None },
+            authentication: Authentication {
+                protocol: Protocol::Wpa1,
+                credentials: Some(Box::new(Credentials::Wpa(
+                    fidl_internal::WpaCredentials::Passphrase("password".into()),
+                ))),
+            },
         };
         (cmd, connect_txn_stream)
     }
