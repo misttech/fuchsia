@@ -60,10 +60,11 @@ std::optional<PowerLevelUpdateRequest> PowerState::RequestTransition(uint32_t cp
   ZX_ASSERT(active_power_level >= domain_->model().idle_levels().size() &&
             active_power_level < domain_->model().levels().size());
 
-  desired_active_power_level_ = active_power_level;
-  if (desired_active_power_level_ == active_power_level_) {
+  if (desired_active_power_level_ == active_power_level) {
     return std::nullopt;
   }
+
+  desired_active_power_level_ = active_power_level;
 
   const PowerLevel& level = domain_->model().levels()[active_power_level];
 
@@ -92,7 +93,11 @@ zx::result<> PowerState::UpdateActivePowerLevel(uint8_t level) {
     return zx::error(ZX_ERR_OUT_OF_RANGE);
   }
 
+  const bool was_at_desired = desired_active_power_level_ == active_power_level_;
   active_power_level_ = level;
+  if (was_at_desired || desired_active_power_level_ == level) {
+    desired_active_power_level_ = level;
+  }
   return zx::ok();
 }
 

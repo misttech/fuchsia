@@ -128,6 +128,33 @@ TEST(PowerStateTest, TransitionWhenPowerLevelIsDesiredPowerLevel) {
   EXPECT_FALSE(state.RequestTransition(1, kMinActivePowerLevel));
 }
 
+TEST(PowerStateTest, TransitionWhenPowerLevelIsAlreadyInFlight) {
+  auto energy_model = MakeFakeEnergyModel(kTotalPowerLevels);
+  auto domain = MakePowerDomainHelper(kModelId, energy_model, 0, 1, 2, 3, 4, 5);
+
+  PowerState state;
+  state.UpdatePowerDomainSet(PowerDomainSet::CreateForTest(domain), 0);
+  ASSERT_EQ(state.domain(), domain);
+  ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel).status_value());
+
+  // First request for a higher level succeeds and enters in-flight state.
+  EXPECT_TRUE(state.RequestTransition(1, kMinActivePowerLevel + 1));
+  EXPECT_EQ(state.desired_active_power_level(), kMinActivePowerLevel + 1);
+
+  // Subsequent request for the same level is suppressed.
+  EXPECT_FALSE(state.RequestTransition(1, kMinActivePowerLevel + 1));
+
+  // Request for an even higher level updates the desired level and succeeds.
+  EXPECT_TRUE(state.RequestTransition(1, kMinActivePowerLevel + 2));
+  EXPECT_EQ(state.desired_active_power_level(), kMinActivePowerLevel + 2);
+
+  // Acknowledging the transition updates active and desired levels.
+  ASSERT_EQ(ZX_OK, state.UpdateActivePowerLevel(kMinActivePowerLevel + 2).status_value());
+  EXPECT_EQ(state.active_power_level(), kMinActivePowerLevel + 2);
+  EXPECT_EQ(state.desired_active_power_level(), kMinActivePowerLevel + 2);
+  EXPECT_FALSE(state.RequestTransition(1, kMinActivePowerLevel + 2));
+}
+
 TEST(PowerStateTest, TransitionWhenPowerLevelIsTooHigh) {
   auto energy_model = MakeFakeEnergyModel(kTotalPowerLevels);
   auto domain = MakePowerDomainHelper(kModelId, energy_model, 0, 1, 2, 3, 4, 5);

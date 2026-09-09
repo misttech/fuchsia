@@ -152,6 +152,39 @@ class PowerState {
     return ProcessingRate{0};
   }
 
+  // Returns the targeted active power level (the in-flight desired level if set,
+  // otherwise the current active level).
+  constexpr std::optional<uint8_t> target_active_power_level() const {
+    return desired_active_power_level_.has_value() ? desired_active_power_level_
+                                                   : active_power_level_;
+  }
+
+  // Returns the processing rate of the targeted active power level (the in-flight
+  // desired level if set, otherwise the current active level).
+  ProcessingRate target_processing_rate() const {
+    if (domain()) {
+      if (const auto level = target_active_power_level()) {
+        return domain()->model().levels()[*level].processing_rate();
+      }
+    }
+    return ProcessingRate{0};
+  }
+
+  // Returns the processing rate of the active power level immediately preceding
+  // the targeted active power level (i.e. the lower bound of the targeted active
+  // power level).
+  ProcessingRate preceding_target_processing_rate() const {
+    if (domain()) {
+      if (const auto level = target_active_power_level()) {
+        const PowerLevel* power_level = &domain()->model().levels()[*level];
+        if (power_level != &domain()->model().active_levels().front()) {
+          return (power_level - 1)->processing_rate();
+        }
+      }
+    }
+    return ProcessingRate{0};
+  }
+
   // Returns the current utilization of the processor.
   Utilization normalized_utilization() const { return normalized_utilization_; }
 

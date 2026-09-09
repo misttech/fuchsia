@@ -299,7 +299,7 @@ void Scheduler::Dump(FILE* output_target, bool queue_state_only) {
             "\n\tmono_ref=%" PRId64 " var_ref=%" PRId64 " slope=%s\n",
             Format(weight_total_).c_str(), Format(min_weight).c_str(), fair_period_.raw_value(),
             runnable_task_count_, total_expected_runtime_ns_.raw_value(),
-            Format(power_level_control_.normalized_utilization()).c_str(),
+            Format(power_level_control_.normalized_deadline_utilization()).c_str(),
             Format(min_utilization).c_str(), now.raw_value(), variable_now.raw_value(),
             monotonic_eligible_time.raw_value(), variable_eligible_time.raw_value(),
             fair_affine_transform_.monotonic_reference_time().raw_value(),
@@ -869,7 +869,7 @@ Scheduler::DequeueResult Scheduler::DequeueDeadlineThread(SchedTime eligible_tim
   const Thread* critical_thread =
       FindEarliestEligibleThread(&critical_deadline_run_queue_, eligible_time);
   const bool is_oversubscribed =
-      power_level_control_.normalized_utilization() > kCpuUtilizationLimit;
+      power_level_control_.normalized_deadline_utilization() > kCpuUtilizationLimit;
 
   const Thread* eligible_thread = nullptr;
 
@@ -959,7 +959,7 @@ Thread* Scheduler::FindEarlierDeadlineThread(SchedTime eligible_time,
   const Thread* critical_thread =
       FindEarliestEligibleThread(&critical_deadline_run_queue_, eligible_time);
   const bool is_oversubscribed =
-      power_level_control_.normalized_utilization() > kCpuUtilizationLimit;
+      power_level_control_.normalized_deadline_utilization() > kCpuUtilizationLimit;
 
   const Thread* eligible_thread = nullptr;
 
@@ -2176,14 +2176,14 @@ void Scheduler::RescheduleCommon(Thread* const current_thread, EndTraceCallback 
       LOCAL_KTRACE_INSTANT(QUEUE, "clear/prune", ("utilization_to_remove", utilization_to_remove));
 
       UpdateTotalDeadlineUtilization(-utilization_to_remove);
+    }
 
-      // Evaluate reducing the processing rate when the required utilization
-      // decreases below the lower bound of the current power level. All of the
-      // processors in the same domain must be re-evaluated to determine whether
-      // an actual rate change should occur.
-      if (power_level_control_.processing_rate_should_decrease()) {
-        power_level_control_.ReevaluateCurrentPowerLevel();
-      }
+    // Evaluate changing the processing rate when the required utilization
+    // moves outside the bounds of the current power level. All of the
+    // processors in the same domain must be re-evaluated to determine whether
+    // an actual rate change should occur.
+    if (power_level_control_.processing_rate_should_change()) {
+      power_level_control_.ReevaluateCurrentPowerLevel();
     }
 
     // Send a pending power level request before updating the processing rate.
@@ -2840,15 +2840,16 @@ void Scheduler::Insert(SchedTime now, Thread* thread, Placement placement) {
       }
 
       UpdateTotalDeadlineUtilization(ep.deadline().utilization - utilization_to_remove);
-
-      // Increase the processing rate when the required utilization increases
-      // beyond the current rate, accounting for current limits.
-      if (power_level_control_.is_enabled() &&
-          power_level_control_.processing_rate_should_increase()) {
-        power_level_control_.PendPowerLevelRequestForRate(
-            power_level_control_.clamped_normalized_utilization());
-      }
     }
+
+    // Increase the processing rate when the required utilization increases
+    // beyond the current rate, accounting for current limits.
+    if (power_level_control_.is_enabled() &&
+        power_level_control_.processing_rate_should_increase()) {
+      power_level_control_.PendPowerLevelRequestForRate(
+          power_level_control_.clamped_total_demand());
+    }
+
     runnable_task_count_++;
     DEBUG_ASSERT(runnable_task_count_ > 0);
     TraceTotalRunnableThreads();
@@ -3757,18 +3758,16 @@ bool Scheduler::RequestPowerLevelForTesting(uint8_t power_level) {
 
 bool Scheduler::PowerLevelControl::UserSetProcessingRateLimits(SchedProcessingRate min,
                                                                SchedProcessingRate max) {
+  AssertHeld(scheduler().queue_lock());
   processing_rate_limit_min_ = ktl::clamp(min, SchedProcessingRate{0}, SchedProcessingRate{1});
   processing_rate_limit_max_ = ktl::clamp(max, SchedProcessingRate{0}, SchedProcessingRate{1});
 
   scheduler().exported_max_processing_rate_ = clamped_max_processing_rate();
+  scheduler().exported_clamped_deadline_utilization_ = clamped_deadline_utilization();
+  scheduler().exported_clamped_fair_utilization_ = clamped_fair_demand();
+  scheduler().exported_clamped_total_utilization_ = clamped_total_demand();
 
-  if (processing_rate_should_change()) {
-    AssertHeld(scheduler().queue_lock());
-    scheduler().exported_clamped_deadline_utilization_ = clamped_normalized_utilization();
-    return true;
-  }
-
-  return false;
+  return processing_rate_should_change();
 }
 
 bool Scheduler::PowerLevelControl::PendPowerLevelRequest(uint8_t power_level) {
@@ -3778,7 +3777,9 @@ bool Scheduler::PowerLevelControl::PendPowerLevelRequest(uint8_t power_level) {
   // If there is already a pending request, it can be updated without issuing a reschedule,
   // since this update raced with dispatch of the previous request and won.
   const bool had_pending_request = pending_update_request_.has_value();
-  pending_update_request_ = power_state_.RequestTransition(cpu(), power_level);
+  if (auto request = power_state_.RequestTransition(cpu(), power_level)) {
+    pending_update_request_ = request;
+  }
   return !had_pending_request && pending_update_request_.has_value();
 }
 
@@ -3799,15 +3800,16 @@ void Scheduler::PowerLevelControl::ReevaluateCurrentPowerLevel() {
   while (domain_cpus != 0) {
     const cpu_num_t cpu_num = remove_cpu_from_mask(domain_cpus);
     max_clamped_demand = ktl::max(
-        max_clamped_demand, percpu::Get(cpu_num).scheduler.exported_clamped_deadline_utilization());
+        max_clamped_demand, percpu::Get(cpu_num).scheduler.exported_clamped_total_utilization());
   }
 
   LOCAL_KTRACE_INSTANT(QUEUE, "ReevaluateCurrentPowerLevel",
                        ("max_clamped_utilization", max_clamped_demand),
-                       ("preceding_processing_rate", preceding_processing_rate()),
-                       ("processing_rate", processing_rate()));
+                       ("preceding_processing_rate", preceding_target_processing_rate()),
+                       ("processing_rate", target_processing_rate()));
 
-  if (max_clamped_demand <= preceding_processing_rate() || max_clamped_demand > processing_rate()) {
+  if (max_clamped_demand <= preceding_target_processing_rate() ||
+      max_clamped_demand > target_processing_rate()) {
     PendPowerLevelRequestForRate(max_clamped_demand);
   }
 }

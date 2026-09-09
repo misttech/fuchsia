@@ -326,7 +326,8 @@ inline void Scheduler::Pi::Common(Upstream& upstream, Thread& thread,
 
     DEBUG_ASSERT(scheduler.weight_total_ >= SchedWeight{0});
     DEBUG_ASSERT(scheduler.critical_deadline_utilization_ >= SchedUtilization{0});
-    DEBUG_ASSERT(scheduler.power_level_control_.normalized_utilization() >= SchedUtilization{0});
+    DEBUG_ASSERT(scheduler.power_level_control_.normalized_deadline_utilization() >=
+                 SchedUtilization{0});
 
     update_dynamic_params(upstream, thread, old_ep, new_ep, now.mono_time);
 

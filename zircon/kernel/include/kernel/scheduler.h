@@ -186,6 +186,24 @@ class Scheduler {
     return exported_clamped_deadline_utilization_.load();
   }
 
+  // Returns the lock-free value of the estimated fair utilization for the
+  // CPU this scheduler is associated with.
+  SchedUtilization exported_fair_utilization() const { return exported_fair_utilization_.load(); }
+
+  // Returns the lock-free value of the estimated fair utilization for the
+  // CPU, clamped to the current rate limits, for the CPU this scheduler is
+  // associated with.
+  SchedUtilization exported_clamped_fair_utilization() const {
+    return exported_clamped_fair_utilization_.load();
+  }
+
+  // Returns the lock-free value of the total estimated utilization (deadline + fair)
+  // for the CPU, clamped to the current rate limits, for the CPU this scheduler
+  // is associated with.
+  SchedUtilization exported_clamped_total_utilization() const {
+    return exported_clamped_total_utilization_.load();
+  }
+
   // Returns the lock-free value of the processing rate for the CPU this
   // scheduler is associated with.
   SchedProcessingRate exported_processing_rate() const { return exported_processing_rate_.load(); }
@@ -1484,6 +1502,9 @@ class Scheduler {
   RelaxedAtomic<SchedDuration> exported_queue_time_ns_{SchedNs(0)};
   RelaxedAtomic<SchedUtilization> exported_deadline_utilization_{SchedUtilization{0}};
   RelaxedAtomic<SchedUtilization> exported_clamped_deadline_utilization_{SchedUtilization{0}};
+  RelaxedAtomic<SchedUtilization> exported_fair_utilization_{SchedUtilization{0}};
+  RelaxedAtomic<SchedUtilization> exported_clamped_fair_utilization_{SchedUtilization{0}};
+  RelaxedAtomic<SchedUtilization> exported_clamped_total_utilization_{SchedUtilization{0}};
   RelaxedAtomic<SchedProcessingRate> exported_processing_rate_{SchedProcessingRate{1}};
   RelaxedAtomic<SchedProcessingRate> exported_max_processing_rate_{SchedProcessingRate{1}};
 
@@ -1674,19 +1695,40 @@ class Scheduler {
       return power_state_.max_idle_power_coefficient_nw();
     }
 
-    // Returns the normalized utilization (constant width demand) of this processor.
-    SchedUtilization normalized_utilization() const {
+    // Returns the normalized deadline utilization of this processor.
+    SchedUtilization normalized_deadline_utilization() const {
       return power_state_.normalized_utilization();
     }
 
-    // Returns the normalized utilization (constant bandwidth demand) of this
-    // processor, clamped to the current performance limits.
-    SchedUtilization clamped_normalized_utilization() const {
-      return ClampDemand(normalized_utilization());
+    // Returns the normalized deadline utilization of this processor,
+    // clamped to the current performance limits.
+    SchedUtilization clamped_deadline_utilization() const {
+      return ClampDemand(normalized_deadline_utilization());
     }
 
-    // Returns the total normalized utilization of the domain this processor belongs to.
-    SchedUtilization total_normalized_utilization() const {
+    // Returns the fair demand of this processor based on total expected runtime
+    // of active fair threads.
+    SchedUtilization fair_demand() const TA_NO_THREAD_SAFETY_ANALYSIS {
+      return scheduler().total_expected_runtime_ns_ * kReciprocalDefaultFairPeriod;
+    }
+
+    // Returns the fair demand of this processor, clamped to the current
+    // performance limits.
+    SchedUtilization clamped_fair_demand() const TA_NO_THREAD_SAFETY_ANALYSIS {
+      return ClampDemand(fair_demand());
+    }
+
+    // Returns the total demand (deadline + fair) of this processor.
+    SchedUtilization total_demand() const {
+      return normalized_deadline_utilization() + fair_demand();
+    }
+
+    // Returns the total normalized utilization demand of this processor,
+    // clamped to the current performance limits.
+    SchedUtilization clamped_total_demand() const { return ClampDemand(total_demand()); }
+
+    // Returns the normalized deadline utilization of the domain this processor belongs to.
+    SchedUtilization domain_deadline_utilization() const {
       return power_state_.total_normalized_utilization();
     }
 
@@ -1726,25 +1768,39 @@ class Scheduler {
       return power_state_.preceding_active_processing_rate();
     }
 
+    // Returns the target processing rate of this processor (the in-flight
+    // desired rate if a transition is pending, or the current processing rate).
+    SchedProcessingRate target_processing_rate() const {
+      return domain() ? power_state_.target_processing_rate() : processing_rate_;
+    }
+
+    // Returns the processing rate of the active power level immediately
+    // preceding the target power level (the lower bound of the target power level).
+    SchedProcessingRate preceding_target_processing_rate() const {
+      return domain() ? power_state_.preceding_target_processing_rate()
+                      : preceding_processing_rate();
+    }
+
     // Returns true if the clamped demand is outside the processing rate range
-    // of the current active power level.
+    // of the target active power level.
     bool processing_rate_should_change() const {
-      const SchedUtilization clamped_demand = clamped_normalized_utilization();
-      return clamped_demand <= preceding_processing_rate() || clamped_demand > processing_rate();
+      const SchedUtilization clamped_demand = clamped_total_demand();
+      return clamped_demand <= preceding_target_processing_rate() ||
+             clamped_demand > target_processing_rate();
     }
 
     // Returns true if the clamped demand is above the processing rate of the
-    // current active power level.
+    // target active power level.
     bool processing_rate_should_increase() const {
-      const SchedUtilization clamped_demand = clamped_normalized_utilization();
-      return clamped_demand > processing_rate();
+      const SchedUtilization clamped_demand = clamped_total_demand();
+      return clamped_demand > target_processing_rate();
     }
 
     // Returns true if the clamped demand is at or below the processing rate of
-    // the preceding active power level.
+    // the preceding target active power level.
     bool processing_rate_should_decrease() const {
-      const SchedUtilization clamped_demand = clamped_normalized_utilization();
-      return clamped_demand <= preceding_processing_rate();
+      const SchedUtilization clamped_demand = clamped_total_demand();
+      return clamped_demand <= preceding_target_processing_rate();
     }
 
     // Returns true if there is a pending update to the processing rate that has not yet been
@@ -1756,7 +1812,8 @@ class Scheduler {
 
    private:
     Scheduler& scheduler() { return *scheduler_; }
-    cpu_num_t cpu() { return scheduler().this_cpu(); }
+    const Scheduler& scheduler() const { return *scheduler_; }
+    cpu_num_t cpu() const { return scheduler().this_cpu(); }
 
     SchedProcessingRate processing_rate_{1};
     SchedProcessingRate processing_rate_reciprocal_{1};
