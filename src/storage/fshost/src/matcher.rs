@@ -7,7 +7,6 @@ use crate::device::{Device, DeviceTag, Parent};
 use crate::environment::Environment;
 use anyhow::Error;
 use async_trait::async_trait;
-use fidl_fuchsia_storage_block::DeviceFlag as BlockDeviceFlag;
 use fs_management::FVM_TYPE_GUID;
 use fs_management::format::DiskFormat;
 use fs_management::format::constants::{
@@ -214,7 +213,7 @@ impl Matcher for FxblobMatcher {
         "Fxblob"
     }
     async fn match_device(&self, device: &mut dyn Device) -> bool {
-        if self.already_matched {
+        if self.already_matched || device.is_removable().await {
             return false;
         }
         if self.ramdisk_required && !device.is_fshost_ramdisk() {
@@ -313,7 +312,7 @@ impl Matcher for FvmMatcher {
     }
 
     async fn match_device(&self, device: &mut dyn Device) -> bool {
-        if self.already_matched {
+        if self.already_matched || device.is_removable().await {
             return false;
         }
         if self.ramdisk_required && !device.is_fshost_ramdisk() {
@@ -365,6 +364,9 @@ impl Matcher for GptAllMatcher {
     }
 
     async fn match_device(&self, device: &mut dyn Device) -> bool {
+        if device.is_nand() || device.is_fshost_ramdisk() || device.is_removable().await {
+            return false;
+        }
         device.content_format().await.ok() == Some(DiskFormat::Gpt)
     }
 
@@ -415,17 +417,9 @@ impl Matcher for SystemGptMatcher {
         if self.device_path.is_some() {
             return false;
         }
-        if device.is_nand() || device.is_fshost_ramdisk() {
+        if device.is_nand() || device.is_fshost_ramdisk() || device.is_removable().await {
             return false;
         }
-        let removable = device
-            .get_block_info()
-            .await
-            .map(|info| info.flags.contains(BlockDeviceFlag::REMOVABLE))
-            .inspect_err(|err| {
-                log::warn!(err:?; "Failed to query block info; assuming non-removable device");
-            })
-            .unwrap_or(false);
         // If the partition has a type GUID, that implies it's inside a partition table so it can't
         // be the system partition table itself.  This is intended to deal with devices like vim3
         // which use the sdmmc partition table and the GPT is one of several sdmmc partitions, but
@@ -436,7 +430,7 @@ impl Matcher for SystemGptMatcher {
         const EMPTY_GUID: [u8; 16] = [0; 16];
         let has_type_guid = device.partition_type().await.unwrap_or(&EMPTY_GUID) != &EMPTY_GUID;
         // Match the first non-removable device which isn't inside a partition table itself.
-        !removable && !has_type_guid
+        !has_type_guid
     }
 
     async fn process_device(
@@ -474,7 +468,7 @@ impl Matcher for FxblobOnRecoveryMatcher {
     }
 
     async fn match_device(&self, device: &mut dyn Device) -> bool {
-        if self.already_matched || device.is_fshost_ramdisk() {
+        if self.already_matched || device.is_fshost_ramdisk() || device.is_removable().await {
             return false;
         }
 
@@ -522,7 +516,7 @@ impl Matcher for FvmOnRecoveryMatcher {
     }
 
     async fn match_device(&self, device: &mut dyn Device) -> bool {
-        if self.already_matched || device.is_fshost_ramdisk() {
+        if self.already_matched || device.is_fshost_ramdisk() || device.is_removable().await {
             return false;
         }
 
@@ -555,7 +549,10 @@ impl Matcher for FvmOnRecoveryMatcher {
 
 #[cfg(test)]
 mod tests {
-    use super::{Device, DiskFormat, Environment, Matchers};
+    use super::{
+        Device, DiskFormat, Environment, FvmMatcher, FxblobMatcher, GptAllMatcher, Matcher,
+        Matchers, SystemGptMatcher,
+    };
     use crate::config::default_test_config;
     use crate::device::constants::LEGACY_FVM_TYPE_GUID;
     use crate::device::{DeviceTag, Parent, RegisteredDevices};
@@ -579,6 +576,7 @@ mod tests {
         partition_label: Option<String>,
         partition_type: Option<[u8; 16]>,
         is_fshost_ramdisk: bool,
+        is_removable: bool,
         parent: Parent,
     }
 
@@ -590,6 +588,7 @@ mod tests {
                 partition_label: None,
                 partition_type: None,
                 is_fshost_ramdisk: false,
+                is_removable: false,
                 // Default to system partition table here mostly so we don't trip the publisher
                 // matcher unless we are testing it.
                 parent: Parent::SystemPartitionTable,
@@ -615,6 +614,10 @@ mod tests {
             self.is_fshost_ramdisk = true;
             self
         }
+        fn set_is_removable(mut self, is_removable: bool) -> Self {
+            self.is_removable = is_removable;
+            self
+        }
         fn set_parent(mut self, parent: Parent) -> Self {
             self.parent = parent;
             self
@@ -633,6 +636,9 @@ mod tests {
         }
         fn is_nand(&self) -> bool {
             false
+        }
+        async fn is_removable(&self) -> bool {
+            self.is_removable
         }
         async fn content_format(&mut self) -> Result<DiskFormat, Error> {
             Ok(self.content_format)
@@ -1497,5 +1503,67 @@ mod tests {
                 .await
                 .expect("match_device failed for device 2")
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_system_gpt_ignores_removable_devices() {
+        let matcher = SystemGptMatcher::new();
+        let mut removable_device = MockDevice::new()
+            .set_topological_path("/dev/sys/platform/pci/00:14.0/xhci/usb-bus/001/usb-mass-storage")
+            .set_is_removable(true);
+        assert!(!matcher.match_device(&mut removable_device).await);
+
+        let mut internal_device = MockDevice::new()
+            .set_topological_path("/dev/sys/platform/pci/00:1f.2/nvme")
+            .set_is_removable(false);
+        assert!(matcher.match_device(&mut internal_device).await);
+    }
+
+    #[fuchsia::test]
+    async fn test_gpt_all_ignores_removable_devices() {
+        let matcher = GptAllMatcher::new();
+        let mut removable_device = MockDevice::new()
+            .set_content_format(DiskFormat::Gpt)
+            .set_topological_path("/dev/sys/platform/pci/00:14.0/xhci/usb-bus/001/usb-mass-storage")
+            .set_is_removable(true);
+        assert!(!matcher.match_device(&mut removable_device).await);
+
+        let mut internal_device = MockDevice::new()
+            .set_content_format(DiskFormat::Gpt)
+            .set_topological_path("/dev/sys/platform/pci/00:1f.2/nvme")
+            .set_is_removable(false);
+        assert!(matcher.match_device(&mut internal_device).await);
+    }
+
+    #[fuchsia::test]
+    async fn test_fxblob_ignores_removable_devices() {
+        let matcher = FxblobMatcher::new(false, false);
+        let mut removable_device = MockDevice::new()
+            .set_content_format(DiskFormat::Fxfs)
+            .set_partition_label("super")
+            .set_is_removable(true);
+        assert!(!matcher.match_device(&mut removable_device).await);
+
+        let mut internal_device = MockDevice::new()
+            .set_content_format(DiskFormat::Fxfs)
+            .set_partition_label("super")
+            .set_is_removable(false);
+        assert!(matcher.match_device(&mut internal_device).await);
+    }
+
+    #[fuchsia::test]
+    async fn test_fvm_ignores_removable_devices() {
+        let matcher = FvmMatcher::new(false);
+        let mut removable_device = MockDevice::new()
+            .set_content_format(DiskFormat::Fvm)
+            .set_partition_label("fvm")
+            .set_is_removable(true);
+        assert!(!matcher.match_device(&mut removable_device).await);
+
+        let mut internal_device = MockDevice::new()
+            .set_content_format(DiskFormat::Fvm)
+            .set_partition_label("fvm")
+            .set_is_removable(false);
+        assert!(matcher.match_device(&mut internal_device).await);
     }
 }

@@ -8,17 +8,21 @@ use anyhow::{Context, Error, anyhow};
 use async_trait::async_trait;
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_device::{ControllerMarker, ControllerProxy};
+use fidl_fuchsia_driver_framework as fdf;
+use fidl_fuchsia_driver_token as ftoken;
 use fidl_fuchsia_io::{self as fio, DirectoryProxy};
-use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
+use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy, DeviceFlag};
 use fs_management::filesystem::{BlockConnector, DirBasedBlockConnector};
 use fs_management::format::{DiskFormat, detect_disk_format};
 use fuchsia_async as fasync;
 use fuchsia_async::condition::Condition;
-use fuchsia_component::client::connect_to_protocol_at_path;
+use fuchsia_component::client::{
+    connect_to_named_protocol_at_dir_root, connect_to_protocol_at_path,
+};
 use futures::stream::{AbortHandle, Abortable};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::Poll;
 use std::thread::JoinHandle;
 use vmo_backed_block_server::{VmoBackedServer, VmoBackedServerConnector};
@@ -92,6 +96,12 @@ pub trait Device: Send + Sync {
     /// NOTE: This is *only* true for the ramdisk device that fshost creates and will not be true
     /// for other ramdisks.
     fn is_fshost_ramdisk(&self) -> bool;
+
+    /// True if this device is removable (e.g. self-reported removable media flag or connected
+    /// over a USB or removable hotplug bus).
+    async fn is_removable(&self) -> bool {
+        false
+    }
 
     /// Marks the device as being backed by an fshost ramdisk.
     fn set_fshost_ramdisk(&mut self, v: bool);
@@ -308,6 +318,19 @@ impl Device for BlockDevice {
         self.is_fshost_ramdisk
     }
 
+    async fn is_removable(&self) -> bool {
+        if self.topological_path.contains("usb")
+            || self.topological_path.contains("xhci")
+            || self.topological_path.contains("sdio")
+        {
+            return true;
+        }
+        match self.get_block_info().await {
+            Ok(info) => info.flags.contains(DeviceFlag::REMOVABLE),
+            Err(_) => false,
+        }
+    }
+
     fn set_fshost_ramdisk(&mut self, v: bool) {
         self.is_fshost_ramdisk = v;
     }
@@ -326,6 +349,7 @@ pub struct VolumeServiceDevice {
     content_format: Option<DiskFormat>,
     partition_label: Option<String>,
     partition_type: Option<[u8; 16]>,
+    is_removable: Mutex<Option<bool>>,
 
     parent: Parent,
 }
@@ -351,8 +375,65 @@ impl VolumeServiceDevice {
             content_format: None,
             partition_label: None,
             partition_type: None,
+            is_removable: Mutex::new(None),
             parent,
         })
+    }
+
+    async fn check_is_removable(&self) -> bool {
+        // Check 1: Self-reported removable media flag from block device info.
+        if let Ok(info) = self.get_block_info().await {
+            if info.flags.contains(DeviceFlag::REMOVABLE) {
+                return true;
+            }
+        }
+
+        // Check 2: Query Driver Framework NodeBusTopology via NodeToken.
+        let token_proxy = match connect_to_named_protocol_at_dir_root::<ftoken::NodeTokenMarker>(
+            self.connector.dir(),
+            "token",
+        ) {
+            Ok(proxy) => proxy,
+            Err(_) => return false,
+        };
+        let event_handle = match token_proxy.get().await {
+            Ok(Ok(handle)) => handle,
+            Ok(Err(status)) => {
+                log::warn!(status:?; "Failed to get node token for device");
+                return false;
+            }
+            Err(err) => {
+                log::warn!(err:?; "Failed to query node token for device");
+                return false;
+            }
+        };
+        let topology_proxy = match fuchsia_component::client::connect_to_protocol::<
+            ftoken::NodeBusTopologyMarker,
+        >() {
+            Ok(proxy) => proxy,
+            Err(err) => {
+                log::warn!(err:?; "Failed to connect to NodeBusTopology protocol");
+                return false;
+            }
+        };
+        match topology_proxy.get(event_handle).await {
+            Ok(Ok(resp)) => resp.iter().any(|bus_info| {
+                matches!(
+                    bus_info.bus,
+                    Some(fdf::BusType::Usb)
+                        | Some(fdf::BusType::UsbPeripheral)
+                        | Some(fdf::BusType::Sdio)
+                )
+            }),
+            Ok(Err(status)) => {
+                log::warn!(status:?; "NodeBusTopology query returned error status");
+                false
+            }
+            Err(err) => {
+                log::warn!(err:?; "Failed to query NodeBusTopology for device");
+                false
+            }
+        }
     }
 }
 
@@ -427,6 +508,15 @@ impl Device for VolumeServiceDevice {
 
     fn is_fshost_ramdisk(&self) -> bool {
         false
+    }
+
+    async fn is_removable(&self) -> bool {
+        if let Some(cached) = *self.is_removable.lock().unwrap() {
+            return cached;
+        }
+        let is_removable = self.check_is_removable().await;
+        *self.is_removable.lock().unwrap() = Some(is_removable);
+        is_removable
     }
 
     fn set_fshost_ramdisk(&mut self, _v: bool) {}

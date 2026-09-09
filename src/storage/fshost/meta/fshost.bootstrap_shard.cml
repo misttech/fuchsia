@@ -63,6 +63,11 @@
             from: "#devfs",
             to: [ "#fshost" ],
         },
+
+        // Route volume service instances for boot storage devices from
+        // #boot-drivers to #fshost. Removable and external peripheral storage
+        // must be isolated or filtered via NodeBusTopology to prevent
+        // unauthenticated media from matching as system storage partitions.
         {
             service: "fuchsia.hardware.block.volume.Service",
             from: "#boot-drivers",

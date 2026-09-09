@@ -57,6 +57,8 @@
                 "fuchsia.process.Launcher",
             ],
         },
+
+        // Volume service instances provided by driver framework for block devices.
         {
             service: [ "fuchsia.hardware.block.volume.Service" ],
         },
