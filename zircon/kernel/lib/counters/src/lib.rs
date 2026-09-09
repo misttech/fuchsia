@@ -69,6 +69,11 @@ impl Descriptor {
 }
 
 unsafe extern "C" {
+    fn kcounter_sum_across_all_cpus_ffi(desc: *const Descriptor) -> i64;
+    fn kcounter_max_across_all_cpus_ffi(desc: *const Descriptor) -> i64;
+    fn kcounter_min_across_all_cpus_ffi(desc: *const Descriptor) -> i64;
+    fn kcounter_value_curr_cpu_ffi(desc: *const Descriptor) -> i64;
+    fn kcounter_set_ffi(desc: *const Descriptor, delta: u64);
     fn kcounter_add_ffi(desc: *const Descriptor, delta: i64);
     fn kcounter_min_ffi(desc: *const Descriptor, value: i64);
     fn kcounter_max_ffi(desc: *const Descriptor, value: i64);
@@ -94,6 +99,37 @@ impl Counter {
     /// static descriptor variable.
     pub const unsafe fn new_with_ptr(descriptor: *const Descriptor) -> Self {
         Self { descriptor }
+    }
+
+    /// Return the sum of the per-cpu slots for this counter across all CPUs.
+    #[inline]
+    pub fn sum_across_all_cpus(&self) -> i64 {
+        unsafe { kcounter_sum_across_all_cpus_ffi(self.descriptor) }
+    }
+
+    // Return the max of the per-cpu slots for this counter.
+    #[inline]
+    pub fn max_across_all_cpus(&self) -> i64 {
+        unsafe { kcounter_max_across_all_cpus_ffi(self.descriptor) }
+    }
+
+    // Return the min of the per-cpu slots for this counter.
+    #[inline]
+    pub fn min_across_all_cpus(&self) -> i64 {
+        unsafe { kcounter_min_across_all_cpus_ffi(self.descriptor) }
+    }
+
+    // Return the value of the calling cpu's slot for this counter.
+    pub fn value_curr_cpu(&self) -> i64 {
+        unsafe { kcounter_value_curr_cpu_ffi(self.descriptor) }
+    }
+
+    // Set the value of calling cpu's slot to |value|. No memory order is implied.
+    #[inline]
+    pub fn set(&self, value: u64) {
+        unsafe {
+            kcounter_set_ffi(self.descriptor, value);
+        }
     }
 
     /// Add the given delta value to the calling CPU's counter slot.

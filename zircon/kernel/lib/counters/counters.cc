@@ -34,10 +34,30 @@ LK_INIT_HOOK(kcounters, counters_init, LK_INIT_LEVEL_USER - 1)
 
 // Provide access to kcounters to Rust.
 extern "C" {
+int64_t kcounter_sum_across_all_cpus_ffi(const counters::Descriptor* desc);
+int64_t kcounter_max_across_all_cpus_ffi(const counters::Descriptor* desc);
+int64_t kcounter_min_across_all_cpus_ffi(const counters::Descriptor* desc);
+int64_t kcounter_value_curr_cpu_ffi(const counters::Descriptor* desc);
+void kcounter_set_ffi(const counters::Descriptor* desc, uint64_t delta);
 void kcounter_add_ffi(const counters::Descriptor* desc, int64_t delta);
 void kcounter_min_ffi(const counters::Descriptor* desc, int64_t value);
 void kcounter_max_ffi(const counters::Descriptor* desc, int64_t value);
 
+int64_t kcounter_sum_across_all_cpus_ffi(const counters::Descriptor* desc) {
+  return Counter(desc).SumAcrossAllCpus();
+}
+int64_t kcounter_max_across_all_cpus_ffi(const counters::Descriptor* desc) {
+  return Counter(desc).MaxAcrossAllCpus();
+}
+int64_t kcounter_min_across_all_cpus_ffi(const counters::Descriptor* desc) {
+  return Counter(desc).MinAcrossAllCpus();
+}
+int64_t kcounter_value_curr_cpu_ffi(const counters::Descriptor* desc) {
+  return Counter(desc).ValueCurrCpu();
+}
+void kcounter_set_ffi(const counters::Descriptor* desc, uint64_t delta) {
+  Counter(desc).Set(delta);
+}
 void kcounter_add_ffi(const counters::Descriptor* desc, int64_t delta) { Counter(desc).Add(delta); }
 void kcounter_min_ffi(const counters::Descriptor* desc, int64_t value) { Counter(desc).Min(value); }
 void kcounter_max_ffi(const counters::Descriptor* desc, int64_t value) { Counter(desc).Max(value); }
