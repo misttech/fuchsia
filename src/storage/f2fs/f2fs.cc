@@ -68,11 +68,33 @@ static zx_status_t CheckBlockSize(const Superblock& sb) {
     return ZX_ERR_INVALID_ARGS;
   }
 
+  uint32_t segment_count = LeToCpu(sb.segment_count);
+  uint32_t segment_count_ckpt = LeToCpu(sb.segment_count_ckpt);
+  uint32_t segment_count_sit = LeToCpu(sb.segment_count_sit);
+  uint32_t segment_count_nat = LeToCpu(sb.segment_count_nat);
+  uint32_t segment_count_ssa = LeToCpu(sb.segment_count_ssa);
+
+  if (segment_count_ckpt < 2 || segment_count_sit < 2 || (segment_count_sit % 2 != 0) ||
+      segment_count_nat < 2 || (segment_count_nat % 2 != 0) || segment_count_ssa == 0 ||
+      segment_count_main == 0) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  auto checked_meta_segments = safemath::CheckAdd<uint32_t>(segment_count_ckpt, segment_count_sit,
+                                                            segment_count_nat, segment_count_ssa);
+  if (!checked_meta_segments.IsValid()) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  auto checked_total_segments = checked_meta_segments + segment_count_main;
+  if (!checked_total_segments.IsValid() || checked_total_segments.ValueOrDie() > segment_count) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
   const uint32_t cp_payload = LeToCpu(sb.cp_payload);
   const uint64_t sit_ver_bitmap_bytesize =
-      VersionBitmapByteSize(LeToCpu(sb.segment_count_sit), LeToCpu(sb.log_blocks_per_seg));
+      VersionBitmapByteSize(segment_count_sit, LeToCpu(sb.log_blocks_per_seg));
   const uint64_t nat_ver_bitmap_bytesize =
-      VersionBitmapByteSize(LeToCpu(sb.segment_count_nat), LeToCpu(sb.log_blocks_per_seg));
+      VersionBitmapByteSize(segment_count_nat, LeToCpu(sb.log_blocks_per_seg));
   if (cp_payload > kMaxCpPayload || sit_ver_bitmap_bytesize > kMaxSitBitmapSize ||
       nat_ver_bitmap_bytesize > kMaxBitmapBytes) {
     return ZX_ERR_INVALID_ARGS;

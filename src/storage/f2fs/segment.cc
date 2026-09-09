@@ -412,8 +412,9 @@ block_t SegmentManager::StartSumBlock() const {
 }
 
 block_t SegmentManager::SumBlkAddr(int base, int type) const {
-  return superblock_info_.StartCpAddr() +
-         LeToCpu(superblock_info_.GetCheckpoint().cp_pack_total_block_count) - (base + 1) + type;
+  uint32_t total_blocks = LeToCpu(superblock_info_.GetCheckpoint().cp_pack_total_block_count);
+  ZX_ASSERT(total_blocks >= static_cast<uint32_t>(base + 1));
+  return superblock_info_.StartCpAddr() + total_blocks - (base + 1) + type;
 }
 
 bool SegmentManager::SecUsageCheck(unsigned int secno) const {

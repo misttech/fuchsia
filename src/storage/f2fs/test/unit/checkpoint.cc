@@ -1194,5 +1194,187 @@ TEST_F(CheckpointTest, InvalidRsvdSegmentCount) {
   }
 }
 
+TEST_F(CheckpointTest, InvalidChecksumOffset) {
+  DisableFsck();
+  SuperblockInfo &sb_info = fs_->GetSuperblockInfo();
+
+  // Aligned offset below header
+  BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->checksum_offset =
+      CpuToLe(static_cast<uint32_t>(Checkpoint::GetHeaderByteSize() - sizeof(uint32_t)));
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  // Unaligned offset within bounds
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->checksum_offset = CpuToLe(static_cast<uint32_t>(Checkpoint::GetHeaderByteSize() + 1));
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  // Aligned offset exceeding block size (testing upper bounds check independently of alignment)
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->checksum_offset = CpuToLe(static_cast<uint32_t>(kBlockSize));
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->checksum_offset = CpuToLe(static_cast<uint32_t>(kBlockSize + sizeof(uint32_t)));
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+}
+
+TEST_F(CheckpointTest, InvalidCpPackBlockCounts) {
+  DisableFsck();
+  SuperblockInfo &sb_info = fs_->GetSuperblockInfo();
+
+  // Test invalid cp_pack_total_block_count (must be in [3, blocks_per_seg])
+  BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_total_block_count = CpuToLe(0u);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_total_block_count = CpuToLe(1u);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_total_block_count = CpuToLe(2u);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_total_block_count =
+      CpuToLe(static_cast<uint32_t>(sb_info.GetBlocksPerSeg() + 1));
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  // Test invalid cp_pack_start_sum (must be in [cp_payload + 1, blocks_per_seg - 1 -
+  // kNrCursegType] and < cp_pack_total_block_count)
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_start_sum = CpuToLe(0u);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_start_sum = ckpt_block->cp_pack_total_block_count;
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_start_sum = CpuToLe(LeToCpu(ckpt_block->cp_pack_total_block_count) + 1);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_start_sum =
+      CpuToLe(static_cast<uint32_t>(sb_info.GetBlocksPerSeg() - kNrCursegType));
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  // When kCpCompactSumFlag and kCpUmountFlag are both set, min_sum_blocks is 4
+  // (1 compact data summary + 3 normal node summaries).
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_start_sum = CpuToLe(1u);
+  ckpt_block->ckpt_flags |= CpuToLe(static_cast<uint32_t>(CpFlag::kCpCompactSumFlag));
+  ckpt_block->ckpt_flags |= CpuToLe(static_cast<uint32_t>(CpFlag::kCpUmountFlag));
+  ckpt_block->cp_pack_total_block_count = CpuToLe(6u);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_OK);
+
+  // If cp_pack_total_block_count is less than cp_pack_start_sum + min_sum_blocks + 1, it is
+  // rejected.
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_start_sum = CpuToLe(1u);
+  ckpt_block->ckpt_flags |= CpuToLe(static_cast<uint32_t>(CpFlag::kCpCompactSumFlag));
+  ckpt_block->ckpt_flags |= CpuToLe(static_cast<uint32_t>(CpFlag::kCpUmountFlag));
+  ckpt_block->cp_pack_total_block_count = CpuToLe(5u);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  // When kCpCompactSumFlag is set without kCpUmountFlag, min_sum_blocks is 1.
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_start_sum = CpuToLe(1u);
+  ckpt_block->ckpt_flags |= CpuToLe(static_cast<uint32_t>(CpFlag::kCpCompactSumFlag));
+  ckpt_block->ckpt_flags &= ~CpuToLe(static_cast<uint32_t>(CpFlag::kCpUmountFlag));
+  ckpt_block->cp_pack_total_block_count = CpuToLe(3u);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_OK);
+
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_start_sum = CpuToLe(1u);
+  ckpt_block->ckpt_flags |= CpuToLe(static_cast<uint32_t>(CpFlag::kCpCompactSumFlag));
+  ckpt_block->ckpt_flags &= ~CpuToLe(static_cast<uint32_t>(CpFlag::kCpUmountFlag));
+  ckpt_block->cp_pack_total_block_count = CpuToLe(2u);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  // Without kCpCompactSumFlag, unmount requires 6 summary blocks (3 data + 3 node).
+  ckpt_block = sb_info.GetCheckpointBlock();
+  ckpt_block->cp_pack_start_sum = CpuToLe(1u);
+  ckpt_block->ckpt_flags &= ~CpuToLe(static_cast<uint32_t>(CpFlag::kCpCompactSumFlag));
+  ckpt_block->ckpt_flags |= CpuToLe(static_cast<uint32_t>(CpFlag::kCpUmountFlag));
+  ckpt_block->cp_pack_total_block_count = CpuToLe(7u);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  ckpt_block->cp_pack_total_block_count = CpuToLe(8u);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_OK);
+}
+
+TEST_F(CheckpointTest, InvalidBitmapByteSizes) {
+  DisableFsck();
+  SuperblockInfo &sb_info = fs_->GetSuperblockInfo();
+
+  // When cp_payload == 0: sit_size + nat_size > max_cp_bitmap_size
+  BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+  const uint32_t sit_size = LeToCpu(ckpt_block->sit_ver_bitmap_bytesize);
+  const uint32_t nat_size = LeToCpu(ckpt_block->nat_ver_bitmap_bytesize);
+  // Set checksum_offset (4-byte aligned) such that max_cp_bitmap_size < sit_size + nat_size
+  const uint32_t tight_offset =
+      fbl::round_down(static_cast<uint32_t>(Checkpoint::GetHeaderByteSize() +
+                                            (sit_size + nat_size) - sizeof(uint32_t)),
+                      static_cast<uint32_t>(sizeof(uint32_t)));
+  ckpt_block->checksum_offset = CpuToLe(tight_offset);
+  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+
+  // When cp_payload > 0: nat_ver_bitmap_bytesize > max_cp_bitmap_size
+  auto sb = std::make_unique<Superblock>();
+  sb->log_blocksize = CpuToLe(12u);
+  sb->log_blocks_per_seg = CpuToLe(kDefaultLogBlocksPerSegment);
+  sb->segment_count_ckpt = CpuToLe(2u);
+  sb->segment_count_sit = CpuToLe(2u);
+  sb->segment_count_nat = CpuToLe(2u);
+  sb->segment_count_ssa = CpuToLe(1u);
+  sb->segment_count_main = CpuToLe(10u);
+  sb->segment_count = CpuToLe(100u);
+  sb->cp_payload = CpuToLe(1u);
+  SuperblockInfo payload_sb_info(std::move(sb));
+
+  BlockBuffer<Checkpoint> payload_block;
+  payload_block->cp_pack_total_block_count = CpuToLe(10u);
+  payload_block->cp_pack_start_sum = CpuToLe(2u);
+  payload_block->ckpt_flags = static_cast<uint32_t>(CpFlag::kCpCompactSumFlag);
+  payload_block->sit_ver_bitmap_bytesize =
+      CpuToLe(static_cast<uint32_t>(VersionBitmapByteSize(2u, kDefaultLogBlocksPerSegment)));
+  payload_block->nat_ver_bitmap_bytesize =
+      CpuToLe(static_cast<uint32_t>(VersionBitmapByteSize(2u, kDefaultLogBlocksPerSegment)));
+
+  // Set checksum_offset such that max_cp_bitmap_size < nat_ver_bitmap_bytesize
+  const uint32_t payload_nat_size = LeToCpu(payload_block->nat_ver_bitmap_bytesize);
+  const uint32_t payload_tight_offset = fbl::round_down(
+      static_cast<uint32_t>(Checkpoint::GetHeaderByteSize() + payload_nat_size - sizeof(uint32_t)),
+      static_cast<uint32_t>(sizeof(uint32_t)));
+  payload_block->checksum_offset = CpuToLe(payload_tight_offset);
+  ASSERT_EQ(payload_sb_info.SetCheckpoint(payload_block), ZX_ERR_BAD_STATE);
+
+  // When cp_payload > 0: sit_ver_bitmap_bytesize > cp_payload * kBlockSize
+  auto sb_overflow = std::make_unique<Superblock>();
+  sb_overflow->log_blocksize = CpuToLe(12u);
+  sb_overflow->log_blocks_per_seg = CpuToLe(kDefaultLogBlocksPerSegment);
+  sb_overflow->segment_count_ckpt = CpuToLe(2u);
+  sb_overflow->segment_count_sit = CpuToLe(200u);
+  sb_overflow->segment_count_nat = CpuToLe(2u);
+  sb_overflow->segment_count_ssa = CpuToLe(1u);
+  sb_overflow->segment_count_main = CpuToLe(10u);
+  sb_overflow->segment_count = CpuToLe(300u);
+  sb_overflow->cp_payload = CpuToLe(1u);
+  SuperblockInfo payload_overflow_sb_info(std::move(sb_overflow));
+
+  BlockBuffer<Checkpoint> overflow_block;
+  overflow_block->cp_pack_total_block_count = CpuToLe(10u);
+  overflow_block->cp_pack_start_sum = CpuToLe(2u);
+  overflow_block->ckpt_flags = static_cast<uint32_t>(CpFlag::kCpCompactSumFlag);
+  overflow_block->sit_ver_bitmap_bytesize =
+      CpuToLe(static_cast<uint32_t>(VersionBitmapByteSize(200u, kDefaultLogBlocksPerSegment)));
+  overflow_block->nat_ver_bitmap_bytesize =
+      CpuToLe(static_cast<uint32_t>(VersionBitmapByteSize(2u, kDefaultLogBlocksPerSegment)));
+  overflow_block->checksum_offset = CpuToLe(kChecksumOffset);
+  ASSERT_EQ(payload_overflow_sb_info.SetCheckpoint(overflow_block), ZX_ERR_BAD_STATE);
+}
+
 }  // namespace
 }  // namespace f2fs

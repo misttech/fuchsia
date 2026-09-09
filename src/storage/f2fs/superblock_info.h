@@ -291,17 +291,19 @@ class SuperblockInfo {
   block_t GetNumCpPayload() const { return cp_payload_; }
 
   zx::result<uint32_t> GetCrcFromCheckpointBlock(
-      std::optional<const Checkpoint *> block = std::nullopt) {
+      std::optional<const Checkpoint *> block = std::nullopt) const {
     const Checkpoint *cp_block = block ? *block : checkpoint_block_.get<Checkpoint>();
     size_t offset = LeToCpu(cp_block->checksum_offset);
-    if (offset >= kBlockSize) {
+    if (offset > kBlockSize - sizeof(uint32_t) || offset < Checkpoint::GetHeaderByteSize() ||
+        offset % sizeof(uint32_t) != 0) {
       return zx::error(ZX_ERR_BAD_STATE);
     }
-    return zx::ok(
-        *reinterpret_cast<const uint32_t *>(reinterpret_cast<const uint8_t *>(cp_block) + offset));
+    uint32_t crc;
+    std::memcpy(&crc, reinterpret_cast<const uint8_t *>(cp_block) + offset, sizeof(uint32_t));
+    return zx::ok(LeToCpu(crc));
   }
 
-  uint64_t GetCheckpointVer(bool with_crc = false) {
+  uint64_t GetCheckpointVer(bool with_crc = false) const {
     uint64_t version = checkpoint_ver_;
     if (with_crc && TestCpFlags(CpFlag::kCpCrcRecoveryFlag)) {
       zx::result crc = GetCrcFromCheckpointBlock();
@@ -368,6 +370,47 @@ class SuperblockInfo {
         LeToCpu(ckpt.nat_ver_bitmap_bytesize) != nat_ver_bitmap_bytesize ||
         nat_blocks > std::numeric_limits<block_t>::max() ||
         LeToCpu(ckpt.next_free_nid) >= kNatEntryPerBlock * nat_blocks) {
+      return ZX_ERR_BAD_STATE;
+    }
+
+    const size_t checksum_offset = LeToCpu(ckpt.checksum_offset);
+    if (checksum_offset > kBlockSize - sizeof(uint32_t) ||
+        checksum_offset < Checkpoint::GetHeaderByteSize() ||
+        checksum_offset % sizeof(uint32_t) != 0) {
+      return ZX_ERR_BAD_STATE;
+    }
+
+    const uint32_t cp_pack_total_block_count = LeToCpu(ckpt.cp_pack_total_block_count);
+    if (cp_pack_total_block_count <= 2 || cp_pack_total_block_count > blocks_per_seg_) {
+      return ZX_ERR_BAD_STATE;
+    }
+
+    const uint32_t cp_payload = LeToCpu(sb_->cp_payload);
+    const uint32_t cp_pack_start_sum = LeToCpu(ckpt.cp_pack_start_sum);
+    if (cp_pack_start_sum < cp_payload + 1 || cp_pack_start_sum >= cp_pack_total_block_count ||
+        cp_pack_start_sum > blocks_per_seg_ - 1 - kNrCursegType) {
+      return ZX_ERR_BAD_STATE;
+    }
+
+    const uint32_t ckpt_flags = LeToCpu(ckpt.ckpt_flags);
+    const bool has_compact_sum =
+        (ckpt_flags & static_cast<uint32_t>(CpFlag::kCpCompactSumFlag)) != 0;
+    const bool is_umount = (ckpt_flags & static_cast<uint32_t>(CpFlag::kCpUmountFlag)) != 0;
+
+    const uint32_t min_sum_blocks =
+        (has_compact_sum ? 1 : kNrCursegDataType) + (is_umount ? kNrCursegNodeType : 0);
+    auto checked_sum_end = safemath::CheckAdd<uint32_t>(cp_pack_start_sum, min_sum_blocks, 1u);
+    if (!checked_sum_end.IsValid() || cp_pack_total_block_count < checked_sum_end.ValueOrDie()) {
+      return ZX_ERR_BAD_STATE;
+    }
+
+    const size_t max_cp_bitmap_size = checksum_offset - Checkpoint::GetHeaderByteSize();
+    if (cp_payload == 0) {
+      if (sit_ver_bitmap_bytesize + nat_ver_bitmap_bytesize > max_cp_bitmap_size) {
+        return ZX_ERR_BAD_STATE;
+      }
+    } else if (nat_ver_bitmap_bytesize > max_cp_bitmap_size ||
+               sit_ver_bitmap_bytesize > static_cast<uint64_t>(cp_payload) * kBlockSize) {
       return ZX_ERR_BAD_STATE;
     }
 

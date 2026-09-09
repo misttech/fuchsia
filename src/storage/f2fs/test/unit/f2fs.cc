@@ -119,6 +119,110 @@ TEST(SuperblockTest, ValidateRawSuper) {
   corrupted->segment_count_sit = CpuToLe(0x01000000u);
   WriteSuperblock(*corrupted, *bc);
   ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check invalid segment_count_ckpt (must be >= 2 for dual checkpoint packs).
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_ckpt = CpuToLe(1u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check zero segment_count_sit (must be non-zero and at least 2).
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_sit = CpuToLe(0u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check zero segment_count_nat (must be non-zero and at least 2).
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_nat = CpuToLe(0u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check zero segment_count_ssa (must be non-zero).
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_ssa = CpuToLe(0u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check odd segment_count_sit (must have even parity for dual SIT packs).
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_sit = CpuToLe(1u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check odd segment_count_nat (must have even parity for dual NAT packs).
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_nat = CpuToLe(1u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check odd segment_count_sit > 1.
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_sit = CpuToLe(3u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check odd segment_count_nat > 1.
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_nat = CpuToLe(3u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check zero segment_count_main (must be non-zero).
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_main = CpuToLe(0u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check segment_count equal to segment_count_main (insufficient for metadata).
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count = corrupted->segment_count_main;
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Total segments required exceeds segment_count.
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count =
+      CpuToLe(LeToCpu(corrupted->segment_count_ckpt) + LeToCpu(corrupted->segment_count_sit) +
+              LeToCpu(corrupted->segment_count_nat) + LeToCpu(corrupted->segment_count_ssa) +
+              LeToCpu(corrupted->segment_count_main) - 1);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Exact equality between required segments and segment_count is valid.
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count =
+      CpuToLe(LeToCpu(corrupted->segment_count_ckpt) + LeToCpu(corrupted->segment_count_sit) +
+              LeToCpu(corrupted->segment_count_nat) + LeToCpu(corrupted->segment_count_ssa) +
+              LeToCpu(corrupted->segment_count_main));
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_OK);
+
+  // It is valid for segment_count to be greater than the sum of meta and main segments
+  // (e.g. when mkfs discards remainder segments not forming a full section).
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count = CpuToLe(LeToCpu(corrupted->segment_count) + 1);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_OK);
+
+  // Zero segment_count is invalid.
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count = CpuToLe(0u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Integer overflow in metadata segments addition.
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_ssa = CpuToLe(std::numeric_limits<uint32_t>::max());
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Integer overflow in total segments addition.
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->segment_count_main = CpuToLe(std::numeric_limits<uint32_t>::max() - 10);
+  corrupted->section_count = corrupted->segment_count_main;
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
 }
 
 TEST(SuperblockTest, GetValidCheckpoint) {

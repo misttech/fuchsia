@@ -94,12 +94,18 @@ zx_status_t F2fs::PurgeOrphanInodes() {
   if (!(superblock_info_->TestCpFlags(CpFlag::kCpOrphanPresentFlag))) {
     return ZX_OK;
   }
-  SetOnRecovery();
   block_t start_blk = superblock_info_->StartCpAddr() + superblock_info_->GetNumCpPayload() + 1;
-  block_t orphan_blkaddr = superblock_info_->StartSumAddr() - 1;
+  block_t start_sum = superblock_info_->StartSumAddr();
+  block_t num_cp_payload = superblock_info_->GetNumCpPayload();
+  if (start_sum <= num_cp_payload) {
+    return ZX_ERR_BAD_STATE;
+  }
+  block_t orphan_blocks = start_sum - 1 - num_cp_payload;
+  SetOnRecovery();
+  auto cleanup = fit::defer([this] { ClearOnRecovery(); });
 
   fs::SharedLock lock(f2fs::GetGlobalLock());
-  for (block_t i = 0; i < orphan_blkaddr; ++i) {
+  for (block_t i = 0; i < orphan_blocks; ++i) {
     LockedPage page;
     if (zx_status_t ret = GetMetaPage(start_blk + i, &page); ret != ZX_OK) {
       return ret;
@@ -121,7 +127,6 @@ zx_status_t F2fs::PurgeOrphanInodes() {
   }
   // clear Orphan Flag
   superblock_info_->ClearCpFlags(CpFlag::kCpOrphanPresentFlag);
-  ClearOnRecovery();
   return ZX_OK;
 }
 
@@ -186,10 +191,14 @@ zx_status_t F2fs::ValidateCheckpoint(block_t cp_addr, uint64_t *version, LockedP
     // The checkpoint header and its copy are located in the first and last blocks on a checkpoint
     // pack respectively.
     if (i == kFirstCheckpointHeaderBlock) {
+      uint32_t total_cp_blocks = LeToCpu(cp_block->cp_pack_total_block_count);
+      if (total_cp_blocks <= 2 || total_cp_blocks > superblock_info_->GetBlocksPerSeg()) {
+        return ZX_ERR_BAD_STATE;
+      }
       checkpoint_version = LeToCpu(cp_block->checkpoint_ver);
       header = std::move(cp_page);
       // Set |cp_addr| to read a copy of the header page in this checkpoint pack
-      cp_addr += LeToCpu(cp_block->cp_pack_total_block_count) - 1;
+      cp_addr += total_cp_blocks - 1;
     } else if (checkpoint_version != LeToCpu(cp_block->checkpoint_ver)) {
       return ZX_ERR_BAD_STATE;
     }
