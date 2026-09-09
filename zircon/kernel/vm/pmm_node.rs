@@ -1187,12 +1187,12 @@ mod pmm_node_rust {
             }
             let cow = self.vmo.debug_get_cow_pages().ok_or(Status::INTERNAL)?;
             for i in 0..count {
-                let result = self.node.alloc_loaned_page(|mut page| {
+                let result = self.node.alloc_loaned_page(|page| {
                     // SAFETY: Initializing loaned page backlink and state for test.
                     unsafe {
                         page.set_state(VmPageState(vm_page_state::OBJECT));
-                        page.as_mut().set_object(core::ptr::null_mut());
-                        page.as_mut().set_page_offset(0);
+                        page.as_ref().set_object(core::ptr::null_mut());
+                        page.as_ref().set_page_offset(0);
                         crate::vm::pmm::node().page_queues().set_reclaim(page, &cow, 0);
                     }
                 });

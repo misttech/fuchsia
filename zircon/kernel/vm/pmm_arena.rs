@@ -199,7 +199,8 @@ impl PmmArena {
         for (index, p) in self.as_slice_mut().iter_mut().enumerate() {
             p.paddr_priv = base + index * kernel_page::SIZE;
             if index >= array_start_index && index < array_end_index {
-                p.set_state(VmPageState(vm_page_state::WIRED));
+                // SAFETY: We have conceptual ownership of the freshly constructed arena page.
+                unsafe { p.set_state(VmPageState(vm_page_state::WIRED)) };
             } else {
                 // SAFETY: `list` is pinned on stack; obtaining mutable reference to the list is safe.
                 unsafe { list.as_mut().get_unchecked_mut().push_back_raw(p) };
@@ -414,7 +415,8 @@ impl PmmArena {
 
         if dump_pages {
             for page in self.as_slice() {
-                page.dump();
+                // SAFETY: It is safe to dump page state and union metadata while inspecting arena pages.
+                unsafe { page.dump() };
             }
         }
 
@@ -650,8 +652,9 @@ mod pmm_arena_rust {
     unsafe fn set_page_state_range(state: vm_page_state, start: NonNull<VmPage>, count: usize) {
         for i in 0..count {
             // SAFETY: Caller guarantees start points to an array with at least count elements.
-            let page = unsafe { &mut *start.as_ptr().add(i) };
-            page.set_state(VmPageState(state));
+            let page = unsafe { &*start.as_ptr().add(i) };
+            // SAFETY: Caller guarantees ownership of the range.
+            unsafe { page.set_state(VmPageState(state)) };
         }
     }
 
