@@ -2,8 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/sysmem/cpp/fidl.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.math/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.display.singleton/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
 #include <lib/ui/scenic/cpp/view_creation_tokens.h>
@@ -11,29 +15,38 @@
 
 #include <cmath>
 #include <cstdint>
+#include <optional>
+#include <tuple>
+#include <unordered_map>
+#include <utility>
 
 #include <zxtest/zxtest.h>
 
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/tests/utils/blocking_present.h"
+#include "src/ui/scenic/tests/utils/flatland_client_with_event_handler.h"
 #include "src/ui/scenic/tests/utils/scenic_ctf_test_base.h"
+#include "src/ui/scenic/tests/utils/simple_watcher_client.h"
 #include "src/ui/scenic/tests/utils/utils.h"
 #include "src/ui/testing/util/screenshot_helper.h"
 
 namespace integration_tests {
 
-namespace fuc = fuchsia::ui::composition;
+namespace fuc = fuchsia_ui_composition;
+namespace fuv = fuchsia_ui_views;
 
 #define EXPECT_NEAR(val1, val2, eps)                                         \
   EXPECT_LE(std::abs(static_cast<double>(val1) - static_cast<double>(val2)), \
             static_cast<double>(eps))
 
-constexpr fuc::TransformId kRootTransform{.value = 1};
+const fuc::TransformId kRootTransform{{.value = 1}};
 constexpr auto kEpsilon = 1;
 
 fuc::ColorRgba GetColorInFloat(utils::Pixel color) {
-  return {static_cast<float>(color.red) / 255.f, static_cast<float>(color.green) / 255.f,
-          static_cast<float>(color.blue) / 255.f, static_cast<float>(color.alpha) / 255.f};
+  return {{.red = static_cast<float>(color.red) / 255.f,
+           .green = static_cast<float>(color.green) / 255.f,
+           .blue = static_cast<float>(color.blue) / 255.f,
+           .alpha = static_cast<float>(color.alpha) / 255.f}};
 }
 
 // Asserts whether the BGRA channel value difference between |actual| and |expected| is at most
@@ -46,12 +59,10 @@ void CompareColor(utils::Pixel actual, utils::Pixel expected) {
 }
 
 // Test fixture that sets up an environment with a Scenic we can connect to.
-// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
-// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfHlcppTest.
-class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
+class FlatlandPixelTestBase : public ScenicCtfTest {
  public:
   void SetUp() override {
-    ScenicCtfHlcppTest::SetUp();
+    ScenicCtfTest::SetUp();
 
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::Allocator>::Create();
     LocalServiceDirectory()->Connect("fuchsia.sysmem2.Allocator", server_end.TakeChannel());
@@ -60,41 +71,53 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
     flatland_allocator_ = ConnectSyncIntoRealm<fuc::Allocator>();
 
     // Create a root view.
-    root_flatland_ = ConnectAsyncIntoRealm<fuc::Flatland>();
-    root_flatland_.set_error_handler([](zx_status_t status) {
-      FX_LOGS(ERROR) << "Lost connection to Scenic: " << zx_status_get_string(status);
+    root_flatland_.emplace(ConnectIntoRealm<fuc::Flatland>(), dispatcher());
+    root_flatland_->set_on_error([](fidl::Event<fuc::Flatland::OnError>& event) {
+      FX_LOGS(ERROR) << "Flatland OnError: " << fidl::ToUnderlying(event.error());
       FAIL();
     });
+    root_flatland_->set_on_close(FailOnClose("Lost connection to Scenic"));
 
     // Attach |root_flatland_| as the only Flatland under the environment's FlatlandDisplay.
-    auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
+    auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
     SetFlatlandDisplayContent(std::move(parent_token));
-    fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
-    root_flatland_->CreateView2(std::move(child_token), scenic::NewViewIdentityOnCreation(), {},
-                                parent_viewport_watcher.NewRequest());
+    auto [pv_client_end, pv_server_end] = fidl::Endpoints<fuc::ParentViewportWatcher>::Create();
+    parent_viewport_watcher_ = std::make_unique<SimpleWatcherClient<fuc::ParentViewportWatcher>>(
+        std::move(pv_client_end), dispatcher());
+    FX_CHECK((*root_flatland_)
+                 ->CreateView2({{.token = std::move(child_token),
+                                 .view_identity = scenic::cpp::NewViewIdentityOnCreation(),
+                                 .protocols = {},
+                                 .parent_viewport_watcher = std::move(pv_server_end)}})
+                 .is_ok());
 
     // Create the root transform.
-    root_flatland_->CreateTransform(kRootTransform);
-    root_flatland_->SetRootTransform(kRootTransform);
+    FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = kRootTransform}}).is_ok());
+    FX_CHECK((*root_flatland_)->SetRootTransform({{.transform_id = kRootTransform}}).is_ok());
 
     // Get the display's width and height. Since there is no Present in FlatlandDisplay, receiving
     // this callback ensures that all FlatlandDisplay calls are processed.
-    std::optional<fuchsia::ui::composition::LayoutInfo> info;
-    parent_viewport_watcher->GetLayout([&info](auto result) { info = std::move(result); });
+    std::optional<fuc::LayoutInfo> info;
+    parent_viewport_watcher_->client()->GetLayout().Then(
+        [&info](fidl::Result<fuc::ParentViewportWatcher::GetLayout>& result) {
+          if (result.is_ok()) {
+            info = std::move(result->info());
+          }
+        });
     RunLoopUntil([&info] { return info.has_value(); });
-    display_width_ = info->logical_size().width;
-    display_height_ = info->logical_size().height;
+    display_width_ = info->logical_size()->width();
+    display_height_ = info->logical_size()->height();
 
     screenshotter_ = ConnectSyncIntoRealm<fuc::Screenshot>();
   }
 
   void TearDown() override {
-    root_flatland_.Unbind();
+    root_flatland_.reset();
 
     zxtest::Test::TearDown();
   }
 
-  // `ScenicCtfHlcppTest`:
+  // `ScenicCtfTest`:
   uint32_t GetDisplayMaxLayerCount() const override { return 4; }
   bool UseDisplayComposition() const override { return true; }
 
@@ -102,44 +125,59 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
   // (|x|,|y|) in |flatland|'s view.
   // Note: |BlockingPresent| must be called after this function to present the rectangle on the
   // display.
-  void DrawRectangle(fuc::FlatlandPtr& flatland, uint32_t width, uint32_t height, int32_t x,
-                     int32_t y, utils::Pixel color, fuc::BlendMode blend_mode = fuc::BlendMode::SRC,
-                     float opacity = 1.f) {
-    const fuc::ContentId kFilledRectId = {get_next_resource_id()};
-    const fuc::TransformId kTransformId = {get_next_resource_id()};
+  void DrawRectangle(FlatlandClientWithEventHandler& flatland, uint32_t width, uint32_t height,
+                     int32_t x, int32_t y, utils::Pixel color,
+                     fuc::BlendMode blend_mode = fuc::BlendMode::kSrc, float opacity = 1.f) {
+    const fuc::ContentId kFilledRectId{{.value = get_next_resource_id()}};
+    const fuc::TransformId kTransformId{{.value = get_next_resource_id()}};
 
-    flatland->CreateFilledRect(kFilledRectId);
-    flatland->SetSolidFill(kFilledRectId, GetColorInFloat(color), {width, height});
+    FX_CHECK(flatland->CreateFilledRect({{.rect_id = kFilledRectId}}).is_ok());
+    FX_CHECK(flatland
+                 ->SetSolidFill({{.rect_id = kFilledRectId,
+                                  .color = GetColorInFloat(color),
+                                  .size = {{.width = width, .height = height}}}})
+                 .is_ok());
 
     // Associate the rect with a transform.
-    flatland->CreateTransform(kTransformId);
-    flatland->SetContent(kTransformId, kFilledRectId);
-    flatland->SetTranslation(kTransformId, {x, y});
+    FX_CHECK(flatland->CreateTransform({{.transform_id = kTransformId}}).is_ok());
+    FX_CHECK(flatland->SetContent({{.transform_id = kTransformId, .content_id = kFilledRectId}})
+                 .is_ok());
+    FX_CHECK(
+        flatland
+            ->SetTranslation({{.transform_id = kTransformId, .translation = {{.x = x, .y = y}}}})
+            .is_ok());
 
     // Set the opacity and the BlendMode for the rectangle.
-    flatland->SetImageBlendingFunction(kFilledRectId, blend_mode);
-    flatland->SetOpacity(kTransformId, opacity);
+    FX_CHECK(
+        flatland->SetImageBlendingFunction({{.image_id = kFilledRectId, .blend_mode = blend_mode}})
+            .is_ok());
+    FX_CHECK(flatland->SetOpacity({{.transform_id = kTransformId, .value = opacity}}).is_ok());
 
     // Attach the transform to the view.
-    flatland->AddChild(fuchsia::ui::composition::TransformId{kRootTransform}, kTransformId);
+    FX_CHECK(flatland
+                 ->AddChild(
+                     {{.parent_transform_id = kRootTransform, .child_transform_id = kTransformId}})
+                 .is_ok());
   }
 
-  fuchsia::sysmem2::BufferCollectionConstraints GetBufferConstraints(
-      fuchsia::images2::PixelFormat pixel_format, fuchsia::images2::ColorSpace color_space) {
-    fuchsia::sysmem2::BufferCollectionConstraints constraints;
-    auto& bmc = *constraints.mutable_buffer_memory_constraints();
-    bmc.set_ram_domain_supported(true);
-    bmc.set_cpu_domain_supported(true);
-    constraints.mutable_usage()->set_cpu(fuchsia::sysmem2::CPU_USAGE_WRITE_OFTEN);
-    constraints.set_min_buffer_count(1);
-    auto& image_constraints = constraints.mutable_image_format_constraints()->emplace_back();
-    image_constraints.set_pixel_format(pixel_format);
-    image_constraints.set_pixel_format_modifier(fuchsia::images2::PixelFormatModifier::LINEAR);
-    image_constraints.mutable_color_spaces()->emplace_back(color_space);
-    image_constraints.set_required_min_size(
-        fuchsia::math::SizeU{.width = display_width_, .height = display_height_});
-    image_constraints.set_required_max_size(
-        fuchsia::math::SizeU{.width = display_width_, .height = display_height_});
+  fuchsia_sysmem2::BufferCollectionConstraints GetBufferConstraints(
+      fuchsia_images2::PixelFormat pixel_format, fuchsia_images2::ColorSpace color_space) {
+    fuchsia_sysmem2::BufferCollectionConstraints constraints;
+    constraints.buffer_memory_constraints() = fuchsia_sysmem2::BufferMemoryConstraints();
+    constraints.buffer_memory_constraints()->ram_domain_supported(true);
+    constraints.buffer_memory_constraints()->cpu_domain_supported(true);
+    constraints.usage() = fuchsia_sysmem2::BufferUsage();
+    constraints.usage()->cpu(fuchsia_sysmem2::kCpuUsageWriteOften);
+    constraints.min_buffer_count(1);
+    fuchsia_sysmem2::ImageFormatConstraints image_constraints;
+    image_constraints.pixel_format(pixel_format);
+    image_constraints.pixel_format_modifier(fuchsia_images2::PixelFormatModifier::kLinear);
+    image_constraints.color_spaces(std::vector{color_space});
+    image_constraints.required_min_size(
+        fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
+    image_constraints.required_max_size(
+        fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
+    constraints.image_format_constraints(std::vector{std::move(image_constraints)});
     return constraints;
   }
 
@@ -168,47 +206,49 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
     for (uint32_t i = 0; i < 2; i++) {
       for (uint32_t j = 0; j < 2; j++) {
         utils::Pixel color(static_cast<uint8_t>(j * 255), 0, static_cast<uint8_t>(i * 255), 255);
-        DrawRectangle(root_flatland_, pane_width, pane_height, i * pane_width, j * pane_height,
+        DrawRectangle(*root_flatland_, pane_width, pane_height, i * pane_width, j * pane_height,
                       color);
       }
     }
 
     // Draw the rectangle in the center.
-    DrawRectangle(root_flatland_, view_width / 4, view_height / 4, 3 * view_width / 8,
+    DrawRectangle(*root_flatland_, view_width / 4, view_height / 4, 3 * view_width / 8,
                   3 * view_height / 8, utils::kGreen);
   }
 
  protected:
-  std::optional<fuchsia::sysmem2::BufferCollectionInfo> SetConstraintsAndAllocateBuffer(
+  std::optional<fuchsia_sysmem2::BufferCollectionInfo> SetConstraintsAndAllocateBuffer(
       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
-      fuchsia::sysmem2::BufferCollectionConstraints constraints) {
-    fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
+      fuchsia_sysmem2::BufferCollectionConstraints constraints) {
+    auto [collection_client_end, collection_server_end] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+    fidl::SyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection(
+        std::move(collection_client_end));
+
     fidl::Arena arena;
-    fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
+    fidl::OneWayStatus bind_status = sysmem_allocator_->BindSharedCollection(
         fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
             .token(std::move(token))
-            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-                buffer_collection.NewRequest().TakeChannel()))
+            .buffer_collection_request(std::move(collection_server_end))
             .Build());
-    FX_CHECK(result.ok());
+    FX_CHECK(bind_status.ok());
 
-    uint32_t constraints_min_buffer_count = constraints.min_buffer_count();
+    uint32_t constraints_min_buffer_count = constraints.min_buffer_count().value_or(1);
 
-    fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
-    set_constraints_request.set_constraints(std::move(constraints));
-    zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
-    FX_CHECK(status == ZX_OK);
+    fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+    set_constraints_request.constraints(std::move(constraints));
+    auto set_constraints_res =
+        buffer_collection->SetConstraints(std::move(set_constraints_request));
+    FX_CHECK(set_constraints_res.is_ok());
 
-    fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-    status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-    if (status != ZX_OK || wait_result.is_framework_err() || wait_result.is_err()) {
+    auto wait_result = buffer_collection->WaitForAllBuffersAllocated();
+    if (wait_result.is_error() || !wait_result->buffer_collection_info().has_value()) {
       return std::nullopt;
     }
 
-    auto buffer_collection_info =
-        std::move(*wait_result.response().mutable_buffer_collection_info());
-    EXPECT_EQ(constraints_min_buffer_count, buffer_collection_info.buffers().size());
-    FX_CHECK(buffer_collection->Release() == ZX_OK);
+    auto buffer_collection_info = std::move(wait_result->buffer_collection_info().value());
+    EXPECT_EQ(constraints_min_buffer_count, buffer_collection_info.buffers()->size());
+    FX_CHECK(buffer_collection->Release().is_ok());
     return buffer_collection_info;
   }
 
@@ -216,43 +256,42 @@ class FlatlandPixelTestBase : public ScenicCtfHlcppTest {
   uint32_t display_height_ = 0;
 
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
-  fuc::AllocatorSyncPtr flatland_allocator_;
-  fuc::FlatlandPtr root_flatland_;
-  fuc::ScreenshotSyncPtr screenshotter_;
+  fidl::SyncClient<fuc::Allocator> flatland_allocator_;
+  std::optional<FlatlandClientWithEventHandler> root_flatland_;
+  std::unique_ptr<SimpleWatcherClient<fuc::ParentViewportWatcher>> parent_viewport_watcher_;
+  fidl::SyncClient<fuc::Screenshot> screenshotter_;
   uint64_t get_next_resource_id() { return resource_id_++; }
 
  private:
-  uint64_t resource_id_ = kRootTransform.value + 1;
+  uint64_t resource_id_ = kRootTransform.value() + 1;
 };
 
 class ParameterizedPixelFormatTest
     : public FlatlandPixelTestBase,
-      public zxtest::WithParamInterface<fuchsia::images2::PixelFormat> {};
+      public zxtest::WithParamInterface<fuchsia_images2::PixelFormat> {};
 
 class ParameterizedYUVPixelTest : public ParameterizedPixelFormatTest {};
 
 INSTANTIATE_TEST_SUITE_P(YuvPixelFormats, ParameterizedYUVPixelTest,
-                         zxtest::Values(fuchsia::images2::PixelFormat::NV12,
-                                        fuchsia::images2::PixelFormat::I420));
+                         zxtest::Values(fuchsia_images2::PixelFormat::kNv12,
+                                        fuchsia_images2::PixelFormat::kI420));
 
 TEST_P(ParameterizedYUVPixelTest, YUVTest) {
   auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
-  allocation::BufferCollectionImportExportTokens bc_tokens =
-      allocation::BufferCollectionImportExportTokens::New();
-  fuc::RegisterBufferCollectionArgs rbc_args = {};
-  rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(
-      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
-  fuc::Allocator_RegisterBufferCollection_Result result;
-  ASSERT_OK(flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result));
-  ASSERT_FALSE(result.is_err());
+  auto bc_tokens = allocation::cpp::BufferCollectionImportExportTokens::New();
+  fuc::RegisterBufferCollectionArgs rbc_args;
+  rbc_args.export_token(std::move(bc_tokens.export_token));
+  rbc_args.buffer_collection_token2(
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
+  auto result = flatland_allocator_->RegisterBufferCollection(std::move(rbc_args));
+  ASSERT_TRUE(result.is_ok());
 
   // Use the local token to allocate a protected buffer.
   auto info = SetConstraintsAndAllocateBuffer(
       std::move(local_token),
-      GetBufferConstraints(GetParam(), fuchsia::images2::ColorSpace::REC709));
+      GetBufferConstraints(GetParam(), fuchsia_images2::ColorSpace::kRec709));
   if (!info) {
     ZXTEST_SKIP(
         "Sysmem allocation failed. The device may not support the requested pixel format (e.g. YUV on emulator).");
@@ -263,7 +302,7 @@ TEST_P(ParameterizedYUVPixelTest, YUVTest) {
   const uint32_t num_pixels = display_width_ * display_height_;
   const uint64_t image_vmo_bytes = (3 * num_pixels) / 2;
 
-  zx::vmo& image_vmo = *info->mutable_buffers()->at(0).mutable_vmo();
+  zx::vmo& image_vmo = info->buffers()->at(0).vmo().value();
   zx_status_t status = zx::vmo::create(image_vmo_bytes, 0, &image_vmo);
   EXPECT_EQ(ZX_OK, status);
 
@@ -281,13 +320,13 @@ TEST_P(ParameterizedYUVPixelTest, YUVTest) {
     vmo_base[i] = kYValue;
   }
 
-  if (GetParam() == fuchsia::images2::PixelFormat::NV12) {
+  if (GetParam() == fuchsia_images2::PixelFormat::kNv12) {
     // Set all the UV pixels pairwise at half res.
     for (uint32_t i = num_pixels; i < image_vmo_bytes; i += 2) {
       vmo_base[i] = kUValue;
       vmo_base[i + 1] = kVValue;
     }
-  } else if (GetParam() == fuchsia::images2::PixelFormat::I420) {
+  } else if (GetParam() == fuchsia_images2::PixelFormat::kI420) {
     for (uint32_t i = num_pixels; i < num_pixels + num_pixels / 4; ++i) {
       vmo_base[i] = kUValue;
     }
@@ -303,16 +342,22 @@ TEST_P(ParameterizedYUVPixelTest, YUVTest) {
                                   ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE));
 
   // Create the image in the Flatland instance.
-  fuc::ImageProperties image_properties = {};
-  image_properties.set_size({display_width_, display_height_});
-  const fuc::ContentId kImageContentId{.value = 1};
+  fuc::ImageProperties image_properties;
+  image_properties.size(fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
+  const fuc::ContentId kImageContentId{{.value = 1}};
 
-  root_flatland_->CreateImage(kImageContentId, std::move(bc_tokens.import_token), 0,
-                              std::move(image_properties));
+  FX_CHECK((*root_flatland_)
+               ->CreateImage({{.image_id = kImageContentId,
+                               .import_token = std::move(bc_tokens.import_token),
+                               .vmo_index = 0,
+                               .properties = std::move(image_properties)}})
+               .is_ok());
 
   // Present the created Image.
-  root_flatland_->SetContent(kRootTransform, kImageContentId);
-  BlockingPresent(this, root_flatland_);
+  FX_CHECK((*root_flatland_)
+               ->SetContent({{.transform_id = kRootTransform, .content_id = kImageContentId}})
+               .is_ok());
+  BlockingPresent(this, *root_flatland_);
 
   // TODO(https://fxbug.dev/42144501): provide reasoning for why this is the correct expected color.
   const utils::Pixel expected_pixel(255, 85, 249, 255);
@@ -325,38 +370,36 @@ TEST_P(ParameterizedYUVPixelTest, YUVTest) {
 class ParameterizedSRGBPixelTest : public ParameterizedPixelFormatTest {};
 
 INSTANTIATE_TEST_SUITE_P(RgbPixelFormats, ParameterizedSRGBPixelTest,
-                         zxtest::Values(fuchsia::images2::PixelFormat::B8G8R8A8,
-                                        fuchsia::images2::PixelFormat::R8G8B8A8));
+                         zxtest::Values(fuchsia_images2::PixelFormat::kB8G8R8A8,
+                                        fuchsia_images2::PixelFormat::kR8G8B8A8));
 
 INSTANTIATE_TEST_SUITE_P(ExoticRgbPixelFormats, ParameterizedSRGBPixelTest,
-                         zxtest::Values(fuchsia::images2::PixelFormat::A2B10G10R10,
-                                        fuchsia::images2::PixelFormat::R8,
-                                        fuchsia::images2::PixelFormat::R5G6B5));
+                         zxtest::Values(fuchsia_images2::PixelFormat::kA2B10G10R10,
+                                        fuchsia_images2::PixelFormat::kR8,
+                                        fuchsia_images2::PixelFormat::kR5G6B5));
 
 TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
   auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
-  allocation::BufferCollectionImportExportTokens bc_tokens =
-      allocation::BufferCollectionImportExportTokens::New();
-  fuc::RegisterBufferCollectionArgs rbc_args = {};
-  rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(
-      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
-  fuc::Allocator_RegisterBufferCollection_Result result;
-  flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result);
-  ASSERT_FALSE(result.is_err());
+  auto bc_tokens = allocation::cpp::BufferCollectionImportExportTokens::New();
+  fuc::RegisterBufferCollectionArgs rbc_args;
+  rbc_args.export_token(std::move(bc_tokens.export_token));
+  rbc_args.buffer_collection_token2(
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
+  auto result = flatland_allocator_->RegisterBufferCollection(std::move(rbc_args));
+  ASSERT_TRUE(result.is_ok());
 
   uint32_t bytes_per_pixel = 4;
-  if (GetParam() == fuchsia::images2::PixelFormat::R5G6B5) {
+  if (GetParam() == fuchsia_images2::PixelFormat::kR5G6B5) {
     bytes_per_pixel = 2;
-  } else if (GetParam() == fuchsia::images2::PixelFormat::R8) {
+  } else if (GetParam() == fuchsia_images2::PixelFormat::kR8) {
     bytes_per_pixel = 1;
   }
 
   // Use the local token to allocate a protected buffer.
   auto info = SetConstraintsAndAllocateBuffer(
-      std::move(local_token), GetBufferConstraints(GetParam(), fuchsia::images2::ColorSpace::SRGB));
+      std::move(local_token), GetBufferConstraints(GetParam(), fuchsia_images2::ColorSpace::kSrgb));
   if (!info) {
     ZXTEST_SKIP("Unsupported constraints.");
   }
@@ -364,9 +407,9 @@ TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
   // Write the pixel values to the VMO.
   const uint32_t num_pixels = display_width_ * display_height_;
   const uint64_t image_vmo_bytes = num_pixels * bytes_per_pixel;
-  ASSERT_EQ(image_vmo_bytes, info->settings().buffer_settings().size_bytes());
+  ASSERT_EQ(image_vmo_bytes, info->settings()->buffer_settings()->size_bytes().value_or(0));
 
-  const zx::vmo& image_vmo = info->buffers()[0].vmo();
+  const zx::vmo& image_vmo = info->buffers()->at(0).vmo().value();
 
   uint8_t* vmo_base;
   auto status =
@@ -376,32 +419,32 @@ TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
 
   utils::Pixel color = utils::kBlue;
   uint8_t color_channel = color.blue;
-  vmo_base += info->buffers()[0].vmo_usable_start();
+  vmo_base += info->buffers()->at(0).vmo_usable_start().value_or(0);
 
   for (uint32_t i = 0; i < num_pixels * bytes_per_pixel; i += bytes_per_pixel) {
-    if (GetParam() == fuchsia::images2::PixelFormat::R5G6B5) {
+    if (GetParam() == fuchsia_images2::PixelFormat::kR5G6B5) {
       uint16_t color16 = static_cast<uint16_t>(((color.red >> 3) << 11) |
                                                ((color.green >> 2) << 5) | (color.blue >> 3));
       *reinterpret_cast<uint16_t*>(&vmo_base[i]) = color16;
-    } else if (GetParam() == fuchsia::images2::PixelFormat::A2B10G10R10) {
+    } else if (GetParam() == fuchsia_images2::PixelFormat::kA2B10G10R10) {
       uint16_t alpha = static_cast<uint16_t>(color.alpha) >> 6;
       uint16_t blue = static_cast<uint16_t>(color.blue << 2);
       uint16_t green = static_cast<uint16_t>(color.green << 2);
       uint16_t red = static_cast<uint16_t>(color.red << 2);
       uint32_t color32 = (alpha << 30) | (blue << 20) | (green << 10) | red;
       *reinterpret_cast<uint32_t*>(&vmo_base[i]) = color32;
-    } else if (GetParam() == fuchsia::images2::PixelFormat::R8) {
+    } else if (GetParam() == fuchsia_images2::PixelFormat::kR8) {
       *reinterpret_cast<uint8_t*>(&vmo_base[i]) = color_channel;
     } else {
       // For BGRA32 pixel format, the first and the third byte in the pixel corresponds to the blue
       // and the red channel respectively.
-      if (GetParam() == fuchsia::images2::PixelFormat::B8G8R8A8) {
+      if (GetParam() == fuchsia_images2::PixelFormat::kB8G8R8A8) {
         vmo_base[i] = color.blue;
         vmo_base[i + 2] = color.red;
       }
       // For R8G8B8A8 pixel format, the first and the third byte in the pixel corresponds to the red
       // and the blue channel respectively.
-      if (GetParam() == fuchsia::images2::PixelFormat::R8G8B8A8) {
+      if (GetParam() == fuchsia_images2::PixelFormat::kR8G8B8A8) {
         vmo_base[i] = color.red;
         vmo_base[i + 2] = color.blue;
       }
@@ -410,46 +453,52 @@ TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
     }
   }
 
-  if (info->settings().buffer_settings().coherency_domain() ==
-      fuchsia::sysmem2::CoherencyDomain::RAM) {
+  if (info->settings()->buffer_settings()->coherency_domain() ==
+      fuchsia_sysmem2::CoherencyDomain::kRam) {
     EXPECT_EQ(ZX_OK, zx_cache_flush(vmo_base, image_vmo_bytes, ZX_CACHE_FLUSH_DATA));
   }
 
   // Create the image in the Flatland instance.
-  fuc::ImageProperties image_properties = {};
-  image_properties.set_size({display_width_, display_height_});
-  const fuc::ContentId kImageContentId{.value = 1};
+  fuc::ImageProperties image_properties;
+  image_properties.size(fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
+  const fuc::ContentId kImageContentId{{.value = 1}};
 
-  root_flatland_->CreateImage(kImageContentId, std::move(bc_tokens.import_token), 0,
-                              std::move(image_properties));
+  FX_CHECK((*root_flatland_)
+               ->CreateImage({{.image_id = kImageContentId,
+                               .import_token = std::move(bc_tokens.import_token),
+                               .vmo_index = 0,
+                               .properties = std::move(image_properties)}})
+               .is_ok());
 
   // Present the created Image.
-  root_flatland_->SetContent(kRootTransform, kImageContentId);
-  BlockingPresent(this, root_flatland_);
+  FX_CHECK((*root_flatland_)
+               ->SetContent({{.transform_id = kRootTransform, .content_id = kImageContentId}})
+               .is_ok());
+  BlockingPresent(this, *root_flatland_);
 
-  fuchsia::ui::composition::ScreenshotFormat ss_format;
+  fuc::ScreenshotFormat ss_format;
   switch (GetParam()) {
-    case fuchsia::images2::PixelFormat::B8G8R8A8:
-      ss_format = fuchsia::ui::composition::ScreenshotFormat::BGRA_RAW;
+    case fuchsia_images2::PixelFormat::kB8G8R8A8:
+      ss_format = fuc::ScreenshotFormat::kBgraRaw;
       break;
-    case fuchsia::images2::PixelFormat::R8G8B8A8:
-    case fuchsia::images2::PixelFormat::A2B10G10R10:
-    case fuchsia::images2::PixelFormat::R8:
-      ss_format = fuchsia::ui::composition::ScreenshotFormat::RGBA_RAW;
+    case fuchsia_images2::PixelFormat::kR8G8B8A8:
+    case fuchsia_images2::PixelFormat::kA2B10G10R10:
+    case fuchsia_images2::PixelFormat::kR8:
+      ss_format = fuc::ScreenshotFormat::kRgbaRaw;
       break;
-    case fuchsia::images2::PixelFormat::R5G6B5:
-      ss_format = fuchsia::ui::composition::ScreenshotFormat::BGRA_RAW;
+    case fuchsia_images2::PixelFormat::kR5G6B5:
+      ss_format = fuc::ScreenshotFormat::kBgraRaw;
       break;
     default:
-      FX_LOGS(ERROR) << "Unexpected PixelFormat: " << GetParam();
+      FX_LOGS(ERROR) << "Unexpected PixelFormat: " << fidl::ToUnderlying(GetParam());
       FAIL();
   }
   auto screenshot = TakeScreenshot(screenshotter_, display_width_, display_height_, ss_format);
   auto histogram = screenshot.Histogram();
 
-  if (GetParam() == fuchsia::images2::PixelFormat::R5G6B5) {
+  if (GetParam() == fuchsia_images2::PixelFormat::kR5G6B5) {
     color.alpha = 0xff;
-  } else if (GetParam() == fuchsia::images2::PixelFormat::R8) {
+  } else if (GetParam() == fuchsia_images2::PixelFormat::kR8) {
     color.alpha = 0xff;
     color.red = color_channel;
     color.green = 0;
@@ -476,7 +525,7 @@ class ParameterizedFlipAndOrientationTest
     // |G |Be|     |Be|G |
     //
     expected_colors_map.insert(
-        {std::make_pair(fuc::ImageFlip::LEFT_RIGHT, fuc::Orientation::CCW_0_DEGREES),
+        {std::make_pair(fuc::ImageFlip::kLeftRight, fuc::Orientation::kCcw0Degrees),
          {.top_left = utils::kRed,
           .top_right = utils::kBlack,
           .bottom_left = utils::kBlue,
@@ -489,7 +538,7 @@ class ParameterizedFlipAndOrientationTest
     // |G |Be|     |Be|G |     |R |Be|
     //
     expected_colors_map.insert(
-        {std::make_pair(fuc::ImageFlip::LEFT_RIGHT, fuc::Orientation::CCW_90_DEGREES),
+        {std::make_pair(fuc::ImageFlip::kLeftRight, fuc::Orientation::kCcw90Degrees),
          {.top_left = utils::kBlack,
           .top_right = utils::kGreen,
           .bottom_left = utils::kRed,
@@ -502,7 +551,7 @@ class ParameterizedFlipAndOrientationTest
     // |G |Be|     |Be|G |     |Bk|R |
     //
     expected_colors_map.insert(
-        {std::make_pair(fuc::ImageFlip::LEFT_RIGHT, fuc::Orientation::CCW_180_DEGREES),
+        {std::make_pair(fuc::ImageFlip::kLeftRight, fuc::Orientation::kCcw180Degrees),
          {.top_left = utils::kGreen,
           .top_right = utils::kBlue,
           .bottom_left = utils::kBlack,
@@ -515,7 +564,7 @@ class ParameterizedFlipAndOrientationTest
     // |G |Be|     |Be|G |     |G |Bk|
     //
     expected_colors_map.insert(
-        {std::make_pair(fuc::ImageFlip::LEFT_RIGHT, fuc::Orientation::CCW_270_DEGREES),
+        {std::make_pair(fuc::ImageFlip::kLeftRight, fuc::Orientation::kCcw270Degrees),
          {.top_left = utils::kBlue,
           .top_right = utils::kRed,
           .bottom_left = utils::kGreen,
@@ -528,7 +577,7 @@ class ParameterizedFlipAndOrientationTest
     // |G |Be|     |Bk|R |
     //
     expected_colors_map.insert(
-        {std::make_pair(fuc::ImageFlip::UP_DOWN, fuc::Orientation::CCW_0_DEGREES),
+        {std::make_pair(fuc::ImageFlip::kUpDown, fuc::Orientation::kCcw0Degrees),
          {.top_left = utils::kGreen,
           .top_right = utils::kBlue,
           .bottom_left = utils::kBlack,
@@ -541,7 +590,7 @@ class ParameterizedFlipAndOrientationTest
     // |G |Be|     |Bk|R |     |G |Bk|
     //
     expected_colors_map.insert(
-        {std::make_pair(fuc::ImageFlip::UP_DOWN, fuc::Orientation::CCW_90_DEGREES),
+        {std::make_pair(fuc::ImageFlip::kUpDown, fuc::Orientation::kCcw90Degrees),
          {.top_left = utils::kBlue,
           .top_right = utils::kRed,
           .bottom_left = utils::kGreen,
@@ -554,7 +603,7 @@ class ParameterizedFlipAndOrientationTest
     // |G |Be|     |Bk|R |     |Be|G |
     //
     expected_colors_map.insert(
-        {std::make_pair(fuc::ImageFlip::UP_DOWN, fuc::Orientation::CCW_180_DEGREES),
+        {std::make_pair(fuc::ImageFlip::kUpDown, fuc::Orientation::kCcw180Degrees),
          {.top_left = utils::kRed,
           .top_right = utils::kBlack,
           .bottom_left = utils::kBlue,
@@ -567,7 +616,7 @@ class ParameterizedFlipAndOrientationTest
     // |G |Be|     |Bk|R |     |R |Be|
     //
     expected_colors_map.insert(
-        {std::make_pair(fuc::ImageFlip::UP_DOWN, fuc::Orientation::CCW_270_DEGREES),
+        {std::make_pair(fuc::ImageFlip::kUpDown, fuc::Orientation::kCcw270Degrees),
          {.top_left = utils::kBlack,
           .top_right = utils::kGreen,
           .bottom_left = utils::kRed,
@@ -619,14 +668,12 @@ class ParameterizedFlipAndOrientationTestBGRA : public ParameterizedFlipAndOrien
 
 class ParameterizedFlipAndOrientationTestRGBA : public ParameterizedFlipAndOrientationTest {};
 
-INSTANTIATE_TEST_SUITE_P(ParameterizedFlipAndOrientationTestWithParams,
-                         ParameterizedFlipAndOrientationTestBGRA,
-                         zxtest::Combine(zxtest::Values(fuc::Orientation::CCW_0_DEGREES,
-                                                        fuc::Orientation::CCW_90_DEGREES,
-                                                        fuc::Orientation::CCW_180_DEGREES,
-                                                        fuc::Orientation::CCW_270_DEGREES),
-                                         zxtest::Values(fuc::ImageFlip::LEFT_RIGHT,
-                                                        fuc::ImageFlip::UP_DOWN)));
+INSTANTIATE_TEST_SUITE_P(
+    ParameterizedFlipAndOrientationTestWithParams, ParameterizedFlipAndOrientationTestBGRA,
+    zxtest::Combine(zxtest::Values(fuc::Orientation::kCcw0Degrees, fuc::Orientation::kCcw90Degrees,
+                                   fuc::Orientation::kCcw180Degrees,
+                                   fuc::Orientation::kCcw270Degrees),
+                    zxtest::Values(fuc::ImageFlip::kLeftRight, fuc::ImageFlip::kUpDown)));
 
 TEST_P(ParameterizedFlipAndOrientationTestBGRA, FlipAndOrientationRenderTest) {
   auto [orientation, image_flip] = GetParam();
@@ -638,27 +685,25 @@ TEST_P(ParameterizedFlipAndOrientationTestBGRA, FlipAndOrientationRenderTest) {
   auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
-  allocation::BufferCollectionImportExportTokens bc_tokens =
-      allocation::BufferCollectionImportExportTokens::New();
-  fuc::RegisterBufferCollectionArgs rbc_args = {};
-  rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(
-      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
-  fuc::Allocator_RegisterBufferCollection_Result result;
-  flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result);
-  ASSERT_FALSE(result.is_err());
+  auto bc_tokens = allocation::cpp::BufferCollectionImportExportTokens::New();
+  fuc::RegisterBufferCollectionArgs rbc_args;
+  rbc_args.export_token(std::move(bc_tokens.export_token));
+  rbc_args.buffer_collection_token2(
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
+  auto result = flatland_allocator_->RegisterBufferCollection(std::move(rbc_args));
+  ASSERT_TRUE(result.is_ok());
 
   // Use the local token to allocate a protected buffer.
   auto info_opt = SetConstraintsAndAllocateBuffer(
-      std::move(local_token), GetBufferConstraints(fuchsia::images2::PixelFormat::B8G8R8A8,
-                                                   fuchsia::images2::ColorSpace::SRGB));
+      std::move(local_token), GetBufferConstraints(fuchsia_images2::PixelFormat::kB8G8R8A8,
+                                                   fuchsia_images2::ColorSpace::kSrgb));
   ASSERT_TRUE(info_opt.has_value());
   auto info = std::move(info_opt.value());
 
   // Write the pixel values to the VMO.
-  ASSERT_EQ(image_vmo_bytes, info.settings().buffer_settings().size_bytes());
+  ASSERT_EQ(image_vmo_bytes, info.settings()->buffer_settings()->size_bytes().value_or(0));
 
-  const zx::vmo& image_vmo = info.buffers()[0].vmo();
+  const zx::vmo& image_vmo = info.buffers()->at(0).vmo().value();
 
   unsigned int current_image_content_id = 1;
   uint8_t* vmo_base;
@@ -667,12 +712,12 @@ TEST_P(ParameterizedFlipAndOrientationTestBGRA, FlipAndOrientationRenderTest) {
                                  image_vmo_bytes, reinterpret_cast<uintptr_t*>(&vmo_base));
   EXPECT_EQ(ZX_OK, status);
 
-  vmo_base += info.buffers()[0].vmo_usable_start();
+  vmo_base += info.buffers()->at(0).vmo_usable_start().value_or(0);
 
   unsigned int image_width = display_width_;
   unsigned int image_height = display_height_;
-  if (orientation == fuc::Orientation::CCW_90_DEGREES ||
-      orientation == fuc::Orientation::CCW_270_DEGREES) {
+  if (orientation == fuc::Orientation::kCcw90Degrees ||
+      orientation == fuc::Orientation::kCcw270Degrees) {
     std::swap(image_width, image_height);
   }
 
@@ -687,45 +732,57 @@ TEST_P(ParameterizedFlipAndOrientationTestBGRA, FlipAndOrientationRenderTest) {
     vmo_base[i + 3] = color.alpha;
   }
 
-  if (info.settings().buffer_settings().coherency_domain() ==
-      fuchsia::sysmem2::CoherencyDomain::RAM) {
+  if (info.settings()->buffer_settings()->coherency_domain() ==
+      fuchsia_sysmem2::CoherencyDomain::kRam) {
     EXPECT_EQ(ZX_OK, zx_cache_flush(vmo_base, image_vmo_bytes, ZX_CACHE_FLUSH_DATA));
   }
 
-  fuc::ImageProperties image_properties = {};
-  image_properties.set_size({image_width, image_height});
-  const fuc::ContentId kImageContentId{.value = current_image_content_id++};
+  fuc::ImageProperties image_properties;
+  image_properties.size(fuchsia_math::SizeU{{.width = image_width, .height = image_height}});
+  const fuc::ContentId kImageContentId{{.value = current_image_content_id++}};
 
-  root_flatland_->CreateImage(kImageContentId, std::move(bc_tokens.import_token), 0,
-                              std::move(image_properties));
-  root_flatland_->SetImageFlip(kImageContentId, image_flip);
+  FX_CHECK((*root_flatland_)
+               ->CreateImage({{.image_id = kImageContentId,
+                               .import_token = std::move(bc_tokens.import_token),
+                               .vmo_index = 0,
+                               .properties = std::move(image_properties)}})
+               .is_ok());
+  FX_CHECK(
+      (*root_flatland_)->SetImageFlip({{.image_id = kImageContentId, .flip = image_flip}}).is_ok());
 
   // Present the created Image.
-  root_flatland_->SetContent(kRootTransform, kImageContentId);
-  root_flatland_->SetOrientation(kRootTransform, orientation);
+  FX_CHECK((*root_flatland_)
+               ->SetContent({{.transform_id = kRootTransform, .content_id = kImageContentId}})
+               .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->SetOrientation({{.transform_id = kRootTransform, .orientation = orientation}})
+               .is_ok());
 
   // Translate back into position after orientating around top-left corner.
-  fuchsia::math::Vec translation;
+  fuchsia_math::Vec translation;
   switch (orientation) {
-    case fuc::Orientation::CCW_0_DEGREES:
-      translation = {0, 0};
+    case fuc::Orientation::kCcw0Degrees:
+      translation = {{.x = 0, .y = 0}};
       break;
-    case fuc::Orientation::CCW_90_DEGREES:
-      translation = {0, static_cast<int32_t>(image_width)};
+    case fuc::Orientation::kCcw90Degrees:
+      translation = {{.x = 0, .y = static_cast<int32_t>(image_width)}};
       break;
-    case fuc::Orientation::CCW_180_DEGREES:
-      translation = {static_cast<int32_t>(image_width), static_cast<int32_t>(image_height)};
+    case fuc::Orientation::kCcw180Degrees:
+      translation = {
+          {.x = static_cast<int32_t>(image_width), .y = static_cast<int32_t>(image_height)}};
       break;
-    case fuc::Orientation::CCW_270_DEGREES:
-      translation = {static_cast<int32_t>(image_height), 0};
+    case fuc::Orientation::kCcw270Degrees:
+      translation = {{.x = static_cast<int32_t>(image_height), .y = 0}};
       break;
   }
-  root_flatland_->SetTranslation(kRootTransform, translation);
+  FX_CHECK((*root_flatland_)
+               ->SetTranslation({{.transform_id = kRootTransform, .translation = translation}})
+               .is_ok());
 
-  BlockingPresent(this, root_flatland_);
+  BlockingPresent(this, *root_flatland_);
 
   auto screenshot = TakeScreenshot(screenshotter_, display_width_, display_height_,
-                                   fuchsia::ui::composition::ScreenshotFormat::BGRA_RAW);
+                                   fuc::ScreenshotFormat::kBgraRaw);
 
   // Verify that the number of pixels is the same (i.e. the image hasn't changed).
   auto histogram = screenshot.Histogram();
@@ -747,6 +804,13 @@ TEST_P(ParameterizedFlipAndOrientationTestBGRA, FlipAndOrientationRenderTest) {
             expected_colors->second.bottom_right);
 }
 
+INSTANTIATE_TEST_SUITE_P(
+    ParameterizedFlipAndOrientationTestRGBAWithParams, ParameterizedFlipAndOrientationTestRGBA,
+    zxtest::Combine(zxtest::Values(fuc::Orientation::kCcw0Degrees, fuc::Orientation::kCcw90Degrees,
+                                   fuc::Orientation::kCcw180Degrees,
+                                   fuc::Orientation::kCcw270Degrees),
+                    zxtest::Values(fuc::ImageFlip::kLeftRight, fuc::ImageFlip::kUpDown)));
+
 TEST_P(ParameterizedFlipAndOrientationTestRGBA, FlipAndOrientationRenderTest) {
   auto [orientation, image_flip] = GetParam();
 
@@ -757,27 +821,25 @@ TEST_P(ParameterizedFlipAndOrientationTestRGBA, FlipAndOrientationRenderTest) {
   auto [local_token, scenic_token] = utils::SysmemTokens::Create(sysmem_allocator_);
 
   // Send one token to Flatland Allocator.
-  allocation::BufferCollectionImportExportTokens bc_tokens =
-      allocation::BufferCollectionImportExportTokens::New();
-  fuc::RegisterBufferCollectionArgs rbc_args = {};
-  rbc_args.set_export_token(std::move(bc_tokens.export_token));
-  rbc_args.set_buffer_collection_token2(
-      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
-  fuc::Allocator_RegisterBufferCollection_Result result;
-  flatland_allocator_->RegisterBufferCollection(std::move(rbc_args), &result);
-  ASSERT_FALSE(result.is_err());
+  auto bc_tokens = allocation::cpp::BufferCollectionImportExportTokens::New();
+  fuc::RegisterBufferCollectionArgs rbc_args;
+  rbc_args.export_token(std::move(bc_tokens.export_token));
+  rbc_args.buffer_collection_token2(
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(scenic_token.TakeChannel()));
+  auto result = flatland_allocator_->RegisterBufferCollection(std::move(rbc_args));
+  ASSERT_TRUE(result.is_ok());
 
   // Use the local token to allocate a protected buffer.
   auto info_opt = SetConstraintsAndAllocateBuffer(
-      std::move(local_token), GetBufferConstraints(fuchsia::images2::PixelFormat::R8G8B8A8,
-                                                   fuchsia::images2::ColorSpace::SRGB));
+      std::move(local_token), GetBufferConstraints(fuchsia_images2::PixelFormat::kR8G8B8A8,
+                                                   fuchsia_images2::ColorSpace::kSrgb));
   ASSERT_TRUE(info_opt.has_value());
   auto info = std::move(info_opt.value());
 
   // Write the pixel values to the VMO.
-  ASSERT_EQ(image_vmo_bytes, info.settings().buffer_settings().size_bytes());
+  ASSERT_EQ(image_vmo_bytes, info.settings()->buffer_settings()->size_bytes().value_or(0));
 
-  const zx::vmo& image_vmo = info.buffers()[0].vmo();
+  const zx::vmo& image_vmo = info.buffers()->at(0).vmo().value();
 
   unsigned int current_image_content_id = 1;
   uint8_t* vmo_base;
@@ -786,12 +848,12 @@ TEST_P(ParameterizedFlipAndOrientationTestRGBA, FlipAndOrientationRenderTest) {
                                  image_vmo_bytes, reinterpret_cast<uintptr_t*>(&vmo_base));
   EXPECT_EQ(ZX_OK, status);
 
-  vmo_base += info.buffers()[0].vmo_usable_start();
+  vmo_base += info.buffers()->at(0).vmo_usable_start().value_or(0);
 
   unsigned int image_width = display_width_;
   unsigned int image_height = display_height_;
-  if (orientation == fuc::Orientation::CCW_90_DEGREES ||
-      orientation == fuc::Orientation::CCW_270_DEGREES) {
+  if (orientation == fuc::Orientation::kCcw90Degrees ||
+      orientation == fuc::Orientation::kCcw270Degrees) {
     std::swap(image_width, image_height);
   }
 
@@ -806,45 +868,57 @@ TEST_P(ParameterizedFlipAndOrientationTestRGBA, FlipAndOrientationRenderTest) {
     vmo_base[i + 3] = color.alpha;
   }
 
-  if (info.settings().buffer_settings().coherency_domain() ==
-      fuchsia::sysmem2::CoherencyDomain::RAM) {
+  if (info.settings()->buffer_settings()->coherency_domain() ==
+      fuchsia_sysmem2::CoherencyDomain::kRam) {
     EXPECT_EQ(ZX_OK, zx_cache_flush(vmo_base, image_vmo_bytes, ZX_CACHE_FLUSH_DATA));
   }
 
-  fuc::ImageProperties image_properties = {};
-  image_properties.set_size({image_width, image_height});
-  const fuc::ContentId kImageContentId{.value = current_image_content_id++};
+  fuc::ImageProperties image_properties;
+  image_properties.size(fuchsia_math::SizeU{{.width = image_width, .height = image_height}});
+  const fuc::ContentId kImageContentId{{.value = current_image_content_id++}};
 
-  root_flatland_->CreateImage(kImageContentId, std::move(bc_tokens.import_token), 0,
-                              std::move(image_properties));
-  root_flatland_->SetImageFlip(kImageContentId, image_flip);
+  FX_CHECK((*root_flatland_)
+               ->CreateImage({{.image_id = kImageContentId,
+                               .import_token = std::move(bc_tokens.import_token),
+                               .vmo_index = 0,
+                               .properties = std::move(image_properties)}})
+               .is_ok());
+  FX_CHECK(
+      (*root_flatland_)->SetImageFlip({{.image_id = kImageContentId, .flip = image_flip}}).is_ok());
 
   // Present the created Image.
-  root_flatland_->SetContent(kRootTransform, kImageContentId);
-  root_flatland_->SetOrientation(kRootTransform, orientation);
+  FX_CHECK((*root_flatland_)
+               ->SetContent({{.transform_id = kRootTransform, .content_id = kImageContentId}})
+               .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->SetOrientation({{.transform_id = kRootTransform, .orientation = orientation}})
+               .is_ok());
 
   // Translate back into position after orientating around top-left corner.
-  fuchsia::math::Vec translation;
+  fuchsia_math::Vec translation;
   switch (orientation) {
-    case fuc::Orientation::CCW_0_DEGREES:
-      translation = {0, 0};
+    case fuc::Orientation::kCcw0Degrees:
+      translation = {{.x = 0, .y = 0}};
       break;
-    case fuc::Orientation::CCW_90_DEGREES:
-      translation = {0, static_cast<int32_t>(image_width)};
+    case fuc::Orientation::kCcw90Degrees:
+      translation = {{.x = 0, .y = static_cast<int32_t>(image_width)}};
       break;
-    case fuc::Orientation::CCW_180_DEGREES:
-      translation = {static_cast<int32_t>(image_width), static_cast<int32_t>(image_height)};
+    case fuc::Orientation::kCcw180Degrees:
+      translation = {
+          {.x = static_cast<int32_t>(image_width), .y = static_cast<int32_t>(image_height)}};
       break;
-    case fuc::Orientation::CCW_270_DEGREES:
-      translation = {static_cast<int32_t>(image_height), 0};
+    case fuc::Orientation::kCcw270Degrees:
+      translation = {{.x = static_cast<int32_t>(image_height), .y = 0}};
       break;
   }
-  root_flatland_->SetTranslation(kRootTransform, translation);
+  FX_CHECK((*root_flatland_)
+               ->SetTranslation({{.transform_id = kRootTransform, .translation = translation}})
+               .is_ok());
 
-  BlockingPresent(this, root_flatland_);
+  BlockingPresent(this, *root_flatland_);
 
   auto screenshot = TakeScreenshot(screenshotter_, display_width_, display_height_,
-                                   fuchsia::ui::composition::ScreenshotFormat::RGBA_RAW);
+                                   fuc::ScreenshotFormat::kRgbaRaw);
 
   // Verify that the number of pixels is the same (i.e. the image hasn't changed).
   auto histogram = screenshot.Histogram();
@@ -866,18 +940,19 @@ TEST_P(ParameterizedFlipAndOrientationTestRGBA, FlipAndOrientationRenderTest) {
             expected_colors->second.bottom_right);
 }
 
-class ParameterizedScreenshotFormatTest
-    : public FlatlandPixelTestBase,
-      public zxtest::WithParamInterface<fuchsia::ui::composition::ScreenshotFormat> {};
+class ParameterizedScreenshotFormatTest : public FlatlandPixelTestBase,
+                                          public zxtest::WithParamInterface<fuc::ScreenshotFormat> {
+};
 
 INSTANTIATE_TEST_SUITE_P(ParameterizedScreenshotFormatTestWithParams,
                          ParameterizedScreenshotFormatTest,
-                         zxtest::Values(fuchsia::ui::composition::ScreenshotFormat::BGRA_RAW,
-                                        fuchsia::ui::composition::ScreenshotFormat::RGBA_RAW));
+                         zxtest::Values(fuc::ScreenshotFormat::kBgraRaw,
+                                        fuc::ScreenshotFormat::kRgbaRaw));
+
 TEST_P(ParameterizedScreenshotFormatTest, CoordinateViewTest) {
   Draw4RectanglesToDisplay();
 
-  BlockingPresent(this, root_flatland_);
+  BlockingPresent(this, *root_flatland_);
 
   auto screenshot = TakeScreenshot(screenshotter_, display_width_, display_height_, GetParam());
 
@@ -906,11 +981,11 @@ TEST_P(ParameterizedScreenshotFormatTest, CoordinateViewTest) {
 TEST_F(FlatlandPixelTestBase, TakeScreenshotCompressionTest) {
   Draw4RectanglesToDisplay();
 
-  BlockingPresent(this, root_flatland_);
+  BlockingPresent(this, *root_flatland_);
 
   auto raw_screenshot = TakeScreenshot(screenshotter_, display_width_, display_height_);
-  auto png_screenshot = TakeScreenshot(screenshotter_, display_width_, display_height_,
-                                       fuchsia::ui::composition::ScreenshotFormat::PNG);
+  auto png_screenshot =
+      TakeScreenshot(screenshotter_, display_width_, display_height_, fuc::ScreenshotFormat::kPng);
 
   EXPECT_LT(png_screenshot.size(), raw_screenshot.size());
   EXPECT_GE(png_screenshot.ComputeSimilarity(raw_screenshot), 100.f);
@@ -919,11 +994,11 @@ TEST_F(FlatlandPixelTestBase, TakeScreenshotCompressionTest) {
 TEST_F(FlatlandPixelTestBase, TakeFileScreenshotCompressionTest) {
   Draw4RectanglesToDisplay();
 
-  BlockingPresent(this, root_flatland_);
+  BlockingPresent(this, *root_flatland_);
 
   auto raw_screenshot = TakeFileScreenshot(screenshotter_, display_width_, display_height_);
   auto png_screenshot = TakeFileScreenshot(screenshotter_, display_width_, display_height_,
-                                           fuchsia::ui::composition::ScreenshotFormat::PNG);
+                                           fuc::ScreenshotFormat::kPng);
 
   EXPECT_LT(png_screenshot.size(), raw_screenshot.size());
   EXPECT_GE(png_screenshot.ComputeSimilarity(raw_screenshot), 100.f);
@@ -954,13 +1029,13 @@ TEST_P(ParameterizedOpacityPixelTest, OpacityTest) {
   utils::Pixel foreground_color(utils::kGreen);
 
   // Draw the background rectangle.
-  DrawRectangle(root_flatland_, display_width_, display_height_, 0, 0, background_color);
+  DrawRectangle(*root_flatland_, display_width_, display_height_, 0, 0, background_color);
 
   // Draw the foreground rectangle.
-  DrawRectangle(root_flatland_, display_width_, display_height_, 0, 0, foreground_color,
-                fuc::BlendMode::SRC_OVER, GetParam().opacity);
+  DrawRectangle(*root_flatland_, display_width_, display_height_, 0, 0, foreground_color,
+                fuc::BlendMode::kSrcOver, GetParam().opacity);
 
-  BlockingPresent(this, root_flatland_);
+  BlockingPresent(this, *root_flatland_);
 
   const auto num_pixels = display_width_ * display_height_;
 
@@ -990,41 +1065,62 @@ TEST_P(ParameterizedOpacityPixelTest, OpacityTest) {
 // gets completely clipped because it was drawn outside of the view bounds.
 TEST_F(FlatlandPixelTestBase, ViewBoundClipping) {
   // Create a child view.
-  fuc::FlatlandPtr child;
-  child = ConnectAsyncIntoRealm<fuc::Flatland>();
+  FlatlandClientWithEventHandler child(ConnectIntoRealm<fuc::Flatland>(), dispatcher());
   uint32_t child_width = 0, child_height = 0;
 
-  auto [view_creation_token, viewport_token] = scenic::ViewCreationTokenPair::New();
-  fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
-  child->CreateView2(std::move(view_creation_token), scenic::NewViewIdentityOnCreation(), {},
-                     parent_viewport_watcher.NewRequest());
+  auto [view_creation_token, viewport_token] = scenic::cpp::ViewCreationTokenPair::New();
+  auto [pv_client_end, pv_server_end] = fidl::Endpoints<fuc::ParentViewportWatcher>::Create();
+  SimpleWatcherClient<fuc::ParentViewportWatcher> parent_viewport_watcher(std::move(pv_client_end),
+                                                                          dispatcher());
+  FX_CHECK(child
+               ->CreateView2({{.token = std::move(view_creation_token),
+                               .view_identity = scenic::cpp::NewViewIdentityOnCreation(),
+                               .protocols = {},
+                               .parent_viewport_watcher = std::move(pv_server_end)}})
+               .is_ok());
   BlockingPresent(this, child);
 
   // Connect the child view to the root view.
-  const fuc::TransformId viewport_transform = {get_next_resource_id()};
-  const fuc::ContentId viewport_content = {get_next_resource_id()};
+  const fuc::TransformId viewport_transform{{.value = get_next_resource_id()}};
+  const fuc::ContentId viewport_content{{.value = get_next_resource_id()}};
 
-  root_flatland_->CreateTransform(viewport_transform);
+  FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = viewport_transform}}).is_ok());
   fuc::ViewportProperties properties;
 
   // Allow the child view to draw content in the left half of the display.
-  properties.set_logical_size({display_width_ / 2, display_height_});
-  fidl::InterfacePtr<fuc::ChildViewWatcher> child_view_watcher;
-  root_flatland_->CreateViewport(viewport_content, std::move(viewport_token), std::move(properties),
-                                 child_view_watcher.NewRequest());
-  root_flatland_->SetContent(viewport_transform, viewport_content);
-  root_flatland_->AddChild(kRootTransform, viewport_transform);
-  BlockingPresent(this, root_flatland_);
+  properties.logical_size(
+      fuchsia_math::SizeU{{.width = display_width_ / 2, .height = display_height_}});
+  auto [cv_client_end, cv_server_end] = fidl::Endpoints<fuc::ChildViewWatcher>::Create();
+  SimpleWatcherClient<fuc::ChildViewWatcher> child_view_watcher(std::move(cv_client_end),
+                                                                dispatcher());
+  FX_CHECK((*root_flatland_)
+               ->CreateViewport({{.viewport_id = viewport_content,
+                                  .token = std::move(viewport_token),
+                                  .properties = std::move(properties),
+                                  .child_view_watcher = std::move(cv_server_end)}})
+               .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->SetContent({{.transform_id = viewport_transform, .content_id = viewport_content}})
+               .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->AddChild({{.parent_transform_id = kRootTransform,
+                            .child_transform_id = viewport_transform}})
+               .is_ok());
+  BlockingPresent(this, *root_flatland_);
 
-  parent_viewport_watcher->GetLayout([&child_width, &child_height](auto layout_info) {
-    child_width = layout_info.logical_size().width;
-    child_height = layout_info.logical_size().height;
-  });
+  parent_viewport_watcher.client()->GetLayout().Then(
+      [&child_width,
+       &child_height](fidl::Result<fuc::ParentViewportWatcher::GetLayout>& layout_info) {
+        if (layout_info.is_ok() && layout_info->info().logical_size().has_value()) {
+          child_width = layout_info->info().logical_size()->width();
+          child_height = layout_info->info().logical_size()->height();
+        }
+      });
   RunLoopUntil([&child_width, &child_height] { return child_width > 0 && child_height > 0; });
 
   // Create the root transform for the child view.
-  child->CreateTransform(kRootTransform);
-  child->SetRootTransform(kRootTransform);
+  FX_CHECK(child->CreateTransform({{.transform_id = kRootTransform}}).is_ok());
+  FX_CHECK(child->SetRootTransform({{.transform_id = kRootTransform}}).is_ok());
 
   const utils::Pixel default_color(0, 0, 0, 0);
 
@@ -1082,74 +1178,125 @@ TEST_F(FlatlandPixelTestBase, ViewBoundClipping) {
 //       g refers to green pixels covered by the second child of the parent view.
 TEST_F(FlatlandPixelTestBase, TranslateInheritsFromParent) {
   // Draw the first rectangle in the top right quadrant.
-  const fuc::ContentId kFilledRectId1 = {get_next_resource_id()};
-  const fuc::TransformId kTransformId1 = {get_next_resource_id()};
+  const fuc::ContentId kFilledRectId1{{.value = get_next_resource_id()}};
+  const fuc::TransformId kTransformId1{{.value = get_next_resource_id()}};
 
-  root_flatland_->CreateFilledRect(kFilledRectId1);
-  root_flatland_->SetSolidFill(kFilledRectId1, GetColorInFloat(utils::kBlue),
-                               {display_width_ / 2, display_height_ / 2});
+  FX_CHECK((*root_flatland_)->CreateFilledRect({{.rect_id = kFilledRectId1}}).is_ok());
+  FX_CHECK(
+      (*root_flatland_)
+          ->SetSolidFill({{.rect_id = kFilledRectId1,
+                           .color = GetColorInFloat(utils::kBlue),
+                           .size = {{.width = display_width_ / 2, .height = display_height_ / 2}}}})
+          .is_ok());
 
   // Associate the rect with a transform.
-  root_flatland_->CreateTransform(kTransformId1);
-  root_flatland_->SetContent(kTransformId1, kFilledRectId1);
-  root_flatland_->SetTranslation(kTransformId1, {static_cast<int32_t>(display_width_ / 2), 0});
+  FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = kTransformId1}}).is_ok());
+  FX_CHECK((*root_flatland_)
+               ->SetContent({{.transform_id = kTransformId1, .content_id = kFilledRectId1}})
+               .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->SetTranslation(
+                   {{.transform_id = kTransformId1,
+                     .translation = {{.x = static_cast<int32_t>(display_width_ / 2), .y = 0}}}})
+               .is_ok());
 
   // Attach the transform to the view.
-  root_flatland_->AddChild(kRootTransform, kTransformId1);
+  FX_CHECK(
+      (*root_flatland_)
+          ->AddChild({{.parent_transform_id = kRootTransform, .child_transform_id = kTransformId1}})
+          .is_ok());
 
   // Draw the second rectangle which should be removed from the view, after ReplaceChildren
   // removes it's child-parent connection.
-  const fuc::ContentId kFilledRectId2 = {get_next_resource_id()};
-  const fuc::TransformId kTransformId2 = {get_next_resource_id()};
+  const fuc::ContentId kFilledRectId2{{.value = get_next_resource_id()}};
+  const fuc::TransformId kTransformId2{{.value = get_next_resource_id()}};
 
-  root_flatland_->CreateFilledRect(kFilledRectId2);
-  root_flatland_->SetSolidFill(kFilledRectId2, GetColorInFloat(utils::kMagenta),
-                               {display_width_ / 2, display_height_ / 2});
+  FX_CHECK((*root_flatland_)->CreateFilledRect({{.rect_id = kFilledRectId2}}).is_ok());
+  FX_CHECK(
+      (*root_flatland_)
+          ->SetSolidFill({{.rect_id = kFilledRectId2,
+                           .color = GetColorInFloat(utils::kMagenta),
+                           .size = {{.width = display_width_ / 2, .height = display_height_ / 2}}}})
+          .is_ok());
 
   // Associate the rect with a transform.
-  root_flatland_->CreateTransform(kTransformId2);
-  root_flatland_->SetContent(kTransformId2, kFilledRectId2);
-  root_flatland_->SetTranslation(kTransformId2, {0, static_cast<int32_t>(display_height_ / 2)});
+  FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = kTransformId2}}).is_ok());
+  FX_CHECK((*root_flatland_)
+               ->SetContent({{.transform_id = kTransformId2, .content_id = kFilledRectId2}})
+               .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->SetTranslation(
+                   {{.transform_id = kTransformId2,
+                     .translation = {{.x = 0, .y = static_cast<int32_t>(display_height_ / 2)}}}})
+               .is_ok());
 
   // Add the |kTransformId2| as the child of |kTransformId1| temporarily, but expect that
   // ReplaceChildren undoes this.
-  root_flatland_->AddChild(kTransformId1, kTransformId2);
-  BlockingPresent(this, root_flatland_);
+  FX_CHECK(
+      (*root_flatland_)
+          ->AddChild({{.parent_transform_id = kTransformId1, .child_transform_id = kTransformId2}})
+          .is_ok());
+  BlockingPresent(this, *root_flatland_);
 
   // Draw the first child rectangle which should appear in the top half of the bottom right
   // quadrant.
-  const fuc::ContentId kFilledChildRectId1 = {get_next_resource_id()};
-  const fuc::TransformId kChildTransformId1 = {get_next_resource_id()};
+  const fuc::ContentId kFilledChildRectId1{{.value = get_next_resource_id()}};
+  const fuc::TransformId kChildTransformId1{{.value = get_next_resource_id()}};
 
-  root_flatland_->CreateFilledRect(kFilledChildRectId1);
-  root_flatland_->SetSolidFill(kFilledChildRectId1, GetColorInFloat(utils::kRed),
-                               {display_width_ / 2, display_height_ / 4});
+  FX_CHECK((*root_flatland_)->CreateFilledRect({{.rect_id = kFilledChildRectId1}}).is_ok());
+  FX_CHECK(
+      (*root_flatland_)
+          ->SetSolidFill({{.rect_id = kFilledChildRectId1,
+                           .color = GetColorInFloat(utils::kRed),
+                           .size = {{.width = display_width_ / 2, .height = display_height_ / 4}}}})
+          .is_ok());
 
   // Associate the rect with a transform.
-  root_flatland_->CreateTransform(kChildTransformId1);
-  root_flatland_->SetContent(kChildTransformId1, kFilledChildRectId1);
-  root_flatland_->SetTranslation(kChildTransformId1,
-                                 {0, static_cast<int32_t>(display_height_ / 2)});
+  FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = kChildTransformId1}}).is_ok());
+  FX_CHECK(
+      (*root_flatland_)
+          ->SetContent({{.transform_id = kChildTransformId1, .content_id = kFilledChildRectId1}})
+          .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->SetTranslation(
+                   {{.transform_id = kChildTransformId1,
+                     .translation = {{.x = 0, .y = static_cast<int32_t>(display_height_ / 2)}}}})
+               .is_ok());
 
   // Draw the second child rectangle which should appear in the bottom half of the bottom right
   // quadrant.
-  const fuc::ContentId kFilledChildRectId2 = {get_next_resource_id()};
-  const fuc::TransformId kChildTransformId2 = {get_next_resource_id()};
+  const fuc::ContentId kFilledChildRectId2{{.value = get_next_resource_id()}};
+  const fuc::TransformId kChildTransformId2{{.value = get_next_resource_id()}};
 
-  root_flatland_->CreateFilledRect(kFilledChildRectId2);
-  root_flatland_->SetSolidFill(kFilledChildRectId2, GetColorInFloat(utils::kGreen),
-                               {display_width_ / 2, display_height_ / 4});
+  FX_CHECK((*root_flatland_)->CreateFilledRect({{.rect_id = kFilledChildRectId2}}).is_ok());
+  FX_CHECK(
+      (*root_flatland_)
+          ->SetSolidFill({{.rect_id = kFilledChildRectId2,
+                           .color = GetColorInFloat(utils::kGreen),
+                           .size = {{.width = display_width_ / 2, .height = display_height_ / 4}}}})
+          .is_ok());
 
   // Associate the rect with a transform.
-  root_flatland_->CreateTransform(kChildTransformId2);
-  root_flatland_->SetContent(kChildTransformId2, kFilledChildRectId2);
-  root_flatland_->SetTranslation(kChildTransformId2,
-                                 {0, static_cast<int32_t>(3 * display_height_ / 4)});
+  FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = kChildTransformId2}}).is_ok());
+  FX_CHECK(
+      (*root_flatland_)
+          ->SetContent({{.transform_id = kChildTransformId2, .content_id = kFilledChildRectId2}})
+          .is_ok());
+  FX_CHECK(
+      (*root_flatland_)
+          ->SetTranslation(
+              {{.transform_id = kChildTransformId2,
+                .translation = {{.x = 0, .y = static_cast<int32_t>(3 * display_height_ / 4)}}}})
+          .is_ok());
 
   // Add |kChildTransformId1| and |kChildTransformId2| as children of |kTransformId1| by calling
   // ReplaceChildren, which also should remove any previous children of |kTransformId1|.
-  root_flatland_->ReplaceChildren(kTransformId1, {kChildTransformId1, kChildTransformId2});
-  BlockingPresent(this, root_flatland_);
+  FX_CHECK((*root_flatland_)
+               ->ReplaceChildren(
+                   {{.parent_transform_id = kTransformId1,
+                     .new_child_transform_ids = {{kChildTransformId1, kChildTransformId2}}}})
+               .is_ok());
+  BlockingPresent(this, *root_flatland_);
 
   const utils::Pixel default_color(0, 0, 0, 0);
 
@@ -1217,14 +1364,16 @@ TEST_F(FlatlandPixelTestBase, ScaleTest) {
   for (uint32_t i = 0; i < 2; i++) {
     for (uint32_t j = 0; j < 2; j++) {
       utils::Pixel color(static_cast<uint8_t>(j * 255), 0, static_cast<uint8_t>(i * 255), 255);
-      DrawRectangle(root_flatland_, pane_width, pane_height, i * pane_width, j * pane_height,
+      DrawRectangle(*root_flatland_, pane_width, pane_height, i * pane_width, j * pane_height,
                     color);
     }
   }
 
   // Set a scale factor for 2.
-  root_flatland_->SetScale(kRootTransform, {2, 2});
-  BlockingPresent(this, root_flatland_);
+  FX_CHECK((*root_flatland_)
+               ->SetScale({{.transform_id = kRootTransform, .scale = {{.x = 2, .y = 2}}}})
+               .is_ok());
+  BlockingPresent(this, *root_flatland_);
 
   const auto num_pixels = display_width_ * display_height_;
   auto screenshot = TakeScreenshot(screenshotter_, display_width_, display_height_);
@@ -1244,33 +1393,50 @@ TEST_F(FlatlandPixelTestBase, ScaleTest) {
 
 // This test ensures that detaching a viewport ceases rendering the view.
 TEST_F(FlatlandPixelTestBase, ViewportDetach) {
-  fuc::FlatlandPtr child;
-  child = ConnectAsyncIntoRealm<fuc::Flatland>();
+  FlatlandClientWithEventHandler child(ConnectIntoRealm<fuc::Flatland>(), dispatcher());
 
   // Create the child view.
-  auto [view_creation_token, viewport_creation_token] = scenic::ViewCreationTokenPair::New();
-  fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
-  child->CreateView2(std::move(view_creation_token), scenic::NewViewIdentityOnCreation(), {},
-                     parent_viewport_watcher.NewRequest());
+  auto [view_creation_token, viewport_creation_token] = scenic::cpp::ViewCreationTokenPair::New();
+  auto [pv_client_end, pv_server_end] = fidl::Endpoints<fuc::ParentViewportWatcher>::Create();
+  SimpleWatcherClient<fuc::ParentViewportWatcher> parent_viewport_watcher(std::move(pv_client_end),
+                                                                          dispatcher());
+  FX_CHECK(child
+               ->CreateView2({{.token = std::move(view_creation_token),
+                               .view_identity = scenic::cpp::NewViewIdentityOnCreation(),
+                               .protocols = {},
+                               .parent_viewport_watcher = std::move(pv_server_end)}})
+               .is_ok());
   BlockingPresent(this, child);
 
   // Connect the child view to the root view.
-  fuc::TransformId viewport_transform = {get_next_resource_id()};
-  fuc::ContentId viewport_content = {get_next_resource_id()};
-  root_flatland_->CreateTransform(viewport_transform);
-  fidl::InterfacePtr<fuc::ChildViewWatcher> child_view_watcher;
+  const fuc::TransformId viewport_transform{{.value = get_next_resource_id()}};
+  const fuc::ContentId viewport_content{{.value = get_next_resource_id()}};
+  FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = viewport_transform}}).is_ok());
+  auto [cv_client_end, cv_server_end] = fidl::Endpoints<fuc::ChildViewWatcher>::Create();
+  SimpleWatcherClient<fuc::ChildViewWatcher> child_view_watcher(std::move(cv_client_end),
+                                                                dispatcher());
   fuc::ViewportProperties properties;
-  properties.set_logical_size({display_width_, display_height_});
-  root_flatland_->CreateViewport(viewport_content, std::move(viewport_creation_token),
-                                 std::move(properties), child_view_watcher.NewRequest());
-  root_flatland_->SetContent(viewport_transform, viewport_content);
-  root_flatland_->AddChild(kRootTransform, viewport_transform);
+  properties.logical_size(
+      fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
+  FX_CHECK((*root_flatland_)
+               ->CreateViewport({{.viewport_id = viewport_content,
+                                  .token = std::move(viewport_creation_token),
+                                  .properties = std::move(properties),
+                                  .child_view_watcher = std::move(cv_server_end)}})
+               .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->SetContent({{.transform_id = viewport_transform, .content_id = viewport_content}})
+               .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->AddChild({{.parent_transform_id = kRootTransform,
+                            .child_transform_id = viewport_transform}})
+               .is_ok());
 
-  BlockingPresent(this, root_flatland_);
+  BlockingPresent(this, *root_flatland_);
 
   // Child view draws a solid filled rectangle.
-  child->CreateTransform(kRootTransform);
-  child->SetRootTransform(kRootTransform);
+  FX_CHECK(child->CreateTransform({{.transform_id = kRootTransform}}).is_ok());
+  FX_CHECK(child->SetRootTransform({{.transform_id = kRootTransform}}).is_ok());
   DrawRectangle(child, display_width_, display_height_, 0, 0, utils::kBlue);
   BlockingPresent(this, child);
 
@@ -1283,8 +1449,15 @@ TEST_F(FlatlandPixelTestBase, ViewportDetach) {
   }
 
   // Root view releases the viewport.
-  root_flatland_->ReleaseViewport(viewport_content, [](auto token) {});
-  BlockingPresent(this, root_flatland_);
+  bool release_viewport_completed = false;
+  (*root_flatland_)
+      ->ReleaseViewport({{.viewport_id = viewport_content}})
+      .Then([&release_viewport_completed](fidl::Result<fuc::Flatland::ReleaseViewport>& result) {
+        EXPECT_TRUE(result.is_ok());
+        release_viewport_completed = true;
+      });
+  BlockingPresent(this, *root_flatland_);
+  EXPECT_TRUE(release_viewport_completed);
 
   // The screenshot taken should not reflect the content drawn by the child view as its viewport was
   // released.
@@ -1298,43 +1471,60 @@ TEST_F(FlatlandPixelTestBase, ViewportDetach) {
 // This test ensures that |fuchsia.ui.composition.ViewportProperties.inset| is only used
 // as hints for clients, and they won't affect rendering of views in Scenic.
 TEST_F(FlatlandPixelTestBase, InsetNotEnforced) {
-  fuc::FlatlandPtr child;
-  child = ConnectAsyncIntoRealm<fuc::Flatland>();
+  FlatlandClientWithEventHandler child(ConnectIntoRealm<fuc::Flatland>(), dispatcher());
 
   // Create the child view.
-  auto [view_creation_token, viewport_creation_token] = scenic::ViewCreationTokenPair::New();
-  fidl::InterfacePtr<fuc::ParentViewportWatcher> parent_viewport_watcher;
-  child->CreateView2(std::move(view_creation_token), scenic::NewViewIdentityOnCreation(), {},
-                     parent_viewport_watcher.NewRequest());
+  auto [view_creation_token, viewport_creation_token] = scenic::cpp::ViewCreationTokenPair::New();
+  auto [pv_client_end, pv_server_end] = fidl::Endpoints<fuc::ParentViewportWatcher>::Create();
+  SimpleWatcherClient<fuc::ParentViewportWatcher> parent_viewport_watcher(std::move(pv_client_end),
+                                                                          dispatcher());
+  FX_CHECK(child
+               ->CreateView2({{.token = std::move(view_creation_token),
+                               .view_identity = scenic::cpp::NewViewIdentityOnCreation(),
+                               .protocols = {},
+                               .parent_viewport_watcher = std::move(pv_server_end)}})
+               .is_ok());
   BlockingPresent(this, child);
 
   // Connect the child view to the root view.
-  fuc::TransformId viewport_transform = {get_next_resource_id()};
-  fuc::ContentId viewport_content = {get_next_resource_id()};
-  root_flatland_->CreateTransform(viewport_transform);
-  fidl::InterfacePtr<fuc::ChildViewWatcher> child_view_watcher;
+  const fuc::TransformId viewport_transform{{.value = get_next_resource_id()}};
+  const fuc::ContentId viewport_content{{.value = get_next_resource_id()}};
+  FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = viewport_transform}}).is_ok());
+  auto [cv_client_end, cv_server_end] = fidl::Endpoints<fuc::ChildViewWatcher>::Create();
+  SimpleWatcherClient<fuc::ChildViewWatcher> child_view_watcher(std::move(cv_client_end),
+                                                                dispatcher());
   fuc::ViewportProperties properties;
-  properties.set_logical_size({display_width_, display_height_});
+  properties.logical_size(
+      fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
 
   // We set non-zero |inset|. These properties should work only as hints, but not affect actual
   // rendered views.
-  properties.set_inset({
+  properties.inset(fuchsia_math::Inset{{
       .top = static_cast<int32_t>(display_height_) / 4,
       .right = static_cast<int32_t>(display_width_) / 4,
       .bottom = static_cast<int32_t>(display_height_) / 4,
       .left = static_cast<int32_t>(display_width_) / 4,
-  });
+  }});
 
-  root_flatland_->CreateViewport(viewport_content, std::move(viewport_creation_token),
-                                 std::move(properties), child_view_watcher.NewRequest());
-  root_flatland_->SetContent(viewport_transform, viewport_content);
-  root_flatland_->AddChild(kRootTransform, viewport_transform);
+  FX_CHECK((*root_flatland_)
+               ->CreateViewport({{.viewport_id = viewport_content,
+                                  .token = std::move(viewport_creation_token),
+                                  .properties = std::move(properties),
+                                  .child_view_watcher = std::move(cv_server_end)}})
+               .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->SetContent({{.transform_id = viewport_transform, .content_id = viewport_content}})
+               .is_ok());
+  FX_CHECK((*root_flatland_)
+               ->AddChild({{.parent_transform_id = kRootTransform,
+                            .child_transform_id = viewport_transform}})
+               .is_ok());
 
-  BlockingPresent(this, root_flatland_);
+  BlockingPresent(this, *root_flatland_);
 
   // Child view draws a solid filled rectangle.
-  child->CreateTransform(kRootTransform);
-  child->SetRootTransform(kRootTransform);
+  FX_CHECK(child->CreateTransform({{.transform_id = kRootTransform}}).is_ok());
+  FX_CHECK(child->SetRootTransform({{.transform_id = kRootTransform}}).is_ok());
   DrawRectangle(child, display_width_, display_height_, 0, 0, utils::kBlue);
   BlockingPresent(this, child);
 

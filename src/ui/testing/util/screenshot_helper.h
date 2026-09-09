@@ -5,6 +5,7 @@
 #ifndef SRC_UI_TESTING_UTIL_SCREENSHOT_HELPER_H_
 #define SRC_UI_TESTING_UTIL_SCREENSHOT_HELPER_H_
 
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/vmo.h>
@@ -35,6 +36,9 @@ class Screenshot {
   Screenshot(const zx::vmo& screenshot_vmo, uint64_t width, uint64_t height, int rotation,
              fuchsia::ui::composition::ScreenshotFormat format =
                  fuchsia::ui::composition::ScreenshotFormat::BGRA_RAW);
+
+  Screenshot(const zx::vmo& screenshot_vmo, uint64_t width, uint64_t height, int rotation,
+             fuchsia_ui_composition::ScreenshotFormat format);
 
   // Use this specifically to create a |Screenshot| object from a PNG encoded vmo.
   explicit Screenshot(const zx::vmo& png_vmo);

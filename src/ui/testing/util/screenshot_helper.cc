@@ -37,6 +37,12 @@ struct libpng_vmo {
 }  // namespace
 
 Screenshot::Screenshot(const zx::vmo& screenshot_vmo, uint64_t width, uint64_t height, int rotation,
+                       fuchsia_ui_composition::ScreenshotFormat format)
+    : Screenshot(
+          screenshot_vmo, width, height, rotation,
+          static_cast<fuchsia::ui::composition::ScreenshotFormat>(fidl::ToUnderlying(format))) {}
+
+Screenshot::Screenshot(const zx::vmo& screenshot_vmo, uint64_t width, uint64_t height, int rotation,
                        ScreenshotFormat format)
     : width_(width), height_(height) {
   if (rotation == 90 || rotation == 270) {

@@ -5,19 +5,16 @@
 #ifndef SRC_UI_SCENIC_TESTS_UTILS_SCREEN_CAPTURE_UTILS_H_
 #define SRC_UI_SCENIC_TESTS_UTILS_SCREEN_CAPTURE_UTILS_H_
 
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fidl/fuchsia.math/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
 
-namespace integration_tests {
+#include <vector>
 
-using fuchsia::math::SizeU;
-using fuchsia::math::Vec;
-using fuchsia::ui::composition::ChildViewWatcher;
-using fuchsia::ui::composition::ContentId;
-using fuchsia::ui::composition::ParentViewportWatcher;
-using fuchsia::ui::composition::RegisterBufferCollectionUsages;
-using fuchsia::ui::composition::TransformId;
-using fuchsia::ui::composition::ViewportProperties;
+#include "src/ui/scenic/tests/utils/flatland_client_with_event_handler.h"
+
+namespace integration_tests {
 
 static constexpr uint32_t kBytesPerPixel = 4;
 
@@ -33,26 +30,26 @@ bool PixelEquals(const uint8_t* a, const uint8_t* b);
 void AppendPixel(std::vector<uint8_t>* values, const uint8_t* pixel);
 
 void GenerateImageForFlatlandInstance(
-    uint32_t buffer_collection_index, fuchsia::ui::composition::FlatlandPtr& flatland,
-    TransformId parent_transform,
-    fuchsia::ui::composition::BufferCollectionImportToken import_token, SizeU size, Vec translation,
-    uint32_t image_id, uint32_t transform_id);
+    uint32_t buffer_collection_index, FlatlandClientWithEventHandler& flatland,
+    fuchsia_ui_composition::TransformId parent_transform,
+    fuchsia_ui_composition::BufferCollectionImportToken import_token, fuchsia_math::SizeU size,
+    fuchsia_math::Vec translation, uint32_t image_id, uint32_t transform_id);
 
 void WriteToSysmemBuffer(const std::vector<uint8_t>& write_values,
-                         fuchsia::sysmem2::BufferCollectionInfo& buffer_collection_info,
+                         const fuchsia_sysmem2::BufferCollectionInfo& buffer_collection_info,
                          uint32_t buffer_collection_idx, uint32_t kBytesPerPixel,
                          uint32_t image_width, uint32_t image_height);
 
-fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints(
-    fuchsia::sysmem2::BufferCollectionConstraints constraints,
-    fuchsia::ui::composition::BufferCollectionExportToken export_token,
-    fuchsia::ui::composition::Allocator_Sync* flatland_allocator,
+fuchsia_sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints(
+    fuchsia_sysmem2::BufferCollectionConstraints constraints,
+    fuchsia_ui_composition::BufferCollectionExportToken export_token,
+    fidl::SyncClient<fuchsia_ui_composition::Allocator>& flatland_allocator,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    RegisterBufferCollectionUsages usage);
+    fuchsia_ui_composition::RegisterBufferCollectionUsages usage);
 
 // This function returns a linear buffer of pixels of size width * height.
 std::vector<uint8_t> ExtractScreenCapture(
-    uint32_t buffer_id, fuchsia::sysmem2::BufferCollectionInfo& buffer_collection_info,
+    uint32_t buffer_id, const fuchsia_sysmem2::BufferCollectionInfo& buffer_collection_info,
     uint32_t kBytesPerPixel, uint32_t render_target_width, uint32_t render_target_height);
 
 }  // namespace integration_tests

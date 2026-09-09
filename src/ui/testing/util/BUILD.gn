@@ -77,6 +77,7 @@ source_set("screenshot_helper") {
 
   public_deps = [
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_cpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
     "//sdk/lib/syslog/cpp",
     "//third_party/libpng",
@@ -118,6 +119,7 @@ source_set("buffers_helper") {
   ]
   public_deps = [
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
+    "//sdk/fidl/fuchsia.sysmem2:fuchsia.sysmem2_cpp",
     "//zircon/system/ulib/zx",
   ]
 }

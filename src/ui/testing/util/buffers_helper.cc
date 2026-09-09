@@ -46,6 +46,22 @@ void MapHostPointer(const fuchsia::sysmem2::BufferCollectionInfo& collection_inf
                  vmo_bytes);
 }
 
+void MapHostPointer(const fuchsia_sysmem2::BufferCollectionInfo& collection_info, uint32_t vmo_idx,
+                    HostPointerAccessMode host_pointer_access_mode,
+                    std::function<void(uint8_t*, uint32_t)> callback) {
+  // If the vmo idx is out of bounds pass in a nullptr and 0 bytes back to the caller.
+  if (!collection_info.buffers().has_value() || vmo_idx >= collection_info.buffers()->size()) {
+    callback(nullptr, 0);
+    return;
+  }
+
+  auto vmo_bytes = collection_info.settings()->buffer_settings()->size_bytes().value_or(0);
+  ZX_ASSERT(vmo_bytes > 0);
+
+  MapHostPointer(collection_info.buffers()->at(vmo_idx).vmo().value(), host_pointer_access_mode,
+                 callback, vmo_bytes);
+}
+
 void MapHostPointer(const zx::vmo& vmo, HostPointerAccessMode host_pointer_access_mode,
                     std::function<void(uint8_t* mapped_ptr, uint32_t num_bytes)> callback,
                     uint64_t vmo_bytes) {

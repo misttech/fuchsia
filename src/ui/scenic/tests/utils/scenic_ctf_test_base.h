@@ -91,7 +91,7 @@ class ScenicCtfTest : public zxtest::Test, public ui_testing::LoggingEventLoop {
   template <typename Protocol>
   fidl::Client<Protocol> ConnectAsyncIntoRealm(
       const std::string& service_path = Protocol::kDiscoverableName) {
-    return fidl::Client<Protocol>(ConnectIntoRealm<Protocol>(service_path));
+    return fidl::Client<Protocol>(ConnectIntoRealm<Protocol>(service_path), dispatcher());
   }
 
   /// Connect to the FIDL protocol which served from the realm proxy use default served path if no

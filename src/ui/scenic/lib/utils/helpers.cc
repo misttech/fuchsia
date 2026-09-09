@@ -173,6 +173,36 @@ fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
   return constraints;
 }
 
+fuchsia_sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
+    uint32_t buffer_count, uint32_t width, uint32_t height, fuchsia_images2::PixelFormat format,
+    bool set_min_max_size) {
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  fuchsia_sysmem2::BufferMemoryConstraints buffer_memory_constraints;
+  buffer_memory_constraints.cpu_domain_supported(true);
+  buffer_memory_constraints.ram_domain_supported(true);
+  constraints.buffer_memory_constraints(std::move(buffer_memory_constraints));
+
+  fuchsia_sysmem2::BufferUsage usage;
+  usage.cpu(fuchsia_sysmem2::kCpuUsageReadOften | fuchsia_sysmem2::kCpuUsageWriteOften);
+  constraints.usage(std::move(usage));
+  constraints.min_buffer_count(buffer_count);
+
+  fuchsia_sysmem2::ImageFormatConstraints image_constraints;
+  image_constraints.color_spaces(std::vector{fuchsia_images2::ColorSpace::kSrgb});
+  image_constraints.pixel_format(format);
+  image_constraints.pixel_format_modifier(fuchsia_images2::PixelFormatModifier::kLinear);
+
+  image_constraints.required_min_size(fuchsia_math::SizeU{{.width = width, .height = height}});
+  image_constraints.required_max_size(fuchsia_math::SizeU{{.width = width, .height = height}});
+  if (set_min_max_size) {
+    image_constraints.min_size(fuchsia_math::SizeU{{.width = width, .height = height}});
+    image_constraints.max_size(fuchsia_math::SizeU{{.width = width, .height = height}});
+  }
+  image_constraints.bytes_per_row_divisor(4);
+  constraints.image_format_constraints(std::vector{std::move(image_constraints)});
+  return constraints;
+}
+
 // Prints in row-major order.
 void PrettyPrintMat3(std::string name, const std::array<float, 9>& mat3) {
   FX_LOGS(INFO) << "\n"
@@ -210,6 +240,14 @@ float GetOrientationAngle(fuchsia_ui_composition::Orientation orientation) {
 
 namespace {
 
+uint32_t GetBytesPerRow(const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints,
+                        uint32_t image_width, uint32_t bytes_per_pixel) {
+  uint32_t bytes_per_row_divisor = image_format_constraints.bytes_per_row_divisor().value_or(1);
+  uint32_t min_bytes_per_row = image_format_constraints.min_bytes_per_row().value_or(0);
+  uint32_t bytes_per_row = fbl::round_up(std::max(image_width * bytes_per_pixel, min_bytes_per_row),
+                                         bytes_per_row_divisor);
+  return bytes_per_row;
+}
 uint32_t GetBytesPerRow(const fuchsia::sysmem2::ImageFormatConstraints& image_format_constraints,
                         uint32_t image_width, uint32_t bytes_per_pixel) {
   uint32_t bytes_per_row_divisor = image_format_constraints.bytes_per_row_divisor();
@@ -229,6 +267,9 @@ uint32_t GetBytesPerRow(const fuchsia::sysmem::ImageFormatConstraints& image_for
 
 }  // namespace
 
+uint32_t GetBytesPerPixel(const fuchsia_sysmem2::SingleBufferSettings& settings) {
+  return GetBytesPerPixel(settings.image_format_constraints().value());
+}
 uint32_t GetBytesPerPixel(const fuchsia::sysmem2::SingleBufferSettings& settings) {
   return GetBytesPerPixel(settings.image_format_constraints());
 }
@@ -236,6 +277,14 @@ uint32_t GetBytesPerPixel(const fuchsia::sysmem::SingleBufferSettings& settings)
   return GetBytesPerPixel(settings.image_format_constraints);
 }
 
+uint32_t GetBytesPerPixel(const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints) {
+  fuchsia_images2::PixelFormat pixel_format = image_format_constraints.pixel_format().value();
+  fuchsia_images2::PixelFormatModifier pixel_format_modifier =
+      image_format_constraints.pixel_format_modifier().value_or(
+          fuchsia_images2::PixelFormatModifier::kLinear);
+  PixelFormatAndModifier pixel_format_and_modifier(pixel_format, pixel_format_modifier);
+  return ImageFormatStrideBytesPerWidthPixel(pixel_format_and_modifier);
+}
 uint32_t GetBytesPerPixel(
     const fuchsia::sysmem2::ImageFormatConstraints& image_format_constraints) {
   fuchsia::images2::PixelFormat pixel_format = image_format_constraints.pixel_format();
@@ -256,6 +305,10 @@ uint32_t GetBytesPerPixel(const fuchsia::sysmem::ImageFormatConstraints& image_f
   return ImageFormatStrideBytesPerWidthPixel(wire_pixel_format);
 }
 
+uint32_t GetBytesPerRow(const fuchsia_sysmem2::SingleBufferSettings& settings,
+                        uint32_t image_width) {
+  return GetBytesPerRow(settings.image_format_constraints().value(), image_width);
+}
 uint32_t GetBytesPerRow(const fuchsia::sysmem2::SingleBufferSettings& settings,
                         uint32_t image_width) {
   return GetBytesPerRow(settings.image_format_constraints(), image_width);
@@ -265,6 +318,11 @@ uint32_t GetBytesPerRow(const fuchsia::sysmem::SingleBufferSettings& settings,
   return GetBytesPerRow(settings.image_format_constraints, image_width);
 }
 
+uint32_t GetBytesPerRow(const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints,
+                        uint32_t image_width) {
+  uint32_t bytes_per_pixel = GetBytesPerPixel(image_format_constraints);
+  return GetBytesPerRow(image_format_constraints, image_width, bytes_per_pixel);
+}
 uint32_t GetBytesPerRow(const fuchsia::sysmem2::ImageFormatConstraints& image_format_constraints,
                         uint32_t image_width) {
   uint32_t bytes_per_pixel = GetBytesPerPixel(image_format_constraints);
@@ -276,16 +334,24 @@ uint32_t GetBytesPerRow(const fuchsia::sysmem::ImageFormatConstraints& image_for
   return GetBytesPerRow(image_format_constraints, image_width, bytes_per_pixel);
 }
 
+uint32_t GetPixelsPerRow(const fuchsia_sysmem2::SingleBufferSettings& settings,
+                         uint32_t image_width) {
+  return GetPixelsPerRow(settings.image_format_constraints().value(), image_width);
+}
 uint32_t GetPixelsPerRow(const fuchsia::sysmem2::SingleBufferSettings& settings,
                          uint32_t image_width) {
   return GetPixelsPerRow(settings.image_format_constraints(), image_width);
 }
-
 uint32_t GetPixelsPerRow(const fuchsia::sysmem::SingleBufferSettings& settings,
                          uint32_t image_width) {
   return GetPixelsPerRow(settings.image_format_constraints, image_width);
 }
 
+uint32_t GetPixelsPerRow(const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints,
+                         uint32_t image_width) {
+  uint32_t bytes_per_pixel = GetBytesPerPixel(image_format_constraints);
+  return GetBytesPerRow(image_format_constraints, image_width, bytes_per_pixel) / bytes_per_pixel;
+}
 uint32_t GetPixelsPerRow(const fuchsia::sysmem2::ImageFormatConstraints& image_format_constraints,
                          uint32_t image_width) {
   uint32_t bytes_per_pixel = GetBytesPerPixel(image_format_constraints);
