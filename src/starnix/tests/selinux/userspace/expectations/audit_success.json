@@ -691,6 +691,33 @@
             ]
         },
         {
+            "name": "MMapTest/MMapDeniedTest.MMapDenied/no_map",
+            "audit_expectations": [
+                "avc:  denied  { map } for path=\"/tmp/proc_test_file_3sGUE2\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_mmap_child_no_map_t:s0 tcontext=test_u:object_r:test_mmap_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { map } for path=\"/tmp/proc_test_file_3sGUE2\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_mmap_child_no_map_t:s0 tcontext=test_u:object_r:test_mmap_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "MMapTest/MMapDeniedTest.MMapDenied/no_read",
+            "audit_expectations": [
+                "avc:  denied  { read } for path=\"/tmp/proc_test_file_AM5FC6\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_mmap_child_no_read_t:s0 tcontext=test_u:object_r:test_mmap_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { read } for path=\"/tmp/proc_test_file_AM5FC6\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_mmap_child_no_read_t:s0 tcontext=test_u:object_r:test_mmap_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
+            "name": "MMapTest/MMapDeniedTest.MMapDenied/no_use_fd",
+            "audit_expectations": [
+                "avc:  denied  { use } for path=\"/tmp/proc_test_file_gSFfw3\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_mmap_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_mmap_parent_t:s0 tclass=fd permissive=0",
+                "avc:  denied  { use } for path=\"/tmp/proc_test_file_gSFfw3\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_mmap_child_no_use_fd_t:s0 tcontext=test_u:test_r:test_mmap_parent_t:s0 tclass=fd permissive=0"
+            ]
+        },
+        {
+            "name": "MMapTest/MMapDeniedTest.MMapDenied/no_write",
+            "audit_expectations": [
+                "avc:  denied  { write } for path=\"/tmp/proc_test_file_aRW5J2\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_mmap_child_no_write_t:s0 tcontext=test_u:object_r:test_mmap_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "MProtectExecmod/MProtectExecmod.ExecMod/ExecmodNo_PrivateMapping_Modification_MprotectFailure",
             "audit_expectations": [
                 "avc:  denied  { execmod } for path=\"/tmp/testdirgMiphP/test_file\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:mprotect_execmod_no_test_t:s0 tcontext=test_u:object_r:tmpfs_t:s0 tclass=file permissive=0"

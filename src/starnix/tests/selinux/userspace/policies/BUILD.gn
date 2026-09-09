@@ -91,6 +91,10 @@ userspace_policy("minimal_policy") {
   sources = [ "//src/starnix/lib/selinux/testdata/composite_policies/new_file/minimal_policy.conf" ]
 }
 
+userspace_policy("mmap_policy") {
+  sources = [ "mmap_policy.conf" ]
+}
+
 userspace_policy("mount_policy") {
   sources = [ "mount_policy.conf" ]
 }
@@ -180,6 +184,7 @@ group("policies") {
     ":memfd_class_policy",
     ":memfd_transition_policy",
     ":minimal_policy",
+    ":mmap_policy",
     ":mount_policy",
     ":mprotect_policy",
     ":netlink_audit_policy",
