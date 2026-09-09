@@ -62,6 +62,7 @@ type EnergyReading = table {
     3: timestamp zx.Time;
 };
 
+/// Provides power and power-related measurements for a single rail.
 @discoverable
 open protocol Device {
     /// Returns metadata for the rail.
@@ -77,6 +78,38 @@ open protocol Device {
     flexible GetEnergyJoules(Options) -> (EnergyReading) error zx.Status;
 };
 
+/// Minimum allowed hardware polling interval (10 ms).
+const MIN_POLL_INTERVAL zx.Duration = 10000000;
+
+/// Configuration options for the ODPM driver hardware polling loop.
+type PollingConfig = table {
+    /// Driver's baseline polling interval. Must be at least `MIN_POLL_INTERVAL`.
+    1: poll_interval zx.Duration;
+    /// Number of hardware polls per Inspect/trace time-series entry.
+    2: polls_per_series_entry uint32;
+};
+
+/// Interface implemented by the ODPM driver to configure polling parameters. Settings apply to
+/// all devices exposed by fuchsia.hardware.google.odpm/Service
+@discoverable
+open protocol DriverConfig {
+    /// Overrides polling configuration parameters. Any omitted fields in `PollingConfig`
+    /// remain unchanged.
+    /// Returns `ZX_ERR_INVALID_ARGS` if `poll_interval` is less than `MIN_POLL_INTERVAL` or
+    /// `polls_per_series_entry` == 0.
+    flexible SetPollingConfig(PollingConfig) -> () error zx.Status;
+
+    /// Retrieves the current polling configuration parameters.
+    flexible GetPollingConfig() -> (PollingConfig) error zx.Status;
+
+    /// Resets polling configuration parameters to the driver's default values.
+    flexible ResetPollingConfig() -> () error zx.Status;
+};
+
+/// One instance of this service is implemented for each power rail.
+// TODO(https://fxbug.dev/558833146): Consider restructuring protocols so the driver can implement
+// a single service that provides access to all rails while also supporting reconfiguration that
+// affects all rails.
 service Service {
     device client_end:Device;
 };
