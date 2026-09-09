@@ -68,7 +68,7 @@ template("fidl_go") {
       "//tools/fidl/fidlgen_go:*",
     ]
 
-    tool = "//build/bazel/host:bazel_root_host_tools.fidlgen_go"
+    tool = "//tools/fidl/fidlgen_go"
     tool_output_name = "fidlgen_go"
     mnemonic = "FIDLGEN"
 

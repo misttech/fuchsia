@@ -8,8 +8,7 @@ assert(
 
 action("generate_python_api_symbols") {
   script = "${root_out_dir}/generate_python_api_symbols"
-  deps =
-      [ "//build/bazel/host:bazel_root_host_tools.generate_python_api_symbols" ]
+  deps = [ "//build/config/python/generate_python_api_symbols" ]
   sources = [
     "//prebuilt/third_party/clang/${host_platform}/bin/llvm-readelf",
     "//prebuilt/third_party/jq/${host_platform}/bin/jq",

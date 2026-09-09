@@ -19,7 +19,7 @@ Support:
 Run:
 
 ```
-$ fx build --host //build/bazel/host:bazel_root_host_tools.check-licenses.host_tool
+$ fx build --host //tools/check-licenses
 $ fx check-licenses
 ```
 

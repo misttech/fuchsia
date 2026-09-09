@@ -2,7 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_host_tool.gni")
 import("//src/developer/ffx/build/ffx_tool.gni")
+
+assert(is_host, "bazel_host_tool() can only be called in a host toolchain.")
 
 group("efi") {
   public_deps = [
@@ -17,7 +20,12 @@ group("bin") {
 
 group("tests") {
   testonly = true
-  deps = [ ":ffx-efi_test($host_toolchain)" ]
+  deps = [ ":ffx-efi_test" ]
+}
+
+bazel_host_tool("ffx-efi_bazel_unversioned") {
+  bazel_target = ":ffx-efi"
+  bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi"
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##

@@ -30,7 +30,7 @@ template("prebuilt_binaries") {
   compiled_action(target_name) {
     testonly = true
 
-    tool = "//build/bazel/host:bazel_root_host_tools.generate_breakpad"
+    tool = "//tools/debug/generate_breakpad"
     tool_output_name = "generate_breakpad"
     outputs = [ binary_manifest ]
 

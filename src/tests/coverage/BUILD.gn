@@ -233,7 +233,7 @@ if (is_host) {
       "clang_golden_coverage.json",
     ]
 
-    deps = [ "//build/bazel/host:bazel_root_host_tools.covargs" ]
+    deps = [ "//tools/debug/covargs" ]
   }
 
   host_test_data("clang_coverage_test_deps_on_host") {
@@ -253,7 +253,7 @@ if (is_host) {
       "rust_golden_coverage.json",
     ]
 
-    deps = [ "//build/bazel/host:bazel_root_host_tools.covargs" ]
+    deps = [ "//tools/debug/covargs" ]
   }
 
   host_test_data("rust_coverage_test_deps_on_host") {

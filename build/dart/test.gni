@@ -173,14 +173,13 @@ template("dart_test") {
       sources = [
         _dart_binary,
         _snapshot,
-        get_label_info(
-                "//build/bazel/host:bazel_root_host_tools.dart_test_parser",
-                "root_out_dir") + "/dart_test_parser",
+        get_label_info("//tools/dart_test_parser", "root_out_dir") +
+            "/dart_test_parser",
       ]
       deps = [
         ":$_copy_target_name",
         ":$_snapshot_target_name",
-        "//build/bazel/host:bazel_root_host_tools.dart_test_parser",
+        "//tools/dart_test_parser",
       ]
     }
   }
@@ -235,11 +234,9 @@ template("dart_test") {
       "--snapshot",
       rebase_path(_snapshot, root_build_dir),
       "--results-parser",
-      rebase_path(
-          get_label_info(
-                  "//build/bazel/host:bazel_root_host_tools.dart_test_parser",
-                  "root_out_dir") + "/dart_test_parser",
-          root_build_dir),
+      rebase_path(get_label_info("//tools/dart_test_parser", "root_out_dir") +
+                      "/dart_test_parser",
+                  root_build_dir),
     ]
 
     # TODO(joshuaseaton): use test_spec's `command` field when fx supports
@@ -261,7 +258,7 @@ template("dart_test") {
       ":$_copy_target_name",
       ":$_snapshot_target_name",
       ":$_spec_target_name",
-      "//build/bazel/host:bazel_root_host_tools.dart_test_parser",
+      "//tools/dart_test_parser",
     ]
     testonly = true
   }

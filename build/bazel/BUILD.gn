@@ -7,7 +7,6 @@ import("//build/assembly/developer_overrides.gni")
 import("//build/bazel/bazel_action.gni")
 import("//build/bazel/bazel_content_hashes.gni")
 import("//build/bazel/bazel_inputs.gni")
-import("//build/bazel/bazel_root_targets.gni")
 import("//build/bazel/bazel_workspace.gni")
 import("//build/bazel/generate_content_hash_file.gni")
 import("//build/bazel/generate_prebuilt_dir_content_hash.gni")
@@ -74,19 +73,6 @@ group("tests") {
     "fuchsia_idk:tests",
     "scripts:tests",
   ]
-}
-
-group("bazel_root_targets") {
-  public_deps = [
-    ":bazel_root_targets_json",
-    "//build/bazel/host:bazel_root_host_tools(${host_toolchain})",
-  ]
-}
-
-generated_file("bazel_root_targets_json") {
-  outputs = [ "$root_build_dir/bazel_root_targets.json" ]
-  contents = resolved_bazel_root_targets
-  output_conversion = "json"
 }
 
 # Generates a file containing information about the GN build variables

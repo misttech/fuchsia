@@ -106,7 +106,7 @@ template("license_data") {
                              "testonly",
                              "visibility",
                            ])
-    tool = "//build/bazel/host:bazel_root_host_tools.generate_intermediate_json_cmd"
+    tool = "//tools/check-licenses/util/cmd/gn/generate_intermediate_json:generate_intermediate_json_cmd"
 
     deps = [ generate_project_json ]
 
@@ -134,7 +134,7 @@ template("license_data") {
                              "testonly",
                              "visibility",
                            ])
-    tool = "//build/bazel/host:bazel_root_host_tools.generate_intermediate_json_cmd"
+    tool = "//tools/check-licenses/util/cmd/gn/generate_intermediate_json:generate_intermediate_json_cmd"
 
     deps = [ ":$generate_intermediate_json" ]
     sources = [ generate_intermediate_json_output ]
@@ -161,7 +161,7 @@ template("license_data") {
                              "testonly",
                              "visibility",
                            ])
-    tool = "//build/bazel/host:bazel_root_host_tools.check-licenses"
+    tool = "//tools/check-licenses"
 
     # The license tool scans the whole source tree, so it cannot be hermetic.
     # TODO(https://fxbug.dev/42165766): Improve the way notice files are generated.

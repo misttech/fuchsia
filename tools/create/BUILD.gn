@@ -2,12 +2,22 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_host_tool.gni")
 import("//build/host.gni")
+
+if (is_host) {
+  bazel_host_tool("create_bin") {
+    bazel_target = ":create_bin"
+    bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/create_bin"
+    output_name = "create"
+    install_host_tool = true
+  }
+}
 
 group("create") {
   deps = [
+    ":create_bin($host_toolchain)",
     "templates($host_toolchain)",
-    "//build/bazel/host:bazel_root_host_tools.create.host_tool",
   ]
 }
 

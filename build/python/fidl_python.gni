@@ -70,7 +70,7 @@ template("fidl_python") {
         "//tools/fidl/fidlgen_python:*",
       ]
 
-      tool = "//build/bazel/host:bazel_root_host_tools.fidlgen_python"
+      tool = "//tools/fidl/fidlgen_python"
       tool_output_name = "fidlgen_python"
       mnemonic = "FIDLGEN"
 

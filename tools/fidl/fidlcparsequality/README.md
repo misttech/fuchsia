@@ -7,7 +7,7 @@ then collecting and categorizing the errors reported by the compiler.
 
 ## Build and Run
 
-    fx build --host //build/bazel/host:bazel_root_host_tools.fidlcparsequality
+    fx build --host //tools/fidl/fidlcparsequality
 
 
 Then

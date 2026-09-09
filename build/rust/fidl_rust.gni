@@ -46,7 +46,7 @@ template("_fidl_rust_crate") {
         "//tools/fidl/fidlgen_rust:*",
       ]
 
-      tool = "//build/bazel/host:bazel_root_host_tools.fidlgen_rust"
+      tool = "//tools/fidl/fidlgen_rust"
       tool_output_name = "fidlgen_rust"
       mnemonic = "FIDLGEN"
 

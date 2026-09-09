@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_host_tool.gni")
 import("//build/compiled_action.gni")
 import("//build/fidl/toolchain.gni")
 import("//build/host.gni")
@@ -9,6 +10,13 @@ import("//build/testing/golden_files.gni")
 import("//tools/fidl/fidlc/testdata/info.gni")
 
 if (is_host) {
+  bazel_host_tool("fidlgen_syzkaller") {
+    bazel_target = ":fidlgen_syzkaller"
+    bazel_output_path =
+        "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_syzkaller_/fidlgen_syzkaller"
+    install_host_tool = true
+  }
+
   fidl_testdata_info_filtered = []
   foreach(info, fidl_testdata_info) {
     if (info.denylist + [ "fidlgen_syzkaller" ] - [ "fidlgen_syzkaller" ] ==
@@ -19,7 +27,7 @@ if (is_host) {
 
   compiled_action_foreach("generate_goldens") {
     testonly = true
-    tool = "//build/bazel/host:bazel_root_host_tools.fidlgen_syzkaller"
+    tool = ":fidlgen_syzkaller"
     tool_output_name = "fidlgen_syzkaller"
     deps = []
     sources = []

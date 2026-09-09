@@ -39,7 +39,7 @@ template("project_json") {
   assert(defined(invoker.gen_output), "gen_output must be defined")
 
   compiled_action("$target_name") {
-    tool = "//build/bazel/host:bazel_root_host_tools.check-licenses-gen-project-json"
+    tool = "//tools/check-licenses/util/cmd/gn/generate_project_json:check-licenses-gen-project-json"
 
     # This command runs "fx gn gen", which potentially touches thousands of
     # files across the repo. It cannot be hermetic.

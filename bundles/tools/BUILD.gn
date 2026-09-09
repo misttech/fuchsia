@@ -38,7 +38,7 @@ group("tools") {
 
 # This group is for host tools.
 _host_tools = [
-  "//build/bazel/host:bazel_root_host_tools.formatjson5.host_tool",
+  "//build/tools/formatjson5",
   "//src/developer/debug/zxdb:zxdb",
   "//src/developer/ffx/tools/speedtest/target:speedtest",
   "//src/diagnostics/triage:install",
@@ -51,8 +51,8 @@ _host_tools = [
   "//src/storage:host_tools",
   "//src/sys/pkg/bin/far:host",
   "//tools",
-  "//build/bazel/host:bazel_root_host_tools.check-licenses.host_tool",
-  "//build/bazel/host:bazel_root_host_tools.whereiscl.host_tool",
+  "//tools/check-licenses",
+  "//tools/whereiscl",
 ]
 group("host_tools") {
   testonly = true

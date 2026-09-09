@@ -7,7 +7,7 @@ group("tools") {
 
   public_deps = [
     "fint",
-    "//build/bazel/host:bazel_root_host_tools.testsharder($host_toolchain)",
+    "testsharder($host_toolchain)",
   ]
 }
 

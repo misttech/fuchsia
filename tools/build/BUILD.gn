@@ -11,8 +11,9 @@ group("tools") {
   testonly = true
 
   public_deps = [
-    "//build/bazel/host:bazel_root_host_tools.buildstats($host_toolchain)",
-    "//build/bazel/host:bazel_root_host_tools.ninjatrace($host_toolchain)",
+    "//tools/build/fx-set($host_toolchain)",
+    "//tools/build/ninjago/buildstats($host_toolchain)",
+    "//tools/build/ninjago/ninjatrace($host_toolchain)",
   ]
 }
 

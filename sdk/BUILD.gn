@@ -1132,7 +1132,6 @@ copy("idk_build_tools") {
   outputs = [ "$root_build_dir/sdk/idk_build_tools/${_rebased_host_dir}/{{source_file_part}}" ]
 
   deps = [
-    "//build/bazel/host:bazel_root_host_tools.measure-tape($host_toolchain)",
     "//src/developer/ffx/plugins/package:ffx_package_tool($host_toolchain)",
     "//src/sys/pkg/bin/far:bin($host_toolchain)",
     "//src/sys/pkg/bin/package-tool($host_toolchain)",
@@ -1144,17 +1143,18 @@ copy("idk_build_tools") {
     "//tools/fidl/fidlc($host_toolchain)",
     "//tools/fidl/fidlgen_cpp($host_toolchain)",
     "//tools/fidl/fidlgen_hlcpp($host_toolchain)",
+    "//tools/fidl/measure-tape/src:measure-tape($host_toolchain)",
     "//zircon/tools/zither($host_toolchain)",
   ]
 
   # The following tools are generated directly from Bazel.
   sources += [ "${host_out_dir}/json_validator_valico" ]
   deps += [
-    "//build/bazel/host:bazel_root_host_tools.fidl_api_diff($host_toolchain)",
-    "//build/bazel/host:bazel_root_host_tools.fidl_api_summarize($host_toolchain)",
-    "//build/bazel/host:bazel_root_host_tools.fidlgen_rust($host_toolchain)",
-    "//build/bazel/host:bazel_root_host_tools.json_merge($host_toolchain)",
-    "//build/bazel/host:bazel_root_host_tools.json_validator_valico($host_toolchain)",
+    "//build/tools/json_merge($host_toolchain)",
+    "//build/tools/json_validator:json_validator_valico($host_toolchain)",
+    "//tools/fidl/fidl_api_diff($host_toolchain)",
+    "//tools/fidl/fidl_api_summarize($host_toolchain)",
+    "//tools/fidl/fidlgen_rust($host_toolchain)",
   ]
 }
 

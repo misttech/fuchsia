@@ -69,8 +69,7 @@ template("idk_archive") {
 
   # Generates the final archive.
   compiled_action(target_name) {
-    tool = "//build/bazel/host:bazel_root_host_tools.tarmaker"
-    tool_output_name = "tarmaker"
+    tool = "//build/tools/tarmaker"
     outputs = [ files.output_archive ]
     inputs = [ files.tarmaker_manifest ]
 

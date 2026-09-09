@@ -8,7 +8,7 @@ group("test") {
 
   # Tools that are only needed on the type of host that does the build.
   public_deps = [
-    "//build/bazel/host:bazel_root_host_tools.testsharder($host_toolchain)",
+    "//tools/integration/testsharder($host_toolchain)",
 
     # The symbolizer should only be needed on Linux x64, but cross-compilation
     # doesn't work for this tool and the Mac builders don't use it, so just
@@ -31,9 +31,9 @@ group("linux_x64_tools") {
   # Tools that are needed on Linux x64, regardless of the current host.
   _linux_x64_only_tools = [
     "//src/diagnostics/triage:triage_bin",
-    "//build/bazel/host:bazel_root_host_tools.covargs",
+    "//tools/debug/covargs",
     "//tools/testing/resultdb",
-    "//build/bazel/host:bazel_root_host_tools.tefmocheck",
+    "//tools/testing/tefmocheck",
     "//tools/testing/test_filterer",
   ]
 

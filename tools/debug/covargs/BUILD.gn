@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_host_tool.gni")
 import("//build/go/go_binary.gni")
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
@@ -22,6 +23,13 @@ group("tests") {
     ":covargs_lib_tests($host_toolchain)",
     ":covargs_tests($host_toolchain)",
   ]
+}
+
+if (is_host) {
+  bazel_host_tool("covargs") {
+    bazel_target = ":covargs"
+    bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/covargs_/covargs"
+  }
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##

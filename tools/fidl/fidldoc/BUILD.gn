@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_host_tool.gni")
 import("//build/compiled_action.gni")
 import("//build/host.gni")
 import("//build/rust/rustc_binary.gni")
@@ -10,6 +11,12 @@ import("//build/testing/golden_files.gni")
 import("//tools/fidl/fidlc/testdata/info.gni")
 
 if (is_host) {
+  bazel_host_tool("fidldoc") {
+    bazel_target = ":fidldoc"
+    bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/fidldoc"
+    install_host_tool = true
+  }
+
   copy("fidldoc_copy_config") {
     sources = [ "src/fidldoc.config.json" ]
     outputs = [ "${host_tools_dir}/fidldoc.config.json" ]
@@ -24,7 +31,7 @@ if (is_host) {
 
   compiled_action("generate_goldens") {
     testonly = true
-    tool = "//build/bazel/host:bazel_root_host_tools.fidldoc"
+    tool = ":fidldoc"
     tool_output_name = "fidldoc"
     deps = [ ":fidldoc_copy_config" ]
     sources = []

@@ -45,8 +45,7 @@ template("fidl_summary_json") {
            "outputs must have exactly one element")
     _summary_file_json = outputs[0]
 
-    tool = "//build/bazel/host:bazel_root_host_tools.fidl_api_summarize"
-    tool_output_name = "fidl_api_summarize"
+    tool = "//tools/fidl/fidl_api_summarize"
     args = [
       "--fidl-ir-file",
       rebase_path(_json_representation, root_build_dir),

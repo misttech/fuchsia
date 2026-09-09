@@ -81,7 +81,7 @@ template("fidlmerge_cpp") {
 
     visibility = [ ":$main_target_name" ]
 
-    tool = "//build/bazel/host:bazel_root_host_tools.fidlmerge"
+    tool = "//tools/fidl/fidlmerge"
     tool_output_name = "fidlmerge"
 
     inputs = [

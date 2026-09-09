@@ -6,15 +6,15 @@
 # `host_prebuilts` builders.
 group("public_host_tools") {
   deps = [
-    "//build/bazel/host:bazel_root_host_tools.buildstats",
-    "//build/bazel/host:bazel_root_host_tools.bundle_fetcher.host_tool",
-    "//build/bazel/host:bazel_root_host_tools.debugsyms",
-    "//build/bazel/host:bazel_root_host_tools.gndoc",
-    "//build/bazel/host:bazel_root_host_tools.ninjatrace",
     "//src/developer/ffx:host",
     "//src/diagnostics/triage:install",
     "//src/storage/tools/blobfs-compression",
+    "//tools/build/gndoc",
+    "//tools/build/ninjago/buildstats",
+    "//tools/build/ninjago/ninjatrace",
+    "//tools/bundle_fetcher",
     "//tools/debug/buildidtool",
+    "//tools/debug/debugsyms",
     "//tools/funnel:host",
     "//tools/orchestrate",
     "//tools/vboot_reference",

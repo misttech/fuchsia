@@ -118,6 +118,6 @@ group("tests") {
     ":expectation-unittests",
     "preprocess:tests",
     "ser:tests",
-    "tool:tests",
+    "tool:tests($host_toolchain)",
   ]
 }
