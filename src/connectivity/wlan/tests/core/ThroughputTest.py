@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 import asyncio
+import csv
+import html
 import json
 import logging
 import os
@@ -95,6 +97,9 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     def __init__(self, configs: TestRunConfig) -> None:
         super().__init__(configs)
         self.csv_file_path: str = os.path.join(self.log_path, "throughput.csv")
+        self.html_file_path: str = os.path.join(
+            self.log_path, "throughput.html"
+        )
 
     async def pre_run(self) -> None:
         tests: list[tuple[TestParams]] = []
@@ -158,9 +163,10 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         with open(self.csv_file_path, "w", encoding="utf-8") as csv_file:
             csv_file.write(
-                "security,channel,channel_bandwidth,"
-                + "ap_rssi,ap_tx_rate_mbps,ap_rx_rate_mbps,dut_rssi,dut_tx_rate_mbps,dut_rx_rate_mbps,"
-                + "udp_or_tcp_test,tx_or_rx_test,result_mbps\n"
+                "security,channel,bandwidth,"
+                + "ap_rssi,ap_tx_rate_mbps,ap_rx_rate_mbps,"
+                + "dut_rssi,dut_tx_rate_mbps,dut_rx_rate_mbps,"
+                + "udp_or_tcp,dut_tx_or_rx,result_mbps\n"
             )
 
     async def setup_test(self) -> None:
@@ -171,6 +177,10 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         if self.access_point is not None:
             self.access_point.stop_all_aps()
         await super().teardown_test()
+
+    async def teardown_class(self) -> None:
+        self._update_html_report()
+        await super().teardown_class()
 
     async def _measure_link_metrics(
         self, iface: wlan_core.ClientIface, dut_mac: MacAddress, band: Band
@@ -599,6 +609,116 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         if isinstance(val, float) and val.is_integer():
             return f"{int(val)} {unit}"
         return f"{val} {unit}"
+
+    def _update_html_report(self) -> None:
+        """Renders throughput.csv into a clean, human-readable HTML table."""
+        if not os.path.exists(self.csv_file_path):
+            return
+
+        with open(self.csv_file_path, "r", encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+
+        if not rows:
+            return
+
+        header_row = rows[0]
+        data_rows = rows[1:]
+
+        html_lines: list[str] = [
+            "<!DOCTYPE html>",
+            '<html lang="en">',
+            "<head>",
+            '  <meta charset="utf-8">',
+            "  <title>Throughput Test Results</title>",
+            "  <style>",
+            "    body {",
+            '      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;',
+            "      margin: 24px;",
+            "      color: #202124;",
+            "      background-color: #ffffff;",
+            "    }",
+            "    h2 {",
+            "      margin-bottom: 16px;",
+            "    }",
+            "    table {",
+            "      border-collapse: collapse;",
+            "      font-size: 14px;",
+            "      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);",
+            "    }",
+            "    th, td {",
+            "      border: 1px solid #dadce0;",
+            "      padding: 8px 14px;",
+            "      white-space: nowrap;",
+            "    }",
+            "    th {",
+            "      background-color: #f1f3f4;",
+            "      font-weight: 600;",
+            "      text-align: center;",
+            "    }",
+            "    tr:nth-child(even) {",
+            "      background-color: #f8f9fa;",
+            "    }",
+            "    tr:hover {",
+            "      background-color: #f1f3f4;",
+            "    }",
+            "    .num {",
+            "      text-align: right;",
+            "      font-variant-numeric: tabular-nums;",
+            "    }",
+            "    .str {",
+            "      text-align: left;",
+            "    }",
+            "    .na {",
+            "      color: #9aa0a6;",
+            "      text-align: center;",
+            "    }",
+            "  </style>",
+            "</head>",
+            "<body>",
+            "  <h2>Throughput Test Results</h2>",
+            "  <table>",
+            "    <thead>",
+            "      <tr>",
+        ]
+
+        for h in header_row:
+            html_lines.append(f"        <th>{html.escape(h)}</th>")
+        html_lines.extend(
+            [
+                "      </tr>",
+                "    </thead>",
+                "    <tbody>",
+            ]
+        )
+
+        for row in data_rows:
+            html_lines.append("      <tr>")
+            for cell in row:
+                cell_str = cell.strip()
+                if not cell_str:
+                    html_lines.append('        <td class="na">N/A</td>')
+                else:
+                    try:
+                        float(cell_str)
+                        cls = "num"
+                    except ValueError:
+                        cls = "str"
+                    html_lines.append(
+                        f'        <td class="{cls}">{html.escape(cell_str)}</td>'
+                    )
+            html_lines.append("      </tr>")
+
+        html_lines.extend(
+            [
+                "    </tbody>",
+                "  </table>",
+                "</body>",
+                "</html>\n",
+            ]
+        )
+
+        with open(self.html_file_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(html_lines))
 
 
 if __name__ == "__main__":
