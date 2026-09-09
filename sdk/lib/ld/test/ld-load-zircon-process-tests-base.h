@@ -72,10 +72,6 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   // A subclass calls CreateProcess() to set process(), root_vmar(), and thread().
   void CreateProcess();
 
-  // Call this after CreateProcess() to mimic the system program loader's
-  // behavior of avoiding the low half of the address space.
-  void VmarReservation();
-
   // This does the actual initialization of the `reserve_vmar_`.
   void InitVmarReservation(zx_info_vmar_t bounds);
 

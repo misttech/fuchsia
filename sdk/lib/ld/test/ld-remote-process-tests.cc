@@ -26,7 +26,7 @@ void LdRemoteProcessTests::Init(std::initializer_list<std::string_view> args,
                                 std::initializer_list<std::string_view> env) {
   LdLoadZirconLdsvcTestsBase::Init(args, env);
   ASSERT_NO_FATAL_FAILURE(CreateProcess());
-  ASSERT_NO_FATAL_FAILURE(VmarReservation());
+  ASSERT_NO_FATAL_FAILURE(InitVmarReservation(VmarBottomHalf(RootVmarInfo(), kPageSize)));
 }
 
 }  // namespace ld::testing

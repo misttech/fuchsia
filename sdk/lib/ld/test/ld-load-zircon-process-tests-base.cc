@@ -163,27 +163,6 @@ zx_info_vmar_t LdLoadZirconProcessTestsBase::RootVmarInfo() const {
   return info;
 }
 
-// This is only called after CreateProcess(), via some subclass Init().
-// But it's before anything has used the root VMAR for anything.
-void LdLoadZirconProcessTestsBase::VmarReservation() {
-  zx_info_vmar_t info = RootVmarInfo();
-
-  // TODO(https://fxbug.dev/42099306): Match the system program loader
-  // (//src/lib/process_builder) legacy behavior: reserve the lower half of the
-  // full address space, not just half of the VMAR length; (base+len)
-  // represents the full address space.
-  const uint64_t page_size = zx_system_get_page_size();
-  const uint64_t top_half_start = ((((info.base + info.len) / 2) + page_size - 1) & -page_size);
-  if (info.base >= top_half_start) {
-    //  Punt if the root VMAR actually starts much higher up, as in a
-    // ZX_PROCESS_SHARED process.
-    return;
-  }
-
-  const uint64_t size = top_half_start - info.base;
-  InitVmarReservation({.base = info.base, .len = size});
-}
-
 void LdLoadZirconProcessTestsBase::InitVmarReservation(zx_info_vmar_t bounds) {
   ASSERT_FALSE(reserve_vmar_) << "called twice??";
 

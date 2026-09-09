@@ -6,7 +6,9 @@
 
 #include <dlfcn.h>
 #include <lib/ld/abi.h>
+#include <lib/ld/vmar.h>
 #include <lib/zx/channel.h>
+#include <zircon/status.h>
 #include <zircon/syscalls.h>
 
 #include <cstddef>
@@ -42,9 +44,9 @@ void LdStartupInProcessTests::Init(std::initializer_list<std::string_view> args,
   LdLoadZirconLdsvcTestsBase::Init(args, env);
 
   zx_vaddr_t test_base;
-  ASSERT_EQ(zx::vmar::root_self()->allocate(
-                ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_CAN_MAP_EXECUTE, 0, kVmarSize,
-                &test_vmar_, &test_base),
+  ASSERT_EQ(zx::vmar::root_self()->allocate(ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE |
+                                                ZX_VM_CAN_MAP_EXECUTE | ZX_VM_CAN_MAP_SPECIFIC,
+                                            0, kVmarSize, &test_vmar_, &test_base),
             ZX_OK);
 
   fbl::unique_fd log_fd;
@@ -64,6 +66,16 @@ void LdStartupInProcessTests::Load(std::string_view raw_executable_name,
       std::string(raw_executable_name) + std::string(kTestExecutableInProcessSuffix);
 
   ASSERT_TRUE(test_vmar_);  // Init must have been called already.
+
+  zx_info_vmar_t info;
+  ASSERT_EQ(test_vmar_.get_info(ZX_INFO_VMAR, &info, sizeof(info), nullptr, nullptr), ZX_OK);
+  zx_info_vmar_t bounds = ld::VmarBottomHalf(info, zx_system_get_page_size());
+  ld::VmarReservation reservation;
+  auto res = reservation.Init(test_vmar_.borrow(), info, bounds);
+  ASSERT_TRUE(res.is_ok()) << "zx_vmar_allocate " << std::hex << std::showbase << bounds.len
+                           << " at 0 " << zx_status_get_string(res.status_value())
+                           << " vs root base=" << info.base << " len=" << info.len;
+  ASSERT_TRUE(reservation);
 
   // This points GetLibVmo() to the right place.
   LdsvcPathPrefix(executable_name);

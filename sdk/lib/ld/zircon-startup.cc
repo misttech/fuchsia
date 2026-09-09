@@ -6,6 +6,7 @@
 #include <lib/elfldltl/vmo.h>
 #include <lib/elfldltl/zircon.h>
 #include <lib/ld/fuchsia-debugdata.h>
+#include <lib/ld/vmar.h>
 #include <lib/llvm-profdata/llvm-profdata.h>
 #include <lib/trivial-allocator/new.h>
 #include <lib/trivial-allocator/zircon.h>
@@ -134,6 +135,28 @@ ld::Debugdata::Deferred PublishProfdata(Diagnostics& diag, zx::unowned_vmar vmar
   return {};
 }
 
+VmarReservation CreateReservationVmar(Diagnostics& diag, zx::unowned_vmar vmar, size_t page_size) {
+  zx_info_vmar_t info;
+  zx_status_t status = vmar->get_info(ZX_INFO_VMAR, &info, sizeof(info), nullptr, nullptr);
+  if (status != ZX_OK) [[unlikely]] {
+    diag.SystemError("cannot get zx_info_vmar_t for root VMAR: ", elfldltl::ZirconError{status});
+    return {};
+  }
+
+  zx_info_vmar_t bottom = VmarBottomHalf(info, page_size);
+
+  VmarReservation reservation;
+  auto result = reservation.Init(vmar->borrow(), info, bottom);
+  if (result.is_error()) [[unlikely]] {
+    diag.SystemError("cannot reserve lower half [", bottom.base, ", ", bottom.base + bottom.len,
+                     ") of root VMAR [", info.base, ", ", info.base + info.len,
+                     "): ", elfldltl::ZirconError{result.status_value()});
+    return {};
+  }
+
+  return reservation;
+}
+
 }  // namespace
 
 // The _start assembly code saves the two argument registers passed by
@@ -162,6 +185,19 @@ extern "C" StartLdResult StartLd(zx_handle_t handle, void* vdso) {
 
   // Now that things are bootstrapped, set up the main diagnostics object.
   Diagnostics diag{startup};
+
+  // Reserve the bottom half of the root VMAR to force all allocations and
+  // loaded modules into the top half of the address space. This helps facilitate
+  // large allocations to be placed into the bottom half of the address space
+  // for things like sanitizers.
+  //
+  // The reserve_vmar object's destructor will automatically remove this reservation
+  // (by destroying the child VMAR) when it goes out of scope at the end of StartLd,
+  // just before returning to start the executable, ensuring libc has free access
+  // to the bottom half of the address space.
+  VmarReservation reserve_vmar =
+      CreateReservationVmar(diag, startup.vmar.borrow(), bootstrap.page_size());
+  CheckErrors(diag);
 
   // Start publishing profiling data in an instrumented build.  Before this,
   // the instrumentation is updating counters in the data segment.  After this,

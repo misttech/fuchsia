@@ -32,10 +32,23 @@ using LdLoadFailureTests = Fixture;
 template <class... Tests>
 using TestTypes = ::testing::Types<
 #ifdef __Fuchsia__
-    ld::testing::LdStartupCreateProcessTests<>,        //
-    ld::testing::LdStartupCreateSharedProcessTests<>,  //
-    ld::testing::LdRemoteProcessTests,                 //
-    ld::testing::LdRemoteSharedProcessTests,           //
+    ld::testing::LdStartupCreateProcessTests<>,  //
+    // TODO(https://fxbug.dev/513259643): Shared process tests using the startup
+    // dynamic linker are disabled because the current system program loader
+    // (//src/lib/process_builder) only reserves the lower half of the full
+    // address space ([0, aspace_size/2)). In a ZX_PROCESS_SHARED process,
+    // the root VMAR starts in the top half of the address space, so the
+    // system loader performs no reservation inside the root VMAR itself. The
+    // startup dynamic linker expects the bottom half of its root VMAR to be
+    // free so it can reserve it during startup, which conflicts if the loader
+    // maps the linker into that space. Unlike in-process tests, the
+    // LdStartupCreate* fixtures are intended to match actual system program
+    // loader behavior rather than diverging from it. This fixture can be
+    // re-enabled once process_builder is updated to reserve the bottom half
+    // of the root VMAR for shared processes.
+    // ld::testing::LdStartupCreateSharedProcessTests<>,  //
+    ld::testing::LdRemoteProcessTests,        //
+    ld::testing::LdRemoteSharedProcessTests,  //
 #endif
     ld::testing::LdStartupSpawnProcessTests, Tests...>;
 

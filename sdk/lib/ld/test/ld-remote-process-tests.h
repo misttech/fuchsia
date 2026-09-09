@@ -14,6 +14,7 @@
 #include <lib/ld/testing/get-test-vmo.h>
 #include <lib/ld/testing/mock-loader-service.h>
 #include <lib/ld/testing/vdso.h>
+#include <lib/ld/vmar.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>

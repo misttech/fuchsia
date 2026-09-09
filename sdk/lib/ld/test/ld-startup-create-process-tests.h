@@ -10,6 +10,7 @@
 #include <lib/ld/abi.h>
 #include <lib/ld/testing/test-processargs.h>
 #include <lib/ld/testing/vdso.h>
+#include <lib/ld/vmar.h>
 #include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>
 #include <lib/zx/vmo.h>
@@ -35,6 +36,10 @@ class LdStartupCreateProcessTestsBase : public LdLoadZirconProcessTestsBase {
   ~LdStartupCreateProcessTestsBase();
 
  protected:
+  // Call this after CreateProcess() to mimic the system program loader's
+  // behavior of avoiding the low half of the address space.
+  void MimicSpawnProcessVmarReservation();
+
   void FinishLoad(zx::vmo executable_vmo);
 };
 
