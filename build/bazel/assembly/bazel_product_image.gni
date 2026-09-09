@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/assembly/developer_overrides.gni")
-import("//build/bazel/bazel_build_group.gni")
+import("//build/bazel/bazel_build_action.gni")
 
 # A GN wrapper for a Bazel product image target. From GN's perspective, this
 # target outputs a set of system images (ZBI, vbmeta, etc.) in its output
@@ -36,7 +36,6 @@ import("//build/bazel/bazel_build_group.gni")
 #    bundles.
 #
 #  deps
-#  metadata
 #  testonly
 #  visibility
 #
@@ -89,58 +88,51 @@ template("bazel_product_image") {
     _bazel_inputs += [ "//bundles/assembly/bazel_inputs:platform_inputs" ]
   }
 
-  _subtargets = []
   _common_deps = _bazel_inputs + invoker.bazel_inputs_from_gn
   if (defined(invoker.deps)) {
     _common_deps += invoker.deps
   }
 
   _product_assembly_target = targets.bazel_product_assembly
-  _subtargets += [
-    {
-      bazel_target = invoker.bazel_product_image_target + "_product_assembly"
-      gn_target_name = _product_assembly_target
-      copy_outputs = [
-        {
-          bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out/image_assembly.json"
-          ninja = "${_product_assembly_target}/image_assembly.json"
-        },
-        {
-          bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out/assembly_builder_forensics.json"
-          ninja = "${_product_assembly_target}/assembly_builder_forensics.json"
-        },
-      ]
-      deps = _common_deps
-    },
-  ]
-
-  _subtargets += [
-    {
-      gn_target_name = targets.bazel_product_image
-      bazel_target = invoker.bazel_product_image_target
-      directory_outputs = [
-        {
-          bazel_dir = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out"
-          ninja_dir = files.bazel_raw_outputs_dir
-          tracked_files = [ "assembled_system.json" ]
-          copy_debug_symbols = true
-        },
-      ]
-      deps = _common_deps
-    },
-  ]
-
-  bazel_build_group(targets.bazel_build_group) {
-    subtargets = _subtargets
-    deps = _common_deps
-    check_for_output_dir_leaks = false
+  bazel_build_action(_product_assembly_target) {
     forward_variables_from(invoker,
                            [
-                             "metadata",
                              "testonly",
                              "visibility",
                            ])
+    bazel_target = invoker.bazel_product_image_target + "_product_assembly"
     bazel_config = "fuchsia_sdk"
+
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out/image_assembly.json"
+        ninja = "${_product_assembly_target}/image_assembly.json"
+      },
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out/assembly_builder_forensics.json"
+        ninja = "${_product_assembly_target}/assembly_builder_forensics.json"
+      },
+    ]
+    deps = _common_deps
+  }
+
+  bazel_build_action(targets.bazel_product_image) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    bazel_target = invoker.bazel_product_image_target
+    bazel_config = "fuchsia_sdk"
+    directory_outputs = [
+      {
+        bazel_dir = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out"
+        ninja_dir = files.bazel_raw_outputs_dir
+        tracked_files = [ "assembled_system.json" ]
+        copy_debug_symbols = true
+      },
+    ]
+    deps = _common_deps
   }
 
   _image_has_fxfs_blob = true
