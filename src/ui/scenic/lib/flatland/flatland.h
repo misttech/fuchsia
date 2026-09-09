@@ -273,10 +273,14 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   void SetContent(SetContentRequestView request, SetContentCompleter::Sync& completer) override;
   void SetContent(TransformId transform_id, ContentId content_id);
 
+  // |fuchsia_ui_composition::Flatland2|
   void SetTransformContent(SetTransformContentRequestView request,
                            SetTransformContentCompleter::Sync& completer) override;
   void SetTransformContent(TransformId transform_id,
                            const fuchsia_ui_composition::wire::TransformContent* content);
+  void SetTransformContent(TransformId transform_id, LayerStackId layer_stack_id);
+  void SetTransformContent(TransformId transform_id, ViewportId viewport_id);
+  void ClearTransformContent(TransformId transform_id);
 
   // |fuchsia_ui_composition::Flatland|
   void SetViewportProperties(SetViewportPropertiesRequestView request,

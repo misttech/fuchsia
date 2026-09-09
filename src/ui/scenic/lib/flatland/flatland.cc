@@ -2170,8 +2170,36 @@ void Flatland::SetTransformContent(SetTransformContentRequestView request,
 
 void Flatland::SetTransformContent(TransformId transform_id,
                                    const fuchsia_ui_composition::wire::TransformContent* content) {
+  if (!content) {
+    ClearTransformContent(transform_id);
+    return;
+  }
+
+  switch (content->Which()) {
+    case fuchsia_ui_composition::wire::TransformContent::Tag::kLayerStack: {
+      SetTransformContent(transform_id, LayerStackId(content->layer_stack().value));
+      break;
+    }
+    case fuchsia_ui_composition::wire::TransformContent::Tag::kViewport: {
+      SetTransformContent(transform_id, ViewportId(content->viewport().value));
+      break;
+    }
+    default: {
+      error_reporter_->ERROR() << "SetTransformContent: unknown content type";
+      CloseConnection(FlatlandError::kBadOperation);
+    }
+  }
+}
+
+void Flatland::SetTransformContent(TransformId transform_id, LayerStackId layer_stack_id) {
   if (!config_.use_flatland2) {
     error_reporter_->ERROR() << "SetTransformContent called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (transform_id == kInvalidTransformId) {
+    error_reporter_->ERROR() << "SetTransformContent called with transform_id zero";
     CloseConnection(FlatlandError::kBadOperation);
     return;
   }
@@ -2183,51 +2211,86 @@ void Flatland::SetTransformContent(TransformId transform_id,
     return;
   }
 
-  // Detach semantics: absence clears the priority child.
-  if (!content) {
-    transform_graph_.ClearPriorityChild(transform_kv->second);
+  if (layer_stack_id == kInvalidLayerStackId) {
+    error_reporter_->ERROR()
+        << "SetTransformContent: LayerStackId must be non-zero (to clear content, omit "
+           "`content`)";
+    CloseConnection(FlatlandError::kBadOperation);
     return;
   }
 
-  // Attach semantics: validate valid non-zero IDs in corresponding arm registry.
-  switch (content->Which()) {
-    case fuchsia_ui_composition::wire::TransformContent::Tag::kLayerStack: {
-      const fuchsia_ui_composition::wire::LayerStackId& layer_stack_id = content->layer_stack();
-      if (!layer_stack_id.value) {
-        error_reporter_->ERROR()
-            << "SetTransformContent: LayerStackId must be non-zero (to clear content, omit "
-               "`content`)";
-        CloseConnection(FlatlandError::kBadOperation);
-        return;
-      }
-
-      // TODO(https://fxbug.dev/474444799): stub
-      error_reporter_->ERROR() << "SetTransformContent: NOT IMPLEMENTED";
-      CloseConnection(FlatlandError::kBadOperation);
-
-      break;
-    }
-    case fuchsia_ui_composition::wire::TransformContent::Tag::kViewport: {
-      const fuchsia_ui_composition::wire::ViewportId& viewport_id = content->viewport();
-      if (!viewport_id.value) {
-        error_reporter_->ERROR()
-            << "SetTransformContent: ViewportId must be non-zero (to clear content, omit "
-               "`content`)";
-        CloseConnection(FlatlandError::kBadOperation);
-        return;
-      }
-
-      // TODO(https://fxbug.dev/474444799): stub
-      error_reporter_->ERROR() << "SetTransformContent: NOT IMPLEMENTED";
-      CloseConnection(FlatlandError::kBadOperation);
-
-      break;
-    }
-    default: {
-      error_reporter_->ERROR() << "SetTransformContent: unknown content type";
-      CloseConnection(FlatlandError::kBadOperation);
-    }
+  auto stack_it = layer_stack_handles_.find(layer_stack_id);
+  if (stack_it == layer_stack_handles_.end()) {
+    error_reporter_->ERROR() << "SetTransformContent failed, layer_stack_id "
+                             << layer_stack_id.value() << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
   }
+
+  FLATLAND_VERBOSE_LOG << "Flatland::SetTransformContent() session_id=" << session_id_
+                       << "  client_transform_id=" << transform_id
+                       << "  transform=" << transform_kv->second
+                       << "  client_layer_stack_id=" << layer_stack_id.value()
+                       << "  content=" << stack_it->second;
+
+  transform_graph_.SetPriorityChild(transform_kv->second, stack_it->second);
+}
+
+void Flatland::SetTransformContent(TransformId transform_id, ViewportId viewport_id) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetTransformContent called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (transform_id == kInvalidTransformId) {
+    error_reporter_->ERROR() << "SetTransformContent called with transform_id zero";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto transform_kv = transforms_.find(transform_id);
+  if (transform_kv == transforms_.end()) {
+    error_reporter_->ERROR() << "SetTransformContent: transform " << transform_id << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (viewport_id == kInvalidViewportId) {
+    error_reporter_->ERROR()
+        << "SetTransformContent: ViewportId must be non-zero (to clear content, omit "
+           "`content`)";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  error_reporter_->ERROR() << "SetTransformContent(viewport) not yet implemented";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
+void Flatland::ClearTransformContent(TransformId transform_id) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetTransformContent called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (transform_id == kInvalidTransformId) {
+    error_reporter_->ERROR() << "SetTransformContent called with transform_id zero";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto transform_kv = transforms_.find(transform_id);
+  if (transform_kv == transforms_.end()) {
+    error_reporter_->ERROR() << "SetTransformContent: transform " << transform_id << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  transform_graph_.ClearPriorityChild(transform_kv->second);
+  FLATLAND_VERBOSE_LOG << "Flatland::SetTransformContent() session_id=" << session_id_
+                       << "  client_transform_id=" << transform_id << " ... cleared content.";
 }
 
 void Flatland::SetViewportProperties(SetViewportPropertiesRequestView request,

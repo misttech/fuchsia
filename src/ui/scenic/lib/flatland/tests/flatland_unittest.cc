@@ -35,6 +35,7 @@
 #include "src/ui/scenic/lib/flatland/flatland_display.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
+#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
 #include "src/ui/scenic/lib/flatland/tests/flatland_unittest.h"
 #include "src/ui/scenic/lib/flatland/tests/logging_event_loop.h"
@@ -6471,6 +6472,370 @@ TEST_F(Flatland2Test, UnattachedStackNotSnapshotted) {
   auto uber_struct = GetUberStruct(flatland.get());
   ASSERT_NE(uber_struct, nullptr);
   EXPECT_TRUE(uber_struct->layer_stacks.empty());
+}
+
+TEST_F(Flatland2Test, AttachedStackAppearsInSnapshot) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayerA(2);
+  const LayerId kLayerB(3);
+  const LayerStackId kStack(4);
+
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayer(kLayerB);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayerA, kLayerB});
+
+  flatland->SetTransformContent(kRoot, kStack);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(flatland, true);
+
+  auto uber_struct = GetUberStruct(flatland.get());
+  ASSERT_NE(uber_struct, nullptr);
+
+  auto stack_handle = flatland->GetLayerStackHandleForTest(kStack);
+  ASSERT_TRUE(stack_handle.has_value());
+
+  ASSERT_TRUE(uber_struct->layer_stacks.contains(*stack_handle));
+  const auto& stack_layers = uber_struct->layer_stacks.find(*stack_handle)->second;
+
+  LayerHandle handle_a = flatland->GetLayerHandleForTest(kLayerA);
+  LayerHandle handle_b = flatland->GetLayerHandleForTest(kLayerB);
+  EXPECT_THAT(stack_layers, ::testing::ElementsAre(handle_a, handle_b));
+
+  ASSERT_EQ(uber_struct->layers.size(), 2u);
+  ASSERT_TRUE(uber_struct->layers.contains(handle_a));
+  ASSERT_TRUE(uber_struct->layers.contains(handle_b));
+  EXPECT_TRUE(
+      std::holds_alternative<std::monostate>(uber_struct->layers.find(handle_a)->second.content));
+  EXPECT_TRUE(
+      std::holds_alternative<std::monostate>(uber_struct->layers.find(handle_b)->second.content));
+}
+
+TEST_F(Flatland2Test, MonostateLayersProduceNoRenderables) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayerA(2);
+  const LayerId kLayerB(3);
+  const LayerStackId kStack(4);
+
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayer(kLayerB);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayerA, kLayerB});
+
+  flatland->SetTransformContent(kRoot, kStack);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(flatland, true);
+
+  auto snapshot = uber_struct_system_->Snapshot();
+  auto links = link_system_->GetResolvedTopologyLinks();
+  auto root_transform = flatland->GetRoot();
+  auto topology_data = GlobalTopologyData::ComputeGlobalTopologyData(
+      snapshot.map, links, link_system_->GetInstanceId(), root_transform);
+
+  GlobalMatrixVector global_matrices;
+  ComputeGlobalMatrices(global_matrices, topology_data.topology_vector,
+                        topology_data.parent_indices, snapshot.map);
+
+  GlobalTransformClipRegionVector clip_regions;
+  ComputeGlobalTransformClipRegions(clip_regions, topology_data.topology_vector,
+                                    topology_data.parent_indices, global_matrices, snapshot.map);
+
+  auto inherited_opacities = ComputeGlobalOpacityValues(topology_data.topology_vector,
+                                                        topology_data.parent_indices, snapshot.map);
+
+  auto resolved_layers = ComputeGlobalResolvedLayers(topology_data, snapshot.map, global_matrices,
+                                                     clip_regions, inherited_opacities);
+  EXPECT_TRUE(resolved_layers.empty());
+}
+
+TEST_F(Flatland2Test, DetachRemovesFromSnapshot) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayerA(2);
+  const LayerStackId kStack(3);
+
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayerA});
+
+  flatland->SetTransformContent(kRoot, kStack);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(flatland, true);
+
+  auto stack_handle = flatland->GetLayerStackHandleForTest(kStack);
+  ASSERT_TRUE(stack_handle.has_value());
+  LayerHandle handle_a = flatland->GetLayerHandleForTest(kLayerA);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    EXPECT_TRUE(uber_struct->layer_stacks.contains(*stack_handle));
+    EXPECT_TRUE(uber_struct->layers.contains(handle_a));
+  }
+
+  // Release the stack and layer from client while attached.
+  flatland->ReleaseLayer(kLayerA);
+  flatland->ReleaseLayerStack(kStack);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(flatland, true);
+
+  // Still snapshotted and alive because attached to transform.
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    EXPECT_TRUE(uber_struct->layer_stacks.contains(*stack_handle));
+    EXPECT_TRUE(uber_struct->layers.contains(handle_a));
+  }
+
+  // Detach content (omit content).
+  flatland->SetTransformContent(kRoot, nullptr);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(flatland, true);
+
+  // Stack is now gone from snapshot, and layer object is GC'd.
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    EXPECT_FALSE(uber_struct->layer_stacks.contains(*stack_handle));
+    EXPECT_FALSE(uber_struct->layers.contains(handle_a));
+  }
+  EXPECT_EQ(flatland->GetLayerObjectForTest(handle_a), nullptr);
+}
+
+TEST_F(Flatland2Test, MultiAttachSameStack) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const TransformId kChild1(2);
+  const TransformId kChild2(3);
+  const LayerId kLayerA(4);
+  const LayerStackId kStack(5);
+
+  flatland->CreateTransform(kRoot);
+  flatland->CreateTransform(kChild1);
+  flatland->CreateTransform(kChild2);
+  flatland->AddChild(kRoot, kChild1);
+  flatland->AddChild(kRoot, kChild2);
+  flatland->SetRootTransform(kRoot);
+
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayerA});
+
+  // Attach the same stack to two transforms.
+  flatland->SetTransformContent(kChild1, kStack);
+  flatland->SetTransformContent(kChild2, kStack);
+  EXPECT_FALSE(error_log.has_value());
+
+  Present(flatland, true);
+
+  auto uber_struct = GetUberStruct(flatland.get());
+  ASSERT_NE(uber_struct, nullptr);
+
+  auto stack_handle = flatland->GetLayerStackHandleForTest(kStack);
+  ASSERT_TRUE(stack_handle.has_value());
+
+  // Snapshot has exactly one layer_stacks entry and one layer.
+  EXPECT_EQ(uber_struct->layer_stacks.size(), 1u);
+  EXPECT_TRUE(uber_struct->layer_stacks.contains(*stack_handle));
+  EXPECT_EQ(uber_struct->layers.size(), 1u);
+
+  // Topology contains the stack handle twice (under child1 and child2).
+  TransformHandle child1_handle = flatland->GetTransformHandle(kChild1).value();
+  TransformHandle child2_handle = flatland->GetTransformHandle(kChild2).value();
+  ASSERT_EQ(uber_struct->local_topology.size(), 6u);
+  EXPECT_EQ(uber_struct->local_topology[2].handle, child1_handle);
+  EXPECT_EQ(uber_struct->local_topology[2].child_count, 1u);
+  EXPECT_EQ(uber_struct->local_topology[3].handle, *stack_handle);
+  EXPECT_EQ(uber_struct->local_topology[3].child_count, 0u);
+  EXPECT_EQ(uber_struct->local_topology[4].handle, child2_handle);
+  EXPECT_EQ(uber_struct->local_topology[4].child_count, 1u);
+  EXPECT_EQ(uber_struct->local_topology[5].handle, *stack_handle);
+  EXPECT_EQ(uber_struct->local_topology[5].child_count, 0u);
+}
+
+TEST_F(Flatland2Test, SwapStacks) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayerA(2);
+  const LayerId kLayerB(3);
+  const LayerStackId kStackA(4);
+  const LayerStackId kStackB(5);
+
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayer(kLayerB);
+  flatland->CreateLayerStack(kStackA);
+  flatland->CreateLayerStack(kStackB);
+  flatland->SetStackLayers(kStackA, {kLayerA});
+  flatland->SetStackLayers(kStackB, {kLayerB});
+
+  auto stack_a_handle = flatland->GetLayerStackHandleForTest(kStackA);
+  auto stack_b_handle = flatland->GetLayerStackHandleForTest(kStackB);
+  ASSERT_TRUE(stack_a_handle.has_value());
+  ASSERT_TRUE(stack_b_handle.has_value());
+
+  // Attach Stack A
+  flatland->SetTransformContent(kRoot, kStackA);
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    EXPECT_TRUE(uber_struct->layer_stacks.contains(*stack_a_handle));
+    EXPECT_FALSE(uber_struct->layer_stacks.contains(*stack_b_handle));
+  }
+
+  // Swap to Stack B
+  flatland->SetTransformContent(kRoot, kStackB);
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    EXPECT_FALSE(uber_struct->layer_stacks.contains(*stack_a_handle));
+    EXPECT_TRUE(uber_struct->layer_stacks.contains(*stack_b_handle));
+  }
+
+  // Swap back to Stack A
+  flatland->SetTransformContent(kRoot, kStackA);
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    EXPECT_TRUE(uber_struct->layer_stacks.contains(*stack_a_handle));
+    EXPECT_FALSE(uber_struct->layer_stacks.contains(*stack_b_handle));
+  }
+}
+
+TEST_F(Flatland2Test, SetTransformContentZeroTransformFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerStackId kStackId(1);
+  flatland->CreateLayerStack(kStackId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetTransformContent(TransformId(0), kStackId);
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetTransformContentUnknownTransformFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerStackId kStackId(1);
+  flatland->CreateLayerStack(kStackId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetTransformContent(TransformId(2), kStackId);
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetTransformContentUnknownStackIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kTransformId(1);
+  flatland->CreateTransform(kTransformId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetTransformContent(kTransformId, LayerStackId(2));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetTransformContentZeroLayerStackIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kTransformId(1);
+  flatland->CreateTransform(kTransformId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetTransformContent(kTransformId, LayerStackId(0));
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_EQ(
+      *error_log,
+      "SetTransformContent: LayerStackId must be non-zero (to clear content, omit `content`)");
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetTransformContentZeroViewportIdFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kTransformId(1);
+  flatland->CreateTransform(kTransformId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetTransformContent(kTransformId, ViewportId(0));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetTransformContentUnknownStackIdEvenIfLayerExists) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kTransformId(1);
+  const LayerId kLayerId(2);
+  flatland->CreateTransform(kTransformId);
+  flatland->CreateLayer(kLayerId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetTransformContent(kTransformId, LayerStackId(2));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetTransformContentViewportArmNotImplementedFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kTransformId(1);
+  flatland->CreateTransform(kTransformId);
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->SetTransformContent(kTransformId, ViewportId(2));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetTransformContentFailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+  // Create valid transform and layer stack to ensure SetTransformContent doesn't
+  // fail from other errors.
+  const TransformId kTransformId(1);
+  const LayerStackId kStackId(2);
+  flatland->CreateTransform(kTransformId);
+  flatland->CreateLayerStack(kStackId);
+  flatland->SetTransformContent(kTransformId, kStackId);
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
 }
 
 // These tests exercise the legacy bridging logic where Flatland1 mutator calls
