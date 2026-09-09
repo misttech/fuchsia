@@ -33,6 +33,10 @@ _host_tools_dir = _temp.host_tools_dir
 #     the 'copy_outputs' list itself.
 #
 template("bazel_host_tool") {
+  # This needs to be called in a host toolchain, so that the outputs can be
+  # copied to the correct `root_out_dir` folder for variant toolchains.
+  assert(is_host, "bazel_host_tool() can only be called in a host toolchain.")
+
   assert(!defined(invoker.copy_outputs),
          "This template creates copy_outputs, don't provide it.")
 
@@ -41,14 +45,6 @@ template("bazel_host_tool") {
   } else {
     _output_name = target_name
   }
-
-  # This needs to be called in the host toolchain, but the bazel build action
-  # itself needs to be in the default toolchain, so it can't do the copy itself.
-  # We need to copy the binary from its location in the default toolchain's
-  # bazel out dir to a temporary place in the ninja build, which will then be
-  # the source for copying it to the correct location in the host toolchain's
-  # output dir.
-  assert(is_host, "bazel_host_tool() can only be called in a host toolchain.")
 
   if (current_toolchain == toolchain_variant.base) {
     # If in the base toolchain, copy the Bazel outputs as normal. Variant
@@ -74,8 +70,13 @@ template("bazel_host_tool") {
 
       bazel_config = "host"
 
-      # Set the ninja base dir to the root build dir, not 'target_out_dir'
-      # so that we can also install files in the tools outdir.
+      # We want to copy the binary to `//out/default/host_x64/my_tool` but
+      # the 'ninja_base_dir' defaults to `target_out_dir`, which is
+      # `//out/default/host_x64/some/path/`.
+      # Set `ninja_base_dir` to `root_build_dir` (ie, `//out/default`), so that
+      # here we can use an output path that's relative to the root of the build.
+      # This also allows us to install files in `host_tools_dir` if requested,
+      # which `root_out_dir` would not support.
       ninja_base_dir = root_build_dir
 
       # In base host toolchains, root *out* dir is always
