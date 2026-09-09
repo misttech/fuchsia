@@ -4063,7 +4063,11 @@ pub mod tests {
                 .insert_for_transaction(guard, &mut RefCountActions::default_released());
 
             // Create a second thread (looper_thread) in proc_a representing a binder looper thread.
-            let looper_task = create_task(current_task.kernel(), "looper_task");
+            let looper_task = current_task.clone_task_for_test(
+                (starnix_uapi::CLONE_VM | starnix_uapi::CLONE_THREAD | starnix_uapi::CLONE_SIGHAND)
+                    as u64,
+                None,
+            );
             let looper_thread = proc_a
                 .proc
                 .lock()
@@ -4919,7 +4923,7 @@ pub mod tests {
             let device = BinderDevice::default();
             let proc_a = BinderProcessFixture::new_current(current_task, &device);
 
-            let proc_b = BinderProcessFixture::new(current_task, &device);
+            let proc_b = BinderProcessFixture::new_current(current_task, &device);
             let event = InterruptibleEvent::new();
             let event_clone = event.clone();
 

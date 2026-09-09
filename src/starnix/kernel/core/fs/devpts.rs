@@ -1340,8 +1340,12 @@ mod tests {
             let kernel = init.kernel();
             tty_device_init(kernel).expect("tty_device_init");
             let task1 = init.clone_task_for_test(0, Some(SIGCHLD));
+            // Share the init task's address space so ioctl usercopy operations can
+            // access memory while running on this test thread.
+            task1.running_state().mm.update(Some(init.mm().unwrap().clone()));
             task1.thread_group().setsid().expect("setsid");
             let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            task2.running_state().mm.update(Some(init.mm().unwrap().clone()));
             task2.thread_group().setpgid(&task2, &task2, &task2.pid).expect("setpgid");
             let task2_pgid = task2.thread_group().read().process_group.leader.clone();
 

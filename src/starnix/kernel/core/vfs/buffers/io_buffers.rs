@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::mm::{
-    MemoryAccessorExt, NumberOfElementsRead, TaskMemoryAccessor, UNIFIED_ASPACES_ENABLED,
-    read_to_array, read_to_object_as_bytes, read_to_vec,
+    MemoryAccessorExt, NumberOfElementsRead, TaskMemoryAccessor, read_to_array,
+    read_to_object_as_bytes, read_to_vec,
 };
 use crate::task::{CurrentTask, Task};
 use smallvec::{SmallVec, smallvec};
@@ -128,10 +128,6 @@ pub fn with_iovec_segments<B: Buffer + ?Sized, I: Iovec, T>(
     data: &mut B,
     f: impl FnOnce(&mut [I]) -> Result<T, Errno>,
 ) -> Option<Result<T, Errno>> {
-    if !UNIFIED_ASPACES_ENABLED {
-        return None;
-    }
-
     match IovecsRef::new(data) {
         Ok(mut o) => Some(f(&mut o)),
         Err(e) => {

@@ -4,7 +4,7 @@
 
 use crate::bpf::attachments::{SockAddrOp, SockAddrProgramResult, SockOp, SockProgramResult};
 use crate::fs::fuchsia::zxio::{zxio_query_events, zxio_wait_async};
-use crate::mm::{MemoryAccessorExt, UNIFIED_ASPACES_ENABLED};
+use crate::mm::MemoryAccessorExt;
 use crate::security;
 use crate::task::syscalls::SockFProgPtr;
 use crate::task::{CurrentTask, EventHandler, Kernel, Task, WaitCanceler, Waiter};
@@ -240,27 +240,25 @@ impl ZxioBackedSocket {
         };
 
         let flags = flags.bits() & !MSG_DONTWAIT;
-        let sent_bytes = if UNIFIED_ASPACES_ENABLED {
-            match data.peek_all_segments_as_iovecs() {
-                Ok(mut iovecs) => {
-                    // Note: We have to prefault here because this is a C FFI call and we cannot
-                    // catch faults directly like we do for Starnix-internal usercopies.
-                    // In the future, we could look into implementing reactive faulting in
-                    // `zxio_maybe_faultable_copy_impl` to match the behavior of internal
-                    // usercopies.
-                    let ranges =
-                        iovecs.as_ref().iter().filter(|iovec| iovec.iov_len > 0).map(|iovec| {
-                            (UserAddress::from_ptr(iovec.iov_base as usize), Some(iovec.iov_len))
-                        });
-                    current_task.mm()?.ensure_ranges_mapped_in_user_vmar(ranges)?;
-
-                    Some(map_errors(self.zxio.sendmsg(&mut addr, &mut iovecs, &cmsgs, flags))?)
+        let sent_bytes = match data.peek_all_segments_as_iovecs() {
+            Ok(mut iovecs) => {
+                // Note: We have to prefault here because this is a C FFI call and we cannot
+                // catch faults directly like we do for Starnix-internal usercopies.
+                // In the future, we could look into implementing reactive faulting in
+                // `zxio_maybe_faultable_copy_impl` to match the behavior of internal
+                // usercopies.
+                let ranges =
+                    iovecs.as_ref().iter().filter(|iovec| iovec.iov_len > 0).map(|iovec| {
+                        (UserAddress::from_ptr(iovec.iov_base as usize), Some(iovec.iov_len))
+                    });
+                if let Ok(mm) = current_task.mm() {
+                    mm.ensure_ranges_mapped_in_user_vmar(ranges)?;
                 }
-                Err(e) if e.code == ENOTSUP => None,
-                Err(e) => return Err(e),
+
+                Some(map_errors(self.zxio.sendmsg(&mut addr, &mut iovecs, &cmsgs, flags))?)
             }
-        } else {
-            None
+            Err(e) if e.code == ENOTSUP => None,
+            Err(e) => return Err(e),
         };
 
         // If we can't pass the iovecs directly so fallback to reading
@@ -298,31 +296,29 @@ impl ZxioBackedSocket {
                 .map_err(|out_code| errno_from_zxio_code!(out_code))
         };
 
-        let info = if UNIFIED_ASPACES_ENABLED {
-            match data.peek_all_segments_as_iovecs() {
-                Ok(mut iovecs) => {
-                    // Note: We have to prefault here because this is a C FFI call and we cannot
-                    // catch faults directly like we do for Starnix-internal usercopies.
-                    // In the future, we could look into implementing reactive faulting in
-                    // `zxio_maybe_faultable_copy_impl` to match the behavior of internal
-                    // usercopies.
-                    let ranges =
-                        iovecs.as_ref().iter().filter(|iovec| iovec.iov_len > 0).map(|iovec| {
-                            (UserAddress::from_ptr(iovec.iov_base as usize), Some(iovec.iov_len))
-                        });
-                    current_task.mm()?.ensure_ranges_mapped_in_user_vmar(ranges)?;
-
-                    let info = map_errors(self.zxio.recvmsg(&mut iovecs, flags))?;
-                    // SAFETY: we successfully read `info.bytes_read` bytes
-                    // directly to the user's buffer segments.
-                    (unsafe { data.advance(info.bytes_read) })?;
-                    Some(info)
+        let info = match data.peek_all_segments_as_iovecs() {
+            Ok(mut iovecs) => {
+                // Note: We have to prefault here because this is a C FFI call and we cannot
+                // catch faults directly like we do for Starnix-internal usercopies.
+                // In the future, we could look into implementing reactive faulting in
+                // `zxio_maybe_faultable_copy_impl` to match the behavior of internal
+                // usercopies.
+                let ranges =
+                    iovecs.as_ref().iter().filter(|iovec| iovec.iov_len > 0).map(|iovec| {
+                        (UserAddress::from_ptr(iovec.iov_base as usize), Some(iovec.iov_len))
+                    });
+                if let Ok(mm) = current_task.mm() {
+                    mm.ensure_ranges_mapped_in_user_vmar(ranges)?;
                 }
-                Err(e) if e.code == ENOTSUP => None,
-                Err(e) => return Err(e),
+
+                let info = map_errors(self.zxio.recvmsg(&mut iovecs, flags))?;
+                // SAFETY: we successfully read `info.bytes_read` bytes
+                // directly to the user's buffer segments.
+                (unsafe { data.advance(info.bytes_read) })?;
+                Some(info)
             }
-        } else {
-            None
+            Err(e) if e.code == ENOTSUP => None,
+            Err(e) => return Err(e),
         };
 
         // If we can't pass the segments directly, fallback to receiving

@@ -222,11 +222,9 @@ impl MessageData for Arc<VmsplicePayload> {
 
                     let to_read = std::cmp::min(segment.length, iovec.capacity - iovec_pos);
                     let after_read = segment.split_off(to_read);
-                    #[allow(
-                        clippy::undocumented_unsafe_blocks,
-                        reason = "Force documented unsafe blocks in Starnix"
-                    )]
-                    unsafe { segment.raw_read(iovec.buffer as *mut u8, to_read) }
+                    // SAFETY: `iovec.buffer` has at least `iovec.capacity` bytes, and
+                    // `iovec_pos + to_read <= iovec.capacity`.
+                    unsafe { segment.raw_read((iovec.buffer as *mut u8).add(iovec_pos), to_read) }
                         .map_err(|_| errno!(EFAULT))?;
                     copied += to_read;
                     iovec_pos += to_read;

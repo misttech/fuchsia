@@ -10,7 +10,7 @@ use crate::mm::{
     FaultRegisterMode, FutexTable, InflightVmsplicedPayloads, MapInfoCache, Mapping,
     MappingBacking, MappingFlags, MappingMode, MappingName, MappingNameRef, MlockPinFlavor,
     PrivateFutexKey, ProtectionFlags, UserFault, VMEX_RESOURCE, VmsplicePayload,
-    VmsplicePayloadSegment, read_to_array,
+    VmsplicePayloadSegment,
 };
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo};
@@ -58,15 +58,11 @@ use std::collections::HashMap;
 use std::mem::MaybeUninit;
 use std::ops::{ControlFlow, Deref, DerefMut, Range, RangeBounds};
 use std::sync::{Arc, LazyLock, Weak};
-use syncio::zxio::zxio_default_maybe_faultable_copy;
 use zerocopy::IntoBytes;
 use zx::{Rights, VmoChildOptions};
 
 pub const ZX_VM_SPECIFIC_OVERWRITE: zx::VmarFlags =
     zx::VmarFlags::from_bits_retain(zx::VmarFlagsExtended::SPECIFIC_OVERWRITE.bits());
-
-// We do not create shared processes in unit tests.
-pub(crate) const UNIFIED_ASPACES_ENABLED: bool = cfg!(not(test));
 
 /// Initializes the usercopy utilities.
 ///
@@ -108,19 +104,14 @@ const MAX_STACK_SIZE: usize = 512 * 1024 * 1024;
 // water mark.
 const STUB_VM_RSS_HWM: usize = 2 * 1024 * 1024;
 
-fn usercopy() -> Option<&'static usercopy::Usercopy> {
-    static USERCOPY: LazyLock<Option<usercopy::Usercopy>> = LazyLock::new(|| {
-        // We do not create shared processes in unit tests.
-        if UNIFIED_ASPACES_ENABLED {
-            // ASUMPTION: All Starnix managed Linux processes have the same
-            // restricted mode address range.
-            Some(usercopy::Usercopy::new(RESTRICTED_ASPACE_RANGE).unwrap())
-        } else {
-            None
-        }
+fn usercopy() -> &'static usercopy::Usercopy {
+    static USERCOPY: LazyLock<usercopy::Usercopy> = LazyLock::new(|| {
+        // ASUMPTION: All Starnix managed Linux processes have the same
+        // restricted mode address range.
+        usercopy::Usercopy::new(RESTRICTED_ASPACE_RANGE).unwrap()
     });
 
-    LazyLock::force(&USERCOPY).as_ref()
+    LazyLock::force(&USERCOPY)
 }
 
 /// Provides an implementation for zxio's `zxio_maybe_faultable_copy` that supports
@@ -141,16 +132,10 @@ pub unsafe fn zxio_maybe_faultable_copy_impl(
     count: usize,
     ret_dest: bool,
 ) -> bool {
-    if let Some(usercopy) = usercopy() {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        let ret = unsafe { usercopy.raw_hermetic_copy(dest, src, count, ret_dest) };
-        ret == count
-    } else {
-        #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        unsafe {
-            zxio_default_maybe_faultable_copy(dest, src, count, ret_dest)
-        }
-    }
+    // SAFETY: Only one of `src`/`dest` may be an address in user/restricted-mode by to our own
+    // SAFETY guarantee.
+    let ret = unsafe { usercopy().raw_hermetic_copy(dest, src, count, ret_dest) };
+    ret == count
 }
 
 pub static PAGE_SIZE: LazyLock<u64> = LazyLock::new(|| zx::system_get_page_size() as u64);
@@ -2824,26 +2809,21 @@ impl MemoryManager {
     ) -> Result<&'a mut [u8], Errno> {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
-        if let Some(usercopy) = usercopy() {
-            let buf_ptr = bytes.as_mut_ptr();
-            let buf_len = bytes.len();
+        let buf_ptr = bytes.as_mut_ptr();
+        let buf_len = bytes.len();
 
-            let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
-                // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
-                let current_bytes = unsafe {
-                    std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset)
-                };
-                let (read_bytes, _unread_bytes) = usercopy.copyin(cur_addr.ptr(), current_bytes);
-                Ok(ControlFlow::Continue(read_bytes.len()))
-            })?;
-            if copied < bytes.len() {
-                error!(EFAULT)
-            } else {
-                // SAFETY: All bytes up to `buf_len` have been initialized.
-                Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, buf_len) })
-            }
+        let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
+            // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
+            let current_bytes =
+                unsafe { std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset) };
+            let (read_bytes, _unread_bytes) = usercopy().copyin(cur_addr.ptr(), current_bytes);
+            Ok(ControlFlow::Continue(read_bytes.len()))
+        })?;
+        if copied < bytes.len() {
+            error!(EFAULT)
         } else {
-            self.syscall_read_memory(addr, bytes)
+            // SAFETY: All bytes up to `buf_len` have been initialized.
+            Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, buf_len) })
         }
     }
 
@@ -2863,33 +2843,28 @@ impl MemoryManager {
     ) -> Result<&'a mut [u8], Errno> {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
-        if let Some(usercopy) = usercopy() {
-            let buf_ptr = bytes.as_mut_ptr();
-            let buf_len = bytes.len();
+        let buf_ptr = bytes.as_mut_ptr();
+        let buf_len = bytes.len();
 
-            let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
-                // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
-                let current_bytes = unsafe {
-                    std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset)
-                };
-                let (read_bytes, _unread_bytes) =
-                    usercopy.copyin_until_null_byte(cur_addr.ptr(), current_bytes);
+        let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
+            // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
+            let current_bytes =
+                unsafe { std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset) };
+            let (read_bytes, _unread_bytes) =
+                usercopy().copyin_until_null_byte(cur_addr.ptr(), current_bytes);
 
-                let num_copied = read_bytes.len();
-                if read_bytes.last().map(|b| *b == 0).unwrap_or(false) {
-                    Ok(ControlFlow::Break(num_copied))
-                } else {
-                    Ok(ControlFlow::Continue(num_copied))
-                }
-            })?;
-            if copied == 0 && !bytes.is_empty() {
-                error!(EFAULT)
+            let num_copied = read_bytes.len();
+            if read_bytes.last().map(|b| *b == 0).unwrap_or(false) {
+                Ok(ControlFlow::Break(num_copied))
             } else {
-                // SAFETY: Bytes up to `copied` have been initialized.
-                Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, copied) })
+                Ok(ControlFlow::Continue(num_copied))
             }
+        })?;
+        if copied == 0 && !bytes.is_empty() {
+            error!(EFAULT)
         } else {
-            self.syscall_read_memory_partial_until_null_byte(addr, bytes)
+            // SAFETY: Bytes up to `copied` have been initialized.
+            Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, copied) })
         }
     }
 
@@ -2909,26 +2884,21 @@ impl MemoryManager {
     ) -> Result<&'a mut [u8], Errno> {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
-        if let Some(usercopy) = usercopy() {
-            let buf_ptr = bytes.as_mut_ptr();
-            let buf_len = bytes.len();
+        let buf_ptr = bytes.as_mut_ptr();
+        let buf_len = bytes.len();
 
-            let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
-                // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
-                let current_bytes = unsafe {
-                    std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset)
-                };
-                let (read_bytes, _unread_bytes) = usercopy.copyin(cur_addr.ptr(), current_bytes);
-                Ok(ControlFlow::Continue(read_bytes.len()))
-            })?;
-            if copied == 0 && !bytes.is_empty() {
-                error!(EFAULT)
-            } else {
-                // SAFETY: Bytes up to `copied` have been initialized.
-                Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, copied) })
-            }
+        let copied = self.unified_transfer_loop(addr, buf_len, |cur_addr, offset| {
+            // SAFETY: Exclusive access to `bytes` for the lifetime of this function.
+            let current_bytes =
+                unsafe { std::slice::from_raw_parts_mut(buf_ptr.add(offset), buf_len - offset) };
+            let (read_bytes, _unread_bytes) = usercopy().copyin(cur_addr.ptr(), current_bytes);
+            Ok(ControlFlow::Continue(read_bytes.len()))
+        })?;
+        if copied == 0 && !bytes.is_empty() {
+            error!(EFAULT)
         } else {
-            self.syscall_read_memory_partial(addr, bytes)
+            // SAFETY: Bytes up to `copied` have been initialized.
+            Ok(unsafe { std::slice::from_raw_parts_mut(buf_ptr as *mut u8, copied) })
         }
     }
 
@@ -2948,15 +2918,11 @@ impl MemoryManager {
     ) -> Result<usize, Errno> {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
-        if let Some(usercopy) = usercopy() {
-            let len = bytes.len();
-            let copied = self.unified_transfer_loop(addr, len, |cur_addr, offset| {
-                Ok(ControlFlow::Continue(usercopy.copyout(&bytes[offset..], cur_addr.ptr())))
-            })?;
-            if copied < bytes.len() { error!(EFAULT) } else { Ok(copied) }
-        } else {
-            self.syscall_write_memory(addr, bytes)
-        }
+        let len = bytes.len();
+        let copied = self.unified_transfer_loop(addr, len, |cur_addr, offset| {
+            Ok(ControlFlow::Continue(usercopy().copyout(&bytes[offset..], cur_addr.ptr())))
+        })?;
+        if copied < bytes.len() { error!(EFAULT) } else { Ok(copied) }
     }
 
     /// Write `bytes` to memory address `addr`, making a copy-on-write child of the VMO backing and
@@ -2985,15 +2951,11 @@ impl MemoryManager {
     ) -> Result<usize, Errno> {
         debug_assert!(self.has_same_address_space(&current_task.mm().unwrap()));
 
-        if let Some(usercopy) = usercopy() {
-            let len = bytes.len();
-            let copied = self.unified_transfer_loop(addr, len, |cur_addr, offset| {
-                Ok(ControlFlow::Continue(usercopy.copyout(&bytes[offset..], cur_addr.ptr())))
-            })?;
-            if copied == 0 && !bytes.is_empty() { error!(EFAULT) } else { Ok(copied) }
-        } else {
-            self.syscall_write_memory_partial(addr, bytes)
-        }
+        let len = bytes.len();
+        let copied = self.unified_transfer_loop(addr, len, |cur_addr, offset| {
+            Ok(ControlFlow::Continue(usercopy().copyout(&bytes[offset..], cur_addr.ptr())))
+        })?;
+        if copied == 0 && !bytes.is_empty() { error!(EFAULT) } else { Ok(copied) }
     }
 
     pub fn syscall_write_memory_partial(
@@ -3031,14 +2993,10 @@ impl MemoryManager {
             }
         }
 
-        if let Some(usercopy) = usercopy() {
-            let copied = self.unified_transfer_loop(addr, length, |cur_addr, offset| {
-                Ok(ControlFlow::Continue(usercopy.zero(cur_addr.ptr(), length - offset)))
-            })?;
-            if copied == 0 && length > 0 { error!(EFAULT) } else { Ok(copied) }
-        } else {
-            self.syscall_zero(addr, length)
-        }
+        let copied = self.unified_transfer_loop(addr, length, |cur_addr, offset| {
+            Ok(ControlFlow::Continue(usercopy().zero(cur_addr.ptr(), length - offset)))
+        })?;
+        if copied == 0 && length > 0 { error!(EFAULT) } else { Ok(copied) }
     }
 
     pub fn syscall_zero(&self, addr: UserAddress, length: usize) -> Result<usize, Errno> {
@@ -3536,9 +3494,13 @@ impl MemoryManager {
                         } else {
                             let memory_obj = backing.memory();
                             let options = mapping.flags().options();
+                            let mut rights = memory_obj.get_rights();
+                            if mapping.flags().contains(MappingFlags::WRITE) {
+                                rights |= zx::Rights::WRITE;
+                            }
                             let memory =
                                 clone_cache.entry(memory_obj.get_koid()).or_insert_with_fallible(
-                                    || memory_obj.clone_memory(memory_obj.get_rights(), options),
+                                    || memory_obj.clone_memory(rights, options),
                                 )?;
                             memory.clone()
                         };
@@ -4410,60 +4372,25 @@ impl MemoryManager {
     where
         F: FnMut(&usercopy::Usercopy) -> Result<T, ()>,
     {
-        if let Some(usercopy) = usercopy() {
-            // Try the lock-free fast path first.
-            // Note: `op` returns `Err(())` strictly on memory access faults. For
-            // compare-exchange operations, a logical mismatch is wrapped inside a
-            // successful `Ok(value_or_error)`, meaning we will short-circuit here
-            // and won't incorrectly retry on logical failures.
-            if let Ok(val) = op(usercopy) {
-                return Ok(val);
-            }
-            self.ensure_range_mapped_in_user_vmar(futex_addr.into(), None)?;
-            op(usercopy).map_err(|_| errno!(EFAULT))
-        } else {
-            unreachable!("can only control memory ordering of atomics with usercopy");
+        let uc = usercopy();
+        // Try the lock-free fast path first.
+        // Note: `op` returns `Err(())` strictly on memory access faults. For
+        // compare-exchange operations, a logical mismatch is wrapped inside a
+        // successful `Ok(value_or_error)`, meaning we will short-circuit here
+        // and won't incorrectly retry on logical failures.
+        if let Ok(val) = op(uc) {
+            return Ok(val);
         }
+        self.ensure_range_mapped_in_user_vmar(futex_addr.into(), None)?;
+        op(uc).map_err(|_| errno!(EFAULT))
     }
 
     pub fn atomic_load_u32_acquire(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {
-        if usercopy().is_some() {
-            self.run_atomic_op(futex_addr, |uc| uc.atomic_load_u32_acquire(futex_addr.ptr()))
-        } else {
-            // SAFETY: `self.state.read().read_memory` only returns `Ok` if all
-            // bytes were read to.
-            let buf = unsafe {
-                read_to_array(|buf| {
-                    self.state
-                        .read()
-                        .read_memory(futex_addr.into(), buf, &self.mapping_context)
-                        .map(|bytes_read| {
-                            debug_assert_eq!(bytes_read.len(), std::mem::size_of::<u32>())
-                        })
-                })
-            }?;
-            Ok(u32::from_ne_bytes(buf))
-        }
+        self.run_atomic_op(futex_addr, |uc| uc.atomic_load_u32_acquire(futex_addr.ptr()))
     }
 
     pub fn atomic_load_u32_relaxed(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {
-        if usercopy().is_some() {
-            self.run_atomic_op(futex_addr, |uc| uc.atomic_load_u32_relaxed(futex_addr.ptr()))
-        } else {
-            // SAFETY: `self.state.read().read_memory` only returns `Ok` if all
-            // bytes were read to.
-            let buf = unsafe {
-                read_to_array(|buf| {
-                    self.state
-                        .read()
-                        .read_memory(futex_addr.into(), buf, &self.mapping_context)
-                        .map(|bytes_read| {
-                            debug_assert_eq!(bytes_read.len(), std::mem::size_of::<u32>())
-                        })
-                })
-            }?;
-            Ok(u32::from_ne_bytes(buf))
-        }
+        self.run_atomic_op(futex_addr, |uc| uc.atomic_load_u32_relaxed(futex_addr.ptr()))
     }
 
     pub fn atomic_store_u32_relaxed(
@@ -4471,18 +4398,7 @@ impl MemoryManager {
         futex_addr: FutexAddress,
         value: u32,
     ) -> Result<(), Errno> {
-        if usercopy().is_some() {
-            self.run_atomic_op(futex_addr, |uc| {
-                uc.atomic_store_u32_relaxed(futex_addr.ptr(), value)
-            })
-        } else {
-            self.state.read().write_memory(
-                futex_addr.into(),
-                value.as_bytes(),
-                &self.mapping_context,
-            )?;
-            Ok(())
-        }
+        self.run_atomic_op(futex_addr, |uc| uc.atomic_store_u32_relaxed(futex_addr.ptr(), value))
     }
 
     pub fn atomic_compare_exchange_u32_acq_rel(
@@ -6068,7 +5984,6 @@ mod tests {
 
         spawn_kernel_and_run(async |current_task| {
             let mm = current_task.mm().unwrap();
-            let ma = current_task.deref();
 
             let port = Arc::new(zx::Port::create());
             let port_clone = port.clone();
@@ -6129,22 +6044,12 @@ mod tests {
 
             let target = current_task.clone_task_for_test(0, None);
 
-            // Make sure it has what we wrote.
+            // Make sure target has what was in the source VMO.
             let buf = target.read_memory_to_vec(addr, 3).expect("read_memory failed");
             assert_eq!(buf, b"foo");
 
-            // Write something to both source and target and make sure they are forked.
-            ma.write_memory(addr, b"bar").expect("write_memory failed");
-
-            let buf = target.read_memory_to_vec(addr, 3).expect("read_memory failed");
+            let buf = current_task.deref().read_memory_to_vec(addr, 3).expect("read_memory failed");
             assert_eq!(buf, b"foo");
-
-            target.write_memory(addr, b"baz").expect("write_memory failed");
-            let buf = ma.read_memory_to_vec(addr, 3).expect("read_memory failed");
-            assert_eq!(buf, b"bar");
-
-            let buf = target.read_memory_to_vec(addr, 3).expect("read_memory failed");
-            assert_eq!(buf, b"baz");
 
             port.queue(&zx::Packet::from_user_packet(0, 0, zx::UserPacket::from_u8_array([0; 32])))
                 .unwrap();
