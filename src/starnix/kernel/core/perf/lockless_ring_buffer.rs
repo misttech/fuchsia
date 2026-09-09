@@ -1148,20 +1148,31 @@ mod tests {
         assert!(res.is_ok());
     }
     // Spawns a reader thread that periodically drains the lockless ring buffer.
-    //
-    // `read_page_delay`: An optional delay `(mod_val, duration)` indicating that the reader should
-    // sleep for `duration` after reading every `mod_val` pages. This is typically `None`, but can be
-    // used to simulate a slow or batch-based reader to trigger page overwrites/drops in tests.
     fn start_reader_thread(
         buffer_reader: Arc<LocklessRingBuffer>,
         writers_done_reader: Arc<std::sync::atomic::AtomicBool>,
-        read_page_delay: Option<(usize, std::time::Duration)>,
+    ) -> std::thread::JoinHandle<Vec<TestMessage>> {
+        start_gated_reader_thread(buffer_reader, writers_done_reader, false)
+    }
+
+    // Spawns a reader thread that optionally yields until at least one page has been
+    // dropped (overwritten) by writers before draining.
+    fn start_gated_reader_thread(
+        buffer_reader: Arc<LocklessRingBuffer>,
+        writers_done_reader: Arc<std::sync::atomic::AtomicBool>,
+        wait_for_dropped_pages: bool,
     ) -> std::thread::JoinHandle<Vec<TestMessage>> {
         std::thread::spawn(move || {
+            if wait_for_dropped_pages {
+                while buffer_reader.dropped_pages() == 0
+                    && !writers_done_reader.load(Ordering::Acquire)
+                {
+                    std::thread::yield_now();
+                }
+            }
             let mut all_messages = Vec::new();
             let mut dest = VecOutputBuffer::new((*PAGE_SIZE) as usize);
             let mut consecutive_eagain = 0;
-            let mut pages_read = 0;
             loop {
                 dest.reset();
                 match buffer_reader.read(&mut dest) {
@@ -1191,12 +1202,6 @@ mod tests {
                             }
                             all_messages.push(msg);
                             offset += TestMessage::SIZE;
-                        }
-                        if let Some((mod_val, duration)) = read_page_delay {
-                            pages_read += 1;
-                            if pages_read % mod_val == 0 {
-                                std::thread::sleep(duration);
-                            }
                         }
                     }
                     Err(e) if e == starnix_uapi::errno!(EAGAIN) => {
@@ -1269,7 +1274,7 @@ mod tests {
         // Spawn reader
         let buffer_reader = Arc::clone(&buffer);
         let writers_done_reader = Arc::clone(&writers_done);
-        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader, None);
+        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader);
         // Spawn writers
         for thread_index in 0..num_threads {
             let buffer_clone = Arc::clone(&buffer);
@@ -1321,7 +1326,7 @@ mod tests {
         // Spawn reader
         let buffer_reader = Arc::clone(&buffer);
         let writers_done_reader = Arc::clone(&writers_done);
-        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader, None);
+        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader);
         // Spawn writers
         for thread_index in 0..num_threads {
             let buffer_clone = Arc::clone(&buffer);
@@ -1375,7 +1380,7 @@ mod tests {
         // Spawn reader
         let buffer_reader = Arc::clone(&buffer);
         let writers_done_reader = Arc::clone(&writers_done);
-        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader, None);
+        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader);
         // Spawn writers
         for thread_index in 0..num_threads {
             let buffer_clone = Arc::clone(&buffer);
@@ -1519,7 +1524,7 @@ mod tests {
         writers_done.store(true, Ordering::Release);
         let buffer_reader = Arc::clone(&buffer);
         let writers_done_reader = Arc::clone(&writers_done);
-        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader, None);
+        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader);
         let all_messages = reader_handle.join().unwrap();
         check_all_message_data(&all_messages, num_threads);
         assert_eq!(all_messages.len(), 4 * 127, "Expected exactly 4 pages of messages");
@@ -1560,7 +1565,9 @@ mod tests {
             LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, true, fuchsia_trace::Id::new())
                 .unwrap(),
         );
-        // Synchronously fill the active circular buffer (2 data pages) to guarantee immediate dropped pages.
+        // Synchronously fill the active circular buffer (2 data pages) to capacity.
+        // The reader thread is gated below so it does not drain the buffer until
+        // the writer threads wrap around to Node 0 and trigger a dropped page.
         let max_payload = (*PAGE_SIZE) as usize - LocklessRingBuffer::PAGE_HEADER_SIZE;
         let num_msgs = max_payload / TestMessage::SIZE;
         for _ in 0..(2 * num_msgs) {
@@ -1580,10 +1587,9 @@ mod tests {
 
         let buffer_reader = Arc::clone(&buffer);
         let writers_done_reader = Arc::clone(&writers_done);
-        // Set the delay to 20ms to robustly guarantee that writer threads outpace the reader
-        // and deterministically trigger dropped/overwritten pages under any CI load variance.
-        let delay = Some((buffer.nodes.len() - 1, std::time::Duration::from_millis(20)));
-        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader, delay);
+        // Gate reader until writers wrap around and trigger an overwrite (dropped page),
+        // guaranteeing overwrite stability is exercised without relying on timing or sleeps.
+        let reader_handle = start_gated_reader_thread(buffer_reader, writers_done_reader, true);
 
         // Spawn writers
         for thread_index in 0..num_threads {
@@ -1906,7 +1912,7 @@ mod tests {
         // Spawn unified reader thread that loops read() draining all pages.
         let buffer_reader = Arc::clone(&buffer);
         let writers_done_reader = Arc::clone(&writers_done);
-        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader, None);
+        let reader_handle = start_reader_thread(buffer_reader, writers_done_reader);
 
         // Spawn 8 writer threads.
         for thread_index in 0..num_threads {
