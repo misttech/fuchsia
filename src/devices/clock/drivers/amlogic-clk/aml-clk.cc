@@ -248,6 +248,10 @@ zx::result<> AmlClock::Start(fdf::DriverContext context) {
       }
     } else if (board_info->vid == PDEV_VID_GOOGLE) {
       switch (board_info->pid) {
+        case PDEV_PID_ASTRO:
+          device_info->pid = PDEV_PID_AMLOGIC_S905D2;
+          device_info->did = PDEV_DID_AMLOGIC_G12A_CLK;
+          break;
         case PDEV_PID_SHERLOCK:
           device_info->pid = PDEV_PID_AMLOGIC_T931;
           device_info->did = PDEV_DID_AMLOGIC_G12B_CLK;

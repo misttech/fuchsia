@@ -437,6 +437,7 @@ zx_status_t AmlTSensor::InitSensor(fuchsia_hardware_thermal::ThermalDeviceInfo t
   thermal_config_ = std::move(thermal_config);
 
   switch (version) {
+    case PDEV_PID_GENERIC:
     case PDEV_PID_AMLOGIC_S905D2:
     case PDEV_PID_AMLOGIC_T931:
     case PDEV_PID_AMLOGIC_A311D:
