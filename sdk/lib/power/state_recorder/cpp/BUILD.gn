@@ -13,13 +13,12 @@ sdk_source_set("cpp") {
 
   sources = [
     "common.h",
-    "common_internal.cc",
     "common_internal.h",
     "concepts.h",
     "enum_state_recorder.h",
     "enum_state_recorder_internal.h",
     "inspect_buffer.h",
-    "numeric_state_recorder.cc",
+    "inspect_buffer_internal.h",
     "numeric_state_recorder.h",
     "numeric_state_recorder_internal.h",
   ]

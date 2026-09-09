@@ -5,7 +5,6 @@
 #ifndef LIB_POWER_STATE_RECORDER_CPP_ENUM_STATE_RECORDER_H_
 #define LIB_POWER_STATE_RECORDER_CPP_ENUM_STATE_RECORDER_H_
 
-#include <lib/inspect/cpp/bounded_list_node.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/power/state_recorder/cpp/common.h>
 #include <lib/power/state_recorder/cpp/common_internal.h>
@@ -110,10 +109,10 @@ class EnumStateRecorder final {
         trace_category_literal_(metadata.trace_category_literal),
         name_lookup_(std::make_shared<internal::StateNameLookup<T>>(metadata.states)),
         root_node_(std::move(root_node)),
-        history_(options.lazy_record ? History(internal::EnumLazyInspectRecorder<T>::Create(
-                                           name_lookup_, options.capacity, root_node_))
-                                     : History(inspect::BoundedListNode(
-                                           root_node_.CreateChild("history"), options.capacity))),
+        history_(options.lazy_record
+                     ? History(internal::EnumLazyInspectRecorder<T>::Create(
+                           name_lookup_, options.capacity, root_node_))
+                     : History(internal::EagerShardedBuffer<T>(root_node_, options.capacity))),
         trace_id_(TRACE_NONCE()),
         trace_name_(std::make_unique<std::string>(name_)),
         trace_name_ref_(trace_make_inline_string_ref(trace_name_->c_str(), trace_name_->length())),
@@ -127,6 +126,7 @@ class EnumStateRecorder final {
     }
 
     root_node_.RecordChild("metadata", [&](inspect::Node& metadata_node) {
+      metadata_node.RecordString("format_version", "2.0");
       metadata_node.RecordString("name", metadata.name);
       metadata_node.RecordString("type", "enum");
       metadata_node.RecordChild("states", [&](inspect::Node& states_node) {
@@ -153,8 +153,8 @@ class EnumStateRecorder final {
 
   inspect::Node root_node_;
 
-  using History =
-      std::variant<inspect::BoundedListNode, std::unique_ptr<internal::EnumLazyInspectRecorder<T>>>;
+  using History = std::variant<internal::EagerShardedBuffer<T>,
+                               std::unique_ptr<internal::EnumLazyInspectRecorder<T>>>;
   History history_;
 
   trace_async_id_t trace_id_;
@@ -227,11 +227,8 @@ void EnumStateRecorder<T>::Record(T state_enum, std::optional<zx::time_boot> eve
     trace_release_context(trace_context);
   }
 
-  if (auto* history = std::get_if<inspect::BoundedListNode>(&history_)) {
-    history->CreateEntry([&](inspect::Node& node) {
-      node.RecordInt("@time", current_timestamp.get());
-      node.RecordString("value", *current_state_name_.value()->inspect_name);
-    });
+  if (auto* history = std::get_if<internal::EagerShardedBuffer<T>>(&history_)) {
+    history->Record(current_timestamp.get(), state_enum);
   } else if (auto* history =
                  std::get_if<std::unique_ptr<internal::EnumLazyInspectRecorder<T>>>(&history_)) {
     (*history)->AddEntry(state_enum, internal::to_msecs(current_timestamp));

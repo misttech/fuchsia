@@ -6,14 +6,13 @@
 #define LIB_POWER_STATE_RECORDER_CPP_INSPECT_BUFFER_H_
 
 #include <lib/fit/function.h>
-#include <lib/inspect/component/cpp/component.h>
-#include <lib/inspect/cpp/inspect.h>
 #include <lib/power/state_recorder/cpp/concepts.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/time.h>
-#include <zircon/syscalls.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 #include <vector>
 
@@ -67,7 +66,7 @@ class BitBuffer {
   std::vector<uint8_t> buffer_;
 };
 
-// Define is_bool_enum_v such that std::underlying_type_t is neer evaluated for a non-enum type.
+// Define is_bool_enum_v such that std::underlying_type_t is never evaluated for a non-enum type.
 template <typename T>
 inline constexpr bool is_bool_enum_v = false;
 
@@ -166,6 +165,8 @@ class TimestampedBuffer {
   }
 
   const ResetInfo& GetResetInfo() const { return reset_info_; }
+  size_t GetCount() const { return count_; }
+  size_t GetCapacity() const { return buffer_size_; }
 
  private:
   std::vector<int32_t> delta_ms_buffer_;
@@ -177,65 +178,6 @@ class TimestampedBuffer {
   size_t count_ = 0;
   ResetInfo reset_info_ = {.count = 0, .last_reset_ns = 0};
   bool initialized_ = false;
-};
-
-// Records data in an underlying TimestampedBuffer to a lazy node.
-template <typename T>
-  requires IsRecordableValueType<T>
-class LazyInspectRecorderBase {
- public:
-  // This class cannot be safely moved because the lazy node callback references `this`.
-  LazyInspectRecorderBase(LazyInspectRecorderBase&& other) = delete;
-  LazyInspectRecorderBase& operator=(LazyInspectRecorderBase&& other) = delete;
-
-  LazyInspectRecorderBase(const LazyInspectRecorderBase& other) = delete;
-  LazyInspectRecorderBase& operator=(const LazyInspectRecorderBase& other) = delete;
-
-  virtual ~LazyInspectRecorderBase() {}
-
-  void AddEntry(T data, int64_t timestamp_ms) { buffer_.AddEntry(data, timestamp_ms); }
-
- protected:
-  // Specifies how to record a value of type T to an Inspect node.1
-  virtual void RecordToNode(inspect::Node& node, T value) const = 0;
-
-  LazyInspectRecorderBase(size_t capacity, inspect::Node& parent_node)
-      : buffer_(capacity),
-        history_node_(parent_node.CreateLazyNode(
-            "history", fit::bind_member<&LazyInspectRecorderBase<T>::TimeSeriesToInspect>(this))),
-        reset_info_node_(parent_node.CreateLazyNode(
-            "reset_info",
-            fit::bind_member<&LazyInspectRecorderBase<T>::ResetInfoToInspect>(this))) {}
-
- private:
-  fpromise::promise<inspect::Inspector> ResetInfoToInspect() const {
-    inspect::Inspector inspector;
-    auto& root = inspector.GetRoot();
-    auto& reset_info = buffer_.GetResetInfo();
-    root.RecordUint("count", reset_info.count);
-    root.RecordInt("last_reset_ns", reset_info.last_reset_ns);
-    return fpromise::make_ok_promise(std::move(inspector));
-  }
-
-  fpromise::promise<inspect::Inspector> TimeSeriesToInspect() const {
-    inspect::Inspector inspector;
-    auto& root = inspector.GetRoot();
-    size_t i = 0;
-
-    buffer_.ForEachDataPoint([&](const DataPoint<T>& data_point) {
-      root.RecordChild(std::format("{}", i++), [&](inspect::Node& node) {
-        node.RecordInt("@time", data_point.timestamp_ns);
-        T value = data_point.value;
-        RecordToNode(node, value);
-      });
-    });
-
-    return fpromise::make_ok_promise(std::move(inspector));
-  }
-
-  TimestampedBuffer<T> buffer_;
-  inspect::LazyNode history_node_;
-  inspect::LazyNode reset_info_node_;
 };
 
 }  // namespace power_observability::internal

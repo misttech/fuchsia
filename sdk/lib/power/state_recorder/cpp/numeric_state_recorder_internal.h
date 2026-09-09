@@ -7,7 +7,7 @@
 
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/power/state_recorder/cpp/concepts.h>
-#include <lib/power/state_recorder/cpp/inspect_buffer.h>
+#include <lib/power/state_recorder/cpp/inspect_buffer_internal.h>
 
 #include <memory>
 
@@ -24,19 +24,6 @@ class NumericLazyInspectRecorder : public LazyInspectRecorderBase<T> {
     // The constructor is private, so we can't use `std::make_unique`.
     return std::unique_ptr<NumericLazyInspectRecorder>(
         new NumericLazyInspectRecorder(capacity, parent_node));
-  }
-
- protected:
-  virtual void RecordToNode(inspect::Node& node, T value) const {
-    if constexpr (WidensToUint64<T>) {
-      node.RecordUint("value", static_cast<uint64_t>(value));
-    } else if constexpr (WidensToInt64<T>) {
-      node.RecordInt("value", static_cast<int64_t>(value));
-    } else if constexpr (WidensToDouble<T>) {
-      node.RecordDouble("value", static_cast<double>(value));
-    } else {
-      static_assert(!IsRecordableNumericType<T>, "Unsupported type");
-    }
   }
 
   NumericLazyInspectRecorder(size_t capacity, inspect::Node& parent_node)
