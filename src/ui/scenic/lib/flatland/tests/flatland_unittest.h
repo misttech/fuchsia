@@ -124,13 +124,13 @@ const int32_t kDefaultInset = 0;
 inline fuchsia_ui_composition::wire::ViewBoundProtocols NoViewProtocols() { return {}; }
 
 inline fuchsia_ui_views::wire::ViewIdentityOnCreation NewWireViewIdentityOnCreation() {
-  auto view_identity_hlcpp = scenic::NewViewIdentityOnCreation();
+  auto view_identity = scenic::cpp::NewViewIdentityOnCreation();
   return fuchsia_ui_views::wire::ViewIdentityOnCreation{
       .view_ref = fuchsia_ui_views::wire::ViewRef{.reference = std::move(
-                                                      view_identity_hlcpp.view_ref.reference)},
+                                                      view_identity.view_ref().reference())},
       .view_ref_control =
           fuchsia_ui_views::wire::ViewRefControl{
-              .reference = std::move(view_identity_hlcpp.view_ref_control.reference)},
+              .reference = std::move(view_identity.view_ref_control().reference())},
   };
 }
 
@@ -139,28 +139,13 @@ inline fuchsia_ui_composition::wire::BufferCollectionImportToken ToWire(
   return {.value = std::move(token.value())};
 }
 
-inline fuchsia_ui_composition::wire::BufferCollectionImportToken ToWire(
-    fuchsia::ui::composition::BufferCollectionImportToken token) {
-  return {.value = std::move(token.value)};
-}
-
 inline fuchsia_ui_views::wire::ViewportCreationToken ToWire(
     fuchsia_ui_views::ViewportCreationToken token) {
   return {.value = std::move(token.value())};
 }
 
-inline fuchsia_ui_views::wire::ViewportCreationToken ToWire(
-    fuchsia::ui::views::ViewportCreationToken token) {
-  return {.value = std::move(token.value)};
-}
-
 inline fuchsia_ui_views::wire::ViewCreationToken ToWire(fuchsia_ui_views::ViewCreationToken token) {
   return {.value = std::move(token.value())};
-}
-
-inline fuchsia_ui_views::wire::ViewCreationToken ToWire(
-    fuchsia::ui::views::ViewCreationToken token) {
-  return {.value = std::move(token.value)};
 }
 
 class EventHandler : public fidl::AsyncEventHandler<fuchsia_ui_composition::Flatland> {
@@ -409,21 +394,19 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
         uber_struct_system_->AllocateQueueForSession(session_id));
   }
 
-  fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> CreateToken() {
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr token;
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> CreateToken() {
+    auto [token_client, token_server] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
     fidl::Arena arena;
     fidl::OneWayStatus result = sysmem_allocator_->AllocateSharedCollection(
         fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
-            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                token.NewRequest().TakeChannel()))
+            .token_request(std::move(token_server))
             .Build());
     EXPECT_TRUE(result.ok());
-    fuchsia::ui::views::ViewportCreationToken parent_token;  // Hack to make sure HLCPP can sync
-    fuchsia::sysmem2::Node_Sync_Result sync_result;
-    zx_status_t status = token->Sync(&sync_result);
-    EXPECT_EQ(status, ZX_OK);
-    EXPECT_TRUE(sync_result.is_response());
-    return token;
+    fidl::SyncClient sync_token(std::move(token_client));
+    auto sync_result = sync_token->Sync();
+    EXPECT_TRUE(sync_result.is_ok());
+    return sync_token.TakeClientEnd();
   }
 
   // Applies the most recently scheduled session update for each session and signals the release
@@ -655,7 +638,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   void RegisterBufferCollection(
       allocation::Allocator* allocator,
       fuchsia_ui_composition::BufferCollectionExportToken bc_export_token,
-      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token, bool expect_success,
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, bool expect_success,
       cpp20::source_location location = cpp20::source_location::current()) {
     SCOPED_TRACE(::testing::Message() << location.file_name() << ":" << location.line());
     if (expect_success) {
@@ -667,8 +650,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     bool processed_callback = false;
     fuchsia_ui_composition::RegisterBufferCollectionArgs args;
     args.export_token(std::move(bc_export_token));
-    args.buffer_collection_token2(
-        fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(std::move(token).TakeChannel()));
+    args.buffer_collection_token2(std::move(token));
     allocator->RegisterBufferCollection(std::move(args),
                                         [&processed_callback, expect_success](auto result) {
                                           EXPECT_EQ(expect_success, result.is_ok());
@@ -681,7 +663,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   void RegisterBufferCollection(
       const std::shared_ptr<allocation::Allocator>& allocator,
       fuchsia_ui_composition::BufferCollectionExportToken bc_export_token,
-      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token, bool expect_success,
+      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, bool expect_success,
       cpp20::source_location location = cpp20::source_location::current()) {
     RegisterBufferCollection(allocator.get(), std::move(bc_export_token), std::move(token),
                              expect_success, location);

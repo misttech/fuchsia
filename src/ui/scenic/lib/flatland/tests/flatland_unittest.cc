@@ -6,13 +6,11 @@
 
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <fidl/fuchsia.ui.views/cpp/hlcpp_conversion.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/async/default.h>
 #include <lib/async/time.h>
-#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
@@ -28,7 +26,6 @@
 
 #include <gtest/gtest.h>
 
-#include "fuchsia/ui/composition/cpp/fidl.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/lib/escher/util/epsilon_compare.h"
 #include "src/ui/scenic/lib/allocation/allocator.h"
@@ -1495,7 +1492,7 @@ TEST_F(FlatlandTest, CreateViewSuccceedsAfterReleaseView) {
 TEST_F(FlatlandTest, RegisterViewBoundProtocols_BothTouchSources_ReturnsBadOperation) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
-  auto creation_tokens = scenic::ViewCreationTokenPair::New();
+  auto creation_tokens = scenic::cpp::ViewCreationTokenPair::New();
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
@@ -1523,7 +1520,7 @@ TEST_F(FlatlandTest, RegisterViewBoundProtocols_BothTouchSources_ReturnsBadOpera
 TEST_F(FlatlandTest, RegisterViewBoundProtocols_BothMouseSources_ReturnsBadOperation) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
-  auto creation_tokens = scenic::ViewCreationTokenPair::New();
+  auto creation_tokens = scenic::cpp::ViewCreationTokenPair::New();
 
   auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
       fidl::Endpoints<ParentViewportWatcher>::Create();
@@ -5472,7 +5469,7 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
     EXPECT_EQ(status, ZX_OK);
   }
 
-  auto creation_tokens = scenic::ViewCreationTokenPair::New();
+  auto creation_tokens = scenic::cpp::ViewCreationTokenPair::New();
   const TransformId kRootTransform(1);
   const ContentId kLinkId(1);
 

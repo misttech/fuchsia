@@ -4,10 +4,14 @@
 
 #include "src/ui/scenic/lib/flatland/flatland_manager.h"
 
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fidl/fuchsia.scenic.scheduling/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
+#include <lib/fit/function.h>
 #include <lib/fit/thread_checker.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/ui/scenic/cpp/view_creation_tokens.h>
 #include <lib/ui/scenic/cpp/view_identity.h>
 
 #include <gtest/gtest.h>
@@ -28,9 +32,6 @@ using flatland::FlatlandPresenter;
 using flatland::LinkSystem;
 using flatland::MockFlatlandPresenter;
 using flatland::UberStructSystem;
-using fuchsia::ui::composition::Flatland;
-using fuchsia::ui::composition::FlatlandError;
-using fuchsia::ui::composition::OnNextFrameBeginValues;
 
 // These macros works like functions that check a variety of conditions, but if those conditions
 // fail, the line number for the failure will appear in-line rather than in a function.
@@ -50,13 +51,15 @@ using fuchsia::ui::composition::OnNextFrameBeginValues;
     if (expect_success) {                                                                    \
       EXPECT_CALL(*mock_flatland_presenter_, ScheduleUpdateForSession(_, _, _, _, _, _, _)); \
     }                                                                                        \
-    fuchsia::ui::composition::PresentArgs present_args;                                      \
-    present_args.set_requested_presentation_time(0);                                         \
-    present_args.set_acquire_fences({});                                                     \
-    present_args.set_release_fences({});                                                     \
-    present_args.set_present_fences({});                                                     \
-    present_args.set_unsquashable(false);                                                    \
-    flatland->Present(std::move(present_args));                                              \
+    fuchsia_ui_composition::PresentArgs present_args;                                        \
+    present_args.requested_presentation_time(0);                                             \
+    present_args.acquire_fences(std::vector<zx::event>{});                                   \
+    present_args.release_fences(std::vector<zx::event>{});                                   \
+    present_args.present_fences(std::vector<zx::counter>{});                                 \
+    present_args.unsquashable(false);                                                        \
+    fuchsia_ui_composition::FlatlandPresentRequest request;                                  \
+    request.args(std::move(present_args));                                                   \
+    EXPECT_TRUE(flatland->Present(std::move(request)).is_ok());                              \
     /* If expecting success, wait for the worker thread to process the request. */           \
     if (expect_success) {                                                                    \
       RunLoopUntil([this, session_id, num_pending_sessions] {                                \
@@ -66,6 +69,48 @@ using fuchsia::ui::composition::OnNextFrameBeginValues;
   }
 
 namespace {
+
+struct TestEventHandler : public fidl::AsyncEventHandler<fuchsia_ui_composition::Flatland> {
+  fit::function<void(fuchsia_ui_composition::OnNextFrameBeginValues)> on_next_frame_begin;
+  fit::function<void(fuchsia_scenic_scheduling::FramePresentedInfo)> on_frame_presented;
+  fit::function<void(fuchsia_ui_composition::FlatlandError)> on_error;
+  bool is_unbound = false;
+
+  void OnNextFrameBegin(
+      fidl::Event<fuchsia_ui_composition::Flatland::OnNextFrameBegin>& event) override {
+    if (on_next_frame_begin) {
+      on_next_frame_begin(std::move(event.values()));
+    }
+  }
+
+  void OnFramePresented(
+      fidl::Event<fuchsia_ui_composition::Flatland::OnFramePresented>& event) override {
+    if (on_frame_presented) {
+      on_frame_presented(std::move(event.frame_presented_info()));
+    }
+  }
+
+  void OnError(fidl::Event<fuchsia_ui_composition::Flatland::OnError>& event) override {
+    if (on_error) {
+      on_error(event.error());
+    }
+  }
+
+  void on_fidl_error(fidl::UnbindInfo info) override { is_unbound = true; }
+};
+
+struct FlatlandClient {
+  std::shared_ptr<TestEventHandler> event_handler;
+  fidl::Client<fuchsia_ui_composition::Flatland> client;
+
+  TestEventHandler& events() { return *event_handler; }
+  auto operator->() const { return client.operator->(); }
+  bool is_bound() const { return client.is_valid() && event_handler && !event_handler->is_unbound; }
+  void reset() {
+    client = {};
+    event_handler.reset();
+  }
+};
 
 class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
  public:
@@ -200,12 +245,19 @@ class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
     ::testing::Test::TearDown();
   }
 
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> CreateFlatland() {
-    fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland;
+  FlatlandClient CreateFlatland(
+      const flatland::FlatlandConfig& config = flatland::FlatlandConfig{}) {
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_composition::Flatland>::Create();
     const scheduling::SessionId id =
-        manager_->CreateFlatland(fidl::HLCPPToNatural(flatland.NewRequest(dispatcher()))).value();
+        manager_->CreateFlatland(std::move(server_end), config).value();
     FX_LOGS(INFO) << "Created flatland with ID " << id;
-    return flatland;
+    auto event_handler = std::make_shared<TestEventHandler>();
+    fidl::Client<fuchsia_ui_composition::Flatland> client(std::move(client_end), dispatcher(),
+                                                          event_handler.get());
+    return FlatlandClient{
+        .event_handler = std::move(event_handler),
+        .client = std::move(client),
+    };
   }
 
   // Returns the number of currently pending session updates for |session_id|.
@@ -259,9 +311,8 @@ class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
 namespace flatland::test {
 
 TEST_F(FlatlandManagerTest, CreateFlatlands) {
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland1 = CreateFlatland();
-
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland2 = CreateFlatland();
+  FlatlandClient flatland1 = CreateFlatland();
+  FlatlandClient flatland2 = CreateFlatland();
 
   RunLoopUntilIdle();
 
@@ -271,7 +322,7 @@ TEST_F(FlatlandManagerTest, CreateFlatlands) {
 }
 
 TEST_F(FlatlandManagerTest, UntrustedFlatlandRunsOnIndependentThread) {
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland = CreateFlatland();
+  FlatlandClient flatland = CreateFlatland();
   const scheduling::SessionId id = uber_struct_system_->GetLatestInstanceId();
 
   RunLoopUntilIdle();
@@ -283,12 +334,8 @@ TEST_F(FlatlandManagerTest, UntrustedFlatlandRunsOnIndependentThread) {
 }
 
 TEST_F(FlatlandManagerTest, TrustedFlatlandRunsOnMainThread) {
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland;
-  const scheduling::SessionId id =
-      manager_
-          ->CreateFlatland(fidl::HLCPPToNatural(flatland.NewRequest(dispatcher())),
-                           {.use_trusted_flatland_api = true})
-          .value();
+  FlatlandClient flatland = CreateFlatland({.use_trusted_flatland_api = true});
+  const scheduling::SessionId id = uber_struct_system_->GetLatestInstanceId();
 
   RunLoopUntilIdle();
 
@@ -299,21 +346,29 @@ TEST_F(FlatlandManagerTest, TrustedFlatlandRunsOnMainThread) {
 }
 
 TEST_F(FlatlandManagerTest, CreateViewportedFlatlands) {
-  fuchsia::ui::views::ViewportCreationToken parent_token;
-  fuchsia::ui::views::ViewCreationToken child_token;
-  ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value, &child_token.value));
+  auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
 
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> parent = CreateFlatland();
-  const fuchsia::ui::composition::ContentId kLinkId = {1};
-  fidl::InterfacePtr<fuchsia::ui::composition::ChildViewWatcher> child_view_watcher;
-  fuchsia::ui::composition::ViewportProperties properties;
-  properties.set_logical_size({1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
-                         child_view_watcher.NewRequest());
+  FlatlandClient parent = CreateFlatland();
+  const fuchsia_ui_composition::ContentId kLinkId = {1};
+  auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+      fidl::Endpoints<fuchsia_ui_composition::ChildViewWatcher>::Create();
+  fuchsia_ui_composition::ViewportProperties properties;
+  properties.logical_size(fuchsia_math::SizeU(1, 2));
+  fuchsia_ui_composition::FlatlandCreateViewportRequest viewport_request;
+  viewport_request.viewport_id(kLinkId);
+  viewport_request.token(std::move(parent_token));
+  viewport_request.properties(std::move(properties));
+  viewport_request.child_view_watcher(std::move(child_view_watcher_server_end));
+  EXPECT_TRUE(parent->CreateViewport(std::move(viewport_request)).is_ok());
+
   {
-    fidl::InterfacePtr<fuchsia::ui::composition::Flatland> child = CreateFlatland();
-    fidl::InterfacePtr<fuchsia::ui::composition::ParentViewportWatcher> parent_viewport_watcher;
-    child->CreateView(std::move(child_token), parent_viewport_watcher.NewRequest());
+    FlatlandClient child = CreateFlatland();
+    auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+        fidl::Endpoints<fuchsia_ui_composition::ParentViewportWatcher>::Create();
+    fuchsia_ui_composition::FlatlandCreateViewRequest view_request;
+    view_request.token(std::move(child_token));
+    view_request.parent_viewport_watcher(std::move(parent_viewport_watcher_server_end));
+    EXPECT_TRUE(child->CreateView(std::move(view_request)).is_ok());
 
     RunLoopUntilIdle();
     EXPECT_EQ(manager_->GetSessionCount(), 2ul);
@@ -328,7 +383,7 @@ TEST_F(FlatlandManagerTest, CreateViewportedFlatlands) {
 TEST_F(FlatlandManagerTest, ClientDiesBeforeManager) {
   scheduling::SessionId id;
   {
-    fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland = CreateFlatland();
+    FlatlandClient flatland = CreateFlatland();
     id = uber_struct_system_->GetLatestInstanceId();
 
     RunLoopUntilIdle();
@@ -360,7 +415,7 @@ TEST_F(FlatlandManagerTest, ClientDiesBeforeManager) {
 }
 
 TEST_F(FlatlandManagerTest, ManagerDiesBeforeClients) {
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland = CreateFlatland();
+  FlatlandClient flatland = CreateFlatland();
   const scheduling::SessionId id = uber_struct_system_->GetLatestInstanceId();
 
   RunLoopUntilIdle();
@@ -393,15 +448,16 @@ TEST_F(FlatlandManagerTest, ManagerDiesBeforeClients) {
 
 TEST_F(FlatlandManagerTest, FirstPresentReturnsMaxPresentCredits) {
   // Setup a Flatland instance with an OnNextFrameBegin() callback.
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland = CreateFlatland();
+  FlatlandClient flatland = CreateFlatland();
   const scheduling::SessionId id = uber_struct_system_->GetLatestInstanceId();
 
   uint32_t returned_tokens = 0;
-  flatland.events().OnNextFrameBegin = [&returned_tokens](OnNextFrameBeginValues values) {
-    returned_tokens += values.additional_present_credits();
-    EXPECT_TRUE(returned_tokens > 0);
-    EXPECT_FALSE(values.future_presentation_infos().empty());
-  };
+  flatland.events().on_next_frame_begin =
+      [&returned_tokens](fuchsia_ui_composition::OnNextFrameBeginValues values) {
+        returned_tokens += values.additional_present_credits().value_or(0);
+        EXPECT_TRUE(returned_tokens > 0);
+        EXPECT_FALSE(values.future_presentation_infos()->empty());
+      };
 
   // Present once, but don't update sessions.
   PRESENT(flatland, id, true);
@@ -429,25 +485,27 @@ TEST_F(FlatlandManagerTest, FirstPresentReturnsMaxPresentCredits) {
 
 TEST_F(FlatlandManagerTest, UpdateInstancesReturnsPresentCredits) {
   // Setup two Flatland instances with OnNextFrameBegin() callbacks.
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland1 = CreateFlatland();
+  FlatlandClient flatland1 = CreateFlatland();
   const scheduling::SessionId id1 = uber_struct_system_->GetLatestInstanceId();
 
   uint32_t returned_tokens1 = 0;
-  flatland1.events().OnNextFrameBegin = [&returned_tokens1](OnNextFrameBeginValues values) {
-    returned_tokens1 += values.additional_present_credits();
-    EXPECT_TRUE(returned_tokens1 > 0);
-    EXPECT_FALSE(values.future_presentation_infos().empty());
-  };
+  flatland1.events().on_next_frame_begin =
+      [&returned_tokens1](fuchsia_ui_composition::OnNextFrameBeginValues values) {
+        returned_tokens1 += values.additional_present_credits().value_or(0);
+        EXPECT_TRUE(returned_tokens1 > 0);
+        EXPECT_FALSE(values.future_presentation_infos()->empty());
+      };
 
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland2 = CreateFlatland();
+  FlatlandClient flatland2 = CreateFlatland();
   const scheduling::SessionId id2 = uber_struct_system_->GetLatestInstanceId();
 
   uint32_t returned_tokens2 = 0;
-  flatland2.events().OnNextFrameBegin = [&returned_tokens2](OnNextFrameBeginValues values) {
-    returned_tokens2 += values.additional_present_credits();
-    EXPECT_TRUE(returned_tokens2 > 0);
-    EXPECT_FALSE(values.future_presentation_infos().empty());
-  };
+  flatland2.events().on_next_frame_begin =
+      [&returned_tokens2](fuchsia_ui_composition::OnNextFrameBeginValues values) {
+        returned_tokens2 += values.additional_present_credits().value_or(0);
+        EXPECT_TRUE(returned_tokens2 > 0);
+        EXPECT_FALSE(values.future_presentation_infos()->empty());
+      };
 
   {  // Go through the initial present so both instances have multiple credits.
     PRESENT(flatland1, id1, true);
@@ -524,15 +582,22 @@ TEST_F(FlatlandManagerTest, UpdateInstancesReturnsPresentCredits) {
 // SendHintsToStartRendering() is called. If that's the case, we need to ensure that present credits
 // returned from the first update are not lost.
 TEST_F(FlatlandManagerTest, ConsecutiveUpdateInstances_ReturnsCorrectPresentCredits) {
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland = CreateFlatland();
+  FlatlandClient flatland = CreateFlatland();
   const scheduling::SessionId id = uber_struct_system_->GetLatestInstanceId();
 
   uint32_t returned_tokens = 0;
-  flatland.events().OnNextFrameBegin = [&returned_tokens](OnNextFrameBeginValues values) {
-    returned_tokens = values.additional_present_credits();
-    EXPECT_TRUE(returned_tokens > 0);
-    EXPECT_FALSE(values.future_presentation_infos().empty());
-  };
+  flatland.events().on_next_frame_begin =
+      [&returned_tokens](fuchsia_ui_composition::OnNextFrameBeginValues values) {
+        // `=` rather than the `+=` used elsewhere in this file, on purpose:
+        // FlatlandManager batches the credits from consecutive UpdateInstances()
+        // calls into one OnNextFrameBegin. With `=`, the EXPECT_EQ at the end of
+        // this test fails if the credits arrive as two events; with `+=` it would
+        // pass. This is the likely reason the original test assigned instead of
+        // accumulating.
+        returned_tokens = values.additional_present_credits().value_or(0);
+        EXPECT_TRUE(returned_tokens > 0);
+        EXPECT_FALSE(values.future_presentation_infos()->empty());
+      };
 
   {  // Receive the initial allotment of tokens, then forget those tokens.
     PRESENT(flatland, id, true);
@@ -577,12 +642,13 @@ TEST_F(FlatlandManagerTest, ConsecutiveUpdateInstances_ReturnsCorrectPresentCred
 
 TEST_F(FlatlandManagerTest, PresentWithoutTokensClosesSession) {
   // Setup a Flatland instance with an OnNextFrameBegin() callback.
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland = CreateFlatland();
+  FlatlandClient flatland = CreateFlatland();
   const scheduling::SessionId id = uber_struct_system_->GetLatestInstanceId();
 
-  FlatlandError error_returned;
-  uint32_t tokens_remaining = 1;
-  flatland.events().OnError = [&error_returned](FlatlandError error) { error_returned = error; };
+  std::optional<fuchsia_ui_composition::FlatlandError> error_returned;
+  flatland.events().on_error = [&error_returned](fuchsia_ui_composition::FlatlandError error) {
+    error_returned = error;
+  };
 
   // Present until no tokens remain.
   PRESENT(flatland, id, true);
@@ -596,7 +662,7 @@ TEST_F(FlatlandManagerTest, PresentWithoutTokensClosesSession) {
   // the destroy_instance_function() posts a task from the worker to the main and that task
   // ultimately posts the destruction back onto the worker.
   RunLoopUntil([&flatland] { return !flatland.is_bound(); });
-  EXPECT_EQ(error_returned, FlatlandError::NO_PRESENTS_REMAINING);
+  EXPECT_EQ(error_returned, fuchsia_ui_composition::FlatlandError::kNoPresentsRemaining);
 
   // Wait until all Flatland threads are destroyed.
   RunLoopUntil([this] { return manager_->GetAliveSessionCount() == 0; });
@@ -607,23 +673,27 @@ TEST_F(FlatlandManagerTest, PresentWithoutTokensClosesSession) {
 
 TEST_F(FlatlandManagerTest, ErrorClosesSession) {
   // Setup a Flatland instance with an OnNextFrameBegin() callback.
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland = CreateFlatland();
+  FlatlandClient flatland = CreateFlatland();
   const scheduling::SessionId id = uber_struct_system_->GetLatestInstanceId();
 
-  FlatlandError error_returned;
-  flatland.events().OnError = [&error_returned](FlatlandError error) { error_returned = error; };
+  std::optional<fuchsia_ui_composition::FlatlandError> error_returned;
+  flatland.events().on_error = [&error_returned](fuchsia_ui_composition::FlatlandError error) {
+    error_returned = error;
+  };
   EXPECT_TRUE(flatland.is_bound());
 
   // Queue a bad SetRootTransform call ensure the session is closed.
   EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(id, _));
-  flatland->SetRootTransform({2});
+  fuchsia_ui_composition::FlatlandSetRootTransformRequest root_request;
+  root_request.transform_id(fuchsia_ui_composition::TransformId{2});
+  EXPECT_TRUE(flatland->SetRootTransform(std::move(root_request)).is_ok());
   PRESENT(flatland, id, false);
 
   // The instance will eventually be unbound, but it takes a pair of thread hops to complete since
   // the destroy_instance_function() posts a task from the worker to the main and that task
   // ultimately posts the destruction back onto the worker.
   RunLoopUntil([&flatland] { return !flatland.is_bound(); });
-  EXPECT_EQ(error_returned, FlatlandError::BAD_OPERATION);
+  EXPECT_EQ(error_returned, fuchsia_ui_composition::FlatlandError::kBadOperation);
 
   // Wait until all Flatland threads are destroyed.
   RunLoopUntil([this] { return manager_->GetAliveSessionCount() == 0; });
@@ -635,14 +705,15 @@ TEST_F(FlatlandManagerTest, ErrorClosesSession) {
 
 TEST_F(FlatlandManagerTest, TokensAreReplenishedAfterRunningOut) {
   // Setup a Flatland instance with an OnNextFrameBegin() callback.
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland = CreateFlatland();
+  FlatlandClient flatland = CreateFlatland();
   const scheduling::SessionId id = uber_struct_system_->GetLatestInstanceId();
 
   uint32_t tokens_remaining = 0;
-  flatland.events().OnNextFrameBegin = [&tokens_remaining](OnNextFrameBeginValues values) {
-    tokens_remaining += values.additional_present_credits();
-    EXPECT_TRUE(tokens_remaining > 0);
-  };
+  flatland.events().on_next_frame_begin =
+      [&tokens_remaining](fuchsia_ui_composition::OnNextFrameBeginValues values) {
+        tokens_remaining += values.additional_present_credits().value_or(0);
+        EXPECT_TRUE(tokens_remaining > 0);
+      };
 
   {  // Receive the initial allotment of tokens.
     PRESENT(flatland, id, true);
@@ -677,29 +748,31 @@ TEST_F(FlatlandManagerTest, TokensAreReplenishedAfterRunningOut) {
 
 TEST_F(FlatlandManagerTest, OnFramePresentedEvent) {
   // Setup two Flatland instances with OnFramePresented() callbacks.
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland1 = CreateFlatland();
+  FlatlandClient flatland1 = CreateFlatland();
   const scheduling::SessionId id1 = uber_struct_system_->GetLatestInstanceId();
 
-  std::optional<fuchsia::scenic::scheduling::FramePresentedInfo> info1;
-  flatland1.events().OnFramePresented =
-      [&info1](fuchsia::scenic::scheduling::FramePresentedInfo info) { info1 = std::move(info); };
+  std::optional<fuchsia_scenic_scheduling::FramePresentedInfo> info1;
+  flatland1.events().on_frame_presented =
+      [&info1](fuchsia_scenic_scheduling::FramePresentedInfo info) { info1 = std::move(info); };
 
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland2 = CreateFlatland();
+  FlatlandClient flatland2 = CreateFlatland();
   const scheduling::SessionId id2 = uber_struct_system_->GetLatestInstanceId();
 
-  std::optional<fuchsia::scenic::scheduling::FramePresentedInfo> info2;
-  flatland2.events().OnFramePresented =
-      [&info2](fuchsia::scenic::scheduling::FramePresentedInfo info) { info2 = std::move(info); };
+  std::optional<fuchsia_scenic_scheduling::FramePresentedInfo> info2;
+  flatland2.events().on_frame_presented =
+      [&info2](fuchsia_scenic_scheduling::FramePresentedInfo info) { info2 = std::move(info); };
 
   {  // Go through the initial present so both instances have multiple credits.
     uint32_t returned_tokens1 = 0;
-    flatland1.events().OnNextFrameBegin = [&returned_tokens1](OnNextFrameBeginValues values) {
-      returned_tokens1 += values.additional_present_credits();
-    };
+    flatland1.events().on_next_frame_begin =
+        [&returned_tokens1](fuchsia_ui_composition::OnNextFrameBeginValues values) {
+          returned_tokens1 += values.additional_present_credits().value_or(0);
+        };
     uint32_t returned_tokens2 = 0;
-    flatland2.events().OnNextFrameBegin = [&](OnNextFrameBeginValues values) {
-      returned_tokens2 += values.additional_present_credits();
-    };
+    flatland2.events().on_next_frame_begin =
+        [&returned_tokens2](fuchsia_ui_composition::OnNextFrameBeginValues values) {
+          returned_tokens2 += values.additional_present_credits().value_or(0);
+        };
     PRESENT(flatland1, id1, true);
     PRESENT(flatland2, id2, true);
     const auto next_present_id1 = PopPendingPresent(id1);
@@ -739,10 +812,10 @@ TEST_F(FlatlandManagerTest, OnFramePresentedEvent) {
   RunLoopUntil([&info1] { return info1.has_value(); });
 
   // Verify that info1 contains the expected data.
-  EXPECT_EQ(zx::time(info1->actual_presentation_time), timestamps.presented_time);
-  EXPECT_EQ(info1->num_presents_allowed, 0ul);
-  EXPECT_EQ(info1->presentation_infos.size(), 1ul);
-  EXPECT_EQ(zx::time(info1->presentation_infos[0].latched_time()), latch_time1);
+  EXPECT_EQ(zx::time(info1->actual_presentation_time()), timestamps.presented_time);
+  EXPECT_EQ(info1->num_presents_allowed(), 0ul);
+  EXPECT_EQ(info1->presentation_infos().size(), 1ul);
+  EXPECT_EQ(zx::time(info1->presentation_infos()[0].latched_time().value()), latch_time1);
 
   // Run the loop again to show that info2 hasn't been populated.
   RunLoopUntilIdle();
@@ -773,16 +846,16 @@ TEST_F(FlatlandManagerTest, OnFramePresentedEvent) {
   RunLoopUntil([&info2] { return info2.has_value(); });
 
   // Verify that both infos contain the expected data.
-  EXPECT_EQ(zx::time(info1->actual_presentation_time), timestamps.presented_time);
-  EXPECT_EQ(info1->num_presents_allowed, 0ul);
-  EXPECT_EQ(info1->presentation_infos.size(), 1ul);
-  EXPECT_EQ(zx::time(info1->presentation_infos[0].latched_time()), latch_time1);
+  EXPECT_EQ(zx::time(info1->actual_presentation_time()), timestamps.presented_time);
+  EXPECT_EQ(info1->num_presents_allowed(), 0ul);
+  EXPECT_EQ(info1->presentation_infos().size(), 1ul);
+  EXPECT_EQ(zx::time(info1->presentation_infos()[0].latched_time().value()), latch_time1);
 
-  EXPECT_EQ(zx::time(info2->actual_presentation_time), timestamps.presented_time);
-  EXPECT_EQ(info2->num_presents_allowed, 0ul);
-  EXPECT_EQ(info2->presentation_infos.size(), 2ul);
-  EXPECT_EQ(zx::time(info2->presentation_infos[0].latched_time()), latch_time2_1);
-  EXPECT_EQ(zx::time(info2->presentation_infos[1].latched_time()), latch_time2_2);
+  EXPECT_EQ(zx::time(info2->actual_presentation_time()), timestamps.presented_time);
+  EXPECT_EQ(info2->num_presents_allowed(), 0ul);
+  EXPECT_EQ(info2->presentation_infos().size(), 2ul);
+  EXPECT_EQ(zx::time(info2->presentation_infos()[0].latched_time().value()), latch_time2_1);
+  EXPECT_EQ(zx::time(info2->presentation_infos()[1].latched_time().value()), latch_time2_2);
 
   // Call `OnFramePresented()` after the first session has terminated.
   //
@@ -796,13 +869,13 @@ TEST_F(FlatlandManagerTest, OnFramePresentedEvent) {
   PRESENT(flatland1, id1, true);
   PRESENT(flatland2, id2, true);
   EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(id1, _));
-  flatland1 = {};
+  flatland1.reset();
   FX_LOGS(INFO) << "Waiting for removal of session " << id1;
   RunLoopUntil([this, id1] {
     std::lock_guard lock(removed_session_thread_checker_);
     return removed_sessions_.find(id1) != removed_sessions_.end();
   });
-  info2 = {};
+  info2.reset();
   manager_->OnFramePresented({{id1, {{PopPendingPresent(id1), zx::time(789)}}},
                               {id2, {{PopPendingPresent(id2), zx::time(789)}}}},
                              scheduling::PresentTimestamps({
@@ -815,28 +888,24 @@ TEST_F(FlatlandManagerTest, OnFramePresentedEvent) {
 
 TEST_F(FlatlandManagerTest, SkipsOnFramePresentedComparison) {
   // Client 1: skips_on_frame_presented = true
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland1;
   flatland::FlatlandConfig config1;
   config1.skips_on_frame_presented = true;
-  const scheduling::SessionId id1 =
-      manager_->CreateFlatland(fidl::HLCPPToNatural(flatland1.NewRequest(dispatcher())), config1)
-          .value();
+  FlatlandClient flatland1 = CreateFlatland(config1);
+  const scheduling::SessionId id1 = uber_struct_system_->GetLatestInstanceId();
 
-  std::optional<fuchsia::scenic::scheduling::FramePresentedInfo> info1;
-  flatland1.events().OnFramePresented =
-      [&info1](fuchsia::scenic::scheduling::FramePresentedInfo info) { info1 = std::move(info); };
+  std::optional<fuchsia_scenic_scheduling::FramePresentedInfo> info1;
+  flatland1.events().on_frame_presented =
+      [&info1](fuchsia_scenic_scheduling::FramePresentedInfo info) { info1 = std::move(info); };
 
   // Client 2: skips_on_frame_presented = false
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland2;
   flatland::FlatlandConfig config2;
   config2.skips_on_frame_presented = false;
-  const scheduling::SessionId id2 =
-      manager_->CreateFlatland(fidl::HLCPPToNatural(flatland2.NewRequest(dispatcher())), config2)
-          .value();
+  FlatlandClient flatland2 = CreateFlatland(config2);
+  const scheduling::SessionId id2 = uber_struct_system_->GetLatestInstanceId();
 
-  std::optional<fuchsia::scenic::scheduling::FramePresentedInfo> info2;
-  flatland2.events().OnFramePresented =
-      [&info2](fuchsia::scenic::scheduling::FramePresentedInfo info) { info2 = std::move(info); };
+  std::optional<fuchsia_scenic_scheduling::FramePresentedInfo> info2;
+  flatland2.events().on_frame_presented =
+      [&info2](fuchsia_scenic_scheduling::FramePresentedInfo info) { info2 = std::move(info); };
 
   RunLoopUntilIdle();
 
@@ -873,26 +942,24 @@ TEST_F(FlatlandManagerTest, SkipsOnFramePresentedComparison) {
 
 TEST_F(FlatlandManagerTest, SkipsPresentCreditsComparison) {
   // Client 1: skips_present_credits = true
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland1;
   flatland::FlatlandConfig config1;
   config1.skips_present_credits = true;
-  const scheduling::SessionId id1 =
-      manager_->CreateFlatland(fidl::HLCPPToNatural(flatland1.NewRequest(dispatcher())), config1)
-          .value();
+  FlatlandClient flatland1 = CreateFlatland(config1);
+  const scheduling::SessionId id1 = uber_struct_system_->GetLatestInstanceId();
 
   bool began1 = false;
-  flatland1.events().OnNextFrameBegin = [&began1](OnNextFrameBeginValues values) { began1 = true; };
+  flatland1.events().on_next_frame_begin =
+      [&began1](fuchsia_ui_composition::OnNextFrameBeginValues values) { began1 = true; };
 
   // Client 2: skips_present_credits = false
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland2;
   flatland::FlatlandConfig config2;
   config2.skips_present_credits = false;
-  const scheduling::SessionId id2 =
-      manager_->CreateFlatland(fidl::HLCPPToNatural(flatland2.NewRequest(dispatcher())), config2)
-          .value();
+  FlatlandClient flatland2 = CreateFlatland(config2);
+  const scheduling::SessionId id2 = uber_struct_system_->GetLatestInstanceId();
 
   bool began2 = false;
-  flatland2.events().OnNextFrameBegin = [&began2](OnNextFrameBeginValues values) { began2 = true; };
+  flatland2.events().on_next_frame_begin =
+      [&began2](fuchsia_ui_composition::OnNextFrameBeginValues values) { began2 = true; };
 
   RunLoopUntilIdle();
 
@@ -919,32 +986,44 @@ TEST_F(FlatlandManagerTest, SkipsPresentCreditsComparison) {
 }
 
 TEST_F(FlatlandManagerTest, ViewBoundProtocolsAreRegistered) {
-  fuchsia::ui::views::ViewportCreationToken parent_token;
-  fuchsia::ui::views::ViewCreationToken child_token;
-  ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value, &child_token.value));
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> parent = CreateFlatland();
-  const fuchsia::ui::composition::ContentId kLinkId = {1};
-  fidl::InterfacePtr<fuchsia::ui::composition::ChildViewWatcher> child_view_watcher;
-  fuchsia::ui::composition::ViewportProperties properties;
-  properties.set_logical_size({1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
-                         child_view_watcher.NewRequest());
+  auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
+  FlatlandClient parent = CreateFlatland();
+  const fuchsia_ui_composition::ContentId kLinkId = {1};
+  auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+      fidl::Endpoints<fuchsia_ui_composition::ChildViewWatcher>::Create();
+  fuchsia_ui_composition::ViewportProperties properties;
+  properties.logical_size(fuchsia_math::SizeU(1, 2));
+  fuchsia_ui_composition::FlatlandCreateViewportRequest viewport_request;
+  viewport_request.viewport_id(kLinkId);
+  viewport_request.token(std::move(parent_token));
+  viewport_request.properties(std::move(properties));
+  viewport_request.child_view_watcher(std::move(child_view_watcher_server_end));
+  EXPECT_TRUE(parent->CreateViewport(std::move(viewport_request)).is_ok());
 
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> child = CreateFlatland();
+  FlatlandClient child = CreateFlatland();
 
-  fidl::InterfacePtr<fuchsia::ui::views::Focuser> view_focuser_ptr;
-  fidl::InterfacePtr<fuchsia::ui::views::ViewRefFocused> view_ref_focused_ptr;
-  fidl::InterfacePtr<fuchsia::ui::pointer::TouchSource> touch_source_ptr;
-  fidl::InterfacePtr<fuchsia::ui::pointer::MouseSource> mouse_source_ptr;
+  auto [view_focuser_client_end, view_focuser_server_end] =
+      fidl::Endpoints<fuchsia_ui_views::Focuser>::Create();
+  auto [view_ref_focused_client_end, view_ref_focused_server_end] =
+      fidl::Endpoints<fuchsia_ui_views::ViewRefFocused>::Create();
+  auto [touch_source_client_end, touch_source_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointer::TouchSource>::Create();
+  auto [mouse_source_client_end, mouse_source_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointer::MouseSource>::Create();
 
-  fidl::InterfacePtr<fuchsia::ui::composition::ParentViewportWatcher> parent_viewport_watcher;
-  fuchsia::ui::composition::ViewBoundProtocols protocols;
-  protocols.set_view_focuser(view_focuser_ptr.NewRequest())
-      .set_view_ref_focused(view_ref_focused_ptr.NewRequest())
-      .set_touch_source(touch_source_ptr.NewRequest())
-      .set_mouse_source(mouse_source_ptr.NewRequest());
-  child->CreateView2(std::move(child_token), scenic::NewViewIdentityOnCreation(),
-                     std::move(protocols), parent_viewport_watcher.NewRequest());
+  auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+      fidl::Endpoints<fuchsia_ui_composition::ParentViewportWatcher>::Create();
+  fuchsia_ui_composition::ViewBoundProtocols protocols;
+  protocols.view_focuser(std::move(view_focuser_server_end));
+  protocols.view_ref_focused(std::move(view_ref_focused_server_end));
+  protocols.touch_source(std::move(touch_source_server_end));
+  protocols.mouse_source(std::move(mouse_source_server_end));
+  fuchsia_ui_composition::FlatlandCreateView2Request view_request;
+  view_request.token(std::move(child_token));
+  view_request.view_identity(scenic::cpp::NewViewIdentityOnCreation());
+  view_request.protocols(std::move(protocols));
+  view_request.parent_viewport_watcher(std::move(parent_viewport_watcher_server_end));
+  EXPECT_TRUE(child->CreateView2(std::move(view_request)).is_ok());
 
   RunLoopUntil([this] {
     return view_focuser_registered_ && view_ref_focused_registered_ && touch_source_registered_ &&
@@ -953,32 +1032,44 @@ TEST_F(FlatlandManagerTest, ViewBoundProtocolsAreRegistered) {
 }
 
 TEST_F(FlatlandManagerTest, ViewBoundProtocolsV2AreRegistered) {
-  fuchsia::ui::views::ViewportCreationToken parent_token;
-  fuchsia::ui::views::ViewCreationToken child_token;
-  ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value, &child_token.value));
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> parent = CreateFlatland();
-  const fuchsia::ui::composition::ContentId kLinkId = {1};
-  fidl::InterfacePtr<fuchsia::ui::composition::ChildViewWatcher> child_view_watcher;
-  fuchsia::ui::composition::ViewportProperties properties;
-  properties.set_logical_size({1, 2});
-  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
-                         child_view_watcher.NewRequest());
+  auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
+  FlatlandClient parent = CreateFlatland();
+  const fuchsia_ui_composition::ContentId kLinkId = {1};
+  auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+      fidl::Endpoints<fuchsia_ui_composition::ChildViewWatcher>::Create();
+  fuchsia_ui_composition::ViewportProperties properties;
+  properties.logical_size(fuchsia_math::SizeU(1, 2));
+  fuchsia_ui_composition::FlatlandCreateViewportRequest viewport_request;
+  viewport_request.viewport_id(kLinkId);
+  viewport_request.token(std::move(parent_token));
+  viewport_request.properties(std::move(properties));
+  viewport_request.child_view_watcher(std::move(child_view_watcher_server_end));
+  EXPECT_TRUE(parent->CreateViewport(std::move(viewport_request)).is_ok());
 
-  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> child = CreateFlatland();
+  FlatlandClient child = CreateFlatland();
 
-  fidl::InterfacePtr<fuchsia::ui::views::Focuser> view_focuser_ptr;
-  fidl::InterfacePtr<fuchsia::ui::views::ViewRefFocused> view_ref_focused_ptr;
-  fidl::InterfacePtr<fuchsia::ui::pointer::TouchSourceV2> touch_source_v2_ptr;
-  fidl::InterfacePtr<fuchsia::ui::pointer::MouseSourceV2> mouse_source_v2_ptr;
+  auto [view_focuser_client_end, view_focuser_server_end] =
+      fidl::Endpoints<fuchsia_ui_views::Focuser>::Create();
+  auto [view_ref_focused_client_end, view_ref_focused_server_end] =
+      fidl::Endpoints<fuchsia_ui_views::ViewRefFocused>::Create();
+  auto [touch_source_v2_client_end, touch_source_v2_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointer::TouchSourceV2>::Create();
+  auto [mouse_source_v2_client_end, mouse_source_v2_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointer::MouseSourceV2>::Create();
 
-  fidl::InterfacePtr<fuchsia::ui::composition::ParentViewportWatcher> parent_viewport_watcher;
-  fuchsia::ui::composition::ViewBoundProtocols protocols;
-  protocols.set_view_focuser(view_focuser_ptr.NewRequest())
-      .set_view_ref_focused(view_ref_focused_ptr.NewRequest())
-      .set_touch_source_v2(touch_source_v2_ptr.NewRequest())
-      .set_mouse_source_v2(mouse_source_v2_ptr.NewRequest());
-  child->CreateView2(std::move(child_token), scenic::NewViewIdentityOnCreation(),
-                     std::move(protocols), parent_viewport_watcher.NewRequest());
+  auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+      fidl::Endpoints<fuchsia_ui_composition::ParentViewportWatcher>::Create();
+  fuchsia_ui_composition::ViewBoundProtocols protocols;
+  protocols.view_focuser(std::move(view_focuser_server_end));
+  protocols.view_ref_focused(std::move(view_ref_focused_server_end));
+  protocols.touch_source_v2(std::move(touch_source_v2_server_end));
+  protocols.mouse_source_v2(std::move(mouse_source_v2_server_end));
+  fuchsia_ui_composition::FlatlandCreateView2Request view_request;
+  view_request.token(std::move(child_token));
+  view_request.view_identity(scenic::cpp::NewViewIdentityOnCreation());
+  view_request.protocols(std::move(protocols));
+  view_request.parent_viewport_watcher(std::move(parent_viewport_watcher_server_end));
+  EXPECT_TRUE(child->CreateView2(std::move(view_request)).is_ok());
 
   RunLoopUntil([this] {
     return view_focuser_registered_ && view_ref_focused_registered_ &&
