@@ -11,7 +11,6 @@
 namespace scenic_impl::input {
 
 using PointerEventPhase = fuchsia::ui::input::PointerEventPhase;
-using GfxPointerEvent = fuchsia::ui::input::PointerEvent;
 
 std::pair<float, float> ReversePointerTraceHACK(trace_flow_id_t trace_id) {
   float fhigh, flow;
@@ -36,34 +35,6 @@ PointerEventPhase InternalPhaseToGfxPhase(Phase phase) {
       FX_CHECK(false) << "Should never be reached.";
       return static_cast<PointerEventPhase>(0);
   };
-}
-
-GfxPointerEvent InternalTouchEventToGfxPointerEvent(const InternalTouchEvent& internal_event,
-                                                    fuchsia::ui::input::PointerEventType type,
-                                                    uint64_t trace_id) {
-  GfxPointerEvent event;
-  event.event_time = internal_event.timestamp;
-  event.device_id = internal_event.device_id;
-  event.pointer_id = internal_event.pointer_id;
-  event.type = type;
-  event.buttons = internal_event.buttons;
-
-  // Convert to view-local coordinates.
-  FX_DCHECK(internal_event.viewport.receiver_from_viewport_transform.has_value());
-  const glm::mat4 view_from_viewport_transform = utils::ColumnMajorMat3ArrayToMat4(
-      internal_event.viewport.receiver_from_viewport_transform.value());
-  const glm::vec2 local_position = utils::TransformPointerCoords(
-      internal_event.position_in_viewport, view_from_viewport_transform);
-  event.x = local_position.x;
-  event.y = local_position.y;
-
-  const auto [high, low] = ReversePointerTraceHACK(trace_id);
-  event.radius_minor = low;   // Lower 32 bits.
-  event.radius_major = high;  // Upper 32 bits.
-
-  event.phase = InternalPhaseToGfxPhase(internal_event.phase);
-
-  return event;
 }
 
 }  // namespace scenic_impl::input

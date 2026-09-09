@@ -18,11 +18,6 @@ namespace scenic_impl::input {
 // No support for HOVER phase.
 fuchsia::ui::input::PointerEventPhase InternalPhaseToGfxPhase(Phase phase);
 
-// Turns an InternalTouchEvent into a gfx pointer event.
-// Does not support HOVER events.
-fuchsia::ui::input::PointerEvent InternalTouchEventToGfxPointerEvent(
-    const InternalTouchEvent& event, fuchsia::ui::input::PointerEventType type, uint64_t trace_id);
-
 // Returns the 2D-transform from the viewport space of |event| to the destination view space as
 // a mat3 in column-major array form.
 // Prereq: |destination| must exist in the |snapshot|.

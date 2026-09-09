@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.ui.pointerinjector/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointerinjector/cpp/wire.h>
-#include <fuchsia/ui/pointerinjector/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <lib/fpromise/single_threaded_executor.h>
 #include <lib/inspect/cpp/hierarchy.h>
@@ -22,17 +22,34 @@
 #include "src/ui/scenic/lib/utils/math.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 
-using Phase = fuchsia::ui::pointerinjector::EventPhase;
-using fuchsia::ui::pointerinjector::DevicePtr;
-using fuchsia::ui::pointerinjector::DeviceType;
-using InjectionEvent = fuchsia::ui::pointerinjector::Event;
+using Phase = fuchsia_ui_pointerinjector::EventPhase;
+using InjectionEvent = fuchsia_ui_pointerinjector::Event;
 using StreamId = scenic_impl::input::StreamId;
-
-// Unit tests for the Injector class.
 
 namespace input::test {
 
 namespace {
+
+class DeviceEventHandler : public fidl::AsyncEventHandler<fuchsia_ui_pointerinjector::Device> {
+ public:
+  DeviceEventHandler() = default;
+  explicit DeviceEventHandler(fit::function<void(fidl::UnbindInfo)> on_error)
+      : on_error_(std::move(on_error)) {}
+
+  void on_fidl_error(fidl::UnbindInfo error) override {
+    error_callback_fired = true;
+    status = error.status();
+    if (on_error_) {
+      on_error_(error);
+    }
+  }
+
+  bool error_callback_fired = false;
+  zx_status_t status = ZX_OK;
+
+ private:
+  fit::function<void(fidl::UnbindInfo)> on_error_;
+};
 
 // clang-format off
 static constexpr std::array<float, 9> kIdentityMatrix = {
@@ -71,29 +88,25 @@ std::shared_ptr<view_tree::SnapshotHolder> ValidSnapshotHolder() {
 scenic_impl::input::TouchInjector CreateTouchInjector(
     std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder, inspect::Node inspect_node,
     scenic_impl::input::InjectorSettings settings, scenic_impl::input::Viewport viewport,
-    fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Device> device,
+    fidl::ServerEnd<fuchsia_ui_pointerinjector::Device> device,
     fit::function<void(scenic_impl::input::InternalTouchEvent, StreamId stream_id,
                        const view_tree::Snapshot& snapshot)>
         inject,
     fit::function<void()> on_channel_closed = [] {}) {
   return scenic_impl::input::TouchInjector(
       std::move(snapshot_holder), std::move(inspect_node), std::move(settings), std::move(viewport),
-      fidl::ServerEnd<fuchsia_ui_pointerinjector::Device>(device.TakeChannel()), std::move(inject),
-      std::move(on_channel_closed));
+      std::move(device), std::move(inject), std::move(on_channel_closed));
 }
 
 InjectionEvent InjectionEventTemplate() {
+  fuchsia_ui_pointerinjector::PointerSample pointer_sample;
+  pointer_sample.pointer_id(2222);
+  pointer_sample.phase(Phase::kChange);
+  pointer_sample.position_in_viewport(std::array<float, 2>{333.f, 444.f});
+
   InjectionEvent event;
-  event.set_timestamp(1111);
-  {
-    fuchsia::ui::pointerinjector::PointerSample pointer_sample;
-    pointer_sample.set_pointer_id(2222);
-    pointer_sample.set_phase(Phase::CHANGE);
-    pointer_sample.set_position_in_viewport({333, 444});
-    fuchsia::ui::pointerinjector::Data data;
-    data.set_pointer_sample(std::move(pointer_sample));
-    event.set_data(std::move(data));
-  }
+  event.timestamp(1111);
+  event.data(fuchsia_ui_pointerinjector::Data::WithPointerSample(std::move(pointer_sample)));
   return event;
 }
 
@@ -103,12 +116,19 @@ class InjectorTestP : public gtest::TestLoopFixture, public testing::WithParamIn
  public:
   bool use_inject_events() const { return GetParam(); }
 
-  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
-              std::function<void()> callback) {
+  void Inject(fidl::Client<fuchsia_ui_pointerinjector::Device>& injector,
+              std::vector<InjectionEvent> events, std::function<void()> callback) {
     if (use_inject_events()) {
-      injector->InjectEvents(std::move(events));
+      auto result = injector->InjectEvents({{.events = std::move(events)}});
+      EXPECT_TRUE(result.is_ok());
     } else {
-      injector->Inject(std::move(events), std::move(callback));
+      injector->Inject({{.events = std::move(events)}})
+          .Then([callback = std::move(callback)](
+                    fidl::Result<fuchsia_ui_pointerinjector::Device::Inject>& result) {
+            if (result.is_ok()) {
+              callback();
+            }
+          });
     }
   }
 
@@ -120,23 +140,22 @@ INSTANTIATE_TEST_SUITE_P(InjectorTest, InjectorTestP, testing::Bool());
 
 TEST_P(InjectorTestP, InjectedEvents_ShouldTriggerTheInjectLambda) {
   // Set up an isolated Injector.
-  DevicePtr injector;
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
-  bool error_callback_fired = false;
-  injector.set_error_handler([&error_callback_fired](zx_status_t) { error_callback_fired = true; });
-
-  bool connectivity_is_good = true;
   uint32_t num_injections = 0;
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/[&num_injections](auto...) { ++num_injections; },
       /*on_channel_closed=*/[] {});
 
   {  // Inject one event.
     bool injection_callback_fired = false;
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
+    event.data()->pointer_sample()->phase(Phase::kAdd);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)},
@@ -153,7 +172,7 @@ TEST_P(InjectorTestP, InjectedEvents_ShouldTriggerTheInjectLambda) {
     bool injection_callback_fired = false;
     std::vector<InjectionEvent> events;
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
+    event.data()->pointer_sample()->phase(Phase::kChange);
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)},
            [&injection_callback_fired] { injection_callback_fired = true; });
@@ -169,7 +188,7 @@ TEST_P(InjectorTestP, InjectedEvents_ShouldTriggerTheInjectLambda) {
     bool injection_callback_fired = false;
     std::vector<InjectionEvent> events;
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_phase(Phase::REMOVE);
+    event.data()->pointer_sample()->phase(Phase::kRemove);
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)},
            [&injection_callback_fired] { injection_callback_fired = true; });
@@ -180,19 +199,19 @@ TEST_P(InjectorTestP, InjectedEvents_ShouldTriggerTheInjectLambda) {
   }
 
   EXPECT_EQ(num_injections, 3u);
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_callback_fired);
 }
 
 TEST_P(InjectorTestP, InjectionWithNoEvent_ShouldCloseChannel) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool error_callback_fired = false;
-  injector.set_error_handler([&error_callback_fired](zx_status_t) { error_callback_fired = true; });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/
       [](auto...) {},
       /*on_channel_closed=*/[] {});
@@ -203,20 +222,20 @@ TEST_P(InjectorTestP, InjectionWithNoEvent_ShouldCloseChannel) {
   RunLoopUntilIdle();
 
   EXPECT_FALSE(injection_callback_fired);
-  EXPECT_TRUE(error_callback_fired);
+  EXPECT_TRUE(event_handler.error_callback_fired);
 }
 
 TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngoingStream) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool error_callback_fired = false;
-  injector.set_error_handler([&error_callback_fired](zx_status_t) { error_callback_fired = true; });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   std::vector<uint32_t> cancelled_streams;
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/
       [&cancelled_streams](const scenic_impl::input::InternalTouchEvent& event, StreamId,
                            const view_tree::Snapshot&) {
@@ -228,32 +247,32 @@ TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngo
   // Start three streams and end one.
   {
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_pointer_id(1);
-    event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
+    event.data()->pointer_sample()->pointer_id(1);
+    event.data()->pointer_sample()->phase(Phase::kAdd);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)}, [] {});
   }
   {
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_pointer_id(2);
-    event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
+    event.data()->pointer_sample()->pointer_id(2);
+    event.data()->pointer_sample()->phase(Phase::kAdd);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)}, [] {});
   }
   {
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_pointer_id(3);
-    event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
+    event.data()->pointer_sample()->pointer_id(3);
+    event.data()->pointer_sample()->phase(Phase::kAdd);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)}, [] {});
   }
   {
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_pointer_id(1);
-    event.mutable_data()->pointer_sample().set_phase(Phase::REMOVE);
+    event.data()->pointer_sample()->pointer_id(1);
+    event.data()->pointer_sample()->phase(Phase::kRemove);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)}, [] {});
@@ -264,21 +283,21 @@ TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerCancelEvents_ForEachOngo
   RunLoopUntilIdle();
 
   // Should receive two CANCEL events, since there should be two ongoing streams.
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_callback_fired);
   EXPECT_THAT(cancelled_streams, testing::UnorderedElementsAre(2, 3));
 }
 
 TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerCancelEvents_ForEachOngoingStream) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool error_callback_fired = false;
-  injector.set_error_handler([&error_callback_fired](zx_status_t) { error_callback_fired = true; });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   std::vector<uint32_t> cancelled_streams;
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/
       [&cancelled_streams](const scenic_impl::input::InternalTouchEvent& event, StreamId,
                            const view_tree::Snapshot&) {
@@ -292,26 +311,26 @@ TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerCancelEvents_ForEachOngo
     std::vector<InjectionEvent> events;
     {
       InjectionEvent event = InjectionEventTemplate();
-      event.mutable_data()->pointer_sample().set_pointer_id(1);
-      event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
+      event.data()->pointer_sample()->pointer_id(1);
+      event.data()->pointer_sample()->phase(Phase::kAdd);
       events.emplace_back(std::move(event));
     }
     {
       InjectionEvent event = InjectionEventTemplate();
-      event.mutable_data()->pointer_sample().set_pointer_id(2);
-      event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
+      event.data()->pointer_sample()->pointer_id(2);
+      event.data()->pointer_sample()->phase(Phase::kAdd);
       events.emplace_back(std::move(event));
     }
     {
       InjectionEvent event = InjectionEventTemplate();
-      event.mutable_data()->pointer_sample().set_pointer_id(3);
-      event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
+      event.data()->pointer_sample()->pointer_id(3);
+      event.data()->pointer_sample()->phase(Phase::kAdd);
       events.emplace_back(std::move(event));
     }
     {
       InjectionEvent event = InjectionEventTemplate();
-      event.mutable_data()->pointer_sample().set_pointer_id(1);
-      event.mutable_data()->pointer_sample().set_phase(Phase::REMOVE);
+      event.data()->pointer_sample()->pointer_id(1);
+      event.data()->pointer_sample()->phase(Phase::kRemove);
       events.emplace_back(std::move(event));
     }
     Inject(injector, {std::move(events)}, [] {});
@@ -325,22 +344,22 @@ TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerCancelEvents_ForEachOngo
   }
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(error_callback_fired);
+  EXPECT_TRUE(event_handler.error_callback_fired);
   // Should receive CANCEL events for the two ongoing streams; 2 and 3.
   EXPECT_THAT(cancelled_streams, testing::UnorderedElementsAre(2, 3));
 }
 
 TEST_P(InjectorTestP, InjectionOfEmptyEvent_ShouldCloseChannel) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool error_callback_fired = false;
-  injector.set_error_handler([&error_callback_fired](auto) { error_callback_fired = true; });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   bool injection_lambda_fired = false;
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/
       [&injection_lambda_fired](auto...) { injection_lambda_fired = true; },
       /*on_channel_closed=*/[] {});
@@ -355,21 +374,20 @@ TEST_P(InjectorTestP, InjectionOfEmptyEvent_ShouldCloseChannel) {
 
   EXPECT_FALSE(injection_lambda_fired);
   EXPECT_FALSE(injection_callback_fired);
-  EXPECT_TRUE(error_callback_fired);
+  EXPECT_TRUE(event_handler.error_callback_fired);
 }
 
 TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerOnChannelClosedLambda) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool client_error_callback_fired = false;
-  injector.set_error_handler(
-      [&client_error_callback_fired](zx_status_t) { client_error_callback_fired = true; });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   bool on_channel_closed_callback_fired = false;
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/[](auto...) {},
       /*on_channel_closed=*/
       [&on_channel_closed_callback_fired] { on_channel_closed_callback_fired = true; });
@@ -378,24 +396,21 @@ TEST_P(InjectorTestP, ClientClosingChannel_ShouldTriggerOnChannelClosedLambda) {
   injector = {};
   RunLoopUntilIdle();
 
-  EXPECT_FALSE(client_error_callback_fired);
+  EXPECT_FALSE(event_handler.error_callback_fired);
   EXPECT_TRUE(on_channel_closed_callback_fired);
 }
 
 TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerOnChannelClosedLambda) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool client_error_callback_fired = false;
-  injector.set_error_handler([&client_error_callback_fired](zx_status_t status) {
-    EXPECT_EQ(status, ZX_ERR_INVALID_ARGS);
-    client_error_callback_fired = true;
-  });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   bool on_channel_closed_callback_fired = false;
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/[](auto...) {},
       /*on_channel_closed=*/
       [&on_channel_closed_callback_fired] { on_channel_closed_callback_fired = true; });
@@ -408,26 +423,23 @@ TEST_P(InjectorTestP, ServerClosingChannel_ShouldTriggerOnChannelClosedLambda) {
   }
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client_error_callback_fired);
+  EXPECT_TRUE(event_handler.error_callback_fired);
+  EXPECT_EQ(event_handler.status, ZX_ERR_INVALID_ARGS);
   EXPECT_TRUE(on_channel_closed_callback_fired);
 }
 
 TEST_P(InjectorTestP, InjectionWithBadConnectivity_ShouldCloseChannel) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool error_callback_fired = false;
-  zx_status_t error = ZX_OK;
-  injector.set_error_handler([&error_callback_fired, &error](zx_status_t status) {
-    error_callback_fired = true;
-    error = status;
-  });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   auto holder = ValidSnapshotHolder();
   uint32_t num_cancel_events = 0;
   auto injector_impl = CreateTouchInjector(
       holder, inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/
       [&num_cancel_events](const scenic_impl::input::InternalTouchEvent& event, StreamId,
                            const view_tree::Snapshot&) {
@@ -438,8 +450,8 @@ TEST_P(InjectorTestP, InjectionWithBadConnectivity_ShouldCloseChannel) {
   // Start event stream while connectivity is good.
   {
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
-    event.mutable_data()->pointer_sample().set_pointer_id(1);
+    event.data()->pointer_sample()->phase(Phase::kAdd);
+    event.data()->pointer_sample()->pointer_id(1);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)}, [] {});
@@ -447,7 +459,7 @@ TEST_P(InjectorTestP, InjectionWithBadConnectivity_ShouldCloseChannel) {
   }
 
   // Connectivity was good. No problems.
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_callback_fired);
 
   // Inject with bad connectivity.
   {
@@ -456,7 +468,7 @@ TEST_P(InjectorTestP, InjectionWithBadConnectivity_ShouldCloseChannel) {
     holder->SetSnapshot(bad_snapshot);
     bool injection_callback_fired = false;
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
+    event.data()->pointer_sample()->phase(Phase::kChange);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)},
@@ -468,8 +480,8 @@ TEST_P(InjectorTestP, InjectionWithBadConnectivity_ShouldCloseChannel) {
   // Connectivity was bad, so channel should be closed and an extra CANCEL event should have been
   // injected for each ongoing stream.
   EXPECT_EQ(num_cancel_events, 1u);
-  EXPECT_TRUE(error_callback_fired);
-  EXPECT_EQ(error, ZX_ERR_BAD_STATE);
+  EXPECT_TRUE(event_handler.error_callback_fired);
+  EXPECT_EQ(event_handler.status, ZX_ERR_BAD_STATE);
 }
 
 // Class for testing parameterized injection of invalid events.
@@ -480,12 +492,19 @@ class InjectorInvalidEventsTest : public gtest::TestLoopFixture,
   int GetMissingField() const { return std::get<0>(GetParam()); }
   bool use_inject_events() const { return std::get<1>(GetParam()); }
 
-  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
-              std::function<void()> callback) {
+  void Inject(fidl::Client<fuchsia_ui_pointerinjector::Device>& injector,
+              std::vector<InjectionEvent> events, std::function<void()> callback) {
     if (use_inject_events()) {
-      injector->InjectEvents(std::move(events));
+      auto result = injector->InjectEvents({{.events = std::move(events)}});
+      EXPECT_TRUE(result.is_ok());
     } else {
-      injector->Inject(std::move(events), std::move(callback));
+      injector->Inject({{.events = std::move(events)}})
+          .Then([callback = std::move(callback)](
+                    fidl::Result<fuchsia_ui_pointerinjector::Device::Inject>& result) {
+            if (result.is_ok()) {
+              callback();
+            }
+          });
     }
   }
 
@@ -497,32 +516,36 @@ INSTANTIATE_TEST_SUITE_P(InjectEventWithMissingField_ShouldCloseChannel, Injecto
                          testing::Combine(testing::Range(0, 3), testing::Bool()));
 
 TEST_P(InjectorInvalidEventsTest, InjectEventWithMissingField_ShouldCloseChannel) {
-  InjectionEvent event = InjectionEventTemplate();
+  fuchsia_ui_pointerinjector::PointerSample pointer_sample;
+  pointer_sample.pointer_id(2222);
+  pointer_sample.phase(Phase::kChange);
+  pointer_sample.position_in_viewport(std::array<float, 2>{333.f, 444.f});
+
   switch (GetMissingField()) {
     case 0:
-      event.mutable_data()->pointer_sample().clear_pointer_id();
+      pointer_sample.pointer_id().reset();
       break;
     case 1:
-      event.mutable_data()->pointer_sample().clear_phase();
+      pointer_sample.phase().reset();
       break;
     case 2:
-      event.mutable_data()->pointer_sample().clear_position_in_viewport();
+      pointer_sample.position_in_viewport().reset();
       break;
   }
 
-  // Set up an isolated Injector.
-  DevicePtr injector;
+  InjectionEvent event;
+  event.timestamp(1111);
+  event.data(fuchsia_ui_pointerinjector::Data::WithPointerSample(std::move(pointer_sample)));
 
-  bool error_callback_fired = false;
-  zx_status_t error = ZX_OK;
-  injector.set_error_handler([&error_callback_fired, &error](zx_status_t status) {
-    error_callback_fired = true;
-    error = status;
-  });
+  // Set up an isolated Injector.
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/
       [](auto...) {},
       /*on_channel_closed=*/[] {});
@@ -535,8 +558,8 @@ TEST_P(InjectorInvalidEventsTest, InjectEventWithMissingField_ShouldCloseChannel
   RunLoopUntilIdle();
 
   EXPECT_FALSE(injection_callback_fired);
-  EXPECT_TRUE(error_callback_fired);
-  EXPECT_EQ(error, ZX_ERR_INVALID_ARGS);
+  EXPECT_TRUE(event_handler.error_callback_fired);
+  EXPECT_EQ(event_handler.status, ZX_ERR_INVALID_ARGS);
 }
 
 // Class for testing different event streams.
@@ -550,12 +573,19 @@ class InjectorGoodEventStreamTest
   std::vector<std::pair<uint32_t, Phase>> GetEventStream() const { return std::get<0>(GetParam()); }
   bool use_inject_events() const { return std::get<1>(GetParam()); }
 
-  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
-              std::function<void()> callback) {
+  void Inject(fidl::Client<fuchsia_ui_pointerinjector::Device>& injector,
+              std::vector<InjectionEvent> events, std::function<void()> callback) {
     if (use_inject_events()) {
-      injector->InjectEvents(std::move(events));
+      auto result = injector->InjectEvents({{.events = std::move(events)}});
+      EXPECT_TRUE(result.is_ok());
     } else {
-      injector->Inject(std::move(events), std::move(callback));
+      injector->Inject({{.events = std::move(events)}})
+          .Then([callback = std::move(callback)](
+                    fidl::Result<fuchsia_ui_pointerinjector::Device::Inject>& result) {
+            if (result.is_ok()) {
+              callback();
+            }
+          });
     }
   }
 
@@ -566,14 +596,14 @@ class InjectorGoodEventStreamTest
 static std::vector<std::vector<std::pair<uint32_t, Phase>>> GoodStreamTestData() {
   // clang-format off
   return {
-    {{1, Phase::ADD}, {1, Phase::REMOVE}},                         // 0: one pointer trivial
-    {{1, Phase::ADD}, {1, Phase::CHANGE}, {1, Phase::REMOVE}},     // 1: one pointer minimal all phases
-    {{1, Phase::ADD}, {1, Phase::CANCEL}},                         // 2: one pointer trivial cancelled
-    {{1, Phase::ADD}, {1, Phase::CHANGE}, {1, Phase::CANCEL}},     // 3: one pointer minimal all phases cancelled
-    {{1, Phase::ADD}, {1, Phase::CHANGE}, {1, Phase::CANCEL},
-     {2, Phase::ADD}, {2, Phase::CHANGE}, {2, Phase::CANCEL}},     // 4: two pointers successive streams
-    {{2, Phase::ADD},    {1, Phase::ADD},    {2, Phase::CHANGE},
-     {1, Phase::CHANGE}, {1, Phase::CANCEL}, {2, Phase::CANCEL}},  // 5: two pointer interleaved
+    {{1, Phase::kAdd}, {1, Phase::kRemove}},                         // 0: one pointer trivial
+    {{1, Phase::kAdd}, {1, Phase::kChange}, {1, Phase::kRemove}},     // 1: one pointer minimal all phases
+    {{1, Phase::kAdd}, {1, Phase::kCancel}},                         // 2: one pointer trivial cancelled
+    {{1, Phase::kAdd}, {1, Phase::kChange}, {1, Phase::kCancel}},     // 3: one pointer minimal all phases cancelled
+    {{1, Phase::kAdd}, {1, Phase::kChange}, {1, Phase::kCancel},
+     {2, Phase::kAdd}, {2, Phase::kChange}, {2, Phase::kCancel}},     // 4: two pointers successive streams
+    {{2, Phase::kAdd},    {1, Phase::kAdd},    {2, Phase::kChange},
+     {1, Phase::kChange}, {1, Phase::kCancel}, {2, Phase::kCancel}},  // 5: two pointer interleaved
   };
   // clang-format on
 }
@@ -592,27 +622,25 @@ INSTANTIATE_TEST_SUITE_P(InjectionWithGoodEventStream_ShouldHaveNoProblems_Separ
 TEST_P(InjectorGoodEventStreamTest,
        InjectionWithGoodEventStream_ShouldHaveNoProblems_CombinedEvents) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool error_callback_fired = false;
-  injector.set_error_handler([&error_callback_fired](zx_status_t) { error_callback_fired = true; });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
-      /*inject=*/
-      [](auto...) {},
+      std::move(endpoints.server),
+      /*inject=*/[](auto...) {},
       /*on_channel_closed=*/[] {});
 
+  bool injection_callback_fired = false;
   std::vector<InjectionEvent> events;
   for (auto [pointer_id, phase] : GetEventStream()) {
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_pointer_id(pointer_id);
-    event.mutable_data()->pointer_sample().set_phase(phase);
+    event.data()->pointer_sample()->pointer_id(pointer_id);
+    event.data()->pointer_sample()->phase(phase);
     events.emplace_back(std::move(event));
   }
-
-  bool injection_callback_fired = false;
   Inject(injector, {std::move(events)},
          [&injection_callback_fired] { injection_callback_fired = true; });
   RunLoopUntilIdle();
@@ -620,21 +648,21 @@ TEST_P(InjectorGoodEventStreamTest,
   if (!use_inject_events()) {
     EXPECT_TRUE(injection_callback_fired);
   }
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_callback_fired);
 }
 
 // Inject a valid event stream in multiple Inject() calls.
 TEST_P(InjectorGoodEventStreamTest,
        InjectionWithGoodEventStream_ShouldHaveNoProblems_SeparateEvents) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool error_callback_fired = false;
-  injector.set_error_handler([&error_callback_fired](zx_status_t) { error_callback_fired = true; });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/
       [](auto...) {},
       /*on_channel_closed=*/[] {});
@@ -642,8 +670,8 @@ TEST_P(InjectorGoodEventStreamTest,
   for (auto [pointer_id, phase] : GetEventStream()) {
     bool injection_callback_fired = false;
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_pointer_id(pointer_id);
-    event.mutable_data()->pointer_sample().set_phase(phase);
+    event.data()->pointer_sample()->pointer_id(pointer_id);
+    event.data()->pointer_sample()->phase(phase);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)},
@@ -653,7 +681,7 @@ TEST_P(InjectorGoodEventStreamTest,
     if (!use_inject_events()) {
       EXPECT_TRUE(injection_callback_fired);
     }
-    ASSERT_FALSE(error_callback_fired);
+    ASSERT_FALSE(event_handler.error_callback_fired);
   }
 }
 
@@ -668,12 +696,19 @@ class InjectorBadEventStreamTest
   std::vector<std::pair<uint32_t, Phase>> GetEventStream() const { return std::get<0>(GetParam()); }
   bool use_inject_events() const { return std::get<1>(GetParam()); }
 
-  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
-              std::function<void()> callback) {
+  void Inject(fidl::Client<fuchsia_ui_pointerinjector::Device>& injector,
+              std::vector<InjectionEvent> events, std::function<void()> callback) {
     if (use_inject_events()) {
-      injector->InjectEvents(std::move(events));
+      auto result = injector->InjectEvents({{.events = std::move(events)}});
+      EXPECT_TRUE(result.is_ok());
     } else {
-      injector->Inject(std::move(events), std::move(callback));
+      injector->Inject({{.events = std::move(events)}})
+          .Then([callback = std::move(callback)](
+                    fidl::Result<fuchsia_ui_pointerinjector::Device::Inject>& result) {
+            if (result.is_ok()) {
+              callback();
+            }
+          });
     }
   }
 
@@ -684,16 +719,16 @@ class InjectorBadEventStreamTest
 static std::vector<std::vector<std::pair<uint32_t, Phase>>> BadStreamTestData() {
   // clang-format off
   return {
-    {{1, Phase::CHANGE}},                                       // 0: one pointer non-add initial event
-    {{1, Phase::REMOVE}},                                       // 1: one pointer non-add initial event
-    {{1, Phase::ADD}, {1, Phase::ADD}},                         // 2: one pointer double add
-    {{1, Phase::ADD}, {1, Phase::CHANGE}, {1, Phase::ADD}},     // 3: one pointer double add mid-stream
-    {{1, Phase::ADD}, {1, Phase::REMOVE}, {1, Phase::REMOVE}},  // 4: one pointer double remove
-    {{1, Phase::ADD}, {1, Phase::REMOVE}, {1, Phase::CHANGE}},  // 5: one pointer event after remove
-    {{1, Phase::ADD}, {1, Phase::CHANGE},
-     {1, Phase::REMOVE}, {2, Phase::ADD}, {2, Phase::ADD}},     // 6: two pointer faulty stream after correct stream
-    {{1, Phase::ADD}, {2, Phase::ADD},
-     {2, Phase::CHANGE}, {2, Phase::REMOVE}, {1, Phase::ADD}},  // 7  two pointer faulty stream interleaved with correct stream
+    {{1, Phase::kChange}},                                       // 0: one pointer non-add initial event
+    {{1, Phase::kRemove}},                                       // 1: one pointer non-add initial event
+    {{1, Phase::kAdd}, {1, Phase::kAdd}},                         // 2: one pointer double add
+    {{1, Phase::kAdd}, {1, Phase::kChange}, {1, Phase::kAdd}},     // 3: one pointer double add mid-stream
+    {{1, Phase::kAdd}, {1, Phase::kRemove}, {1, Phase::kRemove}},  // 4: one pointer double remove
+    {{1, Phase::kAdd}, {1, Phase::kRemove}, {1, Phase::kChange}},  // 5: one pointer event after remove
+    {{1, Phase::kAdd}, {1, Phase::kChange},
+     {1, Phase::kRemove}, {2, Phase::kAdd}, {2, Phase::kAdd}},     // 6: two pointer faulty stream after correct stream
+    {{1, Phase::kAdd}, {2, Phase::kAdd},
+     {2, Phase::kChange}, {2, Phase::kRemove}, {1, Phase::kAdd}},  // 7  two pointer faulty stream interleaved with correct stream
   };
   // clang-format on
 }
@@ -709,97 +744,83 @@ INSTANTIATE_TEST_SUITE_P(InjectionWithBadEventStream_ShouldCloseChannel_Separate
 // Inject an invalid event stream in a single Inject() call.
 TEST_P(InjectorBadEventStreamTest, InjectionWithBadEventStream_ShouldCloseChannel_CombinedEvents) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool error_callback_fired = false;
-  zx_status_t error = ZX_OK;
-  injector.set_error_handler([&error_callback_fired, &error](zx_status_t status) {
-    error_callback_fired = true;
-    error = status;
-  });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/[](auto...) {},
       /*on_channel_closed=*/[] {});
-
-  InjectionEvent event = InjectionEventTemplate();
 
   // Run event stream.
   std::vector<InjectionEvent> events;
   for (auto [pointer_id, phase] : GetEventStream()) {
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_pointer_id(pointer_id);
-    event.mutable_data()->pointer_sample().set_phase(phase);
+    event.data()->pointer_sample()->pointer_id(pointer_id);
+    event.data()->pointer_sample()->phase(phase);
     events.emplace_back(std::move(event));
   }
   Inject(injector, {std::move(events)}, [] {});
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(error_callback_fired);
-  EXPECT_EQ(error, ZX_ERR_BAD_STATE);
+  EXPECT_TRUE(event_handler.error_callback_fired);
+  EXPECT_EQ(event_handler.status, ZX_ERR_BAD_STATE);
 }
 
 // Inject an invalid event stream in multiple Inject() calls.
 TEST_P(InjectorBadEventStreamTest, InjectionWithBadEventStream_ShouldCloseChannel_SeparateEvents) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool error_callback_fired = false;
-  zx_status_t error = ZX_OK;
-  injector.set_error_handler([&error_callback_fired, &error](zx_status_t status) {
-    error_callback_fired = true;
-    error = status;
-  });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/[](auto...) {},
       /*on_channel_closed=*/[] {});
 
   // Run event stream.
   for (auto [pointer_id, phase] : GetEventStream()) {
     InjectionEvent event = InjectionEventTemplate();
-    event.mutable_data()->pointer_sample().set_pointer_id(pointer_id);
-    event.mutable_data()->pointer_sample().set_phase(phase);
+    event.data()->pointer_sample()->pointer_id(pointer_id);
+    event.data()->pointer_sample()->phase(phase);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector, {std::move(events)}, [] {});
     RunLoopUntilIdle();
   }
 
-  EXPECT_TRUE(error_callback_fired);
-  EXPECT_EQ(error, ZX_ERR_BAD_STATE);
+  EXPECT_TRUE(event_handler.error_callback_fired);
+  EXPECT_EQ(event_handler.status, ZX_ERR_BAD_STATE);
 }
 
 TEST_P(InjectorTestP, InjectedViewport_ShouldNotTriggerInjectLambda) {
   // Set up an isolated Injector.
-  DevicePtr injector;
-
-  bool error_callback_fired = false;
-  injector.set_error_handler([&error_callback_fired](zx_status_t) { error_callback_fired = true; });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   bool inject_lambda_fired = false;
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/[&inject_lambda_fired](auto...) { inject_lambda_fired = true; },
       /*on_channel_closed=*/[] {});
 
   {
     bool injection_callback_fired = false;
+    fuchsia_ui_pointerinjector::Viewport viewport;
+    viewport.extents(std::array<std::array<float, 2>, 2>{{{-242.f, -383.f}, {124.f, 252.f}}});
+    viewport.viewport_to_context_transform(kIdentityMatrix);
     InjectionEvent event;
-    event.set_timestamp(1);
-    {
-      fuchsia::ui::pointerinjector::Viewport viewport;
-      viewport.set_extents({{{-242, -383}, {124, 252}}});
-      viewport.set_viewport_to_context_transform(kIdentityMatrix);
-      fuchsia::ui::pointerinjector::Data data;
-      data.set_viewport(std::move(viewport));
-      event.set_data(std::move(data));
-    }
+    event.timestamp(1);
+    event.data(fuchsia_ui_pointerinjector::Data::WithViewport(std::move(viewport)));
 
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
@@ -814,7 +835,7 @@ TEST_P(InjectorTestP, InjectedViewport_ShouldNotTriggerInjectLambda) {
   RunLoopUntilIdle();
 
   EXPECT_FALSE(inject_lambda_fired);
-  EXPECT_FALSE(error_callback_fired);
+  EXPECT_FALSE(event_handler.error_callback_fired);
 }
 
 // Parameterized tests for malformed viewport arguments.
@@ -827,12 +848,19 @@ class InjectorBadViewportTest : public gtest::TestLoopFixture,
   ViewportPair GetViewportPair() const { return std::get<0>(GetParam()); }
   bool use_inject_events() const { return std::get<1>(GetParam()); }
 
-  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
-              std::function<void()> callback) {
+  void Inject(fidl::Client<fuchsia_ui_pointerinjector::Device>& injector,
+              std::vector<InjectionEvent> events, std::function<void()> callback) {
     if (use_inject_events()) {
-      injector->InjectEvents(std::move(events));
+      auto result = injector->InjectEvents({{.events = std::move(events)}});
+      EXPECT_TRUE(result.is_ok());
     } else {
-      injector->Inject(std::move(events), std::move(callback));
+      injector->Inject({{.events = std::move(events)}})
+          .Then([callback = std::move(callback)](
+                    fidl::Result<fuchsia_ui_pointerinjector::Device::Inject>& result) {
+            if (result.is_ok()) {
+              callback();
+            }
+          });
     }
   }
 
@@ -853,28 +881,24 @@ static std::vector<ViewportPair> BadViewportTestData() {
     bad_viewports.emplace_back(pair);
   }
   {  // 2: Malformed extents: Min bigger than max.
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
     pair.first = {{/*min*/ {-100, 100}, /*max*/ {100, -100}}};
     pair.second = kIdentityMatrix;
     bad_viewports.emplace_back(pair);
   }
   {  // 3: Malformed extents: Min equal to max.
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
     pair.first = {{/*min*/ {0, -100}, /*max*/ {0, 100}}};
     pair.second = kIdentityMatrix;
     bad_viewports.emplace_back(pair);
   }
   {  // 4: Malformed extents: Contains NaN
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
     pair.first = {{/*min*/ {0, 0}, /*max*/ {100, std::numeric_limits<double>::quiet_NaN()}}};
     pair.second = kIdentityMatrix;
     bad_viewports.emplace_back(pair);
   }
   {  // 5: Malformed extents: Contains Inf
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
     pair.first = {{/*min*/ {0, 0}, /*max*/ {100, std::numeric_limits<double>::infinity()}}};
     pair.second = kIdentityMatrix;
@@ -888,7 +912,6 @@ static std::vector<ViewportPair> BadViewportTestData() {
       0, 0, 1,
     };
     // clang-format on
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
     pair.first = {{{/*min*/ {0, 0}, /*max*/ {10, 10}}}};
     pair.second = non_invertible_matrix;
@@ -902,7 +925,6 @@ static std::vector<ViewportPair> BadViewportTestData() {
       0, 0, 1,
     };
     // clang-format on
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
     pair.first = {{{/*min*/ {0, 0}, /*max*/ {10, 10}}}};
     pair.second = nan_matrix;
@@ -916,13 +938,11 @@ static std::vector<ViewportPair> BadViewportTestData() {
       0, 0, 1,
     };
     // clang-format on
-    fuchsia::ui::pointerinjector::Viewport viewport;
     ViewportPair pair;
     pair.first = {{{/*min*/ {0, 0}, /*max*/ {10, 10}}}};
     pair.second = inf_matrix;
     bad_viewports.emplace_back(pair);
   }
-
   return bad_viewports;
 }
 
@@ -931,30 +951,27 @@ INSTANTIATE_TEST_SUITE_P(InjectBadViewport_ShouldCloseChannel, InjectorBadViewpo
                                           testing::Bool()));
 
 TEST_P(InjectorBadViewportTest, InjectBadViewport_ShouldCloseChannel) {
-  DevicePtr injector;
-  bool error_callback_fired = false;
-  injector.set_error_handler([&error_callback_fired](zx_status_t) { error_callback_fired = true; });
+  DeviceEventHandler event_handler;
+  auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector(std::move(endpoints.client),
+                                                            dispatcher(), &event_handler);
 
   bool inject_lambda_fired = false;
   auto injector_impl = CreateTouchInjector(
       ValidSnapshotHolder(), inspect::Node(), InjectorSettingsTemplate(), ViewportTemplate(),
-      injector.NewRequest(),
+      std::move(endpoints.server),
       /*inject=*/[&inject_lambda_fired](auto...) { inject_lambda_fired = true; },
       /*on_channel_closed=*/[] {});
 
   InjectionEvent event;
-  {
-    event.set_timestamp(1);
-    fuchsia::ui::pointerinjector::Data data;
-    ViewportPair params = GetViewportPair();
-    fuchsia::ui::pointerinjector::Viewport viewport;
-    if (params.first)
-      viewport.set_extents(params.first.value());
-    if (params.second)
-      viewport.set_viewport_to_context_transform(params.second.value());
-    data.set_viewport(std::move(viewport));
-    event.set_data(std::move(data));
-  }
+  event.timestamp(1);
+  ViewportPair params = GetViewportPair();
+  fuchsia_ui_pointerinjector::Viewport viewport;
+  if (params.first)
+    viewport.extents(params.first.value());
+  if (params.second)
+    viewport.viewport_to_context_transform(params.second.value());
+  event.data(fuchsia_ui_pointerinjector::Data::WithViewport(std::move(viewport)));
 
   std::vector<InjectionEvent> events;
   events.emplace_back(std::move(event));
@@ -964,7 +981,7 @@ TEST_P(InjectorBadViewportTest, InjectBadViewport_ShouldCloseChannel) {
 
   RunLoopUntilIdle();
   EXPECT_FALSE(injection_callback_fired);
-  EXPECT_TRUE(error_callback_fired);
+  EXPECT_TRUE(event_handler.error_callback_fired);
 }
 
 class InjectorInspectionTest : public gtest::TestLoopFixture,
@@ -972,21 +989,29 @@ class InjectorInspectionTest : public gtest::TestLoopFixture,
  public:
   bool use_inject_events() const { return GetParam(); }
 
-  void Inject(DevicePtr& injector, std::vector<InjectionEvent> events,
-              std::function<void()> callback) {
+  void Inject(fidl::Client<fuchsia_ui_pointerinjector::Device>& injector,
+              std::vector<InjectionEvent> events, std::function<void()> callback) {
     if (use_inject_events()) {
-      injector->InjectEvents(std::move(events));
+      auto result = injector->InjectEvents({{.events = std::move(events)}});
+      EXPECT_TRUE(result.is_ok());
     } else {
-      injector->Inject(std::move(events), std::move(callback));
+      injector->Inject({{.events = std::move(events)}})
+          .Then([callback = std::move(callback)](
+                    fidl::Result<fuchsia_ui_pointerinjector::Device::Inject>& result) {
+            if (result.is_ok()) {
+              callback();
+            }
+          });
     }
   }
 
  protected:
   void SetUp() override {
+    auto endpoints = fidl::Endpoints<fuchsia_ui_pointerinjector::Device>::Create();
+    injector_.Bind(std::move(endpoints.client), dispatcher(), &event_handler_);
     injector_impl_.emplace(
         ValidSnapshotHolder(), inspector_.GetRoot().CreateChild("injector"),
-        InjectorSettingsTemplate(), ViewportTemplate(),
-        fidl::ServerEnd<fuchsia_ui_pointerinjector::Device>(injector_.NewRequest().TakeChannel()),
+        InjectorSettingsTemplate(), ViewportTemplate(), std::move(endpoints.server),
         /*inject=*/[this](auto...) { ++num_injections_; },
         /*on_channel_closed=*/[] {});
   }
@@ -1016,7 +1041,6 @@ class InjectorInspectionTest : public gtest::TestLoopFixture,
       return count->value();
     } else {
       FX_LOGS(INFO) << "Found no data for minute " << minute;
-      ;
       return 0;
     }
   }
@@ -1035,7 +1059,8 @@ class InjectorInspectionTest : public gtest::TestLoopFixture,
       "Last " + std::to_string(scenic_impl::input::InjectorInspector::kNumMinutesOfHistory) +
       " minutes of injected events";
   inspect::Inspector inspector_;
-  DevicePtr injector_;
+  DeviceEventHandler event_handler_;
+  fidl::Client<fuchsia_ui_pointerinjector::Device> injector_;
   uint64_t num_injections_ = 0;
   std::optional<scenic_impl::input::TouchInjector> injector_impl_;
   utils::ScopedThreadDispatcherSetter dispatcher_setter_{dispatcher(), dispatcher()};
@@ -1049,18 +1074,14 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
 
   const uint64_t start_minute = Now().get() / zx::min(1).get();
 
-  bool error_callback_fired = false;
-  injector_.set_error_handler(
-      [&error_callback_fired](zx_status_t) { error_callback_fired = true; });
-
   EXPECT_EQ(GetInjectionsAtMinute(start_minute), 0u);
   EXPECT_EQ(GetTotalInjections(), 0u);
 
   // Inject events. Each one should register in inspect.
   {
     InjectionEvent event = InjectionEventTemplate();
-    event.set_timestamp(Now().get());
-    event.mutable_data()->pointer_sample().set_phase(Phase::ADD);
+    event.timestamp(Now().get());
+    event.data()->pointer_sample()->phase(Phase::kAdd);
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
     Inject(injector_, {std::move(events)}, [] {});
@@ -1073,8 +1094,8 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
   {
     std::vector<InjectionEvent> events;
     InjectionEvent event = InjectionEventTemplate();
-    event.set_timestamp(Now().get());
-    event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
+    event.timestamp(Now().get());
+    event.data()->pointer_sample()->phase(Phase::kChange);
     events.emplace_back(std::move(event));
     Inject(injector_, {std::move(events)}, [] {});
     RunLoopUntilIdle();
@@ -1086,8 +1107,8 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
   {
     std::vector<InjectionEvent> events;
     InjectionEvent event = InjectionEventTemplate();
-    event.set_timestamp(Now().get());
-    event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
+    event.timestamp(Now().get());
+    event.data()->pointer_sample()->phase(Phase::kChange);
     events.emplace_back(std::move(event));
     Inject(injector_, {std::move(events)}, [] {});
     RunLoopUntilIdle();
@@ -1097,16 +1118,12 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
   EXPECT_EQ(GetTotalInjections(), 3u);
 
   {  // Inject VIEWPORT event. It should not be reflected in the injection stats.
+    fuchsia_ui_pointerinjector::Viewport viewport;
+    viewport.extents(std::array<std::array<float, 2>, 2>{{{-242.f, -383.f}, {124.f, 252.f}}});
+    viewport.viewport_to_context_transform(kIdentityMatrix);
     InjectionEvent event;
-    event.set_timestamp(1);
-    {
-      fuchsia::ui::pointerinjector::Viewport viewport;
-      viewport.set_extents({{{-242, -383}, {124, 252}}});
-      viewport.set_viewport_to_context_transform(kIdentityMatrix);
-      fuchsia::ui::pointerinjector::Data data;
-      data.set_viewport(std::move(viewport));
-      event.set_data(std::move(data));
-    }
+    event.timestamp(1);
+    event.data(fuchsia_ui_pointerinjector::Data::WithViewport(std::move(viewport)));
 
     std::vector<InjectionEvent> events;
     events.emplace_back(std::move(event));
@@ -1122,8 +1139,8 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
   {
     std::vector<InjectionEvent> events;
     InjectionEvent event = InjectionEventTemplate();
-    event.set_timestamp(Now().get());
-    event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
+    event.timestamp(Now().get());
+    event.data()->pointer_sample()->phase(Phase::kChange);
     events.emplace_back(std::move(event));
     Inject(injector_, {std::move(events)}, [] {});
     RunLoopUntilIdle();
@@ -1146,14 +1163,14 @@ TEST_P(InjectorInspectionTest, InspectHistory) {
     std::vector<InjectionEvent> events;
     {
       InjectionEvent event = InjectionEventTemplate();
-      event.set_timestamp(Now().get());
-      event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
+      event.timestamp(Now().get());
+      event.data()->pointer_sample()->phase(Phase::kChange);
       events.emplace_back(std::move(event));
     }
     {
       InjectionEvent event = InjectionEventTemplate();
-      event.set_timestamp(Now().get());
-      event.mutable_data()->pointer_sample().set_phase(Phase::CHANGE);
+      event.timestamp(Now().get());
+      event.data()->pointer_sample()->phase(Phase::kChange);
       events.emplace_back(std::move(event));
     }
     Inject(injector_, {std::move(events)}, [] {});

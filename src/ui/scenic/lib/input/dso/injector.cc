@@ -11,8 +11,6 @@
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
-#include <src/lib/fostr/fidl/fuchsia/ui/pointerinjector/formatting.h>
-
 #include "src/ui/scenic/lib/input/constants.h"
 #include "src/ui/scenic/lib/utils/fidl_array_cast.h"
 #include "src/ui/scenic/lib/utils/math.h"

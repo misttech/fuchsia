@@ -240,7 +240,6 @@ source_set("injection_dso") {
     "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp",
     "//sdk/fidl/fuchsia.ui.pointerinjector.dso:fuchsia.ui.pointerinjector.dso_cpp",
     "//sdk/lib/sys/cpp",
-    "//src/lib/fostr/fidl/fuchsia.ui.pointerinjector",
   ]
 }
 
