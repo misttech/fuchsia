@@ -923,3 +923,82 @@ async fn clients_have_independent_fifos() {
     check_client(other_client, other_client_byte).await;
     check_client(control_client, control_client_byte).await;
 }
+
+#[fuchsia::test]
+async fn client_write_cooked_partial_when_fifo_full() {
+    let server = setup();
+    let client = open_client(&server, 1).await.unwrap();
+
+    // When data fills the FIFO such that lines fit up to the FIFO boundary,
+    // client.write must return Ok(total_written) for the lines written rather than
+    // returning Err(SHOULD_WAIT) and discarding the already-buffered bytes.
+    let line = b"123456789012345678901234567890\n"; // 31 bytes, expands to 32 bytes
+    let mut data = Vec::new();
+    for _ in 0..130 {
+        // 128 lines fit (4096 bytes), line 129 cannot fit.
+        data.extend_from_slice(line);
+    }
+
+    let result = client.write(&data).await.expect("fidl failed");
+    let written =
+        result.expect("client.write should return Ok(written) when lines fit up to FIFO boundary");
+    assert_eq!(written, 128 * 31);
+}
+
+#[fuchsia::test]
+async fn client_write_cooked_multi_chunk_spanning_fifo() {
+    let server = setup();
+    let client = open_client(&server, 1).await.unwrap();
+    let server_event = get_event(&server).await.unwrap();
+    let client_event = get_event(&client).await.unwrap();
+
+    let line = b"123456789012345678901234567890\n"; // 31 bytes, expands to 32 bytes (\r\n)
+    let total_lines = 300; // 300 lines = 9300 bytes of input, 9600 bytes in FIFO (> 2 full FIFOs)
+    let mut data = Vec::new();
+    for _ in 0..total_lines {
+        data.extend_from_slice(line);
+    }
+
+    // Client task writes all data in chunks, waiting on WRITABLE when needed.
+    let client_task = fasync::Task::local(async move {
+        let mut total_written = 0;
+        while total_written < data.len() {
+            let chunk_end = std::cmp::min(data.len(), total_written + 4096);
+            match client.write(&data[total_written..chunk_end]).await.unwrap() {
+                Ok(n) => {
+                    assert_gt!(n, 0);
+                    total_written += n as usize;
+                }
+                Err(e) => {
+                    assert_eq!(e, zx::Status::SHOULD_WAIT.into_raw());
+                    let _ = fasync::OnSignals::new(
+                        &client_event,
+                        zx::Signals::from_bits_truncate(DeviceSignal::WRITABLE.bits()),
+                    )
+                    .await
+                    .unwrap();
+                }
+            }
+        }
+    });
+
+    // Server reads back all data.
+    let expected_output: Vec<u8> = (0..total_lines)
+        .flat_map(|_| b"123456789012345678901234567890\r\n".iter().copied())
+        .collect();
+
+    let mut received = Vec::new();
+    while received.len() < expected_output.len() {
+        let _ = fasync::OnSignals::new(
+            &server_event,
+            zx::Signals::from_bits_truncate(DeviceSignal::READABLE.bits()),
+        )
+        .await
+        .unwrap();
+        let chunk = server.read(1024).await.unwrap().unwrap();
+        received.extend_from_slice(&chunk);
+    }
+
+    client_task.await;
+    assert_eq!(received, expected_output);
+}

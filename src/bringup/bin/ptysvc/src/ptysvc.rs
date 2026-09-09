@@ -199,7 +199,6 @@ impl Pty {
     }
 
     pub fn server_read(&mut self, count: usize) -> Result<Vec<u8>, zx::Status> {
-        let was_full = self.server.fifo.is_full();
         let data = match self.server.fifo.read(count) {
             Ok(d) => d,
             Err(zx::Status::SHOULD_WAIT) => {
@@ -213,12 +212,8 @@ impl Pty {
             Err(e) => return Err(e),
         };
 
-        if was_full
-            && !data.is_empty()
-            && let Some(active_id) = self.active_id
-            && let Some(client) = self.clients.get_mut(&active_id)
-        {
-            client.assert_signal(DeviceSignal::WRITABLE)?;
+        if !data.is_empty() {
+            self.assert_active_writable()?;
         }
         Ok(data)
     }
@@ -325,52 +320,59 @@ impl Pty {
             }
             return Err(zx::Status::SHOULD_WAIT);
         }
+        if data.is_empty() {
+            return Ok(0);
+        }
 
         let raw_mode = {
             let client = self.clients.get(&id).ok_or(zx::Status::PEER_CLOSED)?;
             (client.flags & FEATURE_RAW) != 0
         };
 
-        if raw_mode {
-            return self.write_chunk(data);
-        }
+        if raw_mode { self.client_write_raw(data) } else { self.client_write_cooked(data) }
+    }
 
+    fn client_write_raw(&mut self, data: &[u8]) -> Result<usize, zx::Status> {
+        let written = self.write_to_server(data, false)?;
+        if written > 0 { Ok(written) } else { Err(zx::Status::SHOULD_WAIT) }
+    }
+
+    fn client_write_cooked(&mut self, data: &[u8]) -> Result<usize, zx::Status> {
         let mut total_written = 0;
-        let mut start = 0;
-        for i in 0..data.len() {
-            if data[i] == b'\n' {
-                let len = i - start;
-                if len > 0 {
-                    let written = self.write_chunk(&data[start..i])?;
-                    total_written += written;
-                    if written < len {
-                        return Ok(total_written);
-                    }
-                }
 
-                // TODO(https://fxbug.dev/42111418): Prevent torn writes here by wiring through
-                // support for `Fifo::write`'s "atomic" flag.
-                let written = self.write_chunk(b"\r\n")?;
+        for part in data.split_inclusive(|&b| b == b'\n') {
+            let (body, has_newline) = match part.strip_suffix(b"\n") {
+                Some(prefix) => (prefix, true),
+                None => (part, false),
+            };
+
+            if !body.is_empty() {
+                let written = self.write_to_server(body, false)?;
+                total_written += written;
+                if written < body.len() {
+                    break;
+                }
+            }
+
+            if has_newline {
+                let written = self.write_to_server(b"\r\n", true)?;
                 if written < 2 {
-                    return Ok(total_written);
+                    break;
                 }
-
                 total_written += 1;
-                start = i + 1;
             }
         }
 
-        if start < data.len() {
-            let written = self.write_chunk(&data[start..])?;
-            total_written += written;
-        }
-
-        Ok(total_written)
+        if total_written > 0 { Ok(total_written) } else { Err(zx::Status::SHOULD_WAIT) }
     }
 
-    fn write_chunk(&mut self, data: &[u8]) -> Result<usize, zx::Status> {
+    fn write_to_server(&mut self, data: &[u8], atomic: bool) -> Result<usize, zx::Status> {
         let was_empty = self.server.fifo.is_empty();
-        let written = self.server.fifo.write(data, false)?;
+        let written = match self.server.fifo.write(data, atomic) {
+            Ok(n) => n,
+            Err(zx::Status::SHOULD_WAIT) => 0,
+            Err(e) => return Err(e),
+        };
 
         if was_empty && written > 0 {
             self.server
@@ -382,14 +384,29 @@ impl Pty {
                 .map_err(|_| zx::Status::INTERNAL)?;
         }
 
-        if self.server.fifo.is_full()
-            && let Some(id) = self.active_id
+        if written < data.len() || self.server.fifo.is_full() {
+            self.deassert_active_writable()?;
+        }
+
+        Ok(written)
+    }
+
+    fn assert_active_writable(&mut self) -> Result<(), zx::Status> {
+        if let Some(id) = self.active_id
+            && let Some(client) = self.clients.get_mut(&id)
+        {
+            client.assert_signal(DeviceSignal::WRITABLE)?;
+        }
+        Ok(())
+    }
+
+    fn deassert_active_writable(&mut self) -> Result<(), zx::Status> {
+        if let Some(id) = self.active_id
             && let Some(client) = self.clients.get_mut(&id)
         {
             client.deassert_signal(DeviceSignal::WRITABLE)?;
         }
-
-        if written == 0 { Err(zx::Status::SHOULD_WAIT) } else { Ok(written) }
+        Ok(())
     }
 
     pub fn handle_server_close(&mut self) {
