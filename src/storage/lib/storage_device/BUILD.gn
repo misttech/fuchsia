@@ -29,7 +29,10 @@ lib_deps = [
 ]
 
 if (is_fuchsia) {
-  lib_srcs += [ "src/block_device.rs" ]
+  lib_srcs += [
+    "src/block_device.rs",
+    "src/pinned_buffer_allocator.rs",
+  ]
   lib_deps += [
     "//sdk/rust/zx",
     "//src/lib/fuchsia-runtime",
@@ -47,6 +50,9 @@ rustc_library("storage_device") {
     "//src/storage/lib/block_client/rust:fake-block-client",
     "//third_party/rust_crates:rand",
   ]
+  if (is_fuchsia) {
+    test_deps += [ "//sdk/lib/driver/fake-bti/rust" ]
+  }
   sources = lib_srcs
 }
 

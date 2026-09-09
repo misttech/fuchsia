@@ -31,6 +31,8 @@ pub use splittable_buffer::{SplittableBuffer, SubHandle};
 
 #[cfg(target_os = "fuchsia")]
 pub mod block_device;
+#[cfg(target_os = "fuchsia")]
+pub mod pinned_buffer_allocator;
 
 #[cfg(target_family = "unix")]
 pub mod file_backed_device;

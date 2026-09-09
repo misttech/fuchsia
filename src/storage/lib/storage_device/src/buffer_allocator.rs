@@ -90,7 +90,7 @@ mod buffer_source {
         ///
         /// The caller must ensure that no other active references or pointer slices overlap with
         /// this range.
-        pub(super) unsafe fn subslice_ptr(&self, range: &Range<usize>) -> MutPtrByteSlice<'_> {
+        pub(crate) unsafe fn subslice_ptr(&self, range: &Range<usize>) -> MutPtrByteSlice<'_> {
             assert!(range.start < self.size && range.end <= self.size);
             // SAFETY: The base pointer is valid for `size` bytes, and `range` is within bounds.
             // The caller guarantees exclusivity.
@@ -109,7 +109,7 @@ mod buffer_source {
         /// The caller must ensure that no other active references or pointer slices overlap with
         /// this range, and that `self` remains valid and mapped in memory for the entire lifetime
         /// `'a`.
-        pub(super) unsafe fn subslice_ptr_unbounded<'a>(
+        pub(crate) unsafe fn subslice_ptr_unbounded<'a>(
             &self,
             range: &Range<usize>,
         ) -> MutPtrByteSlice<'a> {
@@ -134,7 +134,7 @@ mod buffer_source {
         /// # Safety
         ///
         /// The range must not be allocated.
-        pub(super) unsafe fn clean_range(&self, range: Range<usize>) {
+        pub(crate) unsafe fn clean_range(&self, range: Range<usize>) {
             let _ = self.vmo.op_range(zx::VmoOp::ZERO, range.start as u64, range.len() as u64);
         }
     }
@@ -240,7 +240,14 @@ pub use buffer_source::BufferSource;
 
 // Stores a list of offsets into a BufferSource. The size of the free ranges is determined by which
 // FreeList we are looking at.
-// FreeLists are sorted.
+//
+// FreeLists are kept sorted in descending order of offset (highest offset at the front, lowest
+// offset at the back). This allows `pop()` to remove and return the lowest offset in O(1) time,
+// ensuring the allocator allocates from lowest addresses to highest addresses (first-fit).
+// This guarantees that allocations are packed into lower addresses, and that recently freed lower
+// offsets are prioritized for reuse. `PinnedBufferAllocator` relies on this property to ensure
+// allocations pack into the permanently pinned first chunk before spilling over into dynamically
+// pinned chunks.
 type FreeList = Vec<usize>;
 
 #[derive(Debug)]
@@ -253,7 +260,9 @@ struct Inner {
 
 /// BufferAllocator creates Buffer objects to be used for block device I/O requests.
 ///
-/// This is implemented through a simple buddy allocation scheme.
+/// This is implemented through a simple buddy allocation scheme. Allocations always prioritize
+/// the lowest available offset (first-fit), packing allocations toward the beginning of the
+/// memory pool and reusing recently freed lower offsets.
 #[derive(Debug)]
 pub struct BufferAllocator {
     block_size: usize,
@@ -305,15 +314,40 @@ fn initial_free_lists(size: usize, block_size: usize) -> Vec<FreeList> {
     free_lists
 }
 
-/// A future which will resolve to an allocated [`Buffer`].
-pub struct BufferFuture<'a> {
-    allocator: &'a BufferAllocator,
+/// A trait for buffer allocators that support asynchronous buffer allocation via event listeners.
+pub trait TryAllocateBuffer<'a> {
+    type Buffer;
+
+    /// Attempts to allocate a buffer of `size` bytes. Returns an [`EventListener`] to wait on if
+    /// memory is temporarily unavailable.
+    fn try_allocate_buffer(&'a self, size: usize) -> Result<Self::Buffer, EventListener>;
+
+    /// Allocates a buffer synchronously, blocking the current thread until memory is available.
+    fn allocate_buffer_sync(&'a self, size: usize) -> Self::Buffer {
+        loop {
+            match self.try_allocate_buffer(size) {
+                Ok(buffer) => return buffer,
+                Err(listener) => listener.wait(),
+            }
+        }
+    }
+}
+
+/// A future which will resolve to an allocated buffer.
+pub struct BufferFuture<'a, A: TryAllocateBuffer<'a> + ?Sized = BufferAllocator> {
+    allocator: &'a A,
     size: usize,
     listener: Option<EventListener>,
 }
 
-impl<'a> Future for BufferFuture<'a> {
-    type Output = Buffer<'a>;
+impl<'a, A: TryAllocateBuffer<'a> + ?Sized> BufferFuture<'a, A> {
+    pub fn new(allocator: &'a A, size: usize) -> Self {
+        Self { allocator, size, listener: None }
+    }
+}
+
+impl<'a, A: TryAllocateBuffer<'a> + ?Sized> Future for BufferFuture<'a, A> {
+    type Output = A::Buffer;
 
     fn poll(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
         if let Some(listener) = self.listener.as_mut() {
@@ -344,6 +378,15 @@ impl BufferAllocator {
             inner: Mutex::new(Inner { free_lists, allocation_map: BTreeMap::new() }),
             event: Event::new(),
         }
+    }
+
+    /// Returns the underlying VMO if the allocator is untrusted.
+    ///
+    /// Returns `None` if `is_trusted()` is true, because exposing the VMO would allow
+    /// external modification of memory that is assumed to be unshared.
+    #[cfg(target_os = "fuchsia")]
+    pub fn vmo(&self) -> Option<Arc<zx::Vmo>> {
+        if self.is_trusted() { None } else { Some(self.source.vmo().clone()) }
     }
 
     pub fn is_trusted(&self) -> bool {
@@ -380,7 +423,7 @@ impl BufferAllocator {
     ///
     /// Panics if `size` exceeds the pool size (`self.buffer_source().size()`).
     pub fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
-        BufferFuture { allocator: self, size, listener: None }
+        BufferFuture::new(self, size)
     }
 
     /// Allocates a Buffer with capacity for `size` bytes synchronously. Blocks the current thread
@@ -390,12 +433,7 @@ impl BufferAllocator {
     ///
     /// Panics if `size` exceeds the pool size (`self.buffer_source().size()`).
     pub fn allocate_buffer_sync(&self, size: usize) -> Buffer<'_> {
-        loop {
-            match self.try_allocate_buffer(size) {
-                Ok(buffer) => return buffer,
-                Err(listener) => listener.wait(),
-            }
-        }
+        <Self as TryAllocateBuffer>::allocate_buffer_sync(self, size)
     }
 
     /// Allocates an OwnedBuffer with capacity for `size` bytes synchronously. Blocks the current
@@ -487,12 +525,25 @@ impl BufferAllocatorTrait for BufferAllocator {
     fn is_trusted(&self) -> bool {
         self.is_trusted()
     }
+
+    #[cfg(target_os = "fuchsia")]
+    fn vmo(&self) -> Option<Arc<zx::Vmo>> {
+        self.vmo()
+    }
+}
+
+impl<'a> TryAllocateBuffer<'a> for BufferAllocator {
+    type Buffer = Buffer<'a>;
+
+    fn try_allocate_buffer(&'a self, size: usize) -> Result<Buffer<'a>, EventListener> {
+        self.try_allocate_buffer(size)
+    }
 }
 
 impl BufferAllocator {
     /// Deallocation is O(lg(N) + M), where N = size and M = number of allocations.
     #[doc(hidden)]
-    pub(super) fn free_buffer(&self, range: Range<usize>) {
+    pub(crate) fn free_buffer(&self, range: Range<usize>) {
         let mut inner = self.inner.lock();
         let mut offset = range.start;
         let size = inner
@@ -506,7 +557,9 @@ impl BufferAllocator {
         let mut order = order(size, self.block_size());
         while order < inner.free_lists.len() - 1 {
             let buddy = self.find_buddy(offset, order);
-            let idx = if let Ok(idx) = inner.free_lists[order].binary_search(&buddy) {
+            let idx = if let Ok(idx) =
+                inner.free_lists[order].binary_search_by(|probe| buddy.cmp(probe))
+            {
                 idx
             } else {
                 break;
@@ -516,7 +569,7 @@ impl BufferAllocator {
             order += 1;
         }
 
-        let idx = match inner.free_lists[order].binary_search(&offset) {
+        let idx = match inner.free_lists[order].binary_search_by(|probe| offset.cmp(probe)) {
             Ok(_) => panic!("Unexpectedly found {} in free list {}", offset, order),
             Err(idx) => idx,
         };
@@ -548,8 +601,14 @@ impl BufferAllocator {
     }
 }
 
+#[cfg(target_os = "fuchsia")]
+pub use crate::pinned_buffer_allocator::{
+    DEFAULT_PIN_CHUNK_SIZE, PinnedBuffer, PinnedBufferAllocator, PinnedBufferFuture,
+};
+
 #[cfg(test)]
 mod tests {
+    use crate::buffer::BufferAllocator as BufferAllocatorTrait;
     use crate::buffer_allocator::{BufferAllocator, BufferSource, order};
     use fuchsia_async as fasync;
     use futures::future::join_all;
@@ -1054,5 +1113,54 @@ mod tests {
         let vmo = source.vmo();
         let info = vmo.basic_info().expect("failed to get basic info");
         assert!(!info.rights.contains(zx::Rights::TRANSFER));
+    }
+
+    #[fuchsia::test]
+    async fn test_allocator_lowest_offset_first() {
+        let source = BufferSource::new(8192);
+        let allocator = BufferAllocator::new(512, source);
+
+        // Allocate two 1024-byte buffers.
+        let buf0 = allocator.allocate_buffer(1024).await;
+        let buf1 = allocator.allocate_buffer(1024).await;
+        assert_eq!(buf0.range(), 0..1024);
+        assert_eq!(buf1.range(), 1024..2048);
+
+        // Drop buf0. The lower offset (0) is freed.
+        std::mem::drop(buf0);
+
+        // Next allocation should prioritize the lowest available offset (0), not 2048.
+        let buf0_again = allocator.allocate_buffer(1024).await;
+        assert_eq!(buf0_again.range(), 0..1024);
+    }
+
+    #[fuchsia::test]
+    #[cfg(target_os = "fuchsia")]
+    async fn test_unpinned_buffer() {
+        let source = BufferSource::new(4096);
+        let standard_allocator = BufferAllocator::new(512, source);
+        let unpinned = standard_allocator.allocate_buffer(512).await;
+        assert_eq!(unpinned.paddrs(), None);
+        assert_eq!(unpinned.contiguity(), None);
+    }
+
+    #[fuchsia::test]
+    #[cfg(target_os = "fuchsia")]
+    async fn test_vmo_trusted_vs_untrusted() {
+        let untrusted_source = BufferSource::new(4096);
+        let untrusted_alloc = BufferAllocator::new(512, untrusted_source);
+        assert!(!untrusted_alloc.is_trusted());
+        assert!(untrusted_alloc.vmo().is_some());
+        assert!(BufferAllocatorTrait::vmo(&untrusted_alloc).is_some());
+        let untrusted_buf = untrusted_alloc.allocate_buffer(512).await;
+        assert!(untrusted_buf.vmo().is_some());
+
+        let trusted_source = BufferSource::new_trusted(4096);
+        let trusted_alloc = BufferAllocator::new(512, trusted_source);
+        assert!(trusted_alloc.is_trusted());
+        assert!(trusted_alloc.vmo().is_none());
+        assert!(BufferAllocatorTrait::vmo(&trusted_alloc).is_none());
+        let trusted_buf = trusted_alloc.allocate_buffer(512).await;
+        assert!(trusted_buf.vmo().is_none());
     }
 }
