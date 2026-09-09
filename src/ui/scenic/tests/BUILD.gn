@@ -291,8 +291,9 @@ executable("flatland-focus-integration-test-validator-bin") {
   output_name = "flatland-focus-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_cpp",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_cpp",
   ]
 }
 
@@ -324,7 +325,8 @@ executable("flatland-view-ref-installed-integration-test-validator-bin") {
   output_name = "flatland-view-ref-installed-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_cpp",
   ]
 }
 
@@ -368,10 +370,11 @@ executable("observer-registry-integration-test-validator-bin") {
   output_name = "observer-registry-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
-    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_hlcpp",
-    "//sdk/fidl/fuchsia.ui.observation.test:fuchsia.ui.observation.test_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_cpp",
+    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_cpp",
+    "//sdk/fidl/fuchsia.ui.observation.test:fuchsia.ui.observation.test_cpp",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_cpp",
   ]
 }
 
@@ -384,10 +387,11 @@ executable("scoped-observer-registry-integration-test-validator-bin") {
   output_name = "scoped-observer-registry-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_hlcpp",
-    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_hlcpp",
-    "//sdk/fidl/fuchsia.ui.observation.scope:fuchsia.ui.observation.scope_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_cpp",
+    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_cpp",
+    "//sdk/fidl/fuchsia.ui.observation.scope:fuchsia.ui.observation.scope_cpp",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_cpp",
   ]
 }
 
