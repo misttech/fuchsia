@@ -51,3 +51,34 @@ pub type cpu_num_t = u32;
 
 pub const INVALID_CPU: cpu_num_t = u32::MAX;
 pub const CPU_MASK_ALL: cpu_mask_t = u32::MAX;
+
+/// The CPU number of the boot CPU.
+///
+/// Mirrors `BOOT_CPU_ID` from `zircon/kernel/include/platform.h`.
+pub const BOOT_CPU_ID: cpu_num_t = 0;
+
+/// The maximum number of CPUs the kernel was built to support.
+///
+/// This value is read from the `SMP_MAX_CPUS` environment variable at build time.
+pub const SMP_MAX_CPUS: usize =
+    zr::parse_usize(env!("SMP_MAX_CPUS")).expect("SMP_MAX_CPUS invalid");
+
+/// Returns `true` if `num` names a CPU the kernel was built to support.
+///
+/// Mirrors `is_valid_cpu_num()` from `zircon/kernel/include/kernel/cpu.h`.
+#[inline]
+pub const fn is_valid_cpu_num(num: cpu_num_t) -> bool {
+    (num as usize) < SMP_MAX_CPUS
+}
+
+/// Returns a mask with only the bit for `num` set, or an empty mask if `num` is not a valid CPU
+/// number.
+///
+/// Mirrors `cpu_num_to_mask()` from `zircon/kernel/include/kernel/cpu.h`.
+#[inline]
+pub const fn cpu_num_to_mask(num: cpu_num_t) -> cpu_mask_t {
+    if !is_valid_cpu_num(num) {
+        return 0;
+    }
+    1 << num
+}

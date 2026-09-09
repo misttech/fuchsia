@@ -6,8 +6,10 @@
 //
 // Ported from zircon/kernel/dev/interrupt/plic/plic.cc
 
+use crate::arch_rs::Iframe;
 use crate::arch_rs::riscv64::{boot_hart_id, curr_hart_id};
-use crate::kernel::types::PAddr;
+use crate::kernel::mp::MpIpi;
+use crate::kernel::types::{PAddr, cpu_mask_t};
 use crate::pdev_interrupt::{
     InterruptHandler, InterruptPolarity, InterruptTriggerMode, InterruptVector, MsiBlock,
     PdevInterruptOps, pdev_invoke_int_if_present, pdev_register_interrupts,
@@ -178,7 +180,7 @@ extern "C" fn plic_remap_interrupt(vector: InterruptVector) -> InterruptVector {
     vector
 }
 
-extern "C" fn plic_handle_irq(_frame: *mut c_void) {
+extern "C" fn plic_handle_irq(_frame: *mut Iframe) {
     // get the current vector
     let curr_hart_id = curr_hart_id();
     let boot_hart_id = boot_hart_id();
@@ -208,7 +210,7 @@ extern "C" fn plic_handle_irq(_frame: *mut c_void) {
     ltracef_level!(2, "cpu {} exit\n", curr_hart_id);
 }
 
-extern "C" fn plic_send_ipi(_target: u32, _ipi: u32) -> Result<(), Status> {
+extern "C" fn plic_send_ipi(_target: cpu_mask_t, _ipi: MpIpi) -> Result<(), Status> {
     Err(Status::NOT_SUPPORTED)
 }
 

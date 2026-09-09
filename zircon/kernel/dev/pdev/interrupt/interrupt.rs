@@ -11,6 +11,9 @@ pub mod console;
 #[cfg(not(console_enabled))]
 use debug as _;
 
+use crate::arch_rs::Iframe;
+use crate::kernel::mp::MpIpi;
+use crate::kernel::types::cpu_mask_t;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use pin_init as _;
 #[cfg(ktest)]
@@ -121,10 +124,10 @@ pub struct PdevInterruptOps {
     pub get_base_vector: extern "C" fn() -> InterruptVector,
     pub get_max_vector: extern "C" fn() -> InterruptVector,
     pub remap: extern "C" fn(vector: InterruptVector) -> InterruptVector,
-    pub send_ipi: extern "C" fn(target: u32, ipi: u32) -> Result<(), Status>,
+    pub send_ipi: extern "C" fn(target: cpu_mask_t, ipi: MpIpi) -> Result<(), Status>,
     pub init_percpu_early: extern "C" fn(),
     pub init_percpu: extern "C" fn(),
-    pub handle_irq: extern "C" fn(frame: *mut core::ffi::c_void),
+    pub handle_irq: extern "C" fn(frame: *mut Iframe),
     pub shutdown: extern "C" fn(),
     pub shutdown_cpu: extern "C" fn(),
     pub suspend_cpu: extern "C" fn() -> Result<(), Status>,
@@ -190,12 +193,12 @@ extern "C" fn default_get_max_vector() -> InterruptVector {
 extern "C" fn default_remap(_: InterruptVector) -> InterruptVector {
     InterruptVector(0)
 }
-extern "C" fn default_send_ipi(_: u32, _: u32) -> Result<(), Status> {
+extern "C" fn default_send_ipi(_: cpu_mask_t, _: MpIpi) -> Result<(), Status> {
     Err(Status::NOT_SUPPORTED)
 }
 extern "C" fn default_init_percpu_early() {}
 extern "C" fn default_init_percpu() {}
-extern "C" fn default_handle_irq(_: *mut core::ffi::c_void) {}
+extern "C" fn default_handle_irq(_: *mut Iframe) {}
 extern "C" fn default_shutdown() {}
 extern "C" fn default_shutdown_cpu() {}
 extern "C" fn default_suspend_cpu() -> Result<(), Status> {
@@ -346,7 +349,7 @@ unsafe extern "C" fn register_int_handler(
 ///
 /// - The global interrupt ops must be registered.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn register_permanent_int_handler(
+pub unsafe extern "C" fn register_permanent_int_handler(
     vector: InterruptVector,
     handler: InterruptHandler,
 ) -> Result<(), Status> {
@@ -515,7 +518,7 @@ pub unsafe extern "C" fn remap_interrupt(vector: InterruptVector) -> InterruptVe
 ///
 /// The global interrupt ops must be registered.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn interrupt_send_ipi(target: u32, ipi: u32) -> Result<(), Status> {
+pub unsafe extern "C" fn interrupt_send_ipi(target: cpu_mask_t, ipi: MpIpi) -> Result<(), Status> {
     unsafe { ((*get_ops()).send_ipi)(target, ipi) }
 }
 
@@ -545,7 +548,7 @@ pub unsafe extern "C" fn interrupt_init_percpu() {
 /// - The global interrupt ops must be registered.
 /// - `frame` must point to a valid interrupt frame.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn platform_irq(frame: *mut core::ffi::c_void) {
+pub unsafe extern "C" fn platform_irq(frame: *mut Iframe) {
     unsafe { ((*get_ops()).handle_irq)(frame) }
 }
 

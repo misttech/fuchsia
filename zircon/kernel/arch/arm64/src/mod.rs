@@ -17,6 +17,7 @@ pub struct ArchSavedNormalState {
 zr::static_assert!(core::mem::size_of::<ArchSavedNormalState>() == 16);
 zr::static_assert!(core::mem::align_of::<ArchSavedNormalState>() == 8);
 
+use crate::kernel::types::cpu_num_t;
 use core::fmt::Write;
 use debug::ltrace::KernelConsoleWriter;
 use debug::ltracef;
@@ -36,6 +37,69 @@ unsafe extern "C" {
     fn cpp_arm64_enter_uspace(iframe: *const Iframe) -> !;
     fn cpp_arm64_get_general_regs(regs: *mut zx_thread_state_general_regs_t) -> zx_status_t;
     fn cpp_arm64_set_general_regs(regs: *const zx_thread_state_general_regs_t) -> zx_status_t;
+    fn cpp_arm64_cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64;
+}
+
+/// Translates a CPU number back to the MPIDR of that CPU.
+///
+/// Mirrors `arch_cpu_num_to_mpidr()` from
+/// `zircon/kernel/arch/arm64/include/arch/arm64/mp.h`.
+#[inline]
+pub fn cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64 {
+    // SAFETY: `cpp_arm64_cpu_num_to_mpidr` is a read-only FFI call into the arm64 percpu
+    // topology table with no side effects. Out of range CPU numbers are handled by the C++
+    // implementation.
+    unsafe { cpp_arm64_cpu_num_to_mpidr(cpu_num) }
+}
+
+/// Instruction Synchronization Barrier, full system.
+///
+/// Mirrors `__isb(ARM_MB_SY)` from `zircon/kernel/lib/arch/arm64/include/lib/arch/intrin.h`.
+#[inline(always)]
+pub fn isb() {
+    // SAFETY: A barrier instruction has no operands and no memory safety requirements. The
+    // absence of `nomem` preserves the `"memory"` clobber of the C++ macro, which keeps the
+    // compiler from reordering memory accesses across the barrier.
+    unsafe {
+        core::arch::asm!("isb sy", options(nostack, preserves_flags));
+    }
+}
+
+/// Data Synchronization Barrier, full system.
+///
+/// Synchronizes all memory accesses of all kinds. Mirrors `arch::DeviceMemoryBarrier()`
+/// (`__dsb(ARM_MB_SY)`) from `zircon/kernel/lib/arch/arm64/include/lib/arch/intrin.h`.
+#[inline(always)]
+pub fn device_memory_barrier() {
+    // SAFETY: See `isb()`.
+    unsafe {
+        core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+    }
+}
+
+/// Data Memory Barrier, full system.
+///
+/// Synchronizes the ordering of all memory accesses with respect to other CPUs. Mirrors
+/// `arch::ThreadMemoryBarrier()` (`__dmb(ARM_MB_SY)`) from
+/// `zircon/kernel/lib/arch/arm64/include/lib/arch/intrin.h`.
+#[inline(always)]
+pub fn thread_memory_barrier() {
+    // SAFETY: See `isb()`.
+    unsafe {
+        core::arch::asm!("dmb sy", options(nostack, preserves_flags));
+    }
+}
+
+/// Waits for an interrupt, putting the CPU in a low power state until one arrives.
+///
+/// Mirrors `__wfi()` from `zircon/kernel/lib/arch/arm64/include/lib/arch/intrin.h`.
+#[inline(always)]
+pub fn wfi() {
+    // SAFETY: See `isb()`. `wfi` is architecturally permitted to return spuriously, so callers
+    // must not rely on an interrupt having been delivered.
+    unsafe {
+        core::arch::asm!("wfi", options(nostack, preserves_flags));
+    }
 }
 
 // [arm/v8]: C5.2.19 CPSR / D13.2.112 SPSR_EL1
