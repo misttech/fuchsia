@@ -6,34 +6,21 @@
 
 from __future__ import annotations
 
-import io
 import json
-import os
 import pathlib
-import tempfile
 import unittest
 from collections.abc import Sequence
-from unittest import mock
 
 from agents.lib import state
+from agents_testing.base import BaseTestCase
 
 
-class StateTest(unittest.TestCase):
+class StateTest(BaseTestCase):
     """Hermetic unit tests for state journal and rollback operations."""
 
     def setUp(self) -> None:
-        self.stdout_patch = mock.patch("sys.stdout", new_callable=io.StringIO)
-        self.mock_stdout = self.stdout_patch.start()
-        self.addCleanup(self.stdout_patch.stop)
-
-        self.stderr_patch = mock.patch("sys.stderr", new_callable=io.StringIO)
-        self.mock_stderr = self.stderr_patch.start()
-        self.addCleanup(self.stderr_patch.stop)
-
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
-        self.mock_root = pathlib.Path(self.temp_dir.name)
-
+        super().setUp()
+        self.mock_root = self.test_dir
         self.state_dir = self.mock_root / "state"
         self.state_path = self.state_dir / "state.json"
         self.backups_dir = self.state_dir / "backups"
@@ -41,43 +28,34 @@ class StateTest(unittest.TestCase):
 
     def test_get_default_state_dir_fallback(self) -> None:
         """Verify default fallback to ~/.local/share/Fuchsia/agents/setup when no env vars are set."""
-        with mock.patch.dict(os.environ, {}, clear=True):
-            with mock.patch.object(
-                pathlib.Path, "home", return_value=pathlib.Path("/mock/home")
-            ):
-                expected = pathlib.Path(
-                    "/mock/home/.local/share/Fuchsia/agents/setup"
-                )
-                self.assertEqual(state.get_default_state_dir(), expected)
+        self.patch_environ(clear=True)
+        self.patch_object(
+            pathlib.Path, "home", return_value=pathlib.Path("/mock/home")
+        )
+        expected = pathlib.Path("/mock/home/.local/share/Fuchsia/agents/setup")
+        self.assertEqual(state.get_default_state_dir(), expected)
 
     def test_get_default_state_dir_xdg_state_home(self) -> None:
         """Verify XDG_STATE_HOME environment variable override."""
-        with mock.patch.dict(
-            os.environ, {"XDG_STATE_HOME": "/custom/xdg_state"}, clear=True
-        ):
-            expected = pathlib.Path("/custom/xdg_state/Fuchsia/agents/setup")
-            self.assertEqual(state.get_default_state_dir(), expected)
+        self.patch_environ(clear=True, XDG_STATE_HOME="/custom/xdg_state")
+        expected = pathlib.Path("/custom/xdg_state/Fuchsia/agents/setup")
+        self.assertEqual(state.get_default_state_dir(), expected)
 
     def test_get_default_state_dir_xdg_data_home(self) -> None:
         """Verify XDG_DATA_HOME environment variable fallback when XDG_STATE_HOME is not set."""
-        with mock.patch.dict(
-            os.environ, {"XDG_DATA_HOME": "/custom/xdg_data"}, clear=True
-        ):
-            expected = pathlib.Path("/custom/xdg_data/Fuchsia/agents/setup")
-            self.assertEqual(state.get_default_state_dir(), expected)
+        self.patch_environ(clear=True, XDG_DATA_HOME="/custom/xdg_data")
+        expected = pathlib.Path("/custom/xdg_data/Fuchsia/agents/setup")
+        self.assertEqual(state.get_default_state_dir(), expected)
 
     def test_get_default_state_dir_precedence(self) -> None:
         """Verify XDG_STATE_HOME takes precedence over XDG_DATA_HOME."""
-        with mock.patch.dict(
-            os.environ,
-            {
-                "XDG_STATE_HOME": "/custom/xdg_state",
-                "XDG_DATA_HOME": "/custom/xdg_data",
-            },
+        self.patch_environ(
             clear=True,
-        ):
-            expected = pathlib.Path("/custom/xdg_state/Fuchsia/agents/setup")
-            self.assertEqual(state.get_default_state_dir(), expected)
+            XDG_STATE_HOME="/custom/xdg_state",
+            XDG_DATA_HOME="/custom/xdg_data",
+        )
+        expected = pathlib.Path("/custom/xdg_state/Fuchsia/agents/setup")
+        self.assertEqual(state.get_default_state_dir(), expected)
 
     def test_load_and_save_state(self) -> None:
         """Verify saving and loading StateJournal round-trips correctly."""
@@ -276,7 +254,7 @@ class StateTest(unittest.TestCase):
                 self.config_path, self.state_path, self.backups_dir, steps=0
             )
         )
-        self.assertIn("must be positive", self.mock_stderr.getvalue())
+        self.assertIn("must be positive", self.stderr)
 
         # Failure: no history
         self.assertFalse(
@@ -284,7 +262,7 @@ class StateTest(unittest.TestCase):
                 self.config_path, self.state_path, self.backups_dir, steps=1
             )
         )
-        self.assertIn("No transaction history", self.mock_stderr.getvalue())
+        self.assertIn("No transaction history", self.stderr)
 
         # Create 2 transactions in journal and backup files
         self.backups_dir.mkdir(parents=True, exist_ok=True)
@@ -331,7 +309,7 @@ class StateTest(unittest.TestCase):
                 self.config_path, self.state_path, self.backups_dir, steps=3
             )
         )
-        self.assertIn("Cannot rollback 3 steps", self.mock_stderr.getvalue())
+        self.assertIn("Cannot rollback 3 steps", self.stderr)
 
         # Dry run rollback 1 step
         self.assertTrue(

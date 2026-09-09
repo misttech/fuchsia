@@ -8,31 +8,27 @@
 from __future__ import annotations
 
 import argparse
-import io
 import unittest
 from unittest import mock
 
 from agents import main
 from agents.commands import setup
+from agents_testing.base import BaseTestCase
 
 
-class MainCliTest(unittest.TestCase):
+class MainCliTest(BaseTestCase):
     """Test top-level argument parsing and subcommand dispatching."""
 
     def test_help_flag(self) -> None:
         parser = main.create_parser()
-        with (
-            mock.patch("sys.stdout", new_callable=io.StringIO),
-            self.assertRaises(SystemExit) as cm,
-        ):
+        with self.assertRaises(SystemExit) as cm:
             parser.parse_args(["--help"])
         self.assertEqual(cm.exception.code, 0)
 
     def test_no_subcommand_prints_help_and_fails(self) -> None:
-        with mock.patch("sys.stderr", new_callable=io.StringIO) as mock_stderr:
-            exit_code = main.main([])
-            self.assertEqual(exit_code, 1)
-            self.assertIn("fx agents", mock_stderr.getvalue())
+        exit_code = main.main([])
+        self.assertEqual(exit_code, 1)
+        self.assertIn("fx agents", self.stderr)
 
     def test_subcommand_dispatch(self) -> None:
         parser = argparse.ArgumentParser(prog="fx agents")
@@ -47,10 +43,7 @@ class MainCliTest(unittest.TestCase):
 
     def test_setup_help_flag(self) -> None:
         parser = main.create_parser()
-        with (
-            mock.patch("sys.stdout", new_callable=io.StringIO),
-            self.assertRaises(SystemExit) as cm,
-        ):
+        with self.assertRaises(SystemExit) as cm:
             parser.parse_args(["setup", "--help"])
         self.assertEqual(cm.exception.code, 0)
 

@@ -24,34 +24,63 @@ if (is_host) {
     sources = _agents_sources
   }
 
+  python_library("agents_testing") {
+    testonly = true
+    library_name = "agents_testing"
+    source_root = "testing"
+    sources = [
+      "__init__.py",
+      "base.py",
+      "workspace.py",
+    ]
+  }
+
   python_host_test("agents_main_test") {
     main_source = "tests/main_test.py"
-    libraries = [ ":agents_lib" ]
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
   }
 
   python_host_test("agents_setup_test") {
     main_source = "tests/setup_test.py"
-    libraries = [ ":agents_lib" ]
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
   }
 
   python_host_test("agents_config_test") {
     main_source = "tests/config_test.py"
-    libraries = [ ":agents_lib" ]
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
   }
 
   python_host_test("agents_permissions_test") {
     main_source = "tests/permissions_test.py"
-    libraries = [ ":agents_lib" ]
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
   }
 
   python_host_test("agents_services_test") {
     main_source = "tests/services_test.py"
-    libraries = [ ":agents_lib" ]
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
   }
 
   python_host_test("agents_state_test") {
     main_source = "tests/state_test.py"
-    libraries = [ ":agents_lib" ]
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
   }
 }
 

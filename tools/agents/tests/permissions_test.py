@@ -7,22 +7,20 @@
 
 from __future__ import annotations
 
-import pathlib
 import re
-import tempfile
 import unittest
 from unittest import mock
 
 from agents.lib import permissions
+from agents_testing.base import BaseTestCase
 
 
-class PermissionsTest(unittest.TestCase):
+class PermissionsTest(BaseTestCase):
     """Tests for permissions module functions."""
 
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
-        self.mock_root = pathlib.Path(self.temp_dir.name)
+        super().setUp()
+        self.mock_root = self.test_dir
 
     def test_expand_empty_or_comment(self) -> None:
         self.assertEqual(permissions.expand_command_variants(""), [])

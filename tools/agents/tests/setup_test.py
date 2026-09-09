@@ -8,68 +8,45 @@
 from __future__ import annotations
 
 import argparse
-import io
 import json
-import pathlib
-import tempfile
 import unittest
 from unittest import mock
 
 from agents.commands import setup
 from agents.lib import permissions, state
+from agents_testing.base import BaseTestCase
 
 
-class SetupCommandTest(unittest.TestCase):
+class SetupCommandTest(BaseTestCase):
     """Tests for setup command parser and execution."""
 
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
-        self.mock_root = pathlib.Path(self.temp_dir.name)
+        super().setUp()
+        self.mock_root = self.test_dir
         self.state_dir = self.mock_root / "state"
         self.backups_dir = self.state_dir / "backups"
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.backups_dir.mkdir(parents=True, exist_ok=True)
 
-        self.stdout_patch = mock.patch("sys.stdout", new_callable=io.StringIO)
-        self.mock_stdout = self.stdout_patch.start()
-        self.addCleanup(self.stdout_patch.stop)
-
-        self.stderr_patch = mock.patch("sys.stderr", new_callable=io.StringIO)
-        self.mock_stderr = self.stderr_patch.start()
-        self.addCleanup(self.stderr_patch.stop)
-
         self.fuchsia_dir = self.mock_root / "fuchsia"
         self.perm_dir = self.fuchsia_dir / ".agents" / "config" / "permissions"
         self.perm_dir.mkdir(parents=True, exist_ok=True)
 
-        self.fuchsia_dir_patch = mock.patch.object(
+        self.patch_object(
             permissions, "find_fuchsia_dir", return_value=self.fuchsia_dir
         )
-        self.fuchsia_dir_patch.start()
-        self.addCleanup(self.fuchsia_dir_patch.stop)
 
-        (self.perm_dir / "read_only.txt").write_text(
-            "fx status\n", encoding="utf-8"
-        )
-        (self.perm_dir / "local_changes.txt").write_text(
-            "git commit\n", encoding="utf-8"
-        )
-        (self.perm_dir / "never_allow.txt").write_text(
-            "git clean\n", encoding="utf-8"
-        )
-        (self.perm_dir / "device_ops.txt").write_text(
-            "fx ota\n", encoding="utf-8"
-        )
-        (self.perm_dir / "cache_destruction.txt").write_text(
-            "fx clean\n", encoding="utf-8"
-        )
-        (self.perm_dir / "batch_execution.txt").write_text(
-            "find\n", encoding="utf-8"
-        )
-        (self.perm_dir / "external_changes.txt").write_text(
-            "git push\n", encoding="utf-8"
-        )
+        perm_files = {
+            "read_only.txt": "fx status\n",
+            "local_changes.txt": "git commit\n",
+            "never_allow.txt": "git clean\n",
+            "device_ops.txt": "fx ota\n",
+            "cache_destruction.txt": "fx clean\n",
+            "batch_execution.txt": "find\n",
+            "external_changes.txt": "git push\n",
+        }
+        for name, content in perm_files.items():
+            (self.perm_dir / name).write_text(content, encoding="utf-8")
 
     def test_add_arguments(self) -> None:
         """Verify CLI arguments are added correctly."""
@@ -112,7 +89,7 @@ class SetupCommandTest(unittest.TestCase):
         exit_code = setup.run(args)
         self.assertEqual(exit_code, 0)
         self.assertFalse(config_path.exists())
-        self.assertIn("[DRY RUN]", self.mock_stdout.getvalue())
+        self.assertIn("[DRY RUN]", self.stdout)
 
     def test_run_apply_grants(self) -> None:
         """Verify grants are applied and written to config."""
@@ -263,7 +240,7 @@ class SetupCommandTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn(
             "=== AI Coding Agent Configuration Status ===",
-            self.mock_stdout.getvalue(),
+            self.stdout,
         )
 
     def test_run_rollback(self) -> None:
@@ -368,9 +345,7 @@ class SetupCommandTest(unittest.TestCase):
         grants = data["userSettings"]["globalPermissionGrants"]
         self.assertEqual(grants["allow"], ["command(custom_tool)"])
         self.assertEqual(grants["deny"], [])
-        self.assertIn(
-            "Purged Fuchsia-managed rules", self.mock_stdout.getvalue()
-        )
+        self.assertIn("Purged Fuchsia-managed rules", self.stdout)
 
     def test_run_restarts_daemons_on_success(self) -> None:
         """Verify daemons are restarted on apply, rollback, and reset."""

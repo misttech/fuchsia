@@ -7,78 +7,56 @@
 
 from __future__ import annotations
 
-import io
 import json
-import os
 import pathlib
-import tempfile
 import unittest
-from unittest import mock
 
 from agents.lib import config, permissions, state
+from agents_testing.base import BaseTestCase
 
 
-class ConfigTest(unittest.TestCase):
+class ConfigTest(BaseTestCase):
     """Hermetic unit tests for config operations."""
 
     def setUp(self) -> None:
-        self.stdout_patch = mock.patch("sys.stdout", new_callable=io.StringIO)
-        self.mock_stdout = self.stdout_patch.start()
-        self.addCleanup(self.stdout_patch.stop)
-
-        self.stderr_patch = mock.patch("sys.stderr", new_callable=io.StringIO)
-        self.mock_stderr = self.stderr_patch.start()
-        self.addCleanup(self.stderr_patch.stop)
-
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
-        self.mock_root = pathlib.Path(self.temp_dir.name)
+        super().setUp()
+        self.mock_root = self.test_dir
         self.state_dir = self.mock_root / "state"
-
         self.fuchsia_dir = self.mock_root / "fuchsia"
-        self.fuchsia_dir_patch = mock.patch.object(
+        self.patch_object(
             permissions, "find_fuchsia_dir", return_value=self.fuchsia_dir
         )
-        self.fuchsia_dir_patch.start()
-        self.addCleanup(self.fuchsia_dir_patch.stop)
 
     def test_get_default_config_path_fallback(self) -> None:
         """Verify default fallback to ~/.gemini/config/config.json when no env vars are set."""
-        with mock.patch.dict(os.environ, {}, clear=True):
-            with mock.patch.object(
-                pathlib.Path, "home", return_value=pathlib.Path("/mock/home")
-            ):
-                expected = pathlib.Path("/mock/home/.gemini/config/config.json")
-                self.assertEqual(config.get_default_config_path(), expected)
+        self.patch_environ(clear=True)
+        self.patch_object(
+            pathlib.Path, "home", return_value=pathlib.Path("/mock/home")
+        )
+        expected = pathlib.Path("/mock/home/.gemini/config/config.json")
+        self.assertEqual(config.get_default_config_path(), expected)
 
     def test_get_default_config_path_gemini_config_dir(self) -> None:
         """Verify GEMINI_CONFIG_DIR environment variable override."""
-        with mock.patch.dict(
-            os.environ, {"GEMINI_CONFIG_DIR": "/custom/config/dir"}, clear=True
-        ):
-            expected = pathlib.Path("/custom/config/dir/config.json")
-            self.assertEqual(config.get_default_config_path(), expected)
+        self.patch_environ(clear=True, GEMINI_CONFIG_DIR="/custom/config/dir")
+        expected = pathlib.Path("/custom/config/dir/config.json")
+        self.assertEqual(config.get_default_config_path(), expected)
 
     def test_get_default_config_path_gemini_home(self) -> None:
         """Verify GEMINI_HOME environment variable override."""
-        with mock.patch.dict(
-            os.environ, {"GEMINI_HOME": "/custom/gemini/home"}, clear=True
-        ):
-            expected = pathlib.Path("/custom/gemini/home/config/config.json")
-            self.assertEqual(config.get_default_config_path(), expected)
+        self.patch_environ(clear=True, GEMINI_HOME="/custom/gemini/home")
+        expected = pathlib.Path("/custom/gemini/home/config/config.json")
+        self.assertEqual(config.get_default_config_path(), expected)
 
     def test_get_default_config_path_precedence(self) -> None:
         """Verify GEMINI_CONFIG_DIR takes precedence over GEMINI_HOME."""
-        with mock.patch.dict(
-            os.environ,
-            {
-                "GEMINI_CONFIG_DIR": "/custom/config/dir",
-                "GEMINI_HOME": "/custom/gemini/home",
-            },
+        self.patch_environ(
             clear=True,
-        ):
-            expected = pathlib.Path("/custom/config/dir/config.json")
-            self.assertEqual(config.get_default_config_path(), expected)
+            GEMINI_CONFIG_DIR="/custom/config/dir",
+            GEMINI_HOME="/custom/gemini/home",
+        )
+        expected = pathlib.Path("/custom/config/dir/config.json")
+        self.assertEqual(config.get_default_config_path(), expected)
 
     def test_load_config_nonexistent(self) -> None:
         """Verify load_config returns empty dict for nonexistent file."""
@@ -219,7 +197,7 @@ class ConfigTest(unittest.TestCase):
             state_dir=self.state_dir,
         )
         self.assertFalse(success)
-        self.assertIn("Error reading JSON from", self.mock_stderr.getvalue())
+        self.assertIn("Error reading JSON from", self.stderr)
 
 
 if __name__ == "__main__":
