@@ -72,12 +72,12 @@ zx::result<std::unique_ptr<OffsetMap>> OffsetMap::Create(
       return zx::error(ZX_ERR_INVALID_ARGS);
     }
     auto target_end = safemath::CheckAdd(mapping.target_block_offset, mapping.length);
-    if (!target_end.IsValid() || (block_count > 0 && target_end.ValueOrDie() > block_count)) {
-      return zx::error(ZX_ERR_INVALID_ARGS);
+    if (!target_end.IsValid() || target_end.ValueOrDie() > block_count) {
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
     auto total_end = safemath::CheckAdd(total_length, mapping.length);
     if (!total_end.IsValid()) {
-      return zx::error(ZX_ERR_INVALID_ARGS);
+      return zx::error(ZX_ERR_OUT_OF_RANGE);
     }
     total_length = total_end.ValueOrDie();
   }
@@ -269,6 +269,10 @@ void Server::TxnEnd() {
   }
 }
 
+zx::result<std::unique_ptr<Server>> Server::Create(ddk::BlockProtocolClient* bp) {
+  return Create(bp, /*map=*/nullptr);
+}
+
 zx::result<std::unique_ptr<Server>> Server::Create(
     ddk::BlockProtocolClient* bp,
     std::span<const fuchsia_storage_block::wire::BlockOffsetMapping> mappings) {
@@ -276,14 +280,18 @@ zx::result<std::unique_ptr<Server>> Server::Create(
   size_t block_op_size;
   bp->Query(&info, &block_op_size);
 
-  std::unique_ptr<OffsetMap> map;
-  if (!mappings.empty()) {
-    zx::result result = OffsetMap::Create(mappings, info.block_count);
-    if (result.is_error()) {
-      return result.take_error();
-    }
-    map = *std::move(result);
+  zx::result result = OffsetMap::Create(mappings, info.block_count);
+  if (result.is_error()) {
+    return result.take_error();
   }
+  return Create(bp, *std::move(result));
+}
+
+zx::result<std::unique_ptr<Server>> Server::Create(ddk::BlockProtocolClient* bp,
+                                                   std::unique_ptr<OffsetMap> map) {
+  block_info_t info;
+  size_t block_op_size;
+  bp->Query(&info, &block_op_size);
 
   fbl::AllocChecker ac;
   std::unique_ptr<Server> bs(new (&ac) Server(bp, info, block_op_size, std::move(map)));

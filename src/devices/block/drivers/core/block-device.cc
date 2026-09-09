@@ -131,7 +131,9 @@ void BlockDevice::OpenSession(OpenSessionRequestView request,
 
 void BlockDevice::OpenSessionWithOptions(OpenSessionWithOptionsRequestView request,
                                          OpenSessionWithOptionsCompleter::Sync& completer) {
-  CreateSession(std::move(request->session), request->mappings);
+  CreateSession(std::move(request->session),
+                std::span<const fuchsia_storage_block::wire::BlockOffsetMapping>(
+                    request->mappings.data(), request->mappings.size()));
 }
 
 void BlockDevice::ConnectMapper(ConnectMapperRequestView request,
@@ -141,10 +143,9 @@ void BlockDevice::ConnectMapper(ConnectMapperRequestView request,
 
 void BlockDevice::CreateSession(
     fidl::ServerEnd<fuchsia_storage_block::Session> session,
-    fidl::VectorView<fuchsia_storage_block::wire::BlockOffsetMapping> mappings) {
-  std::span<const fuchsia_storage_block::wire::BlockOffsetMapping> mappings_span(mappings.data(),
-                                                                                 mappings.size());
-  zx::result server = Server::Create(&self_protocol_, mappings_span);
+    std::optional<std::span<const fuchsia_storage_block::wire::BlockOffsetMapping>> mappings) {
+  zx::result server = mappings.has_value() ? Server::Create(&self_protocol_, *mappings)
+                                           : Server::Create(&self_protocol_);
   if (server.is_error()) {
     session.Close(server.error_value());
     return;

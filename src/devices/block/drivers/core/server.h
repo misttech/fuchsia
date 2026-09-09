@@ -60,10 +60,13 @@ class OffsetMap {
 
 class Server : public fidl::WireServer<fuchsia_storage_block::Session> {
  public:
-  // Creates a new Server.
+  // Creates a new Server without offset mappings (full device access).
+  static zx::result<std::unique_ptr<Server>> Create(ddk::BlockProtocolClient* bp);
+
+  // Creates a new Server with offset mappings. Fails with ZX_ERR_INVALID_ARGS if mappings is empty.
   static zx::result<std::unique_ptr<Server>> Create(
       ddk::BlockProtocolClient* bp,
-      std::span<const fuchsia_storage_block::wire::BlockOffsetMapping> mappings = {});
+      std::span<const fuchsia_storage_block::wire::BlockOffsetMapping> mappings);
 
   // This will block until all outstanding messages have been processed.
   ~Server() override;
@@ -128,6 +131,9 @@ class Server : public fidl::WireServer<fuchsia_storage_block::Session> {
 
   // Sends the request embedded in the message down to the lower layers.
   void Enqueue(std::unique_ptr<Message> message) TA_EXCL(server_lock_);
+
+  static zx::result<std::unique_ptr<Server>> Create(ddk::BlockProtocolClient* bp,
+                                                    std::unique_ptr<OffsetMap> map);
 
   fzl::fifo<BlockFifoResponse, BlockFifoRequest> fifo_;
   fzl::fifo<BlockFifoRequest, BlockFifoResponse> fifo_peer_;

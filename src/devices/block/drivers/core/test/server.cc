@@ -180,25 +180,34 @@ TEST_F(ServerTestFixture, SplitRequestAfterFailedRequestReturnsFailure) {
 }
 
 TEST(OffsetMap, InvalidMapping) {
+  // Empty mappings
+  ASSERT_EQ(OffsetMap::Create(std::vector<fuchsia_storage_block::wire::BlockOffsetMapping>{}, 10000)
+                .status_value(),
+            ZX_ERR_INVALID_ARGS);
+
   // Zero-length
-  ASSERT_NOT_OK(OffsetMap::Create(
-      std::vector<fuchsia_storage_block::wire::BlockOffsetMapping>{
-          {
-              .target_block_offset = 1000,
-              .length = 0,
-          },
-      },
-      10000));
+  ASSERT_EQ(OffsetMap::Create(
+                std::vector<fuchsia_storage_block::wire::BlockOffsetMapping>{
+                    {
+                        .target_block_offset = 1000,
+                        .length = 0,
+                    },
+                },
+                10000)
+                .status_value(),
+            ZX_ERR_INVALID_ARGS);
 
   // Target overflow
-  ASSERT_NOT_OK(OffsetMap::Create(
-      std::vector<fuchsia_storage_block::wire::BlockOffsetMapping>{
-          {
-              .target_block_offset = std::numeric_limits<uint64_t>::max(),
-              .length = 100,
-          },
-      },
-      10000));
+  ASSERT_EQ(OffsetMap::Create(
+                std::vector<fuchsia_storage_block::wire::BlockOffsetMapping>{
+                    {
+                        .target_block_offset = std::numeric_limits<uint64_t>::max(),
+                        .length = 100,
+                    },
+                },
+                10000)
+                .status_value(),
+            ZX_ERR_OUT_OF_RANGE);
 
   // Target extends beyond device block_count
   ASSERT_EQ(OffsetMap::Create(
@@ -210,7 +219,19 @@ TEST(OffsetMap, InvalidMapping) {
                 },
                 1000)
                 .status_value(),
-            ZX_ERR_INVALID_ARGS);
+            ZX_ERR_OUT_OF_RANGE);
+
+  // Device with block_count == 0 rejects any mapping
+  ASSERT_EQ(OffsetMap::Create(
+                std::vector<fuchsia_storage_block::wire::BlockOffsetMapping>{
+                    {
+                        .target_block_offset = 0,
+                        .length = 1,
+                    },
+                },
+                0)
+                .status_value(),
+            ZX_ERR_OUT_OF_RANGE);
 }
 
 TEST(OffsetMap, RemapRequests) {
@@ -320,10 +341,11 @@ TEST(OffsetMap, MultipleMappingsInvalid) {
   // Sum of lengths overflows uint64_t
   {
     fuchsia_storage_block::wire::BlockOffsetMapping mappings[] = {
-        {.target_block_offset = 100, .length = std::numeric_limits<uint64_t>::max() - 10},
-        {.target_block_offset = 200, .length = 20},
+        {.target_block_offset = 0, .length = std::numeric_limits<uint64_t>::max() - 10},
+        {.target_block_offset = 0, .length = 20},
     };
-    ASSERT_EQ(OffsetMap::Create(mappings, 0).status_value(), ZX_ERR_INVALID_ARGS);
+    ASSERT_EQ(OffsetMap::Create(mappings, std::numeric_limits<uint64_t>::max()).status_value(),
+              ZX_ERR_OUT_OF_RANGE);
   }
 }
 
@@ -367,6 +389,12 @@ TEST_F(ServerTestFixture, CreateServerWithMultipleMappings) {
   };
   zx::result server = Server::Create(&client_, mappings);
   ASSERT_OK(server);
+}
+
+TEST_F(ServerTestFixture, CreateServerWithEmptyMappingsFails) {
+  std::vector<fuchsia_storage_block::wire::BlockOffsetMapping> mappings;
+  zx::result server = Server::Create(&client_, mappings);
+  ASSERT_EQ(server.status_value(), ZX_ERR_INVALID_ARGS);
 }
 
 TEST(OffsetMap, MapMethod) {

@@ -94,9 +94,9 @@ class BlockDevice : public BlockDeviceType,
  private:
   zx_status_t DoIo(zx::vmo& vmo, size_t buf_len, zx_off_t off, zx_off_t vmo_off, bool write);
 
-  void CreateSession(
-      fidl::ServerEnd<fuchsia_storage_block::Session> session,
-      fidl::VectorView<fuchsia_storage_block::wire::BlockOffsetMapping> mappings = {});
+  void CreateSession(fidl::ServerEnd<fuchsia_storage_block::Session> session,
+                     std::optional<std::span<const fuchsia_storage_block::wire::BlockOffsetMapping>>
+                         mappings = std::nullopt);
 
   // Completion callback that expects StatsCookie as |cookie| and calls upper
   // layer completion cookie.
