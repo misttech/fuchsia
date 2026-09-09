@@ -74,6 +74,18 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
             }
         };
 
+        #[allow(deprecated)]
+        let component_url = match (
+            &config.feedback.component_url_for_remote_feedback_id,
+            &config.feedback.feedback_id_component_url,
+        ) {
+            (FeedbackIdComponentUrl::None, url) => url,
+            (url, FeedbackIdComponentUrl::None) => url,
+            _ => anyhow::bail!(
+                "component_url_for_remote_feedback_id and feedback_id_component_url cannot be both specified"
+            ),
+        };
+
         // Cobalt and Feedback may be added to anything utility and higher.
         if matches!(context.feature_set_level, FeatureSetLevel::Standard | FeatureSetLevel::Utility)
         {
@@ -104,6 +116,10 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
                 DEFAULT_SNAPSHOT_STORAGE_SIZE_MIB
             };
 
+            #[allow(deprecated)]
+            let remote_device_id_provider = config.feedback.remote_device_id_provider
+                || !matches!(component_url, FeedbackIdComponentUrl::None);
+
             let feedback_config = FeedbackInternalConfig {
                 report_persistence_max_cache_size_kib,
                 report_persistence_max_tmp_size_kib,
@@ -117,7 +133,7 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
                 enable_data_redaction: build_type_config.enable_data_redaction,
                 enable_hourly_snapshots: build_type_config.enable_hourly_snapshots,
                 enable_limit_inspect_data: build_type_config.enable_limit_inspect_data,
-                remote_device_id_provider: config.feedback.remote_device_id_provider,
+                remote_device_id_provider,
                 supports_user_initiated_poweroffs: config
                     .feedback
                     .supports_user_initiated_poweroffs,
@@ -143,7 +159,7 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
             }
         }
 
-        match &config.feedback.feedback_id_component_url {
+        match component_url {
             FeedbackIdComponentUrl::FlashTs(url) => {
                 util::add_platform_declared_product_provided_component(
                     url,
@@ -511,7 +527,7 @@ mod test {
 
         let forensics_config = ForensicsConfig {
             feedback: FeedbackConfig {
-                feedback_id_component_url: FeedbackIdComponentUrl::FlashTs(
+                component_url_for_remote_feedback_id: FeedbackIdComponentUrl::FlashTs(
                     "fuchsia-pkg://fuchsia.com/test-package#meta/test-component.cm".to_string(),
                 ),
                 ..Default::default()
@@ -553,7 +569,7 @@ mod test {
 
         let forensics_config = ForensicsConfig {
             feedback: FeedbackConfig {
-                feedback_id_component_url: FeedbackIdComponentUrl::SysInfo(
+                component_url_for_remote_feedback_id: FeedbackIdComponentUrl::SysInfo(
                     "fuchsia-pkg://fuchsia.com/test-package#meta/test-component.cm".to_string(),
                 ),
                 ..Default::default()
@@ -633,17 +649,68 @@ mod test {
     }
 
     #[test]
-    fn feedback_config_remote_device_id_provider_false() {
-        let forensics_config = ForensicsConfig {
-            feedback: FeedbackConfig { remote_device_id_provider: false, ..Default::default() },
-            ..Default::default()
-        };
+    fn feedback_config_remote_device_id_provider_default_false() {
+        let forensics_config = ForensicsConfig::default();
         let config = get_feedback_config(BuildType::Eng, forensics_config, Default::default());
 
         assert!(!config.remote_device_id_provider);
     }
 
     #[test]
+    fn feedback_config_remote_device_id_provider_inferred_true() {
+        let resource_dir = tempfile::TempDir::new().unwrap();
+        std::fs::File::create(
+            resource_dir.path().join("flash_ts_feedback_id.core_shard.cml.template"),
+        )
+        .unwrap();
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config: &Default::default(),
+            gendir: Default::default(),
+            resource_dir: Utf8Path::from_path(resource_dir.path()).unwrap().to_path_buf(),
+            developer_only_options: Default::default(),
+        };
+
+        let forensics_config = ForensicsConfig {
+            feedback: FeedbackConfig {
+                component_url_for_remote_feedback_id: FeedbackIdComponentUrl::FlashTs(
+                    "fuchsia-pkg://fuchsia.com/test-package#meta/test-component.cm".to_string(),
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let session_config: PlatformSessionConfig = Default::default();
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+        let result = ForensicsSubsystem::define_configuration(
+            &context,
+            &(&forensics_config, &session_config),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+
+        let config = builder.build();
+        let domain_config: &DomainConfig = config
+            .domain_configs
+            .entries
+            .get(&PackageSetDestination::Blob(PackageDestination::FeedbackConfig))
+            .unwrap();
+        let domain_config_directory: &DomainConfigDirectory =
+            domain_config.directories.entries.get(FEEDBACK_CONFIG_DIRECTORY).unwrap();
+        let feedback_config: &FileOrContents =
+            domain_config_directory.entries.get(FEEDBACK_CONFIG_FILENAME).unwrap();
+        let string_contents: &String = match &feedback_config {
+            FileOrContents::Contents(string_contents) => string_contents,
+            _ => panic!("FileOrContents::Contents expected"),
+        };
+        let forensics_config =
+            serde_json::from_str::<FeedbackInternalConfig>(string_contents).unwrap();
+        assert!(forensics_config.remote_device_id_provider);
+    }
+
+    #[test]
+    #[allow(deprecated)]
     fn feedback_config_remote_device_id_provider_true() {
         let forensics_config = ForensicsConfig {
             feedback: FeedbackConfig { remote_device_id_provider: true, ..Default::default() },
