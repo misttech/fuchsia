@@ -8,7 +8,6 @@ use fidl::endpoints::RequestStream as _;
 use fidl_fuchsia_ui_input as fidl_ui_input_legacy;
 use fidl_next::{Request, Responder, ServerEnd};
 use fidl_next_fuchsia_ui_input as fidl_ui_input;
-use futures::FutureExt as _;
 use log::{error, info};
 use sorted_vec_map::SortedVecMap;
 use std::cell::RefCell;
@@ -19,6 +18,7 @@ pub struct DeviceListenerRegistry {
     listeners: Rc<RefCell<Vec<fidl_next::Client<fidl_ui_input::DeviceListener, Transport>>>>,
     active_devices:
         Rc<RefCell<SortedVecMap<u32, fidl_next_fuchsia_input_report::DeviceDescriptor>>>,
+    scope: Rc<fuchsia_async::Scope>,
 }
 
 impl Default for DeviceListenerRegistry {
@@ -32,6 +32,7 @@ impl DeviceListenerRegistry {
         Self {
             listeners: Rc::new(RefCell::new(Vec::new())),
             active_devices: Rc::new(RefCell::new(SortedVecMap::new())),
+            scope: Rc::new(fuchsia_async::Scope::new()),
         }
     }
 
@@ -217,16 +218,6 @@ pub fn shim_device_descriptor(
 
 struct DeviceListenerRegistryServer {
     registry: DeviceListenerRegistry,
-    tasks: Rc<RefCell<Vec<fuchsia_async::Task<()>>>>,
-}
-
-impl DeviceListenerRegistryServer {
-    fn purge_completed_tasks(&self) {
-        self.tasks.borrow_mut().retain_mut(|task| {
-            task.poll_unpin(&mut std::task::Context::from_waker(&std::task::Waker::noop()))
-                .is_pending()
-        });
-    }
 }
 
 impl fidl_ui_input::DeviceListenerRegistryLocalServerHandler<Transport>
@@ -237,8 +228,6 @@ impl fidl_ui_input::DeviceListenerRegistryLocalServerHandler<Transport>
         request: Request<fidl_ui_input::device_listener_registry::RegisterListener, Transport>,
         responder: Responder<fidl_ui_input::device_listener_registry::RegisterListener, Transport>,
     ) {
-        self.purge_completed_tasks();
-
         let payload = request.payload();
         let listener = Dispatcher::client_from_zx_channel(payload.listener).spawn();
 
@@ -253,12 +242,11 @@ impl fidl_ui_input::DeviceListenerRegistryLocalServerHandler<Transport>
         let iterator_handler =
             DeviceIteratorServer { server, device_iter: existing_devices.into_iter() };
 
-        let task = fuchsia_async::Task::local(async move {
+        self.registry.scope.spawn_local(async move {
             if let Err(e) = dispatcher.run_local(iterator_handler).await {
                 error!("Error serving DeviceIterator: {:?}", e);
             }
         });
-        self.tasks.borrow_mut().push(task);
 
         let _ = responder.respond(iterator_client).await;
     }
@@ -268,8 +256,14 @@ pub async fn handle_device_listener_registry_request_stream(
     server_end: fidl_next::ServerEnd<fidl_ui_input::DeviceListenerRegistry, Transport>,
     registry: DeviceListenerRegistry,
 ) -> Result<(), anyhow::Error> {
-    let tasks = Rc::new(RefCell::new(Vec::new()));
-    handle_device_listener_registry_request_stream_with_tasks(server_end, registry, tasks).await
+    let dispatcher = fidl_next::ServerDispatcher::new(server_end);
+    let handler = DeviceListenerRegistryServer { registry };
+
+    dispatcher
+        .run_local(handler)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("DeviceListenerRegistry error: {:?}", e))
 }
 
 pub async fn handle_device_listener_registry_request_stream_legacy(
@@ -284,21 +278,6 @@ pub async fn handle_device_listener_registry_request_stream_legacy(
     let server_end = ServerEnd::from_untyped(zx_channel);
     let server_end = Dispatcher::server_from_zx_channel(server_end);
     handle_device_listener_registry_request_stream(server_end, registry).await
-}
-
-pub(crate) async fn handle_device_listener_registry_request_stream_with_tasks(
-    server_end: fidl_next::ServerEnd<fidl_ui_input::DeviceListenerRegistry, Transport>,
-    registry: DeviceListenerRegistry,
-    tasks: Rc<RefCell<Vec<fuchsia_async::Task<()>>>>,
-) -> Result<(), anyhow::Error> {
-    let dispatcher = fidl_next::ServerDispatcher::new(server_end);
-    let handler = DeviceListenerRegistryServer { registry, tasks };
-
-    dispatcher
-        .run_local(handler)
-        .await
-        .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("DeviceListenerRegistry error: {:?}", e))
 }
 
 struct DeviceIteratorServer {
@@ -427,49 +406,37 @@ mod tests {
     }
 
     #[fasync::run_singlethreaded(test)]
-    async fn test_device_listener_registry_cleans_up_completed_tasks() {
+    async fn test_device_iterator_survives_registry_disconnect() {
         let registry = DeviceListenerRegistry::new();
-        let (listener_client1, _listener_server1) =
+        let (listener_client, _listener_server) =
             fidl_next::fuchsia::create_channel::<fidl_ui_input::DeviceListener>();
-        let (listener_client2, _listener_server2) =
-            fidl_next::fuchsia::create_channel::<fidl_ui_input::DeviceListener>();
+
+        let device_id = 42;
+        let descriptor = fidl_input_report::DeviceDescriptor::default();
+        registry.active_devices.borrow_mut().insert(device_id, descriptor.clone());
 
         let (registry_client, registry_server) =
             fidl_next::fuchsia::create_channel::<fidl_ui_input::DeviceListenerRegistry>();
 
-        let tasks = Rc::new(RefCell::new(Vec::new()));
-        let tasks_clone = tasks.clone();
-        let handle_fut = handle_device_listener_registry_request_stream_with_tasks(
-            registry_server,
-            registry,
-            tasks_clone,
-        );
+        let handle_fut =
+            handle_device_listener_registry_request_stream(registry_server, registry.clone());
         let _task = fasync::Task::local(handle_fut);
 
         let registry_proxy = registry_client.spawn();
+        let response = registry_proxy.register_listener(listener_client).await.unwrap();
+        let iterator_proxy = response.iterator.spawn();
 
-        // 1. Register first listener.
-        let response1 = registry_proxy.register_listener(listener_client1).await.unwrap();
-        let iterator_proxy1 = response1.iterator.spawn();
+        // Drop registry proxy (client disconnects from registry)
+        std::mem::drop(registry_proxy);
 
-        // Check that 1 task has been spawned.
-        assert_eq!(tasks.borrow().len(), 1);
-
-        // 2. Consume iterator1 completely so the task finishes.
-        let response = iterator_proxy1.get_next().await.unwrap();
-        assert!(response.devices.is_empty());
-        std::mem::drop(iterator_proxy1);
-
-        // Yield execution to allow the task to run to completion.
+        // Allow disconnect to process
         fasync::Timer::new(fasync::MonotonicInstant::after(zx::MonotonicDuration::from_millis(10)))
             .await;
 
-        // 3. Register second listener. This should trigger the purge of completed tasks
-        // before adding the new task.
-        let _response2 = registry_proxy.register_listener(listener_client2).await.unwrap();
-
-        // Tasks count should still be 1 (the completed task was purged, and the new one was added).
-        assert_eq!(tasks.borrow().len(), 1);
+        // Iterator should still work!
+        let response = iterator_proxy.get_next().await.unwrap();
+        assert_eq!(response.devices.len(), 1);
+        assert_eq!(response.devices[0].device_id, Some(device_id));
     }
 
     #[fuchsia::test]
