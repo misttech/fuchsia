@@ -19,6 +19,8 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -65,25 +67,11 @@ class Sampler : public fxl::RefCountedThreadSafe<Sampler> {
   zx::result<profiler::SymbolizationContext> GetContexts();
   fxl::WeakPtr<Sampler> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
-  std::unordered_map<zx_koid_t, std::string> GetProcessNames() {
-    std::unordered_map<zx_koid_t, std::string> names;
-    (void)targets_.ForEachProcess(
-        [&names](std::span<const zx_koid_t>, const ProcessTarget& target) -> zx::result<> {
-          names[target.pid] = target.name;
-          return zx::ok();
-        });
-    return names;
+  std::optional<std::string_view> GetProcessName(zx_koid_t pid) const {
+    return targets_.GetProcessName(pid);
   }
-  std::unordered_map<zx_koid_t, std::string> GetThreadNames() {
-    std::unordered_map<zx_koid_t, std::string> names;
-    (void)targets_.ForEachProcess(
-        [&names](std::span<const zx_koid_t>, const ProcessTarget& target) -> zx::result<> {
-          for (const auto& [tid, thread] : target.threads) {
-            names[tid] = thread.name;
-          }
-          return zx::ok();
-        });
-    return names;
+  std::optional<std::string_view> GetThreadName(zx_koid_t tid) const {
+    return targets_.GetThreadName(tid);
   }
   std::vector<zx::ticks> SamplingDurations() { return inspecting_durations_; }
   virtual zx::result<> AddTarget(JobTarget&& target);

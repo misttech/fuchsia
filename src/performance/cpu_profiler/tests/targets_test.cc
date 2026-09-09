@@ -395,3 +395,40 @@ TEST(TargetsTest, TargetTreeGetProcessNested) {
   EXPECT_TRUE(not_found_path.is_error());
   EXPECT_EQ(not_found_path.status_value(), ZX_ERR_NOT_FOUND);
 }
+
+TEST(TargetsTest, PointLookupProcessAndThreadNames) {
+  profiler::TargetTree tree;
+
+  // Add top-level process with threads
+  std::unordered_map<zx_koid_t, profiler::ThreadTarget> p1_threads;
+  p1_threads.try_emplace(
+      101,
+      profiler::ThreadTarget{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 101, .name = "t1"});
+  p1_threads.try_emplace(
+      102,
+      profiler::ThreadTarget{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 102, .name = "t2"});
+  profiler::ProcessTarget p1{zx::process{ZX_HANDLE_INVALID}, 10, "proc1", std::move(p1_threads)};
+  ASSERT_TRUE(tree.AddProcess(std::move(p1)).is_ok());
+
+  // Add nested job with process and threads
+  profiler::JobTarget j1{zx::job{ZX_HANDLE_INVALID}, 1, std::vector<zx_koid_t>{}};
+  ASSERT_TRUE(tree.AddJob(std::move(j1)).is_ok());
+
+  std::unordered_map<zx_koid_t, profiler::ThreadTarget> p2_threads;
+  p2_threads.try_emplace(
+      201,
+      profiler::ThreadTarget{.handle = zx::thread{ZX_HANDLE_INVALID}, .tid = 201, .name = "t3"});
+  profiler::ProcessTarget p2{zx::process{ZX_HANDLE_INVALID}, 20, "proc2", std::move(p2_threads)};
+  ASSERT_TRUE(tree.AddProcess(std::vector<zx_koid_t>{1}, std::move(p2)).is_ok());
+
+  // Test GetProcessName
+  EXPECT_EQ(tree.GetProcessName(10), "proc1");
+  EXPECT_EQ(tree.GetProcessName(20), "proc2");
+  EXPECT_EQ(tree.GetProcessName(999), std::nullopt);
+
+  // Test GetThreadName
+  EXPECT_EQ(tree.GetThreadName(101), "t1");
+  EXPECT_EQ(tree.GetThreadName(102), "t2");
+  EXPECT_EQ(tree.GetThreadName(201), "t3");
+  EXPECT_EQ(tree.GetThreadName(999), std::nullopt);
+}

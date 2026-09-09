@@ -16,6 +16,7 @@
 
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -153,6 +154,12 @@ struct JobTarget {
   // ZX_ERR_ALREADY_EXISTS if there is already an existing thread at the location with the same tid
   zx::result<> AddThread(std::span<const zx_koid_t> job_path, zx_koid_t pid, ThreadTarget&& thread);
   zx::result<> RemoveThread(std::span<const zx_koid_t> job_path, zx_koid_t pid, zx_koid_t tid);
+
+  // Search for the name of the process specified by `pid`.
+  std::optional<std::string_view> GetProcessName(zx_koid_t pid) const;
+
+  // Search for the name of the thread specified by `tid`.
+  std::optional<std::string_view> GetThreadName(zx_koid_t tid) const;
 };
 
 // Given a job, create a job target containing it, its processes, their threads, and its child
@@ -236,6 +243,12 @@ class TargetTree {
   // circuit and immediately return the error code without visiting any remaining processes.
   zx::result<> ForEachProcess(const fit::function<zx::result<>(std::span<const zx_koid_t> job_path,
                                                                const ProcessTarget& target)>& f);
+
+  // Search for the name of the process specified by `pid`.
+  std::optional<std::string_view> GetProcessName(zx_koid_t pid) const;
+
+  // Search for the name of the thread specified by `tid`.
+  std::optional<std::string_view> GetThreadName(zx_koid_t tid) const;
 
  private:
   std::unordered_map<zx_koid_t, JobTarget> jobs_;

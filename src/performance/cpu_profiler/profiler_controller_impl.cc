@@ -426,23 +426,19 @@ void profiler::ProfilerControllerImpl::Start(StartRequest& request,
     }
     if (pids_seen_.insert(sample.pid).second) {
       if (sampler_) {
-        auto names = sampler_->GetProcessNames();
-        if (auto it = names.find(sample.pid); it != names.end()) {
-          const std::string& name = it->second;
+        if (auto name = sampler_->GetProcessName(sample.pid); name.has_value()) {
           fxt::WriteKernelObjectRecord(
               writer_.get(), fxt::Koid(sample.pid), ZX_OBJ_TYPE_PROCESS,
-              fxt::StringRef<fxt::RefType::kInline>(name.c_str(), name.size()));
+              fxt::StringRef<fxt::RefType::kInline>(name->data(), name->size()));
         }
       }
     }
     if (tids_seen_.insert(sample.tid).second) {
       if (sampler_) {
-        auto names = sampler_->GetThreadNames();
-        if (auto it = names.find(sample.tid); it != names.end()) {
-          const std::string& name = it->second;
+        if (auto name = sampler_->GetThreadName(sample.tid); name.has_value()) {
           fxt::WriteKernelObjectRecord(
               writer_.get(), fxt::Koid(sample.tid), ZX_OBJ_TYPE_THREAD,
-              fxt::StringRef<fxt::RefType::kInline>(name.c_str(), name.size()));
+              fxt::StringRef<fxt::RefType::kInline>(name->data(), name->size()));
         }
       }
     }

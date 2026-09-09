@@ -148,6 +148,34 @@ zx::result<> profiler::JobTarget::RemoveThread(std::span<const zx_koid_t> job_pa
   return next_child->second.RemoveThread(job_path.subspan(1), pid, tid);
 }
 
+std::optional<std::string_view> profiler::JobTarget::GetProcessName(zx_koid_t pid) const {
+  auto it = processes.find(pid);
+  if (it != processes.end()) {
+    return it->second.name;
+  }
+  for (const auto& [_, child_job] : child_jobs) {
+    if (auto name = child_job.GetProcessName(pid); name.has_value()) {
+      return name;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string_view> profiler::JobTarget::GetThreadName(zx_koid_t tid) const {
+  for (const auto& [_, process] : processes) {
+    auto it = process.threads.find(tid);
+    if (it != process.threads.end()) {
+      return it->second.name;
+    }
+  }
+  for (const auto& [_, child_job] : child_jobs) {
+    if (auto name = child_job.GetThreadName(tid); name.has_value()) {
+      return name;
+    }
+  }
+  return std::nullopt;
+}
+
 zx::result<std::vector<zx_koid_t>> GetChildrenTids(const zx::process& process) {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
   size_t num_threads;
@@ -472,6 +500,34 @@ zx::result<> profiler::TargetTree::ForEachProcess(
     }
   }
   return zx::ok();
+}
+
+std::optional<std::string_view> profiler::TargetTree::GetProcessName(zx_koid_t pid) const {
+  auto it = processes_.find(pid);
+  if (it != processes_.end()) {
+    return it->second.name;
+  }
+  for (const auto& [_, job] : jobs_) {
+    if (auto name = job.GetProcessName(pid); name.has_value()) {
+      return name;
+    }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string_view> profiler::TargetTree::GetThreadName(zx_koid_t tid) const {
+  for (const auto& [_, process] : processes_) {
+    auto it = process.threads.find(tid);
+    if (it != process.threads.end()) {
+      return it->second.name;
+    }
+  }
+  for (const auto& [_, job] : jobs_) {
+    if (auto name = job.GetThreadName(tid); name.has_value()) {
+      return name;
+    }
+  }
+  return std::nullopt;
 }
 
 zx::result<std::map<std::vector<std::byte>, profiler::Module>> profiler::GetProcessModules(
