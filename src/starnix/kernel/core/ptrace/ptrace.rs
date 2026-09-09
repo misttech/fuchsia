@@ -837,7 +837,7 @@ pub fn ptrace_detach(
     {
         let mut ptracees = thread_group.ptracees.lock();
         ptrace_cont(tracer, tracee, &data, true)?;
-        ptracees.remove(&tracee.persistent_info);
+        ptracees.remove(&tracee.tid);
     }
     let zombie_notification = thread_group.write().zombie_ptracees.detach(pids, &tracee.tid);
     if let Some(zombie_notification) = zombie_notification {
@@ -1139,7 +1139,7 @@ fn do_attach(
         options,
     )))?;
 
-    ptracees.insert(task.persistent_info.clone());
+    ptracees.insert(task.tid.clone(), task.into());
 
     // If the tracee is already stopped, make sure that the tracer can
     // identify that right away.
