@@ -572,11 +572,11 @@ impl ZombieProcess {
 /// implement [`Releasable`] without tying the mutable reference lifetime to the guard's lifetime
 /// parameter, preserving variance and allowing reborrowing in loops and across sequential calls.
 pub trait ZombieReleaser {
-    fn remove_zombie(&mut self, pid: pid_t);
+    fn remove_zombie(&mut self, pid: &Pid);
 }
 
 impl<'a> ZombieReleaser for PidTableGuard<'a> {
-    fn remove_zombie(&mut self, pid: pid_t) {
+    fn remove_zombie(&mut self, pid: &Pid) {
         self.remove_zombie(pid);
     }
 }
@@ -586,7 +586,7 @@ impl Releasable for ZombieProcess {
 
     fn release<'a>(self, pids: &'a mut dyn ZombieReleaser) {
         if self.is_canonical {
-            pids.remove_zombie(self.pid());
+            pids.remove_zombie(&self.pid);
         }
     }
 }
@@ -861,7 +861,7 @@ impl ThreadGroup {
     /// ThreadGroup are always valid as they are still valid when removed.
     pub fn remove(&self, mut pids: PidTableGuard<'_>, task: &Arc<Task>) {
         task.set_ptrace_zombie(&mut pids);
-        pids.remove_task(task.tid.id);
+        pids.remove_task(&task.tid);
 
         let mut state = self.write();
 
@@ -895,7 +895,7 @@ impl ThreadGroup {
                 ProcessExitInfo { status: exit_status, exit_signal: state.exit_signal.clone() };
             let zombie =
                 ZombieProcess::new(state.as_ref(), &persistent_info.real_creds(), exit_info);
-            pids.kill_process(self.leader.id);
+            pids.kill_process(&self.leader);
 
             let session = state.leave_process_group(&mut pids);
 
