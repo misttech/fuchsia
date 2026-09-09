@@ -64,6 +64,21 @@ pub(super) const DEFAULT_ROBUSTNESS_VARIABLE: NonZeroU8 = NonZeroU8::new(2).unwr
 ///     https://datatracker.ietf.org/doc/html/rfc3376#section-8.2
 pub(super) const DEFAULT_QUERY_INTERVAL: NonZeroDuration = NonZeroDuration::from_secs(125).unwrap();
 
+/// The maximum number of sources to record for a pending response to a
+/// Multicast Address and Source Specific Query.
+///
+/// As per [RFC 3810 section 10.1], and [RFC 3376 section 9.1]:
+///   To protect against such a DoS attack, a node stack implementation
+///   could restrict the number of Multicast Address and Source Specific
+///   Queries per multicast address within this interval, and/or record
+///   only a limited number of sources.
+///
+/// [RFC 3810 section 10.1]:
+///     https://datatracker.ietf.org/doc/html/rfc3810#section-10.1
+/// [RFC 3376 section 9.1]:
+///     https://datatracker.ietf.org/doc/html/rfc3376#section-9.1
+pub(super) const MAX_RECORDED_SOURCES: usize = 64;
+
 /// A delay to use before issuing state change reports in response to interface
 /// state changes (e.g leaving/joining groups).
 ///
@@ -499,7 +514,12 @@ pub(super) fn handle_query_message<
         if clear_sources {
             group.recorded_sources = Default::default();
         } else {
-            group.recorded_sources.extend(sources);
+            for src in sources {
+                if group.recorded_sources.len() >= MAX_RECORDED_SOURCES {
+                    break;
+                }
+                let _: bool = group.recorded_sources.insert(src);
+            }
         }
 
         if let Some(delay) = delay {
@@ -1159,6 +1179,38 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[ip_test(I)]
+    #[test_case(1, u8::try_from(MAX_RECORDED_SOURCES).unwrap(); "single_query")]
+    #[test_case(2, u8::try_from(MAX_RECORDED_SOURCES - 1).unwrap(); "multi_query")]
+    fn recorded_sources_truncated<I: TestIpExt>(num_queries: u8, num_sources_per_query: u8) {
+        let FakeCtx { mut core_ctx, mut bindings_ctx } =
+            testutil::new_context_with_mode::<I>(GmpMode::V2);
+        assert_eq!(
+            core_ctx.gmp_join_group(&mut bindings_ctx, &FakeDeviceId, I::GROUP_ADDR1),
+            GroupJoinResult::Joined(())
+        );
+
+        for i in 0..num_queries {
+            let start = i * num_sources_per_query;
+            let end = start + num_sources_per_query;
+            let sources: Vec<_> = (start..end).map(|i| I::get_other_ip_address(i).get()).collect();
+            let query = FakeV2Query {
+                group_addr: I::GROUP_ADDR1.get(),
+                sources: sources,
+                ..Default::default()
+            };
+            handle_query_message(&mut core_ctx, &mut bindings_ctx, &FakeDeviceId, &query)
+                .expect("handle query 1");
+        }
+
+        let recorded_sources = &core_ctx.groups.get(&I::GROUP_ADDR1).unwrap().v2().recorded_sources;
+        assert_eq!(recorded_sources.len(), MAX_RECORDED_SOURCES);
+        let expected_sources: HashSet<_> = (0..u8::try_from(MAX_RECORDED_SOURCES).unwrap())
+            .map(|i| I::get_other_ip_address(i).get())
+            .collect();
+        assert_eq!(recorded_sources, &expected_sources);
     }
 
     #[ip_test(I)]
