@@ -239,6 +239,33 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                     f"Failed precedence: args={args}, global={global_val}, local={local_val}",
                 )
 
+    def test_resolve_source_dir_from_env(self) -> None:
+        """Verifies resolve_source_dir returns absolute path from environment variable."""
+        env = {"FUCHSIA_DIR": "/custom/fuchsia/path"}
+        resolved = main_build.resolve_source_dir(env)
+        self.assertEqual(
+            resolved, pathlib.Path("/custom/fuchsia/path").resolve()
+        )
+
+    @mock.patch.object(main_build, "find_fuchsia_dir")
+    def test_resolve_source_dir_from_find_fuchsia_dir(
+        self, mock_find: mock.Mock
+    ) -> None:
+        """Verifies resolve_source_dir calls find_fuchsia_dir when environment is empty."""
+        mock_find.return_value = pathlib.Path("/found/fuchsia")
+        resolved = main_build.resolve_source_dir({})
+        self.assertEqual(resolved, pathlib.Path("/found/fuchsia"))
+        mock_find.assert_called_once()
+
+    @mock.patch.object(
+        main_build, "find_fuchsia_dir", side_effect=ValueError("Not found")
+    )
+    def test_resolve_source_dir_fallback(self, mock_find: mock.Mock) -> None:
+        """Verifies resolve_source_dir falls back to relative path if find_fuchsia_dir raises ValueError."""
+        resolved = main_build.resolve_source_dir({})
+        expected = main_build._SCRIPT.resolve().parent.parent.parent
+        self.assertEqual(resolved, expected)
+
 
 class BuildInvocationTest(MainBuildTestBase):
     def test_init_caching(self) -> None:

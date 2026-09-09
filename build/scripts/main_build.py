@@ -362,6 +362,18 @@ class BuildLock:
             print("Build completed.")
 
 
+def resolve_source_dir(environ: dict[str, str]) -> pathlib.Path:
+    """Resolves and returns the absolute path to the Fuchsia source checkout directory."""
+    source_dir_str = environ.get("FUCHSIA_DIR", "")
+    if source_dir_str:
+        return pathlib.Path(source_dir_str).resolve()
+    try:
+        return find_fuchsia_dir()
+    except ValueError:
+        # Fallback to finding it relative to this script: //build/scripts/main_build.py
+        return _SCRIPT.resolve().parent.parent.parent
+
+
 class FuchsiaBuildContext(object):
     """FuchsiaBuildContext contains paths that are relevant to building.
 
@@ -392,13 +404,7 @@ class FuchsiaBuildContext(object):
         args: argparse.Namespace,
         environ: dict[str, str],
     ) -> "FuchsiaBuildContext":
-        source_dir = pathlib.Path(environ.get("FUCHSIA_DIR", ""))
-        if not source_dir:
-            try:
-                source_dir = find_fuchsia_dir()
-            except ValueError:
-                # Fallback to finding it relative to this script: //build/scripts/main_build.py
-                source_dir = _SCRIPT.resolve().parent.parent.parent
+        source_dir = resolve_source_dir(environ)
 
         out_dir = args.out_dir
         if not out_dir:
