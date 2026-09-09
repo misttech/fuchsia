@@ -58,6 +58,7 @@ if (is_host) {
     sources = [
       "binder.py",
       "plugins.py",
+      "result_formatter.py",
     ]
     deps = [ "//src/performance/lib/tp_shell" ]
   }

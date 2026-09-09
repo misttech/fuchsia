@@ -136,13 +136,39 @@ to identify specific performance anomalies.
 
 ### `binder` (Starnix Binder Analysis)
 
-Analyzes Starnix binder delays, missed wakeups (scheduling delays), and
-late-spawned wakers.
+Analyzes Starnix binder delays, missed wakeups (scheduling delays),
+late-spawned wakers (`SpawnLooper` instant events), thread pool exhaustion
+(`no_available_threads` instant events), and process queue depth backlog
+(`process_queue_depth` counters).
+
+> [!TIP]
+> **Trace Category Recommendation**: Including the `starnix:binder` trace category
+> significantly improves the fidelity and depth of binder analysis.
+> With `starnix:binder`, the plugin reconstructs full round-trip IPC transaction flows,
+> driver queue wait times, thread pool exhaustion signals, and backlog counters.
+> If `starnix:binder` is not found in the trace, the plugin issues an explicit notification
+> and falls back to best-effort heuristics using `binder_ioctl` slices and `binder:%` thread
+> naming patterns.
+
+The plugin executes 5 diagnostic queries:
+1. **Missed Wakeups (Wakeup Latencies)**: Identifies scheduling delays (`Runnable` state duration) for binder threads exceeding the threshold.
+2. **Binder Delays (Transaction Queue Latencies)**: Identifies completed and incomplete transaction queue latencies exceeding the threshold.
+3. **Spawn Looper Events (Late-Spawned Wakers)**: Identifies `SpawnLooper` thread-scoped instant events (`dur = 0`) and their enclosing syscall/ioctl parent slice context when the binder thread pool exhausts available threads.
+4. **No Available Threads Events (Thread Pool Exhaustion)**: Identifies `no_available_threads` process-scoped instant events recorded when an incoming command cannot find an idle thread and queues to the process queue.
+5. **Binder Process Queue Depth (Counter Summary)**: Summarizes `process_queue_depth` counter track peaks, averages, and sample counts per process.
+
+#### Fallback Behavior Without `starnix:binder`
+
+When the trace does not contain slices under the `starnix:binder` category:
+* An initial **Trace Category Status** section is reported recommending the inclusion of `starnix:binder`.
+* **Missed Wakeups** and **Binder Delays** fall back to matching `binder_ioctl` slices and `binder:%` / `binder_%` thread names.
+* **Spawn Looper Events**, **No Available Threads**, and **Process Queue Depth** return empty result sets with a note indicating the category was not found and that enabling it will strengthen the analysis.
 
 #### Plugin-Specific Arguments
 
 *   **`--threshold-ms <float>`**: Threshold for scheduling delay and queue
-    latency in milliseconds (default: `10.0`).
+    latency in milliseconds (default: `10.0`). Does not filter instant events or
+    queue depth counters.
 *   **`--complete-only`**: Only return complete transactions (default: False,
     includes incomplete transactions).
 
@@ -166,7 +192,7 @@ lease blockers.
 
 The plugin executes 6 diagnostic queries in prioritized order:
 1. **Restless Sleepers (Wakeup Counts)**: Identifies threads with high context
-   switch / wakeup counts preventing deep sleep ($V_{dd\text{Min}}$).
+   switch / wakeup counts preventing deep sleep (VddMin).
 2. **Per-Core Utilization & Processing Rate**: Analyzes core duty cycles
    (% active non-idle time) and CPU frequency scaling via Fuchsia kernel
    `Processing Rate:CPU:N` counters.
