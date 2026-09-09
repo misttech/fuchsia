@@ -25,7 +25,7 @@ use perfetto_trace_protos::perfetto::protos::ftrace_event::Event::Print;
 use perfetto_trace_protos::perfetto::protos::trace_packet;
 use starnix_core::security;
 use starnix_core::task::dynamic_thread_spawner::SpawnRequestBuilder;
-use starnix_core::task::tracing::TracePerformanceEventManager;
+use starnix_core::task::tracing::PidKoidSession;
 use starnix_core::task::{CurrentTask, Kernel};
 use starnix_core::vfs::FsString;
 use starnix_logging::{
@@ -54,7 +54,9 @@ struct CallbackState {
     /// Partial trace packet returned from Perfetto but not yet written to Fuchsia.
     packet_data: Vec<u8>,
 
-    event_manager: TracePerformanceEventManager,
+    /// Recording session for pid/koid mappings, held while tracing is started. Dropping
+    /// it (on stop) releases this client's interest in the shared manager.
+    session: Option<PidKoidSession>,
 }
 
 impl CallbackState {
@@ -75,8 +77,7 @@ impl CallbackState {
     fn handle_stopped(&mut self) {
         self.prolonged_context = None;
         self.packet_data.clear();
-        self.event_manager.stop();
-        self.event_manager.clear();
+        self.session = None;
     }
 
     fn on_state_change(
@@ -191,8 +192,9 @@ impl CallbackState {
                         attach_notification_only: None,
                     },
                 )?;
-                // Once tracing has started, notify the event manager so it can start tracking processes.
-                self.event_manager.start(current_task.kernel());
+                // Once tracing has started, open a recording session so pid/koid
+                // mappings are tracked for the duration of the trace.
+                self.session = Some(current_task.kernel().trace_event_manager.open());
             }
             TraceState::Stopping => {
                 if prev_state != TraceState::Started {
@@ -474,34 +476,18 @@ impl CallbackState {
     }
 
     fn map_thread_to_koid_val(&mut self, pid: i32) -> i32 {
-        if pid == 0 {
-            return 0;
-        }
-        self.event_manager
-            .map_tid_to_koid(pid)
-            .map(|k| {
-                // Truncate the koid down to 32 bits in order to match the perfetto data schema. This is
-                // usually not an issue except for artificial koids which have the 2^63 bit set, such as
-                // virtual threads. This is consistent with the perfetto data importer code:
-                // https://github.com/google/perfetto/blob/c343c8a77c6e665c679e5c1ec845ac6dde0fc685/src/trace_processor/importers/fuchsia/fuchsia_trace_tokenizer.cc#L490
-                k.raw_koid() as i32
-            })
+        self.session
+            .as_ref()
+            .and_then(|s| s.resolve_tid_to_koid(pid))
+            .map(|k| k.raw_koid() as i32)
             .unwrap_or(pid)
     }
 
     fn map_to_koid_val(&mut self, pid: i32) -> i32 {
-        if pid == 0 {
-            return 0;
-        }
-        self.event_manager
-            .map_pid_to_koid(pid)
-            .map(|k| {
-                // Truncate the koid down to 32 bits in order to match the perfetto data schema. This is
-                // usually not an issue except for artificial koids which have the 2^63 bit set, such as
-                // virtual threads. This is consistent with the perfetto data importer code:
-                // https://github.com/google/perfetto/blob/c343c8a77c6e665c679e5c1ec845ac6dde0fc685/src/trace_processor/importers/fuchsia/fuchsia_trace_tokenizer.cc#L490
-                k.raw_koid() as i32
-            })
+        self.session
+            .as_ref()
+            .and_then(|s| s.resolve_pid_to_koid(pid))
+            .map(|k| k.raw_koid() as i32)
             .unwrap_or(pid)
     }
 }
@@ -534,7 +520,7 @@ pub fn start_perfetto_consumer_thread(kernel: &Kernel, socket_path: FsString) ->
             connection: None,
             prolonged_context: None,
             packet_data: Vec::new(),
-            event_manager: TracePerformanceEventManager::new(),
+            session: None,
         };
 
         fn handle_state_change(

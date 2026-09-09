@@ -10,7 +10,7 @@ use crate::ptrace::{
 use crate::signals::{KernelSignal, SignalDetail, SignalInfo, SignalState};
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::run_state::RunState;
-use crate::task::tracing::KoidPair;
+use crate::task::tracing::ZirconIdentity;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentCreds, CurrentTask,
     EventHandler, Kernel, NormalPriority, Pid, ProcessExitInfo, RealtimePriority, SchedulerState,
@@ -1554,17 +1554,24 @@ impl Task {
         ) || self.thread_group.has_pending_signals.load(Ordering::Relaxed)
     }
 
+    /// Returns the process and thread KOIDs for this task if both are available.
+    ///
+    /// The thread handle is always attached before task startup; a task without a valid
+    /// backing process (a Starnix kernel thread) is intentionally excluded.
+    pub fn get_zircon_identity(&self) -> Option<ZirconIdentity> {
+        let process = self.thread_group().get_process_koid().ok()?;
+        let thread = self.running_state().ok()?.thread.get()?.koid;
+        Some(ZirconIdentity { process, thread })
+    }
+
+    /// Record the pid - koid mapping for tracing and profiling tools.
     pub fn record_pid_koid_mapping(&self) {
-        let Ok(running_state) = self.running_state() else {
-            log_warn!("Cannot record pid/koid mapping for dead task {}", self.get_tid());
+        if !self.kernel().trace_event_manager.is_recording() {
             return;
-        };
-
-        let Some(ref mapping_table) = *self.kernel().pid_to_koid_mapping.read() else { return };
-
-        let pkoid = self.thread_group().get_process_koid().ok();
-        let tkoid = running_state.thread.get().map(|t| t.koid);
-        mapping_table.write().insert(self.tid.id, KoidPair { process: pkoid, thread: tkoid });
+        }
+        if let Some(identity) = self.get_zircon_identity() {
+            self.kernel().trace_event_manager.record(self.get_pid(), self.get_tid(), identity);
+        }
     }
 }
 

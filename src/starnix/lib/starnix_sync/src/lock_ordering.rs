@@ -61,7 +61,6 @@ lock_ordering! {
     EpollStateLock => SuspendResumeManagerInnerLock,
     EpollStateLock => TimerFileInfoLock,
     EpollWaitableStateLock => WaitQueueImplLock,
-    ExecutorVmarManagerLock => PidToKoidMapLock,
     ExecutorVmarManagerLock => ThreadGroupPtraceesLock,
     FdTableMutableStateLock => FsNodeInfoLevel,
     FileEpollFilesLock => EpollStateLock,

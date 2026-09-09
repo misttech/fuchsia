@@ -14,7 +14,7 @@ use crate::task::container_namespace::ContainerNamespace;
 use crate::task::limits::SystemLimits;
 use crate::task::memory_attribution::MemoryAttributionManager;
 use crate::task::net::NetstackDevices;
-use crate::task::tracing::PidToKoidMap;
+use crate::task::tracing::TracePerformanceEventManager;
 use crate::task::{
     AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask, DelayedReleaser,
     IpTables, KernelCgroups, KernelStats, KernelThreads, PidTable, SchedulerManager, Syslog, Task,
@@ -49,8 +49,8 @@ use smallvec::SmallVec;
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
-    ComponentControllerLock, KernelSwapFiles, LockDepGuard, LockDepMutex, LockDepRwLock,
-    MountsLevel, PidToKoidMapLock, RwLock, RwSeqLock, RwSeqLockGuard, SyscallLogFiltersLock,
+    ComponentControllerLock, KernelSwapFiles, LockDepGuard, LockDepMutex, MountsLevel, RwLock,
+    RwSeqLock, RwSeqLockGuard, SyscallLogFiltersLock,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
@@ -245,8 +245,10 @@ pub struct Kernel {
     /// A weak reference to the init task (PID 1).
     pub init_task: OnceLock<Weak<Task>>,
 
-    /// Used to record the pid/tid to Koid mappings. Set when collecting trace data.
-    pub pid_to_koid_mapping: Arc<LockDepRwLock<Option<PidToKoidMap>, PidToKoidMapLock>>,
+    /// Shared manager of pid/tid to koid mappings for tracing and profiling clients.
+    /// A direct field (rather than an expando entry) so the task-creation fast path is a
+    /// single relaxed atomic load with no locks when nothing is recording.
+    pub trace_event_manager: Arc<TracePerformanceEventManager>,
 
     /// Subsystem-specific properties that hang off the Kernel object.
     ///
@@ -530,7 +532,7 @@ impl Kernel {
             features,
             pids: Default::default(),
             init_task: OnceLock::new(),
-            pid_to_koid_mapping: Default::default(),
+            trace_event_manager: Arc::new(TracePerformanceEventManager::new(kernel.clone())),
             expando: Default::default(),
             default_abstract_socket_namespace: AbstractUnixSocketNamespace::new(unix_address_maker),
             default_abstract_vsock_namespace: AbstractVsockSocketNamespace::new(
