@@ -7,7 +7,18 @@ import("//build/config/compiler_config.gni")
 # Platform baseline.
 # This tracks the minimum hardware requirements for Fuchsia on AArch64.
 compiler_config("arm64") {
-  compiler_configs = [ ":fix-cortex-a53-835769" ]
+  if (toolchain_environment == "kernel") {
+    # TODO(https://fxbug.dev/537458631): This is only enabled for the kernel
+    # now to facilitate cross-language inlining, but it should really be part
+    # of the default target features for fuchsia on aarch64. This is disabled
+    # in userspace because passing this un-stabilized LLVM feature via
+    # `-Ctarget-feature` causes rustc to emit an 'unknown and unstable feature'
+    # warning on every crate. Once upstream rustc enables this by default in
+    # the `aarch64-unknown-fuchsia` target spec (matching Clang), this config
+    # shouldn't be needed at all. We'd just need a separate config for toggling
+    # it on/off as needed.
+    compiler_configs = [ ":fix-cortex-a53-835769" ]
+  }
   cflags = [ "-mtune=generic" ]
 
   if (toolchain_environment != "kernel") {
