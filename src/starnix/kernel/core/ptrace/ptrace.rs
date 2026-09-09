@@ -11,8 +11,8 @@ use crate::signals::{
     SignalDetail, SignalInfo, UncheckedSignalInfo, send_signal_first, send_standard_signal,
 };
 use crate::task::{
-    CurrentTask, Pid, PidTable, ProcessSelector, Task, TaskMutableState, ThreadGroup, ThreadState,
-    WaitQueue, ZombieNotification, ZombieProcess,
+    CurrentTask, Pid, PidTableGuard, ProcessSelector, Task, TaskMutableState, ThreadGroup,
+    ThreadState, WaitQueue, ZombieNotification, ZombieProcess,
 };
 use bitflags::bitflags;
 use starnix_logging::track_stub;
@@ -494,7 +494,7 @@ impl TracedZombie {
         }
     }
 
-    fn detach(self, pids: &mut PidTable) -> Option<ZombieNotification> {
+    fn detach(self, pids: &mut PidTableGuard<'_>) -> Option<ZombieNotification> {
         self.artificial_zombie.release(pids);
         self.notification
     }
@@ -523,7 +523,7 @@ impl ZombiePtracees {
 
     /// Adds a zombie tracee to the list, but does not provide a parent task to
     /// notify when the tracer is done.
-    pub fn add(&mut self, pids: &mut PidTable, tid: Pid, zombie: ZombieProcess) {
+    pub fn add(&mut self, pids: &mut PidTableGuard<'_>, tid: Pid, zombie: ZombieProcess) {
         if let std::collections::btree_map::Entry::Vacant(entry) = self.zombies.entry(tid) {
             entry.insert(TracedZombie::new(zombie));
         } else {
@@ -534,14 +534,18 @@ impl ZombiePtracees {
     /// Detaches from the zombie tracee with the given TID.
     ///
     /// Returns the notification to deliver to the tracee's real parent.
-    pub fn detach(&mut self, pids: &mut PidTable, tid: &Pid) -> Option<ZombieNotification> {
+    pub fn detach(
+        &mut self,
+        pids: &mut PidTableGuard<'_>,
+        tid: &Pid,
+    ) -> Option<ZombieNotification> {
         self.zombies.remove(tid).and_then(|traced_zombie| traced_zombie.detach(pids))
     }
 
     /// Detaches from every zombie tracee.
     ///
     /// Returns the notifications to deliver to the tracees' real parents.
-    pub fn detach_all(&mut self, pids: &mut PidTable) -> Vec<ZombieNotification> {
+    pub fn detach_all(&mut self, pids: &mut PidTableGuard<'_>) -> Vec<ZombieNotification> {
         let traced_zombies = std::mem::replace(&mut self.zombies, Default::default());
         traced_zombies
             .into_iter()
@@ -824,7 +828,7 @@ fn ptrace_listen(tracee: &Task) -> Result<(), Errno> {
 }
 
 pub fn ptrace_detach(
-    pids: &mut PidTable,
+    pids: &mut PidTableGuard<'_>,
     tracer: PtraceTracer<'_>,
     tracee: &Task,
     data: &UserAddress,
@@ -893,7 +897,7 @@ pub fn ptrace_dispatch(
             return Ok(starnix_syscalls::SUCCESS);
         }
         PTRACE_DETACH => {
-            let mut pids = current_task.kernel().pids.write();
+            let mut pids = current_task.kernel().pids.lock();
             ptrace_detach(
                 &mut pids,
                 PtraceTracer::Syscall(&current_task.task),

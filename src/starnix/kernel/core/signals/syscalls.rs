@@ -15,6 +15,7 @@ use crate::task::{
     ThreadGroup, ThreadGroupLifecycleWaitValue, WaitResult, WaitableChildResult, Waiter,
 };
 use crate::vfs::{FdFlags, FdNumber};
+use fuchsia_rcu::RcuReadScope;
 use starnix_uapi::user_address::{ArchSpecific, MultiArchUserRef};
 use starnix_uapi::{tid_t, uapi};
 
@@ -474,7 +475,7 @@ pub fn sys_kill(
     pid: pid_t,
     unchecked_signal: UncheckedSignal,
 ) -> Result<(), Errno> {
-    let pids = current_task.kernel().pids.read();
+    let pids = &current_task.kernel().pids;
     match pid {
         pid if pid > 0 => {
             // "If pid is positive, then signal sig is sent to the process with
@@ -508,8 +509,7 @@ pub fn sys_kill(
             // Linux the call kill(-1,sig) does not signal the calling process."
 
             let thread_groups: Vec<_> = pids
-                .get_thread_groups()
-                .into_iter()
+                .get_thread_groups(&RcuReadScope::new())
                 .filter(|thread_group| {
                     if *current_task.thread_group() == *thread_group {
                         return false;
@@ -530,7 +530,7 @@ pub fn sys_kill(
             // process group whose ID is -pid."
             let pid = match pid {
                 0 => current_task.thread_group().read().process_group.leader.clone(),
-                _ => pids.get(negate_pid(pid)?)?.clone(),
+                _ => pids.get(negate_pid(pid)?)?,
             };
 
             let process_group = pid.get_process_group();
@@ -595,11 +595,11 @@ pub fn sys_tgkill(
     if tgid <= 0 || tid <= 0 {
         return error!(EINVAL);
     }
-    let pids = current_task.kernel().pids.read();
+    let pids = &current_task.kernel().pids;
     let tid = pids.get(tid)?;
     let tgid = pids.get(tgid)?;
     let thread = tid.get_task()?;
-    verify_tgid_for_task(&thread, tgid)?;
+    verify_tgid_for_task(&thread, &tgid)?;
     send_unchecked_signal(current_task, &thread, unchecked_signal, SI_TKILL)
 }
 
@@ -657,11 +657,11 @@ pub fn sys_rt_tgsigqueueinfo(
     unchecked_signal: UncheckedSignal,
     siginfo_ref: UserAddress,
 ) -> Result<(), Errno> {
-    let pids = current_task.kernel().pids.read();
+    let pids = &current_task.kernel().pids;
 
     let task = pids.get(tid)?.get_task()?;
     let tgid = pids.get(tgid)?;
-    verify_tgid_for_task(&task, tgid)?;
+    verify_tgid_for_task(&task, &tgid)?;
     send_unchecked_signal_info(current_task, &task, unchecked_signal, siginfo_ref)
 }
 
@@ -830,7 +830,7 @@ fn wait_on_pid(
     let waiter = Waiter::new();
     loop {
         {
-            let mut pids = current_task.kernel().pids.write();
+            let mut pids = current_task.kernel().pids.lock();
             // Waits and notifies on a given task need to be done atomically
             // with respect to changes to the task's waitable state; otherwise,
             // we see missing notifications. We do that by holding the task lock.
@@ -917,8 +917,7 @@ pub fn sys_waitid(
 
     let task_selector = match id_type {
         P_PID => {
-            let pid =
-                current_task.kernel().pids.read().get(id).cloned().map_err(|_| errno!(ECHILD))?;
+            let pid = current_task.kernel().pids.get(id).map_err(|_| errno!(ECHILD))?;
             ProcessSelector::Pid(pid)
         }
         P_ALL => ProcessSelector::Any,
@@ -926,7 +925,7 @@ pub fn sys_waitid(
             let pid = if id == 0 {
                 current_task.thread_group().read().process_group.leader.clone()
             } else {
-                current_task.kernel().pids.read().get(id).cloned().map_err(|_| errno!(ECHILD))?
+                current_task.kernel().pids.get(id).map_err(|_| errno!(ECHILD))?
             };
             ProcessSelector::Pgid(pid)
         }
@@ -1001,21 +1000,13 @@ pub fn sys_wait4(
     } else if raw_selector == -1 {
         ProcessSelector::Any
     } else if raw_selector > 0 {
-        let pid = current_task
-            .kernel()
-            .pids
-            .read()
-            .get(raw_selector)
-            .cloned()
-            .map_err(|_| errno!(ECHILD))?;
+        let pid = current_task.kernel().pids.get(raw_selector).map_err(|_| errno!(ECHILD))?;
         ProcessSelector::Pid(pid)
     } else if raw_selector < -1 {
         let pid = current_task
             .kernel()
             .pids
-            .read()
             .get(negate_pid(raw_selector)?)
-            .cloned()
             .map_err(|_| errno!(ECHILD))?;
         ProcessSelector::Pgid(pid)
     } else {

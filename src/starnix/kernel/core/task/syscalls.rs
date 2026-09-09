@@ -387,7 +387,7 @@ pub fn sys_setpgid(current_task: &CurrentTask, pid: pid_t, pgid: pid_t) -> Resul
     let pgid = if pgid == 0 {
         task.pid.clone()
     } else {
-        current_task.kernel().pids.read().get(pgid).map_err(|_| errno!(EPERM))?.clone()
+        current_task.kernel().pids.get(pgid).map_err(|_| errno!(EPERM))?
     };
 
     current_task.thread_group().setpgid(current_task, &task, &pgid)
@@ -1193,7 +1193,7 @@ pub fn sys_ptrace(
     if request == PTRACE_TRACEME {
         return ptrace_traceme(current_task);
     }
-    let pid = current_task.kernel().pids.read().get(pid)?.clone();
+    let pid = current_task.kernel().pids.get(pid)?;
     match request {
         PTRACE_ATTACH => ptrace_attach(current_task, &pid, PtraceAttachType::Attach, data),
         PTRACE_SEIZE => ptrace_attach(current_task, &pid, PtraceAttachType::Seize, data),
