@@ -122,44 +122,50 @@ class CpuPluginTest(unittest.TestCase):
         self.assertEqual(len(results), 6)
 
         # 1. Restless Sleepers (Wakeups)
-        self.assertEqual(
-            results[0]["name"], "Restless Sleepers (Wakeup Counts)"
-        )
-        self.assertEqual(len(results[0]["results"]), 2)
-        self.assertEqual(results[0]["results"][0]["thread_name"], "idle")
-        self.assertEqual(results[0]["results"][1]["wakeup_count"], 1200)
+        self.assertEqual(results[0].name, "Restless Sleepers (Wakeup Counts)")
+        res0 = results[0].results
+        assert res0 is not None
+        self.assertEqual(len(res0), 2)
+        self.assertEqual(res0[0]["thread_name"], "idle")
+        self.assertEqual(res0[1]["wakeup_count"], 1200)
 
         # 2. Per-Core Utilization & Processing Rate
         self.assertEqual(
-            results[1]["name"], "Per-Core Utilization & Processing Rate"
+            results[1].name, "Per-Core Utilization & Processing Rate"
         )
-        self.assertEqual(len(results[1]["results"]), 1)
-        self.assertEqual(results[1]["results"][0]["cpu"], 0)
-        self.assertEqual(results[1]["results"][0]["avg_rate_pct"], 52.4)
+        res1 = results[1].results
+        assert res1 is not None
+        self.assertEqual(len(res1), 1)
+        self.assertEqual(res1[0]["cpu"], 0)
+        self.assertEqual(res1[0]["avg_rate_pct"], 52.4)
 
         # 3. Top CPU Consumers
-        self.assertEqual(
-            results[2]["name"], "Top CPU Consumers (Usual Suspects)"
-        )
-        self.assertEqual(len(results[2]["results"]), 1)
-        self.assertEqual(results[2]["results"][0]["total_cpu_ms"], 320.5)
+        self.assertEqual(results[2].name, "Top CPU Consumers (Usual Suspects)")
+        res2 = results[2].results
+        assert res2 is not None
+        self.assertEqual(len(res2), 1)
+        self.assertEqual(res2[0]["total_cpu_ms"], 320.5)
 
         # 4. Fuchsia Async Executor Overhead
-        self.assertEqual(results[3]["name"], "Fuchsia Async Executor Overhead")
-        self.assertEqual(len(results[3]["results"]), 1)
-        self.assertEqual(results[3]["results"][0]["slice_count"], 450)
+        self.assertEqual(results[3].name, "Fuchsia Async Executor Overhead")
+        res3 = results[3].results
+        assert res3 is not None
+        self.assertEqual(len(res3), 1)
+        self.assertEqual(res3[0]["slice_count"], 450)
 
         # 5. Binder IPC Breakdown
-        self.assertEqual(results[4]["name"], "Binder IPC Breakdown")
-        self.assertEqual(len(results[4]["results"]), 1)
-        self.assertEqual(results[4]["results"][0]["transaction_count"], 85)
+        self.assertEqual(results[4].name, "Binder IPC Breakdown")
+        res4 = results[4].results
+        assert res4 is not None
+        self.assertEqual(len(res4), 1)
+        self.assertEqual(res4[0]["transaction_count"], 85)
 
         # 6. Suspend and Wake Lease Tracking
-        self.assertEqual(results[5]["name"], "Suspend and Wake Lease Tracking")
-        self.assertEqual(len(results[5]["results"]), 1)
-        self.assertEqual(
-            results[5]["results"][0]["event_name"], "acquire_wake_lease:power"
-        )
+        self.assertEqual(results[5].name, "Suspend and Wake Lease Tracking")
+        res5 = results[5].results
+        assert res5 is not None
+        self.assertEqual(len(res5), 1)
+        self.assertEqual(res5[0]["event_name"], "acquire_wake_lease:power")
 
     def test_analyze_empty_results(self) -> None:
         """Tests that empty query results format as empty lists across all 6 sections."""
@@ -174,8 +180,8 @@ class CpuPluginTest(unittest.TestCase):
 
         self.assertEqual(len(results), 6)
         for section in results:
-            self.assertIn("name", section)
-            self.assertEqual(section["results"], [])
+            self.assertTrue(section.name)
+            self.assertEqual(section.results, [])
 
     def test_analyze_missing_schema(self) -> None:
         """Tests that missing schema tables are handled gracefully with section error messages."""
@@ -190,10 +196,8 @@ class CpuPluginTest(unittest.TestCase):
 
         self.assertEqual(len(results), 6)
         for section in results:
-            self.assertIn("error", section)
-            self.assertIn(
-                "Required schema tables/views missing", section["error"]
-            )
+            assert section.error is not None
+            self.assertIn("Required schema tables/views missing", section.error)
 
     def test_analyze_without_frequency_counters(self) -> None:
         """Tests that Query 2 falls back to core utilization when frequency counters are absent."""
@@ -235,11 +239,12 @@ class CpuPluginTest(unittest.TestCase):
         self.assertEqual(len(results), 6)
         core_util_section = results[1]
         self.assertEqual(
-            core_util_section["name"], "Per-Core Utilization & Processing Rate"
+            core_util_section.name, "Per-Core Utilization & Processing Rate"
         )
-        self.assertIn("results", core_util_section)
-        self.assertEqual(len(core_util_section["results"]), 1)
-        self.assertIsNone(core_util_section["results"][0]["avg_rate_pct"])
+        core_results = core_util_section.results
+        assert core_results is not None
+        self.assertEqual(len(core_results), 1)
+        self.assertIsNone(core_results[0]["avg_rate_pct"])
 
     def test_analyze_query_failure(self) -> None:
         """Tests that runtime SQL query failures return formatted error dicts without crashing."""
@@ -256,10 +261,10 @@ class CpuPluginTest(unittest.TestCase):
 
         self.assertEqual(len(results), 6)
         for section in results:
-            self.assertIn("error", section)
+            assert section.error is not None
             self.assertIn(
                 "Query execution failed: database disk image is malformed",
-                section["error"],
+                section.error,
             )
 
     def test_analyze_core_utilization_variants_directly(self) -> None:
@@ -280,17 +285,19 @@ class CpuPluginTest(unittest.TestCase):
             mock_tp, self.all_tables
         )
         self.assertEqual(
-            res_counters["name"], "Per-Core Utilization & Processing Rate"
+            res_counters.name, "Per-Core Utilization & Processing Rate"
         )
-        self.assertEqual(len(res_counters["results"]), 1)
+        assert res_counters.results is not None
+        self.assertEqual(len(res_counters.results), 1)
 
         res_average = _analyze_core_utilization_from_average(
             mock_tp, self.all_tables
         )
         self.assertEqual(
-            res_average["name"], "Per-Core Utilization & Processing Rate"
+            res_average.name, "Per-Core Utilization & Processing Rate"
         )
-        self.assertEqual(len(res_average["results"]), 1)
+        assert res_average.results is not None
+        self.assertEqual(len(res_average.results), 1)
 
     def test_analyze_with_counter_tables_but_no_power_tracks(self) -> None:
         """Tests that from_average is used when counter tables exist but no kernel:power tracks exist."""
@@ -326,11 +333,12 @@ class CpuPluginTest(unittest.TestCase):
         self.assertEqual(len(results), 6)
         core_util_section = results[1]
         self.assertEqual(
-            core_util_section["name"], "Per-Core Utilization & Processing Rate"
+            core_util_section.name, "Per-Core Utilization & Processing Rate"
         )
-        self.assertIn("results", core_util_section)
-        self.assertEqual(len(core_util_section["results"]), 1)
-        self.assertIsNone(core_util_section["results"][0]["avg_rate_pct"])
+        core_results = core_util_section.results
+        assert core_results is not None
+        self.assertEqual(len(core_results), 1)
+        self.assertIsNone(core_results[0]["avg_rate_pct"])
 
     def test_analyze_invalid_limit(self) -> None:
         """Tests that invalid, non-positive, or non-integer limits raise PluginArgumentError."""

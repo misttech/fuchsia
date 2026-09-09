@@ -9,10 +9,10 @@ import io
 import json
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from typing import Any, Sequence
+from typing import Sequence
 
 from perf_analyze import main
-from plugins import AnalyzePlugin, PluginArgumentError
+from plugins import AnalyzePlugin, PluginArgumentError, SectionResult
 
 
 class MockAnalyzePlugin(AnalyzePlugin):
@@ -26,12 +26,16 @@ class MockAnalyzePlugin(AnalyzePlugin):
         remaining_args: Sequence[str],
         trace_path: str,
         cache: bool = True,
-    ) -> list[dict[str, Any]]:
+    ) -> Sequence[SectionResult]:
         """Mock analysis execution."""
         if "--help" in remaining_args:
             print("mock-analyze help")
             return []
-        return [{"analyze_result": "ok"}]
+        return [
+            SectionResult(
+                name="mock_result", results=[{"analyze_result": "ok"}]
+            )
+        ]
 
 
 class MockErrorPlugin(AnalyzePlugin):
@@ -45,7 +49,7 @@ class MockErrorPlugin(AnalyzePlugin):
         remaining_args: Sequence[str],
         trace_path: str,
         cache: bool = True,
-    ) -> list[dict[str, Any]]:
+    ) -> Sequence[SectionResult]:
         """Mock analysis execution raising errors."""
         if "--invalid" in remaining_args:
             raise PluginArgumentError("Invalid argument")
@@ -200,7 +204,10 @@ class PerfAnalyzeTest(unittest.TestCase):
             )
         self.assertEqual(exit_code, 0)
         results = json.loads(stdout.getvalue())
-        self.assertEqual(results, [{"analyze_result": "ok"}])
+        self.assertEqual(
+            results,
+            [{"name": "mock_result", "results": [{"analyze_result": "ok"}]}],
+        )
 
     def test_analyze_plugin_argument_error(self) -> None:
         """Tests that PluginArgumentError from plugin returns exit code 2."""

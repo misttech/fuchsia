@@ -8,15 +8,27 @@ import csv
 import io
 import json
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Sequence
+
+from plugins import SectionResult
 
 
 class Formatter(ABC):
     """Base class for result formatters."""
 
     @abstractmethod
-    def format_results(self, data: list[dict[str, Any]]) -> str:
-        """Formats query results as a string."""
+    def format_results(
+        self,
+        data: Sequence[SectionResult],
+    ) -> str:
+        """Formats section results as a string."""
+
+    @abstractmethod
+    def format_raw_data(
+        self,
+        data: Sequence[dict[str, Any]],
+    ) -> str:
+        """Formats raw query results as a string."""
 
     @abstractmethod
     def format_error(self, error_msg: str) -> str:
@@ -26,41 +38,50 @@ class Formatter(ABC):
 class JsonFormatter(Formatter):
     """Formats results and errors as JSON."""
 
-    def format_results(self, data: list[dict[str, Any]]) -> str:
-        return json.dumps(data, indent=2)
+    def format_results(
+        self,
+        data: Sequence[SectionResult],
+    ) -> str:
+        serialized = [x.to_dict() for x in data]
+        return json.dumps(serialized, indent=2)
+
+    def format_raw_data(
+        self,
+        data: Sequence[dict[str, Any]],
+    ) -> str:
+        return json.dumps(list(data), indent=2)
 
     def format_error(self, error_msg: str) -> str:
         return json.dumps({"error": error_msg}, indent=2)
 
 
-def _is_batch(data: list[dict[str, Any]]) -> bool:
-    """Checks if the data represents batch query/analysis results."""
-    return bool(
-        data
-        and all(
-            isinstance(x, dict)
-            and "name" in x
-            and ("results" in x or "error" in x)
-            for x in data
-        )
-    )
-
-
 class MarkdownFormatter(Formatter):
     """Formats results and errors as Markdown."""
 
-    def format_results(self, data: list[dict[str, Any]]) -> str:
-        if _is_batch(data):
-            output = []
-            for item in data:
-                output.append(f"### {item['name']}")
-                if "error" in item:
-                    output.append(f"Error: {item['error']}")
-                else:
-                    results = item.get("results", [])
-                    output.append(_table_to_markdown(results))
-                output.append("")
-            return "\n".join(output).strip()
+    def format_results(
+        self,
+        data: Sequence[SectionResult],
+    ) -> str:
+        if not data:
+            return "No results."
+        output = []
+        for item in data:
+            output.append(f"### {item.name}")
+            if item.note is not None:
+                output.append(f"> [!NOTE]\n> {item.note}\n")
+            if item.error is not None:
+                output.append(f"Error: {item.error}")
+            elif item.results is not None:
+                output.append(_table_to_markdown(item.results))
+            elif item.note is None:
+                output.append("No results.")
+            output.append("")
+        return "\n".join(output).strip()
+
+    def format_raw_data(
+        self,
+        data: Sequence[dict[str, Any]],
+    ) -> str:
         return _table_to_markdown(data)
 
     def format_error(self, error_msg: str) -> str:
@@ -70,25 +91,37 @@ class MarkdownFormatter(Formatter):
 class TextFormatter(Formatter):
     """Formats results and errors as plain text (TSV)."""
 
-    def format_results(self, data: list[dict[str, Any]]) -> str:
-        if _is_batch(data):
-            output = []
-            for item in data:
-                output.append(f"Query: {item['name']}")
-                if "error" in item:
-                    output.append(f"Error: {item['error']}")
-                else:
-                    results = item.get("results", [])
-                    output.append(_table_to_text(results))
-                output.append("")
-            return "\n".join(output).strip()
+    def format_results(
+        self,
+        data: Sequence[SectionResult],
+    ) -> str:
+        if not data:
+            return "No results."
+        output = []
+        for item in data:
+            output.append(f"Query: {item.name}")
+            if item.note is not None:
+                output.append(f"Note: {item.note}")
+            if item.error is not None:
+                output.append(f"Error: {item.error}")
+            elif item.results is not None:
+                output.append(_table_to_text(item.results))
+            elif item.note is None:
+                output.append("No results.")
+            output.append("")
+        return "\n".join(output).strip()
+
+    def format_raw_data(
+        self,
+        data: Sequence[dict[str, Any]],
+    ) -> str:
         return _table_to_text(data)
 
     def format_error(self, error_msg: str) -> str:
         return f"Error: {error_msg}"
 
 
-def _table_to_markdown(rows: list[dict[str, Any]]) -> str:
+def _table_to_markdown(rows: Sequence[dict[str, Any]]) -> str:
     """Formats a list of dicts as a Markdown table, escaping pipes."""
     if not rows:
         return "No results."
@@ -108,7 +141,7 @@ def _table_to_markdown(rows: list[dict[str, Any]]) -> str:
     return "\n".join([header_line, separator_line] + row_lines)
 
 
-def _table_to_text(rows: list[dict[str, Any]]) -> str:
+def _table_to_text(rows: Sequence[dict[str, Any]]) -> str:
     """Formats a list of dicts as TSV text using standard csv module."""
     if not rows:
         return "No results."

@@ -5,14 +5,15 @@
 import unittest
 from typing import Any
 
+from plugins import SectionResult
 from result_formatter import FORMATTERS
 
 
 class ResultFormatterTest(unittest.TestCase):
     """Tests for result formatters."""
 
-    def test_format_results(self) -> None:
-        """Tests format_results with normal data."""
+    def test_format_raw_data(self) -> None:
+        """Tests format_raw_data with normal tabular data."""
         test_cases: list[tuple[str, list[dict[str, Any]], str]] = [
             (
                 "json",
@@ -33,11 +34,11 @@ class ResultFormatterTest(unittest.TestCase):
         for fmt_name, data, expected in test_cases:
             with self.subTest(format=fmt_name):
                 formatter = FORMATTERS[fmt_name]
-                output = formatter.format_results(data)
+                output = formatter.format_raw_data(data)
                 self.assertEqual(output.strip(), expected.strip())
 
-    def test_format_results_empty(self) -> None:
-        """Tests format_results with empty data."""
+    def test_format_raw_data_empty(self) -> None:
+        """Tests format_raw_data with empty data."""
         test_cases: list[tuple[str, list[dict[str, Any]], str]] = [
             ("json", [], "[]"),
             ("markdown", [], "No results."),
@@ -46,11 +47,11 @@ class ResultFormatterTest(unittest.TestCase):
         for fmt_name, data, expected in test_cases:
             with self.subTest(format=fmt_name):
                 formatter = FORMATTERS[fmt_name]
-                output = formatter.format_results(data)
+                output = formatter.format_raw_data(data)
                 self.assertEqual(output.strip(), expected.strip())
 
-    def test_format_results_newlines(self) -> None:
-        """Tests format_results with newlines in data."""
+    def test_format_raw_data_newlines(self) -> None:
+        """Tests format_raw_data with newlines in data."""
         test_cases: list[tuple[str, list[dict[str, Any]], str]] = [
             (
                 "json",
@@ -71,20 +72,20 @@ class ResultFormatterTest(unittest.TestCase):
         for fmt_name, data, expected in test_cases:
             with self.subTest(format=fmt_name):
                 formatter = FORMATTERS[fmt_name]
-                output = formatter.format_results(data)
+                output = formatter.format_raw_data(data)
                 self.assertEqual(output.strip(), expected.strip())
 
     def test_format_results_batch(self) -> None:
-        """Tests format_results with batch data."""
-        batch_data: list[dict[str, Any]] = [
-            {
-                "name": "Query 1",
-                "results": [{"col1": "val1"}],
-            },
-            {
-                "name": "Query 2",
-                "error": "Some error occurred",
-            },
+        """Tests format_results with batch SectionResult data."""
+        batch_data: list[SectionResult] = [
+            SectionResult(
+                name="Query 1",
+                results=[{"col1": "val1"}],
+            ),
+            SectionResult(
+                name="Query 2",
+                error="Some error occurred",
+            ),
         ]
         test_cases: list[tuple[str, str]] = [
             (
@@ -105,6 +106,54 @@ class ResultFormatterTest(unittest.TestCase):
                 formatter = FORMATTERS[fmt_name]
                 output = formatter.format_results(batch_data)
                 self.assertEqual(output.strip(), expected.strip())
+
+    def test_format_results_batch_with_note(self) -> None:
+        """Tests format_results with batch data containing a note field."""
+        batch_data: list[SectionResult] = [
+            SectionResult(
+                name="Query 1",
+                note="A note explaining context",
+                results=[{"col1": "val1"}],
+            ),
+        ]
+        test_cases: list[tuple[str, str]] = [
+            (
+                "json",
+                '[\n  {\n    "name": "Query 1",\n    "note": "A note explaining context",\n    "results": [\n      {\n        "col1": "val1"\n      }\n    ]\n  }\n]',
+            ),
+            (
+                "markdown",
+                "### Query 1\n> [!NOTE]\n> A note explaining context\n\n| col1 |\n| --- |\n| val1 |",
+            ),
+            (
+                "text",
+                "Query: Query 1\nNote: A note explaining context\ncol1\nval1",
+            ),
+        ]
+        for fmt_name, expected in test_cases:
+            with self.subTest(format=fmt_name):
+                formatter = FORMATTERS[fmt_name]
+                output = formatter.format_results(batch_data)
+                self.assertEqual(output.strip(), expected.strip())
+
+    def test_format_results_section_result_note_only(self) -> None:
+        """Tests that a SectionResult with only a note does not output 'No results.'."""
+        batch_data = [
+            SectionResult(
+                name="Advisory Notice",
+                note="This is an informational notice.",
+            ),
+        ]
+        md_output = FORMATTERS["markdown"].format_results(batch_data)
+        self.assertEqual(
+            md_output.strip(),
+            "### Advisory Notice\n> [!NOTE]\n> This is an informational notice.",
+        )
+        text_output = FORMATTERS["text"].format_results(batch_data)
+        self.assertEqual(
+            text_output.strip(),
+            "Query: Advisory Notice\nNote: This is an informational notice.",
+        )
 
     def test_format_error(self) -> None:
         """Tests format_error."""

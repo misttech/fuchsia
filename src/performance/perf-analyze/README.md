@@ -201,5 +201,5 @@ Unit tests are written using standard Python `unittest`. To build and run all
 unit tests, execute:
 
 ```shell
-fx test perf_analyze_test binder_test result_formatter_test cpu_test
+fx test perf_analyze_test binder_test result_formatter_test cpu_test plugins_test
 ```

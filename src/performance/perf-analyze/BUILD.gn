@@ -47,7 +47,10 @@ if (is_host) {
 
   python_host_test("result_formatter_test") {
     main_source = "result_formatter_test.py"
-    sources = [ "result_formatter.py" ]
+    sources = [
+      "plugins.py",
+      "result_formatter.py",
+    ]
   }
 
   python_host_test("binder_test") {
@@ -67,6 +70,11 @@ if (is_host) {
     ]
     deps = [ "//src/performance/lib/tp_shell" ]
   }
+
+  python_host_test("plugins_test") {
+    main_source = "plugins_test.py"
+    sources = [ "plugins.py" ]
+  }
 } else {
   group("binder_test") {
     testonly = true
@@ -80,6 +88,10 @@ if (is_host) {
     testonly = true
     public_deps = [ ":perf_analyze_test($host_toolchain)" ]
   }
+  group("plugins_test") {
+    testonly = true
+    public_deps = [ ":plugins_test($host_toolchain)" ]
+  }
   group("result_formatter_test") {
     testonly = true
     public_deps = [ ":result_formatter_test($host_toolchain)" ]
@@ -92,6 +104,7 @@ group("tests") {
     ":binder_test",
     ":cpu_test",
     ":perf_analyze_test",
+    ":plugins_test",
     ":result_formatter_test",
   ]
 }

@@ -122,14 +122,20 @@ def main(
 
         tp_shell = TpShell()
         try:
-            results = tp_shell.query(
-                trace_path=args.trace,
-                sql=args.sql,
-                batch=args.batch,
-                cache=args.cache,
-            )
-            # Format and print results
-            print(formatter.format_results(results))
+            if args.sql:
+                raw_results = tp_shell.query(
+                    trace_path=args.trace,
+                    sql=args.sql,
+                    cache=args.cache,
+                )
+                print(formatter.format_raw_data(raw_results))
+            else:
+                batch_results = tp_shell.query(
+                    trace_path=args.trace,
+                    batch=args.batch,
+                    cache=args.cache,
+                )
+                print(formatter.format_results(batch_results))
             return 0
         except Exception as e:
             print(formatter.format_error(str(e)))
@@ -143,7 +149,7 @@ def main(
             plugin_data = [
                 {"name": p.name, "description": p.description} for p in plugins
             ]
-            print(formatter.format_results(plugin_data))
+            print(formatter.format_raw_data(plugin_data))
             return 0
 
         if args.help:
@@ -192,10 +198,10 @@ def main(
             return 2
 
         try:
-            results = plugin.analyze(
+            analysis_results = plugin.analyze(
                 remaining_args, args.trace, cache=args.cache
             )
-            print(formatter.format_results(results))
+            print(formatter.format_results(analysis_results))
             return 0
         except PluginArgumentError as e:
             print(formatter.format_error(str(e)))

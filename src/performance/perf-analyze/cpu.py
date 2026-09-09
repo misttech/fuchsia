@@ -11,9 +11,14 @@ lease blockers.
 """
 
 from collections.abc import Set
-from typing import Any, Sequence
+from typing import Sequence
 
-from plugins import AnalyzePlugin, PluginArgumentError, PluginArgumentParser
+from plugins import (
+    AnalyzePlugin,
+    PluginArgumentError,
+    PluginArgumentParser,
+    SectionResult,
+)
 from tp_shell import PerfettoTraceProcessor
 
 
@@ -23,30 +28,30 @@ def _perform_analysis_query(
     query: str,
     required_tables: Set[str],
     db_objects: Set[str],
-) -> dict[str, Any]:
+) -> SectionResult:
     if missing := required_tables - db_objects:
-        return {
-            "name": name,
-            "error": f"Required schema tables/views missing: {', '.join(sorted(missing))}",
-        }
+        return SectionResult(
+            name=name,
+            error=f"Required schema tables/views missing: {', '.join(sorted(missing))}",
+        )
     try:
         results = tp.run_query(query)
-        return {
-            "name": name,
-            "results": results,
-        }
+        return SectionResult(
+            name=name,
+            results=results,
+        )
     except Exception as e:
-        return {
-            "name": name,
-            "error": f"Query execution failed: {e}",
-        }
+        return SectionResult(
+            name=name,
+            error=f"Query execution failed: {e}",
+        )
 
 
 def _analyze_restless_sleepers(
     tp: PerfettoTraceProcessor,
     db_objects: Set[str],
     limit: int,
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes thread wakeup counts and context switches (Restless Sleepers)."""
     required_tables = {"thread_state", "thread", "process"}
     query = f"""
@@ -96,7 +101,7 @@ def _has_power_counters(
 def _analyze_core_utilization_from_counters(
     tp: PerfettoTraceProcessor,
     db_objects: Set[str],
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes per-core CPU utilization percentage weighted by DVFS processing rates.
 
     Reference: https://fuchsia.dev/fuchsia-src/development/tracing/advanced/recording-cpu-frequency
@@ -178,7 +183,7 @@ def _analyze_core_utilization_from_counters(
 def _analyze_core_utilization_from_average(
     tp: PerfettoTraceProcessor,
     db_objects: Set[str],
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes per-core CPU utilization percentage over the trace window without DVFS rates."""
     required_tables = {"trace_bounds", "thread_state", "thread", "process"}
     query = """
@@ -215,7 +220,7 @@ def _analyze_core_utilization_from_average(
 def _analyze_core_utilization_and_rate(
     tp: PerfettoTraceProcessor,
     db_objects: Set[str],
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes per-core CPU utilization percentage and DVFS processing rates.
 
     Reference: https://fuchsia.dev/fuchsia-src/development/tracing/advanced/recording-cpu-frequency
@@ -234,7 +239,7 @@ def _analyze_usual_suspects(
     tp: PerfettoTraceProcessor,
     db_objects: Set[str],
     limit: int,
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes top CPU runtime consumers across all threads."""
     required_tables = {"thread_state", "thread", "process"}
     query = f"""
@@ -265,7 +270,7 @@ def _analyze_executor_overhead(
     tp: PerfettoTraceProcessor,
     db_objects: Set[str],
     limit: int,
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes Fuchsia async executor and futures management overhead."""
     required_tables = {"slice", "thread_track", "thread"}
     query = f"""
@@ -295,7 +300,7 @@ def _analyze_binder_overhead(
     tp: PerfettoTraceProcessor,
     db_objects: Set[str],
     limit: int,
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes Starnix/Android Binder IPC transaction volume and latencies."""
     required_tables = {"slice", "thread_track", "thread", "process"}
     query = f"""
@@ -329,7 +334,7 @@ def _analyze_suspend_wake_leases(
     tp: PerfettoTraceProcessor,
     db_objects: Set[str],
     limit: int,
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes System Activity Governor (SAG) suspend attempts and wake lease events."""
     required_tables = {"slice", "thread_track", "thread", "process"}
     query = f"""
@@ -372,7 +377,7 @@ class CpuPlugin(AnalyzePlugin):
         remaining_args: Sequence[str],
         trace_path: str,
         cache: bool = True,
-    ) -> list[dict[str, Any]]:
+    ) -> Sequence[SectionResult]:
         parser = PluginArgumentParser(
             prog=f"perf-analyze analyze --plugin {self.name}"
         )

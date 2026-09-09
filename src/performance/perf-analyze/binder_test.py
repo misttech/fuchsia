@@ -36,18 +36,16 @@ class BinderPluginTest(unittest.TestCase):
             results = plugin.analyze(["--threshold-ms", "10.0"], "dummy_trace")
 
         self.assertEqual(len(results), 3)
+        self.assertEqual(results[0].name, "Missed Wakeups (Wakeup Latencies)")
+        self.assertEqual(results[0].results, [])
         self.assertEqual(
-            results[0]["name"], "Missed Wakeups (Wakeup Latencies)"
+            results[1].name, "Binder Delays (Transaction Queue Latencies)"
         )
-        self.assertEqual(results[0]["results"], [])
+        self.assertEqual(results[1].results, [])
         self.assertEqual(
-            results[1]["name"], "Binder Delays (Transaction Queue Latencies)"
+            results[2].name, "Spawn Looper Events (Late-Spawned Wakers)"
         )
-        self.assertEqual(results[1]["results"], [])
-        self.assertEqual(
-            results[2]["name"], "Spawn Looper Events (Late-Spawned Wakers)"
-        )
-        self.assertEqual(results[2]["results"], [])
+        self.assertEqual(results[2].results, [])
 
     def test_analyze_normal_waker_delay(self) -> None:
         """Tests identifying wakeups and binder delays without spawning loopers."""
@@ -102,11 +100,15 @@ class BinderPluginTest(unittest.TestCase):
             results = plugin.analyze(["--threshold-ms", "10.0"], "dummy_trace")
 
         self.assertEqual(len(results), 3)
-        self.assertEqual(len(results[0]["results"]), 1)
-        self.assertEqual(results[0]["results"][0]["thread_name"], "binder:100")
-        self.assertEqual(len(results[1]["results"]), 1)
-        self.assertEqual(results[1]["results"][0]["queue_latency_ns"], 15000000)
-        self.assertEqual(len(results[2]["results"]), 0)
+        res0 = results[0].results
+        assert res0 is not None
+        self.assertEqual(len(res0), 1)
+        self.assertEqual(res0[0]["thread_name"], "binder:100")
+        res1 = results[1].results
+        assert res1 is not None
+        self.assertEqual(len(res1), 1)
+        self.assertEqual(res1[0]["queue_latency_ns"], 15000000)
+        self.assertEqual(results[2].results, [])
 
     def test_analyze_late_spawned_waker(self) -> None:
         """Tests that SpawnLooper flows are populated during late-spawned waker events."""
@@ -161,10 +163,14 @@ class BinderPluginTest(unittest.TestCase):
             results = plugin.analyze(["--threshold-ms", "10.0"], "dummy_trace")
 
         self.assertEqual(len(results), 3)
-        self.assertEqual(len(results[0]["results"]), 0)
-        self.assertEqual(len(results[1]["results"]), 1)
-        self.assertEqual(len(results[2]["results"]), 1)
-        self.assertEqual(results[2]["results"][0]["spawn_latency_ns"], 48900000)
+        self.assertEqual(results[0].results, [])
+        res1 = results[1].results
+        assert res1 is not None
+        self.assertEqual(len(res1), 1)
+        res2 = results[2].results
+        assert res2 is not None
+        self.assertEqual(len(res2), 1)
+        self.assertEqual(res2[0]["spawn_latency_ns"], 48900000)
 
     def test_analyze_negative_threshold(self) -> None:
         """Tests that passing a negative threshold raises PluginArgumentError."""
@@ -203,8 +209,8 @@ class BinderPluginTest(unittest.TestCase):
 
         self.assertEqual(len(results), 3)
         for item in results:
-            self.assertIn("error", item)
-            self.assertIn("Required schema tables/views missing", item["error"])
+            assert item.error is not None
+            self.assertIn("Required schema tables/views missing", item.error)
 
     def test_analyze_incomplete_transactions(self) -> None:
         """Tests that incomplete transactions are returned by default and filtered with --complete-only."""
@@ -282,7 +288,8 @@ class BinderPluginTest(unittest.TestCase):
                 ["--threshold-ms", "10.0"], "dummy_trace"
             )
             self.assertEqual(len(results_default), 3)
-            delays_default = results_default[1]["results"]
+            delays_default = results_default[1].results
+            assert delays_default is not None
             self.assertEqual(len(delays_default), 2)
             self.assertEqual(delays_default[0]["status"], "Incomplete")
             self.assertEqual(delays_default[1]["status"], "Completed")
@@ -292,7 +299,8 @@ class BinderPluginTest(unittest.TestCase):
                 ["--threshold-ms", "10.0", "--complete-only"], "dummy_trace"
             )
             self.assertEqual(len(results_complete_only), 3)
-            delays_complete_only = results_complete_only[1]["results"]
+            delays_complete_only = results_complete_only[1].results
+            assert delays_complete_only is not None
             self.assertEqual(len(delays_complete_only), 1)
             self.assertEqual(delays_complete_only[0]["status"], "Completed")
 

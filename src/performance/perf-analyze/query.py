@@ -6,13 +6,45 @@
 
 import json
 import os
-from typing import Any
+from typing import Any, Sequence, overload
 
+from plugins import SectionResult
 from tp_shell import PerfettoTraceProcessor
 
 
 class TpShell:
     """Runs raw SQL queries via Perfetto TraceProcessor."""
+
+    @overload
+    def query(
+        self,
+        trace_path: str,
+        sql: str,
+        batch: None = None,
+        cache: bool = True,
+    ) -> Sequence[dict[str, Any]]:
+        ...
+
+    @overload
+    def query(
+        self,
+        trace_path: str,
+        sql: None = None,
+        *,
+        batch: str,
+        cache: bool = True,
+    ) -> Sequence[SectionResult]:
+        ...
+
+    @overload
+    def query(
+        self,
+        trace_path: str,
+        sql: str | None = None,
+        batch: str | None = None,
+        cache: bool = True,
+    ) -> Sequence[dict[str, Any]] | Sequence[SectionResult]:
+        ...
 
     def query(
         self,
@@ -20,7 +52,7 @@ class TpShell:
         sql: str | None = None,
         batch: str | None = None,
         cache: bool = True,
-    ) -> list[dict[str, Any]]:
+    ) -> Sequence[dict[str, Any]] | Sequence[SectionResult]:
         """Executes the query specified by args on the given trace.
 
         Args:
@@ -30,7 +62,7 @@ class TpShell:
             cache: If True, caches trace locally when downloading (default: True).
 
         Returns:
-            A list of dictionary results representing the query output.
+            A list of dictionary results or SectionResults representing the query output.
         """
         if not sql and not batch:
             raise ValueError("Either sql or batch must be provided")
@@ -40,7 +72,7 @@ class TpShell:
                 return tp.run_query(sql)
             elif batch:
                 batch_data = self._load_batch(batch)
-                results: list[dict[str, Any]] = []
+                results: list[SectionResult] = []
                 for item in batch_data:
                     if not isinstance(item, dict):
                         raise ValueError("Batch items must be JSON objects")
@@ -52,13 +84,15 @@ class TpShell:
                         )
                     try:
                         q_results = tp.run_query(q_sql)
-                        results.append({"name": q_name, "results": q_results})
+                        results.append(
+                            SectionResult(name=q_name, results=q_results)
+                        )
                     except Exception as e:
-                        results.append({"name": q_name, "error": str(e)})
+                        results.append(SectionResult(name=q_name, error=str(e)))
                 return results
             return []
 
-    def _load_batch(self, batch_arg: str) -> list[dict[str, Any]]:
+    def _load_batch(self, batch_arg: str) -> Sequence[dict[str, Any]]:
         """Loads batch queries from JSON or file path starting with '@'."""
         if batch_arg.startswith("@"):
             file_path = batch_arg[1:]

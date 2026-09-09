@@ -20,9 +20,14 @@ See: go/systemperf-perfetto-queries#binder for additional info.
 
 import math
 from collections.abc import Set
-from typing import Any, Sequence
+from typing import Sequence
 
-from plugins import AnalyzePlugin, PluginArgumentError, PluginArgumentParser
+from plugins import (
+    AnalyzePlugin,
+    PluginArgumentError,
+    PluginArgumentParser,
+    SectionResult,
+)
 from tp_shell import PerfettoTraceProcessor
 
 
@@ -30,7 +35,7 @@ def _analyze_missed_wakeups(
     tp: PerfettoTraceProcessor,
     db_objects: Set[str],
     threshold_ns: int,
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes thread runnable state durations to detect scheduling delays and missed wakeups."""
     required_tables = {
         "thread_state",
@@ -40,10 +45,10 @@ def _analyze_missed_wakeups(
         "process",
     }
     if missing := required_tables - db_objects:
-        return {
-            "name": "Missed Wakeups (Wakeup Latencies)",
-            "error": f"Required schema tables/views missing: {', '.join(sorted(missing))}",
-        }
+        return SectionResult(
+            name="Missed Wakeups (Wakeup Latencies)",
+            error=f"Required schema tables/views missing: {', '.join(sorted(missing))}",
+        )
 
     query = f"""
     WITH binder_threads AS (
@@ -72,15 +77,15 @@ def _analyze_missed_wakeups(
     """
     try:
         missed_wakeups = tp.run_query(query)
-        return {
-            "name": "Missed Wakeups (Wakeup Latencies)",
-            "results": missed_wakeups,
-        }
+        return SectionResult(
+            name="Missed Wakeups (Wakeup Latencies)",
+            results=missed_wakeups,
+        )
     except Exception as e:
-        return {
-            "name": "Missed Wakeups (Wakeup Latencies)",
-            "error": f"Query execution failed: {e}",
-        }
+        return SectionResult(
+            name="Missed Wakeups (Wakeup Latencies)",
+            error=f"Query execution failed: {e}",
+        )
 
 
 def _analyze_binder_delays(
@@ -88,7 +93,7 @@ def _analyze_binder_delays(
     db_objects: Set[str],
     threshold_ns: int,
     complete_only: bool,
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes flow slice latencies to identify delayed or incomplete binder transactions."""
     required_tables = {
         "flow",
@@ -99,10 +104,10 @@ def _analyze_binder_delays(
         "trace_bounds",
     }
     if missing := required_tables - db_objects:
-        return {
-            "name": "Binder Delays (Transaction Queue Latencies)",
-            "error": f"Required schema tables/views missing: {', '.join(sorted(missing))}",
-        }
+        return SectionResult(
+            name="Binder Delays (Transaction Queue Latencies)",
+            error=f"Required schema tables/views missing: {', '.join(sorted(missing))}",
+        )
 
     completed_query = f"""
         SELECT
@@ -155,22 +160,22 @@ def _analyze_binder_delays(
 
     try:
         binder_delays = tp.run_query(query)
-        return {
-            "name": "Binder Delays (Transaction Queue Latencies)",
-            "results": binder_delays,
-        }
+        return SectionResult(
+            name="Binder Delays (Transaction Queue Latencies)",
+            results=binder_delays,
+        )
     except Exception as e:
-        return {
-            "name": "Binder Delays (Transaction Queue Latencies)",
-            "error": f"Query execution failed: {e}",
-        }
+        return SectionResult(
+            name="Binder Delays (Transaction Queue Latencies)",
+            error=f"Query execution failed: {e}",
+        )
 
 
 def _analyze_spawn_loopers(
     tp: PerfettoTraceProcessor,
     db_objects: Set[str],
     threshold_ns: int,
-) -> dict[str, Any]:
+) -> SectionResult:
     """Analyzes SpawnLooper commands to identify late-spawned binder waker threads."""
     required_tables = {
         "flow",
@@ -180,10 +185,10 @@ def _analyze_spawn_loopers(
         "args",
     }
     if missing := required_tables - db_objects:
-        return {
-            "name": "Spawn Looper Events (Late-Spawned Wakers)",
-            "error": f"Required schema tables/views missing: {', '.join(sorted(missing))}",
-        }
+        return SectionResult(
+            name="Spawn Looper Events (Late-Spawned Wakers)",
+            error=f"Required schema tables/views missing: {', '.join(sorted(missing))}",
+        )
 
     query = f"""
     SELECT
@@ -205,15 +210,15 @@ def _analyze_spawn_loopers(
     """
     try:
         spawn_loopers = tp.run_query(query)
-        return {
-            "name": "Spawn Looper Events (Late-Spawned Wakers)",
-            "results": spawn_loopers,
-        }
+        return SectionResult(
+            name="Spawn Looper Events (Late-Spawned Wakers)",
+            results=spawn_loopers,
+        )
     except Exception as e:
-        return {
-            "name": "Spawn Looper Events (Late-Spawned Wakers)",
-            "error": f"Query execution failed: {e}",
-        }
+        return SectionResult(
+            name="Spawn Looper Events (Late-Spawned Wakers)",
+            error=f"Query execution failed: {e}",
+        )
 
 
 class BinderPlugin(AnalyzePlugin):
@@ -225,7 +230,7 @@ class BinderPlugin(AnalyzePlugin):
         remaining_args: Sequence[str],
         trace_path: str,
         cache: bool = True,
-    ) -> list[dict[str, Any]]:
+    ) -> Sequence[SectionResult]:
         parser = PluginArgumentParser(
             prog=f"perf-analyze analyze --plugin {self.name}"
         )
