@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
-#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
 #include <lib/zx/time.h>
 
@@ -141,7 +140,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // anchor to the Flatland hierarchy. Only called from the main thread.
   fpromise::promise<> AddDisplay(
       display::Display* display, DisplayInfo info, uint32_t num_render_targets,
-      fuchsia::sysmem2::BufferCollectionInfo* out_collection_info = nullptr)
+      fuchsia_sysmem2::BufferCollectionInfo* out_collection_info = nullptr)
       FXL_LOCKS_EXCLUDED(lock_);
 
   // Values needed to adjust the color of the framebuffer as a postprocessing effect.
@@ -209,7 +208,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   fpromise::promise<std::vector<allocation::ImageMetadata>> AllocateDisplayRenderTargets(
       bool use_protected_memory, uint32_t num_render_targets, const fuchsia_math::SizeU& size,
       fuchsia_images2::PixelFormat pixel_format,
-      fuchsia::sysmem2::BufferCollectionInfo* out_collection_info = nullptr)
+      fuchsia_sysmem2::BufferCollectionInfo* out_collection_info = nullptr)
       FXL_LOCKS_EXCLUDED(lock_);
 
   // Generates a new FrameEventData struct to be used with a render target on a display.
@@ -285,12 +284,12 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   // Thin proxy to optimize communication with `fuchsia.hardware.display/Coordinator`.
   display::CoordinatorProxy& display_coordinator_ FXL_GUARDED_BY(lock_);
 
-  // Maps a buffer collection ID to a BufferCollectionSyncPtr in the same domain as the token with
+  // Maps a buffer collection ID to a BufferCollection in the same domain as the token with
   // display constraints set. This is used as a bridge between ImportBufferCollection() and
   // ImportBufferImage() calls, so that we can check if the existing allocation is
   // display-compatible.
   std::unordered_map<allocation::GlobalBufferCollectionId,
-                     fuchsia::sysmem2::BufferCollectionSyncPtr>
+                     fidl::SyncClient<fuchsia_sysmem2::BufferCollection>>
       display_buffer_collection_ptrs_ FXL_GUARDED_BY(lock_);
 
   // Maps a buffer collection ID to a boolean indicating if it can be imported into display.

@@ -7,14 +7,11 @@
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.images2/cpp/fidl.h>
-#include <fidl/fuchsia.images2/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.math/cpp/fidl.h>
-#include <fidl/fuchsia.sysmem/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <lib/fdio/directory.h>
-#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/fidl/cpp/wire/status.h>
 #include <lib/sysmem-version/sysmem-version.h>
 #include <lib/trace/event.h>
@@ -45,15 +42,15 @@ const std::array<float, 4> kGpuRenderingDebugColor = {0.9f, 0.5f, 0.5f, 1.f};
 // TODO(https://fxbug.dev/42108519): Remove this when image type is removed from the display
 // coordinator API.
 uint32_t BufferCollectionPixelFormatToImageTilingType(
-    fuchsia::images2::PixelFormatModifier pixel_format_modifier) {
+    fuchsia_images2::PixelFormatModifier pixel_format_modifier) {
   switch (pixel_format_modifier) {
-    case fuchsia::images2::PixelFormatModifier::INTEL_I915_X_TILED:
+    case fuchsia_images2::PixelFormatModifier::kIntelI915XTiled:
       return 1;  // IMAGE_TILING_TYPE_X_TILED
-    case fuchsia::images2::PixelFormatModifier::INTEL_I915_Y_TILED:
+    case fuchsia_images2::PixelFormatModifier::kIntelI915YTiled:
       return 2;  // IMAGE_TILING_TYPE_Y_LEGACY_TILED
-    case fuchsia::images2::PixelFormatModifier::INTEL_I915_YF_TILED:
+    case fuchsia_images2::PixelFormatModifier::kIntelI915YfTiled:
       return 3;  // IMAGE_TILING_TYPE_YF_TILED
-    case fuchsia::images2::PixelFormatModifier::LINEAR:
+    case fuchsia_images2::PixelFormatModifier::kLinear:
     default:
       return fuchsia_hardware_display_types::kImageTilingTypeLinear;
   }
@@ -62,110 +59,104 @@ uint32_t BufferCollectionPixelFormatToImageTilingType(
 // Creates a duplicate of |token| in |duplicate|.
 // Returns an error string if it fails, otherwise std::nullopt.
 std::optional<std::string> DuplicateToken(
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr& token,
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr& duplicate) {
-  fuchsia::sysmem2::BufferCollectionTokenDuplicateSyncRequest dup_sync_request;
-  dup_sync_request.set_rights_attenuation_masks({ZX_RIGHT_SAME_RIGHTS});
-  fuchsia::sysmem2::BufferCollectionToken_DuplicateSync_Result dup_sync_result;
-  auto status = token->DuplicateSync(std::move(dup_sync_request), &dup_sync_result);
-  if (status != ZX_OK) {
-    return std::string("Could not duplicate token - status: ") + zx_status_get_string(status);
+    fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken>& token,
+    fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>& duplicate) {
+  fuchsia_sysmem2::BufferCollectionTokenDuplicateSyncRequest dup_sync_request;
+  dup_sync_request.rights_attenuation_masks(std::vector{ZX_RIGHT_SAME_RIGHTS});
+  auto dup_sync_result = token->DuplicateSync(std::move(dup_sync_request));
+  if (dup_sync_result.is_error()) {
+    return std::string("Could not duplicate token - error: ") +
+           dup_sync_result.error_value().FormatDescription();
   }
-  if (dup_sync_result.is_framework_err()) {
-    return std::string("Could not duplicate token - framework_err");
-  }
-  FX_DCHECK(dup_sync_result.response().tokens().size() == 1);
-  duplicate = dup_sync_result.response().mutable_tokens()->front().BindSync();
+  FX_DCHECK(dup_sync_result.value().tokens().value().size() == 1);
+  duplicate = std::move(dup_sync_result.value().tokens().value()[0]);
   return std::nullopt;
 }
 
 // Returns a prunable subtree of |token| with |num_new_tokens| children.
 // Returns std::nullopt on failure.
-std::optional<std::vector<fuchsia::sysmem2::BufferCollectionTokenSyncPtr>> CreatePrunableChildren(
-    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
-    const size_t num_new_tokens) {
-  fuchsia::sysmem2::BufferCollectionTokenGroupSyncPtr token_group;
+std::optional<std::vector<fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>>>
+CreatePrunableChildren(fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
+                       fidl::UnownedClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
+                       const size_t num_new_tokens) {
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollectionTokenGroup> token_group;
   {
+    auto [client_end, server_end] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionTokenGroup>::Create();
     fidl::Arena arena;
     fidl::OneWayStatus result = fidl::WireCall(token)->CreateBufferCollectionTokenGroup(
         fuchsia_sysmem2::wire::BufferCollectionTokenCreateBufferCollectionTokenGroupRequest::
             Builder(arena)
-                .group_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionTokenGroup>(
-                    token_group.NewRequest().TakeChannel()))
+                .group_request(std::move(server_end))
                 .Build());
     if (!result.ok()) {
       FX_LOGS(ERROR) << "Could not create buffer collection token group: "
                      << result.status_string();
       return std::nullopt;
     }
+    token_group.Bind(std::move(client_end));
   }
 
   // Create the requested children, then mark all children created and close out |token_group|.
-  fuchsia::sysmem2::BufferCollectionTokenGroup_CreateChildrenSync_Result create_children_result;
   {
     std::vector<zx_rights_t> children_request_rights(num_new_tokens, ZX_RIGHT_SAME_RIGHTS);
-    fuchsia::sysmem2::BufferCollectionTokenGroupCreateChildrenSyncRequest create_children_request;
-    create_children_request.set_rights_attenuation_masks(std::move(children_request_rights));
+    fuchsia_sysmem2::BufferCollectionTokenGroupCreateChildrenSyncRequest create_children_request;
+    create_children_request.rights_attenuation_masks(std::move(children_request_rights));
 
-    auto status = token_group->CreateChildrenSync(std::move(create_children_request),
-                                                  &create_children_result);
-    if (status != ZX_OK) {
-      FX_LOGS(ERROR) << "Could not create buffer collection token group children - status: "
-                     << zx_status_get_string(status);
+    auto create_children_result =
+        token_group->CreateChildrenSync(std::move(create_children_request));
+    if (create_children_result.is_error()) {
+      FX_LOGS(ERROR) << "Could not create buffer collection token group children: "
+                     << create_children_result.error_value().FormatDescription();
       return std::nullopt;
     }
-    if (create_children_result.is_framework_err()) {
-      FX_LOGS(ERROR) << "Could not create buffer collection token group children - framework_err: "
-                     << fidl::ToUnderlying(create_children_result.framework_err());
+    if (const auto status = token_group->AllChildrenPresent(); status.is_error()) {
+      FX_LOGS(ERROR) << "Could not call AllChildrenPresent: "
+                     << status.error_value().FormatDescription();
       return std::nullopt;
     }
-  }
-  if (const auto status = token_group->AllChildrenPresent(); status != ZX_OK) {
-    FX_LOGS(ERROR) << "Could not call AllChildrenPresent: " << zx_status_get_string(status);
-    return std::nullopt;
-  }
-  if (const auto status = token_group->Release(); status != ZX_OK) {
-    FX_LOGS(ERROR) << "Could not release token group: " << zx_status_get_string(status);
-    return std::nullopt;
-  }
+    if (const auto status = token_group->Release(); status.is_error()) {
+      FX_LOGS(ERROR) << "Could not release token group: "
+                     << status.error_value().FormatDescription();
+      return std::nullopt;
+    }
 
-  std::vector<fuchsia::sysmem2::BufferCollectionTokenSyncPtr> out_tokens;
-  for (auto& new_token : *create_children_result.response().mutable_tokens()) {
-    out_tokens.push_back(new_token.BindSync());
+    auto out_tokens = std::move(create_children_result.value().tokens().value());
+    FX_DCHECK(out_tokens.size() == num_new_tokens);
+    return out_tokens;
   }
-  FX_DCHECK(out_tokens.size() == num_new_tokens);
-  return out_tokens;
 }
 
-// Returns a BufferCollectionSyncPtr duplicate of |token| with empty constraints set.
+// Returns a BufferCollection duplicate of |token| with empty constraints set.
 // Since it has the same failure domain as |token|, it can be used to check the status of
 // allocations made from that collection.
-std::optional<fuchsia::sysmem2::BufferCollectionSyncPtr>
+std::optional<fidl::SyncClient<fuchsia_sysmem2::BufferCollection>>
 CreateDuplicateBufferCollectionPtrWithEmptyConstraints(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr& token) {
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr token_dup;
+    fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken>& token) {
+  fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token_dup;
   if (auto error = DuplicateToken(token, token_dup)) {
     FX_LOGS(ERROR) << *error;
     return std::nullopt;
   }
 
-  fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fidl::Arena arena;
-  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
-      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-              token_dup.Unbind().TakeChannel()))
-          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-              buffer_collection.NewRequest().TakeChannel()))
-          .Build());
-  FX_DCHECK(result.ok());
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection;
+  {
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(std::move(token_dup))
+            .buffer_collection_request(std::move(server_end))
+            .Build());
+    FX_DCHECK(result.ok());
+    buffer_collection.Bind(std::move(client_end));
+  }
 
   if (const auto status = buffer_collection->SetConstraints(
-          fuchsia::sysmem2::BufferCollectionSetConstraintsRequest{});
-      status != ZX_OK) {
-    FX_LOGS(ERROR) << "Could not set constraints: " << zx_status_get_string(status);
+          fuchsia_sysmem2::BufferCollectionSetConstraintsRequest{});
+      status.is_error()) {
+    FX_LOGS(ERROR) << "Could not set constraints: " << status.error_value().FormatDescription();
     return std::nullopt;
   }
 
@@ -194,45 +185,45 @@ bool IsValidBufferImage(const allocation::ImageMetadata& metadata) {
 }
 
 // Calls CheckBuffersAllocated |token| and returns whether the allocation succeeded.
-bool CheckBuffersAllocated(fuchsia::sysmem2::BufferCollectionSyncPtr& token) {
-  fuchsia::sysmem2::BufferCollection_CheckAllBuffersAllocated_Result check_allocated_result;
-  const auto check_status = token->CheckAllBuffersAllocated(&check_allocated_result);
-  return check_status == ZX_OK && check_allocated_result.is_response();
+bool CheckBuffersAllocated(fidl::SyncClient<fuchsia_sysmem2::BufferCollection>& token) {
+  auto check_status = token->CheckAllBuffersAllocated();
+  return check_status.is_ok();
 }
 
 // Calls WaitForBuffersAllocated() on |token| and returns the pixel format of the allocation.
 // |token| must have already checked that buffers are allocated.
 // TODO(https://fxbug.dev/42150686): Delete after we don't need the pixel format anymore.
-fuchsia::images2::PixelFormatModifier GetPixelFormatModifier(
-    fuchsia::sysmem2::BufferCollectionSyncPtr& token) {
-  fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-  const auto wait_status = token->WaitForAllBuffersAllocated(&wait_result);
-  FX_DCHECK(wait_status == ZX_OK) << "WaitForBuffersAllocated failed - status: " << wait_status;
-  FX_DCHECK(!wait_result.is_framework_err()) << "WaitForBuffersAllocated failed - framework_err: "
-                                             << fidl::ToUnderlying(wait_result.framework_err());
-  FX_DCHECK(!wait_result.is_err())
-      << "WaitForBuffersAllocated failed - err: " << static_cast<uint32_t>(wait_result.err());
-  return wait_result.response()
+fuchsia_images2::PixelFormatModifier GetPixelFormatModifier(
+    fidl::SyncClient<fuchsia_sysmem2::BufferCollection>& token) {
+  auto wait_result = token->WaitForAllBuffersAllocated();
+  FX_DCHECK(wait_result.is_ok()) << "WaitForBuffersAllocated failed: "
+                                 << wait_result.error_value().FormatDescription();
+  return wait_result.value()
       .buffer_collection_info()
+      .value()
       .settings()
+      .value()
       .image_format_constraints()
-      .pixel_format_modifier();
+      .value()
+      .pixel_format_modifier()
+      .value();
 }
 
 // Consumes |token| and if its allocation is compatible with the display returns its pixel format.
 // Otherwise returns std::nullopt.
 // TODO(https://fxbug.dev/42150686): Just return a bool after we don't need the pixel format
 // anymore.
-std::optional<fuchsia::images2::PixelFormatModifier> DetermineDisplaySupportFor(
-    fuchsia::sysmem2::BufferCollectionSyncPtr token) {
-  std::optional<fuchsia::images2::PixelFormatModifier> result = std::nullopt;
+std::optional<fuchsia_images2::PixelFormatModifier> DetermineDisplaySupportFor(
+    fidl::SyncClient<fuchsia_sysmem2::BufferCollection> token) {
+  std::optional<fuchsia_images2::PixelFormatModifier> result = std::nullopt;
 
   const bool image_supports_display = CheckBuffersAllocated(token);
   if (image_supports_display) {
     result = GetPixelFormatModifier(token);
   }
 
-  token->Release();
+  auto release_status = token->Release();
+  (void)release_status;
   return result;
 }
 
@@ -315,17 +306,19 @@ fpromise::promise<> DisplayCompositor::ImportBufferCollection(
   // . * token_group
   // . . * display_token (+ duplicate with no constraints to check allocation with, created below)
   // . . * Empty token
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr display_token;
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> display_token;
   if (auto prunable_tokens = CreatePrunableChildren(sysmem_allocator, renderer_token,
                                                     /*num_new_tokens*/ 2)) {
     // Display+Renderer should have higher priority than Renderer only.
-    display_token = std::move(prunable_tokens->at(0));
+    display_token.Bind(std::move(prunable_tokens->at(0)));
 
-    // We close the second token with setting any constraints. If this gets chosen during sysmem
+    // We close the second token without setting any constraints. If this gets chosen during sysmem
     // negotiations then the allocated buffers are display-incompatible and we don't need to keep a
     // reference to them here.
-    if (const auto status = prunable_tokens->at(1)->Release(); status != ZX_OK) {
-      FX_LOGS(ERROR) << "Could not close token: " << zx_status_get_string(status);
+    fidl::SyncClient<fuchsia_sysmem2::BufferCollectionToken> empty_token(
+        std::move(prunable_tokens->at(1)));
+    if (const auto status = empty_token->Release(); status.is_error()) {
+      FX_LOGS(ERROR) << "Could not close token: " << status.error_value().FormatDescription();
     }
   } else {
     return fpromise::make_error_promise();
@@ -347,8 +340,8 @@ fpromise::promise<> DisplayCompositor::ImportBufferCollection(
         if (!config_.enable_direct_to_display) {
           // Forced fallback to using the renderer; don't attempt direct-to-display.
           // Close |display_token| without importing it to the display coordinator.
-          if (const auto status = display_token->Release(); status != ZX_OK) {
-            FX_LOGS(ERROR) << "Could not close token: " << zx_status_get_string(status);
+          if (const auto status = display_token->Release(); status.is_error()) {
+            FX_LOGS(ERROR) << "Could not close token: " << status.error_value().FormatDescription();
           }
           return fpromise::ok();
         }
@@ -369,8 +362,8 @@ fpromise::promise<> DisplayCompositor::ImportBufferCollection(
         }
 
         // Import the buffer collection into the display coordinator, setting display constraints.
-        fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> natural_display_token(
-            std::move(display_token).Unbind().TakeChannel());
+        fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> natural_display_token =
+            display_token.TakeClientEnd();
         bool import_success = ImportBufferCollectionToDisplayCoordinator(
             collection_id, std::move(natural_display_token),
             fuchsia_hardware_display_types::wire::ImageBufferUsage{
@@ -1014,7 +1007,7 @@ DisplayCompositor::FrameEventData DisplayCompositor::NewFrameEventData() {
 
 fpromise::promise<> DisplayCompositor::AddDisplay(
     display::Display* display, const DisplayInfo info, const uint32_t num_render_targets,
-    fuchsia::sysmem2::BufferCollectionInfo* out_collection_info) {
+    fuchsia_sysmem2::BufferCollectionInfo* out_collection_info) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_CHECK(display);
   TRACE_DURATION_BEGIN("gfx", "Flatland::DisplayCompositor::AddDisplay");
@@ -1162,7 +1155,7 @@ fpromise::promise<std::vector<allocation::ImageMetadata>>
 DisplayCompositor::AllocateDisplayRenderTargets(
     const bool use_protected_memory, const uint32_t num_render_targets,
     const fuchsia_math::SizeU& size, const fuchsia_images2::PixelFormat pixel_format,
-    fuchsia::sysmem2::BufferCollectionInfo* out_collection_info) {
+    fuchsia_sysmem2::BufferCollectionInfo* out_collection_info) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   fidl::Arena arena;
   // Create the buffer collection token to be used for frame buffers.
@@ -1251,60 +1244,66 @@ DisplayCompositor::AllocateDisplayRenderTargets(
         const bool make_cpu_accessible = false;
 #endif
 
-        fuchsia::sysmem2::BufferCollectionSyncPtr collection_ptr;
+        fidl::SyncClient<fuchsia_sysmem2::BufferCollection> collection_ptr;
         if (make_cpu_accessible && !use_protected_memory) {
           auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
           collection_ptr = CreateBufferCollectionSyncPtrAndSetConstraints(
               sysmem_allocator_, std::move(compositor_token), num_render_targets, size.width(),
               size.height(), std::move(buffer_usage), pixel_format, std::move(memory_constraints));
         } else {
-          fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
-          auto& constraints = *set_constraints_request.mutable_constraints();
-          constraints.set_min_buffer_count_for_camping(num_render_targets);
-          constraints.mutable_usage()->set_none(fuchsia::sysmem2::NONE_USAGE);
+          fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+          fuchsia_sysmem2::BufferCollectionConstraints constraints;
+          constraints.min_buffer_count_for_camping(num_render_targets);
+          fuchsia_sysmem2::BufferUsage usage;
+          usage.none(fuchsia_sysmem2::kNoneUsage);
+          constraints.usage(std::move(usage));
           if (use_protected_memory) {
-            auto& bmc = *constraints.mutable_buffer_memory_constraints();
-            bmc.set_secure_required(true);
-            bmc.set_inaccessible_domain_supported(true);
-            bmc.set_cpu_domain_supported(false);
-            bmc.set_ram_domain_supported(false);
+            fuchsia_sysmem2::BufferMemoryConstraints bmc;
+            bmc.secure_required(true);
+            bmc.inaccessible_domain_supported(true);
+            bmc.cpu_domain_supported(false);
+            bmc.ram_domain_supported(false);
+            constraints.buffer_memory_constraints(std::move(bmc));
           }
 
-          fidl::Arena arena;
-          fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
-              fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-                  .token(std::move(compositor_token))
-                  .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-                      collection_ptr.NewRequest().TakeChannel()))
-                  .Build());
-          FX_DCHECK(result.ok());
+          {
+            auto [client_end, server_end] =
+                fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+            fidl::Arena arena;
+            fidl::OneWayStatus result = sysmem_allocator_->BindSharedCollection(
+                fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+                    .token(std::move(compositor_token))
+                    .buffer_collection_request(std::move(server_end))
+                    .Build());
+            FX_DCHECK(result.ok());
+            collection_ptr.Bind(std::move(client_end));
+          }
 
-          fuchsia::sysmem2::NodeSetNameRequest set_name_request;
-          set_name_request.set_priority(10u);
-          set_name_request.set_name(use_protected_memory
-                                        ? "FlatlandDisplayCompositorProtectedRenderTarget"
-                                        : "FlatlandDisplayCompositorRenderTarget");
-          collection_ptr->SetName(std::move(set_name_request));
+          fuchsia_sysmem2::NodeSetNameRequest set_name_request;
+          set_name_request.priority(10u);
+          set_name_request.name(use_protected_memory
+                                    ? "FlatlandDisplayCompositorProtectedRenderTarget"
+                                    : "FlatlandDisplayCompositorRenderTarget");
+          auto set_name_result = collection_ptr->SetName(std::move(set_name_request));
+          FX_DCHECK(set_name_result.is_ok());
 
+          set_constraints_request.constraints(std::move(constraints));
           const auto status = collection_ptr->SetConstraints(std::move(set_constraints_request));
-          FX_DCHECK(status == ZX_OK) << "status: " << zx_status_get_string(status);
+          FX_DCHECK(status.is_ok()) << "status: " << status.error_value().FormatDescription();
         }
 
         // Wait for buffers allocated so it can populate its information struct with the vmo data.
-        fuchsia::sysmem2::BufferCollectionInfo collection_info;
+        fuchsia_sysmem2::BufferCollectionInfo collection_info;
         {
-          fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-          const auto status = collection_ptr->WaitForAllBuffersAllocated(&wait_result);
-          FX_DCHECK(status == ZX_OK) << "status: " << zx_status_get_string(status);
-          FX_DCHECK(!wait_result.is_framework_err())
-              << "framework_err: " << fidl::ToUnderlying(wait_result.framework_err());
-          FX_DCHECK(!wait_result.is_err()) << "err: " << static_cast<uint32_t>(wait_result.err());
-          collection_info = std::move(*wait_result.response().mutable_buffer_collection_info());
+          auto wait_result = collection_ptr->WaitForAllBuffersAllocated();
+          FX_DCHECK(wait_result.is_ok())
+              << "wait_result: " << wait_result.error_value().FormatDescription();
+          collection_info = std::move(wait_result.value().buffer_collection_info().value());
         }
 
         {
           const auto status = collection_ptr->Release();
-          FX_DCHECK(status == ZX_OK) << "status: " << zx_status_get_string(status);
+          FX_DCHECK(status.is_ok()) << "status: " << status.error_value().FormatDescription();
         }
 
         // We know that this collection is supported by display because we collected constraints
@@ -1313,8 +1312,12 @@ DisplayCompositor::AllocateDisplayRenderTargets(
           std::scoped_lock lock(lock_);
           buffer_collection_supports_display_[collection_id] = true;
           buffer_collection_tiling_type_map_[collection_id] =
-              BufferCollectionPixelFormatToImageTilingType(
-                  collection_info.settings().image_format_constraints().pixel_format_modifier());
+              BufferCollectionPixelFormatToImageTilingType(collection_info.settings()
+                                                               .value()
+                                                               .image_format_constraints()
+                                                               .value()
+                                                               .pixel_format_modifier()
+                                                               .value());
         }
 
         // The collection info is no longer needed, so move it to out_collection_info if provided.

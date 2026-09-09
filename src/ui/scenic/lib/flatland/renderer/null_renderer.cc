@@ -4,9 +4,9 @@
 
 #include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
 
-#include <fuchsia/images2/cpp/fidl.h>
-#include <fuchsia/math/cpp/fidl.h>
-#include <fuchsia/sysmem2/cpp/fidl.h>
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.math/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <memory>
@@ -28,18 +28,17 @@ fpromise::promise<> NullRenderer::ImportBufferCollection(
     FX_LOGS(ERROR) << "Duplicate GlobalBufferCollectionID: " << collection_id;
     return fpromise::make_error_promise();
   }
-  std::optional<fuchsia::sysmem2::ImageFormatConstraints> image_constraints;
+  std::optional<fuchsia_sysmem2::ImageFormatConstraints> image_constraints;
   if (size.has_value()) {
-    image_constraints = std::make_optional<fuchsia::sysmem2::ImageFormatConstraints>();
-    image_constraints->set_pixel_format(fuchsia::images2::PixelFormat::B8G8R8A8);
-    image_constraints->mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::SRGB);
-    image_constraints->set_required_min_size(
-        fuchsia::math::SizeU{.width = size->width(), .height = size->height()});
-    image_constraints->set_required_max_size(
-        fuchsia::math::SizeU{.width = size->width(), .height = size->height()});
+    fuchsia_sysmem2::ImageFormatConstraints constraints;
+    constraints.pixel_format(fuchsia_images2::PixelFormat::kB8G8R8A8);
+    constraints.color_spaces(std::vector{fuchsia_images2::ColorSpace::kSrgb});
+    constraints.required_min_size(fuchsia_math::SizeU(size->width(), size->height()));
+    constraints.required_max_size(fuchsia_math::SizeU(size->width(), size->height()));
+    image_constraints = std::move(constraints);
   }
-  fuchsia::sysmem2::BufferUsage sysmem_usage;
-  sysmem_usage.set_none(fuchsia::sysmem2::NONE_USAGE);
+  fuchsia_sysmem2::BufferUsage sysmem_usage;
+  sysmem_usage.none(fuchsia_sysmem2::kNoneUsage);
   auto result =
       BufferCollectionInfo::New(sysmem_allocator, std::move(token), std::move(image_constraints),
                                 std::move(sysmem_usage), usage);
@@ -105,8 +104,8 @@ fpromise::promise<> NullRenderer::ImportBufferImage(const allocation::ImageMetad
   }
 
   const auto& sysmem_info = collection.GetSysmemInfo();
-  const auto vmo_count = sysmem_info.buffers().size();
-  const auto& image_constraints = sysmem_info.settings().image_format_constraints();
+  const auto vmo_count = sysmem_info.buffers().value().size();
+  const auto& image_constraints = sysmem_info.settings().value().image_format_constraints().value();
 
   if (metadata.vmo_index >= vmo_count) {
     FX_LOGS(ERROR) << "ImportBufferImage failed, vmo_index " << metadata.vmo_index
@@ -114,24 +113,25 @@ fpromise::promise<> NullRenderer::ImportBufferImage(const allocation::ImageMetad
     return fpromise::make_error_promise();
   }
 
-  if (metadata.width < image_constraints.min_size().width ||
-      metadata.width > image_constraints.max_size().width) {
+  if (metadata.width < image_constraints.min_size().value().width() ||
+      metadata.width > image_constraints.max_size().value().width()) {
     FX_LOGS(ERROR) << "ImportBufferImage failed, width " << metadata.width
-                   << " is not within valid range [" << image_constraints.min_size().width << ","
-                   << image_constraints.max_size().width << "]";
+                   << " is not within valid range [" << image_constraints.min_size().value().width()
+                   << "," << image_constraints.max_size().value().width() << "]";
     return fpromise::make_error_promise();
   }
 
-  if (metadata.height < image_constraints.min_size().height ||
-      metadata.height > image_constraints.max_size().height) {
+  if (metadata.height < image_constraints.min_size().value().height() ||
+      metadata.height > image_constraints.max_size().value().height()) {
     FX_LOGS(ERROR) << "ImportBufferImage failed, height " << metadata.height
-                   << " is not within valid range [" << image_constraints.min_size().height << ","
-                   << image_constraints.max_size().height << "]";
+                   << " is not within valid range ["
+                   << image_constraints.min_size().value().height() << ","
+                   << image_constraints.max_size().value().height() << "]";
     return fpromise::make_error_promise();
   }
 
   if (usage == BufferCollectionUsage::kClientImage) {
-    image_map_[metadata.identifier] = fidl::Clone(image_constraints);
+    image_map_[metadata.identifier] = image_constraints;
   }
   return fpromise::make_ok_promise();
 }
@@ -163,8 +163,8 @@ void NullRenderer::Render(const allocation::ImageMetadata& render_target,
     const auto& image_constraints = image_map_itr_->second;
 
     // Make sure the image conforms to the constraints of the collection.
-    FX_DCHECK(image.width <= image_constraints.max_size().width);
-    FX_DCHECK(image.height <= image_constraints.max_size().height);
+    FX_DCHECK(image.width <= image_constraints.max_size().value().width());
+    FX_DCHECK(image.height <= image_constraints.max_size().value().height());
   }
 
   // Fire all of the release fences.

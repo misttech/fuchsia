@@ -4,7 +4,6 @@
 
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.images2/cpp/fidl.h>
-#include <fidl/fuchsia.images2/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <lib/component/incoming/cpp/service_member_watcher.h>
@@ -139,10 +138,10 @@ class DisplayCompositorSmokeTest : public gtest::RealLoopFixture {
 
   // Sets up the buffer collection information for collections that will be imported
   // into the engine.
-  fuchsia::sysmem2::BufferCollectionSyncPtr SetupClientTextures(
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> SetupClientTextures(
       DisplayCompositor* display_compositor, allocation::GlobalBufferCollectionId collection_id,
-      fuchsia::images2::PixelFormat pixel_format, uint32_t width, uint32_t height,
-      uint32_t num_vmos, fuchsia::sysmem2::BufferCollectionInfo* collection_info) {
+      fuchsia_images2::PixelFormat pixel_format, uint32_t width, uint32_t height, uint32_t num_vmos,
+      fuchsia_sysmem2::BufferCollectionInfo* collection_info) {
     // Setup the buffer collection that will be used for the flatland rectangle's texture.
     auto [local_token, dup_token] = SysmemTokens::Create(sysmem_allocator_);
 
@@ -154,22 +153,18 @@ class DisplayCompositorSmokeTest : public gtest::RealLoopFixture {
     EXPECT_TRUE(import_success);
 
     auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
-    fuchsia::sysmem2::BufferCollectionSyncPtr texture_collection =
+    fidl::SyncClient<fuchsia_sysmem2::BufferCollection> texture_collection =
         CreateBufferCollectionSyncPtrAndSetConstraints(
             sysmem_allocator_, std::move(local_token), num_vmos, width, height,
-            fidl::Clone(buffer_usage), fidl::HLCPPToNatural(pixel_format),
-            fidl::Clone(memory_constraints),
-            std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
+            std::move(buffer_usage), pixel_format,
+            std::make_optional(std::move(memory_constraints)),
+            std::make_optional(fuchsia_images2::PixelFormatModifier::kLinear));
 
     // Have the client wait for buffers allocated so it can populate its information
     // struct with the vmo data.
-    fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-    auto status = texture_collection->WaitForAllBuffersAllocated(&wait_result);
-    EXPECT_EQ(status, ZX_OK);
-    EXPECT_TRUE(!wait_result.is_framework_err());
-    EXPECT_TRUE(!wait_result.is_err());
-    EXPECT_TRUE(wait_result.is_response());
-    *collection_info = std::move(*wait_result.response().mutable_buffer_collection_info());
+    auto wait_result = texture_collection->WaitForAllBuffersAllocated();
+    EXPECT_TRUE(wait_result.is_ok());
+    *collection_info = std::move(wait_result.value().buffer_collection_info().value());
 
     return texture_collection;
   }
@@ -177,7 +172,7 @@ class DisplayCompositorSmokeTest : public gtest::RealLoopFixture {
 
 class DisplayCompositorParameterizedSmokeTest
     : public DisplayCompositorSmokeTest,
-      public ::testing::WithParamInterface<fuchsia::images2::PixelFormat> {};
+      public ::testing::WithParamInterface<fuchsia_images2::PixelFormat> {};
 
 namespace {
 
@@ -203,11 +198,11 @@ VK_TEST_P(DisplayCompositorParameterizedSmokeTest, FullscreenRectangleTest) {
   // must also have a fullscreen texture to match.
   const uint32_t kRectWidth = display->width_in_px(), kTextureWidth = display->width_in_px();
   const uint32_t kRectHeight = display->height_in_px(), kTextureHeight = display->height_in_px();
-  fuchsia::sysmem2::BufferCollectionInfo texture_collection_info;
+  fuchsia_sysmem2::BufferCollectionInfo texture_collection_info;
   auto texture_collection =
       SetupClientTextures(display_compositor.get(), kTextureCollectionId, GetParam(), kTextureWidth,
                           kTextureHeight, 1, &texture_collection_info);
-  EXPECT_TRUE(texture_collection);
+  EXPECT_TRUE(texture_collection.is_valid());
   auto release_texture_collection = fit::defer([display_compositor, kTextureCollectionId] {
     display_compositor->ReleaseBufferCollection(kTextureCollectionId,
                                                 BufferCollectionUsage::kClientImage);
@@ -259,8 +254,8 @@ VK_TEST_P(DisplayCompositorParameterizedSmokeTest, FullscreenRectangleTest) {
 // TODO(https://fxbug.dev/42154038): Add YUV formats when they are supported by fake or real
 // display.
 INSTANTIATE_TEST_SUITE_P(PixelFormats, DisplayCompositorParameterizedSmokeTest,
-                         ::testing::Values(fuchsia::images2::PixelFormat::B8G8R8A8,
-                                           fuchsia::images2::PixelFormat::R8G8B8A8));
+                         ::testing::Values(fuchsia_images2::PixelFormat::kB8G8R8A8,
+                                           fuchsia_images2::PixelFormat::kR8G8B8A8));
 
 }  // namespace
 

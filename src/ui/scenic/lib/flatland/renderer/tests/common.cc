@@ -4,7 +4,6 @@
 
 #include "src/ui/scenic/lib/flatland/renderer/tests/common.h"
 
-#include <fuchsia/images/cpp/fidl.h>
 #include <lib/fdio/directory.h>
 #include <lib/trace/event.h>
 

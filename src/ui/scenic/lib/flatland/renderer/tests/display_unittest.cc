@@ -232,21 +232,17 @@ VK_TEST_F(DisplayTest, SetAllConstraintsTest) {
       /*image_count*/ 1,
       /*width*/ kWidth,
       /*height*/ kHeight,
-      /*usage*/ fidl::Clone(flatland::get_none_usage()), fuchsia_images2::PixelFormat::kB8G8R8A8,
+      /*usage*/ flatland::get_none_usage(), fuchsia_images2::PixelFormat::kB8G8R8A8,
       /*memory_constraints*/ std::nullopt,
-      std::make_optional(fuchsia::images2::PixelFormatModifier::LINEAR));
+      std::make_optional(fuchsia_images2::PixelFormatModifier::kLinear));
 
   // Have the client wait for buffers allocated so it can populate its information
   // struct with the vmo data.
-  fuchsia::sysmem2::BufferCollectionInfo client_collection_info;
+  fuchsia_sysmem2::BufferCollectionInfo client_collection_info;
   {
-    fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-    auto status = client_collection->WaitForAllBuffersAllocated(&wait_result);
-    EXPECT_EQ(status, ZX_OK);
-    EXPECT_TRUE(!wait_result.is_framework_err());
-    EXPECT_TRUE(!wait_result.is_err());
-    EXPECT_TRUE(wait_result.is_response());
-    client_collection_info = std::move(*wait_result.response().mutable_buffer_collection_info());
+    auto wait_result = client_collection->WaitForAllBuffersAllocated();
+    EXPECT_TRUE(wait_result.is_ok());
+    client_collection_info = std::move(wait_result->buffer_collection_info().value());
   }
 
   // Now that the renderer, client, and the display have set their constraints, we import one last

@@ -5,7 +5,6 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_RENDERER_TESTS_COMMON_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_RENDERER_TESTS_COMMON_H_
 
-#include <fuchsia/images/cpp/fidl.h>
 #include <lib/fdio/directory.h>
 
 #include "src/ui/lib/escher/test/common/gtest_escher.h"

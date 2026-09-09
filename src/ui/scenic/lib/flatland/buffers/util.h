@@ -5,15 +5,15 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_BUFFERS_UTIL_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_BUFFERS_UTIL_H_
 
+#include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
-#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include "src/ui/scenic/lib/flatland/buffers/buffer_collection.h"
 
 namespace flatland {
 
-fuchsia::sysmem2::BufferUsage get_none_usage();
+fuchsia_sysmem2::BufferUsage get_none_usage();
 
 struct SysmemTokens {
   // Token for setting client side constraints.
@@ -57,7 +57,7 @@ struct SysmemTokens {
 // RAM and Inaccessible domains for buffer allocation, which caused failure in
 // sysmem allocation. So here we add RAM domain support to clients in order
 // to get buffer allocated correctly.
-const std::pair<fuchsia::sysmem2::BufferUsage, fuchsia::sysmem2::BufferMemoryConstraints>
+const std::pair<fuchsia_sysmem2::BufferUsage, fuchsia_sysmem2::BufferMemoryConstraints>
 GetUsageAndMemoryConstraintsForCpuWriteOften();
 
 // Sets the client constraints on a sysmem buffer collection, including the number of images,
@@ -67,21 +67,21 @@ void SetClientConstraintsAndWaitForAllocated(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t image_count = 1,
     uint32_t width = 64, uint32_t height = 32,
-    fuchsia::sysmem2::BufferUsage usage = fidl::Clone(get_none_usage()),
-    const std::vector<fuchsia::images2::PixelFormatModifier>& additional_format_modifiers = {},
-    std::optional<fuchsia::sysmem2::BufferMemoryConstraints> memory_constraints = std::nullopt);
+    fuchsia_sysmem2::BufferUsage usage = get_none_usage(),
+    const std::vector<fuchsia_images2::PixelFormatModifier>& additional_format_modifiers = {},
+    std::optional<fuchsia_sysmem2::BufferMemoryConstraints> memory_constraints = std::nullopt);
 
 // Sets the constraints on a client buffer collection pointer and returns that pointer back to
 // the caller, *without* waiting for the constraint setting to finish. It is up to the caller
 // to wait until constraints are set.
-fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetConstraints(
+fidl::SyncClient<fuchsia_sysmem2::BufferCollection> CreateBufferCollectionSyncPtrAndSetConstraints(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t image_count = 1,
     uint32_t width = 64, uint32_t height = 32,
-    fuchsia::sysmem2::BufferUsage usage = fidl::Clone(get_none_usage()),
+    fuchsia_sysmem2::BufferUsage usage = get_none_usage(),
     fuchsia_images2::PixelFormat pixel_format = fuchsia_images2::PixelFormat::kB8G8R8A8,
-    std::optional<fuchsia::sysmem2::BufferMemoryConstraints> memory_constraints = std::nullopt,
-    std::optional<fuchsia::images2::PixelFormatModifier> pixel_format_modifier = std::nullopt);
+    std::optional<fuchsia_sysmem2::BufferMemoryConstraints> memory_constraints = std::nullopt,
+    std::optional<fuchsia_images2::PixelFormatModifier> pixel_format_modifier = std::nullopt);
 
 enum class HostPointerAccessMode : uint32_t {
   kReadOnly = 0b01,
@@ -95,9 +95,6 @@ enum class HostPointerAccessMode : uint32_t {
 // user callback with mapped_ptr equal to nullptr. Once the callback function returns, the host
 // pointer is unmapped and so cannot continue to be used outside of the scope of the callback.
 void MapHostPointer(const fuchsia_sysmem2::BufferCollectionInfo& collection_info, uint32_t vmo_idx,
-                    HostPointerAccessMode host_pointer_access_mode,
-                    std::function<void(uint8_t* mapped_ptr, uint32_t num_bytes)> callback);
-void MapHostPointer(const fuchsia::sysmem2::BufferCollectionInfo& collection_info, uint32_t vmo_idx,
                     HostPointerAccessMode host_pointer_access_mode,
                     std::function<void(uint8_t* mapped_ptr, uint32_t num_bytes)> callback);
 

@@ -5,7 +5,8 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_BUFFERS_BUFFER_COLLECTION_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_BUFFERS_BUFFER_COLLECTION_H_
 
-#include <fuchsia/sysmem2/cpp/fidl.h>
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -26,12 +27,12 @@ class BufferCollectionInfo {
   static fit::result<fit::failed, BufferCollectionInfo> New(
       fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> buffer_collection_token,
-      std::optional<fuchsia::sysmem2::ImageFormatConstraints> image_format_constraints =
+      std::optional<fuchsia_sysmem2::ImageFormatConstraints> image_format_constraints =
           std::nullopt,
-      fuchsia::sysmem2::BufferUsage buffer_usage =
+      fuchsia_sysmem2::BufferUsage buffer_usage =
           [] {
-            fuchsia::sysmem2::BufferUsage result;
-            result.set_none(fuchsia::sysmem2::NONE_USAGE);
+            fuchsia_sysmem2::BufferUsage result;
+            result.none(fuchsia_sysmem2::kNoneUsage);
             return result;
           }(),
       allocation::BufferCollectionUsage usage = allocation::BufferCollectionUsage::kClientImage);
@@ -60,18 +61,19 @@ class BufferCollectionInfo {
 
   // Info describing |buffer_collection_ptr|. Do not call this until after verifying the allocation
   // status of the buffer collection with BuffersAreAllocated().
-  const fuchsia::sysmem2::BufferCollectionInfo& GetSysmemInfo() const {
+  const fuchsia_sysmem2::BufferCollectionInfo& GetSysmemInfo() const {
     // DCHECK if the struct is uninitialized.
-    FX_DCHECK(buffer_collection_info_.buffers().size() >= 1);
+    FX_DCHECK(buffer_collection_info_.buffers().has_value() &&
+              buffer_collection_info_.buffers()->size() >= 1);
     return buffer_collection_info_;
   }
 
  private:
-  BufferCollectionInfo(fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection_ptr)
+  BufferCollectionInfo(fidl::SyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection_ptr)
       : buffer_collection_ptr_(std::move(buffer_collection_ptr)) {}
 
-  fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection_ptr_;
-  fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info_;
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection_ptr_;
+  fuchsia_sysmem2::BufferCollectionInfo buffer_collection_info_;
 };
 
 }  // namespace flatland

@@ -76,7 +76,7 @@ class NullRenderer final : public Renderer {
       FXL_GUARDED_BY(lock_);
   std::unordered_map<allocation::GlobalBufferCollectionId, BufferCollectionInfo> readback_map_
       FXL_GUARDED_BY(lock_);
-  std::unordered_map<allocation::GlobalImageId, fuchsia::sysmem2::ImageFormatConstraints> image_map_
+  std::unordered_map<allocation::GlobalImageId, fuchsia_sysmem2::ImageFormatConstraints> image_map_
       FXL_GUARDED_BY(lock_);
 };
 

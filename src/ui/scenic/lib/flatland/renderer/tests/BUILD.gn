@@ -54,7 +54,6 @@ cc_test_executable("unittests") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
     "//src/graphics/display/lib/coordinator-getter:client",
     "//src/lib/testing/loop_fixture:gtest",
     "//src/ui/lib/escher/test/common:gtest_escher",

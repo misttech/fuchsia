@@ -5,156 +5,165 @@
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
 
 #include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <lib/zx/vmar.h>
 
 namespace flatland {
 
-fuchsia::sysmem2::BufferUsage get_none_usage() {
-  static fuchsia::sysmem2::BufferUsage none_usage = [] {
-    fuchsia::sysmem2::BufferUsage result;
-    result.set_none(fuchsia::sysmem2::NONE_USAGE);
-    return result;
-  }();
-  return fidl::Clone(none_usage);
+fuchsia_sysmem2::BufferUsage get_none_usage() {
+  fuchsia_sysmem2::BufferUsage result;
+  result.none(fuchsia_sysmem2::kNoneUsage);
+  return result;
 }
 
-const std::pair<fuchsia::sysmem2::BufferUsage, fuchsia::sysmem2::BufferMemoryConstraints>
+const std::pair<fuchsia_sysmem2::BufferUsage, fuchsia_sysmem2::BufferMemoryConstraints>
 GetUsageAndMemoryConstraintsForCpuWriteOften() {
-  static const fuchsia::sysmem2::BufferMemoryConstraints kCpuConstraints = [] {
-    fuchsia::sysmem2::BufferMemoryConstraints bmc;
-    bmc.set_ram_domain_supported(true);
-    bmc.set_cpu_domain_supported(true);
+  static const fuchsia_sysmem2::BufferMemoryConstraints kCpuConstraints = [] {
+    fuchsia_sysmem2::BufferMemoryConstraints bmc;
+    bmc.ram_domain_supported(true);
+    bmc.cpu_domain_supported(true);
     return bmc;
   }();
-  static const fuchsia::sysmem2::BufferUsage kCpuWriteUsage = [] {
-    fuchsia::sysmem2::BufferUsage usage;
-    usage.set_cpu(fuchsia::sysmem2::CPU_USAGE_WRITE_OFTEN);
+  static const fuchsia_sysmem2::BufferUsage kCpuWriteUsage = [] {
+    fuchsia_sysmem2::BufferUsage usage;
+    usage.cpu(fuchsia_sysmem2::kCpuUsageWriteOften);
     return usage;
   }();
-  return std::make_pair(fidl::Clone(kCpuWriteUsage), fidl::Clone(kCpuConstraints));
+  return std::make_pair(kCpuWriteUsage, kCpuConstraints);
 }
 
 void SetClientConstraintsAndWaitForAllocated(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t image_count,
-    uint32_t width, uint32_t height, fuchsia::sysmem2::BufferUsage usage,
-    const std::vector<fuchsia::images2::PixelFormatModifier>& additional_format_modifiers,
-    std::optional<fuchsia::sysmem2::BufferMemoryConstraints> memory_constraints) {
-  fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fidl::Arena arena;
-  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
-      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(std::move(token))
-          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-              buffer_collection.NewRequest().TakeChannel()))
-          .Build());
-  FX_DCHECK(result.ok());
+    uint32_t width, uint32_t height, fuchsia_sysmem2::BufferUsage usage,
+    const std::vector<fuchsia_images2::PixelFormatModifier>& additional_format_modifiers,
+    std::optional<fuchsia_sysmem2::BufferMemoryConstraints> memory_constraints) {
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection;
+  {
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(std::move(token))
+            .buffer_collection_request(std::move(server_end))
+            .Build());
+    FX_DCHECK(result.ok());
+    buffer_collection.Bind(std::move(client_end));
+  }
 
   // Use a name with a priority thats > the vulkan implementation, but < what any client would use.
-  fuchsia::sysmem2::NodeSetNameRequest set_name_request;
-  set_name_request.set_priority(10u);
-  set_name_request.set_name("FlatlandImage");
-  buffer_collection->SetName(std::move(set_name_request));
+  fuchsia_sysmem2::NodeSetNameRequest set_name_request;
+  set_name_request.priority(10u);
+  set_name_request.name("FlatlandImage");
+  auto set_name_result = buffer_collection->SetName(std::move(set_name_request));
+  FX_DCHECK(set_name_result.is_ok());
 
-  fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
-  auto& constraints = *set_constraints_request.mutable_constraints();
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
 
   if (memory_constraints) {
-    constraints.set_buffer_memory_constraints(std::move(*memory_constraints));
+    constraints.buffer_memory_constraints(std::move(*memory_constraints));
   }
-  constraints.set_usage(std::move(usage));
-  constraints.set_min_buffer_count(image_count);
+  constraints.usage(std::move(usage));
+  constraints.min_buffer_count(image_count);
 
   size_t image_format_constraints_count =
       1 + static_cast<uint32_t>(additional_format_modifiers.size());
+  std::vector<fuchsia_sysmem2::ImageFormatConstraints> image_format_constraints;
+  image_format_constraints.reserve(image_format_constraints_count);
   for (size_t i = 0; i < image_format_constraints_count; i++) {
-    auto& image_constraints = constraints.mutable_image_format_constraints()->emplace_back();
-    image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::SRGB);
-    image_constraints.set_pixel_format(fuchsia::images2::PixelFormat::R8G8B8A8);
-    image_constraints.set_pixel_format_modifier(i == 0
-                                                    ? fuchsia::images2::PixelFormatModifier::LINEAR
-                                                    : additional_format_modifiers[i - 1]);
-    image_constraints.set_required_min_size(fuchsia::math::SizeU{.width = width, .height = height});
-    image_constraints.set_required_max_size(fuchsia::math::SizeU{.width = width, .height = height});
+    fuchsia_sysmem2::ImageFormatConstraints ifc;
+    ifc.color_spaces(std::vector{fuchsia_images2::ColorSpace::kSrgb});
+    ifc.pixel_format(fuchsia_images2::PixelFormat::kR8G8B8A8);
+    ifc.pixel_format_modifier(i == 0 ? fuchsia_images2::PixelFormatModifier::kLinear
+                                     : additional_format_modifiers[i - 1]);
+    ifc.required_min_size(fuchsia_math::SizeU(width, height));
+    ifc.required_max_size(fuchsia_math::SizeU(width, height));
+    image_format_constraints.push_back(std::move(ifc));
   }
+  constraints.image_format_constraints(std::move(image_format_constraints));
+  set_constraints_request.constraints(std::move(constraints));
 
-  zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
-  FX_DCHECK(status == ZX_OK);
+  auto status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+  FX_DCHECK(status.is_ok());
 
   // Have the client wait for allocation.
-  fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-  status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-  FX_DCHECK(status == ZX_OK);
-  FX_DCHECK(!wait_result.is_framework_err());
-  FX_DCHECK(!wait_result.is_err());
-  FX_DCHECK(wait_result.is_response());
+  auto wait_result = buffer_collection->WaitForAllBuffersAllocated();
+  FX_DCHECK(wait_result.is_ok());
 
-  status = buffer_collection->Release();
-  FX_DCHECK(status == ZX_OK);
+  auto release_status = buffer_collection->Release();
+  FX_DCHECK(release_status.is_ok());
 }
 
-fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetConstraints(
+fidl::SyncClient<fuchsia_sysmem2::BufferCollection> CreateBufferCollectionSyncPtrAndSetConstraints(
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, uint32_t image_count,
-    uint32_t width, uint32_t height, fuchsia::sysmem2::BufferUsage usage,
+    uint32_t width, uint32_t height, fuchsia_sysmem2::BufferUsage usage,
     fuchsia_images2::PixelFormat pixel_format,
-    std::optional<fuchsia::sysmem2::BufferMemoryConstraints> memory_constraints,
-    std::optional<fuchsia::images2::PixelFormatModifier> pixel_format_modifier) {
-  fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-  fidl::Arena arena;
-  fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
-      fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(std::move(token))
-          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-              buffer_collection.NewRequest().TakeChannel()))
-          .Build());
-  FX_DCHECK(result.ok());
+    std::optional<fuchsia_sysmem2::BufferMemoryConstraints> memory_constraints,
+    std::optional<fuchsia_images2::PixelFormatModifier> pixel_format_modifier) {
+  fidl::SyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection;
+  {
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+    fidl::Arena arena;
+    fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+            .token(std::move(token))
+            .buffer_collection_request(std::move(server_end))
+            .Build());
+    FX_DCHECK(result.ok());
+    buffer_collection.Bind(std::move(client_end));
+  }
   // Use a name with a priority thats > the vulkan implementation, but < what any client would use.
-  fuchsia::sysmem2::NodeSetNameRequest set_name_request;
-  set_name_request.set_priority(10u);
-  set_name_request.set_name("FlatlandClientPointer");
-  buffer_collection->SetName(std::move(set_name_request));
+  fuchsia_sysmem2::NodeSetNameRequest set_name_request;
+  set_name_request.priority(10u);
+  set_name_request.name("FlatlandClientPointer");
+  auto set_name_result = buffer_collection->SetName(std::move(set_name_request));
+  FX_DCHECK(set_name_result.is_ok());
 
-  fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
-  auto& constraints = *set_constraints_request.mutable_constraints();
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
   if (memory_constraints) {
-    constraints.set_buffer_memory_constraints(std::move(*memory_constraints));
+    constraints.buffer_memory_constraints(std::move(*memory_constraints));
   }
 
-  constraints.set_usage(std::move(usage));
-  constraints.set_min_buffer_count(image_count);
+  constraints.usage(std::move(usage));
+  constraints.min_buffer_count(image_count);
 
-  auto& image_constraints = constraints.mutable_image_format_constraints()->emplace_back();
+  fuchsia_sysmem2::ImageFormatConstraints image_constraints;
 
   if (pixel_format_modifier.has_value()) {
-    image_constraints.set_pixel_format_modifier(*pixel_format_modifier);
+    image_constraints.pixel_format_modifier(*pixel_format_modifier);
   }
 
   switch (pixel_format) {
     case fuchsia_images2::PixelFormat::kB8G8R8A8:
-      image_constraints.set_pixel_format(fuchsia::images2::PixelFormat::B8G8R8A8);
-      image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::SRGB);
+      image_constraints.pixel_format(fuchsia_images2::PixelFormat::kB8G8R8A8);
+      image_constraints.color_spaces(std::vector{fuchsia_images2::ColorSpace::kSrgb});
       break;
     case fuchsia_images2::PixelFormat::kR8G8B8A8:
-      image_constraints.set_pixel_format(fuchsia::images2::PixelFormat::R8G8B8A8);
-      image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::SRGB);
+      image_constraints.pixel_format(fuchsia_images2::PixelFormat::kR8G8B8A8);
+      image_constraints.color_spaces(std::vector{fuchsia_images2::ColorSpace::kSrgb});
       break;
     case fuchsia_images2::PixelFormat::kI420:
-      image_constraints.set_pixel_format(fuchsia::images2::PixelFormat::I420);
-      image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::REC709);
+      image_constraints.pixel_format(fuchsia_images2::PixelFormat::kI420);
+      image_constraints.color_spaces(std::vector{fuchsia_images2::ColorSpace::kRec709});
       break;
     case fuchsia_images2::PixelFormat::kNv12:
-      image_constraints.set_pixel_format(fuchsia::images2::PixelFormat::NV12);
-      image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::REC709);
+      image_constraints.pixel_format(fuchsia_images2::PixelFormat::kNv12);
+      image_constraints.color_spaces(std::vector{fuchsia_images2::ColorSpace::kRec709});
       break;
     default:
       FX_NOTREACHED();
   }
 
-  image_constraints.set_required_min_size(fuchsia::math::SizeU{.width = width, .height = height});
-  image_constraints.set_required_max_size(fuchsia::math::SizeU{.width = width, .height = height});
+  image_constraints.required_min_size(fuchsia_math::SizeU(width, height));
+  image_constraints.required_max_size(fuchsia_math::SizeU(width, height));
 
-  zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
-  FX_DCHECK(status == ZX_OK);
+  constraints.image_format_constraints(std::vector{std::move(image_constraints)});
+  set_constraints_request.constraints(std::move(constraints));
+
+  auto status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+  FX_DCHECK(status.is_ok());
 
   return buffer_collection;
 }
@@ -190,22 +199,6 @@ void MapHostPointer(const fuchsia_sysmem2::BufferCollectionInfo& collection_info
 
   MapHostPointer(*collection_info.buffers().value()[vmo_idx].vmo(), host_pointer_access_mode,
                  callback, vmo_bytes);
-}
-
-void MapHostPointer(const fuchsia::sysmem2::BufferCollectionInfo& collection_info, uint32_t vmo_idx,
-                    HostPointerAccessMode host_pointer_access_mode,
-                    std::function<void(uint8_t*, uint32_t)> callback) {
-  // If the vmo idx is out of bounds pass in a nullptr and 0 bytes back to the caller.
-  if (vmo_idx >= collection_info.buffers().size()) {
-    callback(nullptr, 0);
-    return;
-  }
-
-  auto vmo_bytes = collection_info.settings().buffer_settings().size_bytes();
-  FX_DCHECK(vmo_bytes > 0);
-
-  MapHostPointer(collection_info.buffers()[vmo_idx].vmo(), host_pointer_access_mode, callback,
-                 vmo_bytes);
 }
 
 void MapHostPointer(const zx::vmo& vmo, HostPointerAccessMode host_pointer_access_mode,

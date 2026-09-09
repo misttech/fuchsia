@@ -10,8 +10,6 @@
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
-#include <fuchsia/images2/cpp/fidl.h>
-#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/sys/cpp/service_directory.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
@@ -153,26 +151,16 @@ std::string GetArrayString(const std::string& name, const ArrayT& array) {
 float GetOrientationAngle(fuchsia_ui_composition::Orientation orientation);
 
 uint32_t GetBytesPerPixel(const fuchsia_sysmem2::SingleBufferSettings& settings);
-uint32_t GetBytesPerPixel(const fuchsia::sysmem2::SingleBufferSettings& settings);
 uint32_t GetBytesPerPixel(const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints);
-uint32_t GetBytesPerPixel(const fuchsia::sysmem2::ImageFormatConstraints& image_format_constraints);
 
 uint32_t GetBytesPerRow(const fuchsia_sysmem2::SingleBufferSettings& settings,
                         uint32_t image_width);
-uint32_t GetBytesPerRow(const fuchsia::sysmem2::SingleBufferSettings& settings,
-                        uint32_t image_width);
 uint32_t GetBytesPerRow(const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints,
-                        uint32_t image_width);
-uint32_t GetBytesPerRow(const fuchsia::sysmem2::ImageFormatConstraints& image_format_constraints,
                         uint32_t image_width);
 
 uint32_t GetPixelsPerRow(const fuchsia_sysmem2::SingleBufferSettings& settings,
                          uint32_t image_width);
-uint32_t GetPixelsPerRow(const fuchsia::sysmem2::SingleBufferSettings& settings,
-                         uint32_t image_width);
 uint32_t GetPixelsPerRow(const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints,
-                         uint32_t image_width);
-uint32_t GetPixelsPerRow(const fuchsia::sysmem2::ImageFormatConstraints& image_format_constraints,
                          uint32_t image_width);
 
 // Signal all fences with ZX_EVENT_SIGNALED.
