@@ -19,7 +19,6 @@ use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_developer_remotecontrol as fremotecontrol;
 use fdomain_fuchsia_test_manager as ftest_manager;
 use ffx_config::EnvironmentContext;
-use ffx_target;
 use ffx_test_args::{
     EarlyBootProfileCommand, ListCommand, RunCommand, TestCommand, TestSubCommand,
 };
@@ -379,14 +378,9 @@ fn invoke_ffx_log_dump(
     let file = std::fs::File::create(output_path)
         .with_context(|| format!("Failed to create log file at {:?}", output_path))?;
 
-    let spec = ffx_target::get_target_specifier(&context)?;
-    let mut cmd = std::process::Command::new("ffx");
-    cmd.arg("--direct");
-    if let Some(target) = spec {
-        cmd.arg("-t").arg(target);
-    }
+    let mut cmd = context.rerun_prefix()?;
     let status = cmd
-        .args(["log", "--dump", "--since", since])
+        .args(["log", "--since", since, "dump"])
         .stdout(file)
         .status()
         .context("Failed to run ffx log")?;

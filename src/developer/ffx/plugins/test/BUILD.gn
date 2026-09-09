@@ -20,7 +20,6 @@ ffx_plugin("ffx_test") {
     "//src/developer/ffx/config:lib",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
-    "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/testing:lib",
     "//src/developer/ffx/lib/writer:lib",
