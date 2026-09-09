@@ -10,6 +10,7 @@ in-memory trace model using PerfettoTraceProcessor.
 
 import dataclasses
 from collections import defaultdict
+from collections.abc import Set
 from typing import Any, NamedTuple
 
 from tp_shell import PerfettoTraceProcessor
@@ -19,15 +20,15 @@ from trace_processing.trace_importing import construct_model
 
 def create_model_from_tp_session(
     session: PerfettoTraceProcessor,
-    patterns: set[str] | None = None,
-    categories: set[str] | None = None,
+    patterns: Set[str] | None = None,
+    categories: Set[str] | None = None,
 ) -> trace_model.Model:
     """Creates a trace model directly from an active PerfettoTraceProcessor session.
 
     Args:
         session: Active PerfettoTraceProcessor instance.
-        patterns: Optional set of regex patterns to filter events.
-        categories: Optional set of categories to filter events.
+        patterns: Optional regex patterns to filter events.
+        categories: Optional categories to filter events.
 
     Returns:
         A Model object.
@@ -50,8 +51,8 @@ def create_model_from_tp_session(
 
 def create_model_from_fxt_path_directly(
     trace_path: str,
-    patterns: set[str] | None = None,
-    categories: set[str] | None = None,
+    patterns: Set[str] | None = None,
+    categories: Set[str] | None = None,
     trace_processor_shell_path: str | None = None,
 ) -> trace_model.Model:
     """Create a trace model directly from a Perfetto trace file path.
@@ -61,8 +62,8 @@ def create_model_from_fxt_path_directly(
 
     Args:
         trace_path: Path to trace file or URL string.
-        patterns: Optional set of regex patterns to filter events.
-        categories: Optional set of categories to filter events.
+        patterns: Optional regex patterns to filter events.
+        categories: Optional categories to filter events.
         trace_processor_shell_path: Optional path to Perfetto trace_processor_shell executable.
 
     Returns:
@@ -104,8 +105,8 @@ class _FxtImporter:
     def __init__(
         self,
         session: PerfettoTraceProcessor,
-        patterns: set[str] | None = None,
-        categories: set[str] | None = None,
+        patterns: Set[str] | None = None,
+        categories: Set[str] | None = None,
     ) -> None:
         self.session = session
         self.patterns = patterns

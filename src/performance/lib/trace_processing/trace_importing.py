@@ -12,6 +12,7 @@ import stat
 import subprocess
 import types
 from collections import defaultdict
+from collections.abc import Set
 from importlib.resources import as_file, files
 from typing import Any, Dict, List, NamedTuple, Optional, Self, TextIO, Tuple
 
@@ -192,8 +193,8 @@ class WakingMapping(NamedTuple):
 def convert_trace_file_to_json(
     trace_path: str | os.PathLike[Any],
     trace2json_path: str | os.PathLike[Any] | None = None,
-    patterns: set[str] | None = None,
-    categories: set[str] | None = None,
+    patterns: Set[str] | None = None,
+    categories: Set[str] | None = None,
 ) -> str:
     """Converts the specified trace file to JSON.
 
@@ -225,8 +226,8 @@ def convert_trace_file_to_json(
 def time_convert_trace_file_to_json(
     trace_path: str | os.PathLike[Any],
     trace2json_path: str | os.PathLike[Any] | None = None,
-    patterns: set[str] | None = None,
-    categories: set[str] | None = None,
+    patterns: Set[str] | None = None,
+    categories: Set[str] | None = None,
     split: bool = False,
     timer_cmd: list[str] | None = None,
 ) -> tuple[str, str, str]:
@@ -272,8 +273,8 @@ def time_convert_trace_file_to_json(
 def convert_trace_file_to_json_rusage(
     trace_path: str | os.PathLike[str],
     trace2json_path: str | os.PathLike[str] | None = None,
-    patterns: set[str] | None = None,
-    categories: set[str] | None = None,
+    patterns: Set[str] | None = None,
+    categories: Set[str] | None = None,
     split: bool = False,
 ) -> tuple[os.PathLike[str], os.PathLike[str] | None, str]:
     """Converts the specified trace file to JSON.
@@ -360,8 +361,8 @@ def convert_trace_file_to_json_rusage(
 def create_model_from_trace_file_path(
     trace_path: str | os.PathLike[Any],
     trace2json_path: str | os.PathLike[Any] | None = None,
-    patterns: set[str] | None = None,
-    categories: set[str] | None = None,
+    patterns: Set[str] | None = None,
+    categories: Set[str] | None = None,
     without_json_conversion: bool = False,
 ) -> trace_model.Model:
     """Converts the specified trace file to JSON.
@@ -402,15 +403,15 @@ def create_model_from_trace_file_path(
 
 def create_model_using_tp_shell(
     session: PerfettoTraceProcessor,
-    patterns: set[str] | None = None,
-    categories: set[str] | None = None,
+    patterns: Set[str] | None = None,
+    categories: Set[str] | None = None,
 ) -> trace_model.Model:
     """Creates a trace model directly from an active PerfettoTraceProcessor session.
 
     Args:
         session: Active PerfettoTraceProcessor instance.
-        patterns: Optional set of regex patterns to filter events.
-        categories: Optional set of categories to filter events.
+        patterns: Optional regex patterns to filter events.
+        categories: Optional categories to filter events.
 
     Returns:
         A Model object.
