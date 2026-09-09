@@ -6,6 +6,7 @@
 
 use crate::data_types::traits::{AddressableRegister, ReadableRegister, WritableRegister};
 use bitfield::bitfield;
+use fidl_next_fuchsia_input_report as fidl_input_report;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 bitfield! {
@@ -159,6 +160,23 @@ impl TouchContact {
     }
 }
 
+impl From<&TouchContact> for fidl_input_report::ContactInputReport {
+    fn from(contact: &TouchContact) -> Self {
+        fidl_input_report::ContactInputReport {
+            contact_id: Some(contact.id() as u32),
+            position_x: Some(contact.x() as i64),
+            position_y: Some(contact.y() as i64),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<TouchContact> for fidl_input_report::ContactInputReport {
+    fn from(contact: TouchContact) -> Self {
+        Self::from(&contact)
+    }
+}
+
 /// Initial burst read structure combining status, count, and the first contact point.
 //
 // @cite(gt6853-hardware-description): sec=3.4 title="Coordinate Information Buffer"
@@ -266,5 +284,52 @@ mod tests {
         assert_eq!(report.contact_count.count(), 1);
         assert_eq!(report.first_contact.x(), 800);
         assert_eq!(report.first_contact.y(), 1200);
+    }
+
+    #[test]
+    fn test_touch_contact_into_fidl() {
+        let contact = TouchContact {
+            track_id_and_status: TrackIdAndStatus(0x01),
+            x7_0: 0x34,
+            x15_8: 0x12, // 0x1234
+            y7_0: 0x78,
+            y15_8: 0x56, // 0x5678
+            pressure: 0x9a,
+            reserved: [0xbc, 0xde],
+        };
+
+        let report = fidl_input_report::ContactInputReport::from(&contact);
+        assert_eq!(report.contact_id, Some(1));
+        assert_eq!(report.position_x, Some(0x1234));
+        assert_eq!(report.position_y, Some(0x5678));
+        assert_eq!(report.pressure, None);
+        assert_eq!(report.contact_width, None);
+        assert_eq!(report.contact_height, None);
+
+        // Also test value Into trait
+        let report_into: fidl_input_report::ContactInputReport = contact.into();
+        assert_eq!(report, report_into);
+    }
+
+    #[test]
+    fn test_touch_contact_into_fidl_origin() {
+        let origin = TouchContact {
+            track_id_and_status: TrackIdAndStatus(0x00),
+            x7_0: 0x00,
+            x15_8: 0x00,
+            y7_0: 0x00,
+            y15_8: 0x00,
+            pressure: 0,
+            reserved: [0; 2],
+        };
+
+        let origin_report = fidl_input_report::ContactInputReport::from(&origin);
+        assert_eq!(origin_report.contact_id, Some(0));
+        assert_eq!(origin_report.position_x, Some(0));
+        assert_eq!(origin_report.position_y, Some(0));
+
+        // Also test value Into trait
+        let origin_into: fidl_input_report::ContactInputReport = origin.into();
+        assert_eq!(origin_report, origin_into);
     }
 }

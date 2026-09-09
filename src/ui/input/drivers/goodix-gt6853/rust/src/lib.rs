@@ -5,6 +5,7 @@
 //! Goodix GT6853 Touchscreen Driver for Fuchsia.
 
 pub mod data_types;
+pub mod hardware_integration;
 pub mod hardware_units;
 pub mod registers;
 
