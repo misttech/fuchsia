@@ -1322,24 +1322,26 @@ mod tests {
         .await;
 
         // Assert that one mouse device with accurate device id was found.
-        let bindings_map = bindings.lock();
-        assert_eq!(bindings_map.len(), 1);
-        let bindings_vector = bindings_map.get(&10);
-        assert!(bindings_vector.is_some());
-        assert_eq!(bindings_vector.unwrap().len(), 1);
-        let boxed_mouse_binding = bindings_vector.unwrap().get(0);
-        assert!(boxed_mouse_binding.is_some());
-        assert_eq!(
-            boxed_mouse_binding.unwrap().binding.get_device_descriptor(),
-            input_device::InputDeviceDescriptor::Mouse(mouse_binding::MouseDeviceDescriptor {
-                device_id: 10,
-                absolute_x_range: None,
-                absolute_y_range: None,
-                wheel_v_range: None,
-                wheel_h_range: None,
-                buttons: Some(vec![0]),
-            })
-        );
+        {
+            let bindings_map = bindings.lock();
+            assert_eq!(bindings_map.len(), 1);
+            let bindings_vector = bindings_map.get(&10);
+            assert!(bindings_vector.is_some());
+            assert_eq!(bindings_vector.unwrap().len(), 1);
+            let boxed_mouse_binding = bindings_vector.unwrap().get(0);
+            assert!(boxed_mouse_binding.is_some());
+            assert_eq!(
+                boxed_mouse_binding.unwrap().binding.get_device_descriptor(),
+                input_device::InputDeviceDescriptor::Mouse(mouse_binding::MouseDeviceDescriptor {
+                    device_id: 10,
+                    absolute_x_range: None,
+                    absolute_y_range: None,
+                    wheel_v_range: None,
+                    wheel_h_range: None,
+                    buttons: Some(vec![0]),
+                })
+            );
+        }
 
         // Assert that inspect tree reflects new device discovered and connected.
         diagnostics_assertions::assert_data_tree!(inspector, root: {
@@ -1443,8 +1445,10 @@ mod tests {
         .await;
 
         // Assert that no devices were found.
-        let bindings = bindings.lock();
-        assert_eq!(bindings.len(), 0);
+        {
+            let bindings = bindings.lock();
+            assert_eq!(bindings.len(), 0);
+        }
 
         // Assert that inspect tree reflects new device discovered, but not connected.
         diagnostics_assertions::assert_data_tree!(inspector, root: {

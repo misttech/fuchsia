@@ -4986,12 +4986,13 @@ mod tests {
 
         assert_eq!(pages_cleaned, 7);
 
-        let mut inner_locked = inner.lock();
-        assert_eq!(inner_locked.dirty_pages.reserved, 5);
-        assert_eq!(inner_locked.dirty_pages.unreserved, 3);
+        {
+            let mut inner_locked = inner.lock();
+            assert_eq!(inner_locked.dirty_pages.reserved, 5);
+            assert_eq!(inner_locked.dirty_pages.unreserved, 3);
 
-        inner_locked.forget_dirty_pages(allocator, store_object_id);
-        std::mem::drop(inner_locked);
+            inner_locked.forget_dirty_pages(allocator, store_object_id);
+        }
 
         fs.close().await.expect("close filesystem failed");
     }
@@ -5014,13 +5015,14 @@ mod tests {
 
         assert_eq!(pages_cleaned, 0);
 
-        let mut inner_locked = inner.lock();
-        assert_eq!(inner_locked.dirty_pages.reserved, 10);
-        assert_eq!(inner_locked.dirty_pages.unreserved, 5);
+        {
+            let mut inner_locked = inner.lock();
+            assert_eq!(inner_locked.dirty_pages.reserved, 10);
+            assert_eq!(inner_locked.dirty_pages.unreserved, 5);
 
-        // Clean up reservation to avoid leak panic in allocator.
-        inner_locked.forget_dirty_pages(allocator, store_object_id);
-        std::mem::drop(inner_locked);
+            // Clean up reservation to avoid leak panic in allocator.
+            inner_locked.forget_dirty_pages(allocator, store_object_id);
+        }
 
         fs.close().await.expect("close filesystem failed");
     }
@@ -5050,12 +5052,13 @@ mod tests {
 
         assert_eq!(pages_cleaned, 0);
 
-        let mut inner_locked = inner.lock();
-        assert_eq!(inner_locked.dirty_pages.reserved, 10);
-        assert_eq!(inner_locked.dirty_pages.unreserved, 5);
+        {
+            let mut inner_locked = inner.lock();
+            assert_eq!(inner_locked.dirty_pages.reserved, 10);
+            assert_eq!(inner_locked.dirty_pages.unreserved, 5);
 
-        inner_locked.forget_dirty_pages(allocator, store_object_id);
-        std::mem::drop(inner_locked);
+            inner_locked.forget_dirty_pages(allocator, store_object_id);
+        }
 
         fs.close().await.expect("close filesystem failed");
     }

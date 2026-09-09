@@ -309,9 +309,7 @@ mod test {
             _cx: &mut Context<'_>,
             buf: &[u8],
         ) -> Poll<std::io::Result<usize>> {
-            futures::executor::block_on(async {
-                self.inner.lock().unwrap().write_all(buf).await.expect("Writing should work")
-            });
+            self.inner.lock().unwrap().extend_from_slice(buf);
             Poll::Ready(Ok(buf.len()))
         }
 

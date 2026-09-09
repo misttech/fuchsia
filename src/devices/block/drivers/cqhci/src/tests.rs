@@ -603,12 +603,8 @@ async fn test_rpmb() {
     let started_driver = harness.start_driver().await.expect("failed to start driver");
     let started_driver = Mutex::new(Some(started_driver));
 
-    let block_client = RemoteBlockClient::new(connect_block_proxy(
-        started_driver.lock().as_ref().unwrap(),
-        "user",
-    ))
-    .await
-    .expect("failed to create block client");
+    let proxy = connect_block_proxy(started_driver.lock().as_ref().unwrap(), "user");
+    let block_client = RemoteBlockClient::new(proxy).await.expect("failed to create block client");
 
     let rpmb_client = connect_rpmb_client(started_driver.lock().as_ref().unwrap(), &fixture.scope);
 

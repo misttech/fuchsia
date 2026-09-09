@@ -1351,16 +1351,14 @@ mod tests {
 
         let mut url_str = None;
         for _ in 0..100 {
-            let args = mock_installer.captured_args().lock();
             if let Some(mock_installer_fdomain::CapturedUpdateInstallerRequest::StartUpdate {
                 url,
                 ..
-            }) = args.get(0)
+            }) = mock_installer.captured_args().lock().get(0)
             {
                 url_str = Some(url.clone());
                 break;
             }
-            drop(args);
             fuchsia_async::Timer::new(std::time::Duration::from_millis(100)).await;
         }
         let url = url_str.expect("StartUpdate should be called");

@@ -11,7 +11,7 @@ use fidl_fuchsia_bluetooth_host::{
 use fidl_fuchsia_bluetooth_sys::{self as sys, HostInfo as FidlHostInfo};
 use fuchsia_bluetooth::types::bonding_data::example;
 use fuchsia_bluetooth::types::{Address, BondingData, HostId, HostInfo, Peer, PeerId};
-use fuchsia_sync::RwLock;
+use fuchsia_sync::{Mutex, RwLock};
 use futures::future::Either;
 use futures::stream::StreamExt;
 use futures::{FutureExt, future, join, pin_mut};
@@ -47,17 +47,16 @@ impl HostListener for () {
 // Create a HostDevice with a fake channel, set local name and check it is updated
 #[fuchsia::test]
 async fn host_device_set_local_name() -> Result<(), Error> {
-    let (client, server) = fidl::endpoints::create_proxy_and_stream::<HostMarker>();
+    let (client, mut server) = fidl::endpoints::create_proxy_and_stream::<HostMarker>();
     let address = Address::Public([0, 0, 0, 0, 0, 0]);
     let host = HostDevice::mock(HostId(1), address, "/dev/class/bt-hci/test".to_string(), client);
     let expected_name = "EXPECTED_NAME".to_string();
     let info = Arc::new(RwLock::new(host.info()));
-    let server = Arc::new(RwLock::new(server));
-    let _delegate = expect_set_bonding_delegate(server.clone()).await?;
+    let _delegate = expect_set_bonding_delegate(&mut server).await?;
 
     // Assign a name and verify that that it gets written to the bt-host device over FIDL.
     let set_name = host.set_name(expected_name.clone());
-    let expect_fidl = expect_call(server.clone(), |_, e| match e {
+    let expect_fidl = expect_call(&mut server, |_, e| match e {
         HostRequest::SetLocalName { local_name, responder } => {
             info.write().local_name = Some(local_name);
             responder.send(Ok(()))?;
@@ -70,7 +69,7 @@ async fn host_device_set_local_name() -> Result<(), Error> {
     let _ = expect_result.expect("FIDL result unsatisfied");
 
     let info = info.read().clone();
-    refresh_host(host.clone(), server.clone(), info).await;
+    refresh_host(host.clone(), &mut server, info).await;
     let host_name = host.info().local_name.clone();
     assert!(host_name == Some(expected_name));
     Ok(())
@@ -80,18 +79,17 @@ async fn host_device_set_local_name() -> Result<(), Error> {
 // the discovery proxy is dropped.
 #[fuchsia::test]
 async fn test_discovery_session() -> Result<(), Error> {
-    let (client, server) = fidl::endpoints::create_proxy_and_stream::<HostMarker>();
+    let (client, mut server) = fidl::endpoints::create_proxy_and_stream::<HostMarker>();
 
     let address = Address::Public([0, 0, 0, 0, 0, 0]);
     let host = HostDevice::mock(HostId(1), address, "/dev/class/bt-hci/test".to_string(), client);
     let info_server = Arc::new(RwLock::new(host.info()));
-    let server = Arc::new(RwLock::new(server));
-    let _delegate = expect_set_bonding_delegate(server.clone()).await?;
+    let _delegate = expect_set_bonding_delegate(&mut server).await?;
 
     // Simulate request to establish discovery session
     let discovery_proxy = host.start_discovery()?;
     let mut discovery_request_stream: Option<DiscoverySessionRequestStream> = None;
-    let expect_fidl = expect_call(server.clone(), |_, request| match request {
+    let expect_fidl = expect_call(&mut server, |_, request| match request {
         HostRequest::StartDiscovery { payload, .. } => {
             info_server.write().discovering = true;
             discovery_request_stream = Some(payload.token.unwrap().into_stream());
@@ -105,7 +103,7 @@ async fn test_discovery_session() -> Result<(), Error> {
 
     // Assert that host is now marked as discovering
     let info = info_server.read().clone();
-    refresh_host(host.clone(), server.clone(), info).await;
+    refresh_host(host.clone(), &mut server, info).await;
     let is_discovering = host.info().discovering.clone();
     assert!(is_discovering);
 
@@ -115,7 +113,7 @@ async fn test_discovery_session() -> Result<(), Error> {
 
     // Assert that host is no longer marked as discovering
     let info = info_server.read().clone();
-    refresh_host(host.clone(), server.clone(), info).await;
+    refresh_host(host.clone(), &mut server, info).await;
     let is_discovering = host.info().discovering.clone();
     assert!(!is_discovering);
 
@@ -151,14 +149,12 @@ async fn host_device_restore_bonds() -> Result<(), Error> {
 }
 
 // TODO(https://fxbug.dev/42115226): Add host.fidl emulation to bt-fidl-mocks and use that instead.
-async fn expect_call<F, D>(stream: Arc<RwLock<HostRequestStream>>, f: F) -> Result<D, Error>
+async fn expect_call<F, D>(stream: &mut HostRequestStream, f: F) -> Result<D, Error>
 where
     F: FnOnce(Arc<HostControlHandle>, HostRequest) -> Result<D, Error>,
 {
-    let control_handle = Arc::new(stream.read().control_handle());
-    let mut stream = stream.write();
+    let control_handle = Arc::new(stream.control_handle());
     if let Some(event) = stream.next().await {
-        drop(stream);
         let event = event?;
         f(control_handle, event)
     } else {
@@ -167,7 +163,7 @@ where
 }
 
 async fn expect_set_bonding_delegate(
-    stream: Arc<RwLock<HostRequestStream>>,
+    stream: &mut HostRequestStream,
 ) -> Result<BondingDelegateRequestStream, Error> {
     expect_call(stream, |_, e| match e {
         HostRequest::SetBondingDelegate { delegate, .. } => Ok(delegate.into_stream()),
@@ -177,7 +173,7 @@ async fn expect_set_bonding_delegate(
 }
 
 // Updates host with new info
-async fn refresh_host(host: HostDevice, server: Arc<RwLock<HostRequestStream>>, info: HostInfo) {
+async fn refresh_host(host: HostDevice, server: &mut HostRequestStream, info: HostInfo) {
     let refresh = host.refresh_test_host_info();
     let expect_fidl = expect_call(server, |_, e| match e {
         HostRequest::WatchState { responder } => {
@@ -194,16 +190,16 @@ async fn refresh_host(host: HostDevice, server: Arc<RwLock<HostRequestStream>>, 
 
 #[fuchsia::test(allow_stalls = false)]
 async fn bond_data_with_unexpected_address() -> Result<(), Error> {
-    let (client, host_request_stream) = fidl::endpoints::create_proxy_and_stream::<HostMarker>();
+    let (client, mut host_request_stream) =
+        fidl::endpoints::create_proxy_and_stream::<HostMarker>();
     let address_a = Address::Public([0xAA; 6]);
     let address_b = Address::Public([0xBB; 6]);
     let host = HostDevice::mock(HostId(1), address_a, "/dev/class/bt-hci/test".to_string(), client);
 
-    let host_request_stream = Arc::new(RwLock::new(host_request_stream));
-    let bonding_delegate_stream = expect_set_bonding_delegate(host_request_stream.clone()).await?;
+    let bonding_delegate_stream = expect_set_bonding_delegate(&mut host_request_stream).await?;
 
     struct TestListener {
-        bonds: Arc<std::sync::Mutex<Vec<BondingData>>>,
+        bonds: Arc<Mutex<Vec<BondingData>>>,
     }
     impl HostListener for TestListener {
         type PeerUpdatedFut = future::Ready<()>;
@@ -216,7 +212,7 @@ async fn bond_data_with_unexpected_address() -> Result<(), Error> {
         }
         type HostBondFut = future::Ready<Result<(), anyhow::Error>>;
         fn on_new_host_bond(&mut self, data: BondingData) -> Self::HostBondFut {
-            self.bonds.lock().unwrap().push(data);
+            self.bonds.lock().push(data);
             future::ready(Ok(()))
         }
         type HostInfoFut = future::Ready<Result<(), anyhow::Error>>;
@@ -225,7 +221,7 @@ async fn bond_data_with_unexpected_address() -> Result<(), Error> {
         }
     }
 
-    let bonds = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let bonds = Arc::new(Mutex::new(Vec::new()));
     let listener = TestListener { bonds: bonds.clone() };
 
     // Wrap the event loop in an abortable handle to allow programmatic termination
@@ -271,7 +267,7 @@ async fn bond_data_with_unexpected_address() -> Result<(), Error> {
 
     // Verify that only the bond with the expected local address was persisted,
     // confirming that the mismatched update was discarded.
-    let bonds = bonds.lock().unwrap();
+    let bonds = bonds.lock();
     assert_eq!(bonds.len(), 1);
     assert_eq!(bonds[0].local_address, address_a);
 

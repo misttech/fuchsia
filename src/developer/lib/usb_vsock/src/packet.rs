@@ -744,24 +744,26 @@ mod tests {
             println!("now put some things in the packet");
             let header = &mut Header::new(PacketType::Data);
             header.payload_len.set(99);
-            let Poll::Ready(Ok(mut builder)) = poll!(fillable_fut) else {
-                panic!("should have been ready to fill a packet")
-            };
-            builder
-                .as_mut()
-                .unwrap()
-                .write_vsock_packet(&Packet { header, payload: &[b'a'; 99] })
-                .unwrap();
-            drop(builder);
-            let Poll::Ready(Ok(mut builder)) = poll!(filler.wait_for_fillable(1)) else {
-                panic!("should have been ready to fill a packet(2)")
-            };
-            builder
-                .as_mut()
-                .unwrap()
-                .write_vsock_packet(&Packet { header, payload: &[b'a'; 99] })
-                .unwrap();
-            drop(builder);
+            {
+                let Poll::Ready(Ok(mut builder)) = poll!(fillable_fut) else {
+                    panic!("should have been ready to fill a packet")
+                };
+                builder
+                    .as_mut()
+                    .unwrap()
+                    .write_vsock_packet(&Packet { header, payload: &[b'a'; 99] })
+                    .unwrap();
+            }
+            {
+                let Poll::Ready(Ok(mut builder)) = poll!(filler.wait_for_fillable(1)) else {
+                    panic!("should have been ready to fill a packet(2)")
+                };
+                builder
+                    .as_mut()
+                    .unwrap()
+                    .write_vsock_packet(&Packet { header, payload: &[b'a'; 99] })
+                    .unwrap();
+            }
 
             println!("but if we ask for too much space we'll get pending");
             assert!(poll!(filler.wait_for_fillable(1024 - (99 * 2) + 1)).is_pending());

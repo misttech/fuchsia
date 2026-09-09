@@ -1404,13 +1404,14 @@ mod tests {
         stats.on_component_started(&moniker, &*fake_runtime2);
 
         loop {
-            let tree_guard = stats.tree.lock();
-            if let Some(comp_stats) = tree_guard.get(&ext_moniker) {
-                if comp_stats.lock().tasks().len() == 2 {
-                    break;
-                }
+            if stats
+                .tree
+                .lock()
+                .get(&ext_moniker)
+                .is_some_and(|comp_stats| comp_stats.lock().tasks().len() == 2)
+            {
+                break;
             }
-            drop(tree_guard);
             fasync::Timer::new(fasync::MonotonicInstant::after(
                 zx::MonotonicDuration::from_millis(10),
             ))

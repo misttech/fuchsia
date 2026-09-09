@@ -13,6 +13,7 @@ _CLIPPY_WARN_DEFAULT = {
     # Allow everything by default, except for the ones explicitly configured.
     # LINT.IfChange(clippy_warn_default)
     "all": "allow",
+    "await_holding_lock": "warn",
     "clear_with_drain": "warn",
     "confusing_method_to_numeric_cast": "warn",
     "correctness": "warn",
@@ -29,10 +30,8 @@ _CLIPPY_WARN_DEFAULT = {
 
 _CLIPPY_WARN_PRODUCTION = _CLIPPY_WARN_DEFAULT | {
     # LINT.IfChange(clippy_warn_production)
-    "clear_with_drain": "warn",
     "collection_is_never_read": "warn",
     "needless_collect": "warn",
-    "or_fun_call": "warn",
     "perf": "warn",
     "redundant_clone": "warn",
     "set_contains_or_insert": "warn",

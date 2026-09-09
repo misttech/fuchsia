@@ -1294,10 +1294,8 @@ mod test {
             None,
         )
         .await?;
-        let s = state.lock().unwrap();
-
         // There are four partitions, and it's easier to check for each one.
-        assert_eq!(s.get_var_call_count(STREAM_SEGMENT_SIZE), (false, 4));
+        assert_eq!(state.lock().unwrap().get_var_call_count(STREAM_SEGMENT_SIZE), (false, 4));
         server.close();
         let mut messages = vec![];
         while let Some(m) = server.recv().await {

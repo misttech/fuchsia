@@ -9,6 +9,7 @@ config("clippy_warn_default") {
     # LINT.IfChange(clippy_warn_default)
     # go/keep-sorted start
 
+    "-Wclippy::await_holding_lock",
     "-Wclippy::clear_with_drain",
     "-Wclippy::confusing_method_to_numeric_cast",
     "-Wclippy::correctness",
@@ -33,10 +34,8 @@ config("clippy_warn_production") {
     # LINT.IfChange(clippy_warn_production)
     # go/keep-sorted start
 
-    "-Wclippy::clear_with_drain",
     "-Wclippy::collection_is_never_read",
     "-Wclippy::needless_collect",
-    "-Wclippy::or_fun_call",
     "-Wclippy::perf",
     "-Wclippy::redundant_clone",
     "-Wclippy::set_contains_or_insert",

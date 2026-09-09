@@ -233,7 +233,8 @@ mod test {
     use futures::channel::mpsc::UnboundedSender;
     use std::sync::{Arc, Mutex};
 
-    static MOCK_HANDLES_LOCK: Mutex<()> = Mutex::new(());
+    static MOCK_HANDLES_LOCK: std::sync::LazyLock<futures::lock::Mutex<()>> =
+        std::sync::LazyLock::new(|| futures::lock::Mutex::new(()));
     static MOCK_HANDLES: std::sync::LazyLock<Arc<Mutex<Vec<TargetHandle>>>> =
         std::sync::LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 
@@ -259,7 +260,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_resolve_target_success() {
-        let _guard = MOCK_HANDLES_LOCK.lock().unwrap();
+        let _guard = MOCK_HANDLES_LOCK.lock().await;
         let env = ffx_config::test_env().build().unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let handle = TargetHandle {
@@ -277,7 +278,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_resolve_target_no_devices_found() {
-        let _guard = MOCK_HANDLES_LOCK.lock().unwrap();
+        let _guard = MOCK_HANDLES_LOCK.lock().await;
         {
             *MOCK_HANDLES.lock().unwrap() = vec![];
         }
@@ -290,7 +291,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_resolve_target_too_many_devices_found() {
-        let _guard = MOCK_HANDLES_LOCK.lock().unwrap();
+        let _guard = MOCK_HANDLES_LOCK.lock().await;
         let env = ffx_config::test_env().build().unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let handle1 = TargetHandle {
@@ -366,7 +367,7 @@ mod test {
 
     #[fuchsia::test]
     async fn test_resolve_target_escapes_control_characters() {
-        let _guard = MOCK_HANDLES_LOCK.lock().unwrap();
+        let _guard = MOCK_HANDLES_LOCK.lock().await;
         let env = ffx_config::test_env().build().unwrap();
         let mut notifier = ffx_diagnostics::StringNotifier::new();
         let handle = TargetHandle {

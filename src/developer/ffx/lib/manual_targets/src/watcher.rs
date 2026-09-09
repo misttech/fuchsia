@@ -371,8 +371,9 @@ mod test {
         }
 
         async fn get_or_default(&self) -> Map<String, Value> {
-            let mut guard = self.inner_mocks.lock().expect("Get Inner mocks for TestManualTargets");
-            if let Some(mock) = guard.pop() {
+            let mock =
+                self.inner_mocks.lock().expect("Get Inner mocks for TestManualTargets").pop();
+            if let Some(mock) = mock {
                 mock.get_or_default().await
             } else {
                 let mut lock = self.is_empty.lock().unwrap();

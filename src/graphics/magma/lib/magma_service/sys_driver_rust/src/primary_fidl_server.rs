@@ -418,14 +418,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -446,7 +447,7 @@ mod tests {
 
         assert!(proxy.flush().await.is_ok());
 
-        assert!(server.lock().unwrap().connection.lookup_buffer(BufferId(id)).is_some());
+        assert!(server.lock().await.connection.lookup_buffer(BufferId(id)).is_some());
     }
 
     #[fuchsia::test]
@@ -464,14 +465,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -489,11 +491,11 @@ mod tests {
 
         assert!(proxy.import_object(payload).is_ok());
         assert!(proxy.flush().await.is_ok());
-        assert!(server.lock().unwrap().connection.lookup_buffer(BufferId(id)).is_some());
+        assert!(server.lock().await.connection.lookup_buffer(BufferId(id)).is_some());
 
         assert!(proxy.release_object(id, fidl_fuchsia_gpu_magma::ObjectType::Buffer).is_ok());
         assert!(proxy.flush().await.is_ok());
-        assert!(server.lock().unwrap().connection.lookup_buffer(BufferId(id)).is_none());
+        assert!(server.lock().await.connection.lookup_buffer(BufferId(id)).is_none());
     }
 
     #[fuchsia::test]
@@ -511,14 +513,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -536,7 +539,7 @@ mod tests {
 
         assert!(proxy.import_object(payload).is_ok());
         assert!(proxy.flush().await.is_ok());
-        assert!(server.lock().unwrap().connection.lookup_semaphore(SemaphoreId(id)).is_some());
+        assert!(server.lock().await.connection.lookup_semaphore(SemaphoreId(id)).is_some());
     }
 
     #[fuchsia::test]
@@ -554,14 +557,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -579,11 +583,11 @@ mod tests {
 
         assert!(proxy.import_object(payload).is_ok());
         assert!(proxy.flush().await.is_ok());
-        assert!(server.lock().unwrap().connection.lookup_semaphore(SemaphoreId(id)).is_some());
+        assert!(server.lock().await.connection.lookup_semaphore(SemaphoreId(id)).is_some());
 
         assert!(proxy.release_object(id, fidl_fuchsia_gpu_magma::ObjectType::Semaphore).is_ok());
         assert!(proxy.flush().await.is_ok());
-        assert!(server.lock().unwrap().connection.lookup_semaphore(SemaphoreId(id)).is_none());
+        assert!(server.lock().await.connection.lookup_semaphore(SemaphoreId(id)).is_none());
     }
 
     #[fuchsia::test]
@@ -601,14 +605,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -634,14 +639,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -670,14 +676,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -705,14 +712,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -776,14 +784,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -821,14 +830,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -864,12 +874,13 @@ mod tests {
             }),
         );
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
 
         let data = 0x12345678u32;
         server
             .lock()
-            .unwrap()
+            .await
             .connection
             .notification_handler
             .notification_channel_send(&data.to_ne_bytes());
@@ -898,14 +909,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -960,14 +972,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -976,7 +989,7 @@ mod tests {
         assert!(proxy.enable_performance_counter_access(event).is_ok());
         assert!(proxy.flush().await.is_ok());
 
-        assert!(server.lock().unwrap().connection.is_performance_counter_access_allowed());
+        assert!(server.lock().await.connection.is_performance_counter_access_allowed());
     }
 
     #[fuchsia::test]
@@ -991,14 +1004,15 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         fuchsia_async::Task::local(async move {
             let mut stream = stream;
             let control_handle = stream.control_handle();
             while let Some(res) = stream.next().await {
                 let request = res.unwrap();
-                let mut server_locked = server_clone.lock().unwrap();
+                let mut server_locked = server_clone.lock().await;
                 server_locked.handle_message_request(request, &control_handle).await.unwrap();
             }
         })
@@ -1042,18 +1056,19 @@ mod tests {
         let (_proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         let (result_tx, result_rx) = futures::channel::oneshot::channel();
         fuchsia_async::Task::local(async move {
-            let mut server_locked = server_clone.lock().unwrap();
+            let mut server_locked = server_clone.lock().await;
             let result = server_locked.run(stream, rx).await;
             let _ = result_tx.send(result);
         })
         .detach();
 
         // Trigger context killed!
-        server.lock().unwrap().connection.notification_handler.context_killed();
+        server.lock().await.connection.notification_handler.context_killed();
 
         // Wait for result!
         let result = result_rx.await.unwrap();
@@ -1077,11 +1092,12 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fidl_fuchsia_gpu_magma::PrimaryMarker>();
 
-        let server = std::sync::Arc::new(std::sync::Mutex::new(PrimaryFidlServer::new(connection)));
+        let server =
+            std::sync::Arc::new(futures::lock::Mutex::new(PrimaryFidlServer::new(connection)));
         let server_clone = server.clone();
         let (result_tx, result_rx) = futures::channel::oneshot::channel();
         fuchsia_async::Task::local(async move {
-            let mut server_locked = server_clone.lock().unwrap();
+            let mut server_locked = server_clone.lock().await;
             let result = server_locked.run(stream, rx).await;
             let _ = result_tx.send(result);
         })
