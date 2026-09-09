@@ -97,7 +97,7 @@ class StartStopClientConnectionsTest(
                     e,
                 )
                 if attempt == max_attempts:
-                    signals.TestAbortClass(
+                    raise signals.TestAbortClass(
                         f"Failed to acquire WLAN policy client controller after {max_attempts} attempts: {e}."
                     )
 
