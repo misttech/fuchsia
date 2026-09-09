@@ -31,8 +31,8 @@ fundamentals and demonstrates their utility through examples appropriate for a
 Bluetooth stack.
 
 Additionally, this document outlines the non-functional characteristics of the
-proposed design, referencing [RFC 0001](./0001_generic_collections.md) and
-[RFC 0002](./0002_platform_agnostic_synchronization.md) for detailed resource
+proposed design, referencing [RFC 0002](./0002_generic_collections.md) and
+[RFC 0004](./0004_platform_agnostic_synchronization.md) for detailed resource
 constraint analysis.
 
 # Background
@@ -42,8 +42,8 @@ in Rust. As part of this rewrite, the asynchronous model will transition from a
 C++ callback-oriented approach to a Rust async/await model.
 
 This design builds heavily on
-[RFC 0001 - Collections](./0001_generic_collections.md) and
-[RFC 0002 - Synchronization](./0002_platform_agnostic_synchronization.md)
+[RFC 0002 - Collections](./0002_generic_collections.md) and
+[RFC 0004 - Synchronization](./0004_platform_agnostic_synchronization.md)
 
 # Requirements
 
