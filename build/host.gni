@@ -32,8 +32,8 @@ declare_args() {
 #     same as the output_name in the executable() or similar rule
 #     (which is usually just that target's name).
 #
-#   deps (recommended)
-#     [label list] Should list each target that actually builds each output.
+#   deps (required)
+#     [label list] List of targets that actually build the files in `outputs`.
 #     It does not need to use explicit toolchain suffixes; the only target
 #     using the deps will be instantiated only in host_toolchain.
 #
@@ -53,7 +53,9 @@ declare_args() {
 #     outputs = [ "frob", "twiddle" ]
 #   }
 template("install_host_tools") {
-  assert(defined(invoker.outputs), "install_host_tools() must define outputs")
+  assert(defined(invoker.outputs), "install_host_tools() must define `outputs`")
+  assert(defined(invoker.deps) && len(invoker.deps) > 0,
+         "install_host_tools() must specify at least one `deps`.")
 
   # There is more than one host_toolchain when variants are involved, or when
   # building tools for multiple host environments, so we only want to do this
