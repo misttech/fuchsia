@@ -70,7 +70,10 @@
             from: "#input-helper",
         },
         {
-            protocol: [ "fuchsia.ui.policy.DeviceListenerRegistry" ],
+            protocol: [
+                "fuchsia.ui.input.DeviceListenerRegistry",
+                "fuchsia.ui.policy.DeviceListenerRegistry",
+            ],
             from: "#scene_manager",
         },
     ],

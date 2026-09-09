@@ -129,6 +129,7 @@ std::vector<std::string> SceneOwnerServices(const UITestRealm::Config& config) {
 
   return {fuchsia::session::scene::Manager::Name_,
           fuchsia::input::injection::InputDeviceRegistry::Name_,
+          fuchsia::ui::input::DeviceListenerRegistry::Name_,
           fuchsia::ui::policy::DeviceListenerRegistry::Name_};
 }
 
