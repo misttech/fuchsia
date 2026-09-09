@@ -11,8 +11,6 @@
 #include <zircon/syscalls/resource.h>
 #include <zircon/types.h>
 
-#include <fbl/ref_ptr.h>
-
 // When validating MMIO resource ranges against a non-root parent MMIO resource,
 // we need to verify that the requested range is completely contained by its
 // parent's range.  There are two different ways that we can do this: a strict
@@ -46,10 +44,6 @@ enum class StrictMmioRangeValidation { No, Yes };
 // in system/public/zircon/syscalls/resource.h
 
 // Validates a resource based on type and low/high range.
-class ResourceDispatcher;
-zx_status_t validate_ranged_resource(
-    fbl::RefPtr<ResourceDispatcher> resource, zx_rsrc_kind_t kind, uint64_t base, size_t len,
-    StrictMmioRangeValidation strict_validation = StrictMmioRangeValidation::No);
 zx_status_t validate_ranged_resource(
     zx_handle_t handle, zx_rsrc_kind_t kind, uint64_t base, size_t len,
     StrictMmioRangeValidation strict_validation = StrictMmioRangeValidation::No);

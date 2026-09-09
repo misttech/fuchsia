@@ -26,11 +26,6 @@ __BEGIN_CDECLS
 // restrict access to only part of a page of MMIO.
 void root_resource_filter_add_deny_region(uintptr_t base, size_t size, zx_rsrc_kind_t kind);
 
-// Called by object/resource.cc code to check whether or not a resource of the
-// specified range and kind may be created.  This restriction applies even to
-// users with access to the root resource.
-bool root_resource_filter_can_access_region(uintptr_t base, size_t size, zx_rsrc_kind_t kind);
-
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_LIB_ROOT_RESOURCE_FILTER_INCLUDE_LIB_ROOT_RESOURCE_FILTER_H_

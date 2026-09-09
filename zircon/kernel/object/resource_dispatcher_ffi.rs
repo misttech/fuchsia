@@ -55,45 +55,6 @@ crate::object::dispatcher::impl_dispatcher_state_init!(
     region: *mut Region,
 );
 
-/// Creates a new ResourceDispatcher handle.
-///
-/// # Safety
-///
-/// `handle_out` must point to writable, uninitialized memory for
-/// `KernelHandle<ResourceDispatcher>`. If `rights_out` is non-null, it must point to writable
-/// memory for `zx_rights_t`. If `name` is non-null, it must point to a null-terminated C string.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_resource_dispatcher_create(
-    handle_out: *mut MaybeUninit<KernelHandle<ResourceDispatcher>>,
-    rights_out: *mut zx_rights_t,
-    kind: zx_rsrc_kind_t,
-    base: u64,
-    size: usize,
-    flags: u32,
-    name: *const core::ffi::c_char,
-) -> zx_status_t {
-    let name_bytes = if name.is_null() {
-        &[]
-    } else {
-        // SAFETY: The caller guarantees `name` is a null-terminated C string when non-null.
-        unsafe { core::ffi::CStr::from_ptr(name).to_bytes() }
-    };
-    match ResourceDispatcher::create(kind, base, size, flags, name_bytes) {
-        Ok((handle, rights)) => {
-            // SAFETY: The caller guarantees `handle_out` points to writable memory, and
-            // `rights_out` (if non-null) points to writable memory.
-            unsafe {
-                (*handle_out).write(handle);
-                if !rights_out.is_null() {
-                    *rights_out = rights;
-                }
-            }
-            ZX_OK
-        }
-        Err(status) => status.into_raw(),
-    }
-}
-
 /// Creates a new ranged root ResourceDispatcher handle.
 ///
 /// # Safety

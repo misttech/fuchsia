@@ -34,14 +34,7 @@ use zx_types::{ZX_RSRC_KIND_MMIO, ZX_RSRC_KIND_SYSTEM, zx_rsrc_kind_t, zx_rsrc_s
 use super::Dispatcher;
 use super::handle::HandleValue;
 use super::resource_dispatcher::ResourceDispatcher;
-
-unsafe extern "C" {
-    fn root_resource_filter_can_access_region(
-        base: usize,
-        size: usize,
-        kind: zx_rsrc_kind_t,
-    ) -> bool;
-}
+use crate::root_resource_filter::root_resource_filter_can_access_region;
 
 // TODO(https://fxbug.dev/42107339): Take another look at validation and consider returning
 // dispatchers or move validation into the parent dispatcher itself.
@@ -112,7 +105,7 @@ pub fn validate_ranged_resource_dispatcher(
             (base as usize, size)
         };
 
-        if !unsafe { root_resource_filter_can_access_region(check_base, check_size, kind) } {
+        if !root_resource_filter_can_access_region(check_base, check_size, kind) {
             return Err(Status::ACCESS_DENIED);
         }
         return Ok(());
@@ -129,7 +122,7 @@ pub fn validate_ranged_resource_dispatcher(
     // Since all resource ranges need to be a subset of their parent, it should be impossible for a
     // resource object to exist with a range which intersects anything in the deny list. Check that
     // with a debug assert here.
-    debug_assert!(unsafe { root_resource_filter_can_access_region(rbase as usize, rsize, kind) });
+    debug_assert!(root_resource_filter_can_access_region(rbase as usize, rsize, kind));
 
     // In the specific case of MMIO, everything is rounded to page::SIZE units because it's the
     // smallest unit we can operate at with the MMU.
@@ -217,13 +210,11 @@ mod tests {
         let step = 0x1000_0000u64;
         let mut test_base = 0u64;
         let found = loop {
-            if unsafe {
-                root_resource_filter_can_access_region(
-                    test_base as usize,
-                    0x10_0000,
-                    ZX_RSRC_KIND_MMIO,
-                )
-            } {
+            if root_resource_filter_can_access_region(
+                test_base as usize,
+                0x10_0000,
+                ZX_RSRC_KIND_MMIO,
+            ) {
                 break true;
             }
             if test_base >= u64::MAX - step {

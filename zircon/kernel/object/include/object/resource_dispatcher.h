@@ -34,9 +34,6 @@ void rust_resource_dispatcher_state_init(void* state, void* disp, zx_rsrc_kind_t
 void rust_resource_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_resource_dispatcher_state_get_lock(const void* state);
 
-zx_status_t rust_resource_dispatcher_create(
-    ffi::Uninitialized<KernelHandle<ResourceDispatcher>>* handle_out, zx_rights_t* rights_out,
-    zx_rsrc_kind_t kind, uint64_t base, size_t size, uint32_t flags, const char* name);
 zx_status_t rust_resource_dispatcher_create_ranged_root(
     ffi::Uninitialized<KernelHandle<ResourceDispatcher>>* handle_out, zx_rights_t* rights_out,
     zx_rsrc_kind_t kind, const char* name);
@@ -52,15 +49,6 @@ void rust_resource_dispatcher_dump_allocators();
 
 class ResourceDispatcher final : public Dispatcher {
  public:
-  using RefPtr = fbl::RefPtr<ResourceDispatcher>;
-
-  // Creates ResourceDispatcher object representing access rights to a
-  // given region of address space from a particular address space allocator, or a root resource
-  // granted full access permissions. Only one instance of the root resource is created at boot.
-  static zx_status_t Create(KernelHandle<ResourceDispatcher>* handle, zx_rights_t* rights,
-                            zx_rsrc_kind_t kind, uint64_t base, size_t size, uint32_t flags,
-                            const char name[ZX_MAX_NAME_LEN]);
-
   // Creates ResourceDispatcher object representing access rights to all
   // regions of address space for a ranged resource.
   static zx_status_t CreateRangedRoot(KernelHandle<ResourceDispatcher>* handle, zx_rights_t* rights,

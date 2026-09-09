@@ -5,12 +5,9 @@
 // https://opensource.org/licenses/MIT
 
 use super::handle::HandleValue;
-use super::resource::{
-    StrictValidation, validate_ranged_resource_dispatcher, validate_ranged_resource_with_strict,
-};
-use super::resource_dispatcher::ResourceDispatcher;
+use super::resource::{StrictValidation, validate_ranged_resource_with_strict};
 use zx_status::Status;
-use zx_types::{ZX_ERR_INVALID_ARGS, zx_handle_t, zx_rsrc_kind_t, zx_status_t};
+use zx_types::{zx_handle_t, zx_rsrc_kind_t, zx_status_t};
 
 /// Validates a resource handle against a requested range.
 ///
@@ -29,32 +26,6 @@ pub unsafe extern "C" fn rust_resource_validate_ranged_resource(
     let strict_validation = if strict { StrictValidation::Yes } else { StrictValidation::No };
     Status::result_into_raw(validate_ranged_resource_with_strict(
         HandleValue::new(handle),
-        kind,
-        base,
-        size,
-        strict_validation,
-    ))
-}
-
-/// Validates a `ResourceDispatcher` pointer against a requested range.
-///
-/// # Safety
-///
-/// `resource` may be null or point to a valid `ResourceDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_resource_validate_ranged_resource_dispatcher(
-    resource: *const ResourceDispatcher,
-    kind: zx_rsrc_kind_t,
-    base: u64,
-    size: usize,
-    strict: bool,
-) -> zx_status_t {
-    let Some(resource_ref) = (unsafe { resource.as_ref() }) else {
-        return ZX_ERR_INVALID_ARGS;
-    };
-    let strict_validation = if strict { StrictValidation::Yes } else { StrictValidation::No };
-    Status::result_into_raw(validate_ranged_resource_dispatcher(
-        resource_ref,
         kind,
         base,
         size,

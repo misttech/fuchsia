@@ -9,22 +9,9 @@
 #include <zircon/syscalls/resource.h>
 #include <zircon/types.h>
 
-#include <fbl/ref_ptr.h>
-#include <object/resource_dispatcher.h>
-
 extern "C" {
 zx_status_t rust_resource_validate_ranged_resource(zx_handle_t handle, zx_rsrc_kind_t kind,
                                                    uint64_t base, size_t size, bool strict);
-zx_status_t rust_resource_validate_ranged_resource_dispatcher(const ResourceDispatcher* resource,
-                                                              zx_rsrc_kind_t kind, uint64_t base,
-                                                              size_t size, bool strict);
-}
-
-zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, zx_rsrc_kind_t kind,
-                                     uintptr_t base, size_t size,
-                                     StrictMmioRangeValidation strict_validation) {
-  return rust_resource_validate_ranged_resource_dispatcher(
-      resource.get(), kind, base, size, strict_validation == StrictMmioRangeValidation::Yes);
 }
 
 zx_status_t validate_ranged_resource(zx_handle_t handle, zx_rsrc_kind_t kind, uintptr_t base,
