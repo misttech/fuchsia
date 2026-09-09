@@ -81,6 +81,11 @@ python_binary("developer_overrides") {
   ]
 }
 
+python_binary("size_report_merger") {
+  main_source = "//build/bazel_sdk/bazel_rules_fuchsia/fuchsia/tools/size_report_merger.py"
+  deps = [ "//build/python/modules/depfile" ]
+}
+
 group("tests") {
   testonly = true
   deps = [ ":convert_size_limits_test" ]

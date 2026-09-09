@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/assembly/size_report_aggregator.gni")
 import("//build/bazel/bazel_build_action_labels.gni")
 import("//build/bazel/bazel_test_suite.gni")
 import("//build/board.gni")
@@ -1964,7 +1965,7 @@ build_api_module("platform_artifacts") {
   deps = [ "//bundles/assembly" ]
 }
 
-# size_report.json contains a list (size 0 or 1) of gerrit size reports
+# gerrit_size_report.json contains a list (size 0 or 1) of gerrit size reports
 # produced by the build. The gerrit size reports have the format described in:
 #   https://chromium.googlesource.com/infra/gerrit-plugins/binary-size/+/HEAD/README.md
 #
@@ -1974,10 +1975,28 @@ build_api_module("platform_artifacts") {
 #     Required: Path to the gerrit size report
 #     Type: path relative to $root_build_dir
 #
+# Aggregates size reports from all product bundles into a single merged report.
+#
+# Note: //:build_only catches product bundles from multi-product builders (via
+# build_only_labels), additional_default_targets catches builder-added targets,
+# and target_labels catches what developers add manually.
+size_report_aggregator("size_reports") {
+  testonly = true
+  deps = [
+           # Catch product bundles from multi-product builders (via
+           # build_only_labels).
+           "//:build_only",
+
+           # Catch the main product assembly.
+           "//build/images",
+         ] + additional_default_targets + target_labels
+}
+
 build_api_module("gerrit_size_report") {
   testonly = true
   data_keys = [ "gerrit_size_reports" ]
-  deps = [ "//build/images" ]
+  walk_keys = [ "gerrit_size_reports_barrier" ]
+  deps = [ ":size_reports" ]
 }
 
 # Contains the paths to all assembly manifests.
@@ -2277,6 +2296,7 @@ generated_file("bazel_target_infos") {
 group("default") {
   testonly = true
   deps = [
+    ":size_reports",
     "//:build_only",
     "//:host",
     "//:product_bundles.check",

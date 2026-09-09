@@ -177,6 +177,8 @@ template("bazel_product_bundle") {
 
     product_bundle_json = "${out_dir}/product_bundle/product_bundle.json"
 
+    size_report = "${out_dir}/size_report.json"
+
     if (defined(invoker.bazel_product_image_target)) {
       product_assembly_out_dir = targets.bazel_product_assembly
     }
@@ -330,6 +332,26 @@ template("bazel_product_bundle") {
                                root_build_dir)
           },
         ]
+      }
+    }
+  } else {
+    _size_report_target = "${target_name}_size_report"
+    _size_targets += [ ":${_size_report_target}" ]
+
+    _size_report_path = files.size_report
+
+    group(_size_report_target) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      public_deps = [ ":${targets.bazel_product_bundle}" ]
+
+      metadata = {
+        gerrit_size_reports =
+            [ rebase_path("${target_out_dir}/${_size_report_path}",
+                          root_build_dir) ]
       }
     }
   }
@@ -735,6 +757,17 @@ template("bazel_product_bundle") {
         ninja = "${files.create_system_out_dir}/assembled_system.json"
       },
     ]
+
+    # If a size report aggregator isn't provided, copy the size report out from
+    # the product bundle itself, instead.
+    if (!defined(invoker.bazel_size_report_aggregator_target)) {
+      copy_outputs += [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_PATH}}_size_report.json"
+          ninja = files.size_report
+        },
+      ]
+    }
     deps = _common_deps
 
     metadata = _metadata
