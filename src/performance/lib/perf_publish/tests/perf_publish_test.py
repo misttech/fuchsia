@@ -229,7 +229,7 @@ class CatapultConverterTest(unittest.TestCase):
         subprocess_check_call: mock.Mock = mock.Mock()
 
         # Smart integration and public integration can't be specified at the same time
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError) as exception_context:
             converter = self.make_catapult_converter_for_test(
                 [self._test_fuchsia_perf_json],
                 _EXPECTED_METRICS_FILE,
@@ -243,8 +243,8 @@ class CatapultConverterTest(unittest.TestCase):
             )
 
         self.assertIn(
-            ("but not both"),
-            str(context.exception),
+            "but not both",
+            str(exception_context.exception),
         )
 
         self.assertFalse(subprocess_check_call.called)
@@ -502,7 +502,7 @@ class CatapultConverterTest(unittest.TestCase):
         Test case that ensures that we correctly validate the expected metrics
         """
         subprocess_check_call: mock.Mock = mock.Mock()
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError) as exception_context:
             self.make_catapult_converter_for_test(
                 [self._mismatch_metrics_fuchsia_perf_json],
                 _EXPECTED_METRICS_FILE,
@@ -513,11 +513,11 @@ class CatapultConverterTest(unittest.TestCase):
             )
         self.assertIn(
             (
-                "-fuchsia.my.benchmark: metric_2\n"
-                "-fuchsia.my.benchmark: metric_3\n"
-                "+fuchsia.my.benchmark: unexpected\n"
+                "\t-fuchsia.my.benchmark: metric_2\n"
+                "\t-fuchsia.my.benchmark: metric_3\n"
+                "\t+fuchsia.my.benchmark: unexpected\n"
             ),
-            str(context.exception),
+            str(exception_context.exception),
         )
 
         self.assertFalse(subprocess_check_call.called)
@@ -609,7 +609,7 @@ class CatapultConverterTest(unittest.TestCase):
         Test case that ensures that we correctly validate the expected metrics
         """
         subprocess_check_call: mock.Mock = mock.Mock()
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError) as exception_context:
             self.make_catapult_converter_for_test(
                 [self._invalid_suite_fuchsia_perf_json],
                 _EXPECTED_METRICS_FILE,
@@ -618,8 +618,9 @@ class CatapultConverterTest(unittest.TestCase):
                 },
                 subprocess_check_call=subprocess_check_call,
             )
-        self.assertTrue(
-            '"invalid_test_suite_name" does not match' in str(context.exception)
+        self.assertIn(
+            '"invalid_test_suite_name" does not match',
+            str(exception_context.exception),
         )
         subprocess_check_call.assert_not_called()
 

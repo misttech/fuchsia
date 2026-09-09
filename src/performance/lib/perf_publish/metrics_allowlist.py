@@ -5,6 +5,7 @@
 """Provides an abstraction to assert that a set of metrics matches the expected one."""
 
 import os
+from collections.abc import Set
 
 _OPTIONAL_SUFFIX: str = " [optional]"
 
@@ -46,7 +47,7 @@ class MetricsAllowlist:
     def should_summarize(self) -> bool:
         return self._should_summarize
 
-    def check(self, actual_metrics: set[str]) -> None:
+    def check(self, actual_metrics: Set[str]) -> None:
         """Checks that the given `actual_metrics` matches the expected metrics.
 
         Args:
@@ -55,33 +56,29 @@ class MetricsAllowlist:
         Raises:
           ValueError: when the metrics don't match. Includes the diff.
         """
-        actual_minus_optional: set[str] = actual_metrics.difference(
-            self.optional_metrics
-        )
-        if self.expected_metrics == actual_minus_optional:
+        if self.expected_metrics == actual_metrics - self.optional_metrics:
             return
-        union: list[str] = sorted(
-            actual_metrics.union(self.expected_metrics).difference(
-                self.optional_metrics
-            )
+        union = sorted(
+            (actual_metrics | self.expected_metrics) - self.optional_metrics
         )
-        lines: list[str] = []
+        lines = []
         for entry in union:
             if entry in actual_metrics:
                 if entry not in self.expected_metrics:
-                    lines.append("+" + entry)
+                    lines.append("\t+" + entry)
             else:
-                lines.append("-" + entry)
+                lines.append("\t-" + entry)
         diff = "\n".join(lines)
 
         raise ValueError(
             (
                 f"Metric names produced by the test differ from the expectations in "
-                f"{self.file_path}: {diff}\n\n"
+                f"{self.file_path}:\n\n"
+                f"{diff}\n\n"
                 "One way to update the expectation file is to run the test locally with this "
                 "environment variable set:\n"
-                "FUCHSIA_EXPECTED_METRIC_NAMES_DEST_DIR="
+                "\tFUCHSIA_EXPECTED_METRIC_NAMES_DEST_DIR="
                 "$(pwd)/src/tests/end_to_end/perf/expected_metric_names\n\n"
-                "See https://fuchsia.dev/fuchsia-src/development/performance/metric_name_expectations"
+                "See https://fuchsia.dev/fuchsia-src/development/performance/metric_name_expectations\n"
             )
         )

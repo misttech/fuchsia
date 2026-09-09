@@ -11,6 +11,7 @@ import stat
 import subprocess
 import time
 import types
+from collections.abc import Collection, Sequence, Set
 from importlib.resources import as_file, files
 from typing import Any, Iterable, Self
 
@@ -327,7 +328,7 @@ class CatapultConverter:
     def _check_fuchsia_perf_metrics_naming(
         self,
         expected_metric_names_file: str | os.PathLike[str],
-        input_files: list[str],
+        input_files: Sequence[str],
         test_data_module: types.ModuleType | None,
         runtime_deps_dir: str | os.PathLike[str],
     ) -> bool:
@@ -359,7 +360,9 @@ class CatapultConverter:
             )
             return True
 
-    def _extract_perf_file_metrics(self, input_files: list[str]) -> set[str]:
+    def _extract_perf_file_metrics(
+        self, input_files: Sequence[str]
+    ) -> Set[str]:
         entries: set[str] = set()
         for input_file in input_files:
             with open(input_file) as f:
@@ -409,7 +412,7 @@ class CatapultConverter:
 
     def _write_expectation_file(
         self,
-        metrics: set[str],
+        metrics: Collection[str],
         expected_metric_names_filename: str | os.PathLike[str],
         fuchsia_expected_metric_names_dest_dir: str,
     ) -> None:

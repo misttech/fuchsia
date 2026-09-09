@@ -25,22 +25,22 @@ class CatapultConverterTest(unittest.TestCase):
                     "fuchsia.suite1: bar\n"
                 )
             allowlist = metrics_allowlist.MetricsAllowlist(metrics_file)
-        self.assertEqual(
+        self.assertSetEqual(
             allowlist.expected_metrics,
-            set(["fuchsia.suite1: foo", "fuchsia.suite1: bar"]),
+            {"fuchsia.suite1: foo", "fuchsia.suite1: bar"},
         )
-        self.assertEqual(allowlist.optional_metrics, set())
+        self.assertSetEqual(allowlist.optional_metrics, frozenset())
         self.assertTrue(allowlist.should_summarize)
 
         # This succeeds without raising any exception.
-        allowlist.check(set(["fuchsia.suite1: foo", "fuchsia.suite1: bar"]))
+        allowlist.check({"fuchsia.suite1: foo", "fuchsia.suite1: bar"})
 
-        with self.assertRaises(ValueError) as context:
-            allowlist.check(set(["fuchsia.suite1: foo", "fuchsia.suite1: new"]))
+        with self.assertRaises(ValueError) as exception_context:
+            allowlist.check({"fuchsia.suite1: foo", "fuchsia.suite1: new"})
 
         self.assertIn(
-            ("-fuchsia.suite1: bar\n" "+fuchsia.suite1: new"),
-            str(context.exception),
+            ("\t-fuchsia.suite1: bar\n" "\t+fuchsia.suite1: new"),
+            str(exception_context.exception),
         )
 
     def test_optional_metrics(self) -> None:
@@ -56,41 +56,37 @@ class CatapultConverterTest(unittest.TestCase):
                 )
             allowlist = metrics_allowlist.MetricsAllowlist(metrics_file)
 
-        self.assertEqual(
+        self.assertSetEqual(
             allowlist.expected_metrics,
-            set(["fuchsia.suite1: foo", "fuchsia.suite1: bar"]),
+            {"fuchsia.suite1: foo", "fuchsia.suite1: bar"},
         )
-        self.assertEqual(
+        self.assertSetEqual(
             allowlist.optional_metrics,
-            set(["fuchsia.suite1: opt1", "fuchsia.suite1: opt2"]),
+            {"fuchsia.suite1: opt1", "fuchsia.suite1: opt2"},
         )
 
         # These succeed without raising an exception.
-        allowlist.check(set(["fuchsia.suite1: foo", "fuchsia.suite1: bar"]))
+        allowlist.check({"fuchsia.suite1: foo", "fuchsia.suite1: bar"})
         allowlist.check(
-            set(
-                [
-                    "fuchsia.suite1: foo",
-                    "fuchsia.suite1: bar",
-                    "fuchsia.suite1: opt1",
-                ]
-            )
+            {
+                "fuchsia.suite1: foo",
+                "fuchsia.suite1: bar",
+                "fuchsia.suite1: opt1",
+            }
         )
 
-        with self.assertRaises(ValueError) as context:
+        with self.assertRaises(ValueError) as exception_context:
             allowlist.check(
-                set(
-                    [
-                        "fuchsia.suite1: foo",
-                        "fuchsia.suite1: new",
-                        "fuchsia.suite1: opt2",
-                    ]
-                )
+                {
+                    "fuchsia.suite1: foo",
+                    "fuchsia.suite1: new",
+                    "fuchsia.suite1: opt2",
+                }
             )
 
         self.assertIn(
-            ("-fuchsia.suite1: bar\n" "+fuchsia.suite1: new"),
-            str(context.exception),
+            ("\t-fuchsia.suite1: bar\n" "\t+fuchsia.suite1: new"),
+            str(exception_context.exception),
         )
 
     def test_no_summarize(self) -> None:
@@ -104,11 +100,11 @@ class CatapultConverterTest(unittest.TestCase):
                     "fuchsia.suite1: bar\n"
                 )
             allowlist = metrics_allowlist.MetricsAllowlist(metrics_file)
-        self.assertEqual(
+        self.assertSetEqual(
             allowlist.expected_metrics,
-            set(["fuchsia.suite1: foo", "fuchsia.suite1: bar"]),
+            {"fuchsia.suite1: foo", "fuchsia.suite1: bar"},
         )
-        self.assertEqual(allowlist.optional_metrics, set())
+        self.assertSetEqual(allowlist.optional_metrics, frozenset())
         self.assertFalse(allowlist.should_summarize)
 
     def test_command_can_be_present_after_comments_or_blank_lines(self) -> None:
@@ -122,9 +118,9 @@ class CatapultConverterTest(unittest.TestCase):
                     "fuchsia.suite1: bar\n"
                 )
             allowlist = metrics_allowlist.MetricsAllowlist(metrics_file)
-        self.assertEqual(
+        self.assertSetEqual(
             allowlist.expected_metrics,
-            set(["fuchsia.suite1: foo", "fuchsia.suite1: bar"]),
+            {"fuchsia.suite1: foo", "fuchsia.suite1: bar"},
         )
 
     def test_command_rejected_in_between_metrics(self) -> None:
@@ -137,9 +133,9 @@ class CatapultConverterTest(unittest.TestCase):
                     "[no-summarize-metrics]\n"
                     "fuchsia.suite1: bar\n"
                 )
-            with self.assertRaises(ValueError) as context:
+            with self.assertRaises(ValueError) as exception_context:
                 metrics_allowlist.MetricsAllowlist(metrics_file)
         self.assertIn(
             "[no-summarize-metrics] can only appear at the beginning of the file",
-            str(context.exception),
+            str(exception_context.exception),
         )
