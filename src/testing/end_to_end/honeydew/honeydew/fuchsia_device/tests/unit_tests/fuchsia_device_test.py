@@ -1341,6 +1341,11 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             await self.fd_fc_obj.power_cycle()
 
     @mock.patch.object(
+        ffx.FFX,
+        "notify_intentional_disconnect",
+        autospec=True,
+    )
+    @mock.patch.object(
         fuchsia_device.FuchsiaDevice,
         "on_device_boot",
         autospec=True,
@@ -1366,6 +1371,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_wait_for_offline: mock.Mock,
         mock_wait_for_online: mock.Mock,
         mock_on_device_boot: mock.Mock,
+        mock_ffx_notify_intentional_disconnect: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice.power_cycle()"""
         power_switch = mock.MagicMock(spec=power_switch_interface.PowerSwitch)
@@ -1375,6 +1381,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_log_message_to_device.call_count, 2)
         power_switch.power_off.assert_called_with(5)
         power_switch.power_on.assert_called_with(5)
+        mock_ffx_notify_intentional_disconnect.assert_called()
         mock_wait_for_offline.assert_called()
         mock_wait_for_online.assert_called()
         mock_on_device_boot.assert_called()

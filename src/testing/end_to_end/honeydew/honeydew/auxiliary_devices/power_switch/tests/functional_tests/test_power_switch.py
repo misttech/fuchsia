@@ -33,7 +33,7 @@ class PowerSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
                 "Attempting to instantiate PowerSwitchUsingDmc (Infra Mode)..."
             )
             self._power_switch = power_switch_using_dmc.PowerSwitchUsingDmc(
-                device_name=self.dut.device_name, ffx=self.dut.ffx
+                device_name=self.dut.device_name
             )
             self._outlet_arg = None
             _LOGGER.info("Successfully configured for DMC.")
@@ -54,7 +54,6 @@ class PowerSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
                     pdu_host=pdu_config["host"],
                     pdu_username=pdu_config["username"],
                     priv_key_path=pdu_config["priv_key_path"],
-                    ffx=self.dut.ffx,
                 )
                 self._outlet_arg = pdu_config["outlet"]
                 _LOGGER.info("Successfully configured for PDU.")
@@ -75,6 +74,7 @@ class PowerSwitchTest(fuchsia_base_test.FuchsiaBaseTest):
 
         # power off the device using the dynamically determined outlet argument
         _LOGGER.info("Starting power_off test cycle.")
+        self.dut.ffx.notify_intentional_disconnect()
         self._power_switch.power_off(outlet=self._outlet_arg)
 
         self.dut.wait_for_offline()

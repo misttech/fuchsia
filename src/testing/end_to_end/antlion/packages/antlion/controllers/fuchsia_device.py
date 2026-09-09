@@ -542,14 +542,13 @@ class FuchsiaDevice:
             dmc: PowerSwitchUsingDmc | None = None
             if self.name:
                 try:
-                    dmc = PowerSwitchUsingDmc(
-                        device_name=self.name, ffx=self.ffx
-                    )
+                    dmc = PowerSwitchUsingDmc(device_name=self.name)
                 except PowerSwitchDmcError:
                     self.log.info("dmc not found, falling back to using PDU")
 
             if dmc:
                 self.log.info("Killing power to FuchsiaDevice with dmc")
+                self.ffx.notify_intentional_disconnect()
                 dmc.power_off()
                 self.honeydew_fd.wait_for_offline()
 
@@ -572,6 +571,7 @@ class FuchsiaDevice:
                 )
 
                 self.log.info("Killing power to FuchsiaDevice")
+                self.ffx.notify_intentional_disconnect()
                 device_pdu.off(device_pdu_port)
                 self.honeydew_fd.wait_for_offline()
 

@@ -414,9 +414,6 @@ class FFX:
 
     def notify_intentional_disconnect(self) -> None:
         """Notifies the FFX monitor of an upcoming intentional disconnect."""
-        if not self._use_monitor:
-            return
-
         nodename = self._name if self._name else self._query
         cmd = _FFX_CMDS["MONITOR_INTENTIONAL_DISCONNECT"][:]
         cmd.extend(["--nodename", nodename])
@@ -426,8 +423,9 @@ class FFX:
                 cmd=cmd,
                 include_target=False,
                 log_status_on_failure=False,
+                timeout=30.0,
             )
-        except ffx_errors.FfxCommandError as err:
+        except Exception as err:  # pylint: disable=broad-exception-caught
             _LOGGER.warning(
                 "Failed to notify intentional disconnect to FFX monitor: %s",
                 err,

@@ -509,14 +509,13 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 power_switch_impl["class"],
             )
             return (
-                power_switch_class(ffx=fx_device.ffx, **power_switch_hw),
+                power_switch_class(**power_switch_hw),
                 power_switch_outlet,
             )
         elif power_switch_using_dmc.DMC_PATH_KEY in os.environ:
             return (
                 power_switch_using_dmc.PowerSwitchUsingDmc(
                     device_name=fx_device.device_name,
-                    ffx=fx_device.ffx,
                 ),
                 None,
             )

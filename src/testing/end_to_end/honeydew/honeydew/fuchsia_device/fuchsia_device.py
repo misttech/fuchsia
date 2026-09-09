@@ -1017,6 +1017,7 @@ class FuchsiaDevice(
             pass
 
         _LOGGER.info("Powering off %s...", self.device_name)
+        self.ffx.notify_intentional_disconnect()
         self._power_switch.power_off(self._power_switch_outlet)
         await asyncio.to_thread(self.wait_for_offline)
 

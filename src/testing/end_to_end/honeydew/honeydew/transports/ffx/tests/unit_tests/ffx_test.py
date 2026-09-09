@@ -1095,6 +1095,7 @@ class FfxTests(unittest.TestCase):
             ],
             include_target=False,
             log_status_on_failure=False,
+            timeout=30.0,
         )
 
     @mock.patch.object(ffx.FFX, "run")
@@ -1103,4 +1104,25 @@ class FfxTests(unittest.TestCase):
     ) -> None:
         """Test case for ffx.notify_intentional_disconnect() when monitor is not used"""
         self.ffx_obj_with_ip.notify_intentional_disconnect()
-        mock_run.assert_not_called()
+        mock_run.assert_called_once_with(
+            cmd=[
+                "monitor",
+                "intentional-disconnect",
+                "--nodename",
+                _TARGET_NAME,
+            ],
+            include_target=False,
+            log_status_on_failure=False,
+            timeout=30.0,
+        )
+
+    @mock.patch.object(
+        ffx.FFX, "run", side_effect=RuntimeError("Arbitrary failure")
+    )
+    def test_notify_intentional_disconnect_exception(
+        self, mock_run: mock.Mock
+    ) -> None:
+        """Test case for ffx.notify_intentional_disconnect() when run() raises Exception"""
+        # Should catch and not raise exception
+        self.ffx_obj_with_ip_and_monitor.notify_intentional_disconnect()
+        mock_run.assert_called_once()
