@@ -4,6 +4,7 @@
 
 #include "network.h"
 
+#include <algorithm>
 #include <numeric>
 
 #include <efi/protocol/managed-network.h>
