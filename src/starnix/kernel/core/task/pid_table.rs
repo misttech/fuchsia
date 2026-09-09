@@ -7,7 +7,7 @@ use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{ProcessGroup, Task, ThreadGroup};
 use fuchsia_rcu::{RcuDroppable, RcuOptionBox, RcuReadScope, RcuWeak};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::{errno, error, pid_t};
+use starnix_uapi::{errno, error, pid_t, tid_t};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -227,19 +227,23 @@ impl<'a> PidTableGuard<'a> {
         }
     }
 
-    fn remove_item<F>(&mut self, pid: &Pid, do_remove: F)
+    fn remove_item<F>(&mut self, pid: pid_t, do_remove: F)
     where
         F: FnOnce(&PidEntry),
     {
+        if pid <= 0 {
+            return;
+        }
         let scope = RcuReadScope::new();
-        debug_assert_eq!(self.idr.lookup(pid.id as u32, &scope).as_ref(), Some(pid));
-        do_remove(pid);
-        if pid.is_empty(&scope) {
-            self.idr.remove(pid.id as u32);
+        if let Some(entry) = self.idr.lookup(pid as u32, &scope) {
+            do_remove(&entry);
+            if entry.is_empty(&scope) {
+                self.idr.remove(pid as u32);
+            }
         }
     }
 
-    pub fn remove_task(&mut self, tid: &Pid) {
+    pub fn remove_task(&mut self, tid: tid_t) {
         self.remove_item(tid, |entry| {
             let scope = RcuReadScope::new();
             assert!(entry.task.strong_count(&scope) > 0);
@@ -248,29 +252,30 @@ impl<'a> PidTableGuard<'a> {
     }
 
     /// Replace process with the specified `pid` with a zombie.
-    pub fn kill_process(&mut self, pid: &Pid) {
+    pub fn kill_process(&mut self, pid: pid_t) {
+        assert!(pid > 0);
         let scope = RcuReadScope::new();
-        debug_assert_eq!(self.idr.lookup(pid.id as u32, &scope).as_ref(), Some(pid));
-        assert!(matches!(pid.process.read().as_deref(), Some(ProcessEntry::ThreadGroup(_))));
+        let entry =
+            self.idr.lookup(pid as u32, &scope).expect("process to kill should be in pid table");
+        assert!(matches!(entry.process.read().as_deref(), Some(ProcessEntry::ThreadGroup(_))));
 
         // All tasks from the process are expected to be cleared from the table before the process
         // becomes a zombie. Cannot verify this for all tasks here, check it just for the leader.
-        assert_eq!(pid.task.strong_count(&scope), 0);
+        assert_eq!(entry.task.strong_count(&scope), 0);
 
-        pid.process.update(Some(ProcessEntry::Zombie));
+        entry.process.update(Some(ProcessEntry::Zombie));
     }
 
-    pub fn remove_zombie(&mut self, pid: &Pid) {
-        let scope = RcuReadScope::new();
-
+    pub fn remove_zombie(&mut self, pid: pid_t) {
         self.remove_item(pid, |entry| {
             assert!(matches!(entry.process.read().as_deref(), Some(ProcessEntry::Zombie)));
             entry.process.update(None);
         });
 
+        let scope = RcuReadScope::new();
         // Notify thread group changes.
         if let Some(notifier) = self.table.thread_group_notifier.as_ref(&scope) {
-            let _ = notifier.send(MemoryAttributionLifecycleEvent::destruction(pid.id));
+            let _ = notifier.send(MemoryAttributionLifecycleEvent::destruction(pid));
         }
     }
 
@@ -281,11 +286,12 @@ impl<'a> PidTableGuard<'a> {
     }
 
     pub fn remove_process_group(&mut self, leader: &Pid) {
-        self.remove_item(leader, |entry| {
-            let scope = RcuReadScope::new();
-            assert!(entry.process_group.strong_count(&scope) > 0);
-            entry.process_group.update(Weak::new());
-        });
+        let scope = RcuReadScope::new();
+        assert!(leader.process_group.strong_count(&scope) > 0);
+        leader.process_group.update(Weak::new());
+        if leader.is_empty(&scope) && leader.id > 0 {
+            self.idr.remove(leader.id as u32);
+        }
     }
 }
 
