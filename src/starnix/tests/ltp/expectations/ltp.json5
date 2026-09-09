@@ -202,7 +202,6 @@
 
                 // TODO: https://fxbug.dev/287114492 - maybe we'll implement sched_setattr?
                 "sched_setattr01", // https://fxbug.dev/287114492
-                "seccomp01",
                 "send02",
                 "setitimer01",
                 "setitimer02",
@@ -385,6 +384,9 @@
                 "poll04",
                 "sysinfo01",
                 "userfaultfd06",
+
+                // Temporarily skipping for kconfig unification; Move to passing afterwards.
+                "seccomp01",
             ],
         },
     ],
