@@ -61,6 +61,13 @@ unsafe extern "C" {
     fn cpp_thread_current_check_for_restricted_kick() -> bool;
 }
 
+pub const THREAD_SIGNAL_KILL: u32 = 1 << 0;
+pub const THREAD_SIGNAL_SUSPEND: u32 = 1 << 1;
+pub const THREAD_SIGNAL_POLICY_EXCEPTION: u32 = 1 << 2;
+pub const THREAD_SIGNAL_RESTRICTED_KICK: u32 = 1 << 3;
+pub const THREAD_SIGNAL_SAMPLE_STACK: u32 = 1 << 4;
+pub const THREAD_SIGNAL_CHECK_RSEQ: u32 = 1 << 5;
+
 // LINT.IfChange(FxtRef)
 /// Rust representation of the C++ `FxtRef` struct.
 #[repr(C)]
