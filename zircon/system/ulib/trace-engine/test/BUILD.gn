@@ -62,6 +62,7 @@ test("trace_engine_test") {
     "//src/lib/fxl/test:gtest_main",
     "//zircon/system/ulib/trace-engine",
     "//zircon/system/ulib/trace-engine:trace-engine-headers-for-reader",
+    "//zircon/system/ulib/trace-reader",
   ]
 }
 

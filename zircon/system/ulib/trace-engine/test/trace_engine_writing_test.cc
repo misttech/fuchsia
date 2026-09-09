@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <trace-reader/reader.h>
 using trace::internal::trace_buffer_header;
 
 namespace {
@@ -289,4 +290,61 @@ TEST(TraceEngineWritingTest, FillBufferStreaming) {
       reinterpret_cast<uint64_t*>(handler.buffer + sizeof(trace_buffer_header) +
                                   header->durable_buffer_size + header->rolling_buffer_size);
   verify_buffer(rolling_buffer1, header->rolling_data_end[1]);
+}
+
+// Regression test for https://fxbug.dev/553091090.
+// Verifies that when tracing is stopped artificially (e.g. upon durable buffer exhaustion),
+// unallocated trailing space in the rolling buffer is filled with valid placeholder BLOB records,
+// allowing trace parsers reading up to rolling_data_end to cleanly parse the entire buffer
+// without hitting uninitialized memory or failing on 0-sized records.
+TEST(TraceEngineWritingTest, DurableOverflowFillsRollingBufferWithPlaceholderBlob) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  constexpr size_t kBufSize = 4096;
+  alignas(uint64_t) uint8_t buffer[kBufSize];
+  // Fill the buffer with 0x7 words (uninitialized pattern where size field is 0).
+  std::fill_n(reinterpret_cast<uint64_t*>(buffer), kBufSize / sizeof(uint64_t),
+              0x0000000000000007ULL);
+  trace_handler_t handler{&ops};
+
+  zx_status_t init = trace_engine_initialize(loop.dispatcher(), &handler,
+                                             TRACE_BUFFERING_MODE_CIRCULAR, buffer, sizeof(buffer));
+  ASSERT_EQ(init, ZX_OK);
+  loop.RunUntilIdle();
+
+  zx_status_t start = trace_engine_start(TRACE_START_CLEAR_ENTIRE_BUFFER);
+  ASSERT_EQ(start, ZX_OK);
+  loop.RunUntilIdle();
+
+  trace_context_t* context = trace_acquire_context();
+  ASSERT_TRUE(context);
+
+  // Write a valid record into the rolling buffer.
+  trace_thread_ref_t thread_ref = trace_make_unknown_thread_ref();
+  trace_string_ref_t cat_ref = trace_make_inline_c_string_ref("enabled_cat");
+  trace_string_ref_t name_ref = trace_make_inline_c_string_ref("test_event");
+  trace_context_write_instant_event_record(context, 1000, &thread_ref, &cat_ref, &name_ref,
+                                           TRACE_SCOPE_THREAD, nullptr, 0);
+
+  // Exhaust the durable buffer to trigger MarkTracingArtificiallyStopped().
+  while (trace_context_alloc_durable_record(context, 64) != nullptr) {
+  }
+
+  trace_release_context(context);
+
+  trace_engine_stop(ZX_OK);
+  trace_engine_terminate();
+  loop.RunUntilIdle();
+
+  // Attempt to parse the rolling buffer using the reported rolling_data_end offset.
+  trace_buffer_header* header = reinterpret_cast<trace_buffer_header*>(buffer);
+  uint8_t* rolling_buffer = buffer + sizeof(trace_buffer_header) + header->durable_buffer_size;
+  size_t rolling_words = header->rolling_data_end[0] / sizeof(uint64_t);
+
+  trace::Chunk chunk(reinterpret_cast<const uint64_t*>(rolling_buffer), rolling_words);
+  std::vector<std::string> errors;
+  trace::TraceReader reader([](trace::Record) {},
+                            [&errors](std::string_view err) { errors.emplace_back(err); });
+
+  EXPECT_TRUE(reader.ReadRecords(chunk));
+  EXPECT_TRUE(errors.empty());
 }

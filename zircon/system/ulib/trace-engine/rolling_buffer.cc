@@ -6,8 +6,10 @@
 
 #include <zircon/assert.h>
 
+#include <algorithm>
 #include <optional>
 
+#include "lib/trace-engine/fields.h"
 #include "lib/trace-engine/types.h"
 
 /// A lockless multi-writer single reader for trace-engine
@@ -56,6 +58,40 @@ void RollingBuffer::SetBufferFull() {
                       rolling_buffers_[static_cast<uint8_t>(current_buffer)].size_bytes()));
   } while (!state_.compare_exchange_weak(expected, desired, std::memory_order_relaxed,
                                          std::memory_order_relaxed));
+
+  // If tracing is stopped artificially, the rolling buffer offset is advanced to the end of the
+  // buffer so that future writes fail and the buffer is reported as full. However, doing so leaves
+  // unallocated space between the previous offset and the end of the buffer unwritten. Trace
+  // readers reading up to rolling_data_end will encounter this unwritten memory and fail to parse.
+  // Fill the remainder of the buffer with placeholder BLOB records so that parsers can cleanly
+  // consume the entire buffer without error (https://fxbug.dev/553091090).
+  const BufferNumber current_buffer = expected.GetBufferNumber();
+  const uint32_t prev_offset = expected.GetBufferOffset();
+  const size_t buffer_size = rolling_buffers_[static_cast<uint8_t>(current_buffer)].size_bytes();
+
+  if (prev_offset < buffer_size) {
+    size_t remaining_bytes = buffer_size - prev_offset;
+    ZX_DEBUG_ASSERT((remaining_bytes & 7) == 0);
+    size_t remaining_words = remaining_bytes / sizeof(uint64_t);
+    uint64_t* write_ptr = reinterpret_cast<uint64_t*>(
+        rolling_buffers_[static_cast<uint8_t>(current_buffer)].data() + prev_offset);
+
+    while (remaining_words > 0) {
+      const size_t chunk_words =
+          std::min(remaining_words, static_cast<size_t>(trace::RecordFields::kMaxRecordSizeWords));
+      const size_t payload_bytes = (chunk_words - 1) * sizeof(uint64_t);
+      const uint64_t header =
+          trace::RecordFields::Type::Make(trace::ToUnderlyingType(trace::RecordType::kBlob)) |
+          trace::RecordFields::RecordSize::Make(chunk_words) |
+          trace::BlobRecordFields::NameStringRef::Make(TRACE_ENCODED_STRING_REF_EMPTY) |
+          trace::BlobRecordFields::BlobSize::Make(payload_bytes) |
+          trace::BlobRecordFields::BlobType::Make(TRACE_BLOB_TYPE_DATA);
+
+      *write_ptr = header;
+      write_ptr += chunk_words;
+      remaining_words -= chunk_words;
+    }
+  }
 }
 
 bool RollingBuffer::SetBufferServiced(uint32_t wrapped_count) {
