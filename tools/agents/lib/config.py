@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Configuration management, atomic writing, and grant merging for AI coding agents."""
+"""Configuration management and atomic writing for AI coding agents."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import sys
 from collections.abc import Sequence
 from typing import Any
 
-from agents.lib import permissions, state
+from agents.lib import paths, state
 
 
 def get_default_config_path() -> pathlib.Path:
@@ -26,9 +26,6 @@ def get_default_config_path() -> pathlib.Path:
             pathlib.Path(os.environ["GEMINI_HOME"]) / "config" / "config.json"
         )
     return pathlib.Path.home() / ".gemini" / "config" / "config.json"
-
-
-DEFAULT_CONFIG_PATH = get_default_config_path()
 
 
 def load_config(config_path: pathlib.Path) -> dict[str, Any]:
@@ -52,25 +49,6 @@ def save_config_atomic(
         json.dumps(config_data, indent=2) + "\n", encoding="utf-8"
     )
     temp_config.replace(config_path)
-
-
-def merge_grants(
-    existing: Sequence[str], to_add: Sequence[str]
-) -> tuple[list[str], list[str]]:
-    """Merge new grants into existing grant list, preserving order and deduplicating.
-
-    Returns:
-        tuple of (updated_list, added_items)
-    """
-    seen = set(existing)
-    updated = list(existing)
-    added: list[str] = []
-    for item in to_add:
-        if item not in seen:
-            seen.add(item)
-            updated.append(item)
-            added.append(item)
-    return updated, added
 
 
 def apply_grants(
@@ -150,7 +128,7 @@ def apply_grants(
     # Update state journal
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
-        fuchsia_root_str = str(permissions.find_fuchsia_dir())
+        fuchsia_root_str = str(paths.find_fuchsia_dir())
     except RuntimeError:
         fuchsia_root_str = ""
     journal.schema_version = 1

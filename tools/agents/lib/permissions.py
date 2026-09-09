@@ -14,6 +14,8 @@ import shlex
 import shutil
 from collections.abc import Sequence
 
+from agents.lib import paths
+
 _ARG_VALUE_PATTERN = r"""(?:[^\s"']*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')+[^\s"']*|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)"""
 
 ENV_VARS_PREFIX_PATTERN = rf"([A-Za-z_][A-Za-z0-9_]*={_ARG_VALUE_PATTERN}\s+)*"
@@ -150,53 +152,6 @@ PROFILE_DEFINITIONS: dict[str, ProfileDefinition] = {
         ask=(),
     ),
 }
-
-
-def find_fuchsia_dir() -> pathlib.Path:
-    """Locate the Fuchsia source root directory."""
-    current = pathlib.Path(__file__).resolve().parent
-    while current != current.parent:
-        if (current / ".jiri_root").is_dir() or (
-            current / ".fx-root"
-        ).is_file():
-            return current
-        current = current.parent
-
-    env_dir = os.environ.get("FUCHSIA_DIR")
-    if env_dir:
-        candidate = pathlib.Path(env_dir).resolve()
-        if candidate.is_dir():
-            return candidate
-
-    raise RuntimeError(
-        "Could not locate Fuchsia root directory. Run within a Fuchsia source checkout or set FUCHSIA_DIR."
-    )
-
-
-def find_config_dirs(fuchsia_dir: pathlib.Path) -> list[pathlib.Path]:
-    """Find all agent config directories (public root + vendor extensions)."""
-    candidates = [fuchsia_dir / ".agents" / "config"]
-    vendor_dir = fuchsia_dir / "vendor"
-    # Note: Assumes standard single-level vendor layout (vendor/<name>/.agents/config).
-    # If nested vendor repositories are introduced in the future, recursive search or manifest
-    # discovery can be considered.
-    if vendor_dir.is_dir():
-        for vendor_child in sorted(vendor_dir.iterdir()):
-            if vendor_child.is_dir():
-                cfg_dir = vendor_child / ".agents" / "config"
-                if cfg_dir.is_dir():
-                    candidates.append(cfg_dir)
-    return candidates
-
-
-def find_permission_dirs(fuchsia_dir: pathlib.Path) -> list[pathlib.Path]:
-    """Find all permission config directories (public root + vendor extensions)."""
-    candidates: list[pathlib.Path] = []
-    for cfg_dir in find_config_dirs(fuchsia_dir):
-        perm_dir = cfg_dir / "permissions"
-        if perm_dir.is_dir():
-            candidates.append(perm_dir)
-    return candidates
 
 
 @dataclasses.dataclass(frozen=True)
@@ -402,7 +357,7 @@ def load_profile_grants(
         )
 
     profile = PROFILE_DEFINITIONS[profile_name]
-    permission_dirs = find_permission_dirs(fuchsia_dir)
+    permission_dirs = paths.find_permission_dirs(fuchsia_dir)
 
     def _collect_rules(category_files: Sequence[str]) -> list[str]:
         rules: list[str] = []

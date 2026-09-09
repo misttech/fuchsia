@@ -13,7 +13,7 @@ import unittest
 from unittest import mock
 
 from agents.commands import setup
-from agents.lib import permissions, state
+from agents.lib import paths, state
 from agents_testing.base import BaseTestCase
 
 
@@ -33,7 +33,7 @@ class SetupCommandTest(BaseTestCase):
         self.perm_dir.mkdir(parents=True, exist_ok=True)
 
         self.patch_object(
-            permissions, "find_fuchsia_dir", return_value=self.fuchsia_dir
+            paths, "find_fuchsia_dir", return_value=self.fuchsia_dir
         )
 
         perm_files = {

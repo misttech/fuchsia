@@ -35,9 +35,6 @@ def get_default_state_dir() -> pathlib.Path:
     )
 
 
-DEFAULT_STATE_DIR = get_default_state_dir()
-DEFAULT_STATE_PATH = DEFAULT_STATE_DIR / "state.json"
-DEFAULT_BACKUPS_DIR = DEFAULT_STATE_DIR / "backups"
 MAX_BACKUPS = 10
 
 

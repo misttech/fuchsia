@@ -11,6 +11,7 @@ import pathlib
 
 from agents.lib import (
     config,
+    paths,
     permissions,
     services,
     state,
@@ -132,7 +133,7 @@ def _restart_daemons(fuchsia_dir: pathlib.Path, dry_run: bool) -> None:
 
 def run(args: argparse.Namespace) -> int:
     """Execute setup with parsed arguments."""
-    fuchsia_dir = permissions.find_fuchsia_dir()
+    fuchsia_dir = paths.find_fuchsia_dir()
     state_dir = args.state_dir or state.get_default_state_dir()
     config_path = args.config or config.get_default_config_path()
 

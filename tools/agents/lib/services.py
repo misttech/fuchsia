@@ -11,13 +11,13 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 
-from agents.lib import permissions
+from agents.lib import paths
 
 
 def find_daemon_services(fuchsia_dir: pathlib.Path) -> list[str]:
     """Find all configured daemon service names across config directories."""
     found_services: list[str] = []
-    for cfg_dir in permissions.find_config_dirs(fuchsia_dir):
+    for cfg_dir in paths.find_config_dirs(fuchsia_dir):
         services_file = cfg_dir / "services.txt"
         if services_file.is_file():
             with services_file.open("r", encoding="utf-8") as fh:

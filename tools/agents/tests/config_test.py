@@ -11,7 +11,7 @@ import json
 import pathlib
 import unittest
 
-from agents.lib import config, permissions, state
+from agents.lib import config, paths, state
 from agents_testing.base import BaseTestCase
 
 
@@ -24,7 +24,7 @@ class ConfigTest(BaseTestCase):
         self.state_dir = self.mock_root / "state"
         self.fuchsia_dir = self.mock_root / "fuchsia"
         self.patch_object(
-            permissions, "find_fuchsia_dir", return_value=self.fuchsia_dir
+            paths, "find_fuchsia_dir", return_value=self.fuchsia_dir
         )
 
     def test_get_default_config_path_fallback(self) -> None:
@@ -93,14 +93,6 @@ class ConfigTest(BaseTestCase):
         with cfg_file.open("r", encoding="utf-8") as fh:
             loaded = json.load(fh)
         self.assertEqual(loaded, data)
-
-    def test_merge_grants(self) -> None:
-        """Verify grant deduplication and order preservation."""
-        existing = ["grant1", "grant2"]
-        to_add = ["grant2", "grant3", "grant1", "grant4"]
-        updated, added = config.merge_grants(existing, to_add)
-        self.assertEqual(updated, ["grant1", "grant2", "grant3", "grant4"])
-        self.assertEqual(added, ["grant3", "grant4"])
 
     def test_apply_grants_new_file(self) -> None:
         """Verify apply_grants creates new config atomically and initializes state."""

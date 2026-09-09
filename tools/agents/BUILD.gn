@@ -5,19 +5,20 @@
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
 
-_agents_sources = [
-  "__init__.py",
-  "commands/__init__.py",
-  "commands/setup.py",
-  "lib/__init__.py",
-  "lib/config.py",
-  "lib/permissions.py",
-  "lib/services.py",
-  "lib/state.py",
-  "main.py",
-]
-
 if (is_host) {
+  _agents_sources = [
+    "__init__.py",
+    "commands/__init__.py",
+    "commands/setup.py",
+    "lib/__init__.py",
+    "lib/config.py",
+    "lib/paths.py",
+    "lib/permissions.py",
+    "lib/services.py",
+    "lib/state.py",
+    "main.py",
+  ]
+
   python_library("agents_lib") {
     library_name = "agents"
     source_root = "."
@@ -59,6 +60,14 @@ if (is_host) {
     ]
   }
 
+  python_host_test("agents_paths_test") {
+    main_source = "tests/paths_test.py"
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
+  }
+
   python_host_test("agents_permissions_test") {
     main_source = "tests/permissions_test.py"
     libraries = [
@@ -89,6 +98,7 @@ group("tests") {
   deps = [
     ":agents_config_test($host_toolchain)",
     ":agents_main_test($host_toolchain)",
+    ":agents_paths_test($host_toolchain)",
     ":agents_permissions_test($host_toolchain)",
     ":agents_services_test($host_toolchain)",
     ":agents_setup_test($host_toolchain)",
