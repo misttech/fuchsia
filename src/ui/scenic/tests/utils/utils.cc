@@ -122,6 +122,10 @@ zx_koid_t ExtractKoid(const fuchsia::ui::views::ViewRef& view_ref) {
   return ExtractKoid(view_ref.reference);
 }
 
+zx_koid_t ExtractKoid(const fuchsia_ui_views::ViewRef& view_ref) {
+  return ExtractKoid(view_ref.reference());
+}
+
 Mat3 ArrayToMat3(std::array<float, 9> array) {
   Mat3 mat;
   for (size_t row = 0; row < mat.size(); row++) {

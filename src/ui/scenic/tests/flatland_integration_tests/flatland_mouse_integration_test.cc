@@ -2,24 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/input/cpp/fidl.h>
-#include <fuchsia/input/report/cpp/fidl.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
-#include <fuchsia/ui/pointer/cpp/fidl.h>
-#include <fuchsia/ui/pointerinjector/cpp/fidl.h>
+#include <fidl/fuchsia.input.report/cpp/fidl.h>
+#include <fidl/fuchsia.input/cpp/fidl.h>
+#include <fidl/fuchsia.math/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
+#include <fidl/fuchsia.ui.pointerinjector/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/view_creation_tokens.h>
 #include <lib/ui/scenic/cpp/view_identity.h>
+#include <lib/ui/scenic/cpp/view_ref_pair.h>
 #include <zircon/status.h>
 
+#include <algorithm>
+#include <memory>
 #include <utility>
+#include <vector>
 
 #include <zxtest/zxtest.h>
 
 #include "src/ui/scenic/tests/utils/blocking_present.h"
+#include "src/ui/scenic/tests/utils/flatland_client_with_event_handler.h"
 #include "src/ui/scenic/tests/utils/scenic_ctf_test_base.h"
+#include "src/ui/scenic/tests/utils/simple_watcher_client.h"
 #include "src/ui/scenic/tests/utils/utils.h"
-#include "zircon/errors.h"
 
 // These tests exercise the integration between Flatland and the InputSystem, including the
 // View-to-View transform logic between the injection point and the receiver.
@@ -30,43 +37,31 @@
 // - Dispatch done to fuchsia.ui.pointer.MouseSource in receiver View Space.
 namespace integration_tests {
 
-using ParentViewportWatcher = fuchsia::ui::composition::ParentViewportWatcher;
-using ChildViewWatcher = fuchsia::ui::composition::ChildViewWatcher;
-using Flatland = fuchsia::ui::composition::Flatland;
-using FlatlandPtr = fuchsia::ui::composition::FlatlandPtr;
-using ViewBoundProtocols = fuchsia::ui::composition::ViewBoundProtocols;
-using FlatlandDisplay = fuchsia::ui::composition::FlatlandDisplay;
-using FlatlandDisplaySyncPtr = fuchsia::ui::composition::FlatlandDisplaySyncPtr;
-using Orientation = fuchsia::ui::composition::Orientation;
-using ViewportProperties = fuchsia::ui::composition::ViewportProperties;
-using TransformId = fuchsia::ui::composition::TransformId;
-using ContentId = fuchsia::ui::composition::ContentId;
-using ViewRefFocused = fuchsia::ui::views::ViewRefFocused;
-using ViewRefFocusedPtr = fuchsia::ui::views::ViewRefFocusedPtr;
-using ViewRef = fuchsia::ui::views::ViewRef;
-using FocusState = fuchsia::ui::views::FocusState;
-using MouseEvent = fuchsia::ui::pointer::MouseEvent;
-using MouseSource = fuchsia::ui::pointer::MouseSource;
-using MouseSourcePtr = fuchsia::ui::pointer::MouseSourcePtr;
-using MouseSourceV2 = fuchsia::ui::pointer::MouseSourceV2;
-using MouseSourceV2Ptr = fuchsia::ui::pointer::MouseSourceV2Ptr;
-using MouseViewStatus = fuchsia::ui::pointer::MouseViewStatus;
-using Config = fuchsia::ui::pointerinjector::Config;
-using DispatchPolicy = fuchsia::ui::pointerinjector::DispatchPolicy;
-using Event = fuchsia::ui::pointerinjector::Event;
-using EventPhase = fuchsia::ui::pointerinjector::EventPhase;
-using PointerSample = fuchsia::ui::pointerinjector::PointerSample;
-using Context = fuchsia::ui::pointerinjector::Context;
-using Data = fuchsia::ui::pointerinjector::Data;
-using Registry = fuchsia::ui::pointerinjector::Registry;
-using RegistrySyncPtr = fuchsia::ui::pointerinjector::RegistrySyncPtr;
-using DevicePtr = fuchsia::ui::pointerinjector::DevicePtr;
-using DeviceType = fuchsia::ui::pointerinjector::DeviceType;
-using Target = fuchsia::ui::pointerinjector::Target;
-using Viewport = fuchsia::ui::pointerinjector::Viewport;
-using fir_Axis = fuchsia::input::Axis;
+namespace fir = fuchsia_input_report;
+namespace fuc = fuchsia_ui_composition;
+namespace fup = fuchsia_ui_pointer;
+namespace fupi = fuchsia_ui_pointerinjector;
+namespace fuv = fuchsia_ui_views;
 
-// Macros for calling EXPECT on fuchsia::ui::pointer::MousePointerSample.
+using MouseEvent = fup::MouseEvent;
+using TransformId = fuc::TransformId;
+using ContentId = fuc::ContentId;
+using HitRegion = fuc::HitRegion;
+using HitTestInteraction = fuc::HitTestInteraction;
+using Orientation = fuc::Orientation;
+using ViewportProperties = fuc::ViewportProperties;
+using EventPhase = fupi::EventPhase;
+using DispatchPolicy = fupi::DispatchPolicy;
+using MouseViewStatus = fup::MouseViewStatus;
+using FocusState = fuv::FocusState;
+using ViewRef = fuv::ViewRef;
+using Rect = fuchsia_math::Rect;
+using RectF = fuchsia_math::RectF;
+using Vec = fuchsia_math::Vec;
+using VecF = fuchsia_math::VecF;
+using SizeU = fuchsia_math::SizeU;
+
+// Macros for calling EXPECT on fuchsia_ui_pointer::MousePointerSample.
 // Delegates to ExpectEqualPointer(), but are macros to ensure we get the correct line number for
 // the error.
 #define EXPECT_EQ_POINTER_WITH_SCROLL_AND_BUTTONS(pointer_sample, viewport_to_view_transform, \
@@ -91,6 +86,8 @@ using fir_Axis = fuchsia::input::Axis;
   EXPECT_EQ_POINTER_WITH_BUTTONS(pointer_sample, viewport_to_view_transform, expected_x,      \
                                  expected_y, std::vector<uint8_t>());
 
+namespace {
+
 std::array<float, 2> TransformPointerCoords(std::array<float, 2> pointer, const Mat3& transform) {
   const Vec3 homogenous_pointer = {pointer[0], pointer[1], 1};
   Vec3 transformed_pointer = transform * homogenous_pointer;
@@ -99,47 +96,75 @@ std::array<float, 2> TransformPointerCoords(std::array<float, 2> pointer, const 
   return {homogenized[0], homogenized[1]};
 }
 
-void ExpectEqualPointer(const fuchsia::ui::pointer::MousePointerSample& pointer_sample,
+void ExpectEqualPointer(const std::optional<fup::MousePointerSample>& pointer_sample,
                         const std::array<float, 9>& viewport_to_view_transform, float expected_x,
                         float expected_y, std::optional<int64_t> expected_scroll_v,
                         std::optional<int64_t> expected_scroll_h,
                         std::vector<uint8_t> expected_buttons, uint32_t line_number) {
+  ASSERT_TRUE(pointer_sample.has_value(), "Line: %d", line_number);
   const Mat3 transform_matrix = ArrayToMat3(viewport_to_view_transform);
+  ASSERT_TRUE(pointer_sample->position_in_viewport().has_value(), "Line: %d", line_number);
   const std::array<float, 2> transformed_pointer =
-      TransformPointerCoords(pointer_sample.position_in_viewport(), transform_matrix);
+      TransformPointerCoords(pointer_sample->position_in_viewport().value(), transform_matrix);
   EXPECT_TRUE(CmpFloatingValues(transformed_pointer[0], expected_x), "Line: %d", line_number);
   EXPECT_TRUE(CmpFloatingValues(transformed_pointer[1], expected_y), "Line: %d", line_number);
   if (expected_scroll_v.has_value()) {
-    ASSERT_TRUE(pointer_sample.has_scroll_v(), "Line: %d", line_number);
-    EXPECT_EQ(pointer_sample.scroll_v(), expected_scroll_v.value(), "Line: %d", line_number);
+    ASSERT_TRUE(pointer_sample->scroll_v().has_value(), "Line: %d", line_number);
+    EXPECT_EQ(pointer_sample->scroll_v().value(), expected_scroll_v.value(), "Line: %d",
+              line_number);
   } else {
-    EXPECT_FALSE(pointer_sample.has_scroll_v(), "Line: %d", line_number);
+    EXPECT_FALSE(pointer_sample->scroll_v().has_value(), "Line: %d", line_number);
   }
   if (expected_scroll_h.has_value()) {
-    ASSERT_TRUE(pointer_sample.has_scroll_h(), "Line: %d", line_number);
-    EXPECT_EQ(pointer_sample.scroll_h(), expected_scroll_h.value(), "Line: %d", line_number);
+    ASSERT_TRUE(pointer_sample->scroll_h().has_value(), "Line: %d", line_number);
+    EXPECT_EQ(pointer_sample->scroll_h().value(), expected_scroll_h.value(), "Line: %d",
+              line_number);
   } else {
-    EXPECT_FALSE(pointer_sample.has_scroll_h(), "Line: %d", line_number);
+    EXPECT_FALSE(pointer_sample->scroll_h().has_value(), "Line: %d", line_number);
   }
   if (expected_buttons.empty()) {
-    EXPECT_FALSE(pointer_sample.has_pressed_buttons(), "Line: %d", line_number);
+    EXPECT_FALSE(pointer_sample->pressed_buttons().has_value(), "Line: %d", line_number);
   } else {
-    ASSERT_TRUE(pointer_sample.has_pressed_buttons(), "Line: %d", line_number);
-    ASSERT_EQ(pointer_sample.pressed_buttons().size(), expected_buttons.size());
-    for (size_t i = 0; i < pointer_sample.pressed_buttons().size(); i++) {
-      EXPECT_EQ(pointer_sample.pressed_buttons()[i], expected_buttons[i], "Line: %d", line_number);
+    ASSERT_TRUE(pointer_sample->pressed_buttons().has_value(), "Line: %d", line_number);
+    ASSERT_EQ(pointer_sample->pressed_buttons()->size(), expected_buttons.size());
+    for (size_t i = 0; i < pointer_sample->pressed_buttons()->size(); i++) {
+      EXPECT_EQ(pointer_sample->pressed_buttons()->at(i), expected_buttons[i], "Line: %d",
+                line_number);
     }
   }
 }
 
-// TODO(https://fxbug.dev/447603809): DO NOT COPY THIS TEST.
-// All HLCCP tests, and should be migrated from ScenicCtfHlcppTest to ScenicCtfTest.
-class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
+}  // namespace
+
+class MouseSourceV2Client : public fidl::AsyncEventHandler<fup::MouseSourceV2> {
+ public:
+  MouseSourceV2Client(fidl::ClientEnd<fup::MouseSourceV2> client_end,
+                      async_dispatcher_t* dispatcher, std::vector<fup::MouseEvent>& out_events)
+      : client_(std::move(client_end), dispatcher, this), out_events_(out_events) {}
+
+  void on_fidl_error(fidl::UnbindInfo info) override { is_bound_ = false; }
+  void handle_unknown_event(fidl::UnknownEventMetadata<fup::MouseSourceV2> metadata) override {}
+
+  void OnMouseEvents(fidl::Event<fup::MouseSourceV2::OnMouseEvents>& event) override {
+    std::move(event.events().begin(), event.events().end(), std::back_inserter(out_events_));
+    EXPECT_TRUE(
+        client_->AcknowledgeEvents({{.last_acknowledged_event_stamp = event.last_event_stamp()}})
+            .is_ok());
+  }
+
+  bool is_bound() const { return is_bound_ && client_.is_valid(); }
+  fidl::Client<fup::MouseSourceV2>& operator->() { return client_; }
+
+ private:
+  bool is_bound_ = true;
+  fidl::Client<fup::MouseSourceV2> client_;
+  std::vector<fup::MouseEvent>& out_events_;
+};
+
+class FlatlandMouseIntegrationTest : public ScenicCtfTest {
  protected:
   static constexpr uint32_t kDeviceId = 1111;
-
   static constexpr uint32_t kPointerId = 2222;
-
   static constexpr uint32_t kDefaultSize = 10;
 
   // clang-format off
@@ -151,367 +176,404 @@ class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
   // clang-format on
 
   void SetUp() override {
-    ScenicCtfHlcppTest::SetUp();
+    ScenicCtfTest::SetUp();
 
-    pointerinjector_registry_ = ConnectSyncIntoRealm<Registry>();
+    pointerinjector_registry_ = ConnectSyncIntoRealm<fupi::Registry>();
 
     // Set up root view and root transform.
-    root_instance_ = ConnectAsyncIntoRealm<Flatland>();
-    root_instance_.set_error_handler([](zx_status_t status) {
-      FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-    });
+    root_instance_ = std::make_unique<FlatlandClientWithEventHandler>(
+        ConnectIntoRealm<fuc::Flatland>(), dispatcher());
+    root_instance_->set_on_close(FailOnClose("Lost connection to Scenic"));
 
-    auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
-    auto identity = scenic::NewViewIdentityOnCreation();
-    root_view_ref_ = fidl::Clone(identity.view_ref);
+    auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
+    auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+        fidl::CreateEndpoints<fuc::ParentViewportWatcher>().value();
+    auto identity = scenic::cpp::NewViewIdentityOnCreation();
+    root_view_ref_ = scenic::cpp::CloneViewRef(identity.view_ref());
 
-    root_instance_->CreateView2(std::move(child_token), std::move(identity),
-                                /*view_bound_protocols*/ {}, parent_viewport_watcher.NewRequest());
+    ASSERT_TRUE((*root_instance_)
+                    ->CreateView2({{.token = std::move(child_token),
+                                    .view_identity = std::move(identity),
+                                    .protocols = {},
+                                    .parent_viewport_watcher =
+                                        std::move(parent_viewport_watcher_server_end)}})
+                    .is_ok());
 
     SetFlatlandDisplayContent(std::move(parent_token));
 
-    root_instance_->CreateTransform(kRootTransform);
-    root_instance_->SetRootTransform(kRootTransform);
-    BlockingPresent(this, root_instance_);
+    ASSERT_TRUE((*root_instance_)->CreateTransform({{.transform_id = kRootTransform}}).is_ok());
+    ASSERT_TRUE((*root_instance_)->SetRootTransform({{.transform_id = kRootTransform}}).is_ok());
+    BlockingPresent(this, *root_instance_);
 
     // Get the display's width and height. Since there is no Present in FlatlandDisplay, receiving
     // this callback ensures that all FlatlandDisplay calls are processed.
-    std::optional<fuchsia::ui::composition::LayoutInfo> info;
-    parent_viewport_watcher->GetLayout([&info](auto result) { info = std::move(result); });
+    fidl::Client<fuc::ParentViewportWatcher> parent_viewport_watcher(
+        std::move(parent_viewport_watcher_client_end), dispatcher());
+    std::optional<fuc::LayoutInfo> info;
+    parent_viewport_watcher->GetLayout().Then(
+        [&info](fidl::Result<fuc::ParentViewportWatcher::GetLayout>& result) {
+          if (result.is_ok()) {
+            info = std::move(result->info());
+          }
+        });
     RunLoopUntil([&info] { return info.has_value(); });
-    display_width_ = static_cast<float>(info->logical_size().width);
-    display_height_ = static_cast<float>(info->logical_size().height);
+    display_width_ = static_cast<float>(info->logical_size()->width());
+    display_height_ = static_cast<float>(info->logical_size()->height());
   }
 
-  void Inject(float x, float y, EventPhase phase, const std::vector<uint8_t>& pressed_buttons = {},
+  void Inject(float x, float y, fupi::EventPhase phase,
+              const std::vector<uint8_t>& pressed_buttons = {},
               std::optional<int64_t> scroll_v = std::nullopt,
               std::optional<int64_t> scroll_h = std::nullopt,
               std::optional<double> scroll_v_physical_pixel = std::nullopt,
               std::optional<double> scroll_h_physical_pixel = std::nullopt,
               std::optional<bool> is_precision_scroll = std::nullopt) {
-    FX_DCHECK(injector_);
-    Event event;
-    event.set_timestamp(0);
+    FX_CHECK(injector_);
+    fupi::Event event;
+    event.timestamp(0);
     {
-      PointerSample pointer_sample;
-      pointer_sample.set_pointer_id(kPointerId);
-      pointer_sample.set_phase(phase);
-      pointer_sample.set_position_in_viewport({x, y});
+      fupi::PointerSample pointer_sample;
+      pointer_sample.pointer_id(kPointerId);
+      pointer_sample.phase(phase);
+      pointer_sample.position_in_viewport(std::array<float, 2>{x, y});
       if (scroll_v.has_value()) {
-        pointer_sample.set_scroll_v(scroll_v.value());
+        pointer_sample.scroll_v(scroll_v.value());
       }
       if (scroll_h.has_value()) {
-        pointer_sample.set_scroll_h(scroll_h.value());
+        pointer_sample.scroll_h(scroll_h.value());
       }
       if (scroll_v_physical_pixel.has_value()) {
-        pointer_sample.set_scroll_v_physical_pixel(scroll_v_physical_pixel.value());
+        pointer_sample.scroll_v_physical_pixel(scroll_v_physical_pixel.value());
       }
       if (scroll_h_physical_pixel.has_value()) {
-        pointer_sample.set_scroll_h_physical_pixel(scroll_h_physical_pixel.value());
+        pointer_sample.scroll_h_physical_pixel(scroll_h_physical_pixel.value());
       }
       if (is_precision_scroll.has_value()) {
-        pointer_sample.set_is_precision_scroll(is_precision_scroll.value());
+        pointer_sample.is_precision_scroll(is_precision_scroll.value());
       }
 
       if (!pressed_buttons.empty()) {
-        pointer_sample.set_pressed_buttons(pressed_buttons);
+        pointer_sample.pressed_buttons(pressed_buttons);
       }
-      Data data;
-      data.set_pointer_sample(std::move(pointer_sample));
-      event.set_data(std::move(data));
+      event.data(fupi::Data::WithPointerSample(std::move(pointer_sample)));
     }
-    std::vector<Event> events;
-    events.emplace_back(std::move(event));
-    injector_->Inject(std::move(events), [] {});
-  }
-
-  void InjectNewViewport(Viewport viewport) {
-    Event event;
-    event.set_timestamp(0);
-    {
-      Data data;
-      data.set_viewport(std::move(viewport));
-      event.set_data(std::move(data));
-    }
-    std::vector<Event> events;
+    std::vector<fupi::Event> events;
     events.emplace_back(std::move(event));
     bool hanging_get_returned = false;
-    injector_->Inject(std::move(events), [&hanging_get_returned] { hanging_get_returned = true; });
-    RunLoopUntil([&hanging_get_returned] { return hanging_get_returned; });
+    (*injector_)
+        ->Inject({{.events = std::move(events)}})
+        .Then([&hanging_get_returned](fidl::Result<fupi::Device::Inject>& result) {
+          hanging_get_returned = true;
+        });
+    RunLoopUntil(
+        [this, &hanging_get_returned] { return hanging_get_returned || !injector_->is_bound(); });
   }
 
-  void RegisterInjector(ViewRef context_view_ref, ViewRef target_view_ref,
-                        DispatchPolicy dispatch_policy, std::vector<uint8_t> buttons,
+  void InjectNewViewport(fupi::Viewport viewport) {
+    fupi::Event event;
+    event.timestamp(0);
+    event.data(fupi::Data::WithViewport(std::move(viewport)));
+    std::vector<fupi::Event> events;
+    events.emplace_back(std::move(event));
+    bool hanging_get_returned = false;
+    (*injector_)
+        ->Inject({{.events = std::move(events)}})
+        .Then([&hanging_get_returned](fidl::Result<fupi::Device::Inject>& result) {
+          hanging_get_returned = true;
+        });
+    RunLoopUntil(
+        [this, &hanging_get_returned] { return hanging_get_returned || !injector_->is_bound(); });
+  }
+
+  void RegisterInjector(fuv::ViewRef context_view_ref, fuv::ViewRef target_view_ref,
+                        fupi::DispatchPolicy dispatch_policy, std::vector<uint8_t> buttons,
                         std::array<float, 9> viewport_to_context_transform) {
-    Config config;
-    config.set_device_id(kDeviceId);
-    config.set_device_type(DeviceType::MOUSE);
-    config.set_dispatch_policy(dispatch_policy);
+    fupi::Config config;
+    config.device_id(kDeviceId);
+    config.device_type(fupi::DeviceType::kMouse);
+    config.dispatch_policy(dispatch_policy);
 
     {
-      fir_Axis axis;
-      axis.range.min = -1;
-      axis.range.max = 1;
-      config.set_scroll_v_range(axis);
+      fir::Axis axis(fuchsia_input::Range(-1, 1),
+                     fuchsia_input::Unit(fuchsia_input::UnitType::kNone, 0));
+      config.scroll_v_range(axis);
+      config.scroll_h_range(axis);
     }
 
+    config.buttons(std::move(buttons));
+    config.context(fupi::Context::WithView(std::move(context_view_ref)));
+    config.target(fupi::Target::WithView(std::move(target_view_ref)));
     {
-      fir_Axis axis;
-      axis.range.min = -1;
-      axis.range.max = 1;
-      config.set_scroll_h_range(axis);
+      fupi::Viewport viewport;
+      viewport.extents(FullScreenExtents());
+      viewport.viewport_to_context_transform(viewport_to_context_transform);
+      config.viewport(std::move(viewport));
     }
 
-    config.set_buttons(std::move(buttons));
-    {
-      {
-        Context context;
-        context.set_view(std::move(context_view_ref));
-        config.set_context(std::move(context));
-      }
-      {
-        Target target;
-        target.set_view(std::move(target_view_ref));
-        config.set_target(std::move(target));
-      }
-      {
-        Viewport viewport;
-        viewport.set_extents(FullScreenExtents());
-        viewport.set_viewport_to_context_transform(viewport_to_context_transform);
-        config.set_viewport(std::move(viewport));
-      }
-    }
+    auto [injector_client_end, injector_server_end] = fidl::CreateEndpoints<fupi::Device>().value();
+    injector_ = std::make_unique<SimpleWatcherClient<fupi::Device>>(std::move(injector_client_end),
+                                                                    dispatcher());
 
-    injector_.set_error_handler([this](zx_status_t) { injector_channel_closed_ = true; });
-    ASSERT_EQ(ZX_OK,
-              pointerinjector_registry_->Register(std::move(config), injector_.NewRequest()));
-
-    EXPECT_FALSE(injector_channel_closed_);
+    auto result = pointerinjector_registry_->Register(
+        {{.config = std::move(config), .injector = std::move(injector_server_end)}});
+    ASSERT_TRUE(result.is_ok());
+    ASSERT_TRUE(injector_->is_bound());
   }
 
   // Starts a recursive MouseSource::Watch() loop that collects all received events into
   // |out_events|.
-  void StartWatchLoop(MouseSourcePtr& mouse_source, std::vector<MouseEvent>& out_events) {
+  void StartWatchLoop(SimpleWatcherClient<fup::MouseSource>& mouse_source,
+                      std::vector<fup::MouseEvent>& out_events) {
     const size_t index = watch_loops_.size();
     watch_loops_.emplace_back();
     watch_loops_.at(index) = [this, &mouse_source, &out_events,
-                              index](std::vector<MouseEvent> events) {
+                              index](std::vector<fup::MouseEvent> events) {
       std::move(events.begin(), events.end(), std::back_inserter(out_events));
-      mouse_source->Watch([this, index](std::vector<MouseEvent> events) {
-        watch_loops_.at(index)(std::move(events));
+      mouse_source->Watch().Then([this, index](fidl::Result<fup::MouseSource::Watch>& result) {
+        if (result.is_ok()) {
+          watch_loops_.at(index)(std::move(result->events()));
+        }
       });
     };
-    mouse_source->Watch(watch_loops_.at(index));
+    mouse_source->Watch().Then([this, index](fidl::Result<fup::MouseSource::Watch>& result) {
+      if (result.is_ok()) {
+        watch_loops_.at(index)(std::move(result->events()));
+      }
+    });
   }
 
   // Convenience function, we assume the test constructs topologies with one level of N children.
   // Prereq: |parent_of_viewport_transform| is created and connected to the view's root.
-  ViewRef CreateAndAddChildView(FlatlandPtr& parent_instance, TransformId viewport_transform_id,
-                                TransformId parent_of_viewport_transform,
-                                ContentId parent_content_id, FlatlandPtr& child_instance,
-                                fidl::InterfaceRequest<MouseSource> child_mouse_source = nullptr,
-                                fidl::InterfaceRequest<ViewRefFocused> child_focused = nullptr) {
-    child_instance = ConnectAsyncIntoRealm<Flatland>();
+  fuv::ViewRef CreateAndAddChildView(
+      FlatlandClientWithEventHandler& parent_instance, fuc::TransformId viewport_transform_id,
+      fuc::TransformId parent_of_viewport_transform, fuc::ContentId parent_content_id,
+      std::unique_ptr<FlatlandClientWithEventHandler>& child_instance,
+      fidl::ServerEnd<fup::MouseSource> child_mouse_source = {},
+      fidl::ServerEnd<fuv::ViewRefFocused> child_focused = {}) {
+    child_instance = std::make_unique<FlatlandClientWithEventHandler>(
+        ConnectIntoRealm<fuc::Flatland>(), dispatcher());
+    child_instance->set_on_close(FailOnClose("Lost connection to Scenic"));
 
     // Set up the child view watcher.
-    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
-    auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    ViewportProperties properties;
-    properties.set_logical_size({.width = kDefaultSize, .height = kDefaultSize});
+    auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+        fidl::CreateEndpoints<fuc::ChildViewWatcher>().value();
+    auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
+    fuc::ViewportProperties properties;
+    properties.logical_size(fuchsia_math::SizeU(kDefaultSize, kDefaultSize));
 
-    parent_instance->CreateTransform(viewport_transform_id);
-    parent_instance->CreateViewport(parent_content_id, std::move(parent_token),
-                                    std::move(properties), child_view_watcher.NewRequest());
-    parent_instance->SetContent(viewport_transform_id, parent_content_id);
-    parent_instance->AddChild(parent_of_viewport_transform, viewport_transform_id);
+    EXPECT_TRUE(
+        parent_instance->CreateTransform({{.transform_id = viewport_transform_id}}).is_ok());
+    EXPECT_TRUE(
+        parent_instance
+            ->CreateViewport({{.viewport_id = parent_content_id,
+                               .token = std::move(parent_token),
+                               .properties = std::move(properties),
+                               .child_view_watcher = std::move(child_view_watcher_server_end)}})
+            .is_ok());
+    EXPECT_TRUE(
+        parent_instance
+            ->SetContent({{.transform_id = viewport_transform_id, .content_id = parent_content_id}})
+            .is_ok());
+    EXPECT_TRUE(parent_instance
+                    ->AddChild({{.parent_transform_id = parent_of_viewport_transform,
+                                 .child_transform_id = viewport_transform_id}})
+                    .is_ok());
 
     BlockingPresent(this, parent_instance);
 
     // Set up the child view along with its MouseSource and ViewRefFocused channel.
-    fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
-    auto identity = scenic::NewViewIdentityOnCreation();
-    auto child_view_ref = fidl::Clone(identity.view_ref);
-    ViewBoundProtocols protocols;
-    if (child_mouse_source)
-      protocols.set_mouse_source(std::move(child_mouse_source));
-    if (child_focused)
-      protocols.set_view_ref_focused(std::move(child_focused));
-    child_instance->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
-                                parent_viewport_watcher.NewRequest());
-    child_instance->CreateTransform(kRootTransform);
-    child_instance->SetRootTransform(kRootTransform);
-    BlockingPresent(this, child_instance);
+    auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+        fidl::CreateEndpoints<fuc::ParentViewportWatcher>().value();
+    auto identity = scenic::cpp::NewViewIdentityOnCreation();
+    auto child_view_ref = scenic::cpp::CloneViewRef(identity.view_ref());
+    fuc::ViewBoundProtocols protocols;
+    if (child_mouse_source.is_valid())
+      protocols.mouse_source(std::move(child_mouse_source));
+    if (child_focused.is_valid())
+      protocols.view_ref_focused(std::move(child_focused));
+    EXPECT_TRUE((*child_instance)
+                    ->CreateView2({{.token = std::move(child_token),
+                                    .view_identity = std::move(identity),
+                                    .protocols = std::move(protocols),
+                                    .parent_viewport_watcher =
+                                        std::move(parent_viewport_watcher_server_end)}})
+                    .is_ok());
+    EXPECT_TRUE((*child_instance)->CreateTransform({{.transform_id = kRootTransform}}).is_ok());
+    EXPECT_TRUE((*child_instance)->SetRootTransform({{.transform_id = kRootTransform}}).is_ok());
+    BlockingPresent(this, *child_instance);
 
     return child_view_ref;
   }
 
-  ViewRef CreateAndAddChildViewV2(
-      FlatlandPtr& parent_instance, TransformId viewport_transform_id,
-      TransformId parent_of_viewport_transform, ContentId parent_content_id,
-      FlatlandPtr& child_instance,
-      fidl::InterfaceRequest<MouseSourceV2> child_mouse_source_v2 = nullptr,
-      fidl::InterfaceRequest<ViewRefFocused> child_focused = nullptr) {
-    child_instance = ConnectAsyncIntoRealm<Flatland>();
+  fuv::ViewRef CreateAndAddChildViewV2(
+      FlatlandClientWithEventHandler& parent_instance, fuc::TransformId viewport_transform_id,
+      fuc::TransformId parent_of_viewport_transform, fuc::ContentId parent_content_id,
+      std::unique_ptr<FlatlandClientWithEventHandler>& child_instance,
+      fidl::ServerEnd<fup::MouseSourceV2> child_mouse_source_v2 = {},
+      fidl::ServerEnd<fuv::ViewRefFocused> child_focused = {}) {
+    child_instance = std::make_unique<FlatlandClientWithEventHandler>(
+        ConnectIntoRealm<fuc::Flatland>(), dispatcher());
+    child_instance->set_on_close(FailOnClose("Lost connection to Scenic"));
 
     // Set up the child view watcher.
-    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
-    auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    ViewportProperties properties;
-    properties.set_logical_size({.width = kDefaultSize, .height = kDefaultSize});
+    auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+        fidl::CreateEndpoints<fuc::ChildViewWatcher>().value();
+    auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
+    fuc::ViewportProperties properties;
+    properties.logical_size(fuchsia_math::SizeU(kDefaultSize, kDefaultSize));
 
-    parent_instance->CreateTransform(viewport_transform_id);
-    parent_instance->CreateViewport(parent_content_id, std::move(parent_token),
-                                    std::move(properties), child_view_watcher.NewRequest());
-    parent_instance->SetContent(viewport_transform_id, parent_content_id);
-    parent_instance->AddChild(parent_of_viewport_transform, viewport_transform_id);
+    EXPECT_TRUE(
+        parent_instance->CreateTransform({{.transform_id = viewport_transform_id}}).is_ok());
+    EXPECT_TRUE(
+        parent_instance
+            ->CreateViewport({{.viewport_id = parent_content_id,
+                               .token = std::move(parent_token),
+                               .properties = std::move(properties),
+                               .child_view_watcher = std::move(child_view_watcher_server_end)}})
+            .is_ok());
+    EXPECT_TRUE(
+        parent_instance
+            ->SetContent({{.transform_id = viewport_transform_id, .content_id = parent_content_id}})
+            .is_ok());
+    EXPECT_TRUE(parent_instance
+                    ->AddChild({{.parent_transform_id = parent_of_viewport_transform,
+                                 .child_transform_id = viewport_transform_id}})
+                    .is_ok());
 
     BlockingPresent(this, parent_instance);
 
     // Set up the child view along with its MouseSourceV2 and ViewRefFocused channel.
-    fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
-    auto identity = scenic::NewViewIdentityOnCreation();
-    auto child_view_ref = fidl::Clone(identity.view_ref);
-    ViewBoundProtocols protocols;
-    if (child_mouse_source_v2)
-      protocols.set_mouse_source_v2(std::move(child_mouse_source_v2));
-    if (child_focused)
-      protocols.set_view_ref_focused(std::move(child_focused));
-    child_instance->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
-                                parent_viewport_watcher.NewRequest());
-    child_instance->CreateTransform(kRootTransform);
-    child_instance->SetRootTransform(kRootTransform);
-    BlockingPresent(this, child_instance);
+    auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+        fidl::CreateEndpoints<fuc::ParentViewportWatcher>().value();
+    auto identity = scenic::cpp::NewViewIdentityOnCreation();
+    auto child_view_ref = scenic::cpp::CloneViewRef(identity.view_ref());
+    fuc::ViewBoundProtocols protocols;
+    if (child_mouse_source_v2.is_valid())
+      protocols.mouse_source_v2(std::move(child_mouse_source_v2));
+    if (child_focused.is_valid())
+      protocols.view_ref_focused(std::move(child_focused));
+    EXPECT_TRUE((*child_instance)
+                    ->CreateView2({{.token = std::move(child_token),
+                                    .view_identity = std::move(identity),
+                                    .protocols = std::move(protocols),
+                                    .parent_viewport_watcher =
+                                        std::move(parent_viewport_watcher_server_end)}})
+                    .is_ok());
+    EXPECT_TRUE((*child_instance)->CreateTransform({{.transform_id = kRootTransform}}).is_ok());
+    EXPECT_TRUE((*child_instance)->SetRootTransform({{.transform_id = kRootTransform}}).is_ok());
+    BlockingPresent(this, *child_instance);
 
     return child_view_ref;
-  }
-
-  void StartListenerV2(MouseSourceV2Ptr& mouse_source, std::vector<MouseEvent>& out_events) {
-    mouse_source.events().OnMouseEvents =
-        [&mouse_source, &out_events](std::vector<MouseEvent> events, uint64_t last_event_stamp) {
-          std::ranges::move(events, std::back_inserter(out_events));
-          mouse_source->AcknowledgeEvents(last_event_stamp);
-        };
   }
 
   std::array<std::array<float, 2>, 2> FullScreenExtents() const {
     return {{{0, 0}, {display_width_, display_height_}}};
   }
 
-  static constexpr TransformId kRootTransform{.value = 1};
-  static constexpr ContentId kRootContentId{.value = 1};
+  static inline const fuc::TransformId kRootTransform{1};
+  static inline const fuc::TransformId kViewportTransform{2};
+  static inline const fuc::ContentId kRootContentId{1};
 
-  FlatlandPtr root_instance_;
-
-  ViewRef root_view_ref_;
-
-  bool injector_channel_closed_ = false;
-
+  std::unique_ptr<FlatlandClientWithEventHandler> root_instance_;
+  fuv::ViewRef root_view_ref_;
   float display_width_ = 0;
-
   float display_height_ = 0;
 
+  std::unique_ptr<SimpleWatcherClient<fupi::Device>> injector_;
+
  private:
-  RegistrySyncPtr pointerinjector_registry_;
-  DevicePtr injector_;
+  fidl::SyncClient<fupi::Registry> pointerinjector_registry_;
 
   // Holds watch loops so they stay alive through the duration of the test.
-  std::vector<std::function<void(std::vector<MouseEvent>)>> watch_loops_;
+  std::vector<std::function<void(std::vector<fup::MouseEvent>)>> watch_loops_;
 };
 
 TEST_F(FlatlandMouseIntegrationTest, ReleaseTargetView_TriggersChannelClosure) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
   StartWatchLoop(child_mouse_source, child_events);
 
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
 
   // Break the scene graph relation that the pointerinjector relies on. Observe the channel close
   // (lazily).
-  child_instance->ReleaseView();
-  BlockingPresent(this, child_instance);
+  EXPECT_TRUE((*child_instance)->ReleaseView().is_ok());
+  BlockingPresent(this, *child_instance);
 
   // Inject an event to trigger the channel closure.
-  Inject(0, 0, EventPhase::ADD, button_vec);
-  RunLoopUntil([this] { return injector_channel_closed_; });  // Succeeds or times out.
+  Inject(0, 0, EventPhase::kAdd, button_vec);
+  RunLoopUntil([this] { return !injector_->is_bound(); });  // Succeeds or times out.
 }
 
 TEST_F(FlatlandMouseIntegrationTest, DisconnectTargetView_TriggersChannelClosure) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
   StartWatchLoop(child_mouse_source, child_events);
 
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
 
   // Break the scene graph relation that the pointerinjector relies on. Observe the channel close
   // (lazily).
-  root_instance_->RemoveChild(kRootTransform, {.value = kRootTransform.value + 1});
-  BlockingPresent(this, root_instance_);
+  EXPECT_TRUE((*root_instance_)
+                  ->RemoveChild({{.parent_transform_id = kRootTransform,
+                                  .child_transform_id = kViewportTransform}})
+                  .is_ok());
+  BlockingPresent(this, *root_instance_);
 
   // Inject an event to trigger the channel closure.
-  Inject(0, 0, EventPhase::ADD, button_vec);
-  RunLoopUntil([this] { return injector_channel_closed_; });  // Succeeds or times out.
+  Inject(0, 0, EventPhase::kAdd, button_vec);
+  RunLoopUntil([this] { return !injector_->is_bound(); });  // Succeeds or times out.
 }
 
 // The child view should receive focus and input events when the mouse button is pressed over its
 // view.
 TEST_F(FlatlandMouseIntegrationTest, ChildReceivesFocus_OnMouseLatch) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
-  ViewRefFocusedPtr child_focused;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
+  auto [child_focused_client_end, child_focused_server_end] =
+      fidl::CreateEndpoints<fuv::ViewRefFocused>().value();
+  SimpleWatcherClient<fuv::ViewRefFocused> child_focused(
+      std::move(child_focused_client_end), dispatcher(), FailOnClose("ViewRefFocused closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-  child_focused.set_error_handler([](zx_status_t status) {
-    FAIL("ViewRefFocused closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref =
-      CreateAndAddChildView(root_instance_,
-                            /*viewport_transform_id*/ {.value = 2},
-                            /*parent_of_viewport_transform*/ kRootTransform,
-                            /*parent_content_id*/ {.value = 1}, child_instance,
-                            child_mouse_source.NewRequest(), child_focused.NewRequest());
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
+                                              /*parent_of_viewport_transform*/ kRootTransform,
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end),
+                                              std::move(child_focused_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
@@ -520,72 +582,80 @@ TEST_F(FlatlandMouseIntegrationTest, ChildReceivesFocus_OnMouseLatch) {
   // Inject an input event at (0,0) which is the point of overlap between the parent and the
   // child.
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
-  Inject(0, 0, EventPhase::ADD, button_vec);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
+  Inject(0, 0, EventPhase::kAdd, button_vec);
 
   // Child should receive mouse input events.
   RunLoopUntil([&child_events] { return child_events.size() == 1u; });
 
   // Child view should receive focus.
   std::optional<FocusState> is_child_focused;
-  child_focused->Watch([&is_child_focused](auto update) { is_child_focused = std::move(update); });
+  child_focused->Watch().Then(
+      [&is_child_focused](fidl::Result<fuv::ViewRefFocused::Watch>& result) {
+        if (result.is_ok()) {
+          is_child_focused = std::move(result->state());
+        }
+      });
   RunLoopUntil([&is_child_focused] { return is_child_focused.has_value(); });
-  EXPECT_TRUE(is_child_focused->focused());
+  EXPECT_TRUE(is_child_focused->focused().value());
 }
 
 TEST_F(FlatlandMouseIntegrationTest, MouseRejectsFocus_OnMouseLatchWithInvalidContext) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
-  ViewRefFocusedPtr child_focused;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
+  auto [child_focused_client_end, child_focused_server_end] =
+      fidl::CreateEndpoints<fuv::ViewRefFocused>().value();
+  SimpleWatcherClient<fuv::ViewRefFocused> child_focused(
+      std::move(child_focused_client_end), dispatcher(), FailOnClose("ViewRefFocused closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-  child_focused.set_error_handler([](zx_status_t status) {
-    FAIL("ViewRefFocused closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref =
-      CreateAndAddChildView(root_instance_,
-                            /*viewport_transform_id*/ {.value = 2},
-                            /*parent_of_viewport_transform*/ kRootTransform,
-                            /*parent_content_id*/ {.value = 1}, child_instance,
-                            child_mouse_source.NewRequest(), child_focused.NewRequest());
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
+                                              /*parent_of_viewport_transform*/ kRootTransform,
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end),
+                                              std::move(child_focused_server_end));
 
   // Create a sibling view to act as the invalid injection context.
-  FlatlandPtr sibling_instance;
-  MouseSourcePtr sibling_mouse_source;
-  ViewRefFocusedPtr sibling_focused;
-  auto sibling_view_ref =
-      CreateAndAddChildView(root_instance_,
-                            /*viewport_transform_id*/ {.value = 3},
-                            /*parent_of_viewport_transform*/ kRootTransform,
-                            /*parent_content_id*/ {.value = 2}, sibling_instance,
-                            sibling_mouse_source.NewRequest(), sibling_focused.NewRequest());
+  std::unique_ptr<FlatlandClientWithEventHandler> sibling_instance;
+  auto [sibling_mouse_source_client_end, sibling_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> sibling_mouse_source(
+      std::move(sibling_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
+  auto [sibling_focused_client_end, sibling_focused_server_end] =
+      fidl::CreateEndpoints<fuv::ViewRefFocused>().value();
+  SimpleWatcherClient<fuv::ViewRefFocused> sibling_focused(
+      std::move(sibling_focused_client_end), dispatcher(), FailOnClose("ViewRefFocused closed"));
+  auto sibling_view_ref = CreateAndAddChildView(
+      *root_instance_,
+      /*viewport_transform_id*/ TransformId(3),
+      /*parent_of_viewport_transform*/ kRootTransform,
+      /*parent_content_id*/ ContentId(2), sibling_instance,
+      std::move(sibling_mouse_source_server_end), std::move(sibling_focused_server_end));
 
   // Create a child of the sibling view to act as the injection target.
-  FlatlandPtr child_of_sibling_instance;
-  MouseSourcePtr child_of_sibling_mouse_source;
-  ViewRefFocusedPtr child_of_sibling_focused;
-  child_of_sibling_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_of_sibling_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-  child_of_sibling_focused.set_error_handler([](zx_status_t status) {
-    FAIL("ViewRefFocused closed with status: %s", zx_status_get_string(status));
-  });
-  auto child_of_sibling_view_ref = CreateAndAddChildView(
-      sibling_instance,
-      /*viewport_transform_id*/ {.value = 2},
-      /*parent_of_viewport_transform*/ kRootTransform,
-      /*parent_content_id*/ {.value = 1}, child_of_sibling_instance,
-      child_of_sibling_mouse_source.NewRequest(), child_of_sibling_focused.NewRequest());
+  std::unique_ptr<FlatlandClientWithEventHandler> child_of_sibling_instance;
+  auto [child_of_sibling_mouse_source_client_end, child_of_sibling_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_of_sibling_mouse_source(
+      std::move(child_of_sibling_mouse_source_client_end), dispatcher(),
+      FailOnClose("Mouse source closed"));
+  auto [child_of_sibling_focused_client_end, child_of_sibling_focused_server_end] =
+      fidl::CreateEndpoints<fuv::ViewRefFocused>().value();
+  SimpleWatcherClient<fuv::ViewRefFocused> child_of_sibling_focused(
+      std::move(child_of_sibling_focused_client_end), dispatcher(),
+      FailOnClose("ViewRefFocused closed"));
+  auto child_of_sibling_view_ref =
+      CreateAndAddChildView(*sibling_instance,
+                            /*viewport_transform_id*/ kViewportTransform,
+                            /*parent_of_viewport_transform*/ kRootTransform,
+                            /*parent_content_id*/ ContentId(1), child_of_sibling_instance,
+                            std::move(child_of_sibling_mouse_source_server_end),
+                            std::move(child_of_sibling_focused_server_end));
 
   // Listen for input events on the injection target.
   std::vector<MouseEvent> child_of_sibling_events;
@@ -594,9 +664,10 @@ TEST_F(FlatlandMouseIntegrationTest, MouseRejectsFocus_OnMouseLatchWithInvalidCo
   // Setup an injector where sibling is context, and child of sibling is target.
   // This passes the pointerinjector registry validation (target is strict descendant of context).
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(sibling_view_ref), fidl::Clone(child_of_sibling_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
-  Inject(0, 0, EventPhase::ADD, button_vec);
+  RegisterInjector(scenic::cpp::CloneViewRef(sibling_view_ref),
+                   scenic::cpp::CloneViewRef(child_of_sibling_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
+  Inject(0, 0, EventPhase::kAdd, button_vec);
 
   // Target should receive the mouse input events.
   RunLoopUntil([&child_of_sibling_events] { return child_of_sibling_events.size() == 1u; });
@@ -605,29 +676,29 @@ TEST_F(FlatlandMouseIntegrationTest, MouseRejectsFocus_OnMouseLatchWithInvalidCo
   // requester), but `sibling` is not currently in the focus chain. It has no authority to request
   // focus.
   std::optional<FocusState> is_sibling_focused;
-  sibling_focused->Watch(
-      [&is_sibling_focused](auto update) { is_sibling_focused = std::move(update); });
+  sibling_focused->Watch().Then(
+      [&is_sibling_focused](fidl::Result<fuv::ViewRefFocused::Watch>& result) {
+        if (result.is_ok()) {
+          is_sibling_focused = std::move(result->state());
+        }
+      });
   RunLoopWithTimeout(zx::msec(50));
   EXPECT_FALSE(is_sibling_focused.has_value());
 }
 
 // Send wheel events to scenic ensure client receives wheel events.
 TEST_F(FlatlandMouseIntegrationTest, Wheel) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
@@ -636,49 +707,46 @@ TEST_F(FlatlandMouseIntegrationTest, Wheel) {
   // Inject an input event at (0,0) which is the point of overlap between the parent and the
   // child.
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
-  Inject(0, 0, EventPhase::ADD, button_vec);
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
+  Inject(0, 0, EventPhase::kAdd, button_vec);
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::optional<int64_t>(1), /* scroll_h= */ std::optional<int64_t>(-1));
 
   RunLoopUntil([&child_events] { return child_events.size() == 2u; });
 
-  ASSERT_TRUE(child_events[0].has_pointer_sample());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_v());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_h());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[0].pointer_sample().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_v().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_h().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->is_precision_scroll().has_value());
 
-  ASSERT_TRUE(child_events[1].has_pointer_sample());
-  ASSERT_TRUE(child_events[1].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[1].pointer_sample().scroll_v(), 1);
-  ASSERT_TRUE(child_events[1].pointer_sample().has_scroll_h());
-  EXPECT_EQ(child_events[1].pointer_sample().scroll_h(), -1);
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[1].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[1].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[1].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[1].pointer_sample()->scroll_v().value(), 1);
+  ASSERT_TRUE(child_events[1].pointer_sample()->scroll_h().has_value());
+  EXPECT_EQ(child_events[1].pointer_sample()->scroll_h().value(), -1);
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[1].pointer_sample()->is_precision_scroll().has_value());
 }
 
 // Send wheel events in button pressing sequence to scenic ensure client receives correct wheel
 // events.
 TEST_F(FlatlandMouseIntegrationTest, DownWheelUpWheel) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
@@ -687,74 +755,71 @@ TEST_F(FlatlandMouseIntegrationTest, DownWheelUpWheel) {
   // Inject an input event at (0,0) which is the point of overlap between the parent and the
   // child.
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
-  Inject(0, 0, EventPhase::ADD, button_vec);
-  Inject(0, 0, EventPhase::CHANGE, button_vec);
-  Inject(0, 0, EventPhase::CHANGE, button_vec,
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
+  Inject(0, 0, EventPhase::kAdd, button_vec);
+  Inject(0, 0, EventPhase::kChange, button_vec);
+  Inject(0, 0, EventPhase::kChange, button_vec,
          /* scroll_v= */ std::optional<int64_t>(1));
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {});
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {});
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::optional<int64_t>(1));
 
   RunLoopUntil([&child_events] { return child_events.size() == 5u; });
 
-  ASSERT_TRUE(child_events[0].has_pointer_sample());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_v());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_h());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[0].pointer_sample().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_v().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_h().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->is_precision_scroll().has_value());
 
-  ASSERT_TRUE(child_events[1].has_pointer_sample());
-  EXPECT_EQ(child_events[1].pointer_sample().pressed_buttons(), button_vec);
+  ASSERT_TRUE(child_events[1].pointer_sample().has_value());
+  EXPECT_EQ(child_events[1].pointer_sample()->pressed_buttons().value(), button_vec);
 
-  ASSERT_TRUE(child_events[2].has_pointer_sample());
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_v(), 1);
-  EXPECT_FALSE(child_events[2].pointer_sample().has_scroll_h());
-  EXPECT_EQ(child_events[2].pointer_sample().pressed_buttons(), button_vec);
-  EXPECT_FALSE(child_events[2].pointer_sample().has_is_precision_scroll());
-  ASSERT_FALSE(child_events[2].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[2].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[2].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[2].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_v().value(), 1);
+  EXPECT_FALSE(child_events[2].pointer_sample()->scroll_h().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->pressed_buttons().value(), button_vec);
+  EXPECT_FALSE(child_events[2].pointer_sample()->is_precision_scroll().has_value());
+  ASSERT_FALSE(child_events[2].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[2].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[2].pointer_sample()->is_precision_scroll().has_value());
 
-  ASSERT_TRUE(child_events[3].has_pointer_sample());
-  EXPECT_FALSE(child_events[3].pointer_sample().has_pressed_buttons());
-  EXPECT_FALSE(child_events[3].pointer_sample().has_scroll_v());
-  EXPECT_FALSE(child_events[3].pointer_sample().has_is_precision_scroll());
-  ASSERT_FALSE(child_events[3].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[3].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[3].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[3].pointer_sample().has_value());
+  EXPECT_FALSE(child_events[3].pointer_sample()->pressed_buttons().has_value());
+  EXPECT_FALSE(child_events[3].pointer_sample()->scroll_v().has_value());
+  EXPECT_FALSE(child_events[3].pointer_sample()->is_precision_scroll().has_value());
+  ASSERT_FALSE(child_events[3].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[3].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[3].pointer_sample()->is_precision_scroll().has_value());
 
-  ASSERT_TRUE(child_events[4].has_pointer_sample());
-  ASSERT_TRUE(child_events[4].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[4].pointer_sample().scroll_v(), 1);
-  EXPECT_FALSE(child_events[4].pointer_sample().has_scroll_h());
-  EXPECT_FALSE(child_events[4].pointer_sample().has_pressed_buttons());
-  ASSERT_FALSE(child_events[4].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[4].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[4].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[4].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[4].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[4].pointer_sample()->scroll_v().value(), 1);
+  EXPECT_FALSE(child_events[4].pointer_sample()->scroll_h().has_value());
+  EXPECT_FALSE(child_events[4].pointer_sample()->pressed_buttons().has_value());
+  ASSERT_FALSE(child_events[4].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[4].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[4].pointer_sample()->is_precision_scroll().has_value());
 }
 
 // Send wheel events bundled with button changess to scenic ensure client receives correct wheel
 // events.
 TEST_F(FlatlandMouseIntegrationTest, DownWheelUpWheelBundled) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
@@ -763,77 +828,74 @@ TEST_F(FlatlandMouseIntegrationTest, DownWheelUpWheelBundled) {
   // Inject an input event at (0,0) which is the point of overlap between the parent and the
   // child.
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
-  Inject(0, 0, EventPhase::ADD, button_vec);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
+  Inject(0, 0, EventPhase::kAdd, button_vec);
   // This event bundled button down and wheel.
-  Inject(0, 0, EventPhase::CHANGE, button_vec, /* scroll_v= */ std::optional<int64_t>(1));
-  Inject(0, 0, EventPhase::CHANGE, button_vec, /* scroll_v= */ std::optional<int64_t>(1));
+  Inject(0, 0, EventPhase::kChange, button_vec, /* scroll_v= */ std::optional<int64_t>(1));
+  Inject(0, 0, EventPhase::kChange, button_vec, /* scroll_v= */ std::optional<int64_t>(1));
   // This event bundled button up and wheel.
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::optional<int64_t>(1));
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::optional<int64_t>(1));
 
   RunLoopUntil([&child_events] { return child_events.size() == 5u; });
 
-  ASSERT_TRUE(child_events[0].has_pointer_sample());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_v());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_h());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[0].pointer_sample().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_v().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_h().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->is_precision_scroll().has_value());
 
-  ASSERT_TRUE(child_events[1].has_pointer_sample());
-  ASSERT_TRUE(child_events[1].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[1].pointer_sample().scroll_v(), 1);
-  EXPECT_EQ(child_events[1].pointer_sample().pressed_buttons(), button_vec);
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[1].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[1].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[1].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[1].pointer_sample()->scroll_v().value(), 1);
+  EXPECT_EQ(child_events[1].pointer_sample()->pressed_buttons().value(), button_vec);
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[1].pointer_sample()->is_precision_scroll().has_value());
 
-  ASSERT_TRUE(child_events[2].has_pointer_sample());
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_v(), 1);
-  EXPECT_EQ(child_events[2].pointer_sample().pressed_buttons(), button_vec);
-  ASSERT_FALSE(child_events[2].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[2].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[2].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[2].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_v().value(), 1);
+  EXPECT_EQ(child_events[2].pointer_sample()->pressed_buttons().value(), button_vec);
+  ASSERT_FALSE(child_events[2].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[2].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[2].pointer_sample()->is_precision_scroll().has_value());
 
-  ASSERT_TRUE(child_events[3].has_pointer_sample());
-  ASSERT_TRUE(child_events[3].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[3].pointer_sample().scroll_v(), 1);
-  EXPECT_FALSE(child_events[3].pointer_sample().has_pressed_buttons());
-  ASSERT_FALSE(child_events[3].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[3].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[3].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[3].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[3].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[3].pointer_sample()->scroll_v().value(), 1);
+  EXPECT_FALSE(child_events[3].pointer_sample()->pressed_buttons().has_value());
+  ASSERT_FALSE(child_events[3].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[3].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[3].pointer_sample()->is_precision_scroll().has_value());
 
-  ASSERT_TRUE(child_events[4].has_pointer_sample());
-  ASSERT_TRUE(child_events[4].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[4].pointer_sample().scroll_v(), 1);
-  EXPECT_FALSE(child_events[4].pointer_sample().has_pressed_buttons());
-  ASSERT_FALSE(child_events[4].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[4].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[4].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[4].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[4].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[4].pointer_sample()->scroll_v().value(), 1);
+  EXPECT_FALSE(child_events[4].pointer_sample()->pressed_buttons().has_value());
+  ASSERT_FALSE(child_events[4].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[4].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[4].pointer_sample()->is_precision_scroll().has_value());
 }
 
 // Send wheel events with physical pixel fields to scenic ensure client receives wheel events.
 TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
@@ -842,21 +904,22 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
   // Inject an input event at (0,0) which is the point of overlap between the parent and the
   // child.
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
-  Inject(0, 0, EventPhase::ADD, button_vec);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
+  Inject(0, 0, EventPhase::kAdd, button_vec);
 
   RunLoopUntil([&child_events] { return child_events.size() == 1u; });
-  ASSERT_TRUE(child_events[0].has_pointer_sample());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_v());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_h());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_is_precision_scroll());
+  ASSERT_TRUE(child_events[0].pointer_sample().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_v().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_h().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->is_precision_scroll().has_value());
   child_events.clear();
 
   // with v physical pixel, not precision scroll
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::optional<int64_t>(1),
          /* scroll_h= */ std::nullopt,
          /* scroll_v_physical_pixel= */ std::optional<double>(120.0),
@@ -864,7 +927,7 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
          /* is_precision_scroll= */ std::optional<bool>(false));
 
   // with h physical pixel, not precision scroll
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::nullopt,
          /* scroll_h= */ std::optional<int64_t>(-1),
          /* scroll_v_physical_pixel= */ std::nullopt,
@@ -872,7 +935,7 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
          /* is_precision_scroll= */ std::optional<bool>(false));
 
   // with v,h physical pixel, not precision scroll
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::optional<int64_t>(1),
          /* scroll_h= */ std::optional<int64_t>(-1),
          /* scroll_v_physical_pixel= */ std::optional<double>(120.0),
@@ -881,42 +944,42 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
 
   RunLoopUntil([&child_events] { return child_events.size() == 3u; });
 
-  ASSERT_TRUE(child_events[0].has_pointer_sample());
-  ASSERT_TRUE(child_events[0].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[0].pointer_sample().scroll_v(), 1);
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_h());
-  ASSERT_TRUE(child_events[0].pointer_sample().has_scroll_v_physical_pixel());
-  EXPECT_EQ(child_events[0].pointer_sample().scroll_v_physical_pixel(), 120.0);
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_TRUE(child_events[0].pointer_sample().has_is_precision_scroll());
-  EXPECT_FALSE(child_events[0].pointer_sample().is_precision_scroll());
+  ASSERT_TRUE(child_events[0].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[0].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[0].pointer_sample()->scroll_v().value(), 1);
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_h().has_value());
+  ASSERT_TRUE(child_events[0].pointer_sample()->scroll_v_physical_pixel().has_value());
+  EXPECT_EQ(child_events[0].pointer_sample()->scroll_v_physical_pixel().value(), 120.0);
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_TRUE(child_events[0].pointer_sample()->is_precision_scroll().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->is_precision_scroll().value());
 
-  ASSERT_TRUE(child_events[1].has_pointer_sample());
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_v());
-  ASSERT_TRUE(child_events[1].pointer_sample().has_scroll_h());
-  EXPECT_EQ(child_events[1].pointer_sample().scroll_h(), -1);
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_TRUE(child_events[1].pointer_sample().has_scroll_h_physical_pixel());
-  EXPECT_EQ(child_events[1].pointer_sample().scroll_h_physical_pixel(), -120.0);
-  ASSERT_TRUE(child_events[1].pointer_sample().has_is_precision_scroll());
-  EXPECT_FALSE(child_events[1].pointer_sample().is_precision_scroll());
+  ASSERT_TRUE(child_events[1].pointer_sample().has_value());
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_v().has_value());
+  ASSERT_TRUE(child_events[1].pointer_sample()->scroll_h().has_value());
+  EXPECT_EQ(child_events[1].pointer_sample()->scroll_h().value(), -1);
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_TRUE(child_events[1].pointer_sample()->scroll_h_physical_pixel().has_value());
+  EXPECT_EQ(child_events[1].pointer_sample()->scroll_h_physical_pixel().value(), -120.0);
+  ASSERT_TRUE(child_events[1].pointer_sample()->is_precision_scroll().has_value());
+  EXPECT_FALSE(child_events[1].pointer_sample()->is_precision_scroll().value());
 
-  ASSERT_TRUE(child_events[2].has_pointer_sample());
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_v(), 1);
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_h());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_h(), -1);
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_v_physical_pixel());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_v_physical_pixel(), 120.0);
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_h_physical_pixel());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_h_physical_pixel(), -120.0);
-  ASSERT_TRUE(child_events[2].pointer_sample().has_is_precision_scroll());
-  EXPECT_FALSE(child_events[2].pointer_sample().is_precision_scroll());
+  ASSERT_TRUE(child_events[2].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_v().value(), 1);
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_h().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_h().value(), -1);
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_v_physical_pixel().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_v_physical_pixel().value(), 120.0);
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_h_physical_pixel().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_h_physical_pixel().value(), -120.0);
+  ASSERT_TRUE(child_events[2].pointer_sample()->is_precision_scroll().has_value());
+  EXPECT_FALSE(child_events[2].pointer_sample()->is_precision_scroll().value());
 
   child_events.clear();
 
   // with v physical pixel, is precision scroll
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::optional<int64_t>(1),
          /* scroll_h= */ std::nullopt,
          /* scroll_v_physical_pixel= */ std::optional<double>(120.0),
@@ -924,7 +987,7 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
          /* is_precision_scroll= */ std::optional<bool>(true));
 
   // with h physical pixel, is precision scroll
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::nullopt,
          /* scroll_h= */ std::optional<int64_t>(-1),
          /* scroll_v_physical_pixel= */ std::nullopt,
@@ -932,7 +995,7 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
          /* is_precision_scroll= */ std::optional<bool>(true));
 
   // with v,h physical pixel, is precision scroll
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::optional<int64_t>(1),
          /* scroll_h= */ std::optional<int64_t>(-1),
          /* scroll_v_physical_pixel= */ std::optional<double>(120.0),
@@ -941,42 +1004,42 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
 
   RunLoopUntil([&child_events] { return child_events.size() == 3u; });
 
-  ASSERT_TRUE(child_events[0].has_pointer_sample());
-  ASSERT_TRUE(child_events[0].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[0].pointer_sample().scroll_v(), 1);
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_h());
-  ASSERT_TRUE(child_events[0].pointer_sample().has_scroll_v_physical_pixel());
-  EXPECT_EQ(child_events[0].pointer_sample().scroll_v_physical_pixel(), 120.0);
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_TRUE(child_events[0].pointer_sample().has_is_precision_scroll());
-  EXPECT_TRUE(child_events[0].pointer_sample().is_precision_scroll());
+  ASSERT_TRUE(child_events[0].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[0].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[0].pointer_sample()->scroll_v().value(), 1);
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_h().has_value());
+  ASSERT_TRUE(child_events[0].pointer_sample()->scroll_v_physical_pixel().has_value());
+  EXPECT_EQ(child_events[0].pointer_sample()->scroll_v_physical_pixel().value(), 120.0);
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_TRUE(child_events[0].pointer_sample()->is_precision_scroll().has_value());
+  EXPECT_TRUE(child_events[0].pointer_sample()->is_precision_scroll().value());
 
-  ASSERT_TRUE(child_events[1].has_pointer_sample());
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_v());
-  ASSERT_TRUE(child_events[1].pointer_sample().has_scroll_h());
-  EXPECT_EQ(child_events[1].pointer_sample().scroll_h(), -1);
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_TRUE(child_events[1].pointer_sample().has_scroll_h_physical_pixel());
-  EXPECT_EQ(child_events[1].pointer_sample().scroll_h_physical_pixel(), -120.0);
-  ASSERT_TRUE(child_events[1].pointer_sample().has_is_precision_scroll());
-  EXPECT_TRUE(child_events[1].pointer_sample().is_precision_scroll());
+  ASSERT_TRUE(child_events[1].pointer_sample().has_value());
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_v().has_value());
+  ASSERT_TRUE(child_events[1].pointer_sample()->scroll_h().has_value());
+  EXPECT_EQ(child_events[1].pointer_sample()->scroll_h().value(), -1);
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_TRUE(child_events[1].pointer_sample()->scroll_h_physical_pixel().has_value());
+  EXPECT_EQ(child_events[1].pointer_sample()->scroll_h_physical_pixel().value(), -120.0);
+  ASSERT_TRUE(child_events[1].pointer_sample()->is_precision_scroll().has_value());
+  EXPECT_TRUE(child_events[1].pointer_sample()->is_precision_scroll().value());
 
-  ASSERT_TRUE(child_events[2].has_pointer_sample());
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_v());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_v(), 1);
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_h());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_h(), -1);
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_v_physical_pixel());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_v_physical_pixel(), 120.0);
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_h_physical_pixel());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_h_physical_pixel(), -120.0);
-  ASSERT_TRUE(child_events[2].pointer_sample().has_is_precision_scroll());
-  EXPECT_TRUE(child_events[2].pointer_sample().is_precision_scroll());
+  ASSERT_TRUE(child_events[2].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_v().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_v().value(), 1);
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_h().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_h().value(), -1);
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_v_physical_pixel().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_v_physical_pixel().value(), 120.0);
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_h_physical_pixel().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_h_physical_pixel().value(), -120.0);
+  ASSERT_TRUE(child_events[2].pointer_sample()->is_precision_scroll().has_value());
+  EXPECT_TRUE(child_events[2].pointer_sample()->is_precision_scroll().value());
 
   child_events.clear();
 
   // without tick, with v physical pixel, is precision scroll
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::nullopt,
          /* scroll_h= */ std::nullopt,
          /* scroll_v_physical_pixel= */ std::optional<double>(120.0),
@@ -985,7 +1048,7 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
          /* is_precision_scroll= */ std::optional<bool>(true));
 
   // without tick, with h physical pixel, is precision scroll
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::nullopt,
          /* scroll_h= */ std::nullopt,
          /* scroll_v_physical_pixel= */ std::nullopt,
@@ -993,7 +1056,7 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
          /* is_precision_scroll= */ std::optional<bool>(true));
 
   // without tick, with v,h physical pixel, is precision scroll
-  Inject(0, 0, EventPhase::CHANGE, /* pressed_buttons= */ {},
+  Inject(0, 0, EventPhase::kChange, /* pressed_buttons= */ {},
          /* scroll_v= */ std::nullopt,
          /* scroll_h= */ std::nullopt,
          /* scroll_v_physical_pixel= */ std::optional<double>(120.0),
@@ -1002,33 +1065,33 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
 
   RunLoopUntil([&child_events] { return child_events.size() == 3u; });
 
-  ASSERT_TRUE(child_events[0].has_pointer_sample());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_v());
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_h());
-  ASSERT_TRUE(child_events[0].pointer_sample().has_scroll_v_physical_pixel());
-  EXPECT_EQ(child_events[0].pointer_sample().scroll_v_physical_pixel(), 120.0);
-  ASSERT_FALSE(child_events[0].pointer_sample().has_scroll_h_physical_pixel());
-  ASSERT_TRUE(child_events[0].pointer_sample().has_is_precision_scroll());
-  EXPECT_TRUE(child_events[0].pointer_sample().is_precision_scroll());
+  ASSERT_TRUE(child_events[0].pointer_sample().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_v().has_value());
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_h().has_value());
+  ASSERT_TRUE(child_events[0].pointer_sample()->scroll_v_physical_pixel().has_value());
+  EXPECT_EQ(child_events[0].pointer_sample()->scroll_v_physical_pixel().value(), 120.0);
+  ASSERT_FALSE(child_events[0].pointer_sample()->scroll_h_physical_pixel().has_value());
+  ASSERT_TRUE(child_events[0].pointer_sample()->is_precision_scroll().has_value());
+  EXPECT_TRUE(child_events[0].pointer_sample()->is_precision_scroll().value());
 
-  ASSERT_TRUE(child_events[1].has_pointer_sample());
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_v());
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_h());
-  ASSERT_FALSE(child_events[1].pointer_sample().has_scroll_v_physical_pixel());
-  ASSERT_TRUE(child_events[1].pointer_sample().has_scroll_h_physical_pixel());
-  EXPECT_EQ(child_events[1].pointer_sample().scroll_h_physical_pixel(), -120.0);
-  ASSERT_TRUE(child_events[1].pointer_sample().has_is_precision_scroll());
-  EXPECT_TRUE(child_events[1].pointer_sample().is_precision_scroll());
+  ASSERT_TRUE(child_events[1].pointer_sample().has_value());
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_v().has_value());
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_h().has_value());
+  ASSERT_FALSE(child_events[1].pointer_sample()->scroll_v_physical_pixel().has_value());
+  ASSERT_TRUE(child_events[1].pointer_sample()->scroll_h_physical_pixel().has_value());
+  EXPECT_EQ(child_events[1].pointer_sample()->scroll_h_physical_pixel().value(), -120.0);
+  ASSERT_TRUE(child_events[1].pointer_sample()->is_precision_scroll().has_value());
+  EXPECT_TRUE(child_events[1].pointer_sample()->is_precision_scroll().value());
 
-  ASSERT_TRUE(child_events[2].has_pointer_sample());
-  ASSERT_FALSE(child_events[2].pointer_sample().has_scroll_v());
-  ASSERT_FALSE(child_events[2].pointer_sample().has_scroll_h());
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_v_physical_pixel());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_v_physical_pixel(), 120.0);
-  ASSERT_TRUE(child_events[2].pointer_sample().has_scroll_h_physical_pixel());
-  EXPECT_EQ(child_events[2].pointer_sample().scroll_h_physical_pixel(), -120.0);
-  ASSERT_TRUE(child_events[2].pointer_sample().has_is_precision_scroll());
-  EXPECT_TRUE(child_events[2].pointer_sample().is_precision_scroll());
+  ASSERT_TRUE(child_events[2].pointer_sample().has_value());
+  ASSERT_FALSE(child_events[2].pointer_sample()->scroll_v().has_value());
+  ASSERT_FALSE(child_events[2].pointer_sample()->scroll_h().has_value());
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_v_physical_pixel().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_v_physical_pixel().value(), 120.0);
+  ASSERT_TRUE(child_events[2].pointer_sample()->scroll_h_physical_pixel().has_value());
+  EXPECT_EQ(child_events[2].pointer_sample()->scroll_h_physical_pixel().value(), -120.0);
+  ASSERT_TRUE(child_events[2].pointer_sample()->is_precision_scroll().has_value());
+  EXPECT_TRUE(child_events[2].pointer_sample()->is_precision_scroll().value());
 }
 
 // Hit tests follow the same basic view topology:
@@ -1049,44 +1112,42 @@ TEST_F(FlatlandMouseIntegrationTest, WheelWithPhysicalPixel) {
 // Add full screen hit regions on both parent and child instances. Check that only the child
 // receives hits.
 TEST_F(FlatlandMouseIntegrationTest, SimpleHitTest) {
-  FlatlandPtr parent_instance;
-  MouseSourcePtr parent_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> parent_instance;
+  auto [parent_mouse_source_client_end, parent_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> parent_mouse_source(
+      std::move(parent_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  parent_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  parent_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto parent_view_ref = CreateAndAddChildView(root_instance_,
-                                               /*viewport_transform_id*/ {.value = 2},
+  auto parent_view_ref = CreateAndAddChildView(*root_instance_,
+                                               /*viewport_transform_id*/ kViewportTransform,
                                                /*parent_of_viewport_transform*/ kRootTransform,
-                                               /*parent_content_id*/ {.value = 1}, parent_instance,
-                                               parent_mouse_source.NewRequest());
+                                               /*parent_content_id*/ ContentId(1), parent_instance,
+                                               std::move(parent_mouse_source_server_end));
 
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
-
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
   auto child_view_ref = CreateAndAddChildView(
-      parent_instance, /*viewport_transform_id=*/{.value = 2}, kRootTransform,
-      /*parent_content_id=*/{.value = 2}, child_instance, child_mouse_source.NewRequest());
+      *parent_instance, /*viewport_transform_id=*/kViewportTransform, kRootTransform,
+      /*parent_content_id=*/ContentId(2), child_instance, std::move(child_mouse_source_server_end));
 
   // Place hit regions, overriding any default ones if they exist.
-  parent_instance->SetHitRegions(kRootTransform,
-                                 {{.region = {.x = 0, .y = 0, .width = 10, .height = 10}}});
-  child_instance->SetHitRegions(kRootTransform,
-                                {{.region = {.x = 0, .y = 0, .width = 10, .height = 10}}});
+  EXPECT_TRUE((*parent_instance)
+                  ->SetHitRegions(
+                      {{.transform_id = kRootTransform,
+                        .regions = {HitRegion(RectF(0, 0, 10, 10), HitTestInteraction::kDefault)}}})
+                  .is_ok());
+  EXPECT_TRUE((*child_instance)
+                  ->SetHitRegions(
+                      {{.transform_id = kRootTransform,
+                        .regions = {HitRegion(RectF(0, 0, 10, 10), HitTestInteraction::kDefault)}}})
+                  .is_ok());
 
-  BlockingPresent(this, child_instance);
-  BlockingPresent(this, parent_instance);
+  BlockingPresent(this, *child_instance);
+  BlockingPresent(this, *parent_instance);
 
   // Listen for input events.
   std::vector<MouseEvent> parent_events;
@@ -1098,17 +1159,18 @@ TEST_F(FlatlandMouseIntegrationTest, SimpleHitTest) {
   // Inject an input event at (0,0) which is the point of overlap between the parent and the
   // child. The child should receive it.
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(parent_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
-  Inject(0, 0, EventPhase::ADD, button_vec);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(parent_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
+  Inject(0, 0, EventPhase::kAdd, button_vec);
 
   RunLoopUntil([&child_events] { return child_events.size() == 1u; });
-  ASSERT_TRUE(child_events[0].has_pointer_sample());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_v());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_h());
+  ASSERT_TRUE(child_events[0].pointer_sample().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_v().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_h().has_value());
 
   // Verify hit position in viewport.
-  std::array<float, 2> position = child_events[0].pointer_sample().position_in_viewport();
+  std::array<float, 2> position = child_events[0].pointer_sample()->position_in_viewport().value();
 
   EXPECT_EQ(position[0], 0.f);
   EXPECT_EQ(position[1], 0.f);
@@ -1122,48 +1184,55 @@ TEST_F(FlatlandMouseIntegrationTest, SimpleHitTest) {
 // child for that portion of the screen. This forms a parent-child-parent "sandwich" for that
 // region.
 TEST_F(FlatlandMouseIntegrationTest, SandwichTest) {
-  FlatlandPtr parent_instance;
-  MouseSourcePtr parent_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> parent_instance;
+  auto [parent_mouse_source_client_end, parent_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> parent_mouse_source(
+      std::move(parent_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  parent_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  parent_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto parent_view_ref = CreateAndAddChildView(root_instance_,
-                                               /*viewport_transform_id*/ {.value = 2},
+  auto parent_view_ref = CreateAndAddChildView(*root_instance_,
+                                               /*viewport_transform_id*/ kViewportTransform,
                                                /*parent_of_viewport_transform*/ kRootTransform,
-                                               /*parent_content_id*/ {.value = 1}, parent_instance,
-                                               parent_mouse_source.NewRequest());
+                                               /*parent_content_id*/ ContentId(1), parent_instance,
+                                               std::move(parent_mouse_source_server_end));
 
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
-
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
   auto child_view_ref = CreateAndAddChildView(
-      parent_instance, /*parent_transform=*/{.value = 2}, kRootTransform,
-      /*parent_content_id=*/{.value = 2}, child_instance, child_mouse_source.NewRequest());
+      *parent_instance, /*parent_transform=*/kViewportTransform, kRootTransform,
+      /*parent_content_id=*/ContentId(2), child_instance, std::move(child_mouse_source_server_end));
 
   // After creating the child transform, create an additional transform representing the overlay.
-  TransformId overlay_transform = {.value = 3};
-  parent_instance->CreateTransform(overlay_transform);
-  parent_instance->AddChild(kRootTransform, overlay_transform);
+  TransformId overlay_transform(3);
+  EXPECT_TRUE((*parent_instance)->CreateTransform({{.transform_id = overlay_transform}}).is_ok());
+  EXPECT_TRUE((*parent_instance)
+                  ->AddChild({{.parent_transform_id = kRootTransform,
+                               .child_transform_id = overlay_transform}})
+                  .is_ok());
 
   // Place hit regions, overriding any default ones if they exist.
-  parent_instance->SetHitRegions(kRootTransform, {{.region = {0, 0, 10, 10}}});
-  parent_instance->SetHitRegions(overlay_transform, {{.region = {0, 0, 5, 5}}});
-  child_instance->SetHitRegions(kRootTransform, {{.region = {0, 0, 10, 10}}});
+  EXPECT_TRUE((*parent_instance)
+                  ->SetHitRegions(
+                      {{.transform_id = kRootTransform,
+                        .regions = {HitRegion(RectF(0, 0, 10, 10), HitTestInteraction::kDefault)}}})
+                  .is_ok());
+  EXPECT_TRUE((*parent_instance)
+                  ->SetHitRegions(
+                      {{.transform_id = overlay_transform,
+                        .regions = {HitRegion(RectF(0, 0, 5, 5), HitTestInteraction::kDefault)}}})
+                  .is_ok());
+  EXPECT_TRUE((*child_instance)
+                  ->SetHitRegions(
+                      {{.transform_id = kRootTransform,
+                        .regions = {HitRegion(RectF(0, 0, 10, 10), HitTestInteraction::kDefault)}}})
+                  .is_ok());
 
-  BlockingPresent(this, child_instance);
-  BlockingPresent(this, parent_instance);
+  BlockingPresent(this, *child_instance);
+  BlockingPresent(this, *parent_instance);
 
   // Listen for input events.
   std::vector<MouseEvent> parent_events;
@@ -1174,38 +1243,41 @@ TEST_F(FlatlandMouseIntegrationTest, SandwichTest) {
 
   // Inject an input event at (0,0) which is in the sandwich zone. The parent should receive it.
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(parent_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
-  Inject(0, 0, EventPhase::ADD, button_vec);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(parent_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
+  Inject(0, 0, EventPhase::kAdd, button_vec);
   RunLoopUntil([&parent_events] { return parent_events.size() == 1u; });
-  ASSERT_TRUE(parent_events[0].has_pointer_sample());
-  EXPECT_FALSE(parent_events[0].pointer_sample().has_scroll_v());
-  EXPECT_FALSE(parent_events[0].pointer_sample().has_scroll_h());
+  ASSERT_TRUE(parent_events[0].pointer_sample().has_value());
+  EXPECT_FALSE(parent_events[0].pointer_sample()->scroll_v().has_value());
+  EXPECT_FALSE(parent_events[0].pointer_sample()->scroll_h().has_value());
 
   // Verify hit position in viewport.
   {
-    std::array<float, 2> position = parent_events[0].pointer_sample().position_in_viewport();
+    std::array<float, 2> position =
+        parent_events[0].pointer_sample()->position_in_viewport().value();
 
     EXPECT_EQ(position[0], 0.f);
     EXPECT_EQ(position[1], 0.f);
   }
 
   // Remove the previous stream.
-  Inject(0, 0, EventPhase::REMOVE, {});
+  Inject(0, 0, EventPhase::kRemove, {});
   RunLoopUntil([&parent_events] { return parent_events.size() == 2u; });
   EXPECT_EQ(child_events.size(), 0u);
 
   // Inject outside of the sandwich zone. The child should receive it.
-  Inject(6, 3, EventPhase::ADD, button_vec);
+  Inject(6, 3, EventPhase::kAdd, button_vec);
 
   RunLoopUntil([&child_events] { return child_events.size() == 1u; });
-  ASSERT_TRUE(child_events[0].has_pointer_sample());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_v());
-  EXPECT_FALSE(child_events[0].pointer_sample().has_scroll_h());
+  ASSERT_TRUE(child_events[0].pointer_sample().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_v().has_value());
+  EXPECT_FALSE(child_events[0].pointer_sample()->scroll_h().has_value());
 
   // Verify hit position in viewport.
   {
-    std::array<float, 2> position = child_events[0].pointer_sample().position_in_viewport();
+    std::array<float, 2> position =
+        child_events[0].pointer_sample()->position_in_viewport().value();
 
     EXPECT_EQ(position[0], 6.f);
     EXPECT_EQ(position[1], 3.f);
@@ -1235,70 +1307,73 @@ TEST_F(FlatlandMouseIntegrationTest, SandwichTest) {
 //
 // root parent context target
 TEST_F(FlatlandMouseIntegrationTest, PartialScreenViews) {
-  FlatlandPtr parent_instance;
-  MouseSourcePtr parent_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> parent_instance;
+  auto [parent_mouse_source_client_end, parent_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> parent_mouse_source(
+      std::move(parent_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  parent_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  parent_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto parent_view_ref = CreateAndAddChildView(root_instance_,
-                                               /*viewport_transform_id*/ {.value = 2},
+  auto parent_view_ref = CreateAndAddChildView(*root_instance_,
+                                               /*viewport_transform_id*/ kViewportTransform,
                                                /*parent_of_viewport_transform*/ kRootTransform,
-                                               /*parent_content_id*/ {.value = 1}, parent_instance,
-                                               parent_mouse_source.NewRequest());
+                                               /*parent_content_id*/ ContentId(1), parent_instance,
+                                               std::move(parent_mouse_source_server_end));
 
-  FlatlandPtr context_instance;
-  MouseSourcePtr context_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> context_instance;
+  auto [context_mouse_source_client_end, context_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> context_mouse_source(
+      std::move(context_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  context_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  context_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
+  auto context_view_ref =
+      CreateAndAddChildView(*parent_instance, kViewportTransform, kRootTransform,
+                            /*parent_content_id=*/ContentId(2), context_instance,
+                            std::move(context_mouse_source_server_end));
 
-  const TransformId viewport_transform_id = {.value = 2};
-  auto context_view_ref = CreateAndAddChildView(
-      parent_instance, viewport_transform_id, kRootTransform,
-      /*parent_content_id=*/{.value = 2}, context_instance, context_mouse_source.NewRequest());
+  std::unique_ptr<FlatlandClientWithEventHandler> target_instance;
+  auto [target_mouse_source_client_end, target_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> target_mouse_source(
+      std::move(target_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  FlatlandPtr target_instance;
-  MouseSourcePtr target_mouse_source;
-
-  target_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  target_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto target_view_ref = CreateAndAddChildView(
-      context_instance, viewport_transform_id, kRootTransform,
-      /*parent_content_id=*/{.value = 2}, target_instance, target_mouse_source.NewRequest());
+  auto target_view_ref =
+      CreateAndAddChildView(*context_instance, kViewportTransform, kRootTransform,
+                            /*parent_content_id=*/ContentId(2), target_instance,
+                            std::move(target_mouse_source_server_end));
 
   // Change the context view's origin from (0,0) to (5,5).
   int x_translation = 5;
   int y_translation = 5;
-  parent_instance->SetTranslation(viewport_transform_id, {.x = x_translation, .y = y_translation});
-  fuchsia::math::Rect rect = {.x = 0, .y = 0, .width = 5, .height = 5};
-  parent_instance->SetClipBoundary(viewport_transform_id,
-                                   std::make_unique<fuchsia::math::Rect>(rect));
+  EXPECT_TRUE((*parent_instance)
+                  ->SetTranslation({{.transform_id = kViewportTransform,
+                                     .translation = Vec(x_translation, y_translation)}})
+                  .is_ok());
+  Rect rect(0, 0, 5, 5);
+  EXPECT_TRUE((*parent_instance)
+                  ->SetClipBoundary(
+                      {{.transform_id = kViewportTransform, .rect = std::make_unique<Rect>(rect)}})
+                  .is_ok());
 
   // Place hit regions, overriding any default ones if they exist.
-  parent_instance->SetHitRegions(kRootTransform,
-                                 {{.region = {.x = 0, .y = 0, .width = 10, .height = 10}}});
-  context_instance->SetHitRegions(kRootTransform,
-                                  {{.region = {.x = 0, .y = 0, .width = 10, .height = 10}}});
-  target_instance->SetHitRegions(kRootTransform,
-                                 {{.region = {.x = 0, .y = 0, .width = 10, .height = 10}}});
+  EXPECT_TRUE((*parent_instance)
+                  ->SetHitRegions(
+                      {{.transform_id = kRootTransform,
+                        .regions = {HitRegion(RectF(0, 0, 10, 10), HitTestInteraction::kDefault)}}})
+                  .is_ok());
+  EXPECT_TRUE((*context_instance)
+                  ->SetHitRegions(
+                      {{.transform_id = kRootTransform,
+                        .regions = {HitRegion(RectF(0, 0, 10, 10), HitTestInteraction::kDefault)}}})
+                  .is_ok());
+  EXPECT_TRUE((*target_instance)
+                  ->SetHitRegions(
+                      {{.transform_id = kRootTransform,
+                        .regions = {HitRegion(RectF(0, 0, 10, 10), HitTestInteraction::kDefault)}}})
+                  .is_ok());
 
-  BlockingPresent(this, parent_instance);
-  BlockingPresent(this, context_instance);
-  BlockingPresent(this, target_instance);
+  BlockingPresent(this, *parent_instance);
+  BlockingPresent(this, *context_instance);
+  BlockingPresent(this, *target_instance);
 
   // Listen for input events.
   std::vector<MouseEvent> context_events;
@@ -1316,20 +1391,21 @@ TEST_F(FlatlandMouseIntegrationTest, PartialScreenViews) {
   // 0 0 1
   std::array<float, 9> viewport_to_context_transform = {1, 0, 0, 0, 1, 0, -5, -5, 1};
 
-  RegisterInjector(fidl::Clone(context_view_ref), fidl::Clone(target_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec,
-                   viewport_to_context_transform);
+  RegisterInjector(
+      scenic::cpp::CloneViewRef(context_view_ref), scenic::cpp::CloneViewRef(target_view_ref),
+      DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, viewport_to_context_transform);
 
   float x = 7;
   float y = 9;
 
-  Inject(x, y, EventPhase::ADD, button_vec);
+  Inject(x, y, EventPhase::kAdd, button_vec);
   RunLoopUntil([&target_events] { return target_events.size() == 1u; });
-  ASSERT_TRUE(target_events[0].has_pointer_sample());
+  ASSERT_TRUE(target_events[0].pointer_sample().has_value());
 
   // Verify hit position in viewport.
   {
-    std::array<float, 2> position = target_events[0].pointer_sample().position_in_viewport();
+    std::array<float, 2> position =
+        target_events[0].pointer_sample()->position_in_viewport().value();
 
     EXPECT_EQ(position[0], x);
     EXPECT_EQ(position[1], y);
@@ -1408,25 +1484,30 @@ TEST_F(FlatlandMouseIntegrationTest, PartialScreenViews) {
 //
 //   3      O      O      O      O      2
 TEST_F(FlatlandMouseIntegrationTest, TargetViewWith_ScaleRotationTranslation) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Scale, rotate, and translate the child_instance. Those operations are applied in that order.
-  TransformId kTransformId = {.value = 2};
-  root_instance_->SetScale(kTransformId, {2, 3});
-  root_instance_->SetOrientation(kTransformId, Orientation::CCW_270_DEGREES);
-  root_instance_->SetTranslation(kTransformId, {1, 0});
-  BlockingPresent(this, root_instance_);
+  EXPECT_TRUE((*root_instance_)
+                  ->SetScale({{.transform_id = kViewportTransform, .scale = VecF(2, 3)}})
+                  .is_ok());
+  EXPECT_TRUE((*root_instance_)
+                  ->SetOrientation({{.transform_id = kViewportTransform,
+                                     .orientation = Orientation::kCcw270Degrees}})
+                  .is_ok());
+  EXPECT_TRUE((*root_instance_)
+                  ->SetTranslation({{.transform_id = kViewportTransform, .translation = Vec(1, 0)}})
+                  .is_ok());
+  BlockingPresent(this, *root_instance_);
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
@@ -1434,27 +1515,28 @@ TEST_F(FlatlandMouseIntegrationTest, TargetViewWith_ScaleRotationTranslation) {
 
   // Scene is now set up, send in the input. One event for each corner of the view.
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
 
-  Inject(0, 0, EventPhase::ADD, button_vec);
-  Inject(10, 0, EventPhase::CHANGE, button_vec);
-  Inject(0, 10, EventPhase::CHANGE, button_vec);
-  Inject(10, 10, EventPhase::CHANGE, button_vec);
+  Inject(0, 0, EventPhase::kAdd, button_vec);
+  Inject(10, 0, EventPhase::kChange, button_vec);
+  Inject(0, 10, EventPhase::kChange, button_vec);
+  Inject(10, 10, EventPhase::kChange, button_vec);
 
   RunLoopUntil([&child_events] { return child_events.size() == 4u; });  // Succeeds or times out.
 
   {  // Check layout validity.
-    EXPECT_EQ(child_events[0].device_info().id(), kDeviceId);
-    const auto& view_parameters = child_events[0].view_parameters();
-    EXPECT_TRUE(CmpFloatingValues(view_parameters.view.min[0], 0.f));
-    EXPECT_TRUE(CmpFloatingValues(view_parameters.view.min[1], 0.f));
-    EXPECT_TRUE(CmpFloatingValues(view_parameters.view.max[0], 10.f));
-    EXPECT_TRUE(CmpFloatingValues(view_parameters.view.max[1], 10.f));
-    EXPECT_TRUE(CmpFloatingValues(view_parameters.viewport.min[0], 0.f));
-    EXPECT_TRUE(CmpFloatingValues(view_parameters.viewport.min[1], 0.f));
-    EXPECT_TRUE(CmpFloatingValues(view_parameters.viewport.max[0], display_width_));
-    EXPECT_TRUE(CmpFloatingValues(view_parameters.viewport.max[1], display_height_));
+    EXPECT_EQ(child_events[0].device_info()->id(), kDeviceId);
+    const auto& view_parameters = child_events[0].view_parameters().value();
+    EXPECT_TRUE(CmpFloatingValues(view_parameters.view().min()[0], 0.f));
+    EXPECT_TRUE(CmpFloatingValues(view_parameters.view().min()[1], 0.f));
+    EXPECT_TRUE(CmpFloatingValues(view_parameters.view().max()[0], 10.f));
+    EXPECT_TRUE(CmpFloatingValues(view_parameters.view().max()[1], 10.f));
+    EXPECT_TRUE(CmpFloatingValues(view_parameters.viewport().min()[0], 0.f));
+    EXPECT_TRUE(CmpFloatingValues(view_parameters.viewport().min()[1], 0.f));
+    EXPECT_TRUE(CmpFloatingValues(view_parameters.viewport().max()[0], display_width_));
+    EXPECT_TRUE(CmpFloatingValues(view_parameters.viewport().max()[1], display_height_));
   }
 
   // For a CCW_270 rotation, the new x' and y' from x and y is:
@@ -1462,7 +1544,7 @@ TEST_F(FlatlandMouseIntegrationTest, TargetViewWith_ScaleRotationTranslation) {
   // y' = -x
   {
     const auto& viewport_to_view_transform =
-        child_events[0].view_parameters().viewport_to_view_transform;
+        child_events[0].view_parameters()->viewport_to_view_transform();
     EXPECT_EQ_POINTER_WITH_BUTTONS(child_events[0].pointer_sample(), viewport_to_view_transform,
                                    0.f / 2.f, (0.f + 1.f) / 3.f, button_vec);
     EXPECT_EQ_POINTER_WITH_BUTTONS(child_events[1].pointer_sample(), viewport_to_view_transform,
@@ -1498,18 +1580,17 @@ TEST_F(FlatlandMouseIntegrationTest, TargetViewWith_ScaleRotationTranslation) {
 //   O   O   O   O   O   O
 //
 TEST_F(FlatlandMouseIntegrationTest, InjectedInput_ShouldBeCorrectlyViewportTransformed) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
@@ -1527,23 +1608,23 @@ TEST_F(FlatlandMouseIntegrationTest, InjectedInput_ShouldBeCorrectlyViewportTran
 
   // Scene is now set up, send in the input. One event for each corner of the view.
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec,
-                   kViewportToContextTransform);
+  RegisterInjector(
+      scenic::cpp::CloneViewRef(root_view_ref_), scenic::cpp::CloneViewRef(child_view_ref),
+      DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kViewportToContextTransform);
 
   // Scene is now set up, send in the input. One event for where each corner of the view was
   // pre-transformation.
 
-  Inject(0, 0, EventPhase::ADD);                                        // A
-  Inject(5, 0, EventPhase::CHANGE);                                     // C1
-  Inject(5, 5, EventPhase::CHANGE);                                     // C2
-  Inject(0, 5, EventPhase::CHANGE);                                     // R
+  Inject(0, 0, EventPhase::kAdd);                                       // A
+  Inject(5, 0, EventPhase::kChange);                                    // C1
+  Inject(5, 5, EventPhase::kChange);                                    // C2
+  Inject(0, 5, EventPhase::kChange);                                    // R
   RunLoopUntil([&child_events] { return child_events.size() == 4u; });  // Succeeds or times out.
 
   // Check pointer samples.
   {
     const auto& viewport_to_view_transform =
-        child_events[0].view_parameters().viewport_to_view_transform;
+        child_events[0].view_parameters()->viewport_to_view_transform();
     EXPECT_EQ_POINTER(child_events[0].pointer_sample(), viewport_to_view_transform, (0.f / 2.f) + 1,
                       (0.f / 3.f) + 2);
     EXPECT_EQ_POINTER(child_events[1].pointer_sample(), viewport_to_view_transform, (5.f / 2.f) + 1,
@@ -1578,24 +1659,27 @@ TEST_F(FlatlandMouseIntegrationTest, InjectedInput_ShouldBeCorrectlyViewportTran
 //   O O O O O O
 //   3 O O O O 2
 TEST_F(FlatlandMouseIntegrationTest, InjectedInput_OnRotatedChild_ShouldHitEdges) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Apply rotation.
-  TransformId transform = {.value = kRootTransform.value + 1};
-  root_instance_->SetOrientation(transform, Orientation::CCW_270_DEGREES);
-  root_instance_->SetTranslation(transform, {.x = 5, .y = 0});
-  BlockingPresent(this, root_instance_);
+  EXPECT_TRUE((*root_instance_)
+                  ->SetOrientation({{.transform_id = kViewportTransform,
+                                     .orientation = Orientation::kCcw270Degrees}})
+                  .is_ok());
+  EXPECT_TRUE((*root_instance_)
+                  ->SetTranslation({{.transform_id = kViewportTransform, .translation = Vec(5, 0)}})
+                  .is_ok());
+  BlockingPresent(this, *root_instance_);
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
@@ -1603,27 +1687,28 @@ TEST_F(FlatlandMouseIntegrationTest, InjectedInput_OnRotatedChild_ShouldHitEdges
 
   // Scene is now set up, send in the input. One interaction for each corner.
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
 
-  Inject(0, 0, EventPhase::ADD);
-  Inject(0, 5, EventPhase::CHANGE);
-  Inject(5, 5, EventPhase::CHANGE);
-  Inject(5, 0, EventPhase::CHANGE);
+  Inject(0, 0, EventPhase::kAdd);
+  Inject(0, 5, EventPhase::kChange);
+  Inject(5, 5, EventPhase::kChange);
+  Inject(5, 0, EventPhase::kChange);
   RunLoopUntil([&child_events] { return child_events.size() == 4u; });  // Succeeds or times out.
 
   {  // Target should receive all events rotated 90 degrees.
     const auto& viewport_to_view_transform =
-        child_events[0].view_parameters().viewport_to_view_transform;
+        child_events[0].view_parameters()->viewport_to_view_transform();
     EXPECT_EQ_POINTER(child_events[0].pointer_sample(), viewport_to_view_transform, 0.f, 5.f);
-    ASSERT_TRUE(child_events[0].has_stream_info());
-    EXPECT_EQ(child_events[0].stream_info().status, MouseViewStatus::ENTERED);
+    ASSERT_TRUE(child_events[0].stream_info().has_value());
+    EXPECT_EQ(child_events[0].stream_info()->status(), MouseViewStatus::kEntered);
     EXPECT_EQ_POINTER(child_events[1].pointer_sample(), viewport_to_view_transform, 5.f, 5.f);
-    EXPECT_FALSE(child_events[1].has_stream_info());
+    EXPECT_FALSE(child_events[1].stream_info().has_value());
     EXPECT_EQ_POINTER(child_events[2].pointer_sample(), viewport_to_view_transform, 5.f, 0.f);
-    EXPECT_FALSE(child_events[2].has_stream_info());
+    EXPECT_FALSE(child_events[2].stream_info().has_value());
     EXPECT_EQ_POINTER(child_events[3].pointer_sample(), viewport_to_view_transform, 0.f, 0.f);
-    EXPECT_FALSE(child_events[3].has_stream_info());
+    EXPECT_FALSE(child_events[3].stream_info().has_value());
   }
 }
 
@@ -1634,18 +1719,17 @@ TEST_F(FlatlandMouseIntegrationTest, InjectedInput_OnRotatedChild_ShouldHitEdges
 TEST_F(FlatlandMouseIntegrationTest, InjectionOutsideViewport_ShouldLimitOnClick) {
   // Set up a scene with two ViewHolders, one a child of the other. Make the Views bigger than the
   // Viewport.
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
@@ -1655,34 +1739,36 @@ TEST_F(FlatlandMouseIntegrationTest, InjectionOutsideViewport_ShouldLimitOnClick
   // the stream should therefore not be seen by anyone.
   const uint8_t kButtonId = 1;
   const std::vector<uint8_t> button_vec = {kButtonId};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
 
   // Set the viewport to only be the top-left quadrant of the screen.
-  Viewport viewport;
-  viewport.set_extents({{{0, 0}, {display_width_ / 2, display_height_ / 2}}});
-  viewport.set_viewport_to_context_transform(kIdentityMatrix);
+  fupi::Viewport viewport;
+  viewport.extents(std::array<std::array<float, 2>, 2>{
+      {{0.f, 0.f}, {display_width_ / 2.f, display_height_ / 2.f}}});
+  viewport.viewport_to_context_transform(kIdentityMatrix);
   InjectNewViewport(std::move(viewport));
 
-  Inject(display_width_, display_height_, EventPhase::ADD,
+  Inject(display_width_, display_height_, EventPhase::kAdd,
          button_vec);  // Outside viewport. Button down.
   // Remainder inside viewport, but should not be delivered.
-  Inject(5, 0, EventPhase::CHANGE, button_vec);
-  Inject(5, 5, EventPhase::CHANGE, button_vec);
-  Inject(0, 5, EventPhase::CHANGE);  // Button up. Hover event should be delivered.
+  Inject(5, 0, EventPhase::kChange, button_vec);
+  Inject(5, 5, EventPhase::kChange, button_vec);
+  Inject(0, 5, EventPhase::kChange);  // Button up. Hover event should be delivered.
 
   // Send in button down starting in the viewport and moving outside.
-  Inject(1, 1, EventPhase::CHANGE, button_vec);  // Inside viewport.
+  Inject(1, 1, EventPhase::kChange, button_vec);  // Inside viewport.
   // Remainder outside viewport, but should still be delivered.
-  Inject(display_width_, 0, EventPhase::CHANGE, button_vec);
-  Inject(display_width_, display_height_, EventPhase::CHANGE, button_vec);
-  Inject(0, display_height_, EventPhase::CHANGE, button_vec);
-  Inject(1, 1, EventPhase::CHANGE);  // Inside viewport. Button up.
+  Inject(display_width_, 0, EventPhase::kChange, button_vec);
+  Inject(display_width_, display_height_, EventPhase::kChange, button_vec);
+  Inject(0, display_height_, EventPhase::kChange, button_vec);
+  Inject(1, 1, EventPhase::kChange);  // Inside viewport. Button up.
   RunLoopUntil([&child_events] { return child_events.size() == 6u; });  // Succeeds or times out.
 
   {
     const auto& viewport_to_view_transform =
-        child_events[0].view_parameters().viewport_to_view_transform;
+        child_events[0].view_parameters()->viewport_to_view_transform();
     EXPECT_EQ_POINTER_WITH_BUTTONS(child_events[0].pointer_sample(), viewport_to_view_transform,
                                    0.f, 5.f, std::vector<uint8_t>());
     EXPECT_EQ_POINTER_WITH_BUTTONS(child_events[1].pointer_sample(), viewport_to_view_transform,
@@ -1699,18 +1785,17 @@ TEST_F(FlatlandMouseIntegrationTest, InjectionOutsideViewport_ShouldLimitOnClick
 }
 
 TEST_F(FlatlandMouseIntegrationTest, HoverTest) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
@@ -1718,162 +1803,164 @@ TEST_F(FlatlandMouseIntegrationTest, HoverTest) {
 
   // Scene is now set up, send in the input. The initial click is outside the viewport and
   // the stream should therefore not be seen by anyone.
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, {}, kIdentityMatrix);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, {}, kIdentityMatrix);
 
   // Set the viewport to only be the top-left 9x9 section of the screen.
-  Viewport viewport;
-  viewport.set_extents({{{0, 0}, {9, 9}}});
-  viewport.set_viewport_to_context_transform(kIdentityMatrix);
+  fupi::Viewport viewport;
+  viewport.extents(std::array<std::array<float, 2>, 2>{{{0.f, 0.f}, {9.f, 9.f}}});
+  viewport.viewport_to_context_transform(kIdentityMatrix);
   InjectNewViewport(std::move(viewport));
   // Outside viewport.
-  Inject(10, 10, EventPhase::ADD);
+  Inject(10, 10, EventPhase::kAdd);
   // Inside viewport.
-  Inject(5, 0, EventPhase::CHANGE);  // "View entered".
-  Inject(5, 5, EventPhase::CHANGE);
-  Inject(0, 5, EventPhase::CHANGE);
+  Inject(5, 0, EventPhase::kChange);  // "View entered".
+  Inject(5, 5, EventPhase::kChange);
+  Inject(0, 5, EventPhase::kChange);
   // Outside viewport.
-  Inject(50, 0, EventPhase::CHANGE);  // "View exited".
-  Inject(50, 50, EventPhase::CHANGE);
-  Inject(0, 50, EventPhase::CHANGE);
+  Inject(50, 0, EventPhase::kChange);  // "View exited".
+  Inject(50, 50, EventPhase::kChange);
+  Inject(0, 50, EventPhase::kChange);
   // Inside viewport.
-  Inject(1, 1, EventPhase::CHANGE);  // "View entered".
+  Inject(1, 1, EventPhase::kChange);  // "View entered".
 
   RunLoopUntil([&child_events] { return child_events.size() == 5u; });  // Succeeds or times out.
 
   {
     const auto& viewport_to_view_transform =
-        child_events[0].view_parameters().viewport_to_view_transform;
+        child_events[0].view_parameters()->viewport_to_view_transform();
     {
       const auto& event = child_events[0];
       EXPECT_EQ_POINTER(event.pointer_sample(), viewport_to_view_transform, 5.f, 0.f);
-      ASSERT_TRUE(event.has_stream_info());
-      EXPECT_EQ(event.stream_info().status, MouseViewStatus::ENTERED);
+      ASSERT_TRUE(event.stream_info().has_value());
+      EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kEntered);
     }
     {
       const auto& event = child_events[1];
       EXPECT_EQ_POINTER(event.pointer_sample(), viewport_to_view_transform, 5.f, 5.f);
-      EXPECT_FALSE(event.has_stream_info());
+      EXPECT_FALSE(event.stream_info().has_value());
     }
     {
       const auto& event = child_events[2];
       EXPECT_EQ_POINTER(event.pointer_sample(), viewport_to_view_transform, 0.f, 5.f);
-      EXPECT_FALSE(event.has_stream_info());
+      EXPECT_FALSE(event.stream_info().has_value());
     }
     {
       const auto& event = child_events[3];
-      EXPECT_FALSE(event.has_pointer_sample(), "Should get no pointer sample on View Exit");
-      ASSERT_TRUE(event.has_stream_info());
-      EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+      EXPECT_FALSE(event.pointer_sample().has_value(), "Should get no pointer sample on View Exit");
+      ASSERT_TRUE(event.stream_info().has_value());
+      EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
     }
     {
       const auto& event = child_events[4];
       EXPECT_EQ_POINTER(event.pointer_sample(), viewport_to_view_transform, 1.f, 1.f);
-      ASSERT_TRUE(event.has_stream_info());
-      EXPECT_EQ(event.stream_info().status, MouseViewStatus::ENTERED);
+      ASSERT_TRUE(event.stream_info().has_value());
+      EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kEntered);
     }
   }
 }
 
 TEST_F(FlatlandMouseIntegrationTest, InjectorDeath_ShouldCauseViewExitedEvent) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
   StartWatchLoop(child_mouse_source, child_events);
 
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, {}, kIdentityMatrix);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, {}, kIdentityMatrix);
 
-  Inject(2.5f, 2.5f, EventPhase::ADD);  // "View entered".
+  Inject(2.5f, 2.5f, EventPhase::kAdd);  // "View entered".
 
   // Register another injector, killing the old channel.
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, {}, kIdentityMatrix);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, {}, kIdentityMatrix);
 
   RunLoopUntil([&child_events] { return child_events.size() == 2u; });  // Succeeds or times out.
 
   {
     const auto& event = child_events[0];
-    EXPECT_TRUE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::ENTERED);
+    EXPECT_TRUE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kEntered);
   }
   {
     const auto& event = child_events[1];
-    EXPECT_FALSE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+    EXPECT_FALSE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
   }
 }
 
 TEST_F(FlatlandMouseIntegrationTest, REMOVEandCANCEL_ShouldCauseViewExitedEvents) {
-  FlatlandPtr child_instance;
-  MouseSourcePtr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> child_mouse_source(
+      std::move(child_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildView(root_instance_,
-                                              /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildView(*root_instance_,
+                                              /*viewport_transform_id*/ kViewportTransform,
                                               /*parent_of_viewport_transform*/ kRootTransform,
-                                              /*parent_content_id*/ {.value = 1}, child_instance,
-                                              child_mouse_source.NewRequest());
+                                              /*parent_content_id*/ ContentId(1), child_instance,
+                                              std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
   StartWatchLoop(child_mouse_source, child_events);
 
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, {}, kIdentityMatrix);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, {}, kIdentityMatrix);
 
-  Inject(2.5f, 2.5f, EventPhase::ADD);     // "View entered".
-  Inject(2.5f, 2.5f, EventPhase::REMOVE);  // "View exited".
+  Inject(2.5f, 2.5f, EventPhase::kAdd);     // "View entered".
+  Inject(2.5f, 2.5f, EventPhase::kRemove);  // "View exited".
 
   RunLoopUntil([&child_events] { return child_events.size() == 2u; });  // Succeeds or times out.
 
   {
     const auto& event = child_events[0];
-    EXPECT_TRUE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::ENTERED);
+    EXPECT_TRUE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kEntered);
   }
   {
     const auto& event = child_events[1];
-    EXPECT_FALSE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+    EXPECT_FALSE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
   }
 
   child_events.clear();
-  Inject(2.5f, 2.5f, EventPhase::ADD);     // "View entered".
-  Inject(2.5f, 2.5f, EventPhase::CANCEL);  // "View exited".
+  Inject(2.5f, 2.5f, EventPhase::kAdd);     // "View entered".
+  Inject(2.5f, 2.5f, EventPhase::kCancel);  // "View exited".
 
   RunLoopUntil([&child_events] { return child_events.size() == 2u; });  // Succeeds or times out.
 
   {
     const auto& event = child_events[0];
-    EXPECT_TRUE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::ENTERED);
+    EXPECT_TRUE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kEntered);
   }
   {
     const auto& event = child_events[1];
-    EXPECT_FALSE(event.has_pointer_sample());
-    ASSERT_TRUE(event.has_stream_info());
-    EXPECT_EQ(event.stream_info().status, MouseViewStatus::EXITED);
+    EXPECT_FALSE(event.pointer_sample().has_value());
+    ASSERT_TRUE(event.stream_info().has_value());
+    EXPECT_EQ(event.stream_info()->status(), MouseViewStatus::kExited);
   }
 }
 
@@ -1890,62 +1977,75 @@ TEST_F(FlatlandMouseIntegrationTest, REMOVEandCANCEL_ShouldCauseViewExitedEvents
 // Observe that the anonymous view and its child do not get events or show up in hit tests (and
 // block other views from getting events.)
 TEST_F(FlatlandMouseIntegrationTest, AnonymousSubtree) {
-  FlatlandPtr parent_instance;
-  MouseSourcePtr parent_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> parent_instance;
+  auto [parent_mouse_source_client_end, parent_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> parent_mouse_source(
+      std::move(parent_mouse_source_client_end), dispatcher(), FailOnClose("Mouse source closed"));
 
-  parent_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  parent_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-  const auto parent_view_ref = CreateAndAddChildView(
-      root_instance_,
-      /*viewport_transform_id*/ {.value = 2},
-      /*parent_of_viewport_transform*/ kRootTransform,
-      /*parent_content_id*/ {.value = 1}, parent_instance, parent_mouse_source.NewRequest());
+  const auto parent_view_ref =
+      CreateAndAddChildView(*root_instance_,
+                            /*viewport_transform_id*/ kViewportTransform,
+                            /*parent_of_viewport_transform*/ kRootTransform,
+                            /*parent_content_id*/ ContentId(1), parent_instance,
+                            std::move(parent_mouse_source_server_end));
 
-  FlatlandPtr child_instance = ConnectAsyncIntoRealm<Flatland>();
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
+  auto child_instance = std::make_unique<FlatlandClientWithEventHandler>(
+      ConnectIntoRealm<fuc::Flatland>(), dispatcher());
+  child_instance->set_on_close(FailOnClose("Lost connection to Scenic"));
 
   {
     // Set up the anonymous child view.
-    auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
-    fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
-    child_instance->CreateView(std::move(child_token), parent_viewport_watcher.NewRequest());
-    child_instance->CreateTransform(kRootTransform);
-    child_instance->SetRootTransform(kRootTransform);
-    BlockingPresent(this, child_instance);
+    auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
+    auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+        fidl::CreateEndpoints<fuc::ParentViewportWatcher>().value();
+    EXPECT_TRUE((*child_instance)
+                    ->CreateView({{.token = std::move(child_token),
+                                   .parent_viewport_watcher =
+                                       std::move(parent_viewport_watcher_server_end)}})
+                    .is_ok());
+    EXPECT_TRUE((*child_instance)->CreateTransform({{.transform_id = kRootTransform}}).is_ok());
+    EXPECT_TRUE((*child_instance)->SetRootTransform({{.transform_id = kRootTransform}}).is_ok());
+    BlockingPresent(this, *child_instance);
 
     // Attach it to the parent.
-    const TransformId viewport_transform_id{.value = 2};
-    const ContentId parent_content_id{.value = 1};
-    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
+    const ContentId parent_content_id(1);
+    auto [child_view_watcher_client_end, child_view_watcher_server_end] =
+        fidl::CreateEndpoints<fuc::ChildViewWatcher>().value();
     ViewportProperties properties;
-    properties.set_logical_size({.width = kDefaultSize, .height = kDefaultSize});
-    parent_instance->CreateTransform(viewport_transform_id);
-    parent_instance->CreateViewport(parent_content_id, std::move(parent_token),
-                                    std::move(properties), child_view_watcher.NewRequest());
-    parent_instance->SetContent(viewport_transform_id, parent_content_id);
-    parent_instance->AddChild(kRootTransform, viewport_transform_id);
-    BlockingPresent(this, parent_instance);
+    properties.logical_size(SizeU(kDefaultSize, kDefaultSize));
+    EXPECT_TRUE(
+        (*parent_instance)->CreateTransform({{.transform_id = kViewportTransform}}).is_ok());
+    EXPECT_TRUE(
+        (*parent_instance)
+            ->CreateViewport({{.viewport_id = parent_content_id,
+                               .token = std::move(parent_token),
+                               .properties = std::move(properties),
+                               .child_view_watcher = std::move(child_view_watcher_server_end)}})
+            .is_ok());
+    EXPECT_TRUE(
+        (*parent_instance)
+            ->SetContent({{.transform_id = kViewportTransform, .content_id = parent_content_id}})
+            .is_ok());
+    EXPECT_TRUE((*parent_instance)
+                    ->AddChild({{.parent_transform_id = kRootTransform,
+                                 .child_transform_id = kViewportTransform}})
+                    .is_ok());
+    BlockingPresent(this, *parent_instance);
   }
 
   // Create the named grandchild view along with its mouse source and attach it to the child.
-  FlatlandPtr grandchild_instance;
-  MouseSourcePtr grandchild_mouse_source;
-  grandchild_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  grandchild_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-  CreateAndAddChildView(child_instance,
-                        /*viewport_transform_id=*/{.value = 2}, kRootTransform,
-                        /*parent_content_id=*/{.value = 2}, grandchild_instance,
-                        grandchild_mouse_source.NewRequest());
+  std::unique_ptr<FlatlandClientWithEventHandler> grandchild_instance;
+  auto [grandchild_mouse_source_client_end, grandchild_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSource>().value();
+  SimpleWatcherClient<fup::MouseSource> grandchild_mouse_source(
+      std::move(grandchild_mouse_source_client_end), dispatcher(),
+      FailOnClose("Mouse source closed"));
+
+  CreateAndAddChildView(*child_instance,
+                        /*viewport_transform_id=*/kViewportTransform, kRootTransform,
+                        /*parent_content_id=*/ContentId(2), grandchild_instance,
+                        std::move(grandchild_mouse_source_server_end));
 
   // Listen for mouse events.
   std::vector<MouseEvent> parent_events;
@@ -1955,55 +2055,52 @@ TEST_F(FlatlandMouseIntegrationTest, AnonymousSubtree) {
 
   // Inject an input event at (0,0) which should hit every view. The anonymous child tree should be
   // ignored and the parent should receive it.
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(parent_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, {}, kIdentityMatrix);
-  Inject(0, 0, EventPhase::ADD);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(parent_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, {}, kIdentityMatrix);
+  Inject(0, 0, EventPhase::kAdd);
   RunLoopUntil([&parent_events] { return parent_events.size() == 1u; });
-  EXPECT_TRUE(parent_events[0].has_pointer_sample());
+  EXPECT_TRUE(parent_events[0].pointer_sample().has_value());
   EXPECT_TRUE(grandchild_events.empty());
 }
 
 TEST_F(FlatlandMouseIntegrationTest, MouseSourceV2_BasicInputTest) {
-  FlatlandPtr child_instance;
-  MouseSourceV2Ptr child_mouse_source;
+  std::unique_ptr<FlatlandClientWithEventHandler> child_instance;
+  auto [child_mouse_source_client_end, child_mouse_source_server_end] =
+      fidl::CreateEndpoints<fup::MouseSourceV2>().value();
 
-  child_instance.set_error_handler([](zx_status_t status) {
-    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
-  });
-  child_mouse_source.set_error_handler([](zx_status_t status) {
-    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
-  });
-
-  auto child_view_ref = CreateAndAddChildViewV2(root_instance_,
-                                                /*viewport_transform_id*/ {.value = 2},
+  auto child_view_ref = CreateAndAddChildViewV2(*root_instance_,
+                                                /*viewport_transform_id*/ kViewportTransform,
                                                 /*parent_of_viewport_transform*/ kRootTransform,
-                                                /*parent_content_id*/ {.value = 1}, child_instance,
-                                                child_mouse_source.NewRequest());
+                                                /*parent_content_id*/ ContentId(1), child_instance,
+                                                std::move(child_mouse_source_server_end));
 
   // Listen for input events.
   std::vector<MouseEvent> child_events;
-  StartListenerV2(child_mouse_source, child_events);
+  MouseSourceV2Client child_mouse_source(std::move(child_mouse_source_client_end), dispatcher(),
+                                         child_events);
 
   const std::vector<uint8_t> button_vec = {1};
-  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
-                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
+  RegisterInjector(scenic::cpp::CloneViewRef(root_view_ref_),
+                   scenic::cpp::CloneViewRef(child_view_ref),
+                   DispatchPolicy::kMouseHoverAndLatchInTarget, button_vec, kIdentityMatrix);
 
   // Inject mouse move at (0, 0).
-  Inject(0, 0, EventPhase::ADD);
+  Inject(0, 0, EventPhase::kAdd);
   RunLoopUntil([&child_events] { return !child_events.empty(); });
 
   EXPECT_EQ(child_events.size(), 1u);
-  ASSERT_TRUE(child_events[0].has_pointer_sample());
-  ASSERT_TRUE(child_events[0].has_stream_info());
-  EXPECT_EQ(child_events[0].stream_info().status, MouseViewStatus::ENTERED);
+  ASSERT_TRUE(child_events[0].pointer_sample().has_value());
+  ASSERT_TRUE(child_events[0].stream_info().has_value());
+  EXPECT_EQ(child_events[0].stream_info()->status(), MouseViewStatus::kEntered);
   EXPECT_EQ_POINTER(child_events[0].pointer_sample(), kIdentityMatrix, 0, 0);
 
   // Inject mouse press with button 1.
-  Inject(0, 0, EventPhase::CHANGE, button_vec);
+  Inject(0, 0, EventPhase::kChange, button_vec);
   RunLoopUntil([&child_events] { return child_events.size() == 2u; });
 
   EXPECT_EQ(child_events.size(), 2u);
-  ASSERT_TRUE(child_events[1].has_pointer_sample());
+  ASSERT_TRUE(child_events[1].pointer_sample().has_value());
   EXPECT_EQ_POINTER_WITH_BUTTONS(child_events[1].pointer_sample(), kIdentityMatrix, 0, 0,
                                  button_vec);
 }

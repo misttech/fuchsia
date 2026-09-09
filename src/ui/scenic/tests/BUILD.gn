@@ -90,6 +90,7 @@ source_set("common-deps-zxtest") {
     "utils/scenic_ctf_test_base.h",
     "utils/scenic_ctf_test_environment.cc",
     "utils/scenic_ctf_test_environment.h",
+    "utils/simple_watcher_client.h",
     "utils/utils.cc",
     "utils/utils.h",
   ]
@@ -273,10 +274,11 @@ executable("flatland-touch-integration-test-validator-bin") {
   output_name = "flatland-touch-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_cpp",
+    "//sdk/fidl/fuchsia.ui.pointer.augment:fuchsia.ui.pointer.augment_cpp",
+    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_cpp",
   ]
 }
 
@@ -303,10 +305,12 @@ executable("flatland-mouse-integration-test-validator-bin") {
   output_name = "flatland-mouse-integration-test-validator"
   deps = [
     ":common-deps-zxtest",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_hlcpp",
-    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_hlcpp",
-    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_hlcpp",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_cpp",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
+    "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_cpp",
+    "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp",
+    "//sdk/fidl/fuchsia.ui.views:fuchsia.ui.views_cpp",
     "//src/ui/scenic/lib/utils",
   ]
 }

@@ -6,6 +6,7 @@
 #define SRC_UI_SCENIC_TESTS_UTILS_UTILS_H_
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <fuchsia/ui/composition/cpp/fidl.h>
 #include <fuchsia/ui/input/cpp/fidl.h>
 
@@ -27,6 +28,8 @@ bool CmpFloatingValues(float num1, float num2);
 zx_koid_t ExtractKoid(const zx::object_base& object);
 
 zx_koid_t ExtractKoid(const fuchsia::ui::views::ViewRef& view_ref);
+
+zx_koid_t ExtractKoid(const fuchsia_ui_views::ViewRef& view_ref);
 
 Mat3 ArrayToMat3(std::array<float, 9> array);
 

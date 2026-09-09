@@ -18,6 +18,7 @@
 
 #include "src/ui/scenic/tests/utils/blocking_present.h"
 #include "src/ui/scenic/tests/utils/scenic_ctf_test_base.h"
+#include "src/ui/scenic/tests/utils/simple_watcher_client.h"
 #include "src/ui/scenic/tests/utils/utils.h"
 
 // This test exercises a two node topology and tests the signals propagated between the
@@ -29,23 +30,6 @@ namespace fuv = fuchsia_ui_views;
 
 const fuc::TransformId kTransformId = {{.value = 1}};
 const fuc::ContentId kContentId = {{.value = 1}};
-
-template <typename Protocol>
-class SimpleWatcherClient : public fidl::AsyncEventHandler<Protocol> {
- public:
-  SimpleWatcherClient(fidl::ClientEnd<Protocol> client_end, async_dispatcher_t* dispatcher)
-      : client_(std::move(client_end), dispatcher, this) {}
-
-  void on_fidl_error(fidl::UnbindInfo info) override { is_bound_ = false; }
-
-  bool is_bound() const { return is_bound_ && client_.is_valid(); }
-  fidl::Client<Protocol>& operator->() { return client_; }
-  fidl::Client<Protocol>& client() { return client_; }
-
- private:
-  bool is_bound_ = true;
-  fidl::Client<Protocol> client_;
-};
 
 // Test fixture that sets up an environment with a Scenic we can connect to.
 class FlatlandViewIntegrationTest : public ScenicCtfTest {
