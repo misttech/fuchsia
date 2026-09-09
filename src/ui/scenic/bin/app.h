@@ -52,7 +52,7 @@ class DisplayInfoDelegate {
  public:
   explicit DisplayInfoDelegate(std::shared_ptr<display::Display> display);
 
-  fuchsia::math::SizeU GetDisplayDimensions();
+  fuchsia_math::SizeU GetDisplayDimensions();
 
  private:
   std::shared_ptr<display::Display> display_ = nullptr;

@@ -5,7 +5,6 @@
 #include "src/ui/scenic/lib/flatland/buffers/util.h"
 
 #include <fidl/fuchsia.images2/cpp/fidl.h>
-#include <fidl/fuchsia.images2/cpp/hlcpp_conversion.h>
 
 namespace flatland {
 
@@ -126,19 +125,25 @@ fuchsia::sysmem2::BufferCollectionSyncPtr CreateBufferCollectionSyncPtrAndSetCon
 
   auto& image_constraints = constraints.mutable_image_format_constraints()->emplace_back();
 
-  image_constraints.set_pixel_format(fidl::NaturalToHLCPP(pixel_format));
-
   if (pixel_format_modifier.has_value()) {
     image_constraints.set_pixel_format_modifier(*pixel_format_modifier);
   }
 
   switch (pixel_format) {
     case fuchsia_images2::PixelFormat::kB8G8R8A8:
+      image_constraints.set_pixel_format(fuchsia::images2::PixelFormat::B8G8R8A8);
+      image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::SRGB);
+      break;
     case fuchsia_images2::PixelFormat::kR8G8B8A8:
+      image_constraints.set_pixel_format(fuchsia::images2::PixelFormat::R8G8B8A8);
       image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::SRGB);
       break;
     case fuchsia_images2::PixelFormat::kI420:
+      image_constraints.set_pixel_format(fuchsia::images2::PixelFormat::I420);
+      image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::REC709);
+      break;
     case fuchsia_images2::PixelFormat::kNv12:
+      image_constraints.set_pixel_format(fuchsia::images2::PixelFormat::NV12);
       image_constraints.mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::REC709);
       break;
     default:
@@ -170,6 +175,22 @@ zx_vm_option_t HostPointerAccessModeToVmoOptions(HostPointerAccessMode host_poin
 }
 
 }  // namespace
+
+void MapHostPointer(const fuchsia_sysmem2::BufferCollectionInfo& collection_info, uint32_t vmo_idx,
+                    HostPointerAccessMode host_pointer_access_mode,
+                    std::function<void(uint8_t*, uint32_t)> callback) {
+  if (vmo_idx >= collection_info.buffers().value().size()) {
+    callback(nullptr, 0);
+    return;
+  }
+
+  auto vmo_bytes =
+      collection_info.settings().value().buffer_settings().value().size_bytes().value();
+  FX_DCHECK(vmo_bytes > 0);
+
+  MapHostPointer(*collection_info.buffers().value()[vmo_idx].vmo(), host_pointer_access_mode,
+                 callback, vmo_bytes);
+}
 
 void MapHostPointer(const fuchsia::sysmem2::BufferCollectionInfo& collection_info, uint32_t vmo_idx,
                     HostPointerAccessMode host_pointer_access_mode,

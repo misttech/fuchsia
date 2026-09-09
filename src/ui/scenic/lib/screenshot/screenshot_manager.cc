@@ -17,7 +17,7 @@ ScreenshotManager::ScreenshotManager(
     sys::ComponentContext* app_context, std::shared_ptr<allocation::Allocator> allocator,
     std::shared_ptr<flatland::Renderer> renderer, GetRenderables get_renderables,
     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> buffer_collection_importers,
-    fuchsia::math::SizeU display_size, int display_rotation)
+    fuchsia_math::SizeU display_size, int display_rotation)
     : app_context_(app_context),
       allocator_(std::move(allocator)),
       renderer_(std::move(renderer)),

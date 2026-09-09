@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/sysmem/cpp/fidl.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/syslog/cpp/macros.h>
@@ -24,7 +25,7 @@
 namespace screen_capture::test {
 
 using allocation::BufferCollectionUsage;
-using fuchsia::images2::PixelFormat;
+using fuchsia_images2::PixelFormat;
 
 class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
  public:
@@ -35,8 +36,8 @@ class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
         utils::CreateSysmemAllocatorClient(loop_.dispatcher(), "SCBCTest::Setup"), renderer_);
   }
 
-  fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints(
-      fuchsia::sysmem2::BufferCollectionConstraints constraints,
+  fuchsia_sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints(
+      fuchsia_sysmem2::BufferCollectionConstraints constraints,
       allocation::GlobalBufferCollectionId collection_id) {
     fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator =
         utils::CreateSysmemAllocatorClient(loop_.dispatcher(), "CreateBCInfo2WithConstraints");
@@ -50,29 +51,30 @@ class ScreenCaptureBufferCollectionTest : public flatland::RendererTest {
                                           BufferCollectionUsage::kRenderTarget, std::nullopt);
     EXPECT_TRUE(RunPromise(std::move(promise)));
 
-    fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
-    fidl::Arena arena;
-    fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
-        fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-            .token(std::move(local_token))
-            .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-                buffer_collection.NewRequest().TakeChannel()))
-            .Build());
-    EXPECT_TRUE(result.ok());
+    fidl::SyncClient<fuchsia_sysmem2::BufferCollection> buffer_collection;
+    {
+      auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+      fidl::Arena arena;
+      fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
+          fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
+              .token(std::move(local_token))
+              .buffer_collection_request(std::move(server_end))
+              .Build());
+      EXPECT_TRUE(result.ok());
+      buffer_collection.Bind(std::move(client_end));
+    }
 
-    fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
-    set_constraints_request.set_constraints(std::move(constraints));
-    zx_status_t status = buffer_collection->SetConstraints(std::move(set_constraints_request));
-    EXPECT_EQ(status, ZX_OK);
+    fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+    set_constraints_request.constraints(std::move(constraints));
+    auto set_status = buffer_collection->SetConstraints(std::move(set_constraints_request));
+    EXPECT_TRUE(set_status.is_ok());
 
     // Wait for allocation.
-    fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-    status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-    EXPECT_EQ(status, ZX_OK);
-    EXPECT_TRUE(wait_result.is_response());
-    status = buffer_collection->Release();
-    EXPECT_EQ(status, ZX_OK);
-    return std::move(*wait_result.response().mutable_buffer_collection_info());
+    auto wait_result = buffer_collection->WaitForAllBuffersAllocated();
+    EXPECT_TRUE(wait_result.is_ok());
+    auto release_status = buffer_collection->Release();
+    EXPECT_TRUE(release_status.is_ok());
+    return std::move(wait_result.value().buffer_collection_info().value());
   }
 
  protected:
@@ -105,7 +107,7 @@ class ScreenCaptureBCTestParameterized : public ScreenCaptureBufferCollectionTes
 // multiple framebuffer formats, so we allow only BGRA framebuffers.  This is supported by all
 // current platforms, including the emulator.
 INSTANTIATE_TEST_SUITE_P(, ScreenCaptureBCTestParameterized,
-                         testing::Values(PixelFormat::B8G8R8A8));
+                         testing::Values(PixelFormat::kB8G8R8A8));
 
 VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportAndReleaseBufferCollection) {
   // Create Sysmem tokens.
@@ -133,9 +135,8 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, ImportBufferImage) {
   const uint32_t kWidth = 32;
   const uint32_t kHeight = 32;
   const uint32_t buffer_count = 2;
-  fuchsia::sysmem2::BufferCollectionConstraints constraints =
-      utils::CreateDefaultConstraints(buffer_count, kWidth, kHeight);
-  constraints.mutable_image_format_constraints()->at(0).set_pixel_format(pixel_format);
+  fuchsia_sysmem2::BufferCollectionConstraints constraints =
+      utils::CreateDefaultConstraints(buffer_count, kWidth, kHeight, pixel_format);
 
   CreateBufferCollectionInfoWithConstraints(std::move(constraints), collection_id);
   // Extract image into the first Session.
@@ -161,11 +162,10 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, GetBufferCountFromCollectionId) {
   const uint32_t kWidth = 32;
   const uint32_t kHeight = 32;
   const uint32_t buffer_count = 2;
-  fuchsia::sysmem2::BufferCollectionConstraints constraints =
-      utils::CreateDefaultConstraints(buffer_count, kWidth, kHeight);
-  constraints.mutable_image_format_constraints()->at(0).set_pixel_format(pixel_format);
+  fuchsia_sysmem2::BufferCollectionConstraints constraints =
+      utils::CreateDefaultConstraints(buffer_count, kWidth, kHeight, pixel_format);
 
-  fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info =
+  fuchsia_sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(std::move(constraints), collection_id);
 
   std::optional<uint32_t> info = importer_->GetBufferCollectionBufferCount(collection_id);
@@ -183,36 +183,34 @@ VK_TEST_F(ScreenCaptureBufferCollectionTest, ImportBufferCollection_ErrorCases) 
 
   const auto collection_id = allocation::GenerateUniqueBufferCollectionId();
 
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr token1;
   {
+    auto [token_client, token_server] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
     fidl::Arena arena;
     fidl::OneWayStatus result = sysmem_allocator->AllocateSharedCollection(
         fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
-            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                token1.NewRequest().TakeChannel()))
+            .token_request(std::move(token_server))
             .Build());
     EXPECT_TRUE(result.ok());
-    auto promise = importer_->ImportBufferCollection(
-        collection_id, sysmem_allocator,
-        fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token1.Unbind().TakeChannel()),
-        BufferCollectionUsage::kRenderTarget, std::nullopt);
+    auto promise =
+        importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(token_client),
+                                          BufferCollectionUsage::kRenderTarget, std::nullopt);
     EXPECT_TRUE(RunPromise(std::move(promise)));
   }
 
   // Buffer collection id dup.
   {
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr token2;
+    auto [token_client, token_server] =
+        fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
     fidl::Arena arena;
     fidl::OneWayStatus result = sysmem_allocator->AllocateSharedCollection(
         fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
-            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                token2.NewRequest().TakeChannel()))
+            .token_request(std::move(token_server))
             .Build());
     EXPECT_TRUE(result.ok());
-    auto promise = importer_->ImportBufferCollection(
-        collection_id, sysmem_allocator,
-        fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(token2.Unbind().TakeChannel()),
-        BufferCollectionUsage::kRenderTarget, std::nullopt);
+    auto promise =
+        importer_->ImportBufferCollection(collection_id, sysmem_allocator, std::move(token_client),
+                                          BufferCollectionUsage::kRenderTarget, std::nullopt);
     EXPECT_FALSE(RunPromise(std::move(promise)));
   }
 }
@@ -224,11 +222,10 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, ImportBufferImage_ErrorCases) {
   const uint32_t kWidth = 32;
   const uint32_t kHeight = 32;
   const uint32_t buffer_count = 2;
-  fuchsia::sysmem2::BufferCollectionConstraints constraints =
-      utils::CreateDefaultConstraints(buffer_count, kWidth, kHeight);
-  constraints.mutable_image_format_constraints()->at(0).set_pixel_format(pixel_format);
+  fuchsia_sysmem2::BufferCollectionConstraints constraints =
+      utils::CreateDefaultConstraints(buffer_count, kWidth, kHeight, pixel_format);
 
-  fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info =
+  fuchsia_sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(std::move(constraints), collection_id);
 
   // Buffer collection id mismatch.
@@ -279,11 +276,10 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, GetBufferCollectionBufferCount_Error
   const uint32_t kWidth = 32;
   const uint32_t kHeight = 32;
   const uint32_t buffer_count = 2;
-  fuchsia::sysmem2::BufferCollectionConstraints constraints =
-      utils::CreateDefaultConstraints(buffer_count, kWidth, kHeight);
-  constraints.mutable_image_format_constraints()->at(0).set_pixel_format(pixel_format);
+  fuchsia_sysmem2::BufferCollectionConstraints constraints =
+      utils::CreateDefaultConstraints(buffer_count, kWidth, kHeight, pixel_format);
 
-  fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info =
+  fuchsia_sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(std::move(constraints), collection_id);
 
   // collection_id does not exist
@@ -309,13 +305,12 @@ VK_TEST_P(ScreenCaptureBCTestParameterized, GetBufferCollectionBufferCount_Buffe
                                         BufferCollectionUsage::kRenderTarget, std::nullopt);
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
-  fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
           .token(std::move(local_token))
-          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-              buffer_collection.NewRequest().TakeChannel()))
+          .buffer_collection_request(std::move(server_end))
           .Build());
   EXPECT_TRUE(result.ok());
 

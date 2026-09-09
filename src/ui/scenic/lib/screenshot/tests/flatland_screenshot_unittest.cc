@@ -113,7 +113,7 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
 
     // We have what we need to make the flatland screenshot client.
 
-    fuchsia::math::SizeU display_size = {.width = kDisplayWidth, .height = kDisplayHeight};
+    fuchsia_math::SizeU display_size{{.width = kDisplayWidth, .height = kDisplayHeight}};
 
     flatland_screenshotter_ = std::make_unique<screenshot::FlatlandScreenshot>(
         context_provider_.context(), dispatcher(), std::move(screen_capturer_), flatland_allocator_,

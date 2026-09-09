@@ -35,10 +35,10 @@ std::shared_ptr<Allocator> CreateAllocator(
 }
 
 void CreateBufferCollectionInfoWithConstraints(
-    fuchsia::sysmem2::BufferCollectionConstraints constraints,
+    fuchsia_sysmem2::BufferCollectionConstraints constraints,
     fuchsia_ui_composition::BufferCollectionExportToken export_token,
     std::shared_ptr<Allocator> flatland_allocator,
-    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
+    fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator, async_dispatcher_t* dispatcher,
     fit::function<void(fit::function<bool()>)> run_loop_until) {
   // Create Sysmem tokens.
   auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator);
@@ -48,19 +48,23 @@ void CreateBufferCollectionInfoWithConstraints(
   rbc_args.buffer_collection_token2(std::move(dup_token));
   rbc_args.usages(fuchsia_ui_composition::RegisterBufferCollectionUsages::kScreenshot);
 
-  fuchsia::sysmem2::BufferCollectionPtr buffer_collection;
+  auto [collection_client_end, collection_server_end] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+  fidl::Client<fuchsia_sysmem2::BufferCollection> buffer_collection(
+      std::move(collection_client_end), dispatcher);
+
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
           .token(std::move(local_token))
-          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-              buffer_collection.NewRequest().TakeChannel()))
+          .buffer_collection_request(std::move(collection_server_end))
           .Build());
   FX_DCHECK(result.ok());
 
-  fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
-  set_constraints_request.set_constraints(std::move(constraints));
-  buffer_collection->SetConstraints(std::move(set_constraints_request));
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints(std::move(constraints));
+  auto set_res = buffer_collection->SetConstraints(std::move(set_constraints_request));
+  FX_DCHECK(set_res.is_ok());
 
   bool processed_callback = false;
   flatland_allocator->RegisterBufferCollection(std::move(rbc_args),
@@ -70,13 +74,14 @@ void CreateBufferCollectionInfoWithConstraints(
                                                });
 
   // Wait for allocation and registration.
-  fuchsia::sysmem2::BufferCollectionInfo buffer_collection_info;
+  fuchsia_sysmem2::BufferCollectionInfo buffer_collection_info;
   bool allocation_complete = false;
-  buffer_collection->WaitForAllBuffersAllocated(
+  buffer_collection->WaitForAllBuffersAllocated().Then(
       [&allocation_complete, &buffer_collection_info](
-          fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result result) {
-        ASSERT_TRUE(result.is_response());
-        buffer_collection_info = std::move(*result.response().mutable_buffer_collection_info());
+          fidl::Result<fuchsia_sysmem2::BufferCollection::WaitForAllBuffersAllocated>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->buffer_collection_info().has_value());
+        buffer_collection_info = std::move(result->buffer_collection_info().value());
         allocation_complete = true;
       });
 
@@ -84,7 +89,8 @@ void CreateBufferCollectionInfoWithConstraints(
 
   ASSERT_TRUE(processed_callback);
   ASSERT_TRUE(allocation_complete);
-  buffer_collection->Release();
+  auto release_res = buffer_collection->Release();
+  FX_DCHECK(release_res.is_ok());
 }
 
 }  // namespace test

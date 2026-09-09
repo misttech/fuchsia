@@ -5,7 +5,6 @@
 #include "src/ui/scenic/lib/allocation/allocator.h"
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <lib/fpromise/promise.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/syslog/cpp/macros.h>
@@ -93,7 +92,9 @@ class AllocatorTest : public gtest::RealLoopFixture {
 
   fidl::ClientEnd<fuchsia_ui_composition::Allocator> ConnectToAllocator() {
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_composition::Allocator>::Create();
-    context_provider_.ConnectToPublicService(fidl::NaturalToHLCPP(std::move(server_end)));
+    context_provider_.public_service_directory()->Connect(
+        fidl::DiscoverableProtocolName<fuchsia_ui_composition::Allocator>,
+        server_end.TakeChannel());
     return std::move(client_end);
   }
 

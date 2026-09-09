@@ -4,7 +4,6 @@
 
 #include "src/ui/scenic/lib/screenshot/flatland_screenshot.h"
 
-#include <fuchsia/images2/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
 #include <lib/syslog/cpp/macros.h>
@@ -35,14 +34,14 @@ namespace {
 constexpr uint32_t kBufferIndex = 0;
 constexpr auto kBytesPerPixel = 4;
 
-fuchsia::images2::PixelFormat CompositionToImages2Format(ScreenshotFormat format) {
+fuchsia_images2::PixelFormat CompositionToImages2Format(ScreenshotFormat format) {
   switch (format) {
     case ScreenshotFormat::kBgraRaw:
-      return fuchsia::images2::PixelFormat::B8G8R8A8;
+      return fuchsia_images2::PixelFormat::kB8G8R8A8;
     case ScreenshotFormat::kRgbaRaw:
-      return fuchsia::images2::PixelFormat::R8G8B8A8;
+      return fuchsia_images2::PixelFormat::kR8G8B8A8;
     default:
-      return fuchsia::images2::PixelFormat::INVALID;
+      return fuchsia_images2::PixelFormat::kInvalid;
   }
 }
 
@@ -53,9 +52,10 @@ namespace screenshot {
 FlatlandScreenshot::FlatlandScreenshot(
     sys::ComponentContext* app_context, async_dispatcher_t* dispatcher,
     std::unique_ptr<ScreenCapture> screen_capturer, std::shared_ptr<Allocator> allocator,
-    fuchsia::math::SizeU display_size, int display_rotation,
+    fuchsia_math::SizeU display_size, int display_rotation,
     fit::function<void(FlatlandScreenshot*)> destroy_instance_function)
     : app_context_(app_context),
+      dispatcher_(dispatcher),
       screen_capturer_(std::move(screen_capturer)),
       flatland_allocator_(allocator),
       display_size_(display_size),
@@ -68,8 +68,8 @@ FlatlandScreenshot::FlatlandScreenshot(
   FX_DCHECK(screen_capturer_);
   FX_DCHECK(flatland_allocator_);
   FX_DCHECK(sysmem_allocator_.is_valid());
-  FX_DCHECK(display_size_.width);
-  FX_DCHECK(display_size_.height);
+  FX_DCHECK(display_size_.width());
+  FX_DCHECK(display_size_.height());
   FX_DCHECK(destroy_instance_function_);
 
   // Create event and wait for initialization purposes.
@@ -78,7 +78,7 @@ FlatlandScreenshot::FlatlandScreenshot(
   init_wait_ = std::make_shared<async::WaitOnce>(init_event_.get(), ZX_EVENT_SIGNALED);
 
   if (display_rotation_ == 90 || display_rotation_ == 270) {
-    std::swap(display_size_.width, display_size_.height);
+    std::swap(display_size_.width(), display_size_.height());
   }
 }
 
@@ -88,55 +88,60 @@ void FlatlandScreenshot::AllocateBuffers() {
       allocation::cpp::BufferCollectionImportExportTokens::New();
 
   // Create sysmem tokens.
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
+  auto [local_token_client, local_token_server] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator_->AllocateSharedCollection(
       fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
-          .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
-              local_token.NewRequest().TakeChannel()))
+          .token_request(std::move(local_token_server))
           .Build());
   FX_DCHECK(result.ok());
-  fuchsia::sysmem2::BufferCollectionTokenSyncPtr dup_token;
-  fuchsia::sysmem2::BufferCollectionTokenDuplicateRequest dup_request;
-  dup_request.set_rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS);
-  dup_request.set_token_request(dup_token.NewRequest());
-  zx_status_t status = local_token->Duplicate(std::move(dup_request));
-  FX_DCHECK(status == ZX_OK);
-  fuchsia::sysmem2::Node_Sync_Result sync_result;
-  status = local_token->Sync(&sync_result);
-  FX_DCHECK(status == ZX_OK);
-  FX_DCHECK(sync_result.is_response());
 
-  fuchsia::sysmem2::BufferCollectionPtr buffer_collection;
+  auto [dup_token_client, dup_token_server] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollectionToken>::Create();
+  result =
+      fidl::WireCall(local_token_client)
+          ->Duplicate(fuchsia_sysmem2::wire::BufferCollectionTokenDuplicateRequest::Builder(arena)
+                          .rights_attenuation_mask(ZX_RIGHT_SAME_RIGHTS)
+                          .token_request(std::move(dup_token_server))
+                          .Build());
+  FX_DCHECK(result.ok());
+  auto sync_result = fidl::WireCall(local_token_client)->Sync();
+  FX_DCHECK(sync_result.ok());
+
+  auto [bc_client, bc_server] = fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
   result = sysmem_allocator_->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
-          .token(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-              local_token.Unbind().TakeChannel()))
-          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-              buffer_collection.NewRequest().TakeChannel()))
+          .token(std::move(local_token_client))
+          .buffer_collection_request(std::move(bc_server))
           .Build());
   FX_DCHECK(result.ok());
 
+  auto buffer_collection = std::make_shared<fidl::Client<fuchsia_sysmem2::BufferCollection>>(
+      std::move(bc_client), dispatcher_);
+
   // We only need 1 buffer since it gets reused on every Take() call.
-  fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
   // Inform sysmem of the exact dimensions to prevent wasted memory from sysmem padding for
   // lavapipe block size.
   constexpr bool kSetMinMaxSize = true;
-  set_constraints_request.set_constraints(
-      utils::CreateDefaultConstraints(/*buffer_count=*/1, display_size_.width, display_size_.height,
-                                      CompositionToImages2Format(raw_format_), kSetMinMaxSize));
-  buffer_collection->SetConstraints(std::move(set_constraints_request));
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
+  set_constraints_request.constraints(utils::CreateDefaultConstraints(
+      /*buffer_count=*/1, display_size_.width(), display_size_.height(),
+      CompositionToImages2Format(raw_format_), kSetMinMaxSize));
+  auto set_constraints_status =
+      (*buffer_collection)->SetConstraints(std::move(set_constraints_request));
+  FX_DCHECK(set_constraints_status.is_ok());
 
-  fuchsia::sysmem2::NodeSetNameRequest set_name_request;
-  set_name_request.set_priority(11u);
-  set_name_request.set_name("FlatlandScreenshotMemory");
-  buffer_collection->SetName(std::move(set_name_request));
+  fuchsia_sysmem2::NodeSetNameRequest set_name_request;
+  set_name_request.priority(11u);
+  set_name_request.name("FlatlandScreenshotMemory");
+  auto set_name_status = (*buffer_collection)->SetName(std::move(set_name_request));
+  FX_DCHECK(set_name_status.is_ok());
 
   // Initialize Flatland allocator state.
   fuchsia_ui_composition::RegisterBufferCollectionArgs args;
   args.export_token(std::move(ref_pair.export_token));
-  args.buffer_collection_token2(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
-      std::move(dup_token).Unbind().TakeChannel()));
+  args.buffer_collection_token2(std::move(dup_token_client));
   args.usages(fuchsia_ui_composition::RegisterBufferCollectionUsages::kScreenshot);
 
   flatland_allocator_->RegisterBufferCollection(std::move(args),
@@ -145,7 +150,7 @@ void FlatlandScreenshot::AllocateBuffers() {
   ScreenCaptureConfig sc_args;
   sc_args.import_token(std::move(ref_pair.import_token));
   sc_args.buffer_count(1);
-  sc_args.size(fuchsia_math::SizeU{display_size_.width, display_size_.height});
+  sc_args.size(display_size_);
 
   switch (display_rotation_) {
     case 0:
@@ -168,19 +173,19 @@ void FlatlandScreenshot::AllocateBuffers() {
       FX_LOGS(ERROR) << "Invalid display rotation value: " << display_rotation_;
   }
 
-  buffer_collection->WaitForAllBuffersAllocated(
-      [weak_ptr = weak_factory_.GetWeakPtr(), buffer_collection = std::move(buffer_collection),
-       sc_args =
-           std::move(sc_args)](fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result
-                                   wait_result) mutable {
+  (*buffer_collection)
+      ->WaitForAllBuffersAllocated()
+      .Then([weak_ptr = weak_factory_.GetWeakPtr(), buffer_collection,
+             sc_args = std::move(sc_args)](auto& wait_result) mutable {
         if (!weak_ptr) {
           return;
         }
-        FX_DCHECK(wait_result.is_response());
+        FX_DCHECK(wait_result.is_ok());
         weak_ptr->buffer_collection_info_.insert(
             {weak_ptr->raw_format_,
-             std::move(*wait_result.response().mutable_buffer_collection_info())});
-        buffer_collection->Release();
+             std::move(wait_result.value().buffer_collection_info().value())});
+        auto release_status = (*buffer_collection)->Release();
+        FX_DCHECK(release_status.is_ok());
 
         weak_ptr->screen_capturer_->Configure(std::move(sc_args),
                                               [weak_ptr = std::move(weak_ptr)](auto result) {
@@ -266,16 +271,15 @@ void FlatlandScreenshot::Take(fuchsia_ui_composition::ScreenshotTakeRequest para
           zx::vmo response_vmo;
           zx::vmo response_vmo_copy;
           const auto response_vmo_size =
-              (static_cast<uint64_t>(display_size_.width) *
-               static_cast<uint64_t>(display_size_.height) * kBytesPerPixel) +
+              (static_cast<uint64_t>(display_size_.width()) *
+               static_cast<uint64_t>(display_size_.height()) * kBytesPerPixel) +
               zx_system_get_page_size();
           FX_CHECK(zx::vmo::create(response_vmo_size, ZX_VMO_RESIZABLE, &response_vmo) == ZX_OK);
           FX_CHECK(response_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &response_vmo_copy) == ZX_OK);
 
           fuchsia_ui_compression_internal::ImageCompressorEncodePngRequest request;
           request.raw_vmo() = std::move(raw_vmo);
-          request.image_dimensions() =
-              fuchsia_math::SizeU(display_size_.width, display_size_.height);
+          request.image_dimensions(display_size_);
           request.png_vmo() = std::move(response_vmo);
 
           client_->EncodePng(std::move(request))
@@ -306,7 +310,7 @@ void FlatlandScreenshot::Take(fuchsia_ui_composition::ScreenshotTakeRequest para
 void FlatlandScreenshot::FinishTake(zx::vmo response_vmo) {
   ScreenshotTakeResponse response;
   response.vmo(std::move(response_vmo));
-  response.size(fuchsia_math::SizeU{display_size_.width, display_size_.height});
+  response.size(display_size_);
   take_callback_(std::move(response));
 
   take_callback_ = nullptr;
@@ -326,27 +330,33 @@ zx::vmo FlatlandScreenshot::HandleFrameRender() {
   // padding when copying the bytes over to be inspected.
 
   FX_DCHECK(kBytesPerPixel ==
-            utils::GetBytesPerPixel(buffer_collection_info_[raw_format_].settings()));
-  const uint32_t pixels_per_row =
-      utils::GetPixelsPerRow(buffer_collection_info_[raw_format_].settings(), display_size_.width);
+            utils::GetBytesPerPixel(buffer_collection_info_[raw_format_].settings().value()));
+  const uint32_t pixels_per_row = utils::GetPixelsPerRow(
+      buffer_collection_info_[raw_format_].settings().value(), display_size_.width());
   uint32_t bytes_per_row = pixels_per_row * kBytesPerPixel;
-  uint32_t valid_bytes_per_row = display_size_.width * kBytesPerPixel;
+  uint32_t valid_bytes_per_row = display_size_.width() * kBytesPerPixel;
 
   // SL4Fs requires vmo to be readable for transfer, so we need to copy into a new one.
   std::vector<uint8_t> buf(4, 0);
   const bool vmo_is_readable =
-      (buffer_collection_info_[raw_format_].buffers()[kBufferIndex].vmo().read(buf.data(), 0, 1) ==
-       ZX_OK);
+      (buffer_collection_info_[raw_format_].buffers().value()[kBufferIndex].vmo()->read(
+           buf.data(), 0, 1) == ZX_OK);
   zx::vmo response_vmo;
   if (vmo_is_readable && bytes_per_row == valid_bytes_per_row) {
     // Do not need to map the buffer in this case so cannot use zx_cache_flush on the mapping.
     // Attempt to use the ZX_VMO_OP_CACHE_CLEAN_INVALIDATE, falling back to creating a temporary
     // mapping if the operation fails due to being a physical vmo.
     zx_status_t status =
-        buffer_collection_info_[raw_format_].buffers()[kBufferIndex].vmo().op_range(
+        buffer_collection_info_[raw_format_].buffers().value()[kBufferIndex].vmo()->op_range(
             ZX_VMO_OP_CACHE_CLEAN_INVALIDATE, 0,
-            buffer_collection_info_[raw_format_].settings().buffer_settings().size_bytes(), nullptr,
-            0);
+            buffer_collection_info_[raw_format_]
+                .settings()
+                .value()
+                .buffer_settings()
+                .value()
+                .size_bytes()
+                .value(),
+            nullptr, 0);
     if (status == ZX_ERR_NOT_SUPPORTED) {
       // Receiving ZX_ERR_NOT_SUPPORTED from ZX_VMO_OP_CACHE_CLEAN_INVALIDATE indicates it is a
       // physical VMO that does not support cache operations. In this case map it in to use
@@ -360,12 +370,12 @@ zx::vmo FlatlandScreenshot::HandleFrameRender() {
     } else {
       FX_DCHECK(status == ZX_OK);
     }
-    status = buffer_collection_info_[raw_format_].buffers()[kBufferIndex].vmo().duplicate(
+    status = buffer_collection_info_[raw_format_].buffers().value()[kBufferIndex].vmo()->duplicate(
         ZX_RIGHT_READ | ZX_RIGHT_MAP | ZX_RIGHT_TRANSFER | ZX_RIGHT_GET_PROPERTY, &response_vmo);
     FX_DCHECK(status == ZX_OK);
   } else {
-    const auto response_vmo_size = static_cast<uint64_t>(display_size_.width) *
-                                   static_cast<uint64_t>(display_size_.height) * kBytesPerPixel;
+    const auto response_vmo_size = static_cast<uint64_t>(display_size_.width()) *
+                                   static_cast<uint64_t>(display_size_.height()) * kBytesPerPixel;
     FX_CHECK(ZX_OK == zx::vmo::create(response_vmo_size, 0, &response_vmo));
     uint8_t* response_vmo_base;
     FX_CHECK(ZX_OK == zx::vmar::root_self()->map(ZX_VM_PERM_WRITE | ZX_VM_PERM_READ, 0,
@@ -376,12 +386,13 @@ zx::vmo FlatlandScreenshot::HandleFrameRender() {
         flatland::HostPointerAccessMode::kReadOnly,
         [&response_vmo_base, bytes_per_row, display_size = display_size_, valid_bytes_per_row,
          response_vmo_size](uint8_t* vmo_host, uint32_t num_bytes) {
-          FX_CHECK(ZX_OK == zx_cache_flush(vmo_host,
-                                           static_cast<size_t>(display_size.height) * bytes_per_row,
-                                           ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE));
-          for (size_t i = 0; i < display_size.height; ++i) {
-            FX_DCHECK(i * display_size.width * kBytesPerPixel < response_vmo_size);
-            memcpy(&response_vmo_base[i * display_size.width * kBytesPerPixel],
+          FX_CHECK(ZX_OK ==
+                   zx_cache_flush(vmo_host,
+                                  static_cast<size_t>(display_size.height()) * bytes_per_row,
+                                  ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE));
+          for (size_t i = 0; i < display_size.height(); ++i) {
+            FX_DCHECK(i * display_size.width() * kBytesPerPixel < response_vmo_size);
+            memcpy(&response_vmo_base[i * display_size.width() * kBytesPerPixel],
                    &vmo_host[i * bytes_per_row], valid_bytes_per_row);
           }
         });
@@ -484,16 +495,15 @@ void FlatlandScreenshot::TakeFile(fuchsia_ui_composition::ScreenshotTakeFileRequ
           // Make |resonpnse_vmo| large enough to hold any potential PNG encoding of |raw_vmo|.
           // Once compression is complete |resonpnse_vmo| gets resized back down.
           const auto response_vmo_size =
-              (static_cast<uint64_t>(display_size_.width) *
-               static_cast<uint64_t>(display_size_.height) * kBytesPerPixel) +
+              (static_cast<uint64_t>(display_size_.width()) *
+               static_cast<uint64_t>(display_size_.height()) * kBytesPerPixel) +
               zx_system_get_page_size();
           FX_CHECK(zx::vmo::create(response_vmo_size, ZX_VMO_RESIZABLE, &response_vmo) == ZX_OK);
           FX_CHECK(response_vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &response_vmo_copy) == ZX_OK);
 
           fuchsia_ui_compression_internal::ImageCompressorEncodePngRequest request;
           request.raw_vmo() = std::move(raw_vmo);
-          request.image_dimensions() =
-              fuchsia_math::SizeU(display_size_.width, display_size_.height);
+          request.image_dimensions(display_size_);
           request.png_vmo() = std::move(response_vmo);
 
           client_->EncodePng(std::move(request))
@@ -528,7 +538,7 @@ void FlatlandScreenshot::FinishTakeFile(zx::vmo response_vmo) {
   if (ServeScreenshot(std::move(file_server), std::move(response_vmo), screenshot_index,
                       &served_screenshots_)) {
     response.file() = std::move(file_client);
-    response.size() = {display_size_.width, display_size_.height};
+    response.size(display_size_);
   }
   take_file_callback_(std::move(response));
   take_file_callback_ = nullptr;

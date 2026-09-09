@@ -140,31 +140,6 @@ fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClientWithSvc(
   return allocator;
 }
 
-fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
-    uint32_t buffer_count, uint32_t width, uint32_t height, fuchsia::images2::PixelFormat format,
-    bool set_min_max_size) {
-  fuchsia::sysmem2::BufferCollectionConstraints constraints;
-  constraints.mutable_buffer_memory_constraints()->set_cpu_domain_supported(true);
-  constraints.mutable_buffer_memory_constraints()->set_ram_domain_supported(true);
-  constraints.mutable_usage()->set_cpu(fuchsia::sysmem2::CPU_USAGE_READ_OFTEN |
-                                       fuchsia::sysmem2::CPU_USAGE_WRITE_OFTEN);
-  constraints.set_min_buffer_count(buffer_count);
-
-  auto& image_constraints = constraints.mutable_image_format_constraints()->emplace_back();
-  image_constraints.mutable_color_spaces()->push_back(fuchsia::images2::ColorSpace::SRGB);
-  image_constraints.set_pixel_format(format);
-  image_constraints.set_pixel_format_modifier(fuchsia::images2::PixelFormatModifier::LINEAR);
-
-  image_constraints.set_required_min_size({.width = width, .height = height});
-  image_constraints.set_required_max_size({.width = width, .height = height});
-  if (set_min_max_size) {
-    image_constraints.set_min_size({.width = width, .height = height});
-    image_constraints.set_max_size({.width = width, .height = height});
-  }
-  image_constraints.set_bytes_per_row_divisor(4);
-  return constraints;
-}
-
 fuchsia_sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
     uint32_t buffer_count, uint32_t width, uint32_t height, fuchsia_images2::PixelFormat format,
     bool set_min_max_size) {

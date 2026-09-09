@@ -130,12 +130,9 @@ fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClientWithSvc(
     const std::string& debug_name_suffix = std::string());
 
 // Creates default constraints for |buffer_collection|
-fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
-    uint32_t buffer_count, uint32_t width, uint32_t height,
-    fuchsia::images2::PixelFormat format = fuchsia::images2::PixelFormat::B8G8R8A8,
-    bool set_min_max_size = false);
 fuchsia_sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
-    uint32_t buffer_count, uint32_t width, uint32_t height, fuchsia_images2::PixelFormat format,
+    uint32_t buffer_count, uint32_t width, uint32_t height,
+    fuchsia_images2::PixelFormat format = fuchsia_images2::PixelFormat::kB8G8R8A8,
     bool set_min_max_size = false);
 
 void PrettyPrintMat3(std::string, const std::array<float, 9>& mat3);

@@ -184,7 +184,7 @@ DisplayInfoDelegate::DisplayInfoDelegate(std::shared_ptr<display::Display> displ
   FX_CHECK(display_);
 }
 
-fuchsia::math::SizeU DisplayInfoDelegate::GetDisplayDimensions() {
+fuchsia_math::SizeU DisplayInfoDelegate::GetDisplayDimensions() {
   return {display_->width_in_px(), display_->height_in_px()};
 }
 

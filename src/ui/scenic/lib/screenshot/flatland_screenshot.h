@@ -8,10 +8,9 @@
 #include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #include <fidl/fuchsia.math/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.compression.internal/cpp/fidl.h>
-#include <fuchsia/images2/cpp/fidl.h>
-#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/sys/cpp/component_context.h>
 
 #include <map>
@@ -38,7 +37,7 @@ class FlatlandScreenshot : public fidl::Server<fuchsia_ui_composition::Screensho
  public:
   FlatlandScreenshot(sys::ComponentContext* app_context, async_dispatcher_t* dispatcher,
                      std::unique_ptr<ScreenCapture> screen_capturer,
-                     std::shared_ptr<Allocator> allocator, fuchsia::math::SizeU display_size,
+                     std::shared_ptr<Allocator> allocator, fuchsia_math::SizeU display_size,
                      int display_rotation,
                      fit::function<void(FlatlandScreenshot*)> destroy_instance_function);
   ~FlatlandScreenshot() override = default;
@@ -74,11 +73,12 @@ class FlatlandScreenshot : public fidl::Server<fuchsia_ui_composition::Screensho
   void MaybeConnectToImageCompressor();
 
   sys::ComponentContext* app_context_;
+  async_dispatcher_t* dispatcher_ = nullptr;
 
   std::unique_ptr<screen_capture::ScreenCapture> screen_capturer_;
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
   std::shared_ptr<Allocator> flatland_allocator_;
-  fuchsia::math::SizeU display_size_;
+  fuchsia_math::SizeU display_size_;
 
   // Angle in degrees by which the display is rotated in the clockwise direction.
   int display_rotation_ = 0;
@@ -90,7 +90,7 @@ class FlatlandScreenshot : public fidl::Server<fuchsia_ui_composition::Screensho
 
   // Maps buffer collections where the display can be rendered into, based on preferred pixel
   // format.
-  std::map<fuchsia_ui_composition::ScreenshotFormat, fuchsia::sysmem2::BufferCollectionInfo>
+  std::map<fuchsia_ui_composition::ScreenshotFormat, fuchsia_sysmem2::BufferCollectionInfo>
       buffer_collection_info_;
 
   fidl::Client<fuchsia_ui_compression_internal::ImageCompressor> client_;

@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_BUFFERS_UTIL_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_BUFFERS_UTIL_H_
 
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
 #include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -93,6 +94,9 @@ enum class HostPointerAccessMode : uint32_t {
 // number of bytes. If an out of bounds vmo_idx is provided, the callback function will call the
 // user callback with mapped_ptr equal to nullptr. Once the callback function returns, the host
 // pointer is unmapped and so cannot continue to be used outside of the scope of the callback.
+void MapHostPointer(const fuchsia_sysmem2::BufferCollectionInfo& collection_info, uint32_t vmo_idx,
+                    HostPointerAccessMode host_pointer_access_mode,
+                    std::function<void(uint8_t* mapped_ptr, uint32_t num_bytes)> callback);
 void MapHostPointer(const fuchsia::sysmem2::BufferCollectionInfo& collection_info, uint32_t vmo_idx,
                     HostPointerAccessMode host_pointer_access_mode,
                     std::function<void(uint8_t* mapped_ptr, uint32_t num_bytes)> callback);

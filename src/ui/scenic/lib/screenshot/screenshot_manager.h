@@ -27,7 +27,7 @@ class ScreenshotManager {
                     std::shared_ptr<flatland::Renderer> renderer, GetRenderables get_renderables,
                     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>
                         buffer_collection_importers,
-                    fuchsia::math::SizeU display_size, int display_rotation);
+                    fuchsia_math::SizeU display_size, int display_rotation);
   ~ScreenshotManager() = default;
 
   void CreateBinding(fidl::ServerEnd<fuchsia_ui_composition::Screenshot> request);
@@ -41,7 +41,7 @@ class ScreenshotManager {
   GetRenderables get_renderables_;
   std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> buffer_collection_importers_;
 
-  fuchsia::math::SizeU display_size_;
+  fuchsia_math::SizeU display_size_;
 
   // Angle in degrees by which the display is rotated.
   int display_rotation_ = 0;

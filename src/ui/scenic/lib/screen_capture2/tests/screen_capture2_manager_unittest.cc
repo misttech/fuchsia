@@ -87,7 +87,7 @@ class ScreenCapture2ManagerTest : public gtest::TestLoopFixture {
         CreateAllocator(importer_, context_provider_.context(), dispatcher());
     CreateBufferCollectionInfoWithConstraints(
         utils::CreateDefaultConstraints(buffer_count, image_width, image_height),
-        std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_,
+        std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_, dispatcher(),
         [this](fit::function<bool()> condition) { RunLoopUntil(std::move(condition)); });
 
     fuchsia_ui_composition_internal::ScreenCaptureConfig args;
