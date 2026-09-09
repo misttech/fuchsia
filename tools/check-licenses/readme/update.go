@@ -86,7 +86,6 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 
 	for _, r := range readmes {
 		r.LicenseFiles = nil
-		r.SourceFiles = nil
 		r.GeneratedNoticeFiles = nil
 		r.Licenses = nil
 	}
@@ -158,15 +157,21 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 	}
 
 	for _, r := range readmes {
-		loc := filepath.Clean(r.Location)
-		readmeDir := absDir
-		if loc != "" && loc != "." {
-			readmeDir = filepath.Join(absDir, loc)
+		noticeDir := absDir
+		if r.FilePath != "" {
+			noticeDir = filepath.Dir(r.FilePath)
 		}
-		noticePath := filepath.Join(readmeDir, "NOTICE.fuchsia")
+		if loc := filepath.Clean(r.Location); loc != "" && loc != "." {
+			subDir := filepath.Join(noticeDir, loc)
+			if stat, err := os.Stat(subDir); err == nil && stat.IsDir() {
+				noticeDir = subDir
+			}
+		}
+		noticePath := filepath.Join(noticeDir, "NOTICE.fuchsia")
 
 		if len(readmeSourceFiles[r]) > 0 {
 			content := generateNoticeContent(readmeSourceFiles[r])
+			_ = os.MkdirAll(noticeDir, 0755)
 			if err := os.WriteFile(noticePath, []byte(content), 0644); err == nil {
 				r.GeneratedNoticeFiles = []string{"NOTICE.fuchsia"}
 			}
@@ -177,7 +182,6 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 
 		r.Licenses = deduplicateAndSort(r.Licenses)
 		r.LicenseFiles = deduplicateAndSort(r.LicenseFiles)
-		r.SourceFiles = nil
 		r.GeneratedNoticeFiles = deduplicateAndSort(r.GeneratedNoticeFiles)
 	}
 }

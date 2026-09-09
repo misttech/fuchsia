@@ -49,7 +49,6 @@ type Readme struct {
 	Licenses             []string `readme:"License" separator:","`
 	LicenseFiles         []string `readme:"License File" separator:","`
 	GeneratedNoticeFiles []string `readme:"Generated Notice File" separator:","`
-	SourceFiles          []string `readme:"Source File" separator:","`
 	NonLicenseFiles      []string `readme:"Non-License File" separator:","`
 
 	UnknownFields []UnknownField `readme:"-"`

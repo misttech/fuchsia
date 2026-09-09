@@ -100,9 +100,9 @@ func (v *TargetComplianceVerifier) Run(ctx context.Context, projects []*pipeline
 					}
 				}
 				if expectedEntry == "" {
-					for _, sf := range r.SourceFiles {
-						if filepath.Clean(sf) == relTarget {
-							expectedEntry = sf
+					for _, gnf := range r.GeneratedNoticeFiles {
+						if filepath.Clean(gnf) == relTarget {
+							expectedEntry = gnf
 							break
 						}
 					}
@@ -125,9 +125,9 @@ func (v *TargetComplianceVerifier) Run(ctx context.Context, projects []*pipeline
 					}
 				}
 				if actualEntry == "" {
-					for _, sf := range r.SourceFiles {
-						if filepath.Clean(sf) == relTarget {
-							actualEntry = sf
+					for _, gnf := range r.GeneratedNoticeFiles {
+						if filepath.Clean(gnf) == relTarget {
+							actualEntry = gnf
 							break
 						}
 					}

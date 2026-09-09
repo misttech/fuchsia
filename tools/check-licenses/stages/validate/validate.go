@@ -334,7 +334,7 @@ func (v *Validator) isAllowedLicense(spdxID, relPath, relProjRoot, projectRoot s
 
 func isAllowed(targetMap map[string]map[string]RuleMetadata, key, targetPath string) bool {
 	if list, ok := targetMap[key]; ok {
-		slashPath := filepath.ToSlash(targetPath)
+		slashPath := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(targetPath)), "/")
 		if _, ok := list[slashPath]; ok {
 			metrics.AllowlistHits.Inc(key)
 			return true

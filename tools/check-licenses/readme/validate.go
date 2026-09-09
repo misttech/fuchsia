@@ -67,15 +67,15 @@ func Validate(fuchsiaDir, readmeFilePath string, readmes []*Readme, config Confi
 	return errs
 }
 
-// DeclarationsMatch checks if the LicenseFiles and SourceFiles slices match between two Readme structs.
+// DeclarationsMatch checks if the LicenseFiles and GeneratedNoticeFiles slices match between two Readme structs.
 func DeclarationsMatch(a, b *Readme) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	return compareSlices(a.LicenseFiles, b.LicenseFiles) && compareSlices(a.SourceFiles, b.SourceFiles)
+	return compareSlices(a.LicenseFiles, b.LicenseFiles) && compareSlices(a.GeneratedNoticeFiles, b.GeneratedNoticeFiles)
 }
 
-// DeclarationsMatchAll checks if all corresponding Readme segments in two slices have matching LicenseFiles and SourceFiles.
+// DeclarationsMatchAll checks if all corresponding Readme segments in two slices have matching LicenseFiles and GeneratedNoticeFiles.
 func DeclarationsMatchAll(a, b []*Readme) bool {
 	if len(a) != len(b) {
 		return false

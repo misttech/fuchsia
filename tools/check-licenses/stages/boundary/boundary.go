@@ -103,10 +103,17 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 			}
 		}
 
-		// Incorporate Virtual (Out-Of-Tree) READMEs from Config
+		// Incorporate Virtual (Out-Of-Tree) READMEs from Config.
+		// Out-of-tree READMEs take priority over physical in-tree READMEs, but preserve package manifests (e.g. go.mod).
 		for logicalPath, physicalPath := range g.Config.OutOfTreeReadmes {
 			absLogicalDir := filepath.Join(g.FuchsiaDir, logicalPath)
-			physicalReadmes[absLogicalDir] = append(physicalReadmes[absLogicalDir], physicalPath)
+			var manifests []string
+			for _, p := range physicalReadmes[absLogicalDir] {
+				if filepath.Base(p) != "README.fuchsia" {
+					manifests = append(manifests, p)
+				}
+			}
+			physicalReadmes[absLogicalDir] = append(manifests, physicalPath)
 		}
 
 		// PHASE 2: Parse all READMEs to establish exact project boundaries
@@ -256,15 +263,6 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 						if filepath.Clean(gnf) == relToReadme || filepath.Clean(gnf) == relToFuchsia {
 							listedInReadme = true
 							isLicenseFile = true
-							break
-						}
-					}
-					if listedInReadme {
-						break
-					}
-					for _, sf := range r.SourceFiles {
-						if filepath.Clean(sf) == relToReadme || filepath.Clean(sf) == relToFuchsia {
-							listedInReadme = true
 							break
 						}
 					}

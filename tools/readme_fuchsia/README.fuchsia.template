@@ -12,7 +12,7 @@ Location: <Required for sub-projects: Relative path to the sub-project directory
 
 License: <Required: Comma-separated list of OSI-approved licenses (e.g., MIT, Apache-2.0)>
 License File: <Required: Path to the license file. Can specify multiple times or use a comma-separated list>
-Source File: <Optional: Path to specific source files which contain licenses that do not match any License File. Can specify multiple times or use a comma-separated list>
+Generated Notice File: <Optional: Path to generated NOTICE file (e.g., NOTICE.fuchsia) containing embedded license texts. Can specify multiple times or use a comma-separated list>
 Non-License File: <Optional: Path to files that may look like a license but should not be collected. Can specify multiple times or use a comma-separated list>
 
 Description:

@@ -111,3 +111,84 @@ License File: %s
 		t.Errorf("Expected proj4 files %v, got %v", expectedProj4, results[proj4Dir])
 	}
 }
+
+func TestGrouper_VirtualReadmeWithPackageManifest(t *testing.T) {
+	fuchsiaDir := t.TempDir()
+
+	virtualReadmePath := filepath.Join(fuchsiaDir, "virtual_readmes", "golibs_README.fuchsia")
+	if err := os.MkdirAll(filepath.Dir(virtualReadmePath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(virtualReadmePath, []byte("Name: golibs\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	golibsDir := filepath.Join(fuchsiaDir, "third_party", "golibs")
+	if err := os.MkdirAll(golibsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	goModContent := `module go.fuchsia.dev/fuchsia/third_party/golibs
+
+go 1.23
+
+require (
+	github.com/spdx/tools-golang v0.5.5
+)
+`
+	goModPath := filepath.Join(golibsDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte(goModContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	spdxDir := filepath.Join(golibsDir, "vendor", "github.com/spdx/tools-golang")
+	if err := os.MkdirAll(spdxDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	grouper := NewGrouper(
+		fuchsiaDir,
+		Config{
+			BarrierPaths: map[string]bool{"third_party": true},
+			OutOfTreeReadmes: map[string]string{
+				filepath.Join("third_party", "golibs"): virtualReadmePath,
+			},
+		},
+	)
+
+	inChan := make(chan pipeline.RawPath, 10)
+	inChan <- pipeline.RawPath{Path: goModPath, IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(spdxDir, "LICENSE.code"), IsDir: false}
+	inChan <- pipeline.RawPath{Path: filepath.Join(spdxDir, "main.go"), IsDir: false}
+	close(inChan)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	outChan, err := grouper.Run(ctx, inChan)
+	if err != nil {
+		t.Fatalf("Failed to run grouper: %v", err)
+	}
+
+	results := make(map[string][]pipeline.FileInfo)
+	for p := range outChan {
+		results[p.RootPath] = p.Files
+	}
+
+	// Verify spdx files are grouped under the vendored package root, not squashed into third_party/golibs
+	spdxFiles, ok := results[spdxDir]
+	if !ok {
+		t.Fatalf("Expected group for spdxDir %s, got groups: %v", spdxDir, results)
+	}
+	expectedPaths := []string{
+		filepath.Join(spdxDir, "LICENSE.code"),
+		filepath.Join(spdxDir, "main.go"),
+	}
+	var actualPaths []string
+	for _, f := range spdxFiles {
+		actualPaths = append(actualPaths, f.Path)
+	}
+	if !reflect.DeepEqual(actualPaths, expectedPaths) {
+		t.Errorf("Expected files %v, got %v", expectedPaths, actualPaths)
+	}
+}

@@ -173,7 +173,7 @@ func Parse(data []byte) ([]*Readme, error) {
 				// We hit a Key: Value pair, it's not a known directive, and we are NOT
 				// currently inside a multi-line field. This is an unknown field.
 				// We only record it if it's not a legacy ignored field.
-				if key != "License Type" && key != "License File URL" && key != "License Reference" && key != "Non-License File Explanation" && key != "Notes" {
+				if key != "License Type" && key != "License File URL" && key != "License Reference" && key != "Non-License File Explanation" && key != "Notes" && key != "Source File" {
 					readme.UnknownFields = append(readme.UnknownFields, UnknownField{
 						Key:   key,
 						Value: value,

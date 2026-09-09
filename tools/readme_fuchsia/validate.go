@@ -124,17 +124,27 @@ func Validate(projectRoot string, readmes []*Readme) []error {
 			}
 		}
 
-		for _, sf := range r.SourceFiles {
-			filePathOnDisk := filepath.Join(currentDir, sf)
-			if _, err := os.Stat(filePathOnDisk); os.IsNotExist(err) {
-				addFinding(fmt.Sprintf("[%d]: Source File does not exist: %s (%s)", i+1, filePathOnDisk, docURL), getSpan(sf))
-			}
-		}
-
 		for _, nlf := range r.NonLicenseFiles {
 			filePathOnDisk := filepath.Join(currentDir, nlf)
 			if _, err := os.Stat(filePathOnDisk); os.IsNotExist(err) {
 				addFinding(fmt.Sprintf("[%d]: Non-License File does not exist: %s (%s)", i+1, filePathOnDisk, docURL), getSpan(nlf))
+			}
+		}
+
+		for _, gnf := range r.GeneratedNoticeFiles {
+			noticeDir := currentDir
+			if r.FilePath != "" {
+				noticeDir = filepath.Dir(r.FilePath)
+				if loc := filepath.Clean(r.Location); loc != "" && loc != "." {
+					subDir := filepath.Join(noticeDir, loc)
+					if stat, err := os.Stat(subDir); err == nil && stat.IsDir() {
+						noticeDir = subDir
+					}
+				}
+			}
+			filePathOnDisk := filepath.Join(noticeDir, gnf)
+			if _, err := os.Stat(filePathOnDisk); os.IsNotExist(err) {
+				addFinding(fmt.Sprintf("[%d]: Generated Notice File does not exist: %s (%s#license-file)", i+1, filePathOnDisk, docURL), getSpan(gnf))
 			}
 		}
 	}

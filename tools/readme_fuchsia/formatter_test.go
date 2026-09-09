@@ -77,3 +77,27 @@ License File: third_party/sub/LICENSE
 		t.Errorf("Formatted output does not match expected.\nEXPECTED:\n---\n%s\n---\nGOT:\n---\n%s\n---", expected, formatted)
 	}
 }
+
+func TestFormat_GeneratedNoticeFiles(t *testing.T) {
+	readmeText := `Name: awesome_lib
+URL: https://github.com/awesome/lib
+Version: 1.2.3
+Security Critical: yes
+
+License: Apache-2.0
+License File: LICENSE
+Generated Notice File: NOTICE.fuchsia
+`
+	readmes, err := Parse([]byte(readmeText))
+	if err != nil {
+		t.Fatalf("Failed to parse: %v", err)
+	}
+
+	formatted := Format(readmes)
+	formatted = strings.TrimSpace(formatted)
+	expected := strings.TrimSpace(readmeText)
+
+	if formatted != expected {
+		t.Errorf("Formatted output does not match expected.\nEXPECTED:\n---\n%s\n---\nGOT:\n---\n%s\n---", expected, formatted)
+	}
+}

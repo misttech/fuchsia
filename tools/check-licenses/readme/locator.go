@@ -144,43 +144,54 @@ func IsProjectBoundary(dir, fuchsiaDir string, outOfTreeReadmes map[string]strin
 		foundReadmePaths = append(foundReadmePaths, physReadme)
 	}
 
-	// If neither virtual nor physical README.fuchsia exists, check fallback manifests
-	if len(foundReadmePaths) == 0 {
-		for _, name := range []string{"go.mod", "Cargo.toml", "pubspec.yaml"} {
-			possiblePath := filepath.Join(dir, name)
-			if _, err := os.Stat(possiblePath); err == nil {
-				foundReadmePaths = append(foundReadmePaths, possiblePath)
-				break
-			}
+	// Always check for package manifests (e.g. go.mod, Cargo.toml, pubspec.yaml)
+	// which may define sub-projects or serve as project boundaries.
+	for _, name := range []string{"go.mod", "Cargo.toml", "pubspec.yaml"} {
+		possiblePath := filepath.Join(dir, name)
+		if _, err := os.Stat(possiblePath); err == nil {
+			foundReadmePaths = append(foundReadmePaths, possiblePath)
+			break
 		}
 	}
 
-	if len(foundReadmePaths) > 1 {
-		// If both virtual and physical exist, log a warning
+	var readmeCount int
+	for _, p := range foundReadmePaths {
+		if filepath.Base(p) == "README.fuchsia" {
+			readmeCount++
+		}
+	}
+	if readmeCount > 1 {
+		// If both virtual and physical README.fuchsia exist, log a warning
 		var b strings.Builder
 		b.WriteString(fmt.Sprintf("⚠️ Warning, project %s has multiple READMEs:\n", relDir))
 		for _, p := range foundReadmePaths {
-			kind := "physical"
-			if strings.Contains(p, "assets") {
-				kind = "virtual "
+			if filepath.Base(p) == "README.fuchsia" {
+				kind := "physical"
+				if strings.Contains(p, "assets") {
+					kind = "virtual "
+				}
+				b.WriteString(fmt.Sprintf("  * %s: %s\n", kind, p))
 			}
-			b.WriteString(fmt.Sprintf("  * %s: %s\n", kind, p))
 		}
 		b.WriteString("Out-of-tree asset README will take priority.\n")
 		fmt.Fprint(os.Stderr, b.String())
 	}
 
 	if len(foundReadmePaths) > 0 {
-		// Out-of-tree virtual README is added first and takes priority.
-		bestPath := foundReadmePaths[0]
-		rootReadmes, subReadmes, parseErr := ParseAnyMetadata(bestPath)
-		if parseErr == nil {
-			var allReadmes []*Readme
-			allReadmes = append(allReadmes, rootReadmes...)
-			allReadmes = append(allReadmes, subReadmes...)
-			if len(allReadmes) > 0 {
-				return true, bestPath, allReadmes, nil
+		var allReadmes []*Readme
+		var bestPath string
+		for _, p := range foundReadmePaths {
+			rootReadmes, subReadmes, parseErr := ParseAnyMetadata(p)
+			if parseErr == nil {
+				if bestPath == "" {
+					bestPath = p
+				}
+				allReadmes = append(allReadmes, rootReadmes...)
+				allReadmes = append(allReadmes, subReadmes...)
 			}
+		}
+		if len(allReadmes) > 0 {
+			return true, bestPath, allReadmes, nil
 		}
 	}
 
