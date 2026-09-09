@@ -5,8 +5,11 @@
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 
+#include <bind/fuchsia/reloaddriverbind/test/cpp/bind.h>
+
 #include "src/devices/tests/v2/reload-driver-cross-colocated/driver_helpers.h"
 
+namespace bindlib = bind_fuchsia_reloaddriverbind_test;
 namespace helpers = reload_test_driver_helpers;
 
 namespace {
@@ -19,11 +22,19 @@ class TargetDriver : public fdf::DriverBase2 {
     auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
     node_client_.Bind(take_node());
 
+    zx::result result =
+        helpers::AddChild(logger(), "child_a_sub", node_client_, bindlib::TEST_BIND_PROPERTY_LEAF);
+    if (result.is_error()) {
+      return result.take_error();
+    }
+    child_controller_.Bind(std::move(result.value()));
+
     return helpers::SendAck(logger(), context.node_name().value_or("None"), incoming_ptr, name());
   }
 
  private:
   fidl::SyncClient<fuchsia_driver_framework::Node> node_client_;
+  fidl::SyncClient<fuchsia_driver_framework::NodeController> child_controller_;
 };
 
 }  // namespace

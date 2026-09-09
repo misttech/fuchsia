@@ -199,36 +199,64 @@ Collection GetHighestRankingCollection(const Node& node, Collection collection) 
   return collection;
 }
 
-// Perform a Breadth-First-Search (BFS) over the node topology, applying the visitor function on
-// the node being visited.
-// The return value of the visitor function is a boolean for whether the children of the node
-// should be visited. If it returns false, the children will be skipped.
-void PerformBFS(const std::shared_ptr<Node>& starting_node,
+// Specifies the direction of traversal for the search helper.
+enum class Direction : uint8_t {
+  // Traverse downwards through children (e.g. from parent to descendants).
+  kDown,
+  // Traverse upwards through parents (e.g. from child to ancestors).
+  kUp,
+};
+
+// Perform a Breadth-First-Search (BFS) over the node topology starting from |starting_node|,
+// applying the visitor function on the node being visited.
+// |direction| controls whether we traverse downwards (children) or upwards (parents).
+// The return value of the visitor function is a boolean for whether the children/parents of
+// the node should be visited. If it returns false, the traversal of that branch is pruned.
+void PerformBFS(const std::shared_ptr<Node>& starting_node, Direction direction,
                 fit::function<bool(const std::shared_ptr<driver_manager::Node>&)> visitor) {
-  std::unordered_set<std::shared_ptr<const Node>> visited;
+  if (!starting_node) {
+    return;
+  }
+
+  std::unordered_set<const Node*> visited;
   std::queue<std::shared_ptr<Node>> node_queue;
-  visited.insert(starting_node);
+  visited.insert(starting_node.get());
   node_queue.push(starting_node);
 
   while (!node_queue.empty()) {
-    auto current = node_queue.front();
+    auto current = std::move(node_queue.front());
     node_queue.pop();
 
-    bool visit_children = visitor(current);
-    if (!visit_children) {
+    if (!visitor(current)) {
       continue;
     }
 
-    for (const auto& child : current->children()) {
-      if (child->GetPrimaryParent() != current.get()) {
-        continue;
-      }
+    if (direction == Direction::kDown) {
+      for (const auto& child : current->children()) {
+        if (child->GetPrimaryParent() != current.get()) {
+          continue;
+        }
 
-      if (auto [_, inserted] = visited.insert(child); inserted) {
-        node_queue.push(child);
+        if (visited.insert(child.get()).second) {
+          node_queue.push(child);
+        }
+      }
+    } else {
+      for (const auto& parent_weak : current->parents()) {
+        if (auto parent = parent_weak.lock()) {
+          if (visited.insert(parent.get()).second) {
+            node_queue.push(std::move(parent));
+          }
+        }
       }
     }
   }
+}
+
+// Performs a downward BFS over the node topology starting from |starting_node|.
+void PerformBFS(const std::shared_ptr<Node>& starting_node,
+                fit::function<bool(const std::shared_ptr<driver_manager::Node>&)> visitor) {
+  PerformBFS(starting_node, Direction::kDown, std::move(visitor));
 }
 
 void CallStartDriverOnRunner(Runner& runner, Node& node, const std::string& moniker,
@@ -1166,25 +1194,90 @@ zx::result<uint32_t> DriverRunner::RestartNodesColocatedWithDriverUrl(
     std::string_view url, fdd::RestartRematchFlags rematch_flags) {
   auto driver_hosts = DriverHostsWithDriverUrl(url);
 
-  // Perform a BFS over the node topology. If a node's host is one of the driver_hosts
-  // we collected, or if a node's driver URL matches `url`, collect that node as a
-  // topmost node to restart and skip its children since they will go away as part of its restart.
-  //
-  // The BFS ensures that we find the topmost nodes of each affected driver host or any nodes
-  // matching the URL that are not yet in a host.
-  std::vector<std::shared_ptr<driver_manager::Node>> nodes_to_restart;
-  PerformBFS(root_node_, [url, &driver_hosts,
-                          &nodes_to_restart](const std::shared_ptr<driver_manager::Node>& current) {
+  // Helper lambda to check if a node is part of the restarting set.
+  auto is_in_restarting_set = [&driver_hosts, url](Node& node) {
     bool is_in_driver_host =
-        current->driver_host() && driver_hosts.find(current->driver_host()) != driver_hosts.end();
-    bool is_matching_url = current->driver_url() == url;
+        node.driver_host() && driver_hosts.find(node.driver_host()) != driver_hosts.end();
+    bool is_matching_url = node.driver_url() == url;
+    return is_in_driver_host || is_matching_url;
+  };
 
-    if (!is_in_driver_host && !is_matching_url) {
+  // Caches for ancestor traversal across candidate nodes:
+  // - `restarting_ancestor_cache`: Nodes that are in the restarting set or have an ancestor
+  //   in the restarting set. Encountering any of these during upward traversal immediately
+  //   confirms that the start node has a restarting ancestor.
+  // - `no_restarting_ancestor_cache`: Nodes that have no ancestors in the restarting set (and
+  //   are not in the restarting set). Encountering any of these during upward traversal prunes
+  //   the branch since no restarting ancestors exist above it.
+  std::unordered_set<const Node*> restarting_ancestor_cache;
+  std::unordered_set<const Node*> no_restarting_ancestor_cache;
+
+  if (root_node_ && !is_in_restarting_set(*root_node_)) {
+    no_restarting_ancestor_cache.insert(root_node_.get());
+  }
+
+  // Helper lambda to check if a node has any ancestor (traversing upwards across all parents)
+  // that is in the restarting set.
+  auto has_ancestor_in_restarting_set = [&](const std::shared_ptr<Node>& start_node) {
+    if (restarting_ancestor_cache.contains(start_node.get())) {
+      return true;
+    }
+    if (no_restarting_ancestor_cache.contains(start_node.get())) {
+      return false;
+    }
+
+    bool has_ancestor = false;
+    std::vector<const Node*> visited_nodes;
+
+    PerformBFS(
+        start_node, Direction::kUp, [&](const std::shared_ptr<driver_manager::Node>& current) {
+          if (has_ancestor) {
+            return false;
+          }
+          if (current == start_node) {
+            return true;
+          }
+
+          if (restarting_ancestor_cache.contains(current.get()) || is_in_restarting_set(*current)) {
+            has_ancestor = true;
+            restarting_ancestor_cache.insert(current.get());
+            return false;
+          }
+
+          if (no_restarting_ancestor_cache.contains(current.get())) {
+            // Prune traversal up this branch: no ancestors here are in the restarting set.
+            return false;
+          }
+
+          visited_nodes.push_back(current.get());
+          return true;
+        });
+
+    if (has_ancestor) {
+      restarting_ancestor_cache.insert(start_node.get());
+    } else {
+      no_restarting_ancestor_cache.insert(start_node.get());
+      for (const Node* node : visited_nodes) {
+        no_restarting_ancestor_cache.insert(node);
+      }
+    }
+    return has_ancestor;
+  };
+
+  // Perform a BFS over the node topology. If a node's host is one of the driver_hosts
+  // we collected, or if a node's driver URL matches `url`, check if it has any ancestors in
+  // the restarting set. If not, collect that node as a topmost node to restart. Skip its
+  // children since they will go away as part of its restart.
+  std::vector<std::shared_ptr<driver_manager::Node>> nodes_to_restart;
+  PerformBFS(root_node_, [&](const std::shared_ptr<driver_manager::Node>& current) {
+    if (!is_in_restarting_set(*current)) {
       // Not in one of the restarting hosts or matching the URL. Continue to visit the children.
       return true;
     }
 
-    nodes_to_restart.push_back(current);
+    if (!has_ancestor_in_restarting_set(current)) {
+      nodes_to_restart.push_back(current);
+    }
     return false;
   });
 

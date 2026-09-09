@@ -22,8 +22,8 @@ class RightParentDriver : public fdf::DriverBase2 {
     auto incoming_ptr = std::shared_ptr<fdf::Namespace>(context.take_incoming());
     node_client_.Bind(take_node());
 
-    zx::result result = helpers::AddChild(logger(), "child_b", node_client_,
-                                          bindlib::TEST_BIND_PROPERTY_TARGET_2, "shared-host");
+    zx::result result = helpers::AddChild(logger(), "right_child", node_client_,
+                                          bindlib::TEST_BIND_PROPERTY_TARGET_2);
     if (result.is_error()) {
       return result.take_error();
     }

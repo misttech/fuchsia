@@ -105,13 +105,19 @@ async fn test_reload_cross_colocated_target() -> Result<()> {
 
     let driver_dev = instance.root.connect_to_protocol_at_exposed_dir()?;
 
-    // Map of node names to host KOIDs
+    // Map of node names to Option<Option<u64>>.
+    // The outer option is whether the node has been seen (nodes with bound drivers start with
+    // `None` and wait for an Ack from their driver; intermediate composite parents start with
+    // `Some` because they do not have bound drivers and do not send Acks).
+    // The inner option is the driver host KOID populated by validate_host_koids.
     let mut nodes = HashMap::from([
         ("dev".to_string(), None),
         ("left_parent".to_string(), None),
         ("right_parent".to_string(), None),
         ("child_a".to_string(), None),
         ("child_b".to_string(), None),
+        ("right_child".to_string(), Some(None)), // composite parent, sends no ack
+        ("child_a_sub".to_string(), Some(None)), // composite parent, sends no ack
     ]);
 
     // Wait for all initial nodes to report their acks.
@@ -142,8 +148,11 @@ async fn test_reload_cross_colocated_target() -> Result<()> {
     assert_eq!(restart_result, Ok(1));
 
     // Nodes that should restart
-    let mut nodes_after_restart =
-        HashMap::from([("child_a".to_string(), None), ("child_b".to_string(), None)]);
+    let mut nodes_after_restart = HashMap::from([
+        ("child_a".to_string(), None),
+        ("child_b".to_string(), None),
+        ("child_a_sub".to_string(), Some(None)), // composite parent, sends no ack
+    ]);
 
     // Wait for restarted nodes to send acks.
     reloadtest_tools::wait_for_nodes(&mut nodes_after_restart, &mut receiver).await?;
