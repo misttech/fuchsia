@@ -229,6 +229,14 @@ wlan_sorrel_ap_env_testbed_prototype = {
   }
 }
 
+wlan_iris_ap_env = {
+  dimensions = {
+    access_points = "1"
+    device_type = device_types.iris
+    pool = "fuchsia.dev.tests.connectivity.openwrt"
+  }
+}
+
 linux_env = {
   dimensions = {
     os = "Linux"
@@ -542,6 +550,7 @@ wlan_ap_envs = [
   wlan_nelson_ap_env,
   wlan_nuc11_ap_env,
   wlan_sorrel_ap_env,
+  wlan_iris_ap_env,
 ]
 
 # TODO(https://fxbug.dev/465744822): Each environment should be specified in

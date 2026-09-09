@@ -307,6 +307,11 @@ test_platforms = [
     pool = "fuchsia.tests.connectivity"
   },
   {
+    access_points = "1"
+    device_type = "Iris"
+    pool = "fuchsia.dev.tests.connectivity.openwrt"
+  },
+  {
     device_type = "Sherlock"
     pool = "fuchsia.tests.bluetooth"
     sherlocks = "2"
