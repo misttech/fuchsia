@@ -348,6 +348,11 @@ void DirectoryConnection::Open(OpenRequestView request, OpenCompleter::Sync& com
       }
       rights |= optional_rights;
     }
+    // If the target negotiated to a service, ensure this directory connection permits connecting.
+    if (open_result->protocol() == fs::VnodeProtocol::kService &&
+        !(this->rights() & fio::Rights::kConnect)) {
+      return zx::error(ZX_ERR_ACCESS_DENIED);
+    }
     // Serve a new connection to the vnode.
     return fs->ServeResult(*std::move(open_result), rights, request->object, request->flags,
                            request->options);

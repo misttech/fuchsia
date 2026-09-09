@@ -401,6 +401,14 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             }
         }
 
+        // If the target negotiated to a service, ensure this directory connection permits
+        // connecting.
+        if flags.intersects(fio::Flags::PROTOCOL_SERVICE)
+            && !self.options.rights.contains(fio::Operations::CONNECT)
+        {
+            return Err(Status::ACCESS_DENIED);
+        }
+
         // If requesting attributes, check permission.
         if !object_request.attributes().is_empty()
             && !self.options.rights.contains(fio::Operations::GET_ATTRIBUTES)

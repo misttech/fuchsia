@@ -20,8 +20,6 @@ const TEST_STRING: &'static str = "Hello, world!";
 // existing callers that depend on the legacy io1 behavior allowing no flags to be specified for
 // this case. We should either relax this restriction, or work to migrate callers, after which we
 // can update this test accordingly.
-// TODO(https://fxbug.dev/346585458): Either require that connections have the CONNECT right or
-// remove that right from fuchsia.io.
 #[fuchsia::test]
 async fn open_service() {
     let harness = TestHarness::new().await;
@@ -43,6 +41,56 @@ async fn open_service() {
         let echo_response = echo_proxy.echo_string(Some(TEST_STRING)).await.unwrap();
         assert_eq!(echo_response.unwrap(), TEST_STRING);
     }
+}
+
+// Opening a service node with [`fio::Flags::PROTOCOL_SERVICE`] on a directory connection without
+// [`fio::Rights::CONNECT`] must fail with `ZX_ERR_ACCESS_DENIED`.
+#[fuchsia::test]
+async fn open_service_without_connect_rights_fails() {
+    let harness = TestHarness::new().await;
+    if !harness.config.supports_services {
+        return;
+    }
+    let svc_dir = harness.open_service_directory().await;
+
+    // Open a restricted directory connection to "." without CONNECT rights.
+    let (restricted_dir, server) = create_proxy::<fio::DirectoryMarker>();
+    svc_dir
+        .open(
+            ".",
+            fio::Flags::PROTOCOL_DIRECTORY
+                | fio::Flags::PERM_TRAVERSE
+                | fio::Flags::PERM_GET_ATTRIBUTES,
+            &Default::default(),
+            server.into_channel(),
+        )
+        .expect("open directory failed");
+
+    let (echo_proxy, echo_server) = create_proxy::<EchoMarker>();
+    restricted_dir
+        .open(
+            EchoMarker::PROTOCOL_NAME,
+            fio::Flags::PROTOCOL_SERVICE,
+            &Default::default(),
+            echo_server.into_channel(),
+        )
+        .expect("open service failed");
+
+    let echo_response_status = echo_proxy
+        .echo_string(Some(TEST_STRING))
+        .map_err(|e| {
+            if let fidl::Error::ClientChannelClosed { epitaph, .. } = e {
+                match epitaph.into() {
+                    Err(s) => s,
+                    Ok(()) => zx::Status::PEER_CLOSED,
+                }
+            } else {
+                panic!("Unhandled FIDL error: {:?}", e);
+            }
+        })
+        .await
+        .expect_err("echo_string succeeded");
+    assert_eq!(echo_response_status, Status::ACCESS_DENIED);
 }
 
 /// Opening a service node with [`fio::Flags::PROTOCOL_NODE`] should open the underlying node.
