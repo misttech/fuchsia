@@ -29,7 +29,7 @@ namespace fuc = fuchsia_ui_composition;
 namespace fuv = fuchsia_ui_views;
 
 constexpr auto kDefaultSize = 128;
-const fuc::TransformId kRootTransform{{.value = 1}};
+const fuc::TransformId kRootTransform(1);
 
 fuchsia_sysmem2::BufferCollectionConstraints GetDefaultBufferConstraints() {
   fuchsia_sysmem2::BufferCollectionConstraints constraints;
@@ -141,7 +141,7 @@ TEST_F(AllocationTest, CreateAndReleaseImage) {
 
   fuc::ImageProperties image_properties = {};
   image_properties.size(fuchsia_math::SizeU{{.width = kDefaultSize, .height = kDefaultSize}});
-  const fuc::ContentId kImageContentId{{.value = 1}};
+  const fuc::ContentId kImageContentId(1);
 
   ASSERT_TRUE((*root_flatland_)
                   ->CreateImage({{.image_id = kImageContentId,
@@ -157,8 +157,7 @@ TEST_F(AllocationTest, CreateAndReleaseImage) {
   // Release image and remove content to actually deallocate.
   ASSERT_TRUE((*root_flatland_)->ReleaseImage(kImageContentId).is_ok());
   ASSERT_TRUE((*root_flatland_)
-                  ->SetContent({{.transform_id = kRootTransform,
-                                 .content_id = fuc::ContentId{{.value = 0}}}})
+                  ->SetContent({{.transform_id = kRootTransform, .content_id = fuc::ContentId(0)}})
                   .is_ok());
   BlockingPresent(this, *root_flatland_);
 }
@@ -184,14 +183,14 @@ TEST_F(AllocationTest, CreateAndReleaseMultipleImages) {
 
     fuc::ImageProperties image_properties = {};
     image_properties.size(fuchsia_math::SizeU{{.width = kDefaultSize, .height = kDefaultSize}});
-    const fuc::ContentId kImageContentId{{.value = i}};
+    const fuc::ContentId kImageContentId(i);
     ASSERT_TRUE((*root_flatland_)
                     ->CreateImage({{.image_id = kImageContentId,
                                     .import_token = std::move(bc_tokens.import_token),
                                     .vmo_index = 0,
                                     .properties = std::move(image_properties)}})
                     .is_ok());
-    const fuc::TransformId kImageTransformId{{.value = i + 1}};
+    const fuc::TransformId kImageTransformId(i + 1);
     ASSERT_TRUE((*root_flatland_)->CreateTransform(kImageTransformId).is_ok());
     ASSERT_TRUE(
         (*root_flatland_)
@@ -206,9 +205,9 @@ TEST_F(AllocationTest, CreateAndReleaseMultipleImages) {
 
   for (uint64_t i = 1; i <= kImageCount; ++i) {
     // Release image and remove content to actually deallocate.
-    const fuc::ContentId kImageContentId{{.value = i}};
+    const fuc::ContentId kImageContentId(i);
     ASSERT_TRUE((*root_flatland_)->ReleaseImage(kImageContentId).is_ok());
-    const fuc::TransformId kImageTransformId{{.value = i + 1}};
+    const fuc::TransformId kImageTransformId(i + 1);
     ASSERT_TRUE((*root_flatland_)
                     ->RemoveChild({{.parent_transform_id = kRootTransform,
                                     .child_transform_id = kImageTransformId}})
@@ -230,7 +229,7 @@ TEST_F(AllocationTest, MultipleClientsCreateAndReleaseImages) {
         fidl::CreateEndpoints<fuc::ChildViewWatcher>().value();
     fuc::ViewportProperties properties;
     properties.logical_size(fuchsia_math::SizeU{{.width = kDefaultSize, .height = kDefaultSize}});
-    const fuc::ContentId kViewportContentId{{.value = i}};
+    const fuc::ContentId kViewportContentId(i);
     ASSERT_TRUE(
         (*root_flatland_)
             ->CreateViewport({{.viewport_id = kViewportContentId,
@@ -238,7 +237,7 @@ TEST_F(AllocationTest, MultipleClientsCreateAndReleaseImages) {
                                .properties = std::move(properties),
                                .child_view_watcher = std::move(child_view_watcher_server_end)}})
             .is_ok());
-    const fuc::TransformId kViewportTransformId{{.value = i + 1}};
+    const fuc::TransformId kViewportTransformId(i + 1);
     ASSERT_TRUE((*root_flatland_)->CreateTransform(kViewportTransformId).is_ok());
     ASSERT_TRUE((*root_flatland_)
                     ->AddChild({{.parent_transform_id = kRootTransform,
@@ -290,7 +289,7 @@ TEST_F(AllocationTest, MultipleClientsCreateAndReleaseImages) {
 
       fuc::ImageProperties image_properties;
       image_properties.size(fuchsia_math::SizeU{{.width = kDefaultSize, .height = kDefaultSize}});
-      const fuc::ContentId kImageContentId{{.value = 1}};
+      const fuc::ContentId kImageContentId(1);
       ASSERT_TRUE(flatland
                       ->CreateImage({{.image_id = kImageContentId,
                                       .import_token = std::move(bc_tokens.import_token),
@@ -310,10 +309,9 @@ TEST_F(AllocationTest, MultipleClientsCreateAndReleaseImages) {
 
       // Release image and remove content to actually deallocate.
       ASSERT_TRUE(flatland->ReleaseImage(kImageContentId).is_ok());
-      ASSERT_TRUE(flatland
-                      ->SetContent({{.transform_id = kRootTransform,
-                                     .content_id = fuc::ContentId{{.value = 0}}}})
-                      .is_ok());
+      ASSERT_TRUE(
+          flatland->SetContent({{.transform_id = kRootTransform, .content_id = fuc::ContentId(0)}})
+              .is_ok());
       BlockingPresent(&present_loop, flatland);
     });
   }

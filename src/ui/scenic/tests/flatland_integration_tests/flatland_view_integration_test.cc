@@ -28,8 +28,8 @@ namespace integration_tests {
 namespace fuc = fuchsia_ui_composition;
 namespace fuv = fuchsia_ui_views;
 
-const fuc::TransformId kTransformId = {{.value = 1}};
-const fuc::ContentId kContentId = {{.value = 1}};
+const fuc::TransformId kTransformId(1);
+const fuc::ContentId kContentId(1);
 
 // Test fixture that sets up an environment with a Scenic we can connect to.
 class FlatlandViewIntegrationTest : public ScenicCtfTest {
@@ -383,10 +383,9 @@ TEST_F(FlatlandViewIntegrationTest, ParentViewportStatusTest) {
   parent_status.reset();
 
   // Disconnect the child view.
-  ASSERT_TRUE(
-      (*parent)
-          ->SetContent({{.transform_id = kTransformId, .content_id = fuc::ContentId{{.value = 0}}}})
-          .is_ok());
+  ASSERT_TRUE((*parent)
+                  ->SetContent({{.transform_id = kTransformId, .content_id = fuc::ContentId(0)}})
+                  .is_ok());
   parent_viewport_watcher->GetStatus().Then(
       [&parent_status](fidl::Result<fuc::ParentViewportWatcher::GetStatus>& result) {
         if (result.is_ok()) {

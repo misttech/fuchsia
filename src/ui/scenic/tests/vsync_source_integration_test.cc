@@ -44,12 +44,12 @@ class VsyncSourceIntegrationTest
                                      .parent_viewport_watcher =
                                          std::move(parent_viewport_watcher_endpoints->server)}});
       ASSERT_TRUE(res.is_ok());
-      const fuchsia_ui_composition::TransformId kRootTransform = {1};
+      const fuchsia_ui_composition::TransformId kRootTransform(1);
       res = (*root_flatland_)->CreateTransform(kRootTransform);
       ASSERT_TRUE(res.is_ok());
       res = (*root_flatland_)->SetRootTransform(kRootTransform);
       ASSERT_TRUE(res.is_ok());
-      const fuchsia_ui_composition::ContentId kFilledRectContentId = {1};
+      const fuchsia_ui_composition::ContentId kFilledRectContentId(1);
       res = (*root_flatland_)->CreateFilledRect(kFilledRectContentId);
       ASSERT_TRUE(res.is_ok());
       res = (*root_flatland_)

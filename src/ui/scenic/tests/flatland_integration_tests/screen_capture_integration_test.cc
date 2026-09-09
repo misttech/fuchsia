@@ -34,6 +34,10 @@ namespace integration_tests {
 namespace fuc = fuchsia_ui_composition;
 namespace fuv = fuchsia_ui_views;
 
+namespace {
+const fuc::TransformId kChildRootTransform(1);
+}  // namespace
+
 class ScreenCaptureIntegrationTest : public ScenicCtfTest {
  public:
   void SetUp() override {
@@ -84,8 +88,8 @@ class ScreenCaptureIntegrationTest : public ScenicCtfTest {
     fuc::ViewportProperties properties;
     properties.logical_size(
         fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
-    const fuc::TransformId kRootTransform{{.value = 1}};
-    const fuc::ContentId kRootContent{{.value = 1}};
+    const fuc::TransformId kRootTransform(1);
+    const fuc::ContentId kRootContent(1);
     FX_CHECK((*root_session_)->CreateTransform({{.transform_id = kRootTransform}}).is_ok());
     FX_CHECK((*root_session_)
                  ->CreateViewport({{.viewport_id = kRootContent,
@@ -148,7 +152,6 @@ class ScreenCaptureIntegrationTest : public ScenicCtfTest {
     return fit::error(fuc::ScreenCaptureError::kBadOperation);
   }
 
-  const fuc::TransformId kChildRootTransform{{.value = 1}};
   static constexpr zx::duration kEventDelay = zx::msec(5000);
 
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
@@ -181,8 +184,7 @@ TEST_F(ScreenCaptureIntegrationTest, EmptyScreenshot) {
   fuchsia_sysmem2::BufferCollectionInfo sc_buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
-                                          render_target_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+                                          render_target_height),
           std::move(scr_ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kScreenshot);
 
@@ -221,8 +223,7 @@ TEST_F(ScreenCaptureIntegrationTest, SingleColorUnrotatedScreenshot) {
 
   fuchsia_sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
-          utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+          utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height),
           std::move(ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kDefault);
 
@@ -248,8 +249,7 @@ TEST_F(ScreenCaptureIntegrationTest, SingleColorUnrotatedScreenshot) {
   fuchsia_sysmem2::BufferCollectionInfo sc_buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
-                                          render_target_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+                                          render_target_height),
           std::move(scr_ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kScreenshot);
 
@@ -304,8 +304,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor180DegreeRotationScreenshot) {
 
   fuchsia_sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
-          utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+          utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height),
           std::move(ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kDefault);
 
@@ -337,8 +336,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor180DegreeRotationScreenshot) {
   fuchsia_sysmem2::BufferCollectionInfo sc_buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
-                                          render_target_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+                                          render_target_height),
           std::move(scr_ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kScreenshot);
 
@@ -409,8 +407,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor90DegreeRotationScreenshot) {
 
   fuchsia_sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
-          utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+          utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height),
           std::move(ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kDefault);
 
@@ -471,8 +468,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor90DegreeRotationScreenshot) {
   fuchsia_sysmem2::BufferCollectionInfo sc_buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
-                                          render_target_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+                                          render_target_height),
           std::move(scr_ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kScreenshot);
 
@@ -564,8 +560,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor270DegreeRotationScreenshot) {
 
   fuchsia_sysmem2::BufferCollectionInfo buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
-          utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+          utils::CreateDefaultConstraints(/*buffer_count=*/1, image_width, image_height),
           std::move(ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kDefault);
 
@@ -626,8 +621,7 @@ TEST_F(ScreenCaptureIntegrationTest, MultiColor270DegreeRotationScreenshot) {
   fuchsia_sysmem2::BufferCollectionInfo sc_buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
-                                          render_target_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+                                          render_target_height),
           std::move(scr_ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kScreenshot);
 
@@ -697,8 +691,8 @@ TEST_F(ScreenCaptureIntegrationTest, FilledRectScreenshot) {
   const uint32_t render_target_width = display_width_;
   const uint32_t render_target_height = display_height_;
 
-  const fuc::ContentId kFilledRectId{{.value = 1}};
-  const fuc::TransformId kTransformId{{.value = 2}};
+  const fuc::ContentId kFilledRectId(1);
+  const fuc::TransformId kTransformId(2);
 
   // Create a fuchsia colored rectangle.
   FX_CHECK((*child_session_)->CreateFilledRect({{.rect_id = kFilledRectId}}).is_ok());
@@ -729,8 +723,7 @@ TEST_F(ScreenCaptureIntegrationTest, FilledRectScreenshot) {
   fuchsia_sysmem2::BufferCollectionInfo sc_buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/1, render_target_width,
-                                          render_target_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+                                          render_target_height),
           std::move(scr_ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kScreenshot);
 
@@ -770,8 +763,8 @@ TEST_F(ScreenCaptureIntegrationTest, ChangeFilledRectScreenshots) {
   const uint32_t render_target_width = display_width_;
   const uint32_t render_target_height = display_height_;
 
-  const fuc::ContentId kFilledRectId{{.value = 1}};
-  const fuc::TransformId kTransformId{{.value = 2}};
+  const fuc::ContentId kFilledRectId(1);
+  const fuc::TransformId kTransformId(2);
 
   // Create a red rectangle.
   FX_CHECK((*child_session_)->CreateFilledRect({{.rect_id = kFilledRectId}}).is_ok());
@@ -803,8 +796,7 @@ TEST_F(ScreenCaptureIntegrationTest, ChangeFilledRectScreenshots) {
   fuchsia_sysmem2::BufferCollectionInfo sc_buffer_collection_info =
       CreateBufferCollectionInfoWithConstraints(
           utils::CreateDefaultConstraints(/*buffer_count=*/2, render_target_width,
-                                          render_target_height,
-                                          fuchsia_images2::PixelFormat::kB8G8R8A8),
+                                          render_target_height),
           std::move(scr_ref_pair.export_token), flatland_allocator_, sysmem_allocator_,
           fuc::RegisterBufferCollectionUsages::kScreenshot);
 
@@ -838,8 +830,8 @@ TEST_F(ScreenCaptureIntegrationTest, ChangeFilledRectScreenshots) {
 
   // Now change the color of the screen.
 
-  const fuc::ContentId kFilledRectId2{{.value = 2}};
-  const fuc::TransformId kTransformId2{{.value = 3}};
+  const fuc::ContentId kFilledRectId2(2);
+  const fuc::TransformId kTransformId2(3);
 
   // Create a blue rectangle.
   FX_CHECK((*child_session_)->CreateFilledRect({{.rect_id = kFilledRectId2}}).is_ok());

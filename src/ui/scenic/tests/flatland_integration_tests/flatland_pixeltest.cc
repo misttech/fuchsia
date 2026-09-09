@@ -39,7 +39,7 @@ namespace fuv = fuchsia_ui_views;
   EXPECT_LE(std::abs(static_cast<double>(val1) - static_cast<double>(val2)), \
             static_cast<double>(eps))
 
-const fuc::TransformId kRootTransform{{.value = 1}};
+const fuc::TransformId kRootTransform(1);
 constexpr auto kEpsilon = 1;
 
 fuc::ColorRgba GetColorInFloat(utils::Pixel color) {
@@ -128,8 +128,8 @@ class FlatlandPixelTestBase : public ScenicCtfTest {
   void DrawRectangle(FlatlandClientWithEventHandler& flatland, uint32_t width, uint32_t height,
                      int32_t x, int32_t y, utils::Pixel color,
                      fuc::BlendMode blend_mode = fuc::BlendMode::kSrc, float opacity = 1.f) {
-    const fuc::ContentId kFilledRectId{{.value = get_next_resource_id()}};
-    const fuc::TransformId kTransformId{{.value = get_next_resource_id()}};
+    const fuc::ContentId kFilledRectId(get_next_resource_id());
+    const fuc::TransformId kTransformId(get_next_resource_id());
 
     FX_CHECK(flatland->CreateFilledRect({{.rect_id = kFilledRectId}}).is_ok());
     FX_CHECK(flatland
@@ -344,7 +344,7 @@ TEST_P(ParameterizedYUVPixelTest, YUVTest) {
   // Create the image in the Flatland instance.
   fuc::ImageProperties image_properties;
   image_properties.size(fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
-  const fuc::ContentId kImageContentId{{.value = 1}};
+  const fuc::ContentId kImageContentId(1);
 
   FX_CHECK((*root_flatland_)
                ->CreateImage({{.image_id = kImageContentId,
@@ -461,7 +461,7 @@ TEST_P(ParameterizedSRGBPixelTest, RGBTest) {
   // Create the image in the Flatland instance.
   fuc::ImageProperties image_properties;
   image_properties.size(fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
-  const fuc::ContentId kImageContentId{{.value = 1}};
+  const fuc::ContentId kImageContentId(1);
 
   FX_CHECK((*root_flatland_)
                ->CreateImage({{.image_id = kImageContentId,
@@ -739,7 +739,7 @@ TEST_P(ParameterizedFlipAndOrientationTestBGRA, FlipAndOrientationRenderTest) {
 
   fuc::ImageProperties image_properties;
   image_properties.size(fuchsia_math::SizeU{{.width = image_width, .height = image_height}});
-  const fuc::ContentId kImageContentId{{.value = current_image_content_id++}};
+  const fuc::ContentId kImageContentId(current_image_content_id++);
 
   FX_CHECK((*root_flatland_)
                ->CreateImage({{.image_id = kImageContentId,
@@ -875,7 +875,7 @@ TEST_P(ParameterizedFlipAndOrientationTestRGBA, FlipAndOrientationRenderTest) {
 
   fuc::ImageProperties image_properties;
   image_properties.size(fuchsia_math::SizeU{{.width = image_width, .height = image_height}});
-  const fuc::ContentId kImageContentId{{.value = current_image_content_id++}};
+  const fuc::ContentId kImageContentId(current_image_content_id++);
 
   FX_CHECK((*root_flatland_)
                ->CreateImage({{.image_id = kImageContentId,
@@ -1081,8 +1081,8 @@ TEST_F(FlatlandPixelTestBase, ViewBoundClipping) {
   BlockingPresent(this, child);
 
   // Connect the child view to the root view.
-  const fuc::TransformId viewport_transform{{.value = get_next_resource_id()}};
-  const fuc::ContentId viewport_content{{.value = get_next_resource_id()}};
+  const fuc::TransformId viewport_transform(get_next_resource_id());
+  const fuc::ContentId viewport_content(get_next_resource_id());
 
   FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = viewport_transform}}).is_ok());
   fuc::ViewportProperties properties;
@@ -1178,8 +1178,8 @@ TEST_F(FlatlandPixelTestBase, ViewBoundClipping) {
 //       g refers to green pixels covered by the second child of the parent view.
 TEST_F(FlatlandPixelTestBase, TranslateInheritsFromParent) {
   // Draw the first rectangle in the top right quadrant.
-  const fuc::ContentId kFilledRectId1{{.value = get_next_resource_id()}};
-  const fuc::TransformId kTransformId1{{.value = get_next_resource_id()}};
+  const fuc::ContentId kFilledRectId1(get_next_resource_id());
+  const fuc::TransformId kTransformId1(get_next_resource_id());
 
   FX_CHECK((*root_flatland_)->CreateFilledRect({{.rect_id = kFilledRectId1}}).is_ok());
   FX_CHECK(
@@ -1208,8 +1208,8 @@ TEST_F(FlatlandPixelTestBase, TranslateInheritsFromParent) {
 
   // Draw the second rectangle which should be removed from the view, after ReplaceChildren
   // removes it's child-parent connection.
-  const fuc::ContentId kFilledRectId2{{.value = get_next_resource_id()}};
-  const fuc::TransformId kTransformId2{{.value = get_next_resource_id()}};
+  const fuc::ContentId kFilledRectId2(get_next_resource_id());
+  const fuc::TransformId kTransformId2(get_next_resource_id());
 
   FX_CHECK((*root_flatland_)->CreateFilledRect({{.rect_id = kFilledRectId2}}).is_ok());
   FX_CHECK(
@@ -1240,8 +1240,8 @@ TEST_F(FlatlandPixelTestBase, TranslateInheritsFromParent) {
 
   // Draw the first child rectangle which should appear in the top half of the bottom right
   // quadrant.
-  const fuc::ContentId kFilledChildRectId1{{.value = get_next_resource_id()}};
-  const fuc::TransformId kChildTransformId1{{.value = get_next_resource_id()}};
+  const fuc::ContentId kFilledChildRectId1(get_next_resource_id());
+  const fuc::TransformId kChildTransformId1(get_next_resource_id());
 
   FX_CHECK((*root_flatland_)->CreateFilledRect({{.rect_id = kFilledChildRectId1}}).is_ok());
   FX_CHECK(
@@ -1265,8 +1265,8 @@ TEST_F(FlatlandPixelTestBase, TranslateInheritsFromParent) {
 
   // Draw the second child rectangle which should appear in the bottom half of the bottom right
   // quadrant.
-  const fuc::ContentId kFilledChildRectId2{{.value = get_next_resource_id()}};
-  const fuc::TransformId kChildTransformId2{{.value = get_next_resource_id()}};
+  const fuc::ContentId kFilledChildRectId2(get_next_resource_id());
+  const fuc::TransformId kChildTransformId2(get_next_resource_id());
 
   FX_CHECK((*root_flatland_)->CreateFilledRect({{.rect_id = kFilledChildRectId2}}).is_ok());
   FX_CHECK(
@@ -1409,8 +1409,8 @@ TEST_F(FlatlandPixelTestBase, ViewportDetach) {
   BlockingPresent(this, child);
 
   // Connect the child view to the root view.
-  const fuc::TransformId viewport_transform{{.value = get_next_resource_id()}};
-  const fuc::ContentId viewport_content{{.value = get_next_resource_id()}};
+  const fuc::TransformId viewport_transform(get_next_resource_id());
+  const fuc::ContentId viewport_content(get_next_resource_id());
   FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = viewport_transform}}).is_ok());
   auto [cv_client_end, cv_server_end] = fidl::Endpoints<fuc::ChildViewWatcher>::Create();
   SimpleWatcherClient<fuc::ChildViewWatcher> child_view_watcher(std::move(cv_client_end),
@@ -1487,8 +1487,8 @@ TEST_F(FlatlandPixelTestBase, InsetNotEnforced) {
   BlockingPresent(this, child);
 
   // Connect the child view to the root view.
-  const fuc::TransformId viewport_transform{{.value = get_next_resource_id()}};
-  const fuc::ContentId viewport_content{{.value = get_next_resource_id()}};
+  const fuc::TransformId viewport_transform(get_next_resource_id());
+  const fuc::ContentId viewport_content(get_next_resource_id());
   FX_CHECK((*root_flatland_)->CreateTransform({{.transform_id = viewport_transform}}).is_ok());
   auto [cv_client_end, cv_server_end] = fidl::Endpoints<fuc::ChildViewWatcher>::Create();
   SimpleWatcherClient<fuc::ChildViewWatcher> child_view_watcher(std::move(cv_client_end),

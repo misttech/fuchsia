@@ -21,6 +21,10 @@ namespace integration_tests {
 
 namespace fuc = fuchsia_ui_composition;
 
+namespace {
+const fuc::TransformId kRootTransform(1);
+}  // namespace
+
 class ProtectedMemoryIntegrationTest : public ScenicCtfTest {
  public:
   void SetUp() override {
@@ -131,7 +135,6 @@ class ProtectedMemoryIntegrationTest : public ScenicCtfTest {
     return ZX_OK;
   }
 
-  const fuc::TransformId kRootTransform{{.value = 1}};
   uint32_t display_width_ = 0;
   uint32_t display_height_ = 0;
 
@@ -165,7 +168,7 @@ TEST_F(ProtectedMemoryIntegrationTest, RendersProtectedImage) {
   // Create the image in the Flatland instance.
   fuchsia_ui_composition::ImageProperties image_properties = {};
   image_properties.size(fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
-  const fuc::ContentId kImageContentId{{.value = 1}};
+  const fuc::ContentId kImageContentId(1);
   ASSERT_TRUE((*root_flatland_)
                   ->CreateImage({{.image_id = kImageContentId,
                                   .import_token = std::move(bc_tokens.import_token),
@@ -209,7 +212,7 @@ TEST_F(ProtectedMemoryIntegrationTest, ScreenshotReplacesProtectedImage) {
   // Create the image in the Flatland instance.
   fuchsia_ui_composition::ImageProperties image_properties = {};
   image_properties.size(fuchsia_math::SizeU{{.width = display_width_, .height = display_height_}});
-  const fuc::ContentId kImageContentId{{.value = 1}};
+  const fuc::ContentId kImageContentId(1);
   ASSERT_TRUE((*root_flatland_)
                   ->CreateImage({{.image_id = kImageContentId,
                                   .import_token = std::move(bc_tokens.import_token),

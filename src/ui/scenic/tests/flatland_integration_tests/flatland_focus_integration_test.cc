@@ -61,7 +61,7 @@ namespace {
 // Should not be used when actually expecting an update to occur.
 const zx::duration kWaitTime = zx::msec(100);
 const uint32_t kDefaultLogicalPixelSize = 1;
-const fuc::TransformId kRootTransform{1};
+const fuc::TransformId kRootTransform(1);
 
 }  // namespace
 

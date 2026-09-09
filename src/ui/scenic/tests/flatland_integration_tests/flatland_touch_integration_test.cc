@@ -69,6 +69,11 @@ using Vec = fuchsia_math::Vec;
 using VecF = fuchsia_math::VecF;
 
 namespace {
+
+const fuc::TransformId kRootTransform(1);
+const fuc::TransformId kViewportTransform(2);
+const fuc::ContentId kRootContentId(1);
+
 std::array<float, 2> TransformPointerCoords(std::array<float, 2> pointer, const Mat3& transform) {
   const Vec3 homogenous_pointer = {pointer[0], pointer[1], 1};
   Vec3 transformed_pointer = transform * homogenous_pointer;
@@ -362,10 +367,6 @@ class FlatlandTouchIntegrationTest : public ScenicCtfTest {
   std::array<std::array<float, 2>, 2> FullScreenExtents() const {
     return {{{0, 0}, {display_width_, display_height_}}};
   }
-
-  static inline const fuc::TransformId kRootTransform{1};
-  static inline const fuc::TransformId kViewportTransform{2};
-  static inline const fuc::ContentId kRootContentId{1};
 
   std::unique_ptr<FlatlandClientWithEventHandler> root_session_;
   fuv::ViewRef root_view_ref_;

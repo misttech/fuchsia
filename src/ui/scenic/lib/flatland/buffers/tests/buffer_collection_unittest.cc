@@ -170,8 +170,9 @@ TEST_F(BufferCollectionTest, IncompatibleConstraintsTest) {
   auto collection = std::move(result.value());
 
   // Create a client-side handle to the buffer collection and set the client
-  // constraints. We set it to have a max of zero buffers and to not use
-  // vulkan sampling, which the server side will specify is necessary.
+  // constraints. We set it to have a max of zero buffers and to declare no
+  // vulkan usage, whereas the server side will specify that vulkan sampling
+  // is necessary.
   {
     auto [client_end, server_end] = fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
 
@@ -202,8 +203,6 @@ TEST_F(BufferCollectionTest, IncompatibleConstraintsTest) {
     constraints.min_buffer_count(0);
     constraints.max_buffer_count(0);
 
-    // TODO: Is setting 0 here the intent? (the HLCPP code set !VULKAN_IMAGE_USAGE_SAMPLED, i.e. 0)
-    usage.vulkan(0u);
     constraints.usage(std::move(usage));
 
     fuchsia_sysmem2::ImageFormatConstraints image_constraints;

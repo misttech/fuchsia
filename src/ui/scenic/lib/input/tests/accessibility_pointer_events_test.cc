@@ -16,7 +16,7 @@
 
 namespace input::test {
 
-// These tests check that fuchsia::ui::input::accessibility::PointerEventListener integrates
+// These tests check that fuchsia.ui.input.accessibility.PointerEventListener integrates
 // correctly with InputSystem. We inject events into the system, accessibility receives them and
 // decides whether to consumer or reject them. If consumed the other client should win the contest,
 // if rejected the other client should lose.

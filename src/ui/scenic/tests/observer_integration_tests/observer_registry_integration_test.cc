@@ -224,11 +224,11 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfTest,
     fuc::ViewportProperties properties;
     properties.logical_size(fuchsia_math::SizeU{{.width = kDefaultSize, .height = kDefaultSize}});
 
-    fuc::TransformId kTransform{{.value = 1}};
+    const fuc::TransformId kTransform(1);
     EXPECT_TRUE(flatland->CreateTransform({{.transform_id = kTransform}}).is_ok());
     EXPECT_TRUE(flatland->SetRootTransform({{.transform_id = kTransform}}).is_ok());
 
-    const fuc::ContentId kContent{{.value = 1}};
+    const fuc::ContentId kContent(1);
     EXPECT_TRUE(
         flatland
             ->CreateViewport({{.viewport_id = kContent,
@@ -479,8 +479,8 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesLayoutUpdatesForFl
   properties.logical_size(fuchsia_math::SizeU{
       {.width = static_cast<uint32_t>(width), .height = static_cast<uint32_t>(height)}});
   EXPECT_TRUE((*root_session_)
-                  ->SetViewportProperties({{.viewport_id = fuc::ContentId{{.value = 1}},
-                                            .properties = std::move(properties)}})
+                  ->SetViewportProperties(
+                      {{.viewport_id = fuc::ContentId(1), .properties = std::move(properties)}})
                   .is_ok());
 
   BlockingPresent(this, *root_session_);
@@ -651,7 +651,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientDeath_ShouldTriggerNewSnap
   }
 
   // Set up the child view and connect it to the root view.
-  std::optional<std::unique_ptr<FlatlandClientWithEventHandler>> child;
+  std::unique_ptr<FlatlandClientWithEventHandler> child;
   zx_koid_t child_view_koid = ZX_KOID_INVALID;
   {
     auto [child_view_token, parent_viewport_token] = scenic::cpp::ViewCreationTokenPair::New();
@@ -663,7 +663,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientDeath_ShouldTriggerNewSnap
     child_view_koid = ExtractKoid(identity.view_ref());
 
     ConnectChildView(*root_session_, std::move(parent_viewport_token));
-    EXPECT_TRUE((*child.value())
+    EXPECT_TRUE((*child)
                     ->CreateView2({{.token = std::move(child_view_token),
                                     .view_identity = std::move(identity),
                                     .protocols = fuc::ViewBoundProtocols{},
@@ -671,7 +671,7 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientDeath_ShouldTriggerNewSnap
                                         std::move(parent_viewport_watcher_server_end)}})
                     .is_ok());
 
-    BlockingPresent(this, *child.value());
+    BlockingPresent(this, *child);
   }
 
   {  //  Child view should now be present in the snapshot.

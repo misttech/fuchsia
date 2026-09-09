@@ -638,7 +638,7 @@ class DisplayCompositorPixelTest : public gtest::RealLoopFixture {
 
     // Read the capture values back out.
     MapHostPointer(collection_info, /*vmo_index*/ 0, HostPointerAccessMode::kReadOnly,
-                   [read_values](uint8_t* vmo_host, uint32_t num_bytes) mutable {
+                   [read_values](const uint8_t* vmo_host, uint32_t num_bytes) mutable {
                      read_values->resize(num_bytes);
                      memcpy(read_values->data(), vmo_host, num_bytes);
                    });
@@ -1471,7 +1471,7 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
 
   // Make sure the render target has the same data as what's being put on the display.
   MapHostPointer(render_target_info, /*vmo_index*/ 0, HostPointerAccessMode::kReadOnly,
-                 [&](uint8_t* vmo_host, uint32_t num_bytes) {
+                 [&](const uint8_t* vmo_host, uint32_t num_bytes) {
                    // Grab the capture vmo data.
                    std::vector<uint8_t> read_values;
                    CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(),
@@ -1669,7 +1669,7 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
   // Make sure the render target has the same data as what's being put on the display.
   MapHostPointer(
       render_target_info, /*vmo_index*/ 0, HostPointerAccessMode::kReadOnly,
-      [&](uint8_t* vmo_host, uint32_t num_bytes) {
+      [&](const uint8_t* vmo_host, uint32_t num_bytes) {
         // Each pixel is 4 bytes, so the total memory used must be at least 4 * number of pixels, or
         // more if there is e.g. padding at the end of rows.
         EXPECT_GE(num_bytes, 4 * display->width_in_px() * display->height_in_px());
@@ -1897,7 +1897,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
   // Make sure the render target has the same data as what's being put on the display.
   MapHostPointer(
       render_target_info, /*vmo_index*/ 0, HostPointerAccessMode::kReadOnly,
-      [&](uint8_t* vmo_host, uint32_t num_bytes) {
+      [&](const uint8_t* vmo_host, uint32_t num_bytes) {
         const uint32_t display_bytes_per_row =
             utils::GetBytesPerRow(render_target_info.settings().value(), display->width_in_px());
         EXPECT_EQ(0U, display_bytes_per_row % 4);
@@ -2133,7 +2133,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
   // Make sure the render target has the same data as what's being put on the display.
   MapHostPointer(
       render_target_info, /*vmo_index*/ 0, HostPointerAccessMode::kReadOnly,
-      [&](uint8_t* vmo_host, uint32_t num_bytes) {
+      [&](const uint8_t* vmo_host, uint32_t num_bytes) {
         // Grab the capture vmo data.
         std::vector<uint8_t> read_values;
         CaptureDisplayOutput(*display_compositor->GetDisplayCoordinatorForTest(), capture_info,

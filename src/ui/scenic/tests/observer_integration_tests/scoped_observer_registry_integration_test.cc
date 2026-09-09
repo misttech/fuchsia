@@ -228,11 +228,11 @@ class FlatlandObserverRegistryIntegrationTest : public ScenicCtfTest,
     fuc::ViewportProperties properties;
     properties.logical_size(fuchsia_math::SizeU{{.width = kDefaultSize, .height = kDefaultSize}});
 
-    fuc::TransformId kTransform{{.value = 1}};
+    const fuc::TransformId kTransform(1);
     EXPECT_TRUE(flatland->CreateTransform({{.transform_id = kTransform}}).is_ok());
     EXPECT_TRUE(flatland->SetRootTransform({{.transform_id = kTransform}}).is_ok());
 
-    const fuc::ContentId kContent{{.value = 1}};
+    const fuc::ContentId kContent(1);
     EXPECT_TRUE(
         flatland
             ->CreateViewport({{.viewport_id = kContent,
@@ -490,8 +490,8 @@ TEST_F(FlatlandObserverRegistryIntegrationTest, ClientReceivesLayoutUpdatesForFl
   properties.logical_size(fuchsia_math::SizeU{
       {.width = static_cast<uint32_t>(width), .height = static_cast<uint32_t>(height)}});
   EXPECT_TRUE((*parent_session)
-                  ->SetViewportProperties({{.viewport_id = fuc::ContentId{{.value = 1}},
-                                            .properties = std::move(properties)}})
+                  ->SetViewportProperties(
+                      {{.viewport_id = fuc::ContentId(1), .properties = std::move(properties)}})
                   .is_ok());
 
   BlockingPresent(this, *parent_session);

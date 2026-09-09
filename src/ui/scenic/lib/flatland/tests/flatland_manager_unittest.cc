@@ -349,7 +349,7 @@ TEST_F(FlatlandManagerTest, CreateViewportedFlatlands) {
   auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
 
   FlatlandClient parent = CreateFlatland();
-  const fuchsia_ui_composition::ContentId kLinkId = {1};
+  const fuchsia_ui_composition::ContentId kLinkId(1);
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<fuchsia_ui_composition::ChildViewWatcher>::Create();
   fuchsia_ui_composition::ViewportProperties properties;
@@ -685,7 +685,7 @@ TEST_F(FlatlandManagerTest, ErrorClosesSession) {
   // Queue a bad SetRootTransform call ensure the session is closed.
   EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(id, _));
   fuchsia_ui_composition::FlatlandSetRootTransformRequest root_request;
-  root_request.transform_id(fuchsia_ui_composition::TransformId{2});
+  root_request.transform_id(fuchsia_ui_composition::TransformId(2));
   EXPECT_TRUE(flatland->SetRootTransform(std::move(root_request)).is_ok());
   PRESENT(flatland, id, false);
 
@@ -988,7 +988,7 @@ TEST_F(FlatlandManagerTest, SkipsPresentCreditsComparison) {
 TEST_F(FlatlandManagerTest, ViewBoundProtocolsAreRegistered) {
   auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
   FlatlandClient parent = CreateFlatland();
-  const fuchsia_ui_composition::ContentId kLinkId = {1};
+  const fuchsia_ui_composition::ContentId kLinkId(1);
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<fuchsia_ui_composition::ChildViewWatcher>::Create();
   fuchsia_ui_composition::ViewportProperties properties;
@@ -1034,7 +1034,7 @@ TEST_F(FlatlandManagerTest, ViewBoundProtocolsAreRegistered) {
 TEST_F(FlatlandManagerTest, ViewBoundProtocolsV2AreRegistered) {
   auto [child_token, parent_token] = scenic::cpp::ViewCreationTokenPair::New();
   FlatlandClient parent = CreateFlatland();
-  const fuchsia_ui_composition::ContentId kLinkId = {1};
+  const fuchsia_ui_composition::ContentId kLinkId(1);
   auto [child_view_watcher_client_end, child_view_watcher_server_end] =
       fidl::Endpoints<fuchsia_ui_composition::ChildViewWatcher>::Create();
   fuchsia_ui_composition::ViewportProperties properties;

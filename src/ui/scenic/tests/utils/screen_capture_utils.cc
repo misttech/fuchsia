@@ -31,7 +31,7 @@ void GenerateImageForFlatlandInstance(uint32_t buffer_collection_index,
   // Create the image in the Flatland instance.
   fuc::ImageProperties image_properties;
   image_properties.size(size);
-  const fuc::ContentId content_id{{.value = image_id}};
+  const fuc::ContentId content_id(image_id);
   FX_CHECK(flatland
                ->CreateImage({{.image_id = content_id,
                                .import_token = std::move(import_token),
@@ -41,7 +41,7 @@ void GenerateImageForFlatlandInstance(uint32_t buffer_collection_index,
 
   // Add the created image as a child of the parent transform specified. Apply the right size and
   // orientation commands.
-  const fuc::TransformId kTransform{{.value = transform_id}};
+  const fuc::TransformId kTransform(transform_id);
   FX_CHECK(flatland->CreateTransform({{.transform_id = kTransform}}).is_ok());
 
   FX_CHECK(flatland->SetContent({{.transform_id = kTransform, .content_id = content_id}}).is_ok());
