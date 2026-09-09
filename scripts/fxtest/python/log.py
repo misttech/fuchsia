@@ -88,7 +88,13 @@ class LogSource:
     def from_stream(cls, stream: typing.TextIO | None = None) -> "LogSource":
         return LogSource(cls.__static_key, stream=stream)
 
-    def read_log(self) -> Iterator[LogIterElement]:
+    def read_log(
+        self,
+        event_filter: (
+            typing.Callable[[dict[str, typing.Any]], bool] | None
+        ) = None,
+        line_filter: (typing.Callable[[str], bool] | None) = None,
+    ) -> Iterator[LogIterElement]:
         stream = self._stream
         close_stream = False
 
@@ -105,7 +111,12 @@ class LogSource:
                 if not line:
                     continue
 
+                if line_filter is not None and not line_filter(line):
+                    continue
+
                 json_contents = json.loads(line)
+                if event_filter is not None and not event_filter(json_contents):
+                    continue
                 log_event: event.Event = event.Event.from_dict(json_contents)  # type: ignore[attr-defined]
                 yield LogIterElement(log_event=log_event)
         except environment.EnvironmentError as e:
@@ -243,7 +254,13 @@ def compute_stats(log_source: LogSource) -> ExecutionStats:
         ExecutionStats: A dataclass containing top N events and summary stats.
     """
     event_dict: dict[event.Id, event.EventSpan] = dict()
-    for element in log_source.read_log():
+    # Fast-path: Only parse starting and ending events, skipping
+    # JSON decoding and dataclass deserialization for all other events
+    # (such as program_output lines).
+    for element in log_source.read_log(
+        event_filter=lambda d: bool(d.get("starting") or d.get("ending")),
+        line_filter=lambda l: '"starting"' in l or '"ending"' in l,
+    ):
         if element.log_event is None or element.log_event.id is None:
             continue
         event_id = element.log_event.id

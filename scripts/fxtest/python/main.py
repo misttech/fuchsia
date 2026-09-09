@@ -227,7 +227,14 @@ def do_process_previous(flags: args.Flags) -> int:
             flags, create_log_file=False
         )
         log_source = log.LogSource.from_env(env)
-        for element in log_source.read_log():
+        # Fast-path: Only parse the artifact_directory_path event, skipping
+        # JSON decoding and dataclass deserialization for all other events
+        # (such as program_output lines).
+        for element in log_source.read_log(
+            event_filter=lambda d: isinstance(d.get("payload"), dict)
+            and "artifact_directory_path" in d["payload"],
+            line_filter=lambda l: '"artifact_directory_path"' in l,
+        ):
             if (warning := element.warning) is not None:
                 print(f"WARNING: {warning}", file=sys.stderr)
                 continue
@@ -319,7 +326,20 @@ def do_print_failed(flags: args.Flags) -> int:
     suite_names: dict[event.Id, str] = {}
     failed_test_events: List[event.Event] = []
 
-    for element in log_source.read_log():
+    def is_suite_event(d: dict[str, typing.Any]) -> bool:
+        payload = d.get("payload")
+        return isinstance(payload, dict) and (
+            "test_suite_started" in payload or "test_suite_ended" in payload
+        )
+
+    # Fast-path: Only parse test suite start and end events, skipping
+    # JSON decoding and dataclass deserialization for all other events
+    # (such as program_output lines).
+    for element in log_source.read_log(
+        event_filter=is_suite_event,
+        line_filter=lambda l: '"test_suite_started"' in l
+        or '"test_suite_ended"' in l,
+    ):
         if (log_event := element.log_event) is None:
             continue
         if (payload := log_event.payload) is None:

@@ -77,6 +77,45 @@ class TestLogOutput(unittest.IsolatedAsyncioTestCase):
             log.pretty_print(log.LogSource.from_stream(output))
         self.assertIn("1 tests were run", stdout.getvalue())
 
+    async def test_read_log_with_filter(self) -> None:
+        """Test that read_log respects an event_filter."""
+        output = await self._write_test_logs()
+        output.seek(0)
+        source = log.LogSource.from_stream(output)
+        elements = list(
+            source.read_log(
+                event_filter=lambda d: isinstance(d.get("payload"), dict)
+                and "build_targets" in d["payload"]
+            )
+        )
+        self.assertEqual(len(elements), 1)
+        log_event = elements[0].log_event
+        self.assertIsNotNone(log_event)
+        assert log_event is not None
+        payload = log_event.payload
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload.build_targets, ["//test"])
+
+    async def test_read_log_with_line_filter(self) -> None:
+        """Test that read_log respects a line_filter."""
+        output = await self._write_test_logs()
+        output.seek(0)
+        source = log.LogSource.from_stream(output)
+        elements = list(
+            source.read_log(
+                line_filter=lambda l: '"build_targets"' in l,
+            )
+        )
+        self.assertEqual(len(elements), 1)
+        log_event = elements[0].log_event
+        self.assertIsNotNone(log_event)
+        assert log_event is not None
+        payload = log_event.payload
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload.build_targets, ["//test"])
+
 
 class TestPreviousStats(unittest.IsolatedAsyncioTestCase):
     async def _write_test_logs(self) -> io.StringIO:
