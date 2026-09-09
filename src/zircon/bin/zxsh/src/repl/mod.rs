@@ -41,8 +41,7 @@ pub fn run_repl(state: ShellState) {
 }
 
 fn run_repl_reader<R: BufRead>(reader: R, state: ShellState, is_tty: bool) -> Option<i32> {
-    let stdout = std::io::stdout();
-    run_repl_stream(reader, stdout.lock(), state, is_tty)
+    run_repl_stream(reader, line_editor::UnbufferedStdout, state, is_tty)
 }
 
 fn run_repl_stream<R: BufRead, W: Write>(
@@ -91,7 +90,6 @@ fn run_repl_loop<R: BufRead, W: Write>(
                 }
                 Err(ReadlineError::Interrupted) => {
                     ctx.signal_state.clear(ShellSignals::INT);
-                    let _ = writeln!(writer);
                     state.set_last_status(130);
                     input_buffer.clear();
                     continue;
@@ -99,7 +97,6 @@ fn run_repl_loop<R: BufRead, W: Write>(
                 Err(ReadlineError::Eof) => {
                     if ctx.signal_state.is_pending(ShellSignals::INT) {
                         ctx.signal_state.clear(ShellSignals::INT);
-                        let _ = writeln!(writer);
                         state.set_last_status(130);
                         input_buffer.clear();
                         continue;
@@ -421,5 +418,21 @@ mod tests {
         // Prompt is rendered, but PromptOnly mode does not echo typed characters.
         assert!(out_str.contains("$ "));
         assert!(!out_str.contains("echo hello"));
+    }
+
+    #[test]
+    fn test_repl_interactive_ctrl_c_interrupted() {
+        let input = b"\x03exit 42\n";
+        let cursor = Cursor::new(input);
+        let mut output = Vec::new();
+        let mut editor = Editor::with_config(
+            Config::default()
+                .with_terminal_mode(line_editor::TerminalMode::Tty)
+                .with_column_width(line_editor::ColumnWidth::Fixed(80)),
+        );
+
+        let state = ShellState::new();
+        let res = run_repl_loop(cursor, &mut output, state, Some(&mut editor));
+        assert_eq!(res, Some(42));
     }
 }

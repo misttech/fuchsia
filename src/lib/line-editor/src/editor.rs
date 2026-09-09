@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::config::{ColumnWidth, Config, OperatingMode};
+use crate::config::{ColumnWidth, Config, DEFAULT_COLUMN_COUNT, OperatingMode};
 use crate::control::{self, *};
 use crate::history::{History, HistoryDir};
+use crate::io::UnbufferedStdout;
 use crate::state::State;
 use crate::types::{CompletionHandler, HintHandler, ReadlineError};
 use bstr::{BStr, BString, ByteSlice};
@@ -18,6 +19,7 @@ pub struct Editor {
     pub(crate) history: History,
     pub(crate) completion_handler: Option<Box<dyn CompletionHandler>>,
     pub(crate) hint_handler: Option<Box<dyn HintHandler>>,
+    pub(crate) last_cols: std::cell::Cell<usize>,
 }
 
 impl Default for Editor {
@@ -40,15 +42,15 @@ impl Editor {
             history: History::new(max_history_len),
             completion_handler: None,
             hint_handler: None,
+            last_cols: std::cell::Cell::new(DEFAULT_COLUMN_COUNT),
         }
     }
 
     /// Reads a line from stdin/stdout using this editor.
     pub fn readline(&mut self, prompt: impl AsRef<BStr>) -> Result<BString, ReadlineError> {
         let stdin = std::io::stdin();
-        let stdout = std::io::stdout();
         let mode = self.config.resolve_operating_mode(|| stdin.is_terminal());
-        self.readline_from(stdin.lock(), stdout.lock(), mode, prompt)
+        self.readline_from(stdin.lock(), UnbufferedStdout, mode, prompt)
     }
 
     /// Reads a line from the provided reader and writer streams using the specified operating mode.
@@ -300,7 +302,7 @@ impl Editor {
 
     /// Clears the terminal screen using stdout.
     pub fn clear_screen(&self) -> Result<(), std::io::Error> {
-        let mut stdout = std::io::stdout();
+        let mut stdout = UnbufferedStdout;
         self.clear_screen_writer(&mut stdout)
     }
 
@@ -331,32 +333,33 @@ impl Editor {
     fn get_columns_ansi<R: Read, W: Write>(&self, reader: &mut R, writer: &mut W) -> usize {
         let start_pos = get_cursor_position(reader, writer);
         if start_pos.is_none() {
-            return 80;
+            return self.last_cols.get();
         }
-        let (start_row, start_col) = start_pos.unwrap();
+        let (_start_row, start_col) = start_pos.unwrap();
 
         if control::write_query_column_width(writer).is_err() {
-            return 80;
+            return self.last_cols.get();
         }
 
         let max_pos = get_cursor_position(reader, writer);
-        if max_pos.is_none() {
-            return 80;
-        }
-        let (_, max_col) = max_pos.unwrap();
+        let cols = match max_pos {
+            None => self.last_cols.get(),
+            Some((_, col)) => {
+                if col <= 1 {
+                    self.last_cols.get()
+                } else {
+                    self.last_cols.set(col);
+                    col
+                }
+            }
+        };
 
-        if max_col > start_col {
-            let final_cols = max_col;
-            let seq = format!("\x1b[{}D", final_cols - start_col);
+        if cols > start_col {
+            let seq = format!("\x1b[{}D", cols - start_col);
             let _ = writer.write_all(seq.as_bytes());
             let _ = writer.flush();
-            final_cols
-        } else {
-            let _ = control::write_move_cursor_column(writer, start_col);
-            let _ = writer.flush();
-            let _ = start_row;
-            80
         }
+        cols
     }
 }
 

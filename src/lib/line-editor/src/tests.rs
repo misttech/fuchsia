@@ -701,6 +701,47 @@ fn test_term_columns_override() {
 }
 
 #[test]
+fn test_auto_column_width_fallback() {
+    let (mut r_in, mut w_in) = create_pipe();
+    let (mut r_out, mut w_out) = create_pipe();
+
+    let handle = std::thread::spawn(move || {
+        let mut editor = Editor::with_config(
+            Config::default()
+                .with_terminal_mode(TerminalMode::Tty)
+                .with_term_name(Some("xterm-256color")),
+        );
+        let mode = editor.config.resolve_operating_mode(|| true);
+        editor.readline_from(&mut r_in, &mut w_out, mode, b"prompt> ".as_bstr())
+    });
+
+    let mut buf = [0u8; 32];
+    r_out.read_exact(&mut buf[..4]).unwrap();
+    w_in.write_all(b"\x1b[10;80R").unwrap();
+    r_out.read_exact(&mut buf[..6]).unwrap();
+    r_out.read_exact(&mut buf[..4]).unwrap();
+    w_in.write_all(b"\x1b[10;80R").unwrap();
+
+    let mut prompt_buf = [0u8; 8];
+    r_out.read_exact(&mut prompt_buf).unwrap();
+    assert_eq!(&prompt_buf, b"prompt> ");
+
+    w_in.write_all(b"hello\n").unwrap();
+    let res = handle.join().unwrap();
+    assert_eq!(res.ok(), Some(BString::from("hello")));
+}
+
+#[test]
+fn test_get_columns_auto_default() {
+    let (mut r_in, w_in) = create_pipe();
+    let (_r_out, mut w_out) = create_pipe();
+    drop(w_in);
+    let editor = Editor::with_config(Config::default());
+    let cols = editor.get_columns(&mut r_in, &mut w_out);
+    assert_eq!(cols, DEFAULT_COLUMN_COUNT);
+}
+
+#[test]
 fn test_term_name_override_dumb() {
     let (mut r_in, mut w_in) = create_pipe();
     let (mut r_out, mut w_out) = create_pipe();
@@ -969,4 +1010,95 @@ fn test_render_buf_capacity_retention() {
     state.edit_insert(b'!');
     let cap2 = state.render_buf.capacity();
     assert_eq!(cap1, cap2, "render_buf capacity should be retained without reallocation");
+}
+
+#[test]
+fn test_unbuffered_stdout_trait() {
+    let mut out = UnbufferedStdout;
+    assert_eq!(out.write(&[]).unwrap(), 0);
+    assert!(out.flush().is_ok());
+
+    let mut ref_out = &UnbufferedStdout;
+    assert_eq!(ref_out.write(&[]).unwrap(), 0);
+    assert!(ref_out.flush().is_ok());
+}
+
+#[test]
+fn test_handle_escape_sequence_csi_draining() {
+    let (mut r_in, mut w_in) = create_pipe();
+    let (_r_out, mut w_out) = create_pipe();
+
+    // Write a cursor position response: ESC [ 2 4 ; 8 0 R
+    // followed by 'a' '\n'
+    w_in.write_all(b"4;80Ra\n").unwrap();
+
+    let mut editor = test_editor();
+    let prompt = b"".as_bstr();
+    let mut state = state::State {
+        reader: &mut r_in,
+        writer: &mut w_out,
+        buffer: BString::default(),
+        prompt,
+        prompt_length: 0,
+        cursor_position: 0,
+        previous_cursor_position: 0,
+        column_count: 80,
+        max_rows: 0,
+        history_index: 0,
+        draft_line: None,
+        editor: &mut editor,
+        render_buf: Vec::with_capacity(512),
+    };
+
+    // ESC [ 2 has been read, passing b'[' and b'2'
+    state.handle_escape_sequence(b'[', b'2');
+
+    // The sequence 4;80R should have been completely consumed.
+    // The next byte available in the reader should be 'a'.
+    let next_byte = control::read_byte(state.reader).unwrap();
+    assert_eq!(next_byte, Some(b'a'));
+}
+
+#[test]
+fn test_get_columns_ansi_cursor_query() {
+    let (mut r_in, mut w_in) = create_pipe();
+    let (mut r_out, mut w_out) = create_pipe();
+
+    let editor = Editor::with_config(Config::default().with_column_width(ColumnWidth::AnsiCursor));
+    let handle = std::thread::spawn(move || editor.get_columns(&mut r_in, &mut w_out));
+
+    let mut buf = [0u8; 32];
+    // Read \x1b[6n
+    r_out.read_exact(&mut buf[..4]).unwrap();
+    // Respond start pos (row 1, col 10)
+    w_in.write_all(b"\x1b[1;10R").unwrap();
+    // Read \x1b[999C
+    r_out.read_exact(&mut buf[..6]).unwrap();
+    // Read \x1b[6n
+    r_out.read_exact(&mut buf[..4]).unwrap();
+    // Respond max pos (row 1, col 120)
+    w_in.write_all(b"\x1b[1;120R").unwrap();
+
+    let cols = handle.join().unwrap();
+    assert_eq!(cols, 120);
+}
+
+#[test]
+fn test_get_columns_ansi_cursor_col_1_uses_last_cols() {
+    let (mut r_in, mut w_in) = create_pipe();
+    let (mut r_out, mut w_out) = create_pipe();
+
+    let editor = Editor::with_config(Config::default().with_column_width(ColumnWidth::AnsiCursor));
+    let handle = std::thread::spawn(move || editor.get_columns(&mut r_in, &mut w_out));
+
+    let mut buf = [0u8; 32];
+    r_out.read_exact(&mut buf[..4]).unwrap();
+    w_in.write_all(b"\x1b[1;10R").unwrap();
+    r_out.read_exact(&mut buf[..6]).unwrap();
+    r_out.read_exact(&mut buf[..4]).unwrap();
+    // Terminal processing output failure: cols == 1
+    w_in.write_all(b"\x1b[1;1R").unwrap();
+
+    let cols = handle.join().unwrap();
+    assert_eq!(cols, DEFAULT_COLUMN_COUNT);
 }

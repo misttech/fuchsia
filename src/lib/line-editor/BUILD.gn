@@ -19,6 +19,7 @@ rustc_library("line-editor") {
     "src/control.rs",
     "src/editor.rs",
     "src/history.rs",
+    "src/io.rs",
     "src/lib.rs",
     "src/state.rs",
     "src/tests.rs",

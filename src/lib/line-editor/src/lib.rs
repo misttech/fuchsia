@@ -9,6 +9,7 @@ mod config;
 mod control;
 mod editor;
 mod history;
+mod io;
 mod state;
 mod types;
 
@@ -16,11 +17,12 @@ mod types;
 mod tests;
 
 pub use config::{
-    ColumnWidth, Config, DEFAULT_MAX_HISTORY_LEN, DEFAULT_MAX_LINE_LEN, OperatingMode,
-    TerminalCapability, TerminalMode, terminal_capability_from_name,
+    ColumnWidth, Config, DEFAULT_COLUMN_COUNT, DEFAULT_MAX_HISTORY_LEN, DEFAULT_MAX_LINE_LEN,
+    OperatingMode, TerminalCapability, TerminalMode, terminal_capability_from_name,
 };
 pub use editor::Editor;
 pub use history::History;
+pub use io::UnbufferedStdout;
 pub use types::{Color, CompletionHandler, Hint, HintHandler, ReadlineError};
 
 use bstr::BStr;

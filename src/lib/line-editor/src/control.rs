@@ -39,6 +39,9 @@ pub(crate) const CMD_SELECT_GRAPHIC_RENDITION: u8 = b'm';
 pub(crate) const CMD_DEVICE_STATUS_REPORT: u8 = b'n';
 
 // Semantic argument constants for control sequences.
+pub(crate) const CSI_PARAM_OR_INTERMEDIATE_BYTES: std::ops::RangeInclusive<u8> = b' '..=b'?';
+pub(crate) const CSI_FINAL_BYTES: std::ops::RangeInclusive<u8> = b'@'..=b'~';
+
 const STATUS_REPORT_CURSOR_POSITION: usize = 6;
 const ERASE_ENTIRE_DISPLAY: usize = 2;
 const ERASE_TO_END_OF_LINE: usize = 0;

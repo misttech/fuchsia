@@ -346,8 +346,18 @@ impl<'a, R: Read, W: Write> State<'a, R, W> {
 
     pub(crate) fn handle_escape_sequence(&mut self, b1: u8, b2: u8) {
         if b1 == b'[' {
-            if (b'0'..=b'9').contains(&b2) {
-                if control::read_byte(self.reader).ok().flatten() == Some(b'~') && b2 == b'3' {
+            if control::CSI_PARAM_OR_INTERMEDIATE_BYTES.contains(&b2) {
+                let mut term = 0u8;
+                loop {
+                    let Some(b) = control::read_byte(self.reader).ok().flatten() else {
+                        break;
+                    };
+                    if control::CSI_FINAL_BYTES.contains(&b) {
+                        term = b;
+                        break;
+                    }
+                }
+                if term == b'~' && b2 == b'3' {
                     self.delete();
                 }
             } else {

@@ -8,6 +8,9 @@ pub const DEFAULT_MAX_HISTORY_LEN: usize = 100;
 /// Default maximum length of an input line in bytes.
 pub const DEFAULT_MAX_LINE_LEN: usize = 4096;
 
+/// Default terminal column width when auto-detection fails.
+pub const DEFAULT_COLUMN_COUNT: usize = 80;
+
 /// Controls how TTY terminal capability detection is performed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TerminalMode {
