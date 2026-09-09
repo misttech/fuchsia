@@ -228,6 +228,7 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
             expected_watches_[request.address()])) {
       ZX_ASSERT(
           std::get<std::deque<QueuedExpectation>>(expected_watches_[request.address()]).empty());
+      completer.Reply(zx::ok());
       return;
     }
 
