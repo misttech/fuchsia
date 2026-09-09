@@ -231,6 +231,8 @@ class UsbPeripheral : public fdf::DriverBase2,
     }
   }
 
+  bool IsPeripheralStopping() const __TA_EXCLUDES(lock_);
+
   void SetStateLocked(DeviceState state) __TA_REQUIRES(lock_);
   void SetState(DeviceState state) {
     fbl::AutoLock lock(&lock_);
@@ -447,8 +449,8 @@ class UsbPeripheral : public fdf::DriverBase2,
   bool set_interface_in_init_ __TA_GUARDED(lock_) = false;
   // True if we are connected to a host,
   bool connected_ __TA_GUARDED(lock_) = false;
-  // True if we are under the PrepareStop() codepath.
-  bool stopping_driver_ = false;
+  // True if we are under the Stop() codepath.
+  bool stopping_driver_ __TA_GUARDED(lock_) = false;
   // Current configuration number selected via USB_REQ_SET_CONFIGURATION
   // (will be 0 or 1 since we currently do not support multiple configurations).
   // 0 indicates that the device is unconfigured and should not accept USB requests

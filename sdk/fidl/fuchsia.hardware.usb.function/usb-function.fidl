@@ -101,6 +101,7 @@ closed protocol UsbFunction {
     ///     * `ZX_ERR_ALREADY_BOUND` if the function interface is already bound.
     ///     * `ZX_ERR_NO_MEMORY` if the protocol server fails to allocate memory to store the
     ///       descriptors.
+    ///     * `ZX_ERR_BAD_STATE` if the peripheral device is stopping or tearing down.
     strict Configure(resource struct {
         configuration vector<uint8>:MAX_DESCRIPTOR_LEN;
         iface client_end:UsbFunctionInterface;

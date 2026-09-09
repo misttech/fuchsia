@@ -80,6 +80,12 @@ struct formatter<fendpoint::wire::EndpointInfo> : formatter<string_view> {
 
 namespace usb_peripheral {
 
+bool UsbPeripheral::IsPeripheralStopping() const {
+  fbl::AutoLock lock(&lock_);
+  // Return true if the peripheral is undergoing teardown or the driver is stopping.
+  return state_ == DeviceState::kStopping || stopping_driver_;
+}
+
 zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
   TRACE_DURATION("usb-peripheral", __func__, "ep_address", ep_address);
   fidl::Arena arena;
@@ -370,6 +376,10 @@ zx::result<uint8_t> UsbPeripheral::ValidateFunction(size_t function_index, void*
                                                     size_t length) {
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
   fbl::AutoLock lock(&lock_);
+  if (state_ != DeviceState::kWaitForFunctionBind || stopping_driver_) {
+    fdf::error("ValidateFunction: invalid device state {} (stopping={})", state_, stopping_driver_);
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
   auto* intf_desc = static_cast<usb_interface_descriptor_t*>(descriptors);
   uint8_t num_interfaces = 0;
   if (intf_desc->b_descriptor_type == USB_DT_INTERFACE) {
@@ -478,12 +488,20 @@ bool UsbPeripheral::AllFunctionsRegistered() const {
 zx_status_t UsbPeripheral::FunctionRegistered() {
   TRACE_DURATION("usb-peripheral", __func__);
 
-  DeviceState state = SnapshotState();
+  DeviceState state = DeviceState::kNoConfiguration;
+  bool stopping = false;
+  {
+    fbl::AutoLock lock(&lock_);
+    state = state_;
+    stopping = stopping_driver_;
+  }
+
+  if (state == DeviceState::kStopping || stopping) {
+    fdf::info("FunctionRegistered: called while stopping or tearing down. Ignoring.");
+    return ZX_OK;
+  }
+
   if (state != DeviceState::kWaitForFunctionBind) {
-    if (state == DeviceState::kStopping) {
-      fdf::info("FunctionRegistered: called while stopping. Ignoring.");
-      return ZX_OK;
-    }
     fdf::error("FunctionRegistered: unexpected state {}", state);
     return ZX_ERR_BAD_STATE;
   }
@@ -494,7 +512,7 @@ zx_status_t UsbPeripheral::FunctionRegistered() {
 zx_status_t UsbPeripheral::CheckAndStartController() {
   {
     fbl::AutoLock lock(&lock_);
-    if (state_ != DeviceState::kWaitForFunctionBind) {
+    if (state_ != DeviceState::kWaitForFunctionBind || stopping_driver_) {
       return ZX_OK;
     }
     if (functions_.empty() || !AllFunctionsRegistered()) {
@@ -1236,7 +1254,7 @@ void UsbPeripheral::SetConfiguration(uint8_t configuration,
   bool deferred = false;
   {
     fbl::AutoLock lock(&lock_);
-    if (state_ == DeviceState::kStopping || clearing_functions_) {
+    if (state_ == DeviceState::kStopping || clearing_functions_ || stopping_driver_) {
       fdf::warn("SetConfiguration({}) rejected: peripheral is stopping or clearing functions.",
                 configuration);
       completer(ZX_ERR_BAD_STATE);
@@ -1332,6 +1350,11 @@ void UsbPeripheral::SetInterface(uint8_t interface, uint8_t alt_setting,
   std::shared_ptr<UsbFunction> function;
   {
     fbl::AutoLock lock(&lock_);
+    if (stopping_driver_ || state_ == DeviceState::kStopping) {
+      fdf::warn("SetInterface called while peripheral is stopping (state={})", state_);
+      completer(ZX_ERR_BAD_STATE);
+      return;
+    }
     if (configuration_ == 0) {
       fdf::error("SetInterface called before device is configured");
       completer(ZX_ERR_BAD_STATE);
@@ -1932,23 +1955,13 @@ void UsbPeripheral::OnHostConnectionChanged(bool connected) {
       pending_set_configuration_.reset();
     }
     bool ignore_disconnect = false;
-    switch (state_) {
-      case DeviceState::kHostConnected:
-        // Keep the state in kHostConnected while unconfiguring to keep clocks and power active.
-        break;
-      case DeviceState::kPeripheralReady:
-      case DeviceState::kWaitForFunctionBind:
-      case DeviceState::kStarting:
-      case DeviceState::kStopping:
-        // This is a no-op for the state-machine.
-        // We still proceed to make sure the functions are not configured in case
-        // there's a race between host connection changing and peripheral state
-        // changing.
-        break;
-      case DeviceState::kNoConfiguration:
-        fdf::info("Host disconnected event ignored in state {}", state_);
-        ignore_disconnect = true;
-        break;
+    if (stopping_driver_ || state_ == DeviceState::kStopping) {
+      fdf::info("Host disconnected event ignored: driver is stopping or tearing down (state={}).",
+                state_);
+      ignore_disconnect = true;
+    } else if (state_ == DeviceState::kNoConfiguration) {
+      fdf::info("Host disconnected event ignored in state {}", state_);
+      ignore_disconnect = true;
     }
 
     if (!ignore_disconnect) {
@@ -2069,8 +2082,14 @@ void UsbPeripheral::SetConfiguration(SetConfigurationRequestView request,
 
   {
     fbl::AutoLock _(&lock_);
+    if (state_ == DeviceState::kStopping || stopping_driver_) {
+      fdf::error("Cannot set configuration while peripheral is stopping (state={}, stopping={})",
+                 state_, stopping_driver_);
+      completer.ReplyError(ZX_ERR_BAD_STATE);
+      return;
+    }
     if (state_ != DeviceState::kNoConfiguration) {
-      fdf::error("Cannot set configuration while functions are bound");
+      fdf::error("Cannot set configuration while functions are bound (state={})", state_);
       completer.ReplyError(ZX_ERR_ALREADY_BOUND);
       return;
     }
@@ -2293,6 +2312,9 @@ zx_status_t UsbPeripheral::SetDefaultConfig(std::vector<FunctionDescriptor>& fun
 
   {
     fbl::AutoLock _(&lock_);
+    if (state_ == DeviceState::kStopping || stopping_driver_) {
+      return ZX_ERR_BAD_STATE;
+    }
     if (state_ != DeviceState::kNoConfiguration) {
       return ZX_ERR_ALREADY_BOUND;
     }

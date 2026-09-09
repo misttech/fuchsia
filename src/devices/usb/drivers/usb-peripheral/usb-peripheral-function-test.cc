@@ -1971,7 +1971,7 @@ TEST_F(UsbPeripheralFunctionTest, SetFeatureEndpointHaltCancelsAll) {
   ASSERT_OK(res4.value());
 }
 
-TEST_F(UsbPeripheralFunctionTest, DISABLED_RejectConfigureWhileStopping) {
+TEST_F(UsbPeripheralFunctionTest, RejectConfigureWhileStopping) {
   // Connect peripheral so we can call ClearFunctions().
   zx::result peripheral_client_result = ConnectPeripheral();
   ASSERT_OK(peripheral_client_result);
@@ -1989,18 +1989,12 @@ TEST_F(UsbPeripheralFunctionTest, DISABLED_RejectConfigureWhileStopping) {
 
   // Intercept SetConfigured(false) to stall teardown in kStopping state.
   libsync::Completion unconfigure_received;
+  std::mutex completer_lock;
   std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> saved_completer;
-  auto completer_cleanup = fit::defer([&]() {
-    if (saved_completer.has_value()) {
-      saved_completer->ReplySuccess();
-      saved_completer.reset();
-    }
-  });
-  auto callback_cleanup =
-      fit::defer([&]() { fake_function->set_on_set_configured_async(nullptr); });
   fake_function->set_on_set_configured_async(
       [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
         if (!configured) {
+          std::lock_guard lock(completer_lock);
           saved_completer = std::move(completer);
           unconfigure_received.Signal();
         } else {
@@ -2046,6 +2040,20 @@ TEST_F(UsbPeripheralFunctionTest, DISABLED_RejectConfigureWhileStopping) {
     auto clear_res = peripheral_client->ClearFunctions();
     EXPECT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
   });
+  // completer_cleanup is declared after clear_promise so that upon test failure or exception,
+  // its destructor runs before ~future() blocks waiting on ClearFunctions().
+  auto completer_cleanup = fit::defer([&]() {
+    fake_function->set_on_set_configured_async(nullptr);
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> completer_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completer_to_run = std::move(saved_completer);
+      saved_completer.reset();
+    }
+    if (completer_to_run.has_value()) {
+      completer_to_run->ReplySuccess();
+    }
+  });
 
   // Wait until FakeUsbFunction receives SetConfigured(false).
   ASSERT_OK(unconfigure_received.Wait(zx::sec(5)));
@@ -2070,12 +2078,63 @@ TEST_F(UsbPeripheralFunctionTest, DISABLED_RejectConfigureWhileStopping) {
   EXPECT_EQ(second_configure_res->error_value(), ZX_ERR_BAD_STATE);
 
   // Complete the SetConfigured(false) call to resume/finish teardown.
-  ASSERT_TRUE(saved_completer.has_value());
+  {
+    std::lock_guard lock(completer_lock);
+    ASSERT_TRUE(saved_completer.has_value());
+  }
   completer_cleanup.call();
 
   // Wait for the ClearFunctions call to complete on the background thread.
   clear_promise.get();
   dut().runtime().RunUntilIdle();
+}
+
+// Test that calling SetConfigured(false) on a function whose interface is not registered or
+// already unbound succeeds as a no-op with ZX_OK rather than failing with ZX_ERR_BAD_STATE.
+TEST_F(UsbPeripheralFunctionTest, UnconfiguredFunctionUnconfigureSucceedsAsNoOp) {
+  // Add a function without calling Configure() or binding an interface.
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+
+  // Clear functions while the function is not yet bound to an interface.
+  // This triggers SetConfigured(false) in UsbPeripheral::ClearFunctions().
+  auto peripheral_client = ConnectPeripheral();
+  ASSERT_OK(peripheral_client);
+
+  auto clear_res = peripheral_client.value()->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+}
+
+// Test that calling SetConfigured(false) on a function whose interface unbinds or closes
+// concurrently (e.g. during disconnect/suspend when the child function driver unbinds)
+// succeeds cleanly with ZX_OK rather than failing with ZX_ERR_CANCELED.
+TEST_F(UsbPeripheralFunctionTest, FunctionUnbindDuringDeconfigureSucceedsCleanly) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  zx::result<uint8_t> configure_result = ConfigureDefaultFunction(function_client, arena);
+  ASSERT_OK(configure_result);
+
+  // Now simulate the function unbinding its interface while ClearFunctions (SetConfigured(false))
+  // runs.
+  auto peripheral_client = ConnectPeripheral();
+  ASSERT_OK(peripheral_client);
+
+  // Close the function client channel, which triggers empty_set_handler and AsyncTeardown on
+  // function_intf_.
+  function_client = {};
+
+  auto clear_res = peripheral_client.value()->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
 }
 
 }  // namespace
