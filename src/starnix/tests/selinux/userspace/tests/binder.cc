@@ -9,6 +9,7 @@
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
@@ -385,6 +386,74 @@ const auto kImpersonatePermissionValues = ::testing::Combine(
     ::testing::Values("test_u:test_r:binder_impersonation_allow_impersonate_posttransition_t:s0",
                       "test_u:test_r:binder_impersonation_deny_impersonate_posttransition_t:s0"));
 INSTANTIATE_TEST_SUITE_P(BinderTest, Impersonation, kImpersonatePermissionValues);
+
+// Verifies that `security_binder_transaction` evaluates permissions against the target's
+// cached credentials recorded when `/dev/binder` was opened.
+// Even if the target process transitions to a different security domain after opening
+// `/dev/binder`, subsequent transactions to it continue to be authorized against the target's
+// cached open-time domain.
+TEST_F(BinderTest, TargetUsesCachedSid) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  // The target process initially opens `/dev/binder` as `binder_context_manager_t`, sets itself as
+  // context manager, and then transitions to `binder_service_provider_t`.
+  // The caller runs as `binder_target_domain_transition_client_t`.
+  // The policy allows the caller to call `binder_context_manager_t`, but NOT
+  // `binder_service_provider_t`.
+  const char* kTargetInitialLabel = "test_u:test_r:binder_context_manager_t:s0";
+  const char* kTargetPostTransitionLabel = "test_u:test_r:binder_service_provider_t:s0";
+  const char* kClientLabel = "test_u:test_r:binder_target_domain_transition_client_t:s0";
+
+  test_helper::Rendezvous ready = test_helper::MakeRendezvous();
+  test_helper::Rendezvous done = test_helper::MakeRendezvous();
+  test_helper::ForkHelper target_fork_helper;
+
+  RunInForkedProcessWithLabel(
+      target_fork_helper, kTargetInitialLabel,
+      [&, ready_poker = std::move(ready.poker), done_holder = std::move(done.holder)]() mutable {
+        auto fd_and_mapping = OpenBinderAndMap(temp_dir_.path());
+        ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_SET_CONTEXT_MGR, 0), SyscallSucceeds());
+        ASSERT_TRUE(WriteTaskAttr("current", kTargetPostTransitionLabel).is_ok());
+
+        ready_poker.poke();
+        done_holder.hold();
+      });
+
+  ready.holder.hold();
+  auto cleanup = fit::defer([&] { done.poker.poke(); });
+
+  ASSERT_TRUE(RunSubprocessAs(kClientLabel, [&] {
+    auto fd_and_mapping = OpenBinderAndMap(temp_dir_.path());
+
+    TransactionWriteBuffer transaction_payload = {
+        .command = BC_TRANSACTION,
+        .data =
+            {
+                .target =
+                    {
+                        .handle = kServiceManagerHandle,
+                    },
+                .flags = TF_ONE_WAY,
+            },
+    };
+
+    struct binder_write_read payload = {};
+    payload.write_buffer = (binder_uintptr_t)&transaction_payload;
+    payload.write_size = sizeof(TransactionWriteBuffer);
+
+    std::array<uint8_t, kReadBufferSize> read_buffer = {};
+    payload.read_size = sizeof(read_buffer);
+    payload.read_buffer = (binder_uintptr_t)read_buffer.data();
+
+    ASSERT_THAT(ioctl(fd_and_mapping.fd_.get(), BINDER_WRITE_READ, &payload), SyscallSucceeds());
+    ParsedMessage message =
+        ParseMessage((binder_uintptr_t)read_buffer.data(), payload.read_consumed);
+
+    // The transaction succeeds because authorization uses the target's cached open-time
+    // domain (`binder_context_manager_t`), which the client has permission to call.
+    EXPECT_THAT(message.returns_, ::testing::Contains(BR_TRANSACTION_COMPLETE));
+  }));
+}
 
 }  // namespace
 

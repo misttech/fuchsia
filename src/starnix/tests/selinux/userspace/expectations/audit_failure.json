@@ -1,5 +1,9 @@
 {
     "audit_failure": [
+        // TODO: https://fxbug.dev/558674709 - Evaluate binder permissions against cached
+        // target SID.
+        "BinderTest.TargetUsesCachedSid",
+
         // TODO: https://fxbug.dev/509488263 - Make (SE)Starnix match the (SE)Linux behavior
         // demonstrated in this test.
         "BpfMapCreateTestSuite/BpfMapCreateTest.Create/create",
