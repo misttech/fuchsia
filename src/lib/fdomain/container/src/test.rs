@@ -3,6 +3,10 @@
 // found in the LICENSE file.
 
 use super::*;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Wake, Waker};
 
 #[fuchsia::test]
 async fn socket() {
@@ -1622,4 +1626,497 @@ async fn vmo() {
         })
         .unwrap();
     assert_eq!(stream_size_resp2.size, 512);
+}
+
+struct FlagWaker(AtomicBool);
+
+impl Wake for FlagWaker {
+    fn wake(self: Arc<Self>) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
+#[fuchsia::test]
+async fn close_empty_handles() {
+    let mut fdomain = FDomain::new_empty();
+    let tid = 1.try_into().unwrap();
+    fdomain.close(tid, proto::FDomainCloseRequest { handles: vec![] });
+    let response = fdomain.next().await.unwrap();
+    let FDomainEvent::ClosedHandle(got_tid, Ok(())) = response else {
+        panic!("expected ClosedHandle Ok, got {:?}", response);
+    };
+    assert_eq!(tid, got_tid);
+}
+
+#[fuchsia::test]
+async fn close_nonexistent_handle() {
+    let mut fdomain = FDomain::new_empty();
+    let tid = 1.try_into().unwrap();
+    fdomain.close(tid, proto::FDomainCloseRequest { handles: vec![proto::HandleId { id: 999 }] });
+    let response = fdomain.next().await.unwrap();
+    let FDomainEvent::ClosedHandle(
+        got_tid,
+        Err(proto::Error::BadHandleId(proto::BadHandleId { id: 999 })),
+    ) = response
+    else {
+        panic!("expected ClosedHandle BadHandleId, got {:?}", response);
+    };
+    assert_eq!(tid, got_tid);
+}
+
+#[fuchsia::test]
+async fn close_mixed_handles() {
+    let mut fdomain = FDomain::new_empty();
+    let hid_valid_a = 0;
+    let hid_valid_b = 1;
+    assert!(
+        fdomain
+            .create_channel(proto::ChannelCreateChannelRequest {
+                handles: [
+                    proto::NewHandleId { id: hid_valid_a },
+                    proto::NewHandleId { id: hid_valid_b },
+                ],
+            })
+            .is_ok()
+    );
+
+    let tid = 1.try_into().unwrap();
+    fdomain.close(
+        tid,
+        proto::FDomainCloseRequest {
+            handles: vec![proto::HandleId { id: hid_valid_a }, proto::HandleId { id: 999 }],
+        },
+    );
+    let response = fdomain.next().await.unwrap();
+    let FDomainEvent::ClosedHandle(
+        got_tid,
+        Err(proto::Error::BadHandleId(proto::BadHandleId { id: 999 })),
+    ) = response
+    else {
+        panic!("expected ClosedHandle BadHandleId, got {:?}", response);
+    };
+    assert_eq!(tid, got_tid);
+
+    // Verify hid_valid_a was closed while hid_valid_b is still valid
+    let tid_read = 2.try_into().unwrap();
+    fdomain.read_channel(
+        tid_read,
+        proto::ChannelReadChannelRequest { handle: proto::HandleId { id: hid_valid_a } },
+    );
+    let response_read = fdomain.next().await.unwrap();
+    let FDomainEvent::ChannelData(
+        got_tid,
+        Err(proto::Error::BadHandleId(proto::BadHandleId { id: 0 })),
+    ) = response_read
+    else {
+        panic!("expected BadHandleId, got {:?}", response_read);
+    };
+    assert_eq!(tid_read, got_tid);
+}
+
+#[fuchsia::test]
+async fn waker_wakes_on_channel_operations() {
+    let mut fdomain = FDomain::new_empty();
+    let hid_a = 0;
+    let hid_b = 1;
+    assert!(
+        fdomain
+            .create_channel(proto::ChannelCreateChannelRequest {
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b }],
+            })
+            .is_ok()
+    );
+
+    let flag = Arc::new(FlagWaker(AtomicBool::new(false)));
+    let waker = Waker::from(flag.clone());
+    let mut cx = Context::from_waker(&waker);
+
+    // 1. Initial poll yields Pending and registers waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    // 2. read_channel wakes waker
+    let tid_read = 1.try_into().unwrap();
+    fdomain.read_channel(
+        tid_read,
+        proto::ChannelReadChannelRequest { handle: proto::HandleId { id: hid_a } },
+    );
+    assert!(flag.0.swap(false, Ordering::Relaxed), "read_channel did not wake waker");
+
+    // Poll to register read and go back to Pending
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    // 3. write_channel wakes waker
+    let tid_write = 2.try_into().unwrap();
+    fdomain.write_channel(
+        tid_write,
+        proto::ChannelWriteChannelRequest {
+            handle: proto::HandleId { id: hid_b },
+            handles: proto::Handles::Handles(vec![]),
+            data: b"hello".to_vec(),
+        },
+    );
+    assert!(flag.0.swap(false, Ordering::Relaxed), "write_channel did not wake waker");
+
+    // Consume write and read events
+    let FDomainEvent::WroteChannel(got_tid, Ok(())) = fdomain.next().await.unwrap() else {
+        panic!();
+    };
+    assert_eq!(tid_write, got_tid);
+
+    let FDomainEvent::ChannelData(got_tid, Ok(msg)) = fdomain.next().await.unwrap() else {
+        panic!();
+    };
+    assert_eq!(tid_read, got_tid);
+    assert_eq!(msg.data, b"hello");
+
+    // 4. streaming read start wakes waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_stream_start = 3.try_into().unwrap();
+    fdomain.read_channel_streaming_start(
+        tid_stream_start,
+        proto::ChannelReadChannelStreamingStartRequest { handle: proto::HandleId { id: hid_a } },
+    );
+    assert!(
+        flag.0.swap(false, Ordering::Relaxed),
+        "read_channel_streaming_start did not wake waker"
+    );
+
+    let FDomainEvent::ChannelStreamingReadStart(got_tid, Ok(())) = fdomain.next().await.unwrap()
+    else {
+        panic!();
+    };
+    assert_eq!(tid_stream_start, got_tid);
+
+    // 5. streaming read stop wakes waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_stream_stop = 4.try_into().unwrap();
+    fdomain.read_channel_streaming_stop(
+        tid_stream_stop,
+        proto::ChannelReadChannelStreamingStopRequest { handle: proto::HandleId { id: hid_a } },
+    );
+    assert!(
+        flag.0.swap(false, Ordering::Relaxed),
+        "read_channel_streaming_stop did not wake waker"
+    );
+
+    let FDomainEvent::ChannelStreamingReadStop(got_tid, Ok(())) = fdomain.next().await.unwrap()
+    else {
+        panic!();
+    };
+    assert_eq!(tid_stream_stop, got_tid);
+}
+
+#[fuchsia::test]
+async fn waker_wakes_on_socket_operations() {
+    let mut fdomain = FDomain::new_empty();
+    let hid_a = 0;
+    let hid_b = 1;
+    assert!(
+        fdomain
+            .create_socket(proto::SocketCreateSocketRequest {
+                options: proto::SocketType::Stream,
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b }],
+            })
+            .is_ok()
+    );
+
+    let flag = Arc::new(FlagWaker(AtomicBool::new(false)));
+    let waker = Waker::from(flag.clone());
+    let mut cx = Context::from_waker(&waker);
+
+    // 1. Initial poll yields Pending and registers waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    // 2. read_socket wakes waker
+    let tid_read = 1.try_into().unwrap();
+    fdomain.read_socket(
+        tid_read,
+        proto::SocketReadSocketRequest { handle: proto::HandleId { id: hid_a }, max_bytes: 1024 },
+    );
+    assert!(flag.0.swap(false, Ordering::Relaxed), "read_socket did not wake waker");
+
+    // Poll to register read and go back to Pending
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    // 3. write_socket wakes waker
+    let tid_write = 2.try_into().unwrap();
+    fdomain.write_socket(
+        tid_write,
+        proto::SocketWriteSocketRequest {
+            handle: proto::HandleId { id: hid_b },
+            data: b"world".to_vec(),
+        },
+    );
+    assert!(flag.0.swap(false, Ordering::Relaxed), "write_socket did not wake waker");
+
+    let FDomainEvent::WroteSocket(got_tid, Ok(_)) = fdomain.next().await.unwrap() else {
+        panic!();
+    };
+    assert_eq!(tid_write, got_tid);
+
+    let FDomainEvent::SocketData(got_tid, Ok(data)) = fdomain.next().await.unwrap() else {
+        panic!();
+    };
+    assert_eq!(tid_read, got_tid);
+    assert_eq!(data.data, b"world");
+
+    // 4. set_socket_disposition wakes waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_disp = 3.try_into().unwrap();
+    fdomain.set_socket_disposition(
+        tid_disp,
+        proto::SocketSetSocketDispositionRequest {
+            handle: proto::HandleId { id: hid_a },
+            disposition: proto::SocketDisposition::WriteDisabled,
+            disposition_peer: proto::SocketDisposition::NoChange,
+        },
+    );
+    assert!(flag.0.swap(false, Ordering::Relaxed), "set_socket_disposition did not wake waker");
+
+    let FDomainEvent::SocketDispositionSet(got_tid, Ok(())) = fdomain.next().await.unwrap() else {
+        panic!();
+    };
+    assert_eq!(tid_disp, got_tid);
+
+    // 5. streaming read start wakes waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_stream_start = 4.try_into().unwrap();
+    fdomain.read_socket_streaming_start(
+        tid_stream_start,
+        proto::SocketReadSocketStreamingStartRequest { handle: proto::HandleId { id: hid_a } },
+    );
+    assert!(
+        flag.0.swap(false, Ordering::Relaxed),
+        "read_socket_streaming_start did not wake waker"
+    );
+
+    let FDomainEvent::SocketStreamingReadStart(got_tid, Ok(())) = fdomain.next().await.unwrap()
+    else {
+        panic!();
+    };
+    assert_eq!(tid_stream_start, got_tid);
+
+    // 6. streaming read stop wakes waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_stream_stop = 5.try_into().unwrap();
+    fdomain.read_socket_streaming_stop(
+        tid_stream_stop,
+        proto::SocketReadSocketStreamingStopRequest { handle: proto::HandleId { id: hid_a } },
+    );
+    assert!(flag.0.swap(false, Ordering::Relaxed), "read_socket_streaming_stop did not wake waker");
+
+    let FDomainEvent::SocketStreamingReadStop(got_tid, Ok(())) = fdomain.next().await.unwrap()
+    else {
+        panic!();
+    };
+    assert_eq!(tid_stream_stop, got_tid);
+}
+
+#[fuchsia::test]
+async fn waker_wakes_on_close_and_replace() {
+    let mut fdomain = FDomain::new_empty();
+    let hid_a = 0;
+    let hid_b = 1;
+    assert!(
+        fdomain
+            .create_channel(proto::ChannelCreateChannelRequest {
+                handles: [proto::NewHandleId { id: hid_a }, proto::NewHandleId { id: hid_b }],
+            })
+            .is_ok()
+    );
+
+    let flag = Arc::new(FlagWaker(AtomicBool::new(false)));
+    let waker = Waker::from(flag.clone());
+    let mut cx = Context::from_waker(&waker);
+
+    // 1. Initial poll yields Pending and registers waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    // 2. replace wakes waker
+    let tid_replace = 1.try_into().unwrap();
+    fdomain
+        .replace(
+            tid_replace,
+            proto::FDomainReplaceRequest {
+                handle: proto::HandleId { id: hid_a },
+                new_handle: proto::NewHandleId { id: 2 },
+                rights: fidl::Rights::SAME_RIGHTS,
+            },
+        )
+        .unwrap();
+    assert!(flag.0.swap(false, Ordering::Relaxed), "replace did not wake waker");
+
+    let FDomainEvent::ReplacedHandle(got_tid, Ok(())) = fdomain.next().await.unwrap() else {
+        panic!();
+    };
+    assert_eq!(tid_replace, got_tid);
+
+    // 3. replace on bad handle wakes waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_replace_bad = 2.try_into().unwrap();
+    fdomain
+        .replace(
+            tid_replace_bad,
+            proto::FDomainReplaceRequest {
+                handle: proto::HandleId { id: 999 },
+                new_handle: proto::NewHandleId { id: 3 },
+                rights: fidl::Rights::SAME_RIGHTS,
+            },
+        )
+        .unwrap();
+    assert!(flag.0.swap(false, Ordering::Relaxed), "replace with bad handle did not wake waker");
+
+    let FDomainEvent::ReplacedHandle(got_tid, Err(_)) = fdomain.next().await.unwrap() else {
+        panic!();
+    };
+    assert_eq!(tid_replace_bad, got_tid);
+
+    // 4. close with handles wakes waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_close = 3.try_into().unwrap();
+    fdomain
+        .close(tid_close, proto::FDomainCloseRequest { handles: vec![proto::HandleId { id: 2 }] });
+    assert!(flag.0.swap(false, Ordering::Relaxed), "close did not wake waker");
+
+    let FDomainEvent::ClosedHandle(got_tid, Ok(())) = fdomain.next().await.unwrap() else {
+        panic!();
+    };
+    assert_eq!(tid_close, got_tid);
+
+    // 5. close with empty handles wakes waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_close_empty = 4.try_into().unwrap();
+    fdomain.close(tid_close_empty, proto::FDomainCloseRequest { handles: vec![] });
+    assert!(flag.0.swap(false, Ordering::Relaxed), "close empty did not wake waker");
+
+    let FDomainEvent::ClosedHandle(got_tid, Ok(())) = fdomain.next().await.unwrap() else {
+        panic!();
+    };
+    assert_eq!(tid_close_empty, got_tid);
+
+    // 6. close with bad handle wakes waker
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_close_bad = 5.try_into().unwrap();
+    fdomain.close(
+        tid_close_bad,
+        proto::FDomainCloseRequest { handles: vec![proto::HandleId { id: 999 }] },
+    );
+    assert!(flag.0.swap(false, Ordering::Relaxed), "close bad handle did not wake waker");
+
+    let FDomainEvent::ClosedHandle(got_tid, Err(_)) = fdomain.next().await.unwrap() else {
+        panic!();
+    };
+    assert_eq!(tid_close_bad, got_tid);
+}
+
+#[fuchsia::test]
+async fn waker_wakes_on_streaming_read_errors() {
+    let mut fdomain = FDomain::new_empty();
+
+    let flag = Arc::new(FlagWaker(AtomicBool::new(false)));
+    let waker = Waker::from(flag.clone());
+    let mut cx = Context::from_waker(&waker);
+
+    // 1. channel streaming start error
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_1 = 1.try_into().unwrap();
+    fdomain.read_channel_streaming_start(
+        tid_1,
+        proto::ChannelReadChannelStreamingStartRequest { handle: proto::HandleId { id: 999 } },
+    );
+    assert!(
+        flag.0.swap(false, Ordering::Relaxed),
+        "read_channel_streaming_start error did not wake waker"
+    );
+    let FDomainEvent::ChannelStreamingReadStart(got_tid, Err(_)) = fdomain.next().await.unwrap()
+    else {
+        panic!();
+    };
+    assert_eq!(tid_1, got_tid);
+
+    // 2. channel streaming stop error
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_2 = 2.try_into().unwrap();
+    fdomain.read_channel_streaming_stop(
+        tid_2,
+        proto::ChannelReadChannelStreamingStopRequest { handle: proto::HandleId { id: 999 } },
+    );
+    assert!(
+        flag.0.swap(false, Ordering::Relaxed),
+        "read_channel_streaming_stop error did not wake waker"
+    );
+    let FDomainEvent::ChannelStreamingReadStop(got_tid, Err(_)) = fdomain.next().await.unwrap()
+    else {
+        panic!();
+    };
+    assert_eq!(tid_2, got_tid);
+
+    // 3. socket streaming start error
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_3 = 3.try_into().unwrap();
+    fdomain.read_socket_streaming_start(
+        tid_3,
+        proto::SocketReadSocketStreamingStartRequest { handle: proto::HandleId { id: 999 } },
+    );
+    assert!(
+        flag.0.swap(false, Ordering::Relaxed),
+        "read_socket_streaming_start error did not wake waker"
+    );
+    let FDomainEvent::SocketStreamingReadStart(got_tid, Err(_)) = fdomain.next().await.unwrap()
+    else {
+        panic!();
+    };
+    assert_eq!(tid_3, got_tid);
+
+    // 4. socket streaming stop error
+    assert!(Pin::new(&mut fdomain).poll_next(&mut cx).is_pending());
+    assert!(!flag.0.swap(false, Ordering::Relaxed));
+
+    let tid_4 = 4.try_into().unwrap();
+    fdomain.read_socket_streaming_stop(
+        tid_4,
+        proto::SocketReadSocketStreamingStopRequest { handle: proto::HandleId { id: 999 } },
+    );
+    assert!(
+        flag.0.swap(false, Ordering::Relaxed),
+        "read_socket_streaming_stop error did not wake waker"
+    );
+    let FDomainEvent::SocketStreamingReadStop(got_tid, Err(_)) = fdomain.next().await.unwrap()
+    else {
+        panic!();
+    };
+    assert_eq!(tid_4, got_tid);
 }

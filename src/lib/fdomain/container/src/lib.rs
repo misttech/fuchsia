@@ -27,14 +27,14 @@ pub type Result<T, E = proto::Error> = std::result::Result<T, E>;
 
 use handles::{AnyHandle, HandleType as _, IsDatagramSocket};
 
-/// A queue. Basically just a `VecDeque` except we can asynchronously wait for
-/// an element to pop if it is empty.
-struct Queue<T>(VecDeque<T>, Option<Waker>);
+/// A queue. Wraps a `VecDeque` but insures we are waking a waker when we push
+/// items into the queue.
+struct Queue<T>(VecDeque<T>);
 
 impl<T> Queue<T> {
     /// Create a new queue.
     fn new() -> Self {
-        Queue(VecDeque::new(), None)
+        Queue(VecDeque::new())
     }
 
     /// Whether the queue is empty.
@@ -51,13 +51,8 @@ impl<T> Queue<T> {
     }
 
     /// Pop the first element from the queue if available.
-    fn pop_front(&mut self, ctx: &mut Context<'_>) -> Poll<T> {
-        if let Some(t) = self.0.pop_front() {
-            Poll::Ready(t)
-        } else {
-            self.1 = Some(ctx.waker().clone());
-            Poll::Pending
-        }
+    fn pop_front(&mut self) -> Option<T> {
+        self.0.pop_front()
     }
 
     /// Return an element to the front of the queue. Does not wake any waiters
@@ -70,20 +65,15 @@ impl<T> Queue<T> {
         self.0.push_front(t)
     }
 
-    /// Push a new element to the back of the queue.
-    fn push_back(&mut self, t: T) {
+    /// Push a new element to the back of the queue, waking the given waker.
+    fn push_back(&mut self, t: T, waker: &Waker) {
         self.0.push_back(t);
-        self.1.take().map(Waker::wake);
+        waker.wake_by_ref();
     }
 
     /// Get a mutable reference to the first element in the queue.
-    fn front_mut(&mut self, ctx: &mut Context<'_>) -> Poll<&mut T> {
-        if let Some(t) = self.0.front_mut() {
-            Poll::Ready(t)
-        } else {
-            self.1 = Some(ctx.waker().clone());
-            Poll::Pending
-        }
+    fn front_mut(&mut self) -> Option<&mut T> {
+        self.0.front_mut()
     }
 }
 
@@ -171,7 +161,7 @@ impl ShuttingDownHandle {
                 state.poll(event_queue, ctx);
 
                 if state.write_queue.is_empty() {
-                    while let Poll::Ready(op) = state.read_queue.pop_front(ctx) {
+                    while let Some(op) = state.read_queue.pop_front() {
                         match op {
                             ReadOp::StreamingChannel(tid, start) => {
                                 let err = Err(proto::Error::BadHandleId(proto::BadHandleId {
@@ -423,7 +413,7 @@ impl HandleState {
                 if let Poll::Ready(sigs) = signal_waiter.poll_unpin(ctx) {
                     if let Ok(sigs) = sigs {
                         if sigs.intersects(read_signals) {
-                            self.process_read_queue(event_queue, ctx);
+                            self.process_read_queue(event_queue);
                         }
                         if sigs.intersects(write_signals) {
                             self.process_write_queue(event_queue, ctx);
@@ -431,15 +421,15 @@ impl HandleState {
                     }
                 } else {
                     let need_read = matches!(
-                        self.read_queue.front_mut(ctx),
-                        Poll::Ready(ReadOp::StreamingChannel(_, _) | ReadOp::StreamingSocket(_, _))
+                        self.read_queue.front_mut(),
+                        Some(ReadOp::StreamingChannel(_, _) | ReadOp::StreamingSocket(_, _))
                     );
                     let need_write = matches!(
-                        self.write_queue.front_mut(ctx),
-                        Poll::Ready(WriteOp::SetDisposition(_, _, _))
+                        self.write_queue.front_mut(),
+                        Some(WriteOp::SetDisposition(_, _, _))
                     );
 
-                    self.process_read_queue(event_queue, ctx);
+                    self.process_read_queue(event_queue);
                     self.process_write_queue(event_queue, ctx);
 
                     if !(need_read || need_write) {
@@ -488,12 +478,8 @@ impl HandleState {
     }
 
     /// Handle events from the front of the read queue.
-    fn process_read_queue(
-        &mut self,
-        event_queue: &mut VecDeque<UnprocessedFDomainEvent>,
-        ctx: &mut Context<'_>,
-    ) {
-        while let Poll::Ready(op) = self.read_queue.front_mut(ctx) {
+    fn process_read_queue(&mut self, event_queue: &mut VecDeque<UnprocessedFDomainEvent>) {
+        while let Some(op) = self.read_queue.front_mut() {
             match op {
                 ReadOp::StreamingChannel(tid, true) => {
                     let tid = *tid;
@@ -526,7 +512,7 @@ impl HandleState {
                 ReadOp::Socket(tid, max_bytes) => {
                     let (tid, max_bytes) = (*tid, *max_bytes);
                     if let Some(event) = self.do_read_socket(tid, max_bytes) {
-                        let _ = self.read_queue.pop_front(ctx);
+                        let _ = self.read_queue.pop_front();
                         event_queue.push_back(event.into());
                     } else {
                         break;
@@ -535,7 +521,7 @@ impl HandleState {
                 ReadOp::Channel(tid) => {
                     let tid = *tid;
                     if let Some(event) = self.do_read_channel(tid) {
-                        let _ = self.read_queue.pop_front(ctx);
+                        let _ = self.read_queue.pop_front();
                         event_queue.push_back(event.into());
                     } else {
                         break;
@@ -635,7 +621,7 @@ impl HandleState {
         // lifetime shenanigans mean we can't do that and also access `self`,
         // which we need. So we pop the item always, and then maybe push it to
         // the front again if we didn't actually want to pop it.
-        while let Poll::Ready(op) = self.write_queue.pop_front(ctx) {
+        while let Some(op) = self.write_queue.pop_front() {
             match op {
                 WriteOp::Socket(mut op) => {
                     if let Some(event) = self.do_write_socket(&mut op) {
@@ -844,7 +830,7 @@ pub struct FDomain {
     handles: HashMap<proto::HandleId, HandleState>,
     closing_handles: Vec<ClosingHandle>,
     event_queue: VecDeque<UnprocessedFDomainEvent>,
-    waker: Option<Waker>,
+    waker: Waker,
 }
 
 impl FDomain {
@@ -863,7 +849,7 @@ impl FDomain {
             handles: HashMap::new(),
             closing_handles: Vec::new(),
             event_queue: VecDeque::new(),
-            waker: None,
+            waker: Waker::noop().clone(),
         }
     }
 
@@ -876,14 +862,14 @@ impl FDomain {
             handles: HashMap::new(),
             closing_handles: Vec::new(),
             event_queue: VecDeque::new(),
-            waker: None,
+            waker: Waker::noop().clone(),
         }
     }
 
     /// Add an event to be emitted by this FDomain.
     fn push_event(&mut self, event: impl Into<UnprocessedFDomainEvent>) {
         self.event_queue.push_back(event.into());
-        self.waker.take().map(Waker::wake);
+        self.waker.wake_by_ref();
     }
 
     /// Given a [`fidl::MessageBufEtc`], load all of the handles from it into this
@@ -993,10 +979,11 @@ impl FDomain {
     fn using_handle<T>(
         &mut self,
         id: proto::HandleId,
-        f: impl FnOnce(&mut HandleState) -> Result<T, proto::Error>,
+        f: impl FnOnce(&mut HandleState, &Waker) -> Result<T, proto::Error>,
     ) -> Result<T, proto::Error> {
+        let waker = &self.waker;
         if let Some(s) = self.handles.get_mut(&id) {
-            f(s)
+            f(s, waker)
         } else {
             Err(proto::Error::BadHandleId(proto::BadHandleId { id: id.id }))
         }
@@ -1140,12 +1127,11 @@ impl FDomain {
         tid: NonZeroU32,
         request: proto::SocketSetSocketDispositionRequest,
     ) {
-        if let Err(err) = self.using_handle(request.handle, |h| {
-            h.write_queue.push_back(WriteOp::SetDisposition(
-                tid,
-                request.disposition,
-                request.disposition_peer,
-            ));
+        if let Err(err) = self.using_handle(request.handle, |h, waker| {
+            h.write_queue.push_back(
+                WriteOp::SetDisposition(tid, request.disposition, request.disposition_peer),
+                waker,
+            );
             Ok(())
         }) {
             self.push_event(FDomainEvent::SocketDispositionSet(tid, Err(err)));
@@ -1153,8 +1139,8 @@ impl FDomain {
     }
 
     pub fn read_socket(&mut self, tid: NonZeroU32, request: proto::SocketReadSocketRequest) {
-        if let Err(e) = self.using_handle(request.handle, |h| {
-            h.read_queue.push_back(ReadOp::Socket(tid, request.max_bytes));
+        if let Err(e) = self.using_handle(request.handle, |h, waker| {
+            h.read_queue.push_back(ReadOp::Socket(tid, request.max_bytes), waker);
             Ok(())
         }) {
             self.push_event(FDomainEvent::SocketData(tid, Err(e)));
@@ -1162,8 +1148,8 @@ impl FDomain {
     }
 
     pub fn read_channel(&mut self, tid: NonZeroU32, request: proto::ChannelReadChannelRequest) {
-        if let Err(e) = self.using_handle(request.handle, |h| {
-            h.read_queue.push_back(ReadOp::Channel(tid));
+        if let Err(e) = self.using_handle(request.handle, |h, waker| {
+            h.read_queue.push_back(ReadOp::Channel(tid), waker);
             Ok(())
         }) {
             self.push_event(FDomainEvent::ChannelData(tid, Err(e)));
@@ -1171,12 +1157,11 @@ impl FDomain {
     }
 
     pub fn write_socket(&mut self, tid: NonZeroU32, request: proto::SocketWriteSocketRequest) {
-        if let Err(error) = self.using_handle(request.handle, |h| {
-            h.write_queue.push_back(WriteOp::Socket(SocketWrite {
-                tid,
-                wrote: 0,
-                to_write: request.data,
-            }));
+        if let Err(error) = self.using_handle(request.handle, |h, waker| {
+            h.write_queue.push_back(
+                WriteOp::Socket(SocketWrite { tid, wrote: 0, to_write: request.data }),
+                waker,
+            );
             Ok(())
         }) {
             self.push_event(FDomainEvent::WroteSocket(
@@ -1225,7 +1210,7 @@ impl FDomain {
                                 // `write_etc` do it. Otherwise we have to use a
                                 // reference to the handle, and we get lifetime
                                 // hell.
-                                self.using_handle(h, |h| {
+                                self.using_handle(h, |h, _| {
                                     h.handle.duplicate(fidl::Rights::SAME_RIGHTS)
                                 })
                                 .map(ShuttingDownHandle::Ready)
@@ -1252,12 +1237,11 @@ impl FDomain {
 
         let handles = handles.into_iter().map(|x| x.unwrap()).collect::<Vec<_>>();
 
-        if let Err(e) = self.using_handle(request.handle, |h| {
-            h.write_queue.push_back(WriteOp::Channel(
-                tid,
-                request.data,
-                HandlesToWrite::SomeInUse(handles),
-            ));
+        if let Err(e) = self.using_handle(request.handle, |h, waker| {
+            h.write_queue.push_back(
+                WriteOp::Channel(tid, request.data, HandlesToWrite::SomeInUse(handles)),
+                waker,
+            );
             Ok(())
         }) {
             self.push_event(FDomainEvent::WroteChannel(
@@ -1272,7 +1256,7 @@ impl FDomain {
         tid: NonZeroU32,
         request: proto::FDomainWaitForSignalsRequest,
     ) {
-        let result = self.using_handle(request.handle, |h| {
+        let result = self.using_handle(request.handle, |h, _| {
             let signals = fidl::Signals::from_bits_retain(request.signals);
             h.signal_waiters.push(SignalWaiter {
                 tid,
@@ -1284,7 +1268,7 @@ impl FDomain {
         if let Err(e) = result {
             self.push_event(FDomainEvent::WaitForSignals(tid, Err(e)));
         } else {
-            self.waker.take().map(Waker::wake);
+            self.waker.wake_by_ref();
         }
     }
 
@@ -1304,20 +1288,25 @@ impl FDomain {
         let action = Arc::new(CloseAction::Close {
             tid,
             count: AtomicU32::new(states.len().try_into().unwrap()),
-            result,
+            result: result.clone(),
         });
 
-        for (hid, state) in states {
-            self.closing_handles.push(ClosingHandle {
-                action: Arc::clone(&action),
-                state: Some(ShuttingDownHandle::InUse(hid, state)),
-            });
+        if states.is_empty() {
+            self.push_event(FDomainEvent::ClosedHandle(tid, result));
+        } else {
+            for (hid, state) in states {
+                self.closing_handles.push(ClosingHandle {
+                    action: Arc::clone(&action),
+                    state: Some(ShuttingDownHandle::InUse(hid, state)),
+                });
+            }
+            self.waker.wake_by_ref();
         }
     }
 
     pub fn duplicate(&mut self, request: proto::FDomainDuplicateRequest) -> Result<()> {
         let rights = request.rights;
-        let handle = self.using_handle(request.handle, |h| h.handle.duplicate(rights));
+        let handle = self.using_handle(request.handle, |h, _| h.handle.duplicate(rights));
         handle.and_then(|h| self.alloc_client_handles([request.new_handle], [h]))
     }
 
@@ -1329,13 +1318,14 @@ impl FDomain {
         let rights = request.rights;
         let new_hid = request.new_handle;
         match self.take_handle(request.handle) {
-            Ok(state) => self.closing_handles.push(ClosingHandle {
-                action: Arc::new(CloseAction::Replace { tid, new_hid, rights }),
-                state: Some(ShuttingDownHandle::InUse(request.handle, state)),
-            }),
-            Err(e) => self.event_queue.push_back(UnprocessedFDomainEvent::Ready(
-                FDomainEvent::ReplacedHandle(tid, Err(e)),
-            )),
+            Ok(state) => {
+                self.closing_handles.push(ClosingHandle {
+                    action: Arc::new(CloseAction::Replace { tid, new_hid, rights }),
+                    state: Some(ShuttingDownHandle::InUse(request.handle, state)),
+                });
+                self.waker.wake_by_ref();
+            }
+            Err(e) => self.push_event(FDomainEvent::ReplacedHandle(tid, Err(e))),
         }
 
         Ok(())
@@ -1345,21 +1335,21 @@ impl FDomain {
         let set = fidl::Signals::from_bits_retain(request.set);
         let clear = fidl::Signals::from_bits_retain(request.clear);
 
-        self.using_handle(request.handle, |h| h.handle.signal(clear, set))
+        self.using_handle(request.handle, |h, _| h.handle.signal(clear, set))
     }
 
     pub fn signal_peer(&mut self, request: proto::FDomainSignalPeerRequest) -> Result<()> {
         let set = fidl::Signals::from_bits_retain(request.set);
         let clear = fidl::Signals::from_bits_retain(request.clear);
 
-        self.using_handle(request.handle, |h| h.handle.signal_peer(clear, set))
+        self.using_handle(request.handle, |h, _| h.handle.signal_peer(clear, set))
     }
 
     pub fn get_koid(
         &mut self,
         request: proto::FDomainGetKoidRequest,
     ) -> Result<proto::FDomainGetKoidResponse> {
-        self.using_handle(request.handle, |h| {
+        self.using_handle(request.handle, |h, _| {
             h.handle
                 .as_handle_ref()
                 .koid()
@@ -1373,13 +1363,12 @@ impl FDomain {
         tid: NonZeroU32,
         request: proto::ChannelReadChannelStreamingStartRequest,
     ) {
-        if let Err(err) = self.using_handle(request.handle, |h| {
+        if let Err(err) = self.using_handle(request.handle, |h, waker| {
             h.handle.expected_type(fidl::ObjectType::CHANNEL)?;
-            h.read_queue.push_back(ReadOp::StreamingChannel(tid, true));
+            h.read_queue.push_back(ReadOp::StreamingChannel(tid, true), waker);
             Ok(())
         }) {
-            self.event_queue
-                .push_back(FDomainEvent::ChannelStreamingReadStart(tid, Err(err)).into())
+            self.push_event(FDomainEvent::ChannelStreamingReadStart(tid, Err(err)));
         }
     }
 
@@ -1388,12 +1377,12 @@ impl FDomain {
         tid: NonZeroU32,
         request: proto::ChannelReadChannelStreamingStopRequest,
     ) {
-        if let Err(err) = self.using_handle(request.handle, |h| {
+        if let Err(err) = self.using_handle(request.handle, |h, waker| {
             h.handle.expected_type(fidl::ObjectType::CHANNEL)?;
-            h.read_queue.push_back(ReadOp::StreamingChannel(tid, false));
+            h.read_queue.push_back(ReadOp::StreamingChannel(tid, false), waker);
             Ok(())
         }) {
-            self.event_queue.push_back(FDomainEvent::ChannelStreamingReadStop(tid, Err(err)).into())
+            self.push_event(FDomainEvent::ChannelStreamingReadStop(tid, Err(err)));
         }
     }
 
@@ -1402,12 +1391,12 @@ impl FDomain {
         tid: NonZeroU32,
         request: proto::SocketReadSocketStreamingStartRequest,
     ) {
-        if let Err(err) = self.using_handle(request.handle, |h| {
+        if let Err(err) = self.using_handle(request.handle, |h, waker| {
             h.handle.expected_type(fidl::ObjectType::SOCKET)?;
-            h.read_queue.push_back(ReadOp::StreamingSocket(tid, true));
+            h.read_queue.push_back(ReadOp::StreamingSocket(tid, true), waker);
             Ok(())
         }) {
-            self.event_queue.push_back(FDomainEvent::SocketStreamingReadStart(tid, Err(err)).into())
+            self.push_event(FDomainEvent::SocketStreamingReadStart(tid, Err(err)));
         }
     }
 
@@ -1416,12 +1405,12 @@ impl FDomain {
         tid: NonZeroU32,
         request: proto::SocketReadSocketStreamingStopRequest,
     ) {
-        if let Err(err) = self.using_handle(request.handle, |h| {
+        if let Err(err) = self.using_handle(request.handle, |h, waker| {
             h.handle.expected_type(fidl::ObjectType::SOCKET)?;
-            h.read_queue.push_back(ReadOp::StreamingSocket(tid, false));
+            h.read_queue.push_back(ReadOp::StreamingSocket(tid, false), waker);
             Ok(())
         }) {
-            self.event_queue.push_back(FDomainEvent::SocketStreamingReadStop(tid, Err(err)).into())
+            self.push_event(FDomainEvent::SocketStreamingReadStop(tid, Err(err)));
         }
     }
 }
@@ -1476,7 +1465,7 @@ impl futures::Stream for FDomain {
                 }
             }
         } else {
-            self.waker = Some(ctx.waker().clone());
+            self.waker = ctx.waker().clone();
             Poll::Pending
         }
     }
