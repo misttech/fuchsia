@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::errors::FxfsError;
-use crate::filesystem::{ApplyContext, ApplyMode, JournalingObject};
+use crate::filesystem::{ApplyContext, ApplyMode, FlushReason, JournalingObject};
 use crate::log::*;
 use crate::metrics;
 use crate::object_handle::INVALID_OBJECT_ID;
@@ -600,10 +600,9 @@ impl ObjectManager {
         self.inner.read().journal_checkpoints.contains_key(&object_id)
     }
 
-    /// Flushes all known objects.  This will then allow the journal space to be freed.
-    ///
+    /// Flushes changes to device with the given reason.
     /// Also returns the earliest known version of a struct on the filesystem.
-    pub async fn flush(&self) -> Result<Version, Error> {
+    pub async fn flush(&self, reason: FlushReason) -> Result<Version, Error> {
         let objects = {
             let inner = self.inner.read();
             let mut object_ids = inner.journal_checkpoints.keys().cloned().collect::<Vec<_>>();
@@ -614,15 +613,17 @@ impl ObjectManager {
             object_ids
                 .iter()
                 .rev()
-                .map(|oid| (*oid, inner.journaling_object(*oid).unwrap()))
+                .filter_map(|oid| inner.journaling_object(*oid).map(|obj| (*oid, obj)))
                 .collect::<Vec<_>>()
         };
 
         // As we iterate, keep track of the earliest version used by structs in these objects
         let mut earliest_version: Version = LATEST_VERSION;
         for (object_id, object) in objects {
-            let object_earliest_version =
-                object.flush().await.with_context(|| format!("Failed to flush oid {object_id}"))?;
+            let object_earliest_version = object
+                .flush(reason)
+                .await
+                .with_context(|| format!("Failed to flush oid {object_id}"))?;
             if object_earliest_version < earliest_version {
                 earliest_version = object_earliest_version;
             }

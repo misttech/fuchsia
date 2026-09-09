@@ -1173,7 +1173,7 @@ mod tests {
     use fuchsia_fs::file;
     use futures::{TryStreamExt, join};
     use fxfs::errors::FxfsError;
-    use fxfs::filesystem::FxFilesystem;
+    use fxfs::filesystem::{FlushReason, ForceMajor, FxFilesystem};
     use fxfs::fsck::{FsckOptions, fsck, fsck_volume_with_options, fsck_with_options};
     use fxfs::lock_keys;
     use fxfs::object_handle::ObjectHandle;
@@ -3260,7 +3260,11 @@ mod tests {
                 // Flush should not fail, because that would close the journal for the rest of the
                 // filesystem.  Instead, the volume should be force-locked and flushed (which
                 // doesn't depend on crypt).
-                filesystem_clone.object_manager().flush().await.expect("flush failed");
+                filesystem_clone
+                    .object_manager()
+                    .flush(FlushReason::Journal(ForceMajor::False))
+                    .await
+                    .expect("flush failed");
             });
 
             // Trigger unmount.

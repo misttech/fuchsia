@@ -3,9 +3,8 @@
 // found in the LICENSE file.
 
 use crate::errors::FxfsError;
-use crate::filesystem::FxFilesystem;
+use crate::filesystem::{FlushReason, FxFilesystem};
 use crate::object_store::directory::Directory;
-use crate::object_store::flush::Reason;
 use crate::object_store::transaction::{LockKeys, Mutation, Options, Transaction, lock_keys};
 use crate::object_store::tree_cache::TreeCache;
 use crate::object_store::{
@@ -146,7 +145,9 @@ impl RootVolume {
                 // volumes can't be locked without taking the flush lock so it will be forced to
                 // wait for this completion.
                 let _scope_guard = scope_guard;
-                if let Err(error) = store.flush_guarded_with_reason(Reason::UpgradeVersion).await {
+                if let Err(error) =
+                    store.flush_guarded_with_reason(FlushReason::UpgradeVersion).await
+                {
                     error!(error:?; "Failed background flush");
                 }
             });
@@ -343,7 +344,7 @@ pub async fn list_volumes(volume_directory: &Directory<ObjectStore>) -> Result<V
 #[cfg(test)]
 mod tests {
     use super::root_volume;
-    use crate::filesystem::{FxFilesystem, JournalingObject, SyncOptions};
+    use crate::filesystem::{FxFilesystem, SyncOptions};
     use crate::fsck::{FsckOptions, fsck_volume_with_options, fsck_with_options};
     use crate::lsm_tree::persistent_layer::PersistentLayerWriter;
     use crate::lsm_tree::types::LayerWriter as _;

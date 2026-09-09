@@ -24,7 +24,9 @@ mod writer;
 
 use crate::checksum::{Checksum, Checksums, ChecksumsV38};
 use crate::errors::FxfsError;
-use crate::filesystem::{ApplyContext, ApplyMode, FxFilesystem, SyncOptions};
+use crate::filesystem::{
+    ApplyContext, ApplyMode, FlushReason, ForceMajor, FxFilesystem, SyncOptions,
+};
 use crate::log::*;
 use crate::lsm_tree::types::LayerIterator;
 use crate::object_handle::{ObjectHandle as _, ReadObjectHandle};
@@ -1927,6 +1929,56 @@ impl Journal {
         Ok(())
     }
 
+    fn should_force_major_compaction(&self) -> ForceMajor {
+        // required_reservation is the total amount of space we have set aside for metadata.  That
+        // space is divided into borrowed space (which is used by transactions like file deletions
+        // which will eventually, after compaction, give back their space), and
+        // metadata_reservation (which is available for use during compaction, both to persist the
+        // new layer files and for other transient costs).
+        let required_reservation = self.objects.required_reservation();
+        // reclaim_size determines the frequency of compaction.  The journal will automatically
+        // compact when reclaim_size / 2 <= J <= reclaim_size, and will block most operations once
+        // J > reclaim_size, so any given compaction should have no more than reclaim_size bytes.
+        let reclaim_size = self.inner.lock().reclaim_size;
+        // metadata_reservation = required_reservation - borrowed
+        let metadata_reservation = self.objects.metadata_reservation().amount();
+        // max_store_reservation is the greatest amount reserved by any object store.  This
+        // corresponds to the minimum amount which is needed to perform a major compaction of that
+        // store (and therefore the minimum amount needed to do a major compaction overall, since
+        // we compact stores one by one and immediately purge old layer files after compaction,
+        // releasing their space back into metaadta_resrvation).
+        let max_store_reservation = self.objects.max_store_reservation();
+
+        // Compaction will usually return borrowed space by freeing up space in the journal, but a
+        // major or merge compaction is sometimes necessary -- consider if you have one layer file
+        // which adds many objects, and another layer file which deletes all of these objects.  If
+        // the layers are merged, they cancel out and become very small.  If they are not merged,
+        // they do not cancel out and both layers remain large.  The space borrowed to persist the
+        // deletion mutations is only given back once they cancel out with the creation mutations.
+        //
+        // Thus, borrowed space can only be guaranteed to be returned if we eventually
+        // major-compact LSM trees.
+        //
+        // Since major compaction is expensive, we don't want to do it too often, but we also need
+        // to make sure we don't wait too long and drain the metadata reservation too much (in
+        // particular, it cannot go below `max_store_reservation`, because at that point major
+        // compaction might not be possible any more).
+        //
+        // Thus, we force a major compaction when metadata_reservation <= max_store_reservation -
+        // M, for some margin M.  The reason that `reclaim_size` is used as the margin is because
+        // `reclaim_size` determines how often we compact, and in theory, the journal is going to
+        // be compacted at some point when J < reclaim_size.  This establishes the ideal margin --
+        // at this point we are confident that major compaction is still possible, but the next
+        // compaction might be another reclaim_size bytes later, which is too late.
+        if required_reservation >= reclaim_size
+            && metadata_reservation <= max_store_reservation.saturating_sub(reclaim_size)
+        {
+            ForceMajor::True
+        } else {
+            ForceMajor::False
+        }
+    }
+
     #[trace]
     async fn compact(&self) -> Result<(), Error> {
         assert!(
@@ -1939,11 +1991,16 @@ impl Journal {
         );
         crate::metrics::lsm_tree_metrics().journal_compactions_total.add(1);
         let trace = self.trace.load(Ordering::Relaxed);
-        debug!("Compaction starting");
+        let force_major = self.should_force_major_compaction();
+        debug!("Compaction starting, force_major={force_major:?}");
         if trace {
-            info!("J: start compaction");
+            info!("J: start compaction, force_major={force_major:?}");
         }
-        let earliest_version = self.objects.flush().await.context("Failed to flush objects")?;
+        let earliest_version = self
+            .objects
+            .flush(FlushReason::Journal(force_major))
+            .await
+            .context("Failed to flush objects")?;
         self.inner.lock().super_block_header.earliest_version = earliest_version;
         self.write_super_block().await.context("Failed to write superblock")?;
         if trace {

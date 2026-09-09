@@ -9,7 +9,8 @@ pub mod directory;
 pub mod extent;
 mod extent_mapping_iterator;
 mod extent_record;
-mod flush;
+pub mod flush;
+use crate::filesystem::FlushReason;
 pub mod graveyard;
 mod install;
 pub mod journal;
@@ -2343,7 +2344,7 @@ impl ObjectStore {
         std::mem::drop(guard);
 
         if !read_only && !self.filesystem().options().read_only {
-            self.flush_with_reason(flush::Reason::EncryptedMutations).await?;
+            self.flush_with_reason(FlushReason::EncryptedMutations).await?;
 
             // Reap purged files within this store.
             let _ = self.filesystem().graveyard().initial_reap(&self).await?;
@@ -3183,8 +3184,8 @@ impl JournalingObject for ObjectStore {
     /// be trimmed).
     ///
     /// Also returns the earliest version of a struct in the filesystem (when known).
-    async fn flush(&self) -> Result<Version, Error> {
-        self.flush_with_reason(flush::Reason::Journal).await
+    async fn flush(&self, reason: FlushReason) -> Result<Version, Error> {
+        self.flush_with_reason(reason).await
     }
 
     fn write_mutations(
@@ -3436,7 +3437,7 @@ mod tests {
     };
     use crate::errors::FxfsError;
     use crate::filesystem::{
-        FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem,
+        FlushReason, ForceMajor, FxFilesystem, FxFilesystemBuilder, OpenFxFilesystem,
     };
     use crate::fsck::{fsck, fsck_volume};
     use crate::hooks::{Hooks, HooksHandle};
@@ -4005,7 +4006,10 @@ mod tests {
 
             // At this point the "test" volume is locked.  Before checking the object, flush the
             // filesystem.  This should leave a file with encrypted mutations.
-            fs.object_manager().flush().await.expect("flush failed");
+            fs.object_manager()
+                .flush(FlushReason::Journal(ForceMajor::False))
+                .await
+                .expect("flush failed");
 
             assert_ne!(
                 fs.object_manager()
@@ -6073,7 +6077,10 @@ mod tests {
                 .expect("unwrap_key failed");
 
             // Flush the filesystem so that the store creation and root directory are saved to layers.
-            fs.object_manager().flush().await.expect("flush failed");
+            fs.object_manager()
+                .flush(FlushReason::Journal(ForceMajor::False))
+                .await
+                .expect("flush failed");
 
             (store_object_id, root_dir_id, unwrapped_key)
         };

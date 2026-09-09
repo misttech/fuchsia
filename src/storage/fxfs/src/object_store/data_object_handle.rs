@@ -2017,9 +2017,7 @@ impl<'a, S: HandleOwner> WriteBytes for DirectWriter<'a, S> {
 #[cfg(test)]
 mod tests {
     use crate::errors::FxfsError;
-    use crate::filesystem::{
-        FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem, SyncOptions,
-    };
+    use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, OpenFxFilesystem, SyncOptions};
     use crate::fsck::{
         FsckOptions, fsck, fsck_volume, fsck_volume_with_options, fsck_with_options,
     };

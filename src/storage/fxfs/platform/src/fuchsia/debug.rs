@@ -749,7 +749,6 @@ mod tests {
     use fidl_fuchsia_fs_startup::CreateOptions;
     use fidl_fuchsia_io as fio;
     use fuchsia_fs::directory::{read_file, readdir};
-    use fxfs::filesystem::JournalingObject;
     use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
     use vfs::ToObjectRequest;
     use vfs::directory::entry::OpenRequest;

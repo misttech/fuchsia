@@ -5,6 +5,7 @@
 // This module is responsible for flushing (a.k.a. compacting) the object store trees.
 
 use crate::errors::FxfsError;
+use crate::filesystem::{FlushReason, ForceMajor};
 use crate::log::*;
 use crate::lsm_tree::types::{ItemRef, LayerIterator};
 use crate::lsm_tree::{LSMTree, layers_from_handles};
@@ -23,22 +24,16 @@ use anyhow::{Context, Error, anyhow};
 use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Reason {
-    /// Journal memory or space pressure.
-    Journal,
-
-    /// Clean up an encrypted mutations object after mount.
-    EncryptedMutations,
-
-    /// Upgrade old layer files to the latest version after mount. This performs a full compaction.
-    UpgradeVersion,
-}
-
 #[fxfs_trace::trace]
 impl ObjectStore {
+    /// Takes a flush lock on self and performs the flush with a default
+    /// FlushReason::Journal(ForceMajor::False).
+    pub async fn flush(&self) -> Result<Version, Error> {
+        self.flush_with_reason(FlushReason::Journal(ForceMajor::False)).await
+    }
+
     /// Takes a flush lock on self and performs the flush.
-    pub async fn flush_with_reason(&self, reason: Reason) -> Result<Version, Error> {
+    pub async fn flush_with_reason(&self, reason: FlushReason) -> Result<Version, Error> {
         let filesystem = self.filesystem();
 
         let keys = lock_keys![LockKey::flush(self.store_object_id())];
@@ -49,7 +44,7 @@ impl ObjectStore {
 
     /// Performs a flush while already holding a flush guard on self.
     #[trace("store_object_id" => self.store_object_id)]
-    pub async fn flush_guarded_with_reason(&self, reason: Reason) -> Result<Version, Error> {
+    pub async fn flush_guarded_with_reason(&self, reason: FlushReason) -> Result<Version, Error> {
         if self.parent_store.is_none() {
             // Early exit, but still return the earliest version used by a struct in the tree
             return Ok(self.tree.get_earliest_version());
@@ -65,10 +60,11 @@ impl ObjectStore {
         let filesystem = self.filesystem();
         let object_manager = filesystem.object_manager();
         let earliest_version = self.tree.get_earliest_version();
+        let needs_flush = object_manager.needs_flush(self.store_object_id);
         // If we don't need to do anything for the stated flush purpose, do nothing.
-        if (reason == Reason::Journal && !object_manager.needs_flush(self.store_object_id))
-            || (reason == Reason::UpgradeVersion && earliest_version == LATEST_VERSION)
-            || (reason == Reason::EncryptedMutations
+        if (reason == FlushReason::Journal(ForceMajor::False) && !needs_flush)
+            || (reason == FlushReason::UpgradeVersion && earliest_version == LATEST_VERSION)
+            || (reason == FlushReason::EncryptedMutations
                 && self.store_info().unwrap().encrypted_mutations_object_id == INVALID_OBJECT_ID)
         {
             // Early exit, but still return the earliest version used by a struct in the
@@ -108,7 +104,7 @@ impl ObjectStore {
     }
 
     // Flushes an unlocked store. Returns the layer file sizes.
-    async fn flush_unlocked(&self, reason: Reason) -> Result<Vec<u64>, Error> {
+    async fn flush_unlocked(&self, reason: FlushReason) -> Result<Vec<u64>, Error> {
         struct StoreInfoSnapshot<'a> {
             store: &'a ObjectStore,
             store_info: OnceLock<StoreInfo>,
@@ -205,11 +201,16 @@ impl ObjectStore {
         transaction.commit().await.context("Failed to commit create layer transaction")?;
 
         // *Do* the actual compaction.
+        let full_compaction = match reason {
+            FlushReason::UpgradeVersion | FlushReason::Journal(ForceMajor::True) => true,
+            _ => false,
+        };
         let (layers_to_keep, old_layers) = tree::flush(
             &self.tree,
             writer,
-            (reason == Reason::Journal).then(|| filesystem.journal().get_compaction_yielder()),
-            reason == Reason::UpgradeVersion,
+            matches!(reason, FlushReason::Journal(_))
+                .then(|| filesystem.journal().get_compaction_yielder()),
+            full_compaction,
         )
         .await
         .context("Failed to flush tree")?;
@@ -478,9 +479,13 @@ impl ObjectStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::filesystem::{FxFilesystem, JournalingObject};
-    use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle};
+    use super::{FlushReason, ForceMajor};
+    use crate::filesystem::{FxFilesystem, FxFilesystemBuilder};
+    use crate::object_handle::{
+        INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle,
+    };
     use crate::object_store::directory::Directory;
+    use crate::object_store::journal::JournalOptions;
     use crate::object_store::transaction::{Options, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
@@ -491,6 +496,7 @@ mod tests {
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
+
 
     #[fuchsia::test]
     async fn test_flush_when_locked() {
@@ -578,6 +584,392 @@ mod tests {
         ObjectStore::open_object(&store, bar.object_id(), HandleOptions::default(), None)
             .await
             .expect("open_object failed");
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_major_compaction_frees_reservation_and_merges_layers() {
+        let device = DeviceHolder::new(FakeDevice::new(32768, 512));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume("test", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let root_dir =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        // 1. Populate the store with files to create an initial layer > 512 KiB
+        // (DEFAULT_RECLAIM_SIZE).
+        let num_files = 2000;
+        let mut file_ids = Vec::with_capacity(num_files);
+        for i in 0..num_files {
+            let filename = format!("file_{:04}_{:<200}", i, i);
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let file = root_dir
+                .create_child_file(&mut transaction, &filename)
+                .await
+                .expect("create_child_file failed");
+            transaction.commit().await.expect("commit failed");
+            file_ids.push((file.object_id(), filename));
+        }
+
+        // Flush (minor) to create Layer 0.
+        store.flush().await.expect("flush failed");
+
+        let info_initial = store.load_store_info().await.expect("load_store_info failed");
+        assert_eq!(info_initial.layers.len(), 1);
+        let initial_reservation = fs
+            .object_manager()
+            .reservation(store.store_object_id())
+            .expect("reservation not found");
+
+        // 2. Delete half the files (1000 files).
+        for (oid, filename) in &file_ids[0..1000] {
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![
+                        LockKey::object(store.store_object_id(), root_dir.object_id()),
+                        LockKey::object(store.store_object_id(), *oid),
+                    ],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let replaced = crate::object_store::directory::replace_child(
+                &mut transaction,
+                None,
+                (&root_dir, filename.as_str()),
+            )
+            .await
+            .expect("replace_child failed");
+            assert_matches::assert_matches!(
+                replaced,
+                crate::object_store::directory::ReplacedChild::Object(id) if id == *oid
+            );
+            transaction.commit().await.expect("commit failed");
+        }
+
+        // 3. Minor flush after deleting 1000 files (FlushReason::Journal(ForceMajor::False)).
+        // Minor compaction will NOT merge with the base layer because base layer > 512 KiB.
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("minor flush failed");
+
+        let info_after_minor = store.load_store_info().await.expect("load_store_info failed");
+        assert_eq!(
+            info_after_minor.layers.len(),
+            2,
+            "Minor compaction should keep the base layer, creating 2 layers"
+        );
+        let res_after_minor = fs
+            .object_manager()
+            .reservation(store.store_object_id())
+            .expect("reservation not found");
+        assert!(
+            res_after_minor >= initial_reservation,
+            "Minor compaction should not decrease reservation because base layer is kept"
+        );
+
+        // 4. Major flush (FlushReason::Journal(ForceMajor::True)).
+        // Major compaction must merge ALL layers, purge tombstones, and reduce reservation.
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("major flush failed");
+
+        let info_after_major = store.load_store_info().await.expect("load_store_info failed");
+        assert_eq!(
+            info_after_major.layers.len(),
+            1,
+            "Major compaction should merge all layers into 1"
+        );
+        let res_after_major = fs
+            .object_manager()
+            .reservation(store.store_object_id())
+            .expect("reservation not found");
+        assert!(
+            res_after_major < initial_reservation,
+            "Major compaction should decrease reservation (was {}, initial was {})",
+            res_after_major,
+            initial_reservation
+        );
+
+        // 5. Verify data integrity.
+        // Deleted files must be gone.
+        for (oid, filename) in &file_ids[0..1000] {
+            assert!(
+                root_dir.lookup(filename).await.expect("lookup failed").is_none(),
+                "Deleted file {} should not exist",
+                oid
+            );
+        }
+        for (oid, filename) in &file_ids[1000..num_files] {
+            let res = root_dir.lookup(filename).await.expect("lookup failed");
+            assert!(res.is_some(), "Surviving file {} should exist", oid);
+            assert_eq!(res.unwrap().0, *oid);
+        }
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_major_compaction_without_journal_mutations() {
+        let device = DeviceHolder::new(FakeDevice::new(32768, 512));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume("test", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let root_dir =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        // Create initial base layer > 512 KiB.
+        for i in 0..2000 {
+            let filename = format!("file_{:04}_{:<200}", i, i);
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir.create_child_file(&mut transaction, &filename).await.expect("create failed");
+            transaction.commit().await.expect("commit failed");
+        }
+        store.flush().await.expect("flush failed");
+
+        // Write a small file and do a minor flush to create a second layer.
+        let mut transaction = store
+            .new_transaction(
+                lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        root_dir.create_child_file(&mut transaction, "extra_file").await.expect("create failed");
+        transaction.commit().await.expect("commit failed");
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("flush failed");
+
+        let info = store.load_store_info().await.expect("load_store_info failed");
+        assert_eq!(info.layers.len(), 2, "Should have 2 layers before major flush");
+
+        // Now, do a major compaction when there are NO journal mutations in ObjectManager.
+        assert!(!fs.object_manager().needs_flush(store.store_object_id()));
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("major flush failed");
+
+        let info_after_major = store.load_store_info().await.expect("load_store_info failed");
+        assert_eq!(
+            info_after_major.layers.len(),
+            1,
+            "Major flush should merge 2 layers into 1 even without journal mutations"
+        );
+
+        // Doing another major flush when already at 1 layer and no mutations should succeed
+        // and leave 1 layer.
+        assert!(!fs.object_manager().needs_flush(store.store_object_id()));
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("second major flush failed");
+        let info_after_second = store.load_store_info().await.expect("load_store_info failed");
+        assert_eq!(
+            info_after_second.layers.len(),
+            1,
+            "Major flush when at 1 layer should succeed and leave 1 layer"
+        );
+
+        fs.close().await.expect("close failed");
+    }
+
+    #[fuchsia::test]
+    async fn test_major_compaction_purges_deleted_extents() {
+        let device = DeviceHolder::new(FakeDevice::new(32768, 512));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume("test", NewChildStoreOptions::default())
+            .await
+            .expect("new_volume failed");
+        let root_dir =
+            Directory::open(&store, store.root_directory_object_id()).await.expect("open failed");
+
+        // 1. Create a base layer > 512 KiB so minor compaction won't merge with it.
+        for i in 0..2000 {
+            let filename = format!("file_{:04}_{:<200}", i, i);
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            root_dir.create_child_file(&mut transaction, &filename).await.expect("create failed");
+            transaction.commit().await.expect("commit failed");
+        }
+
+        // Create a data file with extents.
+        let data_oid = {
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let file = root_dir
+                .create_child_file(&mut transaction, "data_file")
+                .await
+                .expect("create_child_file failed");
+            let oid = file.object_id();
+            transaction.commit().await.expect("commit failed");
+            oid
+        };
+
+        let data_file = ObjectStore::open_object(&store, data_oid, HandleOptions::default(), None)
+            .await
+            .expect("open_object failed");
+        {
+            let mut transaction = store
+                .new_transaction(
+                    lock_keys![LockKey::object(store.store_object_id(), data_oid)],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let mut buffer = data_file.allocate_buffer(131072).await;
+            buffer.fill(0xAB);
+            data_file
+                .txn_write(&mut transaction, 0, buffer.as_ref())
+                .await
+                .expect("txn_write failed");
+            transaction.commit().await.expect("commit failed");
+        }
+
+        // Flush (minor) to commit extents to Layer 0.
+        store.flush().await.expect("flush failed");
+
+        let info0 = store.load_store_info().await.expect("load_store_info failed");
+        assert_eq!(info0.layers.len(), 1);
+
+        // Truncate data_file to 0 to write extent tombstones (ExtentValue::None).
+        data_file.truncate(0).await.expect("truncate failed");
+
+        // Minor flush: writes Layer 1 with extent tombstones on top of Layer 0.
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::False))
+            .await
+            .expect("minor flush failed");
+        let info1 = store.load_store_info().await.expect("load_store_info failed");
+        assert_eq!(info1.layers.len(), 2, "Minor flush should keep Layer 0 and create Layer 1");
+
+        // Major flush: purges ExtentValue::None tombstones via major_iter and merges into 1 layer.
+        store
+            .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+            .await
+            .expect("major flush failed");
+        let info2 = store.load_store_info().await.expect("load_store_info failed");
+        assert_eq!(info2.layers.len(), 1, "Major flush should merge into 1 layer");
+
+        // Verify data_file size is 0.
+        assert_eq!(data_file.get_size(), 0);
+
+        fs.close().await.expect("close failed");
+    }
+
+    // This test case is a regression test for b/548631578.  It verifies that we will force major
+    // compactions when borrowed_metadata_space gets too large relative to metadata_reservation.
+    // Minor compactions are not sufficient in all cases to return borrowed metadata space, which
+    // can eventually exhuast the metadata reservation and prevent all operations (including
+    // compaction itself).
+    #[fuchsia::test]
+    async fn test_borrow_metadata_space_fails_without_major_compaction() {
+        let reclaim_size = 65536;
+        // 102,400 blocks of 512 bytes = 50 MiB device.
+        let device = DeviceHolder::new(FakeDevice::new(102400, 512));
+        let fs = FxFilesystemBuilder::new()
+            .journal_options(JournalOptions { reclaim_size, ..Default::default() })
+            .format(true)
+            .open(device)
+            .await
+            .expect("open failed");
+
+        // The test creates many files in several stores, and then deletes them.  The deletions
+        // create additional layer files, which should be collapsed into the base layers (and
+        // cancel out the file creations) following a major compaction, which should happen
+        // automatically due to the large amount of borrowed space.
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let num_stores = 3;
+        let files_per_store = 3500;
+        let mut stores_and_files = Vec::new();
+
+        for s in 0..num_stores {
+            let store = root_volume
+                .new_volume(&format!("test_{s}"), NewChildStoreOptions::default())
+                .await
+                .expect("new_volume failed");
+            let root_dir = Directory::open(&store, store.root_directory_object_id())
+                .await
+                .expect("open failed");
+            let mut file_ids = Vec::with_capacity(files_per_store);
+            for i in 0..files_per_store {
+                let filename = format!("file_{:04}_{:<200}", i, i);
+                let mut transaction = store
+                    .new_transaction(
+                        lock_keys![LockKey::object(store.store_object_id(), root_dir.object_id())],
+                        Options::default(),
+                    )
+                    .await
+                    .expect("new_transaction failed");
+                let file = root_dir
+                    .create_child_file(&mut transaction, &filename)
+                    .await
+                    .expect("create_child_file failed");
+                transaction.commit().await.expect("commit failed");
+                file_ids.push((file.object_id(), filename));
+            }
+            store
+                .flush_with_reason(FlushReason::Journal(ForceMajor::True))
+                .await
+                .expect("flush failed");
+            stores_and_files.push((store, root_dir, file_ids));
+        }
+
+        for (_, root_dir, file_ids) in stores_and_files {
+            for (oid, filename) in &file_ids[0..2500] {
+                let mut context = root_dir
+                    .acquire_context_for_replace(None, filename.as_str(), true)
+                    .await
+                    .expect("acquire_context failed");
+                let replaced = crate::object_store::directory::replace_child(
+                    &mut context.transaction,
+                    None,
+                    (&root_dir, filename.as_str()),
+                )
+                .await
+                .expect("replace_child failed");
+                assert_matches::assert_matches!(
+                    replaced,
+                    crate::object_store::directory::ReplacedChild::Object(id) if id == *oid
+                );
+                context.transaction.commit().await.expect("commit failed");
+            }
+        }
 
         fs.close().await.expect("close failed");
     }

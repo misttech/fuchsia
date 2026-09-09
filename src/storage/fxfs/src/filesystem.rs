@@ -180,6 +180,24 @@ impl ApplyMode<'_, '_> {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ForceMajor {
+    True,
+    False,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum FlushReason {
+    /// Journal memory or space pressure.
+    Journal(ForceMajor),
+
+    /// Clean up an encrypted mutations object after mount.
+    EncryptedMutations,
+
+    /// Upgrade old layer files to the latest version after mount. This performs a full compaction.
+    UpgradeVersion,
+}
+
 /// Objects that use journaling to track mutations (`Allocator` and `ObjectStore`) implement this.
 /// This is primarily used by `ObjectManager` and `SuperBlock` with flush calls used in a few tests.
 #[async_trait]
@@ -210,7 +228,7 @@ pub trait JournalingObject: Send + Sync {
     /// Flushes in-memory changes to the device (to allow journal space to be freed).
     ///
     /// Also returns the earliest version of a struct in the filesystem.
-    async fn flush(&self) -> Result<Version, Error>;
+    async fn flush(&self, reason: FlushReason) -> Result<Version, Error>;
 
     /// Writes mutations to the journal.  This allows objects to encrypt or otherwise modify what
     /// gets written to the journal.

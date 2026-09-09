@@ -1866,6 +1866,21 @@ impl Allocator {
         let inner = self.inner.lock();
         inner.used_bytes()
     }
+
+    pub async fn flush(&self) -> Result<Version, Error> {
+        let filesystem = self.filesystem.upgrade().unwrap();
+        let object_manager = filesystem.object_manager();
+        let earliest_version = self.tree.get_earliest_version();
+        if !object_manager.needs_flush(self.object_id()) && earliest_version == LATEST_VERSION {
+            // Early exit, but still return the earliest version used by a struct in the tree
+            return Ok(earliest_version);
+        }
+
+        let fs = self.filesystem.upgrade().unwrap();
+        let mut flusher = Flusher::new(self, &fs).await;
+        let (new_layer_file, info) = flusher.start().await?;
+        flusher.finish(new_layer_file, info).await
+    }
 }
 
 impl ReservationOwner for Allocator {
@@ -2007,19 +2022,8 @@ impl JournalingObject for Allocator {
         }
     }
 
-    async fn flush(&self) -> Result<Version, Error> {
-        let filesystem = self.filesystem.upgrade().unwrap();
-        let object_manager = filesystem.object_manager();
-        let earliest_version = self.tree.get_earliest_version();
-        if !object_manager.needs_flush(self.object_id()) && earliest_version == LATEST_VERSION {
-            // Early exit, but still return the earliest version used by a struct in the tree
-            return Ok(earliest_version);
-        }
-
-        let fs = self.filesystem.upgrade().unwrap();
-        let mut flusher = Flusher::new(self, &fs).await;
-        let (new_layer_file, info) = flusher.start().await?;
-        flusher.finish(new_layer_file, info).await
+    async fn flush(&self, _reason: crate::filesystem::FlushReason) -> Result<Version, Error> {
+        self.flush().await
     }
 }
 
@@ -2267,9 +2271,7 @@ impl<'a> Flusher<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::filesystem::{
-        FxFilesystem, FxFilesystemBuilder, JournalingObject, OpenFxFilesystem,
-    };
+    use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, OpenFxFilesystem};
     use crate::fsck::fsck;
     use crate::lsm_tree::skip_list_layer::SkipListLayer;
     use crate::lsm_tree::types::{FuzzyHash as _, Item, ItemRef, LayerIterator, LayerKey as _};

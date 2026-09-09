@@ -1918,7 +1918,7 @@ pub async fn replace_child_with_object<'a, S: HandleOwner>(
 mod tests {
     use super::{ProxyFilename, encrypt_filename, replace_child_with_object};
     use crate::errors::FxfsError;
-    use crate::filesystem::{FxFilesystem, JournalingObject, SyncOptions};
+    use crate::filesystem::{FxFilesystem, SyncOptions};
     use crate::fsck::{fsck, fsck_volume};
     use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::{
