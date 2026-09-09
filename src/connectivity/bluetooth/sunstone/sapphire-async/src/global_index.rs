@@ -30,14 +30,6 @@ impl core::ops::Sub for GlobalIndex {
     }
 }
 
-impl core::ops::Sub<usize> for GlobalIndex {
-    type Output = Self;
-
-    fn sub(self, rhs: usize) -> Self::Output {
-        GlobalIndex(self.0.wrapping_sub(rhs))
-    }
-}
-
 impl core::ops::Add<usize> for GlobalIndex {
     type Output = Self;
     fn add(self, rhs: usize) -> Self::Output {

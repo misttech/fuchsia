@@ -209,7 +209,7 @@ impl<T, Cfg: MpscCfg> MpscInner<T, Cfg> {
         if self.rx_count == 0 {
             return Err((payload, SendSyncError::SendError(SendError::Closed)));
         }
-        self.queue.try_push_back(payload).map_err(|t| (t, SendSyncError::WouldBlock))
+        self.queue.push_back(payload).map_err(|t| (t, SendSyncError::WouldBlock))
     }
 
     pub fn recv(&mut self) -> Result<Option<T>, RecvError> {

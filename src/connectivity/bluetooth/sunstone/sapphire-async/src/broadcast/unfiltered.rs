@@ -117,7 +117,7 @@ impl<T, Cfg: BroadcastCfg> UnfilteredBroadcastChannelState<T, Cfg> {
     ///
     /// Returns `Err(payload)` if the queue is full and cannot grow.
     fn push_back(&mut self, payload: Payload<T>) -> Result<(), Payload<T>> {
-        self.queue.try_push_back(payload)?;
+        self.queue.push_back(payload)?;
         self.next_global_idx += 1;
         Ok(())
     }

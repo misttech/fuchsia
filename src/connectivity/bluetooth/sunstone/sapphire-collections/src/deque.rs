@@ -70,6 +70,16 @@ impl<T, A: StorageFamily> Deque<T, A> {
         self.len == 0
     }
 
+    /// Reserves capacity for at least `additional` more elements to be inserted in the given `Deque`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(AllocError)` if the buffer is full and cannot be grown.
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), crate::AllocError> {
+        let needed_capacity = self.len.checked_add(additional).ok_or(crate::AllocError)?;
+        self.grow_at_least(needed_capacity)
+    }
+
     /// Grows the internal storage if len == capacity.
     ///
     /// This function **guarantees** that self.capacity() > self.len() if the
@@ -185,20 +195,38 @@ impl<T, A: StorageFamily> Deque<T, A> {
         Some(val)
     }
 
+    fn grow(&mut self) -> Result<(), crate::AllocError> {
+        let old_cap = self.capacity();
+        self.inner.grow()?;
+        debug_assert!(
+            self.inner.capacity() > old_cap,
+            "Capacity should have increased since `grow` succeeded"
+        );
+        self.finish_grow(old_cap);
+        Ok(())
+    }
+
     /// Attempts to grow the underlying storage.
     ///
     /// If wrapped around, shifts the front segment to the new space to maintain contiguity.
-    pub fn grow(&mut self) -> Result<(), crate::AllocError> {
+    fn grow_at_least(&mut self, needed_capacity: usize) -> Result<(), crate::AllocError> {
         let old_cap = self.inner.capacity();
-        if old_cap == 0 {
-            self.inner.grow()?;
-            return Ok(());
-        }
+        self.inner.grow_at_least(needed_capacity)?;
+        self.finish_grow(old_cap);
+        Ok(())
+    }
 
-        self.inner.grow()?;
+    fn finish_grow(&mut self, old_cap: usize) {
         // NOTE: We can't use physical_index until we correct our deque.
+        if self.is_empty() {
+            // Nothing to do since we have no elements to move around
+            return;
+        }
         let new_cap = self.inner.capacity();
-        assert!(new_cap > old_cap, "Capacity should have increased if grow succeeded");
+        if new_cap == old_cap {
+            // Nothing changed so nothing to do
+            return;
+        }
 
         // We must keep elements contiguous
         //
@@ -229,20 +257,6 @@ impl<T, A: StorageFamily> Deque<T, A> {
             }
             self.head = new_cap - count;
         }
-        Ok(())
-    }
-
-    /// Attempts to push an element to the back of the queue, automatically growing
-    /// the storage if full.
-    ///
-    /// Returns `Err(value)` if the buffer is full and cannot be grown.
-    pub fn try_push_back(&mut self, value: T) -> Result<(), T> {
-        if self.len == self.capacity() {
-            if self.grow().is_err() {
-                return Err(value);
-            }
-        }
-        self.push_back(value)
     }
 
     /// Returns a shared reference to the element at the front of the queue, if any.
@@ -637,16 +651,16 @@ mod tests {
         let mut deque = StdDeque::<i32>::new();
         assert_eq!(deque.capacity(), 0);
 
-        deque.try_push_back(1).unwrap(); // grows to 1, len 1
+        deque.push_back(1).unwrap(); // grows to 1, len 1
         assert_eq!(deque.capacity(), 1);
         assert_eq!(*deque.get(0).unwrap(), 1);
 
-        deque.try_push_back(2).unwrap(); // grows to 2, len 2
+        deque.push_back(2).unwrap(); // grows to 2, len 2
         assert_eq!(deque.capacity(), 2);
         assert_eq!(*deque.get(0).unwrap(), 1);
         assert_eq!(*deque.get(1).unwrap(), 2);
 
-        deque.try_push_back(3).unwrap(); // grows to 4, len 3
+        deque.push_back(3).unwrap(); // grows to 4, len 3
         assert_eq!(deque.capacity(), 4);
         assert_eq!(*deque.get(0).unwrap(), 1);
         assert_eq!(*deque.get(1).unwrap(), 2);
@@ -660,14 +674,14 @@ mod tests {
 
         // We want to manually construct a wrapped full deque.
         // Standard StdRawVec grows by doubling: 0 -> 1 -> 2 -> 4.
-        deque.try_push_back(1).unwrap();
-        deque.try_push_back(2).unwrap(); // full at cap 2: [1, 2] (head=0)
+        deque.push_back(1).unwrap();
+        deque.push_back(2).unwrap(); // full at cap 2: [1, 2] (head=0)
 
         deque.pop_front(); // len 1: [_, 2] (head=1)
         deque.push_back(3).unwrap(); // wrapped full at cap 2: [3, 2] (head=1, len=2, physical 1, 0)
 
-        // Now we try_push_back(4) which must grow to cap 4 and shift!
-        deque.try_push_back(4).unwrap();
+        // Now we push_back(4) which must grow to cap 4 and shift!
+        deque.push_back(4).unwrap();
 
         assert_eq!(deque.capacity(), 4);
         assert_eq!(deque.len(), 3);
@@ -768,7 +782,7 @@ mod tests {
                 for op in ops {
                     match op {
                         DequeOp::PushBack(val) => {
-                            custom_deque.try_push_back(val).unwrap();
+                            custom_deque.push_back(val).unwrap();
                             std_deque.push_back(val);
                         }
                         DequeOp::PushFront(val) => {

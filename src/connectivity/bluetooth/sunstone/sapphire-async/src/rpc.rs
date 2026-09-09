@@ -329,10 +329,9 @@ impl<R: Rpc, Cfg: RpcCfg> RpcChannel<R, Cfg> {
                 if chan.server_count == 0 {
                     return Poll::Ready(Err(CallError::Closed));
                 }
-                match chan.inbox.try_push_back(request.take().expect("Missing request from option"))
-                {
+                match chan.inbox.push_back(request.take().expect("Missing request from option")) {
                     Ok(()) => {
-                        // NOTE: Can't underflow since we just succeeded to try_push_back
+                        // NOTE: Can't underflow since we just succeeded to push_back
                         let idx = chan.head + (chan.inbox.len() - 1);
                         // Notify one server that a request is enqueued
                         self.not_empty.notify_one();

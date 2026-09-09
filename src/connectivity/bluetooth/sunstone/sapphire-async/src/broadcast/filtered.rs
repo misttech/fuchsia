@@ -131,7 +131,7 @@ struct FilteredBroadcastChannelState<T, Cfg: BroadcastCfg, F> {
 
 /// The trackable state of an active subscriber in a [`FilteredBroadcastChannel`].
 struct FilteredSubscriberState<F> {
-    next_global_idx: GlobalIndex,
+    next_interesting_message: Option<GlobalIndex>,
     filter: F,
     waker: Option<Waker>,
 }
@@ -148,23 +148,43 @@ pub struct NextFuture<'a, 's, T, Cfg: BroadcastCfg, F: Filter<Item = T>> {
 }
 
 impl<T, Cfg: BroadcastCfg, F: Filter<Item = T>> FilteredBroadcastChannelState<T, Cfg, F> {
-    fn force_publish(&mut self, payload: T, not_full: &Notification<Cfg::Mtx>) {
-        if self.queue.force_push_back(Payload { payload, remaining_subs: 0 }).is_some() {
-            self.head_global_idx += 1;
+    fn force_publish(&mut self, payload: T, not_full: &Notification<Cfg::Mtx>) -> Option<T> {
+        let interested = self
+            .subscribers
+            .values_mut()
+            .filter(|sub| sub.filter.interest(&payload).is_interested())
+            .fold(0, |count, sub| {
+                if let Some(waker) = sub.waker.take() {
+                    waker.wake();
+                }
+
+                sub.next_interesting_message.get_or_insert(self.next_global_idx);
+                count + 1
+            });
+        if interested != 0 {
+            let prev = self.queue.force_push_back(Payload { payload, remaining_subs: interested });
+            if prev.is_some() {
+                self.head_global_idx += 1;
+            }
+            self.next_global_idx += 1;
+            self.reclaim_space(not_full);
+            prev.map(|payload| payload.payload)
+        } else {
+            None
         }
-        self.next_global_idx += 1;
-        self.finish_publish(not_full);
     }
 
     /// Attempts to push a payload to the back of the queue, incrementing `next_global_idx` on success.
     ///
     /// Returns `Err(payload)` if the queue is full and cannot grow.
     fn try_publish(&mut self, payload: T, not_full: &Notification<Cfg::Mtx>) -> Result<(), T> {
-        self.queue
-            .try_push_back(Payload { payload, remaining_subs: 0 })
-            .map_err(|payload| payload.payload)?;
-        self.next_global_idx += 1;
-        self.finish_publish(not_full);
+        if self.queue.try_reserve(1).is_err() {
+            return Err(payload);
+        }
+        assert!(
+            self.force_publish(payload, not_full).is_none(),
+            "Must not evict since reserve succeeded"
+        );
         Ok(())
     }
 
@@ -177,37 +197,6 @@ impl<T, Cfg: BroadcastCfg, F: Filter<Item = T>> FilteredBroadcastChannelState<T,
         if reclaimed > 0 {
             not_full.notify_many(reclaimed);
         }
-    }
-
-    fn finish_publish(&mut self, not_full: &Notification<Cfg::Mtx>) {
-        let payload = self
-            .queue
-            .peek_back_mut()
-            .expect("notify publish must be called after publishing a message");
-        let msg_idx = self.next_global_idx - 1;
-        let mut interested = 0;
-        for sub in self.subscribers.values_mut() {
-            let interest = sub.filter.interest(&payload.payload);
-            if interest.is_interested() {
-                interested += 1;
-            }
-            if sub.next_global_idx == msg_idx {
-                if interest.is_interested() {
-                    if let Some(waker) = sub.waker.take() {
-                        waker.wake();
-                    }
-                } else {
-                    sub.next_global_idx += 1;
-                }
-            } else {
-                assert!(
-                    sub.waker.is_none(),
-                    "Subscriber is not up to date but unexpectedly has a registered waker"
-                );
-            }
-        }
-        payload.remaining_subs = interested;
-        self.reclaim_space(not_full);
     }
 }
 
@@ -245,10 +234,12 @@ impl<T: Clone, Cfg: BroadcastCfg, F: Filter<Item = T>> FilteredBroadcastChannel<
         let id = SubId::new(state.next_sub_id);
         state.next_sub_id += 1;
 
-        let next_global_idx = state.next_global_idx;
         state
             .subscribers
-            .try_insert(id, FilteredSubscriberState { next_global_idx, filter, waker: None })
+            .try_insert(
+                id,
+                FilteredSubscriberState { filter, waker: None, next_interesting_message: None },
+            )
             .ok()?;
 
         Some(FilteredSubscriber { channel: self, id })
@@ -274,9 +265,11 @@ impl<T: Clone, Cfg: BroadcastCfg, F: Filter<Item = T>> FilteredBroadcastChannel<
     }
 
     /// Publishes a payload, evicting the oldest message if full.
-    pub fn force_publish(&self, payload: T) {
+    ///
+    /// Returns the evicted message
+    pub fn force_publish(&self, payload: T) -> Option<T> {
         let state = &mut *self.state.lock();
-        state.force_publish(payload, &self.not_full);
+        state.force_publish(payload, &self.not_full)
     }
 }
 
@@ -293,66 +286,43 @@ impl<'a, 's, T: Clone, Cfg: BroadcastCfg, F: Filter<Item = T>> Future
     type Output = Result<T, MissedMessages>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut state = self.subscriber.channel.state.lock();
+        let state = &mut *self.subscriber.channel.state.lock();
 
-        let head = state.head_global_idx;
-        let next = state.next_global_idx;
-
-        let state = &mut *state;
+        let qhead = state.head_global_idx;
         let sub = state.subscribers.get_mut(&self.subscriber.id).expect("Subscriber not found");
 
-        if sub.next_global_idx < head {
-            let missed = (head - sub.next_global_idx) as usize;
-            sub.next_global_idx = head;
-            return Poll::Ready(Err(MissedMessages { count: missed }));
-        }
+        let Some(mut idx) = sub.next_interesting_message.take() else {
+            sub.waker = Some(cx.waker().clone());
+            return Poll::Pending;
+        };
 
-        let mut current_idx = sub.next_global_idx;
-        let mut found_payload = None;
-
-        while current_idx < next {
-            let logical_idx = (current_idx - head) as usize;
-            // If the subscriber has fallen so far behind that modular index arithmetic
-            // wrapped around (or if logical_idx is out of bounds), queue.get will return None.
-            // Instead of panicking, reset the subscriber to head_global_idx and report
-            // usize::MAX missed messages since the exact count is unbounded.
-            let Some(item) = state.queue.get_mut(logical_idx) else {
-                sub.next_global_idx = head;
-                return Poll::Ready(Err(MissedMessages { count: usize::MAX }));
-            };
-            let is_interested = sub.filter.interest(&item.payload).is_interested();
-            current_idx += 1;
-
-            if is_interested {
+        let logical_idx = (idx - qhead) as usize;
+        let out = match state.queue.get_mut(logical_idx) {
+            Some(item) => {
+                debug_assert!(sub.filter.interest(&item.payload).is_interested());
                 item.remaining_subs =
                     item.remaining_subs.checked_sub(1).expect("remaining_subs underflow");
-                found_payload = Some(item.payload.clone());
+                idx += 1;
+                Ok(item.payload.clone())
+            }
+            None => {
+                let missed = (qhead - idx) as usize;
+                idx = qhead;
+                Err(MissedMessages { count: missed })
+            }
+        };
+
+        // Fast-forward to the next interesting message
+        while let Some(item) = state.queue.get((idx - qhead) as usize) {
+            if sub.filter.interest(&item.payload).is_interested() {
+                sub.next_interesting_message = Some(idx);
                 break;
             }
+            idx += 1;
         }
 
-        if let Some(payload) = found_payload {
-            // Fast-forward current_idx past any subsequent uninterested messages in the queue
-            while current_idx < next {
-                let logical_idx = (current_idx - head) as usize;
-                let Some(item) = state.queue.get(logical_idx) else {
-                    break;
-                };
-                if sub.filter.interest(&item.payload).is_interested() {
-                    break;
-                }
-                current_idx += 1;
-            }
-
-            sub.next_global_idx = current_idx;
-            state.reclaim_space(&self.subscriber.channel.not_full);
-            return Poll::Ready(Ok(payload));
-        }
-
-        sub.next_global_idx = current_idx;
-        sub.waker = Some(cx.waker().clone());
         state.reclaim_space(&self.subscriber.channel.not_full);
-        Poll::Pending
+        Poll::Ready(out)
     }
 }
 
@@ -368,27 +338,19 @@ impl<'a, 's, T, Cfg: BroadcastCfg, F: Filter<Item = T>> Drop for NextFuture<'a, 
 impl<'a, T, Cfg: BroadcastCfg, F: Filter<Item = T>> Drop for FilteredSubscriber<'a, T, Cfg, F> {
     fn drop(&mut self) {
         let mut state = self.channel.state.lock();
-        if let Some(mut sub) = state.subscribers.remove(&self.id) {
+        if let Some(sub) = state.subscribers.remove(&self.id)
+            && let Some(mut idx) = sub.next_interesting_message
+        {
             let head = state.head_global_idx;
-            if sub.next_global_idx < head {
-                sub.next_global_idx = head;
+            if idx < head {
+                idx = head;
             }
-            while sub.next_global_idx < state.next_global_idx {
-                let logical_idx = (sub.next_global_idx - head) as usize;
-                match state.queue.get_mut(logical_idx) {
-                    Some(item) => {
-                        if sub.filter.interest(&item.payload).is_interested() {
-                            item.remaining_subs = item
-                                .remaining_subs
-                                .checked_sub(1)
-                                .expect("remaining_subs underflow");
-                        }
-                        sub.next_global_idx += 1;
-                    }
-                    None => {
-                        break;
-                    }
+            while let Some(item) = state.queue.get_mut((idx - head) as usize) {
+                if sub.filter.interest(&item.payload).is_interested() {
+                    item.remaining_subs =
+                        item.remaining_subs.checked_sub(1).expect("remaining_subs underflow");
                 }
+                idx += 1;
             }
             state.reclaim_space(&self.channel.not_full);
         }
@@ -492,6 +454,85 @@ mod tests {
     }
 
     #[test]
+    fn test_filtered_broadcast_publish_uninteresting_does_not_consume_capacity() {
+        // Buffer capacity 1, max 1 subscriber
+        type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<1, 1>>;
+        let channel = TestFilteredChannel::new();
+
+        let mut sub = channel
+            .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
+            .unwrap();
+
+        BoundedExecutor::new(TestExecutor::new(), |s| {
+            s.block_on(async {
+                // Publishing uninteresting (odd) messages on a capacity-1 queue
+                // does not consume queue capacity and does not block.
+                for odd in [1, 3, 5, 7, 9] {
+                    channel.publish(odd).await;
+                    channel.force_publish(odd);
+                }
+
+                // publishing an interested (even) message should succeed and be received by the subscriber.
+                channel.publish(42).await;
+                assert_eq!(sub.next().await, Ok(42));
+            });
+        });
+    }
+
+    #[test]
+    fn test_filtered_broadcast_publish_uninteresting_does_not_block() {
+        // Buffer capacity 1, max 1 subscriber
+        type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<2, 1>>;
+        let channel = TestFilteredChannel::new();
+
+        let mut sub = channel
+            .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
+            .unwrap();
+
+        BoundedExecutor::new(TestExecutor::new(), |s| {
+            s.block_on(async {
+                // publishing an interested (even) message should succeed and be received by the subscriber.
+                channel.publish(42).await;
+
+                // Publishing uninteresting (odd) messages on a capacity-1 queue
+                // does not consume queue capacity and does not block.
+                for odd in [1, 3, 5, 7, 9] {
+                    channel.publish(odd).await;
+                    channel.force_publish(odd);
+                }
+
+                assert_eq!(sub.next().await, Ok(42));
+            });
+        });
+    }
+
+    #[test]
+    fn test_filtered_broadcast_force_publish_uninteresting_does_not_evict() {
+        // Buffer capacity 1, max 1 subscriber
+        type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<1, 1>>;
+        let channel = TestFilteredChannel::new();
+
+        let mut sub = channel
+            .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
+            .unwrap();
+
+        BoundedExecutor::new(TestExecutor::new(), |s| {
+            s.block_on(async {
+                // 1. Fill the capacity-1 queue with an interested message.
+                channel.publish(10).await;
+            });
+
+            // 2. Force publish an uninteresting (odd) message when queue is full.
+            channel.force_publish(11);
+
+            s.block_on(async {
+                // 3. The subscriber should receive 10 intact without MissedMessages because 10 was not evicted.
+                assert_eq!(sub.next().await, Ok(10));
+            });
+        });
+    }
+
+    #[test]
     fn test_filtered_broadcast_blocking_publisher_unblock_on_read() {
         // Capacity 1, max 2 subscribers
         type TestFilteredChannel = FilteredBroadcastChannel<i32, StackCfg<1, 2>>;
@@ -539,14 +580,12 @@ mod tests {
         let mut sub1 = channel
             .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
             .unwrap();
-        let mut sub2 = channel
-            .subscribe(|x| if *x % 2 == 0 { Interest::Interested } else { Interest::Uninterested })
-            .unwrap();
+        let mut sub2 = channel.subscribe(|_| Interest::Interested).unwrap();
 
         BoundedExecutor::new(TestExecutor::new(), |s| {
             s.block_on(async {
                 channel.publish(2).await; // Both interested, sub1 and sub2 stay at idx 0
-                channel.publish(3).await; // Both behind (at idx 0 != 1), so 3 is enqueued without advancing sub indices
+                channel.publish(3).await; // sub1 uninterested, sub2 interested, so 3 is enqueued
             });
 
             // Queue now has [2, 3] and is full (capacity 2).
@@ -556,20 +595,25 @@ mod tests {
             s.run_until_stalled();
             assert!(!handle1.is_finished(), "Publisher should block when queue is full");
 
-            // sub1 and sub2 read 2. In NextFuture::poll, reading 2 also fast-forwards past 3.
-            // When sub2 finishes, both slots for 2 and 3 are reclaimed.
+            // sub1 reads 2 and skips 3. sub2 reads 2, freeing slot 2.
             s.block_on(async {
                 assert_eq!(sub1.next().await, Ok(2));
                 assert_eq!(sub2.next().await, Ok(2));
             });
 
-            // Space for 2 and 3 is reclaimed; publisher unblocks and publishes 4.
-            // Queue now has [4] (len 1, capacity 2).
+            // Space for 2 is reclaimed; publisher unblocks and publishes 4.
+            // Queue now has [3, 4] (len 2, capacity 2).
             s.run_until_stalled();
             assert!(
                 handle1.is_finished(),
-                "Publisher should unblock after reading 2 and skipping 3"
+                "Publisher should unblock after reading 2 and freeing a slot"
             );
+
+            // sub2 reads 3, freeing slot 3.
+            // Queue now has [4] (len 1, capacity 2).
+            s.block_on(async {
+                assert_eq!(sub2.next().await, Ok(3));
+            });
 
             // Since capacity is 2 and queue only contains [4], publishing 6 succeeds immediately.
             s.block_on(async {
@@ -1132,12 +1176,14 @@ mod tests {
                         let sub1_lag = state
                             .subscribers
                             .get(&sub1_id)
-                            .map(|s| (state.next_global_idx - s.next_global_idx) as usize)
+                            .and_then(|s| s.next_interesting_message)
+                            .map(|s| (state.next_global_idx - s) as usize)
                             .unwrap_or(0);
                         let sub2_lag = state
                             .subscribers
                             .get(&sub2_id)
-                            .map(|s| (state.next_global_idx - s.next_global_idx) as usize)
+                            .and_then(|s| s.next_interesting_message)
+                            .map(|s| (state.next_global_idx - s) as usize)
                             .unwrap_or(0);
 
                         let max_sub_lag = std::cmp::max(sub1_lag, sub2_lag);
