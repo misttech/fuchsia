@@ -19,7 +19,6 @@
 #include <ktl/atomic.h>
 #include <ktl/limits.h>
 #include <ktl/utility.h>
-#include <object/resource_dispatcher.h>
 
 // An MsiAllocation is a wrapper around an allocated block of MSI interrupts.
 // It allows for multiple MsiInterruptDispatchers to share an allocated block, and

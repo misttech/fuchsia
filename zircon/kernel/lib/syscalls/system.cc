@@ -63,7 +63,6 @@
 #include <object/job_dispatcher.h>
 #include <object/port_dispatcher.h>
 #include <object/process_dispatcher.h>
-#include <object/resource.h>
 #include <object/user_handles.h>
 #include <object/vm_object_dispatcher.h>
 #include <phys/handoff.h>

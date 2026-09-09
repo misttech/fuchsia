@@ -5,44 +5,59 @@
 // https://opensource.org/licenses/MIT
 
 use super::handle::HandleValue;
+use super::resource::{
+    StrictValidation, validate_ranged_resource_dispatcher, validate_ranged_resource_with_strict,
+};
+use super::resource_dispatcher::ResourceDispatcher;
+use zx_status::Status;
+use zx_types::{ZX_ERR_INVALID_ARGS, zx_handle_t, zx_rsrc_kind_t, zx_status_t};
 
-unsafe extern "C" {
-    fn cpp_resource_validate_resource_kind_base(
-        handle: zx_types::zx_handle_t,
-        kind: zx_types::zx_rsrc_kind_t,
-        base: zx_types::zx_rsrc_system_base_t,
-    ) -> zx_types::zx_status_t;
-    fn cpp_resource_validate_ranged_resource(
-        handle: zx_types::zx_handle_t,
-        kind: zx_types::zx_rsrc_kind_t,
-        base: zx_types::zx_rsrc_system_base_t,
-        size: usize,
-    ) -> zx_types::zx_status_t;
-}
-
-pub fn validate_resource_kind_base(
-    handle: HandleValue,
-    kind: zx_types::zx_rsrc_kind_t,
-    base: zx_types::zx_rsrc_system_base_t,
-) -> Result<(), zx_status::Status> {
-    // SAFETY: The FFI function is safe to call with any handle value and kind/base options.
-    zx_status::Status::ok(unsafe {
-        cpp_resource_validate_resource_kind_base(handle.raw_value(), kind, base)
-    })
-}
-
-pub fn validate_ranged_resource(
-    handle: HandleValue,
-    kind: zx_types::zx_rsrc_kind_t,
-    base: zx_types::zx_rsrc_system_base_t,
+/// Validates a resource handle against a requested range.
+///
+/// # Safety
+///
+/// This function is safe to call from C with any arguments; it does not dereference raw pointers
+/// and validates all inputs through the handle table and resource validation logic.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_resource_validate_ranged_resource(
+    handle: zx_handle_t,
+    kind: zx_rsrc_kind_t,
+    base: u64,
     size: usize,
-) -> Result<(), zx_status::Status> {
-    // SAFETY: The FFI function is safe to call with any handle value and kind/base options.
-    zx_status::Status::ok(unsafe {
-        cpp_resource_validate_ranged_resource(handle.raw_value(), kind, base, size)
-    })
+    strict: bool,
+) -> zx_status_t {
+    let strict_validation = if strict { StrictValidation::Yes } else { StrictValidation::No };
+    Status::result_into_raw(validate_ranged_resource_with_strict(
+        HandleValue::new(handle),
+        kind,
+        base,
+        size,
+        strict_validation,
+    ))
 }
 
-pub fn validate_system_resource(handle: HandleValue, base: u64) -> Result<(), zx_status::Status> {
-    validate_ranged_resource(handle, zx_types::ZX_RSRC_KIND_SYSTEM, base, 1)
+/// Validates a `ResourceDispatcher` pointer against a requested range.
+///
+/// # Safety
+///
+/// `resource` may be null or point to a valid `ResourceDispatcher`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_resource_validate_ranged_resource_dispatcher(
+    resource: *const ResourceDispatcher,
+    kind: zx_rsrc_kind_t,
+    base: u64,
+    size: usize,
+    strict: bool,
+) -> zx_status_t {
+    let Some(resource_ref) = (unsafe { resource.as_ref() }) else {
+        return ZX_ERR_INVALID_ARGS;
+    };
+    let strict_validation = if strict { StrictValidation::Yes } else { StrictValidation::No };
+    Status::result_into_raw(validate_ranged_resource_dispatcher(
+        resource_ref,
+        kind,
+        base,
+        size,
+        strict_validation,
+    ))
 }

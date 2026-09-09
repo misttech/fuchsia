@@ -11,6 +11,10 @@ library_headers("headers") {
   public_deps = [
     # <lib/root_resource_filter.h> has #include <lib/page/size.h>.
     "//zircon/kernel/lib/page:headers",
+
+    # <lib/root_resource_filter_internal.h> has #include
+    # <region-alloc/region-alloc.h>.
+    "//zircon/system/ulib/region-alloc:headers",
   ]
 }
 

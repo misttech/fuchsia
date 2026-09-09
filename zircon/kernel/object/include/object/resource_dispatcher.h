@@ -7,8 +7,7 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_RESOURCE_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_RESOURCE_DISPATCHER_H_
 
-#include <lib/zircon-internal/thread_annotations.h>
-#include <string.h>
+#include <lib/object-constants.h>
 #include <sys/types.h>
 #include <zircon/compiler.h>
 #include <zircon/rights.h>
@@ -16,119 +15,95 @@
 #include <zircon/syscalls/resource.h>
 #include <zircon/types.h>
 
-#include <fbl/intrusive_double_list.h>
-#include <kernel/lockdep.h>
-#include <kernel/mutex.h>
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <region-alloc/region-alloc.h>
+#include <object/opaque_storage.h>
 
-class ResourceRecord;
+class ResourceDispatcher;
 
-class ResourceDispatcher final
-    : public SoloDispatcher<ResourceDispatcher, ZX_DEFAULT_RESOURCE_RIGHTS>,
-      public fbl::DoublyLinkedListable<ResourceDispatcher*> {
+extern "C" {
+zx_status_t cpp_resource_dispatcher_create(
+    zx_rsrc_kind_t kind, uint64_t base, size_t size, uint32_t flags, const char* name,
+    size_t name_size, void* storage, void* region,
+    ffi::Uninitialized<KernelHandle<ResourceDispatcher>>* handle_out);
+void rust_resource_dispatcher_state_init(void* state, void* disp, zx_rsrc_kind_t kind,
+                                         uint64_t base, size_t size, uint32_t flags,
+                                         const char* name, size_t name_size, void* storage,
+                                         void* region);
+void rust_resource_dispatcher_state_destroy(void* state);
+Lock<CriticalMutex>* rust_resource_dispatcher_state_get_lock(const void* state);
+
+zx_status_t rust_resource_dispatcher_create(
+    ffi::Uninitialized<KernelHandle<ResourceDispatcher>>* handle_out, zx_rights_t* rights_out,
+    zx_rsrc_kind_t kind, uint64_t base, size_t size, uint32_t flags, const char* name);
+zx_status_t rust_resource_dispatcher_create_ranged_root(
+    ffi::Uninitialized<KernelHandle<ResourceDispatcher>>* handle_out, zx_rights_t* rights_out,
+    zx_rsrc_kind_t kind, const char* name);
+zx_status_t rust_resource_dispatcher_initialize_allocator(zx_rsrc_kind_t kind, uint64_t base,
+                                                          size_t size);
+zx_status_t rust_resource_dispatcher_get_name(const ResourceDispatcher* disp,
+                                              char out_name[ZX_MAX_NAME_LEN]);
+void rust_resource_dispatcher_get_info(const ResourceDispatcher* disp,
+                                       zx_info_resource_t* info_out);
+void rust_resource_dispatcher_dump_resources();
+void rust_resource_dispatcher_dump_allocators();
+}  // extern "C"
+
+class ResourceDispatcher final : public Dispatcher {
  public:
-  static constexpr size_t kMaxRegionPoolSize = 64 << 10;
-
-  // Returns true if |kind| is a valid resource kind.
-  //
-  // Note: ZX_RSRC_KIND_ROOT (3) was previously used to represent the root resource, but was
-  // deprecated and removed from the kernel. The numeric value 3 remains reserved to avoid shifting
-  // the values of ZX_RSRC_KIND_SMC (4) and ZX_RSRC_KIND_SYSTEM (5).
-  static constexpr bool IsValidKind(zx_rsrc_kind_t kind) {
-    return kind < ZX_RSRC_KIND_COUNT && kind != /* ZX_RSRC_KIND_ROOT */ 3;
-  }
-
-  using ResourceList = fbl::DoublyLinkedList<ResourceDispatcher*>;
   using RefPtr = fbl::RefPtr<ResourceDispatcher>;
 
-  struct ResourceStorage {
-    ResourceList resource_list;
-    ktl::array<RegionAllocator, ZX_RSRC_KIND_COUNT> rallocs;
-  };
-
   // Creates ResourceDispatcher object representing access rights to a
-  // given region of address space from a particular address space allocator.
+  // given region of address space from a particular address space allocator, or a root resource
+  // granted full access permissions. Only one instance of the root resource is created at boot.
   static zx_status_t Create(KernelHandle<ResourceDispatcher>* handle, zx_rights_t* rights,
                             zx_rsrc_kind_t kind, uint64_t base, size_t size, uint32_t flags,
-                            const char name[ZX_MAX_NAME_LEN], ResourceStorage* = nullptr);
+                            const char name[ZX_MAX_NAME_LEN]);
+
   // Creates ResourceDispatcher object representing access rights to all
   // regions of address space for a ranged resource.
   static zx_status_t CreateRangedRoot(KernelHandle<ResourceDispatcher>* handle, zx_rights_t* rights,
-                                      zx_rsrc_kind_t kind, const char name[ZX_MAX_NAME_LEN],
-                                      ResourceStorage* storage = nullptr);
-  // Initializes the static mmembers used for bookkeeping and storage.
-  static zx_status_t InitializeAllocator(zx_rsrc_kind_t kind, uint64_t base, size_t size,
-                                         ResourceStorage* = nullptr);
-  static void DumpResources();
-  static void DumpAllocators();
+                                      zx_rsrc_kind_t kind, const char name[ZX_MAX_NAME_LEN]);
 
-  template <typename T>
-  static zx_status_t ForEachResource(T func, ResourceStorage* storage = nullptr)
-      TA_EXCL(ResourcesLock::Get()) {
-    Guard<Mutex> guard{ResourcesLock::Get()};
-    return ForEachResourceLocked(func, (storage != nullptr) ? storage : &static_storage_);
-  }
-
-  bool IsRangedRoot(zx_rsrc_kind_t kind) const {
-    return (kind_ == kind && base_ == 0 && size_ == 0);
-  }
+  // Initializes the static members used for bookkeeping and storage.
+  static zx_status_t InitializeAllocator(zx_rsrc_kind_t kind, uint64_t base, size_t size);
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_RESOURCE; }
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
+  bool is_waitable() const final { return false; }
 
   // Returns a null-terminated name.
   [[nodiscard]] zx_status_t get_name(char (&out_name)[ZX_MAX_NAME_LEN]) const final {
-    memcpy(out_name, name_, ZX_MAX_NAME_LEN);
-    return ZX_OK;
+    return rust_resource_dispatcher_get_name(this, out_name);
   }
 
-  zx_info_resource_t GetInfo() const;
+  zx_info_resource_t GetInfo() const {
+    zx_info_resource_t info;
+    rust_resource_dispatcher_get_info(this, &info);
+    return info;
+  }
 
-  uint64_t get_base() const { return base_; }
-  size_t get_size() const { return size_; }
-  uint32_t get_kind() const { return kind_; }
-  uint32_t get_flags() const { return flags_; }
-  ~ResourceDispatcher();
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  ~ResourceDispatcher() override;
+
+ protected:
+  Lock<CriticalMutex>* get_lock() const final;
 
  private:
+  friend zx_status_t cpp_resource_dispatcher_create(
+      zx_rsrc_kind_t, uint64_t, size_t, uint32_t, const char*, size_t, void*, void*,
+      ffi::Uninitialized<KernelHandle<ResourceDispatcher>>*);
   ResourceDispatcher(zx_rsrc_kind_t kind, uint64_t base, size_t size, uint32_t flags,
-                     const char name[ZX_MAX_NAME_LEN], RegionAllocator::Region::UPtr&& region,
-                     ResourceStorage* storage);
+                     const char* name, size_t name_size, void* storage, void* region);
 
-  template <typename T>
-  static zx_status_t ForEachResourceLocked(T callback, ResourceStorage* storage)
-      TA_REQ(ResourcesLock::Get()) {
-    for (const auto& resource : storage->resource_list) {
-      zx_status_t status = callback(resource);
-      if (status != ZX_OK) {
-        return status;
-      }
-    }
-    return ZX_OK;
-  }
-
-  const zx_rsrc_kind_t kind_;
-  const uint64_t base_;
-  const size_t size_;
-  const uint32_t flags_;
-  ResourceList* resource_list_;
-  char name_[ZX_MAX_NAME_LEN] = {};
-  RegionAllocator::Region::UPtr exclusive_region_;
-
-  // Static tracking data structures for physical address space allocations.
-  // Exclusive allocations are pulled out of the RegionAllocators, and all
-  // allocations are added to |static_resource_list_|. Shared allocations will
-  // check that no exclusive reservation exists, but then release the region
-  // back to the allocator. Likewise, exclusive allocations will check to
-  // ensure that the region has not already been allocated as a shared region
-  // by checking the static resource list.
-  DECLARE_SINGLETON_MUTEX(ResourcesLock);
-  static RegionAllocator::RegionPool::RefPtr region_pool_;
-  // A single global list is used for all resources so that root and hypervisor resources can
-  // still be tracked, and filtering can be done via client tools/commands when displaying
-  // the list is concerned.
-  static ResourceStorage static_storage_ TA_GUARDED(ResourcesLock::Get());
+  OpaqueStorage<kResourceDispatcherStateSize, kResourceDispatcherStateAlign> opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_RESOURCE_DISPATCHER_H_

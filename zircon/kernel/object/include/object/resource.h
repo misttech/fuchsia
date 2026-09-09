@@ -45,21 +45,6 @@ enum class StrictMmioRangeValidation { No, Yes };
 // Resource constants (ZX_RSRC_KIND_..., etc) are located
 // in system/public/zircon/syscalls/resource.h
 
-// Determines if this handle is to a resource of the specified
-// kind. Used to provide access to privileged syscalls.
-zx_status_t validate_resource(zx_handle_t handle, zx_rsrc_kind_t kind);
-
-// Determines if this handle is to a resource of the specified base and kind.
-zx_status_t validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
-                                        zx_rsrc_system_base_t base);
-
-extern "C" {
-zx_status_t cpp_resource_validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
-                                                     zx_rsrc_system_base_t base);
-zx_status_t cpp_resource_validate_ranged_resource(zx_handle_t handle, zx_rsrc_kind_t kind,
-                                                  uintptr_t base, size_t size);
-}
-
 // Validates a resource based on type and low/high range.
 class ResourceDispatcher;
 zx_status_t validate_ranged_resource(
@@ -84,11 +69,6 @@ static inline zx_status_t validate_resource_mmio(
 // Validates creation of an interrupt object based on a resource handle
 static inline zx_status_t validate_resource_irq(zx_handle_t handle, uint32_t irq) {
   return validate_ranged_resource(handle, ZX_RSRC_KIND_IRQ, irq, 1);
-}
-
-// Validates access to a SMC service call number based on a resource handle
-static inline zx_status_t validate_resource_smc(zx_handle_t handle, uint64_t service_call_num) {
-  return validate_ranged_resource(handle, ZX_RSRC_KIND_SMC, service_call_num, 1);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_RESOURCE_H_

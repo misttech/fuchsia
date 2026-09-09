@@ -64,7 +64,7 @@ source_set("object") {
     "profile_dispatcher_ffi.cc",
     "resource.cc",
     "resource_dispatcher.cc",
-    "resource_ffi.cc",
+    "resource_dispatcher_ffi.cc",
     "root_job_observer.cc",
     "sampler_dispatcher.cc",
     "sampler_dispatcher_ffi.cc",
@@ -150,9 +150,6 @@ library_headers("headers") {
     # <object/clock_dispatcher.> has #include <lib/page/size.h>
     "//zircon/kernel/lib/page:headers",
 
-    # <object/resource_dispatcher.h> has #include <region-alloc/region-alloc.h>.
-    "//zircon/system/ulib/region-alloc:headers",
-
     # <object/process_dispatcher.h> has #include <vm/vm_aspace.h>.
     "//zircon/kernel/vm:headers",
 
@@ -233,6 +230,9 @@ kernel_rust_mod("object-rs") {
     "process_dispatcher_ffi.rs",
     "profile_dispatcher.rs",
     "profile_dispatcher_ffi.rs",
+    "resource.rs",
+    "resource_dispatcher.rs",
+    "resource_dispatcher_ffi.rs",
     "resource_ffi.rs",
     "sampler_dispatcher.rs",
     "sampler_dispatcher_ffi.rs",
@@ -259,6 +259,7 @@ kernel_rust_mod("object-rs") {
     "//sdk/rust/zx-types",
     "//src/lib/bitrs",
     "//src/lib/kalloc",
+    "//src/lib/kprint",
     "//src/lib/ksync",
     "//src/lib/lockdep/rust:lockdep",
     "//src/lib/zr",
@@ -266,10 +267,14 @@ kernel_rust_mod("object-rs") {
     "//third_party/rust_crates:pin-init",
     "//third_party/rust_crates:zerocopy",
     "//zircon/kernel/lib/counters:counters-rs",
+    "//zircon/kernel/lib/init:init_rust",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/kernel/lib/page:page-rs",
+    "//zircon/kernel/lib/range_check:range_check_rs",
     "//zircon/kernel/lib/relaxed_atomic:relaxed_atomic-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
+    "//zircon/system/ulib/pretty/rust:pretty",
+    "//zircon/system/ulib/region-alloc/rust:region-alloc",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }

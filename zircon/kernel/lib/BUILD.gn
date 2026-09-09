@@ -69,6 +69,7 @@ all_libs = [
   "pow2_range_allocator",
   "power-management",
   "mmu_rcu",
+  "range_check",
   "root_resource_filter",
   "sched",
   "special-sections",

@@ -6,163 +6,29 @@
 
 #include "object/resource.h"
 
-#include <align.h>
-#include <lib/page/size.h>
-#include <lib/root_resource_filter.h>
-#include <trace.h>
 #include <zircon/syscalls/resource.h>
+#include <zircon/types.h>
 
 #include <fbl/ref_ptr.h>
-#include <kernel/range_check.h>
-#include <object/process_dispatcher.h>
 #include <object/resource_dispatcher.h>
 
-#define LOCAL_TRACE 0
-
-// TODO(https://fxbug.dev/42107339): Take another look at validation and consider returning
-// dispatchers or move validation into the parent dispatcher itself.
-
-// Check if the resource referenced by |handle| is of kind |kind|.
-//
-// Possible errors:
-// ++ ZX_ERR_ACCESS_DENIED: |handle| is not the right |kind| of handle.
-// ++ ZX_ERR_WRONG_TYPE: |handle| is not a valid handle.
-zx_status_t validate_resource(zx_handle_t handle, zx_rsrc_kind_t kind) {
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<ResourceDispatcher> resource;
-  auto status = up->handle_table().GetDispatcher(*up, handle, &resource);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  auto res_kind = resource->get_kind();
-  if (res_kind == kind) {
-    return ZX_OK;
-  }
-
-  return ZX_ERR_WRONG_TYPE;
-}
-
-// Check if the resource referenced by |handle| is of kind |kind| AND base |base|.
-//
-// Possible errors:
-// ++ ZX_ERR_ACCESS_DENIED: |handle| is not the right |kind| of handle.
-// ++ ZX_ERR_WRONG_TYPE: |handle| is not a valid handle.
-zx_status_t validate_resource_kind_base(zx_handle_t handle, zx_rsrc_kind_t kind,
-                                        zx_rsrc_system_base_t base) {
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<ResourceDispatcher> resource;
-  auto status = up->handle_table().GetDispatcher(*up, handle, &resource);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  auto res_kind = resource->get_kind();
-  auto res_base = resource->get_base();
-
-  if (res_kind == kind && res_base == base) {
-    return ZX_OK;
-  }
-
-  return ZX_ERR_WRONG_TYPE;
+extern "C" {
+zx_status_t rust_resource_validate_ranged_resource(zx_handle_t handle, zx_rsrc_kind_t kind,
+                                                   uint64_t base, size_t size, bool strict);
+zx_status_t rust_resource_validate_ranged_resource_dispatcher(const ResourceDispatcher* resource,
+                                                              zx_rsrc_kind_t kind, uint64_t base,
+                                                              size_t size, bool strict);
 }
 
 zx_status_t validate_ranged_resource(fbl::RefPtr<ResourceDispatcher> resource, zx_rsrc_kind_t kind,
                                      uintptr_t base, size_t size,
                                      StrictMmioRangeValidation strict_validation) {
-  // Resources get access to almost everything, but there are still resource ranges
-  // they are not permitted to mint. For example:
-  //
-  // 1) All of physical RAM is off limits (with limited platform specific
-  //    exceptions). It exists on the CPU accessible physical bus (so, the
-  //    domain controlled by ZX_RSRC_KIND_MMIO) and user mode program should not
-  //    be able to request access to physical RAM by address, they should be
-  //    forced to go through the PMM using VMO creation instead.
-  // 2) Any MMIO accessible interrupt controller registers.
-  // 3) Any MMIO accessible IOMMU registers.
-  //
-  // Enforce that policy here by disallowing resource minting for any request
-  // which touches any disallowed ranges.
-  //
-  if (resource->IsRangedRoot(kind)) {
-    // If we are creating an MMIO resource from one of the base resources, make
-    // sure that range being requested does not share a page with any of the
-    // kernel reserved regions.
-    //
-    uint64_t effective_base = base;
-    size_t effective_size = size;
-
-    if (kind == ZX_RSRC_KIND_MMIO) {
-      effective_base = RoundDownPageSize(base);
-      effective_size = RoundUpPageSize((base - effective_base) + size);
-    }
-
-    if (!root_resource_filter_can_access_region(effective_base, effective_size, kind)) {
-      return ZX_ERR_ACCESS_DENIED;
-    }
-
-    return ZX_OK;
-  }
-
-  if (resource->get_kind() != kind) {
-    return ZX_ERR_WRONG_TYPE;
-  }
-
-  uint64_t rbase = resource->get_base();
-  size_t rsize = resource->get_size();
-  uint64_t aligned_rbase = rbase;
-  size_t aligned_rsize = rsize;
-
-  // In the specific case of MMIO, everything is rounded to kPageSize units
-  // because it's the smallest unit we can operate at with the MMU.
-  if (resource->get_kind() == ZX_RSRC_KIND_MMIO) {
-    aligned_rbase = RoundDownPageSize(rbase);
-    aligned_rsize = RoundUpPageSize((rbase - aligned_rbase) + rsize);
-  }
-  LTRACEF("req [base %#lx size %#lx] and resource [base %#lx size %#lx]\n", base, size, rbase,
-          rsize);
-
-  // All resources need to track their lineage back to the initial resource,
-  // which is specifically prohibited from producing ranges
-  // which intersect anything in the deny list. Since all resource ranges
-  // need to be a subset of their parent, it should be impossible for a
-  // resource object to exist with a range which intersects anything in the
-  // deny list. Check that with a debug assert here.
-  ZX_DEBUG_ASSERT(root_resource_filter_can_access_region(rbase, rsize, kind));
-
-  // Check for intersection and make sure the requested base+size fits within
-  // the resource's address space  allocation.
-  uintptr_t ibase;
-  size_t isize;
-  const bool intersection_result =
-      (strict_validation == StrictMmioRangeValidation::No)
-          ? GetIntersect(base, size, aligned_rbase, aligned_rsize, &ibase, &isize)
-          : GetIntersect(base, size, rbase, rsize, &ibase, &isize);
-  if (!intersection_result || isize != size || ibase != base) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  return ZX_OK;
+  return rust_resource_validate_ranged_resource_dispatcher(
+      resource.get(), kind, base, size, strict_validation == StrictMmioRangeValidation::Yes);
 }
 
-// Check if the resource referenced by |handle| is of kind |kind|. If
-// |kind| matches the resource's kind, then range validation between |base| and |size| will
-// be made against the resource's backing address space allocation.
-//
-// Possible errors:
-// ++ ZX_ERR_ACCESS_DENIED: |handle| is not a valid handle.
-// ++ ZX_ERR_WRONG_TYPE: |handle| is not a valid resource handle, or |kind| is invalid for
-//                       the request.
-// ++ ZX_ERR_OUT_OF_RANGE: The range specified by |base| and |Len| is not granted by this
-// resource.
 zx_status_t validate_ranged_resource(zx_handle_t handle, zx_rsrc_kind_t kind, uintptr_t base,
                                      size_t size, StrictMmioRangeValidation strict_validation) {
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<ResourceDispatcher> resource;
-  auto status = up->handle_table().GetDispatcher(*up, handle, &resource);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  return validate_ranged_resource(resource, kind, base, size, strict_validation);
+  return rust_resource_validate_ranged_resource(
+      handle, kind, base, size, strict_validation == StrictMmioRangeValidation::Yes);
 }

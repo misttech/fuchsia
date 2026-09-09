@@ -41,6 +41,9 @@ mod process_dispatcher;
 pub(crate) mod process_dispatcher_ffi;
 mod profile_dispatcher;
 mod profile_dispatcher_ffi;
+mod resource;
+mod resource_dispatcher;
+mod resource_dispatcher_ffi;
 mod resource_ffi;
 mod sampler_dispatcher;
 mod sampler_dispatcher_ffi;
@@ -79,9 +82,11 @@ pub use msi_interrupt_dispatcher::MsiInterruptDispatcher;
 pub use pinned_memory_token_dispatcher::{PinnedMemoryTokenDispatcher, dev_vaddr_t};
 pub use process_dispatcher::{HandleTableReadGuard, ProcessDispatcher};
 pub use profile_dispatcher::ProfileDispatcher;
-pub use resource_ffi::{
-    validate_ranged_resource, validate_resource_kind_base, validate_system_resource,
+pub use resource::{
+    StrictValidation, validate_ranged_resource, validate_ranged_resource_dispatcher,
+    validate_resource_kind_base, validate_system_resource,
 };
+pub use resource_dispatcher::{ResourceDispatcher, ZX_RSRC_FLAGS_MASK, is_valid_kind};
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use socket_dispatcher::{Disposition, ReadType, SocketDispatcher};
 pub use stream_dispatcher::*;

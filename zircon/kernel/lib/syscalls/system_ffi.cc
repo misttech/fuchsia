@@ -58,8 +58,6 @@
 #include <object/handle.h>
 #include <object/job_dispatcher.h>
 #include <object/process_dispatcher.h>
-#include <object/resource.h>
-#include <object/resource_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
 #include <phys/handoff.h>
 #include <platform/halt_helper.h>

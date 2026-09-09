@@ -9,7 +9,6 @@
 
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <object/resource.h>
 #include <object/resource_dispatcher.h>
 
 namespace {
@@ -19,10 +18,10 @@ bool GetRangedResourceTest() {
   HandleOwner rsrc_handle = get_resource_handle(ZX_RSRC_KIND_MMIO);
   auto rsrc_dispatcher = DownCastDispatcher<ResourceDispatcher>(rsrc_handle->dispatcher().get());
 
-  ASSERT_TRUE(rsrc_dispatcher->get_kind() == ZX_RSRC_KIND_MMIO);
-  ASSERT_TRUE(rsrc_dispatcher->get_base() == 0);
-  ASSERT_TRUE(rsrc_dispatcher->get_size() == 0);
-  ASSERT_TRUE(rsrc_dispatcher->IsRangedRoot(ZX_RSRC_KIND_MMIO));
+  zx_info_resource_t info = rsrc_dispatcher->GetInfo();
+  ASSERT_TRUE(info.kind == ZX_RSRC_KIND_MMIO);
+  ASSERT_TRUE(info.base == 0);
+  ASSERT_TRUE(info.size == 0);
 
   END_TEST;
 }

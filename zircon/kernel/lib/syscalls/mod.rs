@@ -24,6 +24,7 @@ mod object_wait;
 mod pmt;
 mod process;
 mod profile;
+mod resource;
 mod restricted;
 mod sampler;
 mod smc;

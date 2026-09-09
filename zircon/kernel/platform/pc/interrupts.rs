@@ -16,10 +16,11 @@ use crate::arch_rs::x86::ioapic::{
     apic_io_init_safe, apic_io_is_valid_irq, apic_io_isa_to_global, apic_io_mask_irq,
 };
 use crate::dev_interrupt::{InterruptHandler, InterruptPolarity, InterruptTriggerMode, MsiBlock};
+use crate::object::ResourceDispatcher;
 use core::mem::MaybeUninit;
 use pin_init::PinInit;
 use zx_status::Status;
-use zx_types::zx_status_t;
+use zx_types::{ZX_RSRC_KIND_IRQ, zx_status_t};
 
 struct RealIoApic;
 
@@ -76,7 +77,6 @@ unsafe extern "C" {
     fn apic_issue_eoi();
     fn cpp_arch_ints_disabled() -> bool;
     fn apic_bsp_id() -> u8;
-    fn cpp_resource_dispatcher_inititialize_allocator(base: usize, size: usize) -> zx_status_t;
 }
 
 // Convert an ACPI entry into the format required by the platform's APIC code.
@@ -209,15 +209,12 @@ fn platform_init_apic(_level: init::LkInitLevel) {
         panic!("InterruptManager init failed: {:?}", status);
     }
 
-    // SAFETY: `cpp_resource_dispatcher_inititialize_allocator` initializes the IRQ allocator. It is safe
-    // to call with valid base and maximum vector limits once in boot.
-    let status = unsafe {
-        cpp_resource_dispatcher_inititialize_allocator(
-            interrupt_get_base_vector() as usize,
-            interrupt_get_max_vector() as usize,
-        )
-    };
-    assert!(status == zx_status::sys::ZX_OK);
+    let status = ResourceDispatcher::initialize_allocator(
+        ZX_RSRC_KIND_IRQ,
+        interrupt_get_base_vector() as u64,
+        interrupt_get_max_vector() as usize,
+    );
+    assert!(status.is_ok());
 }
 
 /// Handles a platform interrupt from an interrupt vector.

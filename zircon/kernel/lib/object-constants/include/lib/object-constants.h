@@ -124,4 +124,9 @@ constexpr size_t kWaitSignalObserverStorageOffset = 40;
 constexpr size_t kOwnedWaitQueueSize = 88;
 constexpr size_t kOwnedWaitQueueAlign = 8;
 
+// Size, alignment, and offset for ResourceDispatcherState.
+constexpr size_t kResourceDispatcherStateSize = 128;
+constexpr size_t kResourceDispatcherStateAlign = 8;
+constexpr size_t kResourceDispatcherStateOffset = 48;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_

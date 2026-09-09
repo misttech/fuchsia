@@ -11,6 +11,7 @@
 #include <platform.h>
 #include <pow2.h>
 #include <zircon/errors.h>
+#include <zircon/syscalls/resource.h>
 #include <zircon/time.h>
 
 #include <utility>
@@ -49,8 +50,6 @@ zx_status_t MsiAllocateAssert(uint32_t /* unused */, bool /* unused */, bool /* 
 }
 
 void MsiFreeAssert(msi_block_t* /* unused */) { assert(false); }
-
-const uint32_t kVectorMax = 256u;
 
 zx_status_t create_allocation(fbl::RefPtr<MsiAllocation>* alloc, uint32_t cnt) {
   return MsiAllocation::Create(cnt, alloc, MsiAllocate, MsiFree, MsiIsSupportedTrue);
@@ -123,9 +122,6 @@ bool allocation_creation_and_info_test() {
 bool allocation_irq_count_test() {
   BEGIN_TEST;
 
-  ResourceDispatcher::ResourceStorage rsrc_storage;
-  ASSERT_EQ(ZX_OK, ResourceDispatcher::InitializeAllocator(ZX_RSRC_KIND_IRQ, 0, kVectorMax,
-                                                           &rsrc_storage));
   // Check that the valid range of allocation sizes work. Verifies that only
   // powers of two are valid.
   for (uint32_t cnt = 1; cnt < MsiAllocation::kMsiAllocationCountMax; cnt++) {
