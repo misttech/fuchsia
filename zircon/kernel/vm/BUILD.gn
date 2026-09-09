@@ -270,7 +270,10 @@ kernel_bindgen_crate("physmap-bindings") {
   cpp = true
 
   notice_year = 2026
-  function_allowlist = [ "cpp_paddr_to_physmap" ]
+  function_allowlist = [
+    "cpp_paddr_to_physmap",
+    "cpp_physmap_to_paddr",
+  ]
   type_blocklist = [
     "zx_paddr_t",
     "zx_vaddr_t",
@@ -1190,6 +1193,7 @@ kernel_rust_mod("vm-rs") {
     "mod.rs",
     "page.rs",
     "page_queues.rs",
+    "page_slab_allocator.rs",
     "page_source.rs",
     "page_state.rs",
     "physical_page_borrowing_config.rs",
@@ -1246,6 +1250,7 @@ kernel_rust_mod("vm-rs") {
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/debug",
+    "//zircon/kernel/lib/heap:heap-rs",
     "//zircon/kernel/lib/init:init_rust",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/kernel/lib/page:page-rs",
@@ -1309,6 +1314,7 @@ kernel_rust_mod("vm-rs-unittests") {
   source_root = "unittests/mod.rs"
   sources = [
     "unittests/aspace_unittest.rs",
+    "unittests/slab_unittest.rs",
     "unittests/test_helper.rs",
     "unittests/vmo_unittest.rs",
   ]

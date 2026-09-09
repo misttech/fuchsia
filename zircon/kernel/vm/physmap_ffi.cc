@@ -18,4 +18,8 @@ FFI_ALWAYS_INLINE zx_vaddr_t cpp_paddr_to_physmap(zx_paddr_t paddr) {
   return reinterpret_cast<zx_vaddr_t>(paddr_to_physmap(paddr));
 }
 
+FFI_ALWAYS_INLINE zx_paddr_t cpp_physmap_to_paddr(zx_vaddr_t vaddr) {
+  return physmap_to_paddr(reinterpret_cast<const void*>(vaddr));
+}
+
 }  // extern "C"

@@ -14,6 +14,7 @@
 __BEGIN_CDECLS
 
 zx_vaddr_t cpp_paddr_to_physmap(zx_paddr_t paddr);
+zx_paddr_t cpp_physmap_to_paddr(zx_vaddr_t vaddr);
 
 __END_CDECLS
 

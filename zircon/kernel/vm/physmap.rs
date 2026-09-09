@@ -12,3 +12,9 @@ pub fn paddr_to_physmap(paddr: PAddr) -> VAddr {
     // SAFETY: FFI call passing physical address to get virtual address in physmap.
     VAddr(unsafe { bindings::cpp_paddr_to_physmap(paddr.0) })
 }
+
+/// Converts a virtual address in the kernel physmap to a physical address.
+pub fn physmap_to_paddr(vaddr: VAddr) -> PAddr {
+    // SAFETY: FFI call passing virtual address in physmap to get physical address.
+    PAddr(unsafe { bindings::cpp_physmap_to_paddr(vaddr.0) })
+}

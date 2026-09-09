@@ -3,5 +3,6 @@
 // found in the LICENSE file.
 
 pub mod aspace_unittest;
+pub mod slab_unittest;
 pub mod test_helper;
 pub mod vmo_unittest;

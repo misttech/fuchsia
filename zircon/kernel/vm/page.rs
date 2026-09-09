@@ -582,6 +582,11 @@ impl VmPagePtr {
         }
     }
 
+    /// Returns the non-null pointer.
+    pub fn as_non_null(self) -> NonNull<VmPage> {
+        self.0
+    }
+
     /// Returns the raw pointer.
     pub fn as_raw(self) -> *mut VmPage {
         self.0.as_ptr()
