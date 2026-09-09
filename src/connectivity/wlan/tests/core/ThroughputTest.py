@@ -160,7 +160,7 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             csv_file.write(
                 "security,channel,channel_bandwidth,"
                 + "ap_rssi,ap_tx_rate_mbps,ap_rx_rate_mbps,dut_rssi,dut_tx_rate_mbps,dut_rx_rate_mbps,"
-                + "tcp_tx_mbps,tcp_rx_mbps,udp_tx_mbps,udp_rx_mbps\n"
+                + "udp_or_tcp_test,tx_or_rx_test,result_mbps\n"
             )
 
     async def setup_test(self) -> None:
@@ -526,48 +526,20 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self._log_udp_correction("UDP RX", udp_rx, udp_bandwidth)
         self._log_measurement_result("UDP RX", udp_rx_mbps, udp_rx_metrics)
 
-        all_metrics = [
-            tcp_tx_metrics,
-            tcp_rx_metrics,
-            udp_tx_metrics,
-            udp_rx_metrics,
-        ]
-        avg_ap_rssi = self._calc_avg([m.ap_rssi for m in all_metrics])
-        avg_ap_tx_rate_mbps = self._calc_avg(
-            [m.ap_tx_rate_mbps for m in all_metrics]
-        )
-        avg_ap_rx_rate_mbps = self._calc_avg(
-            [m.ap_rx_rate_mbps for m in all_metrics]
-        )
-        avg_dut_rssi = self._calc_avg([m.dut_rssi for m in all_metrics])
-        avg_dut_tx_rate_mbps = self._calc_avg(
-            [m.dut_tx_rate_mbps for m in all_metrics]
-        )
-        avg_dut_rx_rate_mbps = self._calc_avg(
-            [m.dut_rx_rate_mbps for m in all_metrics]
-        )
-
-        logger.info(
-            f"Throughput Result "
-            + f"(Channel {test.channel}/{test.channel_bandwidth}MHz, "
-            + f"AP avg [RSSI: {self._fmt_metric(avg_ap_rssi, 'dBm')}, "
-            + f"TX phy rate: {self._fmt_metric(avg_ap_tx_rate_mbps, 'Mbps')}, "
-            + f"RX phy rate: {self._fmt_metric(avg_ap_rx_rate_mbps, 'Mbps')}], "
-            + f"DUT avg [RSSI: {self._fmt_metric(avg_dut_rssi, 'dBm')}, "
-            + f"TX phy rate: {self._fmt_metric(avg_dut_tx_rate_mbps, 'Mbps')}, "
-            + f"RX phy rate: {self._fmt_metric(avg_dut_rx_rate_mbps, 'Mbps')}]) "
-            + f"TCP TX: {tcp_tx_mbps} Mbps, TCP RX: {tcp_rx_mbps} Mbps, "
-            + f"UDP TX: {udp_tx_mbps} Mbps, UDP RX: {udp_rx_mbps} Mbps"
-        )
-
         sec_name = ConfigMapper.to_hostapd_security(test.security_mode).value
         with open(self.csv_file_path, "a", encoding="utf-8") as csv_file:
-            csv_file.write(
-                f"{sec_name},{test.channel},{test.channel_bandwidth},"
-                + f"{self._fmt_csv(avg_ap_rssi)},{self._fmt_csv(avg_ap_tx_rate_mbps)},{self._fmt_csv(avg_ap_rx_rate_mbps)},"
-                + f"{self._fmt_csv(avg_dut_rssi)},{self._fmt_csv(avg_dut_tx_rate_mbps)},{self._fmt_csv(avg_dut_rx_rate_mbps)},"
-                + f"{tcp_tx_mbps},{tcp_rx_mbps},{udp_tx_mbps},{udp_rx_mbps}\n"
-            )
+            for proto, direction, metrics, mbps in [
+                ("tcp", "tx", tcp_tx_metrics, tcp_tx_mbps),
+                ("tcp", "rx", tcp_rx_metrics, tcp_rx_mbps),
+                ("udp", "tx", udp_tx_metrics, udp_tx_mbps),
+                ("udp", "rx", udp_rx_metrics, udp_rx_mbps),
+            ]:
+                csv_file.write(
+                    f"{sec_name},{test.channel},{test.channel_bandwidth},"
+                    + f"{self._fmt_csv(metrics.ap_rssi)},{self._fmt_csv(metrics.ap_tx_rate_mbps)},{self._fmt_csv(metrics.ap_rx_rate_mbps)},"
+                    + f"{self._fmt_csv(metrics.dut_rssi)},{self._fmt_csv(metrics.dut_tx_rate_mbps)},{self._fmt_csv(metrics.dut_rx_rate_mbps)},"
+                    + f"{proto},{direction},{mbps}\n"
+                )
 
     @staticmethod
     def get_target_udp_bandwidth(channel_bandwidth: int) -> str:
@@ -611,13 +583,6 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
     def bps_to_mbps(bps: int | float) -> float:
         throughput_mbps = float(bps) / 1_000_000
         return round(throughput_mbps, 2)
-
-    @staticmethod
-    def _calc_avg(values: list[int | float | None]) -> float | None:
-        valid = [v for v in values if v is not None]
-        if not valid:
-            return None
-        return round(sum(valid) / len(valid), 2)
 
     @staticmethod
     def _fmt_csv(val: int | float | None) -> str:
