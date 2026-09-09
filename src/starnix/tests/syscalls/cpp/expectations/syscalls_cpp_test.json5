@@ -189,13 +189,6 @@
                 // If it ever does, implementing `security::mmap_addr` will be necessary.
                 "MmapTest.MmapMinAddr",
 
-                // TODO(https://fxbug.dev/521344735): Allow non-root processes with CAP_NET_ADMIN to
-                // read/write /proc/sys/net.
-                "SysctlTest/SysctlNodeTest.NonRootWithCapNetAdminCanWriteProcSysNet/net_*",
-
-                // Starnix improperly ignores that DAC overrides should be natively rejected within /proc/sys.
-                "SysctlTest/SysctlNodeTest.NonRootWithCapDacOverrideCannotWrite/*",
-
                 // Starnix write handlers for these nodes currently either lack Linux's bounds/format
                 // validation or improperly succeed on writes that should be natively rejected.
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_pid_max",
@@ -203,12 +196,13 @@
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_printk",
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_printk",
 
-                // Starnix erroneously allows opening this 0444 file for write by honoring DAC override.
+                // TODO(https://fxbug.dev/521344735): Remove once boot_id mode is updated to 0444 (fxr/1799659).
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_random_boot_id",
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_random_boot_id",
 
                 // disable_ipv6 incorrectly lacks the proper CAP_NET_ADMIN gating in its node handler.
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/net_ipv6_conf_all_disable_ipv6",
+                "SysctlTest/SysctlNodeTest.NonRootWithCapNetAdminCanWriteProcSysNet/net_ipv6_conf_all_disable_ipv6",
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/net_ipv6_conf_all_disable_ipv6",
 
                 // These nodes currently utilize BytesFile implementations which emit ENOSYS on write.

@@ -34,6 +34,7 @@ rustc_library("procfs") {
     "swaps.rs",
     "sys_net.rs",
     "sysctl.rs",
+    "sysctl_directory.rs",
     "sysrq.rs",
     "thread_self.rs",
     "uid_cputime.rs",

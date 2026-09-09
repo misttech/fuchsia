@@ -6,9 +6,10 @@ use crate::sys_net::{
     PingGroupRangeFile, ProcSysNetIpv4Conf, ProcSysNetIpv4Neigh, ProcSysNetIpv6Conf,
     ProcSysNetIpv6Neigh, RmemMaxFile, TcpRmemFile, WmemMaxFile,
 };
+use crate::sysctl_directory::{SysctlDirectory, SysctlDirectoryMutator};
 use starnix_core::security;
 use starnix_core::task::{CurrentTask, SeccompAction};
-use starnix_core::vfs::pseudo::simple_directory::{SimpleDirectory, SimpleDirectoryMutator};
+use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::{BytesFile, BytesFileOps, parse_unsigned_file};
 use starnix_core::vfs::pseudo::stub_bytes_file::StubBytesFile;
 use starnix_core::vfs::{FileSystemHandle, FsNodeHandle, FsNodeOps, FsString, fs_args};
@@ -17,15 +18,15 @@ use starnix_uapi::auth::{CAP_LAST_CAP, CAP_SYS_ADMIN, CAP_SYS_RESOURCE, Capabili
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::version::{KERNEL_RELEASE, KERNEL_VERSION};
-use starnix_uapi::{errno, error};
+use starnix_uapi::{errno, error, uapi};
 use std::borrow::Cow;
 use std::sync::atomic::Ordering;
 use uuid::Uuid;
 
 pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
     let mode = mode!(IFREG, 0o644);
-    let root_dir = SimpleDirectory::new();
-    let dir = SimpleDirectoryMutator::new(fs.clone(), root_dir.clone());
+    let root_dir = SysctlDirectory::<{ uapi::CAP_SYS_ADMIN }>::new();
+    let dir = SysctlDirectoryMutator::new(fs.clone(), &root_dir);
     dir.subdir("abi", 0o555, |_dir| {
         #[cfg(target_arch = "aarch64")]
         _dir.entry("swp", StubBytesFile::new_node(bug_ref!("https://fxbug.dev/452096300")), mode);
@@ -240,7 +241,7 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             mode,
         );
     });
-    dir.subdir("net", 0o555, sysctl_net_diretory);
+    dir.subdir_with_capability::<{ uapi::CAP_NET_ADMIN }>("net", 0o555, sysctl_net_directory);
     dir.entry(
         "version",
         BytesFile::new_node(|| Ok(format!("{}\n", KERNEL_VERSION))),
@@ -442,9 +443,9 @@ impl BytesFileOps for KernelTaintedFile {
     }
 }
 
-fn sysctl_net_diretory(dir: &SimpleDirectoryMutator) {
+fn sysctl_net_directory(dir: &SysctlDirectoryMutator<'_, { uapi::CAP_NET_ADMIN }>) {
     let file_mode = mode!(IFREG, 0o644);
-    let dir_mode = mode!(IFDIR, 0o644);
+    let dir_mode = mode!(IFDIR, 0o555);
 
     dir.subdir("core", 0o555, |dir| {
         dir.entry(

@@ -4,6 +4,7 @@
 
 use std::sync::atomic::Ordering;
 
+use crate::sysctl_directory::SysctlDirectory;
 use fidl::endpoints::DiscoverableProtocolMarker as _;
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_root as fnet_root;
@@ -12,7 +13,6 @@ use fuchsia_component::client::connect_to_protocol_sync;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
 use netlink::{SysctlError, SysctlInterfaceSelector};
 use starnix_core::task::CurrentTask;
-use starnix_core::vfs::pseudo::simple_directory::SimpleDirectory;
 use starnix_core::vfs::pseudo::simple_file::{
     BytesFile, BytesFileOps, SimpleFileNode, parse_i32_file, serialize_for_file,
 };
@@ -28,7 +28,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{FileMode, mode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
-use starnix_uapi::{errno, error};
+use starnix_uapi::{errno, error, uapi};
 use std::borrow::Cow;
 
 const FILE_MODE: FileMode = mode!(IFREG, 0o644);
@@ -154,7 +154,7 @@ impl FsNodeOps for ProcSysNetIpv4Conf {
     ) -> Result<FsNodeHandle, Errno> {
         if get_netstack_device(current_task, name).is_some() {
             let fs = node.fs();
-            let dir = SimpleDirectory::new();
+            let dir = SysctlDirectory::<{ uapi::CAP_NET_ADMIN }>::new();
             dir.edit(&fs, |dir| {
                 dir.entry(
                     "accept_redirects",
@@ -199,7 +199,7 @@ impl FsNodeOps for ProcSysNetIpv4Neigh {
     ) -> Result<FsNodeHandle, Errno> {
         if let Some(interface) = get_netstack_device(current_task, name) {
             let fs = node.fs();
-            let dir = SimpleDirectory::new();
+            let dir = SysctlDirectory::<{ uapi::CAP_NET_ADMIN }>::new();
             dir.edit(&fs, |dir| {
                 dir.entry(
                     "ucast_solicit",
@@ -259,7 +259,7 @@ impl FsNodeOps for ProcSysNetIpv6Conf {
     ) -> Result<FsNodeHandle, Errno> {
         if let Some(interface) = get_netstack_device(current_task, name) {
             let fs = node.fs();
-            let dir = SimpleDirectory::new();
+            let dir = SysctlDirectory::<{ uapi::CAP_NET_ADMIN }>::new();
             dir.edit(&fs, |dir| {
                 dir.entry(
                     "accept_ra",
@@ -374,7 +374,7 @@ impl FsNodeOps for ProcSysNetIpv6Neigh {
     ) -> Result<FsNodeHandle, Errno> {
         if let Some(interface) = get_netstack_device(current_task, name) {
             let fs = node.fs();
-            let dir = SimpleDirectory::new();
+            let dir = SysctlDirectory::<{ uapi::CAP_NET_ADMIN }>::new();
             dir.edit(&fs, |dir| {
                 dir.entry(
                     "ucast_solicit",

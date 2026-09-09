@@ -25,6 +25,7 @@ mod stat;
 mod swaps;
 pub mod sys_net;
 mod sysctl;
+mod sysctl_directory;
 mod sysrq;
 mod thread_self;
 mod uid_cputime;
