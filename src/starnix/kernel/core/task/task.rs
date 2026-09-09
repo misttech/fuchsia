@@ -1076,7 +1076,7 @@ impl Task {
             .map(|p| p.core_state.thread_group.clone())
             .and_then(|tg| tg.upgrade());
         if let Some(tg) = tracer_tg {
-            tg.ptracees.lock().remove(&self.tid);
+            tg.ptracees.lock().remove(&self.persistent_info);
         }
     }
 
