@@ -808,11 +808,27 @@ function ffx {
   fx-command-run ffx --config fuchsia.analytics.ffx_invoker=fx "$@"
 }
 
+function _is-ffx-built {
+  fx-build-dir-if-present && [[ -x "${FUCHSIA_BUILD_DIR}/host-tools/ffx" ]]
+}
+
 # Prints path to the default SSH key. These credentials are created
 # and configured via ffx.
 #
 # The corresponding public key is stored in "$(get-ssh-privkey).pub".
 function get-ssh-privkey {
+  # If ffx is not built yet, check for existing keys directly to avoid
+  # triggering a slow build of ffx for commands that only need SSH access.
+  if ! _is-ffx-built; then
+    if [[ -n "${FUCHSIA_SSH_KEY:-}" && -f "${FUCHSIA_SSH_KEY}" ]]; then
+      echo "${FUCHSIA_SSH_KEY}"
+      return 0
+    elif [[ -f "${HOME}/.ssh/fuchsia_ed25519" ]]; then
+      echo "${HOME}/.ssh/fuchsia_ed25519"
+      return 0
+    fi
+  fi
+
   init="$(fx-command-run ffx --config fuchsia.analytics.ffx_invoker=fx config check-ssh-keys --create)"
   RESULT=$?
   if [ $RESULT -ne 0 ]; then
@@ -827,6 +843,18 @@ function get-ssh-privkey {
 
 # Prints path to the default authorized_keys to include on Fuchsia devices.
 function get-ssh-authkeys {
+  # If ffx is not built yet, check for existing keys directly to avoid
+  # triggering a slow build of ffx for commands that only need SSH access.
+  if ! _is-ffx-built; then
+    if [[ -n "${FUCHSIA_AUTHORIZED_KEYS:-}" && -f "${FUCHSIA_AUTHORIZED_KEYS}" ]]; then
+      echo "${FUCHSIA_AUTHORIZED_KEYS}"
+      return 0
+    elif [[ -f "${HOME}/.ssh/fuchsia_authorized_keys" ]]; then
+      echo "${HOME}/.ssh/fuchsia_authorized_keys"
+      return 0
+    fi
+  fi
+
   init="$(fx-command-run ffx --config fuchsia.analytics.ffx_invoker=fx config check-ssh-keys --create)"
   RESULT=$?
   if [ $RESULT -ne 0 ]; then
@@ -842,11 +870,14 @@ function get-ssh-authkeys {
 # Checks the ssh_config file exists and references the private key, otherwise
 # (re)creates it
 function check-ssh-config {
+  fx-build-dir-if-present || return 1
   privkey="$(get-ssh-privkey)"
   conffile="${FUCHSIA_BUILD_DIR}/ssh-keys/ssh_config"
 
-  local identities_only
-  identities_only="$(fx-command-run ffx config get ssh.identities_only 2>/dev/null || echo "false")"
+  local identities_only="false"
+  if [[ -x "${FUCHSIA_BUILD_DIR}/host-tools/ffx" ]]; then
+    identities_only="$("${FUCHSIA_BUILD_DIR}/host-tools/ffx" config get ssh.identities_only 2>/dev/null || echo "false")"
+  fi
   if [[ "$identities_only" != "true" ]]; then
     identities_only="false"
   fi
