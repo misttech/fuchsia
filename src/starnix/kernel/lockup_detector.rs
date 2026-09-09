@@ -11,7 +11,7 @@ use fuchsia_runtime as fruntime;
 use futures::future::BoxFuture;
 use starnix_c_file_buffer::CFileBuffer;
 use starnix_core::task::ThreadLockupInfo;
-use starnix_logging::{log_debug, log_error, log_warn};
+use starnix_logging::{log_debug, log_error, log_info, log_warn};
 use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 use zx::{self, Task};
@@ -65,6 +65,7 @@ async fn dump_thread_backtrace<'a>(
 
 const LOCKUP_DETECTOR_INTERVAL_MINUTES: i64 = 2;
 const RCU_STALL_THRESHOLD_SAMPLES: u32 = 4;
+const THREAD_DUMP_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(5);
 
 struct ActiveRcuRead {
     consecutive_polls_active: u32,
@@ -156,6 +157,35 @@ fn build_annotations(lockups: &Lockups, rcu_stalls: &Vec<RcuStall>) -> Vec<ffeed
     ]
 }
 
+fn order_lockup_candidates<'a>(
+    newly_locked: Vec<ThreadLockupInfo>,
+    rcu_stalls: &'a [RcuStall],
+) -> Vec<(zx::Unowned<'a, zx::Thread>, zx::Koid, zx::MonotonicInstant)> {
+    let mut candidates: HashMap<zx::Koid, (zx::Unowned<'a, zx::Thread>, zx::MonotonicInstant)> =
+        HashMap::new();
+
+    for info in newly_locked {
+        candidates
+            .entry(info.koid)
+            .and_modify(|(_, start_time)| *start_time = (*start_time).min(info.start_time))
+            .or_insert_with(|| (info.thread, info.start_time));
+    }
+
+    for stall in rcu_stalls {
+        candidates
+            .entry(stall.koid)
+            .and_modify(|(_, start_time)| *start_time = (*start_time).min(stall.first_seen))
+            .or_insert_with(|| (stall.thread.unowned(), stall.first_seen));
+    }
+
+    let mut sorted_threads: Vec<_> = candidates
+        .into_iter()
+        .map(|(koid, (thread, start_time))| (thread, koid, start_time))
+        .collect();
+    sorted_threads.sort_by_key(|(_, _, start_time)| *start_time);
+    sorted_threads
+}
+
 async fn report_lockups(
     context: &mut LockupDetectorContext,
     lockups: Lockups,
@@ -176,27 +206,46 @@ async fn report_lockups(
     };
 
     let annotations = build_annotations(&lockups, &rcu_stalls);
-    let threads: BTreeSet<_> = lockups
-        .newly_locked
-        .into_iter()
-        .map(|info| (info.thread, info.koid))
-        .chain(rcu_stalls.iter().map(|stall| (stall.thread.unowned(), stall.koid)))
-        .collect();
-    for (thread, koid) in threads {
-        let bt = match dump_thread_backtrace(
-            &thread,
-            &mut file_buffer,
-            zx::MonotonicDuration::from_seconds(1),
-        )
-        .await
-        {
+    let sorted_threads = order_lockup_candidates(lockups.newly_locked, &rcu_stalls);
+    if !sorted_threads.is_empty() {
+        log_info!(
+            "Dumping backtraces for {} newly locked threads (out of {} total locked) in order of oldest first...",
+            sorted_threads.len(),
+            lockups.current_koids.len()
+        );
+    }
+    for (thread, koid, start_time) in sorted_threads {
+        let thread_name = thread
+            .get_name()
+            .map(|name| name.to_string())
+            .unwrap_or_else(|_| "<unknown>".to_string());
+        let duration = zx::MonotonicInstant::get() - start_time;
+
+        let bt = match dump_thread_backtrace(&thread, &mut file_buffer, THREAD_DUMP_TIMEOUT).await {
             Ok(bt) => bt,
             Err(e) => {
-                log_warn!("Failed to dump backtrace for thread {}: {:?}", koid.raw_koid(), e);
+                let thread_state = thread
+                    .info()
+                    .map(|info| format!("{:?}", info.state))
+                    .unwrap_or_else(|_| "unknown".to_string());
+                log_warn!(
+                    "Failed to dump backtrace for thread {} ('{}', state: {}, running for {:.2?}): {:?}",
+                    koid.raw_koid(),
+                    thread_name,
+                    thread_state,
+                    duration,
+                    e
+                );
                 continue;
             }
         };
-        log_error!("Locked thread backtrace:\n{}", bt);
+        log_error!(
+            "Locked thread backtrace for {} (koid: {}, running for {:.2?}):\n{}",
+            thread_name,
+            koid.raw_koid(),
+            duration,
+            bt
+        );
 
         context.reported_lockup_koids.insert(koid);
 
@@ -224,7 +273,7 @@ async fn report_lockups(
             specific_report: Some(ffeedback::SpecificCrashReport::TextBacktrace(
                 ffeedback::TextBacktraceCrashReport {
                     fuchsia_backtrace: Some(fmem::Buffer { vmo, size }),
-                    thread_name: thread.get_name().ok().map(|name| name.to_string()),
+                    thread_name: Some(thread_name),
                     thread_koid: Some(koid.raw_koid()),
                     ..Default::default()
                 },
@@ -496,5 +545,45 @@ mod tests {
                 assert!(annotation.value.ends_with("..."));
             }
         }
+    }
+
+    #[test]
+    fn test_order_lockup_candidates() {
+        let t0 = zx::MonotonicInstant::from_nanos(1000);
+        let t1 = zx::MonotonicInstant::from_nanos(2000);
+        let t2 = zx::MonotonicInstant::from_nanos(3000);
+
+        // SAFETY: Handle from zx_thread_self is valid for the duration of the test.
+        let thread_self =
+            unsafe { zx::Unowned::<zx::Thread>::from_raw_handle(fruntime::zx_thread_self()) };
+
+        let newly_locked = vec![
+            ThreadLockupInfo {
+                thread: thread_self.clone(),
+                koid: zx::Koid::from_raw(2),
+                start_time: t1,
+            },
+            ThreadLockupInfo {
+                thread: thread_self.clone(),
+                koid: zx::Koid::from_raw(3),
+                start_time: t2,
+            },
+            ThreadLockupInfo {
+                thread: thread_self.clone(),
+                koid: zx::Koid::from_raw(1),
+                start_time: t0,
+            },
+        ];
+
+        let rcu_stalls = vec![];
+
+        let sorted = order_lockup_candidates(newly_locked, &rcu_stalls);
+        assert_eq!(sorted.len(), 3);
+        assert_eq!(sorted[0].1, zx::Koid::from_raw(1));
+        assert_eq!(sorted[0].2, t0);
+        assert_eq!(sorted[1].1, zx::Koid::from_raw(2));
+        assert_eq!(sorted[1].2, t1);
+        assert_eq!(sorted[2].1, zx::Koid::from_raw(3));
+        assert_eq!(sorted[2].2, t2);
     }
 }

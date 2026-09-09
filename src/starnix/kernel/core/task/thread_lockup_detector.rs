@@ -111,10 +111,11 @@ unsafe impl Send for RegisteredThread {}
 // SAFETY: Same as above.
 unsafe impl Sync for RegisteredThread {}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ThreadLockupInfo {
     pub thread: zx::Unowned<'static, zx::Thread>,
     pub koid: zx::Koid,
+    pub start_time: zx::MonotonicInstant,
 }
 
 /// Global registry of all tracked threads.
@@ -162,6 +163,7 @@ impl ThreadLockupDetector {
                     Some(ThreadLockupInfo {
                         thread: registered.thread.clone(),
                         koid: registered.koid,
+                        start_time,
                     })
                 } else {
                     None
