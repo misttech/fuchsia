@@ -179,7 +179,10 @@ def check_stability(test_id):
     payload = {
         "project": PROJECT,
         "testId": test_id,
-        "predicate": {},
+        "predicate": {
+            # Filter by sub_realm to only count CI results and exclude tryjob builders (i.e. global.try).
+            "sub_realm": BUCKET,
+        },
         "pageSize": 300,
     }
     cmd = [
