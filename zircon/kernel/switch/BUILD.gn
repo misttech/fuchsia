@@ -610,6 +610,10 @@ kernel_rust_mod_attr("allow_dead_code") {
   output_name = "allow(dead_code)"
 }
 
+kernel_rust_mod_attr("cfg_sanitize") {
+  output_name = "feature(cfg_sanitize)"
+}
+
 # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
 clippy_lints = [
   "assertions-on-constants",
