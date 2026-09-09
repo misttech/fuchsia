@@ -520,4 +520,54 @@ TEST_F(BlockOpTest, MultiQueueDepthWriteTest) {
   }
 }
 
+TEST_F(BlockOpTest, NoneDirectionDoesNotPassVmo) {
+  const uint8_t kTestLun = 0;
+  auto lun_id = Ufs::TranslateScsiLunToUfsLun(kTestLun);
+  ASSERT_OK(lun_id);
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmo));
+
+  auto block_op = std::make_unique<uint8_t[]>(op_size_);
+  auto op = reinterpret_cast<block_op_t*>(block_op.get());
+  *op = {
+      .rw =
+          {
+              .command =
+                  {
+                      .opcode = BLOCK_OPCODE_WRITE,
+                  },
+              .vmo = vmo.get(),
+              .length = 0,
+              .offset_dev = 0,
+              .offset_vmo = 0,
+          },
+  };
+  scsi::DeviceOp* device_op = containerof(op, scsi::DeviceOp, op);
+  device_op->completion_cb = [](void* ctx, zx_status_t status, block_op_t* op) {
+    EXPECT_OK(status);
+    sync_completion_signal(static_cast<sync_completion_t*>(ctx));
+  };
+
+  sync_completion_t done;
+  device_op->cookie = &done;
+
+  uint8_t cdb_buffer[6] = {};
+  auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB*>(cdb_buffer);
+  cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+  iovec cdb_iov = {.iov_base = cdb_buffer, .iov_len = sizeof(*cdb)};
+
+  // is_write = false, device_op opcode is BLOCK_OPCODE_WRITE.
+  // data_direction evaluates to DataDirection::kNone.
+  dut_->ExecuteCommandAsync(0, lun_id.value(), cdb_iov, /*is_write=*/false,
+                            ufs_mock_device::kMockBlockSize, device_op, {nullptr, 0});
+
+  sync_completion_wait(&done, ZX_TIME_INFINITE);
+
+  // Check that the slot in transfer_request_processor did NOT receive the VMO handle.
+  std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+  auto& slot = dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(0);
+  EXPECT_FALSE(slot.data_vmo->is_valid());
+}
+
 }  // namespace ufs

@@ -44,6 +44,7 @@ TEST_F(RequestProcessorTest, RingRequestDoorbell) {
     auto &slot =
         dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
     ASSERT_EQ(slot.state, SlotState::kReserved);
+    slot.completion_cb = [](zx_status_t) {};
   }
 
   RingRequestDoorbell<ufs::TransferRequestProcessor>(slot_num.value());
@@ -78,6 +79,7 @@ TEST_F(RequestProcessorTest, FillDescriptorAndSendRequest) {
     auto &slot =
         dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(slot_num.value());
     ASSERT_EQ(slot.state, SlotState::kReserved);
+    slot.completion_cb = [](zx_status_t) {};
   }
 
   DataDirection data_dir = DataDirection::kHostToDevice;
@@ -284,15 +286,22 @@ TEST_F(RequestProcessorTest, SendRequestUsingSlot) {
   auto slot = ReserveSlot<ufs::TransferRequestProcessor>();
   ASSERT_OK(slot);
 
-  // Send scsi command with SendRequestUsingSlot()
+  // Send scsi command with SendIoScsiCmd()
   uint8_t cdb_buffer[6] = {};
   auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
   cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
 
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
-  auto response_or = dut_->GetTransferRequestProcessor().SendRequestUsingSlot<ScsiCommandUpiu>(
-      upiu, kTestLun, slot.value(), zx::unowned_vmo(), 0, 0, nullptr, /*synchronous*/ true);
-  ASSERT_OK(response_or);
+  sync_completion_t complete;
+  zx_status_t completion_status = ZX_OK;
+  dut_->GetTransferRequestProcessor().SendIoScsiCmd(
+      upiu, kTestLun, slot.value(), zx::unowned_vmo(), 0, 0,
+      [&complete, &completion_status](zx_status_t status) {
+        completion_status = status;
+        sync_completion_signal(&complete);
+      });
+  ASSERT_OK(sync_completion_wait(&complete, ZX_TIME_INFINITE));
+  ASSERT_OK(completion_status);
 
   // Check that the SCSI UPIU is copied into the command descriptor.
   AbstractUpiu command_descriptor([&]() {
@@ -304,7 +313,14 @@ TEST_F(RequestProcessorTest, SendRequestUsingSlot) {
   ASSERT_EQ(memcmp(upiu.GetData(), command_descriptor.GetData(), sizeof(CommandUpiuData)), 0);
 
   // Check response
-  ResponseUpiu response(response_or.value());
+  const uint16_t response_offset = upiu.GetResponseOffset();
+  void *response_buf;
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    response_buf = dut_->GetTransferRequestProcessor().GetRequestListLocked().GetDescriptorBuffer(
+        slot.value(), response_offset);
+  }
+  ResponseUpiu response(response_buf);
   EXPECT_EQ(response.GetHeader().trans_code(), UpiuTransactionCodes::kResponse);
   EXPECT_EQ(response.GetHeader().status, static_cast<uint8_t>(scsi::StatusCode::GOOD));
   EXPECT_EQ(response.GetHeader().response, UpiuHeaderResponseCode::kTargetSuccess);
@@ -313,25 +329,41 @@ TEST_F(RequestProcessorTest, SendRequestUsingSlot) {
 TEST_F(RequestProcessorTest, SendRequestUsingSlotTimeout) {
   constexpr uint8_t kTestLun = 0;
 
-  dut_->GetTransferRequestProcessor().DisableCompletion();
-  dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(100));
-  auto cleanup = fit::defer([this]() {
-    dut_->GetTransferRequestProcessor().EnableCompletion();
-    dut_->GetTransferRequestProcessor().SetTimeout(kCommandTimeout);
-  });
+  dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(10));
+  auto cleanup =
+      fit::defer([this]() { dut_->GetTransferRequestProcessor().SetTimeout(kCommandTimeout); });
 
   auto slot = ReserveSlot<ufs::TransferRequestProcessor>();
   ASSERT_OK(slot);
 
-  // Send scsi command with SendRequestUsingSlot()
+  // Hook TEST_UNIT_READY to time out.
+  mock_device_.GetScsiCommandProcessor().SetHook(
+      scsi::Opcode::TEST_UNIT_READY,
+      [](UfsMockDevice &mock_device, CommandUpiuData &command_upiu, ResponseUpiuData &response_upiu,
+         cpp20::span<PhysicalRegionDescriptionTableEntry> &prdt_upius) {
+        return zx::error(ZX_ERR_TIMED_OUT);
+      });
+
+  // Send scsi command with SendIoScsiCmd()
   uint8_t cdb_buffer[6] = {};
   auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
   cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
 
   ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
-  auto response_or = dut_->GetTransferRequestProcessor().SendRequestUsingSlot<ScsiCommandUpiu>(
-      upiu, kTestLun, slot.value(), zx::unowned_vmo(), 0, 0, nullptr, /*synchronous*/ true);
-  ASSERT_EQ(response_or.status_value(), ZX_ERR_TIMED_OUT);
+  sync_completion_t complete;
+  zx_status_t completion_status = ZX_OK;
+  dut_->GetTransferRequestProcessor().SendIoScsiCmd(
+      upiu, kTestLun, slot.value(), zx::unowned_vmo(), 0, 0,
+      [&complete, &completion_status](zx_status_t status) {
+        completion_status = status;
+        sync_completion_signal(&complete);
+      });
+
+  zx::nanosleep(zx::deadline_after(zx::msec(20)));
+  dut_->GetTransferRequestProcessor().ProcessCompletionOfIoRequests();
+
+  ASSERT_OK(sync_completion_wait(&complete, ZX_TIME_INFINITE));
+  ASSERT_EQ(completion_status, ZX_ERR_TIMED_OUT);
 }
 
 TEST_F(RequestProcessorTest, SendScsiUpiu) {
@@ -392,7 +424,6 @@ TEST_F(RequestProcessorTest, SendScsiUpiuWithAdminSlotIsFull) {
 }
 
 TEST_F(RequestProcessorTest, SendScsiUpiuWithSlotIsFull) {
-  constexpr uint8_t kTestLun = 0;
   const uint8_t kMaxSlotCount =
       dut_->GetTransferRequestProcessor().GetSlotCount() - kAdminCommandSlotCount;
 
@@ -401,15 +432,8 @@ TEST_F(RequestProcessorTest, SendScsiUpiuWithSlotIsFull) {
     ASSERT_OK(ReserveSlot<ufs::TransferRequestProcessor>());
   }
 
-  IoCommand empty_io_cmd = {};
-
-  uint8_t cdb_buffer[6] = {};
-  auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
-  cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
-
-  ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
-  auto response = dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &empty_io_cmd);
-  ASSERT_EQ(response.status_value(), ZX_ERR_NO_RESOURCES);
+  auto slot = dut_->GetTransferRequestProcessor().ReserveSlot();
+  ASSERT_EQ(slot.status_value(), ZX_ERR_NO_RESOURCES);
 }
 
 TEST_F(RequestProcessorTest, SendAdminScsiCmdWithSlotIsFull) {
@@ -431,6 +455,135 @@ TEST_F(RequestProcessorTest, SendAdminScsiCmdWithSlotIsFull) {
   // Admin command should succeed even if all I/O slots are full.
   auto response = dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, kTestLun);
   ASSERT_OK(response);
+}
+
+TEST_F(RequestProcessorTest, SendIoScsiCmdFailureCallsCallback) {
+  constexpr uint8_t kTestLun = 0;
+  zx::result<uint8_t> slot = ReserveSlot<ufs::TransferRequestProcessor>();
+  ASSERT_OK(slot);
+
+  uint8_t cdb_buffer[6] = {};
+  auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
+  cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+
+  // Create a 4KB VMO, but specify an offset/length beyond its size so that pinning fails.
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kDeviceToHost,
+                       zx_system_get_page_size());
+
+  bool callback_called = false;
+  zx_status_t callback_status = ZX_OK;
+  dut_->GetTransferRequestProcessor().SendIoScsiCmd(
+      upiu, kTestLun, slot.value(), vmo.borrow(), zx_system_get_page_size() * 2,
+      zx_system_get_page_size(), [&](zx_status_t status) {
+        callback_called = true;
+        callback_status = status;
+      });
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(callback_status, ZX_ERR_OUT_OF_RANGE);
+
+  // Verify that the slot was released on failure and can be reserved again.
+  zx::result<uint8_t> new_slot = ReserveSlot<ufs::TransferRequestProcessor>();
+  ASSERT_OK(new_slot);
+  EXPECT_EQ(new_slot.value(), slot.value());
+}
+
+TEST_F(RequestProcessorTest, SendIoScsiCmdInvalidVmoCallsCallback) {
+  constexpr uint8_t kTestLun = 0;
+  zx::result<uint8_t> slot = ReserveSlot<ufs::TransferRequestProcessor>();
+  ASSERT_OK(slot);
+
+  uint8_t cdb_buffer[6] = {};
+  auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
+  cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+
+  // With transfer bytes > 0 but invalid VMO, SendIoScsiCmd should fail and invoke the callback with
+  // ZX_ERR_BAD_HANDLE.
+  ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kDeviceToHost, 1024);
+
+  bool callback_called = false;
+  zx_status_t callback_status = ZX_OK;
+  dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, slot.value(), zx::unowned_vmo(),
+                                                    0, 1024, [&](zx_status_t status) {
+                                                      callback_called = true;
+                                                      callback_status = status;
+                                                    });
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(callback_status, ZX_ERR_BAD_HANDLE);
+
+  // Verify that the slot was released on failure and can be reserved again.
+  zx::result<uint8_t> new_slot = ReserveSlot<ufs::TransferRequestProcessor>();
+  ASSERT_OK(new_slot);
+  EXPECT_EQ(new_slot.value(), slot.value());
+}
+
+TEST_F(RequestProcessorTest, ZeroLengthWithValidVmo) {
+  constexpr uint8_t kTestLun = 0;
+  zx::result<uint8_t> slot = ReserveSlot<ufs::TransferRequestProcessor>();
+  ASSERT_OK(slot);
+
+  uint8_t cdb_buffer[6] = {};
+  auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
+  cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+
+  ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kDeviceToHost, 0);
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  bool callback_called = false;
+  zx_status_t callback_status = ZX_ERR_INTERNAL;
+  dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, slot.value(), vmo.borrow(), 0,
+                                                    0, [&](zx_status_t status) {
+                                                      callback_called = true;
+                                                      callback_status = status;
+                                                    });
+
+  // Hardware completion
+  dut_->GetTransferRequestProcessor().ProcessCompletionOfIoRequests();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_OK(callback_status);
+}
+
+TEST_F(RequestProcessorTest, SyncRequestPanicsOnAdminWorkerDispatcher) {
+  ASSERT_DEATH(
+      {
+        libsync::Completion done;
+        async::PostTask(dut_->admin_worker_dispatcher()->async_dispatcher(), [&]() {
+          uint8_t cdb_buffer[6] = {};
+          auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
+          cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+          ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
+          [[maybe_unused]] auto result =
+              dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, 0);
+          done.Signal();
+        });
+        done.Wait();
+      },
+      "Synchronous UFS request cannot be issued from inside IO or Admin worker dispatcher thread!");
+}
+
+TEST_F(RequestProcessorTest, SyncRequestPanicsOnIoWorkerDispatcher) {
+  ASSERT_DEATH(
+      {
+        libsync::Completion done;
+        async::PostTask(dut_->io_worker_dispatcher()->async_dispatcher(), [&]() {
+          uint8_t cdb_buffer[6] = {};
+          auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
+          cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+          ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
+          [[maybe_unused]] auto result =
+              dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, 0);
+          done.Signal();
+        });
+        done.Wait();
+      },
+      "Synchronous UFS request cannot be issued from inside IO or Admin worker dispatcher thread!");
 }
 
 }  // namespace ufs

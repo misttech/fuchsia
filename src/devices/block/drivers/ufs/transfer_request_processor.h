@@ -6,6 +6,7 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_TRANSFER_REQUEST_PROCESSOR_H_
 
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/fit/function.h>
 #include <lib/trace/event.h>
 
 #include "request_processor.h"
@@ -51,6 +52,7 @@ class TransferRequestProcessor : public RequestProcessor {
   ~TransferRequestProcessor() override = default;
 
   zx::result<> Init() override;
+  using RequestProcessor::ReserveSlot;
   // Allocate a slot to submit an Admin command. Use slot 31 to avoid conflicts with I/O commands.
   zx::result<uint8_t> ReserveAdminSlot() TA_REQ(admin_slot_lock_) TA_EXCL(slot_lock_);
 
@@ -66,13 +68,17 @@ class TransferRequestProcessor : public RequestProcessor {
   // Find the earliest timeout deadline of the in-flight I/O.
   zx_time_t GetEarliestTimeoutDeadline();
 
-  // |SendAdminScsiCmd| allocates the admin slot for a SCSI command and calls SendScsiUpiuUsingSlot.
+  // |SendAdminScsiCmd| allocates the admin slot for a SCSI command and calls SendRequestUsingSlot.
+  // Blocks until completion and returns the result.
   zx::result<std::unique_ptr<ResponseUpiu>> SendAdminScsiCmd(
       ScsiCommandUpiu &request, uint8_t lun, zx::unowned_vmo data_vmo = zx::unowned_vmo());
 
-  // |SendIoScsiCmd| allocates an I/O slot for a SCSI command and calls SendScsiUpiuUsingSlot.
-  zx::result<std::unique_ptr<ResponseUpiu>> SendIoScsiCmd(ScsiCommandUpiu &request, uint8_t lun,
-                                                          IoCommand *io_cmd);
+  // |SendIoScsiCmd| sends an asynchronous SCSI command using a previously reserved I/O slot.
+  // The |completion_cb| is guaranteed to be invoked, and the |slot| will be automatically
+  // released, regardless of whether the request is successfully submitted or fails early.
+  void SendIoScsiCmd(ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo,
+                     uint64_t dma_offset, uint64_t dma_length,
+                     fit::callback<void(zx_status_t)> completion_cb);
 
   // This function is a wrapper function that sends a query request UPIU.
   zx::result<std::unique_ptr<QueryResponseUpiu>> SendQueryRequestUpiu(QueryRequestUpiu &request);
@@ -80,23 +86,9 @@ class TransferRequestProcessor : public RequestProcessor {
   // |SendRequestUpiu| allocates a slot for request UPIU and calls SendRequestUsingSlot.
   // This function is only ever used for admin commands.
   template <class RequestType, class ResponseType>
-  zx::result<std::unique_ptr<ResponseType>> SendRequestUpiu(RequestType &request, uint8_t lun = 0) {
-    std::lock_guard<std::mutex> lock(admin_slot_lock_);
-    zx::result<uint8_t> slot = ReserveAdminSlot();
-    if (slot.is_error()) {
-      return zx::error(ZX_ERR_NO_RESOURCES);
-    }
-
-    zx::result<void *> response;
-    if (response = SendRequestUsingSlot<RequestType>(request, lun, slot.value(), zx::unowned_vmo(),
-                                                     0, 0, nullptr, /*synchronous*/ true);
-        response.is_error()) {
-      return response.take_error();
-    }
-    auto response_upiu = std::make_unique<ResponseType>(response.value());
-
-    return zx::ok(std::move(response_upiu));
-  }
+  zx::result<std::unique_ptr<ResponseType>> SendRequestUpiu(
+      RequestType &request, uint8_t lun = 0, zx::unowned_vmo data_vmo = zx::unowned_vmo(),
+      uint64_t dma_offset = 0, uint64_t dma_length = 0);
 
   template <class RequestType>
   std::tuple<uint16_t, uint32_t> PreparePrdt(RequestType &request, uint8_t lun, uint8_t slot,
@@ -112,10 +104,13 @@ class TransferRequestProcessor : public RequestProcessor {
       const std::vector<zx_paddr_t> &buffer_phys, uint16_t response_offset,
       uint16_t response_length) TA_REQ(slot_lock_);
 
+  // Low-level helper that sets up descriptor and PRDT buffers for a reserved slot, pins data VMO,
+  // and rings the doorbell. Invokes |completion_cb| when the hardware request completes, or
+  // immediately with an error status if slot preparation fails.
   template <class RequestType>
-  zx::result<void *> SendRequestUsingSlot(RequestType &request, uint8_t lun, uint8_t slot,
-                                          zx::unowned_vmo data_vmo, uint64_t dma_offset,
-                                          uint64_t dma_length, IoCommand *io_cmd, bool synchronous);
+  void SendRequestUsingSlot(RequestType &request, uint8_t lun, uint8_t slot,
+                            zx::unowned_vmo data_vmo, uint64_t dma_offset, uint64_t dma_length,
+                            fit::callback<void(zx_status_t)> completion_cb);
 
   uint32_t GetInflightIoCount() const {
     std::lock_guard<std::mutex> lock(slot_lock_);
@@ -125,12 +120,6 @@ class TransferRequestProcessor : public RequestProcessor {
 
  private:
   friend class UfsTest;
-
-  zx::result<std::unique_ptr<ResponseUpiu>> SendScsiUpiuUsingSlot(ScsiCommandUpiu &request,
-                                                                  uint8_t lun, uint8_t slot,
-                                                                  zx::unowned_vmo data_vmo,
-                                                                  IoCommand *io_cmd,
-                                                                  bool synchronous);
 
   zx::result<> FillDescriptorAndSendRequest(uint8_t slot, DataDirection data_dir,
                                             uint16_t response_offset, uint16_t response_length,
@@ -146,7 +135,8 @@ class TransferRequestProcessor : public RequestProcessor {
                                                 scsi::StatusCode response_status);
   scsi::HostStatusCode ScsiStatusToHostStatus(scsi::StatusCode command_status);
 
-  void RequestCompletion(uint8_t slot_num, RequestSlot &request_slot, bool is_timeout)
+  void RequestCompletion(uint8_t slot_num, RequestSlot &request_slot, bool is_timeout,
+                         fit::callback<void(zx_status_t)> &cb, zx_status_t &status)
       TA_REQ(slot_lock_);
   zx_status_t UpiuCompletion(uint8_t slot_num, RequestSlot &request_slot, bool is_timeout)
       TA_REQ(slot_lock_);
@@ -161,7 +151,14 @@ class TransferRequestProcessor : public RequestProcessor {
   uint32_t ReadDoorBellRegister() override {
     return UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
   }
-  bool ProcessSlotCompletion(uint8_t slot_num, uint32_t doorbell) TA_REQ(slot_lock_);
+  // Checks if the request at |slot_num| has completed (either via hardware completion or timeout).
+  // If the request completed, returns true, sets |cb| to the completion callback that was stored in
+  // the request slot, and sets |status| to the completion result status.
+  // The caller must invoke |cb(status)| after releasing |slot_lock_| to avoid lock re-entrancy and
+  // inversion deadlocks.
+  bool ProcessSlotCompletion(uint8_t slot_num, uint32_t doorbell,
+                             fit::callback<void(zx_status_t)> &cb, zx_status_t &status)
+      TA_REQ(slot_lock_);
 
   // TODO(b/42075643): Background Operation uses the admin slot, causing a race condition for admin
   // commands running on the main thread. To fix this, per-slot locking is required, but I added

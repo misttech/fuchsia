@@ -248,19 +248,44 @@ void Ufs::ProcessIoSubmissions() {
       continue;
     }
 
-    ScsiCommandUpiu upiu(io_cmd->cdb_buffer, io_cmd->cdb_length, data_direction, transfer_bytes);
-    auto response = transfer_request_processor_->SendIoScsiCmd(upiu, io_cmd->lun, io_cmd);
-    if (response.is_error()) {
-      if (response.error_value() == ZX_ERR_NO_RESOURCES) {
+    uint64_t dma_offset = 0;
+    uint64_t dma_length = 0;
+    if (data_direction != DataDirection::kNone) {
+      if (io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM) {
+        dma_offset = 0;
+        dma_length = zx_system_get_page_size();
+      } else {
+        dma_offset = io_cmd->device_op.op.rw.offset_vmo * io_cmd->block_size_bytes;
+        dma_length =
+            static_cast<uint64_t>(io_cmd->device_op.op.rw.length) * io_cmd->block_size_bytes;
+      }
+    }
+
+    zx::result<uint8_t> slot = transfer_request_processor_->ReserveSlot();
+    if (slot.is_error()) {
+      if (slot.error_value() == ZX_ERR_NO_RESOURCES) {
         std::lock_guard<std::mutex> lock(commands_lock_);
         list_add_head(&pending_commands_, &io_cmd->node);
         return;
       }
-      fdf::error("Failed to submit SCSI command (command {}): {}", static_cast<const void*>(io_cmd),
-                 response);
       io_cmd->data_vmo.reset();
-      io_cmd->device_op.Complete(response.error_value());
+      io_cmd->device_op.Complete(slot.error_value());
+      continue;
     }
+
+    zx::unowned_vmo data_vmo;
+    if (data_direction != DataDirection::kNone) {
+      data_vmo = io_cmd->data_vmo.is_valid() ? io_cmd->data_vmo.borrow() : io_cmd->vmo();
+    }
+
+    auto cb = [io_cmd](zx_status_t status) {
+      io_cmd->data_vmo.reset();
+      io_cmd->device_op.Complete(status);
+    };
+
+    ScsiCommandUpiu upiu(io_cmd->cdb_buffer, io_cmd->cdb_length, data_direction, transfer_bytes);
+    transfer_request_processor_->SendIoScsiCmd(upiu, io_cmd->lun, slot.value(), std::move(data_vmo),
+                                               dma_offset, dma_length, std::move(cb));
   }
 }
 

@@ -6,6 +6,7 @@
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_REQUEST_LIST_H_
 
 #include <lib/dma-buffer/buffer.h>
+#include <lib/fit/function.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/result.h>
 
@@ -22,7 +23,6 @@ namespace ufs {
 // UFS 3.1 only supports up to 32 in-flight requests.
 constexpr uint8_t kMaxRequestListSize = 32;
 
-struct IoCommand;
 class RequestProcessor;
 
 enum class SlotState {
@@ -38,13 +38,12 @@ class RequestSlot {
 
   void Reset(SlotState new_state = SlotState::kFree) {
     sync_completion_reset(&complete);
-    io_cmd = nullptr;
+    completion_cb = nullptr;
     data_vmo = {};
     dma_offset = 0;
     dma_length = 0;
     is_read = false;
     is_scsi_command = false;
-    is_sync = false;
     response_upiu_offset = 0;
     result = ZX_OK;
     deadline = ZX_TIME_INFINITE;
@@ -54,13 +53,12 @@ class RequestSlot {
   std::unique_ptr<dma_buffer::ContiguousBuffer> command_descriptor_io;
   sync_completion_t complete{};
   zx::pmt pmt;
-  IoCommand *io_cmd = nullptr;
+  fit::callback<void(zx_status_t)> completion_cb;
   zx::unowned_vmo data_vmo;
   uint64_t dma_offset = 0;
   uint64_t dma_length = 0;
   bool is_read = false;
   bool is_scsi_command = false;
-  bool is_sync = false;
   uint16_t response_upiu_offset = 0;
   zx_status_t result = ZX_OK;
   zx_time_t deadline = 0;

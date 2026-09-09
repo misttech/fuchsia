@@ -35,20 +35,16 @@ TEST_F(TimeoutTest, GetEarliestTimeoutDeadline) {
 
   // If there are in-flight I/Os, it should return the earliest timeout deadline.
   {
-    IoCommand empty_io_cmd = {};
-    empty_io_cmd.device_op.op.rw.offset_dev = 0;
-    empty_io_cmd.device_op.op.rw.length = 0;
-    empty_io_cmd.device_op.completion_cb = [](void* cookie, zx_status_t status, block_op_t* op) {};
-
     uint8_t cdb_buffer[6] = {};
     auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB*>(cdb_buffer);
     cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
 
     ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
     for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
-      auto response =
-          dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &empty_io_cmd);
-      ASSERT_OK(response);
+      zx::result<uint8_t> slot = dut_->GetTransferRequestProcessor().ReserveSlot();
+      ASSERT_OK(slot);
+      dut_->GetTransferRequestProcessor().SendIoScsiCmd(
+          upiu, kTestLun, slot.value(), zx::unowned_vmo(), 0, 0, [](zx_status_t status) {});
     }
 
     // Request in slot 0 is the earliest issued request.
@@ -326,6 +322,38 @@ TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
                 ZX_OK);
     }
   }
+  mock_device_.GetScsiCommandProcessor().Reset();
+}
+
+TEST_F(TimeoutTest, AdminCommandTimeoutClearsCompletionCallback) {
+  // Emulate a timeout situation for admin command.
+  mock_device_.GetScsiCommandProcessor().SetHook(
+      scsi::Opcode::TEST_UNIT_READY,
+      [](UfsMockDevice& mock_device, CommandUpiuData& command_upiu, ResponseUpiuData& response_upiu,
+         cpp20::span<PhysicalRegionDescriptionTableEntry>& prdt_upius) {
+        return zx::error(ZX_ERR_TIMED_OUT);
+      });
+
+  dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(10));
+
+  uint8_t cdb_buffer[6] = {};
+  auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB*>(cdb_buffer);
+  cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+  ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
+
+  zx::result result = dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, 0);
+  EXPECT_TRUE(result.is_error());
+  EXPECT_EQ(result.status_value(), ZX_ERR_TIMED_OUT);
+
+  {
+    std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
+    auto& slot =
+        dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(kAdminCommandSlotNumber);
+    EXPECT_EQ(slot.state, SlotState::kTimeout);
+    // Completion callback must be reset so there are no lingering references to the wait context.
+    EXPECT_FALSE(slot.completion_cb);
+  }
+
   mock_device_.GetScsiCommandProcessor().Reset();
 }
 

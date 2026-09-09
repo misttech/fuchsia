@@ -5,6 +5,7 @@
 #include "transfer_request_processor.h"
 
 #include <lib/driver/logging/cpp/logger.h>
+#include <lib/fit/defer.h>
 #include <lib/trace/event.h>
 
 #include <optional>
@@ -107,52 +108,40 @@ zx::result<uint8_t> TransferRequestProcessor::ReserveAdminSlot() {
   return zx::ok(kAdminCommandSlotNumber);
 }
 
-zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendScsiUpiuUsingSlot(
-    ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo,
-    IoCommand *io_cmd, bool synchronous) {
-  uint32_t block_offset = 0;
-  uint32_t block_length = 0;
-  uint64_t dma_offset = 0;
-  uint64_t dma_length = 0;
-  if (io_cmd) {
-    block_offset =
-        safemath::checked_cast<uint32_t>(io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM
-                                             ? io_cmd->device_op.op.trim.offset_dev
-                                             : io_cmd->device_op.op.rw.offset_dev);
-    block_length = io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM
-                       ? io_cmd->device_op.op.trim.length
-                       : io_cmd->device_op.op.rw.length;
-    if (data_vmo->is_valid()) {
-      if (io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM) {
-        dma_offset = 0;
-        dma_length = zx_system_get_page_size();
-      } else {
-        dma_offset = io_cmd->device_op.op.rw.offset_vmo * io_cmd->block_size_bytes;
-        dma_length =
-            static_cast<uint64_t>(io_cmd->device_op.op.rw.length) * io_cmd->block_size_bytes;
-      }
-    }
-  } else if (data_vmo->is_valid()) {
-    dma_offset = 0;
-    dma_length = fbl::round_up(request.GetTransferBytes(), zx_system_get_page_size());
-  }
-  TRACE_DURATION("ufs", "SendScsiUpiu", "slot", slot, "offset", block_offset, "length",
-                 block_length);
-
-  zx::result<void *> response = SendRequestUsingSlot<ScsiCommandUpiu>(
-      request, lun, slot, std::move(data_vmo), dma_offset, dma_length, io_cmd, synchronous);
-
-  if (response.is_error()) {
-    return response.take_error();
-  }
-  auto response_upiu = std::make_unique<ResponseUpiu>(response.value());
-  return zx::ok(std::move(response_upiu));
-}
-
 zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendAdminScsiCmd(
     ScsiCommandUpiu &request, uint8_t lun, zx::unowned_vmo data_vmo) {
   if (request.GetTransferBytes() > 0 && !data_vmo->is_valid()) {
     return zx::error(ZX_ERR_BAD_HANDLE);
+  }
+
+  uint64_t dma_length = data_vmo->is_valid()
+                            ? fbl::round_up(request.GetTransferBytes(), zx_system_get_page_size())
+                            : 0;
+  return SendRequestUpiu<ScsiCommandUpiu, ResponseUpiu>(request, lun, std::move(data_vmo), 0,
+                                                        dma_length);
+}
+
+void TransferRequestProcessor::SendIoScsiCmd(ScsiCommandUpiu &request, uint8_t lun, uint8_t slot,
+                                             zx::unowned_vmo data_vmo, uint64_t dma_offset,
+                                             uint64_t dma_length,
+                                             fit::callback<void(zx_status_t)> completion_cb) {
+  SendRequestUsingSlot<ScsiCommandUpiu>(request, lun, slot, std::move(data_vmo), dma_offset,
+                                        dma_length, std::move(completion_cb));
+}
+
+template <class RequestType, class ResponseType>
+zx::result<std::unique_ptr<ResponseType>> TransferRequestProcessor::SendRequestUpiu(
+    RequestType &request, uint8_t lun, zx::unowned_vmo data_vmo, uint64_t dma_offset,
+    uint64_t dma_length) {
+  // TODO(https://fxbug.dev/42075643): Needs to be changed to be compatible with DFv2's dispatcher
+  // Since completions are handled by the worker dispatchers, submitting a synchronous command from
+  // either the I/O or admin worker thread will cause a deadlock.
+  fdf_dispatcher_t *current = fdf::Dispatcher::GetCurrent()->get();
+  fdf_dispatcher_t *io_disp = controller_.io_worker_dispatcher()->get();
+  fdf_dispatcher_t *admin_disp = controller_.admin_worker_dispatcher()->get();
+  if (current && ((io_disp && current == io_disp) || (admin_disp && current == admin_disp))) {
+    ZX_PANIC(
+        "Synchronous UFS request cannot be issued from inside IO or Admin worker dispatcher thread!");
   }
 
   std::lock_guard<std::mutex> lock(admin_slot_lock_);
@@ -161,29 +150,45 @@ zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendAdminScs
     return zx::error(ZX_ERR_NO_RESOURCES);
   }
 
-  return SendScsiUpiuUsingSlot(request, lun, slot.value(), std::move(data_vmo), nullptr,
-                               /*synchronous*/ true);
-}
+  const uint8_t slot_num = slot.value();
+  struct SyncWaitContext {
+    sync_completion_t complete;
+    zx_status_t completion_status = ZX_OK;
+  };
+  auto wait_context = std::make_shared<SyncWaitContext>();
+  SendRequestUsingSlot<RequestType>(request, lun, slot_num, std::move(data_vmo), dma_offset,
+                                    dma_length, [wait_context](zx_status_t status) {
+                                      wait_context->completion_status = status;
+                                      sync_completion_signal(&wait_context->complete);
+                                    });
 
-zx::result<std::unique_ptr<ResponseUpiu>> TransferRequestProcessor::SendIoScsiCmd(
-    ScsiCommandUpiu &request, uint8_t lun, IoCommand *io_cmd) {
-  if (!io_cmd) {
-    return zx::error(ZX_ERR_INVALID_ARGS);
+  zx_time_t deadline = zx_deadline_after(GetTimeout().get());
+  zx_status_t status = sync_completion_wait_deadline(&wait_context->complete, deadline);
+  if (status != ZX_OK) {
+    std::lock_guard<std::mutex> lock(slot_lock_);
+    RequestSlot &request_slot = slots_.GetSlot(slot_num);
+    request_slot.completion_cb = nullptr;
+    uint32_t doorbell = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
+    if (doorbell & (1u << slot_num)) {
+      SetSlotStateLocked(slot_num, SlotState::kTimeout);
+    } else {
+      if (zx::result<> result = ClearSlotLocked(request_slot); result.is_error()) {
+        return result.take_error();
+      }
+    }
+    return zx::error(status);
+  }
+  if (wait_context->completion_status != ZX_OK) {
+    return zx::error(wait_context->completion_status);
   }
 
-  bool has_data_vmo = io_cmd->vmo()->is_valid();
-  if (request.GetTransferBytes() > 0 && !has_data_vmo) {
-    return zx::error(ZX_ERR_BAD_HANDLE);
+  const uint16_t response_offset = request.GetResponseOffset();
+  void *response_buf = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(slot_lock_);
+    response_buf = slots_.GetDescriptorBuffer(slot_num, response_offset);
   }
-
-  const bool synchronous = !io_cmd->device_op.completion_cb;
-
-  zx::result<uint8_t> slot = ReserveSlot();
-  if (slot.is_error()) {
-    return zx::error(ZX_ERR_NO_RESOURCES);
-  }
-
-  return SendScsiUpiuUsingSlot(request, lun, slot.value(), io_cmd->vmo(), io_cmd, synchronous);
+  return zx::ok(std::make_unique<ResponseType>(response_buf));
 }
 
 zx::result<std::unique_ptr<QueryResponseUpiu>> TransferRequestProcessor::SendQueryRequestUpiu(
@@ -200,23 +205,10 @@ zx::result<std::unique_ptr<QueryResponseUpiu>> TransferRequestProcessor::SendQue
 }
 
 template <class RequestType>
-zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
+void TransferRequestProcessor::SendRequestUsingSlot(
     RequestType &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo, uint64_t dma_offset,
-    uint64_t dma_length, IoCommand *io_cmd, bool synchronous) {
-  if (synchronous) {
-    // TODO(https://fxbug.dev/42075643): Needs to be changed to be compatible with DFv2's dispatcher
-    // Since the completion is handled by the I/O thread, submitting a synchronous command from the
-    // I/O thread will cause a deadlock.
-    fdf_dispatcher_t *current = fdf::Dispatcher::GetCurrent()->get();
-    fdf_dispatcher_t *io_disp = controller_.io_worker_dispatcher()->get();
-    if (current && io_disp && current == io_disp) {
-      ZX_PANIC("Synchronous UFS request cannot be issued from inside IO worker dispatcher thread!");
-    }
-  }
-
-  sync_completion_t *complete_signal = nullptr;
-  zx_time_t deadline = 0;
-  void *response = nullptr;
+    uint64_t dma_length, fit::callback<void(zx_status_t)> completion_cb) {
+  zx_status_t status = ZX_OK;
   {
     std::lock_guard<std::mutex> lock(slot_lock_);
     RequestSlot &request_slot = slots_.GetSlot(slot);
@@ -225,132 +217,121 @@ zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot(
     const uint16_t response_offset = request.GetResponseOffset();
     const uint16_t response_length = request.GetResponseLength();
 
-    request_slot.io_cmd = io_cmd;
+    request_slot.completion_cb = std::move(completion_cb);
     request_slot.data_vmo = data_vmo;
     request_slot.dma_offset = dma_offset;
     request_slot.dma_length = dma_length;
     request_slot.is_read = (request.GetDataDirection() == DataDirection::kDeviceToHost);
     request_slot.is_scsi_command = std::is_base_of<ScsiCommandUpiu, RequestType>::value;
-    request_slot.is_sync = synchronous;
     request_slot.response_upiu_offset = response_offset;
 
-    uint16_t prdt_offset = 0;
-    uint32_t prdt_entry_count = 0;
     std::vector<zx_paddr_t> data_paddrs;
 
-    if (request_slot.data_vmo->is_valid()) {
-      // Assign physical addresses(pin) to data vmo. The return value is the physical address of
-      // the pinned memory.
-      const uint32_t kPageSize = zx_system_get_page_size();
-      uint32_t option = request_slot.is_read ? ZX_BTI_PERM_WRITE : ZX_BTI_PERM_READ;
-
-      ZX_DEBUG_ASSERT(dma_length > 0 && dma_length % kPageSize == 0);
-
-      data_paddrs.resize(dma_length / kPageSize, 0);
-      if (zx_status_t status =
-              GetBti()->pin(option, *request_slot.data_vmo, dma_offset, dma_length,
-                            data_paddrs.data(), dma_length / kPageSize, &request_slot.pmt);
-          status != ZX_OK) {
-        fdf::error("Failed to pin IO buffer: {}", zx_status_get_string(status));
-        if (zx::result<> clear_res = ClearSlotLocked(request_slot); clear_res.is_error()) {
-          return clear_res.take_error();
-        }
-        return zx::error(status);
-      }
-
-      // Ensure that any cached writes are written out to RAM before we issue the request.
-      // For writes, CLEAN is sufficient and cheaper. For reads, CLEAN_INVALIDATE ensures
-      // pending writes are flushed and cache lines are cleared before DMA.
-      uint32_t op = request_slot.is_read ? ZX_VMO_OP_CACHE_CLEAN_INVALIDATE : ZX_VMO_OP_CACHE_CLEAN;
-      zx_status_t status = request_slot.data_vmo->op_range(op, dma_offset, dma_length, nullptr, 0);
-      if (status != ZX_OK) {
-        fdf::error("Failed to flush/invalidate cache for data VMO: {}",
-                   zx_status_get_string(status));
-        if (zx::result<> clear_res = ClearSlotLocked(request_slot); clear_res.is_error()) {
-          return clear_res.take_error();
-        }
-        return zx::error(status);
-      }
-    }
-
-    std::tie(prdt_offset, prdt_entry_count) =
-        PreparePrdt<RequestType>(request, lun, slot, data_paddrs, response_offset, response_length);
-
-    // Record the slot number to |task_tag| for debugging.
-    request.GetHeader().task_tag = slot;
-
-    // Copy request and prepare response.
-    const size_t length = static_cast<size_t>(response_offset) + response_length;
-    ZX_DEBUG_ASSERT_MSG(length <= slots_.GetDescriptorBufferSize(slot), "Invalid UPIU size");
-
-    CustomMemCpy(slots_.GetDescriptorBuffer(slot), request.GetData(), response_offset);
-    CustomMemSet(slots_.GetDescriptorBuffer<uint8_t>(slot) + response_offset, 0, response_length);
-    response = slots_.GetDescriptorBuffer(slot, response_offset);
-
-    const bool reliable_write = (lun == static_cast<uint8_t>(WellKnownLuns::kRpmb) &&
-                                 request.GetDataDirection() == DataDirection::kHostToDevice);
-
-    if (zx::result<> result = FillDescriptorAndSendRequest(
-            slot, request.GetDataDirection(), response_offset, response_length, prdt_offset,
-            prdt_entry_count, reliable_write);
-        result.is_error()) {
-      fdf::error("Failed to send upiu: {}", result);
-      if (zx::result<> clear_res = ClearSlotLocked(request_slot); clear_res.is_error()) {
-        return clear_res.take_error();
-      }
-      return result.take_error();
-    }
-    complete_signal = &request_slot.complete;
-    deadline = request_slot.deadline;
-  }
-
-  if (synchronous) {
-    // Wait for completion (WITHOUT holding slot_lock_!).
-    TRACE_DURATION("ufs", "SendRequestUsingSlot::sync_completion_wait", "slot", slot);
-    zx_status_t status = sync_completion_wait_deadline(complete_signal, deadline);
-
-    std::lock_guard<std::mutex> lock(slot_lock_);
-    RequestSlot &request_slot = slots_.GetSlot(slot);
-    zx_status_t request_result = request_slot.result;
-    if (status != ZX_OK) {
-      fdf::error("SendRequestUsingSlot request timed out: {}", zx_status_get_string(status));
-      uint32_t doorbell = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
-      if (doorbell & (1u << slot)) {
-        // Hardware still owns the slot; mark as timed out but keep PMT pinned until reset or abort.
-        SetSlotStateLocked(slot, SlotState::kTimeout);
+    if (dma_length > 0) {
+      if (!request_slot.data_vmo->is_valid()) {
+        fdf::error("Invalid data VMO for transfer of length {}", dma_length);
+        status = ZX_ERR_BAD_HANDLE;
       } else {
-        if (zx::result<> result = ClearSlotLocked(request_slot); result.is_error()) {
-          return result.take_error();
+        // Assign physical addresses(pin) to data vmo. The return value is the physical address of
+        // the pinned memory.
+        const uint32_t kPageSize = zx_system_get_page_size();
+        uint32_t option = request_slot.is_read ? ZX_BTI_PERM_WRITE : ZX_BTI_PERM_READ;
+
+        ZX_DEBUG_ASSERT(dma_length % kPageSize == 0);
+
+        data_paddrs.resize(dma_length / kPageSize, 0);
+        if (zx_status_t pin_status =
+                GetBti()->pin(option, *request_slot.data_vmo, dma_offset, dma_length,
+                              data_paddrs.data(), dma_length / kPageSize, &request_slot.pmt);
+            pin_status != ZX_OK) {
+          fdf::error("Failed to pin IO buffer: {}", zx_status_get_string(pin_status));
+          status = pin_status;
+        } else {
+          // Ensure that any cached writes are written out to RAM before we issue the request.
+          // For writes, CLEAN is sufficient and cheaper. For reads, CLEAN_INVALIDATE ensures
+          // pending writes are flushed and cache lines are cleared before DMA.
+          uint32_t op =
+              request_slot.is_read ? ZX_VMO_OP_CACHE_CLEAN_INVALIDATE : ZX_VMO_OP_CACHE_CLEAN;
+          if (zx_status_t cache_status =
+                  request_slot.data_vmo->op_range(op, dma_offset, dma_length, nullptr, 0);
+              cache_status != ZX_OK) {
+            fdf::error("Failed to flush/invalidate cache for data VMO: {}",
+                       zx_status_get_string(cache_status));
+            status = cache_status;
+          }
         }
       }
-      return zx::error(status);
     }
 
-    if (zx::result<> result = ClearSlotLocked(request_slot); result.is_error()) {
-      return result.take_error();
+    if (status == ZX_OK) {
+      uint16_t prdt_offset = 0;
+      uint32_t prdt_entry_count = 0;
+      std::tie(prdt_offset, prdt_entry_count) = PreparePrdt<RequestType>(
+          request, lun, slot, data_paddrs, response_offset, response_length);
+
+      // Record the slot number to |task_tag| for debugging.
+      request.GetHeader().task_tag = slot;
+
+      // Copy request and prepare response.
+      const size_t length = static_cast<size_t>(response_offset) + response_length;
+      ZX_DEBUG_ASSERT_MSG(length <= slots_.GetDescriptorBufferSize(slot), "Invalid UPIU size");
+
+      CustomMemCpy(slots_.GetDescriptorBuffer(slot), request.GetData(), response_offset);
+      CustomMemSet(slots_.GetDescriptorBuffer<uint8_t>(slot) + response_offset, 0, response_length);
+
+      const bool reliable_write = (lun == static_cast<uint8_t>(WellKnownLuns::kRpmb) &&
+                                   request.GetDataDirection() == DataDirection::kHostToDevice);
+
+      if (zx::result<> result = FillDescriptorAndSendRequest(
+              slot, request.GetDataDirection(), response_offset, response_length, prdt_offset,
+              prdt_entry_count, reliable_write);
+          result.is_error()) {
+        fdf::error("Failed to send upiu: {}", result);
+        status = result.status_value();
+      }
     }
-    const bool is_admin_cmd = (io_cmd == nullptr);
-    if (is_admin_cmd && request_result != ZX_OK) {
-      return zx::error(request_result);
+
+    if (status != ZX_OK) {
+      completion_cb = std::move(request_slot.completion_cb);
+      if (zx::result<> clear_res = ClearSlotLocked(request_slot); clear_res.is_error()) {
+        fdf::error("Failed to clear slot[{}]: {}", slot, clear_res);
+      }
     }
-    UtrListCompletionNotificationReg::Get()
-        .FromValue(0)
-        .set_notification(1u << slot)
-        .WriteTo(&register_);
   }
 
-  return zx::ok(response);
+  // |completion_cb| is consumed once we've submitted the request; this is just used for the
+  // failure path to ensure the callback is invoked.
+  if (completion_cb) {
+    ZX_DEBUG_ASSERT(status != ZX_OK);
+    completion_cb(status);
+  }
 }
 
-template zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot<QueryRequestUpiu>(
+template void TransferRequestProcessor::SendRequestUsingSlot<QueryRequestUpiu>(
     QueryRequestUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo,
-    uint64_t dma_offset, uint64_t dma_length, IoCommand *io_cmd, bool synchronous);
-template zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot<ScsiCommandUpiu>(
+    uint64_t dma_offset, uint64_t dma_length, fit::callback<void(zx_status_t)> completion_cb);
+template void TransferRequestProcessor::SendRequestUsingSlot<ScsiCommandUpiu>(
     ScsiCommandUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo,
-    uint64_t dma_offset, uint64_t dma_length, IoCommand *io_cmd, bool synchronous);
-template zx::result<void *> TransferRequestProcessor::SendRequestUsingSlot<NopOutUpiu>(
+    uint64_t dma_offset, uint64_t dma_length, fit::callback<void(zx_status_t)> completion_cb);
+template void TransferRequestProcessor::SendRequestUsingSlot<NopOutUpiu>(
     NopOutUpiu &request, uint8_t lun, uint8_t slot, zx::unowned_vmo data_vmo, uint64_t dma_offset,
-    uint64_t dma_length, IoCommand *io_cmd, bool synchronous);
+    uint64_t dma_length, fit::callback<void(zx_status_t)> completion_cb);
+
+template zx::result<std::unique_ptr<QueryResponseUpiu>>
+TransferRequestProcessor::SendRequestUpiu<QueryRequestUpiu, QueryResponseUpiu>(
+    QueryRequestUpiu &request, uint8_t lun, zx::unowned_vmo data_vmo, uint64_t dma_offset,
+    uint64_t dma_length);
+template zx::result<std::unique_ptr<NopInUpiu>>
+TransferRequestProcessor::SendRequestUpiu<NopOutUpiu, NopInUpiu>(NopOutUpiu &request, uint8_t lun,
+                                                                 zx::unowned_vmo data_vmo,
+                                                                 uint64_t dma_offset,
+                                                                 uint64_t dma_length);
+template zx::result<std::unique_ptr<ResponseUpiu>>
+TransferRequestProcessor::SendRequestUpiu<ScsiCommandUpiu, ResponseUpiu>(ScsiCommandUpiu &request,
+                                                                         uint8_t lun,
+                                                                         zx::unowned_vmo data_vmo,
+                                                                         uint64_t dma_offset,
+                                                                         uint64_t dma_length);
 
 zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSlot &request_slot,
                                                      bool is_timeout) {
@@ -366,6 +347,7 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
   if (is_timeout) {
     status_message.host_status_code = scsi::HostStatusCode::kTimeout;
     status_message.scsi_status_code = scsi::StatusCode::GOOD;
+    request_result = zx::error(ZX_ERR_TIMED_OUT);
   } else {
     request_result = CheckResponse(slot_num, response);
 
@@ -394,44 +376,29 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
     }
   }
 
-  if (request_slot.is_scsi_command && request_slot.io_cmd) {
+  ZX_DEBUG_ASSERT_MSG(request_slot.completion_cb, "Slot has no completion callback");
+  if (slot_num != kAdminCommandSlotNumber && request_slot.is_scsi_command &&
+      request_result.is_ok()) {
     // Until native UFS IO commands are defined by the UFS specification, we assume that only SCSI
     // commands can be IO commands.
-    if (request_result.is_ok()) {
-      request_result = controller_.ScsiComplete(status_message, sense_data);
-    }
+    request_result = controller_.ScsiComplete(status_message, sense_data);
+  }
 
-    uint32_t doorbell = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
-    if (is_timeout && (doorbell & (1u << slot_num))) {
-      // Hardware still owns the slot; do not unpin PMT memory until hardware doorbell clears
-      // or controller reset / task abort finishes.
-      SetSlotStateLocked(slot_num, SlotState::kTimeout);
-      IoCommand *io_cmd = request_slot.io_cmd;
-      request_slot.io_cmd = nullptr;
-      io_cmd->data_vmo.reset();
-      if (io_cmd->device_op.completion_cb) {
-        io_cmd->device_op.Complete(ZX_ERR_TIMED_OUT);
-      }
-      return ZX_ERR_TIMED_OUT;
-    }
+  uint32_t doorbell = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
+  if (is_timeout && (doorbell & (1u << slot_num))) {
+    // Hardware still owns the slot; do not unpin PMT memory until hardware doorbell clears
+    // or controller reset / task abort finishes.
+    SetSlotStateLocked(slot_num, SlotState::kTimeout);
+    return ZX_ERR_TIMED_OUT;
+  }
 
-    // Unpin data buffer before signalling request completion to the upper layer. This is
-    // necessary because the filesystem is allowed to transfer pages directly out of this
-    // buffer.
-    if (request_slot.pmt.is_valid()) {
-      if (zx_status_t status = request_slot.pmt.unpin(); status != ZX_OK) {
-        fdf::error("Failed to unpin IO buffer: {}", zx_status_get_string(status));
-        request_result = zx::error(status);
-      }
-    }
-
-    IoCommand *io_cmd = request_slot.io_cmd;
-    if (io_cmd) {
-      request_slot.io_cmd = nullptr;
-      io_cmd->data_vmo.reset();
-      if (io_cmd->device_op.completion_cb) {
-        io_cmd->device_op.Complete(request_result.status_value());
-      }
+  // Unpin data buffer before signalling request completion to the upper layer. This is
+  // necessary because the filesystem is allowed to transfer pages directly out of this
+  // buffer.
+  if (request_slot.pmt.is_valid()) {
+    if (zx_status_t unpin_status = request_slot.pmt.unpin(); unpin_status != ZX_OK) {
+      fdf::error("Failed to unpin IO buffer: {}", zx_status_get_string(unpin_status));
+      request_result = zx::error(unpin_status);
     }
   }
 
@@ -446,7 +413,9 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
 }
 
 void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &request_slot,
-                                                 bool is_timeout) {
+                                                 bool is_timeout,
+                                                 fit::callback<void(zx_status_t)> &cb,
+                                                 zx_status_t &status) {
   if (is_timeout) {
     // UTRLDBR bit is still set: tell the host controller to abandon the slot
     // *before* UpiuCompletion() unpins the client VMO and completes the block
@@ -456,16 +425,16 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
     SetSlotStateLocked(slot_num, SlotState::kTimeout);
   }
 
-  if (request_slot.data_vmo->is_valid() && request_slot.is_read) {
+  if (request_slot.data_vmo->is_valid() && request_slot.is_read && request_slot.dma_length > 0) {
     // Invalidate the cache so the read data is visible to the CPU.
-    zx_status_t status = request_slot.data_vmo->op_range(
+    zx_status_t cache_status = request_slot.data_vmo->op_range(
         ZX_VMO_OP_CACHE_INVALIDATE, request_slot.dma_offset, request_slot.dma_length, nullptr, 0);
-    if (status != ZX_OK) {
-      fdf::error("Failed to invalidate cache for data VMO: {}", zx_status_get_string(status));
+    if (cache_status != ZX_OK) {
+      fdf::error("Failed to invalidate cache for data VMO: {}", zx_status_get_string(cache_status));
     }
   }
   // Check request response.
-  zx_status_t status = UpiuCompletion(slot_num, request_slot, is_timeout);
+  status = UpiuCompletion(slot_num, request_slot, is_timeout);
   if (status == ZX_ERR_UNAVAILABLE) {
     fdf::warn(
         "Unavailability reported for request, slot[{}] "
@@ -476,23 +445,23 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
   }
   request_slot.result = status;
 
-  if (!is_timeout) {
-    if (request_slot.is_sync) {
-      sync_completion_signal(&request_slot.complete);
-    } else {
-      UtrListCompletionNotificationReg::Get()
-          .FromValue(0)
-          .set_notification(1u << slot_num)
-          .WriteTo(&register_);
+  cb = std::move(request_slot.completion_cb);
 
-      if (zx::result result = ClearSlotLocked(request_slot); result.is_error()) {
-        fdf::error("Failed to clear slot[{}]: {}", slot_num, result);
-      }
+  if (!is_timeout) {
+    UtrListCompletionNotificationReg::Get()
+        .FromValue(0)
+        .set_notification(1u << slot_num)
+        .WriteTo(&register_);
+
+    if (zx::result result = ClearSlotLocked(request_slot); result.is_error()) {
+      fdf::error("Failed to clear slot[{}]: {}", slot_num, result);
     }
   }
 }
 
-bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num, uint32_t doorbell) {
+bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num, uint32_t doorbell,
+                                                     fit::callback<void(zx_status_t)> &cb,
+                                                     zx_status_t &status) {
   bool is_completed = false;
   RequestSlot &request_slot = slots_.GetSlot(slot_num);
   if (request_slot.state == SlotState::kScheduled) {
@@ -510,15 +479,15 @@ bool TransferRequestProcessor::ProcessSlotCompletion(uint8_t slot_num, uint32_t 
         if (zx_clock_get_monotonic() >= request_slot.deadline) {
           fdf::warn("Doorbell cleared for slot[{}] but OCS remained invalid and deadline passed",
                     slot_num);
-          RequestCompletion(slot_num, request_slot, /*is_timeout=*/true);
+          RequestCompletion(slot_num, request_slot, /*is_timeout=*/true, cb, status);
           return true;
         }
         return false;
       }
-      RequestCompletion(slot_num, request_slot, /*timeout*/ false);
+      RequestCompletion(slot_num, request_slot, /*is_timeout=*/false, cb, status);
       is_completed = true;
     } else if (request_slot.deadline < zx_clock_get_monotonic()) {
-      RequestCompletion(slot_num, request_slot, /*timeout*/ true);
+      RequestCompletion(slot_num, request_slot, /*is_timeout=*/true, cb, status);
       is_completed = true;
     }
   }
@@ -530,8 +499,17 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfAdminRequests() {
     return 0;
   }
   const uint32_t doorbell = ReadDoorBellRegister();
-  std::lock_guard<std::mutex> lock(slot_lock_);
-  return ProcessSlotCompletion(kAdminCommandSlotNumber, doorbell);
+  fit::callback<void(zx_status_t)> cb;
+  zx_status_t status = ZX_OK;
+  bool completed = false;
+  {
+    std::lock_guard<std::mutex> lock(slot_lock_);
+    completed = ProcessSlotCompletion(kAdminCommandSlotNumber, doorbell, cb, status);
+  }
+  if (cb) {
+    cb(status);
+  }
+  return completed ? 1 : 0;
 }
 
 uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
@@ -554,8 +532,17 @@ uint32_t TransferRequestProcessor::ProcessCompletionOfIoRequests() {
   while (active_slots != 0) {
     const uint8_t slot_num = static_cast<uint8_t>(std::countr_zero(active_slots));
     active_slots &= active_slots - 1;
-    std::lock_guard<std::mutex> lock(slot_lock_);
-    completion_count += ProcessSlotCompletion(slot_num, doorbell);
+    fit::callback<void(zx_status_t)> cb;
+    zx_status_t status = ZX_OK;
+    {
+      std::lock_guard<std::mutex> lock(slot_lock_);
+      if (ProcessSlotCompletion(slot_num, doorbell, cb, status)) {
+        completion_count++;
+      }
+    }
+    if (cb) {
+      cb(status);
+    }
   }
   return completion_count;
 }
