@@ -271,6 +271,12 @@ done
 # In Corp environments with valid gcert credentials, use the credential helper
 # to automatically exchange LOAS for OAuth (Google Cloud Platform) tokens.
 # This requires less interaction from the user than 'gcloud auth ...'.
+#
+# Note: --config=gcertauth is only appended when FX_BUILD_LOAS_TYPE is
+# "unrestricted". When running on GCE bots or other machine-based environments
+# where FX_BUILD_LOAS_TYPE is "skip" or absent, --config=gcertauth is omitted,
+# and Bazel automatically falls back to using GCE VM Metadata Server credentials
+# (via --google_default_credentials=true defined in remote_services.bazelrc).
 use_gcert_auth=()
 [[ "$FX_BUILD_LOAS_TYPE" == "unrestricted" ]] && {
   use_gcert_auth=(--config=gcertauth)

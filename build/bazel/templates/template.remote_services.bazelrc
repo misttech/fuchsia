@@ -10,6 +10,12 @@
 # Enable gcert authentication, which will automatically refresh OAuth
 # tokens while gcert certificate (unrestricted) is still valid.
 # Use build/rbe/check_loas_restrictions.sh to determine certificate type.
+#
+# Note: --config=gcertauth is appended by build/bazel/wrapper.bazel.sh when
+# FX_BUILD_LOAS_TYPE is "unrestricted". When running on GCE bots or other
+# machine-based environments where FX_BUILD_LOAS_TYPE is "skip" or absent,
+# --config=gcertauth is omitted, and Bazel automatically falls back to using
+# GCE VM Metadata Server credentials via --google_default_credentials=true below.
 common:gcertauth --credential_helper=*.googleapis.com=/google/src/head/depot/google3/devtools/blaze/bazel/credhelper/credhelper
 
 # Setup remote build (RBE)
