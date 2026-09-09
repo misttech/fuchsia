@@ -1915,7 +1915,7 @@ pub fn sys_pidfd_open(
     let blocking = (flags & PIDFD_NONBLOCK) == 0;
     let open_flags = if blocking { OpenFlags::empty() } else { OpenFlags::NONBLOCK };
 
-    let pid_entry = current_task.kernel().pids.get(pid)?;
+    let pid_entry = current_task.kernel().pids.read().get(pid)?.clone();
     let file = new_pidfd(current_task, pid_entry, open_flags)?;
     current_task.add_file(file, FdFlags::CLOEXEC)
 }

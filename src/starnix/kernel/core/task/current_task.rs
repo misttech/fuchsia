@@ -255,7 +255,7 @@ impl CurrentTask {
         // thread group, and the code below will invalidate it.
         // Moreover, this requires an Arc of the task to ensure the tasks of
         // the thread group are always valid.
-        self.task.thread_group().remove(self.kernel().pids.lock(), &self.task);
+        self.task.thread_group().remove(self.kernel().pids.write(), &self.task);
 
         self.ptrace_disconnect();
     }
@@ -1578,7 +1578,7 @@ impl CurrentTask {
 
         let kernel = self.kernel();
 
-        let mut pids = kernel.pids.lock();
+        let mut pids = kernel.pids.write();
 
         // Lock the cgroup process hierarchy so that the parent process cannot move to a different
         // cgroup while a new task or thread_group is created. This may be unnecessary if
@@ -1629,7 +1629,7 @@ impl CurrentTask {
             seccomp_filters = state.seccomp_filters.clone();
             child_signal_mask = state.signal_mask();
 
-            pid = pids.allocate_pid()?;
+            pid = pids.allocate_pid();
             command = self.command();
             creds = self.current_creds().clone();
             scheduler_state = state.scheduler_state.fork();
@@ -1727,8 +1727,8 @@ impl CurrentTask {
 
         release_on_error!(child, {
             // Drop the pids lock as soon as possible after creating the child. Destroying the child
-            // and removing it from the pids table itself requires the pids lock, so an early exit
-            // would cause a self deadlock.
+            // and removing it from the pids table itself requires the pids lock, so if an early exit
+            // takes place we have a self deadlock.
             pids.add_task(Arc::clone(&child.task));
             std::mem::drop(pids);
 

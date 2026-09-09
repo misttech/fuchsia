@@ -4,13 +4,13 @@
 
 use fidl_fuchsia_buildinfo as buildinfo;
 use fuchsia_component::client::connect_to_protocol_sync;
-use fuchsia_rcu::RcuReadScope;
 use starnix_core::arch::{ARCH_NAME, ARCH_NAME32};
 use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use starnix_core::security;
 use starnix_core::task::CurrentTask;
 use starnix_core::vfs::FsString;
 use starnix_logging::{log_error, track_stub};
+
 use starnix_syscalls::decls::SyscallDecl;
 use starnix_syscalls::{SUCCESS, SyscallResult};
 use starnix_types::user_buffer::MAX_RW_COUNT;
@@ -100,7 +100,7 @@ pub fn sys_sysinfo(
     info: MultiArchUserRef<uapi::sysinfo, uapi::arch32::sysinfo>,
 ) -> Result<(), Errno> {
     let total_ram = zx::system_get_physmem();
-    let num_procs = current_task.kernel().pids.get_thread_groups(&RcuReadScope::new()).count();
+    let num_procs = current_task.kernel().pids.read().len();
 
     track_stub!(TODO("https://fxbug.dev/297374270"), "compute system load");
     let loads = [0; 3];

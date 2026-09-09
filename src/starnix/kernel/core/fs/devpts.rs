@@ -600,7 +600,7 @@ fn shared_ioctl(
             if pgid < 0 {
                 return error!(EINVAL);
             }
-            let pgid = current_task.kernel().pids.get(pgid)?;
+            let pgid = current_task.kernel().pids.read().get(pgid)?.clone();
             current_task.thread_group().set_foreground_process_group(
                 current_task,
                 terminal,

@@ -16,9 +16,8 @@ use crate::signals::{
 };
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
 use crate::task::{
-    ControllingTerminal, CurrentTask, ExitStatus, Kernel, Pid, PidTable, PidTableGuard,
-    ProcessGroup, Session, SessionDisassociation, Task, TaskMutableState, TaskPersistentInfo,
-    TypedWaitQueue,
+    ControllingTerminal, CurrentTask, ExitStatus, Kernel, Pid, PidTable, ProcessGroup, Session,
+    SessionDisassociation, Task, TaskMutableState, TaskPersistentInfo, TypedWaitQueue,
 };
 use crate::time::{IntervalTimerHandle, TimerTable};
 use itertools::Itertools;
@@ -26,7 +25,7 @@ use macro_rules_attribute::apply;
 use starnix_lifecycle::{AtomicCounter, DropNotifier};
 use starnix_logging::{log_debug, log_error, log_info, log_warn, track_stub};
 use starnix_sync::{
-    LockDepMutex, LockDepRwLock, ThreadGroupLimits, ThreadGroupMutableStateLock,
+    LockDepMutex, LockDepRwLock, RwLockWriteGuard, ThreadGroupLimits, ThreadGroupMutableStateLock,
     ThreadGroupPendingSignalsLock, ThreadGroupPtraceesLock, allow_subclass, ordered_write_lock,
 };
 use starnix_task_command::TaskCommand;
@@ -566,25 +565,10 @@ impl ZombieProcess {
     }
 }
 
-/// Trait for releasing a zombie process from the PID table.
-///
-/// This trait erases the lifetime parameter of [`PidTableGuard`] so that [`ZombieProcess`] can
-/// implement [`Releasable`] without tying the mutable reference lifetime to the guard's lifetime
-/// parameter, preserving variance and allowing reborrowing in loops and across sequential calls.
-pub trait ZombieReleaser {
-    fn remove_zombie(&mut self, pid: pid_t);
-}
-
-impl<'a> ZombieReleaser for PidTableGuard<'a> {
-    fn remove_zombie(&mut self, pid: pid_t) {
-        self.remove_zombie(pid);
-    }
-}
-
 impl Releasable for ZombieProcess {
-    type Context<'a> = &'a mut dyn ZombieReleaser;
+    type Context<'a> = &'a mut PidTable;
 
-    fn release<'a>(self, pids: &'a mut dyn ZombieReleaser) {
+    fn release<'a>(self, pids: &'a mut PidTable) {
         if self.is_canonical {
             pids.remove_zombie(self.pid());
         }
@@ -627,7 +611,7 @@ impl ZombieNotification {
     /// # Thread Safety
     ///
     /// Acquires [`ThreadGroup`] state locks.
-    pub fn deliver(self, pids: &mut PidTableGuard<'_>) {
+    pub fn deliver(self, pids: &mut PidTable) {
         if let Some(parent) = self.recipient.upgrade() {
             parent.do_zombie_notifications(self.zombie, pids);
         } else {
@@ -639,7 +623,7 @@ impl ZombieNotification {
     /// Discards the zombie notification without delivering it.
     ///
     /// If the [`ZombieProcess`] has no other owners, it will be reaped.
-    pub fn discard(self, pids: &mut PidTableGuard<'_>) {
+    pub fn discard(self, pids: &mut PidTable) {
         self.zombie.release(pids);
     }
 }
@@ -807,7 +791,7 @@ impl ThreadGroup {
             current_task
                 .ptrace_event(PtraceOptions::TRACEEXIT, exit_status.signal_info_status() as u64);
         }
-        let mut pids = self.kernel.pids.lock();
+        let mut pids = self.kernel.pids.write();
         let mut state = self.write();
         if !state.is_running() {
             return;
@@ -859,7 +843,7 @@ impl ThreadGroup {
     ///
     /// It is important that the task is taken as an `Arc`. It ensures the tasks of the
     /// ThreadGroup are always valid as they are still valid when removed.
-    pub fn remove(&self, mut pids: PidTableGuard<'_>, task: &Arc<Task>) {
+    pub fn remove(&self, mut pids: RwLockWriteGuard<'_, PidTable>, task: &Arc<Task>) {
         task.set_ptrace_zombie(&mut pids);
         pids.remove_task(task.tid.id);
 
@@ -1016,7 +1000,7 @@ impl ThreadGroup {
     }
 
     /// Detach from any ptraced tasks, killing the ones that set `PTRACE_O_EXITKILL`.
-    fn detach_ptracees(&self, pids: &mut PidTableGuard<'_>) {
+    fn detach_ptracees(&self, pids: &mut PidTable) {
         let tracee_tids = self.ptracees.lock().keys().cloned().collect_vec();
         for tracee_tid in tracee_tids {
             let Ok(tracee) = tracee_tid.get_task() else {
@@ -1040,11 +1024,7 @@ impl ThreadGroup {
         }
     }
 
-    pub fn do_zombie_notifications(
-        &self,
-        zombie: OwnedRef<ZombieProcess>,
-        pids: &mut PidTableGuard<'_>,
-    ) {
+    pub fn do_zombie_notifications(&self, zombie: OwnedRef<ZombieProcess>, pids: &mut PidTable) {
         let mut state = self.write();
 
         state.children.remove(&zombie.pid());
@@ -1089,7 +1069,7 @@ impl ThreadGroup {
     fn maybe_notify_tracer(
         &self,
         tracee: &Task,
-        pids: &mut PidTableGuard<'_>,
+        mut pids: &mut PidTable,
         parent: &ThreadGroup,
         zombie: OwnedRef<ZombieProcess>,
     ) -> Option<OwnedRef<ZombieProcess>> {
@@ -1141,7 +1121,7 @@ impl ThreadGroup {
             // The tracer is the parent and has already consumed the parent
             // notification.  No further action required.
             parent.write().children.remove(&tracee.tid.id);
-            zombie.release(pids);
+            zombie.release(&mut pids);
             return None;
         }
         // The tracer is not the parent and has already consumed the parent
@@ -1169,7 +1149,7 @@ impl ThreadGroup {
     }
 
     pub fn setsid(&self) -> Result<(), Errno> {
-        let mut pids = self.kernel.pids.lock();
+        let mut pids = self.kernel.pids.write();
         let pid = self.leader.clone();
         if pid.get_process_group().is_ok() {
             return error!(EPERM);
@@ -1189,7 +1169,7 @@ impl ThreadGroup {
         target: &Task,
         pgid: &Pid,
     ) -> Result<(), Errno> {
-        let mut pids = self.kernel.pids.lock();
+        let mut pids = self.kernel.pids.write();
 
         {
             let current_process_group = Arc::clone(&self.read().process_group);
@@ -1385,6 +1365,7 @@ impl ThreadGroup {
         let send_ttou;
         {
             // Keep locks to ensure atomicity.
+            let _pids = self.kernel.pids.read();
             let state = self.read();
             process_group = Arc::clone(&state.process_group);
             let terminal_state = terminal.read();
@@ -1620,7 +1601,7 @@ impl ThreadGroup {
         &self,
         selector: &ProcessSelector,
         options: &WaitingOptions,
-        pids: &mut PidTableGuard<'_>,
+        pids: &mut PidTable,
     ) -> Option<WaitResult> {
         // This checks to see if the target is a zombie ptracee.
         let waitable_entry = self.write().zombie_ptracees.get_waitable_entry(selector, options);
@@ -2095,7 +2076,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     fn set_process_group(
         &mut self,
         process_group: Arc<ProcessGroup>,
-        pids: &mut PidTableGuard<'_>,
+        pids: &mut PidTable,
     ) -> SessionDisassociation {
         if self.process_group == process_group {
             return SessionDisassociation::new(None);
@@ -2113,7 +2094,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     /// leader.
     /// This must be done after the ThreadGroup state lock is released to avoid lock order
     /// violations.
-    fn leave_process_group(&mut self, pids: &mut PidTableGuard<'_>) -> SessionDisassociation {
+    fn leave_process_group(&mut self, pids: &mut PidTable) -> SessionDisassociation {
         let (is_empty, disassociation) = self.process_group.remove(self.base);
         if is_empty {
             self.process_group.session.write().remove(&self.process_group.leader);
@@ -2123,7 +2104,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     }
 
     /// Reaps the given zombie, making its PID available for reuse.
-    fn reap_zombie(&mut self, zombie: OwnedRef<ZombieProcess>, pids: &mut PidTableGuard<'_>) {
+    fn reap_zombie(&mut self, zombie: OwnedRef<ZombieProcess>, pids: &mut PidTable) {
         self.children_time_stats += zombie.time_stats;
         zombie.release(pids);
     }
@@ -2139,7 +2120,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         zombie_list: &dyn Fn(&mut ThreadGroupMutableState) -> &mut Vec<OwnedRef<ZombieProcess>>,
         selector: &ProcessSelector,
         options: &WaitingOptions,
-        pids: &mut PidTableGuard<'_>,
+        pids: &mut PidTable,
     ) -> Option<WaitResult> {
         // We look for the last zombie in the vector that matches pid selector and waiting options
         let selected_zombie_position = zombie_list(self)
@@ -2278,7 +2259,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         &mut self,
         selector: &ProcessSelector,
         options: &WaitingOptions,
-        pids: &mut PidTableGuard<'_>,
+        pids: &mut PidTable,
     ) -> WaitableChildResult {
         if options.wait_for_exited {
             if let Some(waitable_zombie) = self.get_waitable_zombie(

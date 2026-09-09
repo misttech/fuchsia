@@ -998,7 +998,7 @@ impl Task {
 
     /// When the task exits, if there is a notification that needs to propagate
     /// to a ptracer, make sure it will propagate.
-    pub fn set_ptrace_zombie(&self, pids: &mut crate::task::PidTableGuard<'_>) {
+    pub fn set_ptrace_zombie(&self, pids: &mut crate::task::PidTable) {
         if !self.is_spawned() {
             // A task that has not fully spawned cannot become a zombie.
             return;
@@ -1353,7 +1353,7 @@ impl Task {
     }
 
     pub fn get_task(&self, tid: tid_t) -> Result<Arc<Task>, Errno> {
-        self.kernel().pids.get(tid)?.get_task()
+        self.kernel().pids.read().get(tid)?.get_task()
     }
 
     pub fn get_pid(&self) -> pid_t {
@@ -1684,7 +1684,7 @@ mod test {
             let another_tid = another_current.get_tid();
             assert!(another_tid >= 2);
 
-            let pids = &kernel.pids;
+            let pids = kernel.pids.read();
             assert_eq!(pids.get(1).unwrap().get_task().unwrap().get_tid(), 1);
             assert_eq!(pids.get(another_tid).unwrap().get_task().unwrap().get_tid(), another_tid);
         })

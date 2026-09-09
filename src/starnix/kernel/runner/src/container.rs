@@ -752,7 +752,7 @@ async fn create_container(
     let (fs_context, feature_mounts) =
         create_fs_context(&kernel, &features, start_info, &pkg_dir_proxy)
             .source_context("creating FsContext")?;
-    let init_pid = kernel.pids.lock().allocate_pid().source_context("allocating init pid")?;
+    let init_pid = kernel.pids.write().allocate_pid();
     let init_tid = init_pid.id;
     // Lots of software assumes that the pid for the init process is 1.
     debug_assert_eq!(init_tid, 1);

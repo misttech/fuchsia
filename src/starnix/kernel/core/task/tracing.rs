@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::task::{Kernel, PidTable};
-use fuchsia_rcu::RcuReadScope;
+use crate::task::{Kernel, PidTable, RcuReadScope};
 use starnix_logging::{log_debug, log_error, log_warn};
 use starnix_sync::LockDepRwLock;
 use starnix_uapi::{pid_t, tid_t};
@@ -217,7 +216,7 @@ impl TracePerformanceEventManager {
         let current = self.active_sessions.load(Ordering::Acquire);
         if current == 0 {
             if let Some(kernel) = self.weak_kernel.upgrade() {
-                let snapshot = Self::snapshot_existing_tasks(&kernel.pids);
+                let snapshot = Self::snapshot_existing_tasks(&kernel.pids.read());
                 self.map.write().extend_from(snapshot);
             } else {
                 log_warn!("Kernel is shutting down, unable to snapshot running tasks");

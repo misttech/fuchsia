@@ -15,7 +15,6 @@ use fidl_fuchsia_starnix_container as fstarcontainer;
 use fuchsia_async::{
     DurationExt, {self as fasync},
 };
-use fuchsia_rcu::RcuReadScope;
 use futures::channel::oneshot;
 use futures::{
     AsyncReadExt, AsyncWriteExt, Future, FutureExt, StreamExt, TryFutureExt, TryStreamExt, pin_mut,
@@ -176,10 +175,9 @@ pub async fn serve_container_controller(
                 }
                 fstarcontainer::ControllerRequest::GetVmoReferences { payload, responder } => {
                     if let Some(koid) = payload.koid {
+                        let thread_groups = system_task.kernel().pids.read().get_thread_groups();
                         let mut results = vec![];
-                        for thread_group in
-                            system_task.kernel().pids.get_thread_groups(&RcuReadScope::new())
-                        {
+                        for thread_group in thread_groups {
                             if let Ok(leader) = thread_group.leader.get_task() {
                                 if let Ok(files) = leader.files() {
                                     let fds = files.get_all_fds();
@@ -241,7 +239,7 @@ pub async fn serve_container_controller(
                         },
                     responder,
                 } => {
-                    let pids = &system_task.kernel().pids;
+                    let pids = system_task.kernel().pids.read();
                     if let Some(ProcessEntryRef::Process(target_thread_group)) =
                         pids.get(pid).ok().and_then(|p| p.get_process())
                     {

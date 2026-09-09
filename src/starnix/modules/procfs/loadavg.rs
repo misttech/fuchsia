@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fuchsia_rcu::RcuReadScope;
-use starnix_core::task::{CurrentTask, Kernel, TaskStateCode};
+use starnix_core::task::{CurrentTask, Kernel, RcuReadScope, TaskStateCode};
 use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_logging::track_stub;
@@ -28,7 +27,7 @@ impl DynamicFileSource for LoadavgFile {
     ) -> Result<(), Errno> {
         let (runnable_tasks, existing_tasks, last_pid) = {
             let kernel = self.0.upgrade().ok_or_else(|| errno!(EIO))?;
-            let pid_table = &kernel.pids;
+            let pid_table = kernel.pids.read();
 
             let scope = RcuReadScope::new();
             let mut running_tasks_count = 0;

@@ -1,12 +1,10 @@
 // Copyright 2024 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 use crate::task::CurrentTask;
 use crate::task::dynamic_thread_spawner::SpawnRequestBuilder;
 use attribution_server::{AttributionServer, AttributionServerHandle};
 use fidl_fuchsia_memory_attribution as fattribution;
-use fuchsia_rcu::RcuReadScope;
 use starnix_logging::log_error;
 use starnix_sync::{LockDepMutex, MemoryAttributionPublisherLock};
 use starnix_uapi::pid_t;
@@ -77,9 +75,9 @@ impl MemoryAttributionManager {
             // Initial scan of the PID table when a client connects.
             let mut events = vec![];
             let Some(kernel) = weak_kernel.upgrade() else { return vec![] };
-            let pids = kernel.pids.lock();
+            let pids = kernel.pids.write();
             let mut processes: HashSet<pid_t> = HashSet::new();
-            for thread_group in pids.get_thread_groups(&RcuReadScope::new()) {
+            for thread_group in pids.get_thread_groups() {
                 let name = get_thread_group_identifier(&thread_group);
                 events.append(&mut attribution_info_for_thread_group(name, &thread_group));
                 processes.insert(thread_group.leader.id);
@@ -243,8 +241,11 @@ impl MemoryAttributionManager {
                                 pid
                             );
                         }
+                        // It is faster to take the lock multiple times for short durations than to
+                        // take it for the whole for loop.
+                        let pid_table = kernel.pids.read();
                         let Ok(thread_group) =
-                            kernel.pids.get(pid).and_then(|entry| entry.get_thread_group())
+                            pid_table.get(pid).and_then(|entry| entry.get_thread_group())
                         else {
                             // The thread group is missing. This can happen if it has already
                             // exited.
@@ -261,8 +262,9 @@ impl MemoryAttributionManager {
                                 pid
                             );
                         }
+                        let pid_table = kernel.pids.read();
                         let Ok(thread_group) =
-                            kernel.pids.get(pid).and_then(|entry| entry.get_thread_group())
+                            pid_table.get(pid).and_then(|entry| entry.get_thread_group())
                         else {
                             continue;
                         };
@@ -302,9 +304,9 @@ fn scan_processes(
     mut processes: HashSet<pid_t>,
 ) -> (HashSet<pid_t>, Vec<fattribution::AttributionUpdate>) {
     let mut updates = vec![];
-    let pids = &kernel.pids;
+    let pids = kernel.pids.read();
     let mut new_processes = HashSet::new();
-    for thread_group in pids.get_thread_groups(&RcuReadScope::new()) {
+    for thread_group in pids.get_thread_groups() {
         let pid = thread_group.leader.id;
         new_processes.insert(pid);
         // TODO(https://fxbug.dev/379733655): Remove this
