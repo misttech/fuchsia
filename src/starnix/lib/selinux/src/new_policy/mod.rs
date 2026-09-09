@@ -313,10 +313,6 @@ mod tests {
             include_bytes!("../../testdata/composite_policies/compiled/class_defaults_policy"),
         ),
         (
-            "fs_test_policy",
-            include_bytes!("../../testdata/composite_policies/compiled/fs_test_policy"),
-        ),
-        (
             "genfscon_policy",
             include_bytes!("../../testdata/composite_policies/compiled/genfscon_policy"),
         ),

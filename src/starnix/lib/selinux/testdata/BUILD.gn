@@ -4,20 +4,14 @@
 
 import("//src/starnix/lib/selinux/policy.gni")
 
-# --- Base Policy Source Sets ---
+# --- Base Policy Source Set ---
 
 sepolicy_source_set("base_policy") {
   testonly = true
   sources = [ "composite_policies/base_policy.conf" ]
 }
 
-sepolicy_source_set("test_policy") {
-  testonly = true
-  deps = [ ":base_policy" ]
-  sources = [ "composite_policies/new_file/test_policy.conf" ]
-}
-
-# --- Composite Policy Templates ---
+# --- Composite Policies ---
 
 template("unittest_policy") {
   sepolicy_binary(target_name) {
@@ -28,166 +22,16 @@ template("unittest_policy") {
   }
 }
 
-template("userspace_test_policy") {
-  sepolicy_binary(target_name) {
-    testonly = true
-    prebuilt = "composite_policies/compiled/$target_name"
-    deps = [ ":test_policy" ]
-    sources = invoker.sources
-  }
-}
-
-# --- Userspace Test Policies (includes base_policy + test_policy) ---
-
-userspace_test_policy("anon_inode_policy") {
-  sources = [ "composite_policies/new_file/anon_inode_policy.conf" ]
-}
-
-userspace_test_policy("append_policy") {
-  sources = [ "composite_policies/new_file/append_policy.conf" ]
-}
-
-userspace_test_policy("audit_access_policy") {
-  sources = [ "composite_policies/new_file/audit_access_policy.conf" ]
-}
-
-userspace_test_policy("binder_policy") {
-  sources = [ "composite_policies/new_file/binder_policy.conf" ]
-}
-
-userspace_test_policy("bpf_policy") {
-  sources = [ "composite_policies/new_file/bpf_policy.conf" ]
-}
-
-userspace_test_policy("capabilities_policy") {
-  sources = [ "composite_policies/new_file/capabilities_policy.conf" ]
-}
-
-userspace_test_policy("fcntl_policy") {
-  sources = [ "composite_policies/new_file/fcntl_policy.conf" ]
-}
-
-userspace_test_policy("file_transition_policy") {
-  sources = [ "composite_policies/new_file/file_transition_policy.conf" ]
-}
-
-userspace_test_policy("fs_test_policy") {
-  sources = [ "composite_policies/new_file/fs_test_policy.conf" ]
-}
-
-userspace_test_policy("genfscon_create_policy") {
-  sources = [ "composite_policies/new_file/genfscon_create_policy.conf" ]
-}
-
-userspace_test_policy("inherit_policy") {
-  sources = [ "composite_policies/new_file/inherit_policy.conf" ]
-}
-
-userspace_test_policy("invalidated_sid_initial_policy") {
-  sources = [ "composite_policies/new_file/invalidated_sid_initial.conf" ]
-}
-
-userspace_test_policy("invalidated_sid_reloaded_policy") {
-  sources = [ "composite_policies/new_file/invalidated_sid_reloaded.conf" ]
-}
-
-userspace_test_policy("io_uring_policy") {
-  sources = [ "composite_policies/new_file/io_uring_policy.conf" ]
-}
-
-userspace_test_policy("ioctl_policy") {
-  sources = [ "composite_policies/new_file/ioctl_policy.conf" ]
-}
-
-userspace_test_policy("memfd_class_policy") {
-  sources = [ "composite_policies/new_file/memfd_class_policy.conf" ]
-}
-
-userspace_test_policy("memfd_transition_policy") {
-  sources = [ "composite_policies/new_file/memfd_transition_policy.conf" ]
-}
-
-userspace_test_policy("minimal_policy") {
-  sources = [ "composite_policies/new_file/minimal_policy.conf" ]
-}
-
-userspace_test_policy("mount_policy") {
-  sources = [ "composite_policies/new_file/mount_policy.conf" ]
-}
-
-userspace_test_policy("mprotect_policy") {
-  sources = [ "composite_policies/new_file/mprotect_policy.conf" ]
-}
-
-userspace_test_policy("netlink_audit_policy") {
-  sources = [ "composite_policies/new_file/netlink_audit_policy.conf" ]
-}
-
-userspace_test_policy("netlink_xperms_policy") {
-  sources = [ "composite_policies/new_file/netlink_xperms_policy.conf" ]
-}
-
-userspace_test_policy("open_perms_policy") {
-  sources = [ "composite_policies/new_file/open_perms_policy.conf" ]
-}
-
-userspace_test_policy("overlayfs_policy") {
-  sources = [ "composite_policies/new_file/overlayfs_policy.conf" ]
-}
-
-userspace_test_policy("perf_event_policy") {
-  sources = [ "composite_policies/new_file/perf_event_policy.conf" ]
-}
-
-userspace_test_policy("pipe_policy") {
-  sources = [ "composite_policies/new_file/pipe_policy.conf" ]
-}
-
-userspace_test_policy("ptrace_policy") {
-  sources = [ "composite_policies/new_file/ptrace_policy.conf" ]
-}
-
-userspace_test_policy("sched_policy") {
-  sources = [ "composite_policies/new_file/sched_policy.conf" ]
-}
-
-userspace_test_policy("selinuxfs_policy") {
-  sources = [ "composite_policies/new_file/selinuxfs_policy.conf" ]
-}
-
-userspace_test_policy("socket_policy") {
-  sources = [ "composite_policies/new_file/socket_policy.conf" ]
-}
-
-userspace_test_policy("syslog_policy") {
-  sources = [ "composite_policies/new_file/syslog_policy.conf" ]
-}
-
-userspace_test_policy("timerslack_policy") {
-  sources = [ "composite_policies/new_file/timerslack_policy.conf" ]
-}
-
-userspace_test_policy("tun_policy") {
-  sources = [ "composite_policies/new_file/tun_policy.conf" ]
-}
-
-userspace_test_policy("userspace_initial_context_policy") {
-  sources =
-      [ "composite_policies/new_file/userspace_initial_context_policy.conf" ]
-}
-
-userspace_test_policy("xattr_access_policy") {
-  sources = [ "composite_policies/new_file/xattr_access_policy.conf" ]
-}
-
-# --- Unit Test Policies (base_policy only) ---
-
 unittest_policy("conditional_policy") {
   sources = [ "composite_policies/new_file/conditional_policy.conf" ]
 }
 
 unittest_policy("genfscon_policy") {
   sources = [ "composite_policies/new_file/genfscon_policy.conf" ]
+}
+
+unittest_policy("minimal_policy") {
+  sources = [ "composite_policies/new_file/minimal_policy.conf" ]
 }
 
 unittest_policy("with_additional_domain_policy") {
@@ -300,55 +144,21 @@ group("test_policies") {
   testonly = true
   deps = [
     ":allow_fork_policy",
-    ":anon_inode_policy",
-    ":append_policy",
-    ":audit_access_policy",
-    ":binder_policy",
     ":bounded_transition_policy",
-    ":bpf_policy",
-    ":capabilities_policy",
     ":class_defaults_policy",
     ":conditional_policy",
     ":exceptions_config_policy",
-    ":fcntl_policy",
-    ":file_transition_policy",
-    ":fs_test_policy",
-    ":genfscon_create_policy",
     ":genfscon_policy",
     ":handle_unknown_policy-allow",
     ":handle_unknown_policy-deny",
     ":handle_unknown_policy-reject",
-    ":inherit_policy",
-    ":invalidated_sid_initial_policy",
-    ":invalidated_sid_reloaded_policy",
-    ":io_uring_policy",
-    ":ioctl_policy",
-    ":memfd_class_policy",
-    ":memfd_transition_policy",
     ":minimal_policy",
-    ":mount_policy",
-    ":mprotect_policy",
-    ":netlink_audit_policy",
-    ":netlink_xperms_policy",
-    ":open_perms_policy",
-    ":overlayfs_policy",
-    ":perf_event_policy",
-    ":pipe_policy",
-    ":ptrace_policy",
     ":range_transition_policy",
     ":role_transition_not_allowed_policy",
     ":role_transition_policy",
-    ":sched_policy",
-    ":selinuxfs_policy",
-    ":socket_policy",
-    ":syslog_policy",
-    ":timerslack_policy",
-    ":tun_policy",
     ":type_transition_policy",
-    ":userspace_initial_context_policy",
     ":with_additional_domain_policy",
     ":with_unlabeled_access_domain_policy",
-    ":xattr_access_policy",
   ]
   foreach(name, micro_policies) {
     deps += [ ":micro_$name" ]
