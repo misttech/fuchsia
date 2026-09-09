@@ -7,7 +7,7 @@ use fuchsia_criterion::criterion::Criterion;
 use futures::executor::block_on;
 
 use fxfs::lsm_tree::merge::{MergeLayerIterator, MergeResult};
-use fxfs::lsm_tree::types::{Item, LayerIterator, LayerKey};
+use fxfs::lsm_tree::types::{Item, LayerIterator, LayerKey, MergeableKey, Value};
 use fxfs::lsm_tree::{LSMTree, Query, compact_with_iterator, layers_from_handles};
 use fxfs::object_handle::ObjectHandle;
 use fxfs::object_store::Extent;
@@ -20,8 +20,13 @@ use fxfs::testing::fake_object::{FakeObject, FakeObjectHandle};
 use fxfs::testing::writer::Writer;
 use std::sync::Arc;
 
-use fxfs::lsm_tree::types::{MergeableKey, Value};
+/// Extent size in bytes used for generating and querying extent-based records.
+const EXTENT_SIZE: u64 = 1024;
 
+/// Number of extents to scan in range query benchmarks.
+const RANGE_QUERY_EXTENTS: u64 = 10;
+
+/// Merge function for LSM tree layers that resolves key collisions by emitting the left item.
 fn emit_left_merge_fn<K: MergeableKey, V: Value>(
     _left: &MergeLayerIterator<'_, K, V>,
     _right: &MergeLayerIterator<'_, K, V>,
@@ -29,6 +34,7 @@ fn emit_left_merge_fn<K: MergeableKey, V: Value>(
     MergeResult::EmitLeft
 }
 
+/// Helper to construct a sealed LSM tree with `depth` persistent layers and `size` total items.
 fn create_tree_generic<K, V, F>(depth: u64, size: u64, mut populate_layer: F) -> LSMTree<K, V>
 where
     K: MergeableKey,
@@ -71,59 +77,67 @@ where
     tree
 }
 
+/// Populates an LSM tree with standard object records (`ObjectKey::object(key_id)`).
 fn create_tree(depth: u64, size: u64) -> LSMTree<ObjectKey, ObjectValue> {
     create_tree_generic(depth, size, |tree, layer_idx, items_per_layer| {
         for i in 0..items_per_layer {
             let key_id = i * depth + layer_idx;
-            let key = ObjectKey::object(key_id);
-            let value = ObjectValue::Some;
-            tree.insert(Item::new(key, value)).unwrap();
+            tree.insert(Item::new(ObjectKey::object(key_id), ObjectValue::Some)).unwrap();
         }
     })
 }
 
+/// Populates an LSM tree with long child keys to benchmark performance on large keys.
 fn create_long_tree(depth: u64, size: u64) -> LSMTree<ObjectKey, ObjectValue> {
     create_tree_generic(depth, size, |tree, layer_idx, items_per_layer| {
         for i in 0..items_per_layer {
             let key_id = i * depth + layer_idx;
             let name = "a".repeat(300);
             let key = ObjectKey { object_id: key_id, data: ObjectKeyData::Child { name } };
-            let value = ObjectValue::Some;
-            tree.insert(Item::new(key, value)).unwrap();
+            tree.insert(Item::new(key, ObjectValue::Some)).unwrap();
         }
     })
 }
 
+/// Populates an LSM tree with attribute extent records interleaved across layers.
 fn create_extent_tree(depth: u64, size: u64) -> LSMTree<ObjectKey, ObjectValue> {
     create_tree_generic(depth, size, |tree, layer_idx, items_per_layer| {
-        let mut offset = layer_idx * 1024;
+        let mut offset = layer_idx * EXTENT_SIZE;
         for _ in 0..items_per_layer {
             let key = ObjectKey {
                 object_id: 1,
                 data: ObjectKeyData::Attribute(
                     AttributeId::DATA,
-                    AttributeKey::Extent(Extent(offset..offset + 1024)),
+                    AttributeKey::Extent(Extent(offset..offset + EXTENT_SIZE)),
                 ),
             };
-            let value = ObjectValue::Some;
-            tree.insert(Item::new(key, value)).unwrap();
-            offset += depth * 1024;
+            tree.insert(Item::new(key, ObjectValue::Some)).unwrap();
+            offset += depth * EXTENT_SIZE;
         }
     })
 }
 
+/// Populates an LSM tree with allocator extent records interleaved across layers.
 fn create_allocator_tree(depth: u64, size: u64) -> LSMTree<AllocatorKey, AllocatorValue> {
     create_tree_generic(depth, size, |tree, layer_idx, items_per_layer| {
-        let mut offset = layer_idx * 1024;
+        let mut offset = layer_idx * EXTENT_SIZE;
         for _ in 0..items_per_layer {
-            let key = AllocatorKey { device_range: Extent(offset..offset + 1024) };
+            let key = AllocatorKey { device_range: Extent(offset..offset + EXTENT_SIZE) };
             let value = AllocatorValue::Abs { count: 1, owner_object_id: 1 };
             tree.insert(Item::new(key, value)).unwrap();
-            offset += depth * 1024;
+            offset += depth * EXTENT_SIZE;
         }
     })
 }
 
+/// Advances an iterator until all items have been consumed.
+async fn drain_iterator<K: LayerKey, V: Value>(mut iter: impl LayerIterator<K, V>) {
+    while iter.get().is_some() {
+        iter.advance().await.unwrap();
+    }
+}
+
+/// Registers and runs the full suite of LSM tree benchmarks across depths and sizes.
 fn bench_lsm_tree(c: &mut Criterion) {
     let mut group = c.benchmark_group("fuchsia.fxfs.lsm_tree");
 
@@ -140,8 +154,8 @@ fn bench_lsm_tree(c: &mut Criterion) {
 
         let tree_hit = tree.clone();
         group.bench_function(&format!("find_hit_depth_{}", depth), move |b| {
+            let key = ObjectKey::object(ITEMS / 2);
             b.iter(|| {
-                let key = ObjectKey::object(ITEMS / 2);
                 block_on(async {
                     let _ = tree_hit.find(&key).await.unwrap();
                 });
@@ -154,10 +168,7 @@ fn bench_lsm_tree(c: &mut Criterion) {
             let mut merger = layer_set.merger();
             b.iter(|| {
                 block_on(async {
-                    let mut iter = merger.query(Query::FullScan).await.unwrap();
-                    while iter.get().is_some() {
-                        iter.advance().await.unwrap();
-                    }
+                    drain_iterator(merger.query(Query::FullScan).await.unwrap()).await;
                 });
             })
         });
@@ -167,11 +178,11 @@ fn bench_lsm_tree(c: &mut Criterion) {
 
         let tree_long_hit = long_tree.clone();
         group.bench_function(&format!("find_long_hit_depth_{}", depth), move |b| {
+            let key = ObjectKey {
+                object_id: ITEMS / 2,
+                data: ObjectKeyData::Child { name: "a".repeat(300) },
+            };
             b.iter(|| {
-                let key = ObjectKey {
-                    object_id: ITEMS / 2,
-                    data: ObjectKeyData::Child { name: "a".repeat(300) },
-                };
                 block_on(async {
                     let _ = tree_long_hit.find(&key).await.unwrap();
                 });
@@ -184,10 +195,7 @@ fn bench_lsm_tree(c: &mut Criterion) {
             let mut merger_long_scan = long_layer_set.merger();
             b.iter(|| {
                 block_on(async {
-                    let mut iter = merger_long_scan.query(Query::FullScan).await.unwrap();
-                    while iter.get().is_some() {
-                        iter.advance().await.unwrap();
-                    }
+                    drain_iterator(merger_long_scan.query(Query::FullScan).await.unwrap()).await;
                 });
             })
         });
@@ -201,10 +209,7 @@ fn bench_lsm_tree(c: &mut Criterion) {
             let mut merger_extent_scan = extent_layer_set.merger();
             b.iter(|| {
                 block_on(async {
-                    let mut iter = merger_extent_scan.query(Query::FullScan).await.unwrap();
-                    while iter.get().is_some() {
-                        iter.advance().await.unwrap();
-                    }
+                    drain_iterator(merger_extent_scan.query(Query::FullScan).await.unwrap()).await;
                 });
             })
         });
@@ -213,18 +218,19 @@ fn bench_lsm_tree(c: &mut Criterion) {
         group.bench_function(&format!("extent_range_depth_{}", depth), move |b| {
             let extent_layer_set_range = tree_extent_range.layer_set();
             let mut merger_extent_range = extent_layer_set_range.merger();
+            let query_start = (ITEMS / 2) * EXTENT_SIZE;
+            let query_end = query_start + RANGE_QUERY_EXTENTS * EXTENT_SIZE;
+            let key = ObjectKey {
+                object_id: 1,
+                data: ObjectKeyData::Attribute(
+                    AttributeId::DATA,
+                    AttributeKey::Extent(Extent(query_start..query_start + EXTENT_SIZE)),
+                ),
+            };
             b.iter(|| {
-                let key = ObjectKey {
-                    object_id: 1,
-                    data: ObjectKeyData::Attribute(
-                        AttributeId::DATA,
-                        AttributeKey::Extent(Extent((ITEMS / 2 * 1024)..(ITEMS / 2 * 1024 + 1024))),
-                    ),
-                };
                 block_on(async {
                     let mut iter =
                         merger_extent_range.query(Query::LimitedRange(&key)).await.unwrap();
-                    let query_end = ITEMS / 2 * 1024 + 10 * 1024;
                     while let Some(item) = iter.get() {
                         if let ObjectKeyData::Attribute(_, AttributeKey::Extent(extent_key)) =
                             &item.key.data
@@ -248,10 +254,8 @@ fn bench_lsm_tree(c: &mut Criterion) {
             let mut merger_allocator_scan = allocator_layer_set.merger();
             b.iter(|| {
                 block_on(async {
-                    let mut iter = merger_allocator_scan.query(Query::FullScan).await.unwrap();
-                    while iter.get().is_some() {
-                        iter.advance().await.unwrap();
-                    }
+                    drain_iterator(merger_allocator_scan.query(Query::FullScan).await.unwrap())
+                        .await;
                 });
             })
         });
@@ -260,16 +264,14 @@ fn bench_lsm_tree(c: &mut Criterion) {
         group.bench_function(&format!("allocator_range_depth_{}", depth), move |b| {
             let allocator_layer_set_range = tree_allocator_range.layer_set();
             let mut merger_allocator_range = allocator_layer_set_range.merger();
+            let query_start = (ITEMS / 2) * EXTENT_SIZE;
+            let query_end = query_start + RANGE_QUERY_EXTENTS * EXTENT_SIZE;
+            let key = AllocatorKey { device_range: Extent(query_start..query_start + EXTENT_SIZE) };
+            let search_key = key.search_key().unwrap();
             b.iter(|| {
-                let key = AllocatorKey {
-                    device_range: Extent((ITEMS / 2 * 1024)..(ITEMS / 2 * 1024 + 1024)),
-                };
                 block_on(async {
-                    let mut iter = merger_allocator_range
-                        .query(Query::FullRange(&key.search_key().unwrap()))
-                        .await
-                        .unwrap();
-                    let query_end = ITEMS / 2 * 1024 + 10 * 1024;
+                    let mut iter =
+                        merger_allocator_range.query(Query::FullRange(&search_key)).await.unwrap();
                     while let Some(item) = iter.get() {
                         if item.key.device_range.start >= query_end {
                             break;
