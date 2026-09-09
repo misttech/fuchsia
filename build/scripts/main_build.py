@@ -42,6 +42,11 @@ JSONArray = list[JSONValue]
 
 _SCRIPT = pathlib.Path(__file__)
 
+# Use the executable of the active Python interpreter to ensure that all
+# spawned sub-processes (like fint_build.py) run under the exact same
+# interpreter environment.
+PYTHON_BIN = pathlib.Path(sys.executable)
+
 
 def msg(text: str, file: TextIO | None = None) -> None:
     """Print a message prefixed with the script's basename."""
@@ -430,10 +435,6 @@ class FuchsiaBuildContext(object):
     def fint_build_py(self) -> pathlib.Path:
         return self.source_dir / "tools/integration/fint/fint_build.py"
 
-    @property
-    def python_bin(self) -> pathlib.Path:
-        return pathlib.Path(self.env.get("PREBUILT_PYTHON3", "python3"))
-
     def _fint_wrapper_cmd(
         self,
         static_path: pathlib.Path | None = None,
@@ -448,7 +449,7 @@ class FuchsiaBuildContext(object):
             print_artifact_dir: If True, appends the query flag to print the
               artifact directory path and exits instead of running the build.
         """
-        yield str(self.python_bin)
+        yield str(PYTHON_BIN)
         yield "-S"
         yield "-u"
         yield str(self.fint_build_py)

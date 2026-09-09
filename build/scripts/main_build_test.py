@@ -918,7 +918,7 @@ class ContextPropertiesAndLoggingTest(unittest.TestCase):
             source_dir=pathlib.Path("/tmp/fuchsia"),
             out_dir=pathlib.Path("/tmp/out"),
             build_dir=pathlib.Path("/tmp/out/default"),
-            env={"PREBUILT_PYTHON3": "/custom/bin/python3"},
+            env={},
             config=config,
         )
 
@@ -928,18 +928,16 @@ class ContextPropertiesAndLoggingTest(unittest.TestCase):
             pathlib.Path("/tmp/fuchsia/tools/integration/fint/fint_build.py"),
         )
 
-        # 2. Verify python_bin respects environmental variable
-        self.assertEqual(
-            context.python_bin, pathlib.Path("/custom/bin/python3")
-        )
+        # Verify that the resolved Python binary path is absolute.
+        self.assertTrue(main_build.PYTHON_BIN.is_absolute())
 
-        # 3. Verify fint_build_cmd is empty when not specified
+        # 2. Verify fint_build_cmd is empty when not specified
         self.assertEqual(list(context.fint_build_cmd()), [])
 
-        # 4. Verify fint_build_cmd is fully populated when specified
+        # 3. Verify fint_build_cmd is fully populated when specified
         context.config.fint_params_path = pathlib.Path("/tmp/static.proto")
         expected_cmd = [
-            "/custom/bin/python3",
+            str(main_build.PYTHON_BIN),
             "-S",
             "-u",
             "/tmp/fuchsia/tools/integration/fint/fint_build.py",
@@ -952,10 +950,10 @@ class ContextPropertiesAndLoggingTest(unittest.TestCase):
             expected_cmd,
         )
 
-        # 5. Verify fint_build_cmd forwards context path when specified
+        # 4. Verify fint_build_cmd forwards context path when specified
         context.config.fint_context_path = pathlib.Path("/tmp/context.proto")
         expected_cmd_with_context = [
-            "/custom/bin/python3",
+            str(main_build.PYTHON_BIN),
             "-S",
             "-u",
             "/tmp/fuchsia/tools/integration/fint/fint_build.py",
@@ -1121,7 +1119,7 @@ class ContextPropertiesAndLoggingTest(unittest.TestCase):
         )
         mock_check_output.assert_called_once_with(
             [
-                "python3",
+                str(main_build.PYTHON_BIN),
                 "-S",
                 "-u",
                 "/tmp/fuchsia/tools/integration/fint/fint_build.py",
