@@ -419,7 +419,7 @@ void profiler::ProfilerControllerImpl::Start(StartRequest& request,
   fxt::WriteMagicNumberRecord(writer_.get());
   fxt::WriteInitializationRecord(writer_.get(), zx::ticks::per_second().get());
 
-  SampleCallback on_sample = [this](profiler::Sample sample) {
+  SampleCallback on_sample = [this](const profiler::Sample& sample) {
     num_samples_++;
     if (first_sample_timestamp_ == zx::ticks(0)) {
       first_sample_timestamp_ = sample.timestamp;

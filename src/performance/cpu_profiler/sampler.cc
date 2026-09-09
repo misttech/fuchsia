@@ -265,7 +265,7 @@ void profiler::Sampler::CollectSamples(async_dispatcher_t* dispatcher, async::Ta
               SampleThread(target.handle.borrow(), thread.handle.borrow(), fp_unwinder);
           if (time_sampling != zx::ticks()) {
             if (sample_cb_) {
-              sample_cb_({target.pid, thread.tid, std::move(pcs), time_sampling, {}});
+              sample_cb_({target.pid, thread.tid, pcs, time_sampling, {}});
             }
             inspecting_durations_.push_back(time_sampling);
           }

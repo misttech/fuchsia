@@ -20,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -40,14 +41,14 @@ namespace profiler {
 struct Sample {
   zx_koid_t pid;
   zx_koid_t tid;
-  std::vector<uint64_t> stack;
+  std::span<const uint64_t> stack;
   zx::ticks timestamp;
   // TODO(https://fxbug.dev/466468564): Use std::variant<Backtrace, StackMemory> instead of separate
   // fields.
-  std::vector<uint8_t> stack_memory;
+  std::span<const uint8_t> stack_memory;
 };
 
-using SampleCallback = std::function<void(Sample)>;
+using SampleCallback = std::function<void(const Sample&)>;
 
 class Sampler : public fxl::RefCountedThreadSafe<Sampler> {
  public:

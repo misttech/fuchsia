@@ -328,7 +328,7 @@ void StackSampler::CollectSamples(async_dispatcher_t* dispatcher, async::TaskBas
                     .tid = tid,
                     .stack = {},
                     .timestamp = sample_time,
-                    .stack_memory = std::move(sample_memory)});
+                    .stack_memory = sample_memory});
       }
 
       inspecting_durations_.push_back(tick_resume - tick_suspended);
