@@ -382,10 +382,6 @@ impl<I: Interface + ?Sized> Session<I> {
             self.helper.drop_active_requests(|session| *session == self as *const _ as usize);
         }
 
-        let _drop_guard = scopeguard::guard((), |_| {
-            log::info!("run_fifo dropped");
-        });
-
         // The FIFO has to be processed by a single task due to implementation constraints on
         // fuchsia_async::Fifo.  Thus, we use an event loop to drive the FIFO.  FIFO reads and
         // writes can happen in batch, and request processing is parallel.

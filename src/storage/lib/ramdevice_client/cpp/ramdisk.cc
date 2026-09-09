@@ -129,7 +129,6 @@ struct ramdisk_client {
   }
 
   zx_status_t Destroy() {
-    FX_LOGS(INFO) << "ramdisk_client::Destroy called";
     if (!ramdisk_interface_) {
       return ZX_ERR_BAD_STATE;
     }
