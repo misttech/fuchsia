@@ -969,7 +969,6 @@ config("Wno-vla-cxx-extension") {
     "//src/devices/block/bin/iochk:*",
     "//src/devices/spi/bin/spiutil:*",
     "//src/graphics/display/drivers/amlogic-display:*",
-    "//src/graphics/display/drivers/coordinator:*",
     "//src/graphics/display/drivers/intel-i915:*",
     "//src/graphics/lib/compute/spinel/platforms/vk/tests/spinel_vk_tests:*",
     "//src/graphics/lib/magma/src/libmagma_virt:*",
