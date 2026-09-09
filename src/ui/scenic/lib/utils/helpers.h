@@ -5,13 +5,13 @@
 #ifndef SRC_UI_SCENIC_LIB_UTILS_HELPERS_H_
 #define SRC_UI_SCENIC_LIB_UTILS_HELPERS_H_
 
+#include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
-#include <fuchsia/sysmem/cpp/fidl.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
-#include <fuchsia/ui/views/cpp/fidl.h>
+#include <fuchsia/images2/cpp/fidl.h>
+#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/sys/cpp/service_directory.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
@@ -23,8 +23,6 @@
 #include <lib/zx/counter.h>
 #endif
 #include <lib/zx/event.h>
-
-#include "fuchsia/images2/cpp/fidl.h"
 
 namespace utils {
 
@@ -68,7 +66,6 @@ struct SysmemTokens {
 };
 
 // Helper for extracting the koid from a ViewRef.
-zx_koid_t ExtractKoid(const fuchsia::ui::views::ViewRef& view_ref);
 zx_koid_t ExtractKoid(const fuchsia_ui_views::ViewRef& view_ref);
 zx_koid_t ExtractKoid(const fuchsia_ui_views::wire::ViewRef& view_ref);
 
@@ -134,11 +131,11 @@ fidl::WireClient<fuchsia_sysmem2::Allocator> CreateSysmemAllocatorClientWithSvc(
 
 // Creates default constraints for |buffer_collection|
 fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
-    uint32_t buffer_count, uint32_t kWidth, uint32_t kHeight,
+    uint32_t buffer_count, uint32_t width, uint32_t height,
     fuchsia::images2::PixelFormat format = fuchsia::images2::PixelFormat::B8G8R8A8,
     bool set_min_max_size = false);
 fuchsia_sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
-    uint32_t buffer_count, uint32_t kWidth, uint32_t kHeight, fuchsia_images2::PixelFormat format,
+    uint32_t buffer_count, uint32_t width, uint32_t height, fuchsia_images2::PixelFormat format,
     bool set_min_max_size = false);
 
 void PrettyPrintMat3(std::string, const std::array<float, 9>& mat3);
@@ -156,43 +153,29 @@ std::string GetArrayString(const std::string& name, const ArrayT& array) {
   return result;
 }
 
-float GetOrientationAngle(fuchsia::ui::composition::Orientation orientation);
 float GetOrientationAngle(fuchsia_ui_composition::Orientation orientation);
 
 uint32_t GetBytesPerPixel(const fuchsia_sysmem2::SingleBufferSettings& settings);
 uint32_t GetBytesPerPixel(const fuchsia::sysmem2::SingleBufferSettings& settings);
-uint32_t GetBytesPerPixel(const fuchsia::sysmem::SingleBufferSettings& settings);
-
 uint32_t GetBytesPerPixel(const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints);
 uint32_t GetBytesPerPixel(const fuchsia::sysmem2::ImageFormatConstraints& image_format_constraints);
-uint32_t GetBytesPerPixel(const fuchsia::sysmem::ImageFormatConstraints& image_format_constraints);
 
 uint32_t GetBytesPerRow(const fuchsia_sysmem2::SingleBufferSettings& settings,
                         uint32_t image_width);
 uint32_t GetBytesPerRow(const fuchsia::sysmem2::SingleBufferSettings& settings,
                         uint32_t image_width);
-uint32_t GetBytesPerRow(const fuchsia::sysmem::SingleBufferSettings& settings,
-                        uint32_t image_width);
-
 uint32_t GetBytesPerRow(const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints,
                         uint32_t image_width);
 uint32_t GetBytesPerRow(const fuchsia::sysmem2::ImageFormatConstraints& image_format_constraints,
-                        uint32_t image_width);
-uint32_t GetBytesPerRow(const fuchsia::sysmem::ImageFormatConstraints& image_format_constraints,
                         uint32_t image_width);
 
 uint32_t GetPixelsPerRow(const fuchsia_sysmem2::SingleBufferSettings& settings,
                          uint32_t image_width);
 uint32_t GetPixelsPerRow(const fuchsia::sysmem2::SingleBufferSettings& settings,
                          uint32_t image_width);
-uint32_t GetPixelsPerRow(const fuchsia::sysmem::SingleBufferSettings& settings,
-                         uint32_t image_width);
-
 uint32_t GetPixelsPerRow(const fuchsia_sysmem2::ImageFormatConstraints& image_format_constraints,
                          uint32_t image_width);
 uint32_t GetPixelsPerRow(const fuchsia::sysmem2::ImageFormatConstraints& image_format_constraints,
-                         uint32_t image_width);
-uint32_t GetPixelsPerRow(const fuchsia::sysmem::ImageFormatConstraints& image_format_constraints,
                          uint32_t image_width);
 
 // Signal all fences with ZX_EVENT_SIGNALED.

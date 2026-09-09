@@ -43,6 +43,7 @@ using flatland::MockDisplayCoordinator;
 using flatland::SrcToDest;
 
 using fuchsia_ui_composition::ImageFlip;
+using fuchsia_ui_composition::Orientation;
 using integration_tests::ReturnPromise;
 
 namespace fuchsia_hardware_display::wire {
@@ -257,8 +258,7 @@ class DisplayCompositorTest : public gtest::RealLoopFixture {
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
 
   void HardwareFrameCorrectnessWithRotationTester(
-      fuchsia::ui::composition::Orientation orientation, ImageFlip image_flip,
-      fuchsia_math::wire::RectU expected_dst,
+      Orientation orientation, ImageFlip image_flip, fuchsia_math::wire::RectU expected_dst,
       display::WireCoordinateTransformation expected_transform);
 };
 
@@ -1214,8 +1214,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
 // the layer draws a 128×256 image (full sample region) into a 10×20 destination rect
 // at the origin; each test below varies only the rotation/flip.
 void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
-    fuchsia::ui::composition::Orientation orientation, ImageFlip image_flip,
-    const fuchsia_math::wire::RectU expected_dst,
+    Orientation orientation, ImageFlip image_flip, const fuchsia_math::wire::RectU expected_dst,
     display::WireCoordinateTransformation expected_transform) {
   const uint64_t kGlobalBufferCollectionId = allocation::GenerateUniqueBufferCollectionId();
   const display::WireBufferCollectionId kDisplayBufferCollectionId =
@@ -1414,8 +1413,8 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
 //   Display transform: rotate CCW 90°.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith90DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
-  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_90_DEGREES,
-                                             ImageFlip::kNone, kExpectedDest,
+  HardwareFrameCorrectnessWithRotationTester(Orientation::kCcw90Degrees, ImageFlip::kNone,
+                                             kExpectedDest,
                                              display::WireCoordinateTransformation::kRotateCcw90);
 }
 
@@ -1424,8 +1423,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith90DegreeRotationTest) 
 //   Display transform: rotate CCW 180°.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith180DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
-  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_180_DEGREES,
-                                             ImageFlip::kNone, kExpectedDest,
+  HardwareFrameCorrectnessWithRotationTester(Orientation::kCcw180Degrees, ImageFlip::kNone,
+                                             kExpectedDest,
                                              display::WireCoordinateTransformation::kRotateCcw180);
 }
 
@@ -1434,8 +1433,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith180DegreeRotationTest)
 //   Display transform: rotate CCW 270°.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith270DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
-  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_270_DEGREES,
-                                             ImageFlip::kNone, kExpectedDest,
+  HardwareFrameCorrectnessWithRotationTester(Orientation::kCcw270Degrees, ImageFlip::kNone,
+                                             kExpectedDest,
                                              display::WireCoordinateTransformation::kRotateCcw270);
 }
 
@@ -1444,8 +1443,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWith270DegreeRotationTest)
 //   reflection across the Y axis (kReflectY); the flip rides ImageFlip.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlipTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
-  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_0_DEGREES,
-                                             ImageFlip::kLeftRight, kExpectedDest,
+  HardwareFrameCorrectnessWithRotationTester(Orientation::kCcw0Degrees, ImageFlip::kLeftRight,
+                                             kExpectedDest,
                                              display::WireCoordinateTransformation::kReflectY);
 }
 
@@ -1454,8 +1453,8 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlipTest) {
 //   across the X axis (kReflectX); the flip rides ImageFlip.
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlipTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
-  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_0_DEGREES,
-                                             ImageFlip::kUpDown, kExpectedDest,
+  HardwareFrameCorrectnessWithRotationTester(Orientation::kCcw0Degrees, ImageFlip::kUpDown,
+                                             kExpectedDest,
                                              display::WireCoordinateTransformation::kReflectX);
 }
 
@@ -1469,7 +1468,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlipTest) {
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip90DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
   HardwareFrameCorrectnessWithRotationTester(
-      fuchsia::ui::composition::Orientation::CCW_90_DEGREES, ImageFlip::kLeftRight, kExpectedDest,
+      Orientation::kCcw90Degrees, ImageFlip::kLeftRight, kExpectedDest,
       display::WireCoordinateTransformation::kRotateCcw90ReflectX);
 }
 
@@ -1480,35 +1479,35 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip90DegreeR
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip90DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
   HardwareFrameCorrectnessWithRotationTester(
-      fuchsia::ui::composition::Orientation::CCW_90_DEGREES, ImageFlip::kUpDown, kExpectedDest,
+      Orientation::kCcw90Degrees, ImageFlip::kUpDown, kExpectedDest,
       display::WireCoordinateTransformation::kRotateCcw90ReflectY);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip180DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
-  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_180_DEGREES,
-                                             ImageFlip::kLeftRight, kExpectedDest,
+  HardwareFrameCorrectnessWithRotationTester(Orientation::kCcw180Degrees, ImageFlip::kLeftRight,
+                                             kExpectedDest,
                                              display::WireCoordinateTransformation::kReflectX);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip180DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 10u, .height = 20u};
-  HardwareFrameCorrectnessWithRotationTester(fuchsia::ui::composition::Orientation::CCW_180_DEGREES,
-                                             ImageFlip::kUpDown, kExpectedDest,
+  HardwareFrameCorrectnessWithRotationTester(Orientation::kCcw180Degrees, ImageFlip::kUpDown,
+                                             kExpectedDest,
                                              display::WireCoordinateTransformation::kReflectY);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithLeftRightFlip270DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
   HardwareFrameCorrectnessWithRotationTester(
-      fuchsia::ui::composition::Orientation::CCW_270_DEGREES, ImageFlip::kLeftRight, kExpectedDest,
+      Orientation::kCcw270Degrees, ImageFlip::kLeftRight, kExpectedDest,
       display::WireCoordinateTransformation::kRotateCcw90ReflectY);
 }
 
 TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessWithUpDownFlip270DegreeRotationTest) {
   const fuchsia_math::wire::RectU kExpectedDest = {.x = 0u, .y = 0u, .width = 20u, .height = 10u};
   HardwareFrameCorrectnessWithRotationTester(
-      fuchsia::ui::composition::Orientation::CCW_270_DEGREES, ImageFlip::kUpDown, kExpectedDest,
+      Orientation::kCcw270Degrees, ImageFlip::kUpDown, kExpectedDest,
       display::WireCoordinateTransformation::kRotateCcw90ReflectX);
 }
 

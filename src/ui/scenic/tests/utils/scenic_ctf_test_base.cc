@@ -4,8 +4,6 @@
 
 #include "src/ui/scenic/tests/utils/scenic_ctf_test_base.h"
 
-#include <fidl/fuchsia.math/cpp/hlcpp_conversion.h>
-
 namespace integration_tests {
 
 void ScenicCtfTest::SetFlatlandDisplayContent(fuchsia_ui_views::ViewportCreationToken token) {
@@ -39,44 +37,6 @@ uint32_t ScenicCtfTest::GetDisplayMaxLayerCount() const {
 }
 
 bool ScenicCtfTest::UseDisplayComposition() const {
-  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->UseDisplayComposition();
-}
-
-void ScenicCtfHlcppTest::SetFlatlandDisplayContent(
-    fuchsia::ui::views::ViewportCreationToken token) {
-  fuchsia_ui_views::ViewportCreationToken token_cpp;
-  token_cpp.value() = std::move(token.value);
-  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->SetFlatlandDisplayContent(
-      std::move(token_cpp));
-}
-
-void ScenicCtfHlcppTest::SetFlatlandDisplayDevicePixelRatio(fuchsia::math::VecF dpr) {
-  ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->SetFlatlandDisplayDevicePixelRatio(
-      fidl::HLCPPToNatural(dpr));
-}
-
-const std::shared_ptr<sys::ServiceDirectory>& ScenicCtfHlcppTest::LocalServiceDirectory() const {
-  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->LocalServiceDirectory();
-}
-
-uint64_t ScenicCtfHlcppTest::GetDisplayRotation() const {
-  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayRotation();
-}
-
-fuchsia::math::SizeU ScenicCtfHlcppTest::GetDisplayDimensions() const {
-  auto dimensions = ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayDimensions();
-  return {.width = dimensions.width(), .height = dimensions.height()};
-}
-
-uint32_t ScenicCtfHlcppTest::GetDisplayRefreshRateMillihertz() const {
-  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayRefreshRateMillihertz();
-}
-
-uint32_t ScenicCtfHlcppTest::GetDisplayMaxLayerCount() const {
-  return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->GetDisplayMaxLayerCount();
-}
-
-bool ScenicCtfHlcppTest::UseDisplayComposition() const {
   return ScenicCtfTestEnvironment::GetGlobalTestEnvironment()->UseDisplayComposition();
 }
 

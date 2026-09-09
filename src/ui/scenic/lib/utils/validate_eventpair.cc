@@ -59,11 +59,6 @@ static bool validate_viewref(const zx::eventpair& control_ref, const zx::eventpa
   return false;
 }
 
-bool validate_viewref(const fuchsia::ui::views::ViewRefControl& control_ref,
-                      const fuchsia::ui::views::ViewRef& view_ref) {
-  return validate_viewref(control_ref.reference, view_ref.reference);
-}
-
 bool validate_viewref(const fuchsia_ui_views::ViewRefControl& control_ref,
                       const fuchsia_ui_views::ViewRef& view_ref) {
   return validate_viewref(control_ref.reference(), view_ref.reference());

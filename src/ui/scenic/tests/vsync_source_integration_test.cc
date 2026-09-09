@@ -38,7 +38,6 @@ class VsyncSourceIntegrationTest
       SetFlatlandDisplayContent(std::move(parent_token));
       auto parent_viewport_watcher_endpoints =
           fidl::CreateEndpoints<fuchsia_ui_composition::ParentViewportWatcher>();
-      fuchsia::ui::composition::FlatlandCreateView2Request request;
       auto res = (*root_flatland_)
                      ->CreateView2({{.token = std::move(child_token),
                                      .view_identity = scenic::cpp::NewViewIdentityOnCreation(),

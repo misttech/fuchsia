@@ -35,34 +35,4 @@ void BlockingPresent(ui_testing::LoggingEventLoop* loop, FlatlandClientWithEvent
   flatland.reset_on_next_frame_begin();
 }
 
-void BlockingPresent(ui_testing::LoggingEventLoop* loop,
-                     fuchsia::ui::composition::FlatlandPtr& flatland,
-                     fuchsia::ui::composition::PresentArgs present_args,
-                     cpp20::source_location caller) {
-  if (!present_args.has_unsquashable()) {
-    present_args.set_unsquashable(true);
-  }
-  // Initialize callbacks and callback state.
-  bool presented = false;
-  bool began = false;
-  flatland.events().OnFramePresented = [&presented](auto) { presented = true; };
-  flatland.events().OnNextFrameBegin = [&began](auto) { began = true; };
-
-  // Request that the current frame be presented, and wait until Scenic indicates
-  // that presentation is complete.
-  flatland->Present(std::move(present_args));
-  FX_LOGS(INFO) << "Waiting for OnFramePresented";
-  loop->RunLoopUntil([&presented] { return presented; }, caller);
-
-  // Wait for `OnNextFrameBegin`. This ensures that `flatland` has present
-  // credits available, and hence, the next `Present()` (if any) will not fail
-  // due to `NO_PRESENTS_REMAINING`.
-  FX_LOGS(INFO) << "Waiting for OnNextFrameBegin";
-  loop->RunLoopUntil([&began] { return began; }, caller);
-
-  // Reset callbacks.
-  flatland.events().OnFramePresented = nullptr;
-  flatland.events().OnNextFrameBegin = nullptr;
-}
-
 }  // namespace integration_tests

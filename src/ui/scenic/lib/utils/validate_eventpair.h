@@ -6,7 +6,6 @@
 
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/wire.h>
-#include <fuchsia/ui/views/cpp/fidl.h>
 #include <lib/zx/eventpair.h>
 #include <zircon/rights.h>
 
@@ -20,8 +19,6 @@ bool validate_eventpair(const zx::eventpair& a_object, zx_rights_t a_rights,
 // rights.
 //  - The control ref is expected to have ZX_DEFAULT_EVENTPAIR_RIGHTS.
 //  - The view ref is expected to have ZX_RIGHTS_BASIC.
-bool validate_viewref(const fuchsia::ui::views::ViewRefControl& control_ref,
-                      const fuchsia::ui::views::ViewRef& view_ref);
 bool validate_viewref(const fuchsia_ui_views::ViewRefControl& control_ref,
                       const fuchsia_ui_views::ViewRef& view_ref);
 bool validate_viewref(const fuchsia_ui_views::wire::ViewRefControl& control_ref,

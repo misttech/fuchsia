@@ -5,8 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_BUFFERS_BUFFER_COLLECTION_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_BUFFERS_BUFFER_COLLECTION_H_
 
-#include <fuchsia/images/cpp/fidl.h>
-#include <fuchsia/sysmem/cpp/fidl.h>
+#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 

@@ -91,7 +91,7 @@ fit::result<fit::failed, BufferCollectionInfo> BufferCollectionInfo::New(
   } else if (buffer_usage.has_vulkan()) {
     fuchsia::sysmem2::BufferUsage usage_to_set = fidl::Clone(buffer_usage);
     usage_to_set.set_vulkan(usage_to_set.vulkan() | fuchsia::sysmem2::VULKAN_IMAGE_USAGE_SAMPLED |
-                            fuchsia::sysmem::VULKAN_IMAGE_USAGE_TRANSFER_SRC);
+                            fuchsia::sysmem2::VULKAN_IMAGE_USAGE_TRANSFER_SRC);
     constraints.set_usage(std::move(usage_to_set));
   } else {
     constraints.set_usage(std::move(buffer_usage));

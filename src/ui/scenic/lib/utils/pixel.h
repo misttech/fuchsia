@@ -4,11 +4,12 @@
 #ifndef SRC_UI_SCENIC_LIB_UTILS_PIXEL_H_
 #define SRC_UI_SCENIC_LIB_UTILS_PIXEL_H_
 
-#include <fuchsia/sysmem/cpp/fidl.h>
+#include <fidl/fuchsia.images2/cpp/fidl.h>
 #include <math.h>
 
 #include <cstdint>
 #include <ostream>
+#include <vector>
 
 namespace utils {
 
@@ -29,19 +30,15 @@ struct Pixel {
   }
 
   static Pixel FromVmo(const uint8_t* vmo_host, uint32_t stride, uint32_t x, uint32_t y,
-                       fuchsia::images2::PixelFormat type);
-  static Pixel FromVmo(const uint8_t* vmo_host, uint32_t stride, uint32_t x, uint32_t y,
-                       fuchsia::sysmem::PixelFormatType type);
+                       fuchsia_images2::PixelFormat type);
   static Pixel FromVmoRgb565(const uint8_t* vmo_host, uint32_t stride, uint32_t x, uint32_t y);
 
   static Pixel FromVmoBgra(const uint8_t* vmo_host, uint32_t stride, uint32_t x, uint32_t y);
 
   static Pixel FromVmoRgba(const uint8_t* vmo_host, uint32_t stride, uint32_t x, uint32_t y);
 
-  std::vector<uint8_t> ToFormat(fuchsia::images2::PixelFormat type) const;
-  void ToFormat(fuchsia::images2::PixelFormat type, std::vector<uint8_t>& color) const;
-
-  std::vector<uint8_t> ToFormat(fuchsia::sysmem::PixelFormatType type) const;
+  std::vector<uint8_t> ToFormat(fuchsia_images2::PixelFormat type) const;
+  void ToFormat(fuchsia_images2::PixelFormat type, std::vector<uint8_t>& color) const;
 
   void ToRgb565(std::vector<uint8_t>& bytes) const;
   std::vector<uint8_t> ToRgb565() const {
@@ -81,9 +78,7 @@ struct Pixel {
   float blueF() const { return static_cast<float>(blue) / 255.f; }
   float alphaF() const { return static_cast<float>(alpha) / 255.f; }
 
-  static bool IsFormatSupported(fuchsia::images2::PixelFormat type);
-  // deprecated; use other overload just above
-  static bool IsFormatSupported(fuchsia::sysmem::PixelFormatType type);
+  static bool IsFormatSupported(fuchsia_images2::PixelFormat type);
 
   inline bool operator!=(const Pixel& rhs) const { return !(*this == rhs); }
 

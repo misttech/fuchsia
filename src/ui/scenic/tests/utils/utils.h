@@ -7,8 +7,6 @@
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
-#include <fuchsia/ui/input/cpp/fidl.h>
 
 #include "src/ui/testing/util/screenshot_helper.h"
 
@@ -17,17 +15,9 @@ using Mat3 = std::array<std::array<float, 3>, 3>;
 using Vec3 = std::array<float, 3>;
 using Vec4 = std::array<float, 4>;
 
-bool PointerMatches(
-    const fuchsia::ui::input::PointerEvent& event, uint32_t pointer_id,
-    fuchsia::ui::input::PointerEventPhase phase, float x, float y,
-    fuchsia::ui::input::PointerEventType type = fuchsia::ui::input::PointerEventType::TOUCH,
-    uint32_t buttons = 0);
-
 bool CmpFloatingValues(float num1, float num2);
 
 zx_koid_t ExtractKoid(const zx::object_base& object);
-
-zx_koid_t ExtractKoid(const fuchsia::ui::views::ViewRef& view_ref);
 
 zx_koid_t ExtractKoid(const fuchsia_ui_views::ViewRef& view_ref);
 
@@ -42,17 +32,9 @@ Vec3& operator/(Vec3& vec, float num);
 Vec4 angleAxis(float angle, const Vec3& vec);
 
 // Takes a screenshot using the |fuchsia.ui.composition.Screenshot| and wraps it around a
-// |ui_testing::Screenshot|. This function can only be used after |RealmRoot::ConnectSync| is called
-// for the |screenshotter|. |width| and |height| refer to the expected width and height of the
+// |ui_testing::Screenshot|. |width| and |height| refer to the expected width and height of the
 // display.
 ui_testing::Screenshot TakeScreenshot(
-    const fuchsia::ui::composition::ScreenshotSyncPtr& screenshotter, uint64_t width,
-    uint64_t height,
-    fuchsia::ui::composition::ScreenshotFormat format =
-        fuchsia::ui::composition::ScreenshotFormat::BGRA_RAW,
-    int display_rotation = 0);
-
-ui_testing::Screenshot TakeScreenshot(
     const fidl::SyncClient<fuchsia_ui_composition::Screenshot>& screenshotter, uint64_t width,
     uint64_t height,
     fuchsia_ui_composition::ScreenshotFormat format =
@@ -66,12 +48,6 @@ ui_testing::Screenshot TakeFileScreenshot(
         fuchsia_ui_composition::ScreenshotFormat::kBgraRaw,
     int display_rotation = 0);
 
-ui_testing::Screenshot TakeFileScreenshot(
-    const fuchsia::ui::composition::ScreenshotSyncPtr& screenshotter, uint64_t width,
-    uint64_t height,
-    fuchsia::ui::composition::ScreenshotFormat format =
-        fuchsia::ui::composition::ScreenshotFormat::BGRA_RAW,
-    int display_rotation = 0);
 }  // namespace integration_tests
 
 #endif  // SRC_UI_SCENIC_TESTS_UTILS_UTILS_H_

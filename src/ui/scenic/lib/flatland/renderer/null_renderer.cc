@@ -4,6 +4,9 @@
 
 #include "src/ui/scenic/lib/flatland/renderer/null_renderer.h"
 
+#include <fuchsia/images2/cpp/fidl.h>
+#include <fuchsia/math/cpp/fidl.h>
+#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <memory>

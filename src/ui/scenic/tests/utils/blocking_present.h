@@ -6,7 +6,6 @@
 #define SRC_UI_SCENIC_TESTS_UTILS_BLOCKING_PRESENT_H_
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
 #include <lib/stdcompat/source_location.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -23,12 +22,6 @@ namespace integration_tests {
 // and resets them afterward.
 void BlockingPresent(ui_testing::LoggingEventLoop* loop, FlatlandClientWithEventHandler& flatland,
                      fuchsia_ui_composition::PresentArgs present_args = {},
-                     cpp20::source_location = cpp20::source_location::current());
-
-// TODO(https://fxbug.dev/447603809): deprecated HLCPP version of `BlockingPresent()`.
-void BlockingPresent(ui_testing::LoggingEventLoop* loop,
-                     fuchsia::ui::composition::FlatlandPtr& flatland,
-                     fuchsia::ui::composition::PresentArgs present_args = {},
                      cpp20::source_location = cpp20::source_location::current());
 
 }  // namespace integration_tests

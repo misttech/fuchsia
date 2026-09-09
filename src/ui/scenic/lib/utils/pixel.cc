@@ -12,9 +12,9 @@ namespace utils {
 
 namespace {
 // List of supported pixel formats
-std::vector<fuchsia::images2::PixelFormat> kSupportedPixelFormats = {
-    fuchsia::images2::PixelFormat::B8G8R8A8, fuchsia::images2::PixelFormat::R8G8B8A8,
-    fuchsia::images2::PixelFormat::R5G6B5};
+const std::vector<fuchsia_images2::PixelFormat> kSupportedPixelFormats = {
+    fuchsia_images2::PixelFormat::kB8G8R8A8, fuchsia_images2::PixelFormat::kR8G8B8A8,
+    fuchsia_images2::PixelFormat::kR5G6B5};
 }  // namespace
 
 uint8_t LinearToSrgb(const float val) {
@@ -32,26 +32,14 @@ Pixel Pixel::FromUnormBgra(float blue, float green, float red, float alpha) {
 }
 
 Pixel Pixel::FromVmo(const uint8_t* vmo_host, uint32_t stride, uint32_t x, uint32_t y,
-                     fuchsia::images2::PixelFormat type) {
-  if (type == fuchsia::images2::PixelFormat::B8G8R8A8) {
+                     fuchsia_images2::PixelFormat type) {
+  if (type == fuchsia_images2::PixelFormat::kB8G8R8A8) {
     return FromVmoBgra(vmo_host, stride, x, y);
   }
-  if (type == fuchsia::images2::PixelFormat::R5G6B5) {
+  if (type == fuchsia_images2::PixelFormat::kR5G6B5) {
     return FromVmoRgb565(vmo_host, stride, x, y);
   }
-  FX_DCHECK(type == fuchsia::images2::PixelFormat::R8G8B8A8);
-  return FromVmoRgba(vmo_host, stride, x, y);
-}
-
-Pixel Pixel::FromVmo(const uint8_t* vmo_host, uint32_t stride, uint32_t x, uint32_t y,
-                     fuchsia::sysmem::PixelFormatType type) {
-  if (type == fuchsia::sysmem::PixelFormatType::BGRA32) {
-    return FromVmoBgra(vmo_host, stride, x, y);
-  }
-  if (type == fuchsia::sysmem::PixelFormatType::RGB565) {
-    return FromVmoRgb565(vmo_host, stride, x, y);
-  }
-  FX_DCHECK(type == fuchsia::sysmem::PixelFormatType::R8G8B8A8);
+  FX_DCHECK(type == fuchsia_images2::PixelFormat::kR8G8B8A8);
   return FromVmoRgba(vmo_host, stride, x, y);
 }
 
@@ -84,35 +72,24 @@ Pixel Pixel::FromVmoBgra(const uint8_t* vmo_host, uint32_t stride, uint32_t x, u
   return utils::Pixel(b, g, r, a);
 }
 
-std::vector<uint8_t> Pixel::ToFormat(fuchsia::images2::PixelFormat type) const {
+std::vector<uint8_t> Pixel::ToFormat(fuchsia_images2::PixelFormat type) const {
   std::vector<uint8_t> bytes;
   ToFormat(type, bytes);
   return bytes;
 }
 
-void Pixel::ToFormat(fuchsia::images2::PixelFormat type, std::vector<uint8_t>& bytes) const {
+void Pixel::ToFormat(fuchsia_images2::PixelFormat type, std::vector<uint8_t>& bytes) const {
   switch (type) {
-    case fuchsia::images2::PixelFormat::B8G8R8A8:
+    case fuchsia_images2::PixelFormat::kB8G8R8A8:
       ToBgra(bytes);
       break;
-    case fuchsia::images2::PixelFormat::R5G6B5:
+    case fuchsia_images2::PixelFormat::kR5G6B5:
       ToRgb565(bytes);
       break;
     default:
-      FX_DCHECK(type == fuchsia::images2::PixelFormat::R8G8B8A8);
+      FX_DCHECK(type == fuchsia_images2::PixelFormat::kR8G8B8A8);
       ToRgba(bytes);
   }
-}
-
-std::vector<uint8_t> Pixel::ToFormat(fuchsia::sysmem::PixelFormatType type) const {
-  if (type == fuchsia::sysmem::PixelFormatType::BGRA32) {
-    return ToBgra();
-  }
-  if (type == fuchsia::sysmem::PixelFormatType::RGB565) {
-    return ToRgb565();
-  }
-  FX_DCHECK(type == fuchsia::sysmem::PixelFormatType::R8G8B8A8);
-  return ToRgba();
 }
 
 void Pixel::ToRgb565(std::vector<uint8_t>& bytes) const {
@@ -122,14 +99,9 @@ void Pixel::ToRgb565(std::vector<uint8_t>& bytes) const {
   memcpy(bytes.data(), &color, sizeof(color));
 }
 
-bool Pixel::IsFormatSupported(fuchsia::images2::PixelFormat type) {
+bool Pixel::IsFormatSupported(fuchsia_images2::PixelFormat type) {
   return std::any_of(kSupportedPixelFormats.begin(), kSupportedPixelFormats.end(),
-                     [type](fuchsia::images2::PixelFormat supported) { return supported == type; });
-}
-bool Pixel::IsFormatSupported(fuchsia::sysmem::PixelFormatType type) {
-  fuchsia::images2::PixelFormat v2_pixel_format =
-      static_cast<fuchsia::images2::PixelFormat>(static_cast<uint32_t>(type));
-  return IsFormatSupported(v2_pixel_format);
+                     [type](fuchsia_images2::PixelFormat supported) { return supported == type; });
 }
 
 std::ostream& operator<<(std::ostream& stream, const Pixel& pixel) {

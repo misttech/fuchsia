@@ -46,8 +46,8 @@ fuchsia::sysmem2::BufferUsage get_cpu_usage_read() {
 
 using allocation::BufferCollectionUsage;
 using allocation::ImageMetadata;
-using fuchsia::ui::composition::Orientation;
 using fuchsia_ui_composition::ImageFlip;
+using fuchsia_ui_composition::Orientation;
 
 static bool RunPromise(async::TestLoop& loop, fpromise::promise<> promise) {
   bool done = false;

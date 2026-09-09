@@ -987,9 +987,9 @@ TEST(GlobalTopologyDataTest, HitTest_ClippedandRotatedChild) {
     glm::mat3 child_matrix = glm::mat3();
     child_matrix = glm::scale(child_matrix, {1, 1});
 
-    child_matrix = glm::rotate(
-        child_matrix,
-        utils::GetOrientationAngle(fuchsia::ui::composition::Orientation::CCW_90_DEGREES));
+    child_matrix =
+        glm::rotate(child_matrix,
+                    utils::GetOrientationAngle(fuchsia_ui_composition::Orientation::kCcw90Degrees));
 
     // Translate to account for rotation.
     child_matrix = glm::translate(child_matrix, {-kChildHeight, 0});

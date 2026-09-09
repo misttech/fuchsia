@@ -10,8 +10,8 @@
 
 namespace utils::test {
 
-using fuchsia::ui::views::ViewRef;
-using fuchsia::ui::views::ViewRefControl;
+using fuchsia_ui_views::ViewRef;
+using fuchsia_ui_views::ViewRefControl;
 
 TEST(ValidateEventpair, CorrectEventpair) {
   zx::eventpair a, b;
@@ -75,10 +75,10 @@ TEST(ValidateViewRefs, CorrectViewRefLoose) {
   ViewRefControl control_ref;
   ViewRef view_ref;
   zx_status_t status = zx::eventpair::create(
-      /*flags*/ 0u, &control_ref.reference, &view_ref.reference);
+      /*flags*/ 0u, &control_ref.reference(), &view_ref.reference());
   ASSERT_EQ(status, ZX_OK);
 
-  status = view_ref.reference.replace(ZX_RIGHTS_BASIC, &view_ref.reference);
+  status = view_ref.reference().replace(ZX_RIGHTS_BASIC, &view_ref.reference());
   ASSERT_EQ(status, ZX_OK);
 
   EXPECT_TRUE(validate_viewref(control_ref, view_ref));
@@ -88,14 +88,14 @@ TEST(ValidateViewRefs, CorrectViewRefTight) {
   ViewRefControl control_ref;
   ViewRef view_ref;
   zx_status_t status = zx::eventpair::create(
-      /*flags*/ 0u, &control_ref.reference, &view_ref.reference);
+      /*flags*/ 0u, &control_ref.reference(), &view_ref.reference());
   ASSERT_EQ(status, ZX_OK);
 
-  status = control_ref.reference.replace(ZX_DEFAULT_EVENTPAIR_RIGHTS & (~ZX_RIGHT_DUPLICATE),
-                                         &control_ref.reference);
+  status = control_ref.reference().replace(ZX_DEFAULT_EVENTPAIR_RIGHTS & (~ZX_RIGHT_DUPLICATE),
+                                           &control_ref.reference());
   ASSERT_EQ(status, ZX_OK);
 
-  status = view_ref.reference.replace(ZX_RIGHTS_BASIC, &view_ref.reference);
+  status = view_ref.reference().replace(ZX_RIGHTS_BASIC, &view_ref.reference());
   ASSERT_EQ(status, ZX_OK);
 
   EXPECT_TRUE(validate_viewref(control_ref, view_ref));
@@ -105,10 +105,10 @@ TEST(ValidateViewRefs, DeadViewRef) {
   ViewRefControl control_ref;
   ViewRef view_ref;
   zx_status_t status = zx::eventpair::create(
-      /*flags*/ 0u, &control_ref.reference, &view_ref.reference);
+      /*flags*/ 0u, &control_ref.reference(), &view_ref.reference());
   ASSERT_EQ(status, ZX_OK);
 
-  view_ref.reference.reset();  // Kill view_ref.
+  view_ref.reference().reset();  // Kill view_ref.
 
   EXPECT_FALSE(validate_viewref(control_ref, view_ref));
 }
@@ -117,10 +117,10 @@ TEST(ValidateViewRefs, UncorrelatedViewRefs) {
   ViewRefControl ctrl_a, ctrl_b;
   ViewRef view_a, view_b;
   zx_status_t status = zx::eventpair::create(
-      /*flags*/ 0u, &ctrl_a.reference, &view_a.reference);
+      /*flags*/ 0u, &ctrl_a.reference(), &view_a.reference());
   ASSERT_EQ(status, ZX_OK);
   status = zx::eventpair::create(
-      /*flags*/ 0u, &ctrl_b.reference, &view_b.reference);
+      /*flags*/ 0u, &ctrl_b.reference(), &view_b.reference());
   ASSERT_EQ(status, ZX_OK);
 
   EXPECT_FALSE(validate_viewref(ctrl_a, view_b));
@@ -130,14 +130,14 @@ TEST(ValidateViewRefs, ControlRefMissingCapability) {
   ViewRefControl control_ref;
   ViewRef view_ref;
   zx_status_t status = zx::eventpair::create(
-      /*flags*/ 0u, &control_ref.reference, &view_ref.reference);
+      /*flags*/ 0u, &control_ref.reference(), &view_ref.reference());
   ASSERT_EQ(status, ZX_OK);
 
   // Expected reduction of rights.
-  view_ref.reference.replace(ZX_RIGHTS_BASIC, &view_ref.reference);
+  view_ref.reference().replace(ZX_RIGHTS_BASIC, &view_ref.reference());
 
   // Unexpected reduction of rights.
-  control_ref.reference.replace(ZX_RIGHTS_BASIC, &control_ref.reference);
+  control_ref.reference().replace(ZX_RIGHTS_BASIC, &control_ref.reference());
 
   EXPECT_FALSE(validate_viewref(control_ref, view_ref));
 }
@@ -146,7 +146,7 @@ TEST(ValidateViewRefs, ViewRefExcessCapability) {
   ViewRefControl control_ref;
   ViewRef view_ref;
   zx_status_t status = zx::eventpair::create(
-      /*flags*/ 0u, &control_ref.reference, &view_ref.reference);
+      /*flags*/ 0u, &control_ref.reference(), &view_ref.reference());
   ASSERT_EQ(status, ZX_OK);
 
   // No reduction of rights for view_ref.
