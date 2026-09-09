@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/pci/cpp/bind.h>
 
 namespace pci_child_dt {
 
@@ -172,7 +173,7 @@ zx::result<> PciChildVisitor::ParseChild(fdf_devicetree::Node& parent,
     device_id = (*pci_id)[1];
   }
 
-  AddChildNodeSpec(child, pci_topo, bdf.domain, vendor_id, device_id);
+  AddChildNodeSpec(child, pci_topo, bdf.domain.value_or(kDefaultPciDomain), vendor_id, device_id);
   child_bdfs_.push_back(bdf);
   fdf::debug("PCI device {:04x}:{:02x}:{:02x}.{:x} on bus '{}' wired to child '{}'",
              bdf.domain.value_or(0), bdf.bus, bdf.device, bdf.function, parent.name(),
@@ -194,21 +195,14 @@ zx::result<PciChildBdf> PciChildVisitor::ParseBdf(const fdf_devicetree::ChildNod
 }
 
 void PciChildVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t pci_topo,
-                                       std::optional<uint16_t> domain,
-                                       std::optional<uint32_t> vendor_id,
+                                       uint32_t domain, std::optional<uint32_t> vendor_id,
                                        std::optional<uint32_t> device_id) {
-  // The fragment for this device is selected by its PCI topology (BDF). The PCI
-  // bus driver publishes exactly one such fragment per discovered device.
+  // The fragment for this device is selected by its PCI topology (BDF) and domain.
+  // The PCI bus driver publishes exactly one such fragment per discovered device.
   std::vector<fuchsia_driver_framework::BindRule2> bind_rules = {
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, pci_topo),
-      // PCI_TOPO carries no domain, so devices that share a BDF across domains are
-      // indistinguishable here. Uncomment the rule below (and name the |domain|
-      // parameter above) once the PCI bus driver publishes bind_fuchsia_pci::SEGMENT
-      // on the fragment it creates for each device -- see FidlDevice::Create() in
-      // //src/devices/bus/drivers/pci/fidl.cc. Until it does, nothing would match
-      // the rule and every composite here would fail to assemble.
-      // fdf::MakeAcceptBindRule(bind_fuchsia_pci::SEGMENT, domain),
+      fdf::MakeAcceptBindRule(bind_fuchsia_pci::SEGMENT, domain),
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {

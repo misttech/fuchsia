@@ -12,6 +12,7 @@
 #include <lib/driver/devicetree/visitors/registry.h>
 
 #include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/pci/cpp/bind.h>
 #include <gtest/gtest.h>
 
 namespace pci_child_dt {
@@ -53,6 +54,7 @@ TEST(PciChildVisitorTest, TestPciChildren) {
         {{
             fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, 0x08u),
+            fdf::MakeAcceptBindRule(bind_fuchsia_pci::SEGMENT, 0u),
         }},
         (*spec.parents2())[1].bind_rules(), false));
 
@@ -76,6 +78,7 @@ TEST(PciChildVisitorTest, TestPciChildren) {
         {{
             fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, 0x10u),
+            fdf::MakeAcceptBindRule(bind_fuchsia_pci::SEGMENT, 0u),
         }},
         (*spec.parents2())[1].bind_rules(), false));
 
@@ -107,6 +110,7 @@ TEST(PciChildVisitorTest, TestPciChildren) {
         {{
             fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, 0x18u),
+            fdf::MakeAcceptBindRule(bind_fuchsia_pci::SEGMENT, 1u),
         }},
         (*spec.parents2())[1].bind_rules(), false));
   }
@@ -125,6 +129,7 @@ TEST(PciChildVisitorTest, TestPciChildren) {
         {{
             fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, 0x100u),
+            fdf::MakeAcceptBindRule(bind_fuchsia_pci::SEGMENT, 1u),
         }},
         (*spec.parents2())[1].bind_rules(), false));
   }

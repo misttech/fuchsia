@@ -93,13 +93,11 @@ class PciChildVisitor : public fdf_devicetree::Visitor {
                                           std::optional<uint16_t> domain = std::nullopt);
 
   // Adds the PCI fragment parent spec to |child|. The parent is selected by the
-  // child's PCI topology (BDF). |domain| is not used to select it yet; see
-  // AddChildNodeSpec() for what the PCI bus driver has to publish first. When
-  // |vendor_id|/|device_id| are present (from the optional `pci-id` property)
-  // they are advertised as properties so the child can bind a driver by PCI
-  // vendor/device id.
-  static void AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t pci_topo,
-                               std::optional<uint16_t> domain, std::optional<uint32_t> vendor_id,
+  // child's PCI topology (BDF) and domain. When |vendor_id|/|device_id| are present
+  // (from the optional `pci-id` property) they are advertised as properties so the
+  // child can bind a driver by PCI vendor/device id.
+  static void AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t pci_topo, uint32_t domain,
+                               std::optional<uint32_t> vendor_id,
                                std::optional<uint32_t> device_id);
 
   std::vector<PciChildBdf> child_bdfs_;
