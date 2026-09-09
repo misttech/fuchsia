@@ -588,3 +588,5 @@ toc:
     path: /docs/contribute/governance/rfcs/0284_blob_based_update_manifest.md
   - title: "RFC-0285: The Magma GPU open-source project"
     path: /docs/contribute/governance/rfcs/0285_magma_gpu_open_source_project.md
+  - title: "RFC-0286: Restricting zx.Status in FIDL to Non-Zero Values"
+    path: /docs/contribute/governance/rfcs/0286_restricting_zx.status_in_fidl_to_non-zero_values.md

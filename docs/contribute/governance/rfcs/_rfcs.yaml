@@ -3756,3 +3756,16 @@
   reviewers: ['cstout@google.com', 'msandy@google.com', 'dgilhooley@google.com']
   submitted: '2026-06-23'
   reviewed: '2026-07-24'
+
+- name: 'RFC-0286'
+  title: 'Restricting zx.Status in FIDL to Non-Zero Values'
+  short_description: 'Restricts zx.Status in FIDL to non-zero values and adds zx.Result.'
+  authors: ['csuter@google.com']
+  file: '0286_restricting_zx.status_in_fidl_to_non-zero_values.md'
+  area: ['FIDL']
+  issue: ['545844005']
+  gerrit_change_id: ['1759653']
+  status: 'Accepted'
+  reviewers: ['abarth@google.com', 'dkoloski@google.com', 'hjfreyer@google.com', 'jamesr@google.com', 'surajmalhotra@google.com']
+  submitted: '2026-08-10'
+  reviewed: '2026-09-08'
