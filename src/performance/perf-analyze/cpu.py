@@ -10,6 +10,7 @@ and frequency scaling, async executor overhead, binder IPC chatter, and suspend/
 lease blockers.
 """
 
+from collections.abc import Set
 from typing import Any, Sequence
 
 from plugins import AnalyzePlugin, PluginArgumentError, PluginArgumentParser
@@ -20,11 +21,10 @@ def _perform_analysis_query(
     name: str,
     tp: PerfettoTraceProcessor,
     query: str,
-    required_tables: set[str],
-    db_objects: set[str],
+    required_tables: Set[str],
+    db_objects: Set[str],
 ) -> dict[str, Any]:
-    if not required_tables.issubset(db_objects):
-        missing = required_tables - db_objects
+    if missing := required_tables - db_objects:
         return {
             "name": name,
             "error": f"Required schema tables/views missing: {', '.join(sorted(missing))}",
@@ -44,7 +44,7 @@ def _perform_analysis_query(
 
 def _analyze_restless_sleepers(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
     limit: int,
 ) -> dict[str, Any]:
     """Analyzes thread wakeup counts and context switches (Restless Sleepers)."""
@@ -76,10 +76,10 @@ def _analyze_restless_sleepers(
 
 def _has_power_counters(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
 ) -> bool:
     """Checks whether the trace database contains kernel:power DVFS counter tracks."""
-    if not {"counter", "process_counter_track", "process"}.issubset(db_objects):
+    if {"counter", "process_counter_track", "process"} - db_objects:
         return False
     try:
         rows = tp.run_query(
@@ -95,7 +95,7 @@ def _has_power_counters(
 
 def _analyze_core_utilization_from_counters(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
 ) -> dict[str, Any]:
     """Analyzes per-core CPU utilization percentage weighted by DVFS processing rates.
 
@@ -177,7 +177,7 @@ def _analyze_core_utilization_from_counters(
 
 def _analyze_core_utilization_from_average(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
 ) -> dict[str, Any]:
     """Analyzes per-core CPU utilization percentage over the trace window without DVFS rates."""
     required_tables = {"trace_bounds", "thread_state", "thread", "process"}
@@ -214,7 +214,7 @@ def _analyze_core_utilization_from_average(
 
 def _analyze_core_utilization_and_rate(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
 ) -> dict[str, Any]:
     """Analyzes per-core CPU utilization percentage and DVFS processing rates.
 
@@ -232,7 +232,7 @@ def _analyze_core_utilization_and_rate(
 
 def _analyze_usual_suspects(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
     limit: int,
 ) -> dict[str, Any]:
     """Analyzes top CPU runtime consumers across all threads."""
@@ -263,7 +263,7 @@ def _analyze_usual_suspects(
 
 def _analyze_executor_overhead(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
     limit: int,
 ) -> dict[str, Any]:
     """Analyzes Fuchsia async executor and futures management overhead."""
@@ -293,7 +293,7 @@ def _analyze_executor_overhead(
 
 def _analyze_binder_overhead(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
     limit: int,
 ) -> dict[str, Any]:
     """Analyzes Starnix/Android Binder IPC transaction volume and latencies."""
@@ -327,7 +327,7 @@ def _analyze_binder_overhead(
 
 def _analyze_suspend_wake_leases(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
     limit: int,
 ) -> dict[str, Any]:
     """Analyzes System Activity Governor (SAG) suspend attempts and wake lease events."""

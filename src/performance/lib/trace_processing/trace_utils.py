@@ -15,7 +15,6 @@ from typing import (
     Iterator,
     List,
     Optional,
-    Set,
     Tuple,
     Type,
     TypeVar,
@@ -298,11 +297,11 @@ def get_following_flow_events(
     Returns:
       An [Iterable] of flow connected events.
     """
-    frontier: List[trace_model.Event] = [event]
-    visited: Set[trace_model.Event] = set()
+    frontier = [event]
+    visited: set[trace_model.Event] = set()
 
     def set_add(
-        event_set: Set[trace_model.Event], event: trace_model.Event
+        event_set: set[trace_model.Event], event: trace_model.Event
     ) -> bool:
         length_before = len(event_set)
         event_set.add(event)

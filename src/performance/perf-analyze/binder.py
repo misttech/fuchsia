@@ -19,6 +19,7 @@ See: go/systemperf-perfetto-queries#binder for additional info.
 """
 
 import math
+from collections.abc import Set
 from typing import Any, Sequence
 
 from plugins import AnalyzePlugin, PluginArgumentError, PluginArgumentParser
@@ -27,7 +28,7 @@ from tp_shell import PerfettoTraceProcessor
 
 def _analyze_missed_wakeups(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
     threshold_ns: int,
 ) -> dict[str, Any]:
     """Analyzes thread runnable state durations to detect scheduling delays and missed wakeups."""
@@ -38,8 +39,7 @@ def _analyze_missed_wakeups(
         "thread",
         "process",
     }
-    if not required_tables.issubset(db_objects):
-        missing = required_tables - db_objects
+    if missing := required_tables - db_objects:
         return {
             "name": "Missed Wakeups (Wakeup Latencies)",
             "error": f"Required schema tables/views missing: {', '.join(sorted(missing))}",
@@ -85,7 +85,7 @@ def _analyze_missed_wakeups(
 
 def _analyze_binder_delays(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
     threshold_ns: int,
     complete_only: bool,
 ) -> dict[str, Any]:
@@ -98,8 +98,7 @@ def _analyze_binder_delays(
         "args",
         "trace_bounds",
     }
-    if not required_tables.issubset(db_objects):
-        missing = required_tables - db_objects
+    if missing := required_tables - db_objects:
         return {
             "name": "Binder Delays (Transaction Queue Latencies)",
             "error": f"Required schema tables/views missing: {', '.join(sorted(missing))}",
@@ -169,7 +168,7 @@ def _analyze_binder_delays(
 
 def _analyze_spawn_loopers(
     tp: PerfettoTraceProcessor,
-    db_objects: set[str],
+    db_objects: Set[str],
     threshold_ns: int,
 ) -> dict[str, Any]:
     """Analyzes SpawnLooper commands to identify late-spawned binder waker threads."""
@@ -180,8 +179,7 @@ def _analyze_spawn_loopers(
         "thread",
         "args",
     }
-    if not required_tables.issubset(db_objects):
-        missing = required_tables - db_objects
+    if missing := required_tables - db_objects:
         return {
             "name": "Spawn Looper Events (Late-Spawned Wakers)",
             "error": f"Required schema tables/views missing: {', '.join(sorted(missing))}",
