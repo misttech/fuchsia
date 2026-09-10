@@ -36,12 +36,13 @@ use std::sync::atomic::AtomicU32;
 use vfs::directory::helper::DirectlyMutable as _;
 use vfs::remote::remote_dir;
 
-mod base_resolver;
+mod base_package_resolver;
 mod blob_fetcher;
 mod cache_service;
 mod compat;
+mod component_resolver;
 mod frozen_index;
-mod full_resolver;
+mod full_package_resolver;
 mod gc_service;
 mod index;
 mod ota_downloader;
@@ -348,7 +349,7 @@ async fn main_inner() -> Result<(), Error> {
             .add_entry(
                 fpkg::PackageResolverMarker::PROTOCOL_NAME,
                 vfs::service::host(move |stream: fpkg::PackageResolverRequestStream| {
-                    base_resolver::package::serve_request_stream(
+                    base_package_resolver::serve_request_stream(
                         stream,
                         Arc::clone(&base_index),
                         authenticator.clone(),
@@ -363,7 +364,7 @@ async fn main_inner() -> Result<(), Error> {
             .context("adding fuchsia.pkg/PackageResolver to /svc")?;
     }
     {
-        let base_package_resolver = Arc::new(base_resolver::package::BaseResolver::new(
+        let base_package_resolver = Arc::new(base_package_resolver::BaseResolver::new(
             Arc::clone(&base_index),
             authenticator.clone(),
             open_packages.clone(),
@@ -373,7 +374,7 @@ async fn main_inner() -> Result<(), Error> {
             .add_entry(
                 fcomponent_resolution::ResolverMarker::PROTOCOL_NAME,
                 vfs::service::host(move |stream: fcomponent_resolution::ResolverRequestStream| {
-                    base_resolver::component::serve_request_stream(
+                    component_resolver::serve_request_stream(
                         stream,
                         Arc::clone(&base_package_resolver),
                         scope.clone(),
@@ -465,7 +466,7 @@ async fn main_inner() -> Result<(), Error> {
             .add_entry(
                 format!("{}-full", fpkg::PackageResolverMarker::PROTOCOL_NAME),
                 vfs::service::host(move |stream: fpkg::PackageResolverRequestStream| {
-                    full_resolver::package::serve_request_stream(
+                    full_package_resolver::serve_request_stream(
                         stream,
                         Arc::clone(&base_index),
                         upgradable_packages.clone(),
@@ -485,7 +486,7 @@ async fn main_inner() -> Result<(), Error> {
             .context("adding fuchsia.pkg/PackageResolver-full to /svc")?;
     }
     {
-        let full_package_resolver = Arc::new(full_resolver::package::FullResolver::new(
+        let full_package_resolver = Arc::new(full_package_resolver::FullResolver::new(
             base_index.clone(),
             upgradable_packages,
             tuf_authority.clone(),
@@ -500,7 +501,7 @@ async fn main_inner() -> Result<(), Error> {
             .add_entry(
                 format!("{}-full", fcomponent_resolution::ResolverMarker::PROTOCOL_NAME),
                 vfs::service::host(move |stream: fcomponent_resolution::ResolverRequestStream| {
-                    base_resolver::component::serve_request_stream(
+                    component_resolver::serve_request_stream(
                         stream,
                         full_package_resolver.clone(),
                         scope.clone(),
@@ -571,7 +572,7 @@ async fn serve_base_package_if_present(
     scope: package_directory::ExecutionScope,
 ) -> anyhow::Result<fio::DirectoryProxy> {
     let (proxy, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-    match base_resolver::package::resolve_and_serve_no_context(
+    match base_package_resolver::resolve_and_serve_no_context(
         &url,
         server,
         base_index,
@@ -581,7 +582,7 @@ async fn serve_base_package_if_present(
     .await
     {
         Ok(()) => (),
-        Err(base_resolver::package::Error::PackageNotInIndex) => {
+        Err(base_package_resolver::Error::PackageNotInIndex) => {
             log::warn!(url:%; "package not in base, so exposed directory will close connections")
         }
         Err(e) => Err(e).context("resolving specific base package")?,

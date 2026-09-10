@@ -30,7 +30,7 @@ impl BaseResolver {
     }
 }
 
-impl super::component::PackageResolver for BaseResolver {
+impl crate::component_resolver::PackageResolver for BaseResolver {
     type Error = Error;
 
     async fn resolve_and_serve(

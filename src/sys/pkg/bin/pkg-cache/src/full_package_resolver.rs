@@ -63,7 +63,7 @@ impl FullResolver {
     }
 }
 
-impl crate::base_resolver::component::PackageResolver for FullResolver {
+impl crate::component_resolver::PackageResolver for FullResolver {
     type Error = Error;
 
     async fn resolve_and_serve(
@@ -405,9 +405,9 @@ async fn lookup(
 ) -> Result<(fuchsia_hash::Hash, Option<http::Uri>), Error> {
     // Use monotonic timeline to warn on slow cache fallback to avoid warning on suspension.
     let start_mono = zx::MonotonicInstant::get();
-    let () = match crate::base_resolver::package::lookup(url, base_index) {
+    let () = match crate::base_package_resolver::lookup(url, base_index) {
         Ok(pkg_id) => return Ok((pkg_id, None)),
-        Err(crate::base_resolver::package::Error::PackageNotInIndex) => (),
+        Err(crate::base_package_resolver::Error::PackageNotInIndex) => (),
         Err(e) => return Err(Error::BaseResolver(e)),
     };
 
@@ -574,7 +574,7 @@ pub(crate) enum Error {
     ContextWithAbsoluteUrl,
 
     #[error("forwarding to base resolver")]
-    BaseResolver(#[source] crate::base_resolver::package::Error),
+    BaseResolver(#[source] crate::base_package_resolver::Error),
 
     #[error("upgradable packages must not be pinned")]
     PinnedUpgradablePackage,
