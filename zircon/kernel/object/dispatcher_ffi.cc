@@ -11,6 +11,10 @@ extern "C" {
 
 void cpp_dispatcher_on_zero_handles(Dispatcher* disp) { disp->on_zero_handles(); }
 
+void cpp_dispatcher_clear_signals(Dispatcher* disp, zx_signals_t signals) {
+  disp->ClearSignals(signals);
+}
+
 void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask,
                                  zx_signals_t strobe_mask) {
   disp->UpdateState(clear_mask, set_mask, strobe_mask);

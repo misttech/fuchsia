@@ -35,6 +35,7 @@ class Dispatcher;
 
 extern "C" {
 void cpp_dispatcher_on_zero_handles(Dispatcher* disp);
+void cpp_dispatcher_clear_signals(Dispatcher* disp, zx_signals_t signals);
 void* cpp_dispatcher_get_ref_counted(const Dispatcher* disp);
 zx_obj_type_t cpp_dispatcher_get_type(const Dispatcher* disp);
 zx_koid_t cpp_dispatcher_get_koid(const Dispatcher* disp);
@@ -365,6 +366,7 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
 
  private:
   friend class fbl::Recyclable<Dispatcher>;
+  friend void cpp_dispatcher_clear_signals(Dispatcher* disp, zx_signals_t signals);
   friend void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask,
                                           zx_signals_t set_mask, zx_signals_t strobe_mask);
   friend void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,

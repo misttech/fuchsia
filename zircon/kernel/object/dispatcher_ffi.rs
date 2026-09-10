@@ -8,6 +8,10 @@ use super::dispatcher::Dispatcher;
 
 unsafe extern "C" {
     pub(crate) fn cpp_dispatcher_on_zero_handles(dispatcher: *const Dispatcher);
+    pub(crate) fn cpp_dispatcher_clear_signals(
+        dispatcher: *const Dispatcher,
+        signals: zx_types::zx_signals_t,
+    );
     pub(crate) fn cpp_dispatcher_update_state(
         dispatcher: *const Dispatcher,
         clear_mask: u32,

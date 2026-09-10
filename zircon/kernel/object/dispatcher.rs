@@ -5,11 +5,11 @@
 // https://opensource.org/licenses/MIT
 
 use super::dispatcher_ffi::{
-    cpp_dispatcher_add_observer, cpp_dispatcher_current_handle_count, cpp_dispatcher_get_name,
-    cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_related_koid, cpp_dispatcher_get_type,
-    cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle, cpp_dispatcher_remove_observer,
-    cpp_dispatcher_set_name, cpp_dispatcher_signals_state_locked, cpp_dispatcher_update_state,
-    cpp_dispatcher_update_state_locked,
+    cpp_dispatcher_add_observer, cpp_dispatcher_clear_signals, cpp_dispatcher_current_handle_count,
+    cpp_dispatcher_get_name, cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_related_koid,
+    cpp_dispatcher_get_type, cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle,
+    cpp_dispatcher_remove_observer, cpp_dispatcher_set_name, cpp_dispatcher_signals_state_locked,
+    cpp_dispatcher_update_state, cpp_dispatcher_update_state_locked,
 };
 use super::handle::HandleValue;
 use super::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
@@ -33,6 +33,13 @@ pub trait DispatcherOps {
         // SAFETY: self.dispatcher() returns a valid pointer to an initialized Dispatcher.
         unsafe {
             cpp_dispatcher_on_zero_handles(self.dispatcher());
+        }
+    }
+
+    fn clear_signals(&self, signals: zx_types::zx_signals_t) {
+        // SAFETY: self.dispatcher() returns a valid pointer to an initialized Dispatcher.
+        unsafe {
+            cpp_dispatcher_clear_signals(self.dispatcher(), signals);
         }
     }
 
