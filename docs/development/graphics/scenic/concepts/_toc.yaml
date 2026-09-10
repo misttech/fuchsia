@@ -8,8 +8,6 @@
 toc:
 - title: "Overview"
   path: /docs/development/graphics/scenic/README.md
-- title: "Frame Scheduling"
-  path: /docs/development/graphics/scenic/concepts/frame_scheduling.md
 - title: "Life of a pixel"
   path: /docs/development/graphics/scenic/concepts/life_of_a_pixel.md
 - title: "Views, bounds, and clipping"

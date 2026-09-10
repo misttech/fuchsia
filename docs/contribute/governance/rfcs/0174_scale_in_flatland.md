@@ -332,5 +332,5 @@ which handles
 in a similar way to the proposed design.
 
 [flatland]: /sdk/fidl/fuchsia.ui.composition/flatland.fidl
-[gfx]: /sdk/fidl/fuchsia.ui.scenic/session.fidl
+[gfx]: /sdk/fidl/fuchsia.ui.scenic
 [view]: /docs/contribute/governance/rfcs/0147_view_system.md

@@ -35,32 +35,16 @@ if (is_host) {
 
 fidl("fuchsia.ui.scenic") {
   sources = [
-    "commands.fidl",
-    "events.fidl",
     "overview.fidl",
     "scenic.fidl",
-    "session.fidl",
-    "snapshot.fidl",
   ]
   sdk_area = "UI"
   sdk_category = "partner"
   enable_hlcpp = true
-  excluded_checks = [
-    "invalid-case-for-constant",
-    "string-bounds-not-specified",
-    "vector-bounds-not-specified",
-  ]
   stable = true
   visibility = [ "*" ]
   public_deps = [
     "//sdk/fidl/fuchsia.images",
     "//sdk/fidl/fuchsia.mem",
-    "//sdk/fidl/fuchsia.scenic.scheduling",
-    "//sdk/fidl/fuchsia.sysmem",
-    "//sdk/fidl/fuchsia.ui.gfx",
-    "//sdk/fidl/fuchsia.ui.input",
-    "//sdk/fidl/fuchsia.ui.pointer",
-    "//sdk/fidl/fuchsia.ui.views",
-    "//zircon/vdso/zx",
   ]
 }
