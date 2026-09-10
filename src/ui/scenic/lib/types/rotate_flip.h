@@ -17,6 +17,18 @@ namespace types {
 
 // Covers the rotate/flip permutations supported by
 // `fuchsia.hardware.display.types/CoordinateTransformation`.
+//
+// Enum names read in application order: rotation first, then the named
+// reflection ("rotate-then-flip"). Reflections flip the image across the
+// specified axis: e.g. `kReflectX` mirrors across a horizontal line,
+// swapping top and bottom rows.
+//
+// Rotations do not commute with reflections, so each reflection-carrying
+// value also has a flip-then-rotate reading that names the OTHER axis
+// (e.g. `kRotateCcw90ReflectY` is equivalently REFLECT_X followed by
+// ROTATE_CCW_90); `From(Orientation, ImageFlip)` converts from that
+// flip-first form.
+//
 // TODO(https://fxbug.dev/356385730): Flatland2 introduces `FlipThenRotate`, which adopts Android
 // conventions.  These differ from current display coordinator conventions:
 //   - Android uses flip-then-rotate, display coordinator uses rotate-then-flip
@@ -126,12 +138,20 @@ class RotateFlip {
     kRotateCcw270 = 7,
   };
 
-  // Constructors.  All arguments must be valid; use `IsValid()` to validate if you're not sure.
+  // Returns the transform that applies `flip` first, followed by
+  // `rotation`: Flatland's convention, where the flip happens in image
+  // space before any rotation. The equivalent rotate-then-flip enum value
+  // often names a different reflection axis than `flip`; see the per-case
+  // comments in the implementation.
   [[nodiscard]] static constexpr RotateFlip From(
-      const fuchsia_ui_composition::Orientation& orientation,
-      const fuchsia_ui_composition::ImageFlip& image_flip);
+      const fuchsia_ui_composition::Orientation& rotation,
+      const fuchsia_ui_composition::ImageFlip& flip);
+
+  // `RotateFlip` directly mirrors the hardware display type
+  // `fuchsia.hardware.display.types/CoordinateTransformation`: same numeric
+  // values, converted by cast.
   [[nodiscard]] static constexpr RotateFlip From(
-      const fuchsia_hardware_display_types::wire::CoordinateTransformation& fidl_mode);
+      const fuchsia_hardware_display_types::wire::CoordinateTransformation& coordinate_transform);
 
   // Static "constructors".
   [[nodiscard]] static constexpr RotateFlip kIdentity();
@@ -154,6 +174,12 @@ class RotateFlip {
   friend constexpr bool operator==(const RotateFlip& lhs, const RotateFlip& rhs);
   friend constexpr bool operator!=(const RotateFlip& lhs, const RotateFlip& rhs);
 
+  // Returns the RotateFlip equivalent to applying this transform first, then
+  // `rotation`. `rotation` must be a pure rotation (kIdentity or one of the
+  // kRotateCcw* values); reflections are rejected via CHECK.
+  [[nodiscard]] constexpr RotateFlip RotatedBy(Enum rotation) const;
+  [[nodiscard]] constexpr RotateFlip RotatedBy(RotateFlip rotation) const;
+
   constexpr fuchsia_hardware_display_types::wire::CoordinateTransformation
   ToDisplayCoordinateTransformation() const;
 
@@ -167,8 +193,8 @@ class RotateFlip {
 constexpr RotateFlip::RotateFlip(RotateFlip::Enum val) : val_(val) {}
 
 // static
-constexpr RotateFlip RotateFlip::From(const fuchsia_ui_composition::Orientation& orientation,
-                                      const fuchsia_ui_composition::ImageFlip& image_flip) {
+constexpr RotateFlip RotateFlip::From(const fuchsia_ui_composition::Orientation& rotation,
+                                      const fuchsia_ui_composition::ImageFlip& flip) {
   using fuchsia_ui_composition::ImageFlip;
   using fuchsia_ui_composition::Orientation;
 
@@ -176,9 +202,9 @@ constexpr RotateFlip RotateFlip::From(const fuchsia_ui_composition::Orientation&
   // rotation). However, for the display controller, the reflection specified in the Transform is
   // applied after rotation. The flatland transformations must be converted to the equivalent
   // display controller transform.
-  switch (orientation) {
+  switch (rotation) {
     case Orientation::kCcw0Degrees:
-      switch (image_flip) {
+      switch (flip) {
         case ImageFlip::kNone:
           return RotateFlip::kIdentity();
         case ImageFlip::kLeftRight:
@@ -188,7 +214,7 @@ constexpr RotateFlip RotateFlip::From(const fuchsia_ui_composition::Orientation&
       }
 
     case Orientation::kCcw90Degrees:
-      switch (image_flip) {
+      switch (flip) {
         case ImageFlip::kNone:
           return RotateFlip::kRotateCcw90();
         case ImageFlip::kLeftRight:
@@ -200,7 +226,7 @@ constexpr RotateFlip RotateFlip::From(const fuchsia_ui_composition::Orientation&
       }
 
     case Orientation::kCcw180Degrees:
-      switch (image_flip) {
+      switch (flip) {
         case ImageFlip::kNone:
           return RotateFlip::kRotateCcw180();
         case ImageFlip::kLeftRight:
@@ -212,7 +238,7 @@ constexpr RotateFlip RotateFlip::From(const fuchsia_ui_composition::Orientation&
       }
 
     case Orientation::kCcw270Degrees:
-      switch (image_flip) {
+      switch (flip) {
         case ImageFlip::kNone:
           return RotateFlip::kRotateCcw270();
         case ImageFlip::kLeftRight:
@@ -269,6 +295,59 @@ constexpr bool operator==(const RotateFlip& lhs, const RotateFlip& rhs) {
 }
 
 constexpr bool operator!=(const RotateFlip& lhs, const RotateFlip& rhs) { return !(lhs == rhs); }
+
+constexpr RotateFlip RotateFlip::RotatedBy(Enum rotation) const {
+  // Quarter-turn count of `rotation`; rejects reflections.
+  int r = 0;
+  switch (rotation) {
+    case Enum::kIdentity:
+      r = 0;
+      break;
+    case Enum::kRotateCcw90:
+      r = 1;
+      break;
+    case Enum::kRotateCcw180:
+      r = 2;
+      break;
+    case Enum::kRotateCcw270:
+      r = 3;
+      break;
+    default:
+      FX_CHECK(false) << "RotatedBy: operand must be a pure rotation";
+  }
+
+  // kRotated[v][r] is enum value v post-rotated by r quarter turns CCW. This
+  // is not simple name or bit arithmetic, because rotations do not commute
+  // with reflections: e.g. kReflectX then kRotateCcw90 yields
+  // kRotateCcw90ReflectY, not kRotateCcw90ReflectX.
+  //
+  // This is tested via a mathematical decomposition which is easier to follow;
+  // see `RotateFlipTest.RotatedBy` to assure yourself that this all works.
+  using E = Enum;
+  constexpr E kRotated[8][4] = {
+      /* kIdentity            */ {E::kIdentity, E::kRotateCcw90, E::kRotateCcw180,
+                                  E::kRotateCcw270},
+      /* kReflectX            */
+      {E::kReflectX, E::kRotateCcw90ReflectY, E::kReflectY, E::kRotateCcw90ReflectX},
+      /* kReflectY            */
+      {E::kReflectY, E::kRotateCcw90ReflectX, E::kReflectX, E::kRotateCcw90ReflectY},
+      /* kRotateCcw180        */
+      {E::kRotateCcw180, E::kRotateCcw270, E::kIdentity, E::kRotateCcw90},
+      /* kRotateCcw90         */
+      {E::kRotateCcw90, E::kRotateCcw180, E::kRotateCcw270, E::kIdentity},
+      /* kRotateCcw90ReflectX */
+      {E::kRotateCcw90ReflectX, E::kReflectX, E::kRotateCcw90ReflectY, E::kReflectY},
+      /* kRotateCcw90ReflectY */
+      {E::kRotateCcw90ReflectY, E::kReflectY, E::kRotateCcw90ReflectX, E::kReflectX},
+      /* kRotateCcw270        */
+      {E::kRotateCcw270, E::kIdentity, E::kRotateCcw90, E::kRotateCcw180},
+  };
+  return RotateFlip(kRotated[static_cast<uint8_t>(val_)][r]);
+}
+
+constexpr RotateFlip RotateFlip::RotatedBy(RotateFlip rotation) const {
+  return RotatedBy(rotation.enum_value());
+}
 
 constexpr fuchsia_hardware_display_types::wire::CoordinateTransformation
 RotateFlip::ToDisplayCoordinateTransformation() const {

@@ -16,7 +16,6 @@
 
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
-#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/renderer/renderer.h"
 
 using flatland::SrcToDest;
@@ -26,23 +25,6 @@ using fuchsia_ui_composition::wire::Rotation;
 using fuchsia_ui_composition::wire::ScreenCaptureConfig;
 using fuchsia_ui_composition::wire::ScreenCaptureError;
 using std::vector;
-
-namespace {
-
-// The number of orientations in |fuchsia.ui.composition.Orientation|.
-constexpr int kNumOrientations = 4;
-
-Orientation GetNewOrientation(Orientation screen_capture_rotation, Orientation prev_orientation) {
-  // Orientation values are an enum with an uint value in the range [1, 4], where value 1 represents
-  // no rotation and each subsequent value is a (pi/2) rotation such that value 4 represents a
-  // (3pi/2) rotation, or, (-pi/2) rotation.
-  int a = static_cast<int>(screen_capture_rotation) - 1;
-  int b = static_cast<int>(prev_orientation) - 1;
-
-  return static_cast<Orientation>(((a + b) % kNumOrientations) + 1);
-}
-
-}  // namespace
 
 namespace screen_capture {
 
@@ -314,7 +296,6 @@ std::vector<flatland::ResolvedLayer> ScreenCapture::RotateRenderables(
 
   for (auto layer : layers) {
     const auto& geometry = layer.geometry;
-    auto [orientation, flip] = flatland::DecomposeRotateFlip(geometry.transform);
 
     // (x,y) is the origin pre-rotation. (0,0) is the top-left of the image.
     auto x = geometry.dest.x();
@@ -331,7 +312,7 @@ std::vector<flatland::ResolvedLayer> ScreenCapture::RotateRenderables(
     float new_w = 0;
     float new_h = 0;
     // Account for the new orientation.
-    Orientation new_orientation;
+    types::RotateFlip::Enum ccw_rotation = types::RotateFlip::Enum::kIdentity;
 
     switch (rotation) {
       case fuchsia_ui_composition::wire::Rotation::kCw90Degrees:
@@ -341,14 +322,14 @@ std::vector<flatland::ResolvedLayer> ScreenCapture::RotateRenderables(
         new_h = w;
         // The renderer requires counter-clockwise rotation instead of clockwise as used by screen
         // capture. 90 clockwise is equivalent to 270 counter-clockwise.
-        new_orientation = GetNewOrientation(Orientation::kCcw270Degrees, orientation);
+        ccw_rotation = types::RotateFlip::Enum::kRotateCcw270;
         break;
       case fuchsia_ui_composition::wire::Rotation::kCw180Degrees:
         new_x = static_cast<float>(image_width) - x - w;
         new_y = static_cast<float>(image_height) - y - h;
         new_w = w;
         new_h = h;
-        new_orientation = GetNewOrientation(Orientation::kCcw180Degrees, orientation);
+        ccw_rotation = types::RotateFlip::Enum::kRotateCcw180;
         break;
       case fuchsia_ui_composition::wire::Rotation::kCw270Degrees:
         new_x = y;
@@ -357,14 +338,14 @@ std::vector<flatland::ResolvedLayer> ScreenCapture::RotateRenderables(
         new_h = w;
         // The renderer requires counter-clockwise rotation instead of clockwise as used by screen
         // capture. 270 clockwise is equivalent to 90 counter-clockwise.
-        new_orientation = GetNewOrientation(Orientation::kCcw90Degrees, orientation);
+        ccw_rotation = types::RotateFlip::Enum::kRotateCcw90;
         break;
       default:
         FX_DCHECK(false);
         break;
     }
 
-    const auto new_transform = types::RotateFlip::From(new_orientation, flip);
+    const auto new_transform = geometry.transform.RotatedBy(ccw_rotation);
     layer.geometry = flatland::SrcToDest(
         geometry.src, types::RectangleF({.x = new_x, .y = new_y, .width = new_w, .height = new_h}),
         new_transform);

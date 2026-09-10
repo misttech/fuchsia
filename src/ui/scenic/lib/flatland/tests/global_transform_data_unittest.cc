@@ -226,12 +226,14 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipRotatedBy90Test) {
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
-  TransformClipRegion clip({20, 30, 35, 40});
+  // The clip's y-interval is deliberately off-center in the rotated height so
+  // that mirrored or reversed u-intervals differ from unflipped ones.
+  TransformClipRegion clip({20, 35, 35, 40});
 
   // The rectangle is rotated by 90 such that, prior to clipping, it has a new extent of (90, 100).
   // The texel u-coordinate is now linearly interpolated vertically and the v-coordinate is now
   // linearly interpolated horizontally.
-  const SrcToDest expected_rectangle(types::RectangleF({300.f, 1000.f / 9.f, 400.f, 3500.f / 18.f}),
+  const SrcToDest expected_rectangle(types::RectangleF({250.f, 1000.f / 9.f, 400.f, 3500.f / 18.f}),
                                      types::RectangleF::From(clip),
                                      types::RotateFlip::kRotateCcw90());
 
@@ -275,13 +277,15 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipRotatedBy270Test) {
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
-  TransformClipRegion clip({20, 30, 35, 40});
+  // The clip's y-interval is deliberately off-center in the rotated height so
+  // that mirrored or reversed u-intervals differ from unflipped ones.
+  TransformClipRegion clip({20, 35, 35, 40});
 
   // The rectangle was rotated by 90, such that, prior to clipping, it has a new_extent of (90, 100)
   // and reordered_uvs of [(0, 1), (0, 0), (1, 0), (1, 1)]. The u-coordinate is now linearly
   // interpolated vertically and the v coordinate is now linearly interpolated horizontally.
   const SrcToDest expected_rectangle(
-      types::RectangleF({300.f, 3500.f / 18.f, 400.f, 3500.f / 18.f}),
+      types::RectangleF({350.f, 3500.f / 18.f, 400.f, 3500.f / 18.f}),
       types::RectangleF::From(clip), types::RotateFlip::kRotateCcw270());
 
   const auto rectangle = GetSrcToDestForMatrixAndClip(matrix, clip);
@@ -493,8 +497,8 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipLeftRightTest) {
 }
 
 // NOTE: This test is the same as |ChildCompletelyBiggerThanParentClipRotatedBy90Test|, except that
-// the image is flipped before rotating/clipping - this is reflected in the x-coordinate UVs
-// i.e. 300 --> kImageWidth - 300 = 700.
+// the image is flipped before rotating/clipping - this is reflected in the x-coordinate UVs:
+// the unflipped source interval [250, 650] mirrors to [350, 750].
 TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipLeftRightRotatedBy90Test) {
   const glm::vec2 extent(100.f, 90.f);
   // Since rotation occurs around the top-left corner, translate the rectangle so that it has the
@@ -505,12 +509,14 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipLeftRightRotatedBy90T
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
-  TransformClipRegion clip({20, 30, 35, 40});
+  // The clip's y-interval is deliberately off-center in the rotated height so
+  // that mirrored or reversed u-intervals differ from unflipped ones.
+  TransformClipRegion clip({20, 35, 35, 40});
 
   // The rectangle is rotated by 90 such that, prior to clipping, it has a new extent of (90, 100).
   // The texel u-coordinate is now linearly interpolated vertically and the v-coordinate is now
   // linearly interpolated horizontally.
-  const SrcToDest expected_rectangle(types::RectangleF({300.f, 1000.f / 9.f, 400.f, 3500.f / 18.f}),
+  const SrcToDest expected_rectangle(types::RectangleF({350.f, 1000.f / 9.f, 400.f, 3500.f / 18.f}),
                                      types::RectangleF::From(clip),
                                      types::RotateFlip::kRotateCcw90ReflectX());
 
@@ -543,8 +549,8 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipLeftRightRotatedBy180
 }
 
 // NOTE: This test is the same as |ChildCompletelyBiggerThanParentClipRotatedBy270Test|, except that
-// the image is flipped before rotating/clipping - this is reflected in the x-coordinate UVs
-// i.e. 300 --> kImageWidth - 300 = 700.
+// the image is flipped before rotating/clipping - this is reflected in the x-coordinate UVs:
+// the unflipped source interval [350, 750] mirrors to [250, 650].
 TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipLeftRightRotatedBy270Test) {
   const glm::vec2 extent(100.f, 90.f);
   // Since rotation occurs around the top-left corner, translate the rectangle so that it has the
@@ -555,13 +561,15 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipLeftRightRotatedBy270
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
-  TransformClipRegion clip({20, 30, 35, 40});
+  // The clip's y-interval is deliberately off-center in the rotated height so
+  // that mirrored or reversed u-intervals differ from unflipped ones.
+  TransformClipRegion clip({20, 35, 35, 40});
 
   // The rectangle was rotated by 90, such that, prior to clipping, it has a new_extent of (90, 100)
   // and reordered_uvs of [(0, 1), (0, 0), (1, 0), (1, 1)]. The u-coordinate is now linearly
   // interpolated vertically and the v coordinate is now linearly interpolated horizontally.
   const SrcToDest expected_rectangle(
-      types::RectangleF({300.f, 3500.f / 18.f, 400.f, 3500.f / 18.f}),
+      types::RectangleF({250.f, 3500.f / 18.f, 400.f, 3500.f / 18.f}),
       types::RectangleF::From(clip), types::RotateFlip::kRotateCcw90ReflectY());
 
   const auto rectangle = GetSrcToDestForMatrixAndClip(matrix, clip, ImageFlip::kLeftRight);
@@ -597,13 +605,15 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipUpDownRotatedBy90Test
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
-  TransformClipRegion clip({20, 30, 35, 40});
+  // The clip's y-interval is deliberately off-center in the rotated height so
+  // that mirrored or reversed u-intervals differ from unflipped ones.
+  TransformClipRegion clip({20, 35, 35, 40});
 
   // The rectangle is rotated by 90 such that, prior to clipping, it has a new extent of (90, 100).
   // The texel u-coordinate is now linearly interpolated vertically and the y-coordinate is now
   // linearly interpolated horizontally.
   const SrcToDest expected_rectangle(
-      types::RectangleF({300.f, 3500.f / 18.f, 400.f, 3500.f / 18.f}),
+      types::RectangleF({250.f, 3500.f / 18.f, 400.f, 3500.f / 18.f}),
       types::RectangleF::From(clip), types::RotateFlip::kRotateCcw90ReflectY());
 
   const auto rectangle = GetSrcToDestForMatrixAndClip(matrix, clip, ImageFlip::kUpDown);
@@ -647,12 +657,14 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipUpDownRotatedBy270Tes
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
-  TransformClipRegion clip({20, 30, 35, 40});
+  // The clip's y-interval is deliberately off-center in the rotated height so
+  // that mirrored or reversed u-intervals differ from unflipped ones.
+  TransformClipRegion clip({20, 35, 35, 40});
 
   // The rectangle was rotated by 90, such that, prior to clipping, it has a new_extent of (90, 100)
   // and reordered_uvs of [(0, 1), (0, 0), (1, 0), (1, 1)]. The u-coordinate is now linearly
   // interpolated vertically and the v coordinate is now linearly interpolated horizontally.
-  const SrcToDest expected_rectangle(types::RectangleF({300.f, 1000.f / 9.f, 400.f, 3500.f / 18.f}),
+  const SrcToDest expected_rectangle(types::RectangleF({350.f, 1000.f / 9.f, 400.f, 3500.f / 18.f}),
                                      types::RectangleF::From(clip),
                                      types::RotateFlip::kRotateCcw90ReflectX());
 

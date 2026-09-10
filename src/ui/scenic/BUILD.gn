@@ -256,7 +256,14 @@ fuchsia_unittest_package("scenic_shutdown_unittests") {
 }
 
 fuchsia_unittest_package("scenic_types_unittests") {
+  manifest = "meta/scenic_types_unittests.cml"
   deps = [ "lib/types/tests:unittests" ]
+  test_specs = {
+    log_settings = {
+      # Allows EXPECT_DEATH to work as intended.
+      max_severity = "FATAL"
+    }
+  }
 }
 
 fuchsia_unittest_package("scenic_utils_unittests") {

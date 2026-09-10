@@ -4,6 +4,8 @@
 
 #include "src/ui/scenic/lib/types/rotate_flip.h"
 
+#include <array>
+
 #include <gtest/gtest.h>
 
 namespace types {
@@ -110,6 +112,42 @@ TEST(RotateFlipTest, Hash) {
   EXPECT_EQ(hasher(RotateFlip::kIdentity()), hasher(RotateFlip(RotateFlip::Enum::kIdentity)));
   EXPECT_NE(hasher(RotateFlip::kIdentity()), hasher(RotateFlip::kReflectX()));
   EXPECT_EQ(hasher(RotateFlip::kReflectX()), hasher(RotateFlip(RotateFlip::Enum::kReflectX)));
+}
+
+TEST(RotateFlipTest, RotatedBy) {
+  constexpr std::array kOrientations = {Orientation::kCcw0Degrees, Orientation::kCcw90Degrees,
+                                        Orientation::kCcw180Degrees, Orientation::kCcw270Degrees};
+  constexpr std::array kFlips = {ImageFlip::kNone, ImageFlip::kLeftRight, ImageFlip::kUpDown};
+  constexpr std::array kRotations = {RotateFlip::Enum::kIdentity, RotateFlip::Enum::kRotateCcw90,
+                                     RotateFlip::Enum::kRotateCcw180,
+                                     RotateFlip::Enum::kRotateCcw270};
+
+  // RotatedBy post-composes a rotation. From(o, f) builds its transform as
+  // flip-then-rotation (see its comment), and in that form a post-composed
+  // rotation merges into the rotation factor: the flip stays put and the
+  // quarter turns add. So From(o, f).RotatedBy(r) must equal From(o + r, f),
+  // an expectation independent of the lookup table inside RotatedBy. The
+  // arrays above are ordered by quarter-turn count, so the indices o and r
+  // act as turn counts and the sum wraps mod 4.
+  for (size_t o = 0; o < kOrientations.size(); ++o) {
+    for (const ImageFlip flip : kFlips) {
+      for (size_t r = 0; r < kRotations.size(); ++r) {
+        const RotateFlip original = RotateFlip::From(kOrientations[o], flip);
+        const RotateFlip expected = RotateFlip::From(kOrientations[(o + r) % 4], flip);
+        EXPECT_EQ(original.RotatedBy(kRotations[r]), expected);
+        EXPECT_EQ(original.RotatedBy(RotateFlip(kRotations[r])), expected);
+      }
+    }
+  }
+}
+
+TEST(RotateFlipTest, RotatedByRejectsReflectionOperand) {
+  constexpr std::array kReflections = {RotateFlip::Enum::kReflectX, RotateFlip::Enum::kReflectY,
+                                       RotateFlip::Enum::kRotateCcw90ReflectX,
+                                       RotateFlip::Enum::kRotateCcw90ReflectY};
+  for (const RotateFlip::Enum reflection : kReflections) {
+    EXPECT_DEATH((void)RotateFlip::kIdentity().RotatedBy(reflection), "pure rotation");
+  }
 }
 
 }  // namespace
