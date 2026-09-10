@@ -198,6 +198,11 @@ impl TransferManager {
         self.minimum_contiguity
     }
 
+    #[allow(dead_code)]
+    pub fn bti(&self) -> &zx::Bti {
+        &self.bti
+    }
+
     /// Consumes the TransferManager and unpins its pinned DMA buffers.  This must be called
     /// explicitly (rather than simply dropping TransferManager).
     ///

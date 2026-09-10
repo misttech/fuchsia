@@ -15,6 +15,7 @@ use fdf_component::testing::harness::DriverUnderTest;
 use fdf_power::SuspendableDriver;
 use fidl_fuchsia_hardware_block_volume::{self as fvolume};
 use fidl_fuchsia_storage_block as fblock;
+use fidl_next_fuchsia_hardware_cqhci::EmmcPartitionId;
 use fidl_next_fuchsia_hardware_rpmb as rpmb;
 use fidl_next_fuchsia_mem as fmem;
 use fuchsia_async as fasync;
@@ -1325,4 +1326,73 @@ async fn test_async_task_wakeup_with_active_transfers() {
 
     let driver = started_driver.lock().take().unwrap();
     driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_submit_read_direct() {
+    let (_fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    let block_client = connect_block_client(&started_driver, "user").await;
+
+    // Write known data to block 0 of user partition.
+    let mut write_buf = vec![0u8; 512];
+    for (i, byte) in write_buf.iter_mut().enumerate() {
+        *byte = (i as u8).wrapping_mul(7);
+    }
+    block_client.write_at(BufferSlice::from(&write_buf[..]), 0).await.expect("write failed");
+
+    let driver = started_driver.get_driver().expect("failed to get driver");
+    let cq = driver.command_queue.lock().as_ref().cloned().unwrap();
+
+    assert_eq!(cq.minimum_contiguity(), zx::system_get_page_size() as u64);
+
+    // Allocate a pre-pinned buffer.
+    let source = storage_device::buffer_allocator::BufferSource::new(4096);
+    let allocator = Arc::new(storage_device::pinned_buffer_allocator::PinnedBufferAllocator::new(
+        512,
+        source,
+        cq.bti().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        cq.minimum_contiguity(),
+    ));
+    let buffer = allocator.allocate_buffer_sync_owned(512);
+
+    let (tx, rx) = oneshot::channel();
+    cq.submit_read_direct(
+        EmmcPartitionId::UserDataPartition,
+        0,
+        buffer,
+        Box::new(move |res| {
+            let _ = tx.send(res);
+        }),
+    )
+    .expect("submit_read_direct failed");
+
+    let buffer = rx.await.expect("channel dropped").expect("read failed");
+
+    let mut read_buf = vec![0u8; 512];
+    buffer.copy_to_slice(&mut read_buf);
+    assert_eq!(read_buf, write_buf);
+
+    // Verify invalid buffer length (unaligned) fails early with INVALID_ARGS:
+    let unaligned_allocator =
+        Arc::new(storage_device::pinned_buffer_allocator::PinnedBufferAllocator::new(
+            256,
+            storage_device::buffer_allocator::BufferSource::new(4096),
+            cq.bti().duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            cq.minimum_contiguity(),
+        ));
+    let unaligned_buffer = unaligned_allocator.allocate_buffer_sync_owned(256);
+    assert_eq!(
+        cq.submit_read_direct(
+            EmmcPartitionId::UserDataPartition,
+            0,
+            unaligned_buffer,
+            Box::new(|_| {}),
+        ),
+        Err(zx::Status::INVALID_ARGS)
+    );
+
+    drop(cq);
+    started_driver.stop_driver().await;
 }

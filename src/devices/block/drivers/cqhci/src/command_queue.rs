@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::num::NonZero;
+use std::num::{NonZero, NonZeroU16};
 use std::sync::{Arc, Weak};
 use std::thread::JoinHandle;
 
@@ -50,6 +50,7 @@ use sdmmc_spec::{
 
 use crate::dma_buffer::{ContiguousDmaBuffer, DiscontiguousDmaBuffer, DmaBuffer};
 use crate::transfer_manager::{Transfer, TransferManager, TransferOptions};
+use storage_device::buffer::OwnedBuffer;
 
 const IRQ_PORT_IRQ_KEY: u64 = 1;
 const IRQ_PORT_LIFELINE_KEY: u64 = 2;
@@ -175,9 +176,37 @@ fn complete_request(
     receiver.complete(request_id, status);
 }
 
+enum TaskRequest {
+    BlockServer(RequestId),
+    #[allow(dead_code)]
+    Direct(Box<dyn FnOnce(Result<(), zx::Status>) + Send>),
+}
+
+impl TaskRequest {
+    fn complete(self, receiver: Arc<dyn TaskStatusReceiver>, status: Result<(), zx::Status>) {
+        match self {
+            Self::BlockServer(request_id) => {
+                complete_request(receiver, request_id, status);
+            }
+            Self::Direct(on_complete) => {
+                on_complete(status);
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for TaskRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BlockServer(id) => f.debug_tuple("BlockServer").field(id).finish(),
+            Self::Direct(_) => f.write_str("Direct"),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct PendingTask {
-    request_id: RequestId,
+    request: TaskRequest,
     partition: EmmcPartitionId,
     transfer: Transfer,
     trace_flow_id: Option<NonZero<u64>>,
@@ -201,7 +230,7 @@ impl PendingTask {
         // 1. Invalidate CPU caches (so the transferred data is visible to the client),
         // 2. Call [`Transfer::unpin`], which unpins the pages, then
         // 3. Call the completer (which may send a response to the client).
-        let Self { request_id, transfer, trace_flow_id, .. } = self;
+        let Self { request, transfer, trace_flow_id, .. } = self;
         fuchsia_trace::duration!("sdmmc", "cqhci::complete_transfer",
             "slot" => transfer.tdl_slot() as u64,
             "op" => transfer.opcode(),
@@ -216,7 +245,7 @@ impl PendingTask {
         transfer.cache_invalidate();
         // SAFETY: By the caller's contract.
         unsafe { transfer.unpin() };
-        complete_request(status_receiver, request_id, status);
+        request.complete(status_receiver, status);
     }
 
     /// Unpins the transfer.  Must only be called if the task was never submitted.
@@ -702,7 +731,7 @@ impl Drop for CompletedTasks {
             // Unwrap OK since we only add tasks via [`CompletedTasks::add`]
             let (task, receiver, status) = entry.take().unwrap();
             task.transfer.cache_invalidate();
-            complete_request(receiver, task.request_id, status);
+            task.request.complete(receiver, status);
         }
     }
 }
@@ -1573,14 +1602,23 @@ impl CommandQueue {
             options,
         )?;
 
-        let mut task = Some(PendingTask {
-            request_id,
+        let task = Some(PendingTask {
+            request: TaskRequest::BlockServer(request_id),
             partition,
             transfer,
             trace_flow_id,
             _slot_guard: slot_guard,
         });
 
+        self.submit_pending_task(partition, tdl_slot, task)
+    }
+
+    fn submit_pending_task(
+        &self,
+        partition: EmmcPartitionId,
+        tdl_slot: u8,
+        mut task: Option<PendingTask>,
+    ) -> Result<(), zx::Status> {
         let mut res = Ok(());
         {
             let mut guard = self.inner.lock();
@@ -1613,6 +1651,65 @@ impl CommandQueue {
             }
         }
         res
+    }
+
+    /// Submits a read transfer directly using a pre-pinned buffer.
+    ///
+    /// When the read completes, `on_complete` is invoked with the final status and buffer.
+    #[allow(dead_code)]
+    pub fn submit_read_direct(
+        self: &Arc<Self>,
+        partition: EmmcPartitionId,
+        block_offset: u64,
+        buffer: OwnedBuffer,
+        on_complete: Box<dyn FnOnce(Result<OwnedBuffer, zx::Status>) + Send>,
+    ) -> Result<(), zx::Status> {
+        let block_size = MMC_BLOCK_SIZE as usize;
+        if !buffer.len().is_multiple_of(block_size) {
+            return Err(zx::Status::INVALID_ARGS);
+        }
+        let block_count = u16::try_from(buffer.len() / block_size)
+            .ok()
+            .and_then(NonZeroU16::new)
+            .ok_or(zx::Status::INVALID_ARGS)?;
+        let block_count = u32::from(block_count.get());
+        fuchsia_trace::duration!("sdmmc", "cqhci::submit_read_direct",
+            "blocks" => block_count as u64
+        );
+        let block_offset = u32::try_from(block_offset).map_err(|_| zx::Status::INVALID_ARGS)?;
+        self.ensure_request_is_in_range(partition, block_offset, block_count)?;
+
+        let slot_guard = self.acquire_transfer_slot()?;
+        let tdl_slot = slot_guard.tdl_slot;
+
+        let transfer = self.transfer_manager.prepare_read_transfer_pre_pinned(
+            tdl_slot,
+            &buffer,
+            block_offset,
+            TransferOptions::default(),
+        )?;
+
+        let task = Some(PendingTask {
+            request: TaskRequest::Direct(Box::new(move |res| {
+                on_complete(res.map(|()| buffer));
+            })),
+            partition,
+            transfer,
+            trace_flow_id: None,
+            _slot_guard: slot_guard,
+        });
+
+        self.submit_pending_task(partition, tdl_slot, task)
+    }
+
+    #[allow(dead_code)]
+    pub fn minimum_contiguity(&self) -> u64 {
+        self.transfer_manager.minimum_contiguity()
+    }
+
+    #[allow(dead_code)]
+    pub fn bti(&self) -> &zx::Bti {
+        self.transfer_manager.bti()
     }
 
     pub fn submit_read(
