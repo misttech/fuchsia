@@ -83,6 +83,11 @@ void VerifyProduct(uint64_t a_subject_delta, uint64_t a_reference_delta, uint64_
   EXPECT_EQ(result.reference_delta(), expected_reference_delta)
       << a_subject_delta << "/" << a_reference_delta << " * " << b_subject_delta << "/"
       << b_reference_delta << ", exact=" << exact;
+
+  if (!exact) {
+    TimelineRate default_result = TimelineRate::Product(rate_a, rate_b);
+    EXPECT_EQ(default_result, result);
+  }
 }
 
 // Verifies TimelineRate::Inverse with the given rate.

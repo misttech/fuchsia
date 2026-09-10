@@ -106,6 +106,12 @@ void VerifyCompose(const TimelineFunction& a, const TimelineFunction& b, bool ex
                    const TimelineFunction& expected_result) {
   // Verify the static method.
   EXPECT_EQ(expected_result, TimelineFunction::Compose(a, b, exact));
+
+  // If exact is false, verify the default overload and operator* as well.
+  if (!exact) {
+    EXPECT_EQ(expected_result, TimelineFunction::Compose(a, b));
+    EXPECT_EQ(expected_result, a * b);
+  }
 }
 
 // Tests TimelineFunction basics for various instantiation arguments.
@@ -191,6 +197,11 @@ TEST(TimelineFunctionTest, Compose) {
                 TimelineFunction(0, 0, 1, 4));
   VerifyCompose(TimelineFunction(0, 0, 1, 2), TimelineFunction(0, 0, 2, 1), true,
                 TimelineFunction(0, 0, 1, 1));
+
+  // Composition requiring bit reduction to avoid uint64 overflow.
+  VerifyCompose(TimelineFunction(0, 0, 1ll << 31, (1ll << 31) - 1),
+                TimelineFunction(0, 0, (1ll << 31) - 2, 1ll << 31), false,
+                TimelineFunction(0, 0, 0x7ffffffe, 0x7fffffff));
 }
 
 // Test extreme boundary conditions in TimelineFunction::Apply. Subtracting distant timestamps

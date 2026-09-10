@@ -29,7 +29,7 @@ class TimelineRate final {
   static const TimelineRate NsPerSecond;
 
   // Returns the product of the rates. If exact is true, crash on precision loss.
-  static TimelineRate Product(TimelineRate a, TimelineRate b, bool exact = true);
+  static TimelineRate Product(TimelineRate a, TimelineRate b, bool exact = false);
 
   TimelineRate() : subject_delta_(0), reference_delta_(1) {}
 

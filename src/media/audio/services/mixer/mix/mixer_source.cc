@@ -44,8 +44,7 @@ constexpr zx::duration kMaxErrorThresholdDuration = zx::msec(2);
 // Converts given `dest_time_to_dest_frac_frame` to transform destination time to integral frames.
 TimelineFunction DestTimeToDestFrame(const TimelineFunction& dest_time_to_dest_frac_frame) {
   static const TimelineRate frames_per_fractional_frame = TimelineRate(1, kOneFrame.raw_value());
-  return TimelineFunction::Compose(TimelineFunction(frames_per_fractional_frame),
-                                   dest_time_to_dest_frac_frame);
+  return TimelineFunction(frames_per_fractional_frame) * dest_time_to_dest_frac_frame;
 }
 
 }  // namespace

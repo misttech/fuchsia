@@ -35,8 +35,7 @@ namespace {
 TimelineFunction ReferenceClockToIntegralFrames(
     TimelineFunction ref_time_to_frac_presentation_frame) {
   const TimelineRate frames_per_fractional_frame = TimelineRate(1, Fixed(1).raw_value());
-  return TimelineFunction::Compose(TimelineFunction(frames_per_fractional_frame),
-                                   ref_time_to_frac_presentation_frame);
+  return TimelineFunction(frames_per_fractional_frame) * ref_time_to_frac_presentation_frame;
 }
 
 zx::duration LeadTimeForMixer(const Format& format, const Mixer& mixer) {
@@ -736,8 +735,7 @@ void MixStage::ReconcileClocksAndSetStepSize(::media_audio::ClockSynchronizer& c
       // Product may exceed uint64/uint64: allow reduction. step_size can be approximate, as clocks
       // (not SRC/step_size) determine a stream absolute position -- SRC just chases the position.
       frac_source_frames_per_dest_frame =
-          TimelineRate::Product(frac_source_frames_per_dest_frame, micro_src_factor,
-                                false /* don't require exact precision */);
+          TimelineRate::Product(frac_source_frames_per_dest_frame, micro_src_factor);
     }
   }
 

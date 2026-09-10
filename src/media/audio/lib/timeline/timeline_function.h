@@ -34,9 +34,8 @@ class TimelineFunction final {
   }
 
   // Composes timeline functions B->C and A->B, producing A->C. If exact, ASSERTs on precision loss.
-  // TODO(mpuryear): Consider always allowing inexact results.
   static TimelineFunction Compose(const TimelineFunction& bc, const TimelineFunction& ab,
-                                  bool exact = true);
+                                  bool exact = false);
 
   TimelineFunction() : subject_time_(0), reference_time_(0) {}
 
@@ -98,7 +97,7 @@ inline bool operator==(const TimelineFunction& a, const TimelineFunction& b) {
 // Tests two timeline functions for inequality. Equality requires equal basis values.
 inline bool operator!=(const TimelineFunction& a, const TimelineFunction& b) { return !(a == b); }
 
-// Composes two timeline functions B->C and A->B producing A->C. ASSERTs on precision loss.
+// Composes two timeline functions B->C and A->B producing A->C.
 inline TimelineFunction operator*(const TimelineFunction& bc, const TimelineFunction& ab) {
   return TimelineFunction::Compose(bc, ab);
 }
