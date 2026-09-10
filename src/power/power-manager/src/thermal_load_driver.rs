@@ -19,7 +19,7 @@ use log::*;
 use serde_derive::Deserialize;
 use state_recorder::{NumericStateRecorder, StateRecorderManager};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -153,6 +153,7 @@ impl ThermalLoadDriverBuilder<'_> {
             platform_metrics: self.platform_metrics_node,
             thermal_load_notify_nodes: self.thermal_load_notify_nodes,
             polling_tasks: RefCell::new(Vec::new()),
+            sensors: RefCell::new(Vec::new()),
         });
 
         // Spawn a polling task for each of the temperature input configs. The polling tasks are
@@ -163,6 +164,13 @@ impl ThermalLoadDriverBuilder<'_> {
 
         Ok(node)
     }
+}
+
+struct SensorData {
+    name: String,
+    reboot_temperature: Celsius,
+    poll_interval: Seconds,
+    history: Option<Rc<RefCell<TemperatureHistoryInspect>>>,
 }
 
 pub struct ThermalLoadDriver {
@@ -189,6 +197,9 @@ pub struct ThermalLoadDriver {
     /// within these polling tasks. There exists a polling task for each individual temperature
     /// sensor that this node monitors.
     polling_tasks: RefCell<Vec<fasync::Task<()>>>,
+
+    /// Monitored sensors and their tracking state.
+    sensors: RefCell<Vec<SensorData>>,
 }
 
 impl ThermalLoadDriver {
@@ -216,20 +227,27 @@ impl ThermalLoadDriver {
 
         // For sake of simplicity, we still create this if num_history_entries==0, even though it
         // goes unused.
-        let mut history_inspect = match (config.polls_per_history_entry, config.num_history_entries)
-        {
+        let history_inspect = match (config.polls_per_history_entry, config.num_history_entries) {
             (0, _) => None,
             (_, 0) => None,
-            (polls_per_entry, num_entries) => Some(TemperatureHistoryInspect::new(
-                &sensor_name,
-                &sensor_inspect,
-                state_recorder_manager,
-                polls_per_entry,
-                num_entries,
-            )),
+            (polls_per_entry, num_entries) => {
+                Some(Rc::new(RefCell::new(TemperatureHistoryInspect::new(
+                    &sensor_name,
+                    &sensor_inspect,
+                    state_recorder_manager,
+                    polls_per_entry,
+                    num_entries,
+                ))))
+            }
         };
 
         self.sensor_inspect_roots.borrow_mut().insert(sensor_name.clone(), sensor_inspect);
+        self.sensors.borrow_mut().push(SensorData {
+            name: sensor_name.clone(),
+            reboot_temperature: config.reboot_temperature,
+            poll_interval: config.poll_interval,
+            history: history_inspect.clone(),
+        });
 
         let this = self.clone();
         let log_for_test = config.log_for_test;
@@ -257,8 +275,8 @@ impl ThermalLoadDriver {
                     }
                 };
 
-                if let Some(h) = history_inspect.as_mut() {
-                    h.process_measurement(time, temperature);
+                if let Some(h) = history_inspect.as_ref() {
+                    h.borrow_mut().process_measurement(time, temperature);
                 }
 
                 // Compute the thermal load using the filtered temperature.
@@ -277,7 +295,12 @@ impl ThermalLoadDriver {
 
                 if new_thermal_load >= ThermalLoad(100) {
                     log_if_err!(
-                        this.initiate_thermal_shutdown().await,
+                        this.initiate_thermal_shutdown(
+                            &sensor_name,
+                            temperature,
+                            temperature_input.reboot_temperature,
+                        )
+                        .await,
                         "Failed to initiate thermal shutdown"
                     );
                 } else {
@@ -320,9 +343,23 @@ impl ThermalLoadDriver {
 
     /// Initiates a thermal shutdown.
     ///
-    /// Sends a message to the SystemShutdown node to initiate a system shutdown due to extreme
-    /// temperatures.
-    async fn initiate_thermal_shutdown(&self) -> Result<()> {
+    /// Records details of the triggering sensor and the temperature history of all monitored sensors to syslog,
+    /// logs the platform metric, and sends a message to the SystemShutdown node to initiate a system
+    /// shutdown due to extreme temperatures.
+    async fn initiate_thermal_shutdown(
+        &self,
+        triggering_sensor: &str,
+        trigger_temp: TemperatureReadings,
+        reboot_temp: Celsius,
+    ) -> Result<()> {
+        info!(
+            "Thermal shutdown triggered by sensor '{}': temperature {:.1}°C (raw: {:.1}°C) \
+             reached reboot threshold {:.1}°C",
+            triggering_sensor, trigger_temp.filtered.0, trigger_temp.raw.0, reboot_temp.0
+        );
+
+        self.log_temperature_history_to_syslog();
+
         log_if_err!(
             self.send_message(
                 &self.platform_metrics,
@@ -337,6 +374,49 @@ impl ThermalLoadDriver {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Logs the recent temperature history of all monitored sensors to syslog.
+    fn log_temperature_history_to_syslog(&self) {
+        info!(
+            "Temperature history at thermal shutdown (showing up to {} most recent averages per sensor):",
+            MAX_RECENT_AVERAGES
+        );
+
+        for sensor in self.sensors.borrow().iter() {
+            if let Some(history) = &sensor.history {
+                let h = history.borrow();
+                let averages: Vec<String> =
+                    h.history_averages.iter().map(|e| format!("{:.1}", e.0)).collect();
+                let unaveraged: Vec<String> =
+                    h.recent_samples.iter().map(|s| format!("{:.1}", s.0)).collect();
+
+                info!(
+                    "Sensor {}:\n  \
+                     Reboot threshold = {:.1}°C, sampling interval = {:.1}s, averaging interval = {:.1}s\n  \
+                     Last {} averages: [{}]\n  \
+                     Unaveraged samples: [{}]",
+                    sensor.name,
+                    sensor.reboot_temperature.0,
+                    sensor.poll_interval.0,
+                    sensor.poll_interval.0 * (h.polls_per_entry as f64),
+                    averages.len(),
+                    averages.join(", "),
+                    unaveraged.join(", ")
+                );
+            } else {
+                info!(
+                    "Sensor {}:\n  \
+                     Reboot threshold = {:.1}°C, sampling interval = {:.1}s, history not configured",
+                    sensor.name, sensor.reboot_temperature.0, sensor.poll_interval.0
+                );
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn get_sensors(&self) -> std::cell::Ref<'_, Vec<SensorData>> {
+        self.sensors.borrow()
     }
 }
 
@@ -472,6 +552,9 @@ impl TemperatureInputInspect {
     }
 }
 
+/// Maximum number of recent samples or history averages to retain in memory for shutdown logging.
+const MAX_RECENT_AVERAGES: usize = 30;
+
 struct TemperatureHistoryInspect {
     _root: inspect::Node,
     latest_temperature: inspect::DoubleProperty,
@@ -481,6 +564,8 @@ struct TemperatureHistoryInspect {
     polls_since_last_entry: u32,
     accumulated_average: f64,
     current_max: f32,
+    history_averages: VecDeque<Celsius>,
+    recent_samples: VecDeque<Celsius>,
 }
 
 impl TemperatureHistoryInspect {
@@ -519,10 +604,17 @@ impl TemperatureHistoryInspect {
             polls_since_last_entry: 0,
             accumulated_average: 0.0,
             current_max: f32::MIN,
+            history_averages: VecDeque::with_capacity(MAX_RECENT_AVERAGES),
+            recent_samples: VecDeque::with_capacity(MAX_RECENT_AVERAGES),
         }
     }
 
     fn process_measurement(&mut self, time: BootInstant, temp: TemperatureReadings) {
+        if self.recent_samples.len() >= MAX_RECENT_AVERAGES {
+            self.recent_samples.pop_front();
+        }
+        self.recent_samples.push_back(temp.raw);
+
         if self.polls_per_entry == 0 {
             return;
         }
@@ -544,9 +636,26 @@ impl TemperatureHistoryInspect {
             node.record_double("temp", self.accumulated_average);
         });
         self.max_state_recorder.record(self.current_max);
+
+        if self.history_averages.len() >= MAX_RECENT_AVERAGES {
+            self.history_averages.pop_front();
+        }
+        self.history_averages.push_back(Celsius(self.accumulated_average));
+        self.recent_samples.clear();
+
         self.polls_since_last_entry = 0;
         self.accumulated_average = 0.0;
         self.current_max = f32::MIN;
+    }
+
+    #[cfg(test)]
+    fn get_history_averages(&self) -> &VecDeque<Celsius> {
+        &self.history_averages
+    }
+
+    #[cfg(test)]
+    fn get_recent_samples(&self) -> &VecDeque<Celsius> {
+        &self.recent_samples
     }
 }
 
@@ -1045,5 +1154,370 @@ mod tests {
                 },
             }
         );
+    }
+
+    /// Tests that `TemperatureHistoryInspect` correctly records in-memory history averages and
+    /// recent poll samples, respecting capacity limits.
+    #[fuchsia::test]
+    fn test_in_memory_temperature_history() {
+        let inspector = inspect::Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+        let sensor_root = inspector.root().create_child("test_sensor");
+
+        let mut history = TemperatureHistoryInspect::new(
+            "test_sensor",
+            &sensor_root,
+            manager,
+            2, // polls_per_entry
+            3, // capacity
+        );
+
+        // First poll: recent_samples updated, but no completed history average yet
+        let t0 = BootInstant::from_nanos(0);
+        history.process_measurement(
+            t0,
+            TemperatureReadings { raw: Celsius(20.0), filtered: Celsius(20.0) },
+        );
+        assert_eq!(history.get_recent_samples().len(), 1);
+        assert_eq!(history.get_recent_samples()[0], Celsius(20.0));
+        assert!(history.get_history_averages().is_empty());
+
+        // Second poll: completes first history average (average of 20.0 and 22.0 = 21.0)
+        // and clears recent_samples
+        let t1 = BootInstant::from_nanos(30_000_000_000);
+        history.process_measurement(
+            t1,
+            TemperatureReadings { raw: Celsius(22.0), filtered: Celsius(22.0) },
+        );
+        assert!(history.get_recent_samples().is_empty());
+        assert_eq!(history.get_history_averages().len(), 1);
+        assert_eq!(history.get_history_averages()[0], Celsius(21.0));
+
+        // Poll 3: unaveraged sample stored in recent_samples
+        let t2 = BootInstant::from_nanos(60_000_000_000);
+        history.process_measurement(
+            t2,
+            TemperatureReadings { raw: Celsius(24.0), filtered: Celsius(24.0) },
+        );
+        assert_eq!(history.get_recent_samples().len(), 1);
+        assert_eq!(history.get_recent_samples()[0], Celsius(24.0));
+
+        // Poll 4: completes second average (average of 24.0 & 26.0 = 25.0), clears recent_samples
+        let t3 = BootInstant::from_nanos(90_000_000_000);
+        history.process_measurement(
+            t3,
+            TemperatureReadings { raw: Celsius(26.0), filtered: Celsius(26.0) },
+        );
+        assert!(history.get_recent_samples().is_empty());
+        assert_eq!(history.get_history_averages().len(), 2);
+        assert_eq!(history.get_history_averages()[1], Celsius(25.0));
+
+        // Polls 5 and 6: completes third average (average of 28.0 and 30.0 = 29.0)
+        let t4 = BootInstant::from_nanos(120_000_000_000);
+        let t5 = BootInstant::from_nanos(150_000_000_000);
+        history.process_measurement(
+            t4,
+            TemperatureReadings { raw: Celsius(28.0), filtered: Celsius(28.0) },
+        );
+        history.process_measurement(
+            t5,
+            TemperatureReadings { raw: Celsius(30.0), filtered: Celsius(30.0) },
+        );
+        assert_eq!(history.get_history_averages().len(), 3);
+
+        // Polls 7 and 8: completes fourth average
+        let t6 = BootInstant::from_nanos(180_000_000_000);
+        let t7 = BootInstant::from_nanos(210_000_000_000);
+        history.process_measurement(
+            t6,
+            TemperatureReadings { raw: Celsius(32.0), filtered: Celsius(32.0) },
+        );
+        history.process_measurement(
+            t7,
+            TemperatureReadings { raw: Celsius(34.0), filtered: Celsius(34.0) },
+        );
+        assert_eq!(history.get_history_averages().len(), 4);
+        assert_eq!(history.get_history_averages()[0], Celsius(21.0));
+        assert_eq!(history.get_history_averages()[1], Celsius(25.0));
+        assert_eq!(history.get_history_averages()[2], Celsius(29.0));
+        assert_eq!(history.get_history_averages()[3], Celsius(33.0));
+
+        // Push until exceeding MAX_RECENT_AVERAGES to verify capacity eviction
+        for i in 4..35 {
+            let t = BootInstant::from_nanos((i as i64) * 60_000_000_000);
+            history.process_measurement(
+                t,
+                TemperatureReadings { raw: Celsius(40.0), filtered: Celsius(40.0) },
+            );
+            history.process_measurement(
+                t,
+                TemperatureReadings { raw: Celsius(40.0), filtered: Celsius(40.0) },
+            );
+        }
+        assert_eq!(history.get_history_averages().len(), MAX_RECENT_AVERAGES);
+        assert!(history.get_recent_samples().is_empty());
+
+        // Add one more unaveraged poll sample
+        let t_final = BootInstant::from_nanos(35 * 60_000_000_000);
+        history.process_measurement(
+            t_final,
+            TemperatureReadings { raw: Celsius(41.0), filtered: Celsius(41.0) },
+        );
+        assert_eq!(history.get_recent_samples().len(), 1);
+        assert_eq!(history.get_recent_samples()[0], Celsius(41.0));
+    }
+
+    /// Tests thermal shutdown when history averages have accumulated.
+    #[fuchsia::test]
+    fn test_shutdown_with_accumulated_history() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+
+        let mut mock_maker = MockNodeMaker::new();
+        let mock_platform_metrics = mock_maker.make("mock_platform_metrics", vec![]);
+        let mock_temperature_handler = mock_maker.make("temperature_handler", vec![]);
+        let mock_thermal_load_receiver = mock_maker.make("mock_thermal_load_receiver", vec![]);
+        let mock_system_shutdown = mock_maker.make("mock_system_shutdown_node", vec![]);
+
+        expect_get_sensor_name(&mock_temperature_handler, "fake_driver");
+        expect_read_temperature(&mock_temperature_handler, 35.0);
+        expect_thermal_load(&mock_thermal_load_receiver, 0, "fake_driver");
+
+        let build_fut = ThermalLoadDriverBuilder {
+            temperature_input_configs: vec![TemperatureInputConfig {
+                temperature_handler_node: mock_temperature_handler.clone(),
+                onset_temperature: Celsius(40.0),
+                reboot_temperature: Celsius(50.0),
+                poll_interval: Seconds(30.0),
+                polls_per_history_entry: 2,
+                num_history_entries: 5,
+                filter_time_constant: Seconds(1.0),
+                log_for_test: false,
+            }],
+            system_shutdown_node: mock_system_shutdown.clone(),
+            platform_metrics_node: mock_platform_metrics.clone(),
+            thermal_load_notify_nodes: vec![mock_thermal_load_receiver.clone()],
+            inspector: None,
+        }
+        .build();
+
+        futures::pin_mut!(build_fut);
+        let node = match exec.run_until_stalled(&mut build_fut) {
+            Ready(n) => n.unwrap(),
+            _ => panic!("ThermalLoadDriver not built"),
+        };
+
+        let mut node_runner =
+            NodeTestRunner::new(exec, node.clone(), vec![mock_temperature_handler]);
+
+        // Poll 1: 35.0 (from init), Poll 2: 37.0 -> completes 1st history average (avg 36.0)
+        expect_thermal_load(&mock_thermal_load_receiver, 0, "fake_driver");
+        node_runner.iterate_with_temperature_inputs(&[37.0]);
+
+        // Check sensor data has history average
+        {
+            let sensors = node.get_sensors();
+            assert_eq!(sensors.len(), 1);
+            let history = sensors[0].history.as_ref().unwrap().borrow();
+            assert_eq!(history.get_history_averages().len(), 1);
+            assert_eq!(history.get_history_averages()[0], Celsius(36.0));
+        }
+
+        // Poll 3: 50.0 -> causes thermal shutdown
+        mock_platform_metrics.add_msg_response_pair((
+            msg_eq!(LogPlatformMetric(PlatformMetric::ThrottlingResultShutdown)),
+            msg_ok_return!(LogPlatformMetric),
+        ));
+        mock_system_shutdown.add_msg_response_pair((
+            msg_eq!(HighTemperatureShutdown),
+            msg_ok_return!(SystemShutdown),
+        ));
+        node_runner.iterate_with_temperature_inputs(&[50.0]);
+    }
+
+    /// Tests thermal shutdown in early boot before any history average has completed.
+    #[fuchsia::test]
+    fn test_shutdown_early_boot_without_completed_history() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+
+        let mut mock_maker = MockNodeMaker::new();
+        let mock_platform_metrics = mock_maker.make("mock_platform_metrics", vec![]);
+        let mock_temperature_handler = mock_maker.make("temperature_handler", vec![]);
+        let mock_thermal_load_receiver = mock_maker.make("mock_thermal_load_receiver", vec![]);
+        let mock_system_shutdown = mock_maker.make("mock_system_shutdown_node", vec![]);
+
+        expect_get_sensor_name(&mock_temperature_handler, "fake_driver");
+        expect_read_temperature(&mock_temperature_handler, 35.0);
+        expect_thermal_load(&mock_thermal_load_receiver, 0, "fake_driver");
+
+        let build_fut = ThermalLoadDriverBuilder {
+            temperature_input_configs: vec![TemperatureInputConfig {
+                temperature_handler_node: mock_temperature_handler.clone(),
+                onset_temperature: Celsius(40.0),
+                reboot_temperature: Celsius(50.0),
+                poll_interval: Seconds(30.0),
+                polls_per_history_entry: 10, // 10 polls required per history entry
+                num_history_entries: 5,
+                filter_time_constant: Seconds(1.0),
+                log_for_test: false,
+            }],
+            system_shutdown_node: mock_system_shutdown.clone(),
+            platform_metrics_node: mock_platform_metrics.clone(),
+            thermal_load_notify_nodes: vec![mock_thermal_load_receiver],
+            inspector: None,
+        }
+        .build();
+
+        futures::pin_mut!(build_fut);
+        let node = match exec.run_until_stalled(&mut build_fut) {
+            Ready(n) => n.unwrap(),
+            _ => panic!("ThermalLoadDriver not built"),
+        };
+
+        let mut node_runner =
+            NodeTestRunner::new(exec, node.clone(), vec![mock_temperature_handler]);
+
+        // Immediate shutdown on next poll (55.0C >= 50.0C)
+        mock_platform_metrics.add_msg_response_pair((
+            msg_eq!(LogPlatformMetric(PlatformMetric::ThrottlingResultShutdown)),
+            msg_ok_return!(LogPlatformMetric),
+        ));
+        mock_system_shutdown.add_msg_response_pair((
+            msg_eq!(HighTemperatureShutdown),
+            msg_ok_return!(SystemShutdown),
+        ));
+        node_runner.iterate_with_temperature_inputs(&[55.0]);
+
+        // Verify history_averages is empty (because 10 polls were needed),
+        // but recent_samples captured both the initial and shutdown temperatures
+        {
+            let sensors = node.get_sensors();
+            let history = sensors[0].history.as_ref().unwrap().borrow();
+            assert!(history.get_history_averages().is_empty());
+            assert_eq!(history.get_recent_samples().len(), 2);
+            assert_eq!(history.get_recent_samples()[0], Celsius(35.0));
+            assert_eq!(history.get_recent_samples()[1], Celsius(55.0));
+        }
+    }
+
+    /// Tests that `recent_samples` evicts oldest samples when `polls_per_entry > MAX_RECENT_AVERAGES`.
+    #[fuchsia::test]
+    fn test_recent_samples_eviction_before_average_completes() {
+        let inspector = inspect::Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+        let sensor_root = inspector.root().create_child("test_sensor");
+
+        let mut history = TemperatureHistoryInspect::new(
+            "test_sensor",
+            &sensor_root,
+            manager,
+            40, // polls_per_entry > MAX_RECENT_AVERAGES (30)
+            5,
+        );
+
+        // Feed 35 raw samples (20.0°C .. 54.0°C) without completing the 40-poll window
+        for i in 0..35 {
+            let temp = 20.0 + (i as f64);
+            history.process_measurement(
+                BootInstant::from_nanos((i as i64) * 1_000_000_000),
+                TemperatureReadings { raw: Celsius(temp), filtered: Celsius(temp) },
+            );
+        }
+
+        // No completed averages yet, and recent_samples capped at MAX_RECENT_AVERAGES (30),
+        // retaining samples 5..35 (25.0°C .. 54.0°C)
+        assert!(history.get_history_averages().is_empty());
+        assert_eq!(history.get_recent_samples().len(), MAX_RECENT_AVERAGES);
+        assert_eq!(history.get_recent_samples()[0], Celsius(25.0));
+        assert_eq!(history.get_recent_samples()[MAX_RECENT_AVERAGES - 1], Celsius(54.0));
+    }
+
+    /// Tests thermal shutdown when multiple sensors with different configurations are monitored.
+    #[fuchsia::test]
+    fn test_shutdown_with_multiple_sensors() {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+
+        let mut mock_maker = MockNodeMaker::new();
+        let mock_platform_metrics = mock_maker.make("mock_platform_metrics", vec![]);
+        let mock_sensor_1 = mock_maker.make("sensor_1", vec![]);
+        let mock_sensor_2 = mock_maker.make("sensor_2", vec![]);
+        let mock_thermal_load_receiver = mock_maker.make("mock_thermal_load_receiver", vec![]);
+        let mock_system_shutdown = mock_maker.make("mock_system_shutdown_node", vec![]);
+
+        // Sensor 1 (has history): init poll = 35.0
+        expect_get_sensor_name(&mock_sensor_1, "soc_therm");
+        expect_read_temperature(&mock_sensor_1, 35.0);
+        expect_thermal_load(&mock_thermal_load_receiver, 0, "soc_therm");
+
+        // Sensor 2 (no history): init poll = 30.0
+        expect_get_sensor_name(&mock_sensor_2, "wifi_therm");
+        expect_read_temperature(&mock_sensor_2, 30.0);
+        expect_thermal_load(&mock_thermal_load_receiver, 0, "wifi_therm");
+
+        let build_fut = ThermalLoadDriverBuilder {
+            temperature_input_configs: vec![
+                TemperatureInputConfig {
+                    temperature_handler_node: mock_sensor_1.clone(),
+                    onset_temperature: Celsius(40.0),
+                    reboot_temperature: Celsius(50.0),
+                    poll_interval: Seconds(30.0),
+                    polls_per_history_entry: 2,
+                    num_history_entries: 5,
+                    filter_time_constant: Seconds(1.0),
+                    log_for_test: false,
+                },
+                TemperatureInputConfig {
+                    temperature_handler_node: mock_sensor_2.clone(),
+                    onset_temperature: Celsius(60.0),
+                    reboot_temperature: Celsius(80.0),
+                    poll_interval: Seconds(30.0),
+                    polls_per_history_entry: 0, // history disabled
+                    num_history_entries: 0,
+                    filter_time_constant: Seconds(1.0),
+                    log_for_test: false,
+                },
+            ],
+            system_shutdown_node: mock_system_shutdown.clone(),
+            platform_metrics_node: mock_platform_metrics.clone(),
+            thermal_load_notify_nodes: vec![mock_thermal_load_receiver.clone()],
+            inspector: None,
+        }
+        .build();
+
+        futures::pin_mut!(build_fut);
+        let node = match exec.run_until_stalled(&mut build_fut) {
+            Ready(n) => n.unwrap(),
+            _ => panic!("ThermalLoadDriver not built"),
+        };
+
+        let mut node_runner =
+            NodeTestRunner::new(exec, node.clone(), vec![mock_sensor_1, mock_sensor_2]);
+
+        // Poll 2: sensor_1 = 37.0 (completes 1st history average: avg 36.0), sensor_2 = 32.0
+        expect_thermal_load(&mock_thermal_load_receiver, 0, "soc_therm");
+        expect_thermal_load(&mock_thermal_load_receiver, 0, "wifi_therm");
+        node_runner.iterate_with_temperature_inputs(&[37.0, 32.0]);
+
+        // Poll 3: sensor_1 = 55.0 (triggers shutdown!), sensor_2 = 34.0
+        mock_platform_metrics.add_msg_response_pair((
+            msg_eq!(LogPlatformMetric(PlatformMetric::ThrottlingResultShutdown)),
+            msg_ok_return!(LogPlatformMetric),
+        ));
+        mock_system_shutdown.add_msg_response_pair((
+            msg_eq!(HighTemperatureShutdown),
+            msg_ok_return!(SystemShutdown),
+        ));
+        expect_thermal_load(&mock_thermal_load_receiver, 0, "wifi_therm");
+        node_runner.iterate_with_temperature_inputs(&[55.0, 34.0]);
+
+        let sensors = node.get_sensors();
+        assert_eq!(sensors.len(), 2);
+
+        let history_1 = sensors[0].history.as_ref().unwrap().borrow();
+        assert_eq!(history_1.get_history_averages().len(), 1);
+        assert_eq!(history_1.get_history_averages()[0], Celsius(36.0));
+        assert_eq!(history_1.get_recent_samples().len(), 1);
+        assert_eq!(history_1.get_recent_samples()[0], Celsius(55.0));
+
+        assert!(sensors[1].history.is_none());
     }
 }

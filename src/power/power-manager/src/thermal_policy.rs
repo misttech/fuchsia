@@ -405,6 +405,11 @@ impl ThermalPolicy {
 
         // Temperature has exceeded the thermal shutdown temperature
         if temperature.0 >= self.config.policy_params.thermal_shutdown_temperature.0 {
+            info!(
+                "Thermal shutdown triggered: temperature {:.1}°C reached shutdown threshold {:.1}°C",
+                temperature.0, self.config.policy_params.thermal_shutdown_temperature.0
+            );
+
             fuchsia_trace::instant!(
                 c"power_manager",
                 c"ThermalPolicy::thermal_shutdown_reached",
