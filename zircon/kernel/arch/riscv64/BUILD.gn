@@ -216,6 +216,32 @@ if (toolchain_base_environment == "kernel") {
     expect_lints = [ "non_camel_case_types" ]
   }
 
+  kernel_bindgen_crate("riscv64-crashlog-bindings") {
+    headers = [ "include/arch/crashlog_regs.h" ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    deps = [ ":riscv64-regs-bindings" ]
+    notice_year = 2026
+    raw_lines = [
+      "#![no_std]",
+      "use riscv64_regs_bindings::*;",
+    ]
+    type_blocklist = [
+      "zx_.*",
+      "iframe_t.*",
+      "arch_exception_context.*",
+      "syscall_regs_t.*",
+    ]
+    type_allowlist = [ "crashlog_regs_t" ]
+    explicit_padding = false
+    std_derives = [
+      "default",
+      "eq",
+      "partialeq",
+    ]
+    expect_lints = []
+  }
+
   kernel_bindgen_crate("riscv64-thread-bindings") {
     headers = [
       "include/arch/arch_thread.h",
@@ -313,6 +339,7 @@ if (toolchain_base_environment == "kernel") {
     sources = [
       "src/arch.rs",
       "src/cache.rs",
+      "src/crashlog.rs",
       "src/debugger.rs",
       "src/feature.rs",
       "src/fpu.rs",
@@ -328,6 +355,7 @@ if (toolchain_base_environment == "kernel") {
     ]
     deps = [
       ":riscv-sbi-bindings",
+      ":riscv64-crashlog-bindings",
       ":riscv64-mp-bindings",
       ":riscv64-regs-bindings",
       ":riscv64-restricted-bindings",
