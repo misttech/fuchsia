@@ -102,6 +102,7 @@ pub async fn main() -> Result<(), AnyhowError> {
     let mut sink_stream = sink_stream.fuse();
     let mut shutdown_stream = Either::Left(shutdown_watcher_request_stream);
     let mut shutdown = false;
+    let mut shutdown_responder = None;
 
     component::health().set_ok();
 
@@ -110,23 +111,38 @@ pub async fn main() -> Result<(), AnyhowError> {
             Either::Left((shutdown_request, _)) => match shutdown_request {
                 Some(Ok(ShutdownWatcherRequest::OnShutdown { responder, .. })) => {
                     shutdown = true;
-                    sample_sink_control.send_on_now_or_never()?;
-                    responder.send()?;
+                    shutdown_responder = Some(responder);
+                    shutdown_stream = Either::Right(stream::pending());
+                    if let Err(e) = sample_sink_control.send_on_now_or_never() {
+                        warn!(e:?; "Failed to send on_now_or_never to sample sink");
+                        break;
+                    }
                 }
                 Some(Ok(ShutdownWatcherRequest::_UnknownMethod { .. })) => {
                     warn!("Sampler encountered unknown method on ShutdownWatcher");
                 }
                 Some(Err(err)) => {
                     warn!(err:?; "Sampler encountered error on ShutdownWatcher, data may be missing");
+                    if shutdown {
+                        break;
+                    }
                 }
                 None => {
+                    if shutdown {
+                        break;
+                    }
                     shutdown_stream = Either::Right(stream::pending());
                     continue;
                 }
             },
             Either::Right((event, _)) => {
-                let Some(Ok(event)) = event else {
-                    break;
+                let event = match event {
+                    Some(Ok(event)) => event,
+                    Some(Err(err)) => {
+                        warn!(err:?; "Sample sink stream encountered an error");
+                        break;
+                    }
+                    None => break,
                 };
 
                 handle_sample_sink_request(event, shutdown, &mut projects).await;
@@ -136,6 +152,12 @@ pub async fn main() -> Result<(), AnyhowError> {
                 }
             }
         }
+    }
+
+    if let Some(responder) = shutdown_responder
+        && let Err(err) = responder.send()
+    {
+        warn!(err:?; "Failed to send ShutdownWatcher response; shutdown coordinator may have timed out");
     }
 
     Ok(())
