@@ -96,6 +96,10 @@ rust_syscall_tests = [
   {
     name = "device_mapper_test"
     source_root = "src/device_mapper_test.rs"
+    resources = [
+      ":device_mapper_ext4_img",
+      ":device_mapper_test_resources",
+    ]
     deps = [
       "//src/starnix/lib/linux_uapi",
       "//third_party/rust_crates:libc",
@@ -107,6 +111,7 @@ rust_syscall_tests = [
   {
     name = "ebpf_test"
     source_root = "src/ebpf.rs"
+    resources = [ ":ebpf_test_progs" ]
     deps = [
       "//src/starnix/lib/ebpf",
       "//src/starnix/lib/ebpf_loader",
@@ -121,6 +126,7 @@ rust_syscall_tests = [
   {
     name = "fscrypt_test"
     source_root = "src/fscrypt_test.rs"
+    resources = [ ":fscrypt_child_resource" ]
     deps = [
       ":fscrypt_shared",
       "//src/starnix/lib/linux_uapi",
@@ -147,9 +153,8 @@ all_test_names = []
 foreach(test_def, rust_syscall_tests) {
   all_test_names += [ test_def.name ]
 
-  # Starnix Kernel target
+  # Starnix Kernel target: only bundle test-specific resources
   rust_syscall_test(test_def.name) {
-    resources = syscall_tests_resources
     forward_variables_from(test_def, "*", [ "name" ])
   }
 
@@ -157,7 +162,12 @@ foreach(test_def, rust_syscall_tests) {
   rust_syscall_test("linux_${test_def.name}") {
     test_name = test_def.name
     resources = syscall_tests_resources
-    forward_variables_from(test_def, "*", [ "name" ])
+    forward_variables_from(test_def,
+                           "*",
+                           [
+                             "name",
+                             "resources",
+                           ])
     test_target_kernel = "linux"
     custom_expectations = ":linux_rust_test_expectations"
   }
