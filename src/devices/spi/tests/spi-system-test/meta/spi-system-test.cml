@@ -22,5 +22,10 @@
             },
             max_count: 8,
         },
+        min_expected_throughput_bytes_per_second: {
+            type: "vector",
+            element: { type: "uint64" },
+            max_count: 8,
+        },
     },
 }

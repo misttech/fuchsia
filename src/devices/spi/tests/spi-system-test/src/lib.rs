@@ -17,6 +17,11 @@ use spi_system_test_config::Config;
 use std::collections::{HashMap, HashSet};
 use zx::Status;
 
+#[derive(Clone, Debug)]
+struct SpiBus {
+    min_expected_throughput: u64,
+}
+
 /// Returns the most specific address that is stable, or `None` if no such address exists. Only
 /// string addresses are supported for now.
 fn get_bus_address(path: Vec<fdf::BusInfo>) -> Option<String> {
@@ -127,21 +132,42 @@ async fn discover_devices(bus_addresses: &[String]) -> Result<HashMap<String, fs
 
 async fn run_with_devices<F, Fut>(test_func: F) -> Result<()>
 where
-    F: Fn(fspi::DeviceProxy) -> Fut + Sync + Send,
+    F: Fn(fspi::DeviceProxy, SpiBus) -> Fut + Sync + Send,
     Fut: futures::Future<Output = Result<()>> + Send,
 {
     static CONFIG: std::sync::OnceLock<Config> = std::sync::OnceLock::new();
     let config = CONFIG.get_or_init(|| Config::take_from_startup_handle());
 
+    if config.bus_addresses.len() != config.min_expected_throughput_bytes_per_second.len() {
+        anyhow::bail!(
+            "bus_addresses (len {}) and min_expected_throughput_bytes_per_second (len {}) must have the same length",
+            config.bus_addresses.len(),
+            config.min_expected_throughput_bytes_per_second.len()
+        );
+    }
+
     let devices_map = discover_devices(&config.bus_addresses).await?;
 
+    let bus_configs: HashMap<String, SpiBus> = config
+        .bus_addresses
+        .iter()
+        .zip(&config.min_expected_throughput_bytes_per_second)
+        .map(|(name, &min_expected_throughput)| (name.clone(), SpiBus { min_expected_throughput }))
+        .collect();
+
     let test_func = &test_func;
-    let futures = devices_map.into_iter().map(|(bus_address, device)| async move {
-        let result = test_func(device).await;
-        assert!(result.is_ok(), "Test failed for bus {}: {:?}", bus_address, result);
+    let futures = devices_map.into_iter().map(|(bus_address, device)| {
+        let bus_config = bus_configs.get(&bus_address).cloned().expect("Could not find bus");
+        async move {
+            test_func(device, bus_config)
+                .await
+                .with_context(|| format!("Test failed for bus {}", bus_address))
+        }
     });
 
-    futures::future::join_all(futures).await;
+    let results = futures::future::join_all(futures).await;
+    let errors: Vec<_> = results.into_iter().filter_map(|r| r.err()).collect();
+    assert!(errors.is_empty(), "Some tests failed: {:?}", errors);
 
     Ok(())
 }
@@ -151,7 +177,13 @@ macro_rules! spi_test {
     ($name:ident, $device:ident, $body:block) => {
         #[fuchsia::test]
         async fn $name() -> Result<()> {
-            run_with_devices(|$device| async move { $body }).await
+            run_with_devices(|$device, _bus| async move { $body }).await
+        }
+    };
+    ($name:ident, $device:ident, $bus:ident, $body:block) => {
+        #[fuchsia::test]
+        async fn $name() -> Result<()> {
+            run_with_devices(|$device, $bus| async move { $body }).await
         }
     };
 }
@@ -574,6 +606,104 @@ spi_test!(test_stress, device, {
                 anyhow::anyhow!("UnregisterVmo failed: {:?}", Status::err_from_raw(status))
             })?;
     }
+
+    Ok(())
+});
+
+// This test measures the throughput of a large call to Exchange() in bytes per second, which is
+// then compared to a minimum expected value for this device. The test passes if the actual
+// throughput is greater than or equal to the expected throughput. The expected throughput may be a
+// hard requirement for this device, or just a reasonable value chosen to detect performance
+// regressions. Check the device test configuration for more information.
+spi_test!(test_exchange_throughput, device, bus, {
+    const BUFFER_SIZE: usize = 65536;
+    const TX_VMO_ID: u32 = 1;
+    const RX_VMO_ID: u32 = 2;
+
+    let mut txdata = vec![0u8; BUFFER_SIZE];
+    rand::rng().fill(&mut txdata[..]);
+
+    let tx_vmo = zx::Vmo::create(BUFFER_SIZE as u64).context("Failed to create TX VMO")?;
+    tx_vmo.write(&txdata, 0).context("Failed to write to TX VMO")?;
+
+    let rx_vmo = zx::Vmo::create(BUFFER_SIZE as u64).context("Failed to create RX VMO")?;
+    let rx_vmo_dup =
+        rx_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).context("Failed to duplicate RX VMO")?;
+
+    device
+        .register_vmo(
+            TX_VMO_ID,
+            fmem::Range { vmo: tx_vmo, offset: 0, size: BUFFER_SIZE as u64 },
+            fsharedmemory::SharedVmoRight::READ,
+        )
+        .await
+        .context("RegisterVmo TX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("RegisterVmo TX failed: {:?}", Status::err_from_raw(status))
+        })?;
+
+    device
+        .register_vmo(
+            RX_VMO_ID,
+            fmem::Range { vmo: rx_vmo_dup, offset: 0, size: BUFFER_SIZE as u64 },
+            fsharedmemory::SharedVmoRight::WRITE,
+        )
+        .await
+        .context("RegisterVmo RX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("RegisterVmo RX failed: {:?}", Status::err_from_raw(status))
+        })?;
+
+    let start_time = std::time::Instant::now();
+
+    device
+        .exchange(
+            &fsharedmemory::SharedVmoBuffer {
+                vmo_id: TX_VMO_ID,
+                offset: 0,
+                size: BUFFER_SIZE as u64,
+            },
+            &fsharedmemory::SharedVmoBuffer {
+                vmo_id: RX_VMO_ID,
+                offset: 0,
+                size: BUFFER_SIZE as u64,
+            },
+        )
+        .await
+        .context("Exchange FIDL call failed")?
+        .map_err(|status| anyhow::anyhow!("Exchange failed: {:?}", Status::err_from_raw(status)))?;
+
+    let elapsed = start_time.elapsed();
+    let throughput = BUFFER_SIZE as f64 / elapsed.as_secs_f64();
+
+    println!("Elapsed time: {:.2?}, bytes per second: {:.2}", elapsed, throughput);
+
+    anyhow::ensure!(
+        throughput >= bus.min_expected_throughput as f64,
+        "Throughput {} bytes/s is below minimum expected {} bytes/s",
+        throughput,
+        bus.min_expected_throughput
+    );
+
+    let mut rxdata = vec![0u8; BUFFER_SIZE];
+    rx_vmo.read(&mut rxdata, 0).context("Failed to read from RX VMO")?;
+    assert_eq!(txdata, rxdata);
+
+    let _unregistered_tx_vmo = device
+        .unregister_vmo(TX_VMO_ID)
+        .await
+        .context("UnregisterVmo TX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("UnregisterVmo TX failed: {:?}", Status::err_from_raw(status))
+        })?;
+
+    let _unregistered_rx_vmo = device
+        .unregister_vmo(RX_VMO_ID)
+        .await
+        .context("UnregisterVmo RX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("UnregisterVmo RX failed: {:?}", Status::err_from_raw(status))
+        })?;
 
     Ok(())
 });

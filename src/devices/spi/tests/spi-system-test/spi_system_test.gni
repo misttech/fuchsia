@@ -12,11 +12,18 @@ import("//build/rust/rustc_test.gni")
 #   bus_addresses (required)
 #     [list of strings] The addresses of the SPI buses to target.
 #
+#   min_expected_throughput_bytes_per_second (required)
+#     [list of ints] The minimum expected SPI throughput for each bus in bytes per second. These
+#     values should come with a comment explaining where they came from or how they were chosen.
+#     Must match the length of bus_addresses.
+#
 #   test_specs (required)
 #     [scope] Test specifications.
 #
 template("spi_system_test") {
   assert(defined(invoker.bus_addresses), "bus_addresses must be defined")
+  assert(defined(invoker.min_expected_throughput_bytes_per_second),
+         "min_expected_throughput_bytes_per_second must be defined")
   assert(defined(invoker.test_specs), "test_specs must be defined")
 
   _manifest_target = "${target_name}_manifest"
@@ -72,6 +79,8 @@ template("spi_system_test") {
     cm_label = ":$_manifest_target"
     values = {
       bus_addresses = invoker.bus_addresses
+      min_expected_throughput_bytes_per_second =
+          invoker.min_expected_throughput_bytes_per_second
     }
   }
 
