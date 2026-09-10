@@ -476,6 +476,11 @@ Reviewers and Coders must audit code against this checklist:
 29.  [ ] **Manual Deferred Cleanup**: C++ `fit::defer` cleanup guards are
      translated to `zr::defer` rather than manually duplicating cleanup logic
      before every early return.
+30.  [ ] **LazyInit vs. Ad-hoc Statics**: Translation of bare C++ global
+     variables should use the Rust port of `LazyInit` rather than ad-hoc
+     `MaybeUninit`/`UnsafeCell`/`AtomicPtr` statics.  Note also when `LazyInit`
+     implements `Deref` and avoid introducing redundant `get_foo()` wrappers in
+     those cases.
 
 ---
 
