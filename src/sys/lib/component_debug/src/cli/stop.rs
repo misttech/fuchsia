@@ -13,7 +13,7 @@ pub async fn stop_cmd<W: std::io::Write>(
     lifecycle_controller: fsys::LifecycleControllerProxy,
     realm_query: fsys::RealmQueryProxy,
     mut writer: W,
-) -> Result<()> {
+) -> Result<moniker::Moniker> {
     let moniker = get_cml_moniker_from_query(&query, &realm_query).await?;
 
     writeln!(writer, "Moniker: {}", moniker)?;
@@ -24,7 +24,7 @@ pub async fn stop_cmd<W: std::io::Write>(
         .map_err(|e| format_action_error(&moniker, e))?;
 
     writeln!(writer, "Stopped component instance!")?;
-    Ok(())
+    Ok(moniker)
 }
 
 #[cfg(test)]
@@ -72,7 +72,8 @@ mod test {
             &mut output,
         )
         .await;
-        response.unwrap();
+        let moniker = response.unwrap();
+        assert_eq!(moniker, Moniker::parse_str("/core/ffx-laboratory:test").unwrap());
         Ok(())
     }
 }

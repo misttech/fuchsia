@@ -13,7 +13,7 @@ pub async fn start_cmd<W: std::io::Write>(
     lifecycle_controller: fsys::LifecycleControllerProxy,
     realm_query: fsys::RealmQueryProxy,
     mut writer: W,
-) -> Result<()> {
+) -> Result<moniker::Moniker> {
     let moniker = get_cml_moniker_from_query(&query, &realm_query).await?;
 
     writeln!(writer, "Moniker: {}", moniker)?;
@@ -24,7 +24,7 @@ pub async fn start_cmd<W: std::io::Write>(
         .map_err(|e| format_start_error(&moniker, e))?;
 
     writeln!(writer, "Started component instance!")?;
-    Ok(())
+    Ok(moniker)
 }
 
 #[cfg(test)]
@@ -78,14 +78,15 @@ mod test {
             resolved_info: None,
             ..Default::default()
         }]);
-        start_cmd(
+        let response = start_cmd(
             "/core/ffx-laboratory:test".to_string(),
             lifecycle_controller,
             realm_query,
             &mut output,
         )
-        .await
-        .unwrap();
+        .await;
+        let moniker = response.unwrap();
+        assert_eq!(moniker, Moniker::parse_str("/core/ffx-laboratory:test").unwrap());
         Ok(())
     }
 }

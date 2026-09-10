@@ -49,7 +49,7 @@ pub async fn exec() -> Result<()> {
             destroy_cmd(args.query, lifecycle_controller, realm_query, writer).await
         }
         ComponentSubcommand::Resolve(args) => {
-            resolve_cmd(args.query, lifecycle_controller, realm_query, writer).await
+            resolve_cmd(args.query, lifecycle_controller, realm_query, writer).await.map(|_| ())
         }
         ComponentSubcommand::Explore(args) => {
             // TODO(https://fxbug.dev/296283299): Verify that the optional Launcher protocol is
@@ -74,10 +74,10 @@ pub async fn exec() -> Result<()> {
             reload_cmd(args.query, lifecycle_controller, realm_query, writer).await
         }
         ComponentSubcommand::Start(args) => {
-            start_cmd(args.query, lifecycle_controller, realm_query, writer).await
+            start_cmd(args.query, lifecycle_controller, realm_query, writer).await.map(|_| ())
         }
         ComponentSubcommand::Stop(args) => {
-            stop_cmd(args.query, lifecycle_controller, realm_query, writer).await
+            stop_cmd(args.query, lifecycle_controller, realm_query, writer).await.map(|_| ())
         }
         ComponentSubcommand::Doctor(args) => {
             doctor_cmd_print(args.query, route_validator, realm_query, writer).await

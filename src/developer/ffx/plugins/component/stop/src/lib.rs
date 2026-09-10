@@ -7,9 +7,16 @@ use component_debug_fdomain::cli::stop_cmd;
 use errors::ffx_error;
 use ffx_component::rcs::{connect_to_lifecycle_controller, connect_to_realm_query};
 use ffx_component_stop_args::ComponentStopCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxMain, FfxTool};
+use schemars::JsonSchema;
+use serde::Serialize;
 use target_holders::RemoteControlProxyHolder;
+
+#[derive(Serialize, JsonSchema, Clone)]
+pub struct StopResult {
+    moniker: String,
+}
 
 #[derive(FfxTool)]
 pub struct StopTool {
@@ -22,18 +29,20 @@ fho::embedded_plugin!(StopTool);
 
 #[async_trait(?Send)]
 impl FfxMain for StopTool {
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<StopResult>;
 
     type Error = ::fho::Error;
 
-    async fn main(self, writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         let lifecycle_controller = connect_to_lifecycle_controller(&self.rcs).await?;
         let realm_query = connect_to_realm_query(&self.rcs).await?;
 
         // All errors from component_debug library are user-visible.
-        stop_cmd(self.cmd.query, lifecycle_controller, realm_query, writer)
+        let moniker = stop_cmd(self.cmd.query, lifecycle_controller, realm_query, &mut writer)
             .await
             .map_err(|e| ffx_error!(e))?;
+
+        writer.machine(&StopResult { moniker: moniker.to_string() })?;
         Ok(())
     }
 }
@@ -140,15 +149,28 @@ mod test {
 
         let rcs = testing_lib::setup_fake_rcs(client.clone(), config);
 
-        let tool = StopTool { cmd: ComponentStopCommand { query: moniker }, rcs: rcs.into() };
+        // Test non-machine mode
+        {
+            let tool = StopTool {
+                cmd: ComponentStopCommand { query: moniker.clone() },
+                rcs: rcs.clone().into(),
+            };
+            let buffers = TestBuffers::default();
+            let writer = VerifiedMachineWriter::new_test(None, &buffers);
+            tool.main(writer).await.expect("tool failed");
+            let output = buffers.into_stdout_str();
+            assert!(output.contains("Stopped component instance!"));
+        }
 
-        let buffers = TestBuffers::default();
-        let writer = SimpleWriter::new_test(&buffers);
-
-        tool.main(writer).await.expect("tool failed");
-
-        let output = buffers.into_stdout_str();
-        assert!(output.contains("Stopped component instance!"));
+        // Test machine mode
+        {
+            let tool = StopTool { cmd: ComponentStopCommand { query: moniker }, rcs: rcs.into() };
+            let buffers = TestBuffers::default();
+            let writer = VerifiedMachineWriter::new_test(Some(ffx_writer::Format::Json), &buffers);
+            tool.main(writer).await.expect("tool failed");
+            let output = buffers.into_stdout_str();
+            assert_eq!(output, "{\"moniker\":\"core/test\"}\n");
+        }
 
         Ok(())
     }
