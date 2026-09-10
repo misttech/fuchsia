@@ -42,6 +42,7 @@ group("tests") {
     "fake-clock:tests",
     "fdio:tests",
     "fdomain:tests",
+    "ffl:tests",
     "fidl:tests",
     "fidl_codec:tests",
     "fidl_server:tests",
