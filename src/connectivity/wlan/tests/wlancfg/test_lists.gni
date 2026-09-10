@@ -37,7 +37,6 @@ wlancfg_tests_for_wlan_presubmit = [
 wlancfg_tests_for_postsubmit = [
   "//src/connectivity/wlan/tests/wlancfg:beacon_loss_test",
   "//src/connectivity/wlan/tests/wlancfg:hidden_networks_test",
-  "//src/connectivity/wlan/tests/wlancfg:ping_test",
   "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
   "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_misc_scenario_test",
@@ -54,6 +53,7 @@ wlancfg_tests_for_fyi = [
   "//src/connectivity/wlan/tests/wlancfg:dhcpv4_duplicate_address_test",
   "//src/connectivity/wlan/tests/wlancfg:dhcpv4_interop_basic_test",
   "//src/connectivity/wlan/tests/wlancfg:dhcpv4_interop_combinatorial_options_test",
+  "//src/connectivity/wlan/tests/wlancfg:ping_test",
   "//src/connectivity/wlan/tests/wlancfg:saved_networks_test",
   "//src/connectivity/wlan/tests/wlancfg:vape_interop_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_bss_transition_management_test",
