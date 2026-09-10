@@ -99,29 +99,6 @@ zx::result<> Device::Start(fdf::DriverContext context) {
 
 void Device::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
 
-zx_status_t Device::AddNode() {
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    errorf("Failed to bind devfs connecter to dispatcher: {}", connector);
-    return connector.error_value();
-  }
-
-  auto devfs_args = fuchsia_driver_framework::DevfsAddArgs{{
-      .connector = std::move(connector.value()),
-      .class_name = "bt-hci",
-  }};
-
-  zx::result child = AddOwnedChild("bt-hci-intel", devfs_args);
-  if (child.is_error()) {
-    errorf("Failed to add bt-hci-intel node, FIDL error: {}", child);
-    return child.status_value();
-  }
-
-  child_node_.Bind(std::move(child->node_), dispatcher());
-  child_node_controller_.Bind(std::move(child->node_controller_), dispatcher());
-  return ZX_OK;
-}
-
 zx_status_t Device::Init(bool secure) {
   infof("Init(secure: {}, firmware_loading: {})", (secure_ ? "yes" : "no"),
         (legacy_firmware_loading_ ? "legacy" : "new"));
@@ -141,7 +118,18 @@ zx_status_t Device::Init(bool secure) {
 
   firmware_loaded_ = true;
 
-  return AddNode();
+  fuchsia_hardware_bluetooth::Service::InstanceHandler handler({
+      .vendor =
+          vendor_binding_group_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
+  });
+  zx::result result =
+      outgoing()->AddService<fuchsia_hardware_bluetooth::Service>(std::move(handler));
+  if (result.is_error()) {
+    errorf("Failed to add service: {}", result.status_string());
+    return result.status_value();
+  }
+
+  return ZX_OK;
 }
 
 zx_status_t Device::InitFailed(zx_status_t status, const char* note) {
@@ -246,12 +234,6 @@ void Device::handle_unknown_method(fidl::UnknownMethodMetadata<fhbt::Vendor> met
                                    fidl::UnknownMethodCompleter::Sync& completer) {
   errorf("Unknown method in Vendor request, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
-}
-
-// driver_devfs::Connector<fuchsia_hardware_bluetooth::Vendor>
-void Device::Connect(fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request) {
-  vendor_binding_group_.AddBinding(fdf::Dispatcher::GetCurrent()->async_dispatcher(),
-                                   std::move(request), this, fidl::kIgnoreBindingClosure);
 }
 
 zx_status_t Device::LoadSecureFirmware() {

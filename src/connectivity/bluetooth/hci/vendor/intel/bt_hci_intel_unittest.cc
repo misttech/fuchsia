@@ -41,6 +41,7 @@ const std::array<uint8_t, 6> kResetCommandCompleteEvent = {
     0x00,  // return_code (success)
 };
 
+// clang-format off
 const std::array<uint8_t, 109> kReadVersionTlvCompleteEvent = {
     static_cast<uint8_t>(pw::bluetooth::emboss::EventCode::COMMAND_COMPLETE),
     0x6b,  // parameter_total_size
@@ -59,6 +60,7 @@ const std::array<uint8_t, 109> kReadVersionTlvCompleteEvent = {
     0x00, 0x35, 0x04, 0x00, 0x00, 0x00,
     // End
 };
+// clang-format on
 
 class FakeUsbServer : public ddk::UsbProtocol<FakeUsbServer> {
  public:
@@ -236,6 +238,12 @@ class BtHciIntelTest : public ::testing::Test {
 };
 
 TEST_F(BtHciIntelTest, LifecycleTest) {}
+
+TEST_F(BtHciIntelTest, ConnectVendorService) {
+  zx::result<fidl::ClientEnd<fhbt::Vendor>> client_end =
+      driver_test().Connect<fhbt::Service::Vendor>();
+  ASSERT_TRUE(client_end.is_ok());
+}
 
 }  // namespace
 }  // namespace bt_hci_intel

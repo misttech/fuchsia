@@ -30,11 +30,22 @@
       },
     },
   },
+  capabilities: [
+    {
+      service: "fuchsia.hardware.bluetooth.Service",
+    },
+  ],
   use: [
     {
       service: "fuchsia.hardware.bluetooth.HciService",
       name: "default",
       generate_bind_rule: false,
+    },
+  ],
+  expose: [
+    {
+      service: "fuchsia.hardware.bluetooth.Service",
+      from: "self",
     },
   ],
 }

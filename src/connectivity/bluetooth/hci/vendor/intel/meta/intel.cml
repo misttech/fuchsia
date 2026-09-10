@@ -16,9 +16,16 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
         bind: "meta/bind/intel.bindbc",
     },
-    capabilities: [],
+    capabilities: [
+        { service: "fuchsia.hardware.bluetooth.Service" },
+    ],
     use: [
         { service: "fuchsia.hardware.bluetooth.HciService" },
     ],
-    expose: [],
+    expose: [
+        {
+            service: "fuchsia.hardware.bluetooth.Service",
+            from: "self",
+        },
+    ],
 }

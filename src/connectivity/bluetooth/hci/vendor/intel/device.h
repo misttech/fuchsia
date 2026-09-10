@@ -10,8 +10,6 @@
 #include <fidl/fuchsia.hardware.bluetooth/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
-#include <lib/driver/component/cpp/node_add_args.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/sync/cpp/completion.h>
 
 #include <mutex>
@@ -26,15 +24,11 @@ namespace bt_hci_intel {
 class Device : public fdf::DriverBase2,
                public fidl::WireServer<fuchsia_hardware_bluetooth::Vendor> {
  public:
-  explicit Device()
-      : fdf::DriverBase2("bt-hci-intel"),
-        devfs_connector_(fit::bind_member<&Device::Connect>(this)) {}
+  explicit Device() : fdf::DriverBase2("bt-hci-intel") {}
 
   // Load the firmware and complete device initialization.
   // If |secure| is true, use the "secure" firmware method.
   zx_status_t Init(bool secure);
-
-  zx_status_t AddNode();
 
   // fdf::DriverBase2 overrides
   zx::result<> Start(fdf::DriverContext context) override;
@@ -56,8 +50,6 @@ class Device : public fdf::DriverBase2,
       fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::Vendor> metadata,
       fidl::UnknownMethodCompleter::Sync &completer) override;
 
-  void Connect(fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request);
-
   zx_status_t LoadSecureFirmware();
   zx_status_t LoadLegacyFirmware();
 
@@ -77,12 +69,7 @@ class Device : public fdf::DriverBase2,
 
   std::shared_ptr<fdf::Namespace> incoming_;
 
-  driver_devfs::Connector<fuchsia_hardware_bluetooth::Vendor> devfs_connector_;
-
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Vendor> vendor_binding_group_;
-
-  fidl::WireClient<fuchsia_driver_framework::NodeController> child_node_controller_;
-  fidl::WireClient<fuchsia_driver_framework::Node> child_node_;
 
   fdf::Dispatcher hci_client_dispatcher_;
   HciEventHandler hci_event_handler_;
