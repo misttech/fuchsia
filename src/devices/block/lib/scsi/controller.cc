@@ -389,8 +389,7 @@ zx::result<uint32_t> Controller::ScanAndBindLogicalUnits(uint8_t target,
   // TODO(b/317838849): We should only attempt to bind to the luns obtained by ReportLuns().
   uint16_t luns_found = 0;
   for (uint16_t lun = 0; lun < max_lun; ++lun) {
-    zx::result block_device =
-        BlockDevice::Bind(this, target, lun, max_transfer_bytes, device_options);
+    zx::result block_device = BindBlockDevice(target, lun, max_transfer_bytes, device_options);
     if (block_device.is_ok()) {
       scsi::BlockDevice* dev = block_device.value().get();
       {
@@ -421,6 +420,12 @@ zx::result<uint32_t> Controller::ScanAndBindLogicalUnits(uint8_t target,
   }
 
   return zx::ok(lun_count.value());
+}
+
+zx::result<std::unique_ptr<BlockDevice>> Controller::BindBlockDevice(uint8_t target, uint16_t lun,
+                                                                     uint32_t max_transfer_bytes,
+                                                                     DeviceOptions device_options) {
+  return BlockDevice::Bind(this, target, lun, max_transfer_bytes, device_options);
 }
 
 zx::result<PostProcess> Controller::CheckSenseData(const FixedFormatSenseDataHeader& sense_data) {

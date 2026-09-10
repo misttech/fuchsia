@@ -67,7 +67,7 @@ source_set("scsi_lib") {
   configs += [ "//build/config:all_source" ]
   sources = [ "scsi.cc" ]
   public_deps = [
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",
     "//src/devices/block/lib/scsi",
@@ -148,12 +148,14 @@ test("virtio-scsi-test-bin") {
   sources = [ "scsi_test.cc" ]
   deps = [
     ":scsi_lib",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
     "//sdk/lib/driver/testing/cpp:scoped_global_logger",
     "//src/devices/bin/driver_runtime",
     "//src/devices/bus/lib/virtio",
     "//src/devices/testing/fake-bti",
+    "//src/storage/lib/block_client/cpp",
     "//zircon/system/ulib/zxtest",
   ]
 }

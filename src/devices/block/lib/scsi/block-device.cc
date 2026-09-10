@@ -25,6 +25,7 @@ ScsiRequest::ScsiRequest(ScsiRequest&& other) {
   vmo_offset_ = other.vmo_offset_;
   device_offset_ = other.device_offset_;
   transfer_length_ = other.transfer_length_;
+  block_size_ = other.block_size_;
   cdb_ = other.cdb_;
   cdb_length_ = other.cdb_length_;
   immediate_data_ = other.immediate_data_;
@@ -46,6 +47,7 @@ ScsiRequest& ScsiRequest::operator=(ScsiRequest&& other) {
     vmo_offset_ = other.vmo_offset_;
     device_offset_ = other.device_offset_;
     transfer_length_ = other.transfer_length_;
+    block_size_ = other.block_size_;
     cdb_ = other.cdb_;
     cdb_length_ = other.cdb_length_;
     immediate_data_ = other.immediate_data_;
@@ -354,6 +356,7 @@ void BlockDevice::OnRequests(std::span<block_server::Request> requests) {
     scsi_req = {};
     scsi_req.parent_ = this;
     scsi_req.request_id_ = req.request_id;
+    scsi_req.block_size_ = block_size_bytes_;
 
     switch (req.operation.tag) {
       case block_server::Operation::Tag::Read:

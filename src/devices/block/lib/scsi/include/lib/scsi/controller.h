@@ -995,6 +995,12 @@ class ScsiRequest {
   uint64_t vmo_offset() const { return vmo_offset_; }
   uint64_t device_offset() const { return device_offset_; }
   uint64_t transfer_length() const { return transfer_length_; }
+  uint32_t block_size() const { return block_size_; }
+  uint64_t transfer_length_bytes() const { return transfer_length_ * block_size_; }
+  Opcode opcode() const {
+    ZX_ASSERT(cdb_length_ > 0);
+    return static_cast<Opcode>(cdb_[0]);
+  }
   std::span<const uint8_t> cdb() const { return {cdb_.data(), cdb_length_}; }
   std::span<const uint8_t> immediate_data() const {
     return {immediate_data_.data(), immediate_data_length_};
@@ -1009,6 +1015,7 @@ class ScsiRequest {
   uint64_t vmo_offset_;
   uint64_t device_offset_;
   uint64_t transfer_length_;
+  uint32_t block_size_ = 0;
 
   static constexpr size_t kMaxCdbLength = 16;
   std::array<uint8_t, kMaxCdbLength> cdb_;
@@ -1040,7 +1047,9 @@ class Controller {
 
   // Size of metadata struct required for each command transaction by this controller. This metadata
   // struct must include scsi::DeviceOp as its first (and possibly only) member.
-  virtual size_t BlockOpSize() = 0;
+  // TODO(https://fxbug.dev/505774108): Remove when all clients are migrated to
+  // [`ExecuteCommandsAsync`].
+  virtual size_t BlockOpSize() { return 0; }
 
   // Synchronously execute a SCSI command on the device at target:lun.
   // |cdb| contains the SCSI CDB to execute.
@@ -1064,7 +1073,9 @@ class Controller {
   // [`ExecuteCommandsAsync`].
   virtual void ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
                                    uint32_t block_size_bytes, DeviceOp* device_op,
-                                   iovec data = {nullptr, 0}) = 0;
+                                   iovec data = {nullptr, 0}) {
+    ZX_PANIC("ExecuteCommandAsync should not be called when UseNewInterface() is true");
+  }
 
   // Asynchronously execute a batch of SCSI commands on the device at target:lun.
   // Each request must be completed with [`ScsiRequest::Complete(status)`], whether it was
@@ -1143,6 +1154,11 @@ class Controller {
   zx::result<uint32_t> ScanAndBindLogicalUnits(uint8_t target, uint32_t max_transfer_bytes,
                                                uint16_t max_lun, LuCallback lu_callback,
                                                DeviceOptions device_options);
+
+  // Bind a block device at target:lun.
+  virtual zx::result<std::unique_ptr<BlockDevice>> BindBlockDevice(uint8_t target, uint16_t lun,
+                                                                   uint32_t max_transfer_bytes,
+                                                                   DeviceOptions device_options);
 
   // This function handles the completion of the SCSI command and runs the ErrorHandler if an error
   // is found. |StatusMessage| is a struct for passing the HostStatusCode and ScsiStatusCode.

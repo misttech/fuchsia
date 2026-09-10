@@ -12,7 +12,16 @@
         binary: "driver/virtio_scsi.so",
         bind: "meta/bind/virtio_scsi_bind.bindbc",
     },
+    capabilities: [
+        { service: "fuchsia.hardware.block.volume.Service" },
+    ],
     use: [
         { service: "fuchsia.hardware.pci.Service" },
+    ],
+    expose: [
+        {
+            service: "fuchsia.hardware.block.volume.Service",
+            from: "self",
+        },
     ],
 }

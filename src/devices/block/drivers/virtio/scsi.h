@@ -8,6 +8,7 @@
 #include <lib/dma-buffer/buffer.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/fit/function.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/scsi/block-device.h>
 #include <lib/scsi/controller.h>
@@ -23,6 +24,7 @@
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <fbl/auto_lock.h>
 #include <fbl/condition_variable.h>
@@ -44,25 +46,35 @@ class ScsiDevice : public virtio::Device {
 
   ScsiDevice(ScsiDriver* scsi_driver, zx::bti bti, std::unique_ptr<Backend> backend)
       : virtio::Device(std::move(bti), std::move(backend)), scsi_driver_(scsi_driver) {}
+  ~ScsiDevice() override;
 
   // virtio::Device overrides
   zx_status_t Init() override;
+  void Release() override;
   // Invoked for most device interrupts.
   void IrqRingUpdate() override;
   // Invoked on config change interrupts.
   void IrqConfigChange() override {}
   const char* tag() const override { return "virtio-scsi"; }
 
+  static constexpr uint32_t kMaxXferSectors = 1024;  // 512K clamp
+
   static void FillLUNStructure(struct virtio_scsi_req_cmd* req, uint8_t target, uint16_t lun);
 
   void QueueCommand(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
                     zx::unowned_vmo data_vmo, zx_off_t vmo_offset_bytes, size_t transfer_bytes,
-                    void (*cb)(void*, zx_status_t), void* cookie, void* data, bool vmar_mapped,
+                    fit::callback<void(zx_status_t)> cb, void* data, bool vmar_mapped,
                     std::optional<zx::vmo> trim_data_vmo = std::nullopt);
 
   zx::result<> AllocatePages(zx::vmo& vmo, fzl::VmoMapper& mapper, size_t size);
 
   zx_status_t ProbeLuns();
+
+  uint32_t active_ios() {
+    fbl::AutoLock lock(&lock_);
+    return active_ios_;
+  }
+  void* GetIOForTesting();
 
  private:
   ScsiDriver* const scsi_driver_;
@@ -80,8 +92,7 @@ class ScsiDevice : public virtio::Device {
     std::unique_ptr<dma_buffer::ContiguousBuffer> request_buffer;
     bool avail;
     vring_desc* tail_desc;
-    void* cookie;
-    void (*callback)(void* cookie, zx_status_t status);
+    fit::callback<void(zx_status_t)> callback;
     void* data_in_region;
     dma_buffer::ContiguousBuffer* request_buffers;
     struct virtio_scsi_resp_cmd* response;
@@ -90,6 +101,9 @@ class ScsiDevice : public virtio::Device {
   };
   scsi_io_slot* GetIO() TA_REQ(lock_);
   void FreeIO(scsi_io_slot* io_slot) TA_REQ(lock_);
+  std::vector<fit::callback<void(zx_status_t)>> CleanUpPendingTxns() TA_REQ(lock_);
+  bool irq_thread_started_ TA_GUARDED(lock_) = false;
+  bool released_ TA_GUARDED(lock_) = false;
   size_t request_buffers_size_;
   scsi_io_slot scsi_io_slot_table_[MAX_IOS] TA_GUARDED(lock_) = {};
 
@@ -124,18 +138,15 @@ class ScsiDriver : public fdf::DriverBase2, public scsi::Controller {
   std::shared_ptr<fdf::OutgoingDirectory>& driver_outgoing() override { return outgoing(); }
   const std::optional<std::string>& driver_node_name() const override { return node_name_; }
   fdf::Logger& driver_logger() override { return logger(); }
-  size_t BlockOpSize() override {
-    // No additional metadata required for each command transaction.
-    return sizeof(scsi::DeviceOp);
-  }
   zx_status_t ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
                                  iovec data) override;
-  void ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
-                           uint32_t block_size_bytes, scsi::DeviceOp* device_op,
-                           iovec data) override;
+  void ExecuteCommandsAsync(uint8_t target, uint16_t lun,
+                            std::span<scsi::ScsiRequest> batch) override;
+  bool UseNewInterface() const override { return true; }
 
  protected:
-
+  void set_scsi_device(std::unique_ptr<ScsiDevice> device) { scsi_device_ = std::move(device); }
+  ScsiDevice* scsi_device() { return scsi_device_.get(); }
 
  private:
   std::unique_ptr<ScsiDevice> scsi_device_;

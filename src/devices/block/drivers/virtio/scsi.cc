@@ -5,6 +5,7 @@
 #include "scsi.h"
 
 #include <inttypes.h>
+#include <lib/async/cpp/task.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/fit/defer.h>
 #include <lib/scsi/block-device.h>
@@ -44,8 +45,11 @@ ScsiDevice::scsi_io_slot* ScsiDevice::GetIO() {
   // For testing purposes, this condition can be triggered
   // by lowering MAX_IOS (to say 2). And running biotime
   // (with default IO concurrency).
-  while (active_ios_ == MAX_IOS) {
+  while (active_ios_ == MAX_IOS && !released_) {
     ioslot_cv_.Wait(&lock_);
+  }
+  if (released_) {
+    return nullptr;
   }
   active_ios_++;
   for (int i = 0; i < MAX_IOS; i++) {
@@ -55,19 +59,82 @@ ScsiDevice::scsi_io_slot* ScsiDevice::GetIO() {
     }
   }
   ZX_DEBUG_ASSERT(false);  // Unexpected.
-  return NULL;
+  return nullptr;
+}
+
+void* ScsiDevice::GetIOForTesting() {
+  fbl::AutoLock lock(&lock_);
+  return GetIO();
 }
 
 void ScsiDevice::FreeIO(scsi_io_slot* io_slot) {
+  // The callback must be invoked before the slot is freed.
+  ZX_DEBUG_ASSERT(!io_slot->callback);
   io_slot->trim_data_vmo.reset();
+  io_slot->callback = nullptr;
   io_slot->avail = true;
   active_ios_--;
   ioslot_cv_.Signal();
 }
 
+std::vector<fit::callback<void(zx_status_t)>> ScsiDevice::CleanUpPendingTxns() {
+  // Virtio specification 3.3.1 Driver Requirements: Device Cleanup
+  // A driver MUST ensure a virtqueue isn’t live (by device reset) before removing exposed
+  // buffers.
+  DeviceReset();
+  std::vector<fit::callback<void(zx_status_t)>> callbacks;
+  for (auto& io_slot : scsi_io_slot_table_) {
+    if (!io_slot.avail) {
+      if (io_slot.data_vmo->is_valid()) {
+        if (io_slot.vmar_mapped) {
+          zx_vmar_unmap(zx_vmar_root_self(), reinterpret_cast<zx_vaddr_t>(io_slot.data),
+                        io_slot.transfer_bytes);
+        } else {
+          free(io_slot.data);
+        }
+      }
+      if (io_slot.callback) {
+        callbacks.push_back(std::move(io_slot.callback));
+      }
+      FreeIO(&io_slot);
+    }
+  }
+  ioslot_cv_.Broadcast();
+  desc_cv_.Broadcast();
+  return callbacks;
+}
+
+void ScsiDevice::Release() {
+  bool should_release_virtio = false;
+  std::vector<fit::callback<void(zx_status_t)>> callbacks;
+  {
+    fbl::AutoLock lock(&lock_);
+    if (released_) {
+      return;
+    }
+    released_ = true;
+    callbacks = CleanUpPendingTxns();
+    if (irq_thread_started_) {
+      should_release_virtio = true;
+      irq_thread_started_ = false;
+    }
+  }
+  for (auto& callback : callbacks) {
+    callback(ZX_ERR_IO_NOT_PRESENT);
+  }
+  if (should_release_virtio) {
+    virtio::Device::Release();
+  }
+}
+
+ScsiDevice::~ScsiDevice() { Release(); }
+
 void ScsiDevice::IrqRingUpdate() {
   // Parse our descriptor chain and add back to the free queue.
   auto free_chain = [this](vring_used_elem* elem) TA_NO_THREAD_SAFETY_ANALYSIS {
+    if (released_) {
+      return;
+    }
     auto index = static_cast<uint16_t>(elem->id);
     vring_desc const* tail_desc = nullptr;
 
@@ -95,7 +162,6 @@ void ScsiDevice::IrqRingUpdate() {
     // Search for the IO that just completed, using tail_desc.
     for (int i = 0; i < MAX_IOS; i++) {
       scsi_io_slot* io_slot = &scsi_io_slot_table_[i];
-
       if (io_slot->avail)
         continue;
       if (io_slot->tail_desc == tail_desc) {
@@ -134,11 +200,12 @@ void ScsiDevice::IrqRingUpdate() {
           }
         }
 
-        void* cookie = io_slot->cookie;
-        auto (*callback)(void* cookie, zx_status_t status) = io_slot->callback;
+        fit::callback<void(zx_status_t)> callback = std::move(io_slot->callback);
         FreeIO(io_slot);
         lock_.Release();
-        callback(cookie, status);
+        if (callback) {
+          callback(status);
+        }
         lock_.Acquire();
         return;
       }
@@ -148,6 +215,9 @@ void ScsiDevice::IrqRingUpdate() {
 
   // Tell the ring to find free chains and hand it back to our lambda.
   fbl::AutoLock lock(&lock_);
+  if (released_) {
+    return;
+  }
   request_queue_.IrqRingUpdate(free_chain);
 }
 
@@ -207,7 +277,46 @@ void ScsiDriver::Stop(fdf::StopCompleter completer) {
   if (scsi_device_) {
     scsi_device_->Release();
   }
-  completer(zx::ok());
+
+  std::vector<scsi::BlockDevice*> devs;
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    for (auto& [target, luns] : block_devs_) {
+      for (auto& [lun, dev] : luns) {
+        if (dev) {
+          devs.push_back(dev.get());
+        }
+      }
+    }
+
+    if (devs.empty()) {
+      block_devs_.clear();
+      completer(zx::ok());
+      return;
+    }
+  }
+
+  auto shared_completer = std::make_shared<fdf::StopCompleter>(std::move(completer));
+  auto remaining = std::make_shared<std::atomic<size_t>>(devs.size());
+
+  for (auto* dev : devs) {
+    dev->ShutdownAsync([this, shared_completer, remaining]() {
+      if (remaining->fetch_sub(1) == 1) {
+        auto cleanup = [this, shared_completer]() {
+          {
+            std::lock_guard<std::mutex> lock(lock_);
+            block_devs_.clear();
+          }
+          (*shared_completer)(zx::ok());
+        };
+        if (dispatcher()) {
+          async::PostTask(dispatcher(), std::move(cleanup));
+        } else {
+          cleanup();
+        }
+      }
+    });
+  }
 }
 
 zx_status_t ScsiDriver::ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
@@ -223,20 +332,14 @@ zx_status_t ScsiDriver::ExecuteCommandSync(uint8_t target, uint16_t lun, iovec c
   };
   scsi_sync_callback_state cookie;
   sync_completion_reset(&cookie.completion);
-  auto callback = [](void* cookie, zx_status_t status) {
-    auto* state = reinterpret_cast<scsi_sync_callback_state*>(cookie);
-    state->status = status;
-    sync_completion_signal(&state->completion);
+  auto callback = [&cookie](zx_status_t status) {
+    cookie.status = status;
+    sync_completion_signal(&cookie.completion);
   };
   scsi_device_->QueueCommand(target, lun, cdb, is_write, zx::unowned_vmo(), 0, data.iov_len,
-                             callback, &cookie, data.iov_base, /*vmar_mapped=*/false);
+                             std::move(callback), data.iov_base, /*vmar_mapped=*/false);
   sync_completion_wait(&cookie.completion, ZX_TIME_INFINITE);
   return cookie.status;
-}
-
-static void DeviceOpCompletionCb(void* cookie, zx_status_t status) {
-  auto device_op = static_cast<scsi::DeviceOp*>(cookie);
-  device_op->Complete(status);
 }
 
 zx::result<> ScsiDevice::AllocatePages(zx::vmo& vmo, fzl::VmoMapper& mapper, size_t size) {
@@ -253,87 +356,112 @@ zx::result<> ScsiDevice::AllocatePages(zx::vmo& vmo, fzl::VmoMapper& mapper, siz
   return zx::ok();
 }
 
-void ScsiDriver::ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
-                                     uint32_t block_size_bytes, scsi::DeviceOp* device_op,
-                                     iovec data) {
-  zx_status_t status = ZX_ERR_INTERNAL;
-  auto complete_op = fit::defer([&] { device_op->Complete(status); });
+void ScsiDriver::ExecuteCommandsAsync(uint8_t target, uint16_t lun,
+                                      std::span<scsi::ScsiRequest> batch) {
   if (!scsi_device_) {
-    fdf::error("ExecuteCommandAsync called for driver that has not been started.");
+    fdf::error("ExecuteCommandsAsync called for driver that has not been started.");
+    for (auto& req : batch) {
+      req.Complete(ZX_ERR_INTERNAL);
+    }
     return;
   }
 
-  zx_handle_t data_vmo;
-  zx_off_t vmo_offset_bytes;
-  size_t transfer_bytes;
-  std::optional<zx::vmo> trim_data_vmo;
-
-  if (device_op->op.command.opcode == BLOCK_OPCODE_TRIM) {
-    zx::vmo vmo;
-    trim_data_vmo = std::move(vmo);
-    fzl::VmoMapper mapper;
-    if (zx::result<> result =
-            scsi_device_->AllocatePages(trim_data_vmo.value(), mapper, data.iov_len);
-        result.is_error()) {
-      fdf::error("Failed to allocate data buffer: {}", result);
-      return;
+  uint32_t block_size_bytes = 0;
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    if (auto target_it = block_devs_.find(target); target_it != block_devs_.end()) {
+      if (auto lun_it = target_it->second.find(lun); lun_it != target_it->second.end()) {
+        block_size_bytes = lun_it->second->block_size_bytes();
+      }
     }
-    memcpy(mapper.start(), data.iov_base, data.iov_len);
-
-    data_vmo = trim_data_vmo->get();
-    vmo_offset_bytes = 0;
-    transfer_bytes = data.iov_len;
-  } else {
-    const block_read_write_t& rw = device_op->op.rw;
-    data_vmo = rw.vmo;
-    vmo_offset_bytes = rw.offset_vmo * block_size_bytes;
-    transfer_bytes = rw.length * block_size_bytes;
   }
 
-  // Map IO data into process memory.
-  void* rw_data = nullptr;
-  bool vmar_mapped = false;
-  if (data_vmo != ZX_HANDLE_INVALID) {
-    // To use zx_vmar_map, offset, length must be page aligned. If it isn't (uncommon),
-    // allocate a temp buffer and do a copy.
-    if ((transfer_bytes > 0) && ((transfer_bytes % zx_system_get_page_size()) == 0) &&
-        ((vmo_offset_bytes % zx_system_get_page_size()) == 0)) {
-      vmar_mapped = true;
-      zx_vaddr_t mapped_addr;
-      // This is later unmapped in IrqRingUpdate().
-      status = zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, data_vmo,
-                           vmo_offset_bytes, transfer_bytes, &mapped_addr);
-      if (status != ZX_OK) {
-        return;
+  for (auto& req : batch) {
+    const auto& cdb = req.cdb();
+    iovec cdb_iov = {
+        .iov_base = const_cast<uint8_t*>(cdb.data()),
+        .iov_len = cdb.size(),
+    };
+    bool is_write = req.is_write();
+
+    zx_handle_t data_vmo = req.data_vmo()->is_valid() ? req.data_vmo()->get() : ZX_HANDLE_INVALID;
+    zx_off_t vmo_offset_bytes = req.vmo_offset();
+    size_t transfer_bytes = req.immediate_data().size() > 0
+                                ? req.immediate_data().size()
+                                : (req.block_size() > 0 ? req.transfer_length_bytes()
+                                                        : req.transfer_length() * block_size_bytes);
+    std::optional<zx::vmo> trim_data_vmo;
+
+    if (req.immediate_data().size() > 0) {
+      zx::vmo vmo;
+      trim_data_vmo = std::move(vmo);
+      fzl::VmoMapper mapper;
+      if (zx::result<> result = scsi_device_->AllocatePages(trim_data_vmo.value(), mapper,
+                                                            req.immediate_data().size());
+          result.is_error()) {
+        fdf::error("Failed to allocate data buffer: {}", result);
+        req.Complete(result.status_value());
+        continue;
       }
-      rw_data = reinterpret_cast<void*>(mapped_addr);
-    } else {
-      // This is later freed in IrqRingUpdate().
-      rw_data = calloc(1, transfer_bytes);
-      if (is_write) {
-        status = zx_vmo_read(data_vmo, rw_data, vmo_offset_bytes, transfer_bytes);
+      memcpy(mapper.start(), req.immediate_data().data(), req.immediate_data().size());
+
+      data_vmo = trim_data_vmo->get();
+      vmo_offset_bytes = 0;
+    }
+
+    // Map IO data into process memory.
+    void* rw_data = nullptr;
+    bool vmar_mapped = false;
+    if (data_vmo != ZX_HANDLE_INVALID) {
+      // To use zx_vmar_map, offset, length must be page aligned. If it isn't (uncommon),
+      // allocate a temp buffer and do a copy.
+      if ((transfer_bytes > 0) && ((transfer_bytes % zx_system_get_page_size()) == 0) &&
+          ((vmo_offset_bytes % zx_system_get_page_size()) == 0)) {
+        vmar_mapped = true;
+        zx_vaddr_t mapped_addr;
+        // This is later unmapped in IrqRingUpdate().
+        zx_status_t status = zx_vmar_map(zx_vmar_root_self(), ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0,
+                                         data_vmo, vmo_offset_bytes, transfer_bytes, &mapped_addr);
         if (status != ZX_OK) {
-          free(rw_data);
-          return;
+          req.Complete(status);
+          continue;
+        }
+        rw_data = reinterpret_cast<void*>(mapped_addr);
+      } else {
+        // This is later freed in IrqRingUpdate().
+        rw_data = calloc(1, transfer_bytes);
+        if (is_write) {
+          zx_status_t status = zx_vmo_read(data_vmo, rw_data, vmo_offset_bytes, transfer_bytes);
+          if (status != ZX_OK) {
+            free(rw_data);
+            req.Complete(status);
+            continue;
+          }
         }
       }
     }
-  }
 
-  complete_op.cancel();
-  return scsi_device_->QueueCommand(target, lun, cdb, is_write, zx::unowned_vmo(data_vmo),
-                                    vmo_offset_bytes, transfer_bytes, DeviceOpCompletionCb,
-                                    static_cast<void*>(device_op), rw_data, vmar_mapped,
-                                    std::move(trim_data_vmo));
+    auto callback = [request = std::move(req)](zx_status_t status) mutable {
+      request.Complete(status);
+    };
+
+    scsi_device_->QueueCommand(target, lun, cdb_iov, is_write, zx::unowned_vmo(data_vmo),
+                               vmo_offset_bytes, transfer_bytes, std::move(callback), rw_data,
+                               vmar_mapped, std::move(trim_data_vmo));
+  }
 }
 
 void ScsiDevice::QueueCommand(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
                               zx::unowned_vmo data_vmo, zx_off_t vmo_offset_bytes,
-                              size_t transfer_bytes, void (*cb)(void*, zx_status_t), void* cookie,
+                              size_t transfer_bytes, fit::callback<void(zx_status_t)> cb,
                               void* data, bool vmar_mapped, std::optional<zx::vmo> trim_data_vmo) {
   auto cleanup = fit::defer([=] {
-    if (data_vmo->is_valid() && !vmar_mapped) {
-      free(data);
+    if (data_vmo->is_valid()) {
+      if (vmar_mapped) {
+        zx_vmar_unmap(zx_vmar_root_self(), reinterpret_cast<zx_vaddr_t>(data), transfer_bytes);
+      } else {
+        free(data);
+      }
     }
   });
 
@@ -352,7 +480,9 @@ void ScsiDevice::QueueCommand(uint8_t target, uint16_t lun, iovec cdb, bool is_w
   // If data_in fits within request_buffers_, all the regions of this request will fit.
   if ((sizeof(struct virtio_scsi_req_cmd) + data_out.iov_len + sizeof(struct virtio_scsi_resp_cmd) +
        data_in.iov_len) > request_buffers_size_) {
-    cb(cookie, ZX_ERR_NO_MEMORY);
+    if (cb) {
+      cb(ZX_ERR_NO_MEMORY);
+    }
     return;
   }
 
@@ -365,8 +495,25 @@ void ScsiDevice::QueueCommand(uint8_t target, uint16_t lun, iovec cdb, bool is_w
   }
 
   lock_.Acquire();
+  if (released_) {
+    lock_.Release();
+    if (cb) {
+      cb(ZX_ERR_IO_NOT_PRESENT);
+    }
+    return;
+  }
   // Get both the IO slot and the descriptors needed up front.
   auto io_slot = GetIO();
+  if (released_ || !io_slot) {
+    if (io_slot) {
+      FreeIO(io_slot);
+    }
+    lock_.Release();
+    if (cb) {
+      cb(ZX_ERR_IO_NOT_PRESENT);
+    }
+    return;
+  }
   uint16_t id = 0;
   auto request_desc = request_queue_.AllocDescChain(/*count=*/descriptor_chain_length, &id);
   // For testing purposes, this condition can be triggered by failing
@@ -378,8 +525,32 @@ void ScsiDevice::QueueCommand(uint8_t target, uint16_t lun, iovec cdb, bool is_w
   while (request_desc == nullptr) {
     // Drop the request buf, before blocking, waiting for descs to free up.
     FreeIO(io_slot);
+    if (released_) {
+      lock_.Release();
+      if (cb) {
+        cb(ZX_ERR_IO_NOT_PRESENT);
+      }
+      return;
+    }
     desc_cv_.Wait(&lock_);
+    if (released_) {
+      lock_.Release();
+      if (cb) {
+        cb(ZX_ERR_IO_NOT_PRESENT);
+      }
+      return;
+    }
     io_slot = GetIO();
+    if (released_ || !io_slot) {
+      if (io_slot) {
+        FreeIO(io_slot);
+      }
+      lock_.Release();
+      if (cb) {
+        cb(ZX_ERR_IO_NOT_PRESENT);
+      }
+      return;
+    }
     request_desc = request_queue_.AllocDescChain(/*count=*/descriptor_chain_length, &id);
   }
 
@@ -392,22 +563,22 @@ void ScsiDevice::QueueCommand(uint8_t target, uint16_t lun, iovec cdb, bool is_w
   const auto data_in_offset = response_offset + sizeof(struct virtio_scsi_resp_cmd);
 
   auto* const request_buffers_addr = reinterpret_cast<uint8_t*>(request_buffers->virt());
-  auto* const request =
+  auto* const req =
       reinterpret_cast<struct virtio_scsi_req_cmd*>(request_buffers_addr + request_offset);
   auto* const data_out_region = reinterpret_cast<uint8_t*>(request_buffers_addr + data_out_offset);
   auto* const response =
       reinterpret_cast<struct virtio_scsi_resp_cmd*>(request_buffers_addr + response_offset);
   auto* const data_in_region = reinterpret_cast<uint8_t*>(request_buffers_addr + data_in_offset);
 
-  memset(request, 0, sizeof(*request));
+  memset(req, 0, sizeof(*req));
   memset(response, 0, sizeof(*response));
-  memcpy(&request->cdb, cdb.iov_base, cdb.iov_len);
-  FillLUNStructure(request, target, lun);
-  request->id = scsi_transport_tag_++;
+  memcpy(&req->cdb, cdb.iov_base, cdb.iov_len);
+  FillLUNStructure(req, target, lun);
+  req->id = scsi_transport_tag_++;
 
   vring_desc* tail_desc;
   request_desc->addr = request_buffers->phys() + request_offset;
-  request_desc->len = sizeof(*request);
+  request_desc->len = sizeof(*req);
   request_desc->flags = VRING_DESC_F_NEXT;
   auto next_id = request_desc->next;
 
@@ -444,8 +615,7 @@ void ScsiDevice::QueueCommand(uint8_t target, uint16_t lun, iovec cdb, bool is_w
   io_slot->vmar_mapped = vmar_mapped;
   io_slot->tail_desc = tail_desc;
   io_slot->data_in_region = data_in_region;
-  io_slot->callback = cb;
-  io_slot->cookie = cookie;
+  io_slot->callback = std::move(cb);
   io_slot->request_buffers = request_buffers;
   io_slot->response = response;
   io_slot->trim_data_vmo = std::move(trim_data_vmo);
@@ -459,7 +629,7 @@ void ScsiDevice::QueueCommand(uint8_t target, uint16_t lun, iovec cdb, bool is_w
 }
 
 constexpr uint32_t SCSI_SECTOR_SIZE = 512;
-constexpr uint32_t SCSI_MAX_XFER_SECTORS = 1024;  // 512K clamp
+constexpr uint32_t SCSI_MAX_XFER_SECTORS = ScsiDevice::kMaxXferSectors;
 
 zx_status_t ScsiDevice::ProbeLuns() {
   uint8_t max_target;
@@ -569,6 +739,10 @@ zx_status_t ScsiDevice::Init() {
     scsi_transport_tag_ = 0;
   }
   StartIrqThread();
+  {
+    fbl::AutoLock lock(&lock_);
+    irq_thread_started_ = true;
+  }
   DriverStatusOk();
   return ZX_OK;
 }

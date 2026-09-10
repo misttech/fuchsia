@@ -79,10 +79,15 @@ class BlockDevice : public ddk::BlockImplProtocol<BlockDevice>,
 
   // Asynchronously shut down the block server, invoking `callback` upon completion.
   // This must be called before the `BlockDevice` is deleted.
-  void ShutdownAsync(fit::callback<void()> callback);
+  virtual void ShutdownAsync(fit::callback<void()> callback);
 
   // Remove this block device.
   void RemoveDevice() {
+    if (controller_->UseNewInterface()) {
+      if (auto& outgoing = controller_->driver_outgoing()) {
+        (void)outgoing->RemoveService<fuchsia_hardware_block_volume::Service>(DeviceName().c_str());
+      }
+    }
     if (node_controller_.is_valid()) {
       auto result = node_controller_->Remove();
       if (!result.ok()) {
@@ -126,6 +131,15 @@ class BlockDevice : public ddk::BlockImplProtocol<BlockDevice>,
 
   // Exposed for testing
   std::optional<block_server::BlockServer>& block_server() { return block_server_; }
+  static std::unique_ptr<BlockDevice> CreateForTesting(Controller* controller, uint8_t target,
+                                                       uint16_t lun, DeviceOptions device_options,
+                                                       uint64_t block_count = 1024,
+                                                       uint32_t block_size_bytes = 512) {
+    auto dev = std::make_unique<BlockDevice>(controller, target, lun, device_options);
+    dev->block_count_ = block_count;
+    dev->block_size_bytes_ = block_size_bytes;
+    return dev;
+  }
 
  private:
   zx_status_t AddDevice(uint32_t max_transfer_bytes);
@@ -133,18 +147,18 @@ class BlockDevice : public ddk::BlockImplProtocol<BlockDevice>,
   Controller* const controller_;
   const uint8_t target_;
   const uint16_t lun_;
-  uint32_t max_transfer_bytes_;
-  uint32_t max_transfer_blocks_;
+  uint32_t max_transfer_bytes_ = 0;
+  uint32_t max_transfer_blocks_ = 0;
 
-  bool removable_;
-  bool dpo_fua_available_;
-  bool write_protected_;
-  bool write_cache_enabled_;
+  bool removable_ = false;
+  bool dpo_fua_available_ = false;
+  bool write_protected_ = false;
+  bool write_cache_enabled_ = false;
 
   bool unmap_command_supported_ = false;
 
-  uint64_t block_count_;
-  uint32_t block_size_bytes_;
+  uint64_t block_count_ = 0;
+  uint32_t block_size_bytes_ = 0;
 
   DeviceOptions device_options_;
 
