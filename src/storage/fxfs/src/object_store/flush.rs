@@ -118,9 +118,9 @@ impl ObjectStore {
             ) {
                 let mut store_info = self.store.store_info().unwrap();
 
-                let mutations_cipher = self.store.mutations_cipher.lock();
-                if let Some(cipher) = mutations_cipher.as_ref() {
-                    store_info.mutations_cipher_offset = cipher.sequence_number();
+                let lock_state = self.store.lock_state.lock();
+                if let LockState::Unlocked { mutations_cipher, .. } = &*lock_state {
+                    store_info.mutations_cipher_offset = mutations_cipher.sequence_number();
                 }
 
                 self.store_info.set(store_info).unwrap();

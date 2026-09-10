@@ -442,6 +442,7 @@ pub enum LockState {
     Unlocked {
         crypt: Arc<dyn Crypt>,
         cached_keys: Vec<(NonZero<u64>, EncryptionKey, UnwrappedKey)>,
+        mutations_cipher: JournalCipher,
     },
 
     // The store is unlocked, but in a read-only state, and no flushes or other operations will be
@@ -680,9 +681,6 @@ pub struct ObjectStore {
     // and load all the other layer information.
     store_info_handle: OnceLock<DataObjectHandle<ObjectStore>>,
 
-    // The cipher to use for encrypted mutations, if this store is encrypted.
-    mutations_cipher: Mutex<Option<JournalCipher>>,
-
     // Current lock state of the store.
     // Lock ordering: This must be taken after `store_info`.
     lock_state: Mutex<LockState>,
@@ -725,7 +723,6 @@ impl ObjectStore {
         filesystem: Arc<FxFilesystem>,
         store_info: Option<StoreInfo>,
         object_cache: Option<Box<dyn ObjectCache<ObjectKey, ObjectValue>>>,
-        mutations_cipher: Option<JournalCipher>,
         lock_state: LockState,
         last_object_id: LastObjectId,
     ) -> Arc<ObjectStore> {
@@ -740,7 +737,6 @@ impl ObjectStore {
             store_info: Mutex::new(store_info),
             tree: LSMTree::new(merge::merge, object_cache),
             store_info_handle: OnceLock::new(),
-            mutations_cipher: Mutex::new(mutations_cipher),
             lock_state: Mutex::new(lock_state),
             key_manager: KeyManager::new(),
             trace: AtomicBool::new(false),
@@ -767,7 +763,6 @@ impl ObjectStore {
             filesystem,
             Some(StoreInfo::default()),
             object_cache,
-            None,
             LockState::Unencrypted,
             LastObjectId::Unencrypted { id: 0 },
         )
@@ -789,7 +784,6 @@ impl ObjectStore {
             store_info: Mutex::new(Some(StoreInfo::default())),
             tree: LSMTree::new(merge::merge, None),
             store_info_handle: OnceLock::new(),
-            mutations_cipher: Mutex::new(None),
             lock_state: Mutex::new(LockState::Unencrypted),
             key_manager: KeyManager::new(),
             trace: AtomicBool::new(false),
@@ -938,8 +932,11 @@ impl ObjectStore {
                     ..Default::default()
                 }),
                 object_cache,
-                Some(JournalCipher::new_aes256_xts(&unwrapped_key, 0)),
-                LockState::Unlocked { crypt, cached_keys: Vec::new() },
+                LockState::Unlocked {
+                    crypt,
+                    cached_keys: Vec::new(),
+                    mutations_cipher: JournalCipher::new_aes256_xts(&unwrapped_key, 0),
+                },
                 last_object_id_in_memory,
             )
         } else {
@@ -953,7 +950,6 @@ impl ObjectStore {
                     ..Default::default()
                 }),
                 object_cache,
-                None,
                 LockState::Unencrypted,
                 last_object_id_in_memory,
             )
@@ -1969,7 +1965,6 @@ impl ObjectStore {
             fs.clone(),
             if is_encrypted { None } else { Some(info) },
             object_cache,
-            None,
             if is_encrypted { LockState::Locked } else { LockState::Unencrypted },
             last_object_id,
         );
@@ -2298,7 +2293,6 @@ impl ObjectStore {
         let clean_up = scopeguard::guard((), |_| {
             *self.lock_state.lock() = LockState::Locked;
             *self.store_info.lock() = None;
-            *self.mutations_cipher.lock() = None;
             // Make sure we don't leave unencrypted data lying around in memory.
             self.tree.reset();
         });
@@ -2321,12 +2315,6 @@ impl ObjectStore {
             _ => unreachable!(),
         }
 
-        // Update mutations cipher.
-        *self.mutations_cipher.lock() = Some(JournalCipher::new_aes256_xts(
-            &new_unwrapped_mutations_key,
-            cipher_sequence_number,
-        ));
-
         // Apply mutations.
         for (checkpoint, mutation) in mutations_to_apply {
             let context = ApplyContext { mode: ApplyMode::Replay, checkpoint };
@@ -2338,7 +2326,14 @@ impl ObjectStore {
         *self.lock_state.lock() = if read_only {
             LockState::UnlockedReadOnly(do_not_use_crypt)
         } else {
-            LockState::Unlocked { crypt: do_not_use_crypt, cached_keys: keys_to_cache }
+            LockState::Unlocked {
+                crypt: do_not_use_crypt,
+                cached_keys: keys_to_cache,
+                mutations_cipher: JournalCipher::new_aes256_xts(
+                    &new_unwrapped_mutations_key,
+                    cipher_sequence_number,
+                ),
+            }
         };
 
         // To avoid unbounded memory growth, we should flush the encrypted mutations now. Otherwise
@@ -3196,8 +3191,8 @@ impl JournalingObject for ObjectStore {
         mutations: ObjectMutationIterator<'_, '_>,
         mut writer: journal::Writer<'_>,
     ) {
-        let mut cipher = self.mutations_cipher.lock();
-        if let Some(cipher) = cipher.as_mut() {
+        let mut lock_state = self.lock_state.lock();
+        if let LockState::Unlocked { mutations_cipher, .. } = &mut *lock_state {
             let mut encrypted_transaction = EncryptedTransaction::new();
             for mutation in mutations.cloned() {
                 // Intentionally enumerating all variants to force a decision on any new variants.
@@ -3244,7 +3239,7 @@ impl JournalingObject for ObjectStore {
             }
             if !encrypted_transaction.0.is_empty() {
                 // If this is the first time we've used this key, we must write the key out.
-                if cipher.key_is_new() {
+                if mutations_cipher.key_is_new() {
                     writer.write(Mutation::update_mutations_key(
                         self.store_info
                             .lock()
@@ -3256,7 +3251,7 @@ impl JournalingObject for ObjectStore {
                             .clone(),
                     ));
                 }
-                for encrypted in encrypted_transaction.serialize_and_encrypt(cipher) {
+                for encrypted in encrypted_transaction.serialize_and_encrypt(mutations_cipher) {
                     writer.write(Mutation::EncryptedObjectStore(encrypted));
                 }
             }
@@ -3434,9 +3429,9 @@ async fn load_store_info_from_handle(
 mod tests {
     use super::{
         AttributeId, DirectWriter, EncryptedMutations, FsverityMetadata, HandleOptions,
-        LastObjectId, LastObjectIdInfo, LockKey, MAX_STORE_INFO_SERIALIZED_SIZE, Mutation,
-        NewChildStoreOptions, OBJECT_ID_HI_MASK, ObjectEncryptionOptions, ObjectStore, RootDigest,
-        StoreInfo, StoreOptions,
+        LastObjectId, LastObjectIdInfo, LockKey, LockState, MAX_STORE_INFO_SERIALIZED_SIZE,
+        Mutation, NewChildStoreOptions, OBJECT_ID_HI_MASK, ObjectEncryptionOptions, ObjectStore,
+        RootDigest, StoreInfo, StoreOptions,
     };
     use crate::errors::FxfsError;
     use crate::filesystem::{
@@ -4629,7 +4624,13 @@ mod tests {
                     .expect("open_volume failed");
 
                 // The key should get rolled every time we unlock.
-                assert!(store.mutations_cipher.lock().as_ref().unwrap().key_is_new());
+                {
+                    let lock_state = store.lock_state.lock();
+                    let LockState::Unlocked { mutations_cipher, .. } = &*lock_state else {
+                        panic!("Unexpected lock state: {lock_state:?}");
+                    };
+                    assert!(mutations_cipher.key_is_new());
+                }
 
                 // Make sure there's an encrypted mutation.
                 let handle =
@@ -6178,8 +6179,11 @@ mod tests {
             .create_key(store_object_id, KeyPurpose::Metadata)
             .await
             .expect("create_key failed");
-        *store.mutations_cipher.lock() =
-            Some(JournalCipher::new_aes256_xts(&new_unwrapped_key, chacha_offset));
+        if let LockState::Unlocked { mutations_cipher, .. } = &mut *store.lock_state.lock() {
+            *mutations_cipher = JournalCipher::new_aes256_xts(&new_unwrapped_key, chacha_offset);
+        } else {
+            panic!("Unexpected lock state");
+        }
         store.store_info.lock().as_mut().unwrap().mutations_key = Some(new_wrapped_key);
 
         let new_file_oid = {
