@@ -472,3 +472,108 @@ spi_test!(test_exchange_vmo_multiple, device, {
 
     Ok(())
 });
+
+// This test is intended to stress the SPI controller to find erroneous conditions such as data
+// corruption, unexpected interrupts, or timeouts. It makes continuous calls to Exchange() for ten
+// seconds, with as many as ten requests pending at once. The test fails if the SPI controller
+// driver returns an error or the received data does not match what was sent.
+spi_test!(test_stress, device, {
+    // The first 10 VMOs are for TX, the rest are for RX. VMO IDs start at zero.
+    const MAX_CONCURRENT_CALLS: usize = 10;
+    const VMO_COUNT: usize = MAX_CONCURRENT_CALLS * 2;
+    const VMO_SIZE: usize = 4096;
+    const TEST_DURATION: std::time::Duration = std::time::Duration::from_secs(10);
+
+    let mut vmos = Vec::with_capacity(VMO_COUNT);
+    for i in 0..VMO_COUNT {
+        let vmo_id = i as u32;
+        let vmo = zx::Vmo::create(VMO_SIZE as u64).context("Failed to create VMO")?;
+        let vmo_dup =
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).context("Failed to duplicate VMO")?;
+
+        let rights = if i < MAX_CONCURRENT_CALLS {
+            fsharedmemory::SharedVmoRight::READ
+        } else {
+            fsharedmemory::SharedVmoRight::WRITE
+        };
+
+        device
+            .register_vmo(
+                vmo_id,
+                fmem::Range { vmo: vmo_dup, offset: 0, size: VMO_SIZE as u64 },
+                rights,
+            )
+            .await
+            .context("RegisterVmo FIDL call failed")?
+            .map_err(|status| {
+                anyhow::anyhow!("RegisterVmo failed: {:?}", Status::err_from_raw(status))
+            })?;
+
+        vmos.push(vmo);
+    }
+
+    let make_request = |slot: usize| {
+        let tx_vmo_id = slot as u32;
+        let rx_vmo_id = tx_vmo_id + MAX_CONCURRENT_CALLS as u32;
+        let tx_vmo = &vmos[tx_vmo_id as usize];
+        let rx_vmo = &vmos[rx_vmo_id as usize];
+        let device_clone = device.clone();
+
+        async move {
+            let mut txdata = vec![0u8; VMO_SIZE];
+            rand::rng().fill(&mut txdata[..]);
+            tx_vmo.write(&txdata, 0).context("Failed to write to TX VMO")?;
+
+            device_clone
+                .exchange(
+                    &fsharedmemory::SharedVmoBuffer {
+                        vmo_id: tx_vmo_id,
+                        offset: 0,
+                        size: VMO_SIZE as u64,
+                    },
+                    &fsharedmemory::SharedVmoBuffer {
+                        vmo_id: rx_vmo_id,
+                        offset: 0,
+                        size: VMO_SIZE as u64,
+                    },
+                )
+                .await
+                .context("Exchange FIDL call failed")?
+                .map_err(|status| {
+                    anyhow::anyhow!("Exchange failed: {:?}", Status::err_from_raw(status))
+                })?;
+
+            let mut rxdata = vec![0u8; VMO_SIZE];
+            rx_vmo.read(&mut rxdata, 0).context("Failed to read from RX VMO")?;
+            assert_eq!(txdata, rxdata);
+
+            Ok::<_, anyhow::Error>(slot)
+        }
+    };
+
+    let start_time = std::time::Instant::now();
+    let mut in_flight = futures::stream::FuturesUnordered::new();
+    for slot in 0..MAX_CONCURRENT_CALLS {
+        in_flight.push(make_request(slot));
+    }
+
+    while let Some(result) = in_flight.next().await {
+        let slot = result?;
+        if start_time.elapsed() < TEST_DURATION {
+            in_flight.push(make_request(slot));
+        }
+    }
+
+    for i in 0..VMO_COUNT {
+        let vmo_id = i as u32;
+        let _unregistered_vmo = device
+            .unregister_vmo(vmo_id)
+            .await
+            .context("UnregisterVmo FIDL call failed")?
+            .map_err(|status| {
+                anyhow::anyhow!("UnregisterVmo failed: {:?}", Status::err_from_raw(status))
+            })?;
+    }
+
+    Ok(())
+});
