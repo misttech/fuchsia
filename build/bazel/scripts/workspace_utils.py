@@ -17,6 +17,7 @@ from textwrap import dedent
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import build_utils
+from bazel_build_flags import DefaultBuildFlagsMap
 
 # LINT.IfChange(gn_targets_dir_symlink)
 # Location of the @gn_targets redirection symlink, relative
@@ -812,10 +813,27 @@ class GnBuildArgs(object):
         """
         generated.record_file_content(
             "MODULE.bazel",
-            'module(name = "fuchsia_build_info", version = "1")',
+            """\
+module(name = "fuchsia_build_info", version = "1")
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "fuchsia_rules_common", version = "0.0")
+""",
         )
+
         generated.record_file_content("BUILD.bazel", "")
 
+        # Generate BUILD.bazel which contains the definitions of toolchains
+        # for default build_flags().
+
+        # TODO(digit): Generate this to reflect GN build configuration.
+        default_flags_map = DefaultBuildFlagsMap.new_from_gn_config(build_dir)
+        generated.record_file_content(
+            "default_build_flags/BUILD.bazel",
+            default_flags_map.generate_bazel_toolchain_definitions(),
+        )
+
+        # Generate the args.bzl and vendor_{name}_args.bzl files
         args_files_relative_paths = (
             GnBuildArgs.find_all_gn_build_variables_for_bazel(
                 fuchsia_dir, build_dir

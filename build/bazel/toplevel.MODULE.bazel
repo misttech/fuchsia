@@ -366,3 +366,6 @@ generate_prebuilt_llvm_repository(
 )
 
 register_toolchains("//:fuchsia_sdk_devicetree_toolchain")
+
+# Register the default build_flags() toolchain definitions
+register_toolchains("@fuchsia_build_info//default_build_flags:all")

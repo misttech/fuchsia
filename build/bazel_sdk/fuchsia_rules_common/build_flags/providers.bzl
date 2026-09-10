@@ -96,6 +96,7 @@ BuildFlagsListInfo = provider(
 #####    DefaultBuildFlagsSetInfo
 #####
 
+# LINT.IfChange(DefaultBuildFlagsSetInfo)
 DefaultBuildFlagsSetInfo = provider(
     doc = "A set of default build_flags() targets for different target types.",
     fields = {
@@ -115,3 +116,4 @@ DefaultBuildFlagsSetInfo = provider(
             (list[BuildFlagsInfo]) list of extra build flags used for Rust executables.""",
     },
 )
+# LINT.ThenChange(//build/bazel/scripts/bazel_build_flags.py:DefaultBuildFlagsSet)

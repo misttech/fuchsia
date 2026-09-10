@@ -115,7 +115,10 @@ if (is_host) {
 
   python_library("workspace_utils") {
     sources = [ "workspace_utils.py" ]
-    library_deps = [ ":build_utils" ]
+    library_deps = [
+      ":bazel_build_flags",
+      ":build_utils",
+    ]
   }
 
   python_build_time_tests("workspace_utils_test") {
@@ -217,6 +220,15 @@ if (is_host) {
     deps = [ ":bazel_build_args" ]
   }
 
+  python_library("bazel_build_flags") {
+    sources = [ "bazel_build_flags.py" ]
+  }
+
+  python_build_time_tests("bazel_build_flags_test") {
+    tests = [ "bazel_build_flags_test.py" ]
+    deps = [ ":bazel_build_flags" ]
+  }
+
   python_library("bazel_label_mapper") {
     sources = [ "bazel_label_mapper.py" ]
     library_deps = [
@@ -247,6 +259,7 @@ group("tests") {
   deps = [
     ":bazel_action_utils_test($host_toolchain)",
     ":bazel_build_args_test($host_toolchain)",
+    ":bazel_build_flags_test($host_toolchain)",
     ":bazel_compdb_utils_test($host_toolchain)",
     ":bazel_label_mapper_test($host_toolchain)",
     ":bazel_repository_utils_test($host_toolchain)",

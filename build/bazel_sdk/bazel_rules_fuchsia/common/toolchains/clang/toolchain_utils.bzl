@@ -588,6 +588,8 @@ _prebuilt_clang_cc_toolchain_config = rule(
         ),
     },
     toolchains = [
+        # This toolchain type is optional to support out-of-tree workspaces
+        # which never register any instance of it.
         config_common.toolchain_type(
             "@fuchsia_rules_common//build_flags:toolchain_type",
             mandatory = False,

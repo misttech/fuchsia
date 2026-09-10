@@ -446,6 +446,53 @@ zoo2 = "non-false string"
             self._build_root
         )
 
+        EXPECTED_MODULE_BAZEL = """\
+module(name = "fuchsia_build_info", version = "1")
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "fuchsia_rules_common", version = "0.0")
+"""
+
+        EXPECTED_DEFAULT_BUILD_FLAGS_BUILD_BAZEL = f"""\
+# Default build_flags() definition for C++ and Rust toolchains.
+
+load("@fuchsia_rules_common//build_flags:toolchain.bzl", "build_flags_toolchain_instance")
+load("@@//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+
+build_flags_toolchain_instance(
+    name = "fuchsia_default_build_flags",
+    cxx_common_build_flags = [],
+    cxx_executable_build_flags = [],
+    cxx_shared_library_build_flags = [],
+    rust_common_build_flags = [],
+    rust_executable_build_flags = [],
+    rust_shared_library_build_flags = [],
+)
+
+toolchain(
+    name = "fuchsia_toolchain",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    toolchain = ":fuchsia_default_build_flags",
+    toolchain_type = "@fuchsia_rules_common//build_flags:toolchain_type",
+)
+
+build_flags_toolchain_instance(
+    name = "host_default_build_flags",
+    cxx_common_build_flags = [],
+    cxx_executable_build_flags = [],
+    cxx_shared_library_build_flags = [],
+    rust_common_build_flags = [],
+    rust_executable_build_flags = [],
+    rust_shared_library_build_flags = [],
+)
+
+toolchain(
+    name = "host_toolchain",
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    toolchain = ":host_default_build_flags",
+    toolchain_type = "@fuchsia_rules_common//build_flags:toolchain_type",
+)
+"""
         self.maxDiff = (
             None  # Ensure large dictionary differences are properly printed.
         )
@@ -458,7 +505,7 @@ zoo2 = "non-false string"
                     "type": "file",
                 },
                 "MODULE.bazel": {
-                    "content": 'module(name = "fuchsia_build_info", version = "1")',
+                    "content": EXPECTED_MODULE_BAZEL,
                     "type": "file",
                 },
                 "args.bzl": {
@@ -467,6 +514,10 @@ zoo2 = "non-false string"
                 },
                 "vendor_alice_args.bzl": {
                     "content": EXPECTED_ALICE_ARGS_BZL,
+                    "type": "file",
+                },
+                "default_build_flags/BUILD.bazel": {
+                    "content": EXPECTED_DEFAULT_BUILD_FLAGS_BUILD_BAZEL,
                     "type": "file",
                 },
             },
