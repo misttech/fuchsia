@@ -5,15 +5,15 @@
 // https://opensource.org/licenses/MIT
 
 use crate::user_copy::{UserInPtr, UserOutPtr};
-use crate::vm::page::VmPagePtr;
+use crate::vm::page::{VmPage, VmPagePtr};
 use crate::vm::page_state::VmPageState;
 use crate::vm::{physmap, pmm};
 use core::cmp::min;
 use core::convert::Infallible;
 use core::ffi::c_char;
-use core::mem::{ManuallyDrop, MaybeUninit, align_of, size_of};
+use core::mem::{MaybeUninit, align_of, size_of};
 use core::pin::Pin;
-use core::ptr::drop_in_place;
+use core::ptr::NonNull;
 use core::slice::{from_raw_parts, from_raw_parts_mut};
 use counters_rs::define_kcounter;
 use fbl::{DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode};
@@ -31,7 +31,7 @@ define_kcounter!(MBUF_TOTAL_BYTES_COUNT, "mbuf.total_bytes", Sum);
 #[derive(DoublyLinkedListContainable)]
 struct MBuf {
     #[dll_node]
-    node: ManuallyDrop<DoublyLinkedListNode<MBuf>>,
+    node: DoublyLinkedListNode<MBuf>,
 
     /// Length of the valid `data` in this buffer. Writes can append more to `data` and increment
     /// this length.
@@ -65,35 +65,13 @@ impl MBuf {
         payload.div_ceil(Self::PAYLOAD_SIZE)
     }
 
-    /// Allocates and initializes a single `MBuf` page from PMM.
-    pub fn new() -> Result<*mut MBuf, Status> {
-        let (page, paddr) = pmm::alloc_page(0)?;
-        MBUF_TOTAL_BYTES_COUNT.add(size_of::<MBuf>() as i64);
-
-        // SAFETY: `page` was just allocated from `pmm::alloc_page` and is mapped in the physmap.
-        // `buf_ptr.write(...)` initializes the memory without dropping previous contents.
-        let buf_ptr = physmap::paddr_to_physmap(paddr).0 as *mut MBuf;
-        unsafe {
-            page.set_state(VmPageState(vm_page_state::IPC));
-            buf_ptr.write(MBuf {
-                node: ManuallyDrop::new(DoublyLinkedListNode::new()),
-                len: 0,
-                pkt_len: 0,
-                page,
-                data: MaybeUninit::uninit(),
-            });
-        }
-
-        Ok(buf_ptr)
-    }
-
     /// Returns number of bytes of free space in this MBuf.
     pub fn available_space(&self) -> usize {
         Self::PAYLOAD_SIZE - (self.len as usize)
     }
 
-    /// Returns a slice of valid initialized data starting at `offset` up to `self.len`,
-    /// typed as `c_char` for user memory copy operations.
+    /// Returns a slice of valid initialized data starting at `offset` up to `self.len`, typed as
+    /// `c_char` for user memory copy operations.
     pub fn read(&self, offset: usize) -> &[c_char] {
         let len = self.len as usize;
         if offset >= len {
@@ -138,18 +116,36 @@ impl MBuf {
         self.len += copy_len as u32;
         Ok(())
     }
-}
 
-impl Drop for MBuf {
-    fn drop(&mut self) {
-        MBUF_TOTAL_BYTES_COUNT.add(-(size_of::<MBuf>() as i64));
-
-        // SAFETY: We explicitly drop `self.node` while the page memory is still valid.
-        // Because `self.node` is `ManuallyDrop`, it will not be dropped again after `drop` returns.
-        // We then return the backing page to PMM.
+    /// Initializes an uninitialized `MBuf` in the physical map of the given `page`.
+    ///
+    /// Returns a pointer to the initialized `MBuf`.
+    ///
+    /// # Safety
+    ///
+    /// `page_raw` must be a valid pointer to an allocated `VmPage` whose physical memory is mapped
+    /// in the physmap, and the caller must possess conceptual ownership of the page to set its
+    /// state.
+    unsafe fn init_in_page(page_raw: *mut VmPage) -> *mut MBuf {
+        // SAFETY: Caller guarantees `page_raw` is a valid pointer to an allocated `VmPage` and
+        // possesses conceptual ownership of it. `buf_ptr` points to the mapped physical memory
+        // of the allocated page and is initialized without dropping.
         unsafe {
-            ManuallyDrop::drop(&mut self.node);
-            pmm::free_page(self.page);
+            let page = &*page_raw;
+            page.set_state(VmPageState(vm_page_state::IPC));
+            let paddr = page.paddr();
+            let buf_ptr = physmap::paddr_to_physmap(paddr).0 as *mut MBuf;
+            let page_ptr = VmPagePtr::new(NonNull::from(page));
+
+            buf_ptr.write(MBuf {
+                node: DoublyLinkedListNode::new(),
+                len: 0,
+                pkt_len: 0,
+                page: page_ptr,
+                data: MaybeUninit::uninit(),
+            });
+
+            buf_ptr
         }
     }
 }
@@ -159,44 +155,98 @@ static_assert!(align_of::<MBuf>() == 8);
 
 /// Helper function to allocate `num` `MBuf` buffers into a `DoublyLinkedList`.
 ///
-/// If allocation of any buffer fails, all buffers in `bufs` are freed and the error is returned.
+/// If allocation of any buffer fails, the error is returned and `bufs` is left unmodified.
 fn alloc_mbufs(num: usize, bufs: &mut DoublyLinkedList<*mut MBuf>) -> Result<(), Status> {
-    for _ in 0..num {
-        let buf_ptr = match MBuf::new() {
-            Ok(ptr) => ptr,
-            Err(err) => {
-                free_mbufs(bufs);
-                return Err(err);
-            }
-        };
-        // SAFETY: `buf_ptr` was allocated by `MBuf::new` and is valid and unaliased.
+    if num == 0 {
+        return Ok(());
+    }
+
+    stack_pin_init!(let pages = DoublyLinkedList::<*mut VmPage>::new());
+    pmm::alloc_pages(num, 0, pages.as_mut())?;
+
+    // SAFETY: `pages` is pinned on stack; obtaining mutable reference to pop pages is safe.
+    let pages = unsafe { pages.get_unchecked_mut() };
+    while let Some(page_raw) = pages.pop_front() {
+        // SAFETY: `page_raw` was popped from `pages` allocated by `pmm::alloc_pages` and is valid.
+        // The resulting `buf_ptr` is newly initialized and not currently in any list.
         unsafe {
+            let buf_ptr = MBuf::init_in_page(page_raw);
             bufs.push_back_raw(buf_ptr);
         }
     }
+
+    MBUF_TOTAL_BYTES_COUNT.add((num * size_of::<MBuf>()) as i64);
     Ok(())
 }
 
 /// Helper function to free all `MBuf` buffers in a `DoublyLinkedList`.
 fn free_mbufs(bufs: &mut DoublyLinkedList<*mut MBuf>) {
-    while let Some(buf) = bufs.pop_front() {
-        // SAFETY: `buf` was popped from `bufs` and points to a valid, initialized, and unaliased
-        // `MBuf` allocated from PMM. Dropping in place invokes `MBuf::drop`, returning the page to
-        // PMM.
+    if bufs.is_empty() {
+        return;
+    }
+
+    stack_pin_init!(let pages = DoublyLinkedList::<*mut VmPage>::new());
+    // SAFETY: `pages` is pinned on stack; obtaining mutable reference to the list is safe.
+    let pages_list = unsafe { pages.as_mut().get_unchecked_mut() };
+
+    let mut count = 0usize;
+    while let Some(buf_ptr) = bufs.pop_front() {
+        // SAFETY: `buf_ptr` was popped from `bufs` and points to a valid, initialized `MBuf`
+        // allocated from PMM whose backing page is not in any list.
         unsafe {
-            drop_in_place(buf);
+            let page_ptr = (*buf_ptr).page;
+            pages_list.push_back_raw(page_ptr.as_raw());
         }
+        count += 1;
+    }
+
+    MBUF_TOTAL_BYTES_COUNT.add(-((count * size_of::<MBuf>()) as i64));
+
+    // SAFETY: All pages in `pages` were allocated from PMM and are being returned to PMM.
+    unsafe {
+        pmm::free_list(pages);
     }
 }
 
-/// Helper function to free the front `MBuf` buffer in a `DoublyLinkedList`.
-fn free_front_mbuf(bufs: &mut DoublyLinkedList<*mut MBuf>) {
-    if let Some(buf) = bufs.pop_front() {
-        // SAFETY: `buf` was popped from `bufs` and points to a valid, initialized, and unaliased
-        // `MBuf` allocated from PMM. Dropping in place invokes `MBuf::drop`, returning the page to
-        // PMM.
+/// An RAII guard for a temporary linked list of `MBuf` pointers.
+///
+/// If dropped without being disarmed, any `MBuf`s currently in the list are automatically freed to
+/// PMM via `free_mbufs`. This ensures that temporary allocations during writes or buffers collected
+/// during reads are never leaked on error or early return.
+struct MBufListGuard<'a> {
+    list: Option<&'a mut DoublyLinkedList<*mut MBuf>>,
+}
+
+impl<'a> MBufListGuard<'a> {
+    /// Creates an armed guard wrapping a pinned `list`.
+    fn new(list: Pin<&'a mut DoublyLinkedList<*mut MBuf>>) -> Self {
+        // SAFETY: `list` is pinned on the caller's stack and will not be moved for lifetime `'a`.
+        Self { list: Some(unsafe { list.get_unchecked_mut() }) }
+    }
+
+    /// Pushes an unlinked `MBuf` to the back of the list.
+    fn push(&mut self, buf: *mut MBuf) {
+        // SAFETY: `buf` is a valid, unlinked `MBuf` allocated from PMM.
         unsafe {
-            drop_in_place(buf);
+            self.as_mut().push_back_raw(buf);
+        }
+    }
+
+    /// Returns a mutable reference to the underlying list.
+    fn as_mut(&mut self) -> &mut DoublyLinkedList<*mut MBuf> {
+        self.list.as_deref_mut().expect("MBufListGuard already disarmed")
+    }
+
+    /// Disarms the guard, returning the underlying list so its buffers will not be freed on drop.
+    fn disarm(mut self) -> &'a mut DoublyLinkedList<*mut MBuf> {
+        self.list.take().expect("MBufListGuard already disarmed")
+    }
+}
+
+impl Drop for MBufListGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(list) = self.list.take() {
+            free_mbufs(list);
         }
     }
 }
@@ -259,10 +309,9 @@ impl MBufChain {
         let num_buffers = MBuf::num_buffers_for_payload(len.saturating_sub(avail));
 
         stack_pin_init!(let bufs = DoublyLinkedList::<*mut MBuf>::new());
-        // SAFETY: `bufs` is pinned on stack; obtaining mutable reference to the list is safe.
-        let bufs_list = unsafe { bufs.get_unchecked_mut() };
+        let mut bufs_guard = MBufListGuard::new(bufs);
 
-        if alloc_mbufs(num_buffers, bufs_list).is_err() {
+        if alloc_mbufs(num_buffers, bufs_guard.as_mut()).is_err() {
             return (Err(Status::SHOULD_WAIT), 0);
         }
 
@@ -270,8 +319,10 @@ impl MBufChain {
         let mut tail_written = 0usize;
 
         let tail = this.buffers.back_mut().filter(|b| b.available_space() > 0);
-        let bufs =
-            tail.into_iter().map(|b| (b, true)).chain(bufs_list.iter_mut().map(|b| (b, false)));
+        let bufs = tail
+            .into_iter()
+            .map(|b| (b, true))
+            .chain(bufs_guard.as_mut().iter_mut().map(|b| (b, false)));
 
         for (buf, is_tail) in bufs {
             let res = buf.write_from_user(src, &mut pos, len);
@@ -288,12 +339,11 @@ impl MBufChain {
                 // this partial write information to the caller, or consider not committing any of
                 // the new data until we can ensure success, or consider putting the socket in a
                 // state where it can't succeed a subsequent write.
-                free_mbufs(bufs_list);
                 return (Err(err), tail_written);
             }
         }
 
-        this.buffers.splice(bufs_list);
+        this.buffers.splice(bufs_guard.disarm());
         this.size += pos - tail_written;
         (Ok(()), pos)
     }
@@ -330,25 +380,23 @@ impl MBufChain {
         let num_buffers = MBuf::num_buffers_for_payload(len);
 
         stack_pin_init!(let bufs = DoublyLinkedList::<*mut MBuf>::new());
-        // SAFETY: `bufs` is pinned on stack; obtaining mutable reference to the list is safe.
-        let bufs_list = unsafe { bufs.get_unchecked_mut() };
+        let mut bufs_guard = MBufListGuard::new(bufs);
 
-        if alloc_mbufs(num_buffers, bufs_list).is_err() {
+        if alloc_mbufs(num_buffers, bufs_guard.as_mut()).is_err() {
             return (Err(Status::SHOULD_WAIT), 0);
         }
 
         let mut pos = 0usize;
-        for buf in bufs_list.iter_mut() {
+        for buf in bufs_guard.as_mut().iter_mut() {
             if let Err(err) = buf.write_from_user(src, &mut pos, len) {
-                free_mbufs(bufs_list);
                 return (Err(err), 0);
             }
         }
 
-        bufs_list.front_mut().unwrap().pkt_len = len as u32;
+        bufs_guard.as_mut().front_mut().unwrap().pkt_len = len as u32;
 
         // Successfully built the packet mbufs. Splice into this.buffers.
-        this.buffers.splice(bufs_list);
+        this.buffers.splice(bufs_guard.disarm());
         this.size += len;
         (Ok(()), len)
     }
@@ -374,6 +422,9 @@ impl MBufChain {
         let mut pos = 0usize;
         let mut read_off = this.read_cursor_off;
 
+        stack_pin_init!(let free_list = DoublyLinkedList::<*mut MBuf>::new());
+        let mut free_list = MBufListGuard::new(free_list);
+
         let res = (|| {
             while pos < len
                 && let Some(front) = this.buffers.front()
@@ -388,7 +439,9 @@ impl MBufChain {
                 this.size -= copy_len;
 
                 if read_off == front.len as usize {
-                    free_front_mbuf(&mut this.buffers);
+                    if let Some(buf) = this.buffers.pop_front() {
+                        free_list.push(buf);
+                    }
                     read_off = 0;
                 }
             }
@@ -428,6 +481,9 @@ impl MBufChain {
         len = min(len, this.buffers.front().unwrap().pkt_len as usize);
         let mut pos = 0usize;
 
+        stack_pin_init!(let free_list = DoublyLinkedList::<*mut MBuf>::new());
+        let mut free_list = MBufListGuard::new(free_list);
+
         let res = (|| {
             while pos < len
                 && let Some(front) = this.buffers.front()
@@ -439,7 +495,9 @@ impl MBufChain {
 
                 // In datagram mode, each visited buffer is popped and discarded completely.
                 this.size -= front.len as usize;
-                free_front_mbuf(&mut this.buffers);
+                if let Some(buf) = this.buffers.pop_front() {
+                    free_list.push(buf);
+                }
 
                 copy_res?;
                 pos += copy_len;
@@ -447,13 +505,15 @@ impl MBufChain {
             Ok(())
         })();
 
-        // Drain any leftover mbufs in the datagram packet if we're consuming data, even
-        // if we fail to read bytes.
+        // Drain any leftover mbufs in the datagram packet if we're consuming data, even if we fail
+        // to read bytes.
         while let Some(front) = this.buffers.front()
             && front.pkt_len == 0
         {
             this.size -= front.len as usize;
-            free_front_mbuf(&mut this.buffers);
+            if let Some(buf) = this.buffers.pop_front() {
+                free_list.push(buf);
+            }
         }
 
         (res, pos)
@@ -543,7 +603,7 @@ impl PinnedDrop for MBufChain {
 #[cfg(ktest)]
 #[unittest::suite(name = "mbuf_rust")]
 mod tests {
-    use super::{MBuf, MBufChain, alloc_mbufs, free_mbufs};
+    use super::{MBuf, MBufChain, MBufListGuard, alloc_mbufs};
     use crate::user_copy::{UserInPtr, UserOutPtr};
     use crate::user_memory::UserMemory;
     use core::ffi::c_char;
@@ -1456,33 +1516,28 @@ mod tests {
     #[test]
     fn test_mbuf_alloc_free_node_lifecycle() {
         stack_pin_init!(let bufs = fbl::DoublyLinkedList::<*mut MBuf>::new());
-        let bufs = unsafe { bufs.get_unchecked_mut() };
+        let mut bufs = MBufListGuard::new(bufs);
 
-        for _ in 0..10 {
-            let buf_ptr = MBuf::new().expect("alloc mbuf");
-            unsafe {
-                bufs.push_back_raw(buf_ptr);
-            }
+        expect_ok!(alloc_mbufs(10, bufs.as_mut()));
+
+        stack_pin_init!(let other = fbl::DoublyLinkedList::<*mut MBuf>::new());
+        let mut other = MBufListGuard::new(other);
+
+        while let Some(buf) = bufs.as_mut().pop_front() {
+            other.push(buf);
         }
 
-        while let Some(buf) = bufs.pop_front() {
-            unsafe {
-                drop_in_place(buf);
-            }
-        }
-
-        expect_true!(bufs.is_empty());
+        expect_true!(bufs.as_mut().is_empty());
+        expect_false!(other.as_mut().is_empty());
     }
 
     /// Tests allocating and freeing MBufs using alloc_mbufs and free_mbufs helpers.
     #[test]
     fn test_alloc_free_mbufs() {
         stack_pin_init!(let bufs = fbl::DoublyLinkedList::<*mut MBuf>::new());
-        let bufs = unsafe { bufs.get_unchecked_mut() };
+        let mut bufs = MBufListGuard::new(bufs);
 
-        expect_ok!(alloc_mbufs(5, bufs));
-        expect_false!(bufs.is_empty());
-        free_mbufs(bufs);
-        expect_true!(bufs.is_empty());
+        expect_ok!(alloc_mbufs(5, bufs.as_mut()));
+        expect_false!(bufs.as_mut().is_empty());
     }
 }
