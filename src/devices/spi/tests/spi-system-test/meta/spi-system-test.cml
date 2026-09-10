@@ -27,5 +27,10 @@
             element: { type: "uint64" },
             max_count: 8,
         },
+        max_expected_latency_nanoseconds: {
+            type: "vector",
+            element: { type: "uint64" },
+            max_count: 8,
+        },
     },
 }

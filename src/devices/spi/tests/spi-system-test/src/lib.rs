@@ -20,6 +20,7 @@ use zx::Status;
 #[derive(Clone, Debug)]
 struct SpiBus {
     min_expected_throughput: u64,
+    max_expected_latency: u64,
 }
 
 /// Returns the most specific address that is stable, or `None` if no such address exists. Only
@@ -146,13 +147,24 @@ where
         );
     }
 
+    if config.bus_addresses.len() != config.max_expected_latency_nanoseconds.len() {
+        anyhow::bail!(
+            "bus_addresses (len {}) and max_expected_latency_nanoseconds (len {}) must have the same length",
+            config.bus_addresses.len(),
+            config.max_expected_latency_nanoseconds.len()
+        );
+    }
+
     let devices_map = discover_devices(&config.bus_addresses).await?;
 
     let bus_configs: HashMap<String, SpiBus> = config
         .bus_addresses
         .iter()
         .zip(&config.min_expected_throughput_bytes_per_second)
-        .map(|(name, &min_expected_throughput)| (name.clone(), SpiBus { min_expected_throughput }))
+        .zip(&config.max_expected_latency_nanoseconds)
+        .map(|((name, &min_expected_throughput), &max_expected_latency)| {
+            (name.clone(), SpiBus { min_expected_throughput, max_expected_latency })
+        })
         .collect();
 
     let test_func = &test_func;
@@ -688,6 +700,107 @@ spi_test!(test_exchange_throughput, device, bus, {
     let mut rxdata = vec![0u8; BUFFER_SIZE];
     rx_vmo.read(&mut rxdata, 0).context("Failed to read from RX VMO")?;
     assert_eq!(txdata, rxdata);
+
+    let _unregistered_tx_vmo = device
+        .unregister_vmo(TX_VMO_ID)
+        .await
+        .context("UnregisterVmo TX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("UnregisterVmo TX failed: {:?}", Status::err_from_raw(status))
+        })?;
+
+    let _unregistered_rx_vmo = device
+        .unregister_vmo(RX_VMO_ID)
+        .await
+        .context("UnregisterVmo RX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("UnregisterVmo RX failed: {:?}", Status::err_from_raw(status))
+        })?;
+
+    Ok(())
+});
+
+// This test measures the median latency of ten one-byte calls to Exchange() in nanoseconds, which
+// is then compared to a maximum expected value for this device. The test passes if the median
+// latency is less than or equal to the expected latency. The expected latency may be a hard
+// requirement for this device, or just a reasonable value chosen to detect performance regressions.
+// Check the device test configuration for more information.
+spi_test!(test_latency, device, bus, {
+    const BUFFER_SIZE: usize = 1;
+    const TX_VMO_ID: u32 = 1;
+    const RX_VMO_ID: u32 = 2;
+
+    let mut txdata = vec![0u8; BUFFER_SIZE];
+    rand::rng().fill(&mut txdata[..]);
+
+    let tx_vmo = zx::Vmo::create(BUFFER_SIZE as u64).context("Failed to create TX VMO")?;
+    tx_vmo.write(&txdata, 0).context("Failed to write to TX VMO")?;
+
+    let rx_vmo = zx::Vmo::create(BUFFER_SIZE as u64).context("Failed to create RX VMO")?;
+
+    device
+        .register_vmo(
+            TX_VMO_ID,
+            fmem::Range { vmo: tx_vmo, offset: 0, size: BUFFER_SIZE as u64 },
+            fsharedmemory::SharedVmoRight::READ,
+        )
+        .await
+        .context("RegisterVmo TX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("RegisterVmo TX failed: {:?}", Status::err_from_raw(status))
+        })?;
+
+    device
+        .register_vmo(
+            RX_VMO_ID,
+            fmem::Range { vmo: rx_vmo, offset: 0, size: BUFFER_SIZE as u64 },
+            fsharedmemory::SharedVmoRight::WRITE,
+        )
+        .await
+        .context("RegisterVmo RX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("RegisterVmo RX failed: {:?}", Status::err_from_raw(status))
+        })?;
+
+    const TRANSFER_COUNT: usize = 10;
+    let mut latencies = Vec::with_capacity(TRANSFER_COUNT);
+    for _ in 0..TRANSFER_COUNT {
+        let start_time = std::time::Instant::now();
+
+        device
+            .exchange(
+                &fsharedmemory::SharedVmoBuffer {
+                    vmo_id: TX_VMO_ID,
+                    offset: 0,
+                    size: BUFFER_SIZE as u64,
+                },
+                &fsharedmemory::SharedVmoBuffer {
+                    vmo_id: RX_VMO_ID,
+                    offset: 0,
+                    size: BUFFER_SIZE as u64,
+                },
+            )
+            .await
+            .context("Exchange FIDL call failed")?
+            .map_err(|status| {
+                anyhow::anyhow!("Exchange failed: {:?}", Status::err_from_raw(status))
+            })?;
+
+        latencies.push(start_time.elapsed().as_nanos());
+    }
+
+    assert_eq!(latencies.len(), TRANSFER_COUNT);
+    latencies.sort();
+    let median = (latencies[TRANSFER_COUNT / 2 - 1] + latencies[TRANSFER_COUNT / 2]) / 2;
+
+    println!("Median latency: {} ns", median);
+
+    assert!(
+        median <= bus.max_expected_latency as u128,
+        "Median latency {} ns is above maximum expected {} ns",
+        median,
+        bus.max_expected_latency
+    );
 
     let _unregistered_tx_vmo = device
         .unregister_vmo(TX_VMO_ID)
