@@ -34,9 +34,9 @@ fidlgentest_go_test(
     srcs = ["codegen/ir_test.go"],
     embed = [":codegen"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
 )
 
-# @bazel2gn:skip
 go_binary_host_tool(
     name = "fidlgen_go",
     srcs = ["main.go"],
