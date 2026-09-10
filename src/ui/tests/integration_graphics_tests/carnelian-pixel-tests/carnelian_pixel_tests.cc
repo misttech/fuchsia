@@ -52,11 +52,12 @@ class CarnelianPixelTest : public ui_testing::PortableUITest {
                               .source = ParentRef(),
                               .targets = {ChildRef{kCarnelianClient}, kTestUIStackRef}});
 
-    realm_builder().AddRoute({.capabilities = {Protocol{fuchsia::ui::composition::Flatland::Name_},
-                                               Protocol{fuchsia::ui::composition::Allocator::Name_},
-                                               Protocol{fuchsia::ui::input3::Keyboard::Name_}},
-                              .source = kTestUIStackRef,
-                              .targets = {ChildRef{kCarnelianClient}}});
+    realm_builder().AddRoute(
+        {.capabilities = {Protocol{fuchsia::ui::composition::FlatlandFactory::Name_},
+                          Protocol{fuchsia::ui::composition::Allocator::Name_},
+                          Protocol{fuchsia::ui::input3::Keyboard::Name_}},
+         .source = kTestUIStackRef,
+         .targets = {ChildRef{kCarnelianClient}}});
 
     realm_builder().AddRoute({.capabilities = {Protocol{fuchsia::ui::app::ViewProvider::Name_}},
                               .source = ChildRef{kCarnelianClient},

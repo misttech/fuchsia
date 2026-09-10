@@ -21,7 +21,7 @@
                 "fuchsia.sysmem2.Allocator",
                 "fuchsia.tracing.provider.Registry",
                 "fuchsia.ui.composition.Allocator",
-                "fuchsia.ui.composition.Flatland",
+                "fuchsia.ui.composition.FlatlandFactory",
                 "fuchsia.ui.input3.Keyboard",
                 "fuchsia.vulkan.loader.Loader",
             ],

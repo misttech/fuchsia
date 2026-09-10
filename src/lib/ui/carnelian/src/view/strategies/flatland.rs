@@ -227,7 +227,9 @@ impl FlatlandViewStrategy {
         flatland_params: FlatlandParams,
         app_sender: UnboundedSender<MessageInternal>,
     ) -> Result<ViewStrategyPtr, Error> {
-        let flatland = connect_to_protocol::<flatland::FlatlandMarker>()?;
+        let flatland_factory = connect_to_protocol::<flatland::FlatlandFactoryMarker>()?;
+        let (flatland, server_end) = create_proxy::<flatland::FlatlandMarker>();
+        let _ = flatland_factory.create_flatland(server_end, &flatland::FlatlandConfig::default());
         if let Some(debug_name) = flatland_params.debug_name {
             flatland.set_debug_name(&debug_name)?;
         }
