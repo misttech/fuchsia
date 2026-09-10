@@ -22,7 +22,7 @@ use starnix_core::vfs::{
     emit_dotdot, fileops_impl_directory, fileops_impl_noop_sync, fileops_impl_unbounded_seek,
     fs_node_impl_dir_readonly,
 };
-use starnix_logging::{bug_ref, log_error, log_warn};
+use starnix_logging::{bug_ref, log_error, log_warn, track_stub};
 
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{FileMode, mode};
@@ -627,31 +627,30 @@ fn set_interface_config(
     }
 }
 
+fn get_interface_defaults() -> Result<fidl_fuchsia_net_interfaces_admin::Configuration, Errno> {
+    let state = connect_to_protocol_sync::<fnet_settings::StateMarker>().map_err(|err| {
+        log_error!("failed to connect to {}: {:?}", fnet_settings::StateMarker::PROTOCOL_NAME, err);
+        errno!(EIO)
+    })?;
+    let config = state.get_interface_defaults(zx::MonotonicInstant::INFINITE).map_err(|err| {
+        log_error!("failed to get network interface defaults: {:?}", err);
+        if err.is_closed() { errno!(ENODEV) } else { errno!(EIO) }
+    })?;
+    Ok(config)
+}
+
 fn get_interface_config(
     selector: SysctlInterfaceSelector,
 ) -> Result<fidl_fuchsia_net_interfaces_admin::Configuration, Errno> {
     match selector {
         SysctlInterfaceSelector::All => {
-            log_warn!("getting config for all network interfaces is not supported");
-            Ok(Default::default())
+            track_stub!(
+                TODO("https://fxbug.dev/521344735"),
+                "procfs sys net 'all' interface config"
+            );
+            get_interface_defaults()
         }
-        SysctlInterfaceSelector::Default => {
-            let state =
-                connect_to_protocol_sync::<fnet_settings::StateMarker>().map_err(|err| {
-                    log_error!(
-                        "failed to connect to {}: {:?}",
-                        fnet_settings::StateMarker::PROTOCOL_NAME,
-                        err
-                    );
-                    errno!(EIO)
-                })?;
-            let config =
-                state.get_interface_defaults(zx::MonotonicInstant::INFINITE).map_err(|err| {
-                    log_error!("failed to get network interface defaults: {:?}", err);
-                    if err.is_closed() { errno!(ENODEV) } else { errno!(EIO) }
-                })?;
-            Ok(config)
-        }
+        SysctlInterfaceSelector::Default => get_interface_defaults(),
         SysctlInterfaceSelector::Id(id) => {
             let root =
                 connect_to_protocol_sync::<fnet_root::InterfacesMarker>().map_err(|err| {

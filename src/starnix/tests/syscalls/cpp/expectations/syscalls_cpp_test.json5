@@ -200,11 +200,6 @@
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_random_boot_id",
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_random_boot_id",
 
-                // disable_ipv6 incorrectly lacks the proper CAP_NET_ADMIN gating in its node handler.
-                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/net_ipv6_conf_all_disable_ipv6",
-                "SysctlTest/SysctlNodeTest.NonRootWithCapNetAdminCanWriteProcSysNet/net_ipv6_conf_all_disable_ipv6",
-                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/net_ipv6_conf_all_disable_ipv6",
-
                 // These nodes currently utilize BytesFile implementations which emit ENOSYS on write.
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_core_pattern",
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_core_pattern",
