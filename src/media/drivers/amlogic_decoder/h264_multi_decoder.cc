@@ -1449,11 +1449,7 @@ void H264MultiDecoder::HandleSliceHeadDone() {
     ZX_DEBUG_ASSERT(sps->chroma_array_type == 0);
 
     if (!current_sps_ || memcmp(&current_sps_.value(), sps.get(), sizeof(current_sps_.value()))) {
-      if (!current_sps_) {
-        current_sps_.emplace();
-      }
-      ZX_DEBUG_ASSERT(sizeof(current_sps_.value()) == sizeof(*sps.get()));
-      memcpy(&current_sps_.value(), sps.get(), sizeof(current_sps_.value()));
+      current_sps_ = *sps;
       local_sps_nalu.preparsed_header.emplace<std::unique_ptr<media::H264SPS>>(std::move(sps));
       sps_nalu = std::move(local_sps_nalu);
     }
@@ -1551,11 +1547,7 @@ void H264MultiDecoder::HandleSliceHeadDone() {
     // scaling_list8x8 not available from FW.
     // second_chroma_qp_index_offset not avaialble from FW.
     if (!current_pps_ || memcmp(&current_pps_.value(), pps.get(), sizeof(current_pps_.value()))) {
-      if (!current_pps_) {
-        current_pps_.emplace();
-      }
-      ZX_DEBUG_ASSERT(sizeof(current_pps_.value()) == sizeof(*pps.get()));
-      memcpy(&current_pps_.value(), pps.get(), sizeof(current_pps_.value()));
+      current_pps_ = *pps;
       local_pps_nalu.preparsed_header.emplace<std::unique_ptr<media::H264PPS>>(std::move(pps));
       pps_nalu = std::move(local_pps_nalu);
     }
@@ -1904,9 +1896,8 @@ void H264MultiDecoder::HandleSliceHeadDone() {
 
   if (first_mb_in_slice > per_frame_seen_first_mb_in_slice_) {
     DLOG("first_mb_in_slice > per_frame_seen_first_mb_in_slice_");
-    memcpy(&stashed_latest_slice_header_,
-           std::get<std::unique_ptr<media::H264SliceHeader>>(slice_nalu.preparsed_header).get(),
-           sizeof(stashed_latest_slice_header_));
+    stashed_latest_slice_header_ =
+        *std::get<std::unique_ptr<media::H264SliceHeader>>(slice_nalu.preparsed_header);
     if (sps_nalu) {
       media_decoder_->QueuePreparsedNalu(TakeOptional(sps_nalu));
     }
