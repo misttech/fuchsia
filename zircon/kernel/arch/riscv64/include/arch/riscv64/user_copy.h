@@ -29,8 +29,12 @@ static_assert(sizeof(Riscv64UserCopyRet) == 16, "Riscv64UserCopyRet has unexpect
 // This is the same as memcpy, except that it takes the additional argument of
 // &current_thread()->arch.data_fault_resume, where it temporarily stores the fault recovery PC for
 // bad page faults to user addresses during the call.
-extern "C" Riscv64UserCopyRet _riscv64_user_copy(void* dst, const void* src, size_t len,
-                                                 uint64_t* fault_return,
-                                                 uint64_t capture_faults_mask);
+extern "C" {
+Riscv64UserCopyRet _riscv64_user_copy(void* dst, const void* src, size_t len,
+                                      uint64_t* fault_return, uint64_t capture_faults_mask);
+
+Riscv64UserCopyRet rust_arch_copy_from_user_capture_faults(void* dst, const void* src, size_t len);
+Riscv64UserCopyRet rust_arch_copy_to_user_capture_faults(void* dst, const void* src, size_t len);
+}
 
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_USER_COPY_H_

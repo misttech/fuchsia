@@ -12,9 +12,10 @@
 #include <arch/debugger.h>
 #include <arch/interrupt.h>
 #include <arch/ops.h>
-#include <arch/user_copy.h>
 #include <kernel/ffi.h>
 #include <kernel/thread.h>
+#if !defined(__riscv)
+#include <arch/user_copy.h>
 
 namespace {
 
@@ -33,6 +34,7 @@ FFI_ALWAYS_INLINE zx_status_t capture_faults_result(UserCopyCaptureFaultsResult 
 }
 
 }  // namespace
+#endif
 
 extern "C" {
 
@@ -44,12 +46,14 @@ interrupt_saved_state_t cpp_arch_interrupt_save();
 void cpp_arch_interrupt_restore(interrupt_saved_state_t state);
 cpu_num_t cpp_arch_curr_cpu_num();
 uint32_t cpp_arch_max_num_cpus();
+#if !defined(__riscv)
 zx_status_t cpp_arch_copy_from_user(void* dst, const void* src, size_t len);
 zx_status_t cpp_arch_copy_to_user(void* dst, const void* src, size_t len);
 zx_status_t cpp_arch_copy_from_user_capture_faults(void* dst, const void* src, size_t len,
                                                    vaddr_t* fault_va, uint* fault_flags);
 zx_status_t cpp_arch_copy_to_user_capture_faults(void* dst, const void* src, size_t len,
                                                  vaddr_t* fault_va, uint* fault_flags);
+#endif
 void* cpp_arch_get_current_thread();
 void cpp_arch_set_current_thread(void* thread);
 void cpp_arch_set_restricted_flag(bool in_restricted);
@@ -70,6 +74,7 @@ FFI_ALWAYS_INLINE void cpp_arch_interrupt_restore(interrupt_saved_state_t state)
 }
 FFI_ALWAYS_INLINE cpu_num_t cpp_arch_curr_cpu_num() { return arch_curr_cpu_num(); }
 FFI_ALWAYS_INLINE uint32_t cpp_arch_max_num_cpus() { return arch_max_num_cpus(); }
+#if !defined(__riscv)
 FFI_ALWAYS_INLINE zx_status_t cpp_arch_copy_from_user(void* dst, const void* src, size_t len) {
   return arch_copy_from_user(dst, src, len);
 }
@@ -88,6 +93,7 @@ FFI_ALWAYS_INLINE zx_status_t cpp_arch_copy_to_user_capture_faults(void* dst, co
   return capture_faults_result(arch_copy_to_user_capture_faults(dst, src, len), fault_va,
                                fault_flags);
 }
+#endif
 FFI_ALWAYS_INLINE void* cpp_arch_get_current_thread() { return arch_get_current_thread(); }
 FFI_ALWAYS_INLINE void cpp_arch_set_current_thread(void* thread) {
   arch_set_current_thread(static_cast<Thread*>(thread));

@@ -68,6 +68,7 @@ struct UserCopyCaptureFaultsResult {
 #define ARCH_COPY_ACCESS  // Clang doesn't support this attribute.
 #endif
 
+extern "C" {
 /*
  * @brief Copy data from userspace into kernelspace
  *
@@ -82,6 +83,22 @@ struct UserCopyCaptureFaultsResult {
  *         Changes to the return value are observable by user-space.
  */
 ARCH_COPY_ACCESS zx_status_t arch_copy_from_user(void *dst, const void *src, size_t len);
+
+/*
+ * @brief Copy data from kernelspace into userspace
+ *
+ * This function validates that usermode has access to dst before copying the
+ * data.
+ *
+ * @param dst The destination buffer.
+ * @param src The source buffer.
+ * @param len The number of bytes to copy.
+ *
+ * @return ZX_OK on success, or ZX_ERR_INVALID_ARGS on failure.
+ *         Changes to the return value are observable by user-space.
+ */
+ARCH_COPY_ACCESS zx_status_t arch_copy_to_user(void *dst, const void *src, size_t len);
+}
 
 /*
  * @brief Copy data from userspace into kernelspace
@@ -102,21 +119,6 @@ ARCH_COPY_ACCESS zx_status_t arch_copy_from_user(void *dst, const void *src, siz
  */
 [[nodiscard]] ARCH_COPY_ACCESS UserCopyCaptureFaultsResult arch_copy_from_user_capture_faults(
     void *dst, const void *src, size_t len, CopyContext context = CopyContext::kBlockingAllowed);
-
-/*
- * @brief Copy data from kernelspace into userspace
- *
- * This function validates that usermode has access to dst before copying the
- * data.
- *
- * @param dst The destination buffer.
- * @param src The source buffer.
- * @param len The number of bytes to copy.
- *
- * @return ZX_OK on success, or ZX_ERR_INVALID_ARGS on failure.
- *         Changes to the return value are observable by user-space.
- */
-ARCH_COPY_ACCESS zx_status_t arch_copy_to_user(void *dst, const void *src, size_t len);
 
 /*
  * @brief Copy data from kernelspace into userspace

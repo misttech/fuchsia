@@ -37,6 +37,12 @@ unsafe extern "C" {
     fn cpp_arch_interrupt_restore(state: InterruptSavedState);
     fn cpp_arch_curr_cpu_num() -> u32;
     fn cpp_arch_max_num_cpus() -> u32;
+    fn cpp_arch_set_blocking_disallowed(value: bool);
+    fn cpp_arch_set_restricted_flag(restricted: bool);
+}
+
+#[cfg(not(target_arch = "riscv64"))]
+unsafe extern "C" {
     fn cpp_arch_copy_from_user(
         dst: *mut core::ffi::c_void,
         src: *const core::ffi::c_void,
@@ -61,8 +67,6 @@ unsafe extern "C" {
         fault_va: *mut usize,
         fault_flags: *mut u32,
     ) -> i32;
-    fn cpp_arch_set_blocking_disallowed(value: bool);
-    fn cpp_arch_set_restricted_flag(restricted: bool);
 }
 
 /// Sets the architecture-specific restricted mode flag on the current CPU.
@@ -169,7 +173,16 @@ pub unsafe fn arch_copy_from_user(
     src: *const core::ffi::c_void,
     len: usize,
 ) -> Result<(), Status> {
-    Status::ok(unsafe { cpp_arch_copy_from_user(dst, src, len) })
+    #[cfg(target_arch = "riscv64")]
+    {
+        // SAFETY: Caller guarantees valid pointers and safety invariants.
+        unsafe { riscv64::arch_copy_from_user(dst, src, len) }
+    }
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+        // SAFETY: Caller guarantees valid pointers and safety invariants.
+        Status::ok(unsafe { cpp_arch_copy_from_user(dst, src, len) })
+    }
 }
 
 /// Copies `len` bytes from kernel memory at `src` into user memory at `dst`.
@@ -183,7 +196,16 @@ pub unsafe fn arch_copy_to_user(
     src: *const core::ffi::c_void,
     len: usize,
 ) -> Result<(), Status> {
-    Status::ok(unsafe { cpp_arch_copy_to_user(dst, src, len) })
+    #[cfg(target_arch = "riscv64")]
+    {
+        // SAFETY: Caller guarantees valid pointers and safety invariants.
+        unsafe { riscv64::arch_copy_to_user(dst, src, len) }
+    }
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+        // SAFETY: Caller guarantees valid pointers and safety invariants.
+        Status::ok(unsafe { cpp_arch_copy_to_user(dst, src, len) })
+    }
 }
 
 /// Page fault information captured during a user copy operation.
@@ -206,6 +228,7 @@ impl From<Status> for UserCopyCaptureFaultsError {
     }
 }
 
+#[cfg(not(target_arch = "riscv64"))]
 #[inline(always)]
 fn capture_faults_result(
     status: i32,
@@ -236,18 +259,27 @@ pub unsafe fn arch_copy_from_user_capture_faults(
     src: *const core::ffi::c_void,
     len: usize,
 ) -> Result<(), UserCopyCaptureFaultsError> {
-    let mut fault_va = 0usize;
-    let mut fault_flags = 0u32;
-    let status = unsafe {
-        cpp_arch_copy_from_user_capture_faults(
-            dst,
-            src,
-            len,
-            &raw mut fault_va,
-            &raw mut fault_flags,
-        )
-    };
-    capture_faults_result(status, fault_va, fault_flags)
+    #[cfg(target_arch = "riscv64")]
+    {
+        // SAFETY: Caller guarantees valid pointers and safety invariants.
+        unsafe { riscv64::arch_copy_from_user_capture_faults(dst, src, len) }
+    }
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+        let mut fault_va = 0usize;
+        let mut fault_flags = 0u32;
+        // SAFETY: Foreign function call with valid pointer arguments.
+        let status = unsafe {
+            cpp_arch_copy_from_user_capture_faults(
+                dst,
+                src,
+                len,
+                &raw mut fault_va,
+                &raw mut fault_flags,
+            )
+        };
+        capture_faults_result(status, fault_va, fault_flags)
+    }
 }
 
 /// Copies `len` bytes from kernel memory at `src` into user memory at `dst`, capturing any page
@@ -262,12 +294,27 @@ pub unsafe fn arch_copy_to_user_capture_faults(
     src: *const core::ffi::c_void,
     len: usize,
 ) -> Result<(), UserCopyCaptureFaultsError> {
-    let mut fault_va = 0usize;
-    let mut fault_flags = 0u32;
-    let status = unsafe {
-        cpp_arch_copy_to_user_capture_faults(dst, src, len, &raw mut fault_va, &raw mut fault_flags)
-    };
-    capture_faults_result(status, fault_va, fault_flags)
+    #[cfg(target_arch = "riscv64")]
+    {
+        // SAFETY: Caller guarantees valid pointers and safety invariants.
+        unsafe { riscv64::arch_copy_to_user_capture_faults(dst, src, len) }
+    }
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+        let mut fault_va = 0usize;
+        let mut fault_flags = 0u32;
+        // SAFETY: Foreign function call with valid pointer arguments.
+        let status = unsafe {
+            cpp_arch_copy_to_user_capture_faults(
+                dst,
+                src,
+                len,
+                &raw mut fault_va,
+                &raw mut fault_flags,
+            )
+        };
+        capture_faults_result(status, fault_va, fault_flags)
+    }
 }
 
 /// Sets whether the current thread is allowed to block.

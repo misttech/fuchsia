@@ -13,6 +13,7 @@ pub mod sbi;
 pub mod spinlock;
 pub mod thread;
 pub mod timer;
+pub mod user_copy;
 pub mod vector;
 
 /// Architecture-specific saved normal mode state for riscv64.
@@ -32,11 +33,6 @@ use zx_status::Status;
 use zx_types::{zx_restricted_state_t, zx_status_t, zx_thread_state_general_regs_t};
 
 const LOCAL_TRACE: u32 = 0;
-
-/// Canonical address mask for RISC-V 64 Sv39 virtual addresses.
-///
-/// [riscv/priv/v1.12]: Section 4.4.1 (Sv39: Page-Based 39-bit Virtual-Memory System)
-const RISCV64_CANONICAL_ADDRESS_MASK: usize = !((1usize << 38) - 1);
 
 /// Supervisor Previous Interrupt Enable bit in `sstatus` CSR.
 ///
@@ -86,11 +82,6 @@ zr::static_assert!(core::mem::align_of::<Iframe>() == 16);
 zr::static_assert!(core::mem::size_of::<SyscallRegs>() == core::mem::size_of::<Iframe>());
 zr::static_assert!(core::mem::align_of::<SyscallRegs>() == core::mem::align_of::<Iframe>());
 
-#[inline]
-pub fn is_user_accessible(va: usize) -> bool {
-    (va & RISCV64_CANONICAL_ADDRESS_MASK) == 0
-}
-
 /// Base address of the kernel address space.
 pub const KERNEL_ASPACE_BASE: usize = 0xffff_ffc0_0000_0000;
 /// Size of the kernel address space.
@@ -108,7 +99,6 @@ pub fn is_kernel_address(va: usize) -> bool {
 pub fn is_valid_user_pc(pc: usize) -> bool {
     (pc == 0) || (is_user_accessible(pc) && !is_kernel_address(pc))
 }
-
 pub fn validate_state_pre_restricted_entry(state: &zx_restricted_state_t) -> Result<(), Status> {
     // Validate that PC is within userspace.
     if !is_user_accessible(state.pc as usize) {
@@ -355,14 +345,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_user_accessible() {
-        assert!(is_user_accessible(0x00000000_00100000));
-        assert!(is_user_accessible(0x0000003f_ffffffff));
-        assert!(!is_user_accessible(0x00000040_00000000));
-        assert!(!is_user_accessible(0xffffffff_80000000));
-    }
-
-    #[test]
     fn test_validate_state_pre_restricted_entry() {
         let mut state = zx_restricted_state_t::default();
         state.pc = 0x1000;
@@ -411,4 +393,8 @@ pub use thread::{
     arch_reset_suspended_general_regs, arch_restore_user_state, arch_save_user_state,
     arch_set_suspended_general_regs, arch_thread_construct_first, arch_thread_get_blocked_fp,
     arch_thread_initialize,
+};
+pub use user_copy::{
+    arch_copy_from_user, arch_copy_from_user_capture_faults, arch_copy_to_user,
+    arch_copy_to_user_capture_faults, is_user_accessible,
 };

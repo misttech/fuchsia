@@ -195,6 +195,28 @@ if (toolchain_base_environment == "kernel") {
     expect_lints = [ "non_camel_case_types" ]
   }
 
+  kernel_bindgen_crate("riscv64-user-copy-bindings") {
+    headers = [ "include/arch/riscv64/user_copy.h" ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    deps = [ "//sdk/rust/zx-types" ]
+    notice_year = 2026
+    raw_lines = [
+      "#![no_std]",
+      "pub type zx_status_t = zx_types::zx_status_t;",
+    ]
+    type_blocklist = [ "zx_.*" ]
+    type_allowlist = [ "Riscv64UserCopyRet" ]
+    var_allowlist = [ "RISCV_CAPTURE_USER_COPY_FAULTS_BIT" ]
+    explicit_padding = false
+    std_derives = [
+      "default",
+      "eq",
+      "partialeq",
+    ]
+    expect_lints = [ "non_camel_case_types" ]
+  }
+
   kernel_bindgen_crate("riscv64-thread-bindings") {
     headers = [
       "include/arch/arch_thread.h",
@@ -284,6 +306,7 @@ if (toolchain_base_environment == "kernel") {
       "src/spinlock.rs",
       "src/thread.rs",
       "src/timer.rs",
+      "src/user_copy.rs",
       "src/vector.rs",
     ]
     deps = [
@@ -291,6 +314,7 @@ if (toolchain_base_environment == "kernel") {
       ":riscv64-mp-bindings",
       ":riscv64-regs-bindings",
       ":riscv64-thread-bindings",
+      ":riscv64-user-copy-bindings",
       "//sdk/rust/zbi",
       "//sdk/rust/zx-status",
       "//sdk/rust/zx-types",
