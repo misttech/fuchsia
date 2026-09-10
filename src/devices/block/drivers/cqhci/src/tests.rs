@@ -11,6 +11,7 @@ use block_client::{
     BlockClient, BufferSlice, InlineCryptoOptions, MutableBufferSlice, ReadOptions,
     RemoteBlockClient, WriteOptions,
 };
+use block_server::callback_interface::SessionManager;
 use fdf_component::testing::harness::DriverUnderTest;
 use fdf_power::SuspendableDriver;
 use fidl_fuchsia_hardware_block_volume::{self as fvolume};
@@ -24,7 +25,7 @@ use futures::channel::oneshot;
 use futures::{FutureExt as _, StreamExt as _};
 use sdmmc_spec::{CQHCI_TASK_DESCRIPTOR_LIST_DCMD_SLOT, SdhciInterruptStatusRegister};
 use std::pin::pin;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use test_case::test_case;
 use zx;
 
@@ -1395,4 +1396,81 @@ async fn test_submit_read_direct() {
 
     drop(cq);
     started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_into_block_service_success() {
+    let (_fixture, mut harness) = FakeCqhci::new(None);
+    let started_driver = harness.start_driver().await.expect("failed to start driver");
+
+    let block_client = connect_block_client(&started_driver, "user").await;
+
+    // Write known data to block 0 of user partition.
+    let mut write_buf = vec![0u8; 512];
+    for (i, byte) in write_buf.iter_mut().enumerate() {
+        *byte = (i as u8).wrapping_mul(11);
+    }
+    block_client.write_at(BufferSlice::from(&write_buf[..]), 0).await.expect("write failed");
+
+    let driver = started_driver.get_driver().expect("failed to get driver");
+    let cq = driver.command_queue.lock().as_ref().cloned().unwrap();
+    let partition = Arc::new(crate::partition::EmmcPartition::new(
+        EmmcPartitionId::UserDataPartition,
+        Arc::downgrade(&cq),
+        fblock::BlockInfo {
+            block_count: 1024,
+            block_size: 512,
+            max_transfer_size: 0,
+            flags: fblock::DeviceFlag::empty(),
+        },
+    ));
+    let session_manager = Arc::new(SessionManager::new(partition, 512));
+    let block_service = session_manager.into_block_service(&session_manager);
+
+    let dest_buffer = block_service.allocate_buffer(4096);
+    assert!(dest_buffer.len() >= 512);
+    assert!(dest_buffer.paddrs().is_some());
+
+    let (tx, rx) = oneshot::channel();
+    block_service
+        .read_blocks(
+            0,
+            dest_buffer,
+            Box::new(move |res| {
+                let _ = tx.send(res);
+            }),
+        )
+        .expect("read_blocks failed");
+
+    let res = rx.await.expect("channel dropped").expect("read failed");
+    let mut read_buf = vec![0u8; 512];
+    res.as_ref().subslice(..512).copy_to_slice(&mut read_buf);
+    assert_eq!(read_buf, write_buf);
+
+    drop(res);
+    drop(block_service);
+    drop(session_manager);
+    drop(cq);
+    drop(block_client);
+    started_driver.stop_driver().await;
+}
+
+#[fuchsia::test]
+async fn test_into_block_service_fallback() {
+    let partition = Arc::new(crate::partition::EmmcPartition::new(
+        EmmcPartitionId::UserDataPartition,
+        Weak::new(),
+        fblock::BlockInfo {
+            block_count: 1024,
+            block_size: 512,
+            max_transfer_size: 0,
+            flags: fblock::DeviceFlag::empty(),
+        },
+    ));
+    let session_manager = Arc::new(SessionManager::new(partition, 512));
+    let block_service = session_manager.into_block_service(&session_manager);
+
+    let dest_buffer = block_service.allocate_buffer(4096);
+    // The fallback DefaultCallbackBlockService allocates unpinned buffers.
+    assert!(dest_buffer.paddrs().is_none());
 }

@@ -193,12 +193,10 @@ impl TransferManager {
         Self { tdl_buffer, extra_descriptors_buffer, bti, minimum_contiguity, max_transfer_blocks }
     }
 
-    #[allow(dead_code)]
     pub fn minimum_contiguity(&self) -> u64 {
         self.minimum_contiguity
     }
 
-    #[allow(dead_code)]
     pub fn bti(&self) -> &zx::Bti {
         &self.bti
     }
@@ -335,7 +333,6 @@ impl TransferManager {
     ///
     /// The caller is responsible for ensuring that `buffer` remains pinned and its physical
     /// addresses remain valid for the entire duration of the transfer until completion.
-    #[allow(dead_code)]
     pub fn prepare_read_transfer_pre_pinned(
         &self,
         slot: u8,

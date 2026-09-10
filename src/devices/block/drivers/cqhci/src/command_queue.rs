@@ -178,7 +178,6 @@ fn complete_request(
 
 enum TaskRequest {
     BlockServer(RequestId),
-    #[allow(dead_code)]
     Direct(Box<dyn FnOnce(Result<(), zx::Status>) + Send>),
 }
 
@@ -1656,7 +1655,6 @@ impl CommandQueue {
     /// Submits a read transfer directly using a pre-pinned buffer.
     ///
     /// When the read completes, `on_complete` is invoked with the final status and buffer.
-    #[allow(dead_code)]
     pub fn submit_read_direct(
         self: &Arc<Self>,
         partition: EmmcPartitionId,
@@ -1702,12 +1700,10 @@ impl CommandQueue {
         self.submit_pending_task(partition, tdl_slot, task)
     }
 
-    #[allow(dead_code)]
     pub fn minimum_contiguity(&self) -> u64 {
         self.transfer_manager.minimum_contiguity()
     }
 
-    #[allow(dead_code)]
     pub fn bti(&self) -> &zx::Bti {
         self.transfer_manager.bti()
     }
