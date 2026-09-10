@@ -11,8 +11,16 @@ readonly script="$0"
 readonly script_dir="${script%/*}"
 readonly script_basename="${script##*/}"
 
+verbose=0
+
 function msg() {
   echo >&2 "[$script_basename] $*"
+}
+
+function debug_msg() {
+  [[ "$verbose" -eq 0 ]] || {
+    msg "$*"
+  }
 }
 
 function usage() {
@@ -20,6 +28,9 @@ function usage() {
 Usage: $script \
   --system-log system_logfile \
   [script_args] -- command...
+
+options:
+  -v | --verbose : run verbosely
 END
 }
 
@@ -49,6 +60,7 @@ do
     --system-log=*) system_logfile="$optarg" ;;
     -n) prev_opt=interval ;;
     -n=*) interval="$optarg" ;;
+    -v | --verbose) verbose=1 ;;
     --) shift ; break ;;
     *) echo "Unknown $0 option: $opt" ; usage ; exit 1 ;;
   esac
@@ -70,12 +82,14 @@ shutdown_pids=()
 if [[ -n "$system_logfile" ]]
 then
   rm -f "$system_logfile"
+  debug_msg "Starting background profile collection..."
   "${PREBUILT_PYTHON3:-python3}" -S -u "${script_dir}/system_profiler.py" \
     --interval "$interval" \
     --output "$system_logfile" \
     --pid "$$" \
     --metadata "FX_BUILD_UUID:${FX_BUILD_UUID:-}" &
   readonly system_profiler_pid=$!
+  debug_msg "Background profiler started (PID: $system_profiler_pid)"
   shutdown_pids+=( "$system_profiler_pid" )
 fi
 

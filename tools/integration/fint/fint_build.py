@@ -6,6 +6,7 @@
 """Python implementation of 'fint build' as a command wrapper."""
 
 import pathlib
+import shlex
 import sys
 
 # Find the fuchsia root containing prebuilt/third_party/protobuf-py3.
@@ -95,9 +96,12 @@ class Timer:
         self.duration = time.time() - self._start
 
 
+_SCRIPT_NAME = pathlib.Path(__file__).name
+
+
 def print_msg(msg: str, file: TextIO = sys.stdout) -> None:
-    """Standardized logger that prefixes messages with [fint_build]."""
-    print(f"[fint_build] {msg}", file=file)
+    """Standardized logger that prefixes messages with the script name."""
+    print(f"[{_SCRIPT_NAME}] {msg}", file=file)
 
 
 @dataclass(frozen=True)
@@ -212,6 +216,7 @@ def run_gn_check(
     checkout_dir: pathlib.Path,
     build_dir: pathlib.Path,
     host: HostProperties,
+    verbose: bool = False,
 ) -> int:
     """Runs 'gn check' to verify header dependency rules inside the build directory.
 
@@ -219,22 +224,24 @@ def run_gn_check(
         checkout_dir: Path to the Fuchsia checkout root.
         build_dir: Path to the active build directory.
         host: Resolved properties of the host platform.
+        verbose: Enable verbose logging.
 
     Returns:
         The exit code of the 'gn check' subprocess.
     """
     gn_bin = checkout_dir / host.gn_relative_path
+    cmd = [
+        str(gn_bin),
+        "check",
+        str(build_dir),
+        f"--root={checkout_dir}",
+        "--check-generated",
+        "--check-system",
+    ]
     print_msg("Running gn check...")
-    res = subprocess.run(
-        [
-            str(gn_bin),
-            "check",
-            str(build_dir),
-            f"--root={checkout_dir}",
-            "--check-generated",
-            "--check-system",
-        ]
-    )
+    if verbose:
+        print_msg(f"Command: {shlex.join(cmd)}")
+    res = subprocess.run(cmd)
     return res.returncode
 
 
@@ -243,6 +250,7 @@ def check_ninja_noop(
     build_dir: pathlib.Path,
     host: HostProperties,
     targets: list[str],
+    verbose: bool = False,
 ) -> int:
     """Verifies that the Ninja build converges to a no-op state.
 
@@ -256,13 +264,13 @@ def check_ninja_noop(
         build_dir: Path to the active build directory.
         host: Resolved properties of the host platform.
         targets: Concrete list of Ninja targets to verify.
+        verbose: Enable verbose logging.
 
     Returns:
         0 if the build successfully converges to a no-op, non-zero if Ninja
         diverges or fails.
     """
     ninja_bin = checkout_dir / host.ninja_relative_path
-    print_msg("Verifying ninja build converges to no-op...")
 
     with tempfile.TemporaryDirectory() as td:
         dirty_sources_path = pathlib.Path(td) / "dirty_sources.txt"
@@ -278,6 +286,10 @@ def check_ninja_noop(
             "--dirty_sources_list",
             str(dirty_sources_path),
         ] + targets
+
+        print_msg("Verifying ninja build converges to no-op...")
+        if verbose:
+            print_msg(f"Command: {shlex.join(cmd)}")
 
         res = subprocess.run(
             cmd,
@@ -320,6 +332,7 @@ class BuildContext:
     static_spec: static_pb2.Static
     context_spec: context_pb2.Context
     host: HostProperties
+    verbose: bool = False
 
     @property
     def build_dir(self) -> pathlib.Path:
@@ -493,17 +506,23 @@ class BuildContext:
         success_stamp_path.write_text("")
 
         # Post-build verification checks
-        gn_status = run_gn_check(self.checkout_dir, self.build_dir, self.host)
+        gn_status = run_gn_check(
+            checkout_dir=self.checkout_dir,
+            build_dir=self.build_dir,
+            host=self.host,
+            verbose=self.verbose,
+        )
         if gn_status != 0:
             result.exit_code = gn_status
             return
 
         if not self.context_spec.skip_ninja_noop_check:
             noop_status = check_ninja_noop(
-                self.checkout_dir,
-                self.build_dir,
-                self.host,
-                targets,
+                checkout_dir=self.checkout_dir,
+                build_dir=self.build_dir,
+                host=self.host,
+                targets=targets,
+                verbose=self.verbose,
             )
             if noop_status != 0:
                 result.exit_code = noop_status
@@ -545,7 +564,9 @@ def lookup_tool_path(
 
 
 def make_build_context(
-    static_path: pathlib.Path, context_path: pathlib.Path | None
+    static_path: pathlib.Path,
+    context_path: pathlib.Path | None,
+    verbose: bool = False,
 ) -> BuildContext:
     """Creates a BuildContext by loading and parsing specifications, auto-detecting host properties."""
     static_spec = load_static_spec(static_path)
@@ -559,7 +580,7 @@ def make_build_context(
         )
 
     host = HostProperties.detect()
-    return BuildContext(static_spec, context_spec, host)
+    return BuildContext(static_spec, context_spec, host, verbose)
 
 
 def _main_arg_parser() -> argparse.ArgumentParser:
@@ -585,6 +606,12 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         "--print-artifact-dir",
         action="store_true",
         help="Print the resolved artifact directory from the context spec and exit.",
+    )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Enable verbose output logging.",
     )
     parser.add_argument(
         "--mode",
@@ -636,7 +663,7 @@ def main(argv: list[str]) -> int:
             print_msg(f"Error: {err_msg}", file=sys.stderr)
             return 2
 
-    ctx = make_build_context(args.static, args.context)
+    ctx = make_build_context(args.static, args.context, verbose=args.verbose)
 
     # Select Build Strategy
     wrappers = {
@@ -646,13 +673,16 @@ def main(argv: list[str]) -> int:
     wrapper = wrappers[args.mode]
 
     with wrapper(args.wrapped_cmd) as run:
-        print_msg(f"Delegated command: {' '.join(run.command)}")
+        if args.verbose:
+            print_msg(f"Delegated command: {shlex.join(run.command)}")
 
         with Timer() as t:
             try:
                 # Wrap the delegated command execution in SignalManagedProcess to gracefully
                 # handle and relay process signals (such as Ctrl+C / SIGINT) to Ninja/Bazel.
-                managed = signal_utils.SignalManagedProcess(run.command)
+                managed = signal_utils.SignalManagedProcess(
+                    run.command, verbose=args.verbose
+                )
                 exit_code = managed.run()
             except signal_utils.BuildInterruptedError as e:
                 # If interrupted, propagate the signal-derived exit code (128 + signum)

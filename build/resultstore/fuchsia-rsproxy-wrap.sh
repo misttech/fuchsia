@@ -307,7 +307,9 @@ full_cmd=(
 
 [[ "$verbose" == 0 ]] || {
   echo "[$SCRIPT_NAME] ---- env start ----"
-  export SH_WRAPPER_TEST_DEBUG=1  # extra verbosity in rsproxy-wrap.sh
+  # Uncomment the following to enable extreme gRPC traffic logging from rsproxy.
+  # Doing so will print every single request trace to the console (which can flood build logs).
+  # export SH_WRAPPER_TEST_DEBUG=1
   env
   echo "[$SCRIPT_NAME] ---- env end ----"
 }

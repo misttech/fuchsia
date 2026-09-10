@@ -995,6 +995,39 @@ class ContextPropertiesAndLoggingTest(unittest.TestCase):
             expected_cmd_with_context,
         )
 
+    def test_fint_build_cmd_verbose(self) -> None:
+        """Verifies that fint_build_cmd forwards the --verbose flag when verbose is True."""
+        config = main_build.FuchsiaBuildConfig(
+            rbe=False,
+            resultstore="none",
+            profile=False,
+            tui=False,
+            verbose=True,
+            dry_run=False,
+        )
+        context = main_build.FuchsiaBuildContext(
+            source_dir=pathlib.Path("/tmp/fuchsia"),
+            out_dir=pathlib.Path("/tmp/out"),
+            build_dir=pathlib.Path("/tmp/out/default"),
+            env={"USER": "fake-user"},
+            config=config,
+        )
+        context.config.fint_params_path = pathlib.Path("/tmp/static.proto")
+        expected_cmd = [
+            str(main_build.PYTHON_BIN),
+            "-S",
+            "-u",
+            "/tmp/fuchsia/tools/integration/fint/fint_build.py",
+            "--static",
+            "/tmp/static.proto",
+            "--verbose",
+            "--",
+        ]
+        self.assertEqual(
+            [str(arg) for arg in context.fint_build_cmd()],
+            expected_cmd,
+        )
+
     def test_msg_logging(self) -> None:
         f_stdout = io.StringIO()
         with contextlib.redirect_stdout(f_stdout):

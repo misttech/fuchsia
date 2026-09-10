@@ -30,7 +30,7 @@ readonly tui_wrapper="${FUCHSIA_DIR}/build/tui/build-tui-wrap.sh"
 
 verbose=0
 function debug() {
-  [[ "$verbose" == 0 ]] || echo "[$SCRIPT_NAME]: $*"
+  [[ "$verbose" -eq 0 ]] || echo "[$SCRIPT_NAME]: $*"
 }
 
 function die() {
@@ -261,15 +261,16 @@ loas_type_arg=()
 # Stack prefix wrappers based on enabled features.
 
 maybe_tui_wrap=()
-if [[ "$tui" == 1 ]]
+if [[ "$tui" -eq 1 ]]
 then
   debug "TUI enabled."
   readonly tui_logdir="$log_dir/tui_logs"
   maybe_tui_wrap=(
     "$tui_wrapper"
     --log-dir "$tui_logdir"
-    --
   )
+  [[ "$verbose" -eq 0 ]] || maybe_tui_wrap+=( --verbose )
+  maybe_tui_wrap+=( -- )
   # Nothing to upload.  But if we ever want to upload artifacts such as logs
   # or checkpoints to ResultStore, this wrapper layer must move inside the
   # resultstore (rsproxy) wrapper layer below.
@@ -282,7 +283,7 @@ maybe_fint_build_wrap=()
 # TODO: support fint build wrapper (for infra)
 
 maybe_profile_wrap=()
-if [[ "$collect_system_profile" == 1 ]]
+if [[ "$collect_system_profile" -eq 1 ]]
 then
   debug "Profiling enabled."
   readonly profile_log_dir="$log_dir/build_profile"
@@ -306,8 +307,9 @@ then
   maybe_profile_wrap=(
     "$profile_wrapper"
     --system-log "$system_profile_log"
-    --
   )
+  [[ "$verbose" -eq 0 ]] || maybe_profile_wrap+=( --verbose )
+  maybe_profile_wrap+=( -- )
   post_build_uploads+=(
     # trace and capability logs
     "$system_profile_log"
@@ -316,7 +318,7 @@ then
 fi
 
 maybe_rbe_wrap=()
-if [[ "$needs_reproxy_rbe" == 1 ]]
+if [[ "$needs_reproxy_rbe" -eq 1 ]]
 then
   debug "RBE enabled."
   readonly reproxy_logdir="$log_dir/reproxy_logs"
@@ -333,7 +335,7 @@ then
   done
 
   reproxy_shutdown_opts=()
-  if [[ "$enable_resultstore" == 0 ]]
+  if [[ "$enable_resultstore" -eq 0 ]]
   then
     # When resultstore is enabled, we need to wait for reproxy to fully
     # shutdown to guarantee that produces the logs and metrics that will
@@ -348,7 +350,8 @@ then
     --tmpdir "$reproxy_tmpdir"
     "${loas_type_arg[@]}"
   )
-  [[ "$use_gce_machine_credentials" == 0 ]] || maybe_rbe_wrap+=( --use-machine-credentials )
+  [[ "$use_gce_machine_credentials" -eq 0 ]] || maybe_rbe_wrap+=( --use-machine-credentials )
+  [[ "$verbose" -eq 0 ]] || maybe_rbe_wrap+=( --verbose )
   maybe_rbe_wrap+=(
     "${reproxy_cfg_args[@]}"
     "${reproxy_shutdown_opts[@]}"
@@ -363,12 +366,12 @@ fi
 
 # Both ResultStore and the TUI use rsproxy.
 maybe_resultstore_wrap=()
-if [[ "$enable_resultstore" == 1 || "$tui" == 1 ]]
+if [[ "$enable_resultstore" -eq 1 || "$tui" -eq 1 ]]
 then
-  if [[ "$enable_resultstore" == 1 ]]
+  if [[ "$enable_resultstore" -eq 1 ]]
   then debug "ResultStore uploads enabled, using rsproxy."
   fi
-  if [[ "$tui" == 1 ]]
+  if [[ "$tui" -eq 1 ]]
   then debug "TUI enabled, using rsproxy."
   fi
   readonly rsproxy_logdir="$log_dir/rsproxy_logs"
@@ -376,7 +379,7 @@ then
   rsproxy_options=()
 
   rsproxy_loas_type_arg=( "${loas_type_arg[@]}" )
-  if [[ "$enable_resultstore" == 1 ]]
+  if [[ "$enable_resultstore" -eq 1 ]]
   then
     for f in "${pre_build_uploads[@]}"
     do rsproxy_options+=( --pre_build_uploads "$f" )
@@ -395,7 +398,8 @@ then
     "$rsproxy_wrapper"
     "${rsproxy_loas_type_arg[@]}"
   )
-  [[ "$use_gce_machine_credentials" == 0 ]] || maybe_resultstore_wrap+=( --use-machine-credentials )
+  [[ "$use_gce_machine_credentials" -eq 0 ]] || maybe_resultstore_wrap+=( --use-machine-credentials )
+  [[ "$verbose" -eq 0 ]] || maybe_resultstore_wrap+=( --verbose )
   maybe_resultstore_wrap+=(
     --log-dir "$rsproxy_logdir"
     "${rsproxy_options[@]}"
@@ -415,7 +419,7 @@ readonly full_cmd=(
 )
 
 debug "full command: ${full_cmd[*]}"
-if [[ "$dry_run" == 1 ]]; then
+if [[ "$dry_run" -eq 1 ]]; then
   echo "${full_cmd[@]}"
 else
   exec "${full_cmd[@]}"

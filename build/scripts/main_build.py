@@ -79,7 +79,12 @@ class FuchsiaBuildConfig(object):
       resultstore: "all", "none", "ninja", or "bazel"
       profile: if True, collect system profile during build
       tui: if True, enable terminal UI for monitoring build
+      verbose: if True, enable verbose logging output
+      dry_run: if True, execute in dry-run mode
+      status: if True, show build status metrics
       fint_params_path: path to Fint static parameters if Fint wrapping is triggered
+      fint_context_path: path to Fint context parameters if Fint wrapping is triggered
+      output_metadata_json: path to write the structured metadata JSON of build artifacts
     """
 
     rbe: bool | None
@@ -466,6 +471,8 @@ class FuchsiaBuildContext(object):
         if context_path:
             yield "--context"
             yield str(context_path)
+        if self.config.verbose:
+            yield "--verbose"
         if print_artifact_dir:
             yield "--print-artifact-dir"
         else:
@@ -721,6 +728,9 @@ class BuildInvocation(object):
 
         if context.config.profile:
             yield "--profile"
+
+        if context.config.verbose:
+            yield "--verbose"
 
     def get_build_env(self) -> dict[str, str]:
         """Curate a build environment for this invocation."""
