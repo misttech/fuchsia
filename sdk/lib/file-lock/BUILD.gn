@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/cpp/sdk_cpp_test.gni")
+import("//build/cpp/sdk_cpp_unittest_package.gni")
 import("//build/testing/cc_test_executable.gni")
 
 group("tests") {
@@ -10,19 +12,20 @@ group("tests") {
   deps = [ ":file-lock-unittest-package" ]
 }
 
-cc_test_executable("file-lock-unittest") {
+sdk_cpp_test("file-lock-unittest") {
   testonly = true
 
   sources = [ "file-lock-unittest.cc" ]
 
   deps = [
     ":cpp",
-    "//zircon/system/ulib/zxtest",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
   ]
 }
 
-fuchsia_unittest_package("file-lock-unittest-package") {
-  deps = [ ":file-lock-unittest" ]
+sdk_cpp_unittest_package("file-lock-unittest-package") {
+  sdk_cpp_test_deps = [ ":file-lock-unittest" ]
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##

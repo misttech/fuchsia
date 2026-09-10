@@ -30,7 +30,8 @@ void FileLock::Lock(zx_koid_t owner, LockRequest& req, lock_completer_t& complet
 }
 
 void FileLock::LockLocked(zx_koid_t owner, LockRequest& req, lock_completer_t& completer) {
-  if (pending_exclusive_.contains(owner) || pending_shared_.contains(owner)) {
+  if (pending_exclusive_.find(owner) != pending_exclusive_.end() ||
+      pending_shared_.find(owner) != pending_shared_.end()) {
     completer(ZX_ERR_BAD_STATE);
     return;
   }
@@ -152,7 +153,7 @@ void FileLock::LockLocked(zx_koid_t owner, LockRequest& req, lock_completer_t& c
 
 void FileLock::Forget(zx_koid_t owner) {
   std::scoped_lock lock(lock_mtx_);
-  if (exclusive_ == owner || shared_.contains(owner)) {
+  if (exclusive_ == owner || shared_.find(owner) != shared_.end()) {
     LockRequest req(LockType::UNLOCK, false);
     lock_completer_t completer([](zx_status_t status) { ZX_DEBUG_ASSERT(status == ZX_OK); });
     LockLocked(owner, req, completer);

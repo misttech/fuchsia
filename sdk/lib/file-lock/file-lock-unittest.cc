@@ -6,7 +6,7 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace file_lock {
 namespace {
