@@ -635,8 +635,8 @@ Controller::Controller(std::unique_ptr<EngineDriverClient> engine_driver_client,
       driver_dispatcher_(std::move(driver_dispatcher)),
       engine_listener_fidl_adapter_(this, driver_dispatcher_->borrow()),
       vsync_monitor_(root_.CreateChild("vsync_monitor"), driver_dispatcher_->async_dispatcher()),
-      clients_(root_.CreateChild("clients")),
       engine_driver_client_(std::move(engine_driver_client)),
+      clients_(root_.CreateChild("clients")),
       fallback_horizontal_size_mm_(fallback_horizontal_size_mm),
       fallback_vertical_size_mm_(fallback_vertical_size_mm) {
   ZX_DEBUG_ASSERT(IsRunningOnDriverDispatcher());

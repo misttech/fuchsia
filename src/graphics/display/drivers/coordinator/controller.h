@@ -208,6 +208,11 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
 
   bool unbinding_ = false;
 
+  // The engine driver client used for hardware operations.
+  //
+  // `engine_driver_client_` needs to outlive `displays_` and `clients_`.
+  std::unique_ptr<EngineDriverClient> engine_driver_client_;
+
   DisplayInfo::Map displays_;
   ClientId applied_client_id_ = kInvalidClientId;
   display::DriverCaptureImageId pending_release_capture_image_id_ =
@@ -220,8 +225,6 @@ class Controller : public fidl::WireServer<fuchsia_hardware_display::Provider>,
       display::DriverBufferCollectionId(1);
 
   ClientSet clients_;
-
-  std::unique_ptr<EngineDriverClient> engine_driver_client_;
 
   // TODO(https://fxbug.dev/489243434): Switch away from "applied" terminology.
   zx::time_monotonic last_valid_apply_config_timestamp_mono_;
