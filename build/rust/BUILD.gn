@@ -105,6 +105,7 @@ if (current_toolchain != default_toolchain) {
   }
 } else {
   project_json = "$root_build_dir/project.json"
+  api_level_cfg_flags = "$root_build_dir/rust_api_level_cfg_flags.txt"
 
   action("cargo_toml_gen") {
     testonly = true
@@ -133,6 +134,7 @@ if (current_toolchain != default_toolchain) {
     inputs = [
       project_json,
       "//third_party/rust_crates/Cargo.toml",
+      api_level_cfg_flags,
     ]
     hermetic_deps = false
 
@@ -143,6 +145,8 @@ if (current_toolchain != default_toolchain) {
       ".",
       "--fuchsia_dir",
       rebase_path("//", root_build_dir),
+      "--api_level_cfg_flags",
+      rebase_path(api_level_cfg_flags, root_build_dir),
     ]
     deps = [
       "//build/rust:api_level_cfg_flags",

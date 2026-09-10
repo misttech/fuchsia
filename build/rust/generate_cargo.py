@@ -205,8 +205,8 @@ def get_check_cfgs(rustflags):
     return check_cfg
 
 
-def get_cfgs(rustflags):
-    cfgs = []
+def get_cfgs(rustflags: list[str], api_level_cfgs: list[str]) -> list[str]:
+    cfgs: list[str] = []
     cfg_pat = re.compile(r"--cfg=([^=]*)=(.*)$")
     for flag in rustflags:
         if flag.startswith("--cfg=feature"):
@@ -217,6 +217,11 @@ def get_cfgs(rustflags):
             # of no use to cargo.
             if match.group(1) != "__rust_toolchain":
                 cfgs.append(f"{match.group(1)}={match.group(2)}")
+        elif flag == "@rust_api_level_cfg_flags.txt":
+            # This is a special response file used to provide all the api level
+            # cfg flags.  We've already read that file, so insert those directly
+            # into the cfgs.
+            cfgs.extend(api_level_cfgs)
         elif flag.startswith("@"):
             try:
                 with open(flag[1:]) as f:
@@ -241,6 +246,7 @@ def write_toml_file(
     gn_cargo_dir,
     for_workspace,
     version,
+    api_level_cfgs: list[str],
 ):
     rust_crates_path = os.path.join(root_path, "third_party/rust_crates")
 
@@ -270,7 +276,7 @@ def write_toml_file(
         is_proc_macro = ""
 
     features = get_features(metadata["rustflags"])
-    extra_configs = get_cfgs(metadata["rustflags"])
+    extra_configs = get_cfgs(metadata["rustflags"], api_level_cfgs)
     check_cfgs = get_check_cfgs(metadata["rustflags"])
 
     crate_type = "rlib"
@@ -503,6 +509,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root_build_dir", required=True)
     parser.add_argument("--fuchsia_dir", required=True)
+    parser.add_argument(
+        "--api_level_cfg_flags",
+        required=True,
+        help="Path to rust_api_level_cfg_flags.txt response file",
+    )
     parser.add_argument("json_path")
     args = parser.parse_args()
 
@@ -534,6 +545,12 @@ def main():
     # this will be removed eventually?
     with open(rust_crates_path + "/Cargo.toml", "rb") as f:
         project.patches = tomllib.load(f)["patch"]["crates-io"]
+
+    api_level_cfgs: list[str] = []
+    with open(args.api_level_cfg_flags) as f:
+        for line in f:
+            if line.startswith("--cfg="):
+                api_level_cfgs.append(line[len("--cfg=") :])
 
     lookup = {}
     for target in project.rust_targets:
@@ -577,6 +594,7 @@ def main():
                 gn_cargo_dir,
                 for_workspace=False,
                 version=version,
+                api_level_cfgs=api_level_cfgs,
             )
 
         if (
@@ -602,6 +620,7 @@ def main():
                     os.path.join(gn_cargo_dir, "for_workspace"),
                     for_workspace=True,
                     version=version,
+                    api_level_cfgs=api_level_cfgs,
                 )
 
     # TODO: refactor into separate function
