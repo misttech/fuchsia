@@ -108,9 +108,13 @@ def metadata_bazelrc(env: dict[str, str]) -> Iterable[str]:
 
 
 def service_proxies_bazelrc(env: dict[str, str]) -> Iterable[str]:
+    # LINT.IfChange(bazel_socket_env_vars)
     # Redirect traffic to proxies (infra only).
     # Remote service configuration.
-    rbe_socket_path = env.get("BAZEL_rbe_socket_path")
+    # TODO(https://fxbug.dev/450234102): Deprecate legacy BAZEL_rbe_socket_path after recipes migrate.
+    rbe_socket_path = env.get("FX_INTERNAL_BAZEL_RBE_SOCKET_PATH") or env.get(
+        "BAZEL_rbe_socket_path"
+    )
     if rbe_socket_path:
         yield build_config_option(
             "_remote_common", f"--remote_proxy=unix://{rbe_socket_path}"
@@ -123,11 +127,15 @@ def service_proxies_bazelrc(env: dict[str, str]) -> Iterable[str]:
             "sponge_infra", f"--bes_proxy=unix://{sponge_socket_path}"
         )
 
-    resultstore_socket_path = env.get("BAZEL_resultstore_socket_path")
+    # TODO(https://fxbug.dev/481021388): Deprecate legacy BAZEL_resultstore_socket_path after recipes migrate.
+    resultstore_socket_path = env.get(
+        "FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH"
+    ) or env.get("BAZEL_resultstore_socket_path")
     if resultstore_socket_path:
         yield build_config_option(
             "resultstore_infra", f"--bes_proxy=unix://{resultstore_socket_path}"
         )
+    # LINT.ThenChange(//build/scripts/main_build.py:bazel_socket_env_vars)
 
 
 def generate_bazelrc(

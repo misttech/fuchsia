@@ -85,6 +85,8 @@ class FuchsiaBuildConfig(object):
       fint_params_path: path to Fint static parameters if Fint wrapping is triggered
       fint_context_path: path to Fint context parameters if Fint wrapping is triggered
       output_metadata_json: path to write the structured metadata JSON of build artifacts
+      remote_proxy_socket: path to the local RBE proxy socket if passed via CLI
+      resultstore_proxy_socket: path to the local ResultStore/BES proxy socket if passed via CLI
     """
 
     rbe: bool | None
@@ -97,6 +99,8 @@ class FuchsiaBuildConfig(object):
     fint_params_path: pathlib.Path | None = None
     fint_context_path: pathlib.Path | None = None
     output_metadata_json: pathlib.Path | None = None
+    remote_proxy_socket: pathlib.Path | None = None
+    resultstore_proxy_socket: pathlib.Path | None = None
 
     @staticmethod
     def from_args(
@@ -115,6 +119,8 @@ class FuchsiaBuildConfig(object):
             fint_params_path=args.fint_params_path,
             fint_context_path=args.fint_context_path,
             output_metadata_json=args.output_metadata_json,
+            remote_proxy_socket=args.remote_proxy_socket,
+            resultstore_proxy_socket=args.resultstore_proxy_socket,
         )
 
 
@@ -842,6 +848,26 @@ class BuildInvocation(object):
         build_env["FX_INTERNAL_RESULTSTORE_BAZEL"] = resultstore_bazel
         # LINT.ThenChange(//build/bazel/wrapper.bazel.sh:resultstore_bazel_env_vars)
 
+        # Override the remote execution and resultstore proxy endpoints with
+        # unix:// socket paths if explicit CLI sockets are passed.
+        # LINT.IfChange(bazel_socket_env_vars)
+        if self.context.config.remote_proxy_socket:
+            socket_str = str(self.context.config.remote_proxy_socket)
+            # Override for reproxy, through build/rbe/fuchsia-reproxy-wrap.sh:
+            build_env["RBE_service"] = f"unix://{socket_str}"
+            # Override for rsproxy, through build/resultstore/fuchsia-rsproxy-wrap.sh:
+            build_env["RS_cas_service"] = f"unix://{socket_str}"
+            # Consumed by build/bazel/scripts/generate_invocation_bazelrc.py to route Bazel remote traffic
+            build_env["FX_INTERNAL_BAZEL_RBE_SOCKET_PATH"] = socket_str
+
+        if self.context.config.resultstore_proxy_socket:
+            socket_str = str(self.context.config.resultstore_proxy_socket)
+            # Override for rsproxy, through build/resultstore/fuchsia-rsproxy-wrap.sh:
+            build_env["RS_rs_service"] = f"unix://{socket_str}"
+            # Consumed by build/bazel/scripts/generate_invocation_bazelrc.py to route Bazel resultstore traffic
+            build_env["FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH"] = socket_str
+        # LINT.ThenChange(//build/bazel/scripts/generate_invocation_bazelrc.py:bazel_socket_env_vars)
+
         return build_env
 
     def new_build_command_execution(
@@ -1181,6 +1207,18 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         type=pathlib.Path,
         default=None,
         help="Path to write the structured metadata JSON describing all build logs and artifacts.",
+    )
+    parser.add_argument(
+        "--remote-proxy-socket",
+        type=pathlib.Path,
+        default=None,
+        help="Path to the local RBE proxy socket.",
+    )
+    parser.add_argument(
+        "--resultstore-proxy-socket",
+        type=pathlib.Path,
+        default=None,
+        help="Path to the local ResultStore/BES proxy socket.",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)

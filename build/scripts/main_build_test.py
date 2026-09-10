@@ -370,6 +370,29 @@ class BuildInvocationTest(MainBuildTestBase):
                 env["FX_INTERNAL_RESULTSTORE_BAZEL"], "resultstore_infra"
             )
 
+    def test_get_build_env_proxy_socket_propagation(self) -> None:
+        """Verifies that remote_proxy_socket and resultstore_proxy_socket propagate correct environment variables."""
+        rbe_socket = pathlib.Path("/tmp/rbe.sock")
+        bes_socket = pathlib.Path("/tmp/bes.sock")
+        context = self.create_context(
+            remote_proxy_socket=rbe_socket,
+            resultstore_proxy_socket=bes_socket,
+        )
+        context.env = {"USER": "fuchsia-user"}
+        invocation = main_build.BuildInvocation(context)
+        with self.mock_invocation_context():
+            env = invocation.get_build_env()
+            self.assertEqual(env["RBE_service"], f"unix://{rbe_socket}")
+            self.assertEqual(env["RS_cas_service"], f"unix://{rbe_socket}")
+            self.assertEqual(env["RS_rs_service"], f"unix://{bes_socket}")
+            self.assertEqual(
+                env["FX_INTERNAL_BAZEL_RBE_SOCKET_PATH"], str(rbe_socket)
+            )
+            self.assertEqual(
+                env["FX_INTERNAL_BAZEL_RESULTSTORE_SOCKET_PATH"],
+                str(bes_socket),
+            )
+
     def test_get_build_env_missing_user_error(self) -> None:
         context = self.create_context()
         context.env = {}  # No USER
