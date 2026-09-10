@@ -36,6 +36,7 @@ rustc_library("syscalls") {
     "//sdk/fidl/fuchsia.hardware.power.statecontrol:fuchsia.hardware.power.statecontrol_rust",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-component",
+    "//src/lib/fuchsia-rcu",
     "//src/starnix/kernel/core",
     "//src/starnix/lib/linux_uapi",
     "//src/starnix/lib/starnix_crypto",

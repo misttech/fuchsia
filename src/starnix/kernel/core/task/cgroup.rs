@@ -464,7 +464,7 @@ impl CgroupOps for CgroupRoot {
             .keys()
             .filter_map(|v| v.get_thread_group().ok().map(|tg| tg.leader.id))
             .collect();
-        let kernel_pids = kernel.pids.read().process_ids();
+        let kernel_pids = kernel.pids.process_ids();
         kernel_pids.into_iter().filter(|pid| !controlled_pids.contains(pid)).collect()
     }
 

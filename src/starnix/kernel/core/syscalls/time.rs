@@ -382,8 +382,7 @@ fn get_dynamic_clock(current_task: &CurrentTask, which_clock: i32) -> Result<i64
     }
 
     let pid = pid_of_clock_id(which_clock);
-    let target_pid =
-        current_task.kernel().pids.read().get(pid).map_err(|_| errno!(EINVAL))?.clone();
+    let target_pid = current_task.kernel().pids.get(pid).map_err(|_| errno!(EINVAL))?;
 
     if is_thread_clock(which_clock) {
         let task = target_pid.get_task().map_err(|_| errno!(EINVAL))?;

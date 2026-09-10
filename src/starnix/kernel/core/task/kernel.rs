@@ -41,6 +41,7 @@ use fidl_fuchsia_net_resources as fnet_resources;
 use fidl_fuchsia_time_external::AdjustSynchronousProxy;
 use fuchsia_async as fasync;
 use fuchsia_inspect::ArrayProperty;
+use fuchsia_rcu::RcuReadScope;
 use futures::FutureExt;
 use netlink::interfaces::InterfacesHandler;
 use netlink::{NETLINK_LOG_TAG, Netlink};
@@ -49,8 +50,8 @@ use smallvec::SmallVec;
 use starnix_lifecycle::AtomicCounter;
 use starnix_logging::{SyscallLogFilter, log_debug, log_error, log_info, log_warn};
 use starnix_sync::{
-    ComponentControllerLock, KernelSwapFiles, LockDepGuard, LockDepMutex, MountsLevel, RwLock,
-    RwSeqLock, RwSeqLockGuard, SyscallLogFiltersLock,
+    ComponentControllerLock, KernelSwapFiles, LockDepGuard, LockDepMutex, MountsLevel, RwSeqLock,
+    RwSeqLockGuard, SyscallLogFiltersLock,
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{Errno, errno};
@@ -240,7 +241,7 @@ pub struct Kernel {
     pub features: KernelFeatures,
 
     /// The processes and threads running in this kernel, organized by pid_t.
-    pub pids: RwLock<PidTable>,
+    pub pids: PidTable,
 
     /// A weak reference to the init task (PID 1).
     pub init_task: OnceLock<Weak<Task>>,
@@ -674,16 +675,11 @@ impl Kernel {
         // Step 2: Shut down thread groups in a loop until init and the system task are all that
         // remain.
         loop {
-            let tgs = {
-                // Exiting thread groups need to acquire a write lock for the pid table to
-                // successfully exit so we need to acquire that lock in a reduced scope.
-                self.pids
-                    .read()
-                    .get_thread_groups()
-                    .into_iter()
-                    .filter(|tg| tg.leader.id != SYSTEM_TASK_PID && tg.leader.id != INIT_PID)
-                    .collect::<Vec<_>>()
-            };
+            let tgs = self
+                .pids
+                .get_thread_groups(&RcuReadScope::new())
+                .filter(|tg| tg.leader.id != SYSTEM_TASK_PID && tg.leader.id != INIT_PID)
+                .collect::<Vec<_>>();
             if tgs.is_empty() {
                 log_info!("pid table is empty except init and system task");
                 break;
@@ -957,7 +953,7 @@ impl Kernel {
             }
             filters.push(filter);
         }
-        for headers in self.pids.read().get_thread_groups() {
+        for headers in self.pids.get_thread_groups(&RcuReadScope::new()) {
             headers.sync_syscall_log_level();
         }
     }
@@ -970,7 +966,7 @@ impl Kernel {
             }
             filters.clear();
         }
-        for headers in self.pids.read().get_thread_groups() {
+        for headers in self.pids.get_thread_groups(&RcuReadScope::new()) {
             headers.sync_syscall_log_level();
         }
     }
@@ -982,12 +978,7 @@ impl Kernel {
         let mut mm_summary = MappingSummary::default();
         let mut mms_summarized = HashSet::new();
 
-        // Avoid holding locks for the entire iteration.
-        let all_thread_groups = {
-            let pid_table = self.pids.read();
-            pid_table.get_thread_groups()
-        };
-        for thread_group in all_thread_groups {
+        for thread_group in self.pids.get_thread_groups(&RcuReadScope::new()) {
             // Avoid holding the state lock while summarizing.
             let (ppid, tasks) = {
                 let tg = thread_group.read();

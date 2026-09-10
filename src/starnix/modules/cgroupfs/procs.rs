@@ -76,7 +76,7 @@ impl DynamicFileSource for ControlGroupFile {
         let pid = pid_string.trim().parse::<pid_t>().map_err(|_| errno!(EINVAL))?;
 
         // Check if the pid is a valid process.
-        let thread_group = current_task.kernel().pids.read().get(pid)?.get_thread_group()?;
+        let thread_group = current_task.kernel().pids.get(pid)?.get_thread_group()?;
         self.cgroup()?.add_process(&thread_group)?;
 
         Ok(bytes.len())

@@ -6,11 +6,12 @@ use crate::mm::MemoryManager;
 use crate::security;
 use crate::signals::SignalActions;
 use crate::task::{
-    CurrentTask, Kernel, Pid, PidTable, ProcessGroup, RobustListHeadPtr, SeccompFilterContainer,
-    SeccompState, Task, TaskBuilder, ThreadGroup, ThreadGroupParent, ThreadGroupWriteGuard,
+    CurrentTask, Kernel, Pid, PidTableGuard, ProcessGroup, RobustListHeadPtr,
+    SeccompFilterContainer, SeccompState, Task, TaskBuilder, ThreadGroup, ThreadGroupParent,
+    ThreadGroupWriteGuard,
 };
 use crate::vfs::{FsContext, SharedFdTable};
-use starnix_sync::{RwLockWriteGuard, allow_subclass};
+use starnix_sync::allow_subclass;
 use starnix_task_command::TaskCommand;
 use starnix_types::arch::ArchWidth;
 use starnix_types::release_on_error;
@@ -215,10 +216,9 @@ pub fn create_init_process(
     rlimits: &[(Resource, u64)],
 ) -> Result<TaskBuilder, Errno> {
     assert_eq!(pid.id, 1);
-    let pids = kernel.pids.write();
     let builder = create_task_with_pid(
         kernel,
-        pids,
+        kernel.pids.lock(),
         pid,
         initial_name.clone(),
         fs,
@@ -275,14 +275,14 @@ pub fn create_task<F>(
 where
     F: FnOnce(Pid, Arc<ProcessGroup>) -> Result<TaskInfo, Errno>,
 {
-    let mut pids = kernel.pids.write();
-    let pid = pids.allocate_pid();
-    create_task_with_pid(kernel, pids, pid, initial_name, root_fs, task_info_factory, creds, &[])
+    let mut guard = kernel.pids.lock();
+    let pid = guard.allocate_pid()?;
+    create_task_with_pid(kernel, guard, pid, initial_name, root_fs, task_info_factory, creds, &[])
 }
 
 fn create_task_with_pid<F>(
     kernel: &Kernel,
-    mut pids: RwLockWriteGuard<'_, PidTable>,
+    mut pids: PidTableGuard<'_>,
     pid: Pid,
     initial_name: TaskCommand,
     root_fs: Arc<FsContext>,
@@ -355,8 +355,8 @@ pub fn create_kernel_thread(
     system_task: &Task,
     initial_name: TaskCommand,
 ) -> Result<CurrentTask, Errno> {
-    let mut pids = system_task.kernel().pids.write();
-    let pid = pids.allocate_pid();
+    let mut pids = system_task.kernel().pids.lock();
+    let pid = pids.allocate_pid()?;
 
     let scheduler_state;
     let uts_ns;

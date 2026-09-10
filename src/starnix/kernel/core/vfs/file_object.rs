@@ -1283,16 +1283,14 @@ impl FileAsyncOwner {
         if pid == 0 {
             Ok(Self::Unowned)
         } else if pid > 0 {
-            let pids = current_task.kernel().pids.read();
-            let entry = pids.get(pid)?;
+            let entry = current_task.kernel().pids.get(pid)?;
             entry.get_task()?;
-            Ok(Self::Process(Some(entry.clone())))
+            Ok(Self::Process(Some(entry)))
         } else {
             let pgid = pid.checked_neg().ok_or_else(|| errno!(EINVAL))?;
-            let pids = current_task.kernel().pids.read();
-            let entry = pids.get(pgid)?;
+            let entry = current_task.kernel().pids.get(pgid)?;
             entry.get_process_group()?;
-            Ok(Self::ProcessGroup(Some(entry.clone())))
+            Ok(Self::ProcessGroup(Some(entry)))
         }
     }
 
@@ -1300,7 +1298,7 @@ impl FileAsyncOwner {
         current_task: &CurrentTask,
         requested_owner: uapi::f_owner_ex,
     ) -> Result<Self, Errno> {
-        let pids = current_task.kernel().pids.read();
+        let pids = &current_task.kernel().pids;
         let get_pid = |lookup_pg: bool| -> Result<Option<Pid>, Errno> {
             if requested_owner.pid == 0 {
                 Ok(None)
@@ -1311,7 +1309,7 @@ impl FileAsyncOwner {
                 } else {
                     entry.get_task()?;
                 }
-                Ok(Some(entry.clone()))
+                Ok(Some(entry))
             }
         };
         match requested_owner.type_ as u32 {
