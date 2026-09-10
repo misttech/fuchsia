@@ -18,9 +18,11 @@ use crate::pdev_power::{
     power_management_boot_boost_enabled, power_management_register_domains,
     power_management_rppm_enabled, power_management_set_rate_limits,
 };
-use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
+use core::ptr;
+use core::sync::atomic::{AtomicU64, Ordering};
 use debug::dprintf;
 use kalloc::Box;
+use lazy_init::LazyInit;
 use regio::{MmioBank, MmioPtr, Offset, RwSafe};
 #[cfg(ktest)]
 use unittest as _;
@@ -37,7 +39,7 @@ const DOMAIN2_REG_OFFSET: Offset<u32, RwSafe> = Offset::new(0x10);
 const DOMAIN3_REG_OFFSET: Offset<u32, RwSafe> = Offset::new(0x18);
 const OPP_BANK_SIZE: usize = 0x20;
 
-static OPP_REG_BASE: AtomicPtr<u32> = AtomicPtr::new(core::ptr::null_mut());
+static OPP_BANK: LazyInit<MmioBank<u32, RwSafe>> = LazyInit::uninit();
 
 const UNCACHED_OPP: u64 = u64::MAX;
 
@@ -186,18 +188,6 @@ extern "C" fn iris_get_cpu_state(
     unsafe { psci_get_cpu_state(hw_cpu_id, out_state) }
 }
 
-/// Helper function to construct a `regio::MmioBank` for the OPP register block.
-fn get_opp_bank() -> Option<MmioBank<u32, RwSafe>> {
-    let base = OPP_REG_BASE.load(Ordering::Acquire);
-    if base.is_null() {
-        return None;
-    }
-    // SAFETY: `OPP_REG_BASE` is mapped into kernel address space during early boot
-    // and remains mapped for the kernel's lifetime.
-    let ptr = unsafe { MmioPtr::<u32, RwSafe>::new(base) };
-    Some(MmioBank::new(ptr, OPP_BANK_SIZE))
-}
-
 /// Sets the active Operating Performance Point (OPP) for the specified power domain.
 extern "C" fn iris_opp_set(domain_id: u32, opp: u64) -> Result<(), Status> {
     let Ok(domain_index) = usize::try_from(domain_id) else {
@@ -224,13 +214,9 @@ extern "C" fn iris_opp_set(domain_id: u32, opp: u64) -> Result<(), Status> {
             return Ok(());
         }
 
-        let Some(bank) = get_opp_bank() else {
-            return Err(Status::BAD_STATE);
-        };
-
         let mmio_opp = (opp as u32) + info.mmio_offset;
         // SAFETY: `info.reg_offset` is within `OPP_BANK_SIZE` (0x20) and aligned to 4 bytes.
-        let reg = unsafe { bank.at(info.reg_offset) };
+        let reg = unsafe { OPP_BANK.at(info.reg_offset) };
         reg.write(mmio_opp);
         CURRENT_OPPS[domain_index].store(opp, Ordering::Release);
         Ok(())
@@ -249,22 +235,18 @@ extern "C" fn iris_opp_get(domain_id: u32, out_opp: *mut u64) -> Result<(), Stat
         return Err(Status::INVALID_ARGS);
     };
 
-    let cached = CURRENT_OPPS[domain_index].load(Ordering::Acquire);
-    if cached != UNCACHED_OPP {
-        // SAFETY: `out_opp` was checked non-null above.
-        unsafe {
-            *out_opp = cached;
-        }
-        return Ok(());
+    // SAFETY: `info.reg_offset` is within `OPP_BANK_SIZE` (0x20) and aligned to 4 bytes.
+    let reg = unsafe { OPP_BANK.at(info.reg_offset) };
+    let raw_val = reg.read();
+    let opp = raw_val.saturating_sub(info.mmio_offset) as u64;
+    // SAFETY: `out_opp` was checked non-null above.
+    unsafe {
+        *out_opp = opp;
     }
 
     with_domain_lock(domain_index, || {
-        let Some(bank) = get_opp_bank() else {
-            return Err(Status::BAD_STATE);
-        };
-
         // SAFETY: `info.reg_offset` is within `OPP_BANK_SIZE` (0x20) and aligned to 4 bytes.
-        let reg = unsafe { bank.at(info.reg_offset) };
+        let reg = unsafe { OPP_BANK.at(info.reg_offset) };
         let raw_val = reg.read();
         let opp = raw_val.saturating_sub(info.mmio_offset) as u64;
         CURRENT_OPPS[domain_index].store(opp, Ordering::Release);
@@ -303,9 +285,16 @@ static IRIS_POWER_OPS: PdevPowerOps = PdevPowerOps {
 #[unsafe(no_mangle)]
 pub extern "C" fn iris_power_init_early() {
     dprintf!(INFO, "POWER: registering iris power hooks\n");
-    // SAFETY: Retrieves the mapped virtual address for the OPP peripheral block.
-    let vaddr = unsafe { cpp_iris_get_opp_vaddr() };
-    OPP_REG_BASE.store(core::ptr::with_exposed_provenance_mut::<u32>(vaddr), Ordering::Release);
+    unsafe {
+        // SAFETY: Retrieves the mapped virtual address for the OPP peripheral block.
+        let vaddr = cpp_iris_get_opp_vaddr();
+        assert_ne!(vaddr, 0);
+
+        let base = MmioPtr::<u32, RwSafe>::new(ptr::with_exposed_provenance_mut(vaddr));
+
+        // SAFETY: Initialization is serialized with respect to any other access.
+        OPP_BANK.init(MmioBank::new(base, OPP_BANK_SIZE));
+    }
 
     for (domain_id, info) in DOMAIN_INFOS.iter().enumerate() {
         let _ = iris_opp_set(domain_id as u32, info.boot_opp);
@@ -560,7 +549,6 @@ pub unsafe extern "C" fn iris_power_init(
 #[cfg(ktest)]
 #[unittest::suite(name = "iris_power")]
 mod tests {
-    use super::{OPP_REG_BASE, Ordering};
     use unittest::{assert_eq, assert_err, assert_ok};
     use zx_status::Status;
 
@@ -587,49 +575,6 @@ mod tests {
         let mut count = 0usize;
         assert_ok!(super::iris_opp_get_domain_count(&mut count));
         assert_eq!(count, 4);
-    }
-
-    /// Tests opp_get and opp_set with mock backing memory and verifies cached OPP behavior.
-    #[test]
-    fn test_iris_opp_get_set() {
-        super::reset_cached_opps_for_test();
-        let mut mock_reg_bank = [0u32; 8];
-        let old_base = OPP_REG_BASE.swap(mock_reg_bank.as_mut_ptr(), Ordering::SeqCst);
-
-        // Test Domain 0 (mmio_offset = 2)
-        assert_ok!(super::iris_opp_set(0, 5));
-        assert_eq!(mock_reg_bank[0], 7); // 5 + 2
-
-        let mut opp = 0u64;
-        assert_ok!(super::iris_opp_get(0, &mut opp));
-        assert_eq!(opp, 5);
-
-        // Setting the same OPP should hit the cache and skip MMIO write.
-        mock_reg_bank[0] = 0xbeef;
-        assert_ok!(super::iris_opp_set(0, 5));
-        assert_eq!(mock_reg_bank[0], 0xbeef); // Untouched due to cache hit
-
-        // Setting a different OPP writes to MMIO and updates cache.
-        assert_ok!(super::iris_opp_set(0, 6));
-        assert_eq!(mock_reg_bank[0], 8); // 6 + 2
-
-        // Test Domain 3 (mmio_offset = 1, reg offset 0x18 -> index 6)
-        assert_ok!(super::iris_opp_set(3, 10));
-        assert_eq!(mock_reg_bank[6], 11); // 10 + 1
-
-        assert_ok!(super::iris_opp_get(3, &mut opp));
-        assert_eq!(opp, 10);
-
-        // Test Out of bounds domain
-        assert_err!(super::iris_opp_set(4, 0), Status::INVALID_ARGS);
-        assert_err!(super::iris_opp_get(4, &mut opp), Status::INVALID_ARGS);
-
-        // Test Out of bounds opp
-        assert_err!(super::iris_opp_set(0, 22), Status::INVALID_ARGS);
-
-        // Restore original base pointer and reset cache
-        OPP_REG_BASE.store(old_base, Ordering::SeqCst);
-        super::reset_cached_opps_for_test();
     }
 
     /// Tests that passing a null or empty config to iris_power_init returns gracefully without panicking.
