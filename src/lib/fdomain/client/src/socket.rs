@@ -133,6 +133,22 @@ impl SocketReadStream {
     pub async fn fdomain_read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
         self.0.fdomain_read(buf).await
     }
+
+    /// Turn a `SocketReadStream` and its accompanying `SocketWriter` back
+    /// into a `Socket`.
+    ///
+    /// # Panics
+    /// If this stream and the writer passed didn't come from the same call to
+    /// `Socket::stream`, or if there is more than one writer.
+    pub fn rejoin(mut self, writer: SocketWriter) -> Socket {
+        assert!(Arc::ptr_eq(&self.0, &writer.0), "Tried to join stream with wrong writer!");
+        if let Some(client) = self.0.0.client.upgrade() {
+            client.stop_socket_streaming(self.0.0.proto());
+        }
+        std::mem::drop(writer);
+        let socket = std::mem::replace(&mut self.0, Arc::new(Socket(Handle::invalid())));
+        Arc::try_unwrap(socket).expect("Stream pointer no longer unique!")
+    }
 }
 
 impl futures::AsyncRead for SocketReadStream {

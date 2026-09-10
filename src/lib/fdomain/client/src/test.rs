@@ -900,3 +900,119 @@ async fn test_signals() {
     let signals = OnFDomainSignals::new(&a.as_handle_ref(), fidl::Signals::USER_3).await.unwrap();
     assert_eq!(signals, fidl::Signals::USER_3);
 }
+
+#[fuchsia::test]
+async fn client_loop_drop_sets_transport_error() {
+    let (client, _fault_injector, fut) = TestFDomain::new_client_and_fut();
+    let (a, b) = client.create_channel();
+    let (s1, s2) = client.create_stream_socket();
+
+    assert!(client.transport_status().is_ok());
+
+    std::mem::drop(fut);
+
+    assert!(matches!(client.transport_status(), Err(Error::Transport(None))));
+
+    assert!(matches!(client.namespace().await, Err(Error::Transport(None))));
+    assert!(matches!(a.fdomain_write(b"test", vec![]).await, Err(Error::Transport(None))));
+    assert!(matches!(b.recv_msg().await, Err(Error::Transport(None))));
+    assert!(matches!(s1.fdomain_write_all(b"test").await, Err(Error::Transport(None))));
+    let mut buf = [0u8; 4];
+    assert!(matches!(s2.fdomain_read(&mut buf).await, Err(Error::Transport(None))));
+    assert!(matches!(b.stream(), Err(Error::Transport(None))));
+    assert!(matches!(s2.stream(), Err(Error::Transport(None))));
+}
+
+#[fuchsia::test]
+async fn socket_read_stream_stop() {
+    let (client, _) = TestFDomain::new_client();
+    let (a, b) = client.create_stream_socket();
+    let b_hid = b.0.proto();
+
+    let (mut stream, writer) = b.stream().unwrap();
+    assert!(client.0.lock().socket_read_states.get(&b_hid).unwrap().is_streaming);
+
+    a.fdomain_write_all(b"hello").await.unwrap();
+    let mut buf = [0u8; 5];
+    stream.read_exact(&mut buf).await.unwrap();
+    assert_eq!(&buf, b"hello");
+
+    let b = stream.rejoin(writer);
+    assert!(!client.0.lock().socket_read_states.get(&b_hid).unwrap().is_streaming);
+
+    a.fdomain_write_all(b"world").await.unwrap();
+    let mut buf2 = [0u8; 5];
+    let n = b.fdomain_read(&mut buf2).await.unwrap();
+    assert_eq!(&buf2[..n], b"world");
+}
+
+#[fuchsia::test]
+async fn socket_read_request_pending_deduplication() {
+    let (client, _) = TestFDomain::new_client();
+    let (a, b) = client.create_stream_socket();
+    let b_hid = b.0.proto();
+
+    let mut buf1 = [0u8; 5];
+    let mut buf2 = [0u8; 5];
+    let mut fut1 = b.fdomain_read(&mut buf1);
+    let mut fut2 = b.fdomain_read(&mut buf2);
+
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(fut1.poll_unpin(&mut cx).is_pending());
+    assert!(client.0.lock().socket_read_states.get(&b_hid).unwrap().read_request_pending);
+    let tx_count = client.0.lock().transactions.len();
+
+    // Subsequent polls while pending must not issue duplicate READ_SOCKET requests.
+    assert!(fut1.poll_unpin(&mut cx).is_pending());
+    assert!(fut2.poll_unpin(&mut cx).is_pending());
+    assert!(fut2.poll_unpin(&mut cx).is_pending());
+    assert_eq!(client.0.lock().transactions.len(), tx_count);
+
+    std::mem::drop(fut2);
+
+    a.fdomain_write_all(b"hello").await.unwrap();
+    let n = fut1.await.unwrap();
+    assert_eq!(&buf1[..n], b"hello");
+    assert!(!client.0.lock().socket_read_states.get(&b_hid).unwrap().read_request_pending);
+
+    // Ensure no orphaned READ_SOCKET request remains on the server when switching to streaming.
+    let (mut stream, _writer) = b.stream().unwrap();
+    a.fdomain_write_all(b"world").await.unwrap();
+    let mut stream_buf = [0u8; 5];
+    stream.read_exact(&mut stream_buf).await.unwrap();
+    assert_eq!(&stream_buf, b"world");
+}
+
+#[fuchsia::test]
+async fn channel_read_request_pending_deduplication() {
+    let (client, _) = TestFDomain::new_client();
+    let (a, b) = client.create_channel();
+    let b_hid = b.0.proto();
+
+    let mut fut1 = b.recv_msg();
+    let mut fut2 = b.recv_msg();
+
+    let mut cx = Context::from_waker(Waker::noop());
+    assert!(fut1.poll_unpin(&mut cx).is_pending());
+    assert!(client.0.lock().channel_read_states.get(&b_hid).unwrap().read_request_pending);
+    let tx_count = client.0.lock().transactions.len();
+
+    // Subsequent polls while pending must not issue duplicate READ_CHANNEL requests.
+    assert!(fut1.poll_unpin(&mut cx).is_pending());
+    assert!(fut2.poll_unpin(&mut cx).is_pending());
+    assert!(fut2.poll_unpin(&mut cx).is_pending());
+    assert_eq!(client.0.lock().transactions.len(), tx_count);
+
+    std::mem::drop(fut2);
+
+    a.fdomain_write(b"hello", vec![]).await.unwrap();
+    let msg = fut1.await.unwrap();
+    assert_eq!(msg.bytes.as_slice(), b"hello");
+    assert!(!client.0.lock().channel_read_states.get(&b_hid).unwrap().read_request_pending);
+
+    // Ensure no orphaned READ_CHANNEL request remains on the server when switching to streaming.
+    let (mut stream, _writer) = b.stream().unwrap();
+    a.fdomain_write(b"world", vec![]).await.unwrap();
+    let stream_msg = stream.next().await.unwrap().unwrap();
+    assert_eq!(stream_msg.bytes.as_slice(), b"world");
+}

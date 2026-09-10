@@ -735,6 +735,10 @@ impl Drop for ClientLoop {
 
         let (channel_read_states, socket_read_states, deferred_wakers) = {
             let mut inner = client.0.lock();
+            if matches!(inner.transport, Transport::Transport(_, _, _)) {
+                inner.transport = Transport::Error(InnerError::Transport(None));
+            }
+
             let transactions = std::mem::take(&mut inner.transactions);
             log::debug!("ClientLoop dropped, failing {} transactions", transactions.len());
             for (_, v) in transactions {
@@ -1045,7 +1049,7 @@ impl Client {
                 // TODO: Log?
                 let _ = inner.request(
                     ordinals::READ_SOCKET_STREAMING_STOP,
-                    proto::ChannelReadChannelStreamingStopRequest { handle: id },
+                    proto::SocketReadSocketStreamingStopRequest { handle: id },
                     Responder::Ignore,
                 );
             }
@@ -1138,6 +1142,7 @@ impl Client {
         }
 
         if !state.read_request_pending && !state.is_streaming {
+            state.read_request_pending = true;
             inner.request(
                 ordinals::READ_SOCKET,
                 proto::SocketReadSocketRequest { handle: id, max_bytes: out.len() as u64 },
@@ -1176,6 +1181,7 @@ impl Client {
         }
 
         if !state.read_request_pending && !state.is_streaming {
+            state.read_request_pending = true;
             inner.request(
                 ordinals::READ_CHANNEL,
                 proto::ChannelReadChannelRequest { handle: id },
