@@ -149,6 +149,16 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
         })
     }
 
+    /// Allocates an area of uninitialized memory of AllocSize and returns a pointer to it, or
+    /// returns an error.
+    pub fn allocate_bytes(self: Pin<&mut Self>) -> Result<NonNull<c_void>, SlabAllocationError>
+    where
+        A: SlabProvider,
+    {
+        let entry = self.allocate()?;
+        Ok(entry.cast())
+    }
+
     /// Allocates an area of uninitialized memory capable of holding a single object of type `T`.
     /// This is largely a convenience wrapper around `allocate_bytes` that validates `T` is
     /// compatible with the size and alignment of the allocations.
@@ -379,6 +389,30 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
 
             (*entry.as_ptr()).next = (*slab_state).free_slot;
             (*slab_state).free_slot = index;
+        }
+    }
+
+    pub fn provider(&self) -> &A {
+        &self.inner
+    }
+
+    pub fn debug_free_all_slabs(self: Pin<&mut Self>) {
+        let this = self.project();
+        for p in this.full_slabs.iter() {
+            // SAFETY: `p` is valid for reads.
+            let slab = unsafe { &*slab_state_mut(NonNull::from(p)) };
+            heap::profile_track_free(slab.profile_cookie, page::SIZE);
+        }
+        for p in this.available_slabs.iter() {
+            // SAFETY: `p` is valid for reads.
+            let slab = unsafe { &*slab_state_mut(NonNull::from(p)) };
+            heap::profile_track_free(slab.profile_cookie, page::SIZE);
+        }
+        // SAFETY: Slabs in full_slabs and available_slabs are valid allocated PMM pages.
+        // We do not move the DoublyLinkedList containers out of their pinned location.
+        unsafe {
+            pmm::free_list(this.full_slabs);
+            pmm::free_list(this.available_slabs);
         }
     }
 }
