@@ -10485,6 +10485,9 @@ rustc_library("getrandom-v0_3_4") {
     "-Cextra-filename=-66ec94cdd935904",
     "--cfg=feature=\"std\"",
   ]
+  if (is_kernel) {
+    rustflags -= [ "--cfg=feature=\"std\"" ]
+  }
 
   visibility = [ ":*" ]
 
@@ -17833,6 +17836,15 @@ rustc_library("rand-v0_9_4") {
     "--cfg=feature=\"std_rng\"",
     "--cfg=feature=\"thread_rng\"",
   ]
+  if (is_kernel) {
+    rustflags -= [
+      "--cfg=feature=\"alloc\"",
+      "--cfg=feature=\"std\"",
+      "--cfg=feature=\"std_rng\"",
+      "--cfg=feature=\"os_rng\"",
+      "--cfg=feature=\"thread_rng\"",
+    ]
+  }
 
   visibility = [ ":*" ]
 
@@ -17902,6 +17914,9 @@ rustc_library("rand_chacha-v0_9_0") {
     "-Cextra-filename=-20f552509a618da7",
     "--cfg=feature=\"std\"",
   ]
+  if (is_kernel) {
+    rustflags -= [ "--cfg=feature=\"std\"" ]
+  }
 
   visibility = [ ":*" ]
 
@@ -18005,6 +18020,12 @@ rustc_library("rand_core-v0_9_5") {
     "--cfg=feature=\"os_rng\"",
     "--cfg=feature=\"std\"",
   ]
+  if (is_kernel) {
+    rustflags -= [
+      "--cfg=feature=\"os_rng\"",
+      "--cfg=feature=\"std\"",
+    ]
+  }
 
   visibility = [ ":*" ]
 

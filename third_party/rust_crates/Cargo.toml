@@ -291,6 +291,7 @@ lock_api = { version = "0.4.14", default-features = false }
 num-traits = { version = "0.2.19", default-features = false }
 paste = "1.0.15"
 pin-init = { version = "0.3.0", default-features = false }
+rand = { version = "0.9.4", default-features=false, features = ["small_rng"] }
 zerocopy = { version = "0.8.48", features = ["derive"] }
 # keep-sorted end
 
@@ -740,6 +741,9 @@ rustflags = []
 env_vars = [ "CARGO_PKG_NAME=getrandom", "CARGO_PKG_VERSION=0.3.4", "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.3.4" ]
 rustflags = []
 
+[gn.package.getrandom."0.3.4".platform."cfg(kernel)"]
+remove_features = ["std"]
+
 [gn.package.getrandom."0.4.3"]
 env_vars = [ "CARGO_PKG_NAME=getrandom", "CARGO_PKG_VERSION=0.4.3", "CARGO_MANIFEST_DIR=${gn_source_root}/third_party/rust_crates/vendor/getrandom-0.4.3" ]
 rustflags = []
@@ -997,8 +1001,17 @@ license_files = ["LICENSE-APACHE"]
 [gn.package.rand."0.8.4"]
 groups = [ { name = "rand-0.8", visibility = [ ":*" ] } ]
 
+[gn.package.rand."0.9.4".platform."cfg(kernel)"]
+remove_features = [ "alloc", "std", "std_rng", "os_rng", "thread_rng" ]
+
+[gn.package.rand_chacha."0.9.0".platform."cfg(kernel)"]
+remove_features = ["std"]
+
 [gn.package.rand_core."0.6.4"]
 license_files = ["LICENSE-APACHE"]
+
+[gn.package.rand_core."0.9.5".platform."cfg(kernel)"]
+remove_features = ["os_rng", "std" ]
 
 [gn.package.rayon-core."1.12.1"]
 # Has build script but no config needed.
