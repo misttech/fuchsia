@@ -47,7 +47,6 @@ template("bazel_product_image") {
   invoker.testonly = true
 
   targets = {
-    bazel_build_group = "${target_name}_bazel_build_group"
     bazel_product_image = "${target_name}_bazel_action"
     bazel_product_assembly = "${target_name}_product_assembly"
     copy_outputs = "${target_name}_copy_outputs"

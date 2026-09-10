@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_build_action.gni")
-import("//build/bazel/bazel_build_group.gni")
 import("//build/compiled_action.gni")
 
 # Provides a mechanism for creating a zip file containing all of the

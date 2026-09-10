@@ -89,23 +89,13 @@ As of Q1 2025, the following guidelines apply:
 [bazel_test_package_group]: https://cs.opensource.google/fuchsia/fuchsia/+/main:build/bazel/bazel_test_package_group.gni;l=9
 
 - Invoking Bazel from a GN/Ninja action is *very slow*: it takes several
-  seconds *even if Bazel decides to do nothing*. And only one can be run at
-  a time.
+  seconds *even if Bazel decides to do nothing*. Ninja batches them up, and runs
+  all the waiting, runnable, Bazel actions as a group.
 
   These actions are defined by GN templates such as
-  [`bazel_action`][bazel_action]{:.external}, or one of its wrappers, and their
-  instances are controlled using the
-  [`//build/bazel:bazel_action_allowlist`][bazel_action_allowlist]{:.external}
-  target.
-
-  Templates such as [`bazel_build_group()`][bazel_build_group]{:.external} or
-  [`bazel_test_package_group()`][bazel_test_package_group]{:.external} are used
-  to invoke Bazel only once to build several Bazel targets together. This
-  allows for much better parallelism.
+  [`bazel_action`][bazel_action]{:.external}, or one of its wrappers,.
 
 [bazel_action]: https://cs.opensource.google/fuchsia/fuchsia/+/main:build/bazel/bazel_action.gni;drc=d37d440b207387ed118b3165f3568f1691925aad;l=22
-[bazel_action_allowlist]: https://cs.opensource.google/fuchsia/fuchsia/+/main:build/bazel/BUILD.gn;drc=d37d440b207387ed118b3165f3568f1691925aad;l=170
-[bazel_build_group]: https://cs.opensource.google/fuchsia/fuchsia/+/main:build/bazel/bazel_build_group.gni;drc=7e6c764b6c75095868c18cb7c7e860835bb87717;l=7
 [bazel_test_package_group]: https://cs.opensource.google/fuchsia/fuchsia/+/main:build/bazel/bazel_test_package_group.gni;drc=00b94e4924d42da5ac5a3488c69b446973697316;l=9
 
 - **Avoid non-terminal GN targets that depend on Bazel artifacts**

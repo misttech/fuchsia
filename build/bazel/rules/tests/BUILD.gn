@@ -4,8 +4,6 @@
 
 import("//build/bazel/bazel_build_action.gni")
 
-# The GN test targets are not part of a `bazel_build_group()`, so they should
-# only be built manually.
 visibility = [ ":*" ]
 
 # All the test targets defined in this file.
