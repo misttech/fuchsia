@@ -7,15 +7,18 @@
 
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/fit/function.h>
+#include <lib/zircon-internal/thread_annotations.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmo.h>
 #include <stdint.h>
 #include <sys/uio.h>
 #include <zircon/assert.h>
+#include <zircon/compiler.h>
 #include <zircon/status.h>
 #include <zircon/types.h>
 
 #include <array>
+#include <mutex>
 #include <optional>
 #include <span>
 
@@ -1162,17 +1165,21 @@ class Controller {
   zx_status_t WriteBuffer(uint8_t target, uint16_t lun, uint8_t mod, uint8_t buffer_id,
                           uint32_t buffer_offset, iovec data);
 
+ protected:
+  mutable std::mutex lock_;
+  std::unordered_map<uint8_t /*target*/,
+                     std::unordered_map<uint16_t /*lun*/, std::unique_ptr<BlockDevice>>>
+      block_devs_ TA_GUARDED(lock_);
+
+ public:
+  std::mutex& lock() const TA_RET_CAP(lock_) { return lock_; }
+
   // Logical units that were bound using ScanAndBindLogicalUnits().
   const std::unordered_map<uint8_t /*target*/,
                            std::unordered_map<uint16_t /*lun*/, std::unique_ptr<BlockDevice>>>&
-  block_devs() const {
+  block_devs() const TA_REQ(lock_) {
     return block_devs_;
   }
-
- protected:
-  std::unordered_map<uint8_t /*target*/,
-                     std::unordered_map<uint16_t /*lun*/, std::unique_ptr<BlockDevice>>>
-      block_devs_;
 
  private:
   friend class BlockDeviceTest;

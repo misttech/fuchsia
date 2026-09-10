@@ -94,6 +94,7 @@ class BlockDevice : public ddk::BlockImplProtocol<BlockDevice>,
   fbl::String DeviceName() const {
     return fbl::StringPrintf("scsi-block-device-%u-%u", target_, lun_);
   }
+  fbl::String LunName() const { return fbl::StringPrintf("lun%u", lun_); }
 
   // block_server::DriverInterface implementation
   void OnRequests(std::span<block_server::Request> requests) override;

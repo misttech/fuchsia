@@ -54,7 +54,7 @@ func TestQemuWithUFSDisk(t *testing.T) {
 	emu.WaitForLogMessage("[driver, ufs] INFO: Bind Success")
 
 	// Check that the ufs disk is listed by fuchsia.
-	waitForDeviceInLsblk(t, emu, "/00:02.0/00_02_0/ufs/scsi-block-device-0-0/block")
+	waitForDeviceInLsblk(t, emu, "", "lun0")
 }
 
 func TestQemuWithUFSDiskAndRunBlktest(t *testing.T) {
@@ -110,20 +110,24 @@ func TestQemuWithUFSDiskAndRunBlktest(t *testing.T) {
 	emu.WaitForLogMessage("[driver, ufs] INFO: Bind Success")
 
 	// Check that the emulated disk is there.
-	waitForDeviceInLsblk(t, emu, "/00:02.0/00_02_0/ufs/scsi-block-device-0-0/block")
-	path := waitForDeviceInLsblk(t, emu, "/00:03.0/00_03_0/ufs/scsi-block-device-0-0/block")
+	waitForDeviceInLsblk(t, emu, "", "lun0")
+	path := waitForDeviceInLsblk(t, emu, "10M", "lun0")
 
 	// Run blktest
 	emu.RunCommand("blktest -d /block/" + path + "/fuchsia.storage.block.Block")
 	emu.WaitForLogMessage("[  PASSED  ]")
 }
 
-func waitForDeviceInLsblk(t *testing.T, emu *emulatortest.Instance, expectedPathSuffix string) string {
+func waitForDeviceInLsblk(t *testing.T, emu *emulatortest.Instance, expectedSize string, expectedLabel string) string {
 	t.Helper()
 	// Matches a line of `lsblk` output containing a device, e.g.:
 	// ID   SIZE  TYPE        LABEL        FLAGS        DEVICE
-	// 001  10M   some_type   some_label   some_flags   $(expectedPathSuffix)
-	re := regexp.MustCompile(`^([0-9]+)\s+.*\s+(\S*` + regexp.QuoteMeta(expectedPathSuffix) + `)\s*$`)
+	// 001  10M   empty       scsi                      /svc/fuchsia.hardware.block.volume.Service/...
+	sizePattern := `\S+`
+	if expectedSize != "" {
+		sizePattern = regexp.QuoteMeta(expectedSize)
+	}
+	re := regexp.MustCompile(`^([0-9]+)\s+` + sizePattern + `\s+\S+\s+` + regexp.QuoteMeta(expectedLabel) + `\s+`)
 	for i := 0; i < 60; i++ {
 		emu.RunCommand("lsblk && echo \"LSBLK_DONE\"")
 		lines := emu.CaptureLinesContaining("", "LSBLK_DONE")
@@ -138,6 +142,6 @@ func waitForDeviceInLsblk(t *testing.T, emu *emulatortest.Instance, expectedPath
 		}
 		time.Sleep(1 * time.Second)
 	}
-	t.Fatalf("Device with path suffix %s did not appear in lsblk", expectedPathSuffix)
+	t.Fatalf("Device with size %q and label %q did not appear in lsblk", expectedSize, expectedLabel)
 	return ""
 }

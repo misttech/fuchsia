@@ -897,6 +897,27 @@ TEST_F(BlockDeviceTest, CheckSenseData) {
   }
 }
 
+TEST_F(BlockDeviceTest, BlockServerGetName) {
+  driver_test().RunInDriverContext([&](TestController& controller) {
+    auto result =
+        BlockDevice::Bind(&controller, kTarget, kLun, kTransferSize,
+                          DeviceOptions(/*check_unmap_support=*/true, /*use_mode_sense_6=*/true,
+                                        /*use_read_write_12=*/true));
+    ASSERT_OK(result);
+    device_ = std::move(result.value());
+  });
+  std::string instance_name(device_->DeviceName().c_str());
+
+  auto client_end =
+      driver_test().Connect<fuchsia_hardware_block_volume::Service::Volume>(instance_name);
+  ASSERT_OK(client_end);
+
+  const fidl::WireResult result = fidl::WireCall(client_end.value())->GetName();
+  ASSERT_TRUE(result.ok());
+  ASSERT_OK(result.value().status);
+  EXPECT_EQ(result.value().name.get(), "lun1");
+}
+
 TEST_F(BlockDeviceTest, BlockServerRead) {
   driver_test().RunInDriverContext([&](TestController& controller) {
     auto result =

@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <fidl/fuchsia.hardware.ufs/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
-#include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/cpp/wait.h>
@@ -18,9 +17,10 @@
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/scsi/block-device.h>
-#include <lib/sync/cpp/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>
 
+#include <deque>
+#include <span>
 #include <unordered_set>
 
 #include <fbl/array.h>
@@ -75,32 +75,11 @@ enum NotifyEvent {
   kPostPowerModeChange,
 };
 
+// struct representing a pending block request for a logical unit
 struct IoCommand {
-  scsi::DeviceOp device_op;
-
-  // Ufs::ExecuteCommandAsync() checks that the incoming CDB's size does not exceed
-  // this buffer's.
-  uint8_t cdb_buffer[16];
-  uint8_t cdb_length;
+  scsi::ScsiRequest request;
   uint8_t lun;
-  uint32_t block_size_bytes;
-  bool is_write;
-
-  // Currently, data_buffer is only used by the UNMAP command and has a maximum size of 24 byte.
-  uint8_t data_buffer[24];
-  uint8_t data_length;
-  zx::vmo data_vmo;
-
-  list_node_t node;
-
-  zx::unowned_vmo vmo() const {
-    if (device_op.op.command.opcode == BLOCK_OPCODE_READ ||
-        device_op.op.command.opcode == BLOCK_OPCODE_WRITE) {
-      ZX_DEBUG_ASSERT_MSG(!data_vmo.is_valid(), "Internal VMO set for external RW request");
-      return zx::unowned_vmo(device_op.op.rw.vmo);
-    }
-    return zx::unowned_vmo(data_vmo);
-  }
+  uint32_t block_size;
 };
 
 struct InspectProperties {
@@ -195,12 +174,17 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   fdf::Logger &driver_logger() override { return logger(); }
   const ufs_config::Config &config() const { return config_; }
 
-  size_t BlockOpSize() override { return sizeof(IoCommand); }
+  bool UseNewInterface() const override { return true; }
+  size_t BlockOpSize() override { return 0; }
   zx_status_t ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
                                  iovec data) override;
   void ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
                            uint32_t block_size_bytes, scsi::DeviceOp *device_op,
-                           iovec data) override;
+                           iovec data = {nullptr, 0}) override {
+    ZX_PANIC("ExecuteCommandAsync should not be called when UseNewInterface() is true");
+  }
+  void ExecuteCommandsAsync(uint8_t target, uint16_t lun,
+                            std::span<scsi::ScsiRequest> batch) override;
 
   const fdf::MmioBuffer &GetMmio() const {
     ZX_ASSERT(mmio_.has_value());
@@ -219,9 +203,6 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
     ZX_DEBUG_ASSERT(task_management_request_processor_ != nullptr);
     return *task_management_request_processor_;
   }
-
-  // Queue an IO command to be performed asynchronously.
-  void QueueIoCommand(IoCommand *io_cmd);
 
   // Convert block operations to UPIU commands and submit them asynchronously.
   void ProcessIoSubmissions();
@@ -259,6 +240,10 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
 
   // for test
   uint32_t GetLogicalUnitCount() const { return logical_unit_count_; }
+  size_t GetPendingCommandsCount() {
+    std::lock_guard<std::mutex> lock(lock_);
+    return pending_commands_.size();
+  }
 
   void DumpRegisters();
 
@@ -372,12 +357,12 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   zx::interrupt irq_;
   zx::bti bti_;
 
-  std::mutex commands_lock_;
-  // The pending list consists of commands that have been received via QueueIoCommand() and are
-  // waiting for IO to start.
-  list_node_t pending_commands_ TA_GUARDED(commands_lock_);
+  // The pending list consists of commands that have been received via ExecuteCommandsAsync() and
+  // are waiting for IO to start.
+  std::deque<IoCommand> pending_commands_ TA_GUARDED(lock_);
 
   void OnDispatcherShutdown() TA_EXCL(lock_);
+  void FinishStop(fdf::StopCompleter completer) TA_EXCL(lock_);
 
   // Dispatcher for processing queued block requests.
   fdf::Dispatcher irq_worker_dispatcher_;
@@ -398,12 +383,10 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
 
   // The luns of the well-known logical units that exist on the UFS device.
   std::unordered_set<WellKnownLuns> well_known_lun_set_;
-
-  // Callback function to perform when the host controller is notified.
   HostControllerCallback host_controller_callback_;
 
-  std::mutex lock_;
-  bool driver_shutdown_ TA_GUARDED(lock_) = false;
+  // Note: lock_ is inherited from scsi::Controller, which also guards block_devs_.
+  bool shutdown_ TA_GUARDED(lock_) = false;
   uint32_t pending_dispatcher_shutdowns_ TA_GUARDED(lock_) = 0;
   std::optional<fdf::StopCompleter> stop_completer_ TA_GUARDED(lock_);
 

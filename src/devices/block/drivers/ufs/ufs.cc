@@ -17,7 +17,9 @@
 #include <zircon/errors.h>
 
 #include <array>
+#include <atomic>
 #include <mutex>
+#include <vector>
 
 #include <safemath/safe_conversions.h>
 
@@ -202,89 +204,92 @@ zx::result<uint8_t> Ufs::TranslateScsiLunToUfsLun(uint16_t scsi_lun) {
 
 void Ufs::ProcessIoSubmissions() {
   while (true) {
-    IoCommand* io_cmd;
+    std::optional<IoCommand> maybe_cmd;
     {
-      std::lock_guard<std::mutex> lock(commands_lock_);
-      io_cmd = list_remove_head_type(&pending_commands_, IoCommand, node);
+      std::lock_guard<std::mutex> lock(lock_);
+      if (shutdown_ || pending_commands_.empty()) {
+        return;
+      }
+      maybe_cmd.emplace(std::move(pending_commands_.front()));
+      pending_commands_.pop_front();
     }
 
-    if (io_cmd == nullptr) {
-      return;
-    }
+    IoCommand io_cmd = std::move(*maybe_cmd);
 
     DataDirection data_direction = DataDirection::kNone;
-    if (io_cmd->is_write) {
+    if (io_cmd.request.is_write()) {
       data_direction = DataDirection::kHostToDevice;
-    } else if (io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_READ) {
+    } else if (io_cmd.request.data_vmo()->is_valid()) {
       data_direction = DataDirection::kDeviceToHost;
     }
 
     uint32_t transfer_bytes = 0;
-    if (data_direction != DataDirection::kNone) {
-      if (io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM) {
-        // For the UNMAP command, a data buffer is required for the parameter list.
-        zx::vmo data_vmo;
-        fzl::VmoMapper mapper;
-        if (zx::result<> result = AllocatePages(data_vmo, mapper, io_cmd->data_length);
-            result.is_error()) {
-          fdf::error("Failed to allocate data buffer (command {}): {}",
-                     static_cast<const void*>(io_cmd), result);
-          return;
-        }
-        memcpy(mapper.start(), io_cmd->data_buffer, io_cmd->data_length);
-        io_cmd->data_vmo = std::move(data_vmo);
+    uint64_t dma_offset = 0;
+    uint64_t dma_length = 0;
+    zx::vmo unmap_vmo;
 
-        transfer_bytes = io_cmd->data_length;
+    if (data_direction != DataDirection::kNone) {
+      if (io_cmd.request.immediate_data().size() > 0) {
+        // For the UNMAP command, a data buffer is required for the parameter list.
+        const size_t immediate_size = io_cmd.request.immediate_data().size();
+        fzl::VmoMapper mapper;
+        if (zx::result<> result = AllocatePages(unmap_vmo, mapper, immediate_size);
+            result.is_error()) {
+          fdf::error("Failed to allocate data buffer: {}", result);
+          io_cmd.request.Complete(result.status_value());
+          continue;
+        }
+        memcpy(mapper.start(), io_cmd.request.immediate_data().data(), immediate_size);
+        transfer_bytes = safemath::checked_cast<uint32_t>(immediate_size);
+        dma_offset = 0;
+        dma_length = zx_system_get_page_size();
       } else {
-        transfer_bytes = io_cmd->device_op.op.rw.length * io_cmd->block_size_bytes;
+        transfer_bytes =
+            safemath::checked_cast<uint32_t>(io_cmd.request.transfer_length() * io_cmd.block_size);
+        dma_offset = io_cmd.request.vmo_offset();
+        dma_length = transfer_bytes;
       }
     }
 
     if (transfer_bytes > max_transfer_bytes_) {
       fdf::error("Request exceeding max transfer size. transfer_bytes={}, max_transfer_bytes_={}",
                  transfer_bytes, max_transfer_bytes_);
-      io_cmd->data_vmo.reset();
-      io_cmd->device_op.Complete(ZX_ERR_INVALID_ARGS);
+      io_cmd.request.Complete(ZX_ERR_INVALID_ARGS);
       continue;
     }
 
-    uint64_t dma_offset = 0;
-    uint64_t dma_length = 0;
-    if (data_direction != DataDirection::kNone) {
-      if (io_cmd->device_op.op.command.opcode == BLOCK_OPCODE_TRIM) {
-        dma_offset = 0;
-        dma_length = zx_system_get_page_size();
-      } else {
-        dma_offset = io_cmd->device_op.op.rw.offset_vmo * io_cmd->block_size_bytes;
-        dma_length =
-            static_cast<uint64_t>(io_cmd->device_op.op.rw.length) * io_cmd->block_size_bytes;
-      }
-    }
+    std::span<const uint8_t> cdb = io_cmd.request.cdb();
+    ScsiCommandUpiu upiu(cdb.data(), safemath::checked_cast<uint8_t>(cdb.size()), data_direction,
+                         transfer_bytes);
 
     zx::result<uint8_t> slot = transfer_request_processor_->ReserveSlot();
     if (slot.is_error()) {
       if (slot.error_value() == ZX_ERR_NO_RESOURCES) {
-        std::lock_guard<std::mutex> lock(commands_lock_);
-        list_add_head(&pending_commands_, &io_cmd->node);
+        std::lock_guard<std::mutex> lock(lock_);
+        if (shutdown_) {
+          io_cmd.request.Complete(ZX_ERR_IO_NOT_PRESENT);
+          return;
+        }
+        pending_commands_.push_front(std::move(io_cmd));
         return;
       }
-      io_cmd->data_vmo.reset();
-      io_cmd->device_op.Complete(slot.error_value());
+      io_cmd.request.Complete(slot.error_value());
       continue;
     }
 
     zx::unowned_vmo data_vmo;
     if (data_direction != DataDirection::kNone) {
-      data_vmo = io_cmd->data_vmo.is_valid() ? io_cmd->data_vmo.borrow() : io_cmd->vmo();
+      data_vmo = unmap_vmo.is_valid() ? unmap_vmo.borrow() : io_cmd.request.data_vmo();
     }
+    const uint8_t lun = io_cmd.lun;
 
-    auto cb = [io_cmd](zx_status_t status) {
-      io_cmd->data_vmo.reset();
-      io_cmd->device_op.Complete(status);
+    auto cb = [req = std::move(io_cmd.request),
+               vmo = std::move(unmap_vmo)](zx_status_t status) mutable {
+      vmo.reset();
+      req.Complete(status);
     };
 
-    ScsiCommandUpiu upiu(io_cmd->cdb_buffer, io_cmd->cdb_length, data_direction, transfer_bytes);
-    transfer_request_processor_->SendIoScsiCmd(upiu, io_cmd->lun, slot.value(), std::move(data_vmo),
+    transfer_request_processor_->SendIoScsiCmd(upiu, lun, slot.value(), std::move(data_vmo),
                                                dma_offset, dma_length, std::move(cb));
   }
 }
@@ -429,7 +434,7 @@ void Ufs::TriggerIoWork() {
 void Ufs::ProcessIo() {
   {
     std::lock_guard<std::mutex> lock(lock_);
-    if (driver_shutdown_) {
+    if (shutdown_) {
       return;
     }
   }
@@ -467,42 +472,49 @@ void Ufs::ScheduleTimeoutTask() {
   timeout_task_.PostForTime(io_worker_dispatcher_.async_dispatcher(), zx::time(deadline));
 }
 
-void Ufs::ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
-                              uint32_t block_size_bytes, scsi::DeviceOp* device_op, iovec data) {
-  IoCommand* io_cmd = containerof(device_op, IoCommand, device_op);
-  if (cdb.iov_len > sizeof(io_cmd->cdb_buffer)) {
-    device_op->Complete(ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-
-  auto lun_id = TranslateScsiLunToUfsLun(lun);
-  if (lun_id.is_error()) {
-    device_op->Complete(lun_id.status_value());
-    return;
-  }
-
-  memcpy(io_cmd->cdb_buffer, cdb.iov_base, cdb.iov_len);
-  io_cmd->cdb_length = safemath::checked_cast<uint8_t>(cdb.iov_len);
-  io_cmd->lun = lun_id.value();
-  io_cmd->block_size_bytes = block_size_bytes;
-  io_cmd->is_write = is_write;
-
-  // Currently, data is only used in the UNMAP command.
-  if (device_op->op.command.opcode == BLOCK_OPCODE_TRIM && data.iov_len != 0) {
-    if (sizeof(io_cmd->data_buffer) != data.iov_len) {
-      fdf::error("The size of the requested data buffer({}) and data_buffer({}) are different.",
-                 data.iov_len, sizeof(io_cmd->data_buffer));
-      device_op->Complete(ZX_ERR_INVALID_ARGS);
+void Ufs::ExecuteCommandsAsync(uint8_t target, uint16_t lun, std::span<scsi::ScsiRequest> batch) {
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    if (shutdown_) {
+      for (auto& req : batch) {
+        req.Complete(ZX_ERR_IO_NOT_PRESENT);
+      }
       return;
     }
-    memcpy(io_cmd->data_buffer, data.iov_base, data.iov_len);
-    io_cmd->data_length = static_cast<uint8_t>(data.iov_len);
-  }
 
-  // Queue transaction.
-  {
-    std::lock_guard<std::mutex> lock(commands_lock_);
-    list_add_tail(&pending_commands_, &io_cmd->node);
+    auto target_it = block_devs_.find(target);
+    if (target_it == block_devs_.end()) {
+      for (auto& req : batch) {
+        req.Complete(ZX_ERR_NOT_FOUND);
+      }
+      return;
+    }
+
+    auto lun_it = target_it->second.find(lun);
+    if (lun_it == target_it->second.end() || !lun_it->second) {
+      for (auto& req : batch) {
+        req.Complete(ZX_ERR_NOT_FOUND);
+      }
+      return;
+    }
+
+    auto lun_id = TranslateScsiLunToUfsLun(lun);
+    if (lun_id.is_error()) {
+      for (auto& req : batch) {
+        req.Complete(lun_id.status_value());
+      }
+      return;
+    }
+
+    const uint32_t block_size = lun_it->second->block_size_bytes();
+
+    for (auto& req : batch) {
+      pending_commands_.push_back(IoCommand{
+          .request = std::move(req),
+          .lun = lun_id.value(),
+          .block_size = block_size,
+      });
+    }
   }
   TriggerIoWork();
 }
@@ -643,8 +655,6 @@ zx::result<> Ufs::InitMmioBuffer() {
 Ufs::Ufs() : fdf::DriverBase2(kDriverName), hardware_power_element_runner_server_(*this) {}
 
 zx_status_t Ufs::Init() {
-  list_initialize(&pending_commands_);
-
   if (zx::result<> result = InitMmioBuffer(); result.is_error()) {
     fdf::error("Failed to initialize MMIO buffer: {}", result);
     return result.error_value();
@@ -1441,18 +1451,12 @@ void Ufs::OnDispatcherShutdown() {
   }
 }
 
-void Ufs::Stop(fdf::StopCompleter completer) {
-  {
-    std::lock_guard<std::mutex> lock(lock_);
-    driver_shutdown_ = true;
-  }
-
+void Ufs::FinishStop(fdf::StopCompleter completer) {
   if (zx_status_t status = StopResources(); status != ZX_OK) {
     completer(zx::error(status));
     return;
   }
 
-  // TODO(https://fxbug.dev/42075643): We should flush pending_commands_.
   if (irq_.is_valid()) {
     irq_.destroy();
   }
@@ -1489,6 +1493,52 @@ void Ufs::Stop(fdf::StopCompleter completer) {
   }
   if (admin_worker_dispatcher_.get()) {
     admin_worker_dispatcher_.ShutdownAsync();
+  }
+}
+
+void Ufs::Stop(fdf::StopCompleter completer) {
+  std::deque<IoCommand> pending;
+  std::vector<scsi::BlockDevice*> devs;
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    shutdown_ = true;
+    pending.swap(pending_commands_);
+    for (auto& [target, luns] : block_devs_) {
+      for (auto& [lun, dev] : luns) {
+        if (dev) {
+          devs.push_back(dev.get());
+        }
+      }
+    }
+
+    if (devs.empty()) {
+      block_devs_.clear();
+    }
+  }
+  for (auto& cmd : pending) {
+    cmd.request.Complete(ZX_ERR_IO_NOT_PRESENT);
+  }
+
+  if (devs.empty()) {
+    FinishStop(std::move(completer));
+    return;
+  }
+
+  auto shared_completer = std::make_shared<fdf::StopCompleter>(std::move(completer));
+  auto remaining = std::make_shared<std::atomic<size_t>>(devs.size());
+
+  for (auto* dev : devs) {
+    dev->ShutdownAsync([this, shared_completer, remaining]() {
+      if (remaining->fetch_sub(1) == 1) {
+        async::PostTask(dispatcher(), [this, shared_completer]() {
+          {
+            std::lock_guard<std::mutex> lock(lock_);
+            block_devs_.clear();
+          }
+          FinishStop(std::move(*shared_completer));
+        });
+      }
+    });
   }
 }
 

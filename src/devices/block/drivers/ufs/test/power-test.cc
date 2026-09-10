@@ -4,6 +4,9 @@
 
 #include <lib/fpromise/single_threaded_executor.h>
 
+#include <future>
+
+#include "src/storage/lib/block_client/cpp/remote_block_device.h"
 #include "unit-lib.h"
 
 namespace ufs {
@@ -34,17 +37,28 @@ TEST_F(PowerTest, PowerSuspendResume) {
 
   ASSERT_NO_FATAL_FAILURE(StartDriver(/*supply_power_framework=*/true));
 
-  while (dut_->block_devs().empty() || !dut_->block_devs().contains(0) ||
-         dut_->block_devs().at(0).empty()) {
+  scsi::BlockDevice* block_device = nullptr;
+  while (true) {
+    {
+      std::lock_guard<std::mutex> lock(dut_->lock());
+      if (!dut_->block_devs().empty() && dut_->block_devs().contains(0) &&
+          !dut_->block_devs().at(0).empty()) {
+        block_device = dut_->block_devs().at(0).at(0).get();
+        break;
+      }
+    }
     zx::nanosleep(zx::deadline_after(zx::msec(1)));
   }
-
-  scsi::BlockDevice* block_device;
-  block_info_t info;
-  uint64_t op_size;
-  const auto& block_devs = dut_->block_devs();
-  block_device = block_devs.at(0).at(0).get();
-  block_device->BlockImplQuery(&info, &op_size);
+  std::unique_ptr<block_client::RemoteBlockDevice> client;
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() {
+    auto client_end = driver_test().Connect<fuchsia_hardware_block_volume::Service::Volume>(
+        block_device->DeviceName().c_str());
+    ASSERT_OK(client_end);
+    auto remote_device_result =
+        block_client::RemoteBlockDevice::Create(std::move(client_end.value()));
+    ASSERT_OK(remote_device_result);
+    client = std::move(remote_device_result.value());
+  }));
 
   // 1. Initial power level is kPowerLevelOff.
   EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() { sleep_complete.Wait(); }));
@@ -76,12 +90,6 @@ TEST_F(PowerTest, PowerSuspendResume) {
   awake_complete.Reset();
   sleep_complete.Reset();
 
-  sync_completion_t done;
-  auto callback = [](void* ctx, zx_status_t status, block_op_t* op) {
-    EXPECT_OK(status);
-    sync_completion_signal(static_cast<sync_completion_t*>(ctx));
-  };
-
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmo));
   zx_vaddr_t vaddr;
@@ -90,29 +98,27 @@ TEST_F(PowerTest, PowerSuspendResume) {
   char* mapped_vaddr = reinterpret_cast<char*>(vaddr);
   std::strncpy(mapped_vaddr, "test", ufs_mock_device::kMockBlockSize);
 
-  auto block_op = std::make_unique<uint8_t[]>(op_size);
-  auto op = reinterpret_cast<block_op_t*>(block_op.get());
-  *op = {
-      .rw =
-          {
-              .command =
-                  {
-                      .opcode = BLOCK_OPCODE_WRITE,
-                  },
-              .vmo = vmo.get(),
-              .length = 1,
-              .offset_dev = 0,
-              .offset_vmo = 0,
-          },
+  storage::Vmoid owned_vmoid;
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+      [&]() { ASSERT_OK(client->BlockAttachVmo(vmo, &owned_vmoid)); }));
+
+  BlockFifoRequest request = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE},
+      .vmoid = owned_vmoid.get(),
+      .length = 1,
+      .vmo_offset = 0,
+      .dev_offset = 0,
   };
-  block_device->BlockImplQueue(op, callback, &done);
+
+  std::future<zx_status_t> tx_future =
+      std::async(std::launch::async, [&]() { return client->FifoTransaction(&request, 1); });
 
   // The driver should stay suspended, and the block operation incomplete.
   zx_status_t status;
   EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
       [&]() { status = awake_complete.Wait(zx::msec(100)); }));
   EXPECT_EQ(status, ZX_ERR_TIMED_OUT);
-  EXPECT_EQ(sync_completion_wait(&done, zx_duration_from_msec(100)), ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(tx_future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
 
   // Wake up the driver.
   driver_test().RunInEnvironmentTypeContext([&](Environment& env) {
@@ -124,8 +130,14 @@ TEST_F(PowerTest, PowerSuspendResume) {
   });
 
   EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([&]() { awake_complete.Wait(); }));
-  sync_completion_wait(&done, ZX_TIME_INFINITE);
+  while (tx_future.wait_for(std::chrono::milliseconds(10)) != std::future_status::ready) {
+    driver_test().runtime().RunUntilIdle();
+  }
+  ASSERT_OK(tx_future.get());
   ASSERT_TRUE(dut_->IsResumed());
+  ASSERT_OK(zx::vmar::root_self()->unmap(vaddr, ufs_mock_device::kMockBlockSize));
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync(
+      [&]() { ASSERT_OK(client->BlockDetachVmo(std::move(owned_vmoid))); }));
 
   // Return the driver to the suspended state.
   driver_test().RunInEnvironmentTypeContext([&](Environment& env) {

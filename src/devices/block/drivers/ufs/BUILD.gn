@@ -44,7 +44,7 @@ group("e2e_tests") {
 
 _common_deps = [
   ":ufs-config",
-  "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+  "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
   "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_cpp",
   "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
   "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
@@ -63,7 +63,6 @@ _common_deps = [
   "//sdk/lib/driver/runtime:driver_runtime_cpp",
   "//src/devices/block/lib/common",
   "//src/devices/block/lib/scsi",
-  "//src/devices/lib/dev-operation",
   "//src/devices/lib/dma-buffer",
   "//src/devices/lib/driver:driver_runtime",
   "//zircon/system/ulib/fzl",

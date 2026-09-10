@@ -256,7 +256,8 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
   }
 
   if (controller_->UseNewInterface()) {
-    block_server::PartitionInfo info = {
+    fbl::String partition_name = LunName();
+    const block_server::PartitionInfo info = {
         .device_flags =
             (write_protected_
                  ? static_cast<uint32_t>(fuchsia_storage_block::wire::DeviceFlag::kReadonly)
@@ -271,7 +272,7 @@ zx_status_t BlockDevice::AddDevice(uint32_t max_transfer_bytes) {
         .block_size = block_size_bytes_,
         .type_guid = {},
         .instance_guid = {},
-        .name = "scsi",
+        .name = partition_name.c_str(),
         .flags = 0,
         .max_transfer_size = max_transfer_bytes_,
     };

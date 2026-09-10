@@ -38,5 +38,6 @@ zx_library("scsi") {
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/hwreg",
     "//zircon/system/ulib/sync:sync-cpp",
+    "//zircon/system/ulib/zircon-internal:headers",
   ]
 }

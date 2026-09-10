@@ -393,7 +393,10 @@ zx::result<uint32_t> Controller::ScanAndBindLogicalUnits(uint8_t target,
         BlockDevice::Bind(this, target, lun, max_transfer_bytes, device_options);
     if (block_device.is_ok()) {
       scsi::BlockDevice* dev = block_device.value().get();
-      block_devs_[target][lun] = std::move(block_device.value());
+      {
+        std::lock_guard<std::mutex> lock(lock_);
+        block_devs_[target][lun] = std::move(block_device.value());
+      }
       if (lu_callback) {
         zx::result result = lu_callback(lun, dev->block_size_bytes(), dev->block_count());
         if (result.is_error()) {

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fit/defer.h>
+
 #include <cstdint>
 #include <memory>
 
@@ -93,16 +95,6 @@ TEST_F(TimeoutTest, AsyncCommandTimeout) {
   zx::vmo vmo;
   ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmo));
 
-  auto block_op = std::make_unique<uint8_t[]>(dut_->BlockOpSize());
-  block_op_t& op = *reinterpret_cast<block_op_t*>(block_op.get());
-  scsi::DeviceOp* device_op = containerof(&op, scsi::DeviceOp, op);
-  device_op->op.command.opcode = BLOCK_OPCODE_READ;
-  device_op->op.rw.length = 1;
-  device_op->op.rw.vmo = vmo.get();
-  device_op->completion_cb = [](void* ctx, zx_status_t status, block_op_t* op) {};
-  IoCommand* io_cmd = containerof(device_op, IoCommand, device_op);
-  io_cmd->block_size_bytes = kMockBlockSize;
-
   // Emulates a timeout situation. Hook the SCSI command handler to set a response timeout.
   mock_device_.GetScsiCommandProcessor().SetHook(
       scsi::Opcode::READ_10,
@@ -111,10 +103,17 @@ TEST_F(TimeoutTest, AsyncCommandTimeout) {
         return zx::error(ZX_ERR_TIMED_OUT);
       });
 
-  dut_->ExecuteCommandAsync(0, lun_id.value(), {cdb_buffer, cdb_length}, false, 4096, device_op,
-                            {nullptr, 0});
+  ScsiCommandUpiu upiu(cdb_buffer, cdb_length, DataDirection::kDeviceToHost,
+                       ufs_mock_device::kMockBlockSize);
+  zx::result<uint8_t> slot = dut_->GetTransferRequestProcessor().ReserveSlot();
+  ASSERT_OK(slot);
+  ASSERT_EQ(slot.value(), target_task_tag);
+  dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, slot.value(), vmo.borrow(), 0,
+                                                    ufs_mock_device::kMockBlockSize,
+                                                    [](zx_status_t status) {});
 
   auto wait_for = [&]() -> bool {
+    dut_->ProcessIoCompletions();
     std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
     return dut_->GetTransferRequestProcessor()
                .GetRequestListLocked()
@@ -146,6 +145,10 @@ TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
   auto lun_id = Ufs::TranslateScsiLunToUfsLun(kTestLun);
   ASSERT_OK(lun_id);
 
+  dut_->GetTransferRequestProcessor().DisableCompletion();
+  auto enable_completion =
+      fit::defer([this]() { dut_->GetTransferRequestProcessor().EnableCompletion(); });
+
   dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(100));
 
   uint8_t cdb_buffer[16] = {};
@@ -166,26 +169,25 @@ TEST_F(TimeoutTest, AllAsyncCommandsTimeout) {
         return zx::error(ZX_ERR_TIMED_OUT);
       });
 
-  auto block_ops = std::make_unique<uint8_t[]>(dut_->BlockOpSize() * kMaxSlotCount);
   auto vmos = std::make_unique<zx::vmo[]>(kMaxSlotCount);
-
-  auto callback = [](void* ctx, zx_status_t status, block_op_t* op) {};
 
   for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
     ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmos[slot_num]));
-    block_op_t& op =
-        *(reinterpret_cast<block_op_t*>(block_ops.get() + (dut_->BlockOpSize() * slot_num)));
-    scsi::DeviceOp* device_op = containerof(&op, scsi::DeviceOp, op);
-    device_op->op.command.opcode = BLOCK_OPCODE_READ;
-    device_op->op.rw.length = 1;
-    device_op->op.rw.vmo = vmos[slot_num].get();
-    device_op->completion_cb = callback;
-
-    dut_->ExecuteCommandAsync(0, lun_id.value(), {cdb_buffer, cdb_length}, false, 4096, device_op,
-                              {nullptr, 0});
+    ScsiCommandUpiu upiu(cdb_buffer, cdb_length, DataDirection::kDeviceToHost,
+                         ufs_mock_device::kMockBlockSize);
+    zx::result<uint8_t> slot = dut_->GetTransferRequestProcessor().ReserveSlot();
+    ASSERT_OK(slot);
+    ASSERT_EQ(slot.value(), slot_num);
+    dut_->GetTransferRequestProcessor().SendIoScsiCmd(
+        upiu, kTestLun, slot.value(), vmos[slot_num].borrow(), 0, ufs_mock_device::kMockBlockSize,
+        [](zx_status_t status) {});
   }
 
+  dut_->GetTransferRequestProcessor().EnableCompletion();
+  enable_completion.cancel();
+
   auto wait_for = [&]() -> bool {
+    dut_->ProcessIoCompletions();
     std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
     bool all_timed_out = true;
     for (uint8_t slot_num = 0; slot_num < kMaxSlotCount; ++slot_num) {
@@ -221,6 +223,10 @@ TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
   auto lun_id = Ufs::TranslateScsiLunToUfsLun(kTestLun);
   ASSERT_OK(lun_id);
 
+  dut_->GetTransferRequestProcessor().DisableCompletion();
+  auto enable_completion =
+      fit::defer([this]() { dut_->GetTransferRequestProcessor().EnableCompletion(); });
+
   dut_->GetTransferRequestProcessor().SetTimeout(zx::msec(100));
 
   uint8_t cdb_buffer[16] = {};
@@ -242,27 +248,20 @@ TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
         return zx::error(ZX_ERR_TIMED_OUT);
       });
 
-  auto block_ops = std::make_unique<uint8_t[]>(dut_->BlockOpSize() * kMaxSlotCount);
   auto vmos = std::make_unique<zx::vmo[]>(kMaxSlotCount);
-
-  auto callback = [](void* ctx, zx_status_t status, block_op_t* op) {};
 
   // Execute READ_10 commands to timeout.
   cdb->opcode = scsi::Opcode::READ_10;
   for (uint8_t slot_num = 0; slot_num < kTimeoutCount; ++slot_num) {
     ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmos[slot_num]));
-    block_op_t& op =
-        *(reinterpret_cast<block_op_t*>(block_ops.get() + (dut_->BlockOpSize() * slot_num)));
-    scsi::DeviceOp* device_op = containerof(&op, scsi::DeviceOp, op);
-    device_op->op.command.opcode = BLOCK_OPCODE_READ;
-    device_op->op.rw.length = 1;
-    device_op->op.rw.vmo = vmos[slot_num].get();
-    device_op->completion_cb = callback;
-    IoCommand* io_cmd = containerof(device_op, IoCommand, device_op);
-    io_cmd->block_size_bytes = kMockBlockSize;
-
-    dut_->ExecuteCommandAsync(0, lun_id.value(), {cdb_buffer, cdb_length}, false, 4096, device_op,
-                              {nullptr, 0});
+    ScsiCommandUpiu upiu(cdb_buffer, cdb_length, DataDirection::kDeviceToHost,
+                         ufs_mock_device::kMockBlockSize);
+    zx::result<uint8_t> slot = dut_->GetTransferRequestProcessor().ReserveSlot();
+    ASSERT_OK(slot);
+    ASSERT_EQ(slot.value(), slot_num);
+    dut_->GetTransferRequestProcessor().SendIoScsiCmd(
+        upiu, kTestLun, slot.value(), vmos[slot_num].borrow(), 0, ufs_mock_device::kMockBlockSize,
+        [](zx_status_t status) {});
   }
 
   // Execute WRITE_10 commands to succeed.
@@ -270,21 +269,21 @@ TEST_F(TimeoutTest, PartialAsyncCommandsTimeout) {
   cdb->transfer_length = htobe16(1);
   for (uint8_t slot_num = kTimeoutCount; slot_num < kMaxSlotCount; ++slot_num) {
     ASSERT_OK(zx::vmo::create(ufs_mock_device::kMockBlockSize, 0, &vmos[slot_num]));
-    block_op_t& op =
-        *(reinterpret_cast<block_op_t*>(block_ops.get() + (dut_->BlockOpSize() * slot_num)));
-    scsi::DeviceOp* device_op = containerof(&op, scsi::DeviceOp, op);
-    device_op->op.command.opcode = BLOCK_OPCODE_WRITE;
-    device_op->op.rw.length = 1;
-    device_op->op.rw.vmo = vmos[slot_num].get();
-    device_op->completion_cb = callback;
-    IoCommand* io_cmd = containerof(device_op, IoCommand, device_op);
-    io_cmd->block_size_bytes = kMockBlockSize;
-
-    dut_->ExecuteCommandAsync(0, lun_id.value(), {cdb_buffer, cdb_length}, true, 4096, device_op,
-                              {nullptr, 0});
+    ScsiCommandUpiu upiu(cdb_buffer, cdb_length, DataDirection::kHostToDevice,
+                         ufs_mock_device::kMockBlockSize);
+    zx::result<uint8_t> slot = dut_->GetTransferRequestProcessor().ReserveSlot();
+    ASSERT_OK(slot);
+    ASSERT_EQ(slot.value(), slot_num);
+    dut_->GetTransferRequestProcessor().SendIoScsiCmd(
+        upiu, kTestLun, slot.value(), vmos[slot_num].borrow(), 0, ufs_mock_device::kMockBlockSize,
+        [](zx_status_t status) {});
   }
 
+  dut_->GetTransferRequestProcessor().EnableCompletion();
+  enable_completion.cancel();
+
   auto wait_for = [&]() -> bool {
+    dut_->ProcessIoCompletions();
     std::lock_guard<std::mutex> lock(dut_->GetTransferRequestProcessor().GetSlotLock());
     bool all_done = true;
     for (uint8_t slot_num = 0; slot_num < kTimeoutCount; ++slot_num) {

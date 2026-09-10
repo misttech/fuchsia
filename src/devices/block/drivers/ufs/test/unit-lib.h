@@ -412,6 +412,7 @@ class UfsTest : public ::testing::Test {
  protected:
   fdf_testing::ForegroundDriverTest<TestConfig> driver_test_;
   TestConfig::DriverType* dut_;
+  bool driver_stopped_ = false;
 };
 
 }  // namespace ufs

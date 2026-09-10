@@ -51,8 +51,10 @@ void UfsTest::SetUp() {
 }
 
 void UfsTest::TearDown() {
-  zx::result<> result = driver_test().StopDriver();
-  ASSERT_OK(result);
+  if (!driver_stopped_) {
+    zx::result<> result = driver_test().StopDriver();
+    ASSERT_OK(result);
+  }
   mock_device_.GetRegisterMmioProcessor().Reset();
   mock_device_.GetUicCmdProcessor().Reset();
   mock_device_.GetTransferRequestProcessor().Reset();

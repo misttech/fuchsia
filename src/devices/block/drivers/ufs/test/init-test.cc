@@ -102,20 +102,21 @@ TEST_F(InitTest, AddLogicalUnits) {
 TEST_F(InitTest, LogicalUnitBlockInfo) {
   ASSERT_NO_FATAL_FAILURE(StartDriver());
 
-  while (dut_->block_devs().empty() || !dut_->block_devs().contains(0) ||
-         dut_->block_devs().at(0).empty()) {
+  scsi::BlockDevice* block_device = nullptr;
+  while (true) {
+    {
+      std::lock_guard<std::mutex> lock(dut_->lock());
+      if (!dut_->block_devs().empty() && dut_->block_devs().contains(0) &&
+          !dut_->block_devs().at(0).empty()) {
+        block_device = dut_->block_devs().at(0).at(0).get();
+        break;
+      }
+    }
     zx::nanosleep(zx::deadline_after(zx::msec(1)));
   }
 
-  const auto& block_devs = dut_->block_devs();
-  scsi::BlockDevice* block_device = block_devs.at(0).at(0).get();
-
-  block_info_t info;
-  uint64_t op_size;
-  block_device->BlockImplQuery(&info, &op_size);
-
-  ASSERT_EQ(info.block_size, kMockBlockSize);
-  ASSERT_EQ(info.block_count, kMockTotalDeviceCapacity / kMockBlockSize);
+  ASSERT_EQ(block_device->block_size_bytes(), kMockBlockSize);
+  ASSERT_EQ(block_device->block_count(), kMockTotalDeviceCapacity / kMockBlockSize);
 }
 
 TEST_F(InitTest, UnitAttentionClear) {
