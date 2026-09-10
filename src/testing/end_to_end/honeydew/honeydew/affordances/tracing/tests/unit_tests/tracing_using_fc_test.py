@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import Any, cast
 from unittest import mock
 
+import fidl_fuchsia_tracing as f_tracing
 import fidl_fuchsia_tracing_controller as f_tracingcontroller
 import fuchsia_controller_py as fc
 from fidl import AsyncSocket
@@ -566,6 +567,80 @@ class TracingFCTests(unittest.IsolatedAsyncioTestCase):
                 with open(trace_path, "r", encoding="utf-8") as file:
                     data: str = file.read()
                     self.assertEqual(data, return_value)
+
+    @mock.patch.object(fc, "Context")
+    @mock.patch.object(AsyncSocket, "read_all", new_callable=mock.AsyncMock)
+    async def test_trace_session_with_args(
+        self,
+        mock_async_socket_read_all: mock.AsyncMock,
+        mock_fc_context: mock.Mock,
+    ) -> None:
+        """Test for Tracing.trace_session() method forwarding arguments."""
+        mock_fc_context.socket_create.return_value = (
+            mock.MagicMock(),
+            mock.MagicMock(),
+        )
+        mock_fc_context.channel_create.return_value = (
+            mock.MagicMock(),
+            mock.MagicMock(),
+        )
+
+        self.assertFalse(self.tracing_obj.is_session_initialized())
+
+        with self.assertLogs(level="WARNING") as log_context:
+            async with self.tracing_obj.trace_session(
+                categories=["category1"],
+                buffer_size=1024,
+                start_timeout_milliseconds=1000,
+                buffering_mode=f_tracing.BufferingMode.ONESHOT,
+                defer_transfer=True,
+                compression=True,
+            ):
+                self.assertTrue(self.tracing_obj.is_session_initialized())
+                self.assertTrue(self.tracing_obj.is_active())
+
+        self.assertFalse(self.tracing_obj.is_active())
+
+        # Verify FIDL config received all forwarded options
+        self.mock_provisioner_client.initialize_tracing.assert_called_once()
+        _, kwargs = self.mock_provisioner_client.initialize_tracing.call_args
+        config = kwargs["config"]
+        self.assertEqual(config.categories, ["category1"])
+        self.assertEqual(config.buffer_size_megabytes_hint, 1024)
+        self.assertEqual(config.start_timeout_milliseconds, 1000)
+        self.assertEqual(config.buffering_mode, f_tracing.BufferingMode.ONESHOT)
+        self.assertTrue(config.defer_transfer)
+
+        # Verify fallback warning was emitted for compression
+        self.assertTrue(
+            any(
+                "Compression is not supported in TracingUsingFc" in line
+                for line in log_context.output
+            )
+        )
+
+    @mock.patch.object(fc, "Context")
+    @mock.patch.object(AsyncSocket, "read_all", new_callable=mock.AsyncMock)
+    async def test_trace_session_cleanup_on_exception(
+        self,
+        mock_async_socket_read_all: mock.AsyncMock,
+        mock_fc_context: mock.Mock,
+    ) -> None:
+        """Verify that trace_session cleans up even if an exception is raised."""
+        mock_fc_context.socket_create.return_value = (
+            mock.MagicMock(),
+            mock.MagicMock(),
+        )
+        mock_fc_context.channel_create.return_value = (
+            mock.MagicMock(),
+            mock.MagicMock(),
+        )
+
+        with self.assertRaises(RuntimeError):
+            async with self.tracing_obj.trace_session():
+                raise RuntimeError("Simulated test failure")
+
+        self.assertFalse(self.tracing_obj.is_active())
 
 
 if __name__ == "__main__":

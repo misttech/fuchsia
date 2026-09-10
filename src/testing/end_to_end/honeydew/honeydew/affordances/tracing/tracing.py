@@ -119,6 +119,10 @@ class Tracing(abc.ABC):
         download: bool = False,
         directory: str | None = None,
         trace_file: str | None = None,
+        start_timeout_milliseconds: int | None = None,
+        buffering_mode: f_tracing.BufferingMode | None = None,
+        defer_transfer: bool | None = None,
+        compression: bool | None = None,
     ) -> AsyncGenerator[None, None]:
         """Starts and captures trace data within a context and automatically
             cleans up trace sessions, making it easier to capture trace data.
@@ -131,13 +135,29 @@ class Tracing(abc.ABC):
                 saved. Only required if `download` is True.
             trace_file: Name of the output trace file. Only required if
                 `download` is True.
+            start_timeout_milliseconds: milliseconds to wait for trace providers
+                to acknowledge that they've started tracing.
+            buffering_mode: Tells tracing providers how to buffer data
+                ONESHOT - When the buffer fills the provider drops subsequent records
+                CIRCULAR - When the buffer fills, older records are discarded to make space
+                STREAMING - Data is streamed back to the trace_manager. Providers may still drop
+                            records if events are produced faster than they can be streamed
+            defer_transfer: If true, the trace_manager will delay sending data until tracing has stopped
+            compression: If true, compress the trace data.
 
          Raises:
             ValueError: If `download` is True but either `directory` or
                 `trace_file` is not provided.
         """
         if not self.is_session_initialized():
-            self.initialize(categories, buffer_size)
+            self.initialize(
+                categories=categories,
+                buffer_size=buffer_size,
+                start_timeout_milliseconds=start_timeout_milliseconds,
+                buffering_mode=buffering_mode,
+                defer_transfer=defer_transfer,
+                compression=compression,
+            )
         try:
             await self.start()
             yield

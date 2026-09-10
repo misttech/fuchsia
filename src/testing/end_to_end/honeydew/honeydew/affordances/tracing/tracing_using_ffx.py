@@ -99,7 +99,7 @@ class TracingUsingFfx(tracing.Tracing):
         start_timeout_milliseconds: int | None = None,
         buffering_mode: f_tracing.BufferingMode | None = None,
         defer_transfer: bool | None = None,
-        compression: bool | None = None,
+        compression: bool | None = True,
     ) -> None:
         """Initializes a trace session.
 
@@ -117,11 +117,14 @@ class TracingUsingFfx(tracing.Tracing):
                             records if events are produced faster than they can be streamed
             defer_transfer: Ignored by this implementation. Instead, this behavior is triggered
                 automatically when using STREAMING mode.
-            compression: If true, compress the trace data.
+            compression: If true, compress the trace data. Defaults to True.
 
         Raises:
             TracingStateError: When trace session is already initialized.
         """
+        if compression is None:
+            compression = True
+
         if categories is None:
             categories = DEFAULT_CATEGORIES
         else:
