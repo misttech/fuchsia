@@ -294,7 +294,7 @@ impl FxFile {
                 .get(FSCRYPT_KEY_ID)
             {
                 match key {
-                    EncryptionKey::LegacyFxfs(fxfs_key) | EncryptionKey::Fxfs(fxfs_key) => {
+                    EncryptionKey::Fxfs(fxfs_key) => {
                         return Ok(Some(fxfs_key.wrapping_key_id));
                     }
                     EncryptionKey::FscryptInoLblk32File { key_identifier } => {
@@ -304,6 +304,7 @@ impl FxFile {
                         error!("Unexpected key type for file: {:?}", key);
                         return Ok(None);
                     }
+                    EncryptionKey::LegacyFxfs(_) => unreachable!(),
                 }
             }
         }
@@ -3322,13 +3323,6 @@ mod tests {
 
     use test_case::test_case;
 
-    #[test_case(
-        fxfs_crypto::EncryptionKey::LegacyFxfs(fxfs_crypto::FxfsKey {
-            wrapping_key_id: WRAPPING_KEY_ID,
-            key: fxfs_crypto::WrappedKeyBytes::from([0xff; fxfs_crypto::FXFS_WRAPPED_KEY_SIZE]),
-        });
-        "legacy_fxfs"
-    )]
     #[test_case(
         fxfs_crypto::EncryptionKey::Fxfs(fxfs_crypto::FxfsKey {
             wrapping_key_id: WRAPPING_KEY_ID,

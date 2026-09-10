@@ -137,11 +137,15 @@ impl<'de> Deserialize<'de> for WrappedKeyBytes {
     }
 }
 
+fn reject_legacy_key<'de, D: Deserializer<'de>>(_: D) -> Result<FxfsKey, D::Error> {
+    Err(SerdeError::custom("LegacyFxfs keys are no longer supported"))
+}
+
 /// This specifies a single key to be used to encrypt/decrypt.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TypeFingerprint)]
 pub enum EncryptionKey {
     /// Legacy Fxfs key that derives XTS tweaks using only the sector offset.
-    LegacyFxfs(FxfsKey),
+    LegacyFxfs(#[serde(deserialize_with = "reject_legacy_key")] FxfsKey),
     // NOTE: `key_identifier` can be thought of as the "name" of the key to use; it is not a
     // per-file or per-directory key. It is similar to Fxfs's wrapping key ID, although it
     // doesn't wrap anything. Files using the same `key_identifier` are encrypted using the
@@ -161,7 +165,8 @@ pub enum EncryptionKey {
 impl EncryptionKey {
     pub fn wrapping_key_id(&self) -> Option<WrappingKeyId> {
         match self {
-            EncryptionKey::LegacyFxfs(key) | EncryptionKey::Fxfs(key) => Some(key.wrapping_key_id),
+            EncryptionKey::LegacyFxfs(_) => unreachable!(),
+            EncryptionKey::Fxfs(key) => Some(key.wrapping_key_id),
             EncryptionKey::FscryptInoLblk32File { key_identifier }
             | EncryptionKey::FscryptInoLblk32Dir { key_identifier, .. } => Some(*key_identifier),
         }
@@ -170,14 +175,13 @@ impl EncryptionKey {
 
 impl<'a> arbitrary::Arbitrary<'a> for EncryptionKey {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        Ok(match u.int_in_range(0..=3)? {
-            0 => EncryptionKey::LegacyFxfs(u.arbitrary()?),
-            1 => EncryptionKey::FscryptInoLblk32File { key_identifier: u.arbitrary()? },
-            2 => EncryptionKey::FscryptInoLblk32Dir {
+        Ok(match u.int_in_range(0..=2)? {
+            0 => EncryptionKey::FscryptInoLblk32File { key_identifier: u.arbitrary()? },
+            1 => EncryptionKey::FscryptInoLblk32Dir {
                 key_identifier: u.arbitrary()?,
                 nonce: u.arbitrary()?,
             },
-            3 => EncryptionKey::Fxfs(u.arbitrary()?),
+            2 => EncryptionKey::Fxfs(u.arbitrary()?),
             _ => unreachable!(),
         })
     }
@@ -186,9 +190,8 @@ impl<'a> arbitrary::Arbitrary<'a> for EncryptionKey {
 impl From<EncryptionKey> for WrappedKey {
     fn from(value: EncryptionKey) -> Self {
         match value {
-            EncryptionKey::LegacyFxfs(key) | EncryptionKey::Fxfs(key) => {
-                WrappedKey::Fxfs(key.into())
-            }
+            EncryptionKey::LegacyFxfs(_) => unreachable!(),
+            EncryptionKey::Fxfs(key) => WrappedKey::Fxfs(key.into()),
             EncryptionKey::FscryptInoLblk32File { key_identifier } => {
                 WrappedKey::FscryptInoLblk32File(FscryptKeyIdentifier { key_identifier })
             }
@@ -205,7 +208,7 @@ impl From<EncryptionKey> for WrappedKey {
 impl From<&EncryptionKey> for KeyType {
     fn from(value: &EncryptionKey) -> Self {
         match value {
-            EncryptionKey::LegacyFxfs(_) => KeyType::LegacyFxfs,
+            EncryptionKey::LegacyFxfs(_) => unreachable!(),
             EncryptionKey::Fxfs(_) => KeyType::Fxfs,
             EncryptionKey::FscryptInoLblk32File { .. } => KeyType::FscryptInoLblk32File,
             EncryptionKey::FscryptInoLblk32Dir { .. } => KeyType::FscryptInoLblk32Dir,

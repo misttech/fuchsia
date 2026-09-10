@@ -1265,4 +1265,17 @@ mod tests {
         let ts: TimestampV49 = (Duration::from_nanos(u64::MAX).add(Duration::from_nanos(1))).into();
         assert_eq!(ts.nanos, u64::MAX);
     }
+
+    #[test]
+    fn test_legacy_fxfs_key_decoding_fails() {
+        use fxfs_crypto::{EncryptionKey, FXFS_WRAPPED_KEY_SIZE, FxfsKey, WrappedKeyBytes};
+
+        let key = EncryptionKey::LegacyFxfs(FxfsKey {
+            wrapping_key_id: [1; 16],
+            key: WrappedKeyBytes([2; FXFS_WRAPPED_KEY_SIZE]),
+        });
+        let mut buf = Vec::new();
+        bincode::serialize_into(&mut buf, &key).expect("serialize succeeds");
+        assert!(bincode::deserialize::<EncryptionKey>(&buf).is_err());
+    }
 }

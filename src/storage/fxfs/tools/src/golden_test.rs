@@ -47,6 +47,9 @@ const FSCRYPT_VERSION_START: Version = Version { major: 51, minor: 0 };
 // Version of first image with blobs included.
 const BLOB_IN_GOLDEN_START: Version = Version { major: 52, minor: 0 };
 const SECOND_VOLUME_VERSION: Version = Version { major: 38, minor: 0 };
+// Images prior to version 56 used LegacyFxfs keys for the default volume, which are no longer
+// supported.
+const LEGACY_FXFS_REMOVAL_VERSION: Version = Version { major: 56, minor: 0 };
 
 /// Decompresses a zstd compressed local image into a RAM backed FakeDevice.
 fn load_device(path: &Path) -> Result<FakeDevice, Error> {
@@ -387,6 +390,11 @@ async fn check_image(path: &Path) -> Result<(), Error> {
     let device = DeviceHolder::new(load_device(path)?);
     let fs = FxFilesystem::open(device).await?;
     let version = fs.journal().super_block_header().earliest_version;
+    if version < LEGACY_FXFS_REMOVAL_VERSION {
+        info!("Skipping {} because it uses unsupported LegacyFxfs keys", path.display());
+        fs.close().await?;
+        return Ok(());
+    }
 
     let insecure_crypt = new_insecure_crypt();
     insecure_crypt.add_wrapping_key(WRAPPING_KEY_ID, [1; 32].into()).expect("Failed to add key");

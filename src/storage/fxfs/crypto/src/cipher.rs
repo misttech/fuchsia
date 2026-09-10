@@ -87,7 +87,6 @@ pub trait Cipher: std::fmt::Debug + Send + Sync {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyType {
-    LegacyFxfs,
     Fxfs,
     FscryptInoLblk32Dir,
     FscryptInoLblk32File,
@@ -111,7 +110,7 @@ impl ToKeyType for WrappedKey {
 impl ToKeyType for EncryptionKey {
     fn to_key_type(&self) -> Option<KeyType> {
         match self {
-            EncryptionKey::LegacyFxfs(_) => Some(KeyType::LegacyFxfs),
+            EncryptionKey::LegacyFxfs(_) => unreachable!(),
             EncryptionKey::Fxfs(_) => Some(KeyType::Fxfs),
             EncryptionKey::FscryptInoLblk32Dir { .. } => Some(KeyType::FscryptInoLblk32Dir),
             EncryptionKey::FscryptInoLblk32File { .. } => Some(KeyType::FscryptInoLblk32File),
@@ -136,9 +135,6 @@ pub fn key_to_cipher(
     key_type
         .to_key_type()
         .map(|key_type| match key_type {
-            KeyType::LegacyFxfs => {
-                Arc::new(fxfs::FxfsCipher::new_legacy(&unwrapped_key)) as Arc<dyn Cipher>
-            }
             KeyType::Fxfs => Arc::new(fxfs::FxfsCipher::new(&unwrapped_key)) as Arc<dyn Cipher>,
             KeyType::FscryptInoLblk32Dir => {
                 Arc::new(fscrypt_ino_lblk32::FscryptInoLblk32DirCipher::new(&unwrapped_key))

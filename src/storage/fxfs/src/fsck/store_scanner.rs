@@ -387,9 +387,7 @@ impl<'a> ScannedStore<'a> {
                                     *key_id,
                                 ))?;
                             }
-                            if self.is_root_store
-                                && !matches!(key_type, KeyType::Fxfs | KeyType::LegacyFxfs)
-                            {
+                            if self.is_root_store && key_type != KeyType::Fxfs {
                                 self.fsck.error(FsckError::IllegalKeyInRootStore(
                                     self.store_id,
                                     key.object_id,
@@ -422,7 +420,7 @@ impl<'a> ScannedStore<'a> {
                                         ))?;
                                     }
                                 }
-                                KeyType::Fxfs | KeyType::LegacyFxfs => {}
+                                KeyType::Fxfs => {}
                             }
                             if *key_id == FSCRYPT_KEY_ID {
                                 let wrapping_key_id = encryption_key.wrapping_key_id();

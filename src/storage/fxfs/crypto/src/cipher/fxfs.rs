@@ -12,15 +12,10 @@ use zerocopy::IntoBytes;
 #[derive(Debug)]
 pub struct FxfsCipher {
     key: Aes256,
-    legacy: bool,
 }
 impl FxfsCipher {
     pub fn new(key: &UnwrappedKey) -> Self {
-        Self { key: Aes256::new(key.as_slice().try_into().unwrap()), legacy: false }
-    }
-
-    pub fn new_legacy(key: &UnwrappedKey) -> Self {
-        Self { key: Aes256::new(key.as_slice().try_into().unwrap()), legacy: true }
+        Self { key: Aes256::new(key.as_slice().try_into().unwrap()) }
     }
 }
 impl Cipher for FxfsCipher {
@@ -36,7 +31,7 @@ impl Cipher for FxfsCipher {
         assert_eq!(file_offset % SECTOR_SIZE, 0);
         let mut sector_offset = file_offset / SECTOR_SIZE;
         assert_eq!(buffer.len() % (SECTOR_SIZE as usize), 0);
-        let upper_tweak = if self.legacy { 0 } else { (attribute_id as u128) << 64 };
+        let upper_tweak = (attribute_id as u128) << 64;
         let mut offset = 0;
         while offset < buffer.len() {
             let sector = buffer.reborrow().subslice_mut(offset..offset + SECTOR_SIZE as usize);
@@ -62,7 +57,7 @@ impl Cipher for FxfsCipher {
         assert_eq!(file_offset % SECTOR_SIZE, 0);
         let mut sector_offset = file_offset / SECTOR_SIZE;
         assert_eq!(buffer.len() % (SECTOR_SIZE as usize), 0);
-        let upper_tweak = if self.legacy { 0 } else { (attribute_id as u128) << 64 };
+        let upper_tweak = (attribute_id as u128) << 64;
         let mut offset = 0;
         while offset < buffer.len() {
             let sector = buffer.reborrow().subslice_mut(offset..offset + SECTOR_SIZE as usize);
@@ -111,22 +106,6 @@ mod tests {
     use super::{Cipher, FxfsCipher, SECTOR_SIZE};
     use crate::UnwrappedKey;
     use storage_ptr_slice::MutPtrByteSlice;
-
-    #[test]
-    fn test_legacy_fxfs_cipher_ignores_attribute_id() {
-        let key = UnwrappedKey::new(vec![0x42; 32]);
-        let cipher = FxfsCipher::new_legacy(&key);
-        let mut buf0 = vec![0x12; SECTOR_SIZE as usize];
-        let mut buf1 = vec![0x12; SECTOR_SIZE as usize];
-
-        cipher.encrypt(1, 0, 0, 0, MutPtrByteSlice::from(&mut buf0[..])).expect("encrypt attr 0");
-        cipher.encrypt(1, 4, 0, 0, MutPtrByteSlice::from(&mut buf1[..])).expect("encrypt attr 4");
-        assert_eq!(
-            buf0, buf1,
-            "LegacyFxfsCipher should produce identical ciphertext for same file_offset regardless \
-             of attribute_id"
-        );
-    }
 
     #[test]
     fn test_fxfs_cipher_domain_separates_attribute_id() {

@@ -2833,7 +2833,7 @@ impl ObjectStore {
         }
 
         for key in keys.iter() {
-            if !matches!(key.1, EncryptionKey::Fxfs(_) | EncryptionKey::LegacyFxfs(_)) {
+            if !matches!(key.1, EncryptionKey::Fxfs(_)) {
                 return Err(
                     anyhow!(FxfsError::IntegrityError).context("Illegal key type in root store")
                 );
