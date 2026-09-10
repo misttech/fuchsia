@@ -36,9 +36,9 @@ mod vmo_rs {
     use crate::vm::vm_object_physical::VmObjectPhysical;
     use crate::vm::vm_page_list::VmPageSpliceList;
     use crate::vm_unittests::test_helper::{
-        ARCH_RW_FLAGS, fill_and_test, fill_region, make_committed_pager_vmo,
+        ARCH_RW_FLAGS, TestRand, fill_and_test, fill_region, make_committed_pager_vmo,
         make_partially_committed_pager_vmo, make_private_attribution_counts,
-        make_uncommitted_pager_vmo, supply_pager_vmo_pages, test_rand, test_region,
+        make_uncommitted_pager_vmo, supply_pager_vmo_pages, test_region,
         verify_continuous_attribution_bytes,
     };
     use core::ffi::c_void;
@@ -48,6 +48,7 @@ mod vmo_rs {
     use fbl::{RefPtr, Vector};
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
+    use rand::Rng;
     use unittest::{
         assert_eq, assert_false, assert_ge, assert_le, assert_lt, assert_ok, assert_true,
         expect_eq, expect_false, expect_gt, expect_le, expect_ne, expect_ok, expect_true,
@@ -1997,11 +1998,10 @@ mod vmo_rs {
             let state = unsafe { state.as_mut_unchecked() };
             // SAFETY: `state.vmo` points to a live `VmObjectPaged` that outlives this thread.
             let vmo = unsafe { state.vmo.as_ref_unchecked() };
-            let mut rand_val = state.vmo.addr() as u32;
+            let mut rand = TestRand::new(state.vmo.addr() as u32);
 
             // Randomly decide between try-lock and lock.
-            rand_val = test_rand(rand_val);
-            if !rand_val.is_multiple_of(2) {
+            if rand.random_bool(0.5) {
                 if let Err(status) = vmo.try_lock_range(0, K_SIZE) {
                     return status.into_raw();
                 }
@@ -2012,8 +2012,7 @@ mod vmo_rs {
             }
 
             // Randomly decide whether to unlock, or leave the vmo locked.
-            rand_val = test_rand(rand_val);
-            if !rand_val.is_multiple_of(2) {
+            if rand.random_bool(0.5) {
                 if let Err(status) = vmo.unlock_range(0, K_SIZE) {
                     return status.into_raw();
                 }
@@ -2225,7 +2224,7 @@ mod vmo_rs {
             )));
         }
 
-        let mut rand_val = ptr::from_ref(vmos[0].as_ref().unwrap()).addr() as u32;
+        let mut rand = TestRand::new(ptr::from_ref(vmos[0].as_ref().unwrap()).addr() as u32);
         let mut expected = DiscardablePageCounts { locked: 0, unlocked: 0 };
 
         // Lock all vmos. Unlock a few. And discard a few unlocked ones.
@@ -2235,12 +2234,10 @@ mod vmo_rs {
             expect_ok!(vmo.try_lock_range(0, (i as u64 + 1) * PAGE_SIZE));
             expect_ok!(vmo.commit_range(0, (i as u64 + 1) * PAGE_SIZE));
 
-            rand_val = test_rand(rand_val);
-            if !rand_val.is_multiple_of(2) {
+            if rand.random_bool(0.5) {
                 expect_ok!(vmo.unlock_range(0, (i as u64 + 1) * PAGE_SIZE));
 
-                rand_val = test_rand(rand_val);
-                if !rand_val.is_multiple_of(2) {
+                if rand.random_bool(0.5) {
                     // Discarded pages won't show up under locked or unlocked counts.
                     let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
                     let cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");

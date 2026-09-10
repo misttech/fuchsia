@@ -140,8 +140,8 @@ bool slab_no_leak_test() {
     // Randomize the objects.
     ktl::shuffle(&objects[0], &objects[allocated], r);
 
-    // Free some subset.
-    size_t to_free = r.rand() % allocated;
+    // Free some subset if there are any allocations.
+    size_t to_free = allocated > 0 ? r.rand() % allocated : 0;
     for (size_t i = 0; i < to_free; i++) {
       allocated--;
       ktl::destroy_at(objects[allocated]);

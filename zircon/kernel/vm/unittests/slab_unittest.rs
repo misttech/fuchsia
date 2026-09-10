@@ -12,12 +12,15 @@ mod slab_rs {
     use crate::vm::page_slab_allocator::{
         BaseSlabProvider, PageSlabAllocator, SlabAllocationError, SlabProvider,
     };
+    use crate::vm_unittests::test_helper::TestRand;
     use core::convert::Infallible;
     use core::mem::size_of;
     use core::pin::Pin;
     use core::ptr::NonNull;
     use pin_init::{PinInit, pin_data, pin_init, stack_pin_init};
-    use unittest::{expect_eq, unwrap_ok};
+    use rand::Rng;
+    use rand::seq::SliceRandom;
+    use unittest::{expect_eq, expect_le, unwrap_ok};
 
     struct TestObject {
         _data: [u64; 32],
@@ -79,6 +82,12 @@ mod slab_rs {
 
         fn active_slabs(&self) -> usize {
             self.allocator.provider().allocated - self.allocator.provider().freed
+        }
+
+        const fn slabs_required(num_allocs: usize) -> usize {
+            PageSlabAllocator::<{ size_of::<TestObject>() }, TestSlabProvider>::slabs_required(
+                num_allocs,
+            )
         }
 
         fn as_allocator(
@@ -152,5 +161,59 @@ mod slab_rs {
             }
         }
         expect_eq!(alloc.active_slabs(), 2);
+    }
+
+    /// Tests that active slabs do not exceed the maximum required under churn.
+    #[test]
+    fn slab_no_leak_test() {
+        // Continually allocate and free a range of objects, ensuring that the number of slabs
+        // allocated at one time is never more than required to store all the objects.
+        const NUM_OBJECTS: usize = 400;
+        let max_slabs = TestSlabAllocator::slabs_required(NUM_OBJECTS);
+
+        stack_pin_init!(let alloc = TestSlabAllocator::new());
+        let mut allocated = 0;
+        let mut objects: [NonNull<TestObject>; NUM_OBJECTS] = [NonNull::dangling(); NUM_OBJECTS];
+
+        let mut r = TestRand::new(42);
+
+        for _ in 0..10000 {
+            // Allocate some number of objects.
+            let to_alloc = r.random_range(0..NUM_OBJECTS - allocated);
+            for _ in 0..to_alloc {
+                let object: NonNull<TestObject> =
+                    unwrap_ok!(alloc.as_mut().as_allocator().allocate_object());
+                // SAFETY: `object` is valid for writing TestObject.
+                unsafe {
+                    object.write(TestObject { _data: [0; 32] });
+                }
+                objects[allocated] = object;
+                allocated += 1;
+            }
+            expect_le!(alloc.active_slabs(), max_slabs);
+
+            // Randomize the objects.
+            objects[..allocated].shuffle(&mut r);
+
+            // Free some subset if there are any allocations.
+            let to_free = if allocated > 0 { r.random_range(0..allocated) } else { 0 };
+            for _ in 0..to_free {
+                allocated -= 1;
+                // SAFETY: `objects[allocated]` was allocated by `alloc`.
+                unsafe {
+                    alloc.as_mut().as_allocator().deallocate_bytes(objects[allocated].cast());
+                }
+            }
+        }
+
+        // Free any that are left.
+        for object in &objects[..allocated] {
+            // SAFETY: `*object` was allocated by `alloc`.
+            unsafe {
+                alloc.as_mut().as_allocator().deallocate_bytes(object.cast());
+            }
+        }
+
+        expect_eq!(alloc.active_slabs(), 0);
     }
 }

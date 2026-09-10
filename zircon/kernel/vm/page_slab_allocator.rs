@@ -195,8 +195,31 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
         }
     }
 
+    /// Typed convenience wrapper around `deallocate_bytes`. Assumes the object at `ptr` has already
+    /// been destructed.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be a pointer obtained from this allocator that has not already been deallocated.
+    pub unsafe fn deallocate_object<T>(self: Pin<&mut Self>, ptr: NonNull<T>)
+    where
+        A: SlabProvider,
+    {
+        let ptr: NonNull<c_void> = ptr.cast();
+        // SAFETY: Caller attests to the preconditions for free.
+        unsafe {
+            self.free(ptr);
+        }
+    }
+
     pub fn allocated_slabs(&self) -> usize {
         self.allocated_slabs
+    }
+
+    /// Helper to return the number of slabs this allocator would allocate to store the specified
+    /// number of allocations.
+    pub const fn slabs_required(num_allocs: usize) -> usize {
+        num_allocs.div_ceil(Self::ALLOCS_PER_SLAB)
     }
 
     const fn entry_align() -> usize {

@@ -14,6 +14,8 @@ use crate::vm::vm_object_paged::VmObjectPaged;
 use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use fbl::RefPtr;
+use rand::RngCore;
+use rand::rand_core::impls;
 use test_helper_bindings as bindings;
 use zx_status::Status;
 
@@ -186,4 +188,30 @@ pub fn fill_and_test(buf: &mut [MaybeUninit<u8>]) -> (&mut [u8], bool) {
 pub fn test_rand(seed: u32) -> u32 {
     // SAFETY: `cpp_test_rand` has no preconditions.
     unsafe { bindings::cpp_test_rand(seed) }
+}
+
+#[derive(Debug)]
+pub struct TestRand {
+    state: u32,
+}
+
+impl TestRand {
+    pub const fn new(init: u32) -> Self {
+        Self { state: init }
+    }
+}
+
+impl RngCore for TestRand {
+    fn next_u32(&mut self) -> u32 {
+        self.state = test_rand(self.state);
+        self.state
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        impls::next_u64_via_u32(self)
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        impls::fill_bytes_via_next(self, dest)
+    }
 }

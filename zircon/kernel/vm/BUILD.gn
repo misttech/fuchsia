@@ -1322,6 +1322,7 @@ kernel_rust_mod("vm-rs-unittests") {
     ":test-helper-bindings",
     "//sdk/rust/zx-types",
     "//src/lib/kprint",
+    "//third_party/rust_crates:rand",
     "//zircon/kernel/lib/debug",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
