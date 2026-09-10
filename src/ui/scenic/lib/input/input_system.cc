@@ -101,7 +101,7 @@ void InputSystem::BindLocalHit(fidl::ServerEnd<fuchsia_ui_pointer_augment::Local
 }
 
 void InputSystem::BindA11yPointerEventRegistry(
-    fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request) {
+    fidl::ServerEnd<fuchsia_ui_input_accessibility::PointerEventRegistry> request) {
   utils::CheckIsOnInputThread();
   touch_system_.BindA11yPointerEventRegistry(std::move(request));
 }

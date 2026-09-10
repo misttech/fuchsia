@@ -7,6 +7,7 @@
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.display.singleton/cpp/fidl.h>
+#include <fidl/fuchsia.ui.input.accessibility/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer.augment/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <fidl/fuchsia.ui.views/cpp/fidl.h>
@@ -736,13 +737,12 @@ void App::InitializeInput() {
                }) == ZX_OK);
 
   // Register Accessibility PointerEventRegistry
-  app_context_->outgoing()
-      ->AddPublicService<fuchsia::ui::input::accessibility::PointerEventRegistry>(
-          [this](fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry>
-                     request) {
+  FX_CHECK(
+      app_context_->outgoing()->AddProtocol<fuchsia_ui_input_accessibility::PointerEventRegistry>(
+          [this](fidl::ServerEnd<fuchsia_ui_input_accessibility::PointerEventRegistry> server_end) {
             input_manager_.AsyncCall(&input::InputManager::BindA11yPointerEventRegistry,
-                                     std::move(request));
-          });
+                                     std::move(server_end));
+          }) == ZX_OK);
 }
 
 void App::InitializeHeartbeat(display::Display& display) {

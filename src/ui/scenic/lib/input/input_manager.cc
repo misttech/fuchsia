@@ -120,7 +120,7 @@ void InputManager::BindLocalHit(fidl::ServerEnd<fuchsia_ui_pointer_augment::Loca
 }
 
 void InputManager::BindA11yPointerEventRegistry(
-    fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request) {
+    fidl::ServerEnd<fuchsia_ui_input_accessibility::PointerEventRegistry> request) {
   input_.BindA11yPointerEventRegistry(std::move(request));
 }
 

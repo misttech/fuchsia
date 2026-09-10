@@ -5,7 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_HELPER_H_
 #define SRC_UI_SCENIC_LIB_INPUT_HELPER_H_
 
-#include <fuchsia/ui/input/cpp/fidl.h>
+#include <fidl/fuchsia.ui.input/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include "src/ui/scenic/lib/input/internal_pointer_event.h"
@@ -16,7 +16,7 @@ namespace scenic_impl::input {
 
 // For converting between phase enum types.
 // No support for HOVER phase.
-fuchsia::ui::input::PointerEventPhase InternalPhaseToGfxPhase(Phase phase);
+fuchsia_ui_input::PointerEventPhase InternalPhaseToGfxPhase(Phase phase);
 
 // Returns the 2D-transform from the viewport space of |event| to the destination view space as
 // a mat3 in column-major array form.

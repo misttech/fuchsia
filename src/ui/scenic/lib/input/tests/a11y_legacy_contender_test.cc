@@ -10,6 +10,7 @@
 namespace lib_ui_input_tests {
 namespace {
 
+using fuchsia_ui_input_accessibility::EventHandling;
 using scenic_impl::input::A11yLegacyContender;
 using scenic_impl::input::GestureResponse;
 using scenic_impl::input::InternalTouchEvent;
@@ -60,8 +61,7 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedAtSweep) {
   EXPECT_EQ(events_sent_to_client.size(), 3u);
   EXPECT_TRUE(responses.empty());
 
-  contender.OnStreamHandled(kPointerId1,
-                            fuchsia::ui::input::accessibility::EventHandling::CONSUMED);
+  contender.OnStreamHandled(kPointerId1, EventHandling::kConsumed);
   ASSERT_EQ(responses.size(), 3u);
   EXPECT_THAT(responses, testing::Each(GestureResponse::kYesPrioritize));
 
@@ -106,8 +106,7 @@ TEST(A11yLegacyContenderTest, SingleStream_ConsumedMidContest) {
 
   // Since the stream hasn't ended yet we're not at sweep, but the YES_PRIORITIZE response is sent
   // immediately.
-  contender.OnStreamHandled(kPointerId1,
-                            fuchsia::ui::input::accessibility::EventHandling::CONSUMED);
+  contender.OnStreamHandled(kPointerId1, EventHandling::kConsumed);
   ASSERT_EQ(responses.size(), 2u);
   EXPECT_THAT(responses, testing::Each(GestureResponse::kYesPrioritize));
 
@@ -167,8 +166,7 @@ TEST(A11yLegacyContenderTest, SingleStream_Rejected) {
   EXPECT_TRUE(responses.empty());
 
   // On rejection we should get single NO response.
-  contender.OnStreamHandled(kPointerId1,
-                            fuchsia::ui::input::accessibility::EventHandling::REJECTED);
+  contender.OnStreamHandled(kPointerId1, EventHandling::kRejected);
   ASSERT_EQ(responses.size(), 1u);
   EXPECT_EQ(responses[0], GestureResponse::kNo);
 }
@@ -214,8 +212,7 @@ TEST(A11yLegacyContenderTest, ContestEndedOnResponse) {
 
   // Consume the stream. The win is awarded on the first response, and no further responses
   // should be seen.
-  contender.OnStreamHandled(kPointerId1,
-                            fuchsia::ui::input::accessibility::EventHandling::CONSUMED);
+  contender.OnStreamHandled(kPointerId1, EventHandling::kConsumed);
   ASSERT_EQ(responses.size(), 1u);
   EXPECT_EQ(responses[0], GestureResponse::kYesPrioritize);
 
@@ -287,18 +284,15 @@ TEST(A11yLegacyContenderTest, MultipleStreams) {
 
   // Now the client decides on all three streams and observe the expected responses.
   events_sent_to_client.clear();
-  contender.OnStreamHandled(kPointerId1,
-                            fuchsia::ui::input::accessibility::EventHandling::CONSUMED);
+  contender.OnStreamHandled(kPointerId1, EventHandling::kConsumed);
   EXPECT_EQ(responses.size(), 1u);
   ASSERT_EQ(responses[kId1].size(), 2u);
   EXPECT_THAT(responses[kId1], testing::Each(GestureResponse::kYesPrioritize));
-  contender.OnStreamHandled(kPointerId2,
-                            fuchsia::ui::input::accessibility::EventHandling::CONSUMED);
+  contender.OnStreamHandled(kPointerId2, EventHandling::kConsumed);
   EXPECT_EQ(responses.size(), 2u);
   ASSERT_EQ(responses[kId2].size(), 2u);
   EXPECT_THAT(responses[kId2], testing::Each(GestureResponse::kYesPrioritize));
-  contender.OnStreamHandled(kPointerId3,
-                            fuchsia::ui::input::accessibility::EventHandling::REJECTED);
+  contender.OnStreamHandled(kPointerId3, EventHandling::kRejected);
   EXPECT_EQ(responses.size(), 3u);
   ASSERT_EQ(responses[kId3].size(), 1u);
   EXPECT_EQ(responses[kId3][0], GestureResponse::kNo);
@@ -372,15 +366,15 @@ TEST(A11yLegacyContenderTest, MultipleStreams_WithSamePointer) {
 
   // Return OnStreamHandled messages for all ongoing streams, but always reuse kPointerId.
   // Observe that each stream gets the correct message.
-  contender.OnStreamHandled(kPointerId, fuchsia::ui::input::accessibility::EventHandling::CONSUMED);
+  contender.OnStreamHandled(kPointerId, EventHandling::kConsumed);
   EXPECT_EQ(responses.size(), 1u);
   ASSERT_EQ(responses[kId1].size(), 1u);
   EXPECT_EQ(responses[kId1][0], GestureResponse::kYesPrioritize);
-  contender.OnStreamHandled(kPointerId, fuchsia::ui::input::accessibility::EventHandling::REJECTED);
+  contender.OnStreamHandled(kPointerId, EventHandling::kRejected);
   EXPECT_EQ(responses.size(), 2u);
   ASSERT_EQ(responses[kId2].size(), 1u);
   EXPECT_EQ(responses[kId2][0], GestureResponse::kNo);
-  contender.OnStreamHandled(kPointerId, fuchsia::ui::input::accessibility::EventHandling::CONSUMED);
+  contender.OnStreamHandled(kPointerId, EventHandling::kConsumed);
   EXPECT_EQ(responses.size(), 3u);
   ASSERT_EQ(responses[kId3].size(), 1u);
   EXPECT_EQ(responses[kId3][0], GestureResponse::kYesPrioritize);

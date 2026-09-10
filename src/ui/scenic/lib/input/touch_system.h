@@ -39,9 +39,9 @@ class TouchSystem : public fidl::Server<fuchsia_ui_pointer_augment::LocalHit> {
 
   void Bind(fidl::ServerEnd<fuchsia_ui_pointer_augment::LocalHit> server_end);
   void BindA11yPointerEventRegistry(
-      fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
+      fidl::ServerEnd<fuchsia_ui_input_accessibility::PointerEventRegistry> request);
 
-  fuchsia::ui::input::accessibility::PointerEventListenerPtr&
+  fidl::Client<fuchsia_ui_input_accessibility::PointerEventListener>&
   accessibility_pointer_event_listener() {
     return a11y_pointer_event_registry_->accessibility_pointer_event_listener();
   }
@@ -59,9 +59,9 @@ class TouchSystem : public fidl::Server<fuchsia_ui_pointer_augment::LocalHit> {
   // For tests.
   // TODO(https://fxbug.dev/42152433): Remove when integration tests are properly separated out.
   void RegisterA11yListener(
-      fidl::InterfaceHandle<fuchsia::ui::input::accessibility::PointerEventListener> listener,
-      A11yPointerEventRegistry::RegisterCallback callback) {
-    a11y_pointer_event_registry_->Register(std::move(listener), std::move(callback));
+      fidl::ClientEnd<fuchsia_ui_input_accessibility::PointerEventListener> listener,
+      fit::function<void(bool)> callback) {
+    callback(a11y_pointer_event_registry_->RegisterListener(std::move(listener)));
   }
 
   // Injects a touch event directly to the View with koid |event.target|.
@@ -77,7 +77,7 @@ class TouchSystem : public fidl::Server<fuchsia_ui_pointer_augment::LocalHit> {
   zx_koid_t FindViewRefKoidOfRelatedChannel(
       const fidl::ClientEnd<fuchsia_ui_pointer::TouchSource>& original) const;
 
-  fuchsia::ui::input::accessibility::PointerEvent CreateAccessibilityEvent(
+  fuchsia_ui_input_accessibility::PointerEvent CreateAccessibilityEvent(
       const view_tree::Snapshot& snapshot, const InternalTouchEvent& event);
 
   // Collects all the GestureContenders for a new touch event stream.

@@ -10,7 +10,8 @@
 
 namespace scenic_impl::input {
 
-using PointerEventPhase = fuchsia::ui::input::PointerEventPhase;
+using PointerEventPhase = fuchsia_ui_input::PointerEventPhase;
+using GfxPointerEvent = fuchsia_ui_input::PointerEvent;
 
 std::pair<float, float> ReversePointerTraceHACK(trace_flow_id_t trace_id) {
   float fhigh, flow;
@@ -24,13 +25,13 @@ std::pair<float, float> ReversePointerTraceHACK(trace_flow_id_t trace_id) {
 PointerEventPhase InternalPhaseToGfxPhase(Phase phase) {
   switch (phase) {
     case Phase::kAdd:
-      return PointerEventPhase::ADD;
+      return PointerEventPhase::kAdd;
     case Phase::kChange:
-      return PointerEventPhase::MOVE;
+      return PointerEventPhase::kMove;
     case Phase::kRemove:
-      return PointerEventPhase::REMOVE;
+      return PointerEventPhase::kRemove;
     case Phase::kCancel:
-      return PointerEventPhase::CANCEL;
+      return PointerEventPhase::kCancel;
     case Phase::kInvalid:
       FX_CHECK(false) << "Should never be reached.";
       return static_cast<PointerEventPhase>(0);

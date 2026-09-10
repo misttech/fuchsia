@@ -15,6 +15,7 @@ _scenic_bin = {
   deps = [
     ":base_deps",
     "//sdk/fidl/fuchsia.ui.display.singleton:fuchsia.ui.display.singleton_cpp",
+    "//sdk/fidl/fuchsia.ui.input.accessibility:fuchsia.ui.input.accessibility_cpp",
     "//sdk/fidl/fuchsia.vulkan.loader:fuchsia.vulkan.loader_cpp",
     "//sdk/lib/async_patterns/cpp",
     "//sdk/lib/component/incoming/cpp",

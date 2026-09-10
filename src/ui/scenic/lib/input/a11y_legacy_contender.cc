@@ -73,8 +73,8 @@ void A11yLegacyContender::EndContest(StreamId stream_id, bool awarded_win) {
   }
 }
 
-void A11yLegacyContender::OnStreamHandled(
-    uint32_t pointer_id, fuchsia::ui::input::accessibility::EventHandling handled) {
+void A11yLegacyContender::OnStreamHandled(uint32_t pointer_id,
+                                          fuchsia_ui_input_accessibility::EventHandling handled) {
   if (!pointer_id_to_stream_id_map_.contains(pointer_id) ||
       pointer_id_to_stream_id_map_.at(pointer_id).empty()) {
     FX_LOGS(ERROR) << "Event for unknown pointer_id received. Either a11y unexpectedly lost the "
@@ -88,7 +88,7 @@ void A11yLegacyContender::OnStreamHandled(
 
   FX_DCHECK(ongoing_streams_.contains(stream_id));
   switch (handled) {
-    case fuchsia::ui::input::accessibility::EventHandling::CONSUMED:
+    case fuchsia_ui_input_accessibility::EventHandling::kConsumed:
       ongoing_streams_.at(stream_id).consumed = true;
       for (uint64_t i = 0; i < ongoing_streams_.at(stream_id).num_received_events; ++i) {
         respond_(stream_id, GestureResponse::kYesPrioritize);
@@ -98,11 +98,11 @@ void A11yLegacyContender::OnStreamHandled(
           return;
       }
       break;
-    case fuchsia::ui::input::accessibility::EventHandling::REJECTED:
+    case fuchsia_ui_input_accessibility::EventHandling::kRejected:
       respond_(stream_id, GestureResponse::kNo);
       break;
     default:
-      FX_LOGS(ERROR) << "Unknown fuchsia::ui::input::accessibility::EventHandling enum received. "
+      FX_LOGS(ERROR) << "Unknown fuchsia_ui_input_accessibility::EventHandling enum received. "
                         "Rejecting stream.";
       respond_(stream_id, GestureResponse::kNo);
       break;

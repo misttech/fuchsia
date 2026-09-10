@@ -59,8 +59,8 @@ source_set("input_manager_common") {
     ":touch",
     ":utils",
     "//sdk/fidl/fuchsia.ui.focus:fuchsia.ui.focus_cpp",
-    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_hlcpp",
-    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_hlcpp",
+    "//sdk/fidl/fuchsia.ui.input.accessibility:fuchsia.ui.input.accessibility_cpp",
+    "//sdk/fidl/fuchsia.ui.observation.geometry:fuchsia.ui.observation.geometry_cpp",
     "//sdk/fidl/fuchsia.ui.pointerinjector:fuchsia.ui.pointerinjector_cpp",
     "//src/ui/scenic/lib/focus",
     "//src/ui/scenic/lib/view_tree:geometry_provider",
@@ -145,9 +145,9 @@ source_set("utils") {
   ]
 
   public_deps = [
-    "//sdk/fidl/fuchsia.input:fuchsia.input_hlcpp",
-    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_hlcpp",
-    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_hlcpp",
+    "//sdk/fidl/fuchsia.input:fuchsia.input_cpp",
+    "//sdk/fidl/fuchsia.input.report:fuchsia.input.report_cpp",
+    "//sdk/fidl/fuchsia.ui.input:fuchsia.ui.input_cpp",
     "//src/ui/scenic/lib/view_tree:view_tree_snapshot",
   ]
 }
@@ -181,10 +181,7 @@ source_set("legacy") {
     "//zircon/system/ulib/trace",
   ]
 
-  public_deps = [
-    "//src/lib/fostr/fidl/fuchsia.ui.input",
-    "//src/lib/fostr/fidl/fuchsia.ui.input.accessibility",
-  ]
+  public_deps = [ "//sdk/fidl/fuchsia.ui.input.accessibility:fuchsia.ui.input.accessibility_cpp" ]
 }
 
 source_set("injection") {

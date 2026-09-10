@@ -4,15 +4,13 @@
 
 #include "src/ui/scenic/lib/input/touch_system.h"
 
+#include <fidl/fuchsia.ui.input.accessibility/cpp/fidl.h>
+#include <fidl/fuchsia.ui.input/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer.augment/cpp/fidl.h>
 #include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
-#include <fuchsia/ui/input/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 #include <zircon/status.h>
-
-#include <src/lib/fostr/fidl/fuchsia/ui/input/accessibility/formatting.h>
-#include <src/lib/fostr/fidl/fuchsia/ui/input/formatting.h>
 
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/scenic/lib/input/constants.h"
@@ -28,10 +26,7 @@
 
 namespace scenic_impl::input {
 
-using AccessibilityPointerEvent = fuchsia::ui::input::accessibility::PointerEvent;
-using fuchsia::ui::input::InputEvent;
-using fuchsia::ui::input::PointerEvent;
-using fuchsia::ui::input::PointerEventType;
+using AccessibilityPointerEvent = fuchsia_ui_input_accessibility::PointerEvent;
 
 namespace {
 
@@ -42,15 +37,15 @@ AccessibilityPointerEvent BuildAccessibilityPointerEvent(const InternalTouchEven
                                                          const glm::vec2& local_point,
                                                          uint64_t viewref_koid) {
   AccessibilityPointerEvent event;
-  event.set_event_time(internal_event.timestamp);
-  event.set_device_id(internal_event.device_id);
-  event.set_pointer_id(internal_event.pointer_id);
-  event.set_type(fuchsia::ui::input::PointerEventType::TOUCH);
-  event.set_phase(InternalPhaseToGfxPhase(internal_event.phase));
-  event.set_ndc_point({ndc_point.x, ndc_point.y});
-  event.set_viewref_koid(viewref_koid);
+  event.event_time(internal_event.timestamp);
+  event.device_id(internal_event.device_id);
+  event.pointer_id(internal_event.pointer_id);
+  event.type(fuchsia_ui_input::PointerEventType::kTouch);
+  event.phase(InternalPhaseToGfxPhase(internal_event.phase));
+  event.ndc_point(fuchsia_math::PointF(ndc_point.x, ndc_point.y));
+  event.viewref_koid(viewref_koid);
   if (viewref_koid != ZX_KOID_INVALID) {
-    event.set_local_point({local_point.x, local_point.y});
+    event.local_point(fuchsia_math::PointF(local_point.x, local_point.y));
   }
   return event;
 }
@@ -90,29 +85,32 @@ TouchSystem::TouchSystem(async_dispatcher_t* input_dispatcher, HitTester& hit_te
             },
             /*deliver_to_client*/
             [this](const view_tree::Snapshot& snapshot, const InternalTouchEvent& event) {
-              std::vector<fuchsia::ui::input::accessibility::PointerEvent> a11y_events;
+              std::vector<fuchsia_ui_input_accessibility::PointerEvent> a11y_events;
               a11y_events.push_back(CreateAccessibilityEvent(snapshot, event));
               // Add in legacy UP and DOWN phases for ADD and REMOVE events respectively.
-              const auto& original_event = a11y_events.front();
-              if (original_event.phase() == fuchsia::ui::input::PointerEventPhase::ADD) {
-                auto it = a11y_events.insert(a11y_events.end(), fidl::Clone(original_event));
-                it->set_phase(fuchsia::ui::input::PointerEventPhase::DOWN);
-              } else if (original_event.phase() == fuchsia::ui::input::PointerEventPhase::REMOVE) {
-                auto it = a11y_events.insert(a11y_events.begin(), fidl::Clone(original_event));
-                it->set_phase(fuchsia::ui::input::PointerEventPhase::UP);
+              const auto original_event = a11y_events.front();
+              if (original_event.phase() == fuchsia_ui_input::PointerEventPhase::kAdd) {
+                auto it = a11y_events.insert(a11y_events.end(), original_event);
+                it->phase(fuchsia_ui_input::PointerEventPhase::kDown);
+              } else if (original_event.phase() == fuchsia_ui_input::PointerEventPhase::kRemove) {
+                auto it = a11y_events.insert(a11y_events.begin(), original_event);
+                it->phase(fuchsia_ui_input::PointerEventPhase::kUp);
               }
 
               for (auto& a11y_event : a11y_events) {
-                accessibility_pointer_event_listener()->OnEvent(std::move(a11y_event));
+                fuchsia_ui_input_accessibility::PointerEventListenerOnEventRequest request;
+                request.pointer_event(std::move(a11y_event));
+                auto result = accessibility_pointer_event_listener()->OnEvent(std::move(request));
+                (void)result;
               }
             },
             contender_inspector_);
-        accessibility_pointer_event_listener().events().OnStreamHandled =
+        a11y_pointer_event_registry_->set_on_stream_handled(
             [a11y_contender = a11y_contender.get()](
                 uint32_t device_id, uint32_t pointer_id,
-                fuchsia::ui::input::accessibility::EventHandling handled) {
+                fuchsia_ui_input_accessibility::EventHandling handled) {
               a11y_contender->OnStreamHandled(pointer_id, handled);
-            };
+            });
 
         a11y_contender_ = a11y_contender.get();
         const auto [_, success] =
@@ -125,7 +123,7 @@ TouchSystem::TouchSystem(async_dispatcher_t* input_dispatcher, HitTester& hit_te
         FX_CHECK(contenders_.contains(a11y_contender_id_))
             << "can not disconnect before registering";
         // The listener disconnected. Release held events, delete the buffer.
-        accessibility_pointer_event_listener().events().OnStreamHandled = nullptr;
+        a11y_pointer_event_registry_->set_on_stream_handled(nullptr);
         EraseContender(a11y_contender_id_, ZX_KOID_INVALID);
         FX_LOGS(INFO) << "A11yLegacyContender destroyed";
       });
@@ -138,7 +136,7 @@ void TouchSystem::Bind(fidl::ServerEnd<fuchsia_ui_pointer_augment::LocalHit> ser
 }
 
 void TouchSystem::BindA11yPointerEventRegistry(
-    fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request) {
+    fidl::ServerEnd<fuchsia_ui_input_accessibility::PointerEventRegistry> request) {
   utils::CheckIsOnInputThread();
   a11y_pointer_event_registry_->Bind(std::move(request));
 }
@@ -227,7 +225,7 @@ void TouchSystem::Upgrade(UpgradeRequest& request, UpgradeCompleter::Sync& compl
   completer.Reply({{.augmented = std::move(endpoints->client), .error = nullptr}});
 }
 
-fuchsia::ui::input::accessibility::PointerEvent TouchSystem::CreateAccessibilityEvent(
+fuchsia_ui_input_accessibility::PointerEvent TouchSystem::CreateAccessibilityEvent(
     const view_tree::Snapshot& snapshot, const InternalTouchEvent& event) {
   // Find top-hit target and send it to accessibility.
   const zx_koid_t view_ref_koid =

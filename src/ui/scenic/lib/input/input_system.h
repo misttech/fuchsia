@@ -39,7 +39,7 @@ class InputSystem {
 #endif
   void BindLocalHit(fidl::ServerEnd<fuchsia_ui_pointer_augment::LocalHit> server_end);
   void BindA11yPointerEventRegistry(
-      fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
+      fidl::ServerEnd<fuchsia_ui_input_accessibility::PointerEventRegistry> request);
 
   // Delegates to `touch_system_`.
   void RegisterTouchSource(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source_server_end,

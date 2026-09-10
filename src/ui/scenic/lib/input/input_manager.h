@@ -86,7 +86,7 @@ class InputManager {
 #endif
   void BindLocalHit(fidl::ServerEnd<fuchsia_ui_pointer_augment::LocalHit> server_end);
   void BindA11yPointerEventRegistry(
-      fidl::InterfaceRequest<fuchsia::ui::input::accessibility::PointerEventRegistry> request);
+      fidl::ServerEnd<fuchsia_ui_input_accessibility::PointerEventRegistry> request);
 
  private:
   inspect::Node inspect_node_;

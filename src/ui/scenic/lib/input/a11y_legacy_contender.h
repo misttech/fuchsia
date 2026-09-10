@@ -5,7 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_A11Y_LEGACY_CONTENDER_H_
 #define SRC_UI_SCENIC_LIB_INPUT_A11Y_LEGACY_CONTENDER_H_
 
-#include <fuchsia/ui/input/accessibility/cpp/fidl.h>
+#include <fidl/fuchsia.ui.input.accessibility/cpp/fidl.h>
 #include <lib/fit/function.h>
 
 #include <deque>
@@ -34,9 +34,8 @@ class A11yLegacyContender final : public GestureContender {
 
   void EndContest(StreamId stream_id, bool awarded_win) override;
 
-  // Implementation of |fuchsia::ui::input::accessibility::PointerEventListener::OnStreamHandled|.
-  void OnStreamHandled(uint32_t pointer_id,
-                       fuchsia::ui::input::accessibility::EventHandling handled);
+  // Implementation of |fuchsia_ui_input_accessibility::PointerEventListener::OnStreamHandled|.
+  void OnStreamHandled(uint32_t pointer_id, fuchsia_ui_input_accessibility::EventHandling handled);
 
  private:
   struct Stream {
