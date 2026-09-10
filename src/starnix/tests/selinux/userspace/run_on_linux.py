@@ -352,6 +352,7 @@ class TestSestarnixUserspaceOnLinux(unittest.TestCase):
 
         result = subprocess.run(
             qemu_args,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

@@ -373,6 +373,7 @@ if (is_host) {
   }
 
   host_test_data("policies_host") {
+    testonly = true
     deps = [ "policies" ]
     sources = policy_files
     outputs = [ "$target_out_dir/policies/{{source_file_part}}" ]
