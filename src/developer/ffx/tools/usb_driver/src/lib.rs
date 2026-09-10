@@ -171,18 +171,6 @@ async fn implementation(
         }
     }
 
-    let logger = logging::FfxLog::new(
-        vec![sink],
-        logging::FormatOpts::new(0),
-        Filter,
-        log::LevelFilter::Debug,
-        logging::TargetsFilter::new(vec![]),
-    );
-
-    let _ = log::set_boxed_logger(Box::new(logger))
-        .map(|()| log::set_max_level(log::LevelFilter::Trace));
-    *logging_enabled = true;
-
     if ffx.global.machine.is_some() {
         return Err(ffx_command::Error::User(anyhow::anyhow!(
             "The machine flag is not supported for this subcommand"
@@ -207,12 +195,25 @@ async fn implementation(
 
     let listener = usb_driver_impl::remove_and_bind_socket(socket_path.to_path_buf()).await;
 
-    if command.background {
-        if let Err(usb_driver_impl::RemoveAndBindError::InUse(_)) = listener {
-            log::info!("Looks like there's already a daemon running. Exiting.");
-            return Ok(ExitStatus::from_raw(0));
-        }
+    if command.background
+        && let Err(usb_driver_impl::RemoveAndBindError::InUse(_)) = listener
+    {
+        return Ok(ExitStatus::from_raw(0));
+    }
 
+    let logger = logging::FfxLog::new(
+        vec![sink],
+        logging::FormatOpts::new(0),
+        Filter,
+        log::LevelFilter::Debug,
+        logging::TargetsFilter::new(vec![]),
+    );
+
+    let _ = log::set_boxed_logger(Box::new(logger))
+        .map(|()| log::set_max_level(log::LevelFilter::Trace));
+    *logging_enabled = true;
+
+    if command.background {
         // daemonize(3) is deprecated on macOS 10.15. The replacement is not
         // yet clear, we may want to replace this with a manual double fork
         // setsid, etc.
