@@ -35,6 +35,13 @@ Bypasses both the Power Broker transition overhead and the timer task creation
 Test Daemon.
 *   **`LargeTopologyLease`**: Measures lease acquisition and release in a large
 topology with multiple elements.
+*   **`LargeTopologyWithBackgroundLeases`**: Measures lease acquisition and
+release in a large topology where background leases are held.
+*   **`LargeSharedTopology`**: Measures lease acquisition and release in a
+realistic large topology of 100 elements, where ~80% of elements (the shared
+infrastructure) are held active by initial leases, and individual leases under test
+span the topology dependencies but only modify the required power levels of 0-5 elements
+(with 0 elements modifying when an active shared element is leased).
 
 ## Running the Benchmarks
 

@@ -102,6 +102,14 @@ fn main() -> Result<()> {
         });
     });
 
+    let topology_control = daemon_work::prepare_large_shared_topology();
+    let _ = group.bench_function("LargeSharedTopology", move |b| {
+        let randomize = false;
+        b.iter(|| {
+            let _ = daemon_work::execute_large_shared_topology_lease(&topology_control, randomize);
+        });
+    });
+
     group.finish();
 
     Ok(())
