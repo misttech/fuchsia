@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
@@ -16,8 +17,8 @@ go_library(
         "runtests.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/testing/runtests",
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//:__subpackages__"],
     deps = [
         "//third_party/golibs:github.com/pkg/sftp",
         "//tools/botanist:botanist_lib",
@@ -40,5 +41,5 @@ host_go_test(
     ],
     embed = [":runtests"],
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = ["//:__subpackages__"],
 )

@@ -64,7 +64,7 @@ if (is_host) {
       "serial_linux.go",
       "server.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":constants",
       "//third_party/golibs:golang.org/x/sys/unix",
@@ -77,6 +77,6 @@ if (is_host) {
 if (is_host) {
   go_library("constants") {
     sources = [ "constants/constants.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }

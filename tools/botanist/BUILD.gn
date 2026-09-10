@@ -2,61 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_host_tool.gni")
 import("//build/go/go_binary.gni")
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
 
-go_test("botanist_cmd_tests") {
-  embed = [ ":main" ]
-  output_name = "botanist_cmd_tests"
-
-  sources = [ "cmd/run_test.go" ]
-}
-
-go_binary("botanist") {
-  embed = [ ":main" ]
-}
-
-go_test("botanist_lib_tests") {
-  embed = [ ":botanist_lib" ]
-
-  sources = [
-    "common_test.go",
-    "pkg_test.go",
-  ]
-}
-
-go_test("botanist_repo_tests") {
-  embed = [ ":repo" ]
-
-  sources = [
-    "repo/config_test.go",
-    "repo/repo_test.go",
-  ]
-}
-
-go_test("botanist_targets_tests") {
-  embed = [ ":targets" ]
-  deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
-
-  sources = [
-    "targets/auxiliary_test.go",
-    "targets/device_test.go",
-    "targets/emulator_test.go",
-    "targets/gce_test.go",
-    "targets/target_test.go",
-  ]
-}
-
-group("tests") {
-  testonly = true
-
-  deps = [
-    ":botanist_cmd_tests",
-    ":botanist_lib_tests",
-    ":botanist_repo_tests",
-    ":botanist_targets_tests",
-  ]
+bazel_host_tool("botanist") {
+  bazel_target = ":botanist"
+  bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/botanist_/botanist"
 }
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
@@ -96,7 +49,7 @@ if (is_host) {
       "common.go",
       "pkg.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":constants",
       ":repo",
@@ -117,7 +70,7 @@ if (is_host) {
       "repo/config.go",
       "repo/repo.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       "//src/sys/pkg/lib/repo",
       "//third_party/golibs:github.com/theupdateframework/go-tuf",
@@ -136,7 +89,7 @@ if (is_host) {
       "targets/ip.go",
       "targets/target.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":botanist_lib",
       ":constants",
@@ -172,7 +125,7 @@ if (is_host) {
       "cmd/main.go",
       "cmd/run.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":botanist_lib",
       ":constants",
@@ -201,6 +154,6 @@ if (is_host) {
 if (is_host) {
   go_library("constants") {
     sources = [ "constants/constants.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }

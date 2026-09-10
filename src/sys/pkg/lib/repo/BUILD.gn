@@ -57,7 +57,7 @@ if (is_host) {
       "add.go",
       "config.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       "//third_party/golibs:github.com/pkg/sftp",
       "//third_party/golibs:github.com/theupdateframework/go-tuf",

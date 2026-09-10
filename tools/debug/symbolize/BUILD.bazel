@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 
 package(default_applicable_licenses = ["//:license"])
@@ -27,8 +28,8 @@ go_library(
         "triggers.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/debug/symbolize",
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//:__subpackages__"],
     deps = [
         "//third_party/golibs:cloud.google.com/go/storage",
         "//tools/debug/elflib",
@@ -43,7 +44,7 @@ go_library(
         "cmd/main.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/debug/symbolize/main",
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = [
         ":symbolize_lib",
         "//tools/lib/cache",
@@ -59,5 +60,5 @@ go_binary_host_tool(
         ":main",
     ],
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = ["//:__subpackages__"],
 )

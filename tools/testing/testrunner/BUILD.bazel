@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
@@ -17,8 +18,8 @@ go_library(
         "tester.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/testing/testrunner",
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//:__subpackages__"],
     deps = [
         ":constants",
         "//third_party/golibs:github.com/pkg/sftp",
@@ -54,8 +55,8 @@ go_library(
         "constants/constants.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/testing/testrunner/constants",
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//:__subpackages__"],
 )
 
 host_go_test(
@@ -68,7 +69,7 @@ host_go_test(
     ],
     embed = [":lib"],
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = ["//:__subpackages__"],
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
         "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",

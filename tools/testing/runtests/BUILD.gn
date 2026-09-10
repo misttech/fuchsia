@@ -50,7 +50,7 @@ if (is_host) {
       "output.go",
       "runtests.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       "//third_party/golibs:github.com/pkg/sftp",
       "//tools/botanist:botanist_lib",
@@ -72,6 +72,6 @@ if (is_host) {
       "runtests_test.go",
     ]
     embed = [ ":runtests" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }

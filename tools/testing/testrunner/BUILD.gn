@@ -49,7 +49,7 @@ if (is_host) {
       "outputs.go",
       "tester.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":constants",
       "//third_party/golibs:github.com/pkg/sftp",
@@ -82,7 +82,7 @@ if (is_host) {
 if (is_host) {
   go_library("constants") {
     sources = [ "constants/constants.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }
 if (is_host) {
@@ -94,7 +94,7 @@ if (is_host) {
       "tester_test.go",
     ]
     embed = [ ":lib" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       "//third_party/golibs:github.com/google/go-cmp/cmp",
       "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",

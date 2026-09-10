@@ -51,6 +51,6 @@ if (is_host) {
       "cache.go",
       "filecache.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }

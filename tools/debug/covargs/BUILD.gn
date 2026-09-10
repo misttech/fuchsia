@@ -83,7 +83,7 @@ if (is_host) {
       "common.go",
       "report.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":codecoverage_api",
       ":llvm_api",

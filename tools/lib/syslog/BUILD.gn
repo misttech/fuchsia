@@ -45,7 +45,7 @@ if (is_host) {
 if (is_host) {
   go_library("syslog") {
     sources = [ "syslog.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":constants",
       "//tools/lib/ffxutil",
@@ -58,6 +58,6 @@ if (is_host) {
 if (is_host) {
   go_library("constants") {
     sources = [ "constants/constants.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }

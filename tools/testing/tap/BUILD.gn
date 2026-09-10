@@ -54,7 +54,7 @@ if (is_host) {
       "producer.go",
       "tap.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [ ":tokenizer" ]
   }
 }
@@ -65,6 +65,6 @@ if (is_host) {
       "tokenizer/lexer.go",
       "tokenizer/stream.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }

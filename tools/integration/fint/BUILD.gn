@@ -143,7 +143,7 @@ if (is_host) {
       "proto/set_artifacts.pb.go",
       "proto/static.pb.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [ "//third_party/golibs:google.golang.org/protobuf" ]
   }
 }
@@ -158,7 +158,7 @@ if (is_host) {
       "set.go",
       "should_build.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":proto_lib",
       "//third_party/golibs:github.com/google/go-cmp/cmp",
@@ -188,7 +188,7 @@ if (is_host) {
       "cmd/fint/common.go",
       "cmd/fint/main.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":fint_lib",
       ":proto_lib",

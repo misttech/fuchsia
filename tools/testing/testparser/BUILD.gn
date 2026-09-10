@@ -51,7 +51,7 @@ if (is_host) {
       "vulkanctstest.go",
       "zircon_utest.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       "//src/connectivity/network/testing/conformance/parseoutput",
       "//tools/build",
@@ -62,7 +62,7 @@ if (is_host) {
 if (is_host) {
   go_library("main") {
     sources = [ "cmd/main.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [ ":testparser" ]
   }
 }
@@ -70,7 +70,7 @@ if (is_host) {
   go_test("testparser_tests") {
     sources = [ "testparser_test.go" ]
     embed = [ ":testparser" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
   }
 }
@@ -78,7 +78,7 @@ if (is_host) {
   go_test("testparser_cmd_test") {
     sources = [ "cmd/main_test.go" ]
     embed = [ ":main" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
   }
 }
@@ -88,7 +88,7 @@ if (is_host) {
       ":testparser_cmd_test",
       ":testparser_tests",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     testonly = true
   }
 }

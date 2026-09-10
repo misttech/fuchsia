@@ -46,6 +46,6 @@ if (is_host) {
 if (is_host) {
   go_library("environment") {
     sources = [ "environment.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }

@@ -50,6 +50,6 @@ if (is_host) {
 if (is_host) {
   go_library("parseoutput") {
     sources = [ "parseoutput.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }

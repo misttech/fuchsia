@@ -54,7 +54,7 @@ if (is_host) {
       "match.go",
       "reader.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [ "//tools/lib/logger" ]
   }
 }

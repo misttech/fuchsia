@@ -123,7 +123,7 @@ if (is_host) {
 if (is_host) {
   go_library("proto_lib") {
     sources = [ "proto/params.pb.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [ "//third_party/golibs:google.golang.org/protobuf" ]
   }
 }
@@ -143,7 +143,7 @@ if (is_host) {
       "test.go",
       "test_modifier.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":metadata",
       ":proto_lib",
@@ -166,7 +166,7 @@ if (is_host) {
 if (is_host) {
   go_library("metadata") {
     sources = [ "metadata/metadata.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       "//third_party/golibs:google.golang.org/protobuf",
       "//tools/build",
@@ -177,7 +177,7 @@ if (is_host) {
 if (is_host) {
   go_library("main") {
     sources = [ "cmd/main.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":metadata",
       ":proto_lib",

@@ -38,7 +38,7 @@ if (is_host) {
 if (is_host) {
   go_library("proto_lib") {
     sources = [ "proto/metadata.pb.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [ "//third_party/golibs:google.golang.org/protobuf" ]
   }
 }

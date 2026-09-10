@@ -5,6 +5,8 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -15,8 +17,8 @@ go_library(
         "pkg.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/botanist",
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//:__subpackages__"],
     deps = [
         ":constants",
         ":repo",
@@ -38,8 +40,8 @@ go_library(
         "repo/repo.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/botanist/repo",
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//:__subpackages__"],
     deps = [
         "//src/sys/pkg/lib/repo",
         "//third_party/golibs:github.com/theupdateframework/go-tuf",
@@ -59,8 +61,8 @@ go_library(
         "targets/target.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/botanist/targets",
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//:__subpackages__"],
     deps = [
         ":botanist_lib",
         ":constants",
@@ -97,8 +99,8 @@ go_library(
         "cmd/run.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/botanist/main",
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//:__subpackages__"],
     deps = [
         ":botanist_lib",
         ":constants",
@@ -131,5 +133,61 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/botanist/constants",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = ["//:__subpackages__"],
+)
+
+# @bazel2gn:skip
+go_binary_host_tool(
+    name = "botanist",
+    embed = [":main"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+)
+
+# @bazel2gn:skip
+host_go_test(
+    name = "botanist_cmd_tests",
+    srcs = ["cmd/run_test.go"],
+    embed = [":main"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+)
+
+# @bazel2gn:skip
+host_go_test(
+    name = "botanist_lib_tests",
+    srcs = [
+        "common_test.go",
+        "pkg_test.go",
+    ],
+    embed = [":botanist_lib"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+)
+
+# @bazel2gn:skip
+host_go_test(
+    name = "botanist_repo_tests",
+    srcs = [
+        "repo/config_test.go",
+        "repo/repo_test.go",
+    ],
+    embed = [":repo"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+)
+
+# @bazel2gn:skip
+host_go_test(
+    name = "botanist_targets_tests",
+    srcs = [
+        "targets/auxiliary_test.go",
+        "targets/device_test.go",
+        "targets/emulator_test.go",
+        "targets/gce_test.go",
+        "targets/target_test.go",
+    ],
+    embed = [":targets"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+    deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )

@@ -90,7 +90,6 @@ group("tests_no_e2e") {
     "//tools/agents:tests($host_toolchain)",
     "//tools/auto_owners:tests($host_toolchain)",
     "//tools/bindc:tests",
-    "//tools/botanist:tests($host_toolchain)",
     "//tools/build:tests($host_toolchain)",
     "//tools/cargo-gnaw:tests",
     "//tools/clidoc:tests",

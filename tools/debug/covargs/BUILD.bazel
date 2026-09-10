@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
 
 package(default_applicable_licenses = ["//:license"])
@@ -14,7 +15,7 @@ go_library(
         "api/third_party/codecoverage/code_coverage.pb.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/debug/covargs/api/third_party/codecoverage",
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = [
         "//third_party/golibs:google.golang.org/protobuf/proto",
         "//third_party/golibs:google.golang.org/protobuf/reflect/protoreflect",
@@ -29,7 +30,7 @@ go_library(
         "api/llvm/llvm.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/debug/covargs/api/llvm",
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
 )
 
 go_library(
@@ -39,8 +40,8 @@ go_library(
         "report.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/debug/covargs",
-    target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//:__subpackages__"],
     deps = [
         ":codecoverage_api",
         ":llvm_api",
@@ -59,7 +60,7 @@ go_library(
         "cmd/main.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/debug/covargs/main",
-    target_compatible_with = HOST_CONSTRAINTS,
+    target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = [
         ":covargs_lib",
         ":llvm_api",
@@ -82,5 +83,5 @@ go_binary_host_tool(
         ":main",
     ],
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = ["//:__subpackages__"],
 )

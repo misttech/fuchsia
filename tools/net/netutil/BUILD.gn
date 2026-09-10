@@ -38,7 +38,7 @@ if (is_host) {
 if (is_host) {
   go_library("netutil") {
     sources = [ "netutil.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       ":constants",
       "//tools/lib/retry",
@@ -49,6 +49,6 @@ if (is_host) {
 if (is_host) {
   go_library("constants") {
     sources = [ "constants/constants.go" ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }

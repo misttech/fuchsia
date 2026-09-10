@@ -78,6 +78,6 @@ if (is_host) {
       "pe.go",
       "sources.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
   }
 }

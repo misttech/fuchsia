@@ -98,7 +98,7 @@ if (is_host) {
       "symbolizer.go",
       "triggers.go",
     ]
-    visibility = [ "*" ]
+    visibility = [ "//*" ]
     deps = [
       "//third_party/golibs:cloud.google.com/go/storage",
       "//tools/debug/elflib",
