@@ -6,8 +6,8 @@ use anyhow::Error;
 use cm_rust::{self, FidlIntoNative};
 use fidl_fuchsia_scheduler::RoleManagerMarker;
 use fidl_fuchsia_ui_composition::{
-    AllocatorMarker, FlatlandDisplayMarker, FlatlandMarker, ScreenCaptureMarker, ScreenshotMarker,
-    TrustedFlatlandFactoryMarker,
+    AllocatorMarker, FlatlandDisplayMarker, FlatlandFactoryMarker, FlatlandMarker,
+    ScreenCaptureMarker, ScreenshotMarker, TrustedFlatlandFactoryMarker,
 };
 use fidl_fuchsia_ui_composition_internal::{
     DisplayOwnershipMarker, ScreenCaptureMarker as ScreenCaptureMarker2,
@@ -236,6 +236,7 @@ async fn assemble_realm(
         .add_route(
             Route::new()
                 .capability(Capability::protocol::<FlatlandMarker>())
+                .capability(Capability::protocol::<FlatlandFactoryMarker>())
                 .capability(Capability::protocol::<FlatlandDisplayMarker>())
                 .capability(Capability::protocol::<AllocatorMarker>())
                 .capability(Capability::protocol::<ScreenCaptureMarker>())

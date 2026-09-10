@@ -108,6 +108,7 @@ std::vector<std::string> ScenicServices(const UITestRealm::Config& config) {
           fuchsia::ui::pointer::augment::LocalHit::Name_,
           fuchsia::ui::composition::Allocator::Name_,
           fuchsia::ui::composition::Flatland::Name_,
+          fuchsia::ui::composition::FlatlandFactory::Name_,
           fuchsia::ui::composition::FlatlandDisplay::Name_};
 }
 
