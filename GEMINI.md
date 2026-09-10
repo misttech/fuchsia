@@ -63,12 +63,6 @@ Exceptions:
 
 ## Safety & Confirmations
 
-Follow these rules regarding user confirmations:
-
-1. **Destructive Commands (Always Ask):** Always ask for explicit confirmation
-   from the user before running `fx clean` (wipes global build cache), `ffx
-   target flash` (reboots device), or `fx ota`.
-
 When generating new code, follow the existing coding style.
 
 As the root of the Fuchsia directory contains an enormous amount of nested
