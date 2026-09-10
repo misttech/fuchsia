@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 static constexpr const size_t kDataAlignment = 16;
@@ -80,6 +81,22 @@ int main(int argc, char* argv[]) {
   if (argc < 2) {
     usage();
     exit(-1);
+  }
+
+  // Verify destination filename uniqueness across all inputs before generating image.
+  std::unordered_map<std::string, std::string> seen_filenames;
+  for (int i = 2; i < argc; ++i) {
+    std::string path = argv[i];
+    auto pos = path.rfind('/');
+    std::string filename = pos == path.npos ? path : path.substr(pos + 1);
+    auto [it, inserted] = seen_filenames.emplace(filename, path);
+    if (!inserted) {
+      std::cerr << "Error: duplicate filename '" << filename
+                << "' detected in ROMFS image inputs!\n"
+                << "  First input:  " << it->second << "\n"
+                << "  Second input: " << path << std::endl;
+      exit(-1);
+    }
   }
 
   // Open the output image.
