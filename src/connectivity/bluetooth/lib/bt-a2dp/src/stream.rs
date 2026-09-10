@@ -120,7 +120,7 @@ impl Stream {
         MediaCodecConfig::negotiate(&supported, config).is_some()
     }
 
-    fn build_media_task(
+    fn build_media_task_runner(
         &self,
         peer_id: &PeerId,
         config: &MediaCodecConfig,
@@ -152,8 +152,8 @@ impl Stream {
         remote_id: &StreamEndpointId,
         capabilities: Vec<ServiceCapability>,
     ) -> Result<(), (ServiceCategory, ErrorCode)> {
-        if self.media_task.is_some() {
-            return Err((ServiceCategory::None, ErrorCode::BadState));
+        if self.media_task_runner.is_some() {
+            return Err((ServiceCategory::None, ErrorCode::SepInUse));
         }
         let unsupported = ErrorCode::UnsupportedConfiguration;
         let codec_cap =
@@ -161,9 +161,12 @@ impl Stream {
         let media_unsupported = (ServiceCategory::MediaCodec, unsupported);
         let config = self.supported_config_from_capability(codec_cap).ok_or(media_unsupported)?;
         self.media_task_runner =
-            Some(self.build_media_task(peer_id, &config).ok_or(media_unsupported)?);
+            Some(self.build_media_task_runner(peer_id, &config).ok_or(media_unsupported)?);
         self.peer_id = Some(peer_id.clone());
-        self.endpoint.configure(remote_id, capabilities)
+        self.endpoint.configure(remote_id, capabilities).or_else(|e| {
+            self.media_task_runner = None;
+            Err(e)
+        })
     }
 
     pub fn set_delay(&mut self, delay: Duration) -> Result<(), ErrorCode> {
@@ -206,15 +209,17 @@ impl Stream {
     pub fn start(
         &mut self,
     ) -> Result<BoxFuture<'static, Result<MediaTaskStatus, Error>>, ErrorCode> {
+        let peer_id = self.peer_id.ok_or(ErrorCode::BadState)?;
         if self.media_task_runner.is_none() {
             return Err(ErrorCode::BadState);
-        };
-        let transport = self.endpoint.take_transport().ok_or(ErrorCode::BadState)?;
+        }
         let _ = self.endpoint.start()?;
+        let transport = self.endpoint.take_transport().ok_or(ErrorCode::BadState)?;
         let offload = self.endpoint.audio_offload();
         let mut task = match self.media_runner_ref()?.start(transport, offload) {
             Ok(media_task) => media_task,
-            Err(_e) => {
+            Err(e) => {
+                warn!("Failed to start media task: {e:?} {peer_id}");
                 let _ = self.endpoint.suspend()?;
                 return Err(ErrorCode::BadState);
             }

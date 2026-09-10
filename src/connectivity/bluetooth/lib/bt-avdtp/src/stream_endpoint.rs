@@ -166,14 +166,15 @@ impl StreamEndpoint {
     }
 
     /// Attempt to Configure this stream using the capabilities given.
-    /// If the stream is not in an Idle state, fails with Err(InvalidState).
+    /// If the stream is not in an Idle state, fails with Err(SepInUse).
     /// Used for the Stream Configuration procedure, see Section 6.9
     pub fn configure(
         &mut self,
         remote_id: &StreamEndpointId,
         capabilities: Vec<ServiceCapability>,
     ) -> Result<(), (ServiceCategory, ErrorCode)> {
-        self.state_is(StreamState::Idle).map_err(|e| (ServiceCategory::None, e))?;
+        self.state_is(StreamState::Idle)
+            .map_err(|_| (ServiceCategory::None, ErrorCode::SepInUse))?;
         self.remote_id = Some(remote_id.clone());
         for cap in &capabilities {
             if !self
@@ -690,15 +691,18 @@ mod tests {
             Ok(())
         );
 
-        // Note: we allow endpoints to be configured (and reconfigured) again when they
-        // are only configured, even though this is probably not allowed per the spec.
+        // Configuring not allowed when not IDLE
+        assert_matches!(
+            s.configure(&REMOTE_ID, vec![ServiceCapability::MediaTransport]),
+            Err((_, ErrorCode::SepInUse))
+        );
 
         // Can't configure while open
         let _channel = establish_stream(&mut s, transport);
 
         assert_matches!(
             s.configure(&REMOTE_ID, vec![ServiceCapability::MediaTransport]),
-            Err((_, ErrorCode::BadState))
+            Err((_, ErrorCode::SepInUse))
         );
 
         let reconfiguration = vec![ServiceCapability::MediaCodec {
@@ -728,7 +732,7 @@ mod tests {
 
         assert_matches!(
             s.configure(&REMOTE_ID, vec![ServiceCapability::MediaTransport]),
-            Err((_, ErrorCode::BadState))
+            Err((_, ErrorCode::SepInUse))
         );
 
         assert_matches!(s.reconfigure(reconfiguration.clone()), Err((_, ErrorCode::BadState)));
@@ -741,7 +745,7 @@ mod tests {
         // Configure is still not allowed.
         assert_matches!(
             s.configure(&REMOTE_ID, vec![ServiceCapability::MediaTransport]),
-            Err((_, ErrorCode::BadState))
+            Err((_, ErrorCode::SepInUse))
         );
     }
 
