@@ -97,16 +97,7 @@ zx_status_t UsbPeripheral::UsbDciCancelAll(uint8_t ep_address) {
   }
   if (result->is_error()) {
     zx_status_t status = result->error_value();
-    // In CompleteFunctionsTeardown, UsbDciCancelAll is called across all 32 possible
-    // endpoint addresses. Endpoints that are not configured/allocated in the DCI driver
-    // return ZX_ERR_NOT_FOUND or ZX_ERR_BAD_STATE, while disconnected or unpowered
-    // hardware returns ZX_ERR_IO_NOT_PRESENT, and DCI drivers without CancelAll support
-    // return ZX_ERR_NOT_SUPPORTED. These are expected during teardown and cleanup,
-    // so suppress spurious error logs for them.
-    if (status != ZX_ERR_NOT_SUPPORTED && status != ZX_ERR_IO_NOT_PRESENT &&
-        status != ZX_ERR_NOT_FOUND && status != ZX_ERR_BAD_STATE) {
-      fdf::error("CancelAll failed (DCI error): {}", zx_status_get_string(status));
-    }
+    fdf::error("CancelAll failed (DCI error): {}", zx_status_get_string(status));
     return status;
   }
   dci_inspect_.RecordEvent(std::format("endpoint 0x{:02x} cancelled all requests", ep_address));
@@ -1513,6 +1504,7 @@ void UsbPeripheral::CompleteFunctionsTeardown(std::vector<std::shared_ptr<UsbFun
 
   std::vector<UsbConfiguration> old_configurations;
   std::vector<StringDescriptor> old_strings;
+  std::vector<uint8_t> endpoints_to_cancel;
   fit::callback<void(zx_status_t)> canceled_completer;
   {
     fbl::AutoLock lock(&lock_);
@@ -1523,6 +1515,9 @@ void UsbPeripheral::CompleteFunctionsTeardown(std::vector<std::shared_ptr<UsbFun
     old_configurations = std::move(configurations_);
     configurations_.clear();
     for (size_t i = 0; i < std::size(endpoint_map_); i++) {
+      if (endpoint_map_[i].has_value() && i != 0 && i != 16) {
+        endpoints_to_cancel.push_back(EpIndexToAddress(static_cast<uint8_t>(i)));
+      }
       endpoint_map_[i].reset();
     }
     old_strings = std::move(strings_);
@@ -1533,12 +1528,12 @@ void UsbPeripheral::CompleteFunctionsTeardown(std::vector<std::shared_ptr<UsbFun
     canceled_completer(ZX_ERR_CANCELED);
   }
 
-  // USB endpoints reside at addresses 0x00-0x0F (OUT) and 0x80-0x8F (IN).
-  // We MUST do this even if no functions are clearing, to ensure any pending
-  // requests in the DCI are completed (fixes hangs in unit tests).
-  for (uint8_t i = 0; i < 16; i++) {
-    UsbDciCancelAll(i);
-    UsbDciCancelAll(static_cast<uint8_t>(i | 0x80));
+  // Cancel requests on all endpoints that were allocated to functions.
+  // EP0 is managed directly by the controller driver and is reset in StopController().
+  // We avoid sweeping unallocated endpoints because controller drivers like dwc3 return
+  // ZX_ERR_INVALID_ARGS when CancelAll is called on endpoints that are not allocated.
+  for (uint8_t ep_address : endpoints_to_cancel) {
+    UsbDciCancelAll(ep_address);
   }
 
   // Register callback before requesting removal to ensure that even if
@@ -1846,14 +1841,38 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
     }
     case USB_RECIP_ENDPOINT: {
       uint8_t ep_addr = static_cast<uint8_t>(index);
-      if (ep_addr != 0 && configuration_ == 0) {
+      bool is_ep0 = (ep_addr == 0 || ep_addr == 0x80);
+      if (!is_ep0 && configuration_ == 0) {
         completer(zx::error(ZX_ERR_BAD_STATE));
         return;
       }
+      std::shared_ptr<UsbFunction> function;
+      if (!is_ep0) {
+        uint8_t ep_index = EpAddressToIndex(ep_addr);
+        if (ep_index >= std::size(endpoint_map_)) {
+          fdf::warn(
+              "CommonControl: USB_RECIP_ENDPOINT ep index {} out of range (max {}) (raw index: {})",
+              ep_index, std::size(endpoint_map_), index);
+          completer(zx::error(ZX_ERR_INVALID_ARGS));
+          return;
+        }
+        fbl::AutoLock lock(&lock_);
+        auto function_index = endpoint_map_[ep_index];
+        if (!function_index.has_value()) {
+          fdf::warn("CommonControl: USB_RECIP_ENDPOINT ep index {} not allocated (raw index: {})",
+                    ep_index, index);
+          completer(zx::error(ZX_ERR_NOT_FOUND));
+          return;
+        }
+        if (function_index.value() < functions_.size()) {
+          function = functions_[function_index.value()];
+        }
+      }
+
       if (request_type == (USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
           request == USB_REQ_GET_STATUS && length == 2) {
         uint16_t status = 0;
-        if (ep_addr != 0) {
+        if (!is_ep0) {
           fbl::AutoLock _(&lock_);
           if (stalled_eps_.contains(ep_addr)) {
             status = 1;
@@ -1866,7 +1885,7 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       }
       if (request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
           request == USB_REQ_SET_FEATURE && value == USB_ENDPOINT_HALT && length == 0) {
-        if (ep_addr != 0) {
+        if (!is_ep0) {
           UsbDciCancelAll(ep_addr);
           UsbDciEndpointSetStall(ep_addr);
         }
@@ -1875,37 +1894,13 @@ void UsbPeripheral::CommonControl(const fdescriptor::wire::UsbSetup& setup,
       }
       if (request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT) &&
           request == USB_REQ_CLEAR_FEATURE && value == USB_ENDPOINT_HALT && length == 0) {
-        if (ep_addr != 0) {
+        if (!is_ep0) {
           UsbDciEndpointClearStall(ep_addr);
         }
         completer(zx::ok(std::vector<uint8_t>()));
         return;
       }
       // delegate to the function driver for the endpoint
-      uint8_t ep_index = EpAddressToIndex(ep_addr);
-      if (ep_index == 0 || ep_index >= USB_MAX_EPS) {
-        fdf::warn("CommonControl: USB_RECIP_ENDPOINT invalid ep index {} (raw index: {})", ep_index,
-                  index);
-        completer(zx::error(ZX_ERR_INVALID_ARGS));
-        return;
-      }
-      if (ep_index >= std::size(endpoint_map_)) {
-        fdf::warn(
-            "CommonControl: USB_RECIP_ENDPOINT ep index {} out of range (max {}) (raw index: {})",
-            ep_index, std::size(endpoint_map_), index);
-        completer(zx::error(ZX_ERR_OUT_OF_RANGE));
-        return;
-      }
-      std::shared_ptr<UsbFunction> function;
-      {
-        fbl::AutoLock lock(&lock_);
-        auto function_index = endpoint_map_[ep_index];
-        if (function_index.has_value()) {
-          if (function_index.value() < functions_.size()) {
-            function = functions_[function_index.value()];
-          }
-        }
-      }
       if (function) {
         completer(function->Control(setup, write_buffer));
         return;

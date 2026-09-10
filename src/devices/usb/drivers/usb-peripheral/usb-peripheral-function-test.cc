@@ -1969,6 +1969,50 @@ TEST_F(UsbPeripheralFunctionTest, SetFeatureEndpointHaltCancelsAll) {
       dci().buffer(arena)->Control(halt_setup, fidl::VectorView<uint8_t>::FromExternal(unused));
   ASSERT_TRUE(res4.ok()) << res4.FormatDescription();
   ASSERT_OK(res4.value());
+
+  // Test SET_FEATURE ENDPOINT_HALT on an unallocated endpoint address rejects with error
+  // before invoking CancelAll or EndpointSetStall.
+  uint8_t unallocated_ep_addr = (ep_addr == 0x81) ? 0x82 : 0x81;
+  fdescriptor::wire::UsbSetup invalid_halt_setup = halt_setup;
+  invalid_halt_setup.w_index = unallocated_ep_addr;
+
+  auto res5 = dci().buffer(arena)->Control(invalid_halt_setup,
+                                           fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(res5.ok()) << res5.FormatDescription();
+  ASSERT_TRUE(res5->is_error());
+  EXPECT_STATUS(res5->error_value(), ZX_ERR_NOT_FOUND);
+}
+
+// Test that CompleteFunctionsTeardown() cancels all allocated endpoints without
+// sweeping unallocated endpoints.
+TEST_F(UsbPeripheralFunctionTest, ClearFunctionsCancelsOnlyAllocatedEndpoints) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  fidl::Arena arena;
+  zx::result<uint8_t> configure_result = ConfigureDefaultFunction(function_client, arena);
+  ASSERT_OK(configure_result);
+  uint8_t ep_addr = configure_result.value();
+
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { env.dci().clear_cancelled_endpoints(); });
+
+  auto peripheral_client = ConnectPeripheral();
+  ASSERT_OK(peripheral_client);
+
+  auto clear_res = peripheral_client.value()->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+
+  dut().runtime().RunUntilIdle();
+  ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+
+  dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
+    auto cancelled = env.dci().cancelled_endpoints();
+    // Only allocated function endpoints should be canceled; EP0 is reset in StopController().
+    EXPECT_THAT(cancelled, testing::ElementsAre(ep_addr));
+  });
 }
 
 TEST_F(UsbPeripheralFunctionTest, RejectConfigureWhileStopping) {
@@ -2135,6 +2179,163 @@ TEST_F(UsbPeripheralFunctionTest, FunctionUnbindDuringDeconfigureSucceedsCleanly
 
   dut().runtime().RunUntilIdle();
   ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
+}
+
+TEST_F(UsbPeripheralFunctionTest, EndpointRecipientControlRequestsHandling) {
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  fidl::Arena arena;
+  auto endpoints = fidl::VectorView<ffunction::wire::EndpointResource>(arena, 1);
+  auto ep_endpoints = fidl::Endpoints<fendpoint::Endpoint>::Create();
+  endpoints[0].direction = fdescriptor::wire::EndpointDirection::kIn;
+  endpoints[0].ep_info = BulkEpInfo(arena);
+  endpoints[0].max_packet_size = 512;
+  endpoints[0].endpoint = std::move(ep_endpoints.server);
+
+  fidl::WireResult alloc_res = function_client->AllocResources(1, endpoints, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_TRUE(alloc_res->is_ok()) << zx_status_get_string(alloc_res->error_value());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
+  uint8_t allocated_ep = alloc_res->value()->endpoint_addrs[0];
+
+  usb_interface_descriptor_t intf_desc = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_interface_number = interface_num,
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 1,
+      .b_interface_class = 8,
+      .b_interface_sub_class = 6,
+      .b_interface_protocol = 80,
+      .i_interface = 0,
+  };
+
+  std::vector<uint8_t> descriptors(sizeof(intf_desc));
+  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
+
+  fidl::WireResult configure_res = function_client->Configure(
+      fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+      std::move(fake_function_endpoint));
+  ASSERT_TRUE(configure_res.ok()) << configure_res.FormatDescription();
+  ASSERT_OK(configure_res.value());
+
+  ExpectControllerStarted(true);
+  ASSERT_OK(dci()->SetConnected(true).status());
+
+  std::vector<uint8_t> unused;
+
+  // Set configuration 1 to move device out of unconfigured state.
+  fdescriptor::wire::UsbSetup setup = {
+      .bm_request_type = USB_DIR_OUT | USB_RECIP_DEVICE | USB_TYPE_STANDARD,
+      .b_request = USB_REQ_SET_CONFIGURATION,
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  fidl::WireUnownedResult config_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(config_res.ok()) << config_res.FormatDescription();
+  ASSERT_OK(config_res.value());
+
+  // 1. GET_STATUS on EP0 OUT (0x00) should succeed and return status 0.
+  setup = {
+      .bm_request_type = USB_DIR_IN | USB_RECIP_ENDPOINT | USB_TYPE_STANDARD,
+      .b_request = USB_REQ_GET_STATUS,
+      .w_value = 0,
+      .w_index = 0x00,
+      .w_length = 2,
+  };
+  auto ep0_out_status_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(ep0_out_status_res.ok()) << ep0_out_status_res.FormatDescription();
+  ASSERT_OK(ep0_out_status_res.value());
+  ASSERT_EQ(ep0_out_status_res.value()->read.size(), 2u);
+  EXPECT_EQ(ep0_out_status_res.value()->read[0], 0);
+  EXPECT_EQ(ep0_out_status_res.value()->read[1], 0);
+
+  // 2. GET_STATUS on EP0 IN (0x80) should succeed and return status 0 (not ZX_ERR_NOT_FOUND).
+  setup.w_index = 0x80;
+  auto ep0_in_status_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(ep0_in_status_res.ok()) << ep0_in_status_res.FormatDescription();
+  ASSERT_OK(ep0_in_status_res.value());
+  ASSERT_EQ(ep0_in_status_res.value()->read.size(), 2u);
+  EXPECT_EQ(ep0_in_status_res.value()->read[0], 0);
+  EXPECT_EQ(ep0_in_status_res.value()->read[1], 0);
+
+  // 3. SET_FEATURE(ENDPOINT_HALT) on unallocated endpoint (e.g. 0x02) should return
+  // ZX_ERR_NOT_FOUND without invoking UsbDciCancelAll or UsbDciEndpointSetStall.
+  setup = {
+      .bm_request_type = USB_DIR_OUT | USB_RECIP_ENDPOINT | USB_TYPE_STANDARD,
+      .b_request = USB_REQ_SET_FEATURE,
+      .w_value = USB_ENDPOINT_HALT,
+      .w_index = 0x02,
+      .w_length = 0,
+  };
+  auto unalloc_set_feature_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(unalloc_set_feature_res.ok()) << unalloc_set_feature_res.FormatDescription();
+  ASSERT_TRUE(unalloc_set_feature_res.value().is_error());
+  EXPECT_EQ(unalloc_set_feature_res.value().error_value(), ZX_ERR_NOT_FOUND);
+
+  // 4. SET_FEATURE(ENDPOINT_HALT) on allocated endpoint should succeed.
+  setup.w_index = allocated_ep;
+  auto alloc_set_feature_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(alloc_set_feature_res.ok()) << alloc_set_feature_res.FormatDescription();
+  ASSERT_OK(alloc_set_feature_res.value());
+
+  // Verify GET_STATUS on allocated endpoint reports halted (status == 1).
+  setup = {
+      .bm_request_type = USB_DIR_IN | USB_RECIP_ENDPOINT | USB_TYPE_STANDARD,
+      .b_request = USB_REQ_GET_STATUS,
+      .w_value = 0,
+      .w_index = allocated_ep,
+      .w_length = 2,
+  };
+  auto alloc_status_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(alloc_status_res.ok()) << alloc_status_res.FormatDescription();
+  ASSERT_OK(alloc_status_res.value());
+  ASSERT_EQ(alloc_status_res.value()->read.size(), 2u);
+  EXPECT_EQ(alloc_status_res.value()->read[0], 1);
+  EXPECT_EQ(alloc_status_res.value()->read[1], 0);
+
+  // 5. CLEAR_FEATURE(ENDPOINT_HALT) on allocated endpoint should succeed.
+  setup = {
+      .bm_request_type = USB_DIR_OUT | USB_RECIP_ENDPOINT | USB_TYPE_STANDARD,
+      .b_request = USB_REQ_CLEAR_FEATURE,
+      .w_value = USB_ENDPOINT_HALT,
+      .w_index = allocated_ep,
+      .w_length = 0,
+  };
+  auto alloc_clear_feature_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(alloc_clear_feature_res.ok()) << alloc_clear_feature_res.FormatDescription();
+  ASSERT_OK(alloc_clear_feature_res.value());
+
+  // Verify GET_STATUS on allocated endpoint reports cleared (status == 0).
+  setup = {
+      .bm_request_type = USB_DIR_IN | USB_RECIP_ENDPOINT | USB_TYPE_STANDARD,
+      .b_request = USB_REQ_GET_STATUS,
+      .w_value = 0,
+      .w_index = allocated_ep,
+      .w_length = 2,
+  };
+  alloc_status_res =
+      dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+  ASSERT_TRUE(alloc_status_res.ok()) << alloc_status_res.FormatDescription();
+  ASSERT_OK(alloc_status_res.value());
+  ASSERT_EQ(alloc_status_res.value()->read.size(), 2u);
+  EXPECT_EQ(alloc_status_res.value()->read[0], 0);
+  EXPECT_EQ(alloc_status_res.value()->read[1], 0);
 }
 
 }  // namespace

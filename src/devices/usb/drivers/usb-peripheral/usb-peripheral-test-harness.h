@@ -209,6 +209,10 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   }
 
   void CancelAll(CancelAllRequestView req, CancelAllCompleter::Sync& completer) override {
+    {
+      std::lock_guard lock(lock_);
+      cancelled_endpoints_.push_back(req->ep_address);
+    }
     if (zx_status_t status = fail_cancel_all_status_.load(); status != ZX_OK) {
       completer.ReplyError(status);
       return;
@@ -384,6 +388,14 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
     std::lock_guard lock(lock_);
     return clear_stalls_;
   }
+  std::vector<uint8_t> cancelled_endpoints() const {
+    std::lock_guard lock(lock_);
+    return cancelled_endpoints_;
+  }
+  void clear_cancelled_endpoints() {
+    std::lock_guard lock(lock_);
+    cancelled_endpoints_.clear();
+  }
 
   std::atomic<bool> fail_already_bound_{false};
   std::atomic<bool> fail_stall_{false};
@@ -412,6 +424,7 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   std::map<uint8_t, fidl::ServerEnd<fendpoint::Endpoint>> endpoints_;
   std::vector<uint8_t> set_stalls_;
   std::vector<uint8_t> clear_stalls_;
+  std::vector<uint8_t> cancelled_endpoints_;
   std::vector<fdescriptor::wire::UsbEndpointDescriptor> configured_endpoints_;
   std::vector<fdescriptor::wire::UsbSsEpCompDescriptor> configured_endpoints_ss_companion_;
   std::vector<uint8_t> disabled_endpoints_;
