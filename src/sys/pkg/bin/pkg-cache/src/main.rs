@@ -14,6 +14,7 @@ use cobalt_sw_delivery_registry as metrics;
 use fidl::endpoints::{DiscoverableProtocolMarker as _, ServerEnd};
 use fidl_contrib::ProtocolConnector;
 use fidl_contrib::protocol_connector::ConnectedProtocol;
+use fidl_fuchsia_component_resolution as fcomponent_resolution;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_metrics::{
     MetricEvent, MetricEventLoggerFactoryMarker, MetricEventLoggerProxy, ProjectSpec,
@@ -360,27 +361,26 @@ async fn main_inner() -> Result<(), Error> {
             .context("adding fuchsia.pkg/PackageResolver to /svc")?;
     }
     {
-        let base_index = Arc::clone(&base_index);
-        let authenticator = authenticator.clone();
-        let open_packages = open_packages.clone();
+        let base_package_resolver = Arc::new(base_resolver::package::BaseResolver::new(
+            Arc::clone(&base_index),
+            authenticator.clone(),
+            open_packages.clone(),
+        ));
         let scope = scope.clone();
         let () = svc_dir
             .add_entry(
-                fidl_fuchsia_component_resolution::ResolverMarker::PROTOCOL_NAME,
-                vfs::service::host(
-                    move |stream: fidl_fuchsia_component_resolution::ResolverRequestStream| {
-                        base_resolver::component::serve_request_stream(
-                            stream,
-                            Arc::clone(&base_index),
-                            authenticator.clone(),
-                            open_packages.clone(),
-                            scope.clone(),
-                        )
-                        .unwrap_or_else(|e: anyhow::Error| {
-                            error!("serving fuchsia.component.resolution/Resolver: {e:#}")
-                        })
-                    },
-                ),
+                fcomponent_resolution::ResolverMarker::PROTOCOL_NAME,
+                vfs::service::host(move |stream: fcomponent_resolution::ResolverRequestStream| {
+                    base_resolver::component::serve_request_stream(
+                        stream,
+                        Arc::clone(&base_package_resolver),
+                        scope.clone(),
+                        "base component resolver",
+                    )
+                    .unwrap_or_else(|e: anyhow::Error| {
+                        error!("serving fuchsia.component.resolution/Resolver: {e:#}")
+                    })
+                }),
             )
             .context("adding fuchsia.component.resolution/Resolver to /svc")?;
     }
@@ -439,6 +439,7 @@ async fn main_inner() -> Result<(), Error> {
     {
         let base_index = Arc::clone(&base_index);
         let upgradable_packages = upgradable_packages.clone();
+        let tuf_authority = tuf_authority.clone();
         let cache_index = Arc::clone(&cache_index);
         let package_fetcher = package_fetcher.clone();
         let authenticator = authenticator.clone();
@@ -466,6 +467,35 @@ async fn main_inner() -> Result<(), Error> {
                 }),
             )
             .context("adding fuchsia.pkg/PackageResolver-full to /svc")?;
+    }
+    {
+        let full_package_resolver = Arc::new(full_resolver::package::FullResolver::new(
+            base_index.clone(),
+            upgradable_packages,
+            tuf_authority.clone(),
+            cache_index.clone(),
+            package_fetcher.clone(),
+            authenticator.clone(),
+            open_packages.clone(),
+            executability_restrictions,
+        ));
+        let scope = scope.clone();
+        let () = svc_dir
+            .add_entry(
+                format!("{}-full", fcomponent_resolution::ResolverMarker::PROTOCOL_NAME),
+                vfs::service::host(move |stream: fcomponent_resolution::ResolverRequestStream| {
+                    base_resolver::component::serve_request_stream(
+                        stream,
+                        full_package_resolver.clone(),
+                        scope.clone(),
+                        "full component resolver",
+                    )
+                    .unwrap_or_else(|e: anyhow::Error| {
+                        error!("serving fuchsia.component.resolution/Resolver-full: {e:#}")
+                    })
+                }),
+            )
+            .context("adding fuchsia.component.resolution/Resolver-full to /svc")?;
     }
 
     let base_package_entry = |name: &'static str| {

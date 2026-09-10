@@ -13,6 +13,63 @@ use std::sync::Arc;
 
 const FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::PERM_EXECUTABLE);
 
+/// The package resolver implementation used by the base component resolver.
+pub(crate) struct BaseResolver {
+    base_index: Arc<crate::BaseIndex>,
+    authenticator: context_authenticator::ContextAuthenticator,
+    open_packages: crate::RootDirCache,
+}
+
+impl BaseResolver {
+    pub(crate) fn new(
+        base_index: Arc<crate::BaseIndex>,
+        authenticator: context_authenticator::ContextAuthenticator,
+        open_packages: crate::RootDirCache,
+    ) -> Self {
+        Self { base_index, authenticator, open_packages }
+    }
+}
+
+impl super::component::PackageResolver for BaseResolver {
+    type Error = Error;
+
+    async fn resolve_and_serve(
+        &self,
+        url: &fuchsia_url::fuchsia_pkg::AbsolutePackageUrl,
+        dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+        scope: package_directory::ExecutionScope,
+    ) -> Result<fpkg::ResolutionContext, Error> {
+        resolve_and_serve(
+            url,
+            dir,
+            &self.base_index,
+            self.authenticator.clone(),
+            &self.open_packages,
+            scope,
+        )
+        .await
+    }
+
+    async fn resolve_with_context_and_serve(
+        &self,
+        url: &fuchsia_url::fuchsia_pkg::PackageUrl,
+        context: fpkg::ResolutionContext,
+        dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+        scope: package_directory::ExecutionScope,
+    ) -> Result<fpkg::ResolutionContext, Error> {
+        resolve_with_context_and_serve(
+            url,
+            context,
+            dir,
+            &self.base_index,
+            self.authenticator.clone(),
+            &self.open_packages,
+            scope,
+        )
+        .await
+    }
+}
+
 pub(crate) async fn serve_request_stream(
     mut stream: fpkg::PackageResolverRequestStream,
     base_index: Arc<crate::BaseIndex>,
@@ -20,12 +77,10 @@ pub(crate) async fn serve_request_stream(
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
 ) -> anyhow::Result<()> {
-    while let Some(request) =
-        stream.try_next().await.context("failed to read request from FIDL stream")?
-    {
+    while let Some(request) = stream.try_next().await.context("failed to read request")? {
         match request {
             fpkg::PackageResolverRequest::Resolve { package_url, dir, responder } => {
-                match resolve_unparsed(
+                let () = match resolve_unparsed_and_serve(
                     &package_url,
                     dir,
                     &base_index,
@@ -54,7 +109,7 @@ pub(crate) async fn serve_request_stream(
                 dir,
                 responder,
             } => {
-                match resolve_with_context_unparsed(
+                let () = match resolve_with_context_unparsed_and_serve(
                     &package_url,
                     context,
                     dir,
@@ -92,8 +147,8 @@ pub(crate) async fn serve_request_stream(
     Ok(())
 }
 
-async fn resolve_with_context_unparsed(
-    package_url: &str,
+async fn resolve_with_context_unparsed_and_serve(
+    url: &str,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
     base_index: &crate::BaseIndex,
@@ -101,8 +156,8 @@ async fn resolve_with_context_unparsed(
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
 ) -> Result<fpkg::ResolutionContext, Error> {
-    resolve_with_context(
-        &PackageUrl::parse(package_url)?,
+    resolve_with_context_and_serve(
+        &PackageUrl::parse(url)?,
         context,
         dir,
         base_index,
@@ -113,8 +168,8 @@ async fn resolve_with_context_unparsed(
     .await
 }
 
-pub(super) async fn resolve_with_context(
-    package_url: &PackageUrl,
+async fn resolve_with_context_and_serve(
+    url: &PackageUrl,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
     base_index: &crate::BaseIndex,
@@ -122,7 +177,7 @@ pub(super) async fn resolve_with_context(
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
 ) -> Result<fpkg::ResolutionContext, Error> {
-    let root_dir = match package_url {
+    let root_dir = match url {
         PackageUrl::Absolute(url) => {
             if !context.bytes.is_empty() {
                 return Err(Error::ContextWithAbsoluteUrl);
@@ -138,7 +193,7 @@ pub(super) async fn resolve_with_context(
     Ok(authenticator.create(&hash))
 }
 
-async fn resolve_unparsed(
+async fn resolve_unparsed_and_serve(
     url: &str,
     dir: ServerEnd<fio::DirectoryMarker>,
     base_index: &crate::BaseIndex,
@@ -149,7 +204,7 @@ async fn resolve_unparsed(
     resolve_and_serve(&url.parse()?, dir, base_index, authenticator, open_packages, scope).await
 }
 
-pub(super) async fn resolve_and_serve(
+async fn resolve_and_serve(
     url: &AbsolutePackageUrl,
     dir: ServerEnd<fio::DirectoryMarker>,
     base_index: &crate::BaseIndex,
@@ -213,20 +268,20 @@ pub(crate) fn lookup(
 }
 
 async fn resolve_subpackage(
-    package_url: &fuchsia_url::RelativePackageUrl,
+    url: &fuchsia_url::RelativePackageUrl,
     context: fpkg::ResolutionContext,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
 ) -> Result<Arc<crate::root_dir::RootDir>, Error> {
     let super_hash = authenticator.authenticate(context)?;
     let super_package = open_packages.get(&super_hash).ok_or_else(|| {
-        Error::SuperpackageNotOpen { superpackage: super_hash, subpackage: package_url.clone() }
+        Error::SuperpackageNotOpen { superpackage: super_hash, subpackage: url.clone() }
     })?;
     let subpackage = *super_package
         .subpackages()
         .await?
         .subpackages()
-        .get(package_url)
+        .get(url)
         .ok_or_else(|| Error::SubpackageNotFound)?;
     open_packages.get_or_insert(subpackage, None).await.map_err(Error::CreatePackageDirectory)
 }
@@ -322,7 +377,7 @@ mod tests {
     #[fuchsia::test]
     async fn resolve_rejects_pinned_url_that_does_not_match_base_package_hash() {
         assert_matches!(
-            resolve_unparsed(
+            resolve_unparsed_and_serve(
                 "fuchsia-pkg://fuchsia.test/name?\
                     hash=1111111111111111111111111111111111111111111111111111111111111111",
                 fidl::endpoints::create_endpoints().1,
@@ -348,7 +403,7 @@ mod tests {
         let open_packages = crate::root_dir::new_test(blobfs.client()).await.1;
         let (proxy, server) = fidl::endpoints::create_proxy();
 
-        let _: fpkg::ResolutionContext = resolve_unparsed(
+        let _: fpkg::ResolutionContext = resolve_unparsed_and_serve(
             "fuchsia-pkg://fuchsia.test/name/0",
             server,
             &crate::BaseIndex::new_test_only(
@@ -376,7 +431,7 @@ mod tests {
         let open_packages = crate::root_dir::new_test(blobfs.client()).await.1;
         let (proxy, server) = fidl::endpoints::create_proxy();
 
-        let _: fpkg::ResolutionContext = resolve_unparsed(
+        let _: fpkg::ResolutionContext = resolve_unparsed_and_serve(
             &format!("fuchsia-pkg://fuchsia.test/name?hash={}", pkg.hash()),
             server,
             &crate::BaseIndex::new_test_only(
@@ -399,7 +454,7 @@ mod tests {
     #[fuchsia::test]
     async fn resolve_does_not_clear_non_zero_variant() {
         assert_matches!(
-            resolve_unparsed(
+            resolve_unparsed_and_serve(
                 "fuchsia-pkg://fuchsia.test/name/1",
                 fidl::endpoints::create_proxy().1,
                 &crate::BaseIndex::new_test_only(

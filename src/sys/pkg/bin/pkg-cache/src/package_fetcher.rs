@@ -278,3 +278,43 @@ fn fetch_to_resolve_err(err: &crate::blob_fetcher::FetchError) -> fpkg::ResolveE
         }
     }
 }
+
+impl From<&Error> for fidl_fuchsia_component_resolution::ResolverError {
+    fn from(err: &Error) -> Self {
+        use Error::*;
+        use fidl_fuchsia_component_resolution::ResolverError as Err;
+        match err {
+            BlobPush(_) => Err::Internal,
+            BlobFetch(e) => fetch_to_component_resolve_err(e),
+            CreatingRootDir { .. } => Err::Io,
+            ReadingSubpackages { .. } => Err::Io,
+            ProtectBlobs(_) => Err::Internal,
+            CreatingTrackedRootDir(_) => Err::Io,
+            ClearWritingIndex(_) => Err::Internal,
+            FetchAndClearFailed { source, .. } => (&**source).into(),
+            PushQueue(_) => Err::Internal,
+        }
+    }
+}
+
+fn fetch_to_component_resolve_err(
+    err: &crate::blob_fetcher::FetchError,
+) -> fidl_fuchsia_component_resolution::ResolverError {
+    use crate::blob_fetcher::FetchError::*;
+    use fidl_fuchsia_component_resolution::ResolverError as Err;
+    match err {
+        CreateBlob { .. } => Err::Io,
+        BlobUrl { .. } => Err::Internal,
+        DownloadBlobFidl { .. } => Err::Internal,
+        DownloadBlob(e) => {
+            use fidl_fuchsia_pkg_http::ClientDownloadBlobError::*;
+            match e {
+                NoSpace => Err::NoSpace,
+                Network => Err::Io,
+                NotFound => Err::ResourceUnavailable,
+                NetworkRateLimit => Err::Io,
+                Other => Err::Io,
+            }
+        }
+    }
+}

@@ -14,6 +14,7 @@
         {
             protocol: [
                 "fuchsia.component.resolution.Resolver",
+                "fuchsia.component.resolution.Resolver-full",
                 "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.PackageCache",
                 "fuchsia.pkg.PackageResolver",
@@ -175,6 +176,7 @@
         {
             protocol: [
                 "fuchsia.component.resolution.Resolver",
+                "fuchsia.component.resolution.Resolver-full",
                 "fuchsia.pkg.garbagecollector.Manager",
                 "fuchsia.pkg.PackageCache",
                 "fuchsia.pkg.PackageResolver",

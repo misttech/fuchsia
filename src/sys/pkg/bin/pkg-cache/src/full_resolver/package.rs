@@ -2,6 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! Used to resolve most non-OTA packages on products that support ephemeral resolution.
+//! * always uses open package tracking
+//! * has a hard-coded priority of authorities (url to hash mappings):
+//!   1. base index
+//!   2. upgradable packages
+//!   3. eager packages
+//!   4. the remote TUF repositories managed by pkg-resolver
+//!   5. the cache index in case of certain TUF errors
+
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::{Context as _, anyhow};
 use fidl::endpoints::ServerEnd;
@@ -18,14 +27,92 @@ const SLOW_CACHE_FALLBACK_WARN_DURATION: zx::MonotonicDuration =
 const SLOW_CACHE_FALLBACK_WARN_SQUELCH_DURATION: zx::MonotonicDuration =
     zx::MonotonicDuration::from_minutes(10);
 
-/// Used to resolve most non-OTA packages on products that support ephemeral resolution.
-/// * always uses open package tracking
-/// * has a hard-coded priority of authorities (url to hash mappings):
-///   1. base index
-///   2. upgradable packages
-///   3. eager packages
-///   4. the remote TUF repositories managed by pkg-resolver
-///   5. the cache index in case of certain TUF errors
+/// The package resolver implementation used by the full component resolver.
+pub(crate) struct FullResolver {
+    base_index: Arc<crate::BaseIndex>,
+    upgradable_packages: Option<Arc<UpgradablePackages>>,
+    tuf_authority: fpkg::AuthorityProxy,
+    cache_index: Arc<crate::CacheIndex>,
+    package_fetcher: crate::package_fetcher::PackageFetcher,
+    authenticator: context_authenticator::ContextAuthenticator,
+    open_packages: crate::RootDirCache,
+    executability_restrictions: system_image::ExecutabilityRestrictions,
+}
+
+impl FullResolver {
+    pub(crate) fn new(
+        base_index: Arc<crate::BaseIndex>,
+        upgradable_packages: Option<Arc<UpgradablePackages>>,
+        tuf_authority: fpkg::AuthorityProxy,
+        cache_index: Arc<crate::CacheIndex>,
+        package_fetcher: crate::package_fetcher::PackageFetcher,
+        authenticator: context_authenticator::ContextAuthenticator,
+        open_packages: crate::RootDirCache,
+        executability_restrictions: system_image::ExecutabilityRestrictions,
+    ) -> Self {
+        Self {
+            base_index,
+            upgradable_packages,
+            tuf_authority,
+            cache_index,
+            package_fetcher,
+            authenticator,
+            open_packages,
+            executability_restrictions,
+        }
+    }
+}
+
+impl crate::base_resolver::component::PackageResolver for FullResolver {
+    type Error = Error;
+
+    async fn resolve_and_serve(
+        &self,
+        url: &fuchsia_url::fuchsia_pkg::AbsolutePackageUrl,
+        dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+        scope: package_directory::ExecutionScope,
+    ) -> Result<fpkg::ResolutionContext, Error> {
+        resolve_and_serve(
+            url,
+            dir,
+            self.base_index.as_ref(),
+            self.upgradable_packages.as_deref(),
+            &self.tuf_authority,
+            self.cache_index.as_ref(),
+            &self.package_fetcher,
+            self.authenticator.clone(),
+            &self.open_packages,
+            self.executability_restrictions,
+            scope,
+        )
+        .await
+    }
+
+    async fn resolve_with_context_and_serve(
+        &self,
+        url: &fuchsia_url::fuchsia_pkg::PackageUrl,
+        context: fpkg::ResolutionContext,
+        dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+        scope: package_directory::ExecutionScope,
+    ) -> Result<fpkg::ResolutionContext, Error> {
+        resolve_with_context_and_serve(
+            url,
+            context,
+            dir,
+            &self.base_index,
+            self.upgradable_packages.as_deref(),
+            &self.tuf_authority,
+            self.cache_index.as_ref(),
+            &self.package_fetcher,
+            self.authenticator.clone(),
+            &self.open_packages,
+            self.executability_restrictions,
+            scope,
+        )
+        .await
+    }
+}
+
 pub(crate) async fn serve_request_stream(
     stream: fpkg::PackageResolverRequestStream,
     base_index: Arc<crate::BaseIndex>,
@@ -76,7 +163,7 @@ pub(crate) async fn serve_request_stream(
                     context,
                     dir,
                     responder,
-                } => match resolve_with_context_unparsed(
+                } => match resolve_with_context_unparsed_and_serve(
                     &package_url,
                     context,
                     dir,
@@ -134,7 +221,7 @@ pub(crate) async fn serve_request_stream(
         .await
 }
 
-async fn resolve_with_context_unparsed(
+async fn resolve_with_context_unparsed_and_serve(
     package_url: &str,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
@@ -148,7 +235,7 @@ async fn resolve_with_context_unparsed(
     executability_restrictions: system_image::ExecutabilityRestrictions,
     scope: package_directory::ExecutionScope,
 ) -> Result<fpkg::ResolutionContext, Error> {
-    resolve_with_context(
+    resolve_with_context_and_serve(
         &PackageUrl::parse(package_url).map_err(Error::InvalidUrl)?,
         context,
         dir,
@@ -165,7 +252,7 @@ async fn resolve_with_context_unparsed(
     .await
 }
 
-async fn resolve_with_context(
+async fn resolve_with_context_and_serve(
     package_url: &PackageUrl,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
@@ -218,8 +305,37 @@ async fn resolve_unparsed_and_serve(
     executability_restrictions: system_image::ExecutabilityRestrictions,
     scope: package_directory::ExecutionScope,
 ) -> Result<fpkg::ResolutionContext, Error> {
-    let root_dir = resolve(
+    resolve_and_serve(
         &url.parse().map_err(Error::InvalidUrl)?,
+        dir,
+        base_index,
+        upgradable_packages,
+        tuf_authority,
+        cache_index,
+        package_fetcher,
+        authenticator,
+        open_packages,
+        executability_restrictions,
+        scope,
+    )
+    .await
+}
+
+async fn resolve_and_serve(
+    url: &AbsolutePackageUrl,
+    dir: ServerEnd<fio::DirectoryMarker>,
+    base_index: &crate::BaseIndex,
+    upgradable_packages: Option<&UpgradablePackages>,
+    tuf_authority: &fpkg::AuthorityProxy,
+    cache_index: &crate::CacheIndex,
+    package_fetcher: &crate::package_fetcher::PackageFetcher,
+    authenticator: context_authenticator::ContextAuthenticator,
+    open_packages: &crate::RootDirCache,
+    executability_restrictions: system_image::ExecutabilityRestrictions,
+    scope: package_directory::ExecutionScope,
+) -> Result<fpkg::ResolutionContext, Error> {
+    let root_dir = resolve(
+        url,
         base_index,
         upgradable_packages,
         tuf_authority,
@@ -234,7 +350,7 @@ async fn resolve_unparsed_and_serve(
     Ok(authenticator.create(&hash))
 }
 
-pub(crate) async fn resolve(
+async fn resolve(
     url: &AbsolutePackageUrl,
     base_index: &crate::BaseIndex,
     upgradable_packages: Option<&UpgradablePackages>,
@@ -508,6 +624,44 @@ pub(crate) enum Error {
         source: package_directory::Error,
         subpackage: fuchsia_merkle::Hash,
     },
+}
+
+impl From<&Error> for fidl_fuchsia_component_resolution::ResolverError {
+    fn from(err: &Error) -> fidl_fuchsia_component_resolution::ResolverError {
+        use Error::*;
+        use fidl_fuchsia_component_resolution::ResolverError as Err;
+        match err {
+            InvalidUrl(_) => Err::InvalidArgs,
+            ContextWithAbsoluteUrl => Err::InvalidArgs,
+            BaseResolver(e) => e.into(),
+            PinnedUpgradablePackage => Err::InvalidArgs,
+            AuthorityFidl(_) => Err::Io,
+            Authority(e) => authority_to_component_resolve_err(e),
+            InvalidBlobDirUri(_) => Err::Internal,
+            CreatingRootDir { .. } => Err::Io,
+            PackageFetcher(source) => source.as_ref().into(),
+            ContextAuthenticator(_) => Err::InvalidArgs,
+            SuperpackageNotOpen { .. } => Err::Internal,
+            ReadingSubpackages(_) => Err::Io,
+            SubpackageNotFound { .. } => Err::PackageNotFound,
+            CreatingSubpackageRootDir { .. } => Err::Io,
+        }
+    }
+}
+
+fn authority_to_component_resolve_err(
+    e: &fpkg::AuthorityLookupError,
+) -> fidl_fuchsia_component_resolution::ResolverError {
+    use fidl_fuchsia_component_resolution::ResolverError as Err;
+    use fpkg::AuthorityLookupError::*;
+    match e {
+        InvalidUrl => Err::InvalidArgs,
+        PinnedUrlNotAllowed => Err::Internal,
+        RepositoryNotFound => Err::ResourceUnavailable,
+        PackageNotFound => Err::PackageNotFound,
+        UpstreamConnection => Err::Io,
+        Internal => Err::Internal,
+    }
 }
 
 impl From<&Error> for fpkg::ResolveError {

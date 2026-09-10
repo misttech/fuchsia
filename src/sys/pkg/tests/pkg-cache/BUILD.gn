@@ -12,6 +12,7 @@ rustc_test("driver") {
 
   deps = [
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//sdk/fidl/fuchsia.component.resolution:fuchsia.component.resolution_rust",
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
@@ -66,6 +67,7 @@ rustc_test("driver") {
     "src/cache_pkg_index.rs",
     "src/cobalt.rs",
     "src/executability_enforcement.rs",
+    "src/full_component_resolver.rs",
     "src/full_resolver.rs",
     "src/full_resolver_upgradable.rs",
     "src/get.rs",

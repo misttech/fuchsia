@@ -41,6 +41,7 @@ mod base_pkg_index;
 mod cache_pkg_index;
 mod cobalt;
 mod executability_enforcement;
+mod full_component_resolver;
 mod full_resolver;
 mod full_resolver_upgradable;
 mod get;
@@ -912,6 +913,10 @@ where
                         "{}-full",
                         fpkg::PackageResolverMarker::PROTOCOL_NAME
                     )))
+                    .capability(Capability::protocol_by_name(format!(
+                        "{}-full",
+                        fcomponent_resolution::ResolverMarker::PROTOCOL_NAME
+                    )))
                     .capability(Capability::protocol::<fpkg::PackageCacheMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedPackagesMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedBlobsMarker>())
@@ -929,47 +934,54 @@ where
 
         let realm_instance = builder.build().await.unwrap();
 
-        let proxies =
-            Proxies {
-                commit_status_provider: realm_instance
-                    .root
-                    .connect_to_protocol_at_exposed_dir()
-                    .expect("connect to commit status provider"),
-                space_manager: realm_instance
-                    .root
-                    .connect_to_protocol_at_exposed_dir()
-                    .expect("connect to space manager"),
-                package_cache: realm_instance
-                    .root
-                    .connect_to_protocol_at_exposed_dir()
-                    .expect("connect to package cache"),
-                retained_packages: realm_instance
-                    .root
-                    .connect_to_protocol_at_exposed_dir()
-                    .expect("connect to retained packages"),
-                retained_blobs: realm_instance
-                    .root
-                    .connect_to_protocol_at_exposed_dir()
-                    .expect("connect to retained blobs"),
-                ota_package_resolver: realm_instance
-                    .root
-                    .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(
-                        &format!("{}-ota", fpkg::PackageResolverMarker::PROTOCOL_NAME),
-                    )
-                    .expect("connect to OTA package resolver"),
-                full_package_resolver: realm_instance
-                    .root
-                    .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(
-                        &format!("{}-full", fpkg::PackageResolverMarker::PROTOCOL_NAME),
-                    )
-                    .expect("connect to full package resolver"),
-                pkgfs: fuchsia_fs::directory::open_directory_async(
-                    realm_instance.root.get_exposed_dir(),
-                    "pkgfs",
-                    fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+        let proxies = Proxies {
+            commit_status_provider: realm_instance
+                .root
+                .connect_to_protocol_at_exposed_dir()
+                .expect("connect to commit status provider"),
+            space_manager: realm_instance
+                .root
+                .connect_to_protocol_at_exposed_dir()
+                .expect("connect to space manager"),
+            package_cache: realm_instance
+                .root
+                .connect_to_protocol_at_exposed_dir()
+                .expect("connect to package cache"),
+            retained_packages: realm_instance
+                .root
+                .connect_to_protocol_at_exposed_dir()
+                .expect("connect to retained packages"),
+            retained_blobs: realm_instance
+                .root
+                .connect_to_protocol_at_exposed_dir()
+                .expect("connect to retained blobs"),
+            ota_package_resolver: realm_instance
+                .root
+                .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(&format!(
+                    "{}-ota",
+                    fpkg::PackageResolverMarker::PROTOCOL_NAME
+                ))
+                .expect("connect to OTA package resolver"),
+            full_package_resolver: realm_instance
+                .root
+                .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(&format!(
+                    "{}-full",
+                    fpkg::PackageResolverMarker::PROTOCOL_NAME
+                ))
+                .expect("connect to full package resolver"),
+            full_component_resolver: realm_instance
+                .root
+                .connect_to_named_protocol_at_exposed_dir::<fcomponent_resolution::ResolverMarker>(
+                    &format!("{}-full", fcomponent_resolution::ResolverMarker::PROTOCOL_NAME),
                 )
-                .expect("open pkgfs"),
-            };
+                .expect("connect to full component resolver"),
+            pkgfs: fuchsia_fs::directory::open_directory_async(
+                realm_instance.root.get_exposed_dir(),
+                "pkgfs",
+                fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+            )
+            .expect("open pkgfs"),
+        };
 
         TestEnv {
             apps: Apps { realm_instance },
@@ -994,6 +1006,7 @@ struct Proxies {
     retained_blobs: fpkg::RetainedBlobsProxy,
     ota_package_resolver: fpkg::PackageResolverProxy,
     full_package_resolver: fpkg::PackageResolverProxy,
+    full_component_resolver: fcomponent_resolution::ResolverProxy,
     pkgfs: fio::DirectoryProxy,
 }
 
@@ -1208,6 +1221,21 @@ impl<B: Blobfs> TestEnv<B> {
         let urls: Vec<_> =
             urls.into_iter().map(|url| fpkg::PackageUrl { url: url.to_string() }).collect();
         self.proxies.package_cache.set_upgradable_urls(&urls).await.unwrap()
+    }
+
+    pub async fn resolve_full_component(
+        &self,
+        url: &str,
+    ) -> Result<fcomponent_resolution::Component, fcomponent_resolution::ResolverError> {
+        self.proxies.full_component_resolver.resolve(url).await.unwrap()
+    }
+
+    pub async fn resolve_with_context_full_component(
+        &self,
+        url: &str,
+        context: &fcomponent_resolution::Context,
+    ) -> Result<fcomponent_resolution::Component, fcomponent_resolution::ResolverError> {
+        self.proxies.full_component_resolver.resolve_with_context(url, context).await.unwrap()
     }
 }
 

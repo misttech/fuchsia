@@ -8,45 +8,76 @@ use fidl_fuchsia_component_decl as fcomponent_decl;
 use fidl_fuchsia_component_resolution as fcomponent_resolution;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg as fpkg;
-use fuchsia_url::fuchsia_pkg::{ComponentUrl, PackageUrl};
+use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, ComponentUrl, PackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::{error, warn};
 use std::sync::Arc;
 use version_history::AbiRevision;
 
+/// Abstracts package resolution from the component resolution process.
+/// Component resolution is just package resolution plus copying some data out of the package into
+/// the structure returned by the component resolution FIDL, so by abstracting package resolution
+/// we can reuse the following component resolution FIDL serving code with each component resolver.
+pub(crate) trait PackageResolver {
+    type Error: ToFidlError + std::error::Error + Send + Sync + 'static;
+
+    async fn resolve_and_serve(
+        &self,
+        url: &AbsolutePackageUrl,
+        dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+        scope: package_directory::ExecutionScope,
+    ) -> Result<fpkg::ResolutionContext, Self::Error>;
+
+    async fn resolve_with_context_and_serve(
+        &self,
+        url: &PackageUrl,
+        context: fpkg::ResolutionContext,
+        dir: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+        scope: package_directory::ExecutionScope,
+    ) -> Result<fpkg::ResolutionContext, Self::Error>;
+}
+
+/// This is just `impl Into<fcomponent_resolution::ResolverError> for &Self`, except the bound can
+/// be placed on the error type item in the `PackageResolver` trait. Possibly this can be replaced
+/// with higher rank bounds somehow.
+pub(crate) trait ToFidlError {
+    fn to_fidl_error(&self) -> fcomponent_resolution::ResolverError;
+}
+
+impl<T> ToFidlError for T
+where
+    for<'a> &'a T: Into<fcomponent_resolution::ResolverError>,
+{
+    fn to_fidl_error(&self) -> fcomponent_resolution::ResolverError {
+        self.into()
+    }
+}
+
 pub(crate) async fn serve_request_stream(
     mut stream: fcomponent_resolution::ResolverRequestStream,
-    base_index: Arc<crate::BaseIndex>,
-    authenticator: context_authenticator::ContextAuthenticator,
-    open_packages: crate::RootDirCache,
+    package_resolver: Arc<impl PackageResolver>,
     scope: package_directory::ExecutionScope,
+    log_tag: &'static str,
 ) -> anyhow::Result<()> {
     while let Some(request) =
-        stream.try_next().await.context("failed to read request from FIDL stream")?
+        stream.try_next().await.with_context(|| format!("{log_tag} failed to read request"))?
     {
         match request {
             fcomponent_resolution::ResolverRequest::Resolve { component_url, responder } => {
                 let () = responder
                     .send(
-                        resolve(
-                            &component_url,
-                            &base_index,
-                            authenticator.clone(),
-                            &open_packages,
-                            scope.clone(),
-                        )
-                        .await
-                        .map_err(|e| {
-                            let fidl_err = (&e).into();
-                            error!(
-                                "base component resolver failed to resolve {}: {:#}",
-                                component_url,
-                                anyhow::anyhow!(e)
-                            );
-                            fidl_err
-                        }),
+                        resolve(&component_url, package_resolver.as_ref(), scope.clone())
+                            .await
+                            .map_err(|e| {
+                                let fidl_err = (&e).into();
+                                error!(
+                                    "{log_tag} failed to resolve {component_url}: {:#}",
+                                    anyhow::anyhow!(e)
+                                );
+                                fidl_err
+                            }),
                     )
-                    .context("sending fuchsia.component.resolution/Resolver.Resolve response")?;
+                    .with_context(|| format!("{log_tag} sending Resolve response"))?;
             }
             fcomponent_resolution::ResolverRequest::ResolveWithContext {
                 component_url,
@@ -58,28 +89,23 @@ pub(crate) async fn serve_request_stream(
                         resolve_with_context(
                             &component_url,
                             context,
-                            &base_index,
-                            authenticator.clone(),
-                            &open_packages,
+                            package_resolver.as_ref(),
                             scope.clone(),
                         )
                         .await
                         .map_err(|e| {
                             let fidl_err = (&e).into();
                             error!(
-                                "base component resolver failed to resolve with context {}: {:#}",
-                                component_url,
+                                "{log_tag} failed to resolve with context {component_url}: {:#}",
                                 anyhow::anyhow!(e)
                             );
                             fidl_err
                         }),
                     )
-                    .context(
-                        "sending fuchsia.component.resolution/Resolver.ResolveWithContext response",
-                    )?;
+                    .with_context(|| format!("{log_tag} sending ResolveWithContext response"))?;
             }
             fcomponent_resolution::ResolverRequest::_UnknownMethod { ordinal, .. } => {
-                warn!(ordinal:%; "Unknown Resolver request");
+                warn!(ordinal:%; "{log_tag} received unknown Resolver request")
             }
         }
     }
@@ -88,26 +114,22 @@ pub(crate) async fn serve_request_stream(
 
 async fn resolve(
     url: &str,
-    base_index: &crate::BaseIndex,
-    authenticator: context_authenticator::ContextAuthenticator,
-    open_packages: &crate::RootDirCache,
+    package_resolver: &impl PackageResolver,
     scope: package_directory::ExecutionScope,
 ) -> Result<fcomponent_resolution::Component, Error> {
-    let url = ComponentUrl::parse(url)?;
+    let url = ComponentUrl::parse(url).map_err(Error::InvalidUrl)?;
     let (package, server_end) = fidl::endpoints::create_proxy();
-    let context = super::package::resolve_and_serve(
-        match url.package_url() {
-            PackageUrl::Absolute(url) => url,
-            PackageUrl::Relative(_) => Err(Error::AbsoluteUrlRequired)?,
-        },
-        server_end,
-        base_index,
-        authenticator,
-        open_packages,
-        scope,
-    )
-    .await
-    .map_err(Error::PackageResolve)?;
+    let context = package_resolver
+        .resolve_and_serve(
+            match url.package_url() {
+                PackageUrl::Absolute(url) => url,
+                PackageUrl::Relative(_) => Err(Error::AbsoluteUrlRequired)?,
+            },
+            server_end,
+            scope,
+        )
+        .await
+        .map_err(|e| Error::PackageResolve(e.to_fidl_error(), anyhow::anyhow!(e)))?;
     resolve_from_package(&url, package, fcomponent_resolution::Context { bytes: context.bytes })
         .await
 }
@@ -115,24 +137,20 @@ async fn resolve(
 async fn resolve_with_context(
     url: &str,
     context: fcomponent_resolution::Context,
-    base_index: &crate::BaseIndex,
-    authenticator: context_authenticator::ContextAuthenticator,
-    open_packages: &crate::RootDirCache,
+    package_resolver: &impl PackageResolver,
     scope: package_directory::ExecutionScope,
 ) -> Result<fcomponent_resolution::Component, Error> {
-    let url = ComponentUrl::parse(url)?;
+    let url = ComponentUrl::parse(url).map_err(Error::InvalidUrl)?;
     let (package, server_end) = fidl::endpoints::create_proxy();
-    let context = super::package::resolve_with_context(
-        url.package_url(),
-        fpkg::ResolutionContext { bytes: context.bytes },
-        server_end,
-        base_index,
-        authenticator,
-        open_packages,
-        scope,
-    )
-    .await
-    .map_err(Error::PackageResolve)?;
+    let context = package_resolver
+        .resolve_with_context_and_serve(
+            url.package_url(),
+            fpkg::ResolutionContext { bytes: context.bytes },
+            server_end,
+            scope,
+        )
+        .await
+        .map_err(|e| Error::PackageResolve(e.to_fidl_error(), anyhow::anyhow!(e)))?;
     resolve_from_package(&url, package, fcomponent_resolution::Context { bytes: context.bytes })
         .await
 }
@@ -199,7 +217,7 @@ async fn resolve_from_package(
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum Error {
     #[error("invalid URL")]
-    InvalidUrl(#[from] fuchsia_url::errors::ParseError),
+    InvalidUrl(#[source] fuchsia_url::errors::ParseError),
 
     #[error("component not found")]
     ComponentNotFound(#[source] mem_util::FileError),
@@ -214,7 +232,7 @@ pub(crate) enum Error {
     InvalidConfigSource,
 
     #[error("resolving the package")]
-    PackageResolve(#[source] super::package::Error),
+    PackageResolve(fcomponent_resolution::ResolverError, #[source] anyhow::Error),
 
     #[error("unsupported config source: {0:?}")]
     UnsupportedConfigSource(fcomponent_decl::ConfigValueSource),
@@ -224,12 +242,6 @@ pub(crate) enum Error {
 
     #[error("failed to read abi revision")]
     AbiRevision(#[source] fidl_fuchsia_component_abi_ext::AbiRevisionFileError),
-
-    #[error("failed to read the superpackage's subpackage manifest")]
-    ReadingSubpackageManifest(#[from] package_directory::SubpackagesError),
-
-    #[error("invalid context")]
-    InvalidContext(#[from] context_authenticator::ContextAuthenticatorError),
 
     #[error("resolve must be called with an absolute (not relative) url")]
     AbsoluteUrlRequired,
@@ -243,14 +255,14 @@ impl From<&Error> for fcomponent_resolution::ResolverError {
         use Error::*;
         use fcomponent_resolution::ResolverError as ferror;
         match err {
-            InvalidUrl(_) | InvalidContext(_) | AbsoluteUrlRequired => ferror::InvalidArgs,
+            InvalidUrl(_) | AbsoluteUrlRequired => ferror::InvalidArgs,
             ComponentNotFound(_) => ferror::ManifestNotFound,
-            PackageResolve(e) => e.into(),
+            PackageResolve(fidl, _) => *fidl,
             ConfigValuesNotFound(_) => ferror::ConfigValuesNotFound,
             ParsingManifest(_) | UnsupportedConfigSource(_) | InvalidConfigSource => {
                 ferror::InvalidManifest
             }
-            ReadManifest(_) | ReadingSubpackageManifest(_) => ferror::Io,
+            ReadManifest(_) => ferror::Io,
             ConvertProxyToChannel => ferror::Internal,
             AbiRevision(_) => ferror::InvalidAbiRevision,
         }
@@ -268,14 +280,44 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
 
+    #[derive(thiserror::Error, Debug)]
+    enum BrokenPackageResolverError {}
+    impl ToFidlError for BrokenPackageResolverError {
+        fn to_fidl_error(&self) -> fcomponent_resolution::ResolverError {
+            unimplemented!();
+        }
+    }
+
+    struct BrokenPackageResolver;
+    impl PackageResolver for BrokenPackageResolver {
+        type Error = BrokenPackageResolverError;
+
+        async fn resolve_and_serve(
+            &self,
+            _: &AbsolutePackageUrl,
+            _: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+            _: package_directory::ExecutionScope,
+        ) -> Result<fpkg::ResolutionContext, BrokenPackageResolverError> {
+            unimplemented!();
+        }
+
+        async fn resolve_with_context_and_serve(
+            &self,
+            _: &PackageUrl,
+            _: fpkg::ResolutionContext,
+            _: fidl::endpoints::ServerEnd<fio::DirectoryMarker>,
+            _: package_directory::ExecutionScope,
+        ) -> Result<fpkg::ResolutionContext, BrokenPackageResolverError> {
+            unimplemented!();
+        }
+    }
+
     #[fuchsia::test]
     async fn resolve_rejects_relative_url() {
         assert_matches!(
             resolve(
                 "relative#meta/missing",
-                &crate::BaseIndex::empty(),
-                context_authenticator::ContextAuthenticator::new(),
-                &crate::root_dir::new_test(blobfs::Client::new_test().0).await.1,
+                &BrokenPackageResolver,
                 package_directory::ExecutionScope::new(),
             )
             .await,
