@@ -25,7 +25,6 @@ use crate::object_store::{
     TRANSACTION_MUTATION_THRESHOLD, TrimMode, TrimResult,
 };
 use crate::range::RangeExt;
-use crate::round::{round_down, round_up};
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use fidl_fuchsia_io as fio;
 use fsverity_merkle::{
@@ -45,6 +44,7 @@ use std::sync::atomic::{self, AtomicU64, Ordering};
 use storage_device::WriteFlags;
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
 use storage_ptr_slice::PtrByteSlice;
+use storage_units::BlockSize;
 use zerocopy::FromBytes;
 
 mod allocated_ranges;
@@ -135,22 +135,24 @@ impl FsverityStateInner {
         FsverityStateInner { root_digest, salt, merkle_tree }
     }
 
-    fn get_hasher_for_block_size(&self, block_size: usize) -> FsVerityHasher {
+    fn get_hasher_for_block_size(&self, block_size: BlockSize) -> FsVerityHasher {
         match self.root_digest {
-            RootDigest::Sha256(_) => {
-                FsVerityHasher::Sha256(FsVerityHasherOptions::new(self.salt.clone(), block_size))
-            }
-            RootDigest::Sha512(_) => {
-                FsVerityHasher::Sha512(FsVerityHasherOptions::new(self.salt.clone(), block_size))
-            }
+            RootDigest::Sha256(_) => FsVerityHasher::Sha256(FsVerityHasherOptions::new(
+                self.salt.clone(),
+                block_size.get() as usize,
+            )),
+            RootDigest::Sha512(_) => FsVerityHasher::Sha512(FsVerityHasherOptions::new(
+                self.salt.clone(),
+                block_size.get() as usize,
+            )),
         }
     }
 
     fn from_ptr_slice(
         data: PtrByteSlice<'_>,
-        block_size: usize,
+        block_size: BlockSize,
     ) -> Result<(Self, FsVerityHasher), Error> {
-        let descriptor = FsVerityDescriptor::new(data, block_size)
+        let descriptor = FsVerityDescriptor::new(data, block_size.get() as usize)
             .map_err(|e| anyhow!(FxfsError::IntegrityError).context(e))?;
 
         let root_digest = match descriptor.digest_algorithm() {
@@ -297,13 +299,15 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     .await?
                     .ok_or_else(|| anyhow!(FxfsError::Inconsistent))?;
                 let metadata = FsverityStateInner { root_digest, salt, merkle_tree };
-                let hasher = metadata.get_hasher_for_block_size(self.block_size() as usize);
+                let hasher = metadata.get_hasher_for_block_size(self.block_size());
                 (metadata, hasher)
             }
             FsverityMetadata::F2fs(verity_range) => {
                 let expected_length = verity_range.length()? as usize;
                 let mut buffer = self
-                    .allocate_buffer(expected_length.next_multiple_of(self.block_size() as usize))
+                    .allocate_buffer(
+                        self.block_size().align_up(expected_length as u64).unwrap() as usize
+                    )
                     .await;
                 ensure!(
                     expected_length
@@ -314,7 +318,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     FxfsError::Inconsistent
                 );
                 let data = buffer.as_ptr_slice().subslice(0..expected_length);
-                FsverityStateInner::from_ptr_slice(data, self.block_size() as usize)?
+                FsverityStateInner::from_ptr_slice(data, self.block_size())?
             }
         };
         // Validate the merkle tree data against the root before applying it.
@@ -362,8 +366,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     ///
     /// Panics if `offset` is not block-aligned.
     fn verify_data(&self, mut offset: usize, buffer: PtrByteSlice<'_>) -> Result<(), Error> {
-        let block_size = self.block_size() as usize;
-        assert!(offset % block_size == 0);
+        let block_size = self.block_size();
+        assert!(block_size.is_aligned(offset as u64));
         let state = self.state.lock();
         match &*state {
             DataObjectState::Standard(_) => {
@@ -378,17 +382,17 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     metadata.merkle_tree.chunks(hasher.hash_size()).collect();
                 fxfs_trace::duration!("fsverity-verify", "len" => buffer.len());
                 // TODO(b/318880297): Consider parallelizing computation.
-                for chunk in buffer.chunks(block_size) {
+                for chunk in buffer.chunks(block_size.get() as usize) {
                     // SAFETY: Ideally we wouldn't be creating references here as technically this is
                     // Rust undefined behaviour, but it's difficult for us to fix and mitigated
                     // because these pointers end up being passed directly to non-Rust code (Mundane).
                     let b = unsafe { &*chunk.as_raw_slice_ptr() };
 
                     ensure!(
-                        hasher.hash_block(b) == leaf_nodes[offset / block_size],
+                        hasher.hash_block(b) == leaf_nodes[((offset as u64) / block_size) as usize],
                         anyhow!(FxfsError::Inconsistent).context("Hash mismatch")
                     );
-                    offset += block_size;
+                    offset += block_size.get() as usize;
                 }
                 Ok(())
             }
@@ -403,7 +407,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         device_range: Range<u64>,
     ) -> Result<(), Error> {
         let old_end =
-            round_up(self.txn_get_size(transaction), self.block_size()).ok_or(FxfsError::TooBig)?;
+            self.block_size().align_up(self.txn_get_size(transaction)).ok_or(FxfsError::TooBig)?;
         let new_size = old_end + device_range.end - device_range.start;
         self.store().allocator().mark_allocated(
             transaction,
@@ -568,7 +572,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         let size = self.get_size();
         // TODO(b/314836822): Consider further tuning the buffer size to optimize
         // performance. Experimentally, most verity-enabled files are <256K.
-        let mut buf = self.allocate_buffer(64 * self.block_size() as usize).await;
+        let mut buf = self.allocate_buffer(64 * self.block_size().get() as usize).await;
         while offset < size {
             // TODO(b/314842875): Consider optimizations for sparse files.
             let read = self.read(offset, buf.as_mut()).await? as u64;
@@ -588,7 +592,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         let tree_data_len = tree
             .levels()
             .iter()
-            .map(|layer| layer.len().next_multiple_of(self.block_size() as usize))
+            .map(|layer| self.block_size().align_up(layer.len() as u64).unwrap() as usize)
             .sum();
         let mut merkle_tree_data = Vec::<u8>::with_capacity(tree_data_len);
         // Iterating from the top layers down to the leaves.
@@ -599,16 +603,17 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             }
             merkle_tree_data.extend_from_slice(layer);
             // Pad to the end of the block.
-            let padded_size = merkle_tree_data.len().next_multiple_of(self.block_size() as usize);
+            let padded_size =
+                self.block_size().align_up(merkle_tree_data.len() as u64).unwrap() as usize;
             merkle_tree_data.resize(padded_size, 0);
         }
 
         // Zero the last block, then write the descriptor to the start of it.
         let descriptor_offset = merkle_tree_data.len();
-        merkle_tree_data.resize(descriptor_offset + self.block_size() as usize, 0);
+        merkle_tree_data.resize(descriptor_offset + self.block_size().get() as usize, 0);
         let descriptor = FsVerityDescriptorRaw::new(
             hash_alg,
-            self.block_size(),
+            self.block_size().get(),
             self.get_size(),
             tree.root(),
             salt,
@@ -649,7 +654,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             fio::HashAlgorithm::Sha256 => {
                 let hasher = FsVerityHasher::Sha256(FsVerityHasherOptions::new(
                     salt.clone(),
-                    self.block_size() as usize,
+                    self.block_size().get() as usize,
                 ));
                 let (tree, merkle_tree_data) =
                     self.build_verity_tree(hasher, hash_alg, &salt).await?;
@@ -659,7 +664,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             fio::HashAlgorithm::Sha512 => {
                 let hasher = FsVerityHasher::Sha512(FsVerityHasherOptions::new(
                     salt.clone(),
-                    self.block_size() as usize,
+                    self.block_size().get() as usize,
                 ));
                 let (tree, merkle_tree_data) =
                     self.build_verity_tree(hasher, hash_alg, &salt).await?;
@@ -691,7 +696,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             );
         };
         let descriptor_decoded =
-            FsVerityDescriptor::new(&merkle_tree[..], self.block_size() as usize)?;
+            FsVerityDescriptor::new(&merkle_tree[..], self.block_size().get() as usize)?;
         let descriptor = FsverityStateInner {
             root_digest,
             salt,
@@ -721,12 +726,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         // It's not required that callers of allocate use block aligned ranges, but we need to make
         // the extents block aligned. Luckily, fallocate in posix is allowed to allocate more than
         // what was asked for for block alignment purposes. We just need to make sure that the size
-        // of the file is still the non-block-aligned end of the range if the size was changed.
-        let mut new_range = range.clone();
-        new_range.start = round_down(new_range.start, self.block_size());
         // NB: FxfsError::TooBig turns into EFBIG when passed through starnix, which is the
         // required error code when the requested range is larger than the file size.
-        new_range.end = round_up(new_range.end, self.block_size()).ok_or(FxfsError::TooBig)?;
+        let mut new_range =
+            self.block_size().align_range_outwards(&range).ok_or(FxfsError::TooBig)?;
 
         let mut transaction = self.new_transaction().await?;
         // It's safe to check state after acquiring the transaction lock. Note that `enable_verity`
@@ -981,7 +984,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                         }
                         break;
                     }
-                    ensure!(extent_key.is_aligned(block_size), FxfsError::Inconsistent);
+                    ensure!(block_size.is_aligned(extent_key), FxfsError::Inconsistent);
                     if extent_key.start > end {
                         // If a previous extent has already been visited and we are tracking an
                         // allocated set, we are only interested in an extent where the range of the
@@ -1156,8 +1159,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                                 ..
                             }) => {
                                 ensure!(
-                                    extent.is_aligned(block_size)
-                                        && device_offset % block_size == 0,
+                                    block_size.is_aligned(extent)
+                                        && block_size.is_aligned(device_offset),
                                     FxfsError::Inconsistent
                                 );
                                 let offset_within_extent = offset - extent.start;
@@ -1201,9 +1204,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                             // We are going to make a new extent, but let's check if there is an
                             // extent after us. If there is an extent after us, then we don't want
                             // our new extent to bump into it...
-                            let mut bytes_to_allocate =
-                                round_up(buf.len() as u64, self.block_size())
-                                    .ok_or(FxfsError::TooBig)?;
+                            let mut bytes_to_allocate = self
+                                .block_size()
+                                .align_up(buf.len() as u64)
+                                .ok_or(FxfsError::TooBig)?;
                             if let Some(ItemRef {
                                 key:
                                     ObjectKey {
@@ -1364,7 +1368,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
     }
 
     pub fn truncate_overwrite_ranges(&self, size: u64) -> Result<Option<bool>, Error> {
-        let cutoff = round_up(size, self.block_size()).ok_or(FxfsError::TooBig)?;
+        let cutoff = self.block_size().align_up(size).ok_or(FxfsError::TooBig)?;
         if self.with_overwrite_ranges_mut(|ranges| ranges.map_or(false, |r| r.truncate(cutoff))) {
             // This returns true if there were ranges, but this truncate removed them all, which
             // indicates that we need to flip the has_overwrite_extents metadata flag to false.
@@ -1408,10 +1412,10 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         }
         // We might need to zero out the tail of the old last block.
         let block_size = self.block_size();
-        if old_size % block_size != 0 {
+        if !block_size.is_aligned(old_size) {
             let layer_set = store.tree.layer_set();
             let mut merger = layer_set.merger();
-            let aligned_old_size = round_down(old_size, block_size);
+            let aligned_old_size = block_size.align_down(old_size);
             let iter = merger
                 .query(Query::FullRange(&ObjectKey::attribute(
                     self.object_id(),
@@ -1434,8 +1438,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     let device_offset = device_offset
                         .checked_add(aligned_old_size - extent_key.start)
                         .ok_or(FxfsError::Inconsistent)?;
-                    ensure!(device_offset % block_size == 0, FxfsError::Inconsistent);
-                    let mut buf = self.allocate_buffer(block_size as usize).await;
+                    ensure!(block_size.is_aligned(device_offset), FxfsError::Inconsistent);
+                    let mut buf = self.allocate_buffer(block_size.get() as usize).await;
                     // In the case that this extent is in OverwritePartial mode, there is a
                     // possibility that the last block is allocated, but not initialized yet, in
                     // which case we don't actually need to bother zeroing out the tail. However,
@@ -1476,7 +1480,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         file_range: &mut Range<u64>,
     ) -> Result<Vec<Range<u64>>, Error> {
         let block_size = self.block_size();
-        ensure!(file_range.is_aligned(block_size), FxfsError::InvalidArgs);
+        ensure!(block_size.is_aligned(&*file_range), FxfsError::InvalidArgs);
         ensure!(!self.handle.is_encrypted(), FxfsError::NotSupported);
         let mut ranges = Vec::new();
         let tree = &self.store().tree;
@@ -1510,8 +1514,8 @@ impl<S: HandleOwner> DataObjectHandle<S> {
                     {
                         ensure!(
                             extent.is_valid()
-                                && extent.is_aligned(block_size)
-                                && device_offset % block_size == 0,
+                                && block_size.is_aligned(extent)
+                                && block_size.is_aligned(device_offset),
                             FxfsError::Inconsistent
                         );
                         // If the start of the requested file_range overlaps with an existing extent...
@@ -1587,7 +1591,7 @@ impl<S: HandleOwner> DataObjectHandle<S> {
             }
         }
         // Update the file size if it changed.
-        if file_range.start > round_up(self.txn_get_size(transaction), block_size).unwrap() {
+        if file_range.start > block_size.align_up(self.txn_get_size(transaction)).unwrap() {
             self.txn_update_size(transaction, file_range.start, None).await?;
         }
         self.update_allocated_size(transaction, allocated, 0).await?;
@@ -1888,7 +1892,7 @@ impl<S: HandleOwner> ObjectHandle for DataObjectHandle<S> {
         self.handle.allocate_buffer(size)
     }
 
-    fn block_size(&self) -> u64 {
+    fn block_size(&self) -> BlockSize {
         self.handle.block_size()
     }
 }
@@ -1978,7 +1982,7 @@ impl<'a, S: HandleOwner> DirectWriter<'a, S> {
 }
 
 impl<'a, S: HandleOwner> WriteBytes for DirectWriter<'a, S> {
-    fn block_size(&self) -> u64 {
+    fn block_size(&self) -> BlockSize {
         self.handle.block_size()
     }
 
@@ -2161,7 +2165,7 @@ mod tests {
     async fn test_beyond_eof_read() {
         let (fs, object) = test_filesystem_and_object().await;
         let offset = TEST_OBJECT_SIZE as usize - 2;
-        let align = offset % fs.block_size() as usize;
+        let align = (offset as u64 % fs.block_size()) as usize;
         let len: usize = 2;
         let mut buf = object.allocate_buffer(align + len + 1).await;
         buf.fill(123u8);
@@ -2182,7 +2186,7 @@ mod tests {
         let (fs, object) = test_filesystem_and_object().await;
         let handle = &*object;
         let offset = TEST_OBJECT_SIZE as usize - 2;
-        let align = offset % fs.block_size() as usize;
+        let align = (offset as u64 % fs.block_size()) as usize;
         let len: usize = 2;
         let mut buf = object.allocate_buffer(align + len + 1).await;
         buf.fill(123u8);
@@ -2205,7 +2209,7 @@ mod tests {
     async fn test_beyond_eof_read_unchecked() {
         let (fs, object) = test_filesystem_and_object().await;
         let offset = TEST_OBJECT_SIZE as usize - 2;
-        let align = offset % fs.block_size() as usize;
+        let align = (offset as u64 % fs.block_size()) as usize;
         let len: usize = 2;
         let mut buf = object.allocate_buffer(align + len + 1).await;
         buf.fill(123u8);
@@ -2280,7 +2284,7 @@ mod tests {
         object.truncate(3).await.expect("truncate failed");
         let data = b"foo";
         let offset = 1500u64;
-        let align = (offset % fs.block_size() as u64) as usize;
+        let align = (offset % fs.block_size()) as usize;
         let mut buf = object.allocate_buffer(align + data.len()).await;
         buf.subslice_mut(align..buf.len()).copy_from_slice(data);
         // This adds 1024..1536.
@@ -2310,7 +2314,7 @@ mod tests {
     #[fuchsia::test]
     async fn test_read_whole_blocks_with_multiple_objects() {
         let (fs, object) = test_filesystem_and_object().await;
-        let block_size = object.block_size() as usize;
+        let block_size = object.block_size().get() as usize;
         let mut buffer = object.allocate_buffer(block_size).await;
         buffer.fill(0xaf);
         object.write_or_append(Some(0), buffer.as_ref()).await.expect("write failed");
@@ -2409,7 +2413,7 @@ mod tests {
             }
         }
 
-        let block_size = object.block_size() as u64;
+        let block_size = object.block_size().get();
         let mut align = AlignTest::new(object).await;
 
         // Fill the object to start with (with 1).
@@ -2435,7 +2439,7 @@ mod tests {
         let allocated_before = allocator.get_allocated_bytes();
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
         object
-            .preallocate_range(&mut transaction, &mut (0..fs.block_size() as u64))
+            .preallocate_range(&mut transaction, &mut (0..fs.block_size().get()))
             .await
             .expect("preallocate_range failed");
         transaction.commit().await.expect("commit failed");
@@ -2449,10 +2453,10 @@ mod tests {
         assert_eq!(object.get_size(), 1048576);
         // Check that it didn't reallocate the space for the existing extent
         let allocated_after = allocator.get_allocated_bytes();
-        assert_eq!(allocated_after - allocated_before, 1048576 - fs.block_size() as u64);
+        assert_eq!(allocated_after - allocated_before, 1048576 - fs.block_size());
 
         let mut buf = object
-            .allocate_buffer(round_up(TEST_DATA_OFFSET, fs.block_size()).unwrap() as usize)
+            .allocate_buffer(fs.block_size().align_up(TEST_DATA_OFFSET).unwrap() as usize)
             .await;
         buf.fill(47);
         object
@@ -2460,7 +2464,7 @@ mod tests {
             .await
             .expect("write failed");
         buf.fill(95);
-        let offset = round_up(TEST_OBJECT_SIZE, fs.block_size()).unwrap();
+        let offset = fs.block_size().align_up(TEST_OBJECT_SIZE).unwrap();
         object
             .overwrite(offset, buf.as_mut(), OverwriteOptions::default())
             .await
@@ -2519,7 +2523,7 @@ mod tests {
             .await
             .expect("new failed");
         let bs = fs.block_size();
-        let res = object.preallocate_range(&mut transaction, &mut (0..bs)).await;
+        let res = object.preallocate_range(&mut transaction, &mut (0..bs.get())).await;
         assert!(matches!(res, Err(e) if FxfsError::NotSupported.matches(&e)));
         fs.close().await.expect("Close failed");
     }
@@ -2547,9 +2551,9 @@ mod tests {
         let allocator = fs.allocator();
         let allocated_before = allocator.get_allocated_bytes();
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
-        let offset = TEST_DATA_OFFSET - TEST_DATA_OFFSET % fs.block_size() as u64;
+        let offset = fs.block_size().align_down(TEST_DATA_OFFSET);
         object
-            .preallocate_range(&mut transaction, &mut (offset..offset + fs.block_size() as u64))
+            .preallocate_range(&mut transaction, &mut (offset..offset + fs.block_size()))
             .await
             .expect("preallocate_range failed");
         transaction.commit().await.expect("commit failed");
@@ -3135,7 +3139,9 @@ mod tests {
             .await
             .expect("read_attr failed")
             .expect("No attr found");
-        assert!(FsVerityDescriptor::new(&merkle_data[..], handle.block_size() as usize).is_ok());
+        assert!(
+            FsVerityDescriptor::new(&merkle_data[..], handle.block_size().get() as usize).is_ok()
+        );
         fsck(fs.clone()).await.expect("fsck failed");
         fs.close().await.expect("Close failed");
     }
@@ -3157,7 +3163,7 @@ mod tests {
 
         transaction.commit().await.unwrap();
 
-        let mut buf = object.allocate_buffer(5 * fs.block_size() as usize).await;
+        let mut buf = object.allocate_buffer(5 * fs.block_size().get() as usize).await;
         buf.fill(123);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
@@ -3258,7 +3264,7 @@ mod tests {
         {
             let descriptor = FsVerityDescriptorRaw::new(
                 fio::HashAlgorithm::Sha256,
-                fs.block_size(),
+                fs.block_size().get(),
                 file_size,
                 root_hash.as_slice(),
                 match &verity_info.salt {
@@ -3267,15 +3273,15 @@ mod tests {
                 },
             )
             .expect("Creating descriptor");
-            let mut buf = object.allocate_buffer(fs.block_size() as usize).await;
-            let mut temp = vec![0u8; fs.block_size() as usize];
+            let mut buf = object.allocate_buffer(fs.block_size().get() as usize).await;
+            let mut temp = vec![0u8; fs.block_size().get() as usize];
             descriptor.write_to_slice(&mut temp).expect("Writing descriptor to buf");
             buf.copy_from_slice(&temp);
             object
                 .multi_write(
                     &mut transaction,
                     AttributeId::FSVERITY_MERKLE,
-                    &[fs.block_size()..(fs.block_size() * 2)],
+                    &[fs.block_size().get()..(fs.block_size() * 2)],
                     buf.as_mut(),
                 )
                 .await
@@ -3323,7 +3329,7 @@ mod tests {
 
             transaction.commit().await.unwrap();
 
-            let mut buf = object.allocate_buffer(5 * fs.block_size() as usize).await;
+            let mut buf = object.allocate_buffer(5 * fs.block_size().get() as usize).await;
             buf.fill(123);
             object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
@@ -3425,29 +3431,29 @@ mod tests {
         // of 2MiB here.
         const START_OFFSET: u64 = 2048 * 1024;
         handle
-            .extend(&mut transaction, START_OFFSET..START_OFFSET + 5 * fs.block_size() as u64)
+            .extend(&mut transaction, START_OFFSET..START_OFFSET + 5 * fs.block_size())
             .await
             .expect("extend failed");
         transaction.commit().await.expect("commit failed");
-        let mut buf = handle.allocate_buffer(5 * fs.block_size() as usize).await;
+        let mut buf = handle.allocate_buffer(5 * fs.block_size().get() as usize).await;
         buf.fill(123);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         buf.fill(67);
         handle.read(0, buf.as_mut()).await.expect("read failed");
-        assert_eq!(buf.to_vec(), vec![123; 5 * fs.block_size() as usize]);
+        assert_eq!(buf.to_vec(), vec![123; 5 * fs.block_size().get() as usize]);
         fs.close().await.expect("Close failed");
     }
 
     #[fuchsia::test]
     async fn test_truncate_deallocates_old_extents() {
         let (fs, object) = test_filesystem_and_object().await;
-        let mut buf = object.allocate_buffer(5 * fs.block_size() as usize).await;
+        let mut buf = object.allocate_buffer(5 * fs.block_size().get() as usize).await;
         buf.fill(0xaa);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
 
         let allocator = fs.allocator();
         let allocated_before = allocator.get_allocated_bytes();
-        object.truncate(fs.block_size() as u64).await.expect("truncate failed");
+        object.truncate(fs.block_size().get()).await.expect("truncate failed");
         let allocated_after = allocator.get_allocated_bytes();
         assert!(
             allocated_after < allocated_before,
@@ -3467,7 +3473,7 @@ mod tests {
             .await
             .expect("truncate failed");
 
-        let mut buf = object.allocate_buffer(fs.block_size() as usize).await;
+        let mut buf = object.allocate_buffer(fs.block_size().get() as usize).await;
         let offset = (TEST_DATA_OFFSET % fs.block_size()) as usize;
         object.read(TEST_DATA_OFFSET - offset as u64, buf.as_mut()).await.expect("read failed");
 
@@ -3591,12 +3597,12 @@ mod tests {
                 } else if let Some(object) = needs_trim(&store).await {
                     // Extend the file and make sure that it is correctly trimmed.
                     object.truncate(object_size).await.expect("truncate failed");
-                    let mut buf = object.allocate_buffer(block_size as usize).await;
+                    let mut buf = object.allocate_buffer(block_size.get() as usize).await;
                     object
                         .read(object_size - block_size * 2, buf.as_mut())
                         .await
                         .expect("read failed");
-                    assert_eq!(buf.to_vec(), vec![0; block_size as usize]);
+                    assert_eq!(buf.to_vec(), vec![0; block_size.get() as usize]);
 
                     // Remount, this time with the graveyard performing an initial reap and the
                     // object should get trimmed.
@@ -3684,7 +3690,7 @@ mod tests {
             let mut buf = object.allocate_buffer(5).await;
             buf.fill(1);
             // Write every other block.
-            for offset in (0..object_size).into_iter().step_by(2 * block_size as usize) {
+            for offset in (0..object_size).into_iter().step_by((2 * block_size) as usize) {
                 object
                     .txn_write(&mut transaction, offset, buf.as_ref())
                     .await
@@ -3776,7 +3782,7 @@ mod tests {
             .await
             .expect("purge failed");
 
-        assert_eq!(allocated_before - allocator.get_allocated_bytes(), fs.block_size() as u64);
+        assert_eq!(allocated_before - allocator.get_allocated_bytes(), fs.block_size());
 
         // We need to remove the directory entry, too, otherwise fsck will complain
         {
@@ -3847,7 +3853,7 @@ mod tests {
                 recv1.await.unwrap();
                 // Reads should not block.
                 let offset = TEST_DATA_OFFSET as usize;
-                let align = offset % fs.block_size() as usize;
+                let align = (offset as u64 % fs.block_size()) as usize;
                 let len = TEST_DATA.len();
                 let mut buf = object.allocate_buffer(align + len).await;
                 assert_eq!(
@@ -3930,7 +3936,7 @@ mod tests {
         buf.copy_from_slice(b"hello");
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         let after = object.get_properties().await.expect("get_properties failed").allocated_size;
-        assert_eq!(after, before + fs.block_size() as u64);
+        assert_eq!(after, before + fs.block_size());
 
         // Do the same write again and there should be no change.
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
@@ -3941,31 +3947,31 @@ mod tests {
 
         // extend...
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
-        let offset = 1000 * fs.block_size() as u64;
+        let offset = 1000 * fs.block_size();
         let before = after;
         object
-            .extend(&mut transaction, offset..offset + fs.block_size() as u64)
+            .extend(&mut transaction, offset..offset + fs.block_size())
             .await
             .expect("extend failed");
         transaction.commit().await.expect("commit failed");
         let after = object.get_properties().await.expect("get_properties failed").allocated_size;
-        assert_eq!(after, before + fs.block_size() as u64);
+        assert_eq!(after, before + fs.block_size());
 
         // truncate...
         let before = after;
         let size = object.get_size();
-        object.truncate(size - fs.block_size() as u64).await.expect("extend failed");
+        object.truncate(size - fs.block_size()).await.expect("extend failed");
         let after = object.get_properties().await.expect("get_properties failed").allocated_size;
-        assert_eq!(after, before - fs.block_size() as u64);
+        assert_eq!(after, before - fs.block_size());
 
         // preallocate_range...
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
         let before = after;
-        let mut file_range = offset..offset + fs.block_size() as u64;
+        let mut file_range = offset..offset + fs.block_size();
         object.preallocate_range(&mut transaction, &mut file_range).await.expect("extend failed");
         transaction.commit().await.expect("commit failed");
         let after = object.get_properties().await.expect("get_properties failed").allocated_size;
-        assert_eq!(after, before + fs.block_size() as u64);
+        assert_eq!(after, before + fs.block_size());
         fs.close().await.expect("Close failed");
     }
 
@@ -3974,10 +3980,10 @@ mod tests {
         let (fs, object) = test_filesystem_and_object().await;
         let expected_size = object.get_size();
         let mut transaction = object.new_transaction().await.expect("new_transaction failed");
-        object.zero(&mut transaction, 0..fs.block_size() as u64 * 10).await.expect("zero failed");
+        object.zero(&mut transaction, 0..fs.block_size() * 10).await.expect("zero failed");
         transaction.commit().await.expect("commit failed");
         assert_eq!(object.get_size(), expected_size);
-        let mut buf = object.allocate_buffer(fs.block_size() as usize * 10).await;
+        let mut buf = object.allocate_buffer((fs.block_size() * 10) as usize).await;
         assert_eq!(object.read(0, buf.as_mut()).await.expect("read failed") as u64, expected_size);
         assert_eq!(
             &buf.as_ptr_slice().subslice(0..expected_size as usize).to_vec()[..],
@@ -4049,8 +4055,8 @@ mod tests {
 
         // `test_filesystem_and_object()` wrote the buffer `TEST_DATA` to the device at offset
         // `TEST_DATA_OFFSET` where the length and offset are aligned to the block size.
-        let aligned_offset = round_down(TEST_DATA_OFFSET, fs.block_size());
-        let aligned_length = round_up(TEST_DATA.len() as u64, fs.block_size()).unwrap();
+        let aligned_offset = fs.block_size().align_down(TEST_DATA_OFFSET);
+        let aligned_length = fs.block_size().align_up(TEST_DATA.len() as u64).unwrap();
 
         // Check for the case where where we have the following extent layout
         //       [ unallocated ][ `TEST_DATA` ]
@@ -4073,7 +4079,7 @@ mod tests {
 
         // Check for the case where where we start querying for allocation starting from
         // an allocated range to the end of the device
-        let size = 50 * fs.block_size() as u64;
+        let size = 50 * fs.block_size();
         object.truncate(size).await.expect("extend failed");
 
         let (allocated, count) = object.is_allocated(end).await.expect("is_allocated failed");
@@ -4085,7 +4091,7 @@ mod tests {
         let buf_length = 5 * fs.block_size();
         let mut buf = object.allocate_buffer(buf_length as usize).await;
         buf.fill(123);
-        let new_offset = end + 20 * fs.block_size() as u64;
+        let new_offset = end + 20 * fs.block_size();
         object.write_or_append(Some(new_offset), buf.as_ref()).await.expect("write failed");
         object
             .write_or_append(Some(new_offset + buf_length), buf.as_ref())
@@ -4201,8 +4207,8 @@ mod tests {
         object.truncate(file_size).await.unwrap();
 
         let small_buf_size = 1024;
-        let large_buf_aligned_size = block_size as usize * 2;
-        let large_buf_size = block_size as usize * 2 + 1024;
+        let large_buf_aligned_size = (block_size * 2) as usize;
+        let large_buf_size = (block_size * 2 + 1024) as usize;
 
         let mut small_buf = object.allocate_buffer(small_buf_size).await;
         let mut large_buf_aligned = object.allocate_buffer(large_buf_aligned_size).await;
@@ -4219,7 +4225,7 @@ mod tests {
         assert_eq!(large_buf_aligned.to_vec(), vec![0; large_buf_aligned_size]);
 
         // Allocation succeeds, and without any writes to the location it shows up as zero.
-        object.allocate(block_size..block_size * 3).await.unwrap();
+        object.allocate(block_size.get()..block_size * 3).await.unwrap();
 
         // Test starting before, inside, and after the allocated section with every sized buffer.
         for (buf_index, buf) in [small_buf, large_buf, large_buf_aligned].iter_mut().enumerate() {
@@ -4259,7 +4265,7 @@ mod tests {
         object.allocate(0..block_size * 4).await.unwrap();
         assert_eq!(object.read(0, buf.as_mut()).await.unwrap(), buf.len());
         assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
-        assert_eq!(object.read(block_size, buf.as_mut()).await.unwrap(), buf.len());
+        assert_eq!(object.read(block_size.get(), buf.as_mut()).await.unwrap(), buf.len());
         assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
         assert_eq!(object.read(block_size * 3, buf.as_mut()).await.unwrap(), buf.len());
         assert_eq!(buf.to_vec(), &[0; BUF_SIZE]);
@@ -4304,7 +4310,7 @@ mod tests {
             .expect("attr returned none");
         assert_eq!(content.as_ref(), &vec![0; file_size as usize]);
 
-        object.allocate(block_size..block_size * 3).await.unwrap();
+        object.allocate(block_size.get()..block_size * 3).await.unwrap();
 
         let content = object
             .read_attr(object.attribute_id())
@@ -4339,7 +4345,7 @@ mod tests {
             object.truncate(file_size).await.unwrap();
 
             for write in &case.written_ranges {
-                let write_len = (write.end - write.start) * block_size as usize;
+                let write_len = (write.end - write.start) * block_size.get() as usize;
                 let mut write_buf = object.allocate_buffer(write_len).await;
                 write_buf.fill(0xff);
                 assert_eq!(
@@ -4596,7 +4602,7 @@ mod tests {
             object.truncate(file_size).await.unwrap();
 
             for write in case.pre_writes {
-                let write_len = (write.end - write.start) * block_size as usize;
+                let write_len = (write.end - write.start) * block_size.get() as usize;
                 let mut write_buf = object.allocate_buffer(write_len).await;
                 write_buf.fill(0xff);
                 assert_eq!(
@@ -4707,7 +4713,7 @@ mod tests {
             vec![(0..10 * block_size, ExtentMode::OverwritePartial(expected_bitmap.clone()))]
         );
 
-        let mut write_buf = object.allocate_buffer(2 * block_size as usize).await;
+        let mut write_buf = object.allocate_buffer((2 * block_size) as usize).await;
         let data = (0..20).cycle().take(write_buf.len()).collect::<Vec<_>>();
         write_buf.copy_from_slice(&data);
         let mut transaction = object.new_transaction().await.unwrap();
@@ -4729,7 +4735,7 @@ mod tests {
             vec![(0..10 * block_size, ExtentMode::OverwritePartial(expected_bitmap.clone()))]
         );
 
-        let mut write_buf = object.allocate_buffer(3 * block_size as usize).await;
+        let mut write_buf = object.allocate_buffer((3 * block_size) as usize).await;
         let data = (0..20).cycle().take(write_buf.len()).collect::<Vec<_>>();
         write_buf.copy_from_slice(&data);
         let mut transaction = object.new_transaction().await.unwrap();
@@ -4751,7 +4757,7 @@ mod tests {
             vec![(0..10 * block_size, ExtentMode::OverwritePartial(expected_bitmap.clone()))]
         );
 
-        let mut write_buf = object.allocate_buffer(6 * block_size as usize).await;
+        let mut write_buf = object.allocate_buffer((6 * block_size) as usize).await;
         let data = (0..20).cycle().take(write_buf.len()).collect::<Vec<_>>();
         write_buf.copy_from_slice(&data);
         let mut transaction = object.new_transaction().await.unwrap();
@@ -4791,9 +4797,12 @@ mod tests {
         object.truncate(file_size).await.unwrap();
         assert!(object.check_unwritten_zero(0..file_size).await.unwrap());
 
-        let mut buffer = object.allocate_buffer(block_size as usize).await;
+        let mut buffer = object.allocate_buffer(block_size.get() as usize).await;
         buffer.fill(1);
-        object.write_or_append(Some(block_size), buffer.as_ref()).await.expect("write failed");
+        object
+            .write_or_append(Some(block_size.get()), buffer.as_ref())
+            .await
+            .expect("write failed");
         object.write_or_append(Some(block_size * 2), buffer.as_ref()).await.expect("write failed");
 
         object.allocate((block_size * 4)..(block_size * 6)).await.expect("Allocate failed");
@@ -4818,7 +4827,7 @@ mod tests {
 
         // Anything touching the COW ranges should fail.
         assert!(!object.check_unwritten_zero(0..(block_size * 2)).await.unwrap());
-        assert!(!object.check_unwritten_zero(block_size..(block_size * 3)).await.unwrap());
+        assert!(!object.check_unwritten_zero(block_size.get()..(block_size * 3)).await.unwrap());
         assert!(!object.check_unwritten_zero((block_size * 2)..(block_size * 4)).await.unwrap());
 
         // This should be fine, as the OverwritePartial should only touch the unwritten block.

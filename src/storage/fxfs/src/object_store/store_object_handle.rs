@@ -24,7 +24,6 @@ use crate::object_store::{
     VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
-use crate::round::{round_down, round_up};
 use anyhow::{Context, Error, anyhow, bail, ensure};
 use assert_matches::assert_matches;
 use bit_vec::BitVec;
@@ -43,6 +42,7 @@ use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool, Ordering};
 use storage_device::buffer::{Buffer, BufferFuture, BufferRef, MutableBufferRef};
 use storage_device::{InlineCryptoOptions, ReadOptions, WriteFlags, WriteOptions};
+use storage_units::BlockSize;
 
 use fidl_fuchsia_io as fio;
 use fuchsia_async as fasync;
@@ -59,16 +59,16 @@ pub const MAX_XATTR_VALUE_SIZE: usize = 64000;
 
 /// Zeroes blocks in 'buffer' based on `bitmap`, one bit per block from start of buffer.
 fn apply_bitmap_zeroing(
-    block_size: usize,
+    block_size: BlockSize,
     bitmap: &bit_vec::BitVec,
     mut buffer: MutableBufferRef<'_>,
 ) {
     let mut buf = buffer.as_mut_ptr_slice();
-    debug_assert_eq!(bitmap.len() * block_size, buf.len());
+    debug_assert_eq!(bitmap.len() as u64 * block_size, buf.len() as u64);
     for (i, block) in bitmap.iter().enumerate() {
         if !block {
-            let start = i * block_size;
-            buf.subslice_mut(start..start + block_size).fill(0);
+            let start = (i as u64 * block_size) as usize;
+            buf.subslice_mut(start..start + block_size.get() as usize).fill(0);
         }
     }
 }
@@ -222,7 +222,7 @@ struct ChecksumRangeChunk {
 impl ChecksumRangeChunk {
     fn group_first_write_ranges(
         bitmaps: &mut OverwriteBitmaps,
-        block_size: u64,
+        block_size: BlockSize,
         write_device_range: Range<u64>,
     ) -> Vec<ChecksumRangeChunk> {
         let write_block_len = (write_device_range.length().unwrap() / block_size) as usize;
@@ -305,7 +305,7 @@ impl<S: HandleOwner> ObjectHandle for StoreObjectHandle<S> {
         self.store().device.allocate_buffer(size)
     }
 
-    fn block_size(&self) -> u64 {
+    fn block_size(&self) -> BlockSize {
         self.store().block_size()
     }
 }
@@ -426,8 +426,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         range: Range<u64>,
     ) -> Result<u64, Error> {
         let block_size = self.block_size();
-        assert_eq!(range.start % block_size, 0);
-        assert_eq!(range.end % block_size, 0);
+        assert!(block_size.is_aligned(&range));
         if range.start == range.end {
             return Ok(0);
         }
@@ -461,7 +460,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 if let Some(overlap) = key.overlap(extent_key) {
                     let range = device_offset + overlap.start - extent_key.start
                         ..device_offset + overlap.end - extent_key.start;
-                    ensure!(range.is_aligned(block_size), FxfsError::Inconsistent);
+                    ensure!(block_size.is_aligned(&range), FxfsError::Inconsistent);
                     if trace {
                         info!(
                             store_id = self.store().store_object_id(),
@@ -529,7 +528,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         if compute_checksums {
             let mut checksums = Vec::new();
             try_join!(store.device.write_with_opts(device_offset, buf, opts), async {
-                let block_size = self.block_size() as usize;
+                let block_size = self.block_size().get() as usize;
                 for chunk in buf.as_ptr_slice().chunks(block_size) {
                     checksums.push(crate::checksum::fletcher64_ptr(chunk, 0));
                 }
@@ -654,15 +653,14 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
     ) -> Result<(std::ops::Range<u64>, Buffer<'_>), Error> {
         let block_size = self.block_size();
         let end = offset + buf.len() as u64;
-        let aligned =
-            round_down(offset, block_size)..round_up(end, block_size).ok_or(FxfsError::TooBig)?;
+        let aligned = block_size.align_range_outwards(offset..end).ok_or(FxfsError::TooBig)?;
 
         let mut aligned_buf =
             self.store().device.allocate_buffer((aligned.end - aligned.start) as usize).await;
 
         // Deal with head alignment.
         if aligned.start < offset {
-            let mut head_block = aligned_buf.subslice_mut(0..block_size as usize);
+            let mut head_block = aligned_buf.subslice_mut(0..block_size.get() as usize);
             let read = self.read(attribute_id, aligned.start, head_block.reborrow()).await?;
             let len = head_block.len();
             head_block.subslice_mut(read..len).fill(0);
@@ -674,7 +672,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
             // There's no need to read the tail block if we read it as part of the head block.
             if offset <= end_block_offset {
                 let mut tail_block =
-                    aligned_buf.subslice_mut(aligned_buf.len() - block_size as usize..);
+                    aligned_buf.subslice_mut(aligned_buf.len() - block_size.get() as usize..);
                 let read = self.read(attribute_id, end_block_offset, tail_block.reborrow()).await?;
                 let len = tail_block.len();
                 tail_block.subslice_mut(read..len).fill(0);
@@ -1056,7 +1054,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
 
         // Whilst the read offset must be aligned to the filesystem block size, the buffer need only
         // be aligned to the device's block size.
-        let block_size = self.block_size() as u64;
+        let block_size = self.block_size();
         let device_block_size = self.store().device.block_size() as u64;
         assert_eq!(offset % block_size, 0);
         assert_eq!(buf.range().start as u64 % device_block_size, 0);
@@ -1087,7 +1085,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 break;
             }
             ensure!(
-                extent_key.is_valid() && extent_key.is_aligned(block_size),
+                extent_key.is_valid() && block_size.is_aligned(extent_key),
                 FxfsError::Inconsistent
             );
             if extent_key.start > offset {
@@ -1115,7 +1113,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                             device_range:? = (device_offset..device_offset + to_copy as u64),
                             offset,
                             range:? = **extent_key,
-                            block_size;
+                            block_size = block_size.get();
                             "R",
                         );
                     }
@@ -1125,7 +1123,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                             let mut read_bitmap = bitmap
                                 .clone()
                                 .split_off(((offset - extent_key.start) / block_size) as usize);
-                            read_bitmap.truncate(to_copy / block_size as usize);
+                            read_bitmap.truncate(((to_copy as u64) / block_size) as usize);
                             Some(read_bitmap)
                         }
                         _ => None,
@@ -1140,7 +1138,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         )
                         .await?;
                         if let Some(bitmap) = maybe_bitmap {
-                            apply_bitmap_zeroing(self.block_size() as usize, &bitmap, head);
+                            apply_bitmap_zeroing(self.block_size(), &bitmap, head);
                         }
                         Ok::<(), Error>(())
                     });
@@ -1163,7 +1161,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         }
                     }
                     let mut align_buf =
-                        self.store().device.allocate_buffer(block_size as usize).await;
+                        self.store().device.allocate_buffer(block_size.get() as usize).await;
                     if trace {
                         info!(
                             store_id = self.store().store_object_id(),
@@ -1235,7 +1233,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                 (
                     self.store()
                         .device
-                        .allocate_buffer(round_up(*size, self.block_size()).unwrap() as usize)
+                        .allocate_buffer(self.block_size().align_up(*size).unwrap() as usize)
                         .await,
                     *size as usize,
                     *attribute_id,
@@ -1269,7 +1267,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                                 // start from the beginning of any extent, so we only truncate.
                                 let mut read_bitmap = bitmap.clone();
                                 read_bitmap.truncate(
-                                    (end - extent_key.start as usize) / self.block_size() as usize,
+                                    ((end as u64 - extent_key.start) / self.block_size()) as usize,
                                 );
                                 Some(read_bitmap)
                             }
@@ -1285,7 +1283,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
                         .await?;
                         if let Some(bitmap) = maybe_bitmap {
                             apply_bitmap_zeroing(
-                                self.block_size() as usize,
+                                self.block_size(),
                                 &bitmap,
                                 buffer.subslice_mut(offset..end as usize),
                             );
@@ -1850,7 +1848,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         }
         let mut start_offset = 0;
         for (i, chunk) in chunks.enumerate() {
-            let rounded_len = round_up(chunk.len() as u64, self.block_size()).unwrap();
+            let rounded_len = self.block_size().align_up(chunk.len() as u64).unwrap();
             let mut buffer = self.store().device.allocate_buffer(rounded_len as usize).await;
             let mut slice = buffer.as_mut_ptr_slice();
             slice.subslice_mut(0..chunk.len()).copy_from_slice(chunk);
@@ -1884,7 +1882,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         attribute_id: AttributeId,
         data: &[u8],
     ) -> Result<NeedsTrim, Error> {
-        let rounded_len = round_up(data.len() as u64, self.block_size()).unwrap();
+        let rounded_len = self.block_size().align_up(data.len() as u64).unwrap();
         let store = self.store();
         let tree = store.tree();
         let should_trim = tree
@@ -2259,6 +2257,7 @@ mod tests {
     use std::sync::Arc;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
+    use storage_units::BlockSize;
 
     const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
     const TEST_OBJECT_NAME: &str = "foo";
@@ -2994,7 +2993,7 @@ mod tests {
             .multi_write(
                 &mut transaction,
                 attribute_id,
-                &[0..block_size, block_size..block_size * 2],
+                &[0..block_size.get(), block_size.get()..block_size * 2],
                 buffer.as_mut(),
             )
             .await
@@ -3012,7 +3011,7 @@ mod tests {
 
         let mut transaction = (*object).new_transaction(attribute_id).await.unwrap();
         let needs_trim = (*object)
-            .write_attr(&mut transaction, attribute_id, &vec![3u8; block_size as usize])
+            .write_attr(&mut transaction, attribute_id, &vec![3u8; block_size.get() as usize])
             .await
             .unwrap();
         assert!(!needs_trim.0);
@@ -3103,7 +3102,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_checksum_range_chunk() {
-        let block_size = 4096;
+        let block_size = BlockSize::SIZE_4KIB;
 
         // No bitmap means one chunk that covers the whole range
         assert_eq!(

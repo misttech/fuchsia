@@ -37,7 +37,7 @@ impl<H: ReadObjectHandle> Device for ReadOnlyDevice<H> {
     }
 
     fn block_size(&self) -> u32 {
-        self.handle.block_size() as u32
+        self.handle.block_size().get() as u32
     }
 
     fn block_count(&self) -> u64 {
@@ -128,7 +128,7 @@ mod tests {
 
         {
             let mut transaction = object.new_transaction().await.unwrap();
-            let block_size = object.block_size() as usize;
+            let block_size = object.block_size().get() as usize;
             let mut buffer = object.allocate_buffer(block_size * num_blocks).await;
             for i in 0..num_blocks {
                 let buff_range = (i * block_size)..((i + 1) * block_size);

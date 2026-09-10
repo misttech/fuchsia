@@ -5,6 +5,7 @@
 use crate::object_handle::{WriteBytes, WriteObjectHandle};
 use anyhow::Error;
 use storage_device::buffer::Buffer;
+use storage_units::BlockSize;
 
 const BUFFER_SIZE: usize = 131_072;
 
@@ -21,7 +22,7 @@ impl<'a, H: WriteObjectHandle> Writer<'a, H> {
 }
 
 impl<H: WriteObjectHandle> WriteBytes for Writer<'_, H> {
-    fn block_size(&self) -> u64 {
+    fn block_size(&self) -> BlockSize {
         self.handle.block_size()
     }
 

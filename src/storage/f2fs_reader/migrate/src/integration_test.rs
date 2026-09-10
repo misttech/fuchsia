@@ -36,7 +36,7 @@ fn create_device_with_image_at_offset(path: &str, offset: u64) -> Arc<VmoBackedS
     // so we'll resize dynamically.
     let mut current_size = std::cmp::max(
         offset + 1024 * 1024, // Start with at least 1MB past offset
-        SuperBlockInstance::B.first_extent().end + FXFS_BLOCK_SIZE as u64,
+        SuperBlockInstance::B.first_extent().end + FXFS_BLOCK_SIZE,
     );
     let vmo = zx::Vmo::create_with_opts(zx::VmoOptions::RESIZABLE, current_size)
         .expect("failed to create vmo");
@@ -64,7 +64,7 @@ fn create_device_with_image_at_offset(path: &str, offset: u64) -> Arc<VmoBackedS
     }
 
     // Ensure the VMO is at least the size required for Fxfs superblocks.
-    let min_size = SuperBlockInstance::B.first_extent().end + FXFS_BLOCK_SIZE as u64;
+    let min_size = SuperBlockInstance::B.first_extent().end + FXFS_BLOCK_SIZE;
     if current_offset < min_size {
         if current_size < min_size {
             vmo.set_size(min_size).expect("failed to resize vmo");
@@ -214,7 +214,7 @@ async fn test_fxfs_migration_no_keys() {
 #[fuchsia::test]
 async fn test_fxfs_migration_with_offset() {
     // Place f2fs image between Fxfs superblocks.
-    let offset = SuperBlockInstance::A.first_extent().end + FXFS_BLOCK_SIZE as u64;
+    let offset = SuperBlockInstance::A.first_extent().end + FXFS_BLOCK_SIZE;
     Box::pin(test_fxfs_migration_at_offset(offset)).await;
 }
 

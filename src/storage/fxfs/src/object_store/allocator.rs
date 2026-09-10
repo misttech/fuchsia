@@ -108,7 +108,7 @@ use crate::object_store::{
     DataObjectHandle, DirectWriter, Extent, HandleOptions, ObjectStore, ReservedId, tree,
 };
 use crate::range::RangeExt;
-use crate::round::{round_div, round_down, round_up};
+use crate::round::round_div;
 use crate::serialized_types::{
     DEFAULT_MAX_SERIALIZED_RECORD_SIZE, LATEST_VERSION, Version, Versioned, VersionedLatest,
 };
@@ -132,6 +132,7 @@ use std::num::{NonZero, Saturating};
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
+use storage_units::BlockSize;
 
 /// This trait is implemented by things that own reservations.
 pub trait ReservationOwner: Send + Sync {
@@ -324,7 +325,7 @@ impl SortByU64 for AllocatorKey {
     }
 }
 
-const EXTENT_HASH_BUCKET_SIZE: u64 = 1 * 1024 * 1024;
+const EXTENT_HASH_BUCKET_SIZE: BlockSize = BlockSize::SIZE_1MIB;
 
 pub struct AllocatorKeyPartitionIterator {
     device_range: Range<u64>,
@@ -338,7 +339,7 @@ impl Iterator for AllocatorKeyPartitionIterator {
             None
         } else {
             let start = self.device_range.start;
-            self.device_range.start = start.saturating_add(EXTENT_HASH_BUCKET_SIZE);
+            self.device_range.start = start.saturating_add(EXTENT_HASH_BUCKET_SIZE.get());
             let end = std::cmp::min(self.device_range.start, self.device_range.end);
             let key = AllocatorKey { device_range: Extent(start..end) };
             let hash = crate::stable_hash::stable_hash(key);
@@ -351,7 +352,7 @@ impl Iterator for AllocatorKeyPartitionIterator {
             0
         } else {
             let diff = self.device_range.end - self.device_range.start;
-            let count = diff.div_ceil(EXTENT_HASH_BUCKET_SIZE);
+            let count = EXTENT_HASH_BUCKET_SIZE.align_up_to_blocks(diff);
             usize::try_from(count).unwrap_or(usize::MAX)
         };
         (len, Some(len))
@@ -363,8 +364,8 @@ impl ExactSizeIterator for AllocatorKeyPartitionIterator {}
 impl FuzzyHash for AllocatorKey {
     fn fuzzy_hash(&self) -> impl ExactSizeIterator<Item = u64> {
         AllocatorKeyPartitionIterator {
-            device_range: round_down(self.device_range.start, EXTENT_HASH_BUCKET_SIZE)
-                ..round_up(self.device_range.end, EXTENT_HASH_BUCKET_SIZE).unwrap_or(u64::MAX),
+            device_range: EXTENT_HASH_BUCKET_SIZE.align_down(self.device_range.start)
+                ..EXTENT_HASH_BUCKET_SIZE.align_up(self.device_range.end).unwrap_or(u64::MAX),
         }
     }
 
@@ -473,12 +474,12 @@ pub struct AllocatorInfoV32 {
 const MAX_ALLOCATOR_INFO_SERIALIZED_SIZE: usize = 131_072;
 
 /// Computes the target maximum extent size based on the block size of the allocator.
-pub fn max_extent_size_for_block_size(block_size: u64) -> u64 {
+pub fn max_extent_size_for_block_size(block_size: BlockSize) -> u64 {
     // Each block in an extent contains an 8-byte checksum (which due to varint encoding is 9
     // bytes), and a given extent record must be no larger DEFAULT_MAX_SERIALIZED_RECORD_SIZE.  We
     // also need to leave a bit of room (arbitrarily, 64 bytes) for the rest of the extent's
     // metadata.
-    block_size * (DEFAULT_MAX_SERIALIZED_RECORD_SIZE - 64) / 9
+    block_size * ((DEFAULT_MAX_SERIALIZED_RECORD_SIZE - 64) / 9)
 }
 
 #[derive(Default)]
@@ -489,7 +490,7 @@ struct AllocatorCounters {
 
 pub struct Allocator {
     filesystem: Weak<FxFilesystem>,
-    block_size: u64,
+    block_size: BlockSize,
     device_size: u64,
     object_id: u64,
     max_extent_size_bytes: u64,
@@ -789,11 +790,11 @@ impl Allocator {
     pub fn new(filesystem: Arc<FxFilesystem>, object_id: u64) -> Allocator {
         let block_size = filesystem.block_size();
         // We expect device size to be a multiple of block size. Throw away any tail.
-        let device_size = round_down(filesystem.device().size(), block_size);
+        let device_size = block_size.align_down(filesystem.device().size());
         if device_size != filesystem.device().size() {
             warn!("Device size is not block aligned. Rounding down.");
         }
-        let max_extent_size_bytes = max_extent_size_for_block_size(filesystem.block_size());
+        let max_extent_size_bytes = max_extent_size_for_block_size(block_size);
         let mut strategy = strategy::BestFit::default();
         strategy.free(0..device_size).expect("new fs");
         Allocator {
@@ -1368,7 +1369,7 @@ impl Allocator {
         mut len: u64,
     ) -> Result<Range<u64>, Error> {
         ensure!(self.allocations_allowed.load(Ordering::SeqCst), FxfsError::Unavailable);
-        assert_eq!(len % self.block_size, 0);
+        assert!(self.block_size.is_aligned(len));
         len = std::cmp::min(len, self.max_extent_size_bytes);
         debug_assert_ne!(owner_object_id, INVALID_OBJECT_ID);
 
@@ -1384,7 +1385,7 @@ impl Allocator {
             };
             // Reservation limits aren't necessarily a multiple of the block size.
             let r = reservation
-                .reserve_with(|limit| std::cmp::min(len, round_down(limit, self.block_size)));
+                .reserve_with(|limit| std::cmp::min(len, self.block_size.align_down(limit)));
             len = r.amount();
             Left(r)
         } else {
@@ -1396,7 +1397,7 @@ impl Allocator {
             // We must take care not to use up space that might be reserved.
             let limit =
                 std::cmp::min(owner_bytes_left, (Saturating(self.device_size) - device_used).0);
-            len = round_down(std::cmp::min(len, limit), self.block_size);
+            len = self.block_size.align_down(std::cmp::min(len, limit));
             let owner_entry = inner.owner_bytes.entry(owner_object_id).or_default();
             owner_entry.reserved_bytes += len;
             Right(ReservationImpl::<_, Self>::new(&**self, Some(owner_object_id), len))
@@ -2285,7 +2286,6 @@ mod tests {
     use crate::object_store::volume::root_volume;
     use crate::object_store::{Directory, FxfsError, LockKey, NewChildStoreOptions, ObjectStore};
     use crate::range::RangeExt;
-    use crate::round::round_up;
     use crate::serialized_types::{LATEST_VERSION, Versioned};
     use crate::testing;
     use bincode::Options as _;
@@ -2553,14 +2553,14 @@ mod tests {
         assert_eq!(device_ranges, expected);
         device_ranges.push(
             allocator
-                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                 .await
                 .expect("allocate failed"),
         );
         assert_eq!(device_ranges.last().unwrap().length().expect("Invalid range"), fs.block_size());
         device_ranges.push(
             allocator
-                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                 .await
                 .expect("allocate failed"),
         );
@@ -2574,7 +2574,7 @@ mod tests {
             .expect("new failed");
         device_ranges.push(
             allocator
-                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                 .await
                 .expect("allocate failed"),
         );
@@ -2623,7 +2623,7 @@ mod tests {
             .await
             .expect("new failed");
         let device_range1 = allocator
-            .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+            .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
             .await
             .expect("allocate failed");
         assert_eq!(device_range1.length().expect("Invalid range"), fs.block_size());
@@ -2672,7 +2672,7 @@ mod tests {
         // and this should return the first of them.
         device_ranges.push(
             allocator
-                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                 .await
                 .expect("allocate failed"),
         );
@@ -2690,7 +2690,7 @@ mod tests {
         // This should avoid the range we marked as allocated.
         device_ranges.push(
             allocator
-                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                 .await
                 .expect("allocate failed"),
         );
@@ -3078,19 +3078,19 @@ mod tests {
                 .expect("new failed");
             device_ranges.push(
                 allocator
-                    .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                    .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                     .await
                     .expect("allocate failed"),
             );
             device_ranges.push(
                 allocator
-                    .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                    .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                     .await
                     .expect("allocate failed"),
             );
             device_ranges.push(
                 allocator
-                    .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                    .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                     .await
                     .expect("allocate failed"),
             );
@@ -3123,7 +3123,7 @@ mod tests {
             .await
             .expect("new failed");
         let range = allocator
-            .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+            .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
             .await
             .expect("allocate failed");
 
@@ -3145,7 +3145,7 @@ mod tests {
                 .await
                 .expect("new_transaction failed");
             allocator
-                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                 .await
                 .expect("allocate failed")
         };
@@ -3158,7 +3158,7 @@ mod tests {
             .expect("new_transaction failed");
         assert_eq!(
             allocator
-                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                 .await
                 .expect("allocate failed"),
             allocated_range
@@ -3179,7 +3179,7 @@ mod tests {
                     .await
                     .unwrap();
                 allocator
-                    .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                    .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                     .await
                     .expect("Allocating");
                 transaction.commit().await.expect("Committing.");
@@ -3222,7 +3222,7 @@ mod tests {
                 .await
                 .expect("new_transaction failed");
             let range = allocator
-                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                 .await
                 .expect("allocate failed");
             transaction.commit().await.expect("commit failed");
@@ -3237,7 +3237,7 @@ mod tests {
                 .await
                 .expect("new_transaction failed");
             allocator
-                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size())
+                .allocate(&mut transaction, STORE_OBJECT_ID, fs.block_size().get())
                 .await
                 .expect("allocate failed");
 
@@ -3381,7 +3381,7 @@ mod tests {
         // These values were picked so that each of them would be the reason why
         // collect_free_extents finished, and so we would return after partially processing one of
         // the free extents.
-        let max_extent_size = fs.block_size() as usize * 4;
+        let max_extent_size = (fs.block_size() * 4) as usize;
         const EXTENTS_PER_BATCH: usize = 2;
         let mut free_ranges = vec![];
         let mut offset = allocated_range.start;
@@ -3434,7 +3434,7 @@ mod tests {
         let bs = fs.block_size();
         let alloc_task = fasync::Task::spawn(async move {
             allocator_clone
-                .allocate(&mut transaction, STORE_OBJECT_ID, bs)
+                .allocate(&mut transaction, STORE_OBJECT_ID, bs.get())
                 .await
                 .expect("allocate should fail");
             {
@@ -3480,11 +3480,11 @@ mod tests {
             .allocate(
                 &mut transaction,
                 STORE_OBJECT_ID,
-                round_up(RESERVATION_AMOUNT, fs.block_size()).unwrap(),
+                fs.block_size().align_up(RESERVATION_AMOUNT).unwrap(),
             )
             .await
             .expect("allocate faiiled");
-        assert_eq!((range.end - range.start) % fs.block_size(), 0);
+        assert!(fs.block_size().is_aligned(range.end - range.start));
 
         println!("{}", range.end - range.start);
     }

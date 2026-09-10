@@ -31,13 +31,13 @@ use fxfs::object_store::transaction::{LockKey, lock_keys};
 use fxfs::object_store::{
     DataObjectHandle, HandleOptions, ObjectDescriptor, ObjectStore, Timestamp,
 };
-use fxfs::round::{round_down, round_up};
+use fxfs::round::round_up;
 use fxfs_trace::{TraceFutureExt, trace_future_args};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 use zx::Status;
 
-static RING_BUFFER_SIZE: LazyLock<u64> = LazyLock::new(|| 64 * (zx::system_get_page_size() as u64));
+static RING_BUFFER_SIZE: LazyLock<u64> = LazyLock::new(|| 64 * storage_units::PAGE_SIZE);
 
 const PAYLOAD_BUFFER_FLUSH_THRESHOLD: usize = 131_072; /* 128 KiB */
 
@@ -217,14 +217,18 @@ impl DeliveryBlobWriter {
         })?;
         let final_write =
             (self.payload_persisted as usize + self.buffer.len()) == self.header().payload_length;
-        let block_size = self.stage.handle().block_size() as usize;
-        let flush_threshold = std::cmp::max(block_size, PAYLOAD_BUFFER_FLUSH_THRESHOLD);
+        let block_size = self.stage.handle().block_size();
+        let flush_threshold =
+            std::cmp::max(block_size.get() as usize, PAYLOAD_BUFFER_FLUSH_THRESHOLD);
         // If we expect more data but haven't met the flush threshold, wait for more.
         if !final_write && self.buffer.len() < flush_threshold {
             return Ok(());
         }
-        let len =
-            if final_write { self.buffer.len() } else { round_down(self.buffer.len(), block_size) };
+        let len = if final_write {
+            self.buffer.len()
+        } else {
+            block_size.align_down(self.buffer.len() as u64) as usize
+        };
         // Update Merkle tree.
         let data = &self.buffer.as_slice()[..len];
         let update_merkle_tree_fut = async {
@@ -243,7 +247,7 @@ impl DeliveryBlobWriter {
         debug_assert!(self.payload_persisted >= self.payload_offset);
 
         // Copy data into transfer buffer, zero pad if required.
-        let aligned_len = round_up(len, block_size).ok_or(FxfsError::OutOfRange)?;
+        let aligned_len = block_size.align_up(len as u64).ok_or(FxfsError::OutOfRange)? as usize;
         let mut buffer = self.stage.handle().allocate_buffer(aligned_len).await;
         buffer.as_mut().subslice_mut(..len).copy_from_slice(&self.buffer[..len]);
         buffer.as_mut().subslice_mut(len..).fill(0);
@@ -303,7 +307,7 @@ impl DeliveryBlobWriter {
         }
         let handle = self.stage.handle();
         let size = self.storage_size() as u64;
-        let mut range = 0..round_up(size, handle.block_size()).ok_or(FxfsError::OutOfRange)?;
+        let mut range = 0..handle.block_size().align_up(size).ok_or(FxfsError::OutOfRange)?;
         let mut first_time = true;
         while range.start < range.end {
             let mut transaction =

@@ -482,18 +482,16 @@ impl<'a> Fsck<'a> {
         let bs = filesystem.block_size();
         let mut previous_allocation_end = 0;
         while let Some(allocation) = stored_allocations.get() {
-            if allocation.key.device_range.start % bs > 0
-                || allocation.key.device_range.end % bs > 0
-            {
+            let r = &allocation.key.device_range;
+            if !bs.is_aligned(r) {
                 self.error(FsckError::MisalignedAllocation(allocation.into()))?;
-            } else if allocation.key.device_range.start >= allocation.key.device_range.end {
+            } else if r.start >= r.end {
                 self.error(FsckError::MalformedAllocation(allocation.into()))?;
             }
             let owner_object_id = match allocation.value {
                 AllocatorValue::None => INVALID_OBJECT_ID,
                 AllocatorValue::Abs { owner_object_id, .. } => *owner_object_id,
             };
-            let r = &allocation.key.device_range;
 
             // 'None' allocator values represent free space so should be ignored here.
             if allocation.value != &AllocatorValue::None {

@@ -13,6 +13,7 @@ rustc_library("make-blob-image") {
     "//src/storage/lib/delivery_blob",
     "//src/storage/lib/sparse/rust:lib",
     "//src/storage/lib/storage_device",
+    "//src/storage/lib/units",
     "//src/sys/pkg/lib/fuchsia-merkle",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",

@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use storage_device::Device;
 use storage_device::buffer::{BufferFuture, MutableBufferRef};
+use storage_units::BlockSize;
 
 // Extents are logically contiguous, so we don't need to store their start offset.
 #[derive(Debug, Clone)]
@@ -81,8 +82,8 @@ impl ObjectHandle for BootstrapObjectHandle {
         self.device.allocate_buffer(size)
     }
 
-    fn block_size(&self) -> u64 {
-        self.device.block_size().into()
+    fn block_size(&self) -> BlockSize {
+        BlockSize::new(self.device.block_size()).unwrap()
     }
 
     fn set_trace(&self, trace: bool) {

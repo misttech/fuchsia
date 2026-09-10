@@ -10,13 +10,12 @@ use fuchsia_sync::Mutex;
 use std::ops::Deref;
 use std::sync::Arc;
 use storage_device::buffer::BufferFuture;
+use storage_units::BlockSize;
 
-pub const CHUNK_SIZE: usize = 128 * 1024;
+pub const CHUNK_SIZE: BlockSize = BlockSize::SIZE_128KIB;
 
-fn block_aligned_size(source: &impl ReadObjectHandle) -> usize {
-    let block_size = source.block_size() as usize;
-    let source_size = source.get_size() as usize;
-    source_size.checked_next_multiple_of(block_size).unwrap()
+fn block_aligned_size(source: &impl ReadObjectHandle) -> u64 {
+    source.block_size().align_up(source.get_size()).unwrap()
 }
 
 /// A reference to a chunk of data which is currently in the cache.  The data will be held in the
@@ -96,10 +95,10 @@ unsafe impl<S> Sync for CachingObjectHandle<S> {}
 #[fxfs_trace::trace]
 impl<S: ReadObjectHandle> CachingObjectHandle<S> {
     pub fn new(source: S) -> Self {
-        let block_size = source.block_size() as usize;
-        assert!(CHUNK_SIZE % block_size == 0);
+        let block_size = source.block_size();
+        assert!(block_size.is_aligned(CHUNK_SIZE.get()));
         let aligned_size = block_aligned_size(&source);
-        let chunk_count = aligned_size.div_ceil(CHUNK_SIZE);
+        let chunk_count = CHUNK_SIZE.align_up_to_blocks(aligned_size) as usize;
 
         let mut chunks = Vec::<Chunk>::new();
         chunks.resize_with(chunk_count, Default::default);
@@ -111,7 +110,7 @@ impl<S: ReadObjectHandle> CachingObjectHandle<S> {
     /// `offset` must be less than the size of `source`.
     pub async fn read(&self, offset: usize) -> Result<CachedChunk, Error> {
         ensure!(offset < self.source.get_size() as usize, FxfsError::OutOfRange);
-        let chunk_num = offset / CHUNK_SIZE;
+        let chunk_num = (offset as u64 / CHUNK_SIZE) as usize;
 
         enum Action {
             Wait(EventListener),
@@ -155,7 +154,7 @@ impl<S: ReadObjectHandle> CachingObjectHandle<S> {
         if offset >= self.source.get_size() as usize {
             return None;
         }
-        let chunk_num = offset / CHUNK_SIZE;
+        let chunk_num = (offset as u64 / CHUNK_SIZE) as usize;
         let mut chunks = self.chunks.lock();
         match &chunks[chunk_num] {
             Chunk::Present(cached_chunk) => Some(cached_chunk.clone()),
@@ -184,14 +183,14 @@ impl<S: ReadObjectHandle> CachingObjectHandle<S> {
             self.event.notify(usize::MAX);
         });
 
-        let read_start = chunk_num * CHUNK_SIZE;
+        let read_start = chunk_num as u64 * CHUNK_SIZE;
         let len =
-            std::cmp::min(read_start + CHUNK_SIZE, self.source.get_size() as usize) - read_start;
-        let aligned_len =
-            std::cmp::min(read_start + CHUNK_SIZE, block_aligned_size(&self.source)) - read_start;
+            (std::cmp::min(read_start + CHUNK_SIZE, self.source.get_size()) - read_start) as usize;
+        let aligned_len = (std::cmp::min(read_start + CHUNK_SIZE, block_aligned_size(&self.source))
+            - read_start) as usize;
 
         let mut read_buf = self.source.allocate_buffer(aligned_len).await;
-        let amount_read = self.source.read(read_start as u64, read_buf.as_mut()).await?;
+        let amount_read = self.source.read(read_start, read_buf.as_mut()).await?;
         ensure!(amount_read >= len, anyhow!(FxfsError::Internal).context("Short read"));
 
         log::debug!("COH {}: Read {len}@{read_start}", self.source.object_id());
@@ -227,7 +226,7 @@ impl<S: ReadObjectHandle> CachingObjectHandle<S> {
             "COH {}: Purging {} cached chunks ({} bytes)",
             self.source.object_id(),
             to_deallocate.len(),
-            to_deallocate.len() * CHUNK_SIZE
+            to_deallocate.len() as u64 * CHUNK_SIZE
         );
     }
 }
@@ -245,7 +244,7 @@ impl<S: ReadObjectHandle> ObjectHandle for CachingObjectHandle<S> {
         self.source.allocate_buffer(size)
     }
 
-    fn block_size(&self) -> u64 {
+    fn block_size(&self) -> BlockSize {
         self.source.block_size()
     }
 }
@@ -262,6 +261,7 @@ mod tests {
     use storage_device::Device;
     use storage_device::buffer::{BufferFuture, MutableBufferRef};
     use storage_device::fake_device::FakeDevice;
+    use storage_units::BlockSize;
 
     // Fills a buffer with a pattern seeded by counter.
     fn fill_buf(buf: &mut [u8], counter: u8) {
@@ -344,8 +344,8 @@ mod tests {
             0
         }
 
-        fn block_size(&self) -> u64 {
-            self.device.block_size().into()
+        fn block_size(&self) -> BlockSize {
+            BlockSize::new(self.device.block_size()).unwrap()
         }
 
         fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
@@ -409,11 +409,11 @@ mod tests {
     #[fuchsia::test]
     async fn test_read_with_notification_for_other_chunk() {
         let device = Arc::new(FakeDevice::new(1024, 512));
-        let source = FakeSource::new(device, CHUNK_SIZE + 4096);
+        let source = FakeSource::new(device, (CHUNK_SIZE + 4096) as usize);
         let caching_object_handle = CachingObjectHandle::new(source);
 
         let mut read_fut1 = std::pin::pin!(caching_object_handle.read(0));
-        let mut read_fut2 = std::pin::pin!(caching_object_handle.read(CHUNK_SIZE));
+        let mut read_fut2 = std::pin::pin!(caching_object_handle.read(CHUNK_SIZE.get() as usize));
         let mut read_fut3 = std::pin::pin!(caching_object_handle.read(0));
 
         // The first and second futures will transition their chunks from `Missing` to `Pending`
@@ -432,7 +432,7 @@ mod tests {
         assert!(futures::poll!(&mut read_fut3).is_pending());
         // The first future will read from the source, transition the first chunk to `Present`,
         // and notify the event.
-        let expected = make_buf(1, CHUNK_SIZE);
+        let expected = make_buf(1, CHUNK_SIZE.get() as usize);
         assert_eq!(&*read_fut1.await.unwrap(), expected);
         // The first chunk is now present so the third future can complete.
         assert_eq!(&*read_fut3.await.unwrap(), expected);
@@ -489,14 +489,14 @@ mod tests {
     #[fuchsia::test]
     async fn test_chunk_purging() {
         let device = Arc::new(FakeDevice::new(1024, 512));
-        let source = Arc::new(FakeSource::new(device, CHUNK_SIZE + 4096));
+        let source = Arc::new(FakeSource::new(device, (CHUNK_SIZE + 4096) as usize));
         source.start();
         let caching_object_handle =
             CachingObjectHandle::new(source.clone() as Arc<dyn ReadObjectHandle>);
 
         let _chunk1 = caching_object_handle.read(0).await.unwrap();
         // Immediately drop the second chunk.
-        caching_object_handle.read(CHUNK_SIZE).await.unwrap();
+        caching_object_handle.read(CHUNK_SIZE.get() as usize).await.unwrap();
 
         source.allow_reads(false);
 
@@ -504,16 +504,19 @@ mod tests {
         // from being evicted by the next purge too.
         caching_object_handle.purge();
         caching_object_handle.read(0).await.unwrap();
-        caching_object_handle.read(CHUNK_SIZE).await.unwrap();
+        caching_object_handle.read(CHUNK_SIZE.get() as usize).await.unwrap();
 
         caching_object_handle.purge();
         caching_object_handle.read(0).await.unwrap();
-        caching_object_handle.read(CHUNK_SIZE).await.unwrap();
+        caching_object_handle.read(CHUNK_SIZE.get() as usize).await.unwrap();
 
         // Purging twice should result in evicting the second chunk.
         caching_object_handle.purge();
         caching_object_handle.purge();
         caching_object_handle.read(0).await.unwrap();
-        caching_object_handle.read(CHUNK_SIZE).await.expect_err("Chunk was not purged");
+        caching_object_handle
+            .read(CHUNK_SIZE.get() as usize)
+            .await
+            .expect_err("Chunk was not purged");
     }
 }

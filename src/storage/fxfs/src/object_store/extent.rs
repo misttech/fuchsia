@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use crate::lsm_tree::types::{OrdLowerBound, OrdUpperBound};
-use crate::round::{round_down, round_up};
 use crate::serialized_types::serialized_key::{KeyDeserializer, KeySerializer, SerializeKey};
 use crate::serialized_types::varint::Buffer;
 use anyhow::Context as _;
@@ -12,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::{max, min};
 use std::hash::Hash;
 use std::ops::Range;
+use storage_units::BlockSize;
 use zx_status::Status;
 
 /// Extent represents a physical or logical range of bytes, aligned to a 512-byte boundary.
@@ -60,8 +60,8 @@ impl Extent {
     /// Returns an iterator over the Extent partitions which overlap this key (see `FuzzyHash`).
     pub fn fuzzy_hash_partition(&self) -> ExtentPartitionIterator {
         ExtentPartitionIterator {
-            range: round_down(self.start, EXTENT_HASH_BUCKET_SIZE)
-                ..round_up(self.end, EXTENT_HASH_BUCKET_SIZE).unwrap_or(u64::MAX),
+            range: EXTENT_HASH_BUCKET_SIZE.align_down(self.start)
+                ..EXTENT_HASH_BUCKET_SIZE.align_up(self.end).unwrap_or(u64::MAX),
         }
     }
 
@@ -124,7 +124,14 @@ impl From<Extent> for Range<u64> {
     }
 }
 
-const EXTENT_HASH_BUCKET_SIZE: u64 = 1 * 1024 * 1024;
+impl<T: storage_units::BlockSizeSpec> storage_units::IsAligned<T> for &Extent {
+    #[inline(always)]
+    fn is_aligned(self, block_size: storage_units::GenericBlockSize<T>) -> bool {
+        block_size.is_aligned(&self.0)
+    }
+}
+
+const EXTENT_HASH_BUCKET_SIZE: BlockSize = BlockSize::SIZE_1MIB;
 
 pub struct ExtentPartitionIterator {
     range: Range<u64>,
@@ -138,7 +145,7 @@ impl Iterator for ExtentPartitionIterator {
             None
         } else {
             let start = self.range.start;
-            self.range.start = start.saturating_add(EXTENT_HASH_BUCKET_SIZE);
+            self.range.start = start.saturating_add(EXTENT_HASH_BUCKET_SIZE.get());
             let end = std::cmp::min(self.range.start, self.range.end);
             Some(start..end)
         }
@@ -149,7 +156,7 @@ impl Iterator for ExtentPartitionIterator {
             0
         } else {
             let diff = self.range.end - self.range.start;
-            let count = diff.div_ceil(EXTENT_HASH_BUCKET_SIZE);
+            let count = EXTENT_HASH_BUCKET_SIZE.align_up_to_blocks(diff);
             usize::try_from(count).unwrap_or(usize::MAX)
         };
         (len, Some(len))
@@ -370,7 +377,7 @@ mod tests {
         let mut iter = Extent(0..512).fuzzy_hash_partition();
         assert_eq!(iter.len(), 1);
         assert_eq!(iter.size_hint(), (1, Some(1)));
-        assert_eq!(iter.next(), Some(0..EXTENT_HASH_BUCKET_SIZE));
+        assert_eq!(iter.next(), Some(0..EXTENT_HASH_BUCKET_SIZE.get()));
         assert_eq!(iter.len(), 0);
         assert_eq!(iter.size_hint(), (0, Some(0)));
         assert_eq!(iter.next(), None);

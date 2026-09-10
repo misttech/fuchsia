@@ -13,13 +13,14 @@ use fuchsia_inspect::{Property as _, UintProperty};
 use std::cmp::min;
 use std::io::Write;
 use storage_device::buffer::MutableBufferRef;
+use storage_units::BlockSize;
 
 /// JournalWriter is responsible for writing log records to a journal file.  Each block contains a
 /// fletcher64 checksum at the end of the block.  This is used by both the main journal file and the
 /// super-block.
 pub struct JournalWriter {
     // The block size used for this journal file.
-    block_size: usize,
+    block_size: BlockSize,
 
     // The checkpoint of the last write.
     checkpoint: JournalCheckpoint,
@@ -35,7 +36,7 @@ pub struct JournalWriter {
 }
 
 impl JournalWriter {
-    pub fn new(block_size: usize, last_checksum: u64) -> Self {
+    pub fn new(block_size: BlockSize, last_checksum: u64) -> Self {
         // We must set the correct version here because the journal is written to when
         // formatting as part of creating the allocator and must be ready to go.
         let checkpoint =
@@ -60,7 +61,7 @@ impl JournalWriter {
         // moment.
 
         // For now, our reader cannot handle records that are bigger than a block.
-        if self.buf.len() - buf_len <= self.block_size {
+        if self.buf.len() - buf_len <= self.block_size.get() as usize {
             Ok(())
         } else {
             Err(anyhow!(
@@ -73,9 +74,14 @@ impl JournalWriter {
 
     /// Pads from the current offset in the buffer to the end of the block.
     pub fn pad_to_block(&mut self) -> std::io::Result<()> {
-        let align = self.buf.len() % self.block_size;
+        let align = (self.buf.len() as u64 % self.block_size) as usize;
         if align > 0 {
-            self.write_all(&vec![0; self.block_size - std::mem::size_of::<Checksum>() - align])?;
+            self.write_all(&vec![
+                0;
+                self.block_size.get() as usize
+                    - std::mem::size_of::<Checksum>()
+                    - align
+            ])?;
         }
         Ok(())
     }
@@ -92,7 +98,7 @@ impl JournalWriter {
 
     /// Returns the number of bytes that are ready to be flushed.
     pub fn flushable_bytes(&self) -> usize {
-        self.buf.len() - self.buf.len() % self.block_size
+        self.block_size.align_down(self.buf.len() as u64) as usize
     }
 
     /// Fills `buf` with as many outstanding complete blocks from the journal object as possible, so
@@ -104,7 +110,7 @@ impl JournalWriter {
         // The buffer should always be completely filled.
         assert!(self.flushable_bytes() >= buf.len());
         let len = buf.len();
-        debug_assert!(len % self.block_size == 0);
+        debug_assert!(self.block_size.is_aligned(len as u64));
         buf.copy_from_slice(&self.buf[..len]);
         let offset = self.checkpoint.file_offset;
         self.journal_checkpoint_offset.set(offset);
@@ -125,7 +131,7 @@ impl JournalWriter {
     /// block, and a reset marker should be used to terminate the previous block.
     pub fn seek(&mut self, checkpoint: JournalCheckpoint) {
         assert!(self.buf.is_empty());
-        assert!(checkpoint.file_offset % self.block_size as u64 == 0);
+        assert!(self.block_size.is_aligned(checkpoint.file_offset));
         self.checkpoint = checkpoint;
         self.last_checksum = self.checkpoint.checksum;
         self.journal_checkpoint_offset.set(self.checkpoint.file_offset);
@@ -135,15 +141,16 @@ impl JournalWriter {
 impl std::io::Write for JournalWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let mut offset = 0;
+        let bs = self.block_size.get() as usize;
         while offset < buf.len() {
-            let space = self.block_size
+            let space = bs
                 - std::mem::size_of::<Checksum>()
-                - self.buf.len() % self.block_size;
+                - (self.buf.len() as u64 % self.block_size) as usize;
             let to_copy = min(space, buf.len() - offset);
             self.buf.extend_from_slice(&buf[offset..offset + to_copy]);
             if to_copy == space {
                 let end = self.buf.len();
-                let start = end + std::mem::size_of::<Checksum>() - self.block_size;
+                let start = end + std::mem::size_of::<Checksum>() - bs;
                 self.last_checksum = fletcher64(&self.buf[start..end], self.last_checksum);
                 self.buf.write_u64::<LittleEndian>(self.last_checksum)?;
             }
@@ -179,8 +186,9 @@ mod tests {
     use crate::testing::fake_object::{FakeObject, FakeObjectHandle};
     use byteorder::{ByteOrder, LittleEndian};
     use std::sync::Arc;
+    use storage_units::BlockSize;
 
-    const TEST_BLOCK_SIZE: usize = 512;
+    const TEST_BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
 
     #[fuchsia::test]
     async fn test_write_single_record_and_pad() {
@@ -195,7 +203,7 @@ mod tests {
 
         let handle = FakeObjectHandle::new(object.clone());
         let mut buf = handle.allocate_buffer(object.get_size() as usize).await;
-        assert_eq!(buf.len(), TEST_BLOCK_SIZE);
+        assert_eq!(buf.len(), TEST_BLOCK_SIZE.get() as usize);
         handle.read(0, buf.as_mut()).await.expect("read failed");
         let mut reader = buf.as_ptr_slice();
         let value: u32 =
@@ -208,7 +216,7 @@ mod tests {
         assert_eq!(
             writer.journal_file_checkpoint(),
             JournalCheckpoint {
-                file_offset: TEST_BLOCK_SIZE as u64,
+                file_offset: TEST_BLOCK_SIZE.get(),
                 checksum,
                 version: LATEST_VERSION,
             }
@@ -231,7 +239,7 @@ mod tests {
 
         let handle = FakeObjectHandle::new(object.clone());
         let mut buf = handle.allocate_buffer(object.get_size() as usize).await;
-        assert_eq!(buf.len(), TEST_BLOCK_SIZE);
+        assert_eq!(buf.len(), TEST_BLOCK_SIZE.get() as usize);
         handle.read(0, buf.as_mut()).await.expect("read failed");
         let mut reader = buf.subslice(checkpoint.file_offset as usize..).as_ptr_slice();
         let value: u64 =

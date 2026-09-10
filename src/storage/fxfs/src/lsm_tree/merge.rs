@@ -802,6 +802,7 @@ mod tests {
     use std::hash::Hash;
     use std::ops::{Bound, Range};
     use std::sync::Arc;
+    use storage_units::BlockSize;
 
     use crate::lsm_tree::testing::TestKey;
 
@@ -1788,7 +1789,7 @@ mod tests {
         let mut writer = PersistentLayerWriter::<_, K, V>::new(
             Writer::new(&write_handle).await,
             items.len(),
-            512,
+            BlockSize::SIZE_512B,
         )
         .await
         .expect("PersistentLayerWriter::new failed");

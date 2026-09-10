@@ -18,7 +18,6 @@ use crate::object_store::{
     VOLUME_DATA_KEY_ID,
 };
 use crate::range::RangeExt;
-use crate::round::round_up;
 use anyhow::{Error, bail};
 use fxfs_crypto::{Crypt, KeyType, WrappedKey, WrappingKeyId, key_to_cipher};
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
@@ -26,6 +25,7 @@ use std::cell::UnsafeCell;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
+use storage_units::BlockSize;
 
 // Information about a specific attribute.
 #[derive(Debug)]
@@ -956,10 +956,10 @@ impl<'a> ScannedStore<'a> {
         attribute_id: AttributeId,
         range: &Range<u64>,
         device_offset: u64,
-        bs: u64,
+        bs: BlockSize,
         is_overwrite_extent: bool,
     ) -> Result<(), Error> {
-        if range.start % bs > 0 || range.end % bs > 0 {
+        if !bs.is_aligned(range) {
             self.fsck.error(FsckError::MisalignedExtent(
                 self.store_id,
                 object_id,
@@ -995,7 +995,7 @@ impl<'a> ScannedStore<'a> {
                     Some(attribute) => {
                         if !*in_graveyard
                             && !tombstoned_attributes.contains(&attribute_id)
-                            && range.end > round_up(attribute.size, bs).unwrap()
+                            && range.end > bs.align_up(attribute.size).unwrap()
                         {
                             self.fsck.error(FsckError::ExtentExceedsLength(
                                 self.store_id,
@@ -1024,7 +1024,7 @@ impl<'a> ScannedStore<'a> {
                     .warning(FsckWarning::ExtentForNonexistentObject(self.store_id, object_id))?;
             }
         }
-        if device_offset % bs > 0 {
+        if !bs.is_aligned(device_offset) {
             self.fsck.error(FsckError::MisalignedExtent(
                 self.store_id,
                 object_id,
@@ -1255,7 +1255,7 @@ fn validate_attributes(
     attributes: &ScannedAttributes,
     is_file: bool,
     verified: VerifiedType,
-    block_size: u64,
+    block_size: BlockSize,
 ) -> Result<(), Error> {
     let ScannedAttributes {
         attributes,
@@ -1302,7 +1302,7 @@ fn validate_attributes(
                             // Else, use ceiling integer division in case data_size is not a
                             // multiple of block size.
                             } else {
-                                ((data_attribute.size + (block_size - 1)) / block_size)
+                                block_size.align_up_to_blocks(data_attribute.size)
                                     * hash_size as u64
                             };
                             if merkle_attribute.size != expected_size {

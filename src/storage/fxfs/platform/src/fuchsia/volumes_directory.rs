@@ -1188,6 +1188,7 @@ mod tests {
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
+    use storage_units::{BlockSize, PAGE_SIZE};
     use vfs::execution_scope::ExecutionScope;
     use vfs::temp_clone::{TempClonable, unblock};
     use zx::Status;
@@ -2125,8 +2126,8 @@ mod tests {
     #[fuchsia::test]
     async fn test_limit_bytes() {
         const BYTES_LIMIT: u64 = 262_144; // 256KiB
-        const BLOCK_SIZE: usize = 8192; // 8KiB
-        let device = DeviceHolder::new(FakeDevice::new(BLOCK_SIZE.try_into().unwrap(), 512));
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
+        let device = DeviceHolder::new(FakeDevice::new(8192, BLOCK_SIZE.get() as u32));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
         let blob_resupplied_count =
             Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
@@ -2161,24 +2162,21 @@ mod tests {
             assert!(new_info.used_bytes < old_info.used_bytes);
         }
 
-        let zeros = vec![0u8; BLOCK_SIZE];
+        let zeros = vec![0u8; BLOCK_SIZE.get() as usize];
         // First write should succeed.
         assert_eq!(
-            <u64 as TryInto<usize>>::try_into(
-                vol.file_proxy
-                    .write(&zeros)
-                    .await
-                    .expect("Failed Write message")
-                    .expect("Failed write")
-            )
-            .unwrap(),
+            vol.file_proxy
+                .write(&zeros)
+                .await
+                .expect("Failed Write message")
+                .expect("Failed write"),
             BLOCK_SIZE
         );
         // Likely to run out of space before writing the full limit due to overheads.
-        for _ in (BLOCK_SIZE..BYTES_LIMIT as usize).step_by(BLOCK_SIZE) {
+        for _ in (BLOCK_SIZE.get()..BYTES_LIMIT).step_by(BLOCK_SIZE.get() as usize) {
             match vol.file_proxy.write(&zeros).await.expect("Failed Write message") {
                 Err(_) => break,
-                Ok(b) if b < BLOCK_SIZE.try_into().unwrap() => break,
+                Ok(b) if b < BLOCK_SIZE => break,
                 _ => (),
             };
         }
@@ -2196,14 +2194,11 @@ mod tests {
         // Double the limit and try again. We should have write space again.
         vol.volume_proxy.set_limit(BYTES_LIMIT * 2).await.unwrap().expect("To set limits");
         assert_eq!(
-            <u64 as TryInto<usize>>::try_into(
-                vol.file_proxy
-                    .write(&zeros)
-                    .await
-                    .expect("Failed Write message")
-                    .expect("Failed write")
-            )
-            .unwrap(),
+            vol.file_proxy
+                .write(&zeros)
+                .await
+                .expect("Failed Write message")
+                .expect("Failed write"),
             BLOCK_SIZE
         );
 
@@ -2216,10 +2211,9 @@ mod tests {
     #[fuchsia::test]
     async fn test_limit_bytes_two_hit_device_limit() {
         const BYTES_LIMIT: u64 = 3_145_728; // 3MiB
-        const BLOCK_SIZE: usize = 8192; // 8KiB
-        const BLOCK_COUNT: u32 = 512;
-        let device =
-            DeviceHolder::new(FakeDevice::new(BLOCK_SIZE.try_into().unwrap(), BLOCK_COUNT));
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
+        const BLOCK_COUNT: u64 = 8192;
+        let device = DeviceHolder::new(FakeDevice::new(BLOCK_COUNT, BLOCK_SIZE.get() as u32));
         let filesystem = FxFilesystem::new_empty(device).await.unwrap();
         let blob_resupplied_count =
             Arc::new(PageRefaultCounter::new().expect("Failed to create PageRefaultCounter"));
@@ -2241,41 +2235,27 @@ mod tests {
         let mut b_written: u64 = 0;
 
         // Write chunks of BLOCK_SIZE.
-        let zeros = vec![0u8; BLOCK_SIZE];
+        let zeros = vec![0u8; BLOCK_SIZE.get() as usize];
 
         // First write should succeed for both.
         assert_eq!(
-            <u64 as TryInto<usize>>::try_into(
-                a.file_proxy
-                    .write(&zeros)
-                    .await
-                    .expect("Failed Write message")
-                    .expect("Failed write")
-            )
-            .unwrap(),
+            a.file_proxy.write(&zeros).await.expect("Failed Write message").expect("Failed write"),
             BLOCK_SIZE
         );
-        a_written += BLOCK_SIZE as u64;
+        a_written += BLOCK_SIZE;
         assert_eq!(
-            <u64 as TryInto<usize>>::try_into(
-                b.file_proxy
-                    .write(&zeros)
-                    .await
-                    .expect("Failed Write message")
-                    .expect("Failed write")
-            )
-            .unwrap(),
+            b.file_proxy.write(&zeros).await.expect("Failed Write message").expect("Failed write"),
             BLOCK_SIZE
         );
-        b_written += BLOCK_SIZE as u64;
+        b_written += BLOCK_SIZE;
 
         // Likely to run out of space before writing the full limit due to overheads.
-        for _ in (BLOCK_SIZE..BYTES_LIMIT as usize).step_by(BLOCK_SIZE) {
+        for _ in (BLOCK_SIZE.get()..BYTES_LIMIT).step_by(BLOCK_SIZE.get() as usize) {
             match a.file_proxy.write(&zeros).await.expect("Failed Write message") {
                 Err(_) => break,
                 Ok(bytes) => {
                     a_written += bytes;
-                    if bytes < BLOCK_SIZE.try_into().unwrap() {
+                    if bytes < BLOCK_SIZE {
                         break;
                     }
                 }
@@ -2293,12 +2273,12 @@ mod tests {
 
         // Now write to the second volume. Likely to run out of space before writing the full limit
         // due to overheads.
-        for _ in (BLOCK_SIZE..BYTES_LIMIT as usize).step_by(BLOCK_SIZE) {
+        for _ in (BLOCK_SIZE.get()..BYTES_LIMIT).step_by(BLOCK_SIZE.get() as usize) {
             match b.file_proxy.write(&zeros).await.expect("Failed Write message") {
                 Err(_) => break,
                 Ok(bytes) => {
                     b_written += bytes;
-                    if bytes < BLOCK_SIZE.try_into().unwrap() {
+                    if bytes < BLOCK_SIZE {
                         break;
                     }
                 }
@@ -2315,9 +2295,9 @@ mod tests {
         );
 
         // Second volume should have failed very early.
-        assert!(BLOCK_SIZE as u64 * BLOCK_COUNT as u64 - BYTES_LIMIT >= b_written);
+        assert!(BLOCK_SIZE * BLOCK_COUNT - BYTES_LIMIT >= b_written);
         // First volume should have gotten further.
-        assert!(BLOCK_SIZE as u64 * BLOCK_COUNT as u64 - BYTES_LIMIT <= a_written);
+        assert!(BLOCK_SIZE * BLOCK_COUNT - BYTES_LIMIT <= a_written);
 
         a.file_proxy.close().await.unwrap().expect("Failed to close file");
         b.file_proxy.close().await.unwrap().expect("Failed to close file");
@@ -2775,10 +2755,7 @@ mod tests {
         )
         .await;
 
-        file.resize((zx::system_get_page_size() * 2).into())
-            .await
-            .expect("resize (FIDL)")
-            .expect("resize failed");
+        file.resize((PAGE_SIZE * 2).into()).await.expect("resize (FIDL)").expect("resize failed");
         // The above resize creates zero pages which aren't dirty pages and don't contribute to the
         // dirty bytes count but still need to be flushed. The first write below will cross the
         // `max_dirty_bytes_when_critical` threshold but `minimize_memory` won't flush the file
@@ -2808,8 +2785,7 @@ mod tests {
         // One call to get dirty bytes over 0, the second to force a flush during mark_dirty.
         vmo.write(&buf, 0).expect("Writing to create dirty bytes");
         let before = fixture.volumes_directory().pager_dirty_bytes_count.load();
-        vmo.write(&buf, zx::system_get_page_size().into())
-            .expect("Writing to force a flush during mark_dirty");
+        vmo.write(&buf, PAGE_SIZE.get()).expect("Writing to force a flush during mark_dirty");
         // This is still the page size because we forced a flush of the first write during the
         // second write.
         assert_eq!(fixture.volumes_directory().pager_dirty_bytes_count.load(), before,);

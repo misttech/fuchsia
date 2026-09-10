@@ -736,7 +736,8 @@ pub async fn verify(
                     if check_file_contents {
                         let inline_flags = inode.header.inline_flags;
                         if inline_flags.contains(InlineFlags::Data) {
-                            let mut buffer = handle.allocate_buffer(FXFS_BLOCK_SIZE as usize).await;
+                            let mut buffer =
+                                handle.allocate_buffer(FXFS_BLOCK_SIZE.get() as usize).await;
                             let len = handle.read(0, buffer.as_mut()).await.context("read")?;
                             let f2fs_block = inode.inline_data.as_ref().unwrap();
                             assert_eq!(
@@ -747,14 +748,11 @@ pub async fn verify(
                         } else {
                             let device = fxfs.device();
                             let mut fxfs_buffer =
-                                device.allocate_buffer(FXFS_BLOCK_SIZE as usize).await;
+                                device.allocate_buffer(FXFS_BLOCK_SIZE.get() as usize).await;
                             for i in 0..inode.header.block_size as u32 {
                                 if let Some(f2fs_block) = f2fs.read_data(&inode, i).await.unwrap() {
                                     let len = handle
-                                        .read(
-                                            i as u64 * FXFS_BLOCK_SIZE as u64,
-                                            fxfs_buffer.as_mut(),
-                                        )
+                                        .read(i as u64 * FXFS_BLOCK_SIZE, fxfs_buffer.as_mut())
                                         .await
                                         .unwrap();
                                     assert_eq!(
@@ -903,7 +901,7 @@ pub async fn deep_copy_files(
         .await?;
         if inode.header.inline_flags.contains(InlineFlags::Data) {
             let len = inode.inline_data.as_ref().unwrap().len();
-            let mut buffer = object.allocate_buffer(FXFS_BLOCK_SIZE as usize).await;
+            let mut buffer = object.allocate_buffer(FXFS_BLOCK_SIZE.get() as usize).await;
             let mut transaction = fxfs
                 .root_store()
                 .new_transaction(
@@ -918,7 +916,7 @@ pub async fn deep_copy_files(
                     &mut transaction,
                     AttributeId::DATA,
                     Some(VOLUME_DATA_KEY_ID),
-                    &[0..FXFS_BLOCK_SIZE as u64],
+                    &[0..FXFS_BLOCK_SIZE.get()],
                     buffer.as_mut(),
                 )
                 .await
@@ -990,9 +988,8 @@ pub async fn deep_copy_files(
                             &mut transaction,
                             AttributeId::DATA,
                             Some(VOLUME_DATA_KEY_ID),
-                            &[current_block_offset as u64 * FXFS_BLOCK_SIZE as u64
-                                ..(current_block_offset + chunk_len) as u64
-                                    * FXFS_BLOCK_SIZE as u64],
+                            &[current_block_offset as u64 * FXFS_BLOCK_SIZE
+                                ..(current_block_offset + chunk_len) as u64 * FXFS_BLOCK_SIZE],
                             buffer.subslice_mut(0..byte_len),
                         )
                         .await
@@ -1020,7 +1017,7 @@ pub async fn migrate_device(
     crypt: Arc<dyn Crypt>,
 ) -> Result<(), Error> {
     let image_builder_mode =
-        if offset > FXFS_BLOCK_SIZE as u64 { SuperBlockInstance::A } else { SuperBlockInstance::B };
+        if offset > FXFS_BLOCK_SIZE { SuperBlockInstance::A } else { SuperBlockInstance::B };
     let mut fxfs = FxFilesystemBuilder::new()
         .format(true)
         .trim_config(None)

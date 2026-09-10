@@ -12,6 +12,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use storage_device::buffer::{BufferFuture, BufferRef, MutableBufferRef};
 use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
+use storage_units::BlockSize;
 
 pub struct FakeObject {
     buf: Mutex<Vec<u8>>,
@@ -53,15 +54,17 @@ impl FakeObject {
 pub struct FakeObjectHandle {
     object: Arc<FakeObject>,
     allocator: BufferAllocator,
+    block_size: BlockSize,
 }
 
 impl FakeObjectHandle {
-    pub fn new_with_block_size(object: Arc<FakeObject>, block_size: usize) -> Self {
-        let allocator = BufferAllocator::new(block_size, BufferSource::new(32 * 1024 * 1024));
-        Self { object, allocator }
+    pub fn new_with_block_size(object: Arc<FakeObject>, block_size: BlockSize) -> Self {
+        let allocator =
+            BufferAllocator::new(block_size.get() as usize, BufferSource::new(32 * 1024 * 1024));
+        Self { object, allocator, block_size }
     }
     pub fn new(object: Arc<FakeObject>) -> Self {
-        Self::new_with_block_size(object, 512)
+        Self::new_with_block_size(object, BlockSize::SIZE_512B)
     }
 }
 
@@ -70,8 +73,8 @@ impl ObjectHandle for FakeObjectHandle {
         0
     }
 
-    fn block_size(&self) -> u64 {
-        self.allocator.block_size().try_into().unwrap()
+    fn block_size(&self) -> BlockSize {
+        self.block_size
     }
 
     fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {

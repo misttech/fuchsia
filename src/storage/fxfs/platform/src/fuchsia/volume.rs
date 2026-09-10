@@ -46,6 +46,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::Duration;
 use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
+use storage_units::BlockSize;
 use vfs::directory::entry::DirectoryEntry;
 use vfs::directory::simple::Simple;
 use vfs::execution_scope::ExecutionScope;
@@ -215,7 +216,7 @@ impl FxVolume {
     pub fn blob_allocator(&self) -> &Arc<BufferAllocator> {
         self.blob_allocator.get_or_init(|| {
             Arc::new(BufferAllocator::new(
-                self.store().block_size() as usize,
+                self.store().block_size().get() as usize,
                 BufferSource::new_trusted(BLOB_TRANSFER_VMO_SIZE),
             ))
         })
@@ -1054,7 +1055,7 @@ const FXFS_INFO_NAME_FIDL: [i8; 32] = [
 
 fn info_to_filesystem_info(
     info: filesystem::Info,
-    block_size: u64,
+    block_size: BlockSize,
     object_count: u64,
     fs_id: u64,
 ) -> fio::FilesystemInfo {
@@ -1066,7 +1067,7 @@ fn info_to_filesystem_info(
         // TODO(https://fxbug.dev/42175592): Support free_shared_pool_bytes.
         free_shared_pool_bytes: 0,
         fs_id,
-        block_size: block_size as u32,
+        block_size: block_size.get() as u32,
         max_filename_size: fio::MAX_NAME_LENGTH as u32,
         fs_type: fidl_fuchsia_fs::VfsType::Fxfs.into_primitive(),
         padding: 0,

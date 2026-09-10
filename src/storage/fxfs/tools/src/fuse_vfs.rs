@@ -212,7 +212,7 @@ impl FuseFs {
             let mut out: Vec<u8> = Vec::new();
             let align = offset % self.fs.block_size();
 
-            let mut buf = handle.allocate_buffer(handle.block_size() as usize).await;
+            let mut buf = handle.allocate_buffer(handle.block_size().get() as usize).await;
             // Round down for the block alignment.
             let mut ofs = offset - align;
             let len = size as u64 + align + ofs;
@@ -1939,7 +1939,7 @@ mod tests {
                 new_fake_request(),
                 create_reply.attr.ino,
                 0,
-                fs.fs.block_size(),
+                fs.fs.block_size().get(),
                 TEST_DATA.len() as _,
             )
             .await

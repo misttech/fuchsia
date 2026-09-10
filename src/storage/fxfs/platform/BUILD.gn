@@ -91,6 +91,7 @@ template("fxfs_platform_library") {
       "//src/storage/lib/pseudo_fs:pseudo_fs_static",
       "//src/storage/lib/ptr_slice",
       "//src/storage/lib/storage_device",
+      "//src/storage/lib/units",
       "//src/storage/lib/vfs/rust:vfs_static",
       "//src/storage/lib/vmo-fifo",
       "//src/sys/pkg/lib/fuchsia-hash",

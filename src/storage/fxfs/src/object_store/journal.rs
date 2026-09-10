@@ -54,7 +54,7 @@ use crate::object_store::{
     Item, ItemRef, NewChildStoreOptions, ObjectStore, ReservedId,
 };
 use crate::range::RangeExt;
-use crate::round::{round_div, round_down};
+use crate::round::round_div;
 use crate::serialized_types::{
     LATEST_VERSION, Migrate, Version, Versioned, migrate_nodefault, migrate_to_version,
 };
@@ -77,9 +77,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::task::{Poll, Waker};
 use storage_device::Device;
+use storage_units::BlockSize;
 
 // The journal file is written to in blocks of this size.
-pub const BLOCK_SIZE: u64 = 4096;
+pub const BLOCK_SIZE: BlockSize = BlockSize::SIZE_4KIB;
 
 // The journal file is extended by this amount when necessary.
 const CHUNK_SIZE: u64 = 131_072;
@@ -516,7 +517,7 @@ impl Journal {
                 zero_offset: None,
                 device_flushed_offset: 0,
                 needs_did_flush_device: false,
-                writer: JournalWriter::new(BLOCK_SIZE as usize, starting_checksum),
+                writer: JournalWriter::new(BLOCK_SIZE, starting_checksum),
                 output_reset_version: false,
                 flush_waker: None,
                 terminate: false,
@@ -571,7 +572,7 @@ impl Journal {
     pub(crate) async fn read_superblocks(
         &self,
         device: Arc<dyn Device>,
-        block_size: u64,
+        block_size: BlockSize,
     ) -> Result<(SuperBlockHeader, ObjectStore), Error> {
         self.super_block_manager.load(device, block_size).await
     }
@@ -579,7 +580,12 @@ impl Journal {
     /// Used during replay to validate a mutation.  This should return false if the mutation is not
     /// valid and should not be applied.  This could be for benign reasons: e.g. the device flushed
     /// data out-of-order, or because of a malicious actor.
-    fn validate_mutation(&self, mutation: &Mutation, block_size: u64, device_size: u64) -> bool {
+    fn validate_mutation(
+        &self,
+        mutation: &Mutation,
+        block_size: BlockSize,
+        device_size: u64,
+    ) -> bool {
         match mutation {
             Mutation::ObjectStore(ObjectStoreMutation {
                 item:
@@ -594,7 +600,7 @@ impl Journal {
                     },
                 ..
             }) => {
-                if extent.is_empty() || !extent.is_aligned(block_size) {
+                if extent.is_empty() || !block_size.is_aligned(extent) {
                     return false;
                 }
                 let len = extent.length().unwrap();
@@ -603,12 +609,12 @@ impl Journal {
                         if len % checksums.len() as u64 != 0 {
                             return false;
                         }
-                        if (len / checksums.len() as u64) % block_size != 0 {
+                        if !block_size.is_aligned(len / checksums.len() as u64) {
                             return false;
                         }
                     }
                 }
-                if *device_offset % block_size != 0
+                if !block_size.is_aligned(device_offset)
                     || *device_offset >= device_size
                     || device_size - *device_offset < len
                 {
@@ -701,10 +707,9 @@ impl Journal {
             let mut iter = root_parent_layer.seek(Bound::Included(&ObjectKey::attribute(
                 super_block.journal_object_id,
                 AttributeId::DATA,
-                AttributeKey::Extent(Extent::search_key_from_offset(round_down(
-                    super_block.journal_checkpoint.file_offset,
-                    BLOCK_SIZE,
-                ))),
+                AttributeKey::Extent(Extent::search_key_from_offset(
+                    BLOCK_SIZE.align_down(super_block.journal_checkpoint.file_offset),
+                )),
             )));
             let start_offset = if let Some(ItemRef {
                 key:
@@ -1594,7 +1599,7 @@ impl Journal {
         {
             let mut inner = self.inner.lock();
             inner.super_block_header = new_super_block_header;
-            inner.zero_offset = Some(round_down(old_super_block_offset, BLOCK_SIZE));
+            inner.zero_offset = Some(BLOCK_SIZE.align_down(old_super_block_offset));
         }
 
         Ok(())
@@ -2048,9 +2053,8 @@ impl Journal {
                         // TODO(https://fxbug.dev/42069513): Push-back or rate-limit to prevent DoS.
                         let inner = this.inner.lock();
                         (
-                            round_down(
+                            BLOCK_SIZE.align_down(
                                 inner.super_block_header.journal_checkpoint.file_offset,
-                                BLOCK_SIZE,
                             ),
                             inner.flushed_offset,
                             inner.reclaim_size,

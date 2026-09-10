@@ -68,7 +68,6 @@ use crate::lsm_tree::types::{
 };
 use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes};
 use crate::object_store::caching_object_handle::{CHUNK_SIZE, CachedChunk, CachingObjectHandle};
-use crate::round::{round_down, round_up};
 use crate::serialized_types::{
     LATEST_VERSION, REMOVE_ITEM_SEQUENCE_VERSION, Version, Versioned, VersionedLatest,
 };
@@ -86,6 +85,7 @@ use std::io::{Read, Write as _};
 use std::marker::PhantomData;
 use std::ops::Bound;
 use std::sync::Arc;
+use storage_units::BlockSize;
 
 const PERSISTENT_LAYER_MAGIC: &[u8; 8] = b"FxfsLayr";
 
@@ -133,7 +133,7 @@ pub struct PersistentLayer<K, V> {
     object_handle: Arc<dyn ReadObjectHandle>,
     caching_object_handle: CachingObjectHandle<Arc<dyn ReadObjectHandle>>,
     version: Version,
-    block_size: u64,
+    block_size: BlockSize,
     data_size: u64,
     seek_table: Vec<u64>,
     num_items: usize,
@@ -165,7 +165,7 @@ impl std::io::Read for BufferCursor {
     }
 }
 
-const MIN_BLOCK_SIZE: u64 = 512;
+const MIN_BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
 
 // For small layer files, don't bother with the bloom filter.  Arbitrarily chosen.
 const MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER: usize = 4;
@@ -212,10 +212,10 @@ struct KeyOnlyIterator<'iter, K: Key, V: LayerValue> {
 
 impl<K: Key, V: LayerValue> KeyOnlyIterator<'_, K, V> {
     fn new<'iter>(layer: &'iter PersistentLayer<K, V>, pos: u64) -> KeyOnlyIterator<'iter, K, V> {
-        assert!(pos % layer.block_size == 0);
+        assert!(layer.block_size.is_aligned(pos));
         KeyOnlyIterator {
             layer,
-            buffer: BufferCursor { chunk: None, pos: pos as usize % CHUNK_SIZE },
+            buffer: BufferCursor { chunk: None, pos: (pos % CHUNK_SIZE) as usize },
             pos,
             item_index: 0,
             item_count: 0,
@@ -240,12 +240,13 @@ impl<K: Key, V: LayerValue> KeyOnlyIterator<'_, K, V> {
             PER_DATA_BLOCK_HEADER_SIZE
         } else {
             let old_buffer_pos = self.buffer.pos;
-            self.buffer.pos = round_up(self.buffer.pos, self.layer.block_size as usize).unwrap()
+            self.buffer.pos = self.layer.block_size.align_up(self.buffer.pos as u64).unwrap()
+                as usize
                 - (PER_DATA_BLOCK_SEEK_ENTRY_SIZE * (usize::from(self.item_count - index)));
             let res = self.buffer.read_u16::<LittleEndian>();
             self.buffer.pos = old_buffer_pos;
             let offset_in_block = res.context("Failed to read offset")? as usize;
-            if offset_in_block >= self.layer.block_size as usize
+            if offset_in_block >= self.layer.block_size.get() as usize
                 || offset_in_block <= PER_DATA_BLOCK_HEADER_SIZE
             {
                 return Err(anyhow!(FxfsError::Inconsistent))
@@ -255,7 +256,7 @@ impl<K: Key, V: LayerValue> KeyOnlyIterator<'_, K, V> {
         };
         self.item_index = index;
         self.buffer.pos =
-            round_down(self.buffer.pos, self.layer.block_size as usize) + offset_in_block;
+            (self.layer.block_size.align_down(self.buffer.pos as u64) as usize) + offset_in_block;
         Ok(())
     }
 
@@ -265,7 +266,7 @@ impl<K: Key, V: LayerValue> KeyOnlyIterator<'_, K, V> {
                 self.key = None;
                 return Ok(());
             }
-            if self.buffer.chunk.is_none() || self.pos as usize % CHUNK_SIZE == 0 {
+            if self.buffer.chunk.is_none() || CHUNK_SIZE.is_aligned(self.pos) {
                 self.buffer.chunk = Some(
                     self.layer
                         .caching_object_handle
@@ -274,7 +275,7 @@ impl<K: Key, V: LayerValue> KeyOnlyIterator<'_, K, V> {
                         .context("Reading during advance")?,
                 );
             }
-            self.buffer.pos = self.pos as usize % CHUNK_SIZE;
+            self.buffer.pos = (self.pos % CHUNK_SIZE) as usize;
             self.item_count = self.buffer.read_u16::<LittleEndian>()?;
             if self.item_count == 0 {
                 bail!(
@@ -310,13 +311,13 @@ impl<K: Key, V: LayerValue> KeyOnlyIterator<'_, K, V> {
                 self.key = None;
                 return Ok(true);
             }
-            if self.buffer.chunk.is_none() || self.pos as usize % CHUNK_SIZE == 0 {
+            if self.buffer.chunk.is_none() || CHUNK_SIZE.is_aligned(self.pos) {
                 self.buffer.chunk = self.layer.caching_object_handle.try_read(self.pos as usize);
                 if self.buffer.chunk.is_none() {
                     return Ok(false);
                 }
             }
-            self.buffer.pos = self.pos as usize % CHUNK_SIZE;
+            self.buffer.pos = (self.pos % CHUNK_SIZE) as usize;
             self.item_count = self.buffer.read_u16::<LittleEndian>()?;
             if self.item_count == 0 {
                 bail!(
@@ -482,8 +483,8 @@ async fn load_bloom_filter<K: FuzzyHash>(
 
 impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
     pub async fn open(handle: impl ReadObjectHandle + 'static) -> Result<Arc<Self>, Error> {
-        let bs = handle.block_size();
-        let mut buffer = handle.allocate_buffer(bs as usize).await;
+        let handle_block_size = handle.block_size();
+        let mut buffer = handle.allocate_buffer(handle_block_size.get() as usize).await;
         handle.read(0, buffer.as_mut()).await.context("Failed to read first block")?;
         let mut reader = buffer.as_ptr_slice();
         let version = Version::deserialize_from(&mut reader)?;
@@ -494,33 +495,32 @@ impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
         if &header.magic != PERSISTENT_LAYER_MAGIC {
             return Err(anyhow!(FxfsError::Inconsistent).context("Invalid layer file magic"));
         }
-        if header.block_size == 0 || !header.block_size.is_power_of_two() {
-            return Err(anyhow!(FxfsError::Inconsistent))
-                .context(format!("Invalid block size {}", header.block_size));
-        }
-        ensure!(header.block_size > 0, FxfsError::Inconsistent);
-        ensure!(header.block_size <= MAX_BLOCK_SIZE, FxfsError::NotSupported);
-        let physical_block_size = handle.block_size();
-        if header.block_size % physical_block_size != 0 {
+        let block_size = BlockSize::from_u64(header.block_size).ok_or_else(|| {
+            anyhow!(FxfsError::Inconsistent)
+                .context(format!("Invalid block size {}", header.block_size))
+        })?;
+        ensure!(block_size <= MAX_BLOCK_SIZE, FxfsError::NotSupported);
+        ensure!(block_size >= MIN_BLOCK_SIZE, FxfsError::NotSupported);
+        if !handle_block_size.is_aligned(block_size.get()) {
             return Err(anyhow!(FxfsError::Inconsistent)).context(format!(
-                "{} not a multiple of physical block size {}",
-                header.block_size, physical_block_size
+                "{} not a multiple of handle block size {}",
+                block_size, handle_block_size
             ));
         }
 
-        let bs = header.block_size as usize;
-        if handle.get_size() < MINIMUM_LAYER_FILE_BLOCKS * bs as u64 {
+        if handle.get_size() < MINIMUM_LAYER_FILE_BLOCKS * block_size {
             return Err(anyhow!(FxfsError::Inconsistent).context("Layer file too short"));
         }
 
+        let bs = block_size.get() as usize;
         let layer_info = {
             let last_block_offset = handle
                 .get_size()
-                .checked_sub(header.block_size)
+                .checked_sub(block_size.get())
                 .ok_or(FxfsError::Inconsistent)
                 .context("Layer file unexpectedly short")?;
             handle
-                .read(last_block_offset, buffer.subslice_mut(0..header.block_size as usize))
+                .read(last_block_offset, buffer.subslice_mut(0..bs))
                 .await
                 .context("Failed to read layer info")?;
             let layer_info_len =
@@ -538,19 +538,16 @@ impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
             return Err(anyhow!(FxfsError::Inconsistent))
                 .context("Invalid num_items/num_data_blocks");
         }
-        let total_blocks = handle.get_size() / header.block_size;
+        let total_blocks = handle.get_size() / block_size;
         let bloom_filter_blocks =
-            round_up(layer_info.bloom_filter_size_bytes as u64, header.block_size)
-                .unwrap_or(layer_info.bloom_filter_size_bytes as u64)
-                / header.block_size;
+            block_size.align_up_to_blocks(layer_info.bloom_filter_size_bytes as u64);
         if layer_info.num_data_blocks + bloom_filter_blocks
             > total_blocks - MINIMUM_LAYER_FILE_BLOCKS
         {
             return Err(anyhow!(FxfsError::Inconsistent)).context("Invalid number of blocks");
         }
 
-        let bloom_filter_offset =
-            header.block_size * (NUM_HEADER_BLOCKS + layer_info.num_data_blocks);
+        let bloom_filter_offset = block_size * (NUM_HEADER_BLOCKS + layer_info.num_data_blocks);
         let bloom_filter = if version == LATEST_VERSION {
             load_bloom_filter(&handle, bloom_filter_offset, &layer_info)
                 .await
@@ -563,8 +560,8 @@ impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
         };
         let bloom_filter_stats = bloom_filter.as_ref().map(|b| b.stats());
 
-        let seek_offset = header.block_size
-            * (NUM_HEADER_BLOCKS + layer_info.num_data_blocks + bloom_filter_blocks);
+        let seek_offset =
+            block_size * (NUM_HEADER_BLOCKS + layer_info.num_data_blocks + bloom_filter_blocks);
         let seek_table = load_seek_table(&handle, seek_offset, layer_info.num_data_blocks)
             .await
             .context("Failed to load seek table")?;
@@ -575,8 +572,8 @@ impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
             object_handle,
             caching_object_handle,
             version,
-            block_size: header.block_size,
-            data_size: layer_info.num_data_blocks * header.block_size,
+            block_size,
+            data_size: block_size * layer_info.num_data_blocks,
             seek_table,
             num_items: layer_info.num_items,
             bloom_filter,
@@ -652,7 +649,7 @@ impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
         while right_offset - left_offset > self.block_size {
             // Pick a block midway.
             let mid_offset =
-                round_down(left_offset + (right_offset - left_offset) / 2, self.block_size);
+                self.block_size.align_down(left_offset + (right_offset - left_offset) / 2);
             let mut iterator = KeyOnlyIterator::new(self, mid_offset);
             iterator.advance().await?;
             let iter_key: &K = iterator.get().unwrap();
@@ -789,13 +786,13 @@ impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
 }
 
 // This ensures that item_count can't be overflowed below.
-const_assert!(MAX_BLOCK_SIZE <= u16::MAX as u64 + 1);
+const_assert!(MAX_BLOCK_SIZE.size() <= u16::MAX as u64 + 1);
 
 // -- Writer support --
 
 pub struct PersistentLayerWriter<W: WriteBytes, K: Key, V: LayerValue> {
     writer: W,
-    block_size: u64,
+    block_size: BlockSize,
     buf: Vec<u8>,
     buf_item_count: LayerWriterBufItemCount,
     item_count: usize,
@@ -807,22 +804,23 @@ pub struct PersistentLayerWriter<W: WriteBytes, K: Key, V: LayerValue> {
 
 impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
     /// Creates a new writer that will serialize items to the object accessible via |object_handle|
-    pub async fn new(writer: W, num_items: usize, block_size: u64) -> Result<Self, Error> {
+    pub async fn new(writer: W, num_items: usize, block_size: BlockSize) -> Result<Self, Error> {
         Self::new_with_version(writer, num_items, block_size, LATEST_VERSION).await
     }
 
     pub(crate) async fn new_with_version(
         mut writer: W,
         num_items: usize,
-        block_size: u64,
+        block_size: BlockSize,
         version: Version,
     ) -> Result<Self, Error> {
         ensure!(block_size <= MAX_BLOCK_SIZE, FxfsError::NotSupported);
         ensure!(block_size >= MIN_BLOCK_SIZE, FxfsError::NotSupported);
 
         // Write the header block.
-        let header = LayerHeader { magic: PERSISTENT_LAYER_MAGIC.clone(), block_size };
-        let mut buf = vec![0u8; block_size as usize];
+        let header =
+            LayerHeader { magic: PERSISTENT_LAYER_MAGIC.clone(), block_size: block_size.get() };
+        let mut buf = vec![0u8; block_size.get() as usize];
         {
             let mut cursor = std::io::Cursor::new(&mut buf[..]);
             version.serialize_into(&mut cursor)?;
@@ -853,8 +851,10 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
             return Ok(());
         }
         let seek_table_size = self.block_offsets.len() * PER_DATA_BLOCK_SEEK_ENTRY_SIZE;
-        assert!(PER_DATA_BLOCK_HEADER_SIZE + seek_table_size + len <= self.block_size as usize);
-        let mut cursor = std::io::Cursor::new(vec![0u8; self.block_size as usize]);
+        assert!(
+            PER_DATA_BLOCK_HEADER_SIZE + seek_table_size + len <= self.block_size.get() as usize
+        );
+        let mut cursor = std::io::Cursor::new(vec![0u8; self.block_size.get() as usize]);
         cursor.write_u16::<LittleEndian>(*self.buf_item_count)?;
         cursor.write_all(self.buf.drain(..len).as_ref())?;
         cursor.set_position(self.block_size - seek_table_size as u64);
@@ -896,7 +896,7 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
         bloom_filter_size_bytes: usize,
         seek_table_len: usize,
     ) -> Result<(), Error> {
-        let block_size = self.writer.block_size() as usize;
+        let block_size = self.writer.block_size().get() as usize;
         let layer_info = LayerInfo {
             num_items: self.item_count,
             num_data_blocks,
@@ -914,7 +914,8 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
 
         // We want the LayerInfo to be at the end of the last block.  That might require creating a
         // new block if we don't have enough room.
-        let avail_in_block = block_size - (seek_table_len % block_size);
+        let avail_in_block =
+            block_size - (seek_table_len as u64 % self.writer.block_size()) as usize;
         let to_skip = if avail_in_block < actual_len {
             block_size + avail_in_block - actual_len
         } else {
@@ -932,7 +933,8 @@ impl<W: WriteBytes, K: Key, V: LayerValue> PersistentLayerWriter<W, K, V> {
             return Ok(0);
         }
         // TODO(https://fxbug.dev/323571978): Avoid bounce-buffering.
-        let size = round_up(self.bloom_filter.serialized_size(), self.block_size as usize).unwrap();
+        let size =
+            self.block_size.align_up(self.bloom_filter.serialized_size() as u64).unwrap() as usize;
         self.buf.resize(size, 0);
         let mut cursor = std::io::Cursor::new(&mut self.buf);
         self.bloom_filter.write(&mut cursor)?;
@@ -973,7 +975,7 @@ impl<W: WriteBytes + Send, K: Key, V: LayerValue> LayerWriter<K, V>
         if PER_DATA_BLOCK_HEADER_SIZE
             + self.buf.len()
             + (self.block_offsets.len() * PER_DATA_BLOCK_SEEK_ENTRY_SIZE)
-            > self.block_size as usize - 1
+            > self.block_size.get() as usize - 1
         {
             if added_offset {
                 // Drop the recently added offset from the list. The latest item will be the first
@@ -1030,7 +1032,7 @@ impl std::ops::DerefMut for LayerWriterBufItemCount {
 
 #[cfg(test)]
 mod tests {
-    use super::{PersistentLayer, PersistentLayerWriter};
+    use super::{BlockSize, PersistentLayer, PersistentLayerWriter};
     use crate::filesystem::MAX_BLOCK_SIZE;
     use crate::lsm_tree::LayerIterator;
     use crate::lsm_tree::persistent_layer::MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER;
@@ -1061,7 +1063,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_iterate_after_write() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         const ITEM_COUNT: i32 = 10000;
 
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
@@ -1090,7 +1092,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_seek_after_write() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         const ITEM_COUNT: i32 = 5000;
 
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
@@ -1141,7 +1143,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_seek_unbounded() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         const ITEM_COUNT: i32 = 1000;
 
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
@@ -1171,7 +1173,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_zero_items() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
 
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
         {
@@ -1195,7 +1197,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_one_item() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
 
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
         {
@@ -1253,22 +1255,21 @@ mod tests {
     #[fuchsia::test]
     async fn test_large_block_size() {
         // At the upper end of the supported size.
-        const BLOCK_SIZE: u64 = MAX_BLOCK_SIZE;
+        const BLOCK_SIZE: BlockSize = MAX_BLOCK_SIZE;
         // Items will be 18 bytes, so fill up a few pages.
-        const ITEM_COUNT: i32 = ((BLOCK_SIZE as i32) / 18) * 3;
+        let item_count: i32 = ((BLOCK_SIZE.get() as i32) / 18) * 3;
 
-        let handle =
-            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
+        let handle = FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
         {
             let mut writer = PersistentLayerWriter::<_, i32, i32>::new(
                 Writer::new(&handle).await,
-                ITEM_COUNT as usize * 18,
+                item_count as usize * 18,
                 BLOCK_SIZE,
             )
             .await
             .expect("writer new");
             // Use large values to force varint encoding to use consistent space.
-            for i in 2000000000..(2000000000 + ITEM_COUNT) {
+            for i in 2000000000..(2000000000 + item_count) {
                 writer.write(Item::new(i, i).as_item_ref()).await.expect("write failed");
             }
             writer.complete().await.expect("flush failed");
@@ -1276,7 +1277,7 @@ mod tests {
 
         let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("new failed");
         let mut iterator = layer.seek(Bound::Unbounded).await.expect("seek failed");
-        for i in 2000000000..(2000000000 + ITEM_COUNT) {
+        for i in 2000000000..(2000000000 + item_count) {
             let ItemRef { key, value, .. } = iterator.get().expect("missing item");
             assert_eq!((key, value), (&i, &i));
             iterator.advance().await.expect("failed to advance");
@@ -1287,10 +1288,9 @@ mod tests {
     #[fuchsia::test]
     async fn test_overlarge_block_size() {
         // At the upper end of the supported size.
-        const BLOCK_SIZE: u64 = MAX_BLOCK_SIZE * 2;
+        const BLOCK_SIZE: BlockSize = BlockSize::from_u64(MAX_BLOCK_SIZE.size() * 2).unwrap();
 
-        let handle =
-            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
+        let handle = FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
         PersistentLayerWriter::<_, i32, i32>::new(Writer::new(&handle).await, 0, BLOCK_SIZE)
             .await
             .expect_err("Creating writer with overlarge block size.");
@@ -1298,7 +1298,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_seek_bound_excluded() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         const ITEM_COUNT: i32 = 10000;
 
         let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
@@ -1381,13 +1381,12 @@ mod tests {
     #[fuchsia::test]
     async fn test_block_seek_duplicate_leading_u64() {
         // At the upper end of the supported size.
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         const ITEMS_PER_PHASE: u64 = 50;
 
         let mut to_find = Vec::new();
 
-        let handle =
-            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
+        let handle = FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
         {
             let mut items = Vec::new();
             // Make all values take up maximum space for varint encoding.
@@ -1491,7 +1490,7 @@ mod tests {
 
             let mut writer = PersistentLayerWriter::<_, ObjectKey, u64>::new(
                 Writer::new(&handle).await,
-                3 * BLOCK_SIZE as usize,
+                (3 * BLOCK_SIZE) as usize,
                 BLOCK_SIZE,
             )
             .await
@@ -1515,14 +1514,13 @@ mod tests {
     #[fuchsia::test]
     async fn test_two_seek_blocks() {
         // At the upper end of the supported size.
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         const ITEMS_PER_PHASE: u64 = 50;
-        const ITEM_COUNT: u64 = ITEMS_PER_PHASE * ((BLOCK_SIZE / 8) + 2);
+        const ITEM_COUNT: u64 = ITEMS_PER_PHASE * ((BLOCK_SIZE.size() / 8) + 2);
 
         let mut to_find = Vec::new();
 
-        let handle =
-            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
+        let handle = FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
         {
             let mut writer = PersistentLayerWriter::<_, TestKey, u64>::new(
                 Writer::new(&handle).await,
@@ -1565,11 +1563,11 @@ mod tests {
     // and parsed afterward.
     #[fuchsia::test]
     async fn test_full_seek_block() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         const ITEMS_PER_PHASE: u64 = 50;
 
         // How many entries there are in a seek table block.
-        const SEEK_TABLE_ENTRIES: u64 = BLOCK_SIZE / 8;
+        const SEEK_TABLE_ENTRIES: u64 = BLOCK_SIZE.size() / 8;
 
         // Number of entries to fill a seek block would need one more block of entries, but we're
         // starting low here on purpose to do a range and make sure we hit the size we are
@@ -1577,10 +1575,8 @@ mod tests {
         const START_ENTRIES_COUNT: u64 = ITEMS_PER_PHASE * SEEK_TABLE_ENTRIES;
 
         for entries in START_ENTRIES_COUNT..START_ENTRIES_COUNT + (ITEMS_PER_PHASE * 2) {
-            let handle = FakeObjectHandle::new_with_block_size(
-                Arc::new(FakeObject::new()),
-                BLOCK_SIZE as usize,
-            );
+            let handle =
+                FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
             {
                 let mut writer = PersistentLayerWriter::<_, TestKey, u64>::new(
                     Writer::new(&handle).await,
@@ -1610,15 +1606,15 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_ignore_bloom_filter_on_older_versions() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         const ITEMS_PER_PHASE: u64 = 50;
         // Add enough items to create enough blocks for a bloom filter to be necessary.
         const ITEM_COUNT: u64 = (1 + MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER as u64) * ITEMS_PER_PHASE;
 
         let old_version_handle =
-            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
+            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
         let current_version_handle =
-            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
+            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
         {
             let mut old_version_writer =
                 PersistentLayerWriter::<_, TestKey, u64>::new_with_version(
@@ -1671,12 +1667,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_key_exists_no_bloom_filter() {
-        const BLOCK_SIZE: u64 = 8192;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_8KIB;
         // Not enough items to trigger a bloom filter.
         const ITEM_COUNT: i32 = 100;
 
-        let handle =
-            FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE as usize);
+        let handle = FakeObjectHandle::new_with_block_size(Arc::new(FakeObject::new()), BLOCK_SIZE);
         {
             let mut writer = PersistentLayerWriter::<_, i32, i32>::new(
                 Writer::new(&handle).await,
@@ -1707,7 +1702,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_key_exists_with_bloom_filter() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         // Enough items to trigger a bloom filter.
         const ITEM_COUNT: i32 = 10000;
 
@@ -1752,7 +1747,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_load_large_bloom_filter_multi_chunk() {
-        const BLOCK_SIZE: u64 = 512;
+        const BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
         // Sizing for 600_000 items creates a 2 MiB bloom filter (exceeding 1 MiB chunk size).
         const ESTIMATED_ITEMS: usize = 600_000;
         const WRITTEN_ITEMS: i32 = 2000;

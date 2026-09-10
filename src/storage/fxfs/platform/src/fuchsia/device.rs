@@ -158,7 +158,7 @@ impl BlockServer {
             buffer
         };
 
-        self.file.write_at_uncached(request.dev_offset * block_size as u64, &data[..]).await?;
+        self.file.write_at_uncached(request.dev_offset * block_size, &data[..]).await?;
 
         Ok(())
     }
@@ -167,10 +167,8 @@ impl BlockServer {
         let block_size = self.file.get_block_size();
 
         let mut buffer = vec![0u8; (request.length as u64 * block_size) as usize];
-        let bytes_read = self
-            .file
-            .read_at_uncached(request.dev_offset * (block_size as u64), &mut buffer[..])
-            .await?;
+        let bytes_read =
+            self.file.read_at_uncached(request.dev_offset * block_size, &mut buffer[..]).await?;
 
         // Fill in the rest of the buffer if bytes_read is less than the requested amount
         buffer[bytes_read as usize..].fill(0);
@@ -270,10 +268,10 @@ impl BlockServer {
             BlockRequest::GetInfo { responder } => {
                 let block_size = self.file.get_block_size();
                 let block_count =
-                    (self.file.get_size().await.unwrap() + block_size - 1) / block_size;
+                    block_size.align_up_to_blocks(self.file.get_size().await.unwrap());
                 responder.send(Ok(&block::BlockInfo {
                     block_count,
-                    block_size: block_size as u32,
+                    block_size: block_size.get() as u32,
                     max_transfer_size: 1024 * 1024,
                     flags: block::DeviceFlag::empty(),
                 }))?;
@@ -779,7 +777,7 @@ mod tests {
         let (session_proxy, server) = fidl::endpoints::create_proxy::<SessionMarker>();
         volume.open_session(server).unwrap();
 
-        let vmo = zx::Vmo::create(zx::system_get_page_size() as u64).unwrap();
+        let vmo = zx::Vmo::create(storage_units::PAGE_SIZE.get()).unwrap();
         let vmo_id = session_proxy
             .attach_vmo(vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
             .await

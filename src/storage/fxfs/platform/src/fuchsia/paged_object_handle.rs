@@ -22,12 +22,12 @@ use fxfs::object_store::{
     AttributeId, DataObjectHandle, ObjectStore, RangeType, StoreObjectHandle, Timestamp,
 };
 use fxfs::range::RangeExt;
-use fxfs::round::round_up;
 use scopeguard::defer;
 use std::future::Future;
 use std::ops::Range;
 use std::sync::Arc;
 use storage_device::buffer::{Buffer, BufferFuture};
+use storage_units::{BlockSize, PAGE_SIZE};
 use vfs::temp_clone::{TempClonable, unblock};
 
 /// How much data each sync transaction in a given flush will cover.
@@ -218,33 +218,16 @@ impl std::convert::From<Option<Timestamp>> for DirtyTimestamp {
 
 /// Returns the amount of space that should be reserved to be able to flush `page_count` pages.
 fn reservation_needed(page_count: u64) -> u64 {
-    let page_size = zx::system_get_page_size() as u64;
-    let pages_per_transaction = FLUSH_BATCH_SIZE / page_size;
+    let pages_per_transaction = FLUSH_BATCH_SIZE / PAGE_SIZE;
     let transaction_count = page_count.div_ceil(pages_per_transaction);
-    transaction_count * TRANSACTION_METADATA_MAX_AMOUNT + page_count * page_size
+    transaction_count * TRANSACTION_METADATA_MAX_AMOUNT + page_count * PAGE_SIZE
 }
 
 /// Returns the number of pages spanned by `range`. `range` must be page aligned.
 fn page_count(range: Range<u64>) -> u64 {
-    let page_size = zx::system_get_page_size() as u64;
     debug_assert!(range.start <= range.end);
-    debug_assert_eq!(
-        range.start % page_size,
-        0,
-        "range start not page aligned (page size: {}, range: {}..{})",
-        page_size,
-        range.start,
-        range.end
-    );
-    debug_assert_eq!(
-        range.end % page_size,
-        0,
-        "range end not page aligned (page size: {}, range: {}..{})",
-        page_size,
-        range.start,
-        range.end
-    );
-    (range.end - range.start) / page_size
+    debug_assert!(PAGE_SIZE.is_aligned(&range), "range not page aligned: {range:?}");
+    (range.end - range.start) / PAGE_SIZE
 }
 
 impl Inner {
@@ -673,7 +656,7 @@ impl PagedObjectHandle {
             // always be derivable from `Inner`.
             reservation.forget();
         }
-        Ok(inner.dirty_pages.total() * zx::system_get_page_size() as u64)
+        Ok(inner.dirty_pages.total() * PAGE_SIZE)
     }
 
     /// Queries the VMO to see if it was modified since the last time this function was called.
@@ -732,7 +715,7 @@ impl PagedObjectHandle {
         content_size: u64,
         flush_type: FlushType,
     ) -> Result<BatchCollectionResult, Error> {
-        let page_aligned_content_size = round_up(content_size, zx::system_get_page_size()).unwrap();
+        let page_aligned_content_size = PAGE_SIZE.align_up(content_size).unwrap();
         let modified_ranges =
             self.collect_modified_ranges().context("collect_modified_ranges failed")?;
 
@@ -1016,7 +999,7 @@ impl PagedObjectHandle {
             // `VolumesDirectory` during testing.
             let cleaned_pages = flush_state.finish(&self.inner);
             if cleaned_pages > 0 {
-                self.owner().report_pager_clean(cleaned_pages * zx::system_get_page_size() as u64);
+                self.owner().report_pager_clean(cleaned_pages * PAGE_SIZE);
             }
         });
 
@@ -1264,7 +1247,7 @@ impl PagedObjectHandle {
             )
         };
         let mut props = self.handle.get_properties().await?;
-        props.allocated_size += dirty_page_count * zx::system_get_page_size() as u64;
+        props.allocated_size += dirty_page_count * PAGE_SIZE;
         props.data_attribute_size = data_size;
         if let Some(t) = crtime {
             props.creation_time = t;
@@ -1328,7 +1311,7 @@ impl PagedObjectHandle {
                 .lock()
                 .forget_dirty_pages(self.allocator(), self.store().store_object_id())
                 .total()
-                * zx::system_get_page_size() as u64,
+                * PAGE_SIZE,
         );
     }
 }
@@ -1344,7 +1327,7 @@ impl Drop for PagedObjectHandle {
         // Return what's left.
         self.owner().report_pager_clean(
             inner.forget_dirty_pages(self.allocator(), self.store().store_object_id()).total()
-                * zx::system_get_page_size() as u64,
+                * PAGE_SIZE,
         );
     }
 }
@@ -1359,7 +1342,7 @@ impl ObjectHandle for PagedObjectHandle {
     fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
         self.handle.allocate_buffer(size)
     }
-    fn block_size(&self) -> u64 {
+    fn block_size(&self) -> BlockSize {
         self.handle.block_size()
     }
 }
@@ -1452,8 +1435,7 @@ impl FlushBatches {
         if let Some(batch) = self.working_cow_batch {
             if self.flush_type == FlushType::Background && batch.dirty_byte_count < FLUSH_BATCH_SIZE
             {
-                let dirty_pages =
-                    batch.dirty_byte_count.div_ceil(zx::system_get_page_size() as u64);
+                let dirty_pages = PAGE_SIZE.align_up_to_blocks(batch.dirty_byte_count);
                 self.skipped_dirty_page_count.reserved += dirty_pages;
                 self.dirty_pages.reserved -= dirty_pages;
             } else {
@@ -1463,8 +1445,7 @@ impl FlushBatches {
         if let Some(batch) = self.working_overwrite_batch {
             if self.flush_type == FlushType::Background && batch.dirty_byte_count < FLUSH_BATCH_SIZE
             {
-                let dirty_pages =
-                    batch.dirty_byte_count.div_ceil(zx::system_get_page_size() as u64);
+                let dirty_pages = PAGE_SIZE.align_up_to_blocks(batch.dirty_byte_count);
                 self.skipped_dirty_page_count.unreserved += dirty_pages;
                 self.dirty_pages.unreserved -= dirty_pages;
             } else {
@@ -1524,12 +1505,12 @@ impl FlushBatch {
     fn dirty_pages(&self) -> DirtyPages {
         match self.mode {
             BatchMode::Cow => DirtyPages {
-                reserved: self.dirty_byte_count.div_ceil(zx::system_get_page_size() as u64),
+                reserved: PAGE_SIZE.align_up_to_blocks(self.dirty_byte_count),
                 unreserved: 0,
             },
             BatchMode::Overwrite => DirtyPages {
                 reserved: 0,
-                unreserved: self.dirty_byte_count.div_ceil(zx::system_get_page_size() as u64),
+                unreserved: PAGE_SIZE.align_up_to_blocks(self.dirty_byte_count),
             },
             BatchMode::Zero => DirtyPages::default(),
         }
@@ -1737,11 +1718,10 @@ mod tests {
 
         // Touch enough pages that 3 transaction will be required.
         unblock(move || {
-            let page_size = zx::system_get_page_size() as u64;
-            let write_count: u64 = (FLUSH_BATCH_SIZE / page_size) * 2 + 10;
+            let write_count: u64 = (FLUSH_BATCH_SIZE / PAGE_SIZE) * 2 + 10;
             for i in 0..write_count {
                 stream
-                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[0, 1, 2, 3, 4])
+                    .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &[0, 1, 2, 3, 4])
                     .expect("write should succeed");
             }
         })
@@ -1793,11 +1773,10 @@ mod tests {
             fs.truncate_guard(volume.volume().store().store_object_id(), file_id).await;
         // Touch enough pages that 3 transaction will be required.
         unblock(move || {
-            let page_size = zx::system_get_page_size() as u64;
-            let write_count: u64 = (FLUSH_BATCH_SIZE / page_size) * 2 + 10;
+            let write_count: u64 = (FLUSH_BATCH_SIZE / PAGE_SIZE) * 2 + 10;
             for i in 0..write_count {
                 stream
-                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &i.to_le_bytes())
+                    .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &i.to_le_bytes())
                     .expect("write should succeed");
             }
         })
@@ -1843,8 +1822,7 @@ mod tests {
         let info = file.describe().await.expect("describe failed");
         let stream = Arc::new(info.stream.unwrap());
 
-        let page_size = zx::system_get_page_size() as u64;
-        let write_count: u64 = (FLUSH_BATCH_SIZE / page_size) * 2 + 10;
+        let write_count: u64 = (FLUSH_BATCH_SIZE / PAGE_SIZE) * 2 + 10;
 
         {
             let stream = stream.clone();
@@ -1852,7 +1830,7 @@ mod tests {
                 // Dirty lots of pages so multiple transactions are required.
                 for i in 0..(write_count * 2) {
                     stream
-                        .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[0, 1, 2, 3, 4])
+                        .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &[0, 1, 2, 3, 4])
                         .unwrap();
                 }
             })
@@ -1871,7 +1849,7 @@ mod tests {
                     stream
                         .write_at(
                             zx::StreamWriteOptions::empty(),
-                            i * page_size * 2,
+                            i * PAGE_SIZE * 2,
                             &[0, 1, 2, 3, 4],
                         )
                         .unwrap();
@@ -2092,21 +2070,20 @@ mod tests {
 
     #[test]
     fn test_reservation_needed() {
-        let page_size = zx::system_get_page_size() as u64;
-        assert_eq!(FLUSH_BATCH_SIZE / page_size, 128);
+        assert_eq!(FLUSH_BATCH_SIZE / PAGE_SIZE, 128);
 
         assert_eq!(reservation_needed(0), 0);
 
-        assert_eq!(reservation_needed(1), TRANSACTION_METADATA_MAX_AMOUNT + 1 * page_size);
-        assert_eq!(reservation_needed(10), TRANSACTION_METADATA_MAX_AMOUNT + 10 * page_size);
-        assert_eq!(reservation_needed(128), TRANSACTION_METADATA_MAX_AMOUNT + 128 * page_size);
+        assert_eq!(reservation_needed(1), TRANSACTION_METADATA_MAX_AMOUNT + 1 * PAGE_SIZE);
+        assert_eq!(reservation_needed(10), TRANSACTION_METADATA_MAX_AMOUNT + 10 * PAGE_SIZE);
+        assert_eq!(reservation_needed(128), TRANSACTION_METADATA_MAX_AMOUNT + 128 * PAGE_SIZE);
 
-        assert_eq!(reservation_needed(129), 2 * TRANSACTION_METADATA_MAX_AMOUNT + 129 * page_size);
-        assert_eq!(reservation_needed(256), 2 * TRANSACTION_METADATA_MAX_AMOUNT + 256 * page_size);
+        assert_eq!(reservation_needed(129), 2 * TRANSACTION_METADATA_MAX_AMOUNT + 129 * PAGE_SIZE);
+        assert_eq!(reservation_needed(256), 2 * TRANSACTION_METADATA_MAX_AMOUNT + 256 * PAGE_SIZE);
 
         assert_eq!(
             reservation_needed(1500),
-            12 * TRANSACTION_METADATA_MAX_AMOUNT + 1500 * page_size
+            12 * TRANSACTION_METADATA_MAX_AMOUNT + 1500 * PAGE_SIZE
         );
     }
 
@@ -2194,15 +2171,14 @@ mod tests {
 
     #[test]
     fn test_flush_cow_batches_background() {
-        let page_size = zx::system_get_page_size() as u64;
         let mut batches = FlushBatches::new(FlushType::Background);
-        batches.add_range(0..(FLUSH_BATCH_SIZE * 2 + page_size * 2), BatchMode::Cow);
+        batches.add_range(0..(FLUSH_BATCH_SIZE * 2 + PAGE_SIZE * 2), BatchMode::Cow);
         let BatchCollectionResult {
             batches,
             pages_to_flush: dirty_page_count,
             pages_not_to_flush: skipped_dirty_page_count,
         } = batches.consume();
-        assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE * 2 / page_size);
+        assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE * 2 / PAGE_SIZE);
         assert_eq!(skipped_dirty_page_count.reserved, 2);
         assert_eq!(
             batches,
@@ -2223,15 +2199,14 @@ mod tests {
 
     #[test]
     fn test_flush_overwrite_batches_background() {
-        let page_size = zx::system_get_page_size() as u64;
         let mut batches = FlushBatches::new(FlushType::Background);
-        batches.add_range(0..(FLUSH_BATCH_SIZE + page_size), BatchMode::Overwrite);
+        batches.add_range(0..(FLUSH_BATCH_SIZE + PAGE_SIZE), BatchMode::Overwrite);
         let BatchCollectionResult {
             batches,
             pages_to_flush: dirty_page_count,
             pages_not_to_flush: skipped_dirty_page_count,
         } = batches.consume();
-        assert_eq!(dirty_page_count.unreserved, FLUSH_BATCH_SIZE / page_size);
+        assert_eq!(dirty_page_count.unreserved, FLUSH_BATCH_SIZE / PAGE_SIZE);
         // We don't count overwrite pages here, they don't need reservations.
         assert_eq!(skipped_dirty_page_count.unreserved, 1);
         assert_eq!(
@@ -2246,7 +2221,6 @@ mod tests {
 
     #[test]
     fn test_flush_one_full_batch_background() {
-        let page_size = zx::system_get_page_size() as u64;
         let mut batches = FlushBatches::new(FlushType::Background);
         batches.add_range(0..FLUSH_BATCH_SIZE, BatchMode::Cow);
         let BatchCollectionResult {
@@ -2254,7 +2228,7 @@ mod tests {
             pages_to_flush: dirty_page_count,
             pages_not_to_flush: skipped_dirty_page_count,
         } = batches.consume();
-        assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE / page_size);
+        assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE / PAGE_SIZE);
         assert_eq!(skipped_dirty_page_count.reserved, 0);
         assert_eq!(
             batches,
@@ -2268,25 +2242,24 @@ mod tests {
 
     #[test]
     fn test_flush_batches_background_drops_last_pages() {
-        let page_size = zx::system_get_page_size() as u64;
         let mut batches = FlushBatches::new(FlushType::Background);
         // Despite having better chunking, it will drop the last pages not the smaller ranges.
         // This matters since part of the goal is not to get in the way of linear writers.
-        batches.add_range(0..(FLUSH_BATCH_SIZE - page_size * 2), BatchMode::Cow);
+        batches.add_range(0..(FLUSH_BATCH_SIZE - PAGE_SIZE * 2), BatchMode::Cow);
         batches.add_range(FLUSH_BATCH_SIZE..(FLUSH_BATCH_SIZE * 2), BatchMode::Cow);
         let BatchCollectionResult {
             batches,
             pages_to_flush: dirty_page_count,
             pages_not_to_flush: skipped_dirty_page_count,
         } = batches.consume();
-        assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE / page_size);
-        assert_eq!(skipped_dirty_page_count.reserved, (FLUSH_BATCH_SIZE / page_size) - 2);
+        assert_eq!(dirty_page_count.reserved, FLUSH_BATCH_SIZE / PAGE_SIZE);
+        assert_eq!(skipped_dirty_page_count.reserved, (FLUSH_BATCH_SIZE / PAGE_SIZE) - 2);
         assert_eq!(
             batches,
             vec![FlushBatch {
                 ranges: vec![
-                    0..(FLUSH_BATCH_SIZE - page_size * 2),
-                    FLUSH_BATCH_SIZE..(FLUSH_BATCH_SIZE + page_size * 2)
+                    0..(FLUSH_BATCH_SIZE - PAGE_SIZE * 2),
+                    FLUSH_BATCH_SIZE..(FLUSH_BATCH_SIZE + PAGE_SIZE * 2)
                 ],
                 dirty_byte_count: FLUSH_BATCH_SIZE,
                 mode: BatchMode::Cow,
@@ -2296,13 +2269,12 @@ mod tests {
 
     #[test]
     fn test_flush_batches_add_range_multiple_ranges() {
-        let page_size = zx::system_get_page_size() as u64;
         let mut batches = FlushBatches::default();
-        batches.add_range(0..page_size, BatchMode::Cow);
-        batches.add_range(page_size..(page_size * 3), BatchMode::Zero);
-        batches.add_range((page_size * 7)..(page_size * 150), BatchMode::Cow);
-        batches.add_range((page_size * 200)..(page_size * 500), BatchMode::Zero);
-        batches.add_range((page_size * 500)..(page_size * 650), BatchMode::Overwrite);
+        batches.add_range(0..PAGE_SIZE.get(), BatchMode::Cow);
+        batches.add_range(PAGE_SIZE.get()..(PAGE_SIZE * 3), BatchMode::Zero);
+        batches.add_range((PAGE_SIZE * 7)..(PAGE_SIZE * 150), BatchMode::Cow);
+        batches.add_range((PAGE_SIZE * 200)..(PAGE_SIZE * 500), BatchMode::Zero);
+        batches.add_range((PAGE_SIZE * 500)..(PAGE_SIZE * 650), BatchMode::Overwrite);
 
         let BatchCollectionResult {
             batches,
@@ -2316,27 +2288,30 @@ mod tests {
             batches,
             vec![
                 FlushBatch {
-                    ranges: vec![0..page_size, (page_size * 7)..(page_size * 134)],
+                    ranges: vec![0..PAGE_SIZE.get(), (PAGE_SIZE * 7)..(PAGE_SIZE * 134)],
                     dirty_byte_count: FLUSH_BATCH_SIZE,
                     mode: BatchMode::Cow,
                 },
                 FlushBatch {
-                    ranges: vec![(page_size * 500)..(page_size * 628)],
+                    ranges: vec![(PAGE_SIZE * 500)..(PAGE_SIZE * 628)],
                     dirty_byte_count: FLUSH_BATCH_SIZE,
                     mode: BatchMode::Overwrite,
                 },
                 FlushBatch {
-                    ranges: vec![(page_size * 134)..(page_size * 150),],
-                    dirty_byte_count: 16 * page_size,
+                    ranges: vec![(PAGE_SIZE * 134)..(PAGE_SIZE * 150),],
+                    dirty_byte_count: 16 * PAGE_SIZE,
                     mode: BatchMode::Cow,
                 },
                 FlushBatch {
-                    ranges: vec![(page_size * 628)..(page_size * 650),],
-                    dirty_byte_count: 22 * page_size,
+                    ranges: vec![(PAGE_SIZE * 628)..(PAGE_SIZE * 650),],
+                    dirty_byte_count: 22 * PAGE_SIZE,
                     mode: BatchMode::Overwrite,
                 },
                 FlushBatch {
-                    ranges: vec![page_size..(page_size * 3), (page_size * 200)..(page_size * 500)],
+                    ranges: vec![
+                        PAGE_SIZE.get()..(PAGE_SIZE * 3),
+                        (PAGE_SIZE * 200)..(PAGE_SIZE * 500)
+                    ],
                     dirty_byte_count: 0,
                     mode: BatchMode::Zero,
                 },
@@ -2382,7 +2357,7 @@ mod tests {
             &Default::default(),
         )
         .await;
-        let initial_file_size = zx::system_get_page_size() as usize * 10;
+        let initial_file_size = PAGE_SIZE.get() as usize * 10;
         file::write(&file, vec![5u8; initial_file_size]).await.unwrap();
         file.sync().await.unwrap().map_err(zx::ok).unwrap();
 
@@ -2438,12 +2413,11 @@ mod tests {
             &Default::default(),
         )
         .await;
-        let page_size = zx::system_get_page_size() as u64;
         // Write to every other page to generate lots of small extents that will require multiple
         // transactions to be freed.
         let write_count: u64 = 256;
         for i in 0..write_count {
-            file.write_at(&[5u8; 1], page_size * 2 * i)
+            file.write_at(&[5u8; 1], PAGE_SIZE * 2 * i)
                 .await
                 .unwrap()
                 .map_err(zx::ok)
@@ -2454,7 +2428,7 @@ mod tests {
             get_attributes_checked(&file, fio::NodeAttributesQuery::STORAGE_SIZE).await;
         let initial_storage_size = initial_attrs.immutable_attributes.storage_size.unwrap();
 
-        assert_geq!(initial_storage_size, write_count * page_size);
+        assert_geq!(initial_storage_size, write_count * PAGE_SIZE);
         file.resize(0).await.unwrap().map_err(zx::ok).unwrap();
 
         // Allow the shrink transaction, fail the trim transaction.
@@ -2495,8 +2469,7 @@ mod tests {
             &Default::default(),
         )
         .await;
-        let page_size = zx::system_get_page_size() as u64;
-        file.resize(page_size).await.unwrap().map_err(zx::ok).unwrap();
+        file.resize(PAGE_SIZE.get()).await.unwrap().map_err(zx::ok).unwrap();
         close_file_checked(file).await;
 
         let file = open_file_checked(
@@ -2507,7 +2480,7 @@ mod tests {
         )
         .await;
         let attrs = get_attributes_checked(&file, fio::NodeAttributesQuery::CONTENT_SIZE).await;
-        assert_eq!(attrs.immutable_attributes.content_size.unwrap(), page_size);
+        assert_eq!(attrs.immutable_attributes.content_size.unwrap(), PAGE_SIZE);
 
         close_file_checked(file).await;
         fixture.close().await;
@@ -2768,7 +2741,7 @@ mod tests {
         )
         .await;
 
-        let initial_file_size = zx::system_get_page_size() as usize * 10;
+        let initial_file_size = PAGE_SIZE.get() as usize * 10;
         file::write(&file, vec![5u8; initial_file_size]).await.unwrap();
         file.sync().await.unwrap().map_err(zx::ok).unwrap();
 
@@ -2808,15 +2781,13 @@ mod tests {
     // so that the page cannot be reclaimed.
     #[fuchsia::test(threads = 5)]
     async fn test_duplicate_page_in_race_with_sync() {
-        let page_size = zx::system_get_page_size() as u64;
-
         // Populate 2 pages with 0x01 to be version 1 of the file.
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, _object, stream) = open_file_proxy_object_and_stream(&fixture).await;
 
             std::thread::spawn(move || {
-                let buf = vec![1u8; page_size as usize * 2];
+                let buf = vec![1u8; (PAGE_SIZE * 2) as usize];
                 stream
                     .write_at(zx::StreamWriteOptions::empty(), 0, buf.as_slice())
                     .expect("Init file contents");
@@ -2910,7 +2881,7 @@ mod tests {
             let stream_clone = stream.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
             let write_thread = fasync::unblock(move || {
                 stream_clone
-                    .write_at(zx::StreamWriteOptions::empty(), page_size, &[2u8; 10])
+                    .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[2u8; 10])
                     .expect("stream_write");
             });
 
@@ -2936,8 +2907,12 @@ mod tests {
             });
             // Drop the guard so that these reads don't get blocked.
             std::mem::drop(guard);
-            while object.handle().read_uncached(page_size..(page_size * 2)).await.unwrap().to_vec()
-                [0]
+            while object
+                .handle()
+                .read_uncached(PAGE_SIZE.get()..(PAGE_SIZE * 2))
+                .await
+                .unwrap()
+                .to_vec()[0]
                 == 1u8
             {
                 fasync::Timer::new(std::time::Duration::from_millis(50)).await;
@@ -2946,6 +2921,7 @@ mod tests {
             // hasn't finished so that we know it is well and truly blocked.
             fasync::Timer::new(std::time::Duration::from_millis(50)).await;
             assert_matches!(syncing_done_rx.try_recv(), Err(mpsc::TryRecvError::Empty));
+            let page_size = PAGE_SIZE.get();
             assert!(
                 object
                     .handle()
@@ -2962,7 +2938,7 @@ mod tests {
 
             assert_eq!(
                 stream
-                    .read_at_to_vec(zx::StreamReadOptions::empty(), page_size, 10)
+                    .read_at_to_vec(zx::StreamReadOptions::empty(), PAGE_SIZE.get(), 10)
                     .expect("Reading"),
                 vec![2u8; 10]
             );
@@ -2987,8 +2963,7 @@ mod tests {
         .await;
 
         // Write out three pages initially.
-        let page_size = zx::system_get_page_size() as u64;
-        let file_size = page_size * 3;
+        let file_size = PAGE_SIZE * 3;
         fuchsia_fs::file::write(&file, &vec![1u8; file_size as usize]).await.unwrap();
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
@@ -3004,16 +2979,16 @@ mod tests {
 
         // Resize the file down to one page. Confirm the stream size is updated, but the vmo size
         // stays the same.
-        file.resize(page_size).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.resize(PAGE_SIZE.get()).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
-        assert_eq!(vmo.get_stream_size().unwrap(), page_size);
+        assert_eq!(vmo.get_stream_size().unwrap(), PAGE_SIZE);
 
         // Write some data to the vmo, beyond the current stream size. This does _not_ update the
         // stream size, but it does make pages dirty beyond the end of the file.
         unblock(move || {
-            vmo.write(&[1, 2, 3, 4], page_size * 2).unwrap();
+            vmo.write(&[1, 2, 3, 4], PAGE_SIZE * 2).unwrap();
             // Writing this data to the vmo shouldn't update the stream size.
-            assert_eq!(vmo.get_stream_size().unwrap(), page_size);
+            assert_eq!(vmo.get_stream_size().unwrap(), PAGE_SIZE);
         })
         .await;
 
@@ -3065,11 +3040,7 @@ mod tests {
             stream.write_at(zx::StreamWriteOptions::empty(), 0, &[1u8]).expect("First dirty page");
             let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
                 stream
-                    .write_at(
-                        zx::StreamWriteOptions::empty(),
-                        zx::system_get_page_size() as u64,
-                        &[2u8],
-                    )
+                    .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[2u8])
                     .expect("Second dirty page");
             });
 
@@ -3088,9 +3059,8 @@ mod tests {
         {
             let (proxy, _, stream) = open_file_proxy_object_and_stream(&fixture).await;
 
-            let page_size = zx::system_get_page_size() as u64;
             let initial_pages = 125;
-            let initial_size = initial_pages * page_size;
+            let initial_size = initial_pages * PAGE_SIZE;
             let buf = vec![0xaa; initial_size as usize];
             stream.write_at(zx::StreamWriteOptions::empty(), 0, &buf).expect("Initial write");
             proxy.sync().await.unwrap().expect("Initial sync");
@@ -3158,10 +3128,9 @@ mod tests {
             let stream2 =
                 stream.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicating stream");
 
-            let page_size = zx::system_get_page_size() as u64;
             stream.write_at(zx::StreamWriteOptions::empty(), 0, &[1u8]).expect("First dirty page");
             stream
-                .write_at(zx::StreamWriteOptions::empty(), page_size, &[1u8])
+                .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[1u8])
                 .expect("First dirty page");
 
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 2);
@@ -3171,7 +3140,7 @@ mod tests {
                     assert_eq!(object_clone.handle().inner.lock().dirty_pages.total(), 0);
                     // This page will be found in the page collection.
                     stream
-                        .write_at(zx::StreamWriteOptions::empty(), page_size * 2, &[2u8])
+                        .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE * 2, &[2u8])
                         .expect("Second dirty page");
                     assert_eq!(object_clone.handle().inner.lock().dirty_pages.total(), 1);
                 });
@@ -3181,7 +3150,7 @@ mod tests {
                     assert_eq!(object_clone.handle().inner.lock().dirty_pages.total(), 1);
                     // This page will be missed.
                     stream2
-                        .write_at(zx::StreamWriteOptions::empty(), page_size * 3, &[3u8])
+                        .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE * 3, &[3u8])
                         .expect("Second dirty page");
                     assert_eq!(object_clone.handle().inner.lock().dirty_pages.total(), 2);
                 });
@@ -3203,25 +3172,24 @@ mod tests {
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
 
             // Pre-allocate 4 pages to make them unreserved.
             proxy
-                .allocate(0, page_size * 4, fio::AllocateMode::empty())
+                .allocate(0, PAGE_SIZE * 4, fio::AllocateMode::empty())
                 .await
                 .unwrap()
                 .expect("Allocate failed");
 
             // Now write to the first two pages to make them dirty and unreserved.
             stream.write_at(zx::StreamWriteOptions::empty(), 0, &[2u8]).unwrap();
-            stream.write_at(zx::StreamWriteOptions::empty(), page_size, &[2u8]).unwrap();
+            stream.write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[2u8]).unwrap();
 
             assert_eq!(object.handle().inner.lock().dirty_pages.unreserved, 2);
 
             let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
                 // Write to the next two pages during the race. They should also be unreserved.
-                stream.write_at(zx::StreamWriteOptions::empty(), page_size * 2, &[2u8]).unwrap();
-                stream.write_at(zx::StreamWriteOptions::empty(), page_size * 3, &[2u8]).unwrap();
+                stream.write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE * 2, &[2u8]).unwrap();
+                stream.write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE * 3, &[2u8]).unwrap();
             });
 
             proxy.sync().await.unwrap().expect("Syncing");
@@ -3237,18 +3205,17 @@ mod tests {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
             let stream2 =
                 stream.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("Duplicating stream");
-            let page_size = zx::system_get_page_size() as u64;
 
             // Pre-allocate 4 pages to make them unreserved.
             proxy
-                .allocate(0, page_size * 4, fio::AllocateMode::empty())
+                .allocate(0, PAGE_SIZE * 4, fio::AllocateMode::empty())
                 .await
                 .unwrap()
                 .expect("Allocate failed");
 
             // Now write to the first two pages to make them dirty and unreserved.
             stream.write_at(zx::StreamWriteOptions::empty(), 0, &[2u8]).unwrap();
-            stream.write_at(zx::StreamWriteOptions::empty(), page_size, &[2u8]).unwrap();
+            stream.write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[2u8]).unwrap();
 
             assert_eq!(object.handle().inner.lock().dirty_pages.unreserved, 2);
 
@@ -3256,14 +3223,14 @@ mod tests {
                 let _guard = CALLBACK_BEFORE_RANGE_COLLECTION.set(move || {
                     // This page will be found in the page collection.
                     stream
-                        .write_at(zx::StreamWriteOptions::empty(), page_size * 2, &[2u8])
+                        .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE * 2, &[2u8])
                         .unwrap();
                 });
 
                 let _guard2 = CALLBACK_AFTER_RANGE_COLLECTION.set(move || {
                     // This page will be missed.
                     stream2
-                        .write_at(zx::StreamWriteOptions::empty(), page_size * 3, &[2u8])
+                        .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE * 3, &[2u8])
                         .unwrap();
                 });
 
@@ -3283,18 +3250,17 @@ mod tests {
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
 
             // Pre-allocate 2 pages to make them unreserved.
             proxy
-                .allocate(0, page_size * 2, fio::AllocateMode::empty())
+                .allocate(0, PAGE_SIZE * 2, fio::AllocateMode::empty())
                 .await
                 .unwrap()
                 .expect("Allocate failed");
 
             // Now write to make them dirty (unreserved).
             stream.write_at(zx::StreamWriteOptions::empty(), 0, &[1u8]).unwrap();
-            stream.write_at(zx::StreamWriteOptions::empty(), page_size, &[1u8]).unwrap();
+            stream.write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[1u8]).unwrap();
 
             proxy.resize(0).await.unwrap().expect("Truncating");
 
@@ -3307,7 +3273,9 @@ mod tests {
                     assert_eq!(object_clone.handle().inner.lock().dirty_pages.total(), 0);
                     // Write the 2 pages back COW.
                     stream.write_at(zx::StreamWriteOptions::empty(), 0, &[2u8]).unwrap();
-                    stream.write_at(zx::StreamWriteOptions::empty(), page_size, &[2u8]).unwrap();
+                    stream
+                        .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[2u8])
+                        .unwrap();
                     assert_eq!(object_clone.handle().inner.lock().dirty_pages.reserved, 2);
                 });
 
@@ -3339,15 +3307,14 @@ mod tests {
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
 
             // Write 3 pages to make them dirty.
             stream.write_at(zx::StreamWriteOptions::empty(), 0, &[1u8]).unwrap();
-            stream.write_at(zx::StreamWriteOptions::empty(), page_size, &[2u8]).unwrap();
-            stream.write_at(zx::StreamWriteOptions::empty(), page_size * 2, &[3u8]).unwrap();
+            stream.write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[2u8]).unwrap();
+            stream.write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE * 2, &[3u8]).unwrap();
 
             // File gets truncated, losing 2 of them.
-            proxy.resize(page_size).await.unwrap().expect("Truncating");
+            proxy.resize(PAGE_SIZE.get()).await.unwrap().expect("Truncating");
 
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 3);
 
@@ -3357,12 +3324,14 @@ mod tests {
                     assert_eq!(object_clone.handle().inner.lock().dirty_pages.total(), 0);
                     // Write 4 pages in the race. This makes the number of pages that get flushed
                     // equal what gets flushed, but with leftover pages still dirty.
-                    stream.write_at(zx::StreamWriteOptions::empty(), page_size, &[2u8]).unwrap();
                     stream
-                        .write_at(zx::StreamWriteOptions::empty(), page_size * 2, &[3u8])
+                        .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[2u8])
                         .unwrap();
                     stream
-                        .write_at(zx::StreamWriteOptions::empty(), page_size * 3, &[4u8])
+                        .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE * 2, &[3u8])
+                        .unwrap();
+                    stream
+                        .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE * 3, &[4u8])
                         .unwrap();
                     assert_eq!(object_clone.handle().inner.lock().dirty_pages.total(), 3);
                 });
@@ -3385,12 +3354,11 @@ mod tests {
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
 
             // Write 3 pages to make them dirty.
             stream.write_at(zx::StreamWriteOptions::empty(), 0, &[1u8]).unwrap();
-            stream.write_at(zx::StreamWriteOptions::empty(), page_size, &[1u8]).unwrap();
-            stream.write_at(zx::StreamWriteOptions::empty(), page_size * 2, &[1u8]).unwrap();
+            stream.write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[1u8]).unwrap();
+            stream.write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE * 2, &[1u8]).unwrap();
 
             proxy.sync().await.unwrap().expect("Syncing");
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
@@ -3403,12 +3371,12 @@ mod tests {
                 .expect("Get backing memory");
 
             // Truncate to 2 pages. Page 2 is now past end.
-            proxy.resize(page_size * 2).await.unwrap().expect("Truncating");
+            proxy.resize(PAGE_SIZE * 2).await.unwrap().expect("Truncating");
 
             // Now dirty all three from the vmo.
             vmo.write(&[2u8], 0).expect("Writing vmo page 0");
-            vmo.write(&[2u8], page_size).expect("Writing vmo page 1");
-            vmo.write(&[2u8], page_size * 2).expect("Writing vmo page 2");
+            vmo.write(&[2u8], PAGE_SIZE.get()).expect("Writing vmo page 1");
+            vmo.write(&[2u8], PAGE_SIZE * 2).expect("Writing vmo page 2");
 
             {
                 let object_clone = object.clone();
@@ -3450,18 +3418,17 @@ mod tests {
         .await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
 
             // Start with 4 pages. 2 reserved, 2 unreserved. Dirty all of them.
-            proxy.resize(page_size * 4).await.unwrap().expect("Truncating");
+            proxy.resize(PAGE_SIZE * 4).await.unwrap().expect("Truncating");
             proxy
-                .allocate(page_size * 2, page_size * 4, fio::AllocateMode::empty())
+                .allocate(PAGE_SIZE * 2, PAGE_SIZE * 4, fio::AllocateMode::empty())
                 .await
                 .unwrap()
                 .expect("Allocate failed");
             for i in 0..4 {
                 stream
-                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                    .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &[1u8])
                     .expect("Dirtying pages");
             }
 
@@ -3504,18 +3471,17 @@ mod tests {
         .await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
 
             // Start with 4 pages. 2 reserved, 2 unreserved. Dirty all of them.
-            proxy.resize(page_size * 4).await.unwrap().expect("Truncating");
+            proxy.resize(PAGE_SIZE * 4).await.unwrap().expect("Truncating");
             proxy
-                .allocate(page_size * 2, page_size * 4, fio::AllocateMode::empty())
+                .allocate(PAGE_SIZE * 2, PAGE_SIZE * 4, fio::AllocateMode::empty())
                 .await
                 .unwrap()
                 .expect("Allocate failed");
             for i in 0..4 {
                 stream
-                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                    .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &[1u8])
                     .expect("Dirtying pages");
             }
 
@@ -3601,14 +3567,13 @@ mod tests {
         .await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
-            let background_pages_threshold = BACKGROUND_FLUSH_THRESHOLD / page_size;
+            let background_pages_threshold = BACKGROUND_FLUSH_THRESHOLD / PAGE_SIZE;
 
             if allocate_range {
                 proxy
                     .allocate(
                         0,
-                        BACKGROUND_FLUSH_THRESHOLD + page_size * 2,
+                        BACKGROUND_FLUSH_THRESHOLD + PAGE_SIZE * 2,
                         fio::AllocateMode::empty(),
                     )
                     .await
@@ -3619,7 +3584,7 @@ mod tests {
 
             for i in 0..background_pages_threshold {
                 stream
-                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                    .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &[1u8])
                     .expect("Dirty page");
             }
 
@@ -3638,7 +3603,7 @@ mod tests {
                     stream_dup
                         .write_at(
                             zx::StreamWriteOptions::empty(),
-                            BACKGROUND_FLUSH_THRESHOLD + page_size,
+                            BACKGROUND_FLUSH_THRESHOLD + PAGE_SIZE,
                             &[1u8],
                         )
                         .expect("Dirty one page race");
@@ -3682,27 +3647,26 @@ mod tests {
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
-            let batch_pages = FLUSH_BATCH_SIZE / page_size;
+            let batch_pages = FLUSH_BATCH_SIZE / PAGE_SIZE;
 
             // Allocate 2 pages, dirty them, then truncate away the second one.
             proxy
-                .allocate(0, page_size * 2, fio::AllocateMode::empty())
+                .allocate(0, PAGE_SIZE * 2, fio::AllocateMode::empty())
                 .await
                 .unwrap()
                 .expect("Allocate");
             proxy.sync().await.unwrap().expect("Sync after allocate");
             for i in 0..2 {
                 stream
-                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                    .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &[1u8])
                     .expect("Dirty page");
             }
-            proxy.resize(page_size).await.unwrap().expect("Truncating");
+            proxy.resize(PAGE_SIZE.get()).await.unwrap().expect("Truncating");
 
             // Write one full batch of COW starting from the second page.
             for i in 1..(batch_pages + 1) {
                 stream
-                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                    .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &[1u8])
                     .expect("Dirty page");
             }
 
@@ -3714,7 +3678,7 @@ mod tests {
             // Dirty one more page to make the file need a flush then do a full flush. Everything
             // should be cleared.
             stream
-                .write_at(zx::StreamWriteOptions::empty(), (batch_pages + 1) * page_size, &[1u8])
+                .write_at(zx::StreamWriteOptions::empty(), (batch_pages + 1) * PAGE_SIZE, &[1u8])
                 .expect("Dirty page");
             proxy.sync().await.unwrap().expect("Syncing");
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
@@ -3727,12 +3691,11 @@ mod tests {
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
-            let batch_pages = FLUSH_BATCH_SIZE / page_size;
+            let batch_pages = FLUSH_BATCH_SIZE / PAGE_SIZE;
 
             // Allocate 1 page.
             proxy
-                .allocate(0, page_size, fio::AllocateMode::empty())
+                .allocate(0, PAGE_SIZE.get(), fio::AllocateMode::empty())
                 .await
                 .unwrap()
                 .expect("Allocate");
@@ -3744,13 +3707,13 @@ mod tests {
                 let _guard = CALLBACK_AFTER_RANGE_COLLECTION.set(move || {
                     for i in 0..(batch_pages + 2) {
                         stream2
-                            .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                            .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &[1u8])
                             .expect("Dirty page");
                     }
                 });
 
                 proxy
-                    .allocate(page_size, batch_pages * page_size, fio::AllocateMode::empty())
+                    .allocate(PAGE_SIZE.get(), batch_pages * PAGE_SIZE, fio::AllocateMode::empty())
                     .await
                     .unwrap()
                     .expect("Allocate");
@@ -3762,7 +3725,7 @@ mod tests {
                     stream2
                         .write_at(
                             zx::StreamWriteOptions::empty(),
-                            (batch_pages + 2) * page_size,
+                            (batch_pages + 2) * PAGE_SIZE,
                             &[1u8],
                         )
                         .expect("Dirty page");
@@ -3774,7 +3737,7 @@ mod tests {
             // Dirty one more page to make the file need a flush then do a full flush. Everything
             // should be cleared.
             stream
-                .write_at(zx::StreamWriteOptions::empty(), (batch_pages + 3) * page_size, &[1u8])
+                .write_at(zx::StreamWriteOptions::empty(), (batch_pages + 3) * PAGE_SIZE, &[1u8])
                 .expect("Dirty page");
             proxy.sync().await.unwrap().expect("Syncing");
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
@@ -3789,8 +3752,7 @@ mod tests {
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
-            let batch_pages = FLUSH_BATCH_SIZE / page_size;
+            let batch_pages = FLUSH_BATCH_SIZE / PAGE_SIZE;
 
             {
                 // Allocate a batch where it gets dirtied as COW between the sync that allocate does
@@ -3799,13 +3761,13 @@ mod tests {
                 let _guard = CALLBACK_AFTER_RANGE_COLLECTION.set(move || {
                     for i in 0..(batch_pages + 2) {
                         stream2
-                            .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                            .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &[1u8])
                             .expect("Dirty page");
                     }
                 });
 
                 proxy
-                    .allocate(0, (batch_pages + 2) * page_size, fio::AllocateMode::empty())
+                    .allocate(0, (batch_pages + 2) * PAGE_SIZE, fio::AllocateMode::empty())
                     .await
                     .unwrap()
                     .expect("Allocate");
@@ -3817,7 +3779,7 @@ mod tests {
                     stream2
                         .write_at(
                             zx::StreamWriteOptions::empty(),
-                            (batch_pages + 2) * page_size,
+                            (batch_pages + 2) * PAGE_SIZE,
                             &[1u8],
                         )
                         .expect("Dirty page");
@@ -3829,7 +3791,7 @@ mod tests {
             // Dirty one more page to make the file need a flush then do a full flush. Everything
             // should be cleared.
             stream
-                .write_at(zx::StreamWriteOptions::empty(), (batch_pages + 3) * page_size, &[1u8])
+                .write_at(zx::StreamWriteOptions::empty(), (batch_pages + 3) * PAGE_SIZE, &[1u8])
                 .expect("Dirty page");
             proxy.sync().await.unwrap().expect("Syncing");
             assert_eq!(object.handle().inner.lock().dirty_pages.total(), 0);
@@ -3844,7 +3806,6 @@ mod tests {
         let fixture = TestFixture::new_unencrypted().await;
         {
             let (proxy, object, stream) = open_file_proxy_object_and_stream(&fixture).await;
-            let page_size = zx::system_get_page_size() as u64;
 
             // Mark 1 page dirty via normal write. This will get needs_flush() returning true.
             stream.write_at(zx::StreamWriteOptions::empty(), 0, &[1u8]).expect("Dirty page");
@@ -3854,7 +3815,7 @@ mod tests {
                     // This should get an extra page in the range collection. So now
                     // dirty_pages_not_to_flush will be 2 while marked_dirty_pages is 1.
                     stream
-                        .write_at(zx::StreamWriteOptions::empty(), page_size, &[1u8])
+                        .write_at(zx::StreamWriteOptions::empty(), PAGE_SIZE.get(), &[1u8])
                         .expect("Dirty page in a race");
                 });
 
@@ -3902,15 +3863,14 @@ mod tests {
             };
 
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
-            let page_size = zx::system_get_page_size() as u64;
-            file.resize(page_size * 2).await.unwrap().expect("Grow file");
+            file.resize(PAGE_SIZE * 2).await.unwrap().expect("Grow file");
             file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
-            file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
+            file.write_at(&[1, 2, 3, 4], PAGE_SIZE.get()).await.unwrap().expect("Writing");
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
-            file.resize(page_size).await.unwrap().expect("Shrink file");
+            file.resize(PAGE_SIZE.get()).await.unwrap().expect("Shrink file");
             file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
-            file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
+            file.write_at(&[1, 2, 3, 4], PAGE_SIZE.get()).await.unwrap().expect("Writing");
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
         }
 
@@ -3953,18 +3913,17 @@ mod tests {
             };
 
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
-            let page_size = zx::system_get_page_size() as u64;
-            file.allocate(0, page_size * 2, fio::AllocateMode::empty())
+            file.allocate(0, PAGE_SIZE * 2, fio::AllocateMode::empty())
                 .await
                 .unwrap()
                 .expect("Allocate file");
             file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
-            file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
+            file.write_at(&[1, 2, 3, 4], PAGE_SIZE.get()).await.unwrap().expect("Writing");
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
-            file.resize(page_size).await.unwrap().expect("Shrink file");
+            file.resize(PAGE_SIZE.get()).await.unwrap().expect("Shrink file");
             file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
-            file.write_at(&[1, 2, 3, 4], page_size).await.unwrap().expect("Writing");
+            file.write_at(&[1, 2, 3, 4], PAGE_SIZE.get()).await.unwrap().expect("Writing");
             assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 1);
         }
 
@@ -3986,10 +3945,9 @@ mod tests {
         )
         .await;
 
-        let page_size = zx::system_get_page_size() as u64;
         file::write(&file, &vec![1, 2, 3, 4]).await.unwrap();
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
-        file.allocate(0, page_size, fio::AllocateMode::empty())
+        file.allocate(0, PAGE_SIZE.get(), fio::AllocateMode::empty())
             .await
             .unwrap()
             .map_err(zx::Status::err_from_raw)
@@ -4026,15 +3984,18 @@ mod tests {
             0,
         );
 
-        let page_size = zx::system_get_page_size() as u64;
-        file.allocate(0, page_size, fio::AllocateMode::empty())
+        file.allocate(0, PAGE_SIZE.get(), fio::AllocateMode::empty())
             .await
             .unwrap()
             .map_err(zx::Status::err_from_raw)
             .unwrap();
-        let data =
-            file.read_at(page_size, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
-        assert_eq!(data, vec![0; page_size as usize]);
+        let data = file
+            .read_at(PAGE_SIZE.get(), 0)
+            .await
+            .unwrap()
+            .map_err(zx::Status::err_from_raw)
+            .unwrap();
+        assert_eq!(data, vec![0; PAGE_SIZE.get() as usize]);
 
         assert_eq!(
             file.get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE)
@@ -4044,7 +4005,7 @@ mod tests {
                 .1
                 .content_size
                 .unwrap(),
-            page_size,
+            PAGE_SIZE,
         );
 
         fixture.close().await;
@@ -4065,8 +4026,7 @@ mod tests {
         )
         .await;
 
-        let page_size = zx::system_get_page_size() as u64;
-        file.allocate(0, page_size, fio::AllocateMode::empty())
+        file.allocate(0, PAGE_SIZE.get(), fio::AllocateMode::empty())
             .await
             .unwrap()
             .map_err(zx::Status::err_from_raw)
@@ -4094,24 +4054,23 @@ mod tests {
         )
         .await;
 
-        let page_size = zx::system_get_page_size() as u64;
-        file.allocate(page_size, page_size, fio::AllocateMode::empty())
+        file.allocate(PAGE_SIZE.get(), PAGE_SIZE.get(), fio::AllocateMode::empty())
             .await
             .unwrap()
             .map_err(zx::Status::err_from_raw)
             .unwrap();
-        let write_data = (0..20).cycle().take(page_size as usize * 2).collect::<Vec<_>>();
+        let write_data = (0..20).cycle().take((PAGE_SIZE * 2) as usize).collect::<Vec<_>>();
         assert_eq!(
             file.write_at(&write_data, 2048)
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size * 2
+            PAGE_SIZE * 2
         );
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         let data = file
-            .read_at(page_size * 2, 2048)
+            .read_at(PAGE_SIZE * 2, 2048)
             .await
             .unwrap()
             .map_err(zx::Status::err_from_raw)
@@ -4136,17 +4095,16 @@ mod tests {
         )
         .await;
 
-        let page_size = zx::system_get_page_size() as u64;
-        file.allocate(0, page_size, fio::AllocateMode::empty())
+        file.allocate(0, PAGE_SIZE.get(), fio::AllocateMode::empty())
             .await
             .unwrap()
             .map_err(zx::Status::err_from_raw)
             .unwrap();
-        let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
+        let write_data = (0..20).cycle().take(PAGE_SIZE.get() as usize).collect::<Vec<_>>();
         // Fill up the disk with data.
         loop {
             match file.write(&write_data).await.unwrap().map_err(zx::Status::err_from_raw) {
-                Ok(len) => assert_eq!(len, page_size),
+                Ok(len) => assert_eq!(len, PAGE_SIZE),
                 Err(status) => {
                     assert_eq!(status, zx::Status::NO_SPACE);
                     break;
@@ -4157,7 +4115,10 @@ mod tests {
 
         // Writing outside the allocated range fails (because not overwrite mode.)
         assert_eq!(
-            file.write_at(&write_data, page_size).await.unwrap().map_err(zx::Status::err_from_raw),
+            file.write_at(&write_data, PAGE_SIZE.get())
+                .await
+                .unwrap()
+                .map_err(zx::Status::err_from_raw),
             Err(zx::Status::NO_SPACE)
         );
 
@@ -4169,7 +4130,7 @@ mod tests {
                     .unwrap()
                     .map_err(zx::Status::err_from_raw)
                     .unwrap(),
-                page_size
+                PAGE_SIZE
             );
             file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         }
@@ -4184,8 +4145,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_file_allocate_write_disk_full_multi_file() {
-        let page_size = zx::system_get_page_size() as u64;
-        let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
+        let write_data = (0..20).cycle().take(PAGE_SIZE.get() as usize).collect::<Vec<_>>();
 
         let device = {
             let fixture = TestFixture::new_unencrypted().await;
@@ -4202,7 +4162,7 @@ mod tests {
                     &Default::default(),
                 )
                 .await;
-                file.allocate(0, page_size * 4, fio::AllocateMode::empty())
+                file.allocate(0, PAGE_SIZE * 4, fio::AllocateMode::empty())
                     .await
                     .unwrap()
                     .map_err(zx::Status::err_from_raw)
@@ -4232,7 +4192,7 @@ mod tests {
         .await;
         loop {
             match filler_file.write(&write_data).await.unwrap().map_err(zx::Status::err_from_raw) {
-                Ok(len) => assert_eq!(len, page_size),
+                Ok(len) => assert_eq!(len, PAGE_SIZE),
                 Err(status) => {
                     assert_eq!(status, zx::Status::NO_SPACE);
                     break;
@@ -4250,7 +4210,7 @@ mod tests {
 
         // Writing outside the allocated range fails.
         assert_eq!(
-            file.write_at(&write_data, page_size * 4)
+            file.write_at(&write_data, PAGE_SIZE * 4)
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw),
@@ -4265,31 +4225,31 @@ mod tests {
                     .unwrap()
                     .map_err(zx::Status::err_from_raw)
                     .unwrap(),
-                page_size
+                PAGE_SIZE
             );
             assert_eq!(
-                file.write_at(&write_data, page_size)
+                file.write_at(&write_data, PAGE_SIZE.get())
                     .await
                     .unwrap()
                     .map_err(zx::Status::err_from_raw)
                     .unwrap(),
-                page_size
+                PAGE_SIZE
             );
             assert_eq!(
-                file.write_at(&write_data, page_size * 2)
+                file.write_at(&write_data, PAGE_SIZE * 2)
                     .await
                     .unwrap()
                     .map_err(zx::Status::err_from_raw)
                     .unwrap(),
-                page_size
+                PAGE_SIZE
             );
             assert_eq!(
-                file.write_at(&write_data, page_size * 3)
+                file.write_at(&write_data, PAGE_SIZE * 3)
                     .await
                     .unwrap()
                     .map_err(zx::Status::err_from_raw)
                     .unwrap(),
-                page_size
+                PAGE_SIZE
             );
             file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         }
@@ -4312,29 +4272,29 @@ mod tests {
         )
         .await;
 
-        let page_size = zx::system_get_page_size() as u64;
-        file.allocate(0, page_size * 4, fio::AllocateMode::empty())
+        file.allocate(0, PAGE_SIZE * 4, fio::AllocateMode::empty())
             .await
             .unwrap()
             .map_err(zx::Status::err_from_raw)
             .unwrap();
-        let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
-        let write_data_alternate = (0..15).cycle().take(page_size as usize).collect::<Vec<_>>();
+        let write_data = (0..20).cycle().take(PAGE_SIZE.get() as usize).collect::<Vec<_>>();
+        let write_data_alternate =
+            (0..15).cycle().take(PAGE_SIZE.get() as usize).collect::<Vec<_>>();
         assert_eq!(
-            file.write_at(&write_data, page_size)
+            file.write_at(&write_data, PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size
+            PAGE_SIZE
         );
         assert_eq!(
-            file.write_at(&write_data, page_size * 2)
+            file.write_at(&write_data, PAGE_SIZE * 2)
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size
+            PAGE_SIZE
         );
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         // Sync will make a transaction with whatever we have written. Make sure that there are
@@ -4345,24 +4305,20 @@ mod tests {
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size
+            PAGE_SIZE
         );
         assert_eq!(
-            file.write_at(&write_data_alternate, page_size)
+            file.write_at(&write_data_alternate, PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size
+            PAGE_SIZE
         );
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         assert_eq!(
-            file.read_at(page_size, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
-            write_data_alternate,
-        );
-        assert_eq!(
-            file.read_at(page_size, page_size)
+            file.read_at(PAGE_SIZE.get(), 0)
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
@@ -4370,7 +4326,15 @@ mod tests {
             write_data_alternate,
         );
         assert_eq!(
-            file.read_at(page_size, page_size * 2)
+            file.read_at(PAGE_SIZE.get(), PAGE_SIZE.get())
+                .await
+                .unwrap()
+                .map_err(zx::Status::err_from_raw)
+                .unwrap(),
+            write_data_alternate,
+        );
+        assert_eq!(
+            file.read_at(PAGE_SIZE.get(), PAGE_SIZE * 2)
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
@@ -4378,12 +4342,12 @@ mod tests {
             write_data,
         );
         assert_eq!(
-            file.read_at(page_size, page_size * 3)
+            file.read_at(PAGE_SIZE.get(), PAGE_SIZE * 3)
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            vec![0; page_size as usize],
+            vec![0; PAGE_SIZE.get() as usize],
         );
 
         let device = fixture.close().await;
@@ -4399,11 +4363,7 @@ mod tests {
         .await;
 
         assert_eq!(
-            file.read_at(page_size, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
-            write_data_alternate,
-        );
-        assert_eq!(
-            file.read_at(page_size, page_size)
+            file.read_at(PAGE_SIZE.get(), 0)
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
@@ -4411,7 +4371,15 @@ mod tests {
             write_data_alternate,
         );
         assert_eq!(
-            file.read_at(page_size, page_size * 2)
+            file.read_at(PAGE_SIZE.get(), PAGE_SIZE.get())
+                .await
+                .unwrap()
+                .map_err(zx::Status::err_from_raw)
+                .unwrap(),
+            write_data_alternate,
+        );
+        assert_eq!(
+            file.read_at(PAGE_SIZE.get(), PAGE_SIZE * 2)
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
@@ -4419,12 +4387,12 @@ mod tests {
             write_data,
         );
         assert_eq!(
-            file.read_at(page_size, page_size * 3)
+            file.read_at(PAGE_SIZE.get(), PAGE_SIZE * 3)
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            vec![0; page_size as usize],
+            vec![0; PAGE_SIZE.get() as usize],
         );
 
         fixture.close().await;
@@ -4465,40 +4433,39 @@ mod tests {
         };
         assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
 
-        let page_size = zx::system_get_page_size() as u64;
-        file.allocate(0, page_size * 2, fio::AllocateMode::empty())
+        file.allocate(0, PAGE_SIZE * 2, fio::AllocateMode::empty())
             .await
             .unwrap()
             .map_err(zx::Status::err_from_raw)
             .unwrap();
-        let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
+        let write_data = (0..20).cycle().take(PAGE_SIZE.get() as usize).collect::<Vec<_>>();
         assert_eq!(
-            file.write_at(&write_data, page_size)
+            file.write_at(&write_data, PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size
+            PAGE_SIZE
         );
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
-        file.resize(page_size).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.resize(PAGE_SIZE.get()).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(file_obj.handle().inner.lock().dirty_pages.total(), 0);
 
         assert_eq!(
-            file.write_at(&write_data, page_size)
+            file.write_at(&write_data, PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size
+            PAGE_SIZE
         );
         // Should be a COW dirty range now.
         assert_eq!(file_obj.handle().inner.lock().dirty_pages.reserved, 1);
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(
-            file.read_at(page_size, page_size)
+            file.read_at(PAGE_SIZE.get(), PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
@@ -4539,11 +4506,10 @@ mod tests {
             .unwrap();
         assert_eq!(attrs.content_size, Some(120));
 
-        let page_size = zx::system_get_page_size() as u64;
-        let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
+        let write_data = (0..20).cycle().take(PAGE_SIZE.get() as usize).collect::<Vec<_>>();
         assert_eq!(
             file.write_at(&write_data, 0).await.unwrap().map_err(zx::Status::err_from_raw).unwrap(),
-            page_size
+            PAGE_SIZE
         );
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
@@ -4553,7 +4519,7 @@ mod tests {
             .unwrap()
             .map_err(zx::Status::err_from_raw)
             .unwrap();
-        assert_eq!(attrs.content_size, Some(page_size));
+        assert_eq!(attrs.content_size, Some(PAGE_SIZE.get()));
 
         fixture.close().await;
     }
@@ -4639,37 +4605,36 @@ mod tests {
         )
         .await;
 
-        let page_size = zx::system_get_page_size() as u64;
-        file.allocate(0, page_size * 2, fio::AllocateMode::empty())
+        file.allocate(0, PAGE_SIZE * 2, fio::AllocateMode::empty())
             .await
             .unwrap()
             .map_err(zx::Status::err_from_raw)
             .unwrap();
-        let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
+        let write_data = (0..20).cycle().take(PAGE_SIZE.get() as usize).collect::<Vec<_>>();
         assert_eq!(
-            file.write_at(&write_data, page_size)
+            file.write_at(&write_data, PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size
+            PAGE_SIZE
         );
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
-        file.resize(page_size + 100).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
+        file.resize(PAGE_SIZE + 100).await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         assert_eq!(
-            file.write_at(&write_data, page_size)
+            file.write_at(&write_data, PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size
+            PAGE_SIZE
         );
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(
-            file.read_at(page_size, page_size)
+            file.read_at(PAGE_SIZE.get(), PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
@@ -4695,20 +4660,19 @@ mod tests {
         )
         .await;
 
-        let page_size = zx::system_get_page_size() as u64;
-        file.allocate(0, page_size * 2, fio::AllocateMode::empty())
+        file.allocate(0, PAGE_SIZE * 2, fio::AllocateMode::empty())
             .await
             .unwrap()
             .map_err(zx::Status::err_from_raw)
             .unwrap();
-        let write_data = (0..20).cycle().take(page_size as usize).collect::<Vec<_>>();
+        let write_data = (0..20).cycle().take(PAGE_SIZE.get() as usize).collect::<Vec<_>>();
         assert_eq!(
-            file.write_at(&write_data, page_size)
+            file.write_at(&write_data, PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size
+            PAGE_SIZE
         );
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
@@ -4716,16 +4680,16 @@ mod tests {
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
 
         assert_eq!(
-            file.write_at(&write_data, page_size)
+            file.write_at(&write_data, PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
                 .unwrap(),
-            page_size
+            PAGE_SIZE
         );
         file.sync().await.unwrap().map_err(zx::Status::err_from_raw).unwrap();
         assert_eq!(
-            file.read_at(page_size, page_size)
+            file.read_at(PAGE_SIZE.get(), PAGE_SIZE.get())
                 .await
                 .unwrap()
                 .map_err(zx::Status::err_from_raw)
@@ -5109,8 +5073,7 @@ mod tests {
                 &Default::default(),
             )
             .await;
-            let page_size = zx::system_get_page_size() as u64;
-            file.resize(page_size).await.unwrap().expect("Resizing");
+            file.resize(PAGE_SIZE.get()).await.unwrap().expect("Resizing");
             let file_id = file
                 .get_attributes(fio::NodeAttributesQuery::ID)
                 .await
@@ -5130,7 +5093,7 @@ mod tests {
 
             // Create a dirty range to synchronously call MarkDirty on the file with the last opened
             // reference.
-            let range = MarkDirtyRange::new(0..page_size, opened_node);
+            let range = MarkDirtyRange::new(0..PAGE_SIZE.get(), opened_node);
             fx_file.mark_dirty(range);
         }
 

@@ -34,12 +34,13 @@ use std::io::{BufWriter, Read, Write};
 use std::path::PathBuf;
 use storage_device::DeviceHolder;
 use storage_device::file_backed_device::FileBackedDevice;
+use storage_units::BlockSize;
 
 pub const BLOB_VOLUME_NAME: &str = "blob";
 
-const BLOCK_SIZE: u32 = 4096;
+const BLOCK_SIZE: BlockSize = BlockSize::SIZE_4KIB;
 
-const READ_BUFFER_SIZE: u64 = 512;
+const READ_BUFFER_BLOCKS: u64 = 512;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 struct BlobsJsonOutputEntry {
@@ -83,28 +84,28 @@ pub async fn make_blob_image(
 
     let mut target_size = target_size.unwrap_or_default();
 
-    if target_size > 0 && target_size < BLOCK_SIZE as u64 {
+    if target_size > 0 && target_size < BLOCK_SIZE {
         return Err(anyhow!("Size {} is too small", target_size));
     }
-    if target_size % BLOCK_SIZE as u64 > 0 {
+    if !BLOCK_SIZE.is_aligned(target_size) {
         return Err(anyhow!("Invalid size {} is not block-aligned", target_size));
     }
     let block_count = if target_size != 0 {
         // Truncate the image to the target size now.
         output_image.set_len(target_size).context("Failed to resize image")?;
-        target_size / BLOCK_SIZE as u64
+        target_size / BLOCK_SIZE
     } else {
         // Arbitrarily use 4GiB for the initial block device size, but don't truncate the file yet,
         // so it becomes exactly as large as needed to contain the contents.  We'll truncate it down
         // to 2x contents later.
         // 4G just needs to be large enough to fit pretty much any image.
         const FOUR_GIGS: u64 = 4 * 1024 * 1024 * 1024;
-        FOUR_GIGS / BLOCK_SIZE as u64
+        FOUR_GIGS / BLOCK_SIZE
     };
 
     let device = DeviceHolder::new(FileBackedDevice::new_with_block_count(
         output_image,
-        BLOCK_SIZE,
+        BLOCK_SIZE.get() as u32,
         block_count,
     ));
     let fxblob = FxBlobBuilder::new(device).await?;
@@ -152,7 +153,7 @@ fn create_sparse_image(
     image_path: &str,
     actual_size: u64,
     target_size: u64,
-    block_size: u32,
+    block_size: BlockSize,
 ) -> Result<(), Error> {
     let image = std::fs::OpenOptions::new()
         .read(true)
@@ -166,7 +167,7 @@ fn create_sparse_image(
         .open(sparse_output_image_path)
         .with_context(|| format!("Failed to create {:?}", sparse_output_image_path))?;
     sparse::builder::SparseImageBuilder::new()
-        .set_block_size(block_size)
+        .set_block_size(block_size.get() as u32)
         .add_source(sparse::builder::DataSource::Reader {
             reader: Box::new(image),
             size: actual_size,
@@ -272,7 +273,7 @@ impl FxBlobBuilder {
         data: Vec<u8>,
         compression_algorithm: Option<CompressionAlgorithm>,
     ) -> Result<BlobToInstall, Error> {
-        BlobToInstall::new(data, self.filesystem.block_size() as usize, compression_algorithm)
+        BlobToInstall::new(data, self.filesystem.block_size(), compression_algorithm)
     }
 }
 
@@ -311,7 +312,7 @@ impl BlobToInstall {
     /// Create a new blob ready for installation with [`FxBlobBuilder::install_blob`].
     pub fn new(
         data: Vec<u8>,
-        fs_block_size: usize,
+        fs_block_size: BlockSize,
         compression_algorithm: Option<CompressionAlgorithm>,
     ) -> Result<Self, Error> {
         let (hash, hashes) =
@@ -351,7 +352,7 @@ impl BlobToInstall {
     /// existing file on disk.
     pub fn new_from_file(
         path: PathBuf,
-        fs_block_size: usize,
+        fs_block_size: BlockSize,
         compression_algorithm: Option<CompressionAlgorithm>,
     ) -> Result<Self, Error> {
         let mut data = Vec::new();
@@ -374,7 +375,7 @@ async fn install_blobs(
     compression_algorithm: Option<CompressionAlgorithm>,
 ) -> Result<BlobsJsonOutput, Error> {
     let num_blobs = blobs.len();
-    let fs_block_size = fxblob.filesystem.block_size() as usize;
+    let fs_block_size = fxblob.filesystem.block_size();
     // We don't need any backpressure as the channel guarantees at least one slot per sender.
     let (tx, rx) = futures::channel::mpsc::channel::<BlobToInstall>(0);
     // Generate each blob in parallel using a thread pool.
@@ -438,10 +439,10 @@ async fn install_blob_with_json_output(
 
 fn maybe_compress(
     buf: Vec<u8>,
-    filesystem_block_size: usize,
+    filesystem_block_size: BlockSize,
     compression_algorithm: CompressionAlgorithm,
 ) -> BlobData {
-    if buf.len() <= filesystem_block_size {
+    if buf.len() as u64 <= filesystem_block_size {
         return BlobData::Uncompressed(buf); // No savings, return original data.
     }
     let chunked_archive_options = match compression_algorithm {
@@ -453,8 +454,8 @@ fn maybe_compress(
     };
     let archive =
         ChunkedArchive::new(&buf, chunked_archive_options).expect("failed to compress data");
-    if archive.compressed_data_size().checked_next_multiple_of(filesystem_block_size).unwrap()
-        >= buf.len()
+    if filesystem_block_size.align_up(archive.compressed_data_size() as u64).unwrap()
+        >= buf.len() as u64
     {
         BlobData::Uncompressed(buf) // Compression expanded the file, return original data.
     } else {
@@ -479,7 +480,10 @@ pub async fn extract_blobs(image: PathBuf, out_dir: PathBuf) -> anyhow::Result<(
     let mut non_sparse_image = tempfile::NamedTempFile::new_in(&out_dir)?;
     unsparse(&mut source, non_sparse_image.as_file_mut()).map_err(anyhow::Error::from)?;
 
-    let device = DeviceHolder::new(FileBackedDevice::new(non_sparse_image.reopen()?, BLOCK_SIZE));
+    let device = DeviceHolder::new(FileBackedDevice::new(
+        non_sparse_image.reopen()?,
+        BLOCK_SIZE.get() as u32,
+    ));
     let fs = FxFilesystemBuilder::new().read_only(true).open(device).await?;
     let vol =
         root_volume(fs.clone()).await?.volume(BLOB_VOLUME_NAME, StoreOptions::default()).await?;
@@ -511,7 +515,7 @@ pub async fn extract_blobs(image: PathBuf, out_dir: PathBuf) -> anyhow::Result<(
             let mut read_buf = Vec::new();
             let mut offset = 0;
             let mut buf =
-                handle.allocate_buffer((handle.block_size() * READ_BUFFER_SIZE) as usize).await;
+                handle.allocate_buffer((handle.block_size() * READ_BUFFER_BLOCKS) as usize).await;
             loop {
                 let bytes = handle.read(offset, buf.as_mut()).await?;
                 if bytes == 0 {
@@ -950,7 +954,8 @@ mod tests {
             .unwrap();
         output_image.set_len(image_size).unwrap();
 
-        let device = DeviceHolder::new(FileBackedDevice::new(output_image, BLOCK_SIZE));
+        let device =
+            DeviceHolder::new(FileBackedDevice::new(output_image, BLOCK_SIZE.get() as u32));
         let fs = FxFilesystemBuilder::new()
             .format(true)
             .trim_config(None)

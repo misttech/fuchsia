@@ -28,7 +28,7 @@ use fxfs::log::*;
 use fxfs::object_handle::ObjectHandle;
 use fxfs::object_store::transaction::LockKey;
 use fxfs::object_store::{AttributeId, DataObjectHandle, ObjectDescriptor, StoreObjectHandle};
-use fxfs::round::{round_down, round_up};
+use fxfs::round::round_down;
 use fxfs_macros::ToWeakNode;
 use mapping::Extent as MappingExtent;
 use std::ops::Range;
@@ -413,8 +413,7 @@ impl PagerBacked for FxBlob {
                 let compressed_offsets =
                     compression_info.compressed_range_for_uncompressed_range(&range)?;
                 let bs = self.handle.block_size();
-                let aligned = round_down(compressed_offsets.start, bs)
-                    ..round_up(compressed_offsets.end, bs).unwrap();
+                let aligned = bs.align_range_outwards(&compressed_offsets).unwrap();
                 let mut compressed_buf = self.allocate_buffer(aligned.end - aligned.start).await;
 
                 let mut decompression_errors = 0;
@@ -573,6 +572,7 @@ mod tests {
     use fxfs_make_blob_image::FxBlobBuilder;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
+    use storage_units::PAGE_SIZE;
 
     const BLOCK_SIZE: u64 = fuchsia_merkle::BLOCK_SIZE as u64;
     const CHUNK_SIZE: usize = 32 * 1024;
@@ -674,7 +674,7 @@ mod tests {
     async fn test_non_page_aligned_blob() {
         let fixture = new_blob_fixture().await;
 
-        let page_size = zx::system_get_page_size() as usize;
+        let page_size = PAGE_SIZE.get() as usize;
         let data = vec![0xffu8; page_size - 1];
         let hash = fixture.write_blob(&data, CompressionMode::Never).await;
         assert_eq!(fixture.read_blob(hash).await, data);

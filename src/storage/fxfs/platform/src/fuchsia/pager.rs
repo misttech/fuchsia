@@ -21,6 +21,7 @@ use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use storage_device::buffer;
+use storage_units::PAGE_SIZE;
 use vfs::execution_scope::ExecutionScope;
 use zx::sys::zx_page_request_command_t::{ZX_PAGER_VMO_DIRTY, ZX_PAGER_VMO_READ};
 use zx::{PacketContents, PagerPacket, SignalPacket};
@@ -531,7 +532,7 @@ pub fn default_page_in<P: PagerBacked>(
     // take care to never supply additional pages beyond `page_aligned_size` as there is a chance
     // that we might serve a range outside of the VMO and fail to supply anything at all.
 
-    let page_aligned_size = round_up(this.byte_size(), page_size()).unwrap();
+    let page_aligned_size = PAGE_SIZE.align_up(this.byte_size()).unwrap();
 
     // Zero-pad the tail if the requested range exceeds the size of the thing we're reading. This
     // can happen when we truncate and there are outstanding pager requests that the kernel was not
@@ -628,11 +629,6 @@ impl PagerVmoStats {
     }
 }
 
-#[inline]
-fn page_size() -> u64 {
-    zx::system_get_page_size().into()
-}
-
 /// A trait for specializing `PagerRange` for different request types.
 pub trait PagerRequestType {
     /// Returns the name of the request type for logging purposes.
@@ -655,11 +651,7 @@ pub type PageInRange<T> = PagerRange<T, PageInRequest>;
 impl<T: PagerBacked> PageInRange<T> {
     /// Constructs a new `PageInRange<T>`. `range` must be page aligned.
     pub fn new(range: Range<u64>, file: OpenedNode<T>, epoch_guard: EpochGuard<'static>) -> Self {
-        debug_assert!(
-            range.start % page_size() == 0 && range.end % page_size() == 0,
-            "{:?} is not page aligned",
-            range
-        );
+        debug_assert!(PAGE_SIZE.is_aligned(&range), "{range:?} is not page aligned",);
         Self {
             range,
             inner: Some(PagerRangeInner { file, _epoch_guard: Some(epoch_guard) }),
@@ -697,11 +689,7 @@ pub type MarkDirtyRange<T> = PagerRange<T, MarkDirtyRequest>;
 impl<T: PagerBacked> MarkDirtyRange<T> {
     /// Constructs a new `MarkDirtyRange<T>`. `range` must be page aligned.
     pub fn new(range: Range<u64>, file: OpenedNode<T>) -> Self {
-        debug_assert!(
-            range.start % page_size() == 0 && range.end % page_size() == 0,
-            "{:?} is not page aligned",
-            range
-        );
+        debug_assert!(PAGE_SIZE.is_aligned(&range), "{range:?} is not page aligned");
         Self {
             range,
             inner: Some(PagerRangeInner { file, _epoch_guard: None }),
@@ -771,11 +759,7 @@ impl<T: PagerBacked, U: PagerRequestType> PagerRange<T, U> {
             self.range,
             new_range
         );
-        debug_assert!(
-            new_range.start % page_size() == 0 && new_range.end % page_size() == 0,
-            "{:?} is not page aligned",
-            new_range
-        );
+        debug_assert!(PAGE_SIZE.is_aligned(&new_range), "{new_range:?} is not page aligned");
         self.range = new_range;
         self
     }
@@ -786,9 +770,8 @@ impl<T: PagerBacked, U: PagerRequestType> PagerRange<T, U> {
     /// must a multiple of the page size.
     pub fn chunks(mut self, chunk_size: u64) -> PagerRangeChunksIter<T, U> {
         debug_assert!(
-            chunk_size % page_size() == 0,
-            "{} is not a multiple of the page size",
-            chunk_size
+            PAGE_SIZE.is_aligned(chunk_size),
+            "{chunk_size} is not a multiple of the page size"
         );
         PagerRangeChunksIter {
             start: self.range.start,
@@ -935,6 +918,10 @@ mod tests {
     use futures::StreamExt;
     use futures::channel::mpsc;
     use fxfs_macros::ToWeakNode;
+
+    fn page_size() -> u64 {
+        PAGE_SIZE.get()
+    }
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     enum PagerRequest {

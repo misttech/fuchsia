@@ -50,8 +50,6 @@ use crate::object_store::transaction::{
     AssocObj, AssociatedObject, LockKey, LockKeys, ObjectMutationIterator, ObjectStoreMutation,
     Operation, Options, Transaction, WriteGuard, lock_keys,
 };
-use crate::range::RangeExt;
-use crate::round::round_up;
 use crate::serialized_types::{
     AES_JOURNAL_ENCRYPTION_VERSION, DEFAULT_MAX_SERIALIZED_RECORD_SIZE, Version, Versioned,
     VersionedLatest,
@@ -76,6 +74,7 @@ use std::num::NonZero;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use storage_device::Device;
+use storage_units::BlockSize;
 use uuid::Uuid;
 
 pub use extent::Extent;
@@ -669,7 +668,7 @@ pub struct ObjectStore {
     parent_store: Option<Arc<ObjectStore>>,
     store_object_id: u64,
     device: Arc<dyn Device>,
-    block_size: u64,
+    block_size: BlockSize,
     filesystem: Weak<FxFilesystem>,
     // Lock ordering: This must be taken before `lock_state`.
     store_info: Mutex<Option<StoreInfo>>,
@@ -776,7 +775,11 @@ impl ObjectStore {
 
     /// Cycle breaker constructor that returns an ObjectStore without a filesystem.
     /// This should only be used from super block code.
-    pub fn new_root_parent(device: Arc<dyn Device>, block_size: u64, store_object_id: u64) -> Self {
+    pub fn new_root_parent(
+        device: Arc<dyn Device>,
+        block_size: BlockSize,
+        store_object_id: u64,
+    ) -> Self {
         ObjectStore {
             parent_store: None,
             store_object_id,
@@ -1063,7 +1066,7 @@ impl ObjectStore {
         &self.device
     }
 
-    pub fn block_size(&self) -> u64 {
+    pub fn block_size(&self) -> BlockSize {
         self.block_size
     }
 
@@ -1696,7 +1699,7 @@ impl ObjectStore {
 
         let aligned_offset = match mode {
             TrimMode::FromOffset(offset) => {
-                round_up(offset, self.block_size).ok_or(FxfsError::Inconsistent)?
+                self.block_size.align_up(offset).ok_or(FxfsError::Inconsistent)?
             }
             TrimMode::Tombstone(..) => 0,
             TrimMode::UseSize => {
@@ -1728,7 +1731,7 @@ impl ObjectStore {
                         if *size_attribute_id != attribute_id {
                             return Ok(TrimResult::Done(Some(*size_attribute_id)));
                         }
-                        round_up(*size, self.block_size).ok_or(FxfsError::Inconsistent)?
+                        self.block_size.align_up(*size).ok_or(FxfsError::Inconsistent)?
                     } else {
                         // At time of writing, we should always see a size record or None here, but
                         // asserting here would be brittle so just skip to the the next attribute
@@ -1782,7 +1785,7 @@ impl ObjectStore {
                     end = extent.end;
                     let len = end - start;
                     let device_range = device_offset..device_offset + len;
-                    ensure!(device_range.is_aligned(block_size), FxfsError::Inconsistent);
+                    ensure!(block_size.is_aligned(&device_range), FxfsError::Inconsistent);
                     allocator.deallocate(transaction, self.store_object_id, device_range).await?;
                     deallocated += len;
                     // Stop if the transaction is getting too big.
@@ -5994,7 +5997,7 @@ mod tests {
             .expect("create_object_with_id failed");
             transaction.commit().await.expect("commit failed");
 
-            let buf = handle.allocate_buffer(fs.block_size() as usize).await;
+            let buf = handle.allocate_buffer(fs.block_size().get() as usize).await;
             handle.write_or_append(None, buf.as_ref()).await.expect("Write some data");
 
             // Manually overwrite keys to be appended with an illegal key type. It won't even

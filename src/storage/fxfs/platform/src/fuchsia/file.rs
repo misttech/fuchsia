@@ -28,6 +28,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use storage_device::buffer;
+use storage_units::BlockSize;
 use vfs::directory::entry::{EntryInfo, GetEntryInfo};
 use vfs::directory::entry_container::MutableDirectory;
 use vfs::execution_scope::ExecutionScope;
@@ -237,7 +238,7 @@ impl FxFile {
         this.handle.flush(flush_type).await.map(|_| ())
     }
 
-    pub fn get_block_size(&self) -> u64 {
+    pub fn get_block_size(&self) -> BlockSize {
         self.handle.block_size()
     }
 
@@ -866,6 +867,7 @@ mod tests {
     use std::time::Duration;
     use storage_device::DeviceHolder;
     use storage_device::fake_device::FakeDevice;
+    use storage_units::PAGE_SIZE;
     use zx::Status;
 
     const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(123);
@@ -957,7 +959,7 @@ mod tests {
             immutable_attributes.content_size.unwrap(),
             expected_output.as_bytes().len() as u64
         );
-        assert_eq!(immutable_attributes.storage_size.unwrap(), fixture.fs().block_size() as u64);
+        assert_eq!(immutable_attributes.storage_size.unwrap(), fixture.fs().block_size());
 
         let () = file
             .sync()
@@ -978,7 +980,7 @@ mod tests {
             immutable_attributes.content_size.unwrap(),
             expected_output.as_bytes().len() as u64
         );
-        assert_eq!(immutable_attributes.storage_size.unwrap(), fixture.fs().block_size() as u64);
+        assert_eq!(immutable_attributes.storage_size.unwrap(), fixture.fs().block_size());
 
         close_file_checked(file).await;
         fixture.close().await;
@@ -1226,7 +1228,7 @@ mod tests {
             immutable_attributes.content_size.unwrap(),
             expected_output.as_bytes().len() as u64
         );
-        assert_eq!(immutable_attributes.storage_size.unwrap(), fixture.fs().block_size() as u64);
+        assert_eq!(immutable_attributes.storage_size.unwrap(), fixture.fs().block_size());
 
         close_file_checked(file).await;
         fixture.close().await;
@@ -1987,7 +1989,7 @@ mod tests {
             let file_clone = file_obj.clone();
 
             unblock(move || {
-                let page_size = zx::system_get_page_size() as u64;
+                let page_size = PAGE_SIZE.get();
                 let mut offset: u64 = 0;
                 while !file_clone
                     .background_flush_running
@@ -3250,9 +3252,7 @@ mod tests {
         )
         .await;
 
-        let page_size = zx::system_get_page_size() as u64;
-
-        file.resize(8 * page_size)
+        file.resize(8 * PAGE_SIZE)
             .await
             .expect("resize failed")
             .map_err(Status::err_from_raw)
@@ -3293,10 +3293,10 @@ mod tests {
         let stream2_clone = stream2.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
         unblock(move || {
             stream1_dup_clone2
-                .write_at(zx::StreamWriteOptions::empty(), 1 * page_size, &[5, 6, 7, 8])
+                .write_at(zx::StreamWriteOptions::empty(), 1 * PAGE_SIZE, &[5, 6, 7, 8])
                 .expect("Write on re-opened stream 1 dup should succeed");
             stream2_clone
-                .write_at(zx::StreamWriteOptions::empty(), 2 * page_size, &[9, 10, 11, 12])
+                .write_at(zx::StreamWriteOptions::empty(), 2 * PAGE_SIZE, &[9, 10, 11, 12])
                 .expect("Write on new stream 2 should succeed");
         })
         .await;
@@ -3309,10 +3309,10 @@ mod tests {
         // Page 3 and Page 4.
         unblock(move || {
             stream1_dup
-                .write_at(zx::StreamWriteOptions::empty(), 3 * page_size, &[13, 14, 15, 16])
+                .write_at(zx::StreamWriteOptions::empty(), 3 * PAGE_SIZE, &[13, 14, 15, 16])
                 .expect_err("Write on stream 1 dup should fail after final close");
             stream2
-                .write_at(zx::StreamWriteOptions::empty(), 4 * page_size, &[17, 18, 19, 20])
+                .write_at(zx::StreamWriteOptions::empty(), 4 * PAGE_SIZE, &[17, 18, 19, 20])
                 .expect_err("Write on stream 2 should fail after final close");
         })
         .await;
@@ -3431,10 +3431,8 @@ mod tests {
         )
         .await;
 
-        let page_size = zx::system_get_page_size() as u64;
-
         // Grow the file to 4 pages and sync so the on-disk size is 4 pages.
-        file.resize(page_size * 4).await.unwrap().expect("resize failed");
+        file.resize(PAGE_SIZE * 4).await.unwrap().expect("resize failed");
         file.sync().await.unwrap().expect("sync failed");
 
         // Now cause commits to fail. All changes will be pending on the handle.
@@ -3445,14 +3443,14 @@ mod tests {
         unblock(move || {
             for i in 0..2 {
                 stream
-                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                    .write_at(zx::StreamWriteOptions::empty(), i * PAGE_SIZE, &[1u8])
                     .expect("write_at failed");
             }
         })
         .await;
 
         // Shrink the file to 2 pages so that a pending shrink is recorded on the handle.
-        file.resize(page_size * 2).await.unwrap().expect("resize failed");
+        file.resize(PAGE_SIZE * 2).await.unwrap().expect("resize failed");
 
         // Close the client-side file connection and drop object reference so only the
         // volume's IS_DIRTY raw Arc keeps the file alive.

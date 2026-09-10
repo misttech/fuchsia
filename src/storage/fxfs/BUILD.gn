@@ -38,6 +38,7 @@ fxfs_deps = [
   "//src/storage/lib/fsverity-merkle",
   "//src/storage/lib/ptr_slice",
   "//src/storage/lib/storage_device",
+  "//src/storage/lib/units",
   "//src/storage/type-fprint:fprint",
   "//src/sys/pkg/lib/fuchsia-merkle",
   "//third_party/rust_crates:anyhow",

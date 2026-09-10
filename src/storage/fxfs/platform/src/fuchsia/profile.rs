@@ -35,6 +35,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use storage_device::buffer::{BufferFuture, BufferRef};
 use storage_ptr_slice::{MutPtrByteSlice, PtrByteSlice};
+use storage_units::PAGE_SIZE;
 use vfs::execution_scope::ActiveGuard;
 
 const FILE_OPEN_MARKER: u64 = u64::MAX;
@@ -141,7 +142,7 @@ impl RecordingHandle for FileRecordingHandle {
     }
 
     fn block_size(&self) -> usize {
-        self.handle.block_size() as usize
+        self.handle.block_size().get() as usize
     }
 
     async fn commit(self: Box<Self>) -> Result<(), Error> {
@@ -190,7 +191,7 @@ trait RecordedVolume: Send + Sync + Sized + Unpin {
     ) -> impl std::future::Future<Output = Result<(), Error>> + Send {
         async move {
             let mut io_buf = handle.allocate_buffer(IO_SIZE).await;
-            let block_size = handle.block_size() as usize;
+            let block_size = handle.block_size().get() as usize;
             let file_size = handle.get_size() as usize;
             let mut offset = 0;
             while offset < file_size {
@@ -681,11 +682,8 @@ impl<T: RecordedVolume> ReplayState<T> {
 
     fn page_in_thread(queue: async_channel::Receiver<Request<T::NodeType>>) {
         while let Ok(request) = queue.recv_blocking() {
-            let res = request.file.vmo().op_range(
-                zx::VmoOp::PREFETCH,
-                request.offset,
-                zx::system_get_page_size() as u64,
-            );
+            let res =
+                request.file.vmo().op_range(zx::VmoOp::PREFETCH, request.offset, PAGE_SIZE.get());
             if let Err(e) = res {
                 warn!("Failed to prefetch page: {:?}", e);
             }
@@ -824,6 +822,7 @@ mod tests {
     use std::time::Duration;
     use storage_device::buffer::{BufferRef, MutableBufferRef};
     use storage_device::buffer_allocator::{BufferAllocator, BufferFuture, BufferSource};
+    use storage_units::BlockSize;
 
     struct FakeReaderWriterInner {
         data: Vec<u8>,
@@ -858,8 +857,8 @@ mod tests {
             0
         }
 
-        fn block_size(&self) -> u64 {
-            self.allocator.block_size() as u64
+        fn block_size(&self) -> BlockSize {
+            BlockSize::new(self.allocator.block_size() as u32).unwrap()
         }
 
         fn allocate_buffer(&self, size: usize) -> BufferFuture<'_> {
@@ -1075,7 +1074,8 @@ mod tests {
 
         let fixture = new_blob_fixture().await;
         assert_eq!(BLOCK_SIZE as u64, fixture.fs().block_size());
-        let message_count = (fixture.fs().block_size() as usize / size_of::<BlobMessage>()) + 1;
+        let message_count =
+            (fixture.fs().block_size().get() as usize / size_of::<BlobMessage>()) + 1;
         let hash;
         let volume = fixture.volume().volume();
 
@@ -1122,7 +1122,8 @@ mod tests {
 
         let fixture = TestFixture::new().await;
         assert_eq!(BLOCK_SIZE as u64, fixture.fs().block_size());
-        let message_count = (fixture.fs().block_size() as usize / size_of::<FileMessage>()) + 1;
+        let message_count =
+            (fixture.fs().block_size().get() as usize / size_of::<FileMessage>()) + 1;
         let id;
         let volume = fixture.volume().volume();
         {
@@ -1222,7 +1223,8 @@ mod tests {
         let fixture = new_blob_fixture().await;
         {
             assert_eq!(BLOCK_SIZE as u64, fixture.fs().block_size());
-            let message_count = (fixture.fs().block_size() as usize / size_of::<BlobMessage>()) + 1;
+            let message_count =
+                (fixture.fs().block_size().get() as usize / size_of::<BlobMessage>()) + 1;
 
             let volume = fixture.volume().volume();
             let handle = FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();
@@ -1279,7 +1281,8 @@ mod tests {
         let fixture = TestFixture::new().await;
         {
             assert_eq!(BLOCK_SIZE as u64, fixture.fs().block_size());
-            let message_count = (fixture.fs().block_size() as usize / size_of::<FileMessage>()) + 1;
+            let message_count =
+                (fixture.fs().block_size().get() as usize / size_of::<FileMessage>()) + 1;
 
             let volume = fixture.volume().volume();
             let handle = FileRecordingHandle::new(TEST_PROFILE_NAME, volume.clone()).await.unwrap();

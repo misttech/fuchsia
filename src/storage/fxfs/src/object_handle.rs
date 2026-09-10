@@ -9,6 +9,7 @@ use std::future::Future;
 use std::ops::Deref;
 use std::pin::Pin;
 use storage_device::buffer::{BufferFuture, BufferRef, MutableBufferRef};
+use storage_units::BlockSize;
 
 // Some places use Default and assume that zero is an invalid object ID, so this cannot be changed
 // easily.
@@ -23,7 +24,7 @@ pub trait ObjectHandle: Send + Sync + 'static {
 
     /// Returns the filesystem block size, which should be at least as big as the device block size,
     /// but not necessarily the same.
-    fn block_size(&self) -> u64;
+    fn block_size(&self) -> BlockSize;
 
     /// Allocates a buffer for doing I/O (read and write) for the object.
     fn allocate_buffer(&self, size: usize) -> BufferFuture<'_>;
@@ -89,7 +90,7 @@ pub trait WriteObjectHandle: ObjectHandle {
 
 /// This trait is an asynchronous streaming writer.
 pub trait WriteBytes: Sized {
-    fn block_size(&self) -> u64;
+    fn block_size(&self) -> BlockSize;
 
     /// Buffers writes to be written to the underlying handle. This may flush bytes immediately
     /// or when buffers are full.
@@ -130,7 +131,7 @@ impl<T: Deref<Target = dyn ReadObjectHandle> + Send + Sync + 'static> ObjectHand
         (**self).object_id()
     }
 
-    fn block_size(&self) -> u64 {
+    fn block_size(&self) -> BlockSize {
         (**self).block_size()
     }
 

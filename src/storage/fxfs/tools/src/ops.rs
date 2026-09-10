@@ -185,7 +185,7 @@ pub async fn get(vol: &Arc<ObjectStore>, src: &Path) -> Result<Vec<u8>, Error> {
             ObjectStore::open_object(dir.owner(), object_id, HandleOptions::default(), None)
                 .await?;
         let mut out: Vec<u8> = Vec::new();
-        let mut buf = handle.allocate_buffer(handle.block_size() as usize).await;
+        let mut buf = handle.allocate_buffer(handle.block_size().get() as usize).await;
         let mut ofs = 0;
         loop {
             let bytes = handle.read(ofs, buf.as_mut()).await?;

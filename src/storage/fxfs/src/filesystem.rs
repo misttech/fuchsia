@@ -38,9 +38,10 @@ use std::sync::{Arc, OnceLock, Weak};
 use std::task::Poll;
 use std::time::{Duration, Instant};
 use storage_device::{Device, DeviceHolder};
+use storage_units::BlockSize;
 
-pub const MIN_BLOCK_SIZE: u64 = 4096;
-pub const MAX_BLOCK_SIZE: u64 = u16::MAX as u64 + 1;
+pub const MIN_BLOCK_SIZE: BlockSize = BlockSize::SIZE_4KIB;
+pub const MAX_BLOCK_SIZE: BlockSize = BlockSize::SIZE_64KIB;
 
 // Whilst Fxfs could support up to u64::MAX, off_t is i64 so allowing files larger than that becomes
 // difficult to deal with via the POSIX APIs. Additionally, PagedObjectHandle only sees data get
@@ -454,8 +455,9 @@ impl FxFilesystemBuilder {
 
         let image_builder_mode = self.options.image_builder_mode;
 
-        let block_size = std::cmp::max(device.block_size().into(), MIN_BLOCK_SIZE);
-        assert_eq!(block_size % MIN_BLOCK_SIZE, 0);
+        let device_block_size =
+            BlockSize::new(device.block_size()).expect("Device block size is not a power of 2");
+        let block_size = std::cmp::max(device_block_size, MIN_BLOCK_SIZE);
         assert!(block_size <= MAX_BLOCK_SIZE, "Max supported block size is 64KiB");
 
         let mut fsck_after_every_transaction = None;
@@ -582,7 +584,7 @@ impl FxFilesystemBuilder {
 }
 
 pub struct FxFilesystem {
-    block_size: u64,
+    block_size: BlockSize,
     objects: Arc<ObjectManager>,
     journal: Arc<Journal>,
     commit_mutex: futures::lock::Mutex<()>,
@@ -695,7 +697,7 @@ impl FxFilesystem {
         self.journal.sync(options).await.map(|_| ())
     }
 
-    pub fn block_size(&self) -> u64 {
+    pub fn block_size(&self) -> BlockSize {
         self.block_size
     }
 

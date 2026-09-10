@@ -267,7 +267,7 @@ mod tests {
         // Write with an aligned buffer to avoid reading from vmo when creating a new aligned
         // buffer. We already know that reading from vmo will fail, we want to check that writing
         // fails as well.
-        let mut buf = handle.allocate_buffer(handle.block_size() as usize).await;
+        let mut buf = handle.allocate_buffer(handle.block_size().get() as usize).await;
         buf.fill(0xcc);
         handle.write_or_append(Some(0), buf.as_ref()).await.expect_err("write passed unexpectedly");
 

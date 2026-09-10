@@ -136,16 +136,17 @@ impl FileIo for InternalFile {
     async fn read_at(&self, offset: u64, buffer: &mut [u8]) -> Result<u64, Status> {
         // Deal with alignment. Handle requires aligned reads.
         let handle = self.handle().await?;
-        let block_size = handle.owner().block_size();
-        let start = fxfs::round::round_down(offset, block_size);
-        let end = fxfs::round::round_up(offset + buffer.len() as u64, block_size).unwrap();
-        let mut buf = handle.allocate_buffer((end - start) as usize).await;
-        let bytes = handle.read(start, buf.as_mut()).await.map_err(map_to_status)?;
-        let end = std::cmp::min(offset + buffer.len() as u64, start + bytes as u64);
+        let aligned = handle
+            .block_size()
+            .align_range_outwards(&(offset..offset + buffer.len() as u64))
+            .unwrap();
+        let mut buf = handle.allocate_buffer((aligned.end - aligned.start) as usize).await;
+        let bytes = handle.read(aligned.start, buf.as_mut()).await.map_err(map_to_status)?;
+        let end = std::cmp::min(offset + buffer.len() as u64, aligned.start + bytes as u64);
         if end > offset {
-            let target_range = (offset - start) as usize..(end - start) as usize;
+            let target_range = (offset - aligned.start) as usize..(end - aligned.start) as usize;
             buf.subslice(target_range).copy_to_slice(&mut buffer[..(end - offset) as usize]);
-            Ok(end - start)
+            Ok(end - offset)
         } else {
             Ok(0)
         }

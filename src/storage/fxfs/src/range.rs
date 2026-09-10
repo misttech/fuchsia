@@ -23,9 +23,6 @@ pub trait RangeExt<T> {
     /// The range must be valid (i.e. [`RangeExt::is_valid()`] must be true).
     unsafe fn unchecked_length(&self) -> T;
 
-    /// Returns true if the range is aligned to the given block size.
-    fn is_aligned(&self, block_size: impl Into<T>) -> bool;
-
     /// Splits the half-open range `[range.start, range.end)` into the ranges `[range.start,
     /// split_point)` and `[split_point, range.end)`. If either of the new ranges would be empty,
     /// then `None` is returned in its place and `Some(range)` is returned for the other. `range`
@@ -47,11 +44,6 @@ impl<T: Sub<Output = T> + Copy + Ord + Debug + Rem<Output = T> + PartialEq + Def
 
     unsafe fn unchecked_length(&self) -> T {
         self.end - self.start
-    }
-
-    fn is_aligned(&self, block_size: impl Into<T>) -> bool {
-        let bs = block_size.into();
-        self.start % bs == T::default() && self.end % bs == T::default()
     }
 
     fn split(self, split_point: T) -> (Option<Range<T>>, Option<Range<T>>) {

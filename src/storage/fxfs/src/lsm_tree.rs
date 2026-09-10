@@ -41,6 +41,7 @@ use std::fmt;
 use std::ops::Bound;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use storage_units::BlockSize;
 use types::{
     Existence, Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter, MaybeContainsKey,
     MergeType, MergeableKey, OrdLowerBound, Value,
@@ -145,7 +146,7 @@ pub async fn compact_with_iterator<K: Key, V: Value, W: WriteBytes + Send>(
     mut iterator: impl LayerIterator<K, V>,
     num_items: usize,
     writer: W,
-    block_size: u64,
+    block_size: BlockSize,
     mut yielder: Option<impl Yielder>,
 ) -> Result<u64, Error> {
     let mut writer = PersistentLayerWriter::<W, K, V>::new(writer, num_items, block_size).await?;

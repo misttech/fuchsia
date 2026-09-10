@@ -41,6 +41,7 @@ use std::ops::Deref;
 use std::sync::{Arc, Weak};
 use storage_device::DeviceHolder;
 use storage_device::block_device::BlockDevice;
+use storage_units::PAGE_SIZE;
 use vfs::directory::helper::DirectlyMutable;
 use vfs::execution_scope::ExecutionScope;
 
@@ -91,7 +92,7 @@ impl FsInspect for InspectedFxFilesystem {
             name: FXFS_INFO_NAME.into(),
             version_major: LATEST_VERSION.major.into(),
             version_minor: LATEST_VERSION.minor.into(),
-            block_size: self.0.block_size() as u64,
+            block_size: self.0.block_size().get(),
             max_filename_length: fio::MAX_NAME_LENGTH,
             oldest_version: Some(format!("{}.{}", earliest_version.major, earliest_version.minor)),
         }
@@ -294,8 +295,8 @@ impl Component {
         let client = new_block_client(device).await?;
 
         // TODO(https://fxbug.dev/42063349) Add support for block sizes greater than the page size.
-        assert!(client.block_size() <= zx::system_get_page_size());
-        assert!((zx::system_get_page_size() as u64) == MIN_BLOCK_SIZE);
+        assert!(client.block_size() <= PAGE_SIZE.get() as u32);
+        assert!(PAGE_SIZE == MIN_BLOCK_SIZE);
 
         let fs = FxFilesystemBuilder::new()
             .fsck_after_every_transaction(options.fsck_after_every_transaction.unwrap_or(false))

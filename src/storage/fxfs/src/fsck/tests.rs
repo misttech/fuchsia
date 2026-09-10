@@ -22,7 +22,6 @@ use crate::object_store::{
     ObjectDescriptor, ObjectKey, ObjectKeyData, ObjectKind, ObjectStore, ObjectValue, ProjectId,
     RootDigest, StoreInfo, StoreOptions, Timestamp, VOLUME_DATA_KEY_ID,
 };
-use crate::round::round_down;
 use crate::serialized_types::VersionedLatest;
 use crate::testing::writer::Writer;
 use anyhow::{Context, Error};
@@ -39,9 +38,10 @@ use std::ops::Deref;
 use std::sync::Arc;
 use storage_device::DeviceHolder;
 use storage_device::fake_device::FakeDevice;
+use storage_units::BlockSize;
 use test_case::test_case;
 
-const TEST_DEVICE_BLOCK_SIZE: u32 = 512;
+const TEST_DEVICE_BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
 const TEST_DEVICE_BLOCK_COUNT: u64 = 8192;
 const WRAPPING_KEY_ID: WrappingKeyId = u128::to_le_bytes(2);
 
@@ -62,7 +62,7 @@ impl FsckTest {
     async fn new() -> Self {
         let filesystem = FxFilesystem::new_empty(DeviceHolder::new(FakeDevice::new(
             TEST_DEVICE_BLOCK_COUNT,
-            TEST_DEVICE_BLOCK_SIZE,
+            TEST_DEVICE_BLOCK_SIZE.get() as u32,
         )))
         .await
         .expect("new_empty failed");
@@ -299,8 +299,7 @@ async fn test_extra_allocation() {
         // We need a discontiguous allocation, and some blocks will have been used up by other
         // things, so allocate the very last block.  Note that changing our allocation strategy
         // might break this test.
-        let end =
-            round_down(TEST_DEVICE_BLOCK_SIZE as u64 * TEST_DEVICE_BLOCK_COUNT, fs.block_size());
+        let end = fs.block_size().align_down(TEST_DEVICE_BLOCK_SIZE * TEST_DEVICE_BLOCK_COUNT);
         fs.allocator()
             .mark_allocated(&mut transaction, 4, end - fs.block_size()..end)
             .expect("mark_allocated failed");
@@ -326,8 +325,7 @@ async fn test_misaligned_allocation() {
         // We need a discontiguous allocation, and some blocks will have been used up by other
         // things, so allocate the very last block.  Note that changing our allocation strategy
         // might break this test.
-        let end =
-            round_down(TEST_DEVICE_BLOCK_SIZE as u64 * TEST_DEVICE_BLOCK_COUNT, fs.block_size());
+        let end = fs.block_size().align_down(TEST_DEVICE_BLOCK_SIZE * TEST_DEVICE_BLOCK_COUNT);
         fs.allocator()
             .mark_allocated(&mut transaction, 99, end - fs.block_size() + 1..end)
             .expect("mark_allocated failed");
@@ -378,10 +376,7 @@ async fn test_malformed_allocation() {
             // We also need a discontiguous allocation, and some blocks will have been used up by
             // other things, so allocate the very last block.  Note that changing our allocation
             // strategy might break this test.
-            let end = round_down(
-                TEST_DEVICE_BLOCK_SIZE as u64 * TEST_DEVICE_BLOCK_COUNT,
-                fs.block_size(),
-            );
+            let end = fs.block_size().align_down(TEST_DEVICE_BLOCK_SIZE * TEST_DEVICE_BLOCK_COUNT);
             let item = Item::new(
                 AllocatorKey { device_range: (end..end).into() },
                 AllocatorValue::Abs { count: 2, owner_object_id: 9 },
@@ -445,7 +440,7 @@ async fn test_misaligned_extent_in_child_store() {
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
-                ObjectKey::extent(555, AttributeId::TEST_ID, 1..fs.block_size()),
+                ObjectKey::extent(555, AttributeId::TEST_ID, 1..fs.block_size().get()),
                 ObjectValue::Extent(ExtentValue::new_raw(1, VOLUME_DATA_KEY_ID)),
             ),
         );
@@ -493,7 +488,7 @@ async fn test_malformed_extent_in_child_store() {
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
-                ObjectKey::extent(555, AttributeId::TEST_ID, fs.block_size()..0),
+                ObjectKey::extent(555, AttributeId::TEST_ID, fs.block_size().get()..0),
                 ObjectValue::Extent(ExtentValue::new_raw(1, VOLUME_DATA_KEY_ID)),
             ),
         );
@@ -2105,7 +2100,7 @@ async fn test_incorrect_merkle_tree_size_one_data_block() {
             .expect("Create child failed");
         transaction.commit_and_continue().await.expect("commit_and_continue transaction failed");
 
-        let mut buf = object.allocate_buffer(fs.block_size() as usize).await;
+        let mut buf = object.allocate_buffer(fs.block_size().get() as usize).await;
         buf.fill(1);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         object
@@ -2195,7 +2190,7 @@ async fn test_incorrect_merkle_tree_size_data_unaligned() {
             .expect("Create child failed");
         transaction.commit_and_continue().await.expect("commit_and_continue transaction failed");
 
-        let mut buf = object.allocate_buffer(1 + 5 * fs.block_size() as usize).await;
+        let mut buf = object.allocate_buffer((1 + 5 * fs.block_size()) as usize).await;
         buf.fill(1);
         object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
         object
@@ -3948,10 +3943,7 @@ async fn test_full_disk(read_only: bool) {
             )
             .await
             .expect("writer new");
-            let end = round_down(
-                TEST_DEVICE_BLOCK_SIZE as u64 * TEST_DEVICE_BLOCK_COUNT,
-                fs.block_size(),
-            );
+            let end = fs.block_size().align_down(TEST_DEVICE_BLOCK_SIZE * TEST_DEVICE_BLOCK_COUNT);
             let item = Item::new(
                 AllocatorKey { device_range: (0..end).into() },
                 AllocatorValue::Abs { count: 2, owner_object_id: 9 },
@@ -4306,7 +4298,7 @@ async fn test_overwrite_extent_flag_not_set() {
             .expect("create_child_file failed");
         transaction.commit().await.expect("commit failed");
 
-        file.allocate(0..fs.block_size()).await.expect("allocate failed");
+        file.allocate(0..fs.block_size().get()).await.expect("allocate failed");
 
         let mut transaction = fs
             .root_store()
@@ -4320,7 +4312,7 @@ async fn test_overwrite_extent_flag_not_set() {
             store.store_object_id(),
             Mutation::replace_or_insert_object(
                 ObjectKey::attribute(file.object_id(), AttributeId::DATA, AttributeKey::Attribute),
-                ObjectValue::attribute(fs.block_size(), false),
+                ObjectValue::attribute(fs.block_size().get(), false),
             ),
         );
         transaction.commit().await.expect("commit failed");
