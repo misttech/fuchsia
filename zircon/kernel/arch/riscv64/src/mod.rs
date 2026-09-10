@@ -6,6 +6,7 @@
 
 pub mod arch;
 pub mod cache;
+pub mod debugger;
 pub mod feature;
 pub mod fpu;
 pub mod mp;

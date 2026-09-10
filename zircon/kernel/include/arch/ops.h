@@ -28,8 +28,8 @@ cpu_num_t arch_curr_cpu_num();
 uint arch_max_num_cpus();
 uint arch_cpu_features();
 
-uint8_t arch_get_hw_breakpoint_count();
-uint8_t arch_get_hw_watchpoint_count();
+extern "C" uint8_t arch_get_hw_breakpoint_count();
+extern "C" uint8_t arch_get_hw_watchpoint_count();
 
 uint32_t arch_address_tagging_features();
 

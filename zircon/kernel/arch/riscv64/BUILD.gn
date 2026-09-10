@@ -313,6 +313,7 @@ if (toolchain_base_environment == "kernel") {
     sources = [
       "src/arch.rs",
       "src/cache.rs",
+      "src/debugger.rs",
       "src/feature.rs",
       "src/fpu.rs",
       "src/mod.rs",

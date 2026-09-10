@@ -16,6 +16,7 @@
 
 struct Thread;
 
+extern "C" {
 // The caller is responsible for making sure the thread is in an exception
 // or is suspended, and stays so.
 zx_status_t arch_get_general_regs(Thread* thread, zx_thread_state_general_regs_t* out);
@@ -35,5 +36,6 @@ zx_status_t arch_set_single_step(Thread* thread, const zx_thread_state_single_st
 
 vaddr_t arch_get_instruction_pointer(GeneralRegsSource source, void* gregs);
 zx_status_t arch_set_return_instruction_pointer(GeneralRegsSource source, void* gregs, vaddr_t ip);
+}
 
 #endif  // ZIRCON_KERNEL_INCLUDE_ARCH_DEBUGGER_H_

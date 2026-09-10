@@ -5,8 +5,6 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/kconcurrent/chainlock_transaction.h>
-#include <string.h>
-#include <sys/types.h>
 #include <trace.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls/debug.h>
@@ -21,11 +19,27 @@
 #include <arch/riscv64/vector.h>
 #include <kernel/thread.h>
 #include <ktl/bit.h>
-#include <ktl/memory.h>
+#include <ktl/optional.h>
 
 #include <ktl/enforce.h>
 
 #define LOCAL_TRACE 0
+
+// The six `Thread*` register accessors below deliberately stay in C++ this stack,
+// while the rest of <arch/debugger.h> is Rust in `src/debugger.rs`.
+//
+// They are the only routines here that need to *hold the thread lock*: each takes a
+// `SingleChainLockGuard` over `thread->get_lock()` with a `CLT_TAG`, asserts
+// `IsUserStateSavedLocked()`, and only then reads `thread->arch()`.  Rust can reach
+// the arch state now -- `kernel::thread::get_arch()` was added in 1758077 -- but
+// there is no Rust binding for chainlock acquisition, and `SingleChainLockGuard`'s
+// tagging and lock-ordering machinery is template- and macro-heavy in a way that
+// does not survive bindgen.  Porting them would mean designing that binding, which is
+// a larger and more general change than this stack should carry.
+//
+// Same reasoning as `crashlog.cc` (needs `FILE*`) and `timer.cc` (needs
+// `affine::Ratio`): the blocker is a C++ facility with no Rust equivalent yet, not
+// the register code itself.
 
 zx_status_t arch_get_general_regs(Thread* thread, zx_thread_state_general_regs_t* out) {
   LTRACEF("thread %p out %p\n", thread, out);
@@ -185,46 +199,3 @@ zx_status_t arch_set_vector_regs(Thread* thread, const zx_thread_state_vector_re
 
   return ZX_OK;
 }
-
-// Currently no support for single step debugging.
-zx_status_t arch_get_single_step(Thread* thread, zx_thread_state_single_step_t* out) {
-  LTRACEF("thread %p out %p\n", thread, out);
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
-zx_status_t arch_set_single_step(Thread* thread, const zx_thread_state_single_step_t* in) {
-  LTRACEF("thread %p in %p\n", thread, in);
-  return ZX_ERR_NOT_SUPPORTED;
-}
-
-// Debug registers are basically zero sized, so it's a success to load/store them, but no
-// behavioral changes.
-zx_status_t arch_get_debug_regs(Thread* thread, zx_thread_state_debug_regs_t* out) {
-  LTRACEF("thread %p out %p\n", thread, out);
-
-  *out = {};
-
-  return ZX_OK;
-}
-
-zx_status_t arch_set_debug_regs(Thread* thread, const zx_thread_state_debug_regs_t* in) {
-  LTRACEF("thread %p in %p\n", thread, in);
-  return ZX_OK;
-}
-
-vaddr_t arch_get_instruction_pointer(GeneralRegsSource source, void* gregs) {
-  DEBUG_ASSERT_MSG(source == GeneralRegsSource::Iframe, "invalid source %u\n",
-                   static_cast<uint32_t>(source));
-  return static_cast<iframe_t*>(gregs)->regs.pc;
-}
-
-zx_status_t arch_set_return_instruction_pointer(GeneralRegsSource source, void* gregs, vaddr_t ip) {
-  DEBUG_ASSERT_MSG(source == GeneralRegsSource::Iframe, "invalid source %u\n",
-                   static_cast<uint32_t>(source));
-  static_cast<iframe_t*>(gregs)->regs.pc = ip;
-  return ZX_OK;
-}
-
-uint8_t arch_get_hw_breakpoint_count() { return 0; }
-
-uint8_t arch_get_hw_watchpoint_count() { return 0; }
