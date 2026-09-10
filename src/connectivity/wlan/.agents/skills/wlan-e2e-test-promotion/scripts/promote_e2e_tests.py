@@ -11,6 +11,7 @@ import subprocess
 import sys
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 
 PROJECT = "turquoise"
 BUILDER = "fuchsia_internal.arm64-release-fyi"
@@ -175,6 +176,27 @@ def clean_test_name(name):
     return name
 
 
+def format_time_ago(partition_time_str, now):
+    if not partition_time_str:
+        return "unknown time ago", ""
+    try:
+        dt = datetime.fromisoformat(partition_time_str)
+        diff = now - dt
+        days = diff.days
+        hours = diff.seconds // 3600
+        minutes = (diff.seconds % 3600) // 60
+        if days > 0:
+            time_ago = f"{days}d {hours}h ago"
+        elif hours > 0:
+            time_ago = f"{hours}h {minutes}m ago"
+        else:
+            time_ago = f"{minutes}m ago"
+        date_str = dt.strftime("%Y-%m-%d %H:%M UTC")
+        return time_ago, date_str
+    except Exception:
+        return "unknown time ago", ""
+
+
 def check_stability(test_id):
     payload = {
         "project": PROJECT,
@@ -211,30 +233,50 @@ def check_stability(test_id):
         f"https://luci-milo.appspot.com/ui/test/{PROJECT}/{encoded_id}"
     )
 
-    if len(verdicts) < 300:
-        return {
-            "stable": False,
-            "reason": f"Only ran {len(verdicts)} times in 90 days (needs 300+).",
-            "total_runs": len(verdicts),
-            "avg_runtime_20": avg_runtime,
-            "history_url": history_url,
-        }
-
     failed = 0
     flaky = 0
     error = 0
     passed = 0
 
-    for v in verdicts:
+    consecutive_passes = 0
+    latest_failure = None
+    now = datetime.now(timezone.utc)
+
+    for i, v in enumerate(verdicts):
         status = v.get("statusV2")
         if status == "PASSED":
             passed += 1
-        elif status == "FAILED":
-            failed += 1
-        elif status == "FLAKY":
-            flaky += 1
-        elif status in ("EXECUTION_ERRORED", "PRECLUDED"):
-            error += 1
+            if latest_failure is None:
+                consecutive_passes += 1
+        else:
+            if status == "FAILED":
+                failed += 1
+            elif status == "FLAKY":
+                flaky += 1
+            elif status in ("EXECUTION_ERRORED", "PRECLUDED"):
+                error += 1
+
+            if latest_failure is None:
+                part_time = v.get("partitionTime")
+                time_ago_str, date_str = format_time_ago(part_time, now)
+                latest_failure = {
+                    "status": status,
+                    "runs_ago": i,
+                    "partition_time": part_time,
+                    "time_ago": time_ago_str,
+                    "date": date_str,
+                }
+
+    if len(verdicts) < 300:
+        return {
+            "stable": False,
+            "reason": f"Only ran {len(verdicts)} times in 90 days (needs 300+).",
+            "total_runs": len(verdicts),
+            "consecutive_passes": consecutive_passes,
+            "latest_failure": latest_failure,
+            "avg_runtime_20": avg_runtime,
+            "history_url": history_url,
+        }
 
     if failed > 0 or flaky > 0 or error > 0:
         reason = f"Failed {failed} times, Flaky {flaky} times, Errored {error} times out of {len(verdicts)} runs."
@@ -242,6 +284,8 @@ def check_stability(test_id):
             "stable": False,
             "reason": reason,
             "total_runs": len(verdicts),
+            "consecutive_passes": consecutive_passes,
+            "latest_failure": latest_failure,
             "avg_runtime_20": avg_runtime,
             "history_url": history_url,
         }
@@ -249,6 +293,8 @@ def check_stability(test_id):
     return {
         "stable": True,
         "total_runs": len(verdicts),
+        "consecutive_passes": consecutive_passes,
+        "latest_failure": None,
         "avg_runtime_20": avg_runtime,
         "history_url": history_url,
     }
@@ -374,6 +420,9 @@ def main():
                 board = tid.split(".")[-1] if "." in tid else "unknown"
                 print(f"  - Board [{board}]: {tid}")
                 print(
+                    f"    Consecutive Passes (up to present): {res.get('consecutive_passes', 0)} (no failures in last {res.get('total_runs', 0)} runs)"
+                )
+                print(
                     f"    Average Runtime (last 20 runs): {res['avg_runtime_20']:.2f}s"
                 )
                 print(f"    History URL: {res['history_url']}")
@@ -396,6 +445,20 @@ def main():
 
                 print(f"  - Board [{board}]: {tid}")
                 print(f"    Status: {status}")
+                if "consecutive_passes" in res:
+                    lf = res.get("latest_failure")
+                    if lf:
+                        if lf["runs_ago"] == 0:
+                            lf_info = f"most recent run was {lf['status']} ({lf['time_ago']}, {lf['date']})"
+                        else:
+                            lf_info = f"latest {lf['status']} was {lf['runs_ago']} runs ago ({lf['time_ago']}, {lf['date']})"
+                        print(
+                            f"    Consecutive Passes (up to present): {res['consecutive_passes']} ({lf_info})"
+                        )
+                    else:
+                        print(
+                            f"    Consecutive Passes (up to present): {res['consecutive_passes']} (no failures in {res['total_runs']} runs)"
+                        )
                 if "avg_runtime_20" in res:
                     print(
                         f"    Average Runtime (last 20 runs): {res['avg_runtime_20']:.2f}s"

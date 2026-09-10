@@ -36,7 +36,7 @@ python3 src/connectivity/wlan/.agents/skills/wlan-e2e-test-promotion/scripts/pro
 The script will:
 1. Scan the workspace to identify WLAN tests currently in `tests_for_fyi` (under `src/connectivity/wlan/tests/`).
 2. Query LUCI Analysis to check the stability of each test across all board variants.
-3. Output a **Stability Report** showing which tests are "Ready for Promotion" and which are "Not Ready" (with reasons).
+3. Output a **Stability Report** showing which tests are "Ready for Promotion" and which are "Not Ready" (with reasons, consecutive passes up to the present, and how long ago the latest failure occurred if any).
 
 ### Step 2: Promote the Test and Create a CL
 
@@ -96,5 +96,6 @@ summary to stdout for the user. The summary must contain two lists:
     * For each test, print:
         * The FYI test name.
         * A list of all its board variants with their individual status (Stable,
-          Unstable, or API Error) and direct links to their test history in LUCI
-          Milo. Include test runtime if available.
+          Unstable, or API Error), consecutive passes up to the present (including
+          how long ago the latest failure occurred if any), and direct links to
+          their test history in LUCI Milo. Include test runtime if available.
