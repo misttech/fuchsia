@@ -72,15 +72,8 @@ int ReadAllDevices(async::Loop* loop, Printer* printer) {
         }
 
         auto device = fidl::WireSharedClient(std::move(connection.value()), loop->dispatcher());
-
-        auto res = print_input_report::GetReaderClient(&device, loop->dispatcher());
-        if (!res.is_ok()) {
-          printer->Print("Failed to GetReaderClient\n");
-          return;
-        }
-        auto reader = fidl::WireSharedClient<fuchsia_input_report::InputReportsReader>(
-            std::move(res.value()));
-        print_input_report::PrintInputReports(filename, printer, std::move(reader), UINT32_MAX);
+        print_input_report::PrintInputReports(filename, printer, std::move(device),
+                                              loop->dispatcher(), UINT32_MAX);
       });
 
   loop->Run();
@@ -159,14 +152,9 @@ int main(int argc, const char** argv) {
       return -1;
     }
 
-    auto res = print_input_report::GetReaderClient(&client.value(), loop.dispatcher());
-    if (!res.is_ok()) {
-      return res.status_value();
-    }
-    auto reader = std::move(res.value());
-
     printer.Print("Reading reports from %s:\n", device_path.c_str());
-    print_input_report::PrintInputReports(device_path, &printer, std::move(reader), num_reads,
+    print_input_report::PrintInputReports(device_path, &printer, std::move(*client),
+                                          loop.dispatcher(), num_reads,
                                           [&loop]() { loop.Shutdown(); });
     loop.Run();
 

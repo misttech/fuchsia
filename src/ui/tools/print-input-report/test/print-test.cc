@@ -112,11 +112,7 @@ TEST_F(PrintInputReport, PrintMouseInputReport) {
       "\n",
   });
 
-  auto res = print_input_report::GetReaderClient(&client_.value(), loop_->dispatcher());
-  ASSERT_EQ(res.status_value(), ZX_OK);
-  auto reader = std::move(res.value());
-
-  print_input_report::PrintInputReports("test", &printer, std::move(reader), 1);
+  print_input_report::PrintInputReports("test", &printer, client_->Clone(), loop_->dispatcher(), 1);
   loop_->RunUntilIdle();
   printer.AssertSawAllStrings();
 }
@@ -237,11 +233,7 @@ TEST_F(PrintInputReport, PrintSensorInputReport) {
       "\n",
   });
 
-  auto res = print_input_report::GetReaderClient(&client_.value(), loop_->dispatcher());
-  ASSERT_EQ(res.status_value(), ZX_OK);
-  auto reader = std::move(res.value());
-
-  print_input_report::PrintInputReports("test", &printer, std::move(reader), 1);
+  print_input_report::PrintInputReports("test", &printer, client_->Clone(), loop_->dispatcher(), 1);
   loop_->RunUntilIdle();
   printer.AssertSawAllStrings();
 }
@@ -332,11 +324,7 @@ TEST_F(PrintInputReport, PrintTouchInputReport) {
       "\n",
   });
 
-  auto res = print_input_report::GetReaderClient(&client_.value(), loop_->dispatcher());
-  ASSERT_EQ(res.status_value(), ZX_OK);
-  auto reader = std::move(res.value());
-
-  print_input_report::PrintInputReports("test", &printer, std::move(reader), 1);
+  print_input_report::PrintInputReports("test", &printer, client_->Clone(), loop_->dispatcher(), 1);
   loop_->RunUntilIdle();
   printer.AssertSawAllStrings();
 }
@@ -390,11 +378,7 @@ TEST_F(PrintInputReport, PrintTouchInputReportWithButtons) {
       "\n",
   });
 
-  auto res = print_input_report::GetReaderClient(&client_.value(), loop_->dispatcher());
-  ASSERT_EQ(res.status_value(), ZX_OK);
-  auto reader = std::move(res.value());
-
-  print_input_report::PrintInputReports("test", &printer, std::move(reader), 1);
+  print_input_report::PrintInputReports("test", &printer, client_->Clone(), loop_->dispatcher(), 1);
   loop_->RunUntilIdle();
   printer.AssertSawAllStrings();
 }
@@ -415,11 +399,7 @@ TEST_F(PrintInputReport, PrintTouchInputReportWithUnknownButtons) {
       "\n",
   });
 
-  auto res = print_input_report::GetReaderClient(&client_.value(), loop_->dispatcher());
-  ASSERT_EQ(res.status_value(), ZX_OK);
-  auto reader = std::move(res.value());
-
-  print_input_report::PrintInputReports("test", &printer, std::move(reader), 1);
+  print_input_report::PrintInputReports("test", &printer, client_->Clone(), loop_->dispatcher(), 1);
   loop_->RunUntilIdle();
   printer.AssertSawAllStrings();
 }
@@ -469,11 +449,7 @@ TEST_F(PrintInputReport, PrintKeyboardInputReport) {
       "\n",
   });
 
-  auto res = print_input_report::GetReaderClient(&client_.value(), loop_->dispatcher());
-  ASSERT_EQ(res.status_value(), ZX_OK);
-  auto reader = std::move(res.value());
-
-  print_input_report::PrintInputReports("test", &printer, std::move(reader), 1);
+  print_input_report::PrintInputReports("test", &printer, client_->Clone(), loop_->dispatcher(), 1);
   loop_->RunUntilIdle();
   printer.AssertSawAllStrings();
 }
@@ -494,11 +470,7 @@ TEST_F(PrintInputReport, PrintKeyboardInputReportNoKeys) {
       "\n",
   });
 
-  auto res = print_input_report::GetReaderClient(&client_.value(), loop_->dispatcher());
-  ASSERT_EQ(res.status_value(), ZX_OK);
-  auto reader = std::move(res.value());
-
-  print_input_report::PrintInputReports("test", &printer, std::move(reader), 1);
+  print_input_report::PrintInputReports("test", &printer, client_->Clone(), loop_->dispatcher(), 1);
   loop_->RunUntilIdle();
   printer.AssertSawAllStrings();
 }
@@ -549,11 +521,7 @@ TEST_F(PrintInputReport, PrintConsumerControlReport) {
       "\n",
   });
 
-  auto res = print_input_report::GetReaderClient(&client_.value(), loop_->dispatcher());
-  ASSERT_EQ(res.status_value(), ZX_OK);
-  auto reader = std::move(res.value());
-
-  print_input_report::PrintInputReports("test", &printer, std::move(reader), 1);
+  print_input_report::PrintInputReports("test", &printer, client_->Clone(), loop_->dispatcher(), 1);
   loop_->RunUntilIdle();
   printer.AssertSawAllStrings();
 }
