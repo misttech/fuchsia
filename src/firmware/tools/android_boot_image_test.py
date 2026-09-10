@@ -6,11 +6,11 @@
 """Unit tests for android_boot_image.py."""
 
 import pathlib
-import pkgutil
 import tempfile
 import unittest
 
 import android_boot_image
+import test_utils
 from android_boot_image import AndroidBootImage, ChunkType
 
 # Contents written to images by `generate_testdata.py`
@@ -21,19 +21,11 @@ _TEST_DTB = b"test dtb contents"
 
 def test_image(version: int, vendor: bool) -> bytes:
     """Returns the test_boot_image.bin contents"""
-    # We're including the test data in our build rule `sources` component, which ends
-    # up including it in the resulting .pyz file, so we can use pkgutil to find and
-    # read it.
-    #
-    # One annoying result of this is that running this binary manually from source
-    # does not work - you have to build it and use `fx test` to run the resulting .pyz.
     image_type = "vendor_boot" if vendor else "boot"
-    image = pkgutil.get_data(
-        "android_boot_image_test", f"test_{image_type}_image_v{version}.bin"
+    return test_utils.load_test_data(
+        pathlib.Path("android_boot_image")
+        / f"test_{image_type}_image_v{version}.bin"
     )
-    if not image:
-        raise FileNotFoundError("Failed to load testdata - run with `fx test`")
-    return image
 
 
 def create_boot_image(

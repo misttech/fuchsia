@@ -17,6 +17,19 @@ if (is_host) {
       "test_data/android_boot_image/test_boot_image_v2.bin",
       "test_data/android_boot_image/test_boot_image_v4.bin",
       "test_data/android_boot_image/test_vendor_boot_image_v4.bin",
+      "test_utils.py",
+    ]
+  }
+
+  python_host_test("android_misc_info_test") {
+    main_source = "android_misc_info_test.py"
+    sources = [
+      "android_misc_info.py",
+
+      # Real misc_info.txt from AOSP, specific build/target doesn't matter:
+      # https://ci.android.com/builds/submitted/16102939/aosp_cf_arm64_only_phone-userdebug/latest/misc_info.txt
+      "test_data/android_misc_info/misc_info.aosp_cf_arm64_only_phone-userdebug.16102939.txt",
+      "test_utils.py",
     ]
   }
 }
@@ -25,6 +38,7 @@ group("tests") {
   testonly = true
   public_deps = [
     ":android_boot_image_test($host_toolchain)",
+    ":android_misc_info_test($host_toolchain)",
     ":cipd_utils_test($host_toolchain)",
   ]
 }
