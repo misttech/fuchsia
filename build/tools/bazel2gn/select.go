@@ -17,11 +17,19 @@ const defaultBazelSelectCondition = "//conditions:default"
 // dictionaries to select calls) to GN condition variables (the condition to
 // check in if statements).
 var bazelSelectConditionToGN = map[string]string{
-	"@platforms//os:fuchsia":  "is_fuchsia",
-	"@platforms//os:linux":    "is_linux",
-	"@platforms//cpu:x86_64":  `current_cpu == "x64"`,
-	"@platforms//cpu:arm64":   `current_cpu == "arm64"`,
-	"@platforms//cpu:riscv64": `current_cpu == "riscv64"`,
+	"@platforms//os:fuchsia":                            "is_fuchsia",
+	"@platforms//os:linux":                              "is_linux",
+	"@platforms//cpu:x86_64":                            `current_cpu == "x64"`,
+	"@platforms//cpu:arm64":                             `current_cpu == "arm64"`,
+	"@platforms//cpu:riscv64":                           `current_cpu == "riscv64"`,
+	"//build/bazel/platforms:is_host_os":                "is_host",
+	"//build/bazel/platforms:is_fuchsia_with_sdk_rules": "false", // GN build is always platform.
+	"//build/bazel/platforms:is_fuchsia_platform":       "is_fuchsia",
+	"//build/bazel/platforms:is_fuchsia_x64":            `is_fuchsia && current_cpu == "x64"`,
+	"//build/bazel/platforms:is_fuchsia_arm64":          `is_fuchsia && current_cpu == "arm64"`,
+	"//build/bazel/platforms:is_fuchsia_riscv64":        `is_fuchsia && current_cpu == "riscv64"`,
+	"//build/bazel/platforms:is_linux_x64":              `is_linux && current_cpu == "x64"`,
+	"//build/bazel/platforms:is_linux_arm64":            `is_linux && current_cpu == "arm64"`,
 }
 
 // Returns true iff select call or conditional expression are found in the subtree of `expr`.
