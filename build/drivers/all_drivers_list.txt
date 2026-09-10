@@ -8,8 +8,12 @@
 //examples/drivers/power/cpp:driver
 //examples/drivers/power/rust:driver
 //examples/drivers/simple/dfv1:driver
+//examples/drivers/simple/dfv2:pkg.bazel_build
 //examples/drivers/simple/rust:driver
 //examples/drivers/skeleton:driver
+//examples/drivers/template:pkg.bazel_build
+//examples/drivers/transport:driver_transport_child_pkg.bazel_build
+//examples/drivers/transport:driver_transport_parent_pkg.bazel_build
 //examples/drivers/transport/banjo/v1:child_driver
 //examples/drivers/transport/banjo/v1:parent_driver
 //examples/drivers/transport/banjo/v2:child_driver
@@ -402,7 +406,3 @@
 //src/ui/light/drivers/aml-light:aml-light-driver
 //tools/create/goldens/my-driver-cpp:driver
 //zircon/third_party/dev/ethernet/e1000:e1000-driver
-BAZEL:@//examples/drivers/simple/dfv2:pkg
-BAZEL:@//examples/drivers/template:pkg
-BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_child_pkg
-BAZEL:@//examples/drivers/transport/driver/v2:driver_transport_parent_pkg

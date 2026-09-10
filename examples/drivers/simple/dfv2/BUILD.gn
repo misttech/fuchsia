@@ -2,4 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# These targets are included in GN via //examples/drivers:bazel_drivers
+import("//build/bazel/drivers/bazel_driver_package.gni")
+
+bazel_driver_package("pkg") {
+  testonly = true
+  bazel_target = "//examples/drivers/simple/dfv2:pkg"
+  package_name = "simple_driver"
+}

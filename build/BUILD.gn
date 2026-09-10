@@ -315,6 +315,14 @@ group("non_hermetic_deps") {
   # needs `hermetic_action_ignored_prefixes`. Remove these entries when
   # `prebuilt_package` is hermetic.
   visibility += [
+    "//examples/drivers/simple/dfv2:pkg",
+    "//examples/drivers/simple/dfv2:pkg.package",
+    "//examples/drivers/template:pkg",
+    "//examples/drivers/template:pkg.package",
+    "//examples/drivers/transport:driver_transport_child_pkg",
+    "//examples/drivers/transport:driver_transport_child_pkg.package",
+    "//examples/drivers/transport:driver_transport_parent_pkg",
+    "//examples/drivers/transport:driver_transport_parent_pkg.package",
     "//examples/fortune:fortune_teller",
     "//examples/fortune:fortune_teller.package",
     "//sdk/ctf:*",

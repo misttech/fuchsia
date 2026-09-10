@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/drivers/bazel_driver_package.gni")
 import("//build/components.gni")
 
 group("transport") {
@@ -93,4 +94,18 @@ fuchsia_unittest_package("zircon-test-package-v2") {
     "//examples/drivers/transport/zircon/v2:parent_component",
     "//src/devices/misc/drivers/test-parent",
   ]
+}
+
+bazel_driver_package("driver_transport_parent_pkg") {
+  testonly = true
+  bazel_target =
+      "//examples/drivers/transport/driver/v2:driver_transport_parent_pkg"
+  package_name = "driver_transport_parent_pkg"
+}
+
+bazel_driver_package("driver_transport_child_pkg") {
+  testonly = true
+  bazel_target =
+      "//examples/drivers/transport/driver/v2:driver_transport_child_pkg"
+  package_name = "driver_transport_child_pkg"
 }
