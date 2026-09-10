@@ -352,7 +352,7 @@ struct UrbRef<'a>(&'a InterfaceInner, usize);
 impl Drop for UrbRef<'_> {
     fn drop(&mut self) {
         self.0.cancel_urb_by_id(self.1);
-        if self.refs.fetch_sub(1, Ordering::Relaxed) == 1 {
+        if self.refs.fetch_sub(1, Ordering::AcqRel) == 1 {
             self.0.free_urb_by_id(self.1);
         }
     }
@@ -372,7 +372,7 @@ struct OwnedUrbRef(Arc<InterfaceInner>, usize);
 impl Drop for OwnedUrbRef {
     fn drop(&mut self) {
         self.0.cancel_urb_by_id(self.1);
-        if self.0.urbs[self.1].refs.fetch_sub(1, Ordering::Relaxed) == 1 {
+        if self.0.urbs[self.1].refs.fetch_sub(1, Ordering::AcqRel) == 1 {
             self.0.free_urb_by_id(self.1);
         }
     }
@@ -535,25 +535,29 @@ impl InterfaceInner {
             debug_assert!(got == 1);
         }
 
+        let res = if let Some(stubs) = self.stubs.as_ref() {
+            stubs.submit(self.file.as_raw_fd(), urb.urb.get())
+        } else {
+            // SAFETY: The pointer is held by the kernel until released by USBDEVFS_REAPURB later.
+            // The explanation above explains why we know that pointer will last.
+            unsafe { ioctl!(self.file.as_raw_fd(), USBDEVFS_SUBMITURB, urb.urb.get()) }
+        };
+
+        if let Err(e) = res {
+            // Revert reference count so dropping `urb` can return it to free_urbs.
+            urb.refs.fetch_sub(1, Ordering::Release);
+            return Err(e.into());
+        }
+
         // Leak self so that our Urbs will not be free'd prematurely.
         std::mem::forget(Arc::clone(self));
         self.pending_urbs.fetch_add(1, Ordering::Release);
         self.reaper_thread.thread().unpark();
 
-        if let Some(stubs) = self.stubs.as_ref() {
-            stubs.submit(self.file.as_raw_fd(), urb.urb.get())?;
-        } else {
-            // SAFETY: The pointer is held by the kernel until released by USBDEVFS_REAPURB later.
-            // The explanation above explains why we know that pointer will last.
-            unsafe {
-                ioctl!(self.file.as_raw_fd(), USBDEVFS_SUBMITURB, urb.urb.get())?;
-            }
-        }
-
         Ok(async move {
             poll_fn(|ctx| {
                 urb.waker.register(ctx.waker());
-                if urb.refs.load(Ordering::Relaxed) != 1 { Poll::Pending } else { Poll::Ready(()) }
+                if urb.refs.load(Ordering::Acquire) != 1 { Poll::Pending } else { Poll::Ready(()) }
             })
             .await;
 
@@ -634,25 +638,29 @@ impl InterfaceInner {
             debug_assert!(got == 1);
         }
 
+        let res = if let Some(stubs) = self.stubs.as_ref() {
+            stubs.submit(self.file.as_raw_fd(), urb.urb.get())
+        } else {
+            // SAFETY: The pointer is held by the kernel until released by USBDEVFS_REAPURB later.
+            // The explanation above explains why we know that pointer will last.
+            unsafe { ioctl!(self.file.as_raw_fd(), USBDEVFS_SUBMITURB, urb.urb.get()) }
+        };
+
+        if let Err(e) = res {
+            // Revert reference count so dropping `urb` can return it to free_urbs.
+            urb.refs.fetch_sub(1, Ordering::Release);
+            return Err(e.into());
+        }
+
         // Leak self so that our Urbs will not be free'd prematurely.
         std::mem::forget(Arc::clone(self));
         self.pending_urbs.fetch_add(1, Ordering::Release);
         self.reaper_thread.thread().unpark();
 
-        if let Some(stubs) = self.stubs.as_ref() {
-            stubs.submit(self.file.as_raw_fd(), urb.urb.get())?;
-        } else {
-            // SAFETY: We leaked an `Arc` reference to `Self` above, ensuring our pool of Urbs and
-            // file descriptor remain valid while held by the kernel until reaped via USBDEVFS_REAPURB.
-            unsafe {
-                ioctl!(self.file.as_raw_fd(), USBDEVFS_SUBMITURB, urb.urb.get())?;
-            }
-        }
-
         Ok(async move {
             poll_fn(|ctx| {
                 urb.waker.register(ctx.waker());
-                if urb.refs.load(Ordering::Relaxed) != 1 { Poll::Pending } else { Poll::Ready(()) }
+                if urb.refs.load(Ordering::Acquire) != 1 { Poll::Pending } else { Poll::Ready(()) }
             })
             .await;
 
@@ -796,7 +804,7 @@ impl Interface {
                     panic!("Reap'd URB we did not sow!");
                 };
 
-                let count = urb.refs.fetch_sub(1, Ordering::Relaxed);
+                let count = urb.refs.fetch_sub(1, Ordering::AcqRel);
                 urb.waker.wake();
                 if count == 1 {
                     inner.free_urb_by_id(id);
@@ -1074,8 +1082,11 @@ impl InterfaceDescriptor {
 mod test {
     use super::*;
     use crate::USB_ENDPOINT_DIR_MASK;
+    use crate::bulk_interface::BulkInterface;
     use futures::StreamExt;
+    use futures::io::AsyncWriteExt;
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicU64, AtomicUsize};
     use std::sync::mpsc::{Receiver, Sender, channel};
 
     #[derive(Clone)]
@@ -1123,6 +1134,10 @@ mod test {
         released: AtomicU8,
         set: AtomicU8,
         endpoint_buffers: Mutex<HashMap<u8, EndpointBuffer>>,
+        max_submit_size: AtomicUsize,
+        max_in_flight: AtomicUsize,
+        current_in_flight: AtomicUsize,
+        reap_delay_ms: AtomicU64,
     }
 
     impl FakeDev {
@@ -1144,6 +1159,20 @@ mod test {
                 x.pop_back()
             })
         }
+        fn endpoint_read_all_from_target(&self, address: u8) -> Vec<u8> {
+            let mut buffers = self.endpoint_buffers.lock();
+            let Some(buffer) = buffers.get_mut(&address) else {
+                return Vec::new();
+            };
+            let EndpointBuffer::Data(data) = buffer else {
+                panic!("Target read from buffer with host reads waiting");
+            };
+            let mut result = Vec::new();
+            while let Some(chunk) = data.pop_front() {
+                result.extend_from_slice(&chunk);
+            }
+            result
+        }
         fn endpoint_write_from_target(&self, address: u8, data: &[u8]) {
             let mut buffers = self.endpoint_buffers.lock();
             let buffer = buffers.entry(address).or_default();
@@ -1151,6 +1180,7 @@ mod test {
                 EndpointBuffer::Data(data) => data,
                 EndpointBuffer::WaitingReaders(readers) => {
                     while let Some(urb_ptr) = readers.pop_front() {
+                        self.current_in_flight.fetch_add(1, Ordering::Relaxed);
                         if write_from_target_with_urb(data, urb_ptr, &self.reap_sender) {
                             return;
                         }
@@ -1183,19 +1213,31 @@ mod test {
                 released: AtomicU8::new(0),
                 set: AtomicU8::new(0),
                 endpoint_buffers: Mutex::new(HashMap::new()),
+                max_submit_size: AtomicUsize::new(usize::MAX),
+                max_in_flight: AtomicUsize::new(usize::MAX),
+                current_in_flight: AtomicUsize::new(0),
+                reap_delay_ms: AtomicU64::new(0),
             };
             self.fake_devs.lock().insert(ret.as_raw_fd(), Arc::new(fake_dev));
             ret
         }
 
-        fn new_fake_dev(self: &Arc<Self>, descriptor: InterfaceDescriptor) -> Interface {
+        fn new_fake_dev_with_pool_size(
+            self: &Arc<Self>,
+            descriptor: InterfaceDescriptor,
+            pool_size: usize,
+        ) -> Interface {
             Interface::new(
                 self.new_fake_dev_file(descriptor.clone()),
                 descriptor,
                 Some(Arc::clone(self) as Arc<dyn IoctlStub>),
-                8,
+                pool_size,
             )
             .unwrap()
+        }
+
+        fn new_fake_dev(self: &Arc<Self>, descriptor: InterfaceDescriptor) -> Interface {
+            self.new_fake_dev_with_pool_size(descriptor, 32)
         }
 
         fn new() -> Arc<Self> {
@@ -1244,10 +1286,16 @@ mod test {
             fd: std::os::fd::RawFd,
             urb_ptr: *mut *mut usbdevfs_urb,
         ) -> Result<(), std::io::Error> {
-            // SAFETY: The crate under test should never pass us an invalid pointer.
+            let dev = self.get_dev(fd)?;
             let urb_ptr = unsafe { urb_ptr.as_mut().unwrap() };
 
-            *urb_ptr = self.get_dev(fd)?.reap_receiver.recv().unwrap();
+            let delay_ms = dev.reap_delay_ms.load(Ordering::Relaxed);
+            if delay_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            }
+
+            *urb_ptr = dev.reap_receiver.recv().unwrap();
+            dev.current_in_flight.fetch_sub(1, Ordering::Relaxed);
             Ok(())
         }
 
@@ -1279,6 +1327,16 @@ mod test {
             let urb = unsafe { urb.as_mut().unwrap() };
             let dev = self.get_dev(fd)?;
 
+            let max_size = dev.max_submit_size.load(Ordering::Relaxed);
+            if (urb.buffer_length as usize) > max_size {
+                return Err(std::io::Error::from_raw_os_error(libc::ENOMEM));
+            }
+
+            let max_in_flight = dev.max_in_flight.load(Ordering::Relaxed);
+            if dev.current_in_flight.load(Ordering::Relaxed) >= max_in_flight {
+                return Err(std::io::Error::from_raw_os_error(libc::ENOMEM));
+            }
+
             assert_eq!(urb.type_, USBDEVFS_URB_TYPE_BULK as u8);
             let endpoint =
                 dev.descriptor.endpoints.iter().find(|x| x.address == urb.endpoint).unwrap();
@@ -1302,6 +1360,7 @@ mod test {
                     buffer.push_back(Box::from(data));
                     urb.actual_length = urb.buffer_length;
                     urb.status = 0;
+                    dev.current_in_flight.fetch_add(1, Ordering::Relaxed);
                     dev.reap_sender.send(urb_ptr).unwrap();
                 }
                 EndpointDirection::In => {
@@ -1313,6 +1372,7 @@ mod test {
                                 if write_from_target_with_urb(data, urb_ptr, &dev.reap_sender) {
                                     let _ = queue.pop_front();
                                 }
+                                dev.current_in_flight.fetch_add(1, Ordering::Relaxed);
                                 return Ok(());
                             }
                             *buffer = EndpointBuffer::WaitingReaders(VecDeque::new());
@@ -1518,5 +1578,156 @@ mod test {
 
         assert_eq!(1, env.get_dev(fd).unwrap().times_claimed());
         assert_eq!(1, env.get_dev(fd).unwrap().times_interface_set());
+    }
+
+    #[fuchsia::test]
+    async fn bulk_interface_drains_in_flight_on_enomem() {
+        let env = FakeUSBEnv::new();
+        let descriptor = InterfaceDescriptor {
+            id: 0,
+            class: 0xff,
+            subclass: 0x42,
+            protocol: 22,
+            alternate: 64,
+            endpoints: vec![
+                EndpointDescriptor { ty: EndpointType::Bulk, address: 0 | USB_ENDPOINT_DIR_MASK },
+                EndpointDescriptor { ty: EndpointType::Bulk, address: 1 },
+            ],
+        };
+        let iface = env.new_fake_dev(descriptor);
+        let fd = iface.inner.file.as_raw_fd();
+        let dev = env.get_dev(fd).unwrap();
+
+        // Simulate host kernel usbfs memory limit that can hold at most 3 in-flight URBs
+        dev.max_in_flight.store(3, Ordering::Relaxed);
+        dev.reap_delay_ms.store(5, Ordering::Relaxed);
+
+        let mut bulk = BulkInterface::new(iface);
+
+        // Payload of 6 * 512 KiB chunks (exceeding max_in_flight of 3)
+        let payload: Vec<u8> = (0..6 * 512 * 1024).map(|i| (i % 241) as u8).collect();
+
+        bulk.write_all(&payload)
+            .await
+            .expect("Write should succeed by throttling and draining in-flight URBs on ENOMEM");
+
+        let received = dev.endpoint_read_all_from_target(1);
+        assert_eq!(received.len(), payload.len());
+        assert_eq!(received, payload);
+    }
+
+    #[fuchsia::test]
+    async fn bulk_interface_fails_cleanly_on_fatal_enomem() {
+        let env = FakeUSBEnv::new();
+        let descriptor = InterfaceDescriptor {
+            id: 0,
+            class: 0xff,
+            subclass: 0x42,
+            protocol: 22,
+            alternate: 64,
+            endpoints: vec![EndpointDescriptor { ty: EndpointType::Bulk, address: 1 }],
+        };
+        let iface = env.new_fake_dev(descriptor);
+        let fd = iface.inner.file.as_raw_fd();
+        let dev = env.get_dev(fd).unwrap();
+
+        // Simulate host kernel where even 0 in-flight URBs cannot be submitted
+        dev.max_in_flight.store(0, Ordering::Relaxed);
+
+        let mut bulk = BulkInterface::new(iface);
+        let payload = vec![0x42u8; 1024];
+
+        let err = bulk.write_all(&payload).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::Other);
+        assert!(
+            err.to_string().contains("Linux usbfs_memory_mb exhausted"),
+            "Error message did not contain expected hint: {err}"
+        );
+    }
+
+    #[fuchsia::test]
+    async fn submit_urb_cleans_up_on_submission_error() {
+        let env = FakeUSBEnv::new();
+        let descriptor = InterfaceDescriptor {
+            id: 0,
+            class: 0xff,
+            subclass: 0x42,
+            protocol: 22,
+            alternate: 64,
+            endpoints: vec![EndpointDescriptor { ty: EndpointType::Bulk, address: 1 }],
+        };
+        let iface = env.new_fake_dev(descriptor);
+        let fd = iface.inner.file.as_raw_fd();
+        let dev = env.get_dev(fd).unwrap();
+
+        let mut eps = iface.endpoints().collect::<Vec<_>>();
+        let o = match eps.pop().unwrap() {
+            Endpoint::BulkOut(o) => o,
+            _ => panic!("Expected BulkOut endpoint"),
+        };
+
+        // Set max submit size to 10 bytes
+        dev.max_submit_size.store(10, Ordering::Relaxed);
+
+        // Attempt writing 20 bytes -> should fail with ENOMEM
+        let err = o.write(b"01234567890123456789", ZeroPacket::DoNotSend).await.unwrap_err();
+        match err {
+            Error::IOError(e) => assert_eq!(e.raw_os_error(), Some(libc::ENOMEM)),
+            other => panic!("Expected IOError(ENOMEM), got: {other:?}"),
+        }
+
+        // Verify pending_urbs is 0
+        assert_eq!(iface.inner.pending_urbs.load(Ordering::Relaxed), 0);
+
+        // Verify that the URB was returned to the pool and we can successfully write small data
+        o.write(b"hello", ZeroPacket::DoNotSend)
+            .await
+            .expect("Subsequent valid write should succeed");
+        assert_eq!(iface.inner.pending_urbs.load(Ordering::Relaxed), 0);
+        assert_eq!(dev.endpoint_read_from_target(1).unwrap().as_ref(), b"hello");
+    }
+
+    #[fuchsia::test]
+    async fn try_write_defer_wait_cleans_up_on_submission_error() {
+        let env = FakeUSBEnv::new();
+        let descriptor = InterfaceDescriptor {
+            id: 0,
+            class: 0xff,
+            subclass: 0x42,
+            protocol: 22,
+            alternate: 64,
+            endpoints: vec![EndpointDescriptor { ty: EndpointType::Bulk, address: 1 }],
+        };
+        let iface = env.new_fake_dev(descriptor);
+        let fd = iface.inner.file.as_raw_fd();
+        let dev = env.get_dev(fd).unwrap();
+
+        let mut eps = iface.endpoints().collect::<Vec<_>>();
+        let o = match eps.pop().unwrap() {
+            Endpoint::BulkOut(o) => o,
+            _ => panic!("Expected BulkOut endpoint"),
+        };
+
+        dev.max_submit_size.store(10, Ordering::Relaxed);
+
+        // Attempt try_write_defer_wait with 20 bytes -> should fail with ENOMEM
+        let err = match o.try_write_defer_wait(b"01234567890123456789", ZeroPacket::DoNotSend) {
+            Err(e) => e,
+            Ok(_) => panic!("Expected Err, got Ok"),
+        };
+        match err {
+            Error::IOError(e) => assert_eq!(e.raw_os_error(), Some(libc::ENOMEM)),
+            other => panic!("Expected IOError(ENOMEM), got: {other:?}"),
+        }
+
+        assert_eq!(iface.inner.pending_urbs.load(Ordering::Relaxed), 0);
+
+        let wait_fut = o
+            .try_write_defer_wait(b"hello", ZeroPacket::DoNotSend)
+            .unwrap()
+            .expect("URB should be available in pool");
+        wait_fut.await.expect("Write should complete");
+        assert_eq!(iface.inner.pending_urbs.load(Ordering::Relaxed), 0);
+        assert_eq!(dev.endpoint_read_from_target(1).unwrap().as_ref(), b"hello");
     }
 }

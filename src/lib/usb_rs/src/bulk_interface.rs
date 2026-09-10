@@ -24,6 +24,16 @@ const MAX_USBFS_BULK_WRITE_SIZE: usize = 512 * 1024;
 const MAX_IN_FLIGHT_URBS: usize = 16;
 const MAX_WRITE_BUFFER_SIZE: usize = MAX_USBFS_BULK_WRITE_SIZE * MAX_IN_FLIGHT_URBS;
 
+fn is_out_of_memory(err: &crate::Error) -> bool {
+    match err {
+        crate::Error::IOError(io_err) => {
+            io_err.raw_os_error() == Some(libc::ENOMEM)
+                || io_err.kind() == std::io::ErrorKind::OutOfMemory
+        }
+        _ => false,
+    }
+}
+
 /// Wraps an `Interface` and impls AsyncRead and AsyncWrite and reads and
 /// writes to the appropriate In/Out endpoints of the interface
 pub struct BulkInterface {
@@ -168,10 +178,27 @@ impl AsyncWrite for BulkInterface {
                         break;
                     }
                     Err(e) => {
+                        if !in_flight.is_empty() && is_out_of_memory(&e) {
+                            log::debug!(
+                                "Kernel usbfs memory saturated after submitting {} bytes across {} in-flight URBs; draining before submitting more",
+                                bytes_submitted,
+                                in_flight.len()
+                            );
+                            break;
+                        }
                         log::warn!("Error submitting bulk URB: {}", e);
+                        let err_msg = if is_out_of_memory(&e) {
+                            // In this scenario we should consider increasing
+                            // with: echo 16 | sudo tee /sys/module/usbcore/parameters/usbfs_memory_mb)
+                            format!(
+                                "Error submitting to bulk endpoint: {e} Linux usbfs_memory_mb exhausted"
+                            )
+                        } else {
+                            format!("Error submitting to bulk endpoint: {e}")
+                        };
                         return Poll::Ready(Err(std::io::Error::new(
                             std::io::ErrorKind::Other,
-                            format!("Error submitting to bulk endpoint: {}", e),
+                            err_msg,
                         )));
                     }
                 }
@@ -233,5 +260,22 @@ impl AsyncWrite for BulkInterface {
         _cx: &mut std::task::Context<'_>,
     ) -> Poll<std::io::Result<()>> {
         Poll::Ready(Ok(()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_out_of_memory() {
+        let enomem_err = crate::Error::IOError(std::io::Error::from_raw_os_error(libc::ENOMEM));
+        assert!(is_out_of_memory(&enomem_err));
+
+        let other_err = crate::Error::IOError(std::io::Error::from_raw_os_error(libc::EINVAL));
+        assert!(!is_out_of_memory(&other_err));
+
+        let short_err = crate::Error::ShortWrite(100, 50);
+        assert!(!is_out_of_memory(&short_err));
     }
 }
