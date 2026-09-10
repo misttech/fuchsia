@@ -1818,6 +1818,73 @@ fn new_ip_packet_buf<I: IpExt>(src_addr: I::Addr, dst_addr: I::Addr) -> impl AsR
         .unwrap()
 }
 
+#[test]
+fn test_receive_ipv4_packet_broadcast_source() {
+    let mut builder = FakeCtxBuilder::default();
+    let dev_idx = builder.add_device_with_ip(
+        Ipv4::TEST_ADDRS.local_mac,
+        Ipv4::TEST_ADDRS.local_ip.get(),
+        Ipv4::TEST_ADDRS.subnet,
+    );
+    let (mut ctx, device_ids) = builder.build();
+    let device: DeviceId<_> = device_ids[dev_idx].clone().into();
+    ctx.test_api().enable_device(&device);
+
+    let send_and_assert_drop =
+        |ctx: &mut Ctx<FakeBindingsCtx>, src_ip: Ipv4Addr, expected_count: u64| {
+            let buf = new_ip_packet_buf::<Ipv4>(src_ip, Ipv4::TEST_ADDRS.local_ip.get());
+            ctx.test_api().receive_ip_packet::<Ipv4, _>(
+                &device,
+                Some(LocalFrameDestination::Individual { local: () }),
+                Buf::new(buf.as_ref().to_vec(), ..),
+            );
+            IpCounterExpectations::<Ipv4> {
+                receive_ip_packet: expected_count,
+                invalid_source: expected_count,
+                ..Default::default()
+            }
+            .assert_counters(&ctx.core_ctx(), &device);
+        };
+
+    send_and_assert_drop(&mut ctx, *Ipv4::LIMITED_BROADCAST_ADDRESS, 1);
+    send_and_assert_drop(&mut ctx, Ipv4::TEST_ADDRS.subnet.broadcast(), 2);
+}
+
+#[test]
+fn test_receive_ipv4_packet_broadcast_source_unaddressed_device() {
+    let mut builder = FakeCtxBuilder::default();
+    let dev_idx = builder.add_device(Ipv4::TEST_ADDRS.local_mac);
+    let (mut ctx, device_ids) = builder.build();
+    let device: DeviceId<_> = device_ids[dev_idx].clone().into();
+    ctx.test_api().enable_device(&device);
+
+    let send_ip_packet = |ctx: &mut Ctx<FakeBindingsCtx>, src_ip: Ipv4Addr| {
+        let buf = new_ip_packet_buf::<Ipv4>(src_ip, Ipv4::TEST_ADDRS.local_ip.get());
+        ctx.test_api().receive_ip_packet::<Ipv4, _>(
+            &device,
+            Some(LocalFrameDestination::Individual { local: () }),
+            Buf::new(buf.as_ref().to_vec(), ..),
+        );
+    };
+
+    send_ip_packet(&mut ctx, *Ipv4::LIMITED_BROADCAST_ADDRESS);
+    IpCounterExpectations::<Ipv4> { receive_ip_packet: 1, invalid_source: 1, ..Default::default() }
+        .assert_counters(&ctx.core_ctx(), &device);
+
+    // Since the device doesn't have an address, there's no way for us
+    // to detect that the source address was a subnet broadcast. The
+    // attempt to forward is incidental.
+    send_ip_packet(&mut ctx, Ipv4::TEST_ADDRS.subnet.broadcast());
+    IpCounterExpectations::<Ipv4> {
+        receive_ip_packet: 2,
+        invalid_source: 1,
+        forwarding_disabled: 1,
+        dropped: 1,
+        ..Default::default()
+    }
+    .assert_counters(&ctx.core_ctx(), &device);
+}
+
 // Helper function to call receive ipv4/ipv6 packet action with an source address.
 fn receive_ip_packet_action_with_src_addr<I: IpExt + TestIpExt>(
     ctx: &mut Ctx<FakeBindingsCtx>,

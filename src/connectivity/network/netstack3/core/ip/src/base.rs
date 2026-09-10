@@ -3577,6 +3577,27 @@ pub fn receive_ipv4_packet<
         return;
     }
 
+    // Per RFC 1122 Section 3.2.1.3, broadcast addresses (including limited and
+    // subnet directed broadcasts) must not be used as source addresses.
+    if let Some(src_ip) = SpecifiedAddr::new(packet.src_ip()) {
+        // NOTE: In case the device doesn't have an address, this can only
+        // detect limited broadcast (255.255.255.255).
+        let is_broadcast = core_ctx
+            .address_status_for_device(src_ip, device)
+            .into_present()
+            .and_then(|status| status.to_broadcast_marker())
+            .is_some();
+
+        if is_broadcast {
+            debug!(
+                "receive_ipv4_packet: received packet from broadcast source {}; dropping",
+                packet.src_ip()
+            );
+            core_ctx.increment_both(device, |c| &c.invalid_source);
+            return;
+        }
+    }
+
     // Reassemble all packets before local delivery or forwarding. Reassembly
     // before forwarding is not RFC-compliant, but it's the easiest way to
     // ensure that fragments are filtered properly. Linux does this and it
