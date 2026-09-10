@@ -12,18 +12,29 @@ pub mod registers;
 #[cfg(test)]
 pub mod testing;
 
+use crate::hardware_integration::descriptors;
+use crate::hardware_integration::devfs::DevfsHandler;
+use crate::hardware_integration::fidl_input_device::FidlInputDevice;
 use crate::hardware_units::controller::Controller;
 use crate::hardware_units::i2c::MessageInterfaceUnitI2c;
 use crate::registers::product_info::ProductIdentification;
 use crate::registers::status::FirmwareStatus;
-use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
+use fdf_component::{Driver, DriverContext, DriverError, Node, NodeBuilder, driver_register};
+use fidl_fuchsia_driver_framework::NodeControllerMarker;
 use fidl_next_fuchsia_hardware_gpio as fidl_gpio;
 use fidl_next_fuchsia_hardware_i2c as fidl_i2c;
 use std::sync::Mutex;
 
 struct GoodixGt6853Driver {
-    _node: Node,
+    #[expect(unused)]
+    parent_node: Node,
+    #[expect(unused)]
+    child_node: fidl::endpoints::ClientEnd<NodeControllerMarker>,
+    #[expect(unused)]
+    fidl_input_device: FidlInputDevice,
     controller_task: Mutex<Option<fuchsia_async::Task<()>>>,
+    #[expect(unused)]
+    devfs_task: fuchsia_async::Task<()>,
 }
 
 driver_register!(GoodixGt6853Driver);
@@ -126,13 +137,28 @@ impl Driver for GoodixGt6853Driver {
 
         let gpio_int = Self::connect_gpio(&context, "gpio-int")?;
 
-        let _node = context.take_node()?;
+        let descriptor = descriptors::make_device_descriptor();
+        let fidl_input_device = FidlInputDevice::new(descriptor);
+        let devfs_handler = DevfsHandler::new(fidl_input_device.clone());
+        let (devfs_args, devfs_task) = devfs_handler.serve();
+
+        let mut node_args = NodeBuilder::new(Self::NAME).build();
+        node_args.devfs_args = Some(devfs_args);
+
+        let parent_node = context.take_node()?;
+        let child_node = parent_node.add_child(node_args).await?;
 
         let controller = Controller::new(i2c, gpio_int).await?;
         let controller_task = fuchsia_async::Task::spawn(controller.run());
 
         log::info!("goodix_gt6853 driver initialized successfully");
-        Ok(Self { _node, controller_task: Mutex::new(Some(controller_task)) })
+        Ok(Self {
+            parent_node,
+            child_node,
+            fidl_input_device,
+            controller_task: Mutex::new(Some(controller_task)),
+            devfs_task,
+        })
     }
 
     async fn stop(&self) {
