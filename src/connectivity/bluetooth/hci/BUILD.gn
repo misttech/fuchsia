@@ -16,6 +16,7 @@ group("tests") {
   deps = [
     "passthrough:tests",
     "transport/uart/cpp:tests",
+    "transport/uart/rust:tests",
     "transport/usb:tests",
     "vendor:tests",
   ]
