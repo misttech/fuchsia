@@ -25,6 +25,7 @@ cc_library(
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
         "@fuchsia_sdk//fidl/fuchsia.hardware.spmi:fuchsia.hardware.spmi_cpp",
+        "@fuchsia_sdk//pkg/fit",
         "@fuchsia_sdk//pkg/hwreg",
     ],
 )

@@ -33,6 +33,7 @@ class SpmiHwregTest : public testing::Test {
 
  protected:
   async_patterns::TestDispatcherBound<mock_spmi::MockSpmi>& mock_spmi() { return mock_spmi_; }
+  fdf_testing::DriverRuntime& driver_runtime() { return driver_runtime_; }
   fidl::ClientEnd<fuchsia_hardware_spmi::Device> TakeSpmiClient() {
     return std::move(spmi_client_);
   }
@@ -139,6 +140,92 @@ TEST_F(SpmiHwregTest, ArrayWrite) {
     });
     ASSERT_FALSE(values.WriteTo(TakeSpmiClient()).is_error());
   }
+
+  mock_spmi().SyncCall(&mock_spmi::MockSpmi::VerifyAndClear);
+}
+
+TEST_F(SpmiHwregTest, AsyncRead) {
+  mock_spmi().SyncCall(
+      [](mock_spmi::MockSpmi* spmi) { spmi->ExpectRegisterRead(0xAB, 1, {0x8A}); });
+
+  fidl::WireClient<fuchsia_hardware_spmi::Device> client(
+      TakeSpmiClient(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  std::optional<zx::result<DummySpmiRegister>> result;
+  DummySpmiRegister::Get().ReadFrom(client, [&](zx::result<DummySpmiRegister> r) { result = r; });
+
+  driver_runtime().RunUntil([&]() { return result.has_value(); });
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_TRUE(result->is_ok());
+  EXPECT_EQ((*result)->test_bit(), 1);
+  EXPECT_EQ((*result)->test_field(), 0xA);
+
+  mock_spmi().SyncCall(&mock_spmi::MockSpmi::VerifyAndClear);
+}
+
+TEST_F(SpmiHwregTest, AsyncWrite) {
+  auto dut = DummySpmiRegister::Get().FromValue(0);
+  dut.set_test_bit(1);
+  dut.set_test_field(0xA);
+
+  mock_spmi().SyncCall([](mock_spmi::MockSpmi* spmi) { spmi->ExpectRegisterWrite(0xAB, {0x8A}); });
+
+  fidl::WireClient<fuchsia_hardware_spmi::Device> client(
+      TakeSpmiClient(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  std::optional<zx::result<>> result;
+  dut.WriteTo(client, [&](zx::result<> r) { result = r; });
+
+  driver_runtime().RunUntil([&]() { return result.has_value(); });
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_TRUE(result->is_ok());
+
+  mock_spmi().SyncCall(&mock_spmi::MockSpmi::VerifyAndClear);
+}
+
+TEST_F(SpmiHwregTest, AsyncArrayRead) {
+  constexpr uint8_t kExpected[7] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
+
+  mock_spmi().SyncCall([](mock_spmi::MockSpmi* spmi) {
+    spmi->ExpectRegisterRead(0xAB, 7, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+  });
+
+  fidl::WireClient<fuchsia_hardware_spmi::Device> client(
+      TakeSpmiClient(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  std::optional<zx::result<hwreg::SpmiRegisterArray>> result;
+  hwreg::SpmiRegisterArray(0xAB, 7).ReadFrom(
+      client, [&](zx::result<hwreg::SpmiRegisterArray> r) { result = r; });
+
+  driver_runtime().RunUntil([&]() { return result.has_value(); });
+
+  ASSERT_TRUE(result.has_value());
+  ASSERT_FALSE(result->is_error());
+  EXPECT_EQ(result->value().regs(), std::vector<uint8_t>(kExpected, kExpected + 7));
+
+  mock_spmi().SyncCall(&mock_spmi::MockSpmi::VerifyAndClear);
+}
+
+TEST_F(SpmiHwregTest, AsyncArrayWrite) {
+  auto values = hwreg::SpmiRegisterArray(0xAB, 7);
+  values.regs() = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66};
+
+  mock_spmi().SyncCall([](mock_spmi::MockSpmi* spmi) {
+    spmi->ExpectRegisterWrite(0xAB, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66});
+  });
+
+  fidl::WireClient<fuchsia_hardware_spmi::Device> client(
+      TakeSpmiClient(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  std::optional<zx::result<>> result;
+  values.WriteTo(client, [&](zx::result<> r) { result = r; });
+
+  driver_runtime().RunUntil([&]() { return result.has_value(); });
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_TRUE(result->is_ok());
 
   mock_spmi().SyncCall(&mock_spmi::MockSpmi::VerifyAndClear);
 }

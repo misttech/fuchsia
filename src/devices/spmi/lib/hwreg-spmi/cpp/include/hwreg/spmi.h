@@ -7,6 +7,7 @@
 
 #include <endian.h>
 #include <fidl/fuchsia.hardware.spmi/cpp/wire.h>
+#include <lib/fit/function.h>
 #include <lib/zx/result.h>
 
 #include <hwreg/bitfields.h>
@@ -46,6 +47,37 @@ static inline uint32_t LittleEndianToHost(uint32_t val) { return letoh32(val); }
 static inline uint16_t LittleEndianToHost(uint16_t val) { return letoh16(val); }
 static inline uint8_t LittleEndianToHost(uint8_t val) { return val; }
 
+template <typename ResultType>
+zx::result<const uint8_t*> ParseReadResponse(const ResultType& response, size_t expected_size) {
+  if (!response.ok()) {
+    return zx::error(response.status());
+  }
+  const auto& res = response.value();
+  if (res.is_error()) {
+    return MapError(res.error_value()).take_error();
+  }
+  const auto& data = res.value()->data;
+  if (data.size() != expected_size) {
+    return zx::error(ZX_ERR_IO_DATA_INTEGRITY);
+  }
+  return zx::ok(data.data());
+}
+
+template <typename ResultType>
+zx::result<const uint8_t*> ParseReadResponse(const ResultType&&, size_t) = delete;
+
+template <typename ResultType>
+zx::result<> ParseWriteResponse(const ResultType& response) {
+  if (!response.ok()) {
+    return zx::error(response.status());
+  }
+  const auto& res = response.value();
+  if (res.is_error()) {
+    return MapError(res.error_value()).take_error();
+  }
+  return zx::ok();
+}
+
 }  // namespace internal
 
 struct LittleEndian;
@@ -74,6 +106,23 @@ static T ConvertFromSpmiByteOrder(T value) {
     return internal::LittleEndianToHost(value);
   }
 }
+
+namespace internal {
+
+template <typename IntType, typename SpmiByteOrder>
+IntType UnpackRegisterValue(const uint8_t* data) {
+  IntType value;
+  memcpy(&value, data, sizeof(value));
+  return ConvertFromSpmiByteOrder<IntType, SpmiByteOrder>(value);
+}
+
+template <typename IntType, typename SpmiByteOrder>
+void PackRegisterValue(IntType value, uint8_t* buffer) {
+  value = ConvertToSpmiByteOrder<IntType, SpmiByteOrder>(value);
+  memcpy(buffer, &value, sizeof(value));
+}
+
+}  // namespace internal
 
 // An instance of SpmiRegisterBase represents a staging copy of a register,
 // which can be written to the device's register using SPMI protocol. It knows the register's
@@ -110,24 +159,14 @@ class SpmiRegisterBase : public RegisterBase<DerivedType, IntType, PrinterState>
 
   zx::result<DerivedType> ReadFrom(
       const fidl::UnownedClientEnd<fuchsia_hardware_spmi::Device>& client) {
-    uint32_t addr = RegisterBaseType::reg_addr();
-
-    auto response = fidl::WireCall(client)->RegisterRead(addr, sizeof(IntType));
-    if (!response.ok()) {
-      return zx::error(response.status());
+    auto response =
+        fidl::WireCall(client)->RegisterRead(RegisterBaseType::reg_addr(), sizeof(IntType));
+    auto data = internal::ParseReadResponse(response, sizeof(IntType));
+    if (data.is_error()) {
+      return data.take_error();
     }
-    if (response.value().is_error()) {
-      return internal::MapError(response.value().error_value()).take_error();
-    }
-
-    if (response.value().value()->data.size() != sizeof(IntType)) {
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
-
-    IntType value;
-    memcpy(&value, response.value().value()->data.data(), sizeof(value));
-    value = ConvertFromSpmiByteOrder<IntType, SpmiByteOrder>(value);
-    return zx::ok(RegisterBaseType::set_reg_value(value));
+    return zx::ok(RegisterBaseType::set_reg_value(
+        internal::UnpackRegisterValue<IntType, SpmiByteOrder>(data.value())));
   }
 
   zx::result<> WriteTo(const fidl::ClientEnd<fuchsia_hardware_spmi::Device>& client) {
@@ -135,22 +174,42 @@ class SpmiRegisterBase : public RegisterBase<DerivedType, IntType, PrinterState>
   }
 
   zx::result<> WriteTo(const fidl::UnownedClientEnd<fuchsia_hardware_spmi::Device>& client) {
+    uint8_t buffer[sizeof(IntType)];
+    internal::PackRegisterValue<IntType, SpmiByteOrder>(RegisterBaseType::reg_value(), buffer);
+    return internal::ParseWriteResponse(fidl::WireCall(client)->RegisterWrite(
+        RegisterBaseType::reg_addr(),
+        fidl::VectorView<uint8_t>::FromExternal(buffer, sizeof(IntType))));
+  }
+
+  void ReadFrom(fidl::WireClient<fuchsia_hardware_spmi::Device>& client,
+                fit::callback<void(zx::result<DerivedType>)> callback) {
     uint32_t addr = RegisterBaseType::reg_addr();
-    IntType value = RegisterBaseType::reg_value();
+    client->RegisterRead(addr, sizeof(IntType))
+        .Then([addr, callback = std::move(callback)](
+                  fidl::WireUnownedResult<fuchsia_hardware_spmi::Device::RegisterRead>&
+                      response) mutable {
+          auto data = internal::ParseReadResponse(response, sizeof(IntType));
+          if (data.is_error()) {
+            callback(data.take_error());
+            return;
+          }
+          DerivedType reg;
+          reg.set_reg_addr(addr);
+          reg.set_reg_value(internal::UnpackRegisterValue<IntType, SpmiByteOrder>(data.value()));
+          callback(zx::ok(std::move(reg)));
+        });
+  }
 
-    value = ConvertToSpmiByteOrder<IntType, SpmiByteOrder>(value);
-
-    std::vector<uint8_t> vector{reinterpret_cast<uint8_t*>(&value),
-                                reinterpret_cast<uint8_t*>(&value) + sizeof(IntType)};
-    auto response = fidl::WireCall(client)->RegisterWrite(
-        addr, fidl::VectorView<uint8_t>::FromExternal(vector));
-    if (!response.ok()) {
-      return zx::error(response.status());
-    }
-    if (response.value().is_error()) {
-      return internal::MapError(response.value().error_value()).take_error();
-    }
-    return zx::ok();
+  void WriteTo(fidl::WireClient<fuchsia_hardware_spmi::Device>& client,
+               fit::callback<void(zx::result<>)> callback) {
+    uint8_t buffer[sizeof(IntType)];
+    internal::PackRegisterValue<IntType, SpmiByteOrder>(RegisterBaseType::reg_value(), buffer);
+    client
+        ->RegisterWrite(RegisterBaseType::reg_addr(),
+                        fidl::VectorView<uint8_t>::FromExternal(buffer, sizeof(IntType)))
+        .Then([callback = std::move(callback)](
+                  fidl::WireUnownedResult<fuchsia_hardware_spmi::Device::RegisterWrite>&
+                      response) mutable { callback(internal::ParseWriteResponse(response)); });
   }
 };
 
@@ -190,13 +249,20 @@ class SpmiRegisterAddr : public RegisterAddr<RegType> {
     return reg.ReadFrom(client);
   }
 
+  void ReadFrom(fidl::WireClient<fuchsia_hardware_spmi::Device>& client,
+                fit::callback<void(zx::result<RegType>)> callback) {
+    RegType reg;
+    reg.set_reg_addr(RegisterAddr<RegType>::addr());
+    reg.ReadFrom(client, std::move(callback));
+  }
+
   SpmiRegisterAddr(uint32_t reg_addr) : RegisterAddr<RegType>(reg_addr) {}
 };
 
 // Helper for consolidating contiguous reads/writes to SPMI registers.
 class SpmiRegisterArray {
  public:
-  SpmiRegisterArray(uint16_t base_address, size_t size) : base_address_(base_address) {
+  SpmiRegisterArray(uint32_t base_address, size_t size) : base_address_(base_address) {
     regs_.resize(size);
   }
 
@@ -209,19 +275,31 @@ class SpmiRegisterArray {
       const fidl::UnownedClientEnd<fuchsia_hardware_spmi::Device>& client) {
     auto response =
         fidl::WireCall(client)->RegisterRead(base_address_, static_cast<uint32_t>(regs_.size()));
-    if (!response.ok()) {
-      return zx::error(response.status());
+    auto data = internal::ParseReadResponse(response, regs_.size());
+    if (data.is_error()) {
+      return data.take_error();
     }
-    if (response.value().is_error()) {
-      return internal::MapError(response.value().error_value()).take_error();
-    }
-
-    if (response.value().value()->data.size() != static_cast<uint32_t>(regs_.size())) {
-      return zx::error(ZX_ERR_BAD_STATE);
-    }
-
-    memcpy(regs_.data(), response.value().value()->data.data(), regs_.size());
+    memcpy(regs_.data(), data.value(), regs_.size());
     return zx::ok(*this);
+  }
+
+  void ReadFrom(fidl::WireClient<fuchsia_hardware_spmi::Device>& client,
+                fit::callback<void(zx::result<SpmiRegisterArray>)> callback) {
+    const uint32_t base_address = base_address_;
+    const size_t size = regs_.size();
+    client->RegisterRead(base_address, static_cast<uint32_t>(size))
+        .Then([base_address, size, callback = std::move(callback)](
+                  fidl::WireUnownedResult<fuchsia_hardware_spmi::Device::RegisterRead>&
+                      response) mutable {
+          auto data = internal::ParseReadResponse(response, size);
+          if (data.is_error()) {
+            callback(data.take_error());
+            return;
+          }
+          SpmiRegisterArray result(base_address, size);
+          memcpy(result.regs().data(), data.value(), size);
+          callback(zx::ok(std::move(result)));
+        });
   }
 
   zx::result<> WriteTo(const fidl::ClientEnd<fuchsia_hardware_spmi::Device>& client) {
@@ -229,25 +307,26 @@ class SpmiRegisterArray {
   }
 
   zx::result<> WriteTo(const fidl::UnownedClientEnd<fuchsia_hardware_spmi::Device>& client) {
-    auto response = fidl::WireCall(client)->RegisterWrite(
-        base_address_, fidl::VectorView<uint8_t>::FromExternal(regs_));
-    if (!response.ok()) {
-      return zx::error(response.status());
-    }
-    if (response.value().is_error()) {
-      return internal::MapError(response.value().error_value()).take_error();
-    }
-    return zx::ok();
+    return internal::ParseWriteResponse(fidl::WireCall(client)->RegisterWrite(
+        base_address_, fidl::VectorView<uint8_t>::FromExternal(regs_)));
+  }
+
+  void WriteTo(fidl::WireClient<fuchsia_hardware_spmi::Device>& client,
+               fit::callback<void(zx::result<>)> callback) {
+    client->RegisterWrite(base_address_, fidl::VectorView<uint8_t>::FromExternal(regs_))
+        .Then([callback = std::move(callback)](
+                  fidl::WireUnownedResult<fuchsia_hardware_spmi::Device::RegisterWrite>&
+                      response) mutable { callback(internal::ParseWriteResponse(response)); });
   }
 
   // `regs()` accesses register values of contiguous addresses from `base_address_` in
-  // SpmiByteOrder. Callers of this function should use `CovertTo/FromSpmiByteOrder` to get the
+  // SpmiByteOrder. Callers of this function should use `ConvertTo/FromSpmiByteOrder` to get the
   // correct endianness for host. Callers should also pay attention to alignment issues. If needed,
   // memcpy to/from a new buffer.
   std::vector<uint8_t>& regs() { return regs_; }
 
  private:
-  uint16_t base_address_;
+  uint32_t base_address_;
   std::vector<uint8_t> regs_;
 };
 
