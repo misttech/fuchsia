@@ -54,37 +54,36 @@ where
 }
 
 pub(crate) async fn serve_request_stream(
-    mut stream: fcomponent_resolution::ResolverRequestStream,
+    stream: fcomponent_resolution::ResolverRequestStream,
     package_resolver: Arc<impl PackageResolver>,
     scope: package_directory::ExecutionScope,
     log_tag: &'static str,
 ) -> anyhow::Result<()> {
-    while let Some(request) =
-        stream.try_next().await.with_context(|| format!("{log_tag} failed to read request"))?
-    {
-        match request {
-            fcomponent_resolution::ResolverRequest::Resolve { component_url, responder } => {
-                let () = responder
-                    .send(
-                        resolve(&component_url, package_resolver.as_ref(), scope.clone())
-                            .await
-                            .map_err(|e| {
-                                let fidl_err = (&e).into();
-                                error!(
-                                    "{log_tag} failed to resolve {component_url}: {:#}",
-                                    anyhow::anyhow!(e)
-                                );
-                                fidl_err
-                            }),
-                    )
-                    .with_context(|| format!("{log_tag} sending Resolve response"))?;
-            }
-            fcomponent_resolution::ResolverRequest::ResolveWithContext {
-                component_url,
-                context,
-                responder,
-            } => {
-                let () = responder
+    stream
+        .map_err(anyhow::Error::new)
+        .try_for_each_concurrent(None, |req| async {
+            match req {
+                fcomponent_resolution::ResolverRequest::Resolve { component_url, responder } => {
+                    responder
+                        .send(
+                            resolve(&component_url, package_resolver.as_ref(), scope.clone())
+                                .await
+                                .map_err(|e| {
+                                    let fidl_err = (&e).into();
+                                    error!(
+                                        "{log_tag} failed to resolve {component_url}: {:#}",
+                                        anyhow::anyhow!(e)
+                                    );
+                                    fidl_err
+                                }),
+                        )
+                        .with_context(|| format!("{log_tag} sending Resolve response"))
+                }
+                fcomponent_resolution::ResolverRequest::ResolveWithContext {
+                    component_url,
+                    context,
+                    responder,
+                } => responder
                     .send(
                         resolve_with_context(
                             &component_url,
@@ -102,14 +101,14 @@ pub(crate) async fn serve_request_stream(
                             fidl_err
                         }),
                     )
-                    .with_context(|| format!("{log_tag} sending ResolveWithContext response"))?;
+                    .with_context(|| format!("{log_tag} sending ResolveWithContext response")),
+                fcomponent_resolution::ResolverRequest::_UnknownMethod { ordinal, .. } => {
+                    warn!(ordinal:%; "{log_tag} received unknown Resolver request");
+                    Ok(())
+                }
             }
-            fcomponent_resolution::ResolverRequest::_UnknownMethod { ordinal, .. } => {
-                warn!(ordinal:%; "{log_tag} received unknown Resolver request")
-            }
-        }
-    }
-    Ok(())
+        })
+        .await
 }
 
 async fn resolve(

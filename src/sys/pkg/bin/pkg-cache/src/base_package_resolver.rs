@@ -71,45 +71,46 @@ impl crate::component_resolver::PackageResolver for BaseResolver {
 }
 
 pub(crate) async fn serve_request_stream(
-    mut stream: fpkg::PackageResolverRequestStream,
+    stream: fpkg::PackageResolverRequestStream,
     base_index: Arc<crate::BaseIndex>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
 ) -> anyhow::Result<()> {
-    while let Some(request) = stream.try_next().await.context("failed to read request")? {
-        match request {
-            fpkg::PackageResolverRequest::Resolve { package_url, dir, responder } => {
-                let () = match resolve_unparsed_and_serve(
-                    &package_url,
-                    dir,
-                    &base_index,
-                    authenticator.clone(),
-                    &open_packages,
-                    scope.clone(),
-                )
-                .await
-                {
-                    Ok(context) => responder.send(Ok(&context)),
-                    Err(e) => {
-                        let fidl_error = (&e).into();
-                        error!(
-                            "base resolver failed to resolve {}: {:#}",
-                            package_url,
-                            anyhow::anyhow!(e)
-                        );
-                        responder.send(Err(fidl_error))
+    stream
+        .map_err(anyhow::Error::new)
+        .try_for_each_concurrent(None, |req| async {
+            match req {
+                fpkg::PackageResolverRequest::Resolve { package_url, dir, responder } => {
+                    match resolve_unparsed_and_serve(
+                        &package_url,
+                        dir,
+                        &base_index,
+                        authenticator.clone(),
+                        &open_packages,
+                        scope.clone(),
+                    )
+                    .await
+                    {
+                        Ok(context) => responder.send(Ok(&context)),
+                        Err(e) => {
+                            let fidl_error = (&e).into();
+                            error!(
+                                "base resolver failed to resolve {}: {:#}",
+                                package_url,
+                                anyhow::anyhow!(e)
+                            );
+                            responder.send(Err(fidl_error))
+                        }
                     }
+                    .context("sending fuchsia.pkg/PackageResolver.Resolve response")
                 }
-                .context("sending fuchsia.pkg/PackageResolver.Resolve response")?;
-            }
-            fpkg::PackageResolverRequest::ResolveWithContext {
-                package_url,
-                context,
-                dir,
-                responder,
-            } => {
-                let () = match resolve_with_context_unparsed_and_serve(
+                fpkg::PackageResolverRequest::ResolveWithContext {
+                    package_url,
+                    context,
+                    dir,
+                    responder,
+                } => match resolve_with_context_unparsed_and_serve(
                     &package_url,
                     context,
                     dir,
@@ -131,20 +132,19 @@ pub(crate) async fn serve_request_stream(
                         responder.send(Err(fidl_error))
                     }
                 }
-                .context("sending fuchsia.pkg/PackageResolver.ResolveWithContext response")?;
+                .context("sending fuchsia.pkg/PackageResolver.ResolveWithContext response"),
+                fpkg::PackageResolverRequest::GetHash { package_url, responder } => {
+                    error!(
+                        "unsupported fuchsia.pkg/PackageResolver.GetHash called with {:?}",
+                        package_url
+                    );
+                    responder
+                        .send(Err(zx::Status::NOT_SUPPORTED.into_raw()))
+                        .context("sending fuchsia.pkg/PackageResolver.GetHash response")
+                }
             }
-            fpkg::PackageResolverRequest::GetHash { package_url, responder } => {
-                error!(
-                    "unsupported fuchsia.pkg/PackageResolver.GetHash called with {:?}",
-                    package_url
-                );
-                let () = responder
-                    .send(Err(zx::Status::NOT_SUPPORTED.into_raw()))
-                    .context("sending fuchsia.pkg/PackageResolver.GetHash response")?;
-            }
-        }
-    }
-    Ok(())
+        })
+        .await
 }
 
 async fn resolve_with_context_unparsed_and_serve(
