@@ -809,6 +809,7 @@
                 "NetlinkRouteTest.LinkInfoKind",
                 "NetlinkRouteTest.LinkMulticastGroupNamespaced",
                 "NetlinkRouteTest.LinkedToNetns",
+                "NetlinkRouteTest.VethAddShortPeerIfInfoMsg",
                 "NetworkNamespaceTest.CloneNewNetWithCloneNewUserDoesNotNeedCapSysAdmin",
 
                 // socket_netlink_uevent
