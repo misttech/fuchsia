@@ -5,4 +5,5 @@
 //! Hardware integration and FIDL input protocol adapters for GT6853.
 
 pub mod descriptors;
+pub mod fidl_input_report_reader;
 pub mod input_reports;
