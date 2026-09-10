@@ -174,9 +174,6 @@ class Adb(AsyncLazyReady):
                 self._serial_number = self._serial_number_arg
         return self._serial_number
 
-    # TODO(b/559570418): Provide a mechanism so affordances using ADB can implement
-    # verify_supported() in __init__(). Currently, is_supported() is async due to
-    # serial number resolution.
     async def is_supported(self) -> bool:
         """Returns True if ADB is supported on the device."""
         serial = await self._resolve_serial_number()
