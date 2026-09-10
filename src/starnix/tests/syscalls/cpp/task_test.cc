@@ -1697,3 +1697,51 @@ TEST(Task, SetgroupsWithCapSetgidSucceeds) {
   });
   EXPECT_TRUE(helper.WaitForChildren());
 }
+
+TEST(Task, SetpgidRejoinProcessGroup) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([]() {
+    pid_t p_pid = getpid();
+    // Process P becomes leader of its own process group.
+    ASSERT_THAT(setpgid(0, 0), SyscallSucceeds());
+    EXPECT_EQ(getpgid(0), p_pid);
+
+    test_helper::ForkHelper child_helper;
+    test_helper::EventFdSem c_ready(0);
+    test_helper::EventFdSem d_ready(0);
+    test_helper::EventFdSem stop_c(0);
+    test_helper::EventFdSem stop_d(0);
+
+    // Child C stays in process group P.
+    child_helper.RunInForkedProcess([&]() {
+      EXPECT_EQ(getpgid(0), p_pid);
+      c_ready.Notify(1);
+      stop_c.Wait();
+    });
+
+    // Child D creates its own process group, leaving process group P.
+    pid_t d_pid = child_helper.RunInForkedProcess([&]() {
+      ASSERT_THAT(setpgid(0, 0), SyscallSucceeds());
+      EXPECT_EQ(getpgid(0), getpid());
+      d_ready.Notify(1);
+      stop_d.Wait();
+    });
+
+    c_ready.Wait();
+    d_ready.Wait();
+
+    // P joins D's process group. Process group P is still alive because C is a member.
+    ASSERT_THAT(setpgid(0, d_pid), SyscallSucceeds());
+    EXPECT_EQ(getpgid(0), d_pid);
+
+    // P rejoins its original process group.
+    ASSERT_THAT(setpgid(0, 0), SyscallSucceeds());
+    EXPECT_EQ(getpgid(0), p_pid);
+
+    // Release children and wait for them to finish.
+    stop_c.Notify(1);
+    stop_d.Notify(1);
+    EXPECT_TRUE(child_helper.WaitForChildren());
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
+}

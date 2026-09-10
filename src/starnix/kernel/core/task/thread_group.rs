@@ -1210,22 +1210,24 @@ impl ThreadGroup {
                     return Ok(());
                 }
 
-                // If pgid is not equal to the target process id, the associated process group must exist
-                // and be in the same session as the target process.
-                if *pgid != target_thread_group.base.leader {
-                    new_process_group = pgid.get_process_group().map_err(|_| errno!(EPERM))?;
-                    if new_process_group.session != target_process_group.session {
+                // If the process group already exists, join it. Both process groups must be in the
+                // same session.
+                if let Ok(process_group) = pgid.get_process_group() {
+                    if process_group.session != target_process_group.session {
                         return error!(EPERM);
                     }
                     security::check_setpgid_access(current_task, target)?;
-                } else {
+                    new_process_group = process_group;
+                } else if *pgid == target_thread_group.base.leader {
                     security::check_setpgid_access(current_task, target)?;
-                    // Create a new process group
+                    // Create a new process group.
                     new_process_group = ProcessGroup::new(
                         target_thread_group.base.leader.clone(),
                         Some(target_process_group.session.clone()),
                     );
                     pids.add_process_group(&new_process_group);
+                } else {
+                    return error!(EPERM);
                 }
             }
 
@@ -2556,6 +2558,28 @@ mod test {
             );
             assert_eq!(child_task2.thread_group().read().process_group.leader, child_task1.tid);
             assert!(!old_process_group.read().thread_groups().contains(child_task2.thread_group()));
+
+            let child_task3 = current_task.clone_task_for_test(0, Some(SIGCHLD));
+            assert_eq!(
+                child_task3.thread_group().setpgid(&current_task, &child_task3, &child_task3.pid),
+                Ok(())
+            );
+            // Move child_task1 to child_task3's process group.
+            assert_eq!(
+                current_task.thread_group().setpgid(&current_task, &child_task1, &child_task3.pid),
+                Ok(())
+            );
+            assert_eq!(child_task1.thread_group().read().process_group.leader, child_task3.tid);
+
+            // Rejoin child_task1's original process group (which still contains child_task2).
+            assert_eq!(
+                child_task1.thread_group().setpgid(&current_task, &child_task1, &child_task1.pid),
+                Ok(())
+            );
+            assert_eq!(child_task1.thread_group().read().process_group.leader, child_task1.tid);
+            let pg1 = child_task1.thread_group().read().process_group.clone();
+            let pg2 = child_task2.thread_group().read().process_group.clone();
+            assert_eq!(pg1, pg2);
 
             assert_eq!(
                 crate::task::syscalls::sys_setpgid(&current_task, child_task1.pid.id, -1),
