@@ -468,23 +468,22 @@ void VsockUsb::HandleSocketWritable(async_dispatcher_t*, async::WaitBase*, zx_st
 }
 
 VsockUsb::State VsockUsb::Running::Writable() && {
-  if (socket_out_queue_.empty()) {
-    return std::move(*this);
-  }
+  while (!socket_out_queue_.empty()) {
+    const auto& packet = socket_out_queue_.front();
+    size_t actual;
+    zx_status_t status = socket_.write(0, packet.data(), packet.size(), &actual);
 
-  size_t actual;
-  zx_status_t status =
-      socket_.write(0, socket_out_queue_.data(), socket_out_queue_.size(), &actual);
-
-  if (status == ZX_OK) {
-    socket_out_queue_.erase(socket_out_queue_.begin(),
-                            socket_out_queue_.begin() + static_cast<ssize_t>(actual));
-  } else if (status != ZX_ERR_SHOULD_WAIT) {
-    if (status != ZX_ERR_PEER_CLOSED) {
-      FDF_SLOG(ERROR, "Failed to write to socket", KV("status", zx_status_get_string(status)));
+    if (status == ZX_OK) {
+      socket_out_queue_.pop();
+    } else if (status == ZX_ERR_SHOULD_WAIT) {
+      break;
+    } else {
+      if (status != ZX_ERR_PEER_CLOSED) {
+        FDF_SLOG(ERROR, "Failed to write to socket", KV("status", zx_status_get_string(status)));
+      }
+      FDF_LOG(INFO, "Client socket closed, returning to ready state");
+      return Unconfigured();
     }
-    FDF_LOG(INFO, "Client socket closed, returning to ready state");
-    return Unconfigured();
   }
 
   return std::move(*this);
@@ -549,22 +548,16 @@ VsockUsb::State VsockUsb::Running::ReceiveData(uint8_t* data, size_t len,
                                                std::optional<zx::socket>* peer_socket,
                                                VsockUsb* owner) && {
   FDF_LOG(TRACE, "Running::ReceiveData(%zu)", len);
-  zx_status_t status;
+
+  if (len == 0) {
+    return std::move(*this);
+  }
 
   if (socket_out_queue_.empty()) {
-    size_t actual = 0;
-    while (len > 0) {
-      status = socket_.write(0, data, len, &actual);
+    size_t actual;
+    zx_status_t status = socket_.write(0, data, len, &actual);
 
-      if (status != ZX_OK) {
-        break;
-      }
-
-      len -= actual;
-      data += actual;
-    }
-
-    if (len == 0) {
+    if (status == ZX_OK) {
       return std::move(*this);
     }
 
@@ -577,8 +570,10 @@ VsockUsb::State VsockUsb::Running::ReceiveData(uint8_t* data, size_t len,
     }
   }
 
-  if (len != 0) {
-    std::copy(data, data + len, std::back_inserter(socket_out_queue_));
+  bool was_empty = socket_out_queue_.empty();
+  socket_out_queue_.emplace(data, data + len);
+  if (was_empty) {
+    owner->ProcessWritesToSocket();
   }
 
   return std::move(*this);

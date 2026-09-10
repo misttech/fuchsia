@@ -27,6 +27,7 @@
 
 #include <memory>
 #include <optional>
+#include <queue>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -168,8 +169,8 @@ class VsockUsb : public fdf::DriverBase2,
     // Called when we ware asked to send data from this state. Populates the given buffer with data
     // read from socket_.
     State SendData(uint8_t* data, size_t len, size_t* actual, zx_status_t* status) &&;
-    // Whether we have data waiting to be sent to the host.
-    bool WritesWaiting() { return !socket_out_queue_.empty(); }
+    // Whether we have data waiting to be written to socket_.
+    bool WritesWaiting() const { return !socket_out_queue_.empty(); }
     // Whether we are waiting to read data from the host.
     static bool ReadsWaiting() { return true; }
 
@@ -200,7 +201,7 @@ class VsockUsb : public fdf::DriverBase2,
 
    private:
     zx::socket socket_;
-    std::vector<uint8_t> socket_out_queue_;
+    std::queue<std::vector<uint8_t>> socket_out_queue_;
     bool socket_is_new_ = true;
     std::unique_ptr<async::WaitMethod<VsockUsb, &VsockUsb::HandleSocketReadable>> read_waiter_;
     std::unique_ptr<async::WaitMethod<VsockUsb, &VsockUsb::HandleSocketWritable>> write_waiter_;

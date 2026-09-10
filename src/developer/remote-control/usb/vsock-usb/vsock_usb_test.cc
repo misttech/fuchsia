@@ -878,6 +878,39 @@ TEST_F(VsockUsbTest, DataFromHost) {
   UnconfigureDevice();
 }
 
+TEST_F(VsockUsbTest, DataFromHostQueuedDatagrams) {
+  ConfigureDevice();
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
+
+  std::vector<std::vector<uint8_t>> test_packets;
+  for (size_t i = 0; i < 50; ++i) {
+    std::vector<uint8_t> pkt(256, static_cast<uint8_t>(i));
+    ASSERT_TRUE(SendTx(pkt.data(), pkt.size()));
+    test_packets.push_back(std::move(pkt));
+  }
+
+  driver_test().runtime().RunUntilIdle();
+
+  for (size_t i = 0; i < test_packets.size(); ++i) {
+    std::vector<uint8_t> buf(test_packets[i].size());
+    size_t actual = 0;
+    while (true) {
+      zx_status_t status = socket.read(0, buf.data(), buf.size(), &actual);
+      if (status == ZX_OK) {
+        break;
+      }
+      ASSERT_EQ(status, ZX_ERR_SHOULD_WAIT);
+      driver_test().runtime().RunUntilIdle();
+    }
+    ASSERT_EQ(actual, test_packets[i].size());
+    ASSERT_EQ(buf, test_packets[i]);
+  }
+
+  UnconfigureDevice();
+}
+
 TEST_F(VsockUsbTest, Reset) {
   ConfigureDevice();
   auto callback = SetupCallback(2);
