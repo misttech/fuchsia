@@ -296,11 +296,11 @@ where
     debug_assert!(pid.get_task().is_err());
 
     let process_group = ProcessGroup::new(pid.clone(), None);
-    pids.add_process_group(&process_group);
 
     let TaskInfo { thread_group, memory_manager } =
         task_info_factory(pid.clone(), process_group.clone())?;
 
+    pids.add_process_group(&process_group);
     process_group.insert(&thread_group);
 
     // > The timer slack values of init (PID 1), the ancestor of all processes, are 50,000
@@ -408,4 +408,33 @@ pub fn create_kernel_thread(
         Ok(())
     });
     Ok(current_task)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::testing::*;
+
+    #[::fuchsia::test]
+    async fn test_create_task_failure_does_not_add_process_group() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let (kept_pg_sender, kept_pg_receiver) = std::sync::mpsc::channel();
+            let result = super::create_task(
+                kernel,
+                TaskCommand::new(b"failed_task"),
+                current_task.fs(),
+                |_pid, process_group| {
+                    let _ = kept_pg_sender.send(process_group);
+                    error!(EINVAL)
+                },
+                Credentials::root(),
+            );
+            assert!(result.is_err());
+            let kept_pg = kept_pg_receiver.recv().unwrap();
+            let pid_entry = kernel.pids.get(kept_pg.leader.id).unwrap().clone();
+            assert_eq!(pid_entry.get_process_group(), error!(ESRCH));
+        })
+        .await;
+    }
 }
