@@ -1326,8 +1326,8 @@ impl DynamicFileSource for StatusFile {
                 sink.write(task.persistent_info.command_guard().comm_name());
                 let creds = task.persistent_info.real_creds();
                 (
-                    Some(task.persistent_info.pid()),
-                    Some(task.persistent_info.tid()),
+                    Some(task.pid.clone()),
+                    Some(task.tid.clone()),
                     Some(format!(
                         "Uid:\t{}\t{}\t{}\t{}\nGid:\t{}\t{}\t{}\t{}\nGroups:\t{}",
                         creds.uid,
@@ -1431,7 +1431,7 @@ impl DynamicFileSource for StatusFile {
         if elapsed_monotonic > zx::MonotonicDuration::from_millis(100)
             || elapsed_boot > zx::BootDuration::from_seconds(1)
         {
-            let target_pid = task.as_ref().map(|t| t.persistent_info.pid()).unwrap_or(-1);
+            let target_pid = task.as_ref().map(|t| t.pid.id).unwrap_or(-1);
             let target_comm = task
                 .as_ref()
                 .map(|t| {

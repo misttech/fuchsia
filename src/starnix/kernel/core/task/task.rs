@@ -743,8 +743,8 @@ impl TaskStateCode {
 #[derive(Debug, RcuDroppable)]
 pub struct TaskPersistentInfoState {
     /// Immutable information about the task
-    tid: tid_t,
-    pid: Pid,
+    pub tid: Pid,
+    pub pid: Pid,
 
     /// The command of this task.
     command: LockDepMutex<TaskCommand, TaskCommandLevel>,
@@ -787,7 +787,7 @@ impl<'a> CredentialsWriteGuard<'a> {
 
 impl TaskPersistentInfoState {
     fn new(
-        tid: tid_t,
+        tid: Pid,
         pid: Pid,
         command: TaskCommand,
         creds: Arc<Credentials>,
@@ -799,14 +799,6 @@ impl TaskPersistentInfoState {
             creds: RcuDroppableArc::new(creds),
             creds_lock: Default::default(),
         })
-    }
-
-    pub fn tid(&self) -> tid_t {
-        self.tid
-    }
-
-    pub fn pid(&self) -> pid_t {
-        self.pid.id
     }
 
     pub fn command_guard(&self) -> LockDepGuard<'_, TaskCommand> {
@@ -845,6 +837,38 @@ impl TaskPersistentInfoState {
             )
         };
         CurrentTaskCredentialsWriteGuard { _lock: lock, persistent_info }
+    }
+}
+
+impl std::borrow::Borrow<Pid> for TaskPersistentInfoState {
+    fn borrow(&self) -> &Pid {
+        &self.tid
+    }
+}
+
+impl PartialEq for TaskPersistentInfoState {
+    fn eq(&self, other: &Self) -> bool {
+        self.tid == other.tid
+    }
+}
+
+impl Eq for TaskPersistentInfoState {}
+
+impl PartialOrd for TaskPersistentInfoState {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for TaskPersistentInfoState {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.tid.cmp(&other.tid)
+    }
+}
+
+impl std::hash::Hash for TaskPersistentInfoState {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.tid.hash(state);
     }
 }
 
@@ -1104,11 +1128,10 @@ impl Task {
         timerslack_ns: u64,
     ) -> Arc<Self> {
         let pid = thread_group.leader.clone();
-        let tid_id = tid.id;
         Arc::new_cyclic(|weak_self| {
             let task = Task {
                 weak_self: weak_self.clone(),
-                tid,
+                tid: tid.clone(),
                 pid: pid.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
@@ -1145,7 +1168,7 @@ impl Task {
                     cpuset_path: "/".to_string(),
                 }
                 .into(),
-                persistent_info: TaskPersistentInfoState::new(tid_id, pid, command, creds),
+                persistent_info: TaskPersistentInfoState::new(tid, pid, command, creds),
                 seccomp_filter_state,
                 trace_syscalls: AtomicBool::new(false),
             };
