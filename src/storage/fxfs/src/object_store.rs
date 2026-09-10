@@ -2293,6 +2293,7 @@ impl ObjectStore {
         let clean_up = scopeguard::guard((), |_| {
             *self.lock_state.lock() = LockState::Locked;
             *self.store_info.lock() = None;
+            *self.last_object_id.lock() = LastObjectId::Pending;
             // Make sure we don't leave unencrypted data lying around in memory.
             self.tree.reset();
         });
@@ -2476,6 +2477,7 @@ impl ObjectStore {
         };
         self.key_manager.clear();
         *self.store_info.lock() = None;
+        *self.last_object_id.lock() = LastObjectId::Pending;
         self.tree.reset();
 
         sync_result
@@ -2487,6 +2489,7 @@ impl ObjectStore {
     pub fn lock_read_only(&self) {
         *self.lock_state.lock() = LockState::Locked;
         *self.store_info.lock() = None;
+        *self.last_object_id.lock() = LastObjectId::Pending;
         self.tree.reset();
     }
 
@@ -4561,6 +4564,41 @@ mod tests {
         store.lock_read_only();
         store.unlock_read_only(crypt).await.expect("unlock failed");
         root_directory.lookup("test").await.expect("lookup failed").expect("not found");
+    }
+
+    #[fuchsia::test]
+    async fn test_mutations_cipher_dropped_on_lock() {
+        let fs = test_filesystem().await;
+        let crypt = Arc::new(new_insecure_crypt());
+
+        let root_volume = root_volume(fs.clone()).await.expect("root_volume failed");
+        let store = root_volume
+            .new_volume(
+                "test",
+                NewChildStoreOptions {
+                    options: StoreOptions { crypt: Some(crypt.clone()), ..StoreOptions::default() },
+                    ..NewChildStoreOptions::default()
+                },
+            )
+            .await
+            .expect("new_volume failed");
+
+        // When created/unlocked, mutations_cipher is present in LockState::Unlocked
+        // and last_object_id is Encrypted.
+        assert_matches!(*store.lock_state.lock(), LockState::Unlocked { .. });
+        assert!(matches!(&*store.last_object_id.lock(), LastObjectId::Encrypted { .. }));
+
+        // When locked, LockState transitions to Locked, dropping mutations_cipher,
+        // and last_object_id is reset to Pending.
+        store.lock().await.expect("lock failed");
+        assert_matches!(*store.lock_state.lock(), LockState::Locked);
+        assert!(matches!(&*store.last_object_id.lock(), LastObjectId::Pending));
+
+        // When unlocked again, mutations_cipher is re-created in LockState::Unlocked
+        // and last_object_id is restored to Encrypted.
+        store.unlock(crypt).await.expect("unlock failed");
+        assert_matches!(*store.lock_state.lock(), LockState::Unlocked { .. });
+        assert!(matches!(&*store.last_object_id.lock(), LastObjectId::Encrypted { .. }));
     }
 
     #[fuchsia::test(threads = 10)]
