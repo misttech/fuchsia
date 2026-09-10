@@ -96,8 +96,7 @@ fn deserialize_pretty_bench(b: &mut criterion::Bencher<'_>) {
     let json_pretty = serde_json::to_string_pretty(&h).unwrap();
 
     b.iter(|| {
-        let _: DiagnosticsHierarchy =
-            serde_json::from_value(serde_json::from_str(&json_pretty).unwrap()).unwrap();
+        let _: DiagnosticsHierarchy = serde_json::from_str(&json_pretty).unwrap();
     });
 }
 
@@ -108,8 +107,7 @@ fn deserialize_ugly_bench(b: &mut criterion::Bencher<'_>) {
     let json_ugly = serde_json::to_string(&h).unwrap();
 
     b.iter(|| {
-        let _: DiagnosticsHierarchy =
-            serde_json::from_value(serde_json::from_str(&json_ugly).unwrap()).unwrap();
+        let _: DiagnosticsHierarchy = serde_json::from_str(&json_ugly).unwrap();
     });
 }
 
