@@ -27,7 +27,7 @@ main repository.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:104
+From //BUILD.gn:105
 
 ### additional_default_targets
 
@@ -36,7 +36,7 @@ the //:default target
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:120
+From //BUILD.gn:121
 
 ### additional_tefmocheck_labels
 
@@ -45,7 +45,7 @@ Defaults to empty.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:124
+From //BUILD.gn:125
 
 ### all_cpu_kernel_boot_tests
 
@@ -139,7 +139,7 @@ The result will be built and uploaded to CIPD by infra.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:108
+From //BUILD.gn:109
 
 ### assembly_partitions_configs
 
@@ -148,7 +148,7 @@ The result will be built and uploaded to CIPD by infra.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:116
+From //BUILD.gn:117
 
 ### assembly_product_configs
 
@@ -157,7 +157,7 @@ The result will be built and uploaded to CIPD by infra.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:112
+From //BUILD.gn:113
 
 ### avb_atx_metadata
 
@@ -331,15 +331,6 @@ Supported options:
 **Current value (from the default):** `"remote"`
 
 From //build/bazel/remote_services.gni:25
-
-### bazel_root_host_targets
-
-A similar list to extend the list above for custom build configuration
-in args.gn.
-
-**Current value (from the default):** `[]`
-
-From //build/bazel/bazel_root_targets_list.gni:90
 
 ### bazel_upload_build_events
 
@@ -608,7 +599,7 @@ From //out/not-default/args.gn:13
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:132
+From //BUILD.gn:133
 
 **Current value for `target_cpu = "riscv64"`:** `[]`
 
@@ -616,7 +607,7 @@ From //out/not-default/args.gn:13
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:132
+From //BUILD.gn:133
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
@@ -624,7 +615,7 @@ From //out/not-default/args.gn:13
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:132
+From //BUILD.gn:133
 
 ### build_should_trace_actions
 
@@ -946,12 +937,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2055,358 +2046,6 @@ From //src/storage/fshost/generated_fshost_config.gni:12
 
 From //build/config/compiler.gni:91
 
-### default_bazel_root_host_targets
-
-**Current value (from the default):**
-
-```none
-[{
-  bazel_label = "//tools/build/ninjago/buildstats:buildstats"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/buildstats_/buildstats"
-  ninja = "buildstats"
-}]
-}, {
-  bazel_label = "//tools/build/ninjago/ninjatrace:ninjatrace"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/ninjatrace_/ninjatrace"
-  ninja = "ninjatrace"
-}]
-}, {
-  bazel_label = "//tools/dart_test_parser:dart_test_parser"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/dart_test_parser_/dart_test_parser"
-  ninja = "dart_test_parser"
-}]
-}, {
-  bazel_label = "//tools/rust_test_parser:rust_test_parser"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/rust_test_parser_/rust_test_parser"
-  ninja = "rust_test_parser"
-}]
-}, {
-  bazel_label = "//tools/fidl/fidl_api_diff:fidl_api_diff"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidl_api_diff_/fidl_api_diff"
-  ninja = "fidl_api_diff"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/fidl_api_summarize:fidl_api_summarize"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidl_api_summarize_/fidl_api_summarize"
-  ninja = "fidl_api_summarize"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/fidlcparsequality:fidlcparsequality"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlcparsequality_/fidlcparsequality"
-  ninja = "fidlcparsequality"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/fidlgen_go:fidlgen_go"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_go_/fidlgen_go"
-  ninja = "fidlgen_go"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/fidlgen_python:fidlgen_python"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_python_/fidlgen_python"
-  ninja = "fidlgen_python"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/fidlgen_syzkaller:fidlgen_syzkaller"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_syzkaller_/fidlgen_syzkaller"
-  ninja = "fidlgen_syzkaller"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/gidl-format:gidl-format"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/gidl-format_/gidl-format"
-  ninja = "gidl-format"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/gidl/cmd/gidl:gidl"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/gidl_/gidl"
-  ninja = "gidl"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/gidl/cmd/gidl_audit:gidl_audit"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/gidl_audit_/gidl_audit"
-  ninja = "gidl_audit"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/lib/fidlgen/testing:roundtripper"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/roundtripper_/roundtripper"
-  ninja = "roundtripper"
-}]
-}, {
-  bazel_label = "//tools/fuzz:undercoat"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/undercoat_/undercoat"
-  ninja = "undercoat"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/go_test_parser:go_test_parser"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_test_parser_/go_test_parser"
-  ninja = "go_test_parser"
-}]
-}, {
-  bazel_label = "//tools/staticanalysis/clippy-reporter:clippy-reporter"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/clippy-reporter_/clippy-reporter"
-  ninja = "clippy-reporter"
-}]
-}, {
-  bazel_label = "//tools/staticanalysis/rfcmeta:rfcmeta"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/rfcmeta_/rfcmeta"
-  ninja = "rfcmeta"
-}]
-}, {
-  bazel_label = "//tools/debug/covargs:covargs"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/covargs_/covargs"
-  ninja = "covargs"
-}]
-}, {
-  bazel_label = "//tools/debug/debugsyms:debugsyms"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/debugsyms_/debugsyms"
-  ninja = "debugsyms"
-}]
-}, {
-  bazel_label = "//tools/debug/generate_breakpad:generate_breakpad"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/generate_breakpad_/generate_breakpad"
-  ninja = "generate_breakpad"
-}]
-}, {
-  bazel_label = "//tools/debug/symbolize:symbolize"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/symbolize_/symbolize"
-  ninja = "symbolize"
-}]
-}, {
-  bazel_label = "//tools/fidl/clang-format-wrapper:clang-format-wrapper"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/clang-format-wrapper_/clang-format-wrapper"
-  ninja = "clang-format-wrapper"
-}]
-}, {
-  bazel_label = "//tools/pretty_serial"
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/mdlint"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/mdlint_/mdlint"
-  ninja = "mdlint"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/pkgstats/debugdump:debugdump"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/debugdump_/debugdump"
-  ninja = "debugdump"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/debroot:debroot"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/debroot_/debroot"
-  ninja = "debroot"
-}]
-}, {
-  bazel_label = "//tools/whereiscl:whereiscl"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/whereiscl_/whereiscl"
-  ninja = "whereiscl"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/jq5:jq5"
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/rust_extract"
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/create:create_bin"
-  install_host_tool = true
-  ninja_name = "create"
-}, {
-  bazel_label = "//tools/fidl/fidldoc:fidldoc"
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/fidlgen_rust:fidlgen_rust"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlgen_rust_/fidlgen_rust"
-  ninja = "fidlgen_rust"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/fidlmerge:fidlmerge"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fidlmerge_/fidlmerge"
-  ninja = "fidlmerge"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/fidl/measure-tape/src:measure-tape"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/measure-tape_/measure-tape"
-  ninja = "measure-tape"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/build/fx-set:fx-set"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/fx-set_/fx-set"
-  ninja = "fx-set"
-}]
-}, {
-  bazel_label = "//tools/build/gndoc:gndoc"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/gndoc_/gndoc"
-  ninja = "gndoc"
-}]
-}, {
-  bazel_label = "//tools/integration/testsharder:testsharder"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/testsharder_/testsharder"
-  ninja = "testsharder"
-}]
-}, {
-  bazel_label = "//tools/readme_fuchsia:readme_fuchsia_bin"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/readme_fuchsia_bin_/readme_fuchsia_bin"
-  ninja = "readme_fuchsia"
-}]
-  install_host_tool = true
-  ninja_name = "readme_fuchsia"
-}, {
-  bazel_label = "//tools/testing/tefmocheck:tefmocheck"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/tefmocheck_/tefmocheck"
-  ninja = "tefmocheck"
-}]
-}, {
-  bazel_label = "//tools/testing/testparser:testparser_cmd"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/testparser_cmd_/testparser_cmd"
-  ninja = "testparser"
-}]
-  ninja_name = "testparser"
-}, {
-  bazel_label = "//sdk/ctf/plasa/clang_doc_filter:clang_doc_filter"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/clang_doc_filter_/clang_doc_filter"
-  ninja = "clang_doc_filter"
-}]
-  install_host_tool = true
-  ninja_name = "clang_doc_filter"
-}, {
-  bazel_label = "//sdk/ctf/plasa/plasa_test_coverage_report:plasa_test_coverage_report"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/plasa_test_coverage_report_/plasa_test_coverage_report"
-  ninja = "plasa_test_coverage_report"
-}]
-  install_host_tool = true
-  ninja_name = "plasa_test_coverage_report"
-}, {
-  bazel_label = "//tools/check-licenses:check-licenses"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/check-licenses_/check-licenses"
-  ninja = "check-licenses"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/check-licenses/util/cmd/gn/generate_project_json:check-licenses-gen-project-json"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/check-licenses-gen-project-json_/check-licenses-gen-project-json"
-  ninja = "check-licenses-gen-project-json"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/check-licenses/util/cmd/gn/generate_intermediate_json:generate_intermediate_json_cmd"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/generate_intermediate_json_cmd_/generate_intermediate_json_cmd"
-  ninja = "generate_intermediate_json_cmd"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//tools/artifactory:artifactory"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/artifactory_/artifactory"
-  ninja = "artifactory"
-}]
-}, {
-  bazel_label = "//tools/bundle_fetcher:bundle_fetcher"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/bundle_fetcher_/bundle_fetcher"
-  ninja = "bundle_fetcher"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//src/lib/testing/expectation/tool:list_test_expectations"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/list_test_expectations"
-  ninja = "list_test_expectations"
-}]
-  install_host_tool = true
-}, {
-  bazel_label = "//build/config/python/generate_python_api_symbols"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/generate_python_api_symbols_/generate_python_api_symbols"
-  ninja = "generate_python_api_symbols"
-}]
-}, {
-  bazel_label = "//src/developer/ffx/tools/efi:ffx-efi"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi"
-  ninja = "ffx-efi_bazel_unversioned"
-}]
-  ninja_name = "ffx-efi_bazel_unversioned"
-}, {
-  bazel_label = "//build/tools/json_validator:json_validator_valico"
-  install_host_tool = true
-}, {
-  bazel_label = "//build/tools/json_merge"
-  install_host_tool = true
-}, {
-  bazel_label = "//build/tools/formatjson5"
-  install_host_tool = true
-}, {
-  bazel_label = "//build/tools/bazel2gn"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/bazel2gn_/bazel2gn"
-  ninja = "bazel2gn"
-}]
-}, {
-  bazel_label = "//build/tools/tarmaker:tarmaker"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/tarmaker_/tarmaker"
-  ninja = "tarmaker"
-}]
-}]
-```
-
-From //build/bazel/bazel_root_targets_list.gni:26
-
 ### default_configs
 
 **Current value (from the default):** `[]`
@@ -2446,7 +2085,7 @@ These are always a dependency of the main product assembly.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:82
+From //BUILD.gn:83
 
 ### dir_docker
 
@@ -3795,7 +3434,7 @@ As these cannot be part of the legacy AIB for a product, there is no
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:46
+From //BUILD.gn:47
 
 ### dont_profile_source_files
 
@@ -3821,7 +3460,7 @@ hardware or emulated).
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:71
+From //BUILD.gn:72
 
 ### emboss_build_dir_to_root
 
@@ -3862,7 +3501,7 @@ From //build/bazel/remote_services.gni:16
 
 **Current value (from the default):** `""`
 
-From //BUILD.gn:145
+From //BUILD.gn:146
 
 ### enable_frame_pointers
 
@@ -4382,7 +4021,7 @@ packages instead of explicitly adding the labels of the
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:60
+From //BUILD.gn:61
 
 ### extra_bazel_assembly_targets
 
@@ -4831,7 +4470,7 @@ Fully hermetic tests (both by packaging and at runtime)
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:67
+From //BUILD.gn:68
 
 ### host_byteorder
 
@@ -4857,7 +4496,7 @@ From //out/not-default/args.gn:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:89
+From //BUILD.gn:90
 
 **Current value for `target_cpu = "riscv64"`:** `[]`
 
@@ -4865,7 +4504,7 @@ From //out/not-default/args.gn:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:89
+From //BUILD.gn:90
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
@@ -4873,7 +4512,7 @@ From //out/not-default/args.gn:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:89
+From //BUILD.gn:90
 
 ### host_os
 
@@ -4888,7 +4527,7 @@ These will be added to the build using the host toolchain.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:77
+From //BUILD.gn:78
 
 ### host_tools_base_path_override
 
@@ -6723,7 +6362,7 @@ bundle.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:136
+From //BUILD.gn:137
 
 ### profile_source_files
 
@@ -9030,7 +8669,7 @@ extension mechanism for IDK bits outside of the main repository.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:99
+From //BUILD.gn:100
 
 ### sdk_cross_compile_host_tools
 
@@ -9486,7 +9125,7 @@ From //out/not-default/args.gn:15
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:34
+From //BUILD.gn:35
 
 **Current value for `target_cpu = "riscv64"`:** `["//bundles/docs_roller"]`
 
@@ -9494,7 +9133,7 @@ From //out/not-default/args.gn:15
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:34
+From //BUILD.gn:35
 
 **Current value for `target_cpu = "x64"`:** `["//bundles/docs_roller"]`
 
@@ -9502,7 +9141,7 @@ From //out/not-default/args.gn:15
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:34
+From //BUILD.gn:35
 
 ### target_os
 
@@ -9569,13 +9208,13 @@ afterwards.
 
 **Current value (from the default):** `""`
 
-From //BUILD.gn:95
+From //BUILD.gn:96
 
 ### test_package_labels
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:144
+From //BUILD.gn:145
 
 ### thinlto_cache_dir
 
@@ -9676,7 +9315,7 @@ the build.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:31
+From //BUILD.gn:32
 
 ### update_goldens
 
