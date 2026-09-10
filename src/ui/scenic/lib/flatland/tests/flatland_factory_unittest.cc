@@ -136,6 +136,7 @@ TEST_F(FlatlandFactoryTest, ToInternalConfig) {
 
     auto internal_config = FlatlandFactoryImpl::ToInternalConfig(std::move(config));
     EXPECT_TRUE(internal_config.skips_on_frame_presented);
+    EXPECT_TRUE(internal_config.use_flatland2);
     EXPECT_FALSE(internal_config.use_trusted_flatland_api);
   }
 }

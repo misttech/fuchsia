@@ -27,6 +27,7 @@ FlatlandConfig FlatlandFactoryImpl::ToInternalConfig(
   return FlatlandConfig{
       // Flatland2 deprecates OnFramePresented in favor of Zircon frame presentation fencing.
       .skips_on_frame_presented = use_flatland2,
+      .use_flatland2 = use_flatland2,
   };
 }
 
