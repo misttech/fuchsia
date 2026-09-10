@@ -8,7 +8,7 @@ use crate::kernel::event::{AutounsignalEvent, Event};
 use crate::kernel::types::PAddr;
 use crate::vm::compression::VmCompression;
 use crate::vm::evictor::Evictor;
-use crate::vm::page::{VmPage, VmPagePtr};
+use crate::vm::page::{VmPageDoublyLinkedList, VmPagePtr};
 use crate::vm::page_queues::PageQueues;
 use crate::vm::pmm_arena::PmmArena;
 use crate::vm::pmm_checker::PmmChecker;
@@ -161,7 +161,7 @@ pub struct FreeLoanedPagesHolder {
     /// Although the lock cannot be annotated, this member is guarded by the relevant
     /// PmmNode::loaned_list_lock_.
     #[pin]
-    pub pages: fbl::DoublyLinkedList<*mut VmPage>,
+    pub pages: VmPageDoublyLinkedList,
     /// Maintain a list of waiters to be notified once pages have been freed. The Waiter object
     /// itself is stack allocated in the WithLoanedPage method and registered into this list.
     /// Having this be a list of Events of single waiting thread, instead of a single Event
@@ -238,19 +238,19 @@ pub struct PmmNode {
     /// Free pages where !loaned.
     #[guarded_by(lock)]
     #[pin]
-    free_list: fbl::DoublyLinkedList<*mut VmPage>,
+    free_list: VmPageDoublyLinkedList,
     #[mutex]
     loaned_list_lock: KMutex<RawMutex>,
     /// Free pages where loaned && !loan_cancelled.
     #[guarded_by(loaned_list_lock)]
     #[pin]
-    free_loaned_list: fbl::DoublyLinkedList<*mut VmPage>,
+    free_loaned_list: VmPageDoublyLinkedList,
 
     /// The pages comprising the memory temporarily used during phys hand-off,
     /// populated on Init(). It is the responsibility of EndHandoff() to free this
     /// list.
     #[pin]
-    phys_handoff_temporary_list: fbl::DoublyLinkedList<*mut VmPage>,
+    phys_handoff_temporary_list: VmPageDoublyLinkedList,
 
     /// The pages comprising the page-aligned regions of memory that we expect to
     /// turn into VMOs to hand-off to userspace - as determined by
@@ -261,12 +261,12 @@ pub struct PmmNode {
     /// PmmNode::EndHandoff() to ensure afterward that this list is empty.
     #[guarded_by(lock)]
     #[pin]
-    phys_handoff_vmo_list: fbl::DoublyLinkedList<*mut VmPage>,
+    phys_handoff_vmo_list: VmPageDoublyLinkedList,
 
     /// The pages intended to be permanently reserved.
     #[guarded_by(lock)]
     #[pin]
-    permanently_reserved_list: fbl::DoublyLinkedList<*mut VmPage>,
+    permanently_reserved_list: VmPageDoublyLinkedList,
 
     should_wait: ShouldWaitState,
 
@@ -611,7 +611,7 @@ impl PmmNode {
         &self,
         count: usize,
         alloc_flags: u32,
-        list: Pin<&mut fbl::DoublyLinkedList<*mut VmPage>>,
+        list: Pin<&mut VmPageDoublyLinkedList>,
     ) -> Result<(), Status> {
         // SAFETY: FFI call passing pointer to `list`.
         let status = unsafe {
@@ -619,7 +619,7 @@ impl PmmNode {
                 self.as_raw(),
                 count,
                 alloc_flags,
-                (list.get_unchecked_mut() as *mut fbl::DoublyLinkedList<*mut VmPage>).cast(),
+                (list.get_unchecked_mut() as *mut VmPageDoublyLinkedList).cast(),
             )
         };
         Status::ok(status)
@@ -642,7 +642,7 @@ impl PmmNode {
     /// Caller guarantees that all pages in list are valid and they are the owner.
     pub unsafe fn free_list(
         &self,
-        list: Pin<&mut fbl::DoublyLinkedList<*mut VmPage>>,
+        list: Pin<&mut VmPageDoublyLinkedList>,
         delay_reuse: PmmOptDelayReuse,
     ) {
         if list.is_empty() {
@@ -652,9 +652,9 @@ impl PmmNode {
         unsafe {
             bindings::cpp_pmm_node_free_list(
                 self.as_raw(),
-                (list.get_unchecked_mut() as *mut fbl::DoublyLinkedList<*mut VmPage>).cast(),
+                (list.get_unchecked_mut() as *mut VmPageDoublyLinkedList).cast(),
                 delay_reuse,
-            )
+            );
         }
     }
 
@@ -854,14 +854,14 @@ impl PmmNode {
     /// Caller guarantees that all pages in list are valid and they are the owner.
     pub unsafe fn begin_loan(
         &self,
-        list: Pin<&mut fbl::DoublyLinkedList<*mut VmPage>>,
+        list: Pin<&mut VmPageDoublyLinkedList>,
         delay_reuse: PmmOptDelayReuse,
     ) {
         // SAFETY: FFI call passing valid list pointer.
         unsafe {
             bindings::cpp_pmm_node_begin_loan(
                 self.as_raw(),
-                (list.get_unchecked_mut() as *mut fbl::DoublyLinkedList<*mut VmPage>).cast(),
+                (list.get_unchecked_mut() as *mut VmPageDoublyLinkedList).cast(),
                 delay_reuse,
             )
         }
@@ -996,10 +996,7 @@ impl PmmNode {
     /// # Safety
     ///
     /// Caller guarantees that all pages in |list| are valid and owned by them.
-    pub unsafe fn add_free_pages(
-        &mut self,
-        mut list: Pin<&mut fbl::DoublyLinkedList<*mut VmPage>>,
-    ) {
+    pub unsafe fn add_free_pages(&mut self, mut list: Pin<&mut VmPageDoublyLinkedList>) {
         ltracef!("list {:p}\n", list.as_ref().get_ref() as *const _);
 
         // SAFETY: called at boot time as arenas are brought online, no locks are acquired
@@ -1012,9 +1009,9 @@ impl PmmNode {
             // SAFETY: `page` comes from the list of valid `VmPage` pointers constructed during
             // arena initialization.
             unsafe {
-                debug_assert!(!(*page).is_loaned());
-                debug_assert!(!(*page).is_loan_cancelled());
-                debug_assert!((*page).is_free());
+                debug_assert!(!page.as_ref().is_loaned());
+                debug_assert!(!page.as_ref().is_loan_cancelled());
+                debug_assert!(page.as_ref().is_free());
                 self.free_list.get_mut(&mut token).push_back_raw(page);
             }
             free_count += 1;
@@ -1040,7 +1037,7 @@ impl PmmNode {
 #[unsafe(no_mangle)]
 unsafe extern "C" fn rust_pmm_node_add_free_pages(
     node: *mut PmmNode,
-    list: *mut fbl::DoublyLinkedList<*mut VmPage>,
+    list: *mut VmPageDoublyLinkedList,
 ) {
     // SAFETY: Caller guarantees these are not null and are pinned.
     unsafe { node.as_mut_unchecked().add_free_pages(Pin::new_unchecked(list.as_mut_unchecked())) }
@@ -1057,14 +1054,12 @@ mod pmm_node_rust {
     use crate::kernel::deadline::{Deadline, DurationMono, TimerSlack};
     use crate::kernel::thread;
     use crate::platform_rs::timer::InstantMono;
-    use crate::vm::page::{VmPage, VmPagePtr};
+    use crate::vm::page::{VmPageDoublyLinkedList, VmPagePtr};
     use crate::vm::page_state::VmPageState;
     use crate::vm::page_state::bindings::vm_page_state;
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::physmap::paddr_to_physmap;
-    use core::ptr::NonNull;
     use core::sync::atomic::{AtomicI32, Ordering};
-    use fbl::DoublyLinkedList;
     use page::SIZE as PAGE_SIZE;
     use pin_init::{stack_pin_init, stack_try_pin_init};
     use unittest::{
@@ -1109,7 +1104,7 @@ mod pmm_node_rust {
         }
 
         pub fn setup(self: Pin<&mut Self>) -> Result<(), Status> {
-            pin_init::stack_pin_init!(let list = fbl::DoublyLinkedList::<*mut VmPage>::new());
+            pin_init::stack_pin_init!(let list = VmPageDoublyLinkedList::new());
             crate::vm::pmm::alloc_pages(Self::NUM_PAGES, 0, list.as_mut())?;
             for page in list.iter() {
                 // TODO: Prevent this page state from allowing AllocContiguous() to potentially find
@@ -1230,7 +1225,7 @@ mod pmm_node_rust {
         fn drop(self: core::pin::Pin<&mut Self>) {
             // SAFETY: Destructuring pinned ManagedPmmNode during drop.
             let this = unsafe { self.get_unchecked_mut() };
-            pin_init::stack_pin_init!(let list = fbl::DoublyLinkedList::<*mut VmPage>::new());
+            pin_init::stack_pin_init!(let list = VmPageDoublyLinkedList::new());
             let status = this.node.alloc_pages(Self::NUM_PAGES, 0, list.as_mut());
             assert_eq!(status, Ok(()));
             for page in list.iter() {
@@ -1260,7 +1255,7 @@ mod pmm_node_rust {
         let mut node = unwrap_ok!(node);
         assert_ok!(node.as_mut().setup());
         let alloc_count = ManagedPmmNode::NUM_PAGES / 2;
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
 
         let status = node.node().alloc_pages(alloc_count, 0, list.as_mut());
         expect_ok!(status, "pmm_alloc_pages a few pages");
@@ -1282,7 +1277,7 @@ mod pmm_node_rust {
         stack_try_pin_init!(let node = ManagedPmmNode::init());
         let mut node = unwrap_ok!(node);
         assert_ok!(node.as_mut().setup());
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
 
         let status = node.node().alloc_pages(1, 0, list.as_mut());
         expect_ok!(status, "pmm_alloc_pages a few pages");
@@ -1303,7 +1298,7 @@ mod pmm_node_rust {
 
         let _cleanup = ScopedLoaningEnabled::new(true);
 
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
 
         const LOAN_COUNT: usize = ManagedPmmNode::NUM_PAGES * 3 / 4;
         const NOT_LOAN_COUNT: usize = ManagedPmmNode::NUM_PAGES - LOAN_COUNT;
@@ -1427,7 +1422,7 @@ mod pmm_node_rust {
             // SAFETY: page is a valid page pointer.
             expect_false!(unsafe { page.is_loan_cancelled() });
             // SAFETY: list is pinned on stack, push_back_raw does not move list.
-            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_raw()) };
+            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_non_null()) };
         }
 
         // SAFETY: list contains unloaned allocated pages.
@@ -1469,7 +1464,7 @@ mod pmm_node_rust {
         stack_try_pin_init!(let node = ManagedPmmNode::init());
         let mut node = unwrap_ok!(node);
         assert_ok!(node.as_mut().setup());
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
 
         let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES + 1, 0, list.as_mut());
         expect_true!(status == Err(Status::NO_MEMORY), "pmm_alloc_pages failed to alloc");
@@ -1501,12 +1496,12 @@ mod pmm_node_rust {
         expect_false!(node.is_event_signaled());
 
         // Allocate all but 1 of the pages to trigger the event.
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
 
         for _i in 1..ManagedPmmNode::DEFAULT_MEM_EVENT_ALLOC {
             let page = unwrap_ok!(node.node().alloc_page(0));
             // SAFETY: mutating pinned list without moving it.
-            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_raw()) };
+            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_non_null()) };
         }
         // Should not have triggered the event yet.
         expect_false!(node.is_event_signaled());
@@ -1515,7 +1510,7 @@ mod pmm_node_rust {
         {
             let page = unwrap_ok!(node.node().alloc_page(0));
             // SAFETY: mutating pinned list without moving it.
-            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_raw()) };
+            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_non_null()) };
         }
         expect_true!(node.is_event_signaled());
         node.unsignal_event();
@@ -1526,15 +1521,12 @@ mod pmm_node_rust {
         let pop_page = unsafe { list.as_mut().get_unchecked_mut().pop_front().unwrap() };
         // SAFETY: pop_page is a valid pointer.
         unsafe {
-            node.node().free_page(
-                VmPagePtr::new(NonNull::new_unchecked(pop_page)),
-                PmmOptDelayReuse::Default,
-            );
+            node.node().free_page(VmPagePtr::new(pop_page), PmmOptDelayReuse::Default);
         }
         {
             let page = unwrap_ok!(node.node().alloc_page(0));
             // SAFETY: mutating pinned list without moving it.
-            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_raw()) };
+            unsafe { list.as_mut().get_unchecked_mut().push_back_raw(page.as_non_null()) };
         }
         expect_false!(node.is_event_signaled());
 
@@ -1544,8 +1536,7 @@ mod pmm_node_rust {
         // Take one page off the list as our final page.
         // SAFETY: popping from pinned list without moving list.
         let page_raw = unsafe { list.as_mut().get_unchecked_mut().pop_front().unwrap() };
-        // SAFETY: page_raw is a non-null pointer popped from list.
-        let page = unsafe { VmPagePtr::new(NonNull::new_unchecked(page_raw)) };
+        let page = VmPagePtr::new(page_raw);
 
         // Return the rest of the list.
         // SAFETY: list contains allocated pages.
@@ -1569,7 +1560,7 @@ mod pmm_node_rust {
         stack_try_pin_init!(let node = ManagedPmmNode::init());
         let mut node = unwrap_ok!(node);
         assert_ok!(node.as_mut().setup());
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
 
         // Put the node in an oom state and make sure allocation fails.
         let status =
@@ -1780,7 +1771,7 @@ mod pmm_node_rust {
         assert_ok!(node.as_mut().setup());
 
         // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
         let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
         expect_ok!(status);
 
@@ -1843,7 +1834,7 @@ mod pmm_node_rust {
         assert_ok!(node.as_mut().setup());
 
         // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
         let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
         expect_ok!(status);
 
@@ -1940,7 +1931,7 @@ mod pmm_node_rust {
         assert_ok!(node.as_mut().setup());
 
         // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
         let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
         expect_ok!(status);
 
@@ -1994,7 +1985,7 @@ mod pmm_node_rust {
         assert_ok!(node.as_mut().setup());
 
         // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
         let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
         expect_ok!(status);
 
@@ -2049,7 +2040,7 @@ mod pmm_node_rust {
         assert_ok!(node.as_mut().setup());
 
         // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
         let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
         expect_ok!(status);
 
@@ -2104,7 +2095,7 @@ mod pmm_node_rust {
         assert_ok!(node.as_mut().setup());
 
         // Allocate all pages to ensure AllocPage fails with NO_MEMORY later.
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
         let status = node.node().alloc_pages(ManagedPmmNode::NUM_PAGES, 0, list.as_mut());
         expect_ok!(status);
 
@@ -2165,7 +2156,7 @@ mod pmm_node_rust {
         let mut node = unwrap_ok!(node);
         assert_ok!(node.as_mut().setup());
 
-        stack_pin_init!(let alloc_list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let alloc_list = VmPageDoublyLinkedList::new());
 
         // Allocate a single page into the list first.
         assert_ok!(node.node().alloc_pages(1, 0, alloc_list.as_mut()));

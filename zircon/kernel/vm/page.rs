@@ -801,6 +801,8 @@ impl VmPagePtr {
     }
 }
 
+pub type VmPageDoublyLinkedList = fbl::DoublyLinkedList<NonNull<VmPage>>;
+
 // Return the approximate number of pages in state |state|.
 //
 // When called concurrently with |set_state|, the count may be off by a small amount.

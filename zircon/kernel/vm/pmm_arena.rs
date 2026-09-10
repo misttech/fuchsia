@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::kernel::types::PAddr;
-use crate::vm::page::VmPage;
+use crate::vm::page::{VmPage, VmPageDoublyLinkedList};
 use crate::vm::page_state::{VmPageState, page_state_to_string};
 use crate::vm::physmap;
 use crate::vm::pmm_node::PmmNode;
@@ -193,7 +193,7 @@ impl PmmArena {
 
         // add all pages that aren't part of the page array to the free list
         // pages part of the free array go to the WIRED state.
-        pin_init::stack_pin_init!(let list = fbl::DoublyLinkedList::<*mut VmPage>::new());
+        pin_init::stack_pin_init!(let list = VmPageDoublyLinkedList::new());
         let base = self.base().0;
 
         for (index, p) in self.as_slice_mut().iter_mut().enumerate() {
@@ -203,7 +203,7 @@ impl PmmArena {
                 unsafe { p.set_state(VmPageState(vm_page_state::WIRED)) };
             } else {
                 // SAFETY: `list` is pinned on stack; obtaining mutable reference to the list is safe.
-                unsafe { list.as_mut().get_unchecked_mut().push_back_raw(p) };
+                unsafe { list.as_mut().get_unchecked_mut().push_back_raw(NonNull::from(p)) };
             }
         }
 

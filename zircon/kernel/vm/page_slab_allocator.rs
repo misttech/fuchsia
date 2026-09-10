@@ -10,7 +10,7 @@
 //! identical.
 
 use crate::kernel::types::VAddr;
-use crate::vm::page::{VmPage, VmPagePtr, VmPageSlabState};
+use crate::vm::page::{VmPage, VmPageDoublyLinkedList, VmPagePtr, VmPageSlabState};
 use crate::vm::page_state::VmPageState;
 use crate::vm::{heap, physmap, pmm};
 use core::alloc::Layout;
@@ -20,12 +20,10 @@ use core::ffi::c_void;
 use core::pin::Pin;
 use core::ptr::{self, NonNull};
 use core::{fmt, mem};
-use fbl::{DoublyLinkedList, DoublyLinkedListContainable};
+use fbl::DoublyLinkedListContainable;
 use page_bindings::vm_page_state;
 use pin_init::{PinInit, pin_data, pin_init};
 use zx_status::Status;
-
-pub type VmPageDoublyLinkedList = DoublyLinkedList<NonNull<VmPage>>;
 
 #[derive(Debug)]
 pub struct SlabAllocationError(());
@@ -144,8 +142,8 @@ impl<const ALLOC_SIZE: usize, A> PageSlabAllocator<ALLOC_SIZE, A> {
         }
 
         pin_init!(Self {
-            full_slabs <- DoublyLinkedList::new(),
-            available_slabs <- DoublyLinkedList::new(),
+            full_slabs <- VmPageDoublyLinkedList::new(),
+            available_slabs <- VmPageDoublyLinkedList::new(),
             allocated_slabs: 0,
             inner <- inner,
         })

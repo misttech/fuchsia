@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::user_copy::{UserInPtr, UserOutPtr};
-use crate::vm::page::{VmPage, VmPagePtr};
+use crate::vm::page::{VmPage, VmPageDoublyLinkedList, VmPagePtr};
 use crate::vm::page_state::VmPageState;
 use crate::vm::{physmap, pmm};
 use core::cmp::min;
@@ -161,7 +161,7 @@ fn alloc_mbufs(num: usize, bufs: &mut DoublyLinkedList<*mut MBuf>) -> Result<(),
         return Ok(());
     }
 
-    stack_pin_init!(let pages = DoublyLinkedList::<*mut VmPage>::new());
+    stack_pin_init!(let pages = VmPageDoublyLinkedList::new());
     pmm::alloc_pages(num, 0, pages.as_mut())?;
 
     // SAFETY: `pages` is pinned on stack; obtaining mutable reference to pop pages is safe.
@@ -170,7 +170,7 @@ fn alloc_mbufs(num: usize, bufs: &mut DoublyLinkedList<*mut MBuf>) -> Result<(),
         // SAFETY: `page_raw` was popped from `pages` allocated by `pmm::alloc_pages` and is valid.
         // The resulting `buf_ptr` is newly initialized and not currently in any list.
         unsafe {
-            let buf_ptr = MBuf::init_in_page(page_raw);
+            let buf_ptr = MBuf::init_in_page(page_raw.as_ptr());
             bufs.push_back_raw(buf_ptr);
         }
     }
@@ -185,7 +185,7 @@ fn free_mbufs(bufs: &mut DoublyLinkedList<*mut MBuf>) {
         return;
     }
 
-    stack_pin_init!(let pages = DoublyLinkedList::<*mut VmPage>::new());
+    stack_pin_init!(let pages = VmPageDoublyLinkedList::new());
     // SAFETY: `pages` is pinned on stack; obtaining mutable reference to the list is safe.
     let pages_list = unsafe { pages.as_mut().get_unchecked_mut() };
 
@@ -195,7 +195,7 @@ fn free_mbufs(bufs: &mut DoublyLinkedList<*mut MBuf>) {
         // allocated from PMM whose backing page is not in any list.
         unsafe {
             let page_ptr = (*buf_ptr).page;
-            pages_list.push_back_raw(page_ptr.as_raw());
+            pages_list.push_back_raw(page_ptr.as_non_null());
         }
         count += 1;
     }

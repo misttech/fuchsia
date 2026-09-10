@@ -7,11 +7,10 @@
 use super::pmm_arena::PmmArenaInfo;
 use super::pmm_node::PmmNode;
 use crate::kernel::types::PAddr;
-use crate::vm::page::{VmPage, VmPagePtr};
+use crate::vm::page::{VmPageDoublyLinkedList, VmPagePtr};
 use crate::vm::page_queues::PageQueues;
 use core::mem::MaybeUninit;
 use core::pin::Pin;
-use fbl::DoublyLinkedList;
 use pmm_bindings as bindings;
 use zx_status::Status;
 
@@ -59,7 +58,7 @@ pub unsafe fn free_page(page: VmPagePtr) {
 ///
 /// Caller must ensure every page on the list is a valid allocated PMM page that
 /// has not already been freed.
-pub unsafe fn free_list(list: Pin<&mut DoublyLinkedList<*mut VmPage>>) {
+pub unsafe fn free_list(list: Pin<&mut VmPageDoublyLinkedList>) {
     if list.is_empty() {
         return;
     }
@@ -68,7 +67,7 @@ pub unsafe fn free_list(list: Pin<&mut DoublyLinkedList<*mut VmPage>>) {
     // in place.  The caller guarantees the pages.
     unsafe {
         bindings::cpp_pmm_free_list(
-            (list.get_unchecked_mut() as *mut DoublyLinkedList<*mut VmPage>).cast(),
+            (list.get_unchecked_mut() as *mut VmPageDoublyLinkedList).cast(),
         )
     };
 }
@@ -90,14 +89,14 @@ pub fn paddr_to_vm_page(paddr: PAddr) -> Option<VmPagePtr> {
 pub fn alloc_pages(
     count: usize,
     flags: u32,
-    list: Pin<&mut DoublyLinkedList<*mut VmPage>>,
+    list: Pin<&mut VmPageDoublyLinkedList>,
 ) -> Result<(), Status> {
     // SAFETY: FFI call passing pointer to `list`.
     let status = unsafe {
         bindings::cpp_pmm_alloc_pages(
             count,
             flags,
-            (list.get_unchecked_mut() as *mut DoublyLinkedList<*mut VmPage>).cast(),
+            (list.get_unchecked_mut() as *mut VmPageDoublyLinkedList).cast(),
         )
     };
     Status::ok(status)
@@ -110,7 +109,7 @@ pub fn alloc_contiguous(
     count: usize,
     flags: u32,
     align_log2: u8,
-    list: Pin<&mut DoublyLinkedList<*mut VmPage>>,
+    list: Pin<&mut VmPageDoublyLinkedList>,
 ) -> Result<PAddr, Status> {
     let mut pa: bindings::zx_paddr_t = 0;
     // SAFETY: FFI call passing stack pointer for `pa` and pointer to `list`.
@@ -120,7 +119,7 @@ pub fn alloc_contiguous(
             flags,
             align_log2,
             &mut pa,
-            (list.get_unchecked_mut() as *mut DoublyLinkedList<*mut VmPage>).cast(),
+            (list.get_unchecked_mut() as *mut VmPageDoublyLinkedList).cast(),
         )
     };
     Status::ok(status)?;
@@ -180,10 +179,8 @@ mod pmm_rust {
         alloc_contiguous, alloc_page, free_list, free_page, node, num_arenas, paddr_to_vm_page,
     };
     use crate::kernel::types::PAddr;
-    use crate::vm::page::VmPage;
     use crate::vm::physmap::paddr_to_physmap;
     use crate::vm::pmm_arena::PmmArenaInfo;
-    use fbl::DoublyLinkedList;
     use pin_init::stack_pin_init;
     use unittest::{
         assert_eq, assert_err, assert_ge, assert_gt, assert_ne, assert_true, unwrap_ok,
@@ -205,7 +202,7 @@ mod pmm_rust {
     /// Allocates one page and frees it.
     #[test]
     fn alloc_contiguous_one() {
-        stack_pin_init!(let list = DoublyLinkedList::<*mut VmPage>::new());
+        stack_pin_init!(let list = VmPageDoublyLinkedList::new());
         let count = 1usize;
         let pa = unwrap_ok!(
             alloc_contiguous(count, 0, page::SHIFT as u8, list.as_mut()),
