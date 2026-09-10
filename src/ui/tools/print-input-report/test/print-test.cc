@@ -703,4 +703,270 @@ TEST_F(PrintInputReport, PrintDeviceInfoStrings) {
   printer.AssertSawAllStrings();
 }
 
+TEST_F(PrintInputReport, InputReportsReaderV2InitialReports) {
+  fuchsia::input::report::InputReport report1;
+  report1.mutable_mouse()->set_movement_x(10);
+  fuchsia::input::report::InputReport report2;
+  report2.mutable_mouse()->set_movement_x(20);
+
+  std::vector<fuchsia::input::report::InputReport> initial_reports;
+  initial_reports.push_back(std::move(report1));
+  initial_reports.push_back(std::move(report2));
+  fake_device_->SetReports(std::move(initial_reports));
+
+  fuchsia::input::report::InputReportsReaderV2Ptr reader_v2;
+  bool got_callback = false;
+  fake_device_->GetInputReportsReaderV2(reader_v2.NewRequest(loop_->dispatcher()), 5,
+                                        [&](uint16_t max_unacknowledged_reports) {
+                                          EXPECT_EQ(max_unacknowledged_reports, 5);
+                                          got_callback = true;
+                                        });
+
+  std::vector<std::vector<fuchsia::input::report::InputReport>> received_batches;
+  std::vector<uint64_t> received_stamps;
+  reader_v2.events().OnInputReports = [&](std::vector<fuchsia::input::report::InputReport> reports,
+                                          uint64_t last_report_stamp) {
+    received_batches.push_back(std::move(reports));
+    received_stamps.push_back(last_report_stamp);
+  };
+
+  loop_->RunUntilIdle();
+
+  EXPECT_TRUE(got_callback);
+  ASSERT_EQ(received_batches.size(), 1u);
+  ASSERT_EQ(received_batches[0].size(), 2u);
+  EXPECT_EQ(received_batches[0][0].mouse().movement_x(), 10);
+  EXPECT_EQ(received_batches[0][1].mouse().movement_x(), 20);
+  ASSERT_EQ(received_stamps.size(), 1u);
+  EXPECT_EQ(received_stamps[0], 2u);
+}
+
+TEST_F(PrintInputReport, InputReportsReaderV2AlreadyBound) {
+  fuchsia::input::report::InputReportsReaderV2Ptr reader_v2_first;
+  fake_device_->GetInputReportsReaderV2(
+      reader_v2_first.NewRequest(loop_->dispatcher()), 5,
+      [](uint16_t max_unacknowledged_reports) { EXPECT_EQ(max_unacknowledged_reports, 5); });
+
+  fuchsia::input::report::InputReportsReaderV2Ptr reader_v2_second;
+  bool got_second_callback = false;
+  fake_device_->GetInputReportsReaderV2(reader_v2_second.NewRequest(loop_->dispatcher()), 5,
+                                        [&](uint16_t max_unacknowledged_reports) {
+                                          EXPECT_EQ(max_unacknowledged_reports, 0);
+                                          got_second_callback = true;
+                                        });
+
+  zx_status_t second_error = ZX_OK;
+  reader_v2_second.set_error_handler([&](zx_status_t status) { second_error = status; });
+
+  loop_->RunUntilIdle();
+
+  EXPECT_TRUE(got_second_callback);
+  EXPECT_EQ(second_error, ZX_ERR_ALREADY_BOUND);
+}
+
+TEST_F(PrintInputReport, InputReportsReaderV2MonotonicStamps) {
+  fuchsia::input::report::InputReportsReaderV2Ptr reader_v2;
+  fake_device_->GetInputReportsReaderV2(
+      reader_v2.NewRequest(loop_->dispatcher()), 10,
+      [](uint16_t max_unacknowledged_reports) { EXPECT_EQ(max_unacknowledged_reports, 10); });
+
+  std::vector<uint64_t> received_stamps;
+  reader_v2.events().OnInputReports = [&](std::vector<fuchsia::input::report::InputReport> reports,
+                                          uint64_t last_report_stamp) {
+    received_stamps.push_back(last_report_stamp);
+  };
+
+  // Push first report batch (size 1).
+  {
+    fuchsia::input::report::InputReport r;
+    r.mutable_mouse()->set_movement_x(1);
+    std::vector<fuchsia::input::report::InputReport> reports;
+    reports.push_back(std::move(r));
+    fake_device_->SetReports(std::move(reports));
+  }
+  loop_->RunUntilIdle();
+
+  // Push second report batch (size 2).
+  {
+    fuchsia::input::report::InputReport r1;
+    r1.mutable_mouse()->set_movement_x(2);
+    fuchsia::input::report::InputReport r2;
+    r2.mutable_mouse()->set_movement_x(3);
+    std::vector<fuchsia::input::report::InputReport> reports;
+    reports.push_back(std::move(r1));
+    reports.push_back(std::move(r2));
+    fake_device_->SetReports(std::move(reports));
+  }
+  loop_->RunUntilIdle();
+
+  ASSERT_EQ(received_stamps.size(), 2u);
+  EXPECT_EQ(received_stamps[0], 1u);
+  EXPECT_EQ(received_stamps[1], 3u);
+  EXPECT_LT(received_stamps[0], received_stamps[1]);
+}
+
+TEST_F(PrintInputReport, InputReportsReaderV2FlowControlAndAcknowledge) {
+  fuchsia::input::report::InputReportsReaderV2Ptr reader_v2;
+  // Limit unacknowledged reports in flight to 2.
+  fake_device_->GetInputReportsReaderV2(
+      reader_v2.NewRequest(loop_->dispatcher()), 2,
+      [](uint16_t max_unacknowledged_reports) { EXPECT_EQ(max_unacknowledged_reports, 2); });
+
+  std::vector<std::vector<fuchsia::input::report::InputReport>> received_batches;
+  std::vector<uint64_t> received_stamps;
+  reader_v2.events().OnInputReports = [&](std::vector<fuchsia::input::report::InputReport> reports,
+                                          uint64_t last_report_stamp) {
+    received_batches.push_back(std::move(reports));
+    received_stamps.push_back(last_report_stamp);
+  };
+
+  // Push 5 reports at once.
+  std::vector<fuchsia::input::report::InputReport> reports;
+  for (int i = 0; i < 5; ++i) {
+    fuchsia::input::report::InputReport r;
+    r.mutable_mouse()->set_movement_x(i);
+    reports.push_back(std::move(r));
+  }
+  fake_device_->SetReports(std::move(reports));
+
+  loop_->RunUntilIdle();
+
+  // Because max_unacknowledged_reports is 2, only 2 reports should be sent initially.
+  ASSERT_EQ(received_batches.size(), 1u);
+  EXPECT_EQ(received_batches[0].size(), 2u);
+  ASSERT_EQ(received_stamps.size(), 1u);
+  EXPECT_EQ(received_stamps[0], 2u);
+
+  // Acknowledge the first 2 reports.
+  reader_v2->AcknowledgeReports(2);
+  loop_->RunUntilIdle();
+
+  // Next 2 reports should be dispatched.
+  ASSERT_EQ(received_batches.size(), 2u);
+  EXPECT_EQ(received_batches[1].size(), 2u);
+  ASSERT_EQ(received_stamps.size(), 2u);
+  EXPECT_EQ(received_stamps[1], 4u);
+
+  // Acknowledge up to report stamp 4.
+  reader_v2->AcknowledgeReports(4);
+  loop_->RunUntilIdle();
+
+  // Final 1 report should be dispatched.
+  ASSERT_EQ(received_batches.size(), 3u);
+  EXPECT_EQ(received_batches[2].size(), 1u);
+  ASSERT_EQ(received_stamps.size(), 3u);
+  EXPECT_EQ(received_stamps[2], 5u);
+}
+
+TEST_F(PrintInputReport, InputReportsReaderV2ZeroLimitClampedToOne) {
+  fuchsia::input::report::InputReportsReaderV2Ptr reader_v2;
+  bool got_callback = false;
+  fake_device_->GetInputReportsReaderV2(reader_v2.NewRequest(loop_->dispatcher()), 0,
+                                        [&](uint16_t max_unacknowledged_reports) {
+                                          EXPECT_EQ(max_unacknowledged_reports, 1);
+                                          got_callback = true;
+                                        });
+
+  std::vector<std::vector<fuchsia::input::report::InputReport>> received_batches;
+  std::vector<uint64_t> received_stamps;
+  reader_v2.events().OnInputReports = [&](std::vector<fuchsia::input::report::InputReport> reports,
+                                          uint64_t last_report_stamp) {
+    received_batches.push_back(std::move(reports));
+    received_stamps.push_back(last_report_stamp);
+  };
+
+  std::vector<fuchsia::input::report::InputReport> reports;
+  for (int i = 0; i < 2; ++i) {
+    fuchsia::input::report::InputReport r;
+    r.mutable_mouse()->set_movement_x(i);
+    reports.push_back(std::move(r));
+  }
+  fake_device_->SetReports(std::move(reports));
+
+  loop_->RunUntilIdle();
+
+  EXPECT_TRUE(got_callback);
+  // With clamp to 1, only 1 report is delivered initially.
+  ASSERT_EQ(received_batches.size(), 1u);
+  EXPECT_EQ(received_batches[0].size(), 1u);
+  EXPECT_EQ(received_stamps.size(), 1u);
+  EXPECT_EQ(received_stamps[0], 1u);
+
+  // Acknowledge the first report, next should be delivered.
+  reader_v2->AcknowledgeReports(1);
+  loop_->RunUntilIdle();
+
+  ASSERT_EQ(received_batches.size(), 2u);
+  EXPECT_EQ(received_batches[1].size(), 1u);
+  EXPECT_EQ(received_stamps.size(), 2u);
+  EXPECT_EQ(received_stamps[1], 2u);
+}
+
+TEST_F(PrintInputReport, InputReportsReaderV2AcknowledgeEdgeCases) {
+  fuchsia::input::report::InputReportsReaderV2Ptr reader_v2;
+  fake_device_->GetInputReportsReaderV2(
+      reader_v2.NewRequest(loop_->dispatcher()), 1,
+      [](uint16_t max_unacknowledged_reports) { EXPECT_EQ(max_unacknowledged_reports, 1); });
+
+  std::vector<std::vector<fuchsia::input::report::InputReport>> received_batches;
+  std::vector<uint64_t> received_stamps;
+  reader_v2.events().OnInputReports = [&](std::vector<fuchsia::input::report::InputReport> reports,
+                                          uint64_t last_report_stamp) {
+    received_batches.push_back(std::move(reports));
+    received_stamps.push_back(last_report_stamp);
+  };
+
+  // Push report 1.
+  {
+    fuchsia::input::report::InputReport r;
+    r.mutable_mouse()->set_movement_x(1);
+    std::vector<fuchsia::input::report::InputReport> reports;
+    reports.push_back(std::move(r));
+    fake_device_->SetReports(std::move(reports));
+  }
+  loop_->RunUntilIdle();
+
+  ASSERT_EQ(received_batches.size(), 1u);
+  EXPECT_EQ(received_stamps[0], 1u);
+
+  // Acknowledge a stamp far in the future (e.g. 100). Should be clamped to current stamp (1).
+  reader_v2->AcknowledgeReports(100);
+  loop_->RunUntilIdle();
+
+  // Push report 2.
+  {
+    fuchsia::input::report::InputReport r;
+    r.mutable_mouse()->set_movement_x(2);
+    std::vector<fuchsia::input::report::InputReport> reports;
+    reports.push_back(std::move(r));
+    fake_device_->SetReports(std::move(reports));
+  }
+  loop_->RunUntilIdle();
+
+  // Report 2 should be delivered (since report 1 was acknowledged).
+  ASSERT_EQ(received_batches.size(), 2u);
+  EXPECT_EQ(received_stamps[1], 2u);
+
+  // Acknowledge an older stamp (e.g. 0). Should not regress acknowledgment state.
+  reader_v2->AcknowledgeReports(0);
+  loop_->RunUntilIdle();
+
+  // Now acknowledge report 2 properly.
+  reader_v2->AcknowledgeReports(2);
+  loop_->RunUntilIdle();
+
+  // Push report 3 to verify pipeline is clean.
+  {
+    fuchsia::input::report::InputReport r;
+    r.mutable_mouse()->set_movement_x(3);
+    std::vector<fuchsia::input::report::InputReport> reports;
+    reports.push_back(std::move(r));
+    fake_device_->SetReports(std::move(reports));
+  }
+  loop_->RunUntilIdle();
+
+  ASSERT_EQ(received_batches.size(), 3u);
+  EXPECT_EQ(received_stamps[2], 3u);
+}
+
 }  // namespace test

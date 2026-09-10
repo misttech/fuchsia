@@ -37,8 +37,21 @@ void FakeInputDevice::GetInputReportsReader(
 void FakeInputDevice::GetInputReportsReaderV2(
     ::fidl::InterfaceRequest<::fuchsia::input::report::InputReportsReaderV2> reader,
     uint16_t max_unacknowledged_reports_limit, GetInputReportsReaderV2Callback callback) {
-  // TODO(https://fxbug.dev/512966114): Implement GetInputReportsReaderV2.
-  callback(/*max_unacknowledged_reports=*/0);
+  fbl::AutoLock lock(&lock_);
+  if (reader_v2_) {
+    reader.Close(ZX_ERR_ALREADY_BOUND);
+    callback(0);
+    return;
+  }
+  uint16_t max_unacknowledged_reports =
+      max_unacknowledged_reports_limit == 0 ? 1 : max_unacknowledged_reports_limit;
+  reader_v2_.emplace(std::move(reader), binding_.dispatcher(), max_unacknowledged_reports);
+  if (!reports_.empty()) {
+    std::vector<fuchsia::input::report::InputReport> reports_to_send;
+    fidl::Clone(reports_, &reports_to_send);
+    reader_v2_->SendReports(std::move(reports_to_send));
+  }
+  callback(max_unacknowledged_reports);
 }
 
 void FakeInputDevice::SendOutputReport(fuchsia::input::report::OutputReport report,
@@ -73,6 +86,11 @@ void FakeInputDevice::SetReports(std::vector<fuchsia::input::report::InputReport
   reports_ = std::move(reports);
   if (reader_) {
     reader_->QueueCallback();
+  }
+  if (reader_v2_) {
+    std::vector<fuchsia::input::report::InputReport> reports_to_send;
+    fidl::Clone(reports_, &reports_to_send);
+    reader_v2_->SendReports(std::move(reports_to_send));
   }
 }
 

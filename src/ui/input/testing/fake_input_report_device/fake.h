@@ -70,6 +70,7 @@ class FakeInputDevice final : public fuchsia::input::report::InputDevice {
   std::vector<fuchsia::input::report::FeatureReport> feature_reports_ __TA_GUARDED(lock_);
   fuchsia::input::report::DeviceDescriptorPtr descriptor_ __TA_GUARDED(lock_);
   std::optional<FakeInputReportsReader> reader_ __TA_GUARDED(lock_);
+  std::optional<FakeInputReportsReaderV2> reader_v2_ __TA_GUARDED(lock_);
 };
 
 }  // namespace fake_input_report_device
