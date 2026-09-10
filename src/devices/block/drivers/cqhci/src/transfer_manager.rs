@@ -14,6 +14,7 @@ use sdmmc_spec::{
 use std::num::NonZeroU16;
 use std::ops::Range;
 use std::sync::Arc;
+use storage_device::buffer::OwnedBuffer;
 use zx::sys::zx_paddr_t;
 
 type ContiguousPages = Range<zx_paddr_t>;
@@ -153,6 +154,7 @@ pub struct TransferManager {
     tdl_buffer: ContiguousDmaBuffer,
     extra_descriptors_buffer: DiscontiguousDmaBuffer,
     bti: zx::Bti,
+    minimum_contiguity: u64,
     max_transfer_blocks: u32,
 }
 
@@ -187,7 +189,13 @@ impl TransferManager {
     ) -> Self {
         let (extra_descriptor_size, max_transfer_blocks) = Self::extra_descriptors_dimensions();
         assert!(extra_descriptors_buffer.size() >= extra_descriptor_size);
-        Self { tdl_buffer, extra_descriptors_buffer, bti, max_transfer_blocks }
+        let minimum_contiguity = bti.info().expect("Failed to get BTI info").minimum_contiguity;
+        Self { tdl_buffer, extra_descriptors_buffer, bti, minimum_contiguity, max_transfer_blocks }
+    }
+
+    #[allow(dead_code)]
+    pub fn minimum_contiguity(&self) -> u64 {
+        self.minimum_contiguity
     }
 
     /// Consumes the TransferManager and unpins its pinned DMA buffers.  This must be called
@@ -262,7 +270,7 @@ impl TransferManager {
         };
         let page_size = zx::system_get_page_size() as u64;
         // We have to pin a region that is aligned to `contiguity`.
-        let contiguity = self.bti.info()?.minimum_contiguity;
+        let contiguity = self.minimum_contiguity;
         let aligned_vmo_offset = round_down(vmo_offset, contiguity);
         let end = (vmo_offset + length).next_multiple_of(page_size);
         let aligned_length = end - aligned_vmo_offset;
@@ -311,6 +319,79 @@ impl TransferManager {
             transfer_options,
         )?;
         transfer.pmt = Some(scopeguard::ScopeGuard::into_inner(unpin_guard));
+        Ok(transfer)
+    }
+
+    /// Prepares read transfer descriptors pointing to pre-pinned physical addresses.
+    ///
+    /// Unlike [`Self::prepare_transfer`], this function does not pin the VMO via BTI. Instead, it
+    /// uses the pre-pinned physical addresses of `buffer` (which must have granularity matching
+    /// [`Self::minimum_contiguity`]), and sets `pmt: None` on the returned [`Transfer`].
+    ///
+    /// The caller is responsible for ensuring that `buffer` remains pinned and its physical
+    /// addresses remain valid for the entire duration of the transfer until completion.
+    #[allow(dead_code)]
+    pub fn prepare_read_transfer_pre_pinned(
+        &self,
+        slot: u8,
+        buffer: &OwnedBuffer,
+        block_offset: u32,
+        transfer_options: TransferOptions,
+    ) -> Result<Transfer, zx::Status> {
+        let length = buffer.len();
+        let vmo_offset = buffer.range().start;
+        let block_size = MMC_BLOCK_SIZE as usize;
+        if !vmo_offset.is_multiple_of(block_size) || !length.is_multiple_of(block_size) {
+            return Err(zx::Status::INVALID_ARGS);
+        }
+        let block_count = u16::try_from(length / block_size)
+            .ok()
+            .and_then(NonZeroU16::new)
+            .filter(|&count| u32::from(count.get()) <= self.max_transfer_blocks)
+            .ok_or(zx::Status::INVALID_ARGS)?;
+
+        let paddrs = buffer.paddrs().ok_or(zx::Status::INVALID_ARGS)?;
+        if buffer.contiguity() != Some(self.minimum_contiguity) {
+            return Err(zx::Status::INVALID_ARGS);
+        }
+        let vmo = buffer.vmo().ok_or(zx::Status::INVALID_ARGS)?;
+        let contiguity = self.minimum_contiguity as usize;
+        let offset = vmo_offset % contiguity;
+        if paddrs.len() < (offset + length).div_ceil(contiguity) {
+            return Err(zx::Status::INVALID_ARGS);
+        }
+
+        // We must pessimistically assume that there are pending writes to the VMO which need to be
+        // flushed before we start doing the DMA.  If we didn't flush the writes, they might get
+        // written out after we start to DMA, in which case they could stomp the read bytes.
+        // TODO(https://fxbug.dev/458084387): Consider eliding this when possible.
+        vmo.op_range(zx::VmoOp::CACHE_CLEAN_INVALIDATE, vmo_offset as u64, length as u64)?;
+
+        let mut transfer = Transfer {
+            tdl_slot: slot,
+            vmo,
+            vmo_offset: vmo_offset as u64,
+            offset: block_offset as u64 * MMC_BLOCK_SIZE,
+            length: length as u64,
+            pmt: None,
+            buffers: TransferBuffers::None,
+            data_direction: Direction::Read,
+        };
+
+        let contig_ranges = ContiguousPagesIter::new(ContiguousPagesIterParams {
+            addresses: paddrs,
+            granularity: contiguity,
+            max_contiguity: TransferBytes::MAX_BYTES,
+            offset,
+            length,
+        });
+        self.commit_transfer_task(
+            &mut transfer,
+            block_offset,
+            block_count,
+            contig_ranges,
+            transfer_options,
+        )?;
         Ok(transfer)
     }
 
@@ -569,6 +650,8 @@ mod tests {
     use super::*;
     use fake_bti::FakeBti;
     use sdmmc_spec::{CQHCI_TASK_DESCRIPTOR_LIST_NUM_SLOTS, CQHCI_TASK_DESCRIPTOR_LIST_SIZE};
+    use storage_device::buffer_allocator::{BufferAllocator, BufferSource};
+    use storage_device::pinned_buffer_allocator::PinnedBufferAllocator;
 
     const TDL_BASE: zx_paddr_t = 2 * 1024 * 1024;
     const EXTRA_DESCRIPTORS_BASE: zx_paddr_t = 3 * 1024 * 1024;
@@ -1138,6 +1221,200 @@ mod tests {
 
         unsafe {
             transfer.unpin();
+            Arc::try_unwrap(manager).unwrap().unpin_buffers();
+        }
+    }
+
+    fn test_pinned_allocator(
+        fake_bti: &FakeBti,
+        paddrs: &[zx_paddr_t],
+    ) -> Arc<PinnedBufferAllocator> {
+        fake_bti.set_paddrs(paddrs);
+        let contiguity = zx::system_get_page_size() as u64;
+        let source = BufferSource::new(paddrs.len() * contiguity as usize);
+        Arc::new(PinnedBufferAllocator::with_chunk_size(
+            MMC_BLOCK_SIZE as usize,
+            source,
+            fake_bti.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            contiguity,
+            contiguity as usize,
+        ))
+    }
+
+    #[fuchsia::test]
+    fn pre_pinned_single_buffer_transfer() {
+        let (manager, fake_bti) = setup();
+        assert_eq!(manager.minimum_contiguity(), zx::system_get_page_size() as u64);
+        let allocator = test_pinned_allocator(&fake_bti, &[4096]);
+        let buffer = allocator.allocate_buffer_sync_owned(512);
+        let transfer = manager
+            .prepare_read_transfer_pre_pinned(0, &buffer, 0, TransferOptions::default())
+            .expect("prepare_read_transfer_pre_pinned failed");
+        assert!(transfer.pmt.is_none());
+        assert_eq!(transfer.vmo().koid(), buffer.vmo().unwrap().koid());
+        validate_tdl_entry(
+            &manager,
+            0,
+            CommandQueueTDLEntry::single_buffer(
+                Direction::Read,
+                0,
+                NonZeroU16::MIN,
+                4096,
+                false,
+                None,
+            )
+            .unwrap(),
+        );
+        let TransferBuffers::Single(paddr) = transfer.buffers else {
+            panic!("Expected single paddr");
+        };
+        assert_eq!(paddr, 4096);
+        unsafe {
+            Arc::try_unwrap(manager).unwrap().unpin_buffers();
+        }
+    }
+
+    #[fuchsia::test]
+    fn pre_pinned_multi_buffer_transfer() {
+        let (manager, fake_bti) = setup();
+        let allocator = test_pinned_allocator(&fake_bti, &[4096, 16384, 32768]);
+        let buffer = allocator.allocate_buffer_sync_owned(16 * 512);
+        let transfer = manager
+            .prepare_read_transfer_pre_pinned(0, &buffer, 10, TransferOptions::default())
+            .expect("prepare_read_transfer_pre_pinned failed");
+        assert!(transfer.pmt.is_none());
+        assert_eq!(transfer.vmo().koid(), buffer.vmo().unwrap().koid());
+        validate_extra_transfer_descriptors(
+            &manager,
+            0,
+            &[
+                CommandQueueTransferDescriptor::transfer(
+                    4096,
+                    TransferBytes::try_from(4096).unwrap(),
+                    false,
+                ),
+                CommandQueueTransferDescriptor::transfer(
+                    16384,
+                    TransferBytes::try_from(4096).unwrap(),
+                    true,
+                ),
+            ],
+        );
+        validate_tdl_entry(
+            &manager,
+            0,
+            CommandQueueTDLEntry::scatter_gather_buffers(
+                Direction::Read,
+                10,
+                NonZeroU16::try_from(16).unwrap(),
+                EXTRA_DESCRIPTORS_BASE as u64,
+                false,
+                None,
+            ),
+        );
+        let TransferBuffers::ScatterGatherList(addr, len) = transfer.buffers else {
+            panic!("Expected s/g list");
+        };
+        assert_eq!(addr, EXTRA_DESCRIPTORS_BASE);
+        assert_eq!(len, 2);
+        unsafe {
+            Arc::try_unwrap(manager).unwrap().unpin_buffers();
+        }
+    }
+
+    #[fuchsia::test]
+    fn pre_pinned_offset_buffer_transfer() {
+        let (manager, fake_bti) = setup();
+        let allocator = test_pinned_allocator(&fake_bti, &[4096]);
+        let _pad = allocator.allocate_buffer_sync_owned(512);
+        let buffer = allocator.allocate_buffer_sync_owned(512);
+        assert_eq!(buffer.range().start, 512);
+        let transfer = manager
+            .prepare_read_transfer_pre_pinned(0, &buffer, 5, TransferOptions::default())
+            .expect("prepare_read_transfer_pre_pinned failed");
+        assert!(transfer.pmt.is_none());
+        assert_eq!(transfer.vmo().koid(), buffer.vmo().unwrap().koid());
+        validate_tdl_entry(
+            &manager,
+            0,
+            CommandQueueTDLEntry::single_buffer(
+                Direction::Read,
+                5,
+                NonZeroU16::MIN,
+                4096 + 512,
+                false,
+                None,
+            )
+            .unwrap(),
+        );
+        let TransferBuffers::Single(paddr) = transfer.buffers else {
+            panic!("Expected single paddr");
+        };
+        assert_eq!(paddr, 4096 + 512);
+        unsafe {
+            Arc::try_unwrap(manager).unwrap().unpin_buffers();
+        }
+    }
+
+    #[fuchsia::test]
+    fn pre_pinned_invalid_args() {
+        let (manager, fake_bti) = setup();
+
+        // Allocator buffer not pinned (buffer has no paddrs).
+        let source = BufferSource::new(4096);
+        let allocator = Arc::new(BufferAllocator::new(512, source));
+        let unpinned_buffer = allocator.allocate_buffer_sync_owned(512);
+        assert_eq!(
+            manager
+                .prepare_read_transfer_pre_pinned(
+                    0,
+                    &unpinned_buffer,
+                    0,
+                    TransferOptions::default(),
+                )
+                .err(),
+            Some(zx::Status::INVALID_ARGS)
+        );
+
+        // Mismatched contiguity (pinned with contiguity != minimum_contiguity):
+        fake_bti.set_paddrs(&[4096]);
+        let source = BufferSource::new(4096);
+        let pinned_allocator = Arc::new(PinnedBufferAllocator::new(
+            512,
+            source,
+            fake_bti.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            8192,
+        ));
+        let buffer = pinned_allocator.allocate_buffer_sync_owned(512);
+        assert_eq!(
+            manager
+                .prepare_read_transfer_pre_pinned(0, &buffer, 0, TransferOptions::default())
+                .err(),
+            Some(zx::Status::INVALID_ARGS)
+        );
+
+        // Unaligned length:
+        fake_bti.set_paddrs(&[4096]);
+        let unaligned_allocator = Arc::new(PinnedBufferAllocator::new(
+            256,
+            BufferSource::new(4096),
+            fake_bti.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            4096,
+        ));
+        let unaligned_len_buf = unaligned_allocator.allocate_buffer_sync_owned(256);
+        assert_eq!(
+            manager
+                .prepare_read_transfer_pre_pinned(
+                    0,
+                    &unaligned_len_buf,
+                    0,
+                    TransferOptions::default(),
+                )
+                .err(),
+            Some(zx::Status::INVALID_ARGS)
+        );
+
+        unsafe {
             Arc::try_unwrap(manager).unwrap().unpin_buffers();
         }
     }
