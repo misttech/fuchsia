@@ -276,8 +276,8 @@ mod tests {
             // reports reader, to help debug integration test failures where no component
             // read events from the fake device.
             let (_input_reports_reader_proxy, input_reports_reader_server_end) =
-                endpoints::create_proxy::<InputReportsReaderMarker>();
-            let _ = proxy.get_input_reports_reader(input_reports_reader_server_end);
+                endpoints::create_proxy::<InputReportsReaderV2Marker>();
+            let _ = proxy.get_input_reports_reader_v2(input_reports_reader_server_end, 120);
 
             std::mem::drop(proxy); // Drop `proxy` to terminate `request_stream`.
 
@@ -313,8 +313,8 @@ mod tests {
             // reports reader, to help debug integration test failures where no component
             // read events from the fake device.
             let (_input_reports_reader_proxy, input_reports_reader_server_end) =
-                endpoints::create_proxy::<InputReportsReaderMarker>();
-            let _ = proxy.get_input_reports_reader(input_reports_reader_server_end);
+                endpoints::create_proxy::<InputReportsReaderV2Marker>();
+            let _ = proxy.get_input_reports_reader_v2(input_reports_reader_server_end, 120);
 
             std::mem::drop(proxy); // Drop `proxy` to terminate `request_stream`.
 
@@ -359,22 +359,23 @@ mod tests {
             let mut executor = fasync::TestExecutor::new();
             let (input_device_proxy, input_device, got_input_reports_reader) =
                 make_input_device_proxy_and_struct();
-            input_device
-                .send_input_report(InputReport {
-                    event_time: None,
-                    touch: None,
-                    ..Default::default()
-                })
-                .context("internal error queuing input event")?;
+            for _ in 0..2 {
+                input_device
+                    .send_input_report(InputReport {
+                        event_time: None,
+                        touch: None,
+                        ..Default::default()
+                    })
+                    .context("internal error queuing input event")?;
+            }
 
             let input_device_server_fut = input_device.flush();
             pin_mut!(input_device_server_fut);
 
             let (_input_reports_reader_proxy, input_reports_reader_server_end) =
-                endpoints::create_proxy::<InputReportsReaderMarker>();
-            input_device_proxy
-                .get_input_reports_reader(input_reports_reader_server_end)
-                .context("sending get_input_reports_reader request")?;
+                endpoints::create_proxy::<InputReportsReaderV2Marker>();
+            let _ =
+                input_device_proxy.get_input_reports_reader_v2(input_reports_reader_server_end, 1);
             assert_matches!(
                 executor.run_until_stalled(&mut input_device_server_fut),
                 Poll::Pending
@@ -411,7 +412,7 @@ mod tests {
                 let mut executor = fasync::TestExecutor::new();
                 let (input_device_proxy, input_device, _got_input_reports_reader) =
                     make_input_device_proxy_and_struct();
-                let input_reports_reader_proxy =
+                let _input_reports_reader_proxy =
                     make_input_reports_reader_proxy(&input_device_proxy);
                 input_device
                     .send_input_report(InputReport {
@@ -421,7 +422,6 @@ mod tests {
                     })
                     .expect("queuing input report");
 
-                let _input_reports_fut = input_reports_reader_proxy.read_input_reports();
                 let input_device_fut = input_device.flush();
                 pin_mut!(input_device_fut);
                 std::mem::drop(input_device_proxy); // Close device request channel.
@@ -433,7 +433,7 @@ mod tests {
                 let mut executor = fasync::TestExecutor::new();
                 let (input_device_proxy, input_device, _got_input_reports_reader) =
                     make_input_device_proxy_and_struct();
-                let input_reports_reader_proxy =
+                let _input_reports_reader_proxy =
                     make_input_reports_reader_proxy(&input_device_proxy);
                 input_device
                     .send_input_report(InputReport {
@@ -443,7 +443,6 @@ mod tests {
                     })
                     .expect("queuing input report");
 
-                let _input_reports_fut = input_reports_reader_proxy.read_input_reports();
                 let input_device_fut = input_device.flush();
                 pin_mut!(input_device_fut);
                 assert_matches!(executor.run_until_stalled(&mut input_device_fut), Poll::Ready(()));
@@ -454,9 +453,8 @@ mod tests {
                 let mut executor = fasync::TestExecutor::new();
                 let (input_device_proxy, input_device, _got_input_reports_reader) =
                     make_input_device_proxy_and_struct();
-                let input_reports_reader_proxy =
+                let _input_reports_reader_proxy =
                     make_input_reports_reader_proxy(&input_device_proxy);
-                let _input_reports_fut = input_reports_reader_proxy.read_input_reports();
                 let input_device_fut = input_device.flush();
                 pin_mut!(input_device_fut);
                 assert_matches!(executor.run_until_stalled(&mut input_device_fut), Poll::Ready(()));
@@ -548,7 +546,8 @@ mod tests {
             }
         }
 
-        mod is_pending_if_peer_has_not_read_any_reports_when_a_report_is_available {
+        mod is_pending_if_unacknowledged_reports_reach_limit {
+            use super::utils::make_input_reports_reader_proxy_with_limit;
             use super::*;
             use assert_matches::assert_matches;
 
@@ -558,14 +557,16 @@ mod tests {
                 let (input_device_proxy, input_device, _got_input_reports_reader) =
                     make_input_device_proxy_and_struct();
                 let _input_reports_reader_proxy =
-                    make_input_reports_reader_proxy(&input_device_proxy);
-                input_device
-                    .send_input_report(InputReport {
-                        event_time: None,
-                        touch: None,
-                        ..Default::default()
-                    })
-                    .expect("queuing input report");
+                    make_input_reports_reader_proxy_with_limit(&input_device_proxy, 1);
+                for _ in 0..2 {
+                    input_device
+                        .send_input_report(InputReport {
+                            event_time: None,
+                            touch: None,
+                            ..Default::default()
+                        })
+                        .expect("queuing input report");
+                }
 
                 let input_device_fut = input_device.flush();
                 pin_mut!(input_device_fut);
@@ -578,35 +579,8 @@ mod tests {
                 let (input_device_proxy, input_device, _got_input_reports_reader) =
                     make_input_device_proxy_and_struct();
                 let _input_reports_reader_proxy =
-                    make_input_reports_reader_proxy(&input_device_proxy);
-                input_device
-                    .send_input_report(InputReport {
-                        event_time: None,
-                        touch: None,
-                        ..Default::default()
-                    })
-                    .expect("queuing input report");
-
-                let input_device_fut = input_device.flush();
-                std::mem::drop(input_device_proxy); // Terminate `InputDeviceRequestStream`.
-                pin_mut!(input_device_fut);
-                assert_matches!(executor.run_until_stalled(&mut input_device_fut), Poll::Pending)
-            }
-        }
-
-        mod is_pending_if_peer_did_not_read_all_reports {
-            use super::*;
-            use assert_matches::assert_matches;
-            use fidl_fuchsia_input_report::MAX_DEVICE_REPORT_COUNT;
-
-            #[test]
-            fn if_device_request_channel_is_open() {
-                let mut executor = fasync::TestExecutor::new();
-                let (input_device_proxy, input_device, _got_input_reports_reader) =
-                    make_input_device_proxy_and_struct();
-                let input_reports_reader_proxy =
-                    make_input_reports_reader_proxy(&input_device_proxy);
-                (0..=MAX_DEVICE_REPORT_COUNT).for_each(|_| {
+                    make_input_reports_reader_proxy_with_limit(&input_device_proxy, 1);
+                for _ in 0..2 {
                     input_device
                         .send_input_report(InputReport {
                             event_time: None,
@@ -614,50 +588,21 @@ mod tests {
                             ..Default::default()
                         })
                         .expect("queuing input report");
-                });
+                }
 
-                // One query isn't enough to consume all of the reports queued above.
-                let _input_reports_fut = input_reports_reader_proxy.read_input_reports();
                 let input_device_fut = input_device.flush();
-                pin_mut!(input_device_fut);
-                assert_matches!(executor.run_until_stalled(&mut input_device_fut), Poll::Pending)
-            }
-
-            #[test]
-            fn even_if_device_request_channel_is_closed() {
-                let mut executor = fasync::TestExecutor::new();
-                let (input_device_proxy, input_device, _got_input_reports_reader) =
-                    make_input_device_proxy_and_struct();
-                let input_reports_reader_proxy =
-                    make_input_reports_reader_proxy(&input_device_proxy);
-                (0..=MAX_DEVICE_REPORT_COUNT).for_each(|_| {
-                    input_device
-                        .send_input_report(InputReport {
-                            event_time: None,
-                            touch: None,
-                            ..Default::default()
-                        })
-                        .expect("queuing input report");
-                });
-
-                // One query isn't enough to consume all of the reports queued above.
-                let _input_reports_fut = input_reports_reader_proxy.read_input_reports();
-                let input_device_fut = input_device.flush();
-                pin_mut!(input_device_fut);
                 std::mem::drop(input_device_proxy); // Terminate `InputDeviceRequestStream`.
+                pin_mut!(input_device_fut);
                 assert_matches!(executor.run_until_stalled(&mut input_device_fut), Poll::Pending)
             }
         }
     }
 
     mod utils {
-        use {
-            super::*,
-            fidl_fuchsia_input_report::{
-                Axis, ContactInputDescriptor, InputDeviceProxy, InputReportsReaderProxy, Range,
-                TouchDescriptor, TouchInputDescriptor, TouchType, Unit, UnitType,
-            },
-            //zx as zx,
+        use super::*;
+        use fidl_fuchsia_input_report::{
+            Axis, ContactInputDescriptor, InputDeviceProxy, InputReportsReaderV2Proxy, Range,
+            TouchDescriptor, TouchInputDescriptor, TouchType, Unit, UnitType,
         };
 
         /// Creates a `DeviceDescriptor` for a touchscreen that spans [-1000, 1000] on both axes.
@@ -719,20 +664,26 @@ mod tests {
             (input_device_proxy, input_device, got_input_reports_reader)
         }
 
-        /// Creates an `InputReportsReaderProxy`, for sending
-        /// `fuchsia.input.report.InputReportsReader` requests, and registers that
-        /// `InputReportsReader` with the `InputDevice` bound to `InputDeviceProxy`.
+        /// Creates an `InputReportsReaderV2Proxy`, for sending
+        /// `fuchsia.input.report.InputReportsReaderV2` requests, and registers that
+        /// `InputReportsReaderV2` with the `InputDevice` bound to `InputDeviceProxy`.
         ///
         /// # Returns
-        /// The newly created `InputReportsReaderProxy`.
+        /// The newly created `InputReportsReaderV2Proxy`.
         pub(super) fn make_input_reports_reader_proxy(
             input_device_proxy: &InputDeviceProxy,
-        ) -> InputReportsReaderProxy {
+        ) -> InputReportsReaderV2Proxy {
+            make_input_reports_reader_proxy_with_limit(input_device_proxy, 120)
+        }
+
+        pub(super) fn make_input_reports_reader_proxy_with_limit(
+            input_device_proxy: &InputDeviceProxy,
+            limit: u16,
+        ) -> InputReportsReaderV2Proxy {
             let (input_reports_reader_proxy, input_reports_reader_server_end) =
-                endpoints::create_proxy::<InputReportsReaderMarker>();
-            input_device_proxy
-                .get_input_reports_reader(input_reports_reader_server_end)
-                .expect("sending get_input_reports_reader request");
+                endpoints::create_proxy::<InputReportsReaderV2Marker>();
+            let _ = input_device_proxy
+                .get_input_reports_reader_v2(input_reports_reader_server_end, limit);
             input_reports_reader_proxy
         }
     }

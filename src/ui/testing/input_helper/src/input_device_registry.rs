@@ -215,9 +215,11 @@ mod tests {
         InputDeviceRegistryMarker, InputDeviceRegistryRegisterAndGetDeviceInfoResponse,
         InputDeviceRegistryRequest,
     };
-    use fidl_fuchsia_input_report::InputReportsReaderMarker;
+    use fidl_fuchsia_input_report::InputReportsReaderV2Marker;
     use futures::StreamExt;
     use test_case::test_case;
+
+    const MAX_UNACKNOWLEDGED_REPORTS_LIMIT: u16 = 120;
 
     enum TestDeviceType {
         TouchScreen,
@@ -326,8 +328,13 @@ mod tests {
         // reports reader, to help debug integration test failures where no component
         // read events from the fake device.
         let (_input_reports_reader_proxy, input_reports_reader_server_end) =
-            endpoints::create_proxy::<InputReportsReaderMarker>();
-        let _ = input_device_proxy.get_input_reports_reader(input_reports_reader_server_end);
+            endpoints::create_proxy::<InputReportsReaderV2Marker>();
+        let _ = input_device_proxy
+            .get_input_reports_reader_v2(
+                input_reports_reader_server_end,
+                MAX_UNACKNOWLEDGED_REPORTS_LIMIT,
+            )
+            .await;
 
         std::mem::drop(input_device_proxy); // Terminate stream served by `input_device_server_fut`.
         input_device_server_fut.await;

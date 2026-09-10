@@ -97,19 +97,26 @@ impl InputReportsReaderV2 {
         let mut last_report_stamp: u64 = 0;
         let mut last_acknowledged_report_stamp: u64 = 0;
         let mut pending_reports: VecDeque<InputReport> = VecDeque::new();
+        let mut reports_done = false;
 
         loop {
             let unacknowledged = last_report_stamp.saturating_sub(last_acknowledged_report_stamp);
-            let can_send = unacknowledged < (self.max_unacknowledged_reports as u64);
+            let max_allowed =
+                (self.max_unacknowledged_reports as u64).saturating_sub(unacknowledged) as usize;
+            let max_to_send = std::cmp::min(max_allowed, chunk_size);
 
-            if can_send && !pending_reports.is_empty() {
-                let take_count = std::cmp::min(pending_reports.len(), chunk_size);
+            if max_to_send > 0 && !pending_reports.is_empty() {
+                let take_count = std::cmp::min(pending_reports.len(), max_to_send);
                 let reports_batch: Vec<InputReport> = pending_reports.drain(..take_count).collect();
                 last_report_stamp += reports_batch.len() as u64;
                 control_handle
                     .send_on_input_reports(reports_batch, last_report_stamp)
                     .context("failed to send OnInputReports event")?;
                 continue;
+            }
+
+            if reports_done && pending_reports.is_empty() {
+                break;
             }
 
             futures::select! {
@@ -125,7 +132,12 @@ impl InputReportsReaderV2 {
                         }
                         Some(Ok(_)) => {}
                         Some(Err(e)) => return Err(anyhow::Error::from(e).context("error on V2 reader stream")),
-                        None => break,
+                        None => {
+                            if !pending_reports.is_empty() {
+                                return Err(format_err!("request_stream terminated with reports still pending"));
+                            }
+                            break;
+                        }
                     }
                 }
                 reports = reports_stream.next() => {
@@ -133,7 +145,9 @@ impl InputReportsReaderV2 {
                         Some(reports_batch) if !reports_batch.is_empty() => {
                             pending_reports.extend(reports_batch);
                         }
-                        _ => break,
+                        _ => {
+                            reports_done = true;
+                        }
                     }
                 }
                 complete => break,

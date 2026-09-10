@@ -52,35 +52,38 @@ struct surface_platform;
 //
 //
 //
-class reader_ctx : public fidl::WireResponseContext<FIR::InputReportsReader::ReadInputReports> {
+class reader_ctx : public fidl::WireAsyncEventHandler<FIR::InputReportsReaderV2> {
   //
   //
   //
   struct surface_platform * const                   platform;
   uint32_t const                                    device_id;
   fidl::WireResult<FIR::InputDevice::GetDescriptor> descriptor;
-  fidl::WireClient<FIR::InputReportsReader>         reader;
+  fidl::WireClient<FIR::InputReportsReaderV2>       reader;
 
   //
   //
   //
  public:
-  reader_ctx(struct surface_platform *                   platform,
-             uint32_t                                    device_id,
-             fidl::WireSyncClient<FIR::InputDevice> &    input_device,
-             fidl::WireClient<FIR::InputReportsReader> & input_reader)
+  reader_ctx(struct surface_platform *                  platform,
+             uint32_t                                   device_id,
+             fidl::WireSyncClient<FIR::InputDevice> &   input_device,
+             fidl::ClientEnd<FIR::InputReportsReaderV2> reader_client_end,
+             async_dispatcher_t *                       dispatcher)
       : platform(platform),
         device_id(device_id),
         descriptor(input_device->GetDescriptor()),  // save the result
-        reader(std::move(input_reader))             // take ownership of the reader
+        reader(std::move(reader_client_end), dispatcher, this)
   {
-    fidl::AsyncClientBuffer<FIR::InputReportsReader::ReadInputReports> fidl_buffer;
-
-    reader.buffer(fidl_buffer.view())->ReadInputReports().ThenExactlyOnce(this);
   }
 
   void
-  OnResult(fidl::WireUnownedResult<FIR::InputReportsReader::ReadInputReports> & result) override;
+  OnInputReports(fidl::WireEvent<FIR::InputReportsReaderV2::OnInputReports> * event) override;
+
+  void
+  handle_unknown_event(fidl::UnknownEventMetadata<FIR::InputReportsReaderV2> metadata) override
+  {
+  }
 };
 
 //
@@ -194,7 +197,7 @@ surface_platform::surface_platform()
       auto input_device = fidl::WireSyncClient<FIR::InputDevice>(std::move(*input_client_end));
 
       // create input reports reader
-      zx::result input_endpoints = fidl::CreateEndpoints<FIR::InputReportsReader>();
+      zx::result input_endpoints = fidl::CreateEndpoints<FIR::InputReportsReaderV2>();
 
       if (input_endpoints.is_error())
         {
@@ -203,23 +206,20 @@ surface_platform::surface_platform()
 
       auto & [reports_client, reports_server] = input_endpoints.value();
 
-      auto reader_result = input_device->GetInputReportsReader(std::move(reports_server));
+      constexpr uint16_t kMaxUnacknowledgedReportsLimit = 120;
+      auto reader_result = input_device->GetInputReportsReaderV2(std::move(reports_server),
+                                                                 kMaxUnacknowledgedReportsLimit);
 
       if (reader_result.ok())
         {
           auto reports_client_end =
-            fidl::ClientEnd<FIR::InputReportsReader>(std::move(reports_client));
+            fidl::ClientEnd<FIR::InputReportsReaderV2>(std::move(reports_client));
 
-          fidl::WireClient<FIR::InputReportsReader> input_reader(std::move(reports_client_end),
-                                                                 loop.dispatcher());
-
-          if (input_reader.is_valid())
-            {
-              ctxs.emplace_back(new reader_ctx(this,  // Use ctxs.size() as a unique id
-                                               static_cast<uint32_t>(ctxs.size()),
-                                               input_device,
-                                               input_reader));
-            }
+          ctxs.emplace_back(new reader_ctx(this,  // Use ctxs.size() as a unique id
+                                           static_cast<uint32_t>(ctxs.size()),
+                                           input_device,
+                                           std::move(reports_client_end),
+                                           loop.dispatcher()));
         }
     }
 
@@ -649,10 +649,10 @@ input_touch(struct surface_platform *           platform,
       {
         platform->touch.pressed.dword = 0;
 
-        for (uint8_t const button : report.pressed_buttons())
+        for (auto const button : report.pressed_buttons())
           {
             // guaranteed to be <= TOUCH_MAX_NUM_BUTTONS
-            platform->touch.pressed.dword |= (1u << (button - 1));
+            platform->touch.pressed.dword |= (1u << (static_cast<uint8_t>(button) - 1));
           }
       }
 
@@ -714,27 +714,11 @@ input_consumer_control(struct surface_platform *                     platform,
 //
 //
 void
-reader_ctx::OnResult(fidl::WireUnownedResult<FIR::InputReportsReader::ReadInputReports> & result)
+reader_ctx::OnInputReports(fidl::WireEvent<FIR::InputReportsReaderV2::OnInputReports> * event)
 {
-  //
-  // NOTE(allanmac): When will this occur?
-  //
-  if (!result.ok())
-    return;
+  (void)reader->AcknowledgeReports(event->last_report_stamp);
 
-  //
-  // Initiate another async read
-  //
-  fidl::AsyncClientBuffer<FIR::InputReportsReader::ReadInputReports> fidl_buffer;
-
-  reader.buffer(fidl_buffer.view())->ReadInputReports().ThenExactlyOnce(this);
-
-  //
-  // Get the reports vector view
-  //
-  auto const & reports = result->value()->reports;
-
-  for (auto const & report : reports)
+  for (auto const & report : event->reports)
     {
       if (report.has_mouse())
         {
