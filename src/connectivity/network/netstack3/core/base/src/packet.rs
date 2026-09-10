@@ -470,47 +470,70 @@ impl Default for ChecksumRxOffloading {
     }
 }
 
-impl ChecksumRxOffloading {
-    fn skip_checksum_verification(&mut self) -> bool {
-        match self {
-            ChecksumRxOffloading::FullyOffloaded => true,
-            ChecksumRxOffloading::Offloaded(Some(n)) => {
-                *self = ChecksumRxOffloading::Offloaded(NonZeroU16::new(n.get() - 1));
-                true
-            }
-            ChecksumRxOffloading::Offloaded(None) => false,
-        }
-    }
-}
-
 /// Context for parsing network packets in netstack3.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct NetworkParsingContext {
     /// Hardware checksum offloading context.
     checksum_offload: ChecksumRxOffloading,
+    verified_checksum_count: u16,
 }
 
 impl NetworkParsingContext {
     /// Creates a new `NetworkParsingContext`.
     pub fn new(checksum_offload: ChecksumRxOffloading) -> Self {
-        NetworkParsingContext { checksum_offload }
+        NetworkParsingContext { checksum_offload, verified_checksum_count: 0 }
     }
 
     /// Returns the checksum offload status.
     pub fn checksum_offload(&self) -> ChecksumRxOffloading {
         self.checksum_offload
     }
+
+    /// Returns the count of transport-layer checksums that were actually
+    /// verified.
+    ///
+    /// Note that this only counts actual verifications and does not include
+    /// skipped checksums.
+    pub fn verified_checksum_count(&self) -> u16 {
+        self.verified_checksum_count
+    }
+
+    /// Verifies a checksum using `f` if needed.
+    ///
+    /// If checksum verification should be skipped according to the offload
+    /// configuration, `f` is not called. Otherwise, `f` is called and the
+    /// verified checksum count is incremented on success.
+    fn verify_checksum_if_needed_inner<E>(
+        &mut self,
+        f: impl FnOnce() -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self.checksum_offload {
+            ChecksumRxOffloading::FullyOffloaded => Ok(()),
+            ChecksumRxOffloading::Offloaded(Some(n)) => {
+                self.checksum_offload =
+                    ChecksumRxOffloading::Offloaded(NonZeroU16::new(n.get() - 1));
+                Ok(())
+            }
+            ChecksumRxOffloading::Offloaded(None) => match f() {
+                Ok(()) => {
+                    self.verified_checksum_count = self.verified_checksum_count.saturating_add(1);
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            },
+        }
+    }
 }
 
 impl UdpParseContext for &mut NetworkParsingContext {
-    fn skip_checksum_verification(&mut self) -> bool {
-        self.checksum_offload.skip_checksum_verification()
+    fn verify_checksum_if_needed<E>(&mut self, f: impl FnOnce() -> Result<(), E>) -> Result<(), E> {
+        self.verify_checksum_if_needed_inner(f)
     }
 }
 
 impl TcpParseContext for &mut NetworkParsingContext {
-    fn skip_checksum_verification(&mut self) -> bool {
-        self.checksum_offload.skip_checksum_verification()
+    fn verify_checksum_if_needed<E>(&mut self, f: impl FnOnce() -> Result<(), E>) -> Result<(), E> {
+        self.verify_checksum_if_needed_inner(f)
     }
 }
 
@@ -1165,6 +1188,7 @@ mod tests {
                 .err(),
             Some(ParseError::Checksum)
         );
+        assert_eq!(ctx.verified_checksum_count(), 0);
     }
 
     #[test]
@@ -1184,6 +1208,7 @@ mod tests {
                 .body()
                 .to_vec();
         }
+        assert_eq!(ctx.verified_checksum_count(), 0);
     }
 
     #[test]
@@ -1214,5 +1239,33 @@ mod tests {
                 .err(),
             Some(ParseError::Checksum)
         );
+        assert_eq!(ctx.verified_checksum_count(), 0);
+    }
+
+    #[test]
+    fn checksum_rx_offloading_verified_ok() {
+        let mut payload = [0u8; 10];
+        let buf = Buf::new(&mut payload[..], ..)
+            .wrap_in(UdpPacketBuilder::new(
+                SRC_IP_V4,
+                DST_IP_V4,
+                Some(NonZeroU16::new(1234).unwrap()),
+                NonZeroU16::new(5678).unwrap(),
+            ))
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .as_ref()
+            .to_vec();
+
+        let mut ctx = NetworkParsingContext::new(ChecksumRxOffloading::Offloaded(None));
+        let mut buf_ref: &[u8] = buf.as_ref();
+        assert!(
+            buf_ref
+                .parse_with::<_, UdpPacket<_>>(UdpParseArgs::with_context(
+                    SRC_IP_V4, DST_IP_V4, &mut ctx
+                ))
+                .is_ok()
+        );
+        assert_eq!(ctx.verified_checksum_count(), 1);
     }
 }

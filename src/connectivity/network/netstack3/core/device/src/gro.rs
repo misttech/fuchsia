@@ -236,13 +236,12 @@ impl<'a> TransportPacket<'a> {
         proto: IpProto,
         src_ip: A,
         dst_ip: A,
-        checksum_offload: ChecksumRxOffloading,
+        context: &mut NetworkParsingContext,
     ) -> Option<TransportPacket<'a>> {
-        let mut context = NetworkParsingContext::new(checksum_offload);
         match proto {
             IpProto::Tcp => TcpSegment::parse(
                 transport_view,
-                TcpParseArgs::with_context(src_ip, dst_ip, &mut context),
+                TcpParseArgs::with_context(src_ip, dst_ip, context),
             )
             .ok()
             .map(TransportPacket::Tcp),
@@ -285,6 +284,25 @@ struct HeaderOffsets {
     pub transport_offset: usize,
 }
 
+/// Constructs the checksum offloading indication to include in the GRO output
+/// given the input offloading indication and the parsing context used to parse
+/// the GRO packet.
+fn build_csum_offload_output(
+    input: ChecksumRxOffloading,
+    context_post_parse: &NetworkParsingContext,
+) -> ChecksumRxOffloading {
+    let verified = context_post_parse.verified_checksum_count();
+    match input {
+        ChecksumRxOffloading::FullyOffloaded => ChecksumRxOffloading::FullyOffloaded,
+        ChecksumRxOffloading::Offloaded(Some(n)) => {
+            ChecksumRxOffloading::Offloaded(Some(n.saturating_add(verified)))
+        }
+        ChecksumRxOffloading::Offloaded(None) => {
+            ChecksumRxOffloading::Offloaded(NonZeroU16::new(verified))
+        }
+    }
+}
+
 /// Parsed packet containing all metadata needed for GRO matching and
 /// accumulation.
 struct GroPacket<'a> {
@@ -303,7 +321,7 @@ impl<'a> GroPacket<'a> {
     fn parse<T: GroBufferDestination>(
         slice: &'a [u8],
         target: &T,
-        checksum_offload: ChecksumRxOffloading,
+        context: &mut NetworkParsingContext,
     ) -> Option<GroPacket<'a>> {
         let total_len = slice.len();
         let mut view = slice;
@@ -323,7 +341,7 @@ impl<'a> GroPacket<'a> {
             let dst = ip.dst_ip();
 
             let transport_offset = total_len - view.len();
-            let transport = TransportPacket::parse(&mut view, proto, src, dst, checksum_offload)
+            let transport = TransportPacket::parse(&mut view, proto, src, dst, context)
                 .filter(|p| p.is_eligible_for_gro())?;
 
             (ip.flow_id(), transport_offset, transport)
@@ -501,7 +519,7 @@ where
         // `buffer_slice`. Expanding the pattern match inline allows the borrow
         // to be dropped before moving `buffer` in the `Contiguous` arm.
         macro_rules! return_single_buffer {
-            () => {{
+            ($csum_offload:expr) => {{
                 let buffers = match buffer_slice {
                     BufferSlice::Contiguous(_) => GroOutputBuffers::Contiguous(buffer),
                     BufferSlice::Linearized(slice) => {
@@ -510,25 +528,31 @@ where
                 };
                 return ProcessingResult::Return(GroOutputItem {
                     target,
-                    checksum_offload,
+                    checksum_offload: $csum_offload,
                     buffers,
                 });
             }};
         }
 
         if !*enable_tcp_gro {
-            return_single_buffer!();
+            return_single_buffer!(checksum_offload);
         }
 
-        let parsed = match GroPacket::parse(buffer_slice.as_slice(), &target, checksum_offload) {
+        let mut context = NetworkParsingContext::new(checksum_offload);
+        let parsed = GroPacket::parse(buffer_slice.as_slice(), &target, &mut context);
+        // Note: even if `parse` failed to produce a GRO-eligible packet, it may
+        // still have verified the transport checksum so we build the output
+        // offloading indication prior to checking the parse result.
+        let checksum_offload = build_csum_offload_output(checksum_offload, &context);
+        let parsed = match parsed {
             Some(p) => p,
-            None => return_single_buffer!(),
+            None => return_single_buffer!(checksum_offload),
         };
 
         // TODO(https://fxbug.dev/452980285): Implement flow matching and
         // coalescing.
         let _ = parsed;
-        return_single_buffer!();
+        return_single_buffer!(checksum_offload);
     }
 }
 
@@ -831,7 +855,8 @@ mod tests {
         expected_offsets: HeaderOffsets,
         expected_flow_id: GroFlowId,
     ) {
-        let parsed = GroPacket::parse(&packet_bytes, &target, ChecksumRxOffloading::default())
+        let mut context = NetworkParsingContext::default();
+        let parsed = GroPacket::parse(&packet_bytes, &target, &mut context)
             .expect("GroPacket::parse should succeed");
         assert_eq!(parsed.offsets, expected_offsets);
         assert_eq!(parsed.flow_id, expected_flow_id);
@@ -854,14 +879,8 @@ mod tests {
             .unwrap_b()
             .as_ref()
             .to_vec();
-        assert!(
-            GroPacket::parse(
-                &arp_bytes,
-                &GroFrameType::Ethernet,
-                ChecksumRxOffloading::FullyOffloaded,
-            )
-            .is_none()
-        );
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
+        assert!(GroPacket::parse(&arp_bytes, &GroFrameType::Ethernet, &mut context).is_none());
     }
 
     #[test]
@@ -880,14 +899,8 @@ mod tests {
             .into_inner()
             .as_ref()
             .to_vec();
-        assert!(
-            GroPacket::parse(
-                &packet,
-                &GroFrameType::Ethernet,
-                ChecksumRxOffloading::FullyOffloaded,
-            )
-            .is_none()
-        );
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
+        assert!(GroPacket::parse(&packet, &GroFrameType::Ethernet, &mut context).is_none());
     }
 
     #[test]
@@ -903,14 +916,8 @@ mod tests {
             .into_inner()
             .as_ref()
             .to_vec();
-        assert!(
-            GroPacket::parse(
-                &packet,
-                &GroFrameType::Ethernet,
-                ChecksumRxOffloading::FullyOffloaded,
-            )
-            .is_none()
-        );
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
+        assert!(GroPacket::parse(&packet, &GroFrameType::Ethernet, &mut context).is_none());
     }
 
     #[test]
@@ -926,14 +933,8 @@ mod tests {
             .into_inner()
             .as_ref()
             .to_vec();
-        assert!(
-            GroPacket::parse(
-                &packet,
-                &GroFrameType::Ethernet,
-                ChecksumRxOffloading::FullyOffloaded,
-            )
-            .is_none()
-        );
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
+        assert!(GroPacket::parse(&packet, &GroFrameType::Ethernet, &mut context).is_none());
     }
 
     #[test]
@@ -954,14 +955,8 @@ mod tests {
             .into_inner()
             .as_ref()
             .to_vec();
-        assert!(
-            GroPacket::parse(
-                &packet,
-                &GroFrameType::Ethernet,
-                ChecksumRxOffloading::FullyOffloaded,
-            )
-            .is_none()
-        );
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
+        assert!(GroPacket::parse(&packet, &GroFrameType::Ethernet, &mut context).is_none());
     }
 
     #[test]
@@ -977,66 +972,114 @@ mod tests {
             .into_inner()
             .as_ref()
             .to_vec();
-        assert!(
-            GroPacket::parse(
-                &packet,
-                &GroFrameType::Ethernet,
-                ChecksumRxOffloading::FullyOffloaded,
-            )
-            .is_none()
-        );
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
+        assert!(GroPacket::parse(&packet, &GroFrameType::Ethernet, &mut context).is_none());
     }
 
     #[test]
     fn gro_corrupt_tcp_checksum() {
         let mut packet = build_ethernet_tcp_packet::<Ipv4>();
-        let parsed = GroPacket::parse(
-            &packet,
-            &GroFrameType::Ethernet,
-            ChecksumRxOffloading::FullyOffloaded,
-        )
-        .expect("should parse valid packet");
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
+        let parsed = GroPacket::parse(&packet, &GroFrameType::Ethernet, &mut context)
+            .expect("should parse valid packet");
         let checksum_offset =
             parsed.offsets.transport_offset + packet_formats::tcp::CHECKSUM_OFFSET;
         packet[checksum_offset] ^= 0xff;
 
         // Fails when checksum verification is not offloaded.
-        assert!(
-            GroPacket::parse(&packet, &GroFrameType::Ethernet, ChecksumRxOffloading::default())
-                .is_none()
-        );
+        let mut context = NetworkParsingContext::default();
+        assert!(GroPacket::parse(&packet, &GroFrameType::Ethernet, &mut context).is_none());
 
         // Succeeds when checksum verification is offloaded.
-        assert!(
-            GroPacket::parse(
-                &packet,
-                &GroFrameType::Ethernet,
-                ChecksumRxOffloading::FullyOffloaded,
-            )
-            .is_some()
-        );
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
+        assert!(GroPacket::parse(&packet, &GroFrameType::Ethernet, &mut context).is_some());
     }
 
     #[test]
     fn gro_ineligible_pure_ip_version_mismatch() {
         let pure_v4 = build_pure_ip_tcp_packet::<Ipv4>();
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
         assert!(
-            GroPacket::parse(
-                &pure_v4,
-                &GroFrameType::PureIp(IpVersion::V6),
-                ChecksumRxOffloading::FullyOffloaded,
-            )
-            .is_none()
+            GroPacket::parse(&pure_v4, &GroFrameType::PureIp(IpVersion::V6), &mut context)
+                .is_none()
         );
 
         let pure_v6 = build_pure_ip_tcp_packet::<Ipv6>();
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
         assert!(
-            GroPacket::parse(
-                &pure_v6,
-                &GroFrameType::PureIp(IpVersion::V4),
-                ChecksumRxOffloading::FullyOffloaded,
-            )
-            .is_none()
+            GroPacket::parse(&pure_v6, &GroFrameType::PureIp(IpVersion::V4), &mut context)
+                .is_none()
         );
+    }
+
+    #[test]
+    fn upgrades_csum_offload_on_verified_tcp() {
+        let packet = build_ethernet_tcp_packet::<Ipv4>();
+        let items: Vec<GroInputItem<TestBuffer, GroFrameType>> = vec![GroInputItem {
+            buffer: TestBuffer { buf: packet, contiguous: true },
+            target: GroFrameType::Ethernet,
+            checksum_offload: ChecksumRxOffloading::default(),
+        }];
+
+        let mut storage = GroBufferStorage::new();
+        let mut gro = GroIter::new(items.into_iter(), &mut storage, true);
+        let item = gro.next().unwrap();
+        assert_eq!(
+            item.checksum_offload,
+            ChecksumRxOffloading::Offloaded(Some(NonZeroU16::new(1).unwrap()))
+        );
+    }
+
+    #[test]
+    fn preserves_input_csum_offload_on_unparsed_tcp() {
+        // Build a packet with IPv4 options: ineligible for GRO, so transport
+        // checksum verification is never reached.
+        let ip = Ipv4PacketBuilderWithOptions::new(
+            Ipv4::ip_builder(IpProto::Tcp),
+            [Ipv4Option::RouterAlert { data: 0 }],
+        )
+        .unwrap();
+        let packet = Buf::new(TEST_PAYLOAD.to_vec(), ..)
+            .wrap_in(tcp_builder::<Ipv4>())
+            .wrap_in(ip)
+            .wrap_in(ethernet_builder::<Ipv4>())
+            .serialize_vec_outer(&mut NetworkSerializationContext::default())
+            .unwrap()
+            .into_inner()
+            .as_ref()
+            .to_vec();
+
+        let items: Vec<GroInputItem<TestBuffer, GroFrameType>> = vec![GroInputItem {
+            buffer: TestBuffer { buf: packet, contiguous: true },
+            target: GroFrameType::Ethernet,
+            checksum_offload: ChecksumRxOffloading::default(),
+        }];
+
+        let mut storage = GroBufferStorage::new();
+        let mut gro = GroIter::new(items.into_iter(), &mut storage, true);
+        let item = gro.next().unwrap();
+        assert_eq!(item.checksum_offload, ChecksumRxOffloading::default());
+    }
+
+    #[test]
+    fn preserves_input_csum_offload_on_corrupt_csum() {
+        let mut packet = build_ethernet_tcp_packet::<Ipv4>();
+        let mut context = NetworkParsingContext::new(ChecksumRxOffloading::FullyOffloaded);
+        let parsed = GroPacket::parse(&packet, &GroFrameType::Ethernet, &mut context)
+            .expect("should parse valid packet");
+        let checksum_offset =
+            parsed.offsets.transport_offset + packet_formats::tcp::CHECKSUM_OFFSET;
+        packet[checksum_offset] ^= 0xff;
+
+        let items: Vec<GroInputItem<TestBuffer, GroFrameType>> = vec![GroInputItem {
+            buffer: TestBuffer { buf: packet, contiguous: true },
+            target: GroFrameType::Ethernet,
+            checksum_offload: ChecksumRxOffloading::default(),
+        }];
+
+        let mut storage = GroBufferStorage::new();
+        let mut gro = GroIter::new(items.into_iter(), &mut storage, true);
+        let item = gro.next().unwrap();
+        assert_eq!(item.checksum_offload, ChecksumRxOffloading::default());
     }
 }

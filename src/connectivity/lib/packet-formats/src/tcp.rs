@@ -264,13 +264,14 @@ pub struct TcpSegment<B> {
 
 /// Context for parsing TCP segments that may be subject to hardware checksum offloading.
 pub trait TcpParseContext {
-    /// Returns true if the checksum verification should be skipped.
-    fn skip_checksum_verification(&mut self) -> bool;
+    /// `f` must verify the segment's checksum and return the result. It will be
+    /// called if checksum verification is needed.
+    fn verify_checksum_if_needed<E>(&mut self, f: impl FnOnce() -> Result<(), E>) -> Result<(), E>;
 }
 
 impl TcpParseContext for NoOpParsingContext {
-    fn skip_checksum_verification(&mut self) -> bool {
-        false
+    fn verify_checksum_if_needed<E>(&mut self, f: impl FnOnce() -> Result<(), E>) -> Result<(), E> {
+        f()
     }
 }
 
@@ -352,7 +353,7 @@ impl<B: SplitByteSlice + CloneableByteSlice, A: IpAddress, C: TcpParseContext>
             );
         }
 
-        if !context.skip_checksum_verification() {
+        context.verify_checksum_if_needed(|| {
             let parts = [Ref::bytes(&hdr_prefix), options.bytes(), body.deref().as_ref()];
             let checksum =
                 compute_transport_checksum_parts(src_ip, dst_ip, IpProto::Tcp.into(), parts.iter())
@@ -361,7 +362,9 @@ impl<B: SplitByteSlice + CloneableByteSlice, A: IpAddress, C: TcpParseContext>
             if checksum != [0, 0] {
                 return debug_err!(Err(ParseError::Checksum), "invalid checksum");
             }
-        }
+
+            Ok(())
+        })?;
 
         if hdr_prefix.src_port == U16::ZERO || hdr_prefix.dst_port == U16::ZERO {
             return debug_err!(Err(ParseError::Format), "zero source or destination port");

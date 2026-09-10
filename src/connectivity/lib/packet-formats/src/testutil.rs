@@ -348,13 +348,13 @@ pub fn overwrite_icmpv6_checksum(buf: &mut [u8], checksum: [u8; 2]) -> ParseResu
 /// checksum validation action to be used (or skipped).
 pub struct ForceSkipChecksumValidation(pub bool);
 impl UdpParseContext for ForceSkipChecksumValidation {
-    fn skip_checksum_verification(&mut self) -> bool {
-        self.0
+    fn verify_checksum_if_needed<E>(&mut self, f: impl FnOnce() -> Result<(), E>) -> Result<(), E> {
+        if self.0 { Ok(()) } else { f() }
     }
 }
 impl TcpParseContext for ForceSkipChecksumValidation {
-    fn skip_checksum_verification(&mut self) -> bool {
-        self.0
+    fn verify_checksum_if_needed<E>(&mut self, f: impl FnOnce() -> Result<(), E>) -> Result<(), E> {
+        if self.0 { Ok(()) } else { f() }
     }
 }
 

@@ -112,13 +112,14 @@ pub struct UdpPacket<B> {
 
 /// Context for parsing UDP packets that may be subject to hardware checksum offloading.
 pub trait UdpParseContext {
-    /// Returns true if the checksum verification should be skipped.
-    fn skip_checksum_verification(&mut self) -> bool;
+    /// `f` must verify the packet's checksum and return the result. It will be
+    /// called if checksum verification is needed.
+    fn verify_checksum_if_needed<E>(&mut self, f: impl FnOnce() -> Result<(), E>) -> Result<(), E>;
 }
 
 impl UdpParseContext for NoOpParsingContext {
-    fn skip_checksum_verification(&mut self) -> bool {
-        false
+    fn verify_checksum_if_needed<E>(&mut self, f: impl FnOnce() -> Result<(), E>) -> Result<(), E> {
+        f()
     }
 }
 
@@ -158,7 +159,7 @@ impl<B: SplitByteSlice, A: IpAddress, C: UdpParseContext>
             .ok_or_else(|_| debug_err!(ParseError::Format, "too few bytes for header"))?;
         let body = raw.body.ok_or_else(|_| debug_err!(ParseError::Format, "incomplete body"))?;
 
-        if !context.skip_checksum_verification() {
+        context.verify_checksum_if_needed(|| {
             let checksum = header.checksum;
             // A 0 checksum indicates that the checksum wasn't computed. In
             // IPv4, this means that it shouldn't be validated. In IPv6, the
@@ -191,7 +192,9 @@ impl<B: SplitByteSlice, A: IpAddress, C: UdpParseContext>
             } else if A::Version::VERSION.is_v6() {
                 return debug_err!(Err(ParseError::Format), "missing checksum");
             }
-        }
+
+            Ok(())
+        })?;
 
         if header.dst_port.get() == 0 {
             return debug_err!(Err(ParseError::Format), "zero destination port");
