@@ -749,6 +749,32 @@ class PrepareFunctionsTest(MainBuildTestBase):
             self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
             self.assertIn("bazel", exec_info.full_command)
 
+    def test_bazel_non_build(self) -> None:
+        context = self.create_context()
+        with self.mock_invocation_context():
+            exec_info = main_build.new_bazel_build_command_execution(
+                context, ["info"]
+            )
+            self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
+            self.assertFalse(exec_info.is_build)
+            self.assertNotIn(
+                str(context.top_build_wrapper), exec_info.full_command
+            )
+            self.assertEqual(exec_info.full_command, ["bazel", "info"])
+
+    def test_ninja_non_build(self) -> None:
+        context = self.create_context()
+        with self.mock_invocation_context():
+            exec_info = main_build.new_ninja_build_command_execution(
+                context, ["--help"]
+            )
+            self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
+            self.assertFalse(exec_info.is_build)
+            self.assertNotIn(
+                str(context.top_build_wrapper), exec_info.full_command
+            )
+            self.assertIn("--help", exec_info.full_command)
+
     def test_fint(self) -> None:
         context = self.create_context()
         context.config.fint_params_path = pathlib.Path("/tmp/static.proto")

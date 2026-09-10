@@ -874,12 +874,24 @@ class BuildInvocation(object):
         self,
         command_type: str,
         build_command: list[str],
+        is_build: bool = True,
     ) -> "BuildCommandExecution":
         """Creates a self-contained BuildCommandExecution."""
-        top_cmd = list(self.top_build_command_prefix())
         build_env = self.get_build_env()
         context = self.context
 
+        # For non-build commands (e.g. 'bazel query' or 'bazel info'), we bypass
+        # top_build_wrap.sh completely since no remote execution (reproxy) or
+        # ResultStore (rsproxy) background wrappers/daemons are required.
+        if not is_build:
+            return BuildCommandExecution(
+                full_command=list(build_command),
+                env=build_env,
+                invocation=self,
+                is_build=is_build,
+            )
+
+        top_cmd = list(self.top_build_command_prefix())
         resultstore_post_build_uploads = []
 
         if context.config.resultstore in ("all", "ninja"):
@@ -913,6 +925,7 @@ class BuildInvocation(object):
             full_command=full_cmd,
             env=build_env,
             invocation=self,
+            is_build=is_build,
         )
 
     def _inject_ninja_args(
@@ -954,6 +967,7 @@ class BuildCommandExecution(object):
     full_command: Sequence[str]
     env: dict[str, str]
     invocation: BuildInvocation
+    is_build: bool = True
     cleanup_files: list[pathlib.Path] = dataclasses.field(default_factory=list)
 
     def _run_without_locking(self) -> BuildResult:
@@ -992,16 +1006,19 @@ class BuildCommandExecution(object):
         return BuildResult(return_code=managed.run())
 
     def run(self) -> BuildResult:
-        """Execute the build command, guarded by a build lock.
+        """Execute the build command, guarded by a build lock if it is a build command.
 
         Returns:
           exit code of the command, 0 for success.
         """
         try:
-            quiet = os.getenv("FX_BUILD_QUIET") == "1"
-            with BuildLock(
-                self.invocation.context.build_dir, print_message=quiet
-            ):
+            if self.is_build:
+                quiet = os.getenv("FX_BUILD_QUIET") == "1"
+                with BuildLock(
+                    self.invocation.context.build_dir, print_message=quiet
+                ):
+                    return self._run_without_locking()
+            else:
                 return self._run_without_locking()
         finally:
             for f in self.cleanup_files:
@@ -1112,8 +1129,46 @@ def new_ninja_build_command_execution(
         + ["-C", str(context.build_dir)]
         + remaining
     )
+    is_build = is_ninja_build_command(build_cmd)
     invocation = BuildInvocation(context)
-    return invocation.new_build_command_execution("ninja", build_cmd)
+    return invocation.new_build_command_execution(
+        "ninja", build_cmd, is_build=is_build
+    )
+
+
+def is_ninja_build_command(ninja_args: list[str]) -> bool:
+    """Returns True if the ninja command is a build-like command."""
+    for arg in ninja_args:
+        if arg in (
+            "-n",
+            "--dry-run",
+            "-h",
+            "--help",
+            "--version",
+        ) or arg.startswith("-t"):
+            return False
+    return True
+
+
+def _is_bazel_binary(path_str: str) -> bool:
+    """Returns True if the path_str points to a bazel binary."""
+    return "bazel" in pathlib.Path(path_str).name
+
+
+def is_bazel_build_command(bazel_args: list[str]) -> bool:
+    """Returns True if the bazel command is a build-like command."""
+    for arg in bazel_args:
+        # Skip leading options, env assignments, env prefix, and the bazel binary itself
+        if (
+            arg.startswith("-")
+            or "=" in arg
+            or arg in ("env", "bazel")
+            or _is_bazel_binary(arg)
+        ):
+            continue
+        # The first non-option/non-env/non-binary argument is the subcommand!
+        return arg in ("build", "test", "run", "coverage")
+    return False
 
 
 def new_bazel_build_command_execution(
@@ -1123,17 +1178,20 @@ def new_bazel_build_command_execution(
     """Construct a bazel build command.
 
     Behavior:
-    - Selects the Bazel binary: uses the first argument if it ends in 'bazel',
+    - Selects the Bazel binary: uses the first argument if 'bazel' in its name,
       otherwise defaults to 'bazel'.
     """
-    if bazel_args and bazel_args[0].endswith("bazel"):
+    if bazel_args and _is_bazel_binary(bazel_args[0]):
         # Already has bazel binary
         build_cmd = bazel_args
     else:
         build_cmd = ["bazel"] + list(bazel_args)
 
+    is_build = is_bazel_build_command(build_cmd)
     invocation = BuildInvocation(context)
-    return invocation.new_build_command_execution("bazel", build_cmd)
+    return invocation.new_build_command_execution(
+        "bazel", build_cmd, is_build=is_build
+    )
 
 
 def new_other_build_command_execution(
@@ -1141,6 +1199,10 @@ def new_other_build_command_execution(
     other_args: list[str],
 ) -> BuildCommandExecution:
     """Construct an arbitrary build command.
+
+    Note: main_build.py is the orchestrator for actual, standard build execution
+    pipelines (such as Ninja and Bazel). It is NOT expected or intended to receive
+    or wrap fint-specific commands, as fint is managed and executed externally.
 
     Args:
         context: FuchsiaBuildContext.
@@ -1151,8 +1213,11 @@ def new_other_build_command_execution(
             "other command requires at least one argument."
         )
 
+    is_build = True
     invocation = BuildInvocation(context)
-    return invocation.new_build_command_execution("other", other_args)
+    return invocation.new_build_command_execution(
+        "other", other_args, is_build=is_build
+    )
 
 
 def _main_arg_parser() -> argparse.ArgumentParser:
