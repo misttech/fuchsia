@@ -524,7 +524,7 @@
              path="third_party/openweave-core"
              remote="https://fuchsia.googlesource.com/third_party/openweave-core"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="c622971e4ed44f327a3b72802e5abbdcc529fa70"/>
+             revision="ac451ed21f59d285b19f55c67ed65a3846fb1913"/>
     <project name="third_party/vboot_reference"
              path="third_party/vboot_reference"
              remote="https://fuchsia.googlesource.com/third_party/vboot_reference"
