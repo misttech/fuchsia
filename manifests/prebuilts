@@ -63,7 +63,7 @@
              path="prebuilt/third_party/android/aemu/release/{{.OS}}-arm64"/>
 
      <package name="fuchsia/third_party/android/aemu/release-gfxstream/${platform}"
-             version="bid:14103599"
+             version="bid:16310593"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/android/aemu/release-gfxstream/{{.OS}}-{{.Arch}}"/>
 
