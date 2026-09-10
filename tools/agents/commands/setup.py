@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import sys
 
 from agents.lib import (
     config,
+    githooks,
     paths,
     permissions,
     services,
@@ -42,12 +44,13 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         choices=list(permissions.PROFILE_DEFINITIONS.keys()),
         help="Permission profile flavor (read-only, local-changes, external-changes, full-access). Defaults to local-changes.",
     )
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--status",
         action="store_true",
         help="Display current agent configuration status, active profile, and rule counts.",
     )
-    parser.add_argument(
+    mode_group.add_argument(
         "--rollback",
         nargs="?",
         const=1,
@@ -56,7 +59,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         metavar="N",
         help="Roll back configuration to N setups ago (default: 1).",
     )
-    parser.add_argument(
+    mode_group.add_argument(
         "--reset",
         action="store_true",
         help="Purge all Fuchsia-managed rules from configuration while preserving user custom rules.",
@@ -116,6 +119,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Custom path to output Gemini configuration file (default: ~/.gemini/config/config.json)",
     )
     parser.add_argument(
+        "--git-hooks",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Manage and sync Git hooks across checkout repositories during both initial setup and reset/uninstall workflows (default: True).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print changes without modifying config or services.",
@@ -131,6 +140,38 @@ def _restart_daemons(fuchsia_dir: pathlib.Path, dry_run: bool) -> None:
     )
 
 
+def _format_hook_count(count: int) -> str:
+    return f"{count} Git hook{'s' if count != 1 else ''}"
+
+
+def _report_hook_results(
+    count: int,
+    failed: list[tuple[pathlib.Path, str]],
+    action_verb: str,
+    past_verb: str,
+    dry_run: bool,
+    has_repos: bool = True,
+) -> None:
+    prefix = "[DRY RUN] " if dry_run else ""
+    if count:
+        verb = f"Would {action_verb}" if dry_run else past_verb
+        msg = _format_hook_count(count)
+        print(f"{prefix}{verb} {msg} across checkout.")
+    elif not has_repos:
+        print(f"{prefix}No Git repositories found across checkout.")
+    elif not failed:
+        if action_verb == "remove":
+            print(f"{prefix}No Git hooks found to remove.")
+        else:
+            print(f"{prefix}No Git hooks configured.")
+    if failed:
+        for repo, err in failed:
+            print(
+                f"Warning: Failed to {action_verb} Git hooks in {repo}: {err}",
+                file=sys.stderr,
+            )
+
+
 def run(args: argparse.Namespace) -> int:
     """Execute setup with parsed arguments."""
     fuchsia_dir = paths.find_fuchsia_dir()
@@ -143,6 +184,13 @@ def run(args: argparse.Namespace) -> int:
             state_path=state_dir / "state.json",
         )
         print(status_text)
+        hook_status = githooks.get_git_hooks_status(fuchsia_dir)
+        repo_label = (
+            "repository" if hook_status.total_repos == 1 else "repositories"
+        )
+        print(
+            f"Git hooks: Configured across {hook_status.configured_repos}/{hook_status.total_repos} {repo_label}."
+        )
         return 0
 
     if args.rollback is not None:
@@ -166,6 +214,18 @@ def run(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
         )
         if success:
+            if args.git_hooks:
+                uninstalled = githooks.uninstall_git_hooks(
+                    fuchsia_dir, dry_run=args.dry_run
+                )
+                _report_hook_results(
+                    count=len(uninstalled.modified),
+                    failed=uninstalled.failed,
+                    action_verb="remove",
+                    past_verb="Removed",
+                    dry_run=args.dry_run,
+                    has_repos=bool(paths.find_checkout_git_repos(fuchsia_dir)),
+                )
             _restart_daemons(fuchsia_dir, args.dry_run)
         return 0 if success else 1
 
@@ -198,20 +258,15 @@ def run(args: argparse.Namespace) -> int:
         deny_grants.extend(grants.deny)
         ask_grants.extend(grants.ask)
 
-    for cmd in args.allow or []:
-        allow_grants.extend(permissions.expand_command_variants(cmd))
-    for f in args.allow_list or []:
-        allow_grants.extend(permissions.read_command_list_file(f))
-
-    for cmd in args.deny or []:
-        deny_grants.extend(permissions.expand_command_variants(cmd))
-    for f in args.deny_list or []:
-        deny_grants.extend(permissions.read_command_list_file(f))
-
-    for cmd in args.ask or []:
-        ask_grants.extend(permissions.expand_command_variants(cmd))
-    for f in args.ask_list or []:
-        ask_grants.extend(permissions.read_command_list_file(f))
+    for raw_cmds, list_files, grants_target in (
+        (args.allow, args.allow_list, allow_grants),
+        (args.deny, args.deny_list, deny_grants),
+        (args.ask, args.ask_list, ask_grants),
+    ):
+        for cmd in raw_cmds:
+            grants_target.extend(permissions.expand_command_variants(cmd))
+        for f in list_files:
+            grants_target.extend(permissions.read_command_list_file(f))
 
     success = config.apply_grants(
         config_path=config_path,
@@ -224,6 +279,19 @@ def run(args: argparse.Namespace) -> int:
     )
     if not success:
         return 1
+
+    if args.git_hooks:
+        installed = githooks.install_git_hooks(
+            fuchsia_dir, dry_run=args.dry_run
+        )
+        _report_hook_results(
+            count=len(installed.modified),
+            failed=installed.failed,
+            action_verb="configure",
+            past_verb="Configured",
+            dry_run=args.dry_run,
+            has_repos=bool(paths.find_checkout_git_repos(fuchsia_dir)),
+        )
 
     _restart_daemons(fuchsia_dir, args.dry_run)
     return 0

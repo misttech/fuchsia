@@ -4,7 +4,7 @@
 
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
-
+import("//build/testing/host_test_data.gni")
 if (is_host) {
   _agents_sources = [
     "__init__.py",
@@ -131,12 +131,24 @@ if (is_host) {
       ":agents_testing",
     ]
   }
+  host_test_data("e2e_githooks_scripts") {
+    sources = [
+      "//scripts/shac/commit_msg_checker.py",
+      "//scripts/style/json-fmt.py",
+    ]
+  }
+  python_host_test("agents_e2e_githooks_test") {
+    main_source = "tests/e2e_githooks_test.py"
+    libraries = [ ":agents_lib" ]
+    test_data_deps = [ ":e2e_githooks_scripts" ]
+  }
 }
 
 group("tests") {
   testonly = true
   deps = [
     ":agents_config_test($host_toolchain)",
+    ":agents_e2e_githooks_test($host_toolchain)",
     ":agents_git_staging_test($host_toolchain)",
     ":agents_githooks_adapters_test($host_toolchain)",
     ":agents_githooks_installer_test($host_toolchain)",

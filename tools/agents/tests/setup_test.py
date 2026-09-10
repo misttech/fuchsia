@@ -13,7 +13,7 @@ import unittest
 from unittest import mock
 
 from agents.commands import setup
-from agents.lib import paths, state
+from agents.lib import githooks, paths, state
 from agents_testing.base import BaseTestCase
 
 
@@ -31,6 +31,7 @@ class SetupCommandTest(BaseTestCase):
         self.fuchsia_dir = self.mock_root / "fuchsia"
         self.perm_dir = self.fuchsia_dir / ".agents" / "config" / "permissions"
         self.perm_dir.mkdir(parents=True, exist_ok=True)
+        (self.fuchsia_dir / ".git").mkdir(parents=True, exist_ok=True)
 
         self.patch_object(
             paths, "find_fuchsia_dir", return_value=self.fuchsia_dir
@@ -468,6 +469,385 @@ class SetupCommandTest(BaseTestCase):
                 for g in grants["allow"]
             )
         )
+
+    def test_git_hooks_cli_flags(self) -> None:
+        """Verify BooleanOptionalAction flags for --git-hooks and --no-git-hooks."""
+        parser = argparse.ArgumentParser()
+        setup.add_arguments(parser)
+
+        args_default = parser.parse_args([])
+        self.assertTrue(args_default.git_hooks)
+
+        args_explicit = parser.parse_args(["--git-hooks"])
+        self.assertTrue(args_explicit.git_hooks)
+
+        args_negated = parser.parse_args(["--no-git-hooks"])
+        self.assertFalse(args_negated.git_hooks)
+
+    def test_mutually_exclusive_modes(self) -> None:
+        """Verify --status, --rollback, and --reset cannot be combined."""
+        parser = argparse.ArgumentParser()
+        setup.add_arguments(parser)
+
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["--reset", "--status"])
+
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["--reset", "--rollback"])
+
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["--status", "--rollback"])
+
+    def test_setup_git_hooks_installation(self) -> None:
+        """Verify git hooks installation behavior during setup across configurations."""
+        config_path = self.mock_root / "config.json"
+        failed_repo = self.mock_root / "broken_repo"
+        pre_commit_hook = (
+            self.fuchsia_dir
+            / ".git"
+            / "hooks"
+            / "pre-commit.d"
+            / "10-fuchsia-agent.sh"
+        )
+        commit_msg_hook = (
+            self.fuchsia_dir
+            / ".git"
+            / "hooks"
+            / "commit-msg.d"
+            / "10-fuchsia-agent.sh"
+        )
+
+        cases = [
+            (
+                "normal",
+                ["-p", "read-only"],
+                githooks.HookOperationResult(modified=[pre_commit_hook]),
+                False,
+                "Configured 1 Git hook across checkout.",
+                None,
+            ),
+            (
+                "dry_run",
+                ["-p", "read-only", "--dry-run"],
+                githooks.HookOperationResult(
+                    modified=[pre_commit_hook, commit_msg_hook]
+                ),
+                True,
+                "[DRY RUN] Would configure 2 Git hooks across checkout.",
+                None,
+            ),
+            (
+                "zero_hooks",
+                ["-p", "read-only"],
+                githooks.HookOperationResult(modified=[]),
+                False,
+                "No Git hooks configured.",
+                None,
+            ),
+            (
+                "zero_hooks_dry_run",
+                ["-p", "read-only", "--dry-run"],
+                githooks.HookOperationResult(modified=[]),
+                True,
+                "[DRY RUN] No Git hooks configured.",
+                None,
+            ),
+            (
+                "failure_warnings",
+                ["-p", "read-only"],
+                githooks.HookOperationResult(
+                    modified=[pre_commit_hook],
+                    failed=[(failed_repo, "Permission denied")],
+                ),
+                False,
+                "Configured 1 Git hook across checkout.",
+                f"Warning: Failed to configure Git hooks in {failed_repo}: Permission denied",
+            ),
+        ]
+
+        for (
+            name,
+            extra_args,
+            result,
+            expected_dry_run,
+            expected_stdout,
+            expected_stderr,
+        ) in cases:
+            with self.subTest(scenario=name):
+                self.mock_stdout.truncate(0)
+                self.mock_stdout.seek(0)
+                self.mock_stderr.truncate(0)
+                self.mock_stderr.seek(0)
+
+                parser = argparse.ArgumentParser()
+                setup.add_arguments(parser)
+                args = parser.parse_args(
+                    [
+                        "--config",
+                        str(config_path),
+                        "--state-dir",
+                        str(self.state_dir),
+                        *extra_args,
+                    ]
+                )
+
+                with mock.patch(
+                    "agents.lib.githooks.install_git_hooks",
+                    return_value=result,
+                ) as mock_install:
+                    self.assertEqual(setup.run(args), 0)
+                    mock_install.assert_called_once_with(
+                        self.fuchsia_dir, dry_run=expected_dry_run
+                    )
+                    self.assertIn(expected_stdout, self.stdout)
+                    if expected_stderr:
+                        self.assertIn(expected_stderr, self.stderr)
+
+    def test_setup_no_git_hooks_flag_skips_install(self) -> None:
+        """Verify --no-git-hooks skips hook installation."""
+        config_path = self.mock_root / "config.json"
+        parser = argparse.ArgumentParser()
+        setup.add_arguments(parser)
+        args = parser.parse_args(
+            [
+                "--config",
+                str(config_path),
+                "--state-dir",
+                str(self.state_dir),
+                "-p",
+                "read-only",
+                "--no-git-hooks",
+            ]
+        )
+        with mock.patch(
+            "agents.lib.githooks.install_git_hooks"
+        ) as mock_install:
+            self.assertEqual(setup.run(args), 0)
+            mock_install.assert_not_called()
+
+    def test_setup_reset_git_hooks(self) -> None:
+        """Verify git hooks uninstallation during reset across configurations."""
+        config_path = self.mock_root / "config.json"
+        failed_repo = self.mock_root / "broken_repo"
+        pre_commit_hook = (
+            self.fuchsia_dir
+            / ".git"
+            / "hooks"
+            / "pre-commit.d"
+            / "10-fuchsia-agent.sh"
+        )
+        commit_msg_hook = (
+            self.fuchsia_dir
+            / ".git"
+            / "hooks"
+            / "commit-msg.d"
+            / "10-fuchsia-agent.sh"
+        )
+
+        cases = [
+            (
+                "normal",
+                ["--reset"],
+                githooks.HookOperationResult(
+                    modified=[pre_commit_hook, commit_msg_hook]
+                ),
+                False,
+                "Removed 2 Git hooks across checkout.",
+                None,
+            ),
+            (
+                "dry_run",
+                ["--reset", "--dry-run"],
+                githooks.HookOperationResult(modified=[pre_commit_hook]),
+                True,
+                "[DRY RUN] Would remove 1 Git hook across checkout.",
+                None,
+            ),
+            (
+                "zero_hooks",
+                ["--reset"],
+                githooks.HookOperationResult(modified=[]),
+                False,
+                "No Git hooks found to remove.",
+                None,
+            ),
+            (
+                "zero_hooks_dry_run",
+                ["--reset", "--dry-run"],
+                githooks.HookOperationResult(modified=[]),
+                True,
+                "[DRY RUN] No Git hooks found to remove.",
+                None,
+            ),
+            (
+                "failure_warnings",
+                ["--reset"],
+                githooks.HookOperationResult(
+                    modified=[],
+                    failed=[(failed_repo, "File is locked")],
+                ),
+                False,
+                None,
+                f"Warning: Failed to remove Git hooks in {failed_repo}: File is locked",
+            ),
+        ]
+
+        for (
+            name,
+            extra_args,
+            result,
+            expected_dry_run,
+            expected_stdout,
+            expected_stderr,
+        ) in cases:
+            with self.subTest(scenario=name):
+                self.mock_stdout.truncate(0)
+                self.mock_stdout.seek(0)
+                self.mock_stderr.truncate(0)
+                self.mock_stderr.seek(0)
+                config_path.write_text('{"userSettings": {}}', encoding="utf-8")
+
+                parser = argparse.ArgumentParser()
+                setup.add_arguments(parser)
+                args = parser.parse_args(
+                    [
+                        "--config",
+                        str(config_path),
+                        "--state-dir",
+                        str(self.state_dir),
+                        *extra_args,
+                    ]
+                )
+
+                with (
+                    mock.patch(
+                        "agents.lib.githooks.uninstall_git_hooks",
+                        return_value=result,
+                    ) as mock_uninstall,
+                    mock.patch("agents.lib.state.reset", return_value=True),
+                ):
+                    self.assertEqual(setup.run(args), 0)
+                    mock_uninstall.assert_called_once_with(
+                        self.fuchsia_dir, dry_run=expected_dry_run
+                    )
+                    if expected_stdout:
+                        self.assertIn(expected_stdout, self.stdout)
+                    if expected_stderr:
+                        self.assertIn(expected_stderr, self.stderr)
+
+    def test_setup_reset_with_no_git_hooks_skips_uninstall(self) -> None:
+        """Verify reset with --no-git-hooks resets state but skips uninstalling hooks."""
+        config_path = self.mock_root / "config.json"
+        config_path.write_text('{"userSettings": {}}', encoding="utf-8")
+
+        parser = argparse.ArgumentParser()
+        setup.add_arguments(parser)
+        args = parser.parse_args(
+            [
+                "--reset",
+                "--no-git-hooks",
+                "--config",
+                str(config_path),
+                "--state-dir",
+                str(self.state_dir),
+            ]
+        )
+
+        with (
+            mock.patch(
+                "agents.lib.githooks.uninstall_git_hooks"
+            ) as mock_uninstall,
+            mock.patch(
+                "agents.lib.state.reset", return_value=True
+            ) as mock_reset,
+        ):
+            self.assertEqual(setup.run(args), 0)
+            mock_reset.assert_called_once_with(
+                config_path=config_path,
+                state_path=self.state_dir / "state.json",
+                backups_dir=self.backups_dir,
+                dry_run=False,
+            )
+            mock_uninstall.assert_not_called()
+
+    def test_setup_no_repositories_found(self) -> None:
+        """Verify report when no Git repositories are found across checkout."""
+        config_path = self.mock_root / "config.json"
+        for mode, extra_args, hook_func in [
+            (
+                "setup",
+                ["-p", "read-only"],
+                "agents.lib.githooks.install_git_hooks",
+            ),
+            ("reset", ["--reset"], "agents.lib.githooks.uninstall_git_hooks"),
+        ]:
+            with self.subTest(mode=mode):
+                self.mock_stdout.truncate(0)
+                self.mock_stdout.seek(0)
+                config_path.write_text('{"userSettings": {}}', encoding="utf-8")
+                parser = argparse.ArgumentParser()
+                setup.add_arguments(parser)
+                args = parser.parse_args(
+                    [
+                        "--config",
+                        str(config_path),
+                        "--state-dir",
+                        str(self.state_dir),
+                        *extra_args,
+                    ]
+                )
+                with (
+                    mock.patch(
+                        "agents.lib.paths.find_checkout_git_repos",
+                        return_value=[],
+                    ),
+                    mock.patch(
+                        hook_func,
+                        return_value=githooks.HookOperationResult(modified=[]),
+                    ),
+                    mock.patch("agents.lib.state.reset", return_value=True),
+                ):
+                    self.assertEqual(setup.run(args), 0)
+                    self.assertIn(
+                        "No Git repositories found across checkout.",
+                        self.stdout,
+                    )
+
+    def test_setup_status_reports_git_hooks(self) -> None:
+        """Verify status reports Git hooks configuration status across repositories."""
+        cases = [
+            (1, 1, "Git hooks: Configured across 1/1 repository."),
+            (2, 2, "Git hooks: Configured across 2/2 repositories."),
+        ]
+        config_path = self.mock_root / "config.json"
+        config_path.write_text('{"userSettings": {}}', encoding="utf-8")
+
+        for total, configured, expected_str in cases:
+            with self.subTest(total=total, configured=configured):
+                self.mock_stdout.truncate(0)
+                self.mock_stdout.seek(0)
+
+                parser = argparse.ArgumentParser()
+                setup.add_arguments(parser)
+                args = parser.parse_args(
+                    [
+                        "--status",
+                        "--config",
+                        str(config_path),
+                        "--state-dir",
+                        str(self.state_dir),
+                    ]
+                )
+
+                with mock.patch(
+                    "agents.lib.githooks.get_git_hooks_status"
+                ) as mock_status:
+                    mock_status.return_value = githooks.HookStatusResult(
+                        total_repos=total, configured_repos=configured
+                    )
+                    self.assertEqual(setup.run(args), 0)
+                    mock_status.assert_called_once_with(self.fuchsia_dir)
+                    self.assertIn(expected_str, self.stdout)
 
 
 if __name__ == "__main__":
