@@ -45,7 +45,7 @@ use starnix_uapi::{
     ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL, SA_NOCLDWAIT, SI_TKILL, SI_USER, SIG_IGN, errno,
     error, itimerval, pid_t, rlimit, tid_t, uid_t,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
@@ -132,7 +132,7 @@ pub struct ThreadGroupMutableState {
     /// thread group.
     /// It is still expected that these weak references are always valid, as tasks must unregister
     /// themselves before they are deleted.
-    tasks: BTreeMap<tid_t, TaskContainer>,
+    tasks: HashSet<TaskPersistentInfo>,
 
     /// The children of this thread group.
     ///
@@ -268,7 +268,7 @@ pub struct ThreadGroup {
     pub next_seccomp_filter_id: AtomicCounter<u64>,
 
     /// Tasks ptraced by this process
-    pub ptracees: LockDepMutex<BTreeMap<Pid, TaskContainer>, ThreadGroupPtraceesLock>,
+    pub ptracees: LockDepMutex<HashSet<TaskPersistentInfo>, ThreadGroupPtraceesLock>,
 
     /// The signals that are currently pending for this thread group.
     pub pending_signals: LockDepMutex<QueuedSignals, ThreadGroupPendingSignalsLock>,
@@ -746,7 +746,7 @@ impl ThreadGroup {
                         .as_ref()
                         .map(|p| ThreadGroupParent::new(p.base.weak_self.clone())),
                     exit_signal,
-                    tasks: BTreeMap::new(),
+                    tasks: HashSet::new(),
                     children: BTreeMap::new(),
                     zombie_children: vec![],
                     zombie_ptracees: ZombiePtracees::new(),
@@ -838,7 +838,7 @@ impl ThreadGroup {
             }
             return error!(EINVAL);
         }
-        state.tasks.insert(task.tid.id, (&task).into());
+        state.tasks.insert(task.persistent_info.clone());
 
         Ok(())
     }
@@ -853,15 +853,12 @@ impl ThreadGroup {
 
         let mut state = self.write();
 
-        let persistent_info: TaskPersistentInfo =
-            if let Some(container) = state.tasks.remove(&task.tid.id) {
-                container.into()
-            } else {
-                // The task has never been added. The only expected case is that this thread group
-                // is not running.
-                debug_assert!(!state.is_running());
-                return;
-            };
+        if !state.tasks.remove(&task.persistent_info) {
+            // The task has never been added. The only expected case is that this thread group
+            // is not running.
+            debug_assert!(!state.is_running());
+            return;
+        }
 
         if state.tasks.is_empty() {
             let exit_status = if let ThreadGroupRunState::Exiting(exit_status) = &state.run_state {
@@ -882,7 +879,7 @@ impl ThreadGroup {
             let exit_info =
                 ProcessExitInfo { status: exit_status, exit_signal: state.exit_signal.clone() };
             let zombie =
-                ZombieProcess::new(state.as_ref(), &persistent_info.real_creds(), exit_info);
+                ZombieProcess::new(state.as_ref(), &task.persistent_info.real_creds(), exit_info);
             pids.kill_process(&self.leader);
 
             let session = state.leave_process_group(&mut pids);
@@ -1005,7 +1002,7 @@ impl ThreadGroup {
 
     /// Detach from any ptraced tasks, killing the ones that set `PTRACE_O_EXITKILL`.
     fn detach_ptracees(&self, pids: &mut PidTableGuard<'_>) {
-        let tracee_tids = self.ptracees.lock().keys().cloned().collect_vec();
+        let tracee_tids = self.ptracees.lock().iter().map(|info| info.tid.clone()).collect_vec();
         for tracee_tid in tracee_tids {
             let Ok(tracee) = tracee_tid.get_task() else {
                 continue;
@@ -1589,9 +1586,9 @@ impl ThreadGroup {
         for task_ref in self
             .ptracees
             .lock()
-            .keys()
-            .filter(|tracee_tid| selector.match_tid(tracee_tid))
-            .filter_map(|tracee_tid| tracee_tid.get_task().ok())
+            .iter()
+            .filter(|info| selector.match_tid(&info.tid))
+            .filter_map(|info| info.tid.get_task().ok())
         {
             let task_state = task_ref.write();
             if task_state.ptrace.is_some() {
@@ -1656,7 +1653,7 @@ impl ThreadGroup {
                 // thread's information (if we are in a different stop).
 
                 // The shared information:
-                let info = process_state.tasks.values().next().unwrap().info().clone();
+                let info = process_state.tasks.iter().next().unwrap().clone();
                 let uid = info.real_creds().uid;
                 let mut exit_status = None;
                 let exit_signal = process_state.exit_signal.clone();
@@ -2052,19 +2049,19 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     }
 
     pub fn tasks(&self) -> Vec<Arc<Task>> {
-        self.tasks.values().flat_map(|t| t.upgrade()).collect()
+        self.tasks.iter().flat_map(|info| info.tid.get_task().ok()).collect()
     }
 
-    pub fn task_ids(&self) -> impl Iterator<Item = &tid_t> {
-        self.tasks.keys()
+    pub fn task_ids(&self) -> impl Iterator<Item = tid_t> + '_ {
+        self.tasks.iter().map(|info| info.tid.id)
     }
 
     pub fn contains_task(&self, tid: tid_t) -> bool {
-        self.tasks.contains_key(&tid)
+        self.tasks.iter().any(|info| info.tid.id == tid)
     }
 
     pub fn get_task(&self, tid: tid_t) -> Option<Arc<Task>> {
-        self.tasks.get(&tid).and_then(|t| t.upgrade())
+        self.tasks.iter().find(|info| info.tid.id == tid).and_then(|info| info.tid.get_task().ok())
     }
 
     pub fn tasks_count(&self) -> usize {
@@ -2231,7 +2228,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                     } else {
                         exit_status(siginfo)
                     };
-                    let info = child.tasks.values().next().unwrap().info();
+                    let info = child.tasks.iter().next().unwrap();
                     let uid = info.real_creds().uid;
                     WaitResult {
                         pid: child.base.leader.clone(),
@@ -2291,7 +2288,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
     pub fn get_running_task(&self) -> Result<Arc<Task>, Errno> {
         self.tasks
             .iter()
-            .find_map(|container| container.1.upgrade().filter(|task| task.is_running()))
+            .find_map(|info| info.tid.get_task().ok().filter(|task| task.is_running()))
             .ok_or_else(|| errno!(ESRCH))
     }
 
@@ -2308,8 +2305,8 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         } else {
             None
         };
-        for container in self.tasks.values() {
-            if let Some(task) = container.upgrade() {
+        for container in &self.tasks {
+            if let Ok(task) = container.tid.get_task() {
                 if task.is_running() {
                     return Some(task);
                 }
@@ -2395,7 +2392,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             pending_signals.enqueue(signal_info.clone());
             self.base.has_pending_signals.store(true, Ordering::Relaxed);
         }
-        let tasks: Vec<Weak<Task>> = self.tasks.values().map(|t| t.weak_clone()).collect();
+        let tasks: Vec<Pid> = self.tasks.iter().map(|info| info.tid.clone()).collect();
 
         // Set state to waking before interrupting any tasks.
         if signal_info.signal == SIGKILL {
@@ -2405,7 +2402,7 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         }
 
         let mut has_interrupted_task = false;
-        for task in tasks.iter().flat_map(|t| t.upgrade()) {
+        for task in tasks.iter().flat_map(|pid| pid.get_task().ok()) {
             if !task.is_running() {
                 continue;
             }
@@ -2445,39 +2442,6 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                 }
             }
         }
-    }
-}
-
-/// Container around a weak task and a strong `TaskPersistentInfo`. It is needed to keep the
-/// information even when the task is not upgradable, because when the task is dropped, there is a
-/// moment where the task is not yet released, yet the weak pointer is not upgradeable anymore.
-/// During this time, it is still necessary to access the persistent info to compute the state of
-/// the thread for the different wait syscalls.
-pub struct TaskContainer(Weak<Task>, TaskPersistentInfo);
-
-impl From<&Arc<Task>> for TaskContainer {
-    fn from(task: &Arc<Task>) -> Self {
-        Self(Arc::downgrade(task), task.persistent_info.clone())
-    }
-}
-
-impl From<TaskContainer> for TaskPersistentInfo {
-    fn from(container: TaskContainer) -> TaskPersistentInfo {
-        container.1
-    }
-}
-
-impl TaskContainer {
-    fn upgrade(&self) -> Option<Arc<Task>> {
-        self.0.upgrade()
-    }
-
-    fn weak_clone(&self) -> Weak<Task> {
-        self.0.clone()
-    }
-
-    fn info(&self) -> &TaskPersistentInfo {
-        &self.1
     }
 }
 
