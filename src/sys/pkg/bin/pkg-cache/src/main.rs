@@ -21,6 +21,7 @@ use fidl_fuchsia_metrics::{
 };
 use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_http as fpkg_http;
+use fidl_fuchsia_pkg_internal as fpkg_internal;
 use fidl_fuchsia_update::CommitStatusProviderMarker;
 use fuchsia_async as fasync;
 use fuchsia_async::Task;
@@ -43,6 +44,7 @@ mod frozen_index;
 mod full_resolver;
 mod gc_service;
 mod index;
+mod ota_downloader;
 mod ota_resolver;
 mod package_fetcher;
 mod required_blobs;
@@ -400,6 +402,20 @@ async fn main_inner() -> Result<(), Error> {
             .context("error connecting to fuchsia.pkg.http/Client")?,
     );
     let blob_fetcher_fut = Task::spawn(blob_fetcher_fut);
+    {
+        let blob_fetcher = blob_fetcher.clone();
+        let () = svc_dir
+            .add_entry(
+                fpkg_internal::OtaDownloaderMarker::PROTOCOL_NAME,
+                vfs::service::host(move |stream: fpkg_internal::OtaDownloaderRequestStream| {
+                    ota_downloader::serve_request_stream(stream, blob_fetcher.clone())
+                        .unwrap_or_else(|e: anyhow::Error| {
+                            error!("serving fuchsia.pkg.internal/OtaDownloader: {e:#}")
+                        })
+                }),
+            )
+            .context("adding fuchsia.pkg.internal/OtaDownloader to /svc")?;
+    }
     let (package_fetcher_fut, package_fetcher) = package_fetcher::PackageFetcher::new(
         MAX_CONCURRENT_PACKAGE_FETCHES,
         package_index.clone(),

@@ -19,20 +19,32 @@ pub(crate) struct Params {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) struct QueueContext {
     blob_base_url: http::Uri,
+    conflict_behavior: ConflictBehavior,
+}
+
+/// How the blob fetcher should behave when asked to fetch a blob that is already in blobfs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConflictBehavior {
+    /// Ask blobfs if the existing blob should be overwritten, if not skip the fetch.
+    AskBlobfs,
+    /// Always perform the fetch and overwrite the existing blob.
+    Overwrite,
 }
 
 impl QueueContext {
-    pub(crate) fn new(blob_base_url: http::Uri) -> Self {
-        Self { blob_base_url }
+    pub(crate) fn new(blob_base_url: http::Uri, conflict_behavior: ConflictBehavior) -> Self {
+        Self { blob_base_url, conflict_behavior }
     }
 }
 
 impl work_queue::TryMerge for QueueContext {
     fn try_merge(&mut self, other: Self) -> Result<(), Self> {
-        if self.blob_base_url != other.blob_base_url {
-            return Err(other);
+        if self.blob_base_url == other.blob_base_url
+            && self.conflict_behavior == other.conflict_behavior
+        {
+            return Ok(());
         }
-        Ok(())
+        Err(other)
     }
 }
 
@@ -40,7 +52,7 @@ impl work_queue::TryMerge for QueueContext {
 /// queue will fetch all remaining blobs in the queue and terminate its output stream.
 #[derive(Clone)]
 pub struct BlobFetcher {
-    sender: work_queue::WorkSender<pkg::BlobId, QueueContext, Result<(), Arc<FetchError>>>,
+    sender: work_queue::WorkSender<pkg::BlobId, QueueContext, Result<Option<u64>, Arc<FetchError>>>,
 }
 
 impl BlobFetcher {
@@ -70,11 +82,14 @@ impl BlobFetcher {
     }
 
     /// Enqueue the given blob to be fetched, or attach to an existing request to fetch the blob.
+    /// On success, returns the number of bytes downloaded, which is not necessarily equal to the
+    /// uncompressed size of the blob, or None if the blob did not need to be downloaded.
     pub(crate) fn push(
         &self,
         blob_id: pkg::BlobId,
         context: QueueContext,
-    ) -> impl Future<Output = Result<Result<(), Arc<FetchError>>, work_queue::Closed>> {
+    ) -> impl Future<Output = Result<Result<Option<u64>, Arc<FetchError>>, work_queue::Closed>>
+    {
         self.sender.push(blob_id, context)
     }
 
@@ -88,15 +103,17 @@ impl BlobFetcher {
         &self,
         entries: impl Iterator<Item = (pkg::BlobId, QueueContext)>,
     ) -> impl Iterator<
-        Item = impl Future<Output = Result<Result<(), Arc<FetchError>>, work_queue::Closed>>,
+        Item = impl Future<Output = Result<Result<Option<u64>, Arc<FetchError>>, work_queue::Closed>>,
     > {
         self.sender.push_all(entries)
     }
 }
 
+/// On success, returns the number of bytes downloaded, which is not necessarily equal to the
+/// uncompressed size of the blob, or None if the blob did not need to be downloaded.
 async fn fetch_blob_with_retry(
     blob_id: pkg::BlobId,
-    QueueContext { blob_base_url }: QueueContext,
+    QueueContext { blob_base_url, conflict_behavior }: QueueContext,
     Params {
         header_network_timeout,
         body_network_timeout,
@@ -104,9 +121,14 @@ async fn fetch_blob_with_retry(
     }: Params,
     blobfs_client: &blobfs::Client,
     http_client: &fpkg_http::ClientProxy,
-) -> Result<(), FetchError> {
-    if blobfs_client.blob_present_and_up_to_date(&blob_id.into()).await {
-        return Ok(());
+) -> Result<Option<u64>, FetchError> {
+    match conflict_behavior {
+        ConflictBehavior::AskBlobfs => {
+            if blobfs_client.blob_present_and_up_to_date(&blob_id.into()).await {
+                return Ok(None);
+            }
+        }
+        ConflictBehavior::Overwrite => (),
     }
     let error_base = blob_base_url.clone();
     let blob_url = &blob_base_url
@@ -117,7 +139,7 @@ async fn fetch_blob_with_retry(
             .open_blob_for_write(&blob_id.into(), true)
             .await
             .map_err(FetchError::CreateBlob)?;
-        let _size: u64 = http_client
+        http_client
             .download_blob(
                 &blob_url.to_string(),
                 blob,
@@ -127,8 +149,8 @@ async fn fetch_blob_with_retry(
             )
             .await
             .map_err(FetchError::DownloadBlobFidl)?
-            .map_err(FetchError::DownloadBlob)?;
-        Ok(())
+            .map_err(FetchError::DownloadBlob)
+            .map(Some)
     })
     .await
 }
@@ -177,4 +199,26 @@ pub enum FetchErrorKind {
     Network,
     NotFound,
     Other,
+}
+
+impl From<&FetchError> for fidl_fuchsia_pkg::ResolveError {
+    fn from(err: &FetchError) -> Self {
+        use FetchError::*;
+        use fidl_fuchsia_pkg::ResolveError as Err;
+        match err {
+            CreateBlob { .. } => Err::Io,
+            BlobUrl { .. } => Err::Internal,
+            DownloadBlobFidl { .. } => Err::Internal,
+            DownloadBlob(e) => {
+                use fidl_fuchsia_pkg_http::ClientDownloadBlobError::*;
+                match e {
+                    NoSpace => Err::NoSpace,
+                    Network => Err::UnavailableBlob,
+                    NotFound => Err::UnavailableBlob,
+                    NetworkRateLimit => Err::Io,
+                    Other => Err::Io,
+                }
+            }
+        }
+    }
 }

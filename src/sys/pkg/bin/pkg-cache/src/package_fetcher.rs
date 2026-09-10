@@ -134,13 +134,16 @@ async fn fetch_impl(
 ) -> Result<Arc<crate::RootDir>, Error> {
     let mut queue = std::collections::VecDeque::from([pkg_id]);
     let mut queued = HashSet::from([pkg_id]);
-    let context = crate::blob_fetcher::QueueContext::new(blob_source);
+    let context = crate::blob_fetcher::QueueContext::new(
+        blob_source,
+        crate::blob_fetcher::ConflictBehavior::AskBlobfs,
+    );
     let mut ret = None;
     while let Some(blob_id) = queue.pop_front() {
         // The blob fetcher performs this check as well, but check here to avoid blocking the fetch
         // of an already cached package on a full blob fetch queue.
         if !blobfs_client.blob_present_and_up_to_date(&blob_id).await {
-            let () = blob_fetcher
+            let _: Option<u64> = blob_fetcher
                 .push(blob_id.into(), context.clone())
                 .await
                 .map_err(Error::BlobPush)?
@@ -185,7 +188,7 @@ async fn fetch_impl(
         for fut in
             blob_fetcher.push_all(missing_content.into_iter().map(|h| (h.into(), context.clone())))
         {
-            let () = fut.await.map_err(Error::BlobPush)?.map_err(Error::BlobFetch)?;
+            let _: Option<u64> = fut.await.map_err(Error::BlobPush)?.map_err(Error::BlobFetch)?;
         }
         ret.get_or_insert(root_dir);
     }
@@ -247,7 +250,7 @@ impl From<&Error> for fpkg::ResolveError {
         use fpkg::ResolveError as Err;
         match err {
             BlobPush(_) => Err::Internal,
-            BlobFetch(e) => fetch_to_resolve_err(e),
+            BlobFetch(e) => e.as_ref().into(),
             CreatingRootDir { .. } => Err::Io,
             ReadingSubpackages { .. } => Err::Io,
             ProtectBlobs(_) => Err::Internal,
@@ -255,26 +258,6 @@ impl From<&Error> for fpkg::ResolveError {
             ClearWritingIndex(_) => Err::Internal,
             FetchAndClearFailed { source, .. } => (&**source).into(),
             PushQueue(_) => Err::Internal,
-        }
-    }
-}
-
-fn fetch_to_resolve_err(err: &crate::blob_fetcher::FetchError) -> fpkg::ResolveError {
-    use crate::blob_fetcher::FetchError::*;
-    use fpkg::ResolveError as Err;
-    match err {
-        CreateBlob { .. } => Err::Io,
-        BlobUrl { .. } => Err::Internal,
-        DownloadBlobFidl { .. } => Err::Internal,
-        DownloadBlob(e) => {
-            use fidl_fuchsia_pkg_http::ClientDownloadBlobError::*;
-            match e {
-                NoSpace => Err::NoSpace,
-                Network => Err::UnavailableBlob,
-                NotFound => Err::UnavailableBlob,
-                NetworkRateLimit => Err::Io,
-                Other => Err::Io,
-            }
         }
     }
 }

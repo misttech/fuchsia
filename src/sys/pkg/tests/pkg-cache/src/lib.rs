@@ -20,6 +20,7 @@ use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_ext as fpkg_ext;
 use fidl_fuchsia_pkg_garbagecollector as fpkg_gc;
 use fidl_fuchsia_pkg_http as fpkg_http;
+use fidl_fuchsia_pkg_internal as fpkg_internal;
 use fidl_fuchsia_update as fupdate;
 use fidl_fuchsia_update_verify as fupdate_verify;
 use fuchsia_async as fasync;
@@ -46,6 +47,7 @@ mod full_resolver;
 mod full_resolver_upgradable;
 mod get;
 mod inspect;
+mod ota_downloader;
 mod ota_resolver;
 mod pkgfs;
 mod remote_resolver;
@@ -920,8 +922,9 @@ where
                     .capability(Capability::protocol::<fpkg::PackageCacheMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedPackagesMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedBlobsMarker>())
-                    .capability(Capability::protocol::<fpkg_gc::ManagerMarker>())
                     .capability(Capability::protocol::<fpkg::PackageResolverMarker>())
+                    .capability(Capability::protocol::<fpkg_gc::ManagerMarker>())
+                    .capability(Capability::protocol::<fpkg_internal::OtaDownloaderMarker>())
                     .capability(Capability::protocol::<fcomponent_resolution::ResolverMarker>())
                     .capability(Capability::directory(SHELL_COMMANDS_BIN_PATH))
                     .capability(Capability::directory("pkgfs"))
@@ -975,6 +978,10 @@ where
                     &format!("{}-full", fcomponent_resolution::ResolverMarker::PROTOCOL_NAME),
                 )
                 .expect("connect to full component resolver"),
+            ota_downloader: realm_instance
+                .root
+                .connect_to_protocol_at_exposed_dir()
+                .expect("connect to ota downloader"),
             pkgfs: fuchsia_fs::directory::open_directory_async(
                 realm_instance.root.get_exposed_dir(),
                 "pkgfs",
@@ -1007,6 +1014,7 @@ struct Proxies {
     ota_package_resolver: fpkg::PackageResolverProxy,
     full_package_resolver: fpkg::PackageResolverProxy,
     full_component_resolver: fcomponent_resolution::ResolverProxy,
+    ota_downloader: fpkg_internal::OtaDownloaderProxy,
     pkgfs: fio::DirectoryProxy,
 }
 
@@ -1236,6 +1244,23 @@ impl<B: Blobfs> TestEnv<B> {
         context: &fcomponent_resolution::Context,
     ) -> Result<fcomponent_resolution::Component, fcomponent_resolution::ResolverError> {
         self.proxies.full_component_resolver.resolve_with_context(url, context).await.unwrap()
+    }
+
+    pub async fn fetch_blob(
+        &self,
+        hash: fuchsia_hash::Hash,
+        url: impl AsRef<str>,
+        overwrite_existing: bool,
+    ) -> Result<u64, fpkg::ResolveError> {
+        self.proxies
+            .ota_downloader
+            .fetch_blob(
+                &fpkg::BlobId { merkle_root: hash.into() },
+                url.as_ref(),
+                overwrite_existing,
+            )
+            .await
+            .unwrap()
     }
 }
 
