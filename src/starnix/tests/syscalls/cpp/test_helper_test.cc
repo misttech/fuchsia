@@ -218,15 +218,27 @@ TEST(TestHelperTest, MultipleChildrenFailing) {
 TEST(SyscallResultMatchersTest, SyscallResultIsOk) {
   fit::result<int> ok_result = fit::ok();
   EXPECT_THAT(ok_result, SyscallResultIsOk());
+  EXPECT_THAT(ok_result, ::testing::Not(SyscallResultIsOk("hello")));
+  EXPECT_THAT(ok_result, ::testing::Not(SyscallResultIsOkWithValue("hello")));
 
   fit::result<int, std::string> ok_val_result = fit::ok("hello");
   EXPECT_THAT(ok_val_result, SyscallResultIsOk());
+  EXPECT_THAT(ok_val_result, SyscallResultIsOk("hello"));
+  EXPECT_THAT(ok_val_result, SyscallResultIsOk(::testing::StartsWith("hell")));
+  using ResultType = fit::result<int, std::string>;
+  EXPECT_EQ(
+      "is fit::ok with value starts with \"hell\"",
+      ::testing::DescribeMatcher<ResultType>(SyscallResultIsOk(::testing::StartsWith("hell"))));
+  EXPECT_THAT(ok_val_result, ::testing::Not(SyscallResultIsOk("world")));
+  EXPECT_THAT(ok_val_result, SyscallResultIsOkWithValue("hello"));
 
   fit::result<int> err_result = fit::error(ENOENT);
   EXPECT_THAT(err_result, ::testing::Not(SyscallResultIsOk()));
 
   fit::result<int, std::string> err_val_result = fit::error(EACCES);
   EXPECT_THAT(err_val_result, ::testing::Not(SyscallResultIsOk()));
+  EXPECT_THAT(err_val_result, ::testing::Not(SyscallResultIsOk("hello")));
+  EXPECT_THAT(err_val_result, ::testing::Not(SyscallResultIsOkWithValue("hello")));
 }
 
 TEST(SyscallResultMatchersTest, SyscallResultIsErrno) {

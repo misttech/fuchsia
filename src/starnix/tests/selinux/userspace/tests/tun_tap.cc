@@ -62,7 +62,7 @@ TEST_P(TunTapCreateTest, CheckCreateAccess) {
   EXPECT_TRUE(RunSubprocessAs(test_case.label, [&]() {
     fbl::unique_fd fd(open(kTunPath, O_RDWR));
     ASSERT_TRUE(fd) << strerror(errno);
-    EXPECT_THAT(GetLinkLabel(fd.get()), IsOk(std::string(test_case.label).c_str()));
+    EXPECT_THAT(GetLinkLabel(fd.get()), SyscallResultIsOk(std::string(test_case.label).c_str()));
 
     struct ifreq ifr;
     memset(&ifr, 0, sizeof(ifr));
@@ -71,7 +71,7 @@ TEST_P(TunTapCreateTest, CheckCreateAccess) {
     int result = ioctl(fd.get(), TUNSETIFF, &ifr);
     if (test_case.expected_result.is_ok()) {
       EXPECT_THAT(result, SyscallSucceeds());
-      EXPECT_THAT(GetLinkLabel(fd.get()), IsOk(std::string(test_case.label).c_str()));
+      EXPECT_THAT(GetLinkLabel(fd.get()), SyscallResultIsOk(std::string(test_case.label).c_str()));
     } else {
       EXPECT_THAT(result, SyscallFailsWithErrno(test_case.expected_result.error_value()));
     }
@@ -201,7 +201,7 @@ TEST_P(TunTapRelabelTest, Relabel) {
     }
     ASSERT_THAT(ioctl(fd.get(), TUNSETPERSIST, 1), SyscallSucceeds());
 
-    ASSERT_EQ(WriteTaskAttr("current", test_case.label), fit::ok());
+    ASSERT_THAT(WriteTaskAttr("current", test_case.label), SyscallResultIsOk());
     fbl::unique_fd fd2(open(kTunPath, O_RDWR));
     ASSERT_TRUE(fd2) << strerror(errno);
     memset(&ifr, 0, sizeof(struct ifreq));

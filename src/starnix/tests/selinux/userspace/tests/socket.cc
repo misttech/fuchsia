@@ -642,7 +642,8 @@ TEST(SocketTest, AcceptAllowed) {
     // Accept the connection in a domain that is only allowed the "accept" permission, to verify
     // that only the "accept" permission is required and that the "create" permission is not needed
     // to create `accepted_fd` on `accept()`.
-    ASSERT_EQ(WriteTaskAttr("current", "test_u:test_r:socket_accept_only_test_t:s0"), fit::ok());
+    ASSERT_THAT(WriteTaskAttr("current", "test_u:test_r:socket_accept_only_test_t:s0"),
+                SyscallResultIsOk());
     fbl::unique_fd accepted_fd;
     EXPECT_TRUE((accepted_fd = fbl::unique_fd(accept(listen_fd.get(), nullptr, nullptr))))
         << strerror(errno);
@@ -679,16 +680,19 @@ TEST(SocketPeerSecTest, UnixDomainStream) {
     auto listen_fd =
         SocketWithLabel(AF_UNIX, SOCK_STREAM, 0, "test_u:test_r:socket_test_peer_t:s0");
     ASSERT_TRUE(listen_fd.is_ok()) << listen_fd.error_value();
-    EXPECT_THAT(GetLabel(listen_fd.value().get()), IsOk("test_u:test_r:socket_test_peer_t:s0"));
+    EXPECT_THAT(GetLabel(listen_fd.value().get()),
+                SyscallResultIsOk("test_u:test_r:socket_test_peer_t:s0"));
 
     // Before connecting, Unix stream sockets report the peer as the "unlabeled" context.
     EXPECT_THAT(GetPeerSec(listen_fd.value().get()),
-                IsOk("unlabeled_u:unlabeled_r:unlabeled_t:s0"));
+                SyscallResultIsOk("unlabeled_u:unlabeled_r:unlabeled_t:s0"));
 
     fbl::unique_fd client_fd;
     ASSERT_TRUE((client_fd = fbl::unique_fd(socket(AF_UNIX, SOCK_STREAM, 0)))) << strerror(errno);
-    EXPECT_THAT(GetLabel(client_fd.get()), IsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
-    EXPECT_THAT(GetPeerSec(client_fd.get()), IsOk("unlabeled_u:unlabeled_r:unlabeled_t:s0"));
+    EXPECT_THAT(GetLabel(client_fd.get()),
+                SyscallResultIsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
+    EXPECT_THAT(GetPeerSec(client_fd.get()),
+                SyscallResultIsOk("unlabeled_u:unlabeled_r:unlabeled_t:s0"));
 
     // Bind the `listen_fd` to an address and start listening on it.
     constexpr char kListenPath[] = "/tmp/unix_domain_stream_test";
@@ -702,14 +706,16 @@ TEST(SocketPeerSecTest, UnixDomainStream) {
     // reflect that of the listening socket.
     ASSERT_THAT(connect(client_fd.get(), (struct sockaddr*)&sock_addr, sizeof(sock_addr)),
                 SyscallSucceeds());
-    EXPECT_THAT(GetPeerSec(client_fd.get()), IsOk("test_u:test_r:socket_test_peer_t:s0"));
+    EXPECT_THAT(GetPeerSec(client_fd.get()),
+                SyscallResultIsOk("test_u:test_r:socket_test_peer_t:s0"));
 
     // Accept the client connection on `listen_fd` and validate the peer label reported by the
     // accepted socket.
     fbl::unique_fd accepted_fd;
     ASSERT_TRUE((accepted_fd = fbl::unique_fd(accept(listen_fd.value().get(), nullptr, nullptr))))
         << strerror(errno);
-    EXPECT_THAT(GetPeerSec(accepted_fd.get()), IsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
+    EXPECT_THAT(GetPeerSec(accepted_fd.get()),
+                SyscallResultIsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
   }));
 }
 
@@ -717,10 +723,10 @@ TEST(SocketPeerSecTest, UnixDomainDatagram) {
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:socket_test_t:s0", [&] {
     fbl::unique_fd fd;
     ASSERT_TRUE((fd = fbl::unique_fd(socket(AF_UNIX, SOCK_DGRAM, 0)))) << strerror(errno);
-    EXPECT_THAT(GetLabel(fd.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+    EXPECT_THAT(GetLabel(fd.get()), SyscallResultIsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
 
     // Unix datagram sockets do not support `SO_PEERSEC`.
-    EXPECT_EQ(GetPeerSec(fd.get()), fit::error(ENOPROTOOPT));
+    EXPECT_THAT(GetPeerSec(fd.get()), SyscallResultIsErrno(ENOPROTOOPT));
   }));
 }
 
@@ -732,13 +738,17 @@ TEST(SocketPeerSecTest, SocketPairUnixStream) {
     fbl::unique_fd fd1(fds[0]);
     fbl::unique_fd fd2(fds[1]);
 
-    EXPECT_THAT(GetLabel(fd1.get()), IsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
-    EXPECT_THAT(GetLabel(fd2.get()), IsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
+    EXPECT_THAT(GetLabel(fd1.get()),
+                SyscallResultIsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
+    EXPECT_THAT(GetLabel(fd2.get()),
+                SyscallResultIsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
 
     // Unix-domain sockets created with `socketpair()` should report each other's labels
     // immediately.
-    EXPECT_THAT(GetPeerSec(fd1.get()), IsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
-    EXPECT_THAT(GetPeerSec(fd2.get()), IsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
+    EXPECT_THAT(GetPeerSec(fd1.get()),
+                SyscallResultIsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
+    EXPECT_THAT(GetPeerSec(fd2.get()),
+                SyscallResultIsOk("test_u:test_r:unix_stream_socket_test_t:s0"));
   }));
 }
 
@@ -750,13 +760,15 @@ TEST(SocketPeerSecTest, SocketPairUnixDatagram) {
     fbl::unique_fd fd1(fds[0]);
     fbl::unique_fd fd2(fds[1]);
 
-    EXPECT_THAT(GetLabel(fd1.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
-    EXPECT_THAT(GetLabel(fd2.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+    EXPECT_THAT(GetLabel(fd1.get()),
+                SyscallResultIsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+    EXPECT_THAT(GetLabel(fd2.get()),
+                SyscallResultIsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
 
     // Unix-domain datagram sockets created with `socketpair()` are described as supporting
     // `SO_PEERSEC` but actually seem to report not-supported.
-    EXPECT_EQ(GetPeerSec(fd1.get()), fit::error(ENOPROTOOPT));
-    EXPECT_EQ(GetPeerSec(fd2.get()), fit::error(ENOPROTOOPT));
+    EXPECT_THAT(GetPeerSec(fd1.get()), SyscallResultIsErrno(ENOPROTOOPT));
+    EXPECT_THAT(GetPeerSec(fd2.get()), SyscallResultIsErrno(ENOPROTOOPT));
   }));
 }
 
@@ -798,8 +810,10 @@ TEST(SocketPassSecTest, UnixDomainDatagram) {
     fbl::unique_fd sender(fds[0]);
     fbl::unique_fd receiver(fds[1]);
 
-    EXPECT_THAT(GetLabel(sender.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
-    EXPECT_THAT(GetLabel(receiver.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+    EXPECT_THAT(GetLabel(sender.get()),
+                SyscallResultIsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+    EXPECT_THAT(GetLabel(receiver.get()),
+                SyscallResultIsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
 
     // Enable SO_PASSSEC on the receiver.
     int one = 1;
@@ -812,7 +826,7 @@ TEST(SocketPassSecTest, UnixDomainDatagram) {
 
     // Receive message and verify that SCM_SECURITY contains the sender's security context.
     EXPECT_THAT(RecvMsgSecurityContext(receiver.get()),
-                IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+                SyscallResultIsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
   }));
 }
 
@@ -823,8 +837,10 @@ TEST(SocketPassSecTest, UnixDomainDatagramSendBeforePassSec) {
     fbl::unique_fd sender(fds[0]);
     fbl::unique_fd receiver(fds[1]);
 
-    EXPECT_THAT(GetLabel(sender.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
-    EXPECT_THAT(GetLabel(receiver.get()), IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+    EXPECT_THAT(GetLabel(sender.get()),
+                SyscallResultIsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+    EXPECT_THAT(GetLabel(receiver.get()),
+                SyscallResultIsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
 
     // Send message BEFORE SO_PASSSEC is enabled on the receiver.
     const char kPayload[] = "hello";
@@ -837,7 +853,7 @@ TEST(SocketPassSecTest, UnixDomainDatagramSendBeforePassSec) {
 
     // Receive message and verify that SCM_SECURITY contains the sender's security context.
     EXPECT_THAT(RecvMsgSecurityContext(receiver.get()),
-                IsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
+                SyscallResultIsOk("test_u:test_r:unix_dgram_socket_test_t:s0"));
   }));
 }
 

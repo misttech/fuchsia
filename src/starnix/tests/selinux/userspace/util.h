@@ -14,6 +14,7 @@
 #include <gmock/gmock.h>
 #include <linux/capability.h>
 
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace test_helper {
@@ -134,15 +135,6 @@ class ScopedTaskAttrResetter {
   std::string old_value_;
 };
 
-MATCHER_P(IsOk, expected_value, std::string("fit::result<> is fit::ok(") + expected_value + ")") {
-  if (arg.is_error()) {
-    *result_listener << "failed with error: " << arg.error_value();
-    return false;
-  }
-  ::testing::Matcher<fit::result<int, std::string>> expected = ::testing::Eq(expected_value);
-  return expected.MatchAndExplain(arg, result_listener);
-}
-
 namespace fit {
 
 /// Kludge to tell gTest how to stringify `fit::result<>` values.
@@ -155,17 +147,6 @@ void PrintTo(const fit::result<E, T>& result, std::ostream* os) {
     ::testing::internal::UniversalPrinter<T>::Print(result.value(), os);
     *os << " )";
   }
-}
-
-template <typename E, typename... Ts>
-constexpr bool operator==(const fit::result<E, Ts...>& result, const fit::error<E>& expected) {
-  // fit::result<...> comparisons do not compare the error values, so hand-roll that here.
-  return result.is_error() && result.error_value() == fit::result<E, Ts...>(expected).error_value();
-}
-
-template <typename E, typename T, typename T2>
-constexpr bool operator==(const fit::result<E, T>& result, const fit::success<T2>& expected) {
-  return result == fit::result<E, T>(expected);
 }
 
 }  // namespace fit

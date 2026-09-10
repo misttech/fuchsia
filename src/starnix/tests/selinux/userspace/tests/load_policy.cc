@@ -41,12 +41,12 @@ extern std::string DoPrePolicyLoadWork() {
   // Create a file in "tmpfs" with an explicitly-specified label, different from the calculated one.
   fd = fbl::unique_fd(open(kTestFileWithXattr, O_CREAT | O_RDWR, 0644));
   EXPECT_TRUE(fd.is_valid()) << "Failed to create test file:" << strerror(errno);
-  EXPECT_EQ(SetLabel(kTestFileWithXattr, kTestSecurityXattr), fit::ok());
+  EXPECT_THAT(SetLabel(kTestFileWithXattr, kTestSecurityXattr), SyscallResultIsOk());
 
   // Create a file in "tmpfs" with an invalid security xattr value.
   fd = fbl::unique_fd(open(kTestFileWithInvalidXattr, O_CREAT | O_RDWR, 0644));
   EXPECT_TRUE(fd.is_valid()) << "Failed to create test file:" << strerror(errno);
-  EXPECT_EQ(SetLabel(kTestFileWithInvalidXattr, kTestInvalidSecurityXattr), fit::ok());
+  EXPECT_THAT(SetLabel(kTestFileWithInvalidXattr, kTestInvalidSecurityXattr), SyscallResultIsOk());
 
   return "minimal_policy";
 }
@@ -55,25 +55,26 @@ namespace {
 
 TEST(PolicyLoadTest, TasksUseKernelSid) {
   // All processes created prior to policy loading are labeled with the kernel SID.
-  EXPECT_THAT(ReadTaskAttr("current"), IsOk("system_u:unconfined_r:unconfined_t:s0"));
+  EXPECT_THAT(ReadTaskAttr("current"), SyscallResultIsOk("system_u:unconfined_r:unconfined_t:s0"));
 }
 
 TEST(PolicyLoadTest, TmpFsFsUseTransIgnoresSecurityXattr) {
   // "tmpfs" is defined to use the `fs_use_trans` labeling scheme, which ignores the xattr value.
-  EXPECT_THAT(GetLabel(kTestFileWithoutXattr), IsOk(kDefaultTmpFsNodeLabel));
-  EXPECT_THAT(GetLabel(kTestFileWithXattr), IsOk(kDefaultTmpFsNodeLabel));
-  EXPECT_THAT(GetLabel(kTestFileWithInvalidXattr), IsOk(kDefaultTmpFsNodeLabel));
+  EXPECT_THAT(GetLabel(kTestFileWithoutXattr), SyscallResultIsOk(kDefaultTmpFsNodeLabel));
+  EXPECT_THAT(GetLabel(kTestFileWithXattr), SyscallResultIsOk(kDefaultTmpFsNodeLabel));
+  EXPECT_THAT(GetLabel(kTestFileWithInvalidXattr), SyscallResultIsOk(kDefaultTmpFsNodeLabel));
 }
 
 TEST(PolicyLoadTest, ProcFsLabels) {
   ASSERT_TRUE(g_pre_policy_procfs_labels.has_value());
   // Procfs does not support xattrs prior to policy load.
-  EXPECT_EQ(g_pre_policy_procfs_labels->meminfo, fit::error(EOPNOTSUPP));
-  EXPECT_EQ(g_pre_policy_procfs_labels->stat, fit::error(EOPNOTSUPP));
+  EXPECT_THAT(g_pre_policy_procfs_labels->meminfo, SyscallResultIsErrno(EOPNOTSUPP));
+  EXPECT_THAT(g_pre_policy_procfs_labels->stat, SyscallResultIsErrno(EOPNOTSUPP));
 
   // After policy load, non-PID nodes use the genfscon label and PID nodes use the task label.
-  EXPECT_THAT(GetLabel("/proc/meminfo"), IsOk("system_u:object_r:unconfined_t:s0"));
-  EXPECT_THAT(GetLabel("/proc/self/stat"), IsOk("system_u:unconfined_r:unconfined_t:s0"));
+  EXPECT_THAT(GetLabel("/proc/meminfo"), SyscallResultIsOk("system_u:object_r:unconfined_t:s0"));
+  EXPECT_THAT(GetLabel("/proc/self/stat"),
+              SyscallResultIsOk("system_u:unconfined_r:unconfined_t:s0"));
 }
 
 }  // namespace

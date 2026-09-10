@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "stdio.h"
 #include "stdlib.h"
 
@@ -17,6 +18,6 @@ int main(int argc, char** argv) {
   int null_inode_fd = open("/sys/fs/selinux/null", 0, O_RDONLY);
   EXPECT_TRUE(null_inode_fd > 0);
 
-  EXPECT_EQ(IsSameInode(test_fd, null_inode_fd), fit::ok(expect_null_inode));
+  EXPECT_THAT(IsSameInode(test_fd, null_inode_fd), SyscallResultIsOk(expect_null_inode));
   return ::testing::Test::HasFailure() ? 1 : 0;
 }

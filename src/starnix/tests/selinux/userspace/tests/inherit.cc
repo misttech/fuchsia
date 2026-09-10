@@ -261,7 +261,7 @@ TEST(InheritTest, DynamicTransitionFdRemainsValid) {
     // Verify that the FD was not remapped to the null inode.
     const fbl::unique_fd null_fd(open("/sys/fs/selinux/null", O_RDONLY));
     ASSERT_TRUE(null_fd.is_valid());
-    EXPECT_EQ(IsSameInode(fd.get(), null_fd.get()), fit::ok(false));
+    EXPECT_THAT(IsSameInode(fd.get(), null_fd.get()), SyscallResultIsOk(false));
 
     // Verify that the FD is not accessible.
     // We try to read from it. If SELinux revalidates on use or Starnix revokes access, this should

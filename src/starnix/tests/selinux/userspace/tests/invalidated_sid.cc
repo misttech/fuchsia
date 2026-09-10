@@ -88,7 +88,7 @@ class InvalidatedSidTestSuite : public ::testing::Test {
       EXPECT_EQ(msg, HandshakeMessage::kReloaded);
 
       // Step D: Verify our own task context fell back to unlabeled.
-      EXPECT_THAT(ReadTaskAttr("current"), IsOk(kUnlabeledContext));
+      EXPECT_THAT(ReadTaskAttr("current"), SyscallResultIsOk(kUnlabeledContext));
 
       // Step E: Signal parent that verification succeeded.
       msg = HandshakeMessage::kVerified;
@@ -109,13 +109,14 @@ class InvalidatedSidTestSuite : public ::testing::Test {
     ASSERT_THAT(read(accepted_socket_.get(), &msg, sizeof(msg)),
                 SyscallSucceedsWithValue(sizeof(msg)));
     ASSERT_EQ(msg, HandshakeMessage::kConnected);
-    EXPECT_THAT(GetPeerSec(accepted_socket_.get()), IsOk(kInitialDomainContext));
-    EXPECT_THAT(ReadProcAttr(child_pid_, "current"), IsOk(kInitialDomainContext));
+    EXPECT_THAT(GetPeerSec(accepted_socket_.get()), SyscallResultIsOk(kInitialDomainContext));
+    EXPECT_THAT(ReadProcAttr(child_pid_, "current"), SyscallResultIsOk(kInitialDomainContext));
 
     // 4. Reload policy (which omits test_invalidated_domain_t).
     auto policy_bytes = ReadFile("data/policies/invalidated_sid_reloaded_policy");
-    ASSERT_TRUE(policy_bytes.is_ok());
-    EXPECT_EQ(WriteExistingFile("/sys/fs/selinux/load", policy_bytes.value()), fit::ok());
+    ASSERT_THAT(policy_bytes, SyscallResultIsOk());
+    EXPECT_THAT(WriteExistingFile("/sys/fs/selinux/load", policy_bytes.value()),
+                SyscallResultIsOk());
 
     // 5. Signal child that policy has been reloaded and wait for child verification.
     msg = HandshakeMessage::kReloaded;
@@ -149,9 +150,9 @@ fbl::unique_fd InvalidatedSidTestSuite::accepted_socket_;
 extern std::string DoPrePolicyLoadWork() { return "invalidated_sid_initial_policy"; }
 
 TEST_F(InvalidatedSidTestSuite, TaskContextFallsBackToUnlabeled) {
-  EXPECT_THAT(ReadProcAttr(child_pid(), "current"), IsOk(kUnlabeledContext));
+  EXPECT_THAT(ReadProcAttr(child_pid(), "current"), SyscallResultIsOk(kUnlabeledContext));
 }
 
 TEST_F(InvalidatedSidTestSuite, SocketPeerContextFallsBackToUnlabeled) {
-  EXPECT_THAT(GetPeerSec(accepted_socket()), IsOk(kUnlabeledContext));
+  EXPECT_THAT(GetPeerSec(accepted_socket()), SyscallResultIsOk(kUnlabeledContext));
 }

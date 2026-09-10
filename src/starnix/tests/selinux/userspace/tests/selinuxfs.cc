@@ -124,11 +124,11 @@ SeLinuxApiResult ComputeAccess(std::string_view source_context, std::string_view
 TEST(SeLinuxFsNull, HasPolicyDevnullContext) {
   constexpr char kSeLinuxFsNull[] = "/sys/fs/selinux/null";
 
-  EXPECT_EQ(GetLabel(kSeLinuxFsNull), fit::ok("system_u:object_r:devnull_t:s0"));
+  EXPECT_THAT(GetLabel(kSeLinuxFsNull), SyscallResultIsOk("system_u:object_r:devnull_t:s0"));
 }
 
 TEST(SeLinuxFs, RootNodeLabel) {
-  EXPECT_THAT(GetLabel("/sys/fs/selinux"), IsOk("system_u:object_r:selinuxfs_t:s0"));
+  EXPECT_THAT(GetLabel("/sys/fs/selinux"), SyscallResultIsOk("system_u:object_r:selinuxfs_t:s0"));
 }
 
 TEST(SeLinuxFsContext, OneRequestPerInstance) {
@@ -164,75 +164,76 @@ TEST(SeLinuxFsContext, ReadUpdatesSeekPosition) {
     result.push_back(buf);
   }
 
-  EXPECT_THAT(RemoveTrailingNul(result), IsOk(kMinimumValidContext));
+  EXPECT_THAT(RemoveTrailingNul(result), SyscallResultIsOk(kMinimumValidContext));
 }
 
 TEST(SeLinuxFsContext, ValidatesRequiredFieldsPresent) {
   // Contexts that have too few colons to provide user, role, type & sensitivity are rejected.
-  EXPECT_EQ(ValidateContext("test_selinuxfs_u"), fit::failed());
-  EXPECT_EQ(ValidateContext("test_selinuxfs_u:test_selinuxfs_r"), fit::failed());
-  EXPECT_EQ(ValidateContext("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t"), fit::failed());
+  EXPECT_THAT(ValidateContext("test_selinuxfs_u"), SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(ValidateContext("test_selinuxfs_u:test_selinuxfs_r"), SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(ValidateContext("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t"),
+              SyscallResultIsErrno(EINVAL));
 
   // The minimum valid context has at least user, role, type and low/default sensitivity.
   constexpr std::string_view kMinimumValidContext =
       "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0";
-  EXPECT_EQ(ValidateContext(kMinimumValidContext), fit::ok(kMinimumValidContext));
+  EXPECT_THAT(ValidateContext(kMinimumValidContext), SyscallResultIsOk(kMinimumValidContext));
 }
 
 TEST(SeLinuxFsContext, ValidatesFieldValues) {
   // Valid contexts are successfully written, and can be read-back.
   constexpr std::string_view kValidContext =
       "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0:c0-s2:c0.c2";
-  EXPECT_EQ(ValidateContext(kValidContext), fit::ok(kValidContext));
+  EXPECT_THAT(ValidateContext(kValidContext), SyscallResultIsOk(kValidContext));
 
   // Context user must be defined by the policy.
-  EXPECT_EQ(ValidateContext("bad_value:test_selinuxfs_r:test_selinuxfs_t:s0:c0-s2:c0.c2"),
-            fit::failed());
+  EXPECT_THAT(ValidateContext("bad_value:test_selinuxfs_r:test_selinuxfs_t:s0:c0-s2:c0.c2"),
+              SyscallResultIsErrno(EINVAL));
 
   // Context role must be defined by the policy.
-  EXPECT_EQ(ValidateContext("test_selinuxfs_u:bad_value:test_selinuxfs_t:s0:c0-s2:c0.c2"),
-            fit::failed());
+  EXPECT_THAT(ValidateContext("test_selinuxfs_u:bad_value:test_selinuxfs_t:s0:c0-s2:c0.c2"),
+              SyscallResultIsErrno(EINVAL));
 
   // Context type/domain must be defined by the policy.
-  EXPECT_EQ(ValidateContext("test_selinuxfs_u:test_selinuxfs_r:bad_value:s0:c0-s2:c0.c2"),
-            fit::failed());
+  EXPECT_THAT(ValidateContext("test_selinuxfs_u:test_selinuxfs_r:bad_value:s0:c0-s2:c0.c2"),
+              SyscallResultIsErrno(EINVAL));
 
   // Context low & high sensitivities must be defined by the policy.
-  EXPECT_EQ(
+  EXPECT_THAT(
       ValidateContext("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:bad_value:c0-s2:c0.c2"),
-      fit::failed());
-  EXPECT_EQ(
+      SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(
       ValidateContext("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0:c0-bad_value:c0.c2"),
-      fit::failed());
+      SyscallResultIsErrno(EINVAL));
 
   // Context low & high categories must be defined by the policy.
-  EXPECT_EQ(
+  EXPECT_THAT(
       ValidateContext("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0:bad_value-s2:c0.c2"),
-      fit::failed());
-  EXPECT_EQ(
+      SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(
       ValidateContext("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0:c0-s2:c0.bad_value"),
-      fit::failed());
+      SyscallResultIsErrno(EINVAL));
 }
 
 TEST(SeLinuxFsContext, ValidatesAllowedUserFieldValues) {
   // The "test_selinuxfs_u" user is granted the full range of categories.
   constexpr std::string_view kValidContext =
       "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0:c0-s2:c0.c2";
-  EXPECT_EQ(ValidateContext(kValidContext), fit::ok(kValidContext));
+  EXPECT_THAT(ValidateContext(kValidContext), SyscallResultIsOk(kValidContext));
 
   // The "test_selinuxfs_limited_u" user is granted only "s0" sensitivity, must have "c0" category
   // and may have "c1" category.
   constexpr std::string_view kLimitedContext_Valid =
       "test_selinuxfs_limited_level_u:test_selinuxfs_r:test_selinuxfs_t:s0:c0";
-  EXPECT_EQ(ValidateContext(kLimitedContext_Valid), fit::ok(kLimitedContext_Valid));
+  EXPECT_THAT(ValidateContext(kLimitedContext_Valid), SyscallResultIsOk(kLimitedContext_Valid));
 
   constexpr std::string_view kLimitedContext_MissingCategory =
       "test_selinuxfs_limited_level_u:test_selinuxfs_r:test_selinuxfs_t:s0";
-  EXPECT_EQ(ValidateContext(kLimitedContext_MissingCategory), fit::failed());
+  EXPECT_THAT(ValidateContext(kLimitedContext_MissingCategory), SyscallResultIsErrno(EINVAL));
 
   constexpr std::string_view kLimitedContext_BadSensitivity =
       "test_selinuxfs_limited_level_u:test_selinuxfs_r:test_selinuxfs_t:s1:c0";
-  EXPECT_EQ(ValidateContext(kLimitedContext_BadSensitivity), fit::failed());
+  EXPECT_THAT(ValidateContext(kLimitedContext_BadSensitivity), SyscallResultIsErrno(EINVAL));
 }
 
 TEST(SeLinuxFsContext, NormalizeCategories) {
@@ -260,8 +261,8 @@ TEST(SeLinuxFsCreate, DefaultComputeCreateForProcess) {
   constexpr std::string_view kTargetContext =
       "test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0";
 
-  EXPECT_EQ(ComputeCreateContext(kSourceContext, kTargetContext, "process"),
-            fit::ok("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"));
+  EXPECT_THAT(ComputeCreateContext(kSourceContext, kTargetContext, "process"),
+              SyscallResultIsOk("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"));
 }
 
 TEST(SeLinuxFsCreate, OneRequestPerInstance) {
@@ -304,7 +305,7 @@ TEST(SeLinuxFsCreate, ReadUpdatesSeekPosition) {
   }
 
   constexpr char kExpected[] = "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0";
-  EXPECT_THAT(RemoveTrailingNul(result), IsOk(kExpected));
+  EXPECT_THAT(RemoveTrailingNul(result), SyscallResultIsOk(kExpected));
 }
 
 // Validate that Security Contexts for new socket-like class instances behave the same as "process".
@@ -314,8 +315,8 @@ TEST(SeLinuxFsCreate, DefaultComputeCreateForSocket) {
   constexpr std::string_view kTargetContext =
       "test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0";
 
-  EXPECT_EQ(ComputeCreateContext(kSourceContext, kTargetContext, "tcp_socket"),
-            fit::ok("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"));
+  EXPECT_THAT(ComputeCreateContext(kSourceContext, kTargetContext, "tcp_socket"),
+              SyscallResultIsOk("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"));
 }
 
 // Validate that Security Contexts for non-process/socket-like class instances receive "object_r"
@@ -326,8 +327,8 @@ TEST(SeLinuxFsCreate, DefaultComputeCreateForFile) {
   constexpr std::string_view kTargetContext =
       "test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0";
 
-  EXPECT_EQ(ComputeCreateContext(kSourceContext, kTargetContext, "file"),
-            fit::ok("test_selinuxfs_u:object_r:test_selinuxfs_create_target_t:s0"));
+  EXPECT_THAT(ComputeCreateContext(kSourceContext, kTargetContext, "file"),
+              SyscallResultIsOk("test_selinuxfs_u:object_r:test_selinuxfs_create_target_t:s0"));
 }
 
 TEST(SeLinuxFsCreate, ComputeCreateForFifoFile) {
@@ -336,8 +337,8 @@ TEST(SeLinuxFsCreate, ComputeCreateForFifoFile) {
   constexpr std::string_view kTargetContext =
       "test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0";
 
-  EXPECT_EQ(ComputeCreateContext(kSourceContext, kTargetContext, "fifo_file"),
-            fit::ok("test_selinuxfs_u:object_r:test_selinuxfs_create_target_t:s0"));
+  EXPECT_THAT(ComputeCreateContext(kSourceContext, kTargetContext, "fifo_file"),
+              SyscallResultIsOk("test_selinuxfs_u:object_r:test_selinuxfs_create_target_t:s0"));
 }
 
 // Validate handling of whitespace between request elements.
@@ -346,77 +347,77 @@ TEST(SeLinuxFsCreate, ExtraWhitespace) {
       "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0";
 
   // Additional whitespace between elements is ignored.
-  EXPECT_EQ(
+  EXPECT_THAT(
       ComputeCreateContext(" test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process"),
-      fit::ok(kExpectedContext));
-  EXPECT_EQ(
+      SyscallResultIsOk(kExpectedContext));
+  EXPECT_THAT(
       ComputeCreateContext("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 ",
                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process"),
-      fit::ok(kExpectedContext));
-  EXPECT_EQ(
+      SyscallResultIsOk(kExpectedContext));
+  EXPECT_THAT(
       ComputeCreateContext("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 ", "process"),
-      fit::ok(kExpectedContext));
+      SyscallResultIsOk(kExpectedContext));
 
   // Fields are separated by spaces, with leading & trailing whitespace around each element ignored.
-  EXPECT_EQ(
+  EXPECT_THAT(
       ComputeCreateContext("\ttest_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process"),
-      fit::ok(kExpectedContext));
-  EXPECT_EQ(
+      SyscallResultIsOk(kExpectedContext));
+  EXPECT_THAT(
       ComputeCreateContext("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\t",
                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process"),
-      fit::ok(kExpectedContext));
-  EXPECT_EQ(
+      SyscallResultIsOk(kExpectedContext));
+  EXPECT_THAT(
       ComputeCreateContext("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\t", "process"),
-      fit::ok(kExpectedContext));
-  EXPECT_EQ(
+      SyscallResultIsOk(kExpectedContext));
+  EXPECT_THAT(
       ComputeCreateContext("\ntest_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\n", "process"),
-      fit::ok(kExpectedContext));
+      SyscallResultIsOk(kExpectedContext));
 
   // Although whitespace around elements is ignored, only spaces are valid separators.
-  EXPECT_EQ(
+  EXPECT_THAT(
       CallSeLinuxApi(
           "create",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\ttest_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\tprocess"),
-      fit::error(EINVAL));
-  EXPECT_EQ(
+      SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(
       CallSeLinuxApi(
           "create",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\ntest_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\nprocess"),
-      fit::error(EINVAL));
+      SyscallResultIsErrno(EINVAL));
 }
 
 // "create" API requests are appropriately validated.
 TEST(SeLinuxFsCreate, ComputeCreateRequestValidation) {
   // Fewer than three arguments is an invalid request.
-  EXPECT_EQ(CallSeLinuxApi("create", "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"),
-            fit::error(EINVAL));
-  EXPECT_EQ(
+  EXPECT_THAT(CallSeLinuxApi("create", "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"),
+              SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(
       CallSeLinuxApi(
           "create",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"),
-      fit::error(EINVAL));
+      SyscallResultIsErrno(EINVAL));
 
   // More than four arguments is an invalid request.
-  EXPECT_EQ(
+  EXPECT_THAT(
       CallSeLinuxApi(
           "create",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 process test bad"),
-      fit::error(EINVAL));
+      SyscallResultIsErrno(EINVAL));
 
   // If either security context is malformed, it is an invalid request.
-  EXPECT_EQ(
+  EXPECT_THAT(
       ComputeCreateContext("test_selinuxfs_non_existent_u:test_selinuxfs_r:test_selinuxfs_t:s0",
                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process"),
-      fit::error(EINVAL));
-  EXPECT_EQ(ComputeCreateContext(
-                "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                "test_selinuxfs_non_existent_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process"),
-            fit::error(EINVAL));
+      SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(ComputeCreateContext(
+                  "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                  "test_selinuxfs_non_existent_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process"),
+              SyscallResultIsErrno(EINVAL));
 }
 
 // Validate "create" handling of class Id values not defined in the loaded policy.
@@ -425,19 +426,19 @@ TEST(SeLinuxFsCreate, ComputeCreateRequestValidation) {
 // not.
 TEST(SeLinuxFsCreate, InvalidComputeCreateClassId) {
   // Zero is not a valid class Id, but is apparently treated as process/socket-like.
-  EXPECT_EQ(
+  EXPECT_THAT(
       CallSeLinuxApiAndRemoveNul(
           "create",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0 0"),
-      fit::ok("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"));
+      SyscallResultIsOk("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"));
 
   // 65535 is not a valid class Id in the test policy, but is apparently treated as
   // non-process/socket-like.
-  EXPECT_EQ(
+  EXPECT_THAT(
       CallSeLinuxApiAndRemoveNul(
           "create",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0 65535"),
-      fit::ok("test_selinuxfs_u:object_r:test_selinuxfs_create_target_t:s0"));
+      SyscallResultIsOk("test_selinuxfs_u:object_r:test_selinuxfs_create_target_t:s0"));
 }
 
 TEST(SeLinuxFsAccess, OneRequestPerInstance) {
@@ -493,60 +494,60 @@ TEST(SeLinuxFsAccess, ExtraWhitespace) {
           .value();
 
   // Additional whitespace between elements is ignored.
-  EXPECT_EQ(
+  EXPECT_THAT(
       ComputeAccess(" test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
                     "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process", kRequested),
-      fit::ok(kExpectedResult));
-  EXPECT_EQ(
+      SyscallResultIsOk(kExpectedResult));
+  EXPECT_THAT(
       ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 ",
                     "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process", kRequested),
-      fit::ok(kExpectedResult));
-  EXPECT_EQ(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 ", "process",
-                          kRequested),
-            fit::ok(kExpectedResult));
+      SyscallResultIsOk(kExpectedResult));
+  EXPECT_THAT(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 ", "process",
+                            kRequested),
+              SyscallResultIsOk(kExpectedResult));
 
   // Fields are separated by spaces, with leading & trailing whitespace around each element ignored.
-  EXPECT_EQ(
+  EXPECT_THAT(
       ComputeAccess("\ttest_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
                     "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process", kRequested),
-      fit::ok(kExpectedResult));
-  EXPECT_EQ(
+      SyscallResultIsOk(kExpectedResult));
+  EXPECT_THAT(
       ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\t",
                     "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process", kRequested),
-      fit::ok(kExpectedResult));
-  EXPECT_EQ(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\t", "process",
-                          kRequested),
-            fit::ok(kExpectedResult));
-  EXPECT_EQ(ComputeAccess("\ntest_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\n", "process",
-                          kRequested),
-            fit::ok(kExpectedResult));
+      SyscallResultIsOk(kExpectedResult));
+  EXPECT_THAT(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\t", "process",
+                            kRequested),
+              SyscallResultIsOk(kExpectedResult));
+  EXPECT_THAT(ComputeAccess("\ntest_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                            "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\n", "process",
+                            kRequested),
+              SyscallResultIsOk(kExpectedResult));
 
   // Although whitespace around elements is ignored, only spaces are valid separators.
-  EXPECT_EQ(
+  EXPECT_THAT(
       CallSeLinuxApi(
           "access",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\ttest_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\tprocess\t1"),
-      fit::error(EINVAL));
-  EXPECT_EQ(
+      SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(
       CallSeLinuxApi(
           "access",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\ntest_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0\nprocess\t1"),
-      fit::error(EINVAL));
+      SyscallResultIsErrno(EINVAL));
 }
 
 // "access" API requests with too few arguments are invalid.
 TEST(SeLinuxFsAccess, TooFewArgumentsIsInvalid) {
   // Fewer than three arguments is an invalid request.
-  EXPECT_EQ(CallSeLinuxApi("access", "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"),
-            fit::error(EINVAL));
-  EXPECT_EQ(
+  EXPECT_THAT(CallSeLinuxApi("access", "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"),
+              SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(
       CallSeLinuxApi(
           "access",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0"),
-      fit::error(EINVAL));
+      SyscallResultIsErrno(EINVAL));
 }
 
 // "access" API requests with three arguments are valid, even with trailing data.
@@ -558,22 +559,22 @@ TEST(SeLinuxFsAccess, ClassIdMayHaveTrailingNonNumericData) {
   const std::string_view kExpectedAccess = "f ffffffff 0 ffffffff 1 0";
 
   // Three arguments (just the `kRequestBase` with no "requested" set) is valid.
-  ASSERT_EQ(CallSeLinuxApi("access", kRequestBase), fit::ok(kExpectedAccess));
+  ASSERT_THAT(CallSeLinuxApi("access", kRequestBase), SyscallResultIsOk(kExpectedAccess));
 
   // Trailing non-numeric characters in the target class argument appear to be ignored. This is
   // consistent with the way that `atoi()` handles trailing non-numeric characters.
-  EXPECT_EQ(CallSeLinuxApi("access", kRequestBase + "third_arg_trailing_junk"),
-            fit::ok(kExpectedAccess));
+  EXPECT_THAT(CallSeLinuxApi("access", kRequestBase + "third_arg_trailing_junk"),
+              SyscallResultIsOk(kExpectedAccess));
 }
 
 // The class Id argument must be a valid decimal.
 TEST(SeLinuxFsAccess, ClassIdMustBeDecimal) {
   // Non-numeric class Ids are rejected.
-  EXPECT_EQ(
+  EXPECT_THAT(
       CallSeLinuxApi(
           "access",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0 bad"),
-      fit::error(EINVAL));
+      SyscallResultIsErrno(EINVAL));
 }
 
 // "access" API requests with a fourth argument containing arbitrary data is accepted.
@@ -586,25 +587,27 @@ TEST(SeLinuxFsAccess, FourthArgumentIsNotValidated) {
 
   // Four arguments (i.e. including the "requested" set) is valid, though the requested set has no
   // effect on the result.
-  EXPECT_EQ(CallSeLinuxApi("access", kRequestBase + " 0"), fit::ok(kExpectedAccess));
-  EXPECT_EQ(CallSeLinuxApi("access", kRequestBase + " ffffffff"), fit::ok(kExpectedAccess));
-  EXPECT_EQ(CallSeLinuxApi("access", kRequestBase + " -1"), fit::ok(kExpectedAccess));
+  EXPECT_THAT(CallSeLinuxApi("access", kRequestBase + " 0"), SyscallResultIsOk(kExpectedAccess));
+  EXPECT_THAT(CallSeLinuxApi("access", kRequestBase + " ffffffff"),
+              SyscallResultIsOk(kExpectedAccess));
+  EXPECT_THAT(CallSeLinuxApi("access", kRequestBase + " -1"), SyscallResultIsOk(kExpectedAccess));
 
   // There is no validation that the requested set argument is a valid hex value.
-  EXPECT_EQ(CallSeLinuxApi("access", kRequestBase + " non_numeric"), fit::ok(kExpectedAccess));
+  EXPECT_THAT(CallSeLinuxApi("access", kRequestBase + " non_numeric"),
+              SyscallResultIsOk(kExpectedAccess));
 }
 
 // If either security context is malformed, it is an invalid request.
 TEST(SeLinuxFsAccess, SecurityContextsMustBeValid) {
   const auto kRequested = GetAccessVector("process", "fork");
-  EXPECT_EQ(
+  EXPECT_THAT(
       ComputeAccess("test_selinuxfs_non_existent_u:test_selinuxfs_r:test_selinuxfs_t:s0",
                     "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0", "process", kRequested),
-      fit::error(EINVAL));
-  EXPECT_EQ(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "test_selinuxfs_non_existent_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "process", kRequested),
-            fit::error(EINVAL));
+      SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                            "test_selinuxfs_non_existent_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                            "process", kRequested),
+              SyscallResultIsErrno(EINVAL));
 }
 
 // Validate "access" handling of class Id values not defined in the loaded policy.
@@ -614,18 +617,18 @@ TEST(SeLinuxFsAccess, UnknownClassIdIsAccepted) {
   constexpr char kAllAccessDenied[] = "0 ffffffff 0 ffffffff 1 0";
 
   // Zero is not a valid class Id.
-  EXPECT_EQ(
+  EXPECT_THAT(
       CallSeLinuxApi(
           "access",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0 0 1"),
-      fit::ok(kAllAccessDenied));
+      SyscallResultIsOk(kAllAccessDenied));
 
   // 65535 is not a valid class Id in the test policy.
-  EXPECT_EQ(
+  EXPECT_THAT(
       CallSeLinuxApi(
           "access",
           "test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0 test_selinuxfs_create_target_u:test_selinuxfs_create_target_r:test_selinuxfs_create_target_t:s0 65535 1"),
-      fit::ok(kAllAccessDenied));
+      SyscallResultIsOk(kAllAccessDenied));
 }
 
 // Validate that a subject domain that is marked `permissive` in the policy is reported as having
@@ -633,32 +636,34 @@ TEST(SeLinuxFsAccess, UnknownClassIdIsAccepted) {
 TEST(SeLinuxFsAccess, ComputeAccessPermissiveSubject) {
   constexpr uint32_t kAllPerms = UINT32_MAX;
 
-  EXPECT_EQ(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_access_permissive_t:s0",
-                          "test_selinuxfs_u:object_r:test_selinuxfs_access_no_perms_target_t:s0",
-                          "test_selinuxfs_target_class", kAllPerms),
-            fit::ok("0 ffffffff 0 ffffffff 1 1"));
+  EXPECT_THAT(
+      ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_access_permissive_t:s0",
+                    "test_selinuxfs_u:object_r:test_selinuxfs_access_no_perms_target_t:s0",
+                    "test_selinuxfs_target_class", kAllPerms),
+      SyscallResultIsOk("0 ffffffff 0 ffffffff 1 1"));
 }
 
 // Validate that the allowed permissions are reported correctly in the result.
 TEST(SeLinuxFsAccess, ComputeAccessPermissions) {
   constexpr uint32_t kAllPerms = UINT32_MAX;
 
-  EXPECT_EQ(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "test_selinuxfs_u:object_r:test_selinuxfs_access_no_perms_target_t:s0",
-                          "test_selinuxfs_target_class", kAllPerms),
-            fit::ok("0 ffffffff 0 ffffffff 1 0"));
-  EXPECT_EQ(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "test_selinuxfs_u:object_r:test_selinuxfs_access_myperm1_target_t:s0",
-                          "test_selinuxfs_target_class", kAllPerms),
-            fit::ok("1 ffffffff 0 ffffffff 1 0"));
-  EXPECT_EQ(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "test_selinuxfs_u:object_r:test_selinuxfs_access_myperm1234_target_t:s0",
-                          "test_selinuxfs_target_class", kAllPerms),
-            fit::ok("f ffffffff 0 ffffffff 1 0"));
-  EXPECT_EQ(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "test_selinuxfs_u:object_r:test_selinuxfs_access_all_target_t:s0",
-                          "test_selinuxfs_target_class", kAllPerms),
-            fit::ok("f ffffffff 0 ffffffff 1 0"));
+  EXPECT_THAT(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                            "test_selinuxfs_u:object_r:test_selinuxfs_access_no_perms_target_t:s0",
+                            "test_selinuxfs_target_class", kAllPerms),
+              SyscallResultIsOk("0 ffffffff 0 ffffffff 1 0"));
+  EXPECT_THAT(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                            "test_selinuxfs_u:object_r:test_selinuxfs_access_myperm1_target_t:s0",
+                            "test_selinuxfs_target_class", kAllPerms),
+              SyscallResultIsOk("1 ffffffff 0 ffffffff 1 0"));
+  EXPECT_THAT(
+      ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                    "test_selinuxfs_u:object_r:test_selinuxfs_access_myperm1234_target_t:s0",
+                    "test_selinuxfs_target_class", kAllPerms),
+      SyscallResultIsOk("f ffffffff 0 ffffffff 1 0"));
+  EXPECT_THAT(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                            "test_selinuxfs_u:object_r:test_selinuxfs_access_all_target_t:s0",
+                            "test_selinuxfs_target_class", kAllPerms),
+              SyscallResultIsOk("f ffffffff 0 ffffffff 1 0"));
 }
 
 // Validate that the `auditallow` and `dontaudit` statements are taken into account in the reported
@@ -666,14 +671,15 @@ TEST(SeLinuxFsAccess, ComputeAccessPermissions) {
 TEST(SeLinuxFsAccess, ComputeAccessAudit) {
   constexpr uint32_t kAllPerms = UINT32_MAX;
 
-  EXPECT_EQ(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "test_selinuxfs_u:object_r:test_selinuxfs_access_audit_all_target_t:s0",
-                          "test_selinuxfs_target_class", kAllPerms),
-            fit::ok("0 ffffffff f ffffffff 1 0"));
-  EXPECT_EQ(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
-                          "test_selinuxfs_u:object_r:test_selinuxfs_access_audit_none_target_t:s0",
-                          "test_selinuxfs_target_class", kAllPerms),
-            fit::ok("0 ffffffff 0 fffffff0 1 0"));
+  EXPECT_THAT(ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                            "test_selinuxfs_u:object_r:test_selinuxfs_access_audit_all_target_t:s0",
+                            "test_selinuxfs_target_class", kAllPerms),
+              SyscallResultIsOk("0 ffffffff f ffffffff 1 0"));
+  EXPECT_THAT(
+      ComputeAccess("test_selinuxfs_u:test_selinuxfs_r:test_selinuxfs_t:s0",
+                    "test_selinuxfs_u:object_r:test_selinuxfs_access_audit_none_target_t:s0",
+                    "test_selinuxfs_target_class", kAllPerms),
+      SyscallResultIsOk("0 ffffffff 0 fffffff0 1 0"));
 }
 
 TEST(SeLinuxFsPolicy, ReadPolicyPermission) {

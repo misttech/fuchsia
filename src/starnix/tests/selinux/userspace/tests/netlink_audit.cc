@@ -48,7 +48,7 @@ TEST(NetlinkAuditTest, DeregisterInexistentAuditDaemon) {
 TEST(NetlinkAuditTest, RegisterAuditDaemonWithOtherPid) {
   fbl::unique_fd fd = OpenNetlinkAuditSocket();
   ASSERT_TRUE(fd.is_valid());
-  ASSERT_EQ(RegisterAsAuditDaemon(fd.get(), getpid() + 1), fit::error(EINVAL));
+  ASSERT_THAT(RegisterAsAuditDaemon(fd.get(), getpid() + 1), SyscallResultIsErrno(EINVAL));
 }
 
 TEST(NetlinkAuditTest, RegisterAuditDaemonTwice) {
@@ -58,7 +58,7 @@ TEST(NetlinkAuditTest, RegisterAuditDaemonTwice) {
   ASSERT_TRUE(fd2.is_valid());
 
   ASSERT_TRUE(RegisterAsAuditDaemon(fd1.get()).is_ok());
-  ASSERT_EQ(RegisterAsAuditDaemon(fd2.get()), fit::error(EEXIST));
+  ASSERT_THAT(RegisterAsAuditDaemon(fd2.get()), SyscallResultIsErrno(EEXIST));
 
   EXPECT_TRUE(UnregisterAuditDaemon(fd1.get()).is_ok());
 }
@@ -75,7 +75,8 @@ TEST(NetlinkAuditTest, MessageReceivedOnlyOnDaemonSocket) {
   ASSERT_TRUE(RegisterAsAuditDaemon(fd1.get()).is_ok());
 
   char buf[NETLINK_BUF_SIZE]{};
-  EXPECT_EQ(ReceiveNetlinkMessage(fd2.get(), buf, sizeof(buf), false), fit::error(EAGAIN));
+  EXPECT_THAT(ReceiveNetlinkMessage(fd2.get(), buf, sizeof(buf), false),
+              SyscallResultIsErrno(EAGAIN));
 
   // The message should be on fd1.
   struct nlmsghdr* nlh;
@@ -218,11 +219,9 @@ TEST_P(NetlinkAuditSendTest, Send) {
         fd.get(), 1, std::string(send_test.label) + ": GENERIC_MESSAGE", send_test.should_wait_ack);
     // If the errno is expected to be 0, check for success.
     if (send_test.expected_errno == 0) {
-      ASSERT_TRUE(result.is_ok()) << "Netlink send should succeed";
+      ASSERT_THAT(result, SyscallResultIsOk()) << "Netlink send should succeed";
     } else {
-      ASSERT_TRUE(result.is_error()) << "Netlink send should fail";
-      ASSERT_EQ(result.error_value(), send_test.expected_errno)
-          << "Returned error should be " << strerror(send_test.expected_errno);
+      ASSERT_THAT(result, SyscallResultIsErrno(send_test.expected_errno));
     }
   }));
 }

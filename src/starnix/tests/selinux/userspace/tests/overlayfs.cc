@@ -97,7 +97,8 @@ TEST_F(OverlayFsTest, RootLabelMatchesUpper) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   // Re-label the upper directory to a more specific label for this test.
-  ASSERT_EQ(SetLabel(upper_, "test_u:object_r:test_overlayfs_upper_file_t:s0"), fit::ok());
+  ASSERT_THAT(SetLabel(upper_, "test_u:object_r:test_overlayfs_upper_file_t:s0"),
+              SyscallResultIsOk());
 
   ASSERT_NO_FATAL_FAILURE(Mount());
 
@@ -108,7 +109,8 @@ TEST_F(OverlayFsTest, RootLabelMatchesUpper) {
 TEST_F(OverlayFsTest, ReadSucceedsWithPermissions) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "lower_data"));
-  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_file_t:s0"), fit::ok());
+  ASSERT_THAT(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_file_t:s0"),
+              SyscallResultIsOk());
   ASSERT_NO_FATAL_FAILURE(Mount());
 
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_caller_t:s0", [&] {
@@ -122,8 +124,8 @@ TEST_F(OverlayFsTest, ReadSucceedsWithPermissions) {
 TEST_F(OverlayFsTest, CopyUpOnlyAfterAccessCheck) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "lower_data"));
-  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_read_only_file_t:s0"),
-            fit::ok());
+  ASSERT_THAT(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_read_only_file_t:s0"),
+              SyscallResultIsOk());
   ASSERT_NO_FATAL_FAILURE(Mount());
 
   // Attempt to write to the read-only labeled file, which neither mounter nor caller can write.
@@ -139,8 +141,8 @@ TEST_F(OverlayFsTest, CopyUpOnlyAfterAccessCheck) {
 TEST_F(OverlayFsTest, OpenReadDeniedIfMounterCannotRead) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "lower_data"));
-  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_no_read_file_t:s0"),
-            fit::ok());
+  ASSERT_THAT(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_no_read_file_t:s0"),
+              SyscallResultIsOk());
 
   ASSERT_NO_FATAL_FAILURE(Mount());
 
@@ -155,9 +157,9 @@ TEST_F(OverlayFsTest, OpenReadDeniedIfMounterCannotRead) {
 TEST_F(OverlayFsTest, ClearAppendNotDeniedIfMounterLacksWrite) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   ASSERT_TRUE(files::WriteFile(upper_ + "/file", "upper_data"));
-  ASSERT_EQ(
+  ASSERT_THAT(
       SetLabel(upper_ + "/file", "test_u:object_r:test_overlay_mounter_append_only_file_t:s0"),
-      fit::ok());
+      SyscallResultIsOk());
 
   ASSERT_NO_FATAL_FAILURE(Mount());
 
@@ -181,7 +183,8 @@ TEST_F(OverlayFsTest, ClearAppendNotDeniedIfMounterLacksWrite) {
 TEST_F(OverlayFsTest, CopyUpSucceedsWithPermissions) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "lower_data"));
-  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_file_t:s0"), fit::ok());
+  ASSERT_THAT(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_file_t:s0"),
+              SyscallResultIsOk());
   ASSERT_NO_FATAL_FAILURE(Mount());
 
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_caller_t:s0", [&] {
@@ -197,9 +200,9 @@ TEST_F(OverlayFsTest, CopyUpSucceedsWithPermissions) {
 TEST_F(OverlayFsTest, CopyUpDeniedIfMounterLacksWrite) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "upper_data"));
-  ASSERT_EQ(
+  ASSERT_THAT(
       SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_append_only_file_t:s0"),
-      fit::ok());
+      SyscallResultIsOk());
 
   ASSERT_NO_FATAL_FAILURE(Mount());
 
@@ -215,9 +218,9 @@ TEST_F(OverlayFsTest, CopyUpDeniedIfMounterLacksWrite) {
 TEST_F(OverlayFsTest, CopyUpDeniedForAppendIfMounterLacksWrite) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "upper_data"));
-  ASSERT_EQ(
+  ASSERT_THAT(
       SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_append_only_file_t:s0"),
-      fit::ok());
+      SyscallResultIsOk());
 
   ASSERT_NO_FATAL_FAILURE(Mount());
 
@@ -232,8 +235,8 @@ TEST_F(OverlayFsTest, CopyUpDeniedForAppendIfMounterLacksWrite) {
 // running in permissive mode and accessing a file that neither caller nor mounter can access.
 TEST_F(OverlayFsTest, AuditChecksFileOpenAndWrite) {
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "upper_data"));
-  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_no_access_file_t:s0"),
-            fit::ok());
+  ASSERT_THAT(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_no_access_file_t:s0"),
+              SyscallResultIsOk());
 
   ASSERT_NO_FATAL_FAILURE(Mount());
 
@@ -250,8 +253,8 @@ TEST_F(OverlayFsTest, AuditChecksFileOpenAndWrite) {
 // can access.
 TEST_F(OverlayFsTest, AuditChecksFileOpenAndRead) {
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "upper_data"));
-  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_no_access_file_t:s0"),
-            fit::ok());
+  ASSERT_THAT(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_no_access_file_t:s0"),
+              SyscallResultIsOk());
 
   ASSERT_NO_FATAL_FAILURE(Mount());
 
@@ -307,7 +310,8 @@ TEST_F(OverlayFsTest, MknodSucceedsWithPermissions) {
 TEST_F(OverlayFsTest, UnlinkLowerDoesNotRequireMounterMknodCapability) {
   auto enforce = ScopedEnforcement::SetEnforcing();
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "data"));
-  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_file_t:s0"), fit::ok());
+  ASSERT_THAT(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_file_t:s0"),
+              SyscallResultIsOk());
 
   ASSERT_NO_FATAL_FAILURE(MountWith("test_u:test_r:test_overlayfs_mounter_no_mknod_t:s0"));
 
@@ -322,14 +326,15 @@ TEST_F(OverlayFsTest, SecurityLabelAccessDeniedIfMounterGetattrDenied) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "lower_data"));
-  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_no_getattr_file_t:s0"),
-            fit::ok());
+  ASSERT_THAT(
+      SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_no_getattr_file_t:s0"),
+      SyscallResultIsOk());
 
   ASSERT_NO_FATAL_FAILURE(Mount());
 
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_overlayfs_caller_t:s0", [&] {
     // Verify that retrieving the SELinux label (getxattr) fails.
-    EXPECT_EQ(GetLabel(overlay_ + "/file"), fit::error(EACCES));
+    EXPECT_THAT(GetLabel(overlay_ + "/file"), SyscallResultIsErrno(EACCES));
 
     // Verify that stat() also fails.
     struct stat st;
@@ -344,8 +349,9 @@ TEST_F(OverlayFsTest, FileIsInaccessibleIfMounterGetattrDenied) {
   auto enforce = ScopedEnforcement::SetEnforcing();
 
   ASSERT_TRUE(files::WriteFile(lower_ + "/file", "lower_data"));
-  ASSERT_EQ(SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_no_getattr_file_t:s0"),
-            fit::ok());
+  ASSERT_THAT(
+      SetLabel(lower_ + "/file", "test_u:object_r:test_overlay_mounter_no_getattr_file_t:s0"),
+      SyscallResultIsOk());
 
   ASSERT_NO_FATAL_FAILURE(Mount());
 

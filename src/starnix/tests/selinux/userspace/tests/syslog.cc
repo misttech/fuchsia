@@ -59,7 +59,8 @@ TEST(SyslogTest, ProcKmsgReadDeniedIfDroppedPermission) {
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:syslog_test_has_syslog_mod_t:s0", [&] {
     fbl::unique_fd proc_kmsg = fbl::unique_fd(open("/proc/kmsg", O_RDONLY | O_NONBLOCK));
     ASSERT_TRUE(proc_kmsg) << strerror(errno);
-    ASSERT_EQ(WriteTaskAttr("current", "test_u:test_r:syslog_test_no_syslog_perm_t:s0"), fit::ok());
+    ASSERT_THAT(WriteTaskAttr("current", "test_u:test_r:syslog_test_no_syslog_perm_t:s0"),
+                SyscallResultIsOk());
     char buf;
     EXPECT_THAT(read(proc_kmsg.get(), &buf, 1), SyscallFailsWithErrno(EACCES));
   }));
@@ -90,7 +91,8 @@ TEST(SyslogTest, DevKmsgReadAllowedIfDroppedPermission) {
     ASSERT_TRUE(dev_kmsg) << strerror(errno);
 
     // Permissions are not re-checked after opening.
-    ASSERT_EQ(WriteTaskAttr("current", "test_u:test_r:syslog_test_no_syslog_perm_t:s0"), fit::ok());
+    ASSERT_THAT(WriteTaskAttr("current", "test_u:test_r:syslog_test_no_syslog_perm_t:s0"),
+                SyscallResultIsOk());
     char buf[4096];
     EXPECT_THAT(read(dev_kmsg.get(), buf, sizeof(buf)),
                 ::testing::AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EAGAIN)));

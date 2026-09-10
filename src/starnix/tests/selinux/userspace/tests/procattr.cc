@@ -13,6 +13,7 @@
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 namespace {
 
@@ -38,6 +39,7 @@ extern std::string DoPrePolicyLoadWork() {
       .prev = ReadTaskAttr("prev"),
       .sockcreate = ReadTaskAttr("sockcreate"),
   };
+
   return "minimal_policy";
 }
 
@@ -45,17 +47,17 @@ namespace {
 
 TEST(ProcAttrTest, PrePolicyAttrs) {
   ASSERT_TRUE(g_pre_policy_procattrs.has_value());
-  EXPECT_EQ(g_pre_policy_procattrs->current, fit::ok("kernel"));
-  EXPECT_EQ(g_pre_policy_procattrs->prev, fit::ok("kernel"));
-  EXPECT_EQ(g_pre_policy_procattrs->exec, fit::ok(""));
-  EXPECT_EQ(g_pre_policy_procattrs->fscreate, fit::ok(""));
-  EXPECT_EQ(g_pre_policy_procattrs->keycreate, fit::ok(""));
-  EXPECT_EQ(g_pre_policy_procattrs->sockcreate, fit::ok(""));
+  EXPECT_THAT(g_pre_policy_procattrs->current, SyscallResultIsOk("kernel"));
+  EXPECT_THAT(g_pre_policy_procattrs->prev, SyscallResultIsOk("kernel"));
+  EXPECT_THAT(g_pre_policy_procattrs->exec, SyscallResultIsOk(""));
+  EXPECT_THAT(g_pre_policy_procattrs->fscreate, SyscallResultIsOk(""));
+  EXPECT_THAT(g_pre_policy_procattrs->keycreate, SyscallResultIsOk(""));
+  EXPECT_THAT(g_pre_policy_procattrs->sockcreate, SyscallResultIsOk(""));
 }
 
 // Attempting to read the process' current context should return a value.
 TEST(ProcAttrTest, Current) {
-  EXPECT_THAT(ReadTaskAttr("current"), IsOk("system_u:unconfined_r:unconfined_t:s0"));
+  EXPECT_THAT(ReadTaskAttr("current"), SyscallResultIsOk("system_u:unconfined_r:unconfined_t:s0"));
 }
 
 TEST(ProcAttrTest, AttrsAreSeekable) {
@@ -92,30 +94,31 @@ TEST(ProcAttrTest, AttrsAreSeekable) {
 // Writable attributes validate the contexts written to them.
 TEST(ProcAttrTest, WritableAttrsValidateContexts) {
   // Write a valid context and verify that it was set.
-  EXPECT_TRUE(WriteTaskAttr("exec", "system_u:unconfined_r:unconfined_t:s0").is_ok());
-  EXPECT_EQ(ReadTaskAttr("exec"), fit::ok("system_u:unconfined_r:unconfined_t:s0"));
+  EXPECT_THAT(WriteTaskAttr("exec", "system_u:unconfined_r:unconfined_t:s0"), SyscallResultIsOk());
+  EXPECT_THAT(ReadTaskAttr("exec"), SyscallResultIsOk("system_u:unconfined_r:unconfined_t:s0"));
 
   // Write an invalid context and verify that nothing is changed.
-  EXPECT_EQ(WriteTaskAttr("exec", "system_u:invalid_role_r:unconfined_t:s0"), fit::error(EINVAL));
-  EXPECT_EQ(ReadTaskAttr("exec"), fit::ok("system_u:unconfined_r:unconfined_t:s0"));
+  EXPECT_THAT(WriteTaskAttr("exec", "system_u:invalid_role_r:unconfined_t:s0"),
+              SyscallResultIsErrno(EINVAL));
+  EXPECT_THAT(ReadTaskAttr("exec"), SyscallResultIsOk("system_u:unconfined_r:unconfined_t:s0"));
 }
 
 // Writing a single NUL clears the attribute.
 TEST(ProcAttrTest, WritableAttrsClearedByNul) {
   // Set a valid context, then clear it with NUL.
-  ASSERT_TRUE(WriteTaskAttr("exec", "system_u:unconfined_r:unconfined_t:s0").is_ok());
-  ASSERT_EQ(ReadTaskAttr("exec"), fit::ok("system_u:unconfined_r:unconfined_t:s0"));
-  EXPECT_EQ(WriteTaskAttr("exec", std::string_view("\0", 1)), fit::success<>());
-  EXPECT_EQ(ReadTaskAttr("exec"), fit::ok(""));
+  ASSERT_THAT(WriteTaskAttr("exec", "system_u:unconfined_r:unconfined_t:s0"), SyscallResultIsOk());
+  ASSERT_THAT(ReadTaskAttr("exec"), SyscallResultIsOk("system_u:unconfined_r:unconfined_t:s0"));
+  EXPECT_THAT(WriteTaskAttr("exec", std::string_view("\0", 1)), SyscallResultIsOk());
+  EXPECT_THAT(ReadTaskAttr("exec"), SyscallResultIsOk(""));
 }
 
 // Writing a single newline clears the attribute.
 TEST(ProcAttrTest, WritableAttrsClearedByNewline) {
   // Set a valid context, then clear it with newline.
-  ASSERT_TRUE(WriteTaskAttr("exec", "system_u:unconfined_r:unconfined_t:s0").is_ok());
-  ASSERT_EQ(ReadTaskAttr("exec"), fit::ok("system_u:unconfined_r:unconfined_t:s0"));
-  EXPECT_EQ(WriteTaskAttr("exec", "\n"), fit::success<>());
-  EXPECT_EQ(ReadTaskAttr("exec"), fit::ok(""));
+  ASSERT_THAT(WriteTaskAttr("exec", "system_u:unconfined_r:unconfined_t:s0"), SyscallResultIsOk());
+  ASSERT_THAT(ReadTaskAttr("exec"), SyscallResultIsOk("system_u:unconfined_r:unconfined_t:s0"));
+  EXPECT_THAT(WriteTaskAttr("exec", "\n"), SyscallResultIsOk());
+  EXPECT_THAT(ReadTaskAttr("exec"), SyscallResultIsOk(""));
 }
 
 // Writing a valid context across multiple writes is not valid.
@@ -219,7 +222,7 @@ TEST(ProcAttrTest, ZombieProcPid) {
     auto my_label = ReadTaskAttr("current");
     ASSERT_TRUE(my_label.is_ok()) << my_label.error_value();
 
-    EXPECT_THAT(GetLabel(proc_pid_path), IsOk(my_label.value()));
+    EXPECT_THAT(GetLabel(proc_pid_path), SyscallResultIsOk(my_label.value()));
   }));
 }
 

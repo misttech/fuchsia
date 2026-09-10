@@ -26,20 +26,21 @@ class MemFdTest : public ::testing::Test {
 };
 
 TEST(MemFdTest, MemFdTransitionRetrospectivelyAppliedOnPolicyLoad) {
-  EXPECT_THAT(GetLabel(g_before_policy_fd), "system_u:object_r:test_memfd_transition_file_t:s0");
+  EXPECT_THAT(GetLabel(g_before_policy_fd),
+              SyscallResultIsOk("system_u:object_r:test_memfd_transition_file_t:s0"));
 }
 
 TEST(MemFdTest, MemFdTransition) {
   int fd;
   EXPECT_THAT((fd = test_helper::MemFdCreate("test", 0)), SyscallSucceeds());
-  EXPECT_THAT(GetLabel(fd), "system_u:object_r:test_memfd_transition_file_t:s0");
+  EXPECT_THAT(GetLabel(fd), SyscallResultIsOk("system_u:object_r:test_memfd_transition_file_t:s0"));
 }
 
 TEST(MemFdTest, MemFdNoTransitionInheritsTmpFsDomain) {
   ASSERT_TRUE(RunSubprocessAs("test_u:test_r:test_memfd_no_transition_t:s0", []() {
     int fd;
     EXPECT_THAT((fd = test_helper::MemFdCreate("test", 0)), SyscallSucceeds());
-    EXPECT_THAT(GetLabel(fd), "test_u:object_r:tmpfs_t:s0");
+    EXPECT_THAT(GetLabel(fd), SyscallResultIsOk("test_u:object_r:tmpfs_t:s0"));
   }));
 }
 
@@ -50,7 +51,7 @@ extern std::string DoPrePolicyLoadWork() {
   EXPECT_THAT((g_before_policy_fd = test_helper::MemFdCreate("test", 0)), SyscallSucceeds());
 
   // Until a policy is loaded, no file label is provided.
-  EXPECT_EQ(GetLabel(g_before_policy_fd), fit::error(ENODATA));
+  EXPECT_THAT(GetLabel(g_before_policy_fd), SyscallResultIsErrno(ENODATA));
 
   return "memfd_transition_policy";
 }

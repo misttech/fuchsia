@@ -44,13 +44,8 @@ TEST_P(MountOptionValidationTest, RejectedBeforePolicyLoad) {
   ASSERT_NE(it, g_pre_policy_mount_results.end()) << "Result for " << option_name << " not found";
   const auto& result = it->second;
 
-  EXPECT_TRUE(result.is_error()) << "Mount with '" << option_name
-                                 << "' unexpectedly succeeded pre-policy";
-  if (result.is_error()) {
-    EXPECT_EQ(result.error_value(), EINVAL)
-        << "Mount with '" << option_name << "' failed with " << result.error_value() << " ("
-        << strerror(result.error_value()) << "), expected EINVAL";
-  }
+  EXPECT_THAT(result, SyscallResultIsErrno(EINVAL))
+      << "Mount with '" << option_name << "' unexpectedly succeeded or failed with wrong error";
 }
 
 TEST_P(MountOptionValidationTest, RejectedWhenInvalid) {

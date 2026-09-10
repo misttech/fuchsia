@@ -29,7 +29,7 @@ TEST(AnonInodeTest, EventFdIsUnlabeled) {
   fbl::unique_fd fd(eventfd(0, 0));
   ASSERT_TRUE(fd.is_valid());
 
-  EXPECT_EQ(GetLabel(fd.get()), fit::error(ENOTSUP));
+  EXPECT_THAT(GetLabel(fd.get()), SyscallResultIsErrno(ENOTSUP));
 }
 
 TEST(AnonInodeTest, PrivateFdIsUnchecked) {
@@ -43,7 +43,7 @@ TEST(AnonInodeTest, PrivateFdIsUnchecked) {
     auto fd_label = GetLabel(fd.get());
 
     // Ensure that `fd` is of an un-labeled, aka "private", kind.
-    ASSERT_EQ(fd_label, fit::error(ENOTSUP));
+    ASSERT_THAT(fd_label, SyscallResultIsErrno(ENOTSUP));
 
     uint64_t event_buf = 1;
 
@@ -71,7 +71,7 @@ TEST(AnonInodeTest, TmpFileHasLabel) {
     fbl::unique_fd fd(open(kTmpPath, O_RDWR | O_TMPFILE, 0o600));
     ASSERT_TRUE(fd.is_valid());
 
-    EXPECT_EQ(GetLabel(fd.get()), fit::ok());
+    EXPECT_THAT(GetLabel(fd.get()), SyscallResultIsOk());
   }));
 }
 
@@ -82,7 +82,8 @@ TEST(AnonInodeTest, UserfaultFdHasLabel) {
     fbl::unique_fd fd(static_cast<int>(syscall(SYS_userfaultfd, O_CLOEXEC)));
     ASSERT_TRUE(fd.is_valid());
 
-    EXPECT_EQ(GetLabel(fd.get()), fit::ok("test_u:object_r:anon_inode_test_userfaultfd_t:s0"));
+    EXPECT_THAT(GetLabel(fd.get()),
+                SyscallResultIsOk("test_u:object_r:anon_inode_test_userfaultfd_t:s0"));
   }));
 }
 
@@ -100,7 +101,7 @@ TEST(AnonInodeTest, EpollIsUnlabeled) {
   fbl::unique_fd fd(epoll_create1(0));
   ASSERT_TRUE(fd.is_valid());
 
-  EXPECT_EQ(GetLabel(fd.get()), fit::error(ENOTSUP));
+  EXPECT_THAT(GetLabel(fd.get()), SyscallResultIsErrno(ENOTSUP));
 }
 
 TEST(AnonInodeTest, InotifyIsUnlabeled) {
@@ -109,7 +110,7 @@ TEST(AnonInodeTest, InotifyIsUnlabeled) {
   fbl::unique_fd fd(inotify_init());
   ASSERT_TRUE(fd.is_valid());
 
-  EXPECT_EQ(GetLabel(fd.get()), fit::error(ENOTSUP));
+  EXPECT_THAT(GetLabel(fd.get()), SyscallResultIsErrno(ENOTSUP));
 }
 
 TEST(AnonInodeTest, PidFdIsUnlabeled) {
@@ -118,7 +119,7 @@ TEST(AnonInodeTest, PidFdIsUnlabeled) {
   fbl::unique_fd fd(static_cast<int>(syscall(SYS_pidfd_open, getpid(), 0)));
   ASSERT_TRUE(fd.is_valid());
 
-  EXPECT_EQ(GetLabel(fd.get()), fit::error(ENOTSUP));
+  EXPECT_THAT(GetLabel(fd.get()), SyscallResultIsErrno(ENOTSUP));
 }
 
 TEST(AnonInodeTest, TimerFdIsUnlabeled) {
@@ -127,7 +128,7 @@ TEST(AnonInodeTest, TimerFdIsUnlabeled) {
   fbl::unique_fd fd(timerfd_create(CLOCK_MONOTONIC, 0));
   ASSERT_TRUE(fd.is_valid());
 
-  EXPECT_EQ(GetLabel(fd.get()), fit::error(ENOTSUP));
+  EXPECT_THAT(GetLabel(fd.get()), SyscallResultIsErrno(ENOTSUP));
 }
 
 TEST(AnonInodeTest, SignalFdIsUnlabeled) {
@@ -138,7 +139,7 @@ TEST(AnonInodeTest, SignalFdIsUnlabeled) {
   fbl::unique_fd fd(signalfd(-1, &signals, SFD_CLOEXEC));
   ASSERT_TRUE(fd.is_valid());
 
-  EXPECT_EQ(GetLabel(fd.get()), fit::error(ENOTSUP));
+  EXPECT_THAT(GetLabel(fd.get()), SyscallResultIsErrno(ENOTSUP));
 }
 
 TEST(AnonInodeTest, PerfEventFdIsUnlabeled) {
@@ -158,13 +159,13 @@ TEST(AnonInodeTest, PerfEventFdIsUnlabeled) {
       syscall(SYS_perf_event_open, &attr, /*pid=*/0, /*cpu=*/-1, /*group_fd=*/-1, /*flags=*/0)));
   ASSERT_TRUE(fd.is_valid());
 
-  EXPECT_EQ(GetLabel(fd.get()), fit::error(ENOTSUP));
+  EXPECT_THAT(GetLabel(fd.get()), SyscallResultIsErrno(ENOTSUP));
 }
 
 TEST(AnonInodeTest, EventFdBeforePolicy) {
   // userfaultfd() created before policy load should have been labeled based on the "kernel" SID.
   EXPECT_THAT(GetLabel(g_before_policy_userfaultfd),
-              IsOk("unlabeled_u:unlabeled_r:unlabeled_t:s0"));
+              SyscallResultIsOk("unlabeled_u:unlabeled_r:unlabeled_t:s0"));
 }
 
 }  // namespace
@@ -173,7 +174,7 @@ extern std::string DoPrePolicyLoadWork() {
   g_before_policy_userfaultfd = static_cast<int>(syscall(SYS_userfaultfd, O_CLOEXEC));
   EXPECT_NE(g_before_policy_userfaultfd, -1)
       << "Failed pre-policy userfaultfd: " << strerror(errno);
-  EXPECT_EQ(GetLabel(g_before_policy_userfaultfd), fit::error(ENOTSUP));
+  EXPECT_THAT(GetLabel(g_before_policy_userfaultfd), SyscallResultIsErrno(ENOTSUP));
 
   return "anon_inode_policy";
 }

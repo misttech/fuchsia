@@ -33,7 +33,7 @@ bool IsPolicyCapSupported(const char* capability) {
   if (value.is_ok()) {
     return true;
   }
-  EXPECT_EQ(value.error_value(), ENOENT);
+  EXPECT_THAT(value, SyscallResultIsErrno(ENOENT));
   return false;
 }
 
@@ -42,7 +42,7 @@ bool IsPolicyCapEnabled(const char* capability) {
   if (value.is_ok()) {
     return atoi(value.value().c_str()) != 0;
   }
-  EXPECT_EQ(value.error_value(), ENOENT);
+  EXPECT_THAT(value, SyscallResultIsErrno(ENOENT));
   return false;
 }
 

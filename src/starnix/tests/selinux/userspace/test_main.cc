@@ -32,20 +32,18 @@ struct CommandLineOptions {
 void LoadPolicy(const std::string& name) {
   // Ensure that no previous policy has been loaded.
   auto previous_policy = ReadFile("/sys/fs/selinux/policy");
-  ASSERT_EQ(previous_policy, fit::error(EINVAL));
+  ASSERT_THAT(previous_policy, SyscallResultIsErrno(EINVAL));
 
   // Load the specified policy from the policy data directory.
   auto policy_path = "data/policies/" + name;
   auto binary_policy = ReadFile(policy_path);
-  ASSERT_TRUE(binary_policy.is_ok()) << "Read of policy at " << policy_path
-                                     << " failed: " << strerror(binary_policy.error_value());
+  ASSERT_THAT(binary_policy, SyscallResultIsOk()) << "Read of policy at " << policy_path;
   auto result = WriteExistingFile("/sys/fs/selinux/load", binary_policy.value());
-  ASSERT_TRUE(result.is_ok()) << "Load of policy from " << policy_path
-                              << " failed: " << strerror(result.error_value());
+  ASSERT_THAT(result, SyscallResultIsOk()) << "Load of policy from " << policy_path;
 
   // Ensure that the binary policy is reported by the kernel as having been loaded.
   auto loaded_policy = ReadFile("/sys/fs/selinux/policy");
-  ASSERT_TRUE(loaded_policy.is_ok());
+  ASSERT_THAT(loaded_policy, SyscallResultIsOk());
 }
 
 // Perform one-time initialization of the test system.

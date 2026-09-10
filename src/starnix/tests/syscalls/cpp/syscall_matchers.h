@@ -10,6 +10,7 @@
 #include <lib/fit/result.h>
 #include <string.h>
 
+#include <type_traits>
 #include <utility>
 
 #include <gmock/gmock.h>
@@ -189,6 +190,55 @@ class SyscallResultSuccessMatcher {
   void DescribeNegationTo(::std::ostream* os) const { *os << "is fit::error"; }
 };
 
+template <typename E>
+class SyscallResultSuccessWithValueMatcher {
+ public:
+  explicit SyscallResultSuccessWithValueMatcher(E expected) : expected_(::std::move(expected)) {}
+
+  template <typename ResultType>
+  bool MatchAndExplain(const ResultType& result,
+                       ::testing::MatchResultListener* const listener) const {
+    if (result.is_error()) {
+      int actual_errno = static_cast<int>(result.error_value());
+      *listener << "failed with errno " << strerror(actual_errno) << " (" << actual_errno << ")";
+      return false;
+    }
+    if constexpr (requires { typename std::remove_cvref_t<ResultType>::value_type; }) {
+      using ValueType = typename std::remove_cvref_t<ResultType>::value_type;
+      auto matcher = ::testing::SafeMatcherCast<ValueType>(expected_);
+      return matcher.MatchAndExplain(result.value(), listener);
+    } else {
+      *listener << "which has no value to match";
+      return false;
+    }
+  }
+
+  void DescribeTo(::std::ostream* const os) const {
+    *os << "is fit::ok with value ";
+    if constexpr (requires { expected_.DescribeTo(os); }) {
+      expected_.DescribeTo(os);
+    } else if constexpr (requires { expected_.impl().DescribeTo(os); }) {
+      expected_.impl().DescribeTo(os);
+    } else {
+      ::testing::internal::UniversalPrinter<E>::Print(expected_, os);
+    }
+  }
+
+  void DescribeNegationTo(::std::ostream* const os) const {
+    *os << "is not fit::ok with value ";
+    if constexpr (requires { expected_.DescribeNegationTo(os); }) {
+      expected_.DescribeNegationTo(os);
+    } else if constexpr (requires { expected_.impl().DescribeNegationTo(os); }) {
+      expected_.impl().DescribeNegationTo(os);
+    } else {
+      ::testing::internal::UniversalPrinter<E>::Print(expected_, os);
+    }
+  }
+
+ private:
+  E expected_;
+};
+
 }  // namespace internal
 
 template <typename E>
@@ -219,6 +269,19 @@ inline ::testing::PolymorphicMatcher<internal::SyscallFailureMatcher> SyscallFai
 
 inline ::testing::PolymorphicMatcher<internal::SyscallResultSuccessMatcher> SyscallResultIsOk() {
   return ::testing::MakePolymorphicMatcher(internal::SyscallResultSuccessMatcher());
+}
+
+template <typename E>
+inline ::testing::PolymorphicMatcher<internal::SyscallResultSuccessWithValueMatcher<E>>
+SyscallResultIsOkWithValue(E expected) {
+  return ::testing::MakePolymorphicMatcher(
+      internal::SyscallResultSuccessWithValueMatcher<E>(::std::move(expected)));
+}
+
+template <typename E>
+inline ::testing::PolymorphicMatcher<internal::SyscallResultSuccessWithValueMatcher<E>>
+SyscallResultIsOk(E expected) {
+  return SyscallResultIsOkWithValue(::std::move(expected));
 }
 
 inline ::testing::PolymorphicMatcher<internal::SyscallResultFailureMatcher> SyscallResultIsErrno(
