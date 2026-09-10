@@ -5,10 +5,12 @@
 use anyhow::{Context as _, Error, format_err};
 use async_trait::async_trait;
 use fidl_fuchsia_input_report::{
-    DeviceDescriptor, InputReportsReaderMarker, InputReportsReaderProxy, SensorInputDescriptor,
-    SensorType, ServiceMarker,
+    DeviceDescriptor, InputReportsReaderV2Event, InputReportsReaderV2EventStream,
+    InputReportsReaderV2Marker, InputReportsReaderV2Proxy, SensorInputDescriptor, SensorType,
+    ServiceMarker,
 };
 use fuchsia_component::client::Service;
+use futures::lock::Mutex;
 
 #[derive(Debug)]
 pub struct AmbientLightInputRpt {
@@ -25,7 +27,8 @@ struct AmbientLightComponent {
 }
 
 struct AmbientLightInputReportReaderProxy {
-    pub proxy: InputReportsReaderProxy,
+    pub proxy: InputReportsReaderV2Proxy,
+    pub event_stream: Mutex<InputReportsReaderV2EventStream>,
 
     pub illuminance: Option<AmbientLightComponent>,
     pub red: Option<AmbientLightComponent>,
@@ -81,11 +84,20 @@ async fn open_sensor_input_report_reader() -> Result<AmbientLightInputReportRead
                     }
 
                     if illuminance.is_some() {
+                        const MAX_UNACKNOWLEDGED_REPORTS_LIMIT: u16 = 120;
                         let (proxy, server_end) =
-                            fidl::endpoints::create_proxy::<InputReportsReaderMarker>();
-                        if let Ok(()) = device.get_input_reports_reader(server_end) {
+                            fidl::endpoints::create_proxy::<InputReportsReaderV2Marker>();
+                        if let Ok(_) = device
+                            .get_input_reports_reader_v2(
+                                server_end,
+                                MAX_UNACKNOWLEDGED_REPORTS_LIMIT,
+                            )
+                            .await
+                        {
+                            let event_stream = proxy.take_event_stream();
                             return Ok(AmbientLightInputReportReaderProxy {
-                                proxy: proxy,
+                                proxy,
+                                event_stream: Mutex::new(event_stream),
                                 illuminance,
                                 red,
                                 blue,
@@ -107,10 +119,12 @@ async fn open_sensor_input_report_reader() -> Result<AmbientLightInputReportRead
 async fn read_sensor_input_report(
     device: &AmbientLightInputReportReaderProxy,
 ) -> Result<Option<AmbientLightInputRpt>, Error> {
-    let r = device.proxy.read_input_reports().await;
-
-    match r {
-        Ok(Ok(reports)) => {
+    let mut event_stream = device.event_stream.lock().await;
+    match event_stream.next().await {
+        Some(Ok(InputReportsReaderV2Event::OnInputReports { reports, last_report_stamp })) => {
+            if let Err(e) = device.proxy.acknowledge_reports(last_report_stamp) {
+                log::warn!("Failed to acknowledge reports: {e}");
+            }
             for report in reports {
                 if report.report_id.unwrap_or(0) != device.illuminance.as_ref().unwrap().report_id {
                     continue;
@@ -136,8 +150,11 @@ async fn read_sensor_input_report(
             }
             Ok(None)
         }
-        Ok(Err(e)) => Err(format_err!("ReadInputReports error: {}", e)),
-        Err(e) => Err(format_err!("FIDL call failed: {}", e)),
+        Some(Ok(InputReportsReaderV2Event::_UnknownEvent { ordinal, .. })) => {
+            Err(format_err!("Unknown event received: {ordinal}"))
+        }
+        Some(Err(e)) => Err(format_err!("Event stream error: {}", e)),
+        None => Err(format_err!("Event stream ended")),
     }
 }
 
