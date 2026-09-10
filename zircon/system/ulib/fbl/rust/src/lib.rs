@@ -14,6 +14,8 @@ mod conditional_select_nospec;
 mod confine_array_index;
 mod doubly_linked_list;
 mod inline_array;
+#[cfg(feature = "kernel")]
+mod name;
 mod opaque_ref_counted;
 mod packed_pointer;
 mod ptr_traits;
@@ -47,6 +49,8 @@ pub use fbl_macros::{
     ref_counted,
 };
 pub use inline_array::InlineArray;
+#[cfg(feature = "kernel")]
+pub use name::Name;
 pub use opaque_ref_counted::{IsOpaqueRefCounted, OpaqueRefCounted, OpaqueRefCountedFacade};
 pub use packed_pointer::PackedPointer;
 pub use pin_init;

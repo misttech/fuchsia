@@ -21,6 +21,7 @@ rustc_library("fbl") {
     "src/inline_array.rs",
     "src/intrusive_container_test_support.rs",
     "src/lib.rs",
+    "src/name.rs",
     "src/opaque_ref_counted.rs",
     "src/packed_pointer.rs",
     "src/ptr_traits.rs",
@@ -54,6 +55,7 @@ rustc_library("fbl") {
 
   # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
   if (is_kernel) {
+    features = [ "kernel" ]
     configs += [ "//zircon/kernel/switch:allow-redundant-pattern-matching" ]
     configs += [ "//zircon/kernel/switch:allow-collapsible-if" ]
     configs += [ "//zircon/kernel/switch:allow-let-unit-value" ]
