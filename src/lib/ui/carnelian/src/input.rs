@@ -412,31 +412,51 @@ async fn listen_to_instance(
         ))
         .expect("unbounded_send");
     let input_report_sender = internal_sender.clone();
-    let (input_reports_reader_proxy, input_reports_reader_request) = create_proxy();
-    device.get_input_reports_reader(input_reports_reader_request)?;
+    let (input_reports_reader_proxy, input_reports_reader_request) =
+        create_proxy::<fidl_input_report::InputReportsReaderV2Marker>();
+
+    const MAX_UNACKNOWLEDGED_REPORTS_LIMIT: u16 = 120;
+    device
+        .get_input_reports_reader_v2(input_reports_reader_request, MAX_UNACKNOWLEDGED_REPORTS_LIMIT)
+        .await
+        .expect("failed to get InputReportsReaderV2; v1 is no longer supported");
+
+    let mut event_stream = input_reports_reader_proxy.take_event_stream();
     fasync::Task::local(async move {
-        let _device = device;
-        loop {
-            let reports_res = input_reports_reader_proxy.read_input_reports().await;
-            match reports_res {
-                Ok(r) => match r {
-                    Ok(reports) => {
-                        for report in reports {
-                            input_report_sender
-                                .unbounded_send(MessageInternal::InputReport(
-                                    DeviceId(device_id.clone()),
-                                    report,
-                                ))
-                                .expect("unbounded_send");
-                        }
+        // Keep `device` alive for the duration of this task.
+        #[expect(unused)]
+        let device = device;
+
+        while let Some(event) = event_stream.next().await {
+            match event {
+                Ok(fidl_input_report::InputReportsReaderV2Event::OnInputReports {
+                    reports,
+                    last_report_stamp,
+                }) => {
+                    if let Err(err) =
+                        input_reports_reader_proxy.acknowledge_reports(last_report_stamp)
+                    {
+                        eprintln!("Error acknowledging reports for {}: {}", device_id, err);
                     }
-                    Err(err) => {
-                        eprintln!("Error report from read_input_reports: {}: {}", device_id, err);
-                        break;
+                    for report in reports {
+                        input_report_sender
+                            .unbounded_send(MessageInternal::InputReport(
+                                DeviceId(device_id.clone()),
+                                report,
+                            ))
+                            .expect("unbounded_send");
                     }
-                },
+                }
+                Ok(fidl_input_report::InputReportsReaderV2Event::_UnknownEvent {
+                    ordinal, ..
+                }) => {
+                    eprintln!("Unknown event (ordinal {}) for device {}", ordinal, device_id);
+                }
                 Err(err) => {
-                    eprintln!("Error report from read_input_reports: {}: {}", device_id, err);
+                    eprintln!(
+                        "Error from input reports reader event stream for {}: {}",
+                        device_id, err
+                    );
                     break;
                 }
             }
