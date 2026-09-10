@@ -16,6 +16,7 @@ if (is_host) {
     "lib/git_staging/engine.py",
     "lib/githooks/__init__.py",
     "lib/githooks/adapters.py",
+    "lib/githooks/installer.py",
     "lib/githooks/reporters.py",
     "lib/githooks/runner.py",
     "lib/paths.py",
@@ -123,6 +124,13 @@ if (is_host) {
       ":agents_testing",
     ]
   }
+  python_host_test("agents_githooks_installer_test") {
+    main_source = "tests/githooks_installer_test.py"
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
+  }
 }
 
 group("tests") {
@@ -131,6 +139,7 @@ group("tests") {
     ":agents_config_test($host_toolchain)",
     ":agents_git_staging_test($host_toolchain)",
     ":agents_githooks_adapters_test($host_toolchain)",
+    ":agents_githooks_installer_test($host_toolchain)",
     ":agents_githooks_reporters_test($host_toolchain)",
     ":agents_githooks_runner_test($host_toolchain)",
     ":agents_main_test($host_toolchain)",
