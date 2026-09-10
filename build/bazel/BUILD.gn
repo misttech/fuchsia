@@ -256,6 +256,19 @@ generated_file("gn_build_variables_for_bazel") {
     },
   ]
 
+  string_all_numbered_api_levels = []
+  foreach(api_level, platform_version.all_numbered_api_levels) {
+    string_all_numbered_api_levels += [ "${api_level}" ]
+  }
+  contents += [
+    {
+      name = "all_numbered_api_levels"
+      value = string_all_numbered_api_levels
+      type = "array_of_strings"
+      location = declaration
+    },
+  ]
+
   # LINT.ThenChange(//build/config/fuchsia/platform_version.gni)
 
   # LINT.IfChange(get_platform_version)

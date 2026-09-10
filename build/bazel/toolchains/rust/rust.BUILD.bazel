@@ -4,6 +4,7 @@
 
 """Top level BUILD.bazel in the @fuchsia_rust_toolchain repository."""
 
+load("@//build/bazel/versioning:rustc_api_level.bzl", "get_rustc_api_level_flags")
 load("@fuchsia_build_config//:defs.bzl", "build_config")
 load("@fuchsia_rules_common//build_flags:toolchain.bzl", "rust_toolchain_with_build_flags")
 load("@rules_rust//rust:toolchain.bzl", "rust_stdlib_filegroup", "rust_toolchain")
@@ -125,6 +126,7 @@ rust_toolchain(
 rust_toolchain_with_build_flags(
     name = "rust_linux_x64_toolchain",
     toolchain = ":rust_linux_x64_toolchain_base",
+    extra_rustc_flags = get_rustc_api_level_flags(),
 )
 
 toolchain(
@@ -179,6 +181,7 @@ rust_toolchain(
 rust_toolchain_with_build_flags(
     name = "rust_linux_arm64_toolchain",
     toolchain = ":rust_linux_arm64_toolchain_base",
+    extra_rustc_flags = get_rustc_api_level_flags(),
 )
 
 toolchain(
@@ -224,6 +227,7 @@ rust_toolchain(
 rust_toolchain_with_build_flags(
     name = "rust_fuchsia_x64_toolchain",
     toolchain = ":rust_fuchsia_x64_toolchain_base",
+    extra_rustc_flags = get_rustc_api_level_flags(),
 )
 
 toolchain(
@@ -277,6 +281,7 @@ rust_toolchain(
 rust_toolchain_with_build_flags(
     name = "rust_fuchsia_arm64_toolchain",
     toolchain = ":rust_fuchsia_arm64_toolchain_base",
+    extra_rustc_flags = get_rustc_api_level_flags(),
 )
 
 toolchain(
@@ -334,6 +339,7 @@ rust_toolchain(
 rust_toolchain_with_build_flags(
     name = "rust_fuchsia_riscv64_toolchain",
     toolchain = ":rust_fuchsia_riscv64_toolchain_base",
+    extra_rustc_flags = get_rustc_api_level_flags(),
 )
 
 toolchain(

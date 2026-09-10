@@ -46,6 +46,8 @@ _api_level_condition_visibility = [
     # The location where `verify_public_symbols()` is defined - see
     # https://fxbug.dev/491244314.
     "//build/bazel/rules/cc:__subpackages__",
+    # The location where Rust toolchains are defined.
+    "@fuchsia_prebuilt_rust//:__subpackages__",
 ]
 
 config_setting(
@@ -105,5 +107,11 @@ config_setting(
 config_setting(
     name = "is_api_level_NEXT",
     flag_values = {"//build/bazel/versioning:api_level": "NEXT"},
+    visibility = _api_level_condition_visibility,
+)
+
+config_setting(
+    name = "is_api_level_HEAD",
+    flag_values = {"//build/bazel/versioning:api_level": "HEAD"},
     visibility = _api_level_condition_visibility,
 )

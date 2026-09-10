@@ -34,6 +34,11 @@ _ARGS_TO_IGNORE = (
     # Ignore remote-only flags, which are used in GN to maximize RBE cache hits
     # by utilizing wrapper scripts.
     "--remote-only",
+    # API flags for rustc are handled differently in GN and Bazel.
+    # GN relies on a generated rust_api_level_cfg_flags.txt, while Bazel sets them directly.
+    "--cfg=fuchsia_api_level_at_least=",
+    "--cfg=fuchsia_api_level_less_than=",
+    "@rust_api_level_cfg_flags.txt",
     # TODO(https://fxbug.dev/477167250): Propagate debug_info to Bazel and
     # remove this.
     "-Cdebug-assertions=",
@@ -52,7 +57,6 @@ _ARGS_TO_IGNORE = (
     # TODO(https://fxbug.dev/478707341): Figure out how to set the following args in Bazel and remove this.
     "--cfg=__rust_toolchain=",
     "-Cmetadata=",
-    "@rust_api_level_cfg_flags.txt",
     "RUST_BACKTRACE=1",
     # TODO(https://fxbug.dev/478707341): Figure out the root causes of link-arg inconsistencies.
     "-Clink-arg=",
