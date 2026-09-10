@@ -135,6 +135,7 @@ macro_rules! impl_dispatcher_facade_with_state {
         $obj_type:expr,
         $offset_const:expr,
         $lock_class:ty,
+        $lock_ret:ty,
         $get_lock:expr
     ) => {
         paste::paste! {
@@ -159,17 +160,16 @@ macro_rules! impl_dispatcher_facade_with_state {
             ///
             /// # Safety
             ///
-            /// `ptr` must point to an initialized `$state`.
+            /// When `$type` has a lock, `ptr` must point to a valid, initialized `$state`.
+            ///
+            /// # Panics
+            ///
+            /// Panics if `$type` does not have an internal lock (e.g. configured with `no_lock`).
             #[unsafe(no_mangle)]
             pub unsafe extern "C" fn [<rust_ $type:snake _state_get_lock>](
                 ptr: *const $state,
-            ) -> *mut ksync::KMutex<$lock_class, ksync::RawCriticalMutex> {
-                // SAFETY: The caller guarantees `ptr` points to a valid,
-                // initialized `$state`.
-                unsafe {
-                    let lock_ref: &ksync::KMutex<$lock_class, ksync::RawCriticalMutex> = ($get_lock)(ptr);
-                    zr::ToMutPtr::to_mut_ptr(lock_ref)
-                }
+            ) -> $lock_ret {
+                ($get_lock)(ptr)
             }
 
             /// Destroys a `$state` in-place.
@@ -188,6 +188,29 @@ macro_rules! impl_dispatcher_facade_with_state {
                 }
             }
         }
+    };
+    (
+        @base
+        $(#[$meta:meta])* $vis:vis struct $type:ident,
+        $state:ident,
+        $obj_type:expr,
+        $offset_const:expr,
+        $lock_class:ty,
+        $get_lock:expr
+    ) => {
+        $crate::object::dispatcher::impl_dispatcher_facade_with_state!(
+            @base
+            $(#[$meta])* $vis struct $type,
+            $state,
+            $obj_type,
+            $offset_const,
+            $lock_class,
+            *mut ksync::KMutex<$lock_class, ksync::RawCriticalMutex>,
+            |ptr: *const $state| {
+                let lock_ref: &ksync::KMutex<$lock_class, ksync::RawCriticalMutex> = ($get_lock)(ptr);
+                zr::ToMutPtr::to_mut_ptr(lock_ref)
+            }
+        );
     };
     ($(#[$meta:meta])* $vis:vis struct $type:ident, $state:ident, $obj_type:expr, $offset_const:expr) => {
         paste::paste! {
@@ -198,58 +221,10 @@ macro_rules! impl_dispatcher_facade_with_state {
                 $obj_type,
                 $offset_const,
                 [<$state LockClass>],
-                |ptr: *const $state| &(*ptr).lock
+                // SAFETY: The caller of `rust_<type>_state_get_lock` guarantees `ptr` points
+                // to a valid, initialized `$state`.
+                |ptr: *const $state| unsafe { &(*ptr).lock }
             );
-        }
-    };
-    (
-        @no_lock
-        $(#[$meta:meta])* $vis:vis struct $type:ident,
-        $state:ident,
-        $obj_type:expr,
-        $offset_const:expr
-    ) => {
-        paste::paste! {
-            $crate::object::dispatcher::impl_dispatcher_facade!($(#[$meta])* $vis struct $type, $obj_type, ());
-
-            impl $type {
-                /// Returns a reference to the underlying state object.
-                pub fn state(&self) -> &$state {
-                    // SAFETY: The state object is located at a verified offset within the
-                    // same allocation as the facade.
-                    unsafe {
-                        let ptr = (self as *const Self)
-                            .cast::<u8>()
-                            .add($offset_const as usize)
-                            .cast::<$state>();
-                        &*ptr
-                    }
-                }
-            }
-
-            /// Returns null since `$state` has no internal lock.
-            #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn [<rust_ $type:snake _state_get_lock>](
-                _ptr: *const $state,
-            ) -> *mut core::ffi::c_void {
-                core::ptr::null_mut()
-            }
-
-            /// Destroys a `$state` in-place.
-            ///
-            /// # Safety
-            ///
-            /// The caller must ensure `state` is a valid reference to an initialized `$state`, and
-            /// must not use the state (or the enclosing dispatcher) after this function returns.
-            #[unsafe(no_mangle)]
-            pub unsafe extern "C" fn [<rust_ $type:snake _state_destroy>](
-                state: &mut $state,
-            ) {
-                // SAFETY: The caller is destroying the dispatcher and will not use it again.
-                unsafe {
-                    core::ptr::drop_in_place(state);
-                }
-            }
         }
     };
     (
@@ -260,11 +235,14 @@ macro_rules! impl_dispatcher_facade_with_state {
         no_lock $(,)?
     ) => {
         $crate::object::dispatcher::impl_dispatcher_facade_with_state!(
-            @no_lock
+            @base
             $(#[$meta])* $vis struct $type,
             $state,
             $obj_type,
-            $offset_const
+            $offset_const,
+            (),
+            *mut core::ffi::c_void,
+            |_ptr: *const $state| panic!(concat!(stringify!($type), " does not have a lock"))
         );
     };
 }
@@ -288,7 +266,9 @@ macro_rules! impl_peered_dispatcher_facade_with_state {
             $obj_type,
             $offset_const,
             $crate::object::dispatcher::PeerHolderMuClass<$type>,
-            |ptr: *const $state| &(&(*ptr).peered.holder).mu
+            // SAFETY: The caller of `rust_<type>_state_get_lock` guarantees `ptr` points
+            // to a valid, initialized `$state`.
+            |ptr: *const $state| unsafe { &(&(*ptr).peered.holder).mu }
         );
 
         impl $type {
