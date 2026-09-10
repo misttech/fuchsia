@@ -196,10 +196,6 @@
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_printk",
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_printk",
 
-                // TODO(https://fxbug.dev/521344735): Remove once boot_id mode is updated to 0444 (fxr/1799659).
-                "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_random_boot_id",
-                "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_random_boot_id",
-
                 // These nodes currently utilize BytesFile implementations which emit ENOSYS on write.
                 "SysctlTest/SysctlNodeTest.CapDacOverrideHasNoEffectOnRootWrite/kernel_core_pattern",
                 "SysctlTest/SysctlNodeTest.RootCanWriteWithoutCapDacOverrideAndNetAdmin/kernel_core_pattern",

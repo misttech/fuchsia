@@ -213,7 +213,11 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         dir.subdir("random", 0o555, |dir| {
             // Generate random UUID
             let boot_id = Uuid::new_v4().hyphenated().to_string();
-            dir.entry("boot_id", BytesFile::new_node(boot_id.as_bytes().to_vec()), mode);
+            dir.entry(
+                "boot_id",
+                BytesFile::new_node(boot_id.as_bytes().to_vec()),
+                mode!(IFREG, 0o444),
+            );
             dir.entry(
                 "uuid",
                 BytesFile::new_node(|| Ok(format!("{}\n", Uuid::new_v4().hyphenated()))),
