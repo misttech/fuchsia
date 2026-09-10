@@ -20,7 +20,6 @@ kernel_rust_mod("moonflower-rs") {
   sources = [ "moonflower.rs" ]
   deps = [
     "//sdk/rust/zx-status",
-    "//src/lib/lazy_init:lazy_init_rs",
     "//src/lib/regio",
     "//zircon/kernel/lib/debug",
   ]

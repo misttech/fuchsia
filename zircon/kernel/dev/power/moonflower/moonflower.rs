@@ -18,10 +18,9 @@ use crate::pdev_power::{
     power_management_boot_boost_enabled, power_management_register_domains,
     power_management_rppm_enabled, power_management_set_rate_limits,
 };
-use core::ptr;
+use core::sync::atomic::{AtomicPtr, Ordering};
 use debug::dprintf;
-use lazy_init::LazyInit;
-use regio::{Mmio, MmioBank, MmioPtr, Offset, RwSafe};
+use regio::{MmioBank, MmioPtr, Offset, RwSafe};
 #[cfg(ktest)]
 use unittest as _;
 use zx_status::Status;
@@ -47,10 +46,10 @@ const DOMAIN_ID: u32 = 0;
 const MAX_OPP_INDEX: u64 = 3;
 
 // Register offset within the MMIO bank
-const OPP_OFFSET: Offset<u32, RwSafe> = Offset::new(0x920);
+const OPP_INDEX_OFFSET: Offset<u32, RwSafe> = Offset::new(0x920);
 const OPP_BANK_SIZE: usize = 0x1000;
 
-static OPP_REG: LazyInit<Mmio<u32, u32, RwSafe>> = LazyInit::uninit();
+static OPP_REG_BASE: AtomicPtr<u32> = AtomicPtr::new(core::ptr::null_mut());
 
 unsafe extern "C" {
     fn cpp_moonflower_get_opp_vaddr() -> usize;
@@ -125,14 +124,30 @@ extern "C" fn moonflower_get_cpu_state(
     unsafe { psci_get_cpu_state(hw_cpu_id, out_state) }
 }
 
+/// Helper function to construct a `regio::MmioBank` for the OPP index register.
+fn get_opp_bank() -> Option<MmioBank<u32, RwSafe>> {
+    let base = OPP_REG_BASE.load(Ordering::Acquire);
+    if base.is_null() {
+        return None;
+    }
+    // SAFETY: `OPP_REG_BASE` is mapped into kernel address space during early boot
+    // and remains mapped for the kernel's lifetime.
+    let ptr = unsafe { MmioPtr::<u32, RwSafe>::new(base) };
+    Some(MmioBank::new(ptr, OPP_BANK_SIZE))
+}
+
 /// Sets the active Operating Performance Point (OPP) for the specified domain.
 extern "C" fn moonflower_opp_set(domain_id: u32, opp: u64) -> Result<(), Status> {
+    let Some(bank) = get_opp_bank() else {
+        return Err(Status::BAD_STATE);
+    };
     if domain_id != DOMAIN_ID || opp > MAX_OPP_INDEX {
         return Err(Status::INVALID_ARGS);
     }
 
-    // SAFETY: Initialized during boot.
-    OPP_REG.write((MAX_OPP_INDEX - opp) as u32);
+    // SAFETY: `OPP_INDEX_OFFSET` (0x920) is within `OPP_BANK_SIZE` (0x1000) and aligned to 4 bytes.
+    let reg = unsafe { bank.at(OPP_INDEX_OFFSET) };
+    reg.write((MAX_OPP_INDEX - opp) as u32);
     Ok(())
 }
 
@@ -141,12 +156,16 @@ extern "C" fn moonflower_opp_get(domain_id: u32, out_opp: *mut u64) -> Result<()
     if out_opp.is_null() {
         return Err(Status::INVALID_ARGS);
     }
+    let Some(bank) = get_opp_bank() else {
+        return Err(Status::BAD_STATE);
+    };
     if domain_id != DOMAIN_ID {
         return Err(Status::INVALID_ARGS);
     }
 
-    // SAFETY: Initialized during boot.
-    let raw_val = OPP_REG.read();
+    // SAFETY: `OPP_INDEX_OFFSET` (0x920) is within `OPP_BANK_SIZE` (0x1000) and aligned to 4 bytes.
+    let reg = unsafe { bank.at(OPP_INDEX_OFFSET) };
+    let raw_val = reg.read();
     // SAFETY: `out_opp` was checked non-null.
     unsafe {
         *out_opp = MAX_OPP_INDEX.saturating_sub(raw_val as u64);
@@ -181,20 +200,9 @@ static MOONFLOWER_POWER_OPS: PdevPowerOps = PdevPowerOps {
 #[unsafe(no_mangle)]
 pub extern "C" fn moonflower_power_init_early() {
     dprintf!(INFO, "POWER: registering moonflower power hooks\n");
-    unsafe {
-        // SAFETY: Retrieves the mapped virtual address for the OPP peripheral
-        // block.
-        let vaddr = cpp_moonflower_get_opp_vaddr();
-        assert_ne!(vaddr, 0);
-
-        // SAFETY: `vaddr` is mapped into kernel address space for the OPP
-        // peripheral.
-        let base = MmioPtr::<u32, RwSafe>::new(ptr::with_exposed_provenance_mut(vaddr));
-        let bank = MmioBank::new(base, OPP_BANK_SIZE);
-
-        // SAFETY: Initialization is serialized with respect to any other access.
-        OPP_REG.init(bank.at(OPP_OFFSET));
-    };
+    // SAFETY: Retrieves the mapped virtual address for the OPP peripheral block.
+    let vaddr = unsafe { cpp_moonflower_get_opp_vaddr() };
+    OPP_REG_BASE.store(core::ptr::with_exposed_provenance_mut::<u32>(vaddr), Ordering::Release);
 
     let mut current_opp = 0u64;
     let opp_res = moonflower_opp_get(DOMAIN_ID, &mut current_opp);
@@ -302,8 +310,9 @@ pub extern "C" fn moonflower_power_init() {
 #[cfg(ktest)]
 #[unittest::suite(name = "moonflower_power")]
 mod tests {
-    use super::Status;
+    use super::{DOMAIN_ID, OPP_REG_BASE, Ordering};
     use unittest::{assert_eq, assert_err, assert_ok};
+    use zx_status::Status;
 
     /// Tests that passing a null output pointer to get_cpu_state returns INVALID_ARGS.
     #[test]
@@ -325,5 +334,38 @@ mod tests {
         let mut count = 0usize;
         assert_ok!(super::moonflower_opp_get_domain_count(&mut count));
         assert_eq!(count, 1);
+    }
+
+    /// Tests opp_get and opp_set with mock backing register bank.
+    #[test]
+    fn test_moonflower_opp_get_set() {
+        let mut mock_reg_bank = [0u32; 1024];
+        let old_base = OPP_REG_BASE.swap(mock_reg_bank.as_mut_ptr(), Ordering::SeqCst);
+
+        // Test OPP 0 -> register value should be MAX_OPP_INDEX (3) - 0 = 3
+        assert_ok!(super::moonflower_opp_set(DOMAIN_ID, 0));
+        // Index for offset 0x920 is 0x920 / 4 = 584
+        assert_eq!(mock_reg_bank[0x920 / 4], 3);
+
+        let mut opp = 0u64;
+        assert_ok!(super::moonflower_opp_get(DOMAIN_ID, &mut opp));
+        assert_eq!(opp, 0);
+
+        // Test OPP 2 -> register value should be 3 - 2 = 1
+        assert_ok!(super::moonflower_opp_set(DOMAIN_ID, 2));
+        assert_eq!(mock_reg_bank[0x920 / 4], 1);
+
+        assert_ok!(super::moonflower_opp_get(DOMAIN_ID, &mut opp));
+        assert_eq!(opp, 2);
+
+        // Test Out of bounds domain
+        assert_err!(super::moonflower_opp_set(1, 0), Status::INVALID_ARGS);
+        assert_err!(super::moonflower_opp_get(1, &mut opp), Status::INVALID_ARGS);
+
+        // Test Out of bounds OPP index
+        assert_err!(super::moonflower_opp_set(DOMAIN_ID, 4), Status::INVALID_ARGS);
+
+        // Restore original base pointer
+        OPP_REG_BASE.store(old_base, Ordering::SeqCst);
     }
 }
