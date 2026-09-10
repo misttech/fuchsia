@@ -41,7 +41,7 @@ rustc_binary("fscrypt_test_bin") {
   sources = [ source_root ]
 }
 
-resource("simple_ext4_image") {
+resource("device_mapper_test_resources") {
   sources = [
     "data/corrupted_hashtree_sha256.txt",
     "data/corrupted_hashtree_sha512.txt",
@@ -51,16 +51,20 @@ resource("simple_ext4_image") {
     "data/hashtree_sha512.txt",
     "data/root_hash_sha256.txt",
     "data/root_hash_sha512.txt",
-    "data/simple_ext4.img",
     "data/valid_image_with_corrupted_hashtree_sha256.txt",
     "data/valid_image_with_hashtree_sha256.txt",
   ]
   outputs = [ "data/{{source_file_part}}" ]
 }
 
+resource("device_mapper_ext4_img") {
+  sources = [ "data/device_mapper_ext4.img" ]
+  outputs = [ "data/{{source_file_part}}" ]
+}
+
 resource("ebpf_test_progs") {
   sources = [ "data/ebpf/ebpf_test_progs.o" ]
-  outputs = [ "data/ebpf/ebpf_test_progs.o" ]
+  outputs = [ "data/ebpf_test_progs.o" ]
 }
 
 _fscrypt_bin_label = ":fscrypt_test_bin($target_linux_toolchain)"
@@ -70,7 +74,7 @@ _fscrypt_binary_path =
 resource("fscrypt_child_resource") {
   deps = [ _fscrypt_bin_label ]
   sources = [ _fscrypt_binary_path ]
-  outputs = [ "data/tests/fscrypt_test" ]
+  outputs = [ "data/fscrypt_test" ]
 }
 
 # TODO(b/438330549): The resources need to be bundled together, and included in
@@ -79,9 +83,10 @@ resource("fscrypt_child_resource") {
 syscall_tests_resources = [
   # go/keep-sorted start
 
+  ":device_mapper_ext4_img",
+  ":device_mapper_test_resources",
   ":ebpf_test_progs",
   ":fscrypt_child_resource",
-  ":simple_ext4_image",
 
   # go/keep-sorted end
 ]

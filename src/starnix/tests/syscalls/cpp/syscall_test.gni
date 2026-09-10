@@ -19,7 +19,7 @@ template("_resource_from_executables") {
     resource(_resource_name) {
       testonly = true
       sources = [ "${_executable_out_dir}/${_executable_name}" ]
-      outputs = [ "data/tests/deps/${_executable_name}" ]
+      outputs = [ "data/${_executable_name}" ]
       deps = [ "${_executable}(${_toolchain})" ]
     }
     _resources += [ ":${_resource_name}" ]

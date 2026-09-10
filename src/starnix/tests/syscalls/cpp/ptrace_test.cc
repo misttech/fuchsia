@@ -874,14 +874,7 @@ void DoExec(pid_t *out) {
     ASSERT_EQ(ptrace(PTRACE_TRACEME, 0, 0, 0), 0) << strerror(errno);
     raise(SIGSTOP);
 
-    std::string test_binary = "data/tests/deps/ptrace_test_exec_child";
-    if (!files::IsFile(test_binary)) {
-      // We're running on host
-      char self_path[PATH_MAX];
-      realpath("/proc/self/exe", self_path);
-
-      test_binary = files::JoinPath(files::GetDirectoryName(self_path), "ptrace_test_exec_child");
-    }
+    std::string test_binary = test_helper::GetTestResourcePath("ptrace_test_exec_child");
     char *const argv[] = {const_cast<char *>(test_binary.c_str()), nullptr};
 
     // execv happens without releasing futex, so futex's FUTEX_OWNER_DIED bit is set.

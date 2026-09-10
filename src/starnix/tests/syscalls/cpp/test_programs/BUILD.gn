@@ -16,7 +16,7 @@ if (is_linux) {
   resource("print_helper_resource") {
     testonly = true
     sources = [ "$root_out_dir/print_helper" ]
-    outputs = [ "data/tests/deps/print_helper" ]
+    outputs = [ "data/print_helper" ]
     deps = [ ":print_helper" ]
   }
 
@@ -31,7 +31,7 @@ if (is_linux) {
   resource("clone_exec_helper_resource") {
     testonly = true
     sources = [ "$root_out_dir/clone_exec_helper" ]
-    outputs = [ "data/tests/deps/clone_exec_helper" ]
+    outputs = [ "data/clone_exec_helper" ]
     deps = [ ":clone_exec_helper" ]
   }
 
@@ -46,7 +46,7 @@ if (is_linux) {
   resource("exit_zero_resource") {
     testonly = true
     sources = [ "$root_out_dir/exit_zero" ]
-    outputs = [ "data/tests/deps/exit_zero" ]
+    outputs = [ "data/exit_zero" ]
     deps = [ ":exit_zero" ]
   }
 
@@ -62,7 +62,7 @@ if (is_linux) {
   resource("custom_pt_interp_child_resource") {
     testonly = true
     sources = [ "$root_out_dir/custom_pt_interp_child" ]
-    outputs = [ "data/tests/deps/custom_pt_interp_child" ]
+    outputs = [ "data/custom_pt_interp_child" ]
     deps = [ ":custom_pt_interp_child" ]
   }
 
@@ -81,7 +81,7 @@ if (is_linux) {
   resource("signal_handling_test_exec_parent_before_exit_resource") {
     testonly = true
     sources = [ "$root_out_dir/signal_handling_test_exec_parent_before_exit" ]
-    outputs = [ "data/tests/deps/signal_handling_test_exec_parent_before_exit" ]
+    outputs = [ "data/signal_handling_test_exec_parent_before_exit" ]
     deps = [ ":signal_handling_test_exec_parent_before_exit" ]
   }
 
@@ -101,7 +101,7 @@ if (is_linux) {
   resource("signal_handling_test_exec_parent_after_exit_resource") {
     testonly = true
     sources = [ "$root_out_dir/signal_handling_test_exec_parent_after_exit" ]
-    outputs = [ "data/tests/deps/signal_handling_test_exec_parent_after_exit" ]
+    outputs = [ "data/signal_handling_test_exec_parent_after_exit" ]
     deps = [ ":signal_handling_test_exec_parent_after_exit" ]
   }
 }

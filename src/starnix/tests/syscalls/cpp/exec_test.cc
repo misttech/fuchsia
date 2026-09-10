@@ -22,15 +22,7 @@ constexpr uid_t kTestUid = 65533;
 constexpr gid_t kTestGid = 65534;
 
 std::string GetCredsBinaryPath() {
-  std::string test_binary = "data/tests/deps/print_uid_gid_exec_child";
-  if (!files::IsFile(test_binary)) {
-    // We're running on host
-    char self_path[PATH_MAX];
-    realpath("/proc/self/exe", self_path);
-
-    test_binary = files::JoinPath(files::GetDirectoryName(self_path), "print_uid_gid_exec_child");
-  }
-  return test_binary;
+  return test_helper::GetTestResourcePath("print_uid_gid_exec_child");
 }
 
 }  // namespace

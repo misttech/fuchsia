@@ -393,18 +393,7 @@ std::string GetSystemDynamicLinkerPath() {
 }
 
 std::string GetTestResourcePath(const std::string &resource) {
-  std::filesystem::path test_file = std::filesystem::path("data/tests/deps") / resource;
-
-  std::error_code ec;
-  bool file_exists = std::filesystem::exists(test_file, ec);
-  EXPECT_FALSE(ec) << "failed to check if file exists: " << ec;
-
-  if (!file_exists) {
-    char self_path[PATH_MAX];
-    realpath("/proc/self/exe", self_path);
-    std::filesystem::path directory = std::filesystem::path(self_path).parent_path();
-    return (directory / resource).string();
-  }
+  std::filesystem::path test_file = std::filesystem::path("data") / resource;
   return test_file.string();
 }
 

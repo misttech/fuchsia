@@ -325,9 +325,9 @@ TEST_F(MountTest, ProcMountInfoRoot) {
 
 TEST_F(MountTest, Ext4ReadOnlySmokeTest) {
   std::string expected_contents;
-  EXPECT_TRUE(files::ReadFileToString("data/tests/deps/hello_world.txt", &expected_contents));
+  EXPECT_TRUE(files::ReadFileToString("data/hello_world.txt", &expected_contents));
 
-  fbl::unique_fd ext_image(open("data/tests/deps/simple_ext4.img", O_RDONLY));
+  fbl::unique_fd ext_image(open("data/mount_ext4.img", O_RDONLY));
   ASSERT_TRUE(ext_image.is_valid());
   auto loop_res = test_helper::ScopedLoopDevice::Create(ext_image.get());
   ASSERT_THAT(loop_res, SyscallResultIsOk());
@@ -347,7 +347,7 @@ TEST_F(MountTest, Ext4ReadOnlySmokeTest) {
 
 TEST_F(MountTest, ErofsReadOnlySmokeTest) {
   std::string expected_contents;
-  EXPECT_TRUE(files::ReadFileToString("data/tests/deps/file1", &expected_contents));
+  EXPECT_TRUE(files::ReadFileToString("data/file1", &expected_contents));
 
   fbl::unique_fd loop_control(open("/dev/loop-control", O_RDWR, 0777));
   ASSERT_TRUE(loop_control.is_valid());
@@ -359,7 +359,7 @@ TEST_F(MountTest, ErofsReadOnlySmokeTest) {
   fbl::unique_fd free_loop_device(open(loop_device_path.c_str(), O_RDONLY, 0644));
   ASSERT_TRUE(free_loop_device.is_valid());
 
-  fbl::unique_fd erofs_image(open("data/tests/deps/simple.erofs", O_RDONLY, 0644));
+  fbl::unique_fd erofs_image(open("data/simple.erofs", O_RDONLY, 0644));
   ASSERT_TRUE(erofs_image.is_valid());
 
   ASSERT_SUCCESS(ioctl(free_loop_device.get(), LOOP_SET_FD, erofs_image.get()));
@@ -580,12 +580,12 @@ TEST_F(MountTest, RemountReadWriteToReadOnlyWithOpenReaderSucceeds) {
 // VMOs.
 TEST_F(MountTest, Ext4ReadOnlyInMutableStorageSmokeTest) {
   std::string expected_contents;
-  ASSERT_TRUE(files::ReadFileToString("data/tests/deps/hello_world.txt", &expected_contents));
+  ASSERT_TRUE(files::ReadFileToString("data/hello_world.txt", &expected_contents));
 
   // Copy the original ext4 image to a location in mutable storage.
-  std::ifstream orig_image("data/tests/deps/simple_ext4.img", std::ios_base::in | std::ios::binary);
+  std::ifstream orig_image("data/mount_ext4.img", std::ios_base::in | std::ios::binary);
   std::string image_in_mut_storage_path =
-      std::string(std::getenv("MUTABLE_STORAGE")) + "/simple_ext4_in_mut_storage.img";
+      std::string(std::getenv("MUTABLE_STORAGE")) + "/mount_ext4_in_mut_storage.img";
   std::ofstream image_in_mut_storage(image_in_mut_storage_path,
                                      std::ios_base::out | std::ios::binary);
   ASSERT_TRUE(orig_image.good());

@@ -71,7 +71,7 @@ class FuseTest : public ::testing::Test {
     if (getenv(kOverlayFsPath)) {
       return getenv(kOverlayFsPath);
     } else {
-      return "data/tests/deps/fuse-overlayfs";
+      return test_helper::GetTestResourcePath("fuse-overlayfs");
     }
   }
 

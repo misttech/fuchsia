@@ -125,7 +125,7 @@ class LoopTest : public ::testing::Test {
 #define ASSERT_SUCCESS(call) ASSERT_THAT((call), SyscallSucceeds())
 
 TEST_F(LoopTest, ReopeningDevicePreservesOffset) {
-  fbl::unique_fd backing_file(open("data/tests/deps/hello_world.txt", O_RDONLY, 0644));
+  fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY, 0644));
   ASSERT_TRUE(backing_file.is_valid());
 
   // Configure an offset that we'll check for after re-opening the device.
@@ -168,7 +168,7 @@ TEST_F(LoopTest, RemoveLoopDeviceFromKernelDeviceRegistry) {
 }
 
 TEST_F(LoopTest, BackingFile) {
-  fbl::unique_fd backing_file(open("data/tests/deps/hello_world.txt", O_RDONLY, 0644));
+  fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY, 0644));
   ASSERT_TRUE(backing_file.is_valid());
 
   ActiveLoopDevice device(*this, backing_file.get(), 4096, 0, 0);
@@ -186,11 +186,11 @@ TEST_F(LoopTest, BackingFile) {
   // The actual path is prefixed with container namespace, which includes a dynamically
   // generated component identifier.  Since we don't want a change-detector test, just match
   // the suffix.
-  ASSERT_TRUE(buffer.str().ends_with("/data/tests/deps/hello_world.txt\n"));
+  ASSERT_TRUE(buffer.str().ends_with("/data/hello_world.txt\n"));
 }
 
 TEST_F(LoopTest, BlkGetSize64) {
-  fbl::unique_fd backing_file(open("data/tests/deps/hello_world.txt", O_RDONLY, 0644));
+  fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY, 0644));
   ASSERT_TRUE(backing_file.is_valid());
 
   // Use a large size: 4TiB = 2^42 bytes. This requires more than 32 bits.
@@ -219,7 +219,7 @@ TEST_F(LoopTest, BlkGetSize64) {
 }
 
 TEST_F(LoopTest, BlkGetSize) {
-  const char* backing_file_path = "data/tests/deps/hello_world.txt";
+  const char* backing_file_path = "data/hello_world.txt";
   fbl::unique_fd backing_file(open(backing_file_path, O_RDONLY));
   ASSERT_TRUE(backing_file.is_valid())
       << "Failed to open backing file " << backing_file_path << " (errno: " << errno << ")";
@@ -251,7 +251,7 @@ TEST_F(LoopTest, BlkGetSize) {
 }
 
 TEST_F(LoopTest, BlkGetSize_UnitsAndSafety) {
-  fbl::unique_fd backing_file(open("data/tests/deps/hello_world.txt", O_RDONLY, 0644));
+  fbl::unique_fd backing_file(open("data/hello_world.txt", O_RDONLY, 0644));
   ASSERT_TRUE(backing_file.is_valid());
 
   // Use a large size: 4TiB = 2^42 bytes.

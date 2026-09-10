@@ -74,7 +74,7 @@ mod device_mapper_test {
         hash_algorithm: &str,
     ) -> (String, linux_uapi::dm_target_spec, Vec<u8>) {
         let mut ext4_image_file =
-            OpenOptions::new().read(true).open("data/simple_ext4.img").unwrap();
+            OpenOptions::new().read(true).open("data/device_mapper_ext4.img").unwrap();
 
         let mut ext4_image = vec![];
         ext4_image_file.read_to_end(&mut ext4_image).expect("failed to read ext4 image");

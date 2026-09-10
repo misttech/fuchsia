@@ -419,7 +419,7 @@ mod ebpf_test {
             maps: &mut MapSet,
         ) -> Self {
             let ProgramDefinition { mut code, maps: map_defs } =
-                ebpf_loader::load_ebpf_program("data/ebpf/ebpf_test_progs.o", ".text", name)
+                ebpf_loader::load_ebpf_program("data/ebpf_test_progs.o", ".text", name)
                     .expect("Failed to load program");
 
             let map_fds: Vec<_> = map_defs

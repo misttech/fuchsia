@@ -21,8 +21,7 @@ TEST(Ext4WriteTest, ReadWriteAndTruncate) {
   char* mutable_storage = getenv("TEST_EXT4_ROOT");
   std::string path = std::string(mutable_storage) + "/hello_world.txt";
   std::string expected_original_content;
-  ASSERT_TRUE(
-      files::ReadFileToString("data/tests/deps/hello_world.txt", &expected_original_content));
+  ASSERT_TRUE(files::ReadFileToString("data/hello_world.txt", &expected_original_content));
 
   // Verify initial content
   {

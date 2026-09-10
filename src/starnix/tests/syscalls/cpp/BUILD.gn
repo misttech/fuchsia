@@ -24,8 +24,9 @@ syscall_tests_resources = [
   # go/keep-sorted start
 
   ":fuse_overlayfs",
+  ":hello_world_resource",
+  ":mount_ext4_img",
   ":simple_erofs_image",
-  ":simple_ext4_image",
 
   # go/keep-sorted end
 ]
@@ -436,19 +437,21 @@ if (current_cpu == "x64" || current_cpu == "arm64") {
     if (current_cpu == "arm64") {
       sources += [ "//prebuilt/starnix/fuse-overlayfs-arm64/fuse-overlayfs" ]
     }
-    outputs = [ "data/tests/deps/fuse-overlayfs" ]
+    outputs = [ "data/fuse-overlayfs" ]
   }
 } else {
   group("fuse_overlayfs") {
   }
 }
 
-resource("simple_ext4_image") {
-  sources = [
-    "data/hello_world.txt",
-    "data/simple_ext4.img",
-  ]
-  outputs = [ "data/tests/deps/{{source_file_part}}" ]
+resource("mount_ext4_img") {
+  sources = [ "data/mount_ext4.img" ]
+  outputs = [ "data/mount_ext4.img" ]
+}
+
+resource("hello_world_resource") {
+  sources = [ "data/hello_world.txt" ]
+  outputs = [ "data/hello_world.txt" ]
 }
 
 resource("simple_erofs_image") {
@@ -456,7 +459,7 @@ resource("simple_erofs_image") {
     "//src/storage/erofs/testing/data/simple.erofs",
     "//src/storage/erofs/testing/data/simple/file1",
   ]
-  outputs = [ "data/tests/deps/{{source_file_part}}" ]
+  outputs = [ "data/{{source_file_part}}" ]
 }
 
 config("march") {
@@ -698,7 +701,7 @@ syscall_test("ext4_write_test") {
 }
 
 ext4_test_server("ext4_write_test_pkg") {
-  image = "data/simple_ext4.img"
+  image = "data/mount_ext4.img"
 }
 
 fuchsia_test_package("starnix_syscalls_cpp_tests") {

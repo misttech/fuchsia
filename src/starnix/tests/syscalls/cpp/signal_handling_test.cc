@@ -78,15 +78,7 @@ void *setup_sigaltstack(size_t size) {
 }
 
 std::string GetBinaryPath(std::string_view binary_name) {
-  std::string test_binary = "data/tests/deps/" + std::string(binary_name);
-  if (!files::IsFile(test_binary)) {
-    // We're running on host
-    char self_path[PATH_MAX];
-    realpath("/proc/self/exe", self_path);
-
-    test_binary = files::JoinPath(files::GetDirectoryName(self_path), std::string(binary_name));
-  }
-  return test_binary;
+  return test_helper::GetTestResourcePath(std::string(binary_name));
 }
 
 TEST(SignalHandling, NestedSigpipe) {

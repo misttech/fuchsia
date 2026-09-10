@@ -33,7 +33,7 @@ pub struct DebianGuest {
     /// The proxy for interacting with the guest. This should be accessed by the `interactive_guest`
     /// helper function, to aid with locking and ensuring that the guest is ready for interaction.
     guest_proxy: OnceCell<Mutex<InteractiveGuestProxy>>,
-    /// Stores the state of whether test data dependencies have already been pushed to the guest.
+    /// Tracks if test data dependencies have already been pushed to the guest.
     // TODO(https://fxbug.dev/438284662): Better state / lifecycle management.
     deps_pushed: OnceCell<bool>,
 }
@@ -242,7 +242,9 @@ impl DebianGuest {
 
     /// Expected to be called once and only once.
     pub fn mark_deps_pushed(&self) {
-        self.deps_pushed.set(true).expect("Unexpected state management, test dependencies are expected to be pushed once, and only once.");
+        self.deps_pushed.set(true).expect(
+            "Unexpected state management, test dependencies are expected to be pushed once, and only once.",
+        );
     }
 
     /// Gets the absolute guest filepath for test results given a unique filename.
@@ -299,7 +301,7 @@ impl DebianGuest {
             if entry.kind == directory::DirentKind::File {
                 let file_name = entry.name;
                 // Skip test binaries in data/tests/ (which are pushed separately by push_test_binary).
-                if file_name.starts_with("tests/") && !file_name.starts_with("tests/deps/") {
+                if file_name.starts_with("tests/") {
                     continue;
                 }
 

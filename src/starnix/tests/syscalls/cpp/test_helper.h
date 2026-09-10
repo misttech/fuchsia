@@ -227,9 +227,8 @@ std::string get_tmp_path();
 // Returns the path to the system dynamic linker requested by /proc/self/exe.
 std::string GetSystemDynamicLinkerPath();
 
-// Returns the path to a test resource named `resource`, which should either be in
-// "data/tests/deps" relative to the current working directory, or in the same
-// directory as the current executable.
+// Returns the path to a test resource named `resource`, which should be in
+// "data" relative to the current working directory.
 std::string GetTestResourcePath(const std::string &resource);
 
 struct MemoryMapping {

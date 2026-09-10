@@ -136,13 +136,15 @@ mod fscrypt_test {
         );
     }
 
+    fn get_child_binary_path() -> std::path::PathBuf {
+        std::path::PathBuf::from("data/fscrypt_test")
+    }
+
     #[test]
     #[serial]
     fn remove_key_added_by_different_user_non_root() {
         let Some(_) = get_root_path() else { return };
-        let self_path = std::fs::read_link("/proc/self/exe").unwrap();
-        let parent = self_path.parent().expect("no parent");
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
 
         let output = std::process::Command::new(child_binary_path)
             .args(["--uid", "1000", "add"])
@@ -152,7 +154,7 @@ mod fscrypt_test {
         let fscrypt_output: FscryptOutput = serde_json::from_str(&output_str).unwrap();
         assert!(output.status.success(), "{:#?}", output.status);
 
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args([
                 "--uid",
@@ -168,7 +170,7 @@ mod fscrypt_test {
         assert!(output.status.success(), "{:#?}", output.status);
 
         // Cleanup
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args([
                 "--uid",
@@ -188,9 +190,7 @@ mod fscrypt_test {
     #[serial]
     fn remove_key_added_by_different_user_root() {
         let Some(_) = get_root_path() else { return };
-        let self_path = std::fs::read_link("/proc/self/exe").unwrap();
-        let parent = self_path.parent().expect("no parent");
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
 
         let output = std::process::Command::new(child_binary_path)
             .args(["--uid", "1000", "add"])
@@ -210,7 +210,7 @@ mod fscrypt_test {
         );
 
         // Cleanup
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args([
                 "--uid",
@@ -235,9 +235,7 @@ mod fscrypt_test {
         let dir_path = std::path::Path::new(&root_path).join("my_dir");
         std::fs::create_dir_all(dir_path.clone()).unwrap();
 
-        let self_path = std::fs::read_link("/proc/self/exe").unwrap();
-        let parent = self_path.parent().expect("no parent");
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
 
         std::os::unix::fs::chown(dir_path.clone(), Some(1000), Some(1000)).expect("chown failed");
         let output = std::process::Command::new(child_binary_path)
@@ -248,7 +246,7 @@ mod fscrypt_test {
         let fscrypt_output: FscryptOutput = serde_json::from_str(&output_str).unwrap();
         assert!(output.status.success(), "{:#?}", output.status);
 
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args([
                 "--uid",
@@ -264,14 +262,14 @@ mod fscrypt_test {
         assert!(output.status.success(), "{:#?}", output.status);
         std::fs::create_dir(dir_path.join("subdir")).unwrap();
 
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args(["--uid", "2000", "read", "--locked", "false"])
             .output()
             .expect("set encryption policy failed");
         assert!(output.status.success(), "{:#?}", output.status);
 
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args([
                 "--uid",
@@ -286,7 +284,7 @@ mod fscrypt_test {
             .expect("remove encryption key failed");
         assert!(output.status.success(), "{:#?}", output.status);
 
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args(["--uid", "2000", "read", "--locked", "true"])
             .output()
@@ -470,9 +468,7 @@ mod fscrypt_test {
         }
 
         std::os::unix::fs::chown(dir_path.clone(), Some(2000), Some(2000)).expect("chown failed");
-        let self_path = std::fs::read_link("/proc/self/exe").unwrap();
-        let parent = self_path.parent().expect("no parent");
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args([
                 "--uid",
@@ -990,9 +986,7 @@ mod fscrypt_test {
         let dir_path = std::path::Path::new(&root_path).join("my_dir");
         std::fs::create_dir_all(dir_path.clone()).unwrap();
 
-        let self_path = std::fs::read_link("/proc/self/exe").unwrap();
-        let parent = self_path.parent().expect("no parent");
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
 
         std::os::unix::fs::chown(dir_path.clone(), Some(1000), Some(1000)).expect("chown failed");
         let output = std::process::Command::new(child_binary_path)
@@ -1003,7 +997,7 @@ mod fscrypt_test {
         let fscrypt_output: FscryptOutput = serde_json::from_str(&output_str).unwrap();
         assert!(output.status.success(), "{:#?}", output.status);
 
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         std::os::unix::fs::chown(dir_path.clone(), Some(2000), Some(2000)).expect("chown failed");
         let output = std::process::Command::new(child_binary_path)
             .args([
@@ -1028,9 +1022,7 @@ mod fscrypt_test {
         let dir_path = std::path::Path::new(&root_path).join("my_dir");
         std::fs::create_dir_all(dir_path.clone()).unwrap();
 
-        let self_path = std::fs::read_link("/proc/self/exe").unwrap();
-        let parent = self_path.parent().expect("no parent");
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
 
         std::os::unix::fs::chown(dir_path.clone(), Some(1000), Some(1000)).expect("chown failed");
         let output = std::process::Command::new(child_binary_path)
@@ -1042,7 +1034,7 @@ mod fscrypt_test {
         assert!(output.status.success(), "{:#?}", output.status);
 
         std::os::unix::fs::chown(dir_path.clone(), Some(2000), Some(2000)).expect("chown failed");
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args([
                 "--uid",
@@ -1230,16 +1222,14 @@ mod fscrypt_test {
         let dir_path = std::path::Path::new(&root_path).join("my_dir");
         std::fs::create_dir_all(dir_path.clone()).unwrap();
 
-        let self_path = std::fs::read_link("/proc/self/exe").unwrap();
-        let parent = self_path.parent().expect("no parent");
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let wrapping_key: [u8; 64] = [2; 64];
         let output = std::process::Command::new(child_binary_path)
             .args(["--uid", "1000", "add", "--key", &hex::encode(wrapping_key)])
             .output()
             .expect("set encryption policy failed");
         assert!(output.status.success(), "{:#?}", output.status);
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
 
         let output = std::process::Command::new(child_binary_path)
             .args(["--uid", "1000", "add", "--key", &hex::encode(wrapping_key)])
@@ -1249,7 +1239,7 @@ mod fscrypt_test {
         let fscrypt_output: FscryptOutput = serde_json::from_str(&output_str).unwrap();
         assert!(output.status.success(), "{:#?}", output.status);
 
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args([
                 "--uid",
@@ -1276,9 +1266,7 @@ mod fscrypt_test {
         std::fs::create_dir_all(dir_path.clone()).unwrap();
         let dir = std::fs::File::open(dir_path.clone()).unwrap();
 
-        let self_path = std::fs::read_link("/proc/self/exe").unwrap();
-        let parent = self_path.parent().expect("no parent");
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let wrapping_key: [u8; 64] = [2; 64];
         let output = std::process::Command::new(child_binary_path)
             .args(["--uid", "1000", "add", "--key", &hex::encode(wrapping_key)])
@@ -1286,7 +1274,7 @@ mod fscrypt_test {
             .expect("set encryption policy failed");
         eprintln!("std err is {:?}", String::from_utf8_lossy(&output.stderr));
         assert!(output.status.success(), "{:#?}", output.status);
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
 
         let output = std::process::Command::new(child_binary_path)
             .args(["--uid", "2000", "add", "--key", &hex::encode(wrapping_key)])
@@ -1296,7 +1284,7 @@ mod fscrypt_test {
         let fscrypt_output: FscryptOutput = serde_json::from_str(&output_str).unwrap();
         assert!(output.status.success(), "{:#?}", output.status);
 
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         std::os::unix::fs::chown(dir_path.clone(), Some(1000), Some(1000)).expect("chown failed");
         let output = std::process::Command::new(child_binary_path)
             .args([
@@ -1315,7 +1303,7 @@ mod fscrypt_test {
         std::fs::create_dir(dir_path.join("subdir")).unwrap();
         drop(dir);
 
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args([
                 "--uid",
@@ -1339,7 +1327,7 @@ mod fscrypt_test {
         }
         assert_eq!(count, 1);
 
-        let child_binary_path = parent.join("fscrypt_test");
+        let child_binary_path = get_child_binary_path();
         let output = std::process::Command::new(child_binary_path)
             .args([
                 "--uid",
