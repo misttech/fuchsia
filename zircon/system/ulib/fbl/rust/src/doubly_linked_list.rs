@@ -886,6 +886,136 @@ where
         }
     }
 
+    /// Splits the list immediately after the current cursor position, moving all elements
+    /// after the cursor into `dest`, inserted before `dest`'s current position.
+    ///
+    /// The current list retains all elements up to and including the current element.
+    ///
+    /// If the cursor is positioned at the tail of the list, no elements are moved.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cursor is positioned at the end sentinel.
+    ///
+    /// This operation is O(1) for lists with non-tracking size.
+    pub fn split_after(&mut self, dest: &mut CursorMut<'_, P, Tag, S>) {
+        assert!(!is_sentinel_ptr(self.current), "Cannot split after end sentinel");
+
+        // SAFETY: `self.current` is not sentinel.
+        let curr_node = unsafe { self.list.get_node_ref(self.current) };
+        let next_ptr = curr_node.get_next();
+
+        // If cursor is at the tail, there are no elements after it.
+        if is_sentinel_ptr(next_ptr) {
+            return;
+        }
+
+        let chain_head = next_ptr;
+        let chain_tail = self.list.get_tail();
+
+        let mut count = 0;
+        if S::IS_TRACKING {
+            let mut p = chain_head;
+            let sentinel = self.list.get_sentinel();
+            while p != sentinel {
+                count += 1;
+                // SAFETY: `p` is in the chain.
+                p = unsafe { self.list.get_node_ref(p) }.get_next();
+            }
+            self.list.size.set(self.list.size.get() - count);
+        }
+
+        // Update self.list: `self.current` becomes the new tail.
+        curr_node.set_next(self.list.get_sentinel());
+        unsafe {
+            self.list.set_tail(self.current);
+        }
+
+        // Insert the extracted chain before dest's current position.
+        // SAFETY: The chain [chain_head .. chain_tail] is valid, detached from self.list,
+        // and count is exact.
+        unsafe {
+            dest.insert_chain_before(chain_head, chain_tail, count);
+        }
+    }
+
+    /// Splits the list immediately before the current cursor position, moving all elements
+    /// before the cursor into `dest`, inserted before `dest`'s current position.
+    ///
+    /// The current list retains all elements from the current position to the end of the list.
+    ///
+    /// - If the cursor is positioned at the head of the list, no elements are moved.
+    /// - If the cursor is positioned at the end sentinel, all elements of the list are moved
+    ///   into `dest`, leaving this list empty.
+    /// - If the cursor is positioned at an element between head and sentinel, all elements from
+    ///   head up to (and excluding) the current element are moved into `dest`.
+    ///
+    /// Upon completion, the cursor remains positioned at the same element (which is now the new
+    /// head of this list, or the sentinel).
+    ///
+    /// This operation is O(1) for lists with non-tracking size.
+    pub fn split_before(&mut self, dest: &mut CursorMut<'_, P, Tag, S>) {
+        // Case 1: Cursor is at head. No elements before head.
+        if self.current == self.list.head {
+            return;
+        }
+
+        // Case 2: Cursor is at sentinel. All elements in list are before sentinel.
+        if is_sentinel_ptr(self.current) {
+            if self.list.is_empty() {
+                return;
+            }
+            let chain_head = self.list.head;
+            let chain_tail = self.list.get_tail();
+            let count = if S::IS_TRACKING {
+                let c = self.list.size.get();
+                self.list.size.set(0);
+                c
+            } else {
+                0
+            };
+
+            self.list.head = self.list.get_sentinel();
+
+            // SAFETY: The chain [chain_head .. chain_tail] is valid, detached from self.list,
+            // and count is exact.
+            unsafe {
+                dest.insert_chain_before(chain_head, chain_tail, count);
+            }
+            return;
+        }
+
+        // Case 3: Cursor is at an interior element B.
+        // Elements before B are [head .. B.prev].
+        let b = self.current;
+        let b_node = unsafe { self.list.get_node_ref(b) };
+        let chain_head = self.list.head;
+        let chain_tail = b_node.get_prev();
+        let old_tail = self.list.get_tail();
+
+        let mut count = 0;
+        if S::IS_TRACKING {
+            let mut p = chain_head;
+            while p != b {
+                count += 1;
+                // SAFETY: `p` is in the chain.
+                p = unsafe { self.list.get_node_ref(p) }.get_next();
+            }
+            self.list.size.set(self.list.size.get() - count);
+        }
+
+        // Update self.list: B becomes the new head, and its prev points to old_tail.
+        self.list.head = b;
+        b_node.set_prev(old_tail);
+
+        // Insert the extracted chain before dest's current position.
+        // SAFETY: The chain [chain_head .. chain_tail] is valid, detached from self.list,
+        // and count is exact.
+        unsafe {
+            dest.insert_chain_before(chain_head, chain_tail, count);
+        }
+    }
+
     pub fn erase(&mut self) -> Option<P> {
         if is_sentinel_ptr(self.current) {
             return None;
@@ -1696,6 +1826,85 @@ mod tests {
 
                     list.clear();
                 }
+
+                #[test]
+                fn test_split_after() {
+                    let mut factory = <$factory_type>::new();
+                    stack_pin_init!(let list1 = DoublyLinkedList::<$ptr_type>::new());
+                    let list1 = unsafe { list1.get_unchecked_mut() };
+                    stack_pin_init!(let list2 = DoublyLinkedList::<$ptr_type>::new());
+                    let list2 = unsafe { list2.get_unchecked_mut() };
+
+                    let obj1 = factory.create(1);
+                    let obj2 = factory.create(2);
+                    let obj3 = factory.create(3);
+                    let obj4 = factory.create(4);
+
+                    $push(list1, obj4);
+                    $push(list1, obj3);
+                    $push(list1, obj2);
+                    $push(list1, obj1);
+
+                    let mut cursor = list1.cursor_front_mut();
+                    cursor.move_next(); // points to 2
+
+                    let mut dest_cursor = list2.cursor_back_mut();
+                    cursor.split_after(&mut dest_cursor);
+
+                    let mut iter1 = list1.iter();
+                    assert_eq!($get_val(iter1.next().unwrap()), 1);
+                    assert_eq!($get_val(iter1.next().unwrap()), 2);
+                    assert!(iter1.next().is_none());
+
+                    let mut iter2 = list2.iter();
+                    assert_eq!($get_val(iter2.next().unwrap()), 3);
+                    assert_eq!($get_val(iter2.next().unwrap()), 4);
+                    assert!(iter2.next().is_none());
+
+                    list1.clear();
+                    list2.clear();
+                }
+
+                #[test]
+                fn test_split_before() {
+                    let mut factory = <$factory_type>::new();
+                    stack_pin_init!(let list1 = DoublyLinkedList::<$ptr_type>::new());
+                    let list1 = unsafe { list1.get_unchecked_mut() };
+                    stack_pin_init!(let list2 = DoublyLinkedList::<$ptr_type>::new());
+                    let list2 = unsafe { list2.get_unchecked_mut() };
+
+                    let obj1 = factory.create(1);
+                    let obj2 = factory.create(2);
+                    let obj3 = factory.create(3);
+                    let obj4 = factory.create(4);
+
+                    $push(list1, obj4);
+                    $push(list1, obj3);
+                    $push(list1, obj2);
+                    $push(list1, obj1);
+
+                    let mut cursor = list1.cursor_front_mut();
+                    cursor.move_next();
+                    cursor.move_next(); // points to 3
+
+                    let mut dest_cursor = list2.cursor_back_mut();
+                    cursor.split_before(&mut dest_cursor);
+
+                    // list2 should have elements before cursor (1, 2)
+                    let mut iter2 = list2.iter();
+                    assert_eq!($get_val(iter2.next().unwrap()), 1);
+                    assert_eq!($get_val(iter2.next().unwrap()), 2);
+                    assert!(iter2.next().is_none());
+
+                    // list1 should have elements from cursor onwards (3, 4)
+                    let mut iter1 = list1.iter();
+                    assert_eq!($get_val(iter1.next().unwrap()), 3);
+                    assert_eq!($get_val(iter1.next().unwrap()), 4);
+                    assert!(iter1.next().is_none());
+
+                    list1.clear();
+                    list2.clear();
+                }
             }
         };
     }
@@ -2041,6 +2250,279 @@ mod tests {
         assert!(list1.is_empty());
 
         list3.clear();
+    }
+
+    #[test]
+    fn test_split_after_at_tail() {
+        stack_pin_init!(let list1 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list1 = unsafe { list1.get_unchecked_mut() };
+        stack_pin_init!(let list2 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list2 = unsafe { list2.get_unchecked_mut() };
+
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(1)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(2)).unwrap());
+
+        let mut cursor = list1.cursor_front_mut();
+        cursor.move_next(); // points to 2 (tail)
+
+        let mut dest_cursor = list2.cursor_back_mut();
+        cursor.split_after(&mut dest_cursor);
+
+        assert!(list2.is_empty());
+        assert_eq!(list2.len(), 0);
+        assert_eq!(list1.len(), 2);
+
+        list1.clear();
+    }
+
+    #[test]
+    fn test_split_after_at_head() {
+        stack_pin_init!(let list1 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list1 = unsafe { list1.get_unchecked_mut() };
+        stack_pin_init!(let list2 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list2 = unsafe { list2.get_unchecked_mut() };
+
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(1)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(2)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(3)).unwrap());
+
+        let mut cursor = list1.cursor_front_mut(); // points to 1 (head)
+
+        let mut dest_cursor = list2.cursor_back_mut();
+        cursor.split_after(&mut dest_cursor);
+
+        assert_eq!(list1.len(), 1);
+        assert_eq!(list2.len(), 2);
+
+        let mut iter1 = list1.iter();
+        assert_eq!(iter1.next().unwrap().value, 1);
+        assert!(iter1.next().is_none());
+
+        let mut iter2 = list2.iter();
+        assert_eq!(iter2.next().unwrap().value, 2);
+        assert_eq!(iter2.next().unwrap().value, 3);
+        assert!(iter2.next().is_none());
+
+        list1.clear();
+        list2.clear();
+    }
+
+    #[test]
+    fn test_split_before_at_head() {
+        stack_pin_init!(let list1 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list1 = unsafe { list1.get_unchecked_mut() };
+        stack_pin_init!(let list2 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list2 = unsafe { list2.get_unchecked_mut() };
+
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(1)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(2)).unwrap());
+
+        let mut cursor = list1.cursor_front_mut(); // points to 1 (head)
+
+        let mut dest_cursor = list2.cursor_back_mut();
+        cursor.split_before(&mut dest_cursor);
+
+        assert!(list2.is_empty());
+        assert_eq!(list2.len(), 0);
+        assert_eq!(list1.len(), 2);
+
+        list1.clear();
+    }
+
+    #[test]
+    fn test_split_before_at_tail() {
+        stack_pin_init!(let list1 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list1 = unsafe { list1.get_unchecked_mut() };
+        stack_pin_init!(let list2 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list2 = unsafe { list2.get_unchecked_mut() };
+
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(1)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(2)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(3)).unwrap());
+
+        let mut cursor = list1.cursor_front_mut();
+        cursor.move_next();
+        cursor.move_next(); // points to 3 (tail)
+
+        let mut dest_cursor = list2.cursor_back_mut();
+        cursor.split_before(&mut dest_cursor);
+
+        assert_eq!(list2.len(), 2);
+        assert_eq!(list1.len(), 1);
+
+        let mut iter2 = list2.iter();
+        assert_eq!(iter2.next().unwrap().value, 1);
+        assert_eq!(iter2.next().unwrap().value, 2);
+        assert!(iter2.next().is_none());
+
+        let mut iter1 = list1.iter();
+        assert_eq!(iter1.next().unwrap().value, 3);
+        assert!(iter1.next().is_none());
+
+        list1.clear();
+        list2.clear();
+    }
+
+    #[test]
+    fn test_split_before_at_sentinel() {
+        stack_pin_init!(let list1 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list1 = unsafe { list1.get_unchecked_mut() };
+        stack_pin_init!(let list2 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list2 = unsafe { list2.get_unchecked_mut() };
+
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(1)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(2)).unwrap());
+
+        let mut cursor = list1.cursor_back_mut(); // points to sentinel
+
+        let mut dest_cursor = list2.cursor_back_mut();
+        cursor.split_before(&mut dest_cursor);
+
+        assert!(list1.is_empty());
+        assert_eq!(list1.len(), 0);
+        assert_eq!(list2.len(), 2);
+
+        let mut iter2 = list2.iter();
+        assert_eq!(iter2.next().unwrap().value, 1);
+        assert_eq!(iter2.next().unwrap().value, 2);
+        assert!(iter2.next().is_none());
+
+        list2.clear();
+    }
+
+    #[test]
+    fn test_split_into_middle_of_dest_list() {
+        stack_pin_init!(let list1 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list1 = unsafe { list1.get_unchecked_mut() };
+        stack_pin_init!(let list2 =
+            DoublyLinkedList::<UniquePtr<UniqueTestObject>, DefaultObjectTag, TrackingSize>::new());
+        let list2 = unsafe { list2.get_unchecked_mut() };
+
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(1)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(2)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(3)).unwrap());
+        list1.push_back(UniquePtr::try_new(UniqueTestObject::new(4)).unwrap());
+
+        list2.push_back(UniquePtr::try_new(UniqueTestObject::new(10)).unwrap());
+        list2.push_back(UniquePtr::try_new(UniqueTestObject::new(20)).unwrap());
+
+        // Split after 2 from list1, and insert before 20 in list2
+        let mut cursor1 = list1.cursor_front_mut();
+        cursor1.move_next(); // points to 2
+
+        let mut cursor2 = list2.cursor_front_mut();
+        cursor2.move_next(); // points to 20
+
+        cursor1.split_after(&mut cursor2);
+
+        // list1 should retain [1, 2]
+        assert_eq!(list1.len(), 2);
+        let mut iter1 = list1.iter();
+        assert_eq!(iter1.next().unwrap().value, 1);
+        assert_eq!(iter1.next().unwrap().value, 2);
+        assert!(iter1.next().is_none());
+
+        // list2 should now be [10, 3, 4, 20]
+        assert_eq!(list2.len(), 4);
+        let mut iter2 = list2.iter();
+        assert_eq!(iter2.next().unwrap().value, 10);
+        assert_eq!(iter2.next().unwrap().value, 3);
+        assert_eq!(iter2.next().unwrap().value, 4);
+        assert_eq!(iter2.next().unwrap().value, 20);
+        assert!(iter2.next().is_none());
+
+        list1.clear();
+        list2.clear();
+    }
+
+    #[test]
+    fn test_list_split_methods() {
+        let mut obj1 = TestObject::new(1);
+        let mut obj2 = TestObject::new(2);
+        let mut obj3 = TestObject::new(3);
+
+        stack_pin_init!(let list1 = DoublyLinkedList::<*mut TestObject>::new());
+        let list1 = unsafe { list1.get_unchecked_mut() };
+        stack_pin_init!(let list2 = DoublyLinkedList::<*mut TestObject>::new());
+        let list2 = unsafe { list2.get_unchecked_mut() };
+
+        unsafe {
+            list1.push_back_raw(&mut obj1);
+            list1.push_back_raw(&mut obj2);
+            list1.push_back_raw(&mut obj3);
+
+            // Split after obj1
+            let mut cursor1 = list1.cursor_at(&obj1);
+            let mut cursor2 = list2.cursor_back_mut();
+            cursor1.split_after(&mut cursor2);
+
+            assert_eq!(list1.iter().count(), 1);
+            assert_eq!(list2.iter().count(), 2);
+
+            let mut iter1 = list1.iter();
+            assert_eq!(iter1.next().unwrap().value, 1);
+            assert!(iter1.next().is_none());
+
+            let mut iter2 = list2.iter();
+            assert_eq!(iter2.next().unwrap().value, 2);
+            assert_eq!(iter2.next().unwrap().value, 3);
+            assert!(iter2.next().is_none());
+
+            // Splice back
+            list1.splice(list2);
+            assert_eq!(list1.iter().count(), 3);
+
+            // Split before obj3
+            let mut cursor1 = list1.cursor_at(&obj3);
+            let mut cursor2 = list2.cursor_back_mut();
+            cursor1.split_before(&mut cursor2);
+
+            assert_eq!(list2.iter().count(), 2);
+            assert_eq!(list1.iter().count(), 1);
+
+            let mut iter2 = list2.iter();
+            assert_eq!(iter2.next().unwrap().value, 1);
+            assert_eq!(iter2.next().unwrap().value, 2);
+            assert!(iter2.next().is_none());
+
+            let mut iter1 = list1.iter();
+            assert_eq!(iter1.next().unwrap().value, 3);
+            assert!(iter1.next().is_none());
+
+            list1.clear();
+            list2.clear();
+        }
+    }
+
+    #[test]
+    fn test_cursor_get() {
+        stack_pin_init!(let list = DoublyLinkedList::<UniquePtr<UniqueTestObject>>::new());
+        let list = unsafe { list.get_unchecked_mut() };
+
+        let cursor = list.cursor_front_mut();
+        assert!(cursor.get().is_none());
+
+        list.push_back(UniquePtr::try_new(UniqueTestObject::new(42)).unwrap());
+
+        let mut cursor = list.cursor_front_mut();
+        assert!(cursor.get().is_some());
+        assert_eq!(cursor.get().unwrap().value, 42);
+
+        cursor.move_next();
+        assert!(cursor.get().is_none());
+
+        list.clear();
     }
 
     #[test]
