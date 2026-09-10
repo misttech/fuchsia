@@ -11,56 +11,29 @@ namespace bt::passthrough {
 
 void PassthroughDevice::Start(fdf::DriverContext context, fdf::StartCompleter completer) {
   incoming_ = std::shared_ptr<fdf::Namespace>(context.take_incoming());
-  node_client_.Bind(take_node(), dispatcher());
   zx_status_t status = ConnectToHciTransportFidlProtocol();
   if (status != ZX_OK) {
     completer(zx::error(status));
     return;
   }
 
-  zx::result connector = devfs_connector_.Bind(dispatcher());
-  if (connector.is_error()) {
-    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector);
-    completer(zx::error(ZX_ERR_INTERNAL));
+  fuchsia_hardware_bluetooth::Service::InstanceHandler handler({
+      .vendor =
+          vendor_binding_group_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
+  });
+  zx::result result =
+      outgoing()->AddService<fuchsia_hardware_bluetooth::Service>(std::move(handler));
+  if (result.is_error()) {
+    fdf::error("Failed to add service: {}", result.status_string());
+    completer(zx::error(result.status_value()));
     return;
   }
 
-  fidl::Arena args_arena;
-  auto devfs_add_args = fuchsia_driver_framework::wire::DevfsAddArgs::Builder(args_arena)
-                            .connector(std::move(connector.value()))
-                            .class_name("bt-hci")
-                            .Build();
-  auto node_add_args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(args_arena)
-                           .name("bt-hci-passthrough")
-                           .devfs_args(devfs_add_args)
-                           .Build();
-
-  auto controller_endpoints = fidl::Endpoints<fuchsia_driver_framework::NodeController>::Create();
-  child_node_controller_client_.Bind(std::move(controller_endpoints.client), dispatcher());
-
-  // Add bt_hci_passthrough child node
-  node_client_->AddChild(node_add_args, std::move(controller_endpoints.server), {})
-      .ThenExactlyOnce(
-          [completer = std::move(completer)](
-              fidl::WireUnownedResult<fuchsia_driver_framework::Node::AddChild>& result) mutable {
-            if (!result.ok()) {
-              fdf::error("Failed to add child: {}", result.status_string());
-              completer(zx::error(result.status()));
-              return;
-            }
-
-            fdf::info("Started successfully");
-            completer(zx::ok());
-          });
-}
-
-void PassthroughDevice::Stop(fdf::StopCompleter completer) {
-  auto status = child_node_controller_client_->Remove();
-  if (!status.ok()) {
-    fdf::error("Could not remove child: {}", status.status_string());
-  }
+  fdf::info("Started successfully");
   completer(zx::ok());
 }
+
+void PassthroughDevice::Stop(fdf::StopCompleter completer) { completer(zx::ok()); }
 
 PassthroughDevice::~PassthroughDevice() = default;
 
@@ -172,11 +145,6 @@ void PassthroughDevice::on_fidl_error(::fidl::UnbindInfo error) {
 void PassthroughDevice::handle_unknown_event(
     fidl::UnknownEventMetadata<::fuchsia_hardware_bluetooth::HciTransport> metadata) {
   fdf::warn("Unknown event from HciTransport protocol");
-}
-
-void PassthroughDevice::Connect(fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request) {
-  vendor_binding_group_.AddBinding(dispatcher(), std::move(request), this,
-                                   fidl::kIgnoreBindingClosure);
 }
 
 zx_status_t PassthroughDevice::ConnectToHciTransportFidlProtocol() {

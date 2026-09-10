@@ -8,7 +8,6 @@
 #include <assert.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/wire.h>
 #include <lib/driver/component/cpp/driver_base2.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -22,9 +21,7 @@ class PassthroughDevice
       public fidl::WireServer<fuchsia_hardware_bluetooth::HciTransport>,
       public fidl::WireAsyncEventHandler<fuchsia_hardware_bluetooth::HciTransport> {
  public:
-  PassthroughDevice()
-      : DriverBase2("bt_hci_passthrough"),
-        devfs_connector_(fit::bind_member<&PassthroughDevice::Connect>(this)) {}
+  PassthroughDevice() : DriverBase2("bt_hci_passthrough") {}
 
   ~PassthroughDevice() override;
 
@@ -62,17 +59,11 @@ class PassthroughDevice
   void handle_unknown_event(
       fidl::UnknownEventMetadata<::fuchsia_hardware_bluetooth::HciTransport> metadata) override;
 
-  // Called by devfs_connector_ when a client connects.
-  void Connect(fidl::ServerEnd<fuchsia_hardware_bluetooth::Vendor> request);
-
   zx_status_t ConnectToHciTransportFidlProtocol();
 
   fidl::WireClient<fuchsia_hardware_bluetooth::HciTransport> hci_transport_client_;
-  fidl::WireClient<fuchsia_driver_framework::Node> node_client_;
-  fidl::WireClient<fuchsia_driver_framework::NodeController> child_node_controller_client_;
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::Vendor> vendor_binding_group_;
   fidl::ServerBindingGroup<fuchsia_hardware_bluetooth::HciTransport> hci_transport_server_bindings_;
-  driver_devfs::Connector<fuchsia_hardware_bluetooth::Vendor> devfs_connector_;
   std::shared_ptr<fdf::Namespace> incoming_;
   const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
 };

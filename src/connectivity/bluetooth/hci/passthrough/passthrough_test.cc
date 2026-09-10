@@ -87,9 +87,9 @@ class PassthroughTest : public ::testing::Test {
 
 TEST_F(PassthroughTest, Lifecycle) {}
 
-TEST_F(PassthroughTest, DevfsConnectAndSendCommand) {
+TEST_F(PassthroughTest, ConnectAndSendCommand) {
   zx::result<fidl::ClientEnd<fuchsia_hardware_bluetooth::Vendor>> client_end =
-      driver_test().ConnectThroughDevfs<fuchsia_hardware_bluetooth::Vendor>("bt-hci-passthrough");
+      driver_test().Connect<fuchsia_hardware_bluetooth::Service::Vendor>();
   ASSERT_TRUE(client_end.is_ok());
   fidl::WireClient<fuchsia_hardware_bluetooth::Vendor> client(std::move(client_end.value()),
                                                               dispatcher());

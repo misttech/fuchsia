@@ -29,7 +29,6 @@ source_set("passthrough_sources") {
     ":bt_hci_passthrough_bind",
     "//sdk/fidl/fuchsia.hardware.bluetooth:fuchsia.hardware.bluetooth_cpp",
     "//sdk/lib/driver/component/cpp",
-    "//sdk/lib/driver/devfs/cpp",
     "//sdk/lib/driver/logging/cpp",
     "//sdk/lib/fidl",
     "//src/devices/lib/driver",
