@@ -103,7 +103,6 @@ if (toolchain_base_environment == "kernel") {
       "handoff.cc",
       "mmu.cc",
       "mp.cc",
-      "restricted.cc",
       "riscv64_ffi.cc",
       "sbi.cc",
       "spinlock.cc",
@@ -292,6 +291,22 @@ if (toolchain_base_environment == "kernel") {
     expect_lints = [ "non_camel_case_types" ]
   }
 
+  kernel_bindgen_crate("riscv64-restricted-bindings") {
+    headers = [ "include/arch/restricted.h" ]
+    cpp = true
+    non_rust_deps = [ ":headers" ]
+    notice_year = 2026
+    raw_lines = [ "#![no_std]" ]
+    type_allowlist = [ "ArchSavedNormalState" ]
+    explicit_padding = false
+    std_derives = [
+      "default",
+      "eq",
+      "partialeq",
+    ]
+    expect_lints = []
+  }
+
   kernel_rust_mod("arch-riscv64-rs") {
     output_name = "arch_riscv64"
     source_root = "src/mod.rs"
@@ -302,6 +317,7 @@ if (toolchain_base_environment == "kernel") {
       "src/fpu.rs",
       "src/mod.rs",
       "src/mp.rs",
+      "src/restricted.rs",
       "src/sbi.rs",
       "src/spinlock.rs",
       "src/thread.rs",
@@ -313,6 +329,7 @@ if (toolchain_base_environment == "kernel") {
       ":riscv-sbi-bindings",
       ":riscv64-mp-bindings",
       ":riscv64-regs-bindings",
+      ":riscv64-restricted-bindings",
       ":riscv64-thread-bindings",
       ":riscv64-user-copy-bindings",
       "//sdk/rust/zbi",
