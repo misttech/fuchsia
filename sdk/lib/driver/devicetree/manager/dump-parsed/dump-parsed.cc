@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
   }
 
   // Initialize a global logger for host-side logging (required for FDF_LOG).
-  fdf::Logger logger("devicetree-dump-parsed", FUCHSIA_LOG_INFO);
+  fdf::Logger logger("devicetree-dump-parsed", FUCHSIA_LOG_ERROR);
   fdf::Logger::SetGlobalInstance(&logger);
 
   // 1. Load the DTB from the specified path.
