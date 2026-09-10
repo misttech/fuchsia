@@ -375,18 +375,12 @@
                 "io_submit04",
                 "io_uring03",
                 "ioctl_getlbmd01",
-                "ioctl_loop03",
-                "ioctl_loop04",
-                "ioctl_loop06",
                 "mremap07",
                 "newuname01",
                 "poll03",
                 "poll04",
                 "sysinfo01",
                 "userfaultfd06",
-
-                // Temporarily skipping for kconfig unification; Move to passing afterwards.
-                "seccomp01",
             ],
         },
     ],
