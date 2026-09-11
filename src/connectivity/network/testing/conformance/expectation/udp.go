@@ -76,7 +76,7 @@ var udpExpectationsNS3 map[AnvlCaseNumber]outcome.Outcome = map[AnvlCaseNumber]o
 	{7, 1}:  Pass,
 	{7, 3}:  Pass,
 	{8, 1}:  Pass,
-	{8, 2}:  Fail,
+	{8, 2}:  Pass,
 	{9, 1}:  Pass,
 	{9, 2}:  Pass,
 	{10, 1}: Fail,
