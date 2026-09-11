@@ -22,24 +22,18 @@ import functools
 import logging
 import os
 import time
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    try:
-        from .testusb import (
-            TestParams,
-            TestResult,
-        )
-    except ImportError:
-        from testusb import (
-            TestParams,
-            TestResult,
-        )
-
-try:
-    from .backend import USBTestBackend
-except ImportError:
-    from backend import USBTestBackend
+from .backend import USBTestBackend
+from .models import (
+    ALL_TEST_CASES,
+    EP0_GENERIC_TESTS,
+    USB_DT_CONFIG,
+    USB_DT_DEVICE,
+    TestParams,
+    TestResult,
+    TestStatus,
+    UsbDescriptorType,
+)
 
 
 @functools.cache
@@ -53,7 +47,7 @@ def _get_libc() -> ctypes.CDLL:
 
 
 def _ioc(direction: int, io_type: int, seq_number: int, size: int) -> int:
-    """Calculate a Linux ioctl command number from directional and type fields."""
+    """Calculate a Linux ioctl command number from directional/type fields."""
     return (direction << 30) | (io_type << 8) | (seq_number << 0) | (size << 16)
 
 
@@ -73,6 +67,8 @@ def _io(type_char: str, seq_number: int) -> int:
 
 
 class UsbdevfsIoctl(ctypes.Structure):
+    """Ctypes representation of struct usbdevfs_ioctl (<linux/usbdevice_fs.h>)."""
+
     _fields_ = [
         ("ifno", ctypes.c_int),
         ("ioctl_code", ctypes.c_int),
@@ -81,6 +77,8 @@ class UsbdevfsIoctl(ctypes.Structure):
 
 
 class UsbdevfsSetinterface(ctypes.Structure):
+    """Ctypes representation of struct usbdevfs_setinterface (<linux/usbdevice_fs.h>)."""
+
     _fields_ = [
         ("interface", ctypes.c_uint),
         ("altsetting", ctypes.c_uint),
@@ -88,6 +86,8 @@ class UsbdevfsSetinterface(ctypes.Structure):
 
 
 class UsbdevfsBulktransfer(ctypes.Structure):
+    """Ctypes representation of struct usbdevfs_bulktransfer (<linux/usbdevice_fs.h>)."""
+
     _fields_ = [
         ("ep", ctypes.c_uint),
         ("len", ctypes.c_uint),
@@ -97,6 +97,8 @@ class UsbdevfsBulktransfer(ctypes.Structure):
 
 
 class UsbdevfsCtrltransfer(ctypes.Structure):
+    """Ctypes representation of struct usbdevfs_ctrltransfer (<linux/usbdevice_fs.h>)."""
+
     _fields_ = [
         ("bRequestType", ctypes.c_uint8),
         ("bRequest", ctypes.c_uint8),
@@ -109,6 +111,8 @@ class UsbdevfsCtrltransfer(ctypes.Structure):
 
 
 class UsbdevfsDisconnectClaim(ctypes.Structure):
+    """Ctypes representation of struct usbdevfs_disconnect_claim (<linux/usbdevice_fs.h>)."""
+
     _fields_ = [
         ("interface", ctypes.c_uint),
         ("flags", ctypes.c_uint),
@@ -117,6 +121,8 @@ class UsbdevfsDisconnectClaim(ctypes.Structure):
 
 
 class Timeval(ctypes.Structure):
+    """Ctypes representation of struct timeval (<sys/time.h>)."""
+
     _fields_ = [
         ("tv_sec", ctypes.c_long),
         ("tv_usec", ctypes.c_long),
@@ -124,6 +130,8 @@ class Timeval(ctypes.Structure):
 
 
 class UsbtestParam(ctypes.Structure):
+    """Ctypes representation of struct usbtest_param (<linux/usb/test.h>)."""
+
     _fields_ = [
         ("test_num", ctypes.c_uint32),
         ("iterations", ctypes.c_uint32),
@@ -157,25 +165,6 @@ USB_DIR_OUT = 0x00
 USB_DIR_IN = 0x80
 
 
-class UsbDescriptorType(enum.IntEnum):
-    """USB Descriptor Types per USB 2.0 / 3.x Specs."""
-
-    DEVICE = 0x01
-    CONFIG = 0x02
-    STRING = 0x03
-    INTERFACE = 0x04
-    ENDPOINT = 0x05
-    DEVICE_QUALIFIER = 0x06
-    OTHER_SPEED_CONFIG = 0x07
-    INTERFACE_POWER = 0x08
-
-
-USB_DT_DEVICE = UsbDescriptorType.DEVICE
-USB_DT_CONFIG = UsbDescriptorType.CONFIG
-USB_DT_STRING = UsbDescriptorType.STRING
-USB_DT_INTERFACE = UsbDescriptorType.INTERFACE
-USB_DT_ENDPOINT = UsbDescriptorType.ENDPOINT
-
 USB_ENDPOINT_XFER_CONTROL = 0x00
 USB_ENDPOINT_XFER_ISOC = 0x01
 USB_ENDPOINT_XFER_BULK = 0x02
@@ -207,9 +196,9 @@ def iter_descriptors(
 def parse_endpoints_from_config_descriptor(
     config_descriptor: bytes,
 ) -> tuple[int | None, int | None, int | None]:
-    """Walk raw USB configuration descriptor bytes to locate paired endpoints."""
+    """Walk raw USB config descriptor bytes to locate paired endpoints."""
     curr_intf = None
-    intf_eps = {}
+    intf_eps: dict[int, tuple[int | None, int | None]] = {}
 
     try:
         for descriptor in iter_descriptors(config_descriptor):
@@ -301,7 +290,7 @@ _USB_SPEED_NAMES: tuple[str, ...] = (
     "super-plus",
 )
 
-_EP0_GENERIC_TESTS: frozenset[int] = frozenset({0, 9, 10, 14, 21})
+_EP0_GENERIC_TESTS: frozenset[int] = EP0_GENERIC_TESTS
 _ZERO_BYTE_TRANSFER_TESTS: frozenset[int] = frozenset({0, 9, 10, 13, 14, 21})
 _SCATTER_GATHER_TESTS: frozenset[int] = frozenset(
     {5, 6, 7, 8, 11, 12, 27, 28, 30, 31}
@@ -395,7 +384,6 @@ class USBTestIoctlBackend(USBTestBackend):
         """
         super().__init__(device_path)
         self.ifnum = ifnum
-        self.is_open = False
         self._fd: int | None = None
         self._maxpacket: int | None = None
 
@@ -428,8 +416,14 @@ class USBTestIoctlBackend(USBTestBackend):
             ) from e
 
         self.is_open = True
-        self.speed_name = self.get_speed()
-        self.current_config = self.get_configuration()
+        try:
+            self.speed_name = self.get_speed()
+            self.current_config = self.get_configuration()
+        except Exception:
+            self.is_open = False
+            os.close(self._fd)
+            self._fd = None
+            raise
 
     def close(self) -> None:
         """Closes the device node and restores kernel driver bindings."""
@@ -452,11 +446,11 @@ class USBTestIoctlBackend(USBTestBackend):
         self.is_open = False
 
     def _reconnect_kernel_drivers(self) -> None:
-        """Re-bind detached kernel drivers (usbtest) across valid interfaces."""
+        """Re-bind detached kernel drivers (usbtest) across all interfaces."""
         if self._fd is None:
             return
         cdll = _get_libc()
-        for ifnum in self._get_valid_interfaces():
+        for ifnum in range(_MAX_USB_INTERFACES):
             try:
                 wrapper = UsbdevfsIoctl()
                 wrapper.ifno = ifnum
@@ -606,11 +600,11 @@ class USBTestIoctlBackend(USBTestBackend):
             self._fd, USBDEVFS_CLAIMINTERFACE, ctypes.byref(ifno_c)
         )
         if res < 0:
-            err = ctypes.get_errno()
+            errno_val = ctypes.get_errno()
             raise OSError(
-                err,
-                f"Failed to claim interface {ifnum}: errno {err} "
-                f"({os.strerror(err)})",
+                errno_val,
+                f"Failed to claim interface {ifnum}: errno {errno_val} "
+                f"({os.strerror(errno_val)})",
             )
 
         try:
@@ -667,9 +661,9 @@ class USBTestIoctlBackend(USBTestBackend):
         # interfaces for this specific USB device node (self._fd). Linux devio
         # proc_setconfig returns -EBUSY if any interface is claimed by userspace
         # or driver.
-        #
-        # USBDEVFS ioctls are scoped strictly to self._fd (/dev/bus/usb/BBB/DDD),
-        # so this does not affect other USB devices on the host.
+        # USBDEVFS ioctls are scoped strictly to self._fd
+        # (/dev/bus/usb/BBB/DDD), so this does not affect other USB devices on
+        # the host.
         for ifnum in self._get_valid_interfaces(config_val):
             ifno_c = ctypes.c_uint(ifnum)
             try:
@@ -912,13 +906,13 @@ class USBTestIoctlBackend(USBTestBackend):
         return None, None, None
 
     def _get_valid_interfaces(self, config_val: int | None = None) -> set[int]:
-        """Discovers all valid interface numbers for the specified configuration.
+        """Discovers valid interface numbers for the specified configuration.
 
         Args:
             config_val: Optional configuration value to inspect.
 
         Returns:
-            A set of integer interface numbers present in the configuration descriptor.
+            A set of integer interface numbers present in the configuration.
         """
         interfaces: set[int] = set()
         if config_val is None:
@@ -967,7 +961,8 @@ class USBTestIoctlBackend(USBTestBackend):
                                     interfaces.add(desc[2])
             except (OSError, ValueError) as err:
                 _LOGGER.debug(
-                    "Failed querying configuration descriptor for interfaces: %s",
+                    "Failed querying configuration descriptor for "
+                    "interfaces: %s",
                     err,
                 )
 
@@ -1114,11 +1109,6 @@ class USBTestIoctlBackend(USBTestBackend):
         if not self.is_open or self._fd is None:
             raise RuntimeError("Backend is not open")
 
-        try:
-            from .testusb import TestResult, TestStatus
-        except ImportError:
-            from testusb import TestResult, TestStatus
-
         # Automatically ensure Loopback configuration is active
         num_configs = self.get_num_configurations()
         target_config = (
@@ -1221,10 +1211,10 @@ class USBTestIoctlBackend(USBTestBackend):
                     )
                     break
                 if res_out < 0:
-                    err = ctypes.get_errno()
+                    errno_val = ctypes.get_errno()
                     error_msg = (
                         f"Bulk OUT write failed at iteration {i}: "
-                        f"errno {err} ({os.strerror(err)})"
+                        f"errno {errno_val} ({os.strerror(errno_val)})"
                     )
                     break
                 if res_out != curr_len:
@@ -1246,10 +1236,10 @@ class USBTestIoctlBackend(USBTestBackend):
                     )
                     break
                 if res_in < 0:
-                    err = ctypes.get_errno()
+                    errno_val = ctypes.get_errno()
                     error_msg = (
                         f"Bulk IN read failed at iteration {i}: "
-                        f"errno {err} ({os.strerror(err)})"
+                        f"errno {errno_val} ({os.strerror(errno_val)})"
                     )
                     break
 
@@ -1327,19 +1317,6 @@ class USBTestIoctlBackend(USBTestBackend):
         """
         if not self.is_open or self._fd is None:
             raise RuntimeError("Backend is not open")
-
-        try:
-            from .testusb import (
-                ALL_TEST_CASES,
-                TestResult,
-                TestStatus,
-            )
-        except ImportError:
-            from testusb import (
-                ALL_TEST_CASES,
-                TestResult,
-                TestStatus,
-            )
 
         test_case = ALL_TEST_CASES.get(test_id)
         test_name = test_case.name if test_case else f"Test {test_id}"

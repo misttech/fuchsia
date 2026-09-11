@@ -3,27 +3,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""USB Zero Function Test Host Utility.
+"""Data models, enums, and test case definitions for testusb.
 
-A Python 3 CLI tool and library for testing USB devices using either Linux
-`usbtest` ioctls or `libusb-1.0` (via pyusb or ctypes).
-
-Supports test case selection, loop counts, random ordering, buffer size and
-transfer count customization, and JSON/text reporting.
+Leaf module with no dependencies on runner, cli, or backends, ensuring a clean
+directed acyclic graph (DAG) across the testusb package.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import enum
-import logging
 from typing import Any
-
-_LOGGER = logging.getLogger(__name__)
-
-# ==============================================================================
-# Constants & Ioctl Definitions
-# ==============================================================================
 
 
 class UsbDescriptorType(enum.IntEnum):
@@ -48,28 +38,19 @@ USB_DT_DEVICE_QUALIFIER = UsbDescriptorType.DEVICE_QUALIFIER
 USB_DT_OTHER_SPEED_CONFIG = UsbDescriptorType.OTHER_SPEED_CONFIG
 USB_DT_INTERFACE_POWER = UsbDescriptorType.INTERFACE_POWER
 
-USB_ENDPOINT_XFER_CONTROL = 0x00
-USB_ENDPOINT_XFER_ISOC = 0x01
-USB_ENDPOINT_XFER_BULK = 0x02
-USB_ENDPOINT_XFER_INT = 0x03
-USB_ENDPOINT_XFERTYPE_MASK = 0x03
-
-USB_DIR_OUT = 0x00
-USB_DIR_IN = 0x80
-
 # Recognized USB Test Device VENDOR:PRODUCT IDs
 KNOWN_TEST_DEVICES: tuple[tuple[int, int], ...] = (
     (0x18D1, 0xA022),  # Fuchsia USB Test Gadget (Source/Sink)
     (0x18D1, 0xA023),  # Fuchsia USB Test Gadget (Loopback)
 )
 
-
-# ==============================================================================
-# Data Models & Interfaces
-# ==============================================================================
+# Standard Chapter 9 / EP0 generic control tests applicable across configs
+EP0_GENERIC_TESTS: frozenset[int] = frozenset({0, 9, 10, 14, 21})
 
 
 class TestStatus(str, enum.Enum):
+    """Outcome status for a test execution."""
+
     PASS = "PASS"
     FAIL = "FAIL"
     SKIP = "SKIP"
@@ -101,6 +82,14 @@ class TestParams:
 
     @buffer_size.setter
     def buffer_size(self, val: int) -> None:
+        """Set transfer buffer size in bytes.
+
+        Args:
+            val: Transfer buffer length in bytes. Must be > 0.
+
+        Raises:
+            ValueError: If val is <= 0.
+        """
         if val <= 0:
             raise ValueError("buffer_size must be > 0")
         self.length = val
@@ -145,6 +134,11 @@ class TestResult:
     throughput_mbs: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
+        """Convert test result to a JSON-serializable dictionary.
+
+        Returns:
+            Dictionary mapping result attribute names to their serialized values.
+        """
         return dict(
             test_id=self.test_id,
             test_name=self.name_without_id(),
@@ -296,55 +290,3 @@ ALL_TEST_CASES: dict[int, TestCase] = {
         "Bidirectional bulk loopback zero-length packets",
     ),
 }
-
-
-try:
-    from .ioctl import (
-        MalformedDescriptorError,
-        UsbdevfsBulktransfer,
-        UsbdevfsCtrltransfer,
-        UsbdevfsDisconnectClaim,
-        UsbdevfsIoctl,
-        UsbdevfsSetinterface,
-        UsbtestParam,
-        iter_descriptors,
-        parse_endpoints_from_config_descriptor,
-    )
-except ImportError:
-    from ioctl import (
-        MalformedDescriptorError,
-        UsbdevfsBulktransfer,
-        UsbdevfsCtrltransfer,
-        UsbdevfsDisconnectClaim,
-        UsbdevfsIoctl,
-        UsbdevfsSetinterface,
-        UsbtestParam,
-        iter_descriptors,
-        parse_endpoints_from_config_descriptor,
-    )
-
-
-try:
-    from .backend import USBTestBackend
-except ImportError:
-    from backend import USBTestBackend
-
-__all__: tuple[str, ...] = (
-    "ALL_TEST_CASES",
-    "KNOWN_TEST_DEVICES",
-    "MalformedDescriptorError",
-    "TestCase",
-    "TestParams",
-    "TestResult",
-    "TestStatus",
-    "USBTestBackend",
-    "UsbDescriptorType",
-    "UsbdevfsBulktransfer",
-    "UsbdevfsCtrltransfer",
-    "UsbdevfsDisconnectClaim",
-    "UsbdevfsIoctl",
-    "UsbdevfsSetinterface",
-    "UsbtestParam",
-    "iter_descriptors",
-    "parse_endpoints_from_config_descriptor",
-)

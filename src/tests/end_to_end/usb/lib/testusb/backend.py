@@ -17,14 +17,9 @@ import logging
 import os
 import stat
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    try:
-        from .testusb import TestParams, TestResult
-    except ImportError:
-        from testusb import TestParams, TestResult
+from .models import TestParams, TestResult, TestStatus
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -127,11 +122,6 @@ class USBTestBackend(ABC):
         Returns:
             TestResult summarizing outcome and transfer metrics.
         """
-        try:
-            from .testusb import TestResult, TestStatus
-        except ImportError:
-            from testusb import TestResult, TestStatus
-
         return TestResult(
             test_id=test_id,
             test_name=test_name,
@@ -141,23 +131,17 @@ class USBTestBackend(ABC):
         )
 
     @abstractmethod
-    @contextlib.contextmanager
-    def claimed_interface(self, ifnum: int) -> Iterator[None]:
+    def claimed_interface(
+        self, ifnum: int
+    ) -> contextlib.AbstractContextManager[None]:
         """Context manager to claim and manage the lifecycle of a USB interface.
 
         Args:
             ifnum: Interface number to claim.
 
-        Yields:
-            None once the interface has been claimed.
-
-        Raises:
-            NotImplementedError: If not overridden by concrete backend subclass.
+        Returns:
+            Context manager yielding None once the interface has been claimed.
         """
-        raise NotImplementedError(
-            "claimed_interface must be implemented by subclasses"
-        )
-        yield
 
     @abstractmethod
     def run_test(self, test_id: int, params: TestParams) -> TestResult:
@@ -185,11 +169,13 @@ class USBTestBackend(ABC):
         """Close the backend on context manager exit."""
         self.close()
 
-    def discover_devices(self) -> list[str]:
+    @classmethod
+    def discover_devices(cls) -> list[str]:
         """Discover available USB test devices on the system.
 
         Returns:
-            Sorted list of device node paths matching known test device VID/PIDs.
+            Sorted list of device node paths matching known test device
+            VID/PIDs.
         """
         found = set()
 
@@ -257,11 +243,12 @@ class USBTestBackend(ABC):
                     _LOGGER.debug("Failed stat on %s: %s", path, err)
                     continue
 
-                if self._is_test_device(path):
+                if cls._is_test_device(path):
                     found.add(path)
         return sorted(found)
 
-    def _is_test_device(self, dev_path: str) -> bool:
+    @classmethod
+    def _is_test_device(cls, dev_path: str) -> bool:
         """Check if a device node matches a known USB test gadget VID/PID.
 
         Args:
