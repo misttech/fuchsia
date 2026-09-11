@@ -525,45 +525,23 @@ config("optimize_speed") {
 
 # Each of those "well-optimized" primary optimization modes gets corresponding
 # _lto and _thinlto modes.
-config("optimize_moderate_lto") {
-  configs = [ ":optimize_moderate" ]
-  if (lto_is_compatible) {
-    configs += [ "//build/config/lto:lto" ]
-  }
-}
-
-config("optimize_moderate_thinlto") {
-  configs = [ ":optimize_moderate" ]
-  if (lto_is_compatible) {
-    configs += [ "//build/config/lto:thinlto" ]
-  }
-}
-
-config("optimize_size_lto") {
-  configs = [ ":optimize_size" ]
-  if (lto_is_compatible) {
-    configs += [ "//build/config/lto:lto" ]
-  }
-}
-
-config("optimize_size_thinlto") {
-  configs = [ ":optimize_size" ]
-  if (lto_is_compatible) {
-    configs += [ "//build/config/lto:thinlto" ]
-  }
-}
-
-config("optimize_speed_lto") {
-  configs = [ ":optimize_speed" ]
-  if (lto_is_compatible) {
-    configs += [ "//build/config/lto:lto" ]
-  }
-}
-
-config("optimize_speed_thinlto") {
-  configs = [ ":optimize_speed" ]
-  if (lto_is_compatible) {
-    configs += [ "//build/config/lto:thinlto" ]
+foreach(primary,
+        [
+          "moderate",
+          "size",
+          "speed",
+        ]) {
+  foreach(lto,
+          [
+            "lto",
+            "thinlto",
+          ]) {
+    config("optimize_${primary}_${lto}") {
+      configs = [ ":optimize_${primary}" ]
+      if (lto_is_compatible) {
+        configs += [ "//build/config/lto:${lto}" ]
+      }
+    }
   }
 }
 
