@@ -114,6 +114,10 @@ FFI_ALWAYS_INLINE void cpp_vm_page_list_btree_erase_at(VmPageListBtree* tree,
   cursor->iter = tree->erase(cursor->iter);
 }
 
+FFI_ALWAYS_INLINE void cpp_vm_page_list_btree_cursor_default_init(VmPageListBtreeCursor* cursor) {
+  cursor->iter = {};
+}
+
 FFI_ALWAYS_INLINE void cpp_vm_page_list_btree_cursor_init(VmPageListBtreeCursor* cursor,
                                                           VmPageListBtree* tree) {
   cursor->iter = tree->begin();

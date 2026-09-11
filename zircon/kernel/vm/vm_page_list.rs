@@ -665,7 +665,7 @@ pub struct VmPageListNode {
 
 impl VmPageListNode {
     /// Number of page slots in a node.
-    const PAGE_FAN_OUT: usize = kVmPageListFanOut;
+    pub const PAGE_FAN_OUT: usize = kVmPageListFanOut;
 
     /// Total size in bytes of the address range covered by a single `VmPageListNode` (64 KiB).
     pub(crate) const NODE_SPAN_BYTES: u64 = (Self::PAGE_FAN_OUT as u64) * (page::SIZE as u64);
@@ -998,7 +998,10 @@ impl<'a> BatchInserter<'a> {
     /// Construct a `BatchInserter` for the specified `VmPageList`. The list must be kept alive for
     /// the duration of this object.
     pub fn new(list: &'a mut VmPageList) -> Self {
-        Self { list, node: Opaque::uninit() }
+        let cursor = Opaque::uninit();
+        // SAFETY: `cursor.get()` is a valid pointer to be initialized to default invalid iterator.
+        unsafe { bindings::cpp_vm_page_list_btree_cursor_default_init(cursor.get()) };
+        Self { list, node: cursor }
     }
 
     /// Similar to `VmPageList::lookup_or_allocate` but is implicitly `NoIntervals`. If repeated
@@ -1081,7 +1084,8 @@ impl<'a> BatchInserter<'a> {
     /// Reset the batch inserter. This makes it safe to use again if other `VmPageList` operations
     /// had been performed.
     pub fn reset(&mut self) {
-        self.node = Opaque::uninit();
+        // SAFETY: `self.node.get()` is a valid pointer to be reset to default invalid iterator.
+        unsafe { bindings::cpp_vm_page_list_btree_cursor_default_init(self.node.get()) };
     }
 }
 
@@ -1766,8 +1770,8 @@ impl VmPageSpliceList {
 /// Unit tests for VmPageOrMarker.
 mod vm_page_list_rs {
     use super::{
-        BatchInserter, IntervalHandling, ReferenceValue, SentinelType, Status, VmPageList,
-        VmPageListNode, VmPageOrMarker, VmPageOrMarkerRef, ZeroRangeDirtyState,
+        ReferenceValue, SentinelType, VmPageListNode, VmPageOrMarker, VmPageOrMarkerRef,
+        ZeroRangeDirtyState,
     };
     use unittest::{expect_eq, expect_false, expect_true};
 
@@ -2089,194 +2093,5 @@ mod vm_page_list_rs {
         expect_true!(node1.is_empty());
         expect_true!(node2.lookup(1).is_marker());
         *node2.lookup_mut(1) = VmPageOrMarker::empty();
-    }
-
-    /// Tests VmPageList empty state, slot lookup, allocation, return empty slot, and removal.
-    #[test]
-    fn test_page_list_basic_lifecycle() {
-        let mut pl = VmPageList::new();
-        expect_true!(pl.is_empty());
-        expect_true!(pl.has_no_page_or_ref());
-        expect_true!(pl.has_no_page_ref_or_marker());
-        expect_true!(pl.lookup(4096).is_none());
-
-        // Verify MAX_SIZE bounds check.
-        expect_true!(
-            pl.lookup_or_allocate(VmPageList::MAX_SIZE, IntervalHandling::NoIntervals).0.is_none()
-        );
-        expect_true!(pl.lookup_or_allocate(u64::MAX, IntervalHandling::NoIntervals).0.is_none());
-
-        // Allocate a slot in node 0.
-        let slot = pl.lookup_or_allocate(4096, IntervalHandling::NoIntervals).0.unwrap();
-        expect_true!(slot.is_empty());
-        *slot = VmPageOrMarker::marker();
-
-        expect_false!(pl.is_empty());
-        expect_true!(pl.has_no_page_or_ref());
-        expect_false!(pl.has_no_page_ref_or_marker());
-        expect_true!(pl.lookup(4096).unwrap().is_marker());
-
-        // Test lookup_mut.
-        {
-            let mut mut_ref = pl.lookup_mut(4096).unwrap();
-            expect_true!(mut_ref.is_marker());
-            expect_eq!(mut_ref.marker_share_count(), 0);
-            mut_ref.increment_marker_share_count();
-            expect_eq!(mut_ref.marker_share_count(), 1);
-            mut_ref.decrement_marker_share_count();
-            expect_eq!(mut_ref.marker_share_count(), 0);
-        }
-        expect_true!(pl.lookup(4096).unwrap().is_marker());
-
-        let removed = pl.remove_content(4096);
-        expect_true!(removed.is_marker());
-        expect_true!(pl.is_empty());
-
-        // Allocate and return empty slot.
-        let empty_slot = pl.lookup_or_allocate(8192, IntervalHandling::NoIntervals).0.unwrap();
-        expect_true!(empty_slot.is_empty());
-        pl.return_empty_slot(8192);
-        expect_true!(pl.is_empty());
-
-        // Insert across multiple nodes and remove all content.
-        *pl.lookup_or_allocate(0, IntervalHandling::NoIntervals).0.unwrap() =
-            VmPageOrMarker::marker();
-        *pl.lookup_or_allocate(65536, IntervalHandling::NoIntervals).0.unwrap() =
-            VmPageOrMarker::marker();
-        expect_false!(pl.is_empty());
-
-        let mut remove_count = 0;
-        pl.remove_all_content(|item| {
-            if item.is_marker() {
-                remove_count += 1;
-            }
-        });
-        expect_eq!(remove_count, 2);
-        expect_true!(pl.is_empty());
-
-        // Test clear on non-empty list containing markers.
-        *pl.lookup_or_allocate(0, IntervalHandling::NoIntervals).0.unwrap() =
-            VmPageOrMarker::marker();
-        expect_false!(pl.is_empty());
-        pl.clear();
-        expect_true!(pl.is_empty());
-    }
-
-    /// Tests BatchInserter sequential allocation and multi-node leaf traversal.
-    #[test]
-    fn test_batch_inserter_sequential() {
-        let mut pl = VmPageList::new();
-        let page_size = page::SIZE as u64;
-        {
-            let mut inserter = BatchInserter::new(&mut pl);
-            // Sequentially insert pages across 3 nodes (48 pages)
-            for i in 0..(VmPageListNode::PAGE_FAN_OUT * 3) {
-                let offset = (i as u64) * page_size;
-                let slot = inserter.lookup_or_allocate(offset).unwrap();
-                expect_true!(slot.is_empty());
-                *slot = VmPageOrMarker::marker();
-            }
-        }
-
-        // Verify all pages are populated
-        for i in 0..(VmPageListNode::PAGE_FAN_OUT * 3) {
-            let offset = (i as u64) * page_size;
-            let slot = pl.lookup(offset).unwrap();
-            expect_true!(slot.is_marker());
-        }
-
-        pl.remove_all_content(|_| {});
-    }
-
-    /// Tests BatchInserter non-sequential insertions and reset.
-    #[test]
-    fn test_batch_inserter_out_of_order() {
-        let mut pl = VmPageList::new();
-        let page_size = page::SIZE as u64;
-
-        {
-            let mut inserter = BatchInserter::new(&mut pl);
-            // Insert at high offset
-            let high_offset = VmPageListNode::NODE_SPAN_BYTES * 10;
-            let slot = inserter.lookup_or_allocate(high_offset).unwrap();
-            expect_true!(slot.is_empty());
-            *slot = VmPageOrMarker::marker();
-
-            // Insert out-of-order at lower offset
-            let slot_low = inserter.lookup_or_allocate(page_size).unwrap();
-            expect_true!(slot_low.is_empty());
-            *slot_low = VmPageOrMarker::marker();
-
-            // Test reset
-            inserter.reset();
-        }
-
-        // Test MAX_SIZE bounds check on VmPageList::lookup_or_allocate
-        expect_true!(
-            pl.lookup_or_allocate(VmPageList::MAX_SIZE, IntervalHandling::NoIntervals).0.is_none()
-        );
-        expect_true!(pl.lookup_or_allocate(u64::MAX, IntervalHandling::NoIntervals).0.is_none());
-
-        pl.remove_all_content(|_| {});
-    }
-
-    /// Tests for_every_page and for_every_page_in_range.
-    #[test]
-    fn test_for_every_page_in_range() {
-        let mut pl = VmPageList::new();
-        let page_size = page::SIZE as u64;
-
-        *pl.lookup_or_allocate(0, IntervalHandling::NoIntervals).0.unwrap() =
-            VmPageOrMarker::marker();
-        *pl.lookup_or_allocate(VmPageListNode::NODE_SPAN_BYTES, IntervalHandling::NoIntervals)
-            .0
-            .unwrap() = VmPageOrMarker::marker();
-
-        let mut count = 0;
-        let _ = pl.for_every_page(|_, _| {
-            count += 1;
-            Status::NEXT
-        });
-        expect_eq!(count, 2);
-
-        let mut range_count = 0;
-        let _ = pl.for_every_page_in_range(0, page_size, |_, _| {
-            range_count += 1;
-            Status::NEXT
-        });
-        expect_eq!(range_count, 1);
-
-        pl.remove_all_content(|_| {});
-    }
-
-    /// Tests remove_pages with empty node cleanup.
-    #[test]
-    fn test_remove_pages() {
-        let mut pl = VmPageList::new();
-
-        *pl.lookup_or_allocate(0, IntervalHandling::NoIntervals).0.unwrap() =
-            VmPageOrMarker::marker();
-        expect_false!(pl.is_empty());
-
-        let _ = pl.remove_pages(0, VmPageListNode::NODE_SPAN_BYTES, |slot, _| {
-            let _ = slot.swap(VmPageOrMarker::empty());
-            Status::NEXT
-        });
-        expect_true!(pl.is_empty());
-    }
-
-    /// Tests any_pages_or_intervals_in_range.
-    #[test]
-    fn test_any_pages_in_range() {
-        let mut pl = VmPageList::new();
-        let page_size = page::SIZE as u64;
-
-        expect_false!(pl.any_pages_or_intervals_in_range(0, page_size));
-        *pl.lookup_or_allocate(0, IntervalHandling::NoIntervals).0.unwrap() =
-            VmPageOrMarker::marker();
-        expect_true!(pl.any_pages_or_intervals_in_range(0, page_size));
-        expect_true!(pl.any_owned_pages_or_intervals_in_range(0, page_size));
-
-        pl.remove_all_content(|_| {});
     }
 }

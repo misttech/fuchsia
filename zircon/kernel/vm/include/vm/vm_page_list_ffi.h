@@ -90,6 +90,7 @@ void* cpp_vm_page_list_btree_insert(VmPageListBtree* tree, uint64_t node_offset,
 void cpp_vm_page_list_btree_erase_at(VmPageListBtree* tree, VmPageListBtreeCursor* cursor);
 
 // Cursors for iterating over nodes in the B-Tree in ascending key order.
+void cpp_vm_page_list_btree_cursor_default_init(VmPageListBtreeCursor* cursor);
 void cpp_vm_page_list_btree_cursor_init(VmPageListBtreeCursor* cursor, VmPageListBtree* tree);
 VmPageListBtreeNodeEntry cpp_vm_page_list_btree_cursor_next(VmPageListBtreeCursor* cursor);
 

@@ -807,6 +807,7 @@ kernel_bindgen_crate("vm-page-list-bindings") {
     "cpp_vm_page_list_btree_clear",
     "cpp_vm_page_list_btree_const_cursor_init",
     "cpp_vm_page_list_btree_const_cursor_next",
+    "cpp_vm_page_list_btree_cursor_default_init",
     "cpp_vm_page_list_btree_cursor_get",
     "cpp_vm_page_list_btree_cursor_init",
     "cpp_vm_page_list_btree_cursor_next",
@@ -1317,6 +1318,7 @@ kernel_rust_mod("vm-rs-unittests") {
     "unittests/slab_unittest.rs",
     "unittests/test_helper.rs",
     "unittests/vmo_unittest.rs",
+    "unittests/vmpl_unittest.rs",
   ]
   deps = [
     ":test-helper-bindings",
