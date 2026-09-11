@@ -305,6 +305,40 @@ class ZeroFunctionTest(zero_function.ZeroFunctionBaseTest):
             results, "Queued Scatter/Gather (Tests 30 & 31) failed"
         )
 
+    def test_loopback_ep0_control(self) -> None:
+        """Verifies EP0 generic control tests (0, 9, 10, 14, 21) in Loopback mode."""
+        dev_node = self.require_dev_node()
+        _LOGGER.info(
+            "Executing Loopback EP0 Generic Control Tests on %s...",
+            dev_node,
+        )
+        results = self.execute_testusb(
+            dev_node=dev_node,
+            test_ids=[0, 9, 10, 14, 21],
+            mode="loopback",
+            iterations=5,
+        )
+        self.assert_testusb_success(
+            results, "Loopback EP0 generic control tests failed"
+        )
+
+    def test_loopback_bulk_roundtrip(self) -> None:
+        """Verifies userspace bulk loopback fixed and varying round-trips."""
+        dev_node = self.require_dev_node()
+        _LOGGER.info(
+            "Executing Userspace Bulk Loopback Round-trips on %s...",
+            dev_node,
+        )
+        results = self.execute_testusb(
+            dev_node=dev_node,
+            test_ids=[32, 33, 34, 35],
+            mode="loopback",
+            iterations=5,
+        )
+        self.assert_testusb_success(
+            results, "Userspace Bulk Loopback Round-trips failed"
+        )
+
     def test_full_suite_sweep(self) -> None:
         """Sweeps all 27 supported tests in Source/Sink mode in one pass."""
         dev_node = self.require_dev_node()
