@@ -55,6 +55,16 @@ def msg(text: str, file: TextIO | None = None) -> None:
     print(f"[{_SCRIPT.name}] {text}", file=file)
 
 
+def ts_msg(
+    text: str, verbose: bool = False, file: TextIO | None = None
+) -> None:
+    """Print a message with high-precision epoch timestamps for verbose mode."""
+    if file is None:
+        file = sys.stderr
+    if verbose:
+        print(f"[{time.time():.9f}] [{_SCRIPT.name}]: {text}", file=file)
+
+
 GLOBAL_RESULTSTORE_CONFIG = pathlib.Path(".fx/config/resultstore")
 LOCAL_RESULTSTORE_CONFIG = pathlib.Path(".resultstore")
 
@@ -1003,7 +1013,17 @@ class BuildCommandExecution(object):
             verbose=config.verbose,
         )
 
-        return BuildResult(return_code=managed.run())
+        ts_msg("Starting build command execution...", config.verbose)
+        return_code = -1
+        try:
+            return_code = managed.run()
+        finally:
+            ts_msg(
+                f"Build command execution completed with status {return_code}",
+                config.verbose,
+            )
+
+        return BuildResult(return_code=return_code)
 
     def run(self) -> BuildResult:
         """Execute the build command, guarded by a build lock if it is a build command.

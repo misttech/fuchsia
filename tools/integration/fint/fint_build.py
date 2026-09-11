@@ -99,9 +99,15 @@ class Timer:
 _SCRIPT_NAME = pathlib.Path(__file__).name
 
 
-def print_msg(msg: str, file: TextIO = sys.stdout) -> None:
+def msg(msg: str, file: TextIO = sys.stdout) -> None:
     """Standardized logger that prefixes messages with the script name."""
     print(f"[{_SCRIPT_NAME}] {msg}", file=file)
+
+
+def ts_msg(msg: str, verbose: bool = False, file: TextIO = sys.stderr) -> None:
+    """Logs high-precision timestamps to stderr in verbose mode."""
+    if verbose:
+        print(f"[{time.time():.9f}] [{_SCRIPT_NAME}]: {msg}", file=file)
 
 
 @dataclass(frozen=True)
@@ -207,9 +213,7 @@ def produce_build_artifacts(
         artifacts, always_print_fields_with_no_presence=True
     )
     json_manifest_path.write_text(json_data)
-    print_msg(
-        f"Successfully wrote build artifacts manifest to {json_manifest_path}"
-    )
+    msg(f"Successfully wrote build artifacts manifest to {json_manifest_path}")
 
 
 def run_gn_check(
@@ -238,9 +242,9 @@ def run_gn_check(
         "--check-generated",
         "--check-system",
     ]
-    print_msg("Running gn check...")
+    msg("Running gn check...")
     if verbose:
-        print_msg(f"Command: {shlex.join(cmd)}")
+        msg(f"Command: {shlex.join(cmd)}")
     res = subprocess.run(cmd)
     return res.returncode
 
@@ -287,9 +291,9 @@ def check_ninja_noop(
             str(dirty_sources_path),
         ] + targets
 
-        print_msg("Verifying ninja build converges to no-op...")
+        msg("Verifying ninja build converges to no-op...")
         if verbose:
-            print_msg(f"Command: {shlex.join(cmd)}")
+            msg(f"Command: {shlex.join(cmd)}")
 
         res = subprocess.run(
             cmd,
@@ -304,7 +308,7 @@ def check_ninja_noop(
             return 0
 
         # Handle non-noop build
-        print_msg(
+        msg(
             "Error: Ninja build did not converge to no-op.",
             file=sys.stderr,
         )
@@ -314,7 +318,7 @@ def check_ninja_noop(
         if dirty_sources_path.exists():
             dirty_content = dirty_sources_path.read_text().strip()
             if dirty_content:
-                print_msg(
+                msg(
                     f"Identified dirty source files:\n{dirty_content}",
                     file=sys.stderr,
                 )
@@ -322,7 +326,7 @@ def check_ninja_noop(
 
 
 def collect_failure_diagnostics(build_dir: pathlib.Path) -> None:
-    print_msg("Build failed. Diagnostic logs would be collected here.")
+    msg("Build failed. Diagnostic logs would be collected here.")
 
 
 @dataclass(frozen=True)
@@ -451,7 +455,7 @@ class BuildContext:
             "--enable_runfiles=true",
         ] + bazel_labels
 
-        print_msg(f"Building Bazel host tests: {bazel_labels}")
+        msg(f"Building Bazel host tests: {bazel_labels}")
         subprocess.run(cmd, check=True)
 
     @contextmanager
@@ -631,7 +635,7 @@ def _main_arg_parser() -> argparse.ArgumentParser:
 def main(argv: list[str]) -> int:
     # Verify that we are running in a valid Fuchsia checkout environment when executed.
     if not (fuchsia_root / ".jiri_manifest").exists():
-        print_msg(
+        msg(
             f"INTERNAL ERROR: Could not find valid Fuchsia root: {fuchsia_root}",
             file=sys.stderr,
         )
@@ -642,7 +646,7 @@ def main(argv: list[str]) -> int:
 
     if args.print_artifact_dir:
         if not args.context:
-            print_msg(
+            msg(
                 "Error: --context is required with --print-artifact-dir",
                 file=sys.stderr,
             )
@@ -660,8 +664,10 @@ def main(argv: list[str]) -> int:
     ]
     for val, err_msg in required_build_args:
         if not val:
-            print_msg(f"Error: {err_msg}", file=sys.stderr)
+            msg(f"Error: {err_msg}", file=sys.stderr)
             return 2
+
+    ts_msg("Fint build wrapper starting up...", args.verbose)
 
     ctx = make_build_context(args.static, args.context, verbose=args.verbose)
 
@@ -674,7 +680,11 @@ def main(argv: list[str]) -> int:
 
     with wrapper(args.wrapped_cmd) as run:
         if args.verbose:
-            print_msg(f"Delegated command: {shlex.join(run.command)}")
+            msg(f"Delegated command: {shlex.join(run.command)}")
+            ts_msg(
+                f"Executing delegated build command: {shlex.join(run.command)}",
+                args.verbose,
+            )
 
         with Timer() as t:
             try:
@@ -687,14 +697,22 @@ def main(argv: list[str]) -> int:
             except signal_utils.BuildInterruptedError as e:
                 # If interrupted, propagate the signal-derived exit code (128 + signum)
                 exit_code = e.return_code
-                print_msg(f"Build interrupted by signal {e.signum}")
+                msg(f"Build interrupted by signal {e.signum}")
         duration_seconds = round(t.duration)
 
         run.exit_code = exit_code
+        ts_msg(
+            f"Delegated build command completed with status {run.exit_code} (duration: {duration_seconds}s)",
+            args.verbose,
+        )
 
         if run.exit_code == 0:
             # If artifact_dir is specified, serialize and write build_artifacts.json
             if ctx.context_spec.artifact_dir:
+                ts_msg(
+                    f"Serializing build artifacts manifest to {ctx.context_spec.artifact_dir}...",
+                    args.verbose,
+                )
                 produce_build_artifacts(
                     pathlib.Path(ctx.context_spec.artifact_dir),
                     duration_seconds,

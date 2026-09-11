@@ -17,10 +17,10 @@ function msg() {
   echo >&2 "[$script_basename] $*"
 }
 
-function debug_msg() {
-  [[ "$verbose" -eq 0 ]] || {
-    msg "$*"
-  }
+function ts_echo() {
+  if [[ "$verbose" -ne 0 ]]; then
+    echo "[@$EPOCHREALTIME] [$script_basename]: $*" >&2
+  fi
 }
 
 function usage() {
@@ -82,19 +82,20 @@ shutdown_pids=()
 if [[ -n "$system_logfile" ]]
 then
   rm -f "$system_logfile"
-  debug_msg "Starting background profile collection..."
+  ts_echo "Starting background profile collection..."
   "${PREBUILT_PYTHON3:-python3}" -S -u "${script_dir}/system_profiler.py" \
     --interval "$interval" \
     --output "$system_logfile" \
     --pid "$$" \
     --metadata "FX_BUILD_UUID:${FX_BUILD_UUID:-}" &
   readonly system_profiler_pid=$!
-  debug_msg "Background profiler started (PID: $system_profiler_pid)"
+  ts_echo "Background profiler started (PID: $system_profiler_pid)"
   shutdown_pids+=( "$system_profiler_pid" )
 fi
 
 # Terminate system_profiler when main command is complete (or interrupted).
 function shutdown() {
+  ts_echo "Shutting down system profiler..."
   if [[ "${#shutdown_pids[@]}" > 0 ]]
   then
     if [[ "${_interrupted:-0}" == "1" ]]; then
@@ -102,6 +103,7 @@ function shutdown() {
     fi
     kill "${shutdown_pids[@]}"
   fi
+  ts_echo "System profiler teardown completed"
 }
 trap shutdown EXIT
 

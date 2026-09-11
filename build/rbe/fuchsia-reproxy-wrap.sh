@@ -168,11 +168,12 @@ test -z "$prev_out" || { echo "Option is missing argument to set $prev_opt." ; e
 
 [[ "${#configs[@]}" > 0 ]] || configs=( "$default_config" )
 
-function _timetrace() {
-  [[ "$print_times" == 0 ]] || timetrace "$@"
+function ts_echo() {
+  [[ "$verbose" -ne 0 || "$print_times" -ne 0 ]] || return 0
+  timetrace "$@"
 }
 
-_timetrace "main start (after option processing)"
+ts_echo "main start (after option processing)"
 
 readonly bootstrap="$reclient_bindir"/bootstrap
 readonly reproxy="$reclient_bindir"/reproxy
@@ -412,7 +413,7 @@ fi
 # Use the same config for bootstrap as for reproxy.
 # This also checks for authentication, and prompts the user to
 # re-authenticate if needed.
-_timetrace "Bootstrapping reproxy"
+ts_echo "Bootstrapping reproxy"
 bootstrap_status=0
 "${bootstrap_env[@]}" \
   "$bootstrap" \
@@ -429,7 +430,7 @@ logs: $reproxy_logdir
 socket: $socket_path
 EOF
 }
-_timetrace "Bootstrapping reproxy (done)"
+ts_echo "Bootstrapping reproxy (done)"
 [[ "$bootstrap_status" == 0 ]] || {
   # Check for possible known causes of errors, and remedies.
   if grep -q -e "credential" -e "authenticat" "$reproxy_logdir/bootstrap.ERROR"
@@ -446,13 +447,13 @@ EOF
 }
 
 test "$BUILD_METRICS_ENABLED" = 0 || {
-  _timetrace "Authenticating for metrics upload"
+  ts_echo "Authenticating for metrics upload"
   # Pre-authenticate for uploading metrics and logs
   "$script_dir"/upload_reproxy_logs.sh --auth-only
 
   # Generate a uuid for uploading logs and metrics.
   echo "$build_uuid" > "$reproxy_logdir"/build_id
-  _timetrace "Authenticating for metrics upload (done)"
+  ts_echo "Authenticating for metrics upload (done)"
 }
 
 # Wait for a process to finish, even if wait is interrupted by signals.
@@ -495,11 +496,11 @@ function shutdown() {
   # shut down reproxy. This is critical to prevent tearing down the RBE daemon
   # underneath active compile/link processes.
   if [[ -n "${WRAPPED_PID:-}" ]] && kill -0 "${WRAPPED_PID}" 2>/dev/null; then
-    _timetrace "WARNING: wrapped command (PID: ${WRAPPED_PID}) is still running during shutdown. Waiting for it..."
+    ts_echo "WARNING: wrapped command (PID: ${WRAPPED_PID}) is still running during shutdown. Waiting for it..."
     wait_for_process_exit "${WRAPPED_PID}" || true
   fi
 
-  _timetrace "Shutting down reproxy"
+  ts_echo "Shutting down reproxy"
   # b/188923283 -- added --cfg to shut down properly
   shutdown_status=0
   "${bootstrap_env[@]}" \
@@ -517,7 +518,7 @@ function shutdown() {
       cat "$reproxy_logdir/bootstrap.ERROR"
     fi
   }
-  _timetrace "Shutting down reproxy (done)"
+  ts_echo "Shutting down reproxy (done)"
 
   # link the reproxy log with a deterministic name.  There is only one .rrpl.
   (cd "$reproxy_logdir" && ln -s *.rrpl reproxy.rrpl || : )
@@ -529,7 +530,7 @@ function shutdown() {
   }
 
   test "$BUILD_METRICS_ENABLED" = 0 || {
-    _timetrace "Processing RBE logs and uploading to BigQuery"
+    ts_echo "Processing RBE logs and uploading to BigQuery"
     # This script uses the 'bq' CLI tool, which is installed in the
     # same path as `gcloud`.
     # This is experimental and runs a bit noisily for the moment.
@@ -543,7 +544,7 @@ function shutdown() {
       --bq-metrics-table="$cloud_project:$dataset".rbe_client_metrics_developer_raw \
       "$reproxy_logdir"
       # The upload exit status does not propagate from inside a trap call.
-    _timetrace "Processing RBE logs and uploading to BigQuery (done)"
+    ts_echo "Processing RBE logs and uploading to BigQuery (done)"
   }
 }
 
@@ -559,7 +560,7 @@ WRAPPED_PID=""
 # Forwards signals to the wrapped command and waits for it to exit.
 function handle_signal() {
   local signal_name="$1"
-  timetrace "Received ${signal_name}, forwarding per policy: ${SIGNAL_POLICY}..."
+  ts_echo "Received ${signal_name}, forwarding per policy: ${SIGNAL_POLICY}..."
 
   if [[ -n "${WRAPPED_PID:-}" ]] && kill -0 "${WRAPPED_PID}" 2>/dev/null; then
     msg "Received ${signal_name}. Waiting for wrapped command (PID: ${WRAPPED_PID}) to exit cleanly..."
@@ -567,12 +568,12 @@ function handle_signal() {
       relay | relay-group)
         # Forward to the entire process group.
         # The child was isolated via set -m.
-        timetrace "Forwarding ${signal_name} to PGID -${WRAPPED_PID}."
+        ts_echo "Forwarding ${signal_name} to PGID -${WRAPPED_PID}."
         kill "-${signal_name}" "-${WRAPPED_PID}"
         ;;
       passive)
         # Do nothing. TTY already sent the signal to the whole group.
-        timetrace "Passive mode: waiting for child to exit on its own."
+        ts_echo "Passive mode: waiting for child to exit on its own."
         ;;
     esac
 
@@ -580,7 +581,7 @@ function handle_signal() {
     # Wait for the process to terminate, ensuring we wait even if the wait
     # is interrupted by further signals.
     wait_for_process_exit "${WRAPPED_PID}" && exit_code=0 || exit_code=$?
-    timetrace "Wrapped command exited with status ${exit_code} after receiving ${signal_name}."
+    ts_echo "Wrapped command exited with status ${exit_code} after receiving ${signal_name}."
     # Exit this script with the same status code.
     # The EXIT trap will handle the rest of the cleanup.
     exit "${exit_code}"
@@ -606,7 +607,7 @@ case "${SIGNAL_POLICY}" in
   "relay" | "relay-group") set -m ;;
 esac
 
-_timetrace "Running wrapped command"
+ts_echo "Running wrapped command"
 "${rewrapper_env[@]}" "$@" &
 WRAPPED_PID=$!
 
@@ -617,4 +618,4 @@ esac
 # Wait for the wrapped command to finish, ensuring we wait even if the wait
 # is interrupted by trapped signals.
 wait_for_process_exit "${WRAPPED_PID}"
-_timetrace "Running wrapped command (done)"
+ts_echo "Running wrapped command (done)"

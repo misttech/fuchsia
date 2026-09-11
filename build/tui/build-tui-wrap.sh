@@ -29,10 +29,10 @@ function die() {
   exit 1
 }
 
-function debug_msg() {
-  [[ "$verbose" == 0 ]] || {
-    echo "[$SCRIPT_NAME]: $*"
-  }
+function ts_echo() {
+  if [[ "$verbose" -ne 0 ]]; then
+    echo "[@$EPOCHREALTIME] [$SCRIPT_NAME]: $*" >&2
+  fi
 }
 
 function usage() {
@@ -125,10 +125,11 @@ full_cmd=(
 
 [[ "$verbose" == 0 ]] || {
   echo "[$SCRIPT_NAME] ---- env start ----"
-  export SH_WRAPPER_TEST_DEBUG=1  # extra verbosity in buildminder-wrap.sh
+  # Uncomment the following to enable extreme gRPC traffic logging from buildminder.
+  # export SH_WRAPPER_TEST_DEBUG=1
   env
   echo "[$SCRIPT_NAME] ---- env end ----"
 }
 
-debug_msg "full command: ${full_cmd[*]}"
+ts_echo "full command: ${full_cmd[*]}"
 exec "${full_cmd[@]}"

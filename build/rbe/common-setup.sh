@@ -37,17 +37,9 @@ function msg() {
 }
 
 function timetrace() {
-  # Uncomment one of the following:
-
-  # $EPOCHREALTIME has microsecond resolution and is is available in bash 5.0+
+  # $EPOCHREALTIME has microsecond resolution and is available in bash 5.0+
   # This is preferred, as it incurs the least measurement overhead.
-  msg "[@$EPOCHREALTIME]" "$@"
-
-  # exec'ing date can be slower, ~2ms
-  # msg "[@$(date +%H:%M:%S.%N)]" "$@"
-
-  # leave only this line uncommented to quickly disable all calls:
-  :
+  echo "[@$EPOCHREALTIME] [$_invoking_script_basename]: $*" >&2
 }
 
 # Normalize path: return an absolute path without any .. in the middle.

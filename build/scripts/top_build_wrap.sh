@@ -33,6 +33,13 @@ function debug() {
   [[ "$verbose" -eq 0 ]] || echo "[$SCRIPT_NAME]: $*"
 }
 
+function ts_echo() {
+  if [[ "$verbose" -ne 0 ]]; then
+    # Use high-precision epoch timestamps for easier debugging and performance profiling.
+    echo "[@$EPOCHREALTIME] [$SCRIPT_NAME]: $*" >&2
+  fi
+}
+
 function die() {
   echo "[$SCRIPT_NAME] Error: $*"
   exit 1
@@ -165,6 +172,8 @@ build_tool_args+=( "$@" )
 [[ "${#build_tool_args[@]}" -ge 1 ]] || {
   die "Missing wrapped command after --."
 }
+
+ts_echo "Starting build wrapper orchestration"
 
 [[ -n "$build_dir" ]] || die "Missing required --build-dir option."
 
