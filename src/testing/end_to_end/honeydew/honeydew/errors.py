@@ -85,6 +85,10 @@ class NotSupportedError(HoneydewError):
     underlying Fuchsia platform."""
 
 
+class NotEnabledError(HoneydewError):
+    """Exception to be raised if an entity is not enabled."""
+
+
 class InspectError(HoneydewError):
     """Exception to be raised for Inspect affordance related failures."""
 

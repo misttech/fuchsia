@@ -413,13 +413,31 @@ class FuchsiaDevice(
 
         Returns:
             ADB transport interface implementation.
+
+        Raises:
+            errors.NotEnabledError: If ADB transport is not enabled.
         """
         run_isolated_server = False
         vendor_keys_path = None
+
+        # Note - An existing ADB implementation in //vendor/google is used by
+        # some Lacewing tests. Running two ADB server implementations against
+        # the same device causes conflicts. Tests that manage ADB externally
+        # can set `enabled` to False to disable Honeydew's ADB transport.
+        # TODO(b/559563915): Delete this `enabled` config once legacy ADB
+        # server implementations are removed and all Lacewing tests use
+        # Honeydew's ADB transport.
+        enabled = True
         if self._config:
             adb_config = self._config.get("transports", {}).get("adb", {})
             run_isolated_server = adb_config.get("run_isolated_server", False)
             vendor_keys_path = adb_config.get("vendor_keys_path")
+            enabled = adb_config.get("enabled", True)
+
+        if not enabled:
+            raise errors.NotEnabledError(
+                f"ADB transport is not enabled for '{self.device_name}'"
+            )
 
         serial_number = self._device_info.serial_number or self.serial_number
         adb_obj: adb_transport.Adb = adb_transport.Adb(

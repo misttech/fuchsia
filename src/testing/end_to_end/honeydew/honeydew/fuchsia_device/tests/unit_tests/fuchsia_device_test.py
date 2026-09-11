@@ -45,6 +45,7 @@ from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub as usb_power_hub_interface,
 )
 from honeydew.fuchsia_device import fuchsia_device
+from honeydew.transports.adb import adb as adb_transport
 from honeydew.transports.fastboot import fastboot
 from honeydew.transports.ffx import config as ffx_config
 from honeydew.transports.ffx import errors as ffx_errors
@@ -385,6 +386,59 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(self.fd_sl4f_obj, fuchsia_device.FuchsiaDevice)
 
     # List all the tests related to transports
+    @mock.patch.object(
+        adb_transport.Adb,
+        "__init__",
+        autospec=True,
+        return_value=None,
+    )
+    def test_adb_transport(self, mock_adb_init: mock.Mock) -> None:
+        """Test case to make sure fuchsia_device supports adb transport."""
+        self.assertIsInstance(
+            self.fd_fc_obj.adb,
+            adb_transport.Adb,
+        )
+        mock_adb_init.assert_called_once()
+
+    def test_adb_transport_disabled(self) -> None:
+        """Test case to make sure fuchsia_device raises NotEnabledError when adb is disabled."""
+        config = {
+            "transports": {
+                "adb": {
+                    "enabled": False,
+                }
+            }
+        }
+        with (
+            mock.patch.object(
+                ffx.FFX,
+                "check_connection",
+                autospec=True,
+            ),
+            mock.patch.object(
+                fc_transport.FuchsiaController,
+                "check_connection",
+                autospec=True,
+            ),
+            mock.patch.object(
+                fc_transport.FuchsiaController,
+                "create_context",
+                autospec=True,
+            ),
+        ):
+            fd_obj = fuchsia_device.FuchsiaDevice(
+                device_info=custom_types.DeviceInfo(
+                    name=_INPUT_ARGS["device_name"],
+                    serial_number=None,
+                    ip_port=_INPUT_ARGS["device_ip"],
+                    serial_socket=_INPUT_ARGS["device_serial_socket"],
+                ),
+                ffx_config_data=_INPUT_ARGS["ffx_config_data"],
+                config=config,
+            )
+            with self.assertRaises(errors.NotEnabledError):
+                _ = fd_obj.adb
+
     @mock.patch.object(
         fastboot.Fastboot,
         "__init__",
