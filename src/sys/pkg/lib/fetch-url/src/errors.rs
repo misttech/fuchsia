@@ -29,4 +29,7 @@ pub enum FetchUrlError {
 
     #[error("read size mismatch, expected {0},  got {1}")]
     SizeReadMismatch(u64, u64),
+
+    #[error("range header is not allowed when the range argument is also provided")]
+    DuplicateRangeHeader,
 }

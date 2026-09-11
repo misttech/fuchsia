@@ -851,6 +851,10 @@ impl TestEnv {
         self.realm_instance.root.connect_to_protocol_at_exposed_dir().unwrap()
     }
 
+    fn http_loader_service(&self) -> &MockHttpLoaderService {
+        &self.http_loader_service
+    }
+
     async fn get_ota_metrics(&self) -> OtaMetrics {
         let loggers = self.metric_event_logger_factory.clone_loggers();
         assert_eq!(loggers.len(), 1);
@@ -1085,11 +1089,16 @@ type ResumeHandle = oneshot::Sender<()>;
 struct MockHttpLoaderService {
     manifest: Option<Vec<u8>>,
     blocker: Mutex<Option<oneshot::Sender<ResumeHandle>>>,
+    received_headers: Mutex<Vec<Vec<fhttp::Header>>>,
 }
 
 impl MockHttpLoaderService {
     fn new(manifest: Option<Vec<u8>>) -> Self {
-        Self { manifest, blocker: Mutex::new(None) }
+        Self { manifest, blocker: Mutex::new(None), received_headers: Mutex::new(Vec::new()) }
+    }
+
+    fn received_headers(&self) -> Vec<Vec<fhttp::Header>> {
+        std::mem::take(&mut *self.received_headers.lock())
     }
 
     fn block_once(&self) -> oneshot::Receiver<ResumeHandle> {
@@ -1114,11 +1123,18 @@ impl MockHttpLoaderService {
                         }
                     }
 
+                    if let Some(headers) = &request.headers {
+                        self.received_headers.lock().push(headers.clone());
+                    }
+
                     let url = request.url.unwrap();
                     let response = if url == MANIFEST_URL {
                         let manifest_bytes = self.manifest.clone().unwrap();
                         let range_header = request.headers.as_ref().and_then(|headers| {
-                            headers.iter().find(|h| h.name == b"Range").map(|h| &h.value)
+                            headers
+                                .iter()
+                                .find(|h| h.name.eq_ignore_ascii_case(b"range"))
+                                .map(|h| &h.value)
                         });
 
                         if let Some(range_val) = range_header {
@@ -1278,6 +1294,7 @@ fn default_options() -> Options {
         allow_attach_to_existing_attempt: true,
         should_write_recovery: true,
         manifest_range: None,
+        manifest_headers: vec![],
     }
 }
 

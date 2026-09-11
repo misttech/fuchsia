@@ -92,7 +92,7 @@ async fn packageless_update_fails_with_wrong_signature() {
 }
 
 #[fuchsia::test]
-async fn packageless_update_with_valid_range() {
+async fn packageless_update_with_valid_range_and_header() {
     let content_blob = vec![1; 200];
     let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
     let zbi_content = b"zbi contents";
@@ -139,9 +139,40 @@ async fn packageless_update_with_valid_range() {
             offset,
             size: signed_manifest.len() as u64,
         }),
+        manifest_headers: vec![
+            fidl_fuchsia_net_http::Header {
+                name: b"Authorization".to_vec(),
+                value: b"Bearer token123".to_vec(),
+            },
+            fidl_fuchsia_net_http::Header {
+                name: b"User-Agent".to_vec(),
+                value: b"TestAgent".to_vec(),
+            },
+            fidl_fuchsia_net_http::Header { name: b"X-Custom".to_vec(), value: b"val".to_vec() },
+        ],
     };
 
     env.run_update_with_options(MANIFEST_URL, options).await.unwrap();
+
+    assert_eq!(
+        env.http_loader_service().received_headers(),
+        vec![vec![
+            fidl_fuchsia_net_http::Header {
+                name: b"Authorization".to_vec(),
+                value: b"Bearer token123".to_vec(),
+            },
+            fidl_fuchsia_net_http::Header {
+                name: b"User-Agent".to_vec(),
+                value: b"TestAgent".to_vec(),
+            },
+            fidl_fuchsia_net_http::Header { name: b"X-Custom".to_vec(), value: b"val".to_vec() },
+            fidl_fuchsia_net_http::Header {
+                name: b"range".to_vec(),
+                value: format!("bytes={offset}-{}", offset + signed_manifest.len() as u64 - 1)
+                    .into_bytes()
+            },
+        ]]
+    );
 }
 
 #[fuchsia::test]
@@ -156,6 +187,7 @@ async fn packageless_update_fails_with_overflowing_range() {
             offset: u64::MAX,
             size: 10,
         }),
+        manifest_headers: vec![],
     };
 
     let mut attempt = env.start_update_with_options(MANIFEST_URL, options, None).await.unwrap();

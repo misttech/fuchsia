@@ -118,6 +118,9 @@ enum PrepareError {
     #[error("manifest range is not supported for package-based updates")]
     ManifestRangeNotSupported,
 
+    #[error("manifest headers are not supported for package-based updates")]
+    ManifestHeadersNotSupported,
+
     #[error("while opening blobfs")]
     OpenBlobfs(#[source] blobfs::BlobfsError),
 
@@ -346,6 +349,7 @@ async fn update(
             allow_attach_to_existing_attempt: config.allow_attach_to_existing_attempt,
             should_write_recovery: config.should_write_recovery,
             manifest_range: config.manifest_range,
+            manifest_headers: config.manifest_headers.clone(),
         },
         &config.update_url,
         config.start_time,
@@ -862,6 +866,9 @@ impl Attempt<'_> {
         if self.config.manifest_range.is_some() {
             return Err(PrepareError::ManifestRangeNotSupported);
         }
+        if !self.config.manifest_headers.is_empty() {
+            return Err(PrepareError::ManifestHeadersNotSupported);
+        }
         let update_pkg = resolve_update_package(
             &self.env.pkg_resolver,
             &update_url,
@@ -1308,7 +1315,9 @@ impl PackagelessAttempt<'_> {
             None
         };
         let manifest_bytes =
-            fetch_url(&update_url, manifest_range).await.map_err(PrepareError::FetchUrl)?;
+            fetch_url(&update_url, manifest_range, self.config.manifest_headers.clone())
+                .await
+                .map_err(PrepareError::FetchUrl)?;
         let manifest_size = manifest_bytes.len() as u64;
 
         let manifest = update_package::signed_manifest::parse_and_verify(

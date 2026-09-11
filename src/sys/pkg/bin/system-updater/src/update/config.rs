@@ -17,6 +17,7 @@ pub struct Config {
     pub(super) start_time_mono: Instant,
     pub allow_attach_to_existing_attempt: bool,
     pub manifest_range: Option<Range>,
+    pub manifest_headers: Vec<fidl_fuchsia_net_http::Header>,
 }
 
 impl Config {
@@ -34,6 +35,7 @@ impl Config {
             start_time_mono,
             allow_attach_to_existing_attempt: options.allow_attach_to_existing_attempt,
             manifest_range: options.manifest_range,
+            manifest_headers: options.manifest_headers,
         }
     }
 }
@@ -48,6 +50,7 @@ impl std::fmt::Debug for Config {
             .field("start_time_mono", &self.start_time_mono)
             .field("allow_attach_to_existing_attempt", &self.allow_attach_to_existing_attempt)
             .field("manifest_range", &self.manifest_range)
+            .field("manifest_headers", &self.manifest_headers)
             .finish()
     }
 }
@@ -116,6 +119,7 @@ impl<'a> ConfigBuilder<'a> {
                 should_write_recovery,
                 initiator: ExtInitiator::User,
                 manifest_range: None,
+                manifest_headers: vec![],
             },
         ))
     }
@@ -132,6 +136,7 @@ mod tests {
             allow_attach_to_existing_attempt: true,
             should_write_recovery: true,
             manifest_range: None,
+            manifest_headers: vec![],
         };
         let update_url: http::Uri = "fuchsia-pkg://fuchsia.test/foo".parse().unwrap();
 

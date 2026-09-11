@@ -232,6 +232,7 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
             allow_attach_to_existing_attempt: false,
             should_write_recovery: true,
             manifest_range: None,
+            manifest_headers: vec![],
         },
     )
     .await
@@ -433,6 +434,7 @@ async fn increments_attempts_counter_on_retry(
                 allow_attach_to_existing_attempt: false,
                 should_write_recovery: true,
                 manifest_range: None,
+                manifest_headers: vec![],
             },
         )
         .await

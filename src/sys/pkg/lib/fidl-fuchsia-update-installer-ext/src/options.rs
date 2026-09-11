@@ -4,7 +4,8 @@
 
 //! Wrapper types for the Options table.
 
-use fuchsia_inspect as inspect;
+use fuchsia_inspect::{self as inspect, ArrayProperty as _};
+use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -58,6 +59,16 @@ pub struct Options {
 
     /// Optional range parameter to be used as the `Range` HTTP header when fetching the manifest.
     pub manifest_range: Option<Range>,
+
+    /// Optional HTTP headers to be included when fetching the manifest.
+    #[serde(skip)]
+    #[proptest(strategy = "prop::collection::vec(any_header(), 0..2)")]
+    pub manifest_headers: Vec<fidl_fuchsia_net_http::Header>,
+}
+
+fn any_header() -> impl Strategy<Value = fidl_fuchsia_net_http::Header> {
+    (prop::collection::vec(any::<u8>(), 0..10), prop::collection::vec(any::<u8>(), 0..10))
+        .prop_map(|(name, value)| fidl_fuchsia_net_http::Header { name, value })
 }
 
 impl Options {
@@ -68,6 +79,7 @@ impl Options {
             allow_attach_to_existing_attempt,
             should_write_recovery,
             manifest_range,
+            manifest_headers,
         } = self;
         node.record_string("initiator", initiator.name());
         node.record_bool("allow_attach_to_existing_attempt", *allow_attach_to_existing_attempt);
@@ -77,6 +89,15 @@ impl Options {
                 range_node.record_uint("offset", range.offset);
                 range_node.record_uint("size", range.size);
             });
+        }
+        // Only record the names of the headers, to avoid leaking potentially sensitive data.
+        if !manifest_headers.is_empty() {
+            let header_names =
+                node.create_string_array("manifest_header_names", manifest_headers.len());
+            for (i, header) in manifest_headers.iter().enumerate() {
+                header_names.set(i, String::from_utf8_lossy(&header.name));
+            }
+            node.record(header_names);
         }
     }
 }
@@ -109,6 +130,7 @@ impl TryFrom<fidl_fuchsia_update_installer::Options> for Options {
             data.initiator.map(|o| o.into()).ok_or(OptionsParseError::MissingInitiator)?;
 
         let manifest_range = data.manifest_range.map(Range::from);
+        let manifest_headers = data.manifest_headers.unwrap_or_default();
 
         Ok(Self {
             initiator,
@@ -117,6 +139,7 @@ impl TryFrom<fidl_fuchsia_update_installer::Options> for Options {
                 .unwrap_or(false),
             should_write_recovery: data.should_write_recovery.unwrap_or(true),
             manifest_range,
+            manifest_headers,
         })
     }
 }
@@ -128,6 +151,11 @@ impl From<&Options> for fidl_fuchsia_update_installer::Options {
             allow_attach_to_existing_attempt: Some(options.allow_attach_to_existing_attempt),
             should_write_recovery: Some(options.should_write_recovery),
             manifest_range: options.manifest_range.as_ref().map(|r| r.into()),
+            manifest_headers: if options.manifest_headers.is_empty() {
+                None
+            } else {
+                Some(options.manifest_headers.clone())
+            },
             ..Default::default()
         }
     }
@@ -161,7 +189,6 @@ impl From<Initiator> for fidl_fuchsia_update_installer::Initiator {
 mod tests {
 
     use super::*;
-    use proptest::prelude::*;
 
     proptest! {
         #[test]

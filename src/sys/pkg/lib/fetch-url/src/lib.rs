@@ -26,28 +26,31 @@ pub struct Range {
 pub async fn fetch_url(
     url: impl Into<String>,
     range: Option<Range>,
+    mut headers: Vec<Header>,
 ) -> Result<Vec<u8>, FetchUrlError> {
     let http_svc = connect_to_protocol::<http::LoaderMarker>()
         .map_err(FetchUrlError::FidlHttpServiceConnectionError)?;
 
     let url_string = url.into();
 
-    // Support range requests to resume download of large blobs
-    let headers = if let Some(r) = &range {
+    if let Some(r) = &range {
+        const RANGE_HEADER_NAME: &[u8] = b"range";
+        if headers.iter().any(|h| h.name.eq_ignore_ascii_case(RANGE_HEADER_NAME)) {
+            return Err(FetchUrlError::DuplicateRangeHeader);
+        }
+
         let range_string = if let Some(end) = r.end {
             format!("bytes={}-{}", r.start, end)
         } else {
             format!("bytes={}-", r.start)
         };
-        Some(vec![Header { name: "Range".into(), value: range_string.into() }])
-    } else {
-        None
-    };
+        headers.push(Header { name: RANGE_HEADER_NAME.into(), value: range_string.into() });
+    }
 
     let url_request = http::Request {
         url: Some(url_string),
         method: Some(String::from("GET")),
-        headers: headers,
+        headers: if headers.is_empty() { None } else { Some(headers) },
         body: None,
         deadline: None,
         ..Default::default()
@@ -92,7 +95,7 @@ pub async fn fetch_url(
         }
     } else {
         match response.status_code {
-            Some(HTTP_OK) => {
+            Some(HTTP_OK | HTTP_PARTIAL_CONTENT_OK) => {
                 let mut body = Vec::new();
                 let bytes_received = socket
                     .read_to_end(&mut body)

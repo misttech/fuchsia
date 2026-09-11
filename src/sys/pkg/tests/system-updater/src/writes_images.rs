@@ -2332,6 +2332,7 @@ async fn recovery_present_but_should_write_recovery_is_false() {
             allow_attach_to_existing_attempt: true,
             should_write_recovery: false,
             manifest_range: None,
+            manifest_headers: vec![],
         },
     )
     .await
@@ -2409,6 +2410,7 @@ async fn recovery_present_but_should_write_recovery_is_false_packageless() {
             allow_attach_to_existing_attempt: true,
             should_write_recovery: false,
             manifest_range: None,
+            manifest_headers: vec![],
         },
     )
     .await

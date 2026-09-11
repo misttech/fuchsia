@@ -125,7 +125,7 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
                             let () = res.map_err(zx::Status::err_from_raw)?;
                         }
                         RepoAddSubCommand::Url(RepoAddUrlCommand { persist, name, repo_url }) => {
-                            let res = fetch_url(repo_url, None).await?;
+                            let res = fetch_url(repo_url, None, vec![]).await?;
                             let mut repo: pkg::RepositoryConfig = serde_json::from_slice(&res)?;
                             // If a name is specified via the command line, override the
                             // automatically derived name.

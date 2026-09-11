@@ -116,6 +116,7 @@ async fn apply_system_update_impl(
         should_write_recovery: true,
         allow_attach_to_existing_attempt: true,
         manifest_range: None,
+        manifest_headers: vec![],
     };
     let update_url = target_channel_updater
         .get_target_channel_update_url()
@@ -286,6 +287,7 @@ mod test_apply_system_update_impl {
                 should_write_recovery: true,
                 allow_attach_to_existing_attempt: true,
                 manifest_range: None,
+                manifest_headers: vec![],
             })
         );
         assert_matches!(update_installer.reboot_controller_server_end, Some(Some(_)));
@@ -313,6 +315,7 @@ mod test_apply_system_update_impl {
                 should_write_recovery: true,
                 allow_attach_to_existing_attempt: true,
                 manifest_range: None,
+                manifest_headers: vec![],
             })
         );
         assert_matches!(update_installer.reboot_controller_server_end, Some(Some(_)));
@@ -465,6 +468,7 @@ mod test_apply_system_update_impl {
                         should_write_recovery: true,
                         allow_attach_to_existing_attempt: true,
                         manifest_range: None,
+                        manifest_headers: vec![],
                     })
                 );
                 Ok(())}

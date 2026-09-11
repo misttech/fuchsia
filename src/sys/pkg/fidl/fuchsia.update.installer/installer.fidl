@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.update.installer;
 
+using fuchsia.net.http;
 using fuchsia.pkg;
 
 alias AttemptId = string:36; // 36 == strlen("01234567-89ab-cdef-0123-456789abcdef")
@@ -137,6 +138,10 @@ type Options = table {
     /// the manifest. Can only be set when the [`Installer.StartUpdate`] url has scheme "http[s]",
     /// i.e. when using the blob-based update manifest. Defaults to the entire resource.
     4: manifest_range Range;
+
+    /// The HTTP headers to include when fetching the manifest. Can only be set when the
+    /// [`Installer.StartUpdate`] url has scheme "http[s]".
+    5: manifest_headers vector<fuchsia.net.http.Header>:MAX;
 };
 
 /// Who or what initiated the update installation.
