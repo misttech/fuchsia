@@ -63,17 +63,16 @@ impl<'de> Visitor<'de> for SelectorsVisitor {
     {
         let mut selectors = Vec::new();
         while let Some(v) = seq.next_element::<String>()? {
-            if v.len() < PREFIX.len() || &v[..PREFIX.len()] != PREFIX {
+            let Some(rest) = v.strip_prefix(PREFIX) else {
                 return Err(A::Error::custom(format!(
                     "Expected selector with prefix \"{}\", got \"{v}\"",
                     PREFIX
                 )));
-            } else {
-                selectors.push(
-                    selectors::parse_selector::<selectors::VerboseError>(&v[PREFIX.len()..])
-                        .map_err(|e| A::Error::custom(e))?,
-                );
-            }
+            };
+            selectors.push(
+                selectors::parse_selector::<selectors::VerboseError>(rest)
+                    .map_err(|e| A::Error::custom(e))?,
+            );
         }
         Ok(selectors)
     }
@@ -119,5 +118,15 @@ mod tests {
         let deserialized_again: TestConfig = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized, deserialized_again);
         assert_eq!(deserialized.selectors, vec![selectors::parse_verbose(selector).unwrap()]);
+    }
+
+    #[test_case("🦀a🦀" ; "unicode_split_at_boundary_emoji")]
+    #[test_case("日本語" ; "unicode_split_at_boundary_cjk")]
+    #[test_case("test:🔥" ; "unicode_split_at_boundary_short_prefix")]
+    #[fuchsia::test]
+    fn test_deserialization_invalid_prefix_unicode(input: &str) {
+        let json = serde_json::to_string(&vec![input]).unwrap();
+        let result = serde_json::from_str::<TestConfig>(&json);
+        assert!(result.is_err());
     }
 }

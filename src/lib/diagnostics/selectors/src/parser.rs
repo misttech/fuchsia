@@ -72,7 +72,11 @@ where
 }
 
 fn extract_from_quotes(input: &str) -> &str {
-    if input.starts_with('"') && input.len() > 1 { &input[1..input.len() - 1] } else { input }
+    if input.starts_with('"') && input.ends_with('"') && input.len() >= 2 {
+        &input[1..input.len() - 1]
+    } else {
+        input
+    }
 }
 
 /// Returns the parser for a tree selector, which is a node selector and an optional property selector.
@@ -832,12 +836,27 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn unclosed_quotes_rejected() {
+        assert!(selector::<VerboseError>(r#""core/foo:some node/*:prop"#).is_err());
+        assert!(selector::<VerboseError>(r#""core/foo:some node/*:propx"#).is_err());
+        assert!(selector::<VerboseError>(r#""a:b:cde"#).is_err());
+        assert!(selector::<VerboseError>(r#""core/foo:root:bar🦀"#).is_err());
+    }
+
+    #[fuchsia::test]
     fn test_extract_from_quotes() {
         let test_cases = [
             ("foo", "foo"),
             (r#""foo""#, "foo"),
             (r#""foo\"bar""#, r#"foo\"bar"#),
             (r#""bar\*""#, r#"bar\*"#),
+            (r#""foo"#, r#""foo"#),
+            (r#""a"#, r#""a"#),
+            (r#""foo\"bar"#, r#""foo\"bar"#),
+            (r#""foo"bar"#, r#""foo"bar"#),
+            (r#""🦀"#, r#""🦀"#),
+            (r#"""#, r#"""#),
+            (r#""""#, ""),
         ];
 
         for (case_number, (input, expected_extracted)) in test_cases.into_iter().enumerate() {
