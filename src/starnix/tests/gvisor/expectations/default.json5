@@ -514,6 +514,7 @@
                 "MsgqueueTest.InterruptRecv",
                 "MsgqueueTest.InterruptSend",
                 "MsgqueueTest.MsgCtlIpcInfo",
+                "MsgqueueTest.MsgCtlIpcRmid",
                 "MsgqueueTest.MsgCtlIpcSet",
                 "MsgqueueTest.MsgCtlIpcSetMaxBytes",
                 "MsgqueueTest.MsgCtlIpcStat",
