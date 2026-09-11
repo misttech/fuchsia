@@ -9,7 +9,7 @@ use capability_source::{AggregateInstance, AggregateMember, CapabilitySource, Co
 use cm_rust::{CapabilityTypeName, ChildRef};
 use cm_types::{IterablePath, Name, RelativePath};
 use errors::{ModelError, VfsError};
-use fidl_fuchsia_component_runtime::RouteRequest;
+use fidl_fuchsia_component_runtime as fruntime;
 use fidl_fuchsia_io as fio;
 use flyweights::FlyStr;
 use fuchsia_async::{DurationExt, TimeoutExt};
@@ -577,7 +577,8 @@ impl AnonymizedAggregateServiceDir {
             self.parent.upgrade().map_err(|err| ModelError::ComponentInstanceError { err })?;
 
         let (proxy, server_end) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-        let result = router.route(RouteRequest::default(), self.parent.clone().into()).await;
+        let result =
+            router.route(fruntime::RouteRequest::default(), self.parent.clone().into()).await;
         let dir_connector = match result? {
             Some(dir_connector) => dir_connector,
             None => {
@@ -955,7 +956,7 @@ mod tests {
     use ::routing::bedrock::request_metadata::service_metadata;
     use ::routing::component_instance::ComponentInstanceInterface;
     use ::routing::error::{PrettyPrintRef, RouteVerb, RoutingError};
-    use ::routing::intermediate_router::IntermediateRouter;
+    use ::routing::intermediate_router::{IntermediateRouter, RouteRequest};
     use capability_source::ComponentCapability;
     use cm_rust::offer::*;
     use cm_rust::*;
@@ -1033,7 +1034,7 @@ mod tests {
                         Arc::downgrade(&program_output_dict).into(),
                         RelativePath::new("my.service.Service").unwrap(),
                         RouteRequest {
-                            build_type_name: Some(CapabilityTypeName::Service.to_string()),
+                            build_type_name: CapabilityTypeName::Service,
                             ..Default::default()
                         },
                         self.weak_component.clone().into(),
@@ -1049,7 +1050,7 @@ mod tests {
             impl Routable<DirConnector> for TestRouter {
                 async fn route(
                     &self,
-                    _request: RouteRequest,
+                    _request: fruntime::RouteRequest,
                     target: Arc<WeakInstanceToken>,
                 ) -> Result<Option<Arc<DirConnector>>, RouterError> {
                     let service_router = self.get_service_router().await?;
@@ -1059,7 +1060,7 @@ mod tests {
 
                 async fn route_debug(
                     &self,
-                    _request: RouteRequest,
+                    _request: fruntime::RouteRequest,
                     _target: Arc<WeakInstanceToken>,
                 ) -> Result<CapabilitySource, RouterError> {
                     panic!("debug routing not expected");

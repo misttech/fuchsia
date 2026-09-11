@@ -2,26 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::intermediate_router::RouteRequest;
 use cm_rust::offer::{OfferDecl, OfferDeclCommon};
 use cm_rust::{
-    CapabilityTypeName, DebugRegistration, ExposeDecl, ExposeDeclCommon, NativeIntoFidl,
-    ResolverRegistration, RunnerRegistration, UseDecl, UseDeclCommon,
+    CapabilityTypeName, DebugRegistration, ExposeDecl, ExposeDeclCommon, ResolverRegistration,
+    RunnerRegistration, UseDecl, UseDeclCommon,
 };
 use cm_types::RelativePath;
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_component_runtime as fruntime;
 use fidl_fuchsia_io as fio;
 use moniker::Moniker;
 
 pub trait ToRequest {
-    fn to_request(&self, moniker: &Moniker) -> fruntime::RouteRequest;
+    fn to_request(&self, moniker: &Moniker) -> RouteRequest;
 }
 
 impl ToRequest for OfferDecl {
-    fn to_request(&self, moniker: &Moniker) -> fruntime::RouteRequest {
-        let mut request = fruntime::RouteRequest {
-            build_type_name: Some(CapabilityTypeName::from(self).native_into_fidl()),
-            availability: Some(self.availability().clone().native_into_fidl()),
+    fn to_request(&self, moniker: &Moniker) -> RouteRequest {
+        let mut request = RouteRequest {
+            build_type_name: CapabilityTypeName::from(self),
+            availability: Some(self.availability().clone()),
             ..Default::default()
         };
         match self {
@@ -34,18 +33,18 @@ impl ToRequest for OfferDecl {
                     fio::Flags::from_bits(rights.bits())
                         .expect("operations and flags are bit compatible")
                 });
-                request.sub_directory_path = Some(o.subdir.clone().native_into_fidl());
+                request.sub_directory_path = Some(o.subdir.clone());
                 request.inherit_rights = Some(true);
             }
             cm_rust::OfferDecl::Storage(_) => {
                 request.directory_rights = Some(fio::PERM_READABLE | fio::PERM_WRITABLE);
-                request.sub_directory_path = Some(RelativePath::dot().native_into_fidl());
+                request.sub_directory_path = Some(RelativePath::dot());
                 request.inherit_rights = Some(false);
             }
             cm_rust::OfferDecl::EventStream(o) => {
                 if let Some(scope) = &o.scope {
-                    request.event_stream_scope_moniker = Some(moniker.to_string());
-                    request.event_stream_scope = Some(scope.clone().native_into_fidl());
+                    request.event_stream_scope_moniker = Some(moniker.clone());
+                    request.event_stream_scope = Some(scope.clone());
                 }
             }
             cm_rust::OfferDecl::Config(_)
@@ -59,10 +58,10 @@ impl ToRequest for OfferDecl {
 }
 
 impl ToRequest for UseDecl {
-    fn to_request(&self, moniker: &Moniker) -> fruntime::RouteRequest {
-        let mut request = fruntime::RouteRequest {
-            build_type_name: Some(CapabilityTypeName::from(self).native_into_fidl()),
-            availability: Some(self.availability().clone().native_into_fidl()),
+    fn to_request(&self, moniker: &Moniker) -> RouteRequest {
+        let mut request = RouteRequest {
+            build_type_name: CapabilityTypeName::from(self),
+            availability: Some(self.availability().clone()),
             ..Default::default()
         };
         match self {
@@ -75,18 +74,18 @@ impl ToRequest for UseDecl {
                     fio::Flags::from_bits(u.rights.bits())
                         .expect("operations and flags are bit compatible"),
                 );
-                request.sub_directory_path = Some(u.subdir.clone().native_into_fidl());
+                request.sub_directory_path = Some(u.subdir.clone());
                 request.inherit_rights = Some(false);
             }
             cm_rust::UseDecl::Storage(_) => {
                 request.directory_rights = Some(fio::PERM_READABLE | fio::PERM_WRITABLE);
-                request.sub_directory_path = Some(RelativePath::dot().native_into_fidl());
+                request.sub_directory_path = Some(RelativePath::dot());
                 request.inherit_rights = Some(false);
             }
             cm_rust::UseDecl::EventStream(u) => {
                 if let Some(scope) = &u.scope {
-                    request.event_stream_scope = Some(scope.clone().native_into_fidl());
-                    request.event_stream_scope_moniker = Some(moniker.to_string());
+                    request.event_stream_scope = Some(scope.clone());
+                    request.event_stream_scope_moniker = Some(moniker.clone());
                 }
             }
             cm_rust::UseDecl::Config(_)
@@ -99,10 +98,10 @@ impl ToRequest for UseDecl {
 }
 
 impl ToRequest for ExposeDecl {
-    fn to_request(&self, _moniker: &Moniker) -> fruntime::RouteRequest {
-        let mut request = fruntime::RouteRequest {
-            build_type_name: Some(CapabilityTypeName::from(self).native_into_fidl()),
-            availability: Some(self.availability().clone().native_into_fidl()),
+    fn to_request(&self, _moniker: &Moniker) -> RouteRequest {
+        let mut request = RouteRequest {
+            build_type_name: CapabilityTypeName::from(self),
+            availability: Some(self.availability().clone()),
             ..Default::default()
         };
         match self {
@@ -115,7 +114,7 @@ impl ToRequest for ExposeDecl {
                     fio::Flags::from_bits(rights.bits())
                         .expect("operations and flags are bit compatible")
                 });
-                request.sub_directory_path = Some(o.subdir.clone().native_into_fidl());
+                request.sub_directory_path = Some(o.subdir.clone());
                 request.inherit_rights = Some(true);
             }
             cm_rust::ExposeDecl::Config(_)
@@ -129,30 +128,30 @@ impl ToRequest for ExposeDecl {
 }
 
 impl ToRequest for DebugRegistration {
-    fn to_request(&self, _moniker: &Moniker) -> fruntime::RouteRequest {
-        fruntime::RouteRequest {
-            build_type_name: Some(CapabilityTypeName::Protocol.to_string()),
-            availability: Some(fdecl::Availability::Required),
+    fn to_request(&self, _moniker: &Moniker) -> RouteRequest {
+        RouteRequest {
+            build_type_name: CapabilityTypeName::Protocol,
+            availability: Some(cm_rust::Availability::Required),
             ..Default::default()
         }
     }
 }
 
 impl ToRequest for RunnerRegistration {
-    fn to_request(&self, _moniker: &Moniker) -> fruntime::RouteRequest {
-        fruntime::RouteRequest {
-            build_type_name: Some(CapabilityTypeName::Runner.to_string()),
-            availability: Some(fdecl::Availability::Required),
+    fn to_request(&self, _moniker: &Moniker) -> RouteRequest {
+        RouteRequest {
+            build_type_name: CapabilityTypeName::Runner,
+            availability: Some(cm_rust::Availability::Required),
             ..Default::default()
         }
     }
 }
 
 impl ToRequest for ResolverRegistration {
-    fn to_request(&self, _moniker: &Moniker) -> fruntime::RouteRequest {
-        fruntime::RouteRequest {
-            build_type_name: Some(CapabilityTypeName::Resolver.to_string()),
-            availability: Some(fdecl::Availability::Required),
+    fn to_request(&self, _moniker: &Moniker) -> RouteRequest {
+        RouteRequest {
+            build_type_name: CapabilityTypeName::Resolver,
+            availability: Some(cm_rust::Availability::Required),
             ..Default::default()
         }
     }

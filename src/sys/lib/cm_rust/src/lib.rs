@@ -762,6 +762,7 @@ fidl_translations_identical!(fdecl::OnTerminate);
 fidl_translations_identical!(fdecl::Durability);
 fidl_translations_identical!(fdata::Dictionary);
 fidl_translations_identical!(fio::Operations);
+fidl_translations_identical!(fio::Flags);
 fidl_translations_identical!(fdecl::EnvironmentExtends);
 fidl_translations_identical!(fdecl::StorageId);
 fidl_translations_identical!(Vec<fprocess::HandleInfo>);

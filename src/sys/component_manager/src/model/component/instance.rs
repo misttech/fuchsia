@@ -1030,26 +1030,10 @@ impl ResolvedInstanceState {
         let create_exposed_dict = async || {
             let dict = Dictionary::new();
             for (key, value) in self.sandbox.component_output.capabilities().enumerate() {
-                let error_info_res = value.error_info();
-                if error_info_res.is_none() {
-                    log::error!(
-                        "missing error info for {value:?} that has capability source {:?}",
-                        match &value {
-                            Capability::ConnectorRouter(r) =>
-                                r.route_debug(Default::default(), self_target.clone()).await,
-                            Capability::DirConnectorRouter(r) =>
-                                r.route_debug(Default::default(), self_target.clone()).await,
-                            Capability::DictionaryRouter(r) =>
-                                r.route_debug(Default::default(), self_target.clone()).await,
-                            Capability::DataRouter(r) =>
-                                r.route_debug(Default::default(), self_target.clone()).await,
-                            _ => panic!("not a router??"),
-                        }
-                    );
-                }
+                let error_info = value.error_info().expect("missing error info");
                 let error_logging_router = ErrorLoggingRouter::new(
                     value,
-                    error_info_res.expect("missing error info"),
+                    error_info,
                     RoutingFailureErrorReporter::new(),
                     self_target.clone(),
                 );

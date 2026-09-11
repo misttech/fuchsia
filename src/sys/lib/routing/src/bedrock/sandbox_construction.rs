@@ -12,7 +12,7 @@ use crate::bedrock::with_service_renames_and_filter::WithServiceRenamesAndFilter
 use crate::component_instance::ComponentInstanceInterface;
 use crate::error::{ErrorReporter, RouteVerb, RoutingError};
 use crate::error_logging_router::ErrorLoggingRouter;
-use crate::intermediate_router::{IntermediateRouter, WeakDictionaryOrRouter};
+use crate::intermediate_router::{IntermediateRouter, RouteRequest, WeakDictionaryOrRouter};
 use crate::to_request::ToRequest;
 use crate::to_source::ToSource;
 use async_trait::async_trait;
@@ -29,7 +29,7 @@ use cm_rust::{
 use cm_types::{IterablePath, Name, RelativePath};
 use fidl::endpoints::DiscoverableProtocolMarker;
 use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_component_runtime::RouteRequest;
+use fidl_fuchsia_component_runtime as fruntime;
 use fuchsia_sync::Mutex;
 use log::warn;
 use moniker::{ChildName, Moniker};
@@ -40,7 +40,6 @@ use runtime_capabilities::{
 };
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
-use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
 
 /// This type comes from `UseEventStreamDecl`.
@@ -203,14 +202,14 @@ impl Default for ComponentSandbox {
         impl Routable<Dictionary> for NullRouter {
             async fn route(
                 &self,
-                _request: RouteRequest,
+                _request: fruntime::RouteRequest,
                 _target: Arc<WeakInstanceToken>,
             ) -> Result<Option<Arc<Dictionary>>, RouterError> {
                 panic!("null router invoked");
             }
             async fn route_debug(
                 &self,
-                _request: RouteRequest,
+                _request: fruntime::RouteRequest,
                 _target: Arc<WeakInstanceToken>,
             ) -> Result<CapabilitySource, RouterError> {
                 panic!("null router invoked");
@@ -831,15 +830,11 @@ fn new_intermediate_router_inner(
         }
         fdecl::Ref::VoidType(_) => {
             let source_name = source_path.basename().expect("invalid source capability path");
-            let type_name_str =
-                request.build_type_name.as_ref().expect("request is missing type name");
-            let type_name = CapabilityTypeName::from_str(type_name_str).expect("invalid type name");
+            let type_name = request.build_type_name;
             return UnavailableRouter::new_from_type_name(source_name.into(), type_name, moniker);
         }
         fdecl::Ref::Environment(_) => {
-            let type_name_str =
-                request.build_type_name.as_ref().expect("request is missing type name");
-            let type_name = CapabilityTypeName::from_str(type_name_str).expect("invalid type name");
+            let type_name = request.build_type_name;
             match type_name {
                 CapabilityTypeName::Runner => {
                     Arc::downgrade(&sandbox.component_input.environment().runners()).into()
@@ -1192,7 +1187,7 @@ impl UnavailableRouter {
 impl<T: CapabilityBound> Routable<T> for UnavailableRouter {
     async fn route(
         &self,
-        request: RouteRequest,
+        request: fruntime::RouteRequest,
         _target: Arc<WeakInstanceToken>,
     ) -> Result<Option<Arc<T>>, RouterError> {
         let availability = request
@@ -1215,7 +1210,7 @@ impl<T: CapabilityBound> Routable<T> for UnavailableRouter {
 
     async fn route_debug(
         &self,
-        request: RouteRequest,
+        request: fruntime::RouteRequest,
         _target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         match request.availability {

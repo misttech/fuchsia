@@ -7,9 +7,10 @@ use crate::rights::{Rights, validate_rights};
 use async_trait::async_trait;
 use capability_source::CapabilitySource;
 use cm_rust::{CapabilityTypeName, FidlIntoNative, NativeIntoFidl};
+use cm_rust_derive::FidlDecl;
 use cm_types::RelativePath;
 use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_component_runtime::RouteRequest;
+use fidl_fuchsia_component_runtime as fruntime;
 use fidl_fuchsia_io as fio;
 use moniker::{ChildName, Moniker};
 use router_error::RouterError;
@@ -17,7 +18,6 @@ use runtime_capabilities::{
     Capability, CapabilityBound, Connector, Data, Dictionary, DirConnector, Routable, Router,
     RouterErrorInfo, WeakInstanceToken,
 };
-use std::str::FromStr;
 use std::sync::{Arc, Weak};
 
 #[cfg(target_os = "fuchsia")]
@@ -73,6 +73,46 @@ impl NotFoundErrorContext {
     }
 }
 
+#[derive(FidlDecl, Debug, Clone, PartialEq)]
+#[fidl_decl(fidl_table = "fruntime::RouteRequest")]
+pub struct RouteRequest {
+    pub build_type_name: cm_rust::CapabilityTypeName,
+    pub availability: Option<cm_rust::Availability>,
+    pub directory_rights: Option<fio::Flags>,
+    pub directory_intermediate_rights: Option<fio::Flags>,
+    pub inherit_rights: Option<bool>,
+    pub sub_directory_path: Option<RelativePath>,
+    pub isolated_storage_path: Option<RelativePath>,
+    pub storage_sub_directory_path: Option<RelativePath>,
+    pub storage_source_moniker: Option<Moniker>,
+    pub event_stream_scope_moniker: Option<Moniker>,
+    pub event_stream_scope: Option<Box<[cm_rust::EventScope]>>,
+    pub skip_policy_checks: Option<bool>,
+}
+
+impl Default for RouteRequest {
+    fn default() -> Self {
+        Self {
+            // Having Default implemented reduces verbosity in places where we assemble this
+            // struct, but it's also more convenient to not have `build_type_name` wrapped in an
+            // `Option`. We set the default to `Protocol` here, but anyone using this should
+            // overwrite that.
+            build_type_name: cm_rust::CapabilityTypeName::Protocol,
+            availability: None,
+            directory_rights: None,
+            directory_intermediate_rights: None,
+            inherit_rights: None,
+            sub_directory_path: None,
+            isolated_storage_path: None,
+            storage_sub_directory_path: None,
+            storage_source_moniker: None,
+            event_stream_scope_moniker: None,
+            event_stream_scope: None,
+            skip_policy_checks: None,
+        }
+    }
+}
+
 /// A router that attempts to find a router to forward to in a source dictionary, validates (and
 /// potentially mutates) the route request, and then forwards the request to next router.
 pub struct IntermediateRouter {
@@ -125,9 +165,7 @@ impl IntermediateRouter {
         source: fdecl::Ref,
     ) -> Capability {
         assert!(source_path.len() != 0);
-        let type_name_str =
-            default_request.build_type_name.as_ref().expect("request is missing type name");
-        let type_name = CapabilityTypeName::from_str(type_name_str).expect("invalid type name");
+        let type_name = default_request.build_type_name;
 
         let enable_tracing = route_verb == RouteVerb::Use;
 
@@ -185,7 +223,7 @@ impl IntermediateRouter {
     /// Initiates a routing operation for that dictionary if necessary.
     async fn upgrade_source_dictionary(
         &self,
-        dictionary_request: &RouteRequest,
+        dictionary_request: &fruntime::RouteRequest,
     ) -> Result<Arc<Dictionary>, RouterError> {
         match &self.source_dictionary {
             WeakDictionaryOrRouter::Dictionary(dictionary) => dictionary.upgrade().ok_or(
@@ -214,7 +252,7 @@ impl IntermediateRouter {
     /// successive dictionary (routing dictionary routers as needed).
     async fn get_source_router<C: CapabilityBound>(
         &self,
-        request: &RouteRequest,
+        request: &fruntime::RouteRequest,
         debug: bool,
     ) -> Result<RouterCapabilityOrSource<C>, RouterError>
     where
@@ -222,7 +260,7 @@ impl IntermediateRouter {
         Arc<C>: TryFrom<Capability>,
         Router<C>: CapabilityBound,
     {
-        let dictionary_request = RouteRequest {
+        let dictionary_request = fruntime::RouteRequest {
             build_type_name: Some(CapabilityTypeName::Dictionary.to_string()),
             ..request.clone()
         };
@@ -306,9 +344,9 @@ impl IntermediateRouter {
 
     /// Check to see if `request` does not request anything different or larger in scope than
     /// `self.default_request`. `request` will be set to `self.default_request` if it is empty.
-    fn handle_new_request(&self, request: &mut RouteRequest) -> Result<(), RouterError> {
-        if *request == RouteRequest::default() {
-            *request = self.default_request.clone();
+    fn handle_new_request(&self, request: &mut fruntime::RouteRequest) -> Result<(), RouterError> {
+        if *request == fruntime::RouteRequest::default() {
+            *request = self.default_request.clone().native_into_fidl();
             return Ok(());
         }
 
@@ -321,11 +359,11 @@ impl IntermediateRouter {
         Ok(())
     }
 
-    fn check_build_type_name(&self, request: &mut RouteRequest) -> Result<(), RouterError> {
-        if self.default_request.build_type_name.is_none() {
-            return Ok(());
-        }
-        if request.build_type_name != self.default_request.build_type_name {
+    fn check_build_type_name(
+        &self,
+        request: &mut fruntime::RouteRequest,
+    ) -> Result<(), RouterError> {
+        if request.build_type_name != Some(self.default_request.build_type_name.to_string()) {
             Err(RoutingError::BedrockWrongCapabilityType {
                 moniker: self.moniker.clone().into(),
                 actual: request
@@ -333,18 +371,13 @@ impl IntermediateRouter {
                     .as_ref()
                     .map(Clone::clone)
                     .unwrap_or_else(|| "".to_string()),
-                expected: self
-                    .default_request
-                    .build_type_name
-                    .as_ref()
-                    .map(Clone::clone)
-                    .unwrap_or_else(|| "".to_string()),
+                expected: self.default_request.build_type_name.to_string(),
             })?;
         }
         Ok(())
     }
 
-    fn handle_availability(&self, request: &mut RouteRequest) -> Result<(), RouterError> {
+    fn handle_availability(&self, request: &mut fruntime::RouteRequest) -> Result<(), RouterError> {
         if self.default_request.availability.is_none() {
             return Ok(());
         }
@@ -361,14 +394,17 @@ impl IntermediateRouter {
         let new_availability = crate::availability::advance(
             &self.moniker.clone().into(),
             request_availability,
-            default_availability.fidl_into_native(),
+            default_availability,
         )
         .map_err(|e| RoutingError::from(e))?;
         request.availability = Some(new_availability.native_into_fidl());
         Ok(())
     }
 
-    fn handle_directory_rights(&self, request: &mut RouteRequest) -> Result<(), RouterError> {
+    fn handle_directory_rights(
+        &self,
+        request: &mut fruntime::RouteRequest,
+    ) -> Result<(), RouterError> {
         let Some(directory_rights) = self.default_request.directory_rights else {
             return Ok(());
         };
@@ -378,15 +414,17 @@ impl IntermediateRouter {
         Ok(())
     }
 
-    fn handle_sub_directory(&self, request: &mut RouteRequest) -> Result<(), RouterError> {
-        let Some(new_subdir) = self.default_request.sub_directory_path.as_ref() else {
+    fn handle_sub_directory(
+        &self,
+        request: &mut fruntime::RouteRequest,
+    ) -> Result<(), RouterError> {
+        let Some(mut new_subdir) = self.default_request.sub_directory_path.clone() else {
             return Ok(());
         };
-        let mut new_subdir = RelativePath::new(new_subdir)
-            .expect("default request sub directory path should never be invalid");
 
         let Some(current_subdir) = request.sub_directory_path.as_ref() else {
-            request.sub_directory_path = self.default_request.sub_directory_path.clone();
+            request.sub_directory_path =
+                self.default_request.sub_directory_path.clone().map(|p| p.to_string());
             return Ok(());
         };
         let current_subdir = RelativePath::new(current_subdir).map_err(|e| {
@@ -401,7 +439,7 @@ impl IntermediateRouter {
         if !success {
             return Err(RoutingError::PathTooLong {
                 moniker: self.moniker.clone().into(),
-                path: self.default_request.sub_directory_path.clone().unwrap(),
+                path: self.default_request.sub_directory_path.clone().unwrap().to_string(),
                 keyword: request.sub_directory_path.clone().unwrap(),
             }
             .into());
@@ -411,7 +449,7 @@ impl IntermediateRouter {
         Ok(())
     }
 
-    fn handle_event_stream_scope(&self, request: &mut RouteRequest) {
+    fn handle_event_stream_scope(&self, request: &mut fruntime::RouteRequest) {
         if request.event_stream_scope_moniker.is_some() {
             // If the scope is already set then it's a smaller scope (because we can't expose
             // these), so only set our scope if the request doesn't have one yet.
@@ -423,8 +461,8 @@ impl IntermediateRouter {
         let Some(new_scope) = self.default_request.event_stream_scope.as_ref() else {
             return;
         };
-        request.event_stream_scope_moniker = Some(new_moniker.clone());
-        request.event_stream_scope = Some(new_scope.clone());
+        request.event_stream_scope_moniker = Some(new_moniker.clone().native_into_fidl());
+        request.event_stream_scope = Some(new_scope.clone().native_into_fidl());
     }
 }
 
@@ -438,7 +476,7 @@ where
 {
     async fn route(
         &self,
-        mut request: RouteRequest,
+        mut request: fruntime::RouteRequest,
         target: Arc<WeakInstanceToken>,
     ) -> Result<Option<Arc<C>>, RouterError> {
         #[cfg(target_os = "fuchsia")]
@@ -446,7 +484,7 @@ where
             trace::duration_begin!(
                 "component_manager", "route_capability",
                 "target" => self.moniker.as_str(),
-                "type" => self.default_request.build_type_name.as_ref().unwrap().as_str(),
+                "type" => self.default_request.build_type_name.to_string().as_str(),
                 "capability" => self.source_path.iter_segments().join("/").as_str()
             );
         }
@@ -474,7 +512,7 @@ where
             trace::duration_end!(
                 "component_manager", "route_capability",
                 "target" => self.moniker.as_str(),
-                "type" => self.default_request.build_type_name.as_ref().unwrap().as_str(),
+                "type" => self.default_request.build_type_name.to_string().as_str(),
                 "capability" => self.source_path.iter_segments().join("/").as_str()
             );
         }
@@ -484,7 +522,7 @@ where
 
     async fn route_debug(
         &self,
-        mut request: RouteRequest,
+        mut request: fruntime::RouteRequest,
         target: Arc<WeakInstanceToken>,
     ) -> Result<CapabilitySource, RouterError> {
         #[cfg(target_os = "fuchsia")]
@@ -492,7 +530,7 @@ where
             trace::duration_begin!(
                 "component_manager", "route_capability_debug",
                 "target" => self.moniker.as_str(),
-                "type" => self.default_request.build_type_name.as_ref().unwrap().as_str(),
+                "type" => self.default_request.build_type_name.to_string().as_str(),
                 "capability" => self.source_path.iter_segments().join("/").as_str()
             );
         }
@@ -511,7 +549,7 @@ where
             trace::duration_end!(
                 "component_manager", "route_capability_debug",
                 "target" => self.moniker.as_str(),
-                "type" => self.default_request.build_type_name.as_ref().unwrap().as_str(),
+                "type" => self.default_request.build_type_name.to_string().as_str(),
                 "capability" => self.source_path.iter_segments().join("/").as_str()
             );
         }
@@ -523,7 +561,7 @@ where
         Some(RouterErrorInfo {
             capability_type: self.not_found_context.type_name,
             name: self.source_path.basename().unwrap().to_owned(),
-            availability: self.default_request.availability.unwrap().fidl_into_native(),
+            availability: self.default_request.availability.unwrap(),
         })
     }
 }

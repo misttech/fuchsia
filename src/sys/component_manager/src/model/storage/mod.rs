@@ -9,7 +9,7 @@ use crate::model::storage::admin_protocol::StorageAdmin;
 use crate::sandbox_util::LaunchTaskOnReceive;
 use ::routing::component_instance::ComponentInstanceInterface;
 use ::routing::error::{RouteVerb, RoutingError};
-use ::routing::intermediate_router::IntermediateRouter;
+use ::routing::intermediate_router::{IntermediateRouter, RouteRequest};
 use capability_source::{
     CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
     NamespaceSource, StorageBackingDirectorySource,
@@ -20,8 +20,6 @@ use component_id_index::InstanceId;
 use derivative::Derivative;
 use errors::{ModelError, StorageError};
 use fidl::endpoints::{ServerEnd, create_proxy};
-use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
@@ -201,10 +199,10 @@ pub async fn route_backing_directory(
         Arc::downgrade(&source_dictionary).into(),
         vec![storage_decl.backing_dir.clone()].into(),
         RouteRequest {
-            build_type_name: Some(CapabilityTypeName::Directory.to_string()),
-            availability: Some(fdecl::Availability::Required),
+            build_type_name: CapabilityTypeName::Directory,
+            availability: Some(cm_rust::Availability::Required),
             directory_rights: Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
-            sub_directory_path: Some(RelativePath::dot().native_into_fidl()),
+            sub_directory_path: Some(RelativePath::dot()),
             inherit_rights: Some(false),
             ..Default::default()
         },

@@ -9,7 +9,7 @@ use crate::component_instance::{
     WeakExtendedInstanceInterface,
 };
 use crate::error::{RouteVerb, RoutingError};
-use crate::intermediate_router::{IntermediateRouter, WeakDictionaryOrRouter};
+use crate::intermediate_router::{IntermediateRouter, RouteRequest, WeakDictionaryOrRouter};
 use crate::{DictExt, WeakInstanceTokenExt};
 use async_trait::async_trait;
 use capability_source::{CapabilitySource, ComponentCapability, ComponentSource};
@@ -17,7 +17,7 @@ use cm_rust::{CapabilityTypeName, NativeIntoFidl};
 use cm_types::{Path, RelativePath};
 use component_id_index::InstanceId;
 use fidl_fuchsia_component_decl as fdecl;
-use fidl_fuchsia_component_runtime::RouteRequest;
+use fidl_fuchsia_component_runtime as fruntime;
 use fidl_fuchsia_io as fio;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::RouterError;
@@ -155,10 +155,10 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
                 backing_source,
                 vec![backing_dir.clone()].into(),
                 RouteRequest {
-                    build_type_name: Some(CapabilityTypeName::Directory.to_string()),
-                    availability: Some(fdecl::Availability::Required),
+                    build_type_name: CapabilityTypeName::Directory,
+                    availability: Some(cm_rust::Availability::Required),
                     directory_rights: Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
-                    sub_directory_path: Some(RelativePath::dot().native_into_fidl()),
+                    sub_directory_path: Some(RelativePath::dot()),
                     inherit_rights: Some(false),
                     ..Default::default()
                 },
@@ -183,9 +183,9 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             impl<C: ComponentInstanceInterface + 'static> StorageBackingDirRouter<C> {
                 fn prepare_route(
                     &self,
-                    mut request: RouteRequest,
+                    mut request: fruntime::RouteRequest,
                     target: Arc<WeakInstanceToken>,
-                ) -> Result<RouteRequest, RouterError> {
+                ) -> Result<fruntime::RouteRequest, RouterError> {
                     fn generate_moniker_based_storage_path(
                         subdir: Option<String>,
                         moniker: &Moniker,
@@ -276,7 +276,7 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             {
                 async fn route(
                     &self,
-                    request: RouteRequest,
+                    request: fruntime::RouteRequest,
                     target: Arc<WeakInstanceToken>,
                 ) -> Result<Option<Arc<DirConnector>>, RouterError> {
                     let request = self.prepare_route(request, target)?;
@@ -285,7 +285,7 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
 
                 async fn route_debug(
                     &self,
-                    request: RouteRequest,
+                    request: fruntime::RouteRequest,
                     target: Arc<WeakInstanceToken>,
                 ) -> Result<CapabilitySource, RouterError> {
                     let request = self.prepare_route(request, target)?;
@@ -352,14 +352,14 @@ fn extend_dict_with_capability<C: ComponentInstanceInterface + 'static>(
             impl Routable<Data> for ConfigRouter {
                 async fn route(
                     &self,
-                    _request: RouteRequest,
+                    _request: fruntime::RouteRequest,
                     _target: Arc<WeakInstanceToken>,
                 ) -> Result<Option<Arc<Data>>, RouterError> {
                     Ok(Some(self.data.clone()))
                 }
                 async fn route_debug(
                     &self,
-                    _request: RouteRequest,
+                    _request: fruntime::RouteRequest,
                     _target: Arc<WeakInstanceToken>,
                 ) -> Result<CapabilitySource, RouterError> {
                     Ok(self.source.clone())
@@ -426,7 +426,7 @@ fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
     impl Routable<Dictionary> for DictRouter {
         async fn route(
             &self,
-            _request: RouteRequest,
+            _request: fruntime::RouteRequest,
             _target: Arc<WeakInstanceToken>,
         ) -> Result<Option<Arc<Dictionary>>, RouterError> {
             Ok(Some(self.dict.clone()))
@@ -434,7 +434,7 @@ fn make_simple_dict_router<C: ComponentInstanceInterface + 'static>(
 
         async fn route_debug(
             &self,
-            _request: RouteRequest,
+            _request: fruntime::RouteRequest,
             _target: Arc<WeakInstanceToken>,
         ) -> Result<CapabilitySource, RouterError> {
             Ok(self.source.clone())
