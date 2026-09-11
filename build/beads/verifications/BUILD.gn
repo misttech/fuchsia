@@ -15,6 +15,7 @@ if (is_host) {
       "//build/beads/scripts/build_command_query_utils.py",
       "//build/beads/scripts/gn_runner.py",
       "//build/beads/scripts/normalize_rustc_args.py",
+      "//build/beads/scripts/path_normalizer.py",
       "//build/beads/scripts/shell_utils.py",
     ]
   }

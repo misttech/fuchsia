@@ -8,6 +8,8 @@ Library to normalize rustc command arguments.
 import os
 import shlex
 
+import path_normalizer
+
 # List of args to ignore when comparing GN and Bazel commands.
 _ARGS_TO_IGNORE = (
     # Dependency directories and externs are provided by response files in GN,
@@ -73,7 +75,7 @@ _ARGS_TO_IGNORE = (
 )
 
 # Argument prefixes that need to be converted for consistency between GN and Bazel.
-_ARGS_PREFIXES_TO_CONVERT = {
+_ARGS_PREFIX_CONVERSION_MAP = {
     "--codegen": "-C",
     "--allow": "-A",
     "--deny": "-D",
@@ -83,8 +85,12 @@ _ARGS_PREFIXES_TO_CONVERT = {
     "--local-only": "",
 }
 
+_ARGS_PREFIXES_TO_CONVERT = tuple(_ARGS_PREFIX_CONVERSION_MAP.keys())
 
-def normalize_rustc_cmd(cmd: str) -> list[str]:
+
+def normalize_rustc_cmd(
+    cmd: str, normalizer: path_normalizer.PathNormalizer
+) -> list[str]:
     """Normalize a full rustc command.
 
     This function normalizes arguments by:
@@ -93,6 +99,7 @@ def normalize_rustc_cmd(cmd: str) -> list[str]:
 
     Args:
         cmd: The command to normalize.
+        normalizer: A PathNormalizer instance.
 
     Returns:
         The normalized command.
@@ -105,27 +112,35 @@ def normalize_rustc_cmd(cmd: str) -> list[str]:
         "-o ", "-o="
     )
     return sorted(
-        set(normalize_rustc_arg(a) for a in shlex.split(rustc_cmd_replaced))
+        set(
+            normalize_rustc_arg(a, normalizer=normalizer)
+            for a in shlex.split(rustc_cmd_replaced)
+        )
     )
 
 
-def normalize_rustc_arg(arg: str) -> str:
+def normalize_rustc_arg(
+    arg: str,
+    normalizer: path_normalizer.PathNormalizer,
+) -> str:
     """Normalize a single rustc argument.
 
     This function normalizes arguments by:
     - Omitting certain arguments that are not relevant to the comparison.
     - Converting some flags to a more common format.
+    - Normalizing the paths prefix into common expression such as {SOURCE_DIR}.
 
     Args:
         arg: The argument to normalize.
+        normalizer: A PathNormalizer instance.
 
     Returns:
         The normalized argument.
     """
     # Convert to the same flag format.
-    if arg.startswith(tuple(_ARGS_PREFIXES_TO_CONVERT.keys())):
+    if arg.startswith(_ARGS_PREFIXES_TO_CONVERT):
         opt, _, val = arg.partition("=")
-        opt_new = _ARGS_PREFIXES_TO_CONVERT[opt]
+        opt_new = _ARGS_PREFIX_CONVERSION_MAP[opt]
         arg = f"{opt_new}{val}"
 
     if arg.startswith(_ARGS_TO_IGNORE):
@@ -148,8 +163,10 @@ def normalize_rustc_arg(arg: str) -> str:
         if arg.startswith("bazel-out") and "fuchsia_prebuilt_rust" in arg:
             return ""
 
-        # Strip `../../` prefixes, which is how GN/Ninja locates sources.
-        if arg.startswith("../../"):
-            return arg[6:]
+        # Try to normalize relative/absolute source path
+        try:
+            return normalizer.normalize_path(arg)
+        except ValueError:
+            pass
 
     return arg

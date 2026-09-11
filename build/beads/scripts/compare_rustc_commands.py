@@ -15,6 +15,7 @@ import typing as T
 
 import build_command_query_utils
 import normalize_rustc_args
+import path_normalizer
 import shell_utils
 
 # Enable debug logging.
@@ -128,11 +129,19 @@ def main() -> int:
         print("Failed to get GN or Bazel rustc command.")
         return 1
 
+    gn_path_normalizer = path_normalizer.GnPathNormalizer(
+        paths.fuchsia_dir, paths.build_dir
+    )
+    bazel_path_normalizer = path_normalizer.BazelPathNormalizer(
+        paths.fuchsia_dir, paths.build_dir
+    )
+
     normalized_gn_args = normalize_rustc_args.normalize_rustc_cmd(
-        str(gn_rustc_cmd)
+        str(gn_rustc_cmd), gn_path_normalizer
     )
     normalized_bazel_args = normalize_rustc_args.normalize_rustc_cmd(
-        str(bazel_rustc_cmd)
+        str(bazel_rustc_cmd),
+        bazel_path_normalizer,
     )
 
     temp_dir = tempfile.mkdtemp(

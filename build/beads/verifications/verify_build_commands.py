@@ -28,6 +28,7 @@ import build_utils
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/beads/scripts"))
 import build_command_query_utils
 import normalize_rustc_args
+import path_normalizer
 import shell_utils
 
 
@@ -175,11 +176,16 @@ def main() -> int:
             debug(f"GN raw rustc command:\n{gn_rustc_cmd}\n")
             debug(f"Bazel raw rustc command:\n{bazel_rustc_cmd}\n")
 
+        gn_path_normalizer = path_normalizer.GnPathNormalizer(
+            paths.fuchsia_dir, paths.build_dir
+        )
+        bazel_path_normalizer = path_normalizer.BazelPathNormalizer(bazel_paths)
+
         normalized_gn_args = normalize_rustc_args.normalize_rustc_cmd(
-            str(gn_rustc_cmd)
+            str(gn_rustc_cmd), gn_path_normalizer
         )
         normalized_bazel_args = normalize_rustc_args.normalize_rustc_cmd(
-            str(bazel_rustc_cmd)
+            str(bazel_rustc_cmd), bazel_path_normalizer
         )
 
         if _DEBUG:
