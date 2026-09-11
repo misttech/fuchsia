@@ -36,6 +36,10 @@ class Dhcpv4InteropCombinatorialOptionsTest(
             log_path=self.log_path,
         )
 
+    async def setup_test(self) -> None:
+        await super().setup_test()
+        await self.dut.wlan_policy.ensure_clean_state()
+
     async def teardown_test(self) -> None:
         await self.dut.wlan_policy.ensure_clean_state()
         if self.access_point:

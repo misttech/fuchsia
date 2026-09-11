@@ -30,6 +30,7 @@ class Dhcpv4DuplicateAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
     async def setup_test(self) -> None:
         await super().setup_test()
+        await self.dut.wlan_policy.ensure_clean_state()
         self.extra_addresses: list[IPv4Address] = []
         self.ap_params = self.dhcp.setup_ap()
         if self.access_point:
