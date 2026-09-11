@@ -16,7 +16,14 @@
         default_dispatcher_opts: [ "allow_sync_calls" ],
         bind: "meta/bind/usb-mass-storage.bindbc",
     },
-    capabilities: [],
+    capabilities: [
+        { service: "fuchsia.hardware.block.volume.Service" },
+    ],
     use: [],
-    expose: [],
+    expose: [
+        {
+            service: [ "fuchsia.hardware.block.volume.Service" ],
+            from: "self",
+        },
+    ],
 }

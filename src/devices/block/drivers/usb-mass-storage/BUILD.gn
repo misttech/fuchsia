@@ -34,7 +34,7 @@ fuchsia_cc_driver("usb-mass-storage-driver") {
   ]
   deps = [
     ":usb_mass_storage_bind",
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/logging/cpp",
@@ -75,7 +75,7 @@ test("ums") {
   defines = [ "UNITTEST" ]
   deps = [
     ":usb_mass_storage_bind",
-    "//sdk/fidl/fuchsia.hardware.block.driver:fuchsia.hardware.block.driver_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/logging/cpp",
@@ -89,6 +89,7 @@ test("ums") {
     "//src/devices/usb/lib/usb:usb-dfv2-compat-logging",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
+    "//src/storage/lib/block_client/cpp",
     "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/fzl",
     "//zircon/system/ulib/zircon-internal",
@@ -115,6 +116,7 @@ test("ums-integration") {
   output_name = "ums-integration-test"
   sources = [ "tests/ums-test.cc" ]
   deps = [
+    "//sdk/fidl/fuchsia.hardware.block.volume:fuchsia.hardware.block.volume_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.peripheral:fuchsia.hardware.usb.peripheral_cpp",
     "//sdk/fidl/fuchsia.hardware.usb.virtual.bus:fuchsia.hardware.usb.virtual.bus_cpp",
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_cpp",
@@ -136,7 +138,6 @@ test("ums-integration") {
   # Other components/binaries we depend on.
   deps += [
     "//src/devices/block/bin/blktest",
-    "//src/devices/block/drivers/core",
     "//src/devices/block/drivers/ums-function",
     "//src/devices/board/drivers/integration-test",
     "//src/devices/bus/drivers/platform",

@@ -5,12 +5,11 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_USB_MASS_STORAGE_USB_MASS_STORAGE_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_USB_MASS_STORAGE_USB_MASS_STORAGE_H_
 
-#include <fuchsia/hardware/block/driver/c/banjo.h>
-#include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <fuchsia/hardware/usb/c/banjo.h>
 #include <inttypes.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/fit/function.h>
 #include <lib/fzl/vmo-mapper.h>
 #include <lib/scsi/block-device.h>
 #include <lib/scsi/controller.h>
@@ -18,11 +17,12 @@
 #include <lib/sync/cpp/completion.h>
 #include <lib/zircon-internal/thread_annotations.h>
 #include <zircon/assert.h>
-#include <zircon/listnode.h>
 
 #include <atomic>
+#include <deque>
 #include <memory>
 #include <mutex>
+#include <span>
 
 #include <fbl/array.h>
 #include <fbl/condition_variable.h>
@@ -43,22 +43,10 @@ class WaiterInterface : public fbl::RefCounted<WaiterInterface> {
   virtual ~WaiterInterface() = default;
 };
 
-// struct representing a block device for a logical unit
+// struct representing a pending block request for a logical unit
 struct Transaction {
-  scsi::DeviceOp device_op;
-
-  // UsbMassStorageDevice::ExecuteCommandAsync() checks that the incoming CDB's size does not exceed
-  // this buffer's.
-  uint8_t cdb_buffer[16];
-  uint8_t cdb_length;
+  scsi::ScsiRequest request;
   uint8_t lun;
-  uint32_t block_size_bytes;
-
-  // Currently, data_buffer is only used by the UNMAP command and has a maximum size of 24 byte.
-  uint8_t data_buffer[24];
-  zx::vmo data_vmo;
-
-  list_node_t node;
 };
 
 struct UsbRequestContext {
@@ -83,18 +71,29 @@ class UsbMassStorageDevice : public fdf::DriverBase2, public scsi::Controller {
   std::shared_ptr<fdf::OutgoingDirectory>& driver_outgoing() override { return outgoing(); }
   const std::optional<std::string>& driver_node_name() const override { return node_name_; }
   fdf::Logger& driver_logger() override { return logger(); }
-  size_t BlockOpSize() override { return sizeof(Transaction); }
+  bool UseNewInterface() const override { return true; }
   zx_status_t ExecuteCommandSync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
                                  iovec data) override;
-  void ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
-                           uint32_t block_size_bytes, scsi::DeviceOp* device_op,
-                           iovec data) override;
+  void ExecuteCommandsAsync(uint8_t target, uint16_t lun,
+                            std::span<scsi::ScsiRequest> batch) override;
 
   // Performs the object initialization.
   zx_status_t Init();
 
   // Visible for testing.
-  const std::vector<std::unique_ptr<scsi::BlockDevice>>& block_devs() const { return block_devs_; }
+  const std::vector<std::unique_ptr<scsi::BlockDevice>>& block_devs() const
+      TA_NO_THREAD_SAFETY_ANALYSIS {
+    return block_devs_;
+  }
+  size_t queued_txns_count() {
+    std::lock_guard<std::mutex> l(queue_lock_);
+    return queued_txns_.size();
+  }
+  bool is_dead() const { return dead_.load(); }
+  zx_status_t CheckLunsReady();
+  void set_on_pre_shutdown(fit::function<void(uint8_t lun)> on_pre_shutdown) {
+    on_pre_shutdown_ = std::move(on_pre_shutdown);
+  }
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(UsbMassStorageDevice);
 
@@ -108,7 +107,7 @@ class UsbMassStorageDevice : public fdf::DriverBase2, public scsi::Controller {
   // Sends a Command Block Wrapper (command portion of request)
   // to a USB mass storage device.
   zx_status_t SendCbw(uint8_t lun, uint32_t transfer_length, uint8_t flags, uint8_t command_len,
-                      void* command);
+                      const void* command);
 
   // Reads a Command Status Wrapper from a USB mass storage device
   // and validates that the command index in the response matches the index
@@ -123,10 +122,7 @@ class UsbMassStorageDevice : public fdf::DriverBase2, public scsi::Controller {
   zx_status_t DataTransfer(zx_handle_t vmo_handle, zx_off_t offset, size_t length,
                            uint8_t ep_address);
 
-  zx_status_t DoTransaction(Transaction* txn, uint8_t flags, uint8_t ep_address,
-                            const std::string& action);
-
-  zx_status_t CheckLunsReady();
+  zx_status_t DoTransaction(scsi::ScsiRequest& req, uint8_t lun, std::string_view action);
 
   void WorkerLoop();
 
@@ -176,13 +172,19 @@ class UsbMassStorageDevice : public fdf::DriverBase2, public scsi::Controller {
   std::atomic_bool dead_ = false;
 
   // list of queued transactions
-  list_node_t queued_txns_ TA_GUARDED(queue_lock_);
+  std::deque<Transaction> queued_txns_ TA_GUARDED(queue_lock_);
+
+  // Per-LUN flag indicating whether new requests for this LUN should be failed immediately
+  // (e.g. while the LUN is shutting down or being torn down).
+  std::vector<bool> fail_new_requests_ TA_GUARDED(queue_lock_);
 
   sync_completion_t txn_completion_;  // signals WorkerLoop when new txns are available
                                       // and when device is dead
   std::mutex queue_lock_;
   std::mutex txn_lock_;   // Synchronizes RequestQueue completion.
-  std::mutex luns_lock_;  // Synchronizes the checking of whether LUNs are ready.
+  std::mutex luns_lock_;  // Synchronizes LUN lifecycle and guards block_devs_ against WorkerLoop.
+
+  fit::function<void(uint8_t lun)> on_pre_shutdown_;
 
   std::shared_ptr<fdf::Namespace> incoming_;
   std::optional<std::string> node_name_;
@@ -190,7 +192,7 @@ class UsbMassStorageDevice : public fdf::DriverBase2, public scsi::Controller {
   fidl::WireSyncClient<fuchsia_driver_framework::Node> root_node_;
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
 
-  std::vector<std::unique_ptr<scsi::BlockDevice>> block_devs_;
+  std::vector<std::unique_ptr<scsi::BlockDevice>> block_devs_ TA_GUARDED(luns_lock_);
 };
 
 }  // namespace ums

@@ -5,11 +5,14 @@
 #include <dirent.h>
 #include <endian.h>
 #include <errno.h>
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.virtual.bus/cpp/wire.h>
 #include <fidl/fuchsia.storage.block/cpp/wire.h>
+#include <lib/component/incoming/cpp/clone.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
+#include <lib/component/incoming/cpp/service.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/cpp/caller.h>
@@ -85,7 +88,10 @@ usb_peripheral::wire::DeviceDescriptor GetDeviceDescriptor() {
 class UmsTest : public zxtest::Test {
  protected:
   void SetUp() override {
-    auto bus = BusLauncher::Create();
+    auto bus = BusLauncher::Create({
+        fuchsia_component_test::Capability::WithService(fuchsia_component_test::Service{
+            {.name = fuchsia_hardware_block_volume::Service::Name}}),
+    });
     ASSERT_OK(bus.status_value());
     bus_ = std::move(bus.value());
     ASSERT_NO_FATAL_FAILURE(Connect());
@@ -121,9 +127,8 @@ class UmsTest : public zxtest::Test {
   }
 
   fbl::String GetTestdevPath() {
-    fdio_cpp::UnownedFdioCaller caller(bus_->GetRootFd());
     zx::result directory = component::OpenDirectoryAt(
-        caller.directory(), "class/block",
+        bus_->GetExposedDir(), fuchsia_hardware_block_volume::Service::Name,
         fuchsia_io::wire::Flags::kProtocolDirectory | fuchsia_io::wire::kPermReadable);
     if (directory.is_error()) {
       return fbl::String("");
@@ -134,8 +139,7 @@ class UmsTest : public zxtest::Test {
           if (name == "." || name == "..") {
             return std::nullopt;
           }
-          last_known_devpath_ =
-              fbl::String::Concat({"class/block/", fbl::String(name.data(), name.size())});
+          last_known_devpath_ = fbl::String(name.data(), name.size());
           return last_known_devpath_;
         });
     if (watch_result.is_ok()) {
@@ -149,31 +153,37 @@ class UmsTest : public zxtest::Test {
     if (last_known_devpath_.length() == 0) {
       return;
     }
-    fdio_cpp::UnownedFdioCaller caller(bus_->GetRootFd());
 
     zx::result directory = component::OpenDirectoryAt(
-        caller.directory(), "class/block",
+        bus_->GetExposedDir(), fuchsia_hardware_block_volume::Service::Name,
         fuchsia_io::wire::Flags::kProtocolDirectory | fuchsia_io::wire::kPermReadable);
-    ASSERT_OK(directory);
+    if (directory.is_error()) {
+      last_known_devpath_ = fbl::String("");
+      return;
+    }
 
-    zx::result<device_watcher::DirWatcher> watcher =
-        device_watcher::DirWatcher::Create(directory.value());
-    ASSERT_OK(watcher);
+    int dir_fd = -1;
+    zx_status_t status = fdio_fd_create(directory.value().TakeChannel().release(), &dir_fd);
+    if (status != ZX_OK) {
+      last_known_devpath_ = fbl::String("");
+      return;
+    }
+    auto close_fd = fit::defer([dir_fd]() { close(dir_fd); });
+
+    std::unique_ptr<device_watcher::DirWatcher> watcher;
+    status = device_watcher::DirWatcher::Create(dir_fd, &watcher);
+    ASSERT_OK(status);
 
     const char* c_path = last_known_devpath_.c_str();
     if (c_path == nullptr || c_path[0] == '\0') {
       return;
     }
     std::string_view name_view(c_path);
-    size_t last_slash = name_view.rfind('/');
-    if (last_slash != std::string_view::npos) {
-      name_view = name_view.substr(last_slash + 1);
-    }
 
     for (int i = 0; i < 2000; i++) {
-      // 1. Check if the device is already gone using fstatat.
+      // 1. Check if the instance is already gone using fstatat.
       struct stat st;
-      if (fstatat(bus_->GetRootFd(), last_known_devpath_.c_str(), &st, 0) < 0) {
+      if (fstatat(dir_fd, c_path, &st, 0) < 0) {
         if (errno == ENOENT) {
           last_known_devpath_ = fbl::String("");
           return;
@@ -181,7 +191,7 @@ class UmsTest : public zxtest::Test {
       }
 
       // 2. Wait up to 50ms for a removal event.
-      zx_status_t status = watcher->WaitForRemoval(name_view, zx::msec(50));
+      status = watcher->WaitForRemoval(name_view, zx::msec(50));
       if (status == ZX_OK) {
         last_known_devpath_ = fbl::String("");
         return;
@@ -209,13 +219,14 @@ TEST_F(UmsTest, ReconnectTest) {
 }
 
 TEST_F(UmsTest, WriteShouldBePersistedToBlockDevice) {
-  fdio_cpp::UnownedFdioCaller caller(bus_->GetRootFd());
-
   uint32_t blk_size;
   std::unique_ptr<uint8_t[]> write_buffer;
   {
+    fbl::String dev_instance = GetTestdevPath();
+    ASSERT_FALSE(dev_instance.empty());
     zx::result client_end =
-        component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(), GetTestdevPath());
+        component::ConnectAtMember<fuchsia_hardware_block_volume::Service::Volume>(
+            bus_->GetExposedDir(), dev_instance.c_str());
     ASSERT_OK(client_end);
     {
       const fidl::WireResult result = fidl::WireCall(client_end.value())->GetInfo();
@@ -238,8 +249,11 @@ TEST_F(UmsTest, WriteShouldBePersistedToBlockDevice) {
   ASSERT_NO_FATAL_FAILURE(Disconnect());
   ASSERT_NO_FATAL_FAILURE(Connect());
   {
+    fbl::String dev_instance = GetTestdevPath();
+    ASSERT_FALSE(dev_instance.empty());
     zx::result client_end =
-        component::ConnectAt<fuchsia_storage_block::Block>(caller.directory(), GetTestdevPath());
+        component::ConnectAtMember<fuchsia_hardware_block_volume::Service::Volume>(
+            bus_->GetExposedDir(), dev_instance.c_str());
     ASSERT_OK(client_end);
     // Read back the pattern, which should match what was written
     // since writeback caching was disabled.
@@ -255,11 +269,19 @@ TEST_F(UmsTest, BlkdevTest) {
   fdio_spawn_action_t actions[1];
   actions[0] = {};
   actions[0].action = FDIO_SPAWN_ACTION_ADD_NS_ENTRY;
-  zx_handle_t fd_channel;
-  ASSERT_OK(fdio_fd_clone(bus_->GetRootFd(), &fd_channel));
-  actions[0].ns.handle = fd_channel;
-  actions[0].ns.prefix = "/dev2";
-  fbl::String path = fbl::String::Concat({fbl::String("/dev2/"), GetTestdevPath()});
+  zx::result exposed_dir = component::Clone(bus_->GetExposedDir());
+  ASSERT_OK(exposed_dir);
+  actions[0].ns.handle = exposed_dir.value().TakeChannel().release();
+  actions[0].ns.prefix = "/svc2";
+  fbl::String instance = GetTestdevPath();
+  ASSERT_FALSE(instance.empty());
+  fbl::String path = fbl::String::Concat({
+      fbl::String("/svc2/"),
+      fbl::String(fuchsia_hardware_block_volume::Service::Name),
+      fbl::String("/"),
+      instance,
+      fbl::String("/volume"),
+  });
   const char* argv[] = {"/pkg/bin/blktest", "-d", path.c_str(), nullptr};
   zx_handle_t process;
   ASSERT_OK(fdio_spawn_etc(zx_job_default(), FDIO_SPAWN_CLONE_ALL, "/pkg/bin/blktest", argv,

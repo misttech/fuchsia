@@ -17,4 +17,17 @@
       },
     },
   },
+  capabilities: [
+    {
+      service: "fuchsia.hardware.block.volume.Service",
+    },
+  ],
+  expose: [
+    {
+      service: [
+        "fuchsia.hardware.block.volume.Service",
+      ],
+      from: "self",
+    },
+  ],
 }

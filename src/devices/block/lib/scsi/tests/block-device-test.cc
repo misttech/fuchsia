@@ -129,13 +129,16 @@ class TestController : public fdf::DriverBase2, public Controller {
       io->target = target;
       io->lun = lun;
       std::span<const uint8_t> cdb = req.cdb();
+      EXPECT_EQ(req.opcode(), static_cast<Opcode>(cdb[0]));
+      EXPECT_EQ(req.block_size(), kBlockSize);
+      EXPECT_EQ(req.transfer_length_bytes(), req.transfer_length() * kBlockSize);
       memcpy(reinterpret_cast<void*>(&io->cdbptr), cdb.data(), cdb.size());
       io->cdb.iov_base = &io->cdbptr;
       io->cdb.iov_len = cdb.size();
       io->is_write = req.is_write();
       io->data_vmo = req.data_vmo();
       io->vmo_offset_bytes = req.vmo_offset();
-      io->transfer_bytes = req.transfer_length() * kBlockSize;
+      io->transfer_bytes = req.transfer_length_bytes();
       io->scsi_req = std::move(req);
       queued_ios_.push(std::move(io));
       cv_.Signal();
