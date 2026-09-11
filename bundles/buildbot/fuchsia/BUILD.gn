@@ -13,4 +13,7 @@ group("fuchsia") {
   if (current_cpu == "arm64") {
     deps += [ "//bundles/buildbot/minimal/arm64($host_toolchain)" ]
   }
+  if (target_cpu == "x64") {
+    deps += [ "//bundles/buildbot/workbench/x64" ]
+  }
 }
