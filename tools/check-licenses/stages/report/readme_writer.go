@@ -16,8 +16,9 @@ import (
 // ReadmeWriter updates each project's README.fuchsia in-place with its found licenses
 // and writes the updated contents to disk (or stdout).
 type ReadmeWriter struct {
-	FuchsiaDir  string
-	PrintStdout bool
+	FuchsiaDir       string
+	PrintStdout      bool
+	PreserveExisting bool
 }
 
 // NewReadmeWriter creates a new ReadmeWriter.
@@ -34,7 +35,7 @@ func (w *ReadmeWriter) Run(ctx context.Context, projects []*pipeline.Project, er
 			continue
 		}
 
-		readme.UpdateWithClassifiedFiles(w.FuchsiaDir, proj.RootPath, proj.Readme.UpdatedSegments(), proj.FoundLicenses())
+		readme.UpdateWithClassifiedFiles(w.FuchsiaDir, proj.RootPath, proj.Readme.UpdatedSegments(), proj.FoundLicenses(), w.PreserveExisting)
 		formatted := readme.Format(proj.Readme.UpdatedSegments())
 
 		if w.PrintStdout {

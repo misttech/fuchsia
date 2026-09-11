@@ -9,10 +9,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/google/subcommands"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/pipeline"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/classify"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/discover"
@@ -24,6 +28,7 @@ import (
 type ProjectCheckCommand struct {
 	fuchsiaDir string
 	fileList   string
+	fast       bool
 }
 
 func (*ProjectCheckCommand) Name() string { return "check" }
@@ -31,14 +36,16 @@ func (*ProjectCheckCommand) Synopsis() string {
 	return "Analyzes specific files and validates them against their parent README.fuchsia."
 }
 func (*ProjectCheckCommand) Usage() string {
-	return `check [-file-list <path>] <files...>:
+	return `check [--fast] [-file-list <path>] <files...>:
   Checks if the specified files are declared in their parent README.fuchsia.
   Use -file-list to specify a file containing paths to check, one per line.
+  Use --fast to only evaluate declared license files and explicit targets.
 `
 }
 
 func (c *ProjectCheckCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.fileList, "file-list", "", "Path to a file containing a list of file paths to check, one per line.")
+	f.BoolVar(&c.fast, "fast", false, "Fast mode: only check files declared in README.fuchsia and target paths, avoiding full directory recursion.")
 }
 
 func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
@@ -62,14 +69,13 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 		return subcommands.ExitFailure
 	}
 
-	discoverer := discover.NewCrawler(inputCtx.FuchsiaDir, inputCtx.Config.Discover)
 	boundaryCfg := inputCtx.Config.Boundary
 	boundaryCfg.FilesInReadmeOnly = false
-	grouper := boundary.NewGrouper(inputCtx.FuchsiaDir, boundaryCfg)
-	pruner := prune.NewPruner(nil)
 	validator := validate.NewValidator(inputCtx.FuchsiaDir, inputCtx.Config.Validate)
 
 	// Step 3: Group input targets by project root.
+	// We map each input target path to its enclosing project root so that multiple files belonging to
+	// the same project are verified together against their governing README in a single pipeline run.
 	projectTargets := make(map[string][]string)
 	hasErrors := false
 
@@ -83,9 +89,21 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 		projectTargets[projectRoot] = append(projectTargets[projectRoot], inputPath)
 	}
 
-	for projectRoot, targets := range projectTargets {
+	// Sort project roots to ensure deterministic execution ordering.
+	var projectRoots []string
+	for root := range projectTargets {
+		projectRoots = append(projectRoots, root)
+	}
+	sort.Strings(projectRoots)
+
+	for _, projectRoot := range projectRoots {
+		targets := projectTargets[projectRoot]
+
 		var targetProj *pipeline.Project
+		// TargetComplianceVerifier checks that individual target files or sub-directories
+		// have their detected licenses declared in their governing README.fuchsia.
 		verifier := report.NewTargetComplianceVerifier(inputCtx.FuchsiaDir, inputCtx.Config, targets...)
+		// Capture the target project after grouping and pruning to report its name in the pass confirmation.
 		passPrinter := pipeline.RenderFunc(func(ctx context.Context, projects []*pipeline.Project, errors []pipeline.ComplianceError) error {
 			for _, p := range projects {
 				if p.RootPath == projectRoot {
@@ -96,9 +114,30 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 			return nil
 		})
 
+		disc := discover.NewCrawler(inputCtx.FuchsiaDir, inputCtx.Config.Discover)
+		grouper := boundary.NewGrouper(inputCtx.FuchsiaDir, boundaryCfg)
+
+		// When fast mode is requested, configure the pruner to keep only the files explicitly
+		// declared in the governing README or explicitly targeted, skipping unnecessary files.
+		iterPruner := prune.NewPruner(nil)
+		iterPruner.FilesInReadmeOnly = c.fast
+		iterPruner.TargetFiles = targets
+		iterPruner.FuchsiaDir = inputCtx.FuchsiaDir
+
+		// If the target path points to a subdirectory of the project, widen crawlRoot to the directory
+		// containing the governing README so that the README and its notices can be found and verified.
+		crawlRoot := projectRoot
+		if _, bestReadmePath, err := readme.FindProjectReadme(projectRoot, inputCtx.FuchsiaDir, inputCtx.Config.Boundary.OutOfTreeReadmes); err == nil && bestReadmePath != "" && strings.HasPrefix(bestReadmePath, inputCtx.FuchsiaDir) {
+			readmeDir := filepath.Dir(bestReadmePath)
+			if strings.HasPrefix(projectRoot, readmeDir) {
+				crawlRoot = readmeDir
+			}
+		}
+
+		// Execute the pipeline on crawlRoot to discover, group, prune, classify, and verify compliance.
 		renderers := pipeline.MultiRenderer{verifier, passPrinter}
-		orchestrator := pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, renderers)
-		runErr := orchestrator.Run(ctx, []string{projectRoot})
+		orchestrator := pipeline.NewOrchestrator(disc, grouper, iterPruner, classifier, validator, renderers)
+		runErr := orchestrator.Run(ctx, []string{crawlRoot})
 		if runErr != nil {
 			fmt.Fprintf(os.Stderr, "❌ Error in %s: %v\n", projectRoot, runErr)
 			hasErrors = true

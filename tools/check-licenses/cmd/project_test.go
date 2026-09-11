@@ -109,6 +109,33 @@ func TestProjectCommand_Check(t *testing.T) {
 	if status != subcommands.ExitFailure {
 		t.Errorf("Expected ExitFailure for undeclared file, got %v", status)
 	}
+
+	// Test 3: Fast mode on declared file should pass
+	fs3 := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs3)
+	fs3.Parse([]string{"--fuchsia_dir", tempDir, "check", "--fast", declaredFile})
+	status = cmd.Execute(ctx, fs3)
+	if status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for declared file in fast mode, got %v", status)
+	}
+
+	// Test 4: Fast mode on undeclared file should fail
+	fs4 := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs4)
+	fs4.Parse([]string{"--fuchsia_dir", tempDir, "check", "--fast", undeclaredFile})
+	status = cmd.Execute(ctx, fs4)
+	if status != subcommands.ExitFailure {
+		t.Errorf("Expected ExitFailure for undeclared file in fast mode, got %v", status)
+	}
+
+	// Test 5: Fast mode with // workspace-relative path should pass
+	fs5 := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs5)
+	fs5.Parse([]string{"--fuchsia_dir", tempDir, "check", "--fast", "//third_party/foo/declared.cc"})
+	status = cmd.Execute(ctx, fs5)
+	if status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for // path in fast mode, got %v", status)
+	}
 }
 
 func TestProjectCommand_Update(t *testing.T) {
@@ -174,6 +201,140 @@ func TestProjectCommand_Update(t *testing.T) {
 	}
 	if !strings.Contains(content, "Non-License File: ignored.cc") {
 		t.Errorf("Expected ignored.cc to be preserved in Non-License File list, got:\n%s", content)
+	}
+}
+
+func TestProjectCommand_Update_Fast(t *testing.T) {
+	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
+
+	mitPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
+	if err := os.MkdirAll(mitPatternDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mitPatternDir, "mit.txt"), []byte(mockMITLicenseText), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	bsdPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "BSD")
+	if err := os.MkdirAll(bsdPatternDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bsdPatternDir, "bsd.txt"), []byte(mockBSDLicenseText), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
+
+	projectDir := filepath.Join(tempDir, "third_party", "foo")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Project has existing README with Generated Notice File and License File
+	readmeContent := []byte("Name: foo\nURL: http://foo\nVersion: 1.0\nRevision: abc\nSecurity Critical: no\nLicense: MIT\nLicense File: LICENSE\nGenerated Notice File: NOTICE.fuchsia\n")
+	if err := os.WriteFile(filepath.Join(projectDir, "README.fuchsia"), readmeContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	licensePath := filepath.Join(projectDir, "LICENSE")
+	os.WriteFile(licensePath, []byte("Permission is hereby granted, free of charge, to any person obtaining a copy\n"), 0644)
+
+	noticePath := filepath.Join(projectDir, "NOTICE.fuchsia")
+	noticeContent := "Pre-existing custom notice content\n"
+	os.WriteFile(noticePath, []byte(noticeContent), 0644)
+
+	// Add a new license file
+	newLicensePath := filepath.Join(projectDir, "LICENSE.bsd")
+	os.WriteFile(newLicensePath, []byte(mockBSDLicenseText), 0644)
+
+	cmd := &ProjectCommand{
+		fuchsiaDir: tempDir,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use // workspace-relative path with --fast
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs)
+	fs.Parse([]string{"--fuchsia_dir", tempDir, "update", "--fast", "//third_party/foo/LICENSE.bsd"})
+	status := cmd.Execute(ctx, fs)
+
+	if status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for fast update, got %v", status)
+	}
+
+	// Verify NOTICE.fuchsia was NOT deleted and content was preserved
+	readNotice, err := os.ReadFile(noticePath)
+	if err != nil {
+		t.Fatalf("NOTICE.fuchsia was unexpectedly deleted or unreadable: %v", err)
+	}
+	if string(readNotice) != noticeContent {
+		t.Errorf("Expected NOTICE.fuchsia content %q, got %q", noticeContent, string(readNotice))
+	}
+
+	updatedReadme, err := os.ReadFile(filepath.Join(projectDir, "README.fuchsia"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(updatedReadme)
+
+	if !strings.Contains(content, "Generated Notice File: NOTICE.fuchsia") {
+		t.Errorf("Expected Generated Notice File to be preserved in fast mode, got:\n%s", content)
+	}
+	if !strings.Contains(content, "License File: LICENSE") {
+		t.Errorf("Expected LICENSE to be preserved in License File list, got:\n%s", content)
+	}
+	if !strings.Contains(content, "License File: LICENSE.bsd") {
+		t.Errorf("Expected LICENSE.bsd to be added to License File list in fast mode, got:\n%s", content)
+	}
+	if !strings.Contains(content, "BSD-3-Clause") && !strings.Contains(content, "BSD") {
+		t.Errorf("Expected BSD license to be added, got:\n%s", content)
+	}
+}
+
+func TestProjectCommand_Check_MultiProject(t *testing.T) {
+	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
+
+	mitPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
+	if err := os.MkdirAll(mitPatternDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mitPatternDir, "mit.txt"), []byte(mockMITLicenseText), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
+
+	// Create project A
+	projADir := filepath.Join(tempDir, "third_party", "proj_a")
+	os.MkdirAll(projADir, 0755)
+	os.WriteFile(filepath.Join(projADir, "README.fuchsia"), []byte("Name: proj_a\nURL: http://a\nVersion: 1.0\nRevision: 1\nSecurity Critical: no\nLicense: MIT\nLicense File: declared.cc\n"), 0644)
+	projAFile := filepath.Join(projADir, "declared.cc")
+	os.WriteFile(projAFile, []byte("/* Permission is hereby granted, free of charge, to any person obtaining a copy */\nint a() {}"), 0644)
+
+	// Create project B
+	projBDir := filepath.Join(tempDir, "third_party", "proj_b")
+	os.MkdirAll(projBDir, 0755)
+	os.WriteFile(filepath.Join(projBDir, "README.fuchsia"), []byte("Name: proj_b\nURL: http://b\nVersion: 1.0\nRevision: 2\nSecurity Critical: no\nLicense: MIT\nLicense File: declared.cc\n"), 0644)
+	projBFile := filepath.Join(projBDir, "declared.cc")
+	os.WriteFile(projBFile, []byte("/* Permission is hereby granted, free of charge, to any person obtaining a copy */\nint b() {}"), 0644)
+
+	cmd := &ProjectCommand{
+		fuchsiaDir: tempDir,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs)
+	fs.Parse([]string{"--fuchsia_dir", tempDir, "check", "--fast", projAFile, projBFile})
+	status := cmd.Execute(ctx, fs)
+	if status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for multi-project fast check, got %v", status)
 	}
 }
 

@@ -17,7 +17,9 @@ import (
 // UpdateWithClassifiedFiles updates a slice of Readmes in-place with the given classified files.
 // It maps each classified file to the correct sub-project (based on Location) and populates the LicenseFiles arrays.
 // Files that match any NonLicenseFile entries are ignored.
-func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, foundLicenses []pipeline.ClassifiedFile) {
+// If preserveExisting is true, existing license file entries and NOTICE.fuchsia files are preserved
+// rather than being cleared or deleted (e.g. for targeted or incremental updates).
+func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, foundLicenses []pipeline.ClassifiedFile, preserveExisting bool) {
 	fileToReadme := make(map[string]*Readme)
 
 	for _, cf := range foundLicenses {
@@ -50,6 +52,11 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 	primaryLicensesByReadme := make(map[*Readme]map[string]bool)
 	for _, r := range readmes {
 		primaryLicensesByReadme[r] = make(map[string]bool)
+		if preserveExisting {
+			for _, l := range r.Licenses {
+				primaryLicensesByReadme[r][l] = true
+			}
+		}
 	}
 
 	for _, cf := range foundLicenses {
@@ -84,10 +91,12 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 
 	readmeSourceFiles := make(map[*Readme][]sourceMatchInfo)
 
-	for _, r := range readmes {
-		r.LicenseFiles = nil
-		r.GeneratedNoticeFiles = nil
-		r.Licenses = nil
+	if !preserveExisting {
+		for _, r := range readmes {
+			r.LicenseFiles = nil
+			r.GeneratedNoticeFiles = nil
+			r.Licenses = nil
+		}
 	}
 
 	for _, cf := range foundLicenses {
@@ -175,7 +184,7 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 			if err := os.WriteFile(noticePath, []byte(content), 0644); err == nil {
 				r.GeneratedNoticeFiles = []string{"NOTICE.fuchsia"}
 			}
-		} else {
+		} else if !preserveExisting {
 			os.Remove(noticePath)
 			r.GeneratedNoticeFiles = nil
 		}

@@ -48,7 +48,7 @@ func TestReadmeVerifier_Success(t *testing.T) {
 	}
 
 	// Format accurately according to readme package
-	readme.UpdateWithClassifiedFiles(tempDir, tempDir, proj.Readme.UpdatedSegments(), proj.FoundLicenses())
+	readme.UpdateWithClassifiedFiles(tempDir, tempDir, proj.Readme.UpdatedSegments(), proj.FoundLicenses(), false)
 	content := readme.Format(proj.Readme.UpdatedSegments())
 
 	if err := os.WriteFile(readmePath, []byte(content), 0644); err != nil {

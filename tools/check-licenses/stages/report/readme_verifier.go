@@ -34,7 +34,7 @@ func (v *ReadmeVerifier) Run(ctx context.Context, projects []*pipeline.Project, 
 			continue
 		}
 
-		readme.UpdateWithClassifiedFiles(v.FuchsiaDir, proj.RootPath, proj.Readme.UpdatedSegments(), proj.FoundLicenses())
+		readme.UpdateWithClassifiedFiles(v.FuchsiaDir, proj.RootPath, proj.Readme.UpdatedSegments(), proj.FoundLicenses(), false)
 		newFormatted := readme.Format(proj.Readme.UpdatedSegments())
 
 		rawBytes, err := os.ReadFile(proj.Readme.Path)

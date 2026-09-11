@@ -25,9 +25,20 @@ type TargetComplianceVerifier struct {
 
 // NewTargetComplianceVerifier creates a new TargetComplianceVerifier.
 func NewTargetComplianceVerifier(fuchsiaDir string, config readme.Config, targetPaths ...string) *TargetComplianceVerifier {
+	var canonicalTargets []string
+	for _, tp := range targetPaths {
+		if tp == "" {
+			continue
+		}
+		clean := filepath.Clean(tp)
+		if !filepath.IsAbs(clean) && fuchsiaDir != "" {
+			clean = filepath.Join(fuchsiaDir, clean)
+		}
+		canonicalTargets = append(canonicalTargets, clean)
+	}
 	return &TargetComplianceVerifier{
 		FuchsiaDir:  fuchsiaDir,
-		TargetPaths: targetPaths,
+		TargetPaths: canonicalTargets,
 		Config:      config,
 	}
 }
@@ -43,9 +54,6 @@ func (v *TargetComplianceVerifier) Run(ctx context.Context, projects []*pipeline
 		}
 
 		absTarget := targetPath
-		if !filepath.IsAbs(absTarget) {
-			absTarget = filepath.Join(v.FuchsiaDir, targetPath)
-		}
 		info, statErr := os.Stat(absTarget)
 		isDir := statErr == nil && info.IsDir()
 

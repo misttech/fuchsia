@@ -161,7 +161,9 @@ func ResolveAndValidatePath(fuchsiaDir, inputPath string) (string, string, error
 	}
 
 	var absInputPath string
-	if filepath.IsAbs(inputPath) {
+	if strings.HasPrefix(inputPath, "//") {
+		absInputPath = filepath.Join(absFuchsiaDir, strings.TrimPrefix(inputPath, "//"))
+	} else if filepath.IsAbs(inputPath) {
 		absInputPath = filepath.Clean(inputPath)
 	} else {
 		workingDir := os.Getenv("BUILD_WORKING_DIRECTORY")
@@ -254,12 +256,15 @@ func UpdateConfigFile(destFile string, mutate func(*v2config.ConfigFile)) error 
 	return nil
 }
 
-// LoadTargets parses and combines target paths from both the command line arguments and an optional file list.
+// LoadTargets parses and combines target paths from both the command line arguments and an optional file list,
+// resolving each path to a canonical absolute path within the Fuchsia repository.
 func LoadTargets(fileList, fuchsiaDir string, args []string) ([]string, error) {
-	var targets []string
+	var rawTargets []string
 	if fileList != "" {
 		absList := fileList
-		if !filepath.IsAbs(absList) {
+		if strings.HasPrefix(absList, "//") {
+			absList = filepath.Join(fuchsiaDir, strings.TrimPrefix(absList, "//"))
+		} else if !filepath.IsAbs(absList) {
 			absList = filepath.Join(fuchsiaDir, fileList)
 		}
 		data, err := os.ReadFile(absList)
@@ -269,11 +274,27 @@ func LoadTargets(fileList, fuchsiaDir string, args []string) ([]string, error) {
 		for _, line := range strings.Split(string(data), "\n") {
 			line = strings.TrimSpace(line)
 			if line != "" && !strings.HasPrefix(line, "#") {
-				targets = append(targets, line)
+				rawTargets = append(rawTargets, line)
 			}
 		}
 	}
-	targets = append(targets, args...)
+	rawTargets = append(rawTargets, args...)
+	if len(rawTargets) == 0 {
+		return nil, fmt.Errorf("at least one target path must be provided via positional arguments or -file-list")
+	}
+
+	var targets []string
+	for _, t := range rawTargets {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		absFuchsia, rel, err := ResolveAndValidatePath(fuchsiaDir, t)
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, filepath.Join(absFuchsia, rel))
+	}
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("at least one target path must be provided via positional arguments or -file-list")
 	}

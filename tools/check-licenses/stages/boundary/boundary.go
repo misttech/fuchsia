@@ -260,17 +260,27 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 						break
 					}
 					for _, gnf := range r.GeneratedNoticeFiles {
-						if filepath.Clean(gnf) == relToReadme || filepath.Clean(gnf) == relToFuchsia {
+						cleanGNF := filepath.Clean(gnf)
+						if cleanGNF == relToReadme || cleanGNF == relToFuchsia {
 							listedInReadme = true
 							isLicenseFile = true
 							break
+						}
+						if proj, ok := projects[root]; ok && proj.Readme != nil && proj.Readme.Path != "" {
+							relToReadmeDir, _ := filepath.Rel(filepath.Dir(proj.Readme.Path), file)
+							if cleanGNF == relToReadmeDir {
+								listedInReadme = true
+								isLicenseFile = true
+								break
+							}
 						}
 					}
 					if listedInReadme {
 						break
 					}
 					for _, nlf := range r.NonLicenseFiles {
-						if filepath.Clean(nlf) == relToReadme || filepath.Clean(nlf) == relToFuchsia {
+						cleanNLF := filepath.Clean(nlf)
+						if cleanNLF == relToReadme || cleanNLF == relToFuchsia {
 							listedInReadme = true
 							isNonLicense = true
 							break
@@ -315,7 +325,11 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 // findProjectRoot walks up the directory tree from the file to find the closest
 // registered project boundary (from README.fuchsia or package manifests) or barrier root.
 func (g *Grouper) findProjectRoot(filePath string, projectRoots map[string][]*readme.Readme) string {
-	dir := filepath.Dir(filePath)
+	cleanPath := filepath.Clean(filePath)
+	dir := cleanPath
+	if _, isBoundary := projectRoots[cleanPath]; !isBoundary {
+		dir = filepath.Dir(cleanPath)
+	}
 	var barrierChild string
 
 	for {
