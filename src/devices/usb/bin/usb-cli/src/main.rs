@@ -69,18 +69,22 @@ struct GetConfigArgs {}
 /// Sets the USB peripheral configuration.
 ///
 /// Supported input formats:
-///   - Comma-separated functions:
-///       usb-cli set-config "cdc"
+///   - Single configuration (comma-separated functions):
+///       usb-cli set-config "cdc,adb"
 ///       usb-cli set-config "sourcesink"
 ///       usb-cli set-config "loopback"
-///       usb-cli set-config "cdc,vsock"
+///   - Multi-configuration (semicolon-separated configurations):
+///       usb-cli set-config "sourcesink;loopback"
+///       usb-cli set-config "cdc;vsock"
+///       usb-cli set-config "cdc,adb;vsock"
 ///   - JSON configuration string:
 ///       usb-cli set-config '{"configurations": [["sourcesink"]]}'
+///       usb-cli set-config '{"configurations": [["cdc", "sourcesink"], ["loopback"]]}'
 ///   - JSON configuration file path:
 ///       usb-cli set-config /path/to/usb_config.json
 #[argh(subcommand, name = "set-config")]
 struct SetConfigArgs {
-    /// configuration string (e.g. "sourcesink", "loopback", "cdc,vsock"), inline JSON, or JSON file path
+    /// configuration string (e.g. "cdc,adb", "cdc;vsock", "sourcesink;loopback"), inline JSON, or JSON file path
     #[argh(positional)]
     config: String,
 }
@@ -115,10 +119,7 @@ async fn run_get_config(_args: GetConfigArgs) -> Result<(), Error> {
         .map_err(zx::Status::err_from_raw)
         .context("GetConfiguration returned an error status")?;
 
-    let configurations: Vec<Vec<String>> = config_descriptors
-        .into_iter()
-        .map(|cfg| cfg.into_iter().map(|func| config::descriptor_to_function_name(&func)).collect())
-        .collect();
+    let configurations = config::config_descriptors_to_names(&config_descriptors);
 
     let json_output = config::UsbConfigJson {
         configurations,
@@ -134,9 +135,8 @@ async fn run_get_config(_args: GetConfigArgs) -> Result<(), Error> {
 
 async fn run_set_config(args: SetConfigArgs) -> Result<(), Error> {
     let parsed_config = config::load_config_input(&args.config)?;
-    let config_client = get_configuration_client().await?;
-
     let config_descriptors = config::resolve_config_descriptors(&parsed_config)?;
+    let config_client = get_configuration_client().await?;
 
     let (device_desc, _) = config_client
         .get_configuration()
@@ -145,20 +145,39 @@ async fn run_set_config(args: SetConfigArgs) -> Result<(), Error> {
         .map_err(zx::Status::err_from_raw)
         .context("GetConfiguration returned an error status")?;
 
-    let num_configs = config_descriptors.len() as u8;
+    let num_configurations =
+        u8::try_from(config_descriptors.len()).context("Too many configurations")?;
     let (device_desc, standard_derived) =
-        config::update_device_descriptor(&parsed_config, device_desc, num_configs);
+        config::update_device_descriptor(&parsed_config, device_desc, num_configurations);
 
-    println!(
-        "Applying new configuration via Policy (configurations: {:?})...",
-        parsed_config.configurations
-    );
     if standard_derived {
         println!(
             "Using standard USB identifiers: VID 0x{:04x}, PID 0x{:04x} ('{}')",
             device_desc.id_vendor, device_desc.id_product, device_desc.product
         );
+    } else {
+        match (&parsed_config.id_product, &parsed_config.product) {
+            (None, None) => {
+                println!(
+                    "Note: No standard USB PID found for this configuration; retaining current PID (0x{:04x}) and product string.",
+                    device_desc.id_product
+                );
+            }
+            (None, Some(_)) => {
+                println!(
+                    "Note: No standard USB PID found for this configuration; retaining current PID (0x{:04x}).",
+                    device_desc.id_product
+                );
+            }
+            _ => {}
+        }
     }
+
+    println!(
+        "Applying new configuration via Policy ({} configuration(s): {:?})...",
+        config_descriptors.len(),
+        config::config_descriptors_to_names(&config_descriptors)
+    );
     config_client
         .set_configuration(&device_desc, &config_descriptors)
         .await
@@ -167,6 +186,23 @@ async fn run_set_config(args: SetConfigArgs) -> Result<(), Error> {
         .context("SetConfiguration returned an error status")?;
 
     println!("Successfully applied USB peripheral configuration.");
+
+    let (active_device_desc, active_config_descriptors) = config_client
+        .get_configuration()
+        .await
+        .context("Failed FIDL call get_configuration to query active configuration")?
+        .map_err(zx::Status::err_from_raw)
+        .context("GetConfiguration returned an error status")?;
+
+    let active_configurations = config::config_descriptors_to_names(&active_config_descriptors);
+
+    println!(
+        "Active configuration (VID: 0x{:04x}, PID: 0x{:04x}, {} configuration(s)): {:?}",
+        active_device_desc.id_vendor,
+        active_device_desc.id_product,
+        active_configurations.len(),
+        active_configurations
+    );
     Ok(())
 }
 
@@ -315,6 +351,29 @@ mod tests {
             UsbCliArgs {
                 subcommand: SubCommand::SetConfig(SetConfigArgs {
                     config: "cdc,sourcesink".to_string(),
+                }),
+            }
+        );
+
+        let multi_args =
+            UsbCliArgs::from_args(&["usb-cli"], &["set-config", "cdc,sourcesink;loopback"])
+                .unwrap();
+        assert_eq!(
+            multi_args,
+            UsbCliArgs {
+                subcommand: SubCommand::SetConfig(SetConfigArgs {
+                    config: "cdc,sourcesink;loopback".to_string(),
+                }),
+            }
+        );
+
+        let test_args =
+            UsbCliArgs::from_args(&["usb-cli"], &["set-config", "sourcesink;loopback"]).unwrap();
+        assert_eq!(
+            test_args,
+            UsbCliArgs {
+                subcommand: SubCommand::SetConfig(SetConfigArgs {
+                    config: "sourcesink;loopback".to_string(),
                 }),
             }
         );

@@ -163,6 +163,12 @@ pub fn descriptor_to_function_name(desc: &peripheral::FunctionDescriptor) -> Str
     }
 }
 
+pub fn config_descriptors_to_names(
+    descriptors: &[Vec<peripheral::FunctionDescriptor>],
+) -> Vec<Vec<String>> {
+    descriptors.iter().map(|cfg| cfg.iter().map(descriptor_to_function_name).collect()).collect()
+}
+
 fn validate_functions(funcs: &[String], config_idx: Option<usize>) -> Result<(), Error> {
     let config_str = config_idx.map_or(String::new(), |i| format!("{} ", i));
 
@@ -522,10 +528,28 @@ mod tests {
 
     #[test]
     fn test_invalid_names() {
+        assert!(function_name_to_descriptor("foobar").is_err());
         assert!(function_name_to_descriptor("invalid_fn").is_err());
         assert!(function_name_to_descriptor("custom_0x12_0x34").is_err());
         assert!(function_name_to_descriptor("custom_0xzz_0x12_0x34").is_err());
         assert!(function_name_to_descriptor("custom_0x100_0x12_0x34").is_err());
+    }
+
+    #[test]
+    fn test_resolve_config_descriptors_unknown_function_rejected() {
+        let err = load_config_descriptors("foobar").unwrap_err().to_string();
+        assert!(err.contains("Unknown USB function: foobar"), "got: {err}");
+
+        let err_multi = load_config_descriptors("cdc;foobar").unwrap_err().to_string();
+        assert!(err_multi.contains("Unknown USB function: foobar"), "got: {err_multi}");
+    }
+
+    #[test]
+    fn test_config_descriptors_to_names() -> Result<(), Error> {
+        let descriptors = load_config_descriptors("cdc,adb;sourcesink")?;
+        let names = config_descriptors_to_names(&descriptors);
+        assert_eq!(names, vec![vec!["cdc", "adb"], vec!["sourcesink"]]);
+        Ok(())
     }
 
     #[test]
