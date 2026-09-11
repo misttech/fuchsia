@@ -304,6 +304,21 @@ class BuildInvocationTest(MainBuildTestBase):
             self.assertNotIn("EXTRA", env)
             self.assertEqual(env["NINJA_STATUS"], "[%f/%t][%p/%w](%r) ")
 
+    def test_get_build_env_forward_buildbucket(self) -> None:
+        context = self.create_context()
+        context.env = {
+            "USER": "fuchsia-user",
+            "BUILDBUCKET_ID": "8670925737098591985",
+            "BUILDBUCKET_BUILDER": "fuchsia-builder",
+            "SWARMING_TASK_ID": "616a9bc24f0",
+        }
+        with self.mock_invocation_context():
+            invocation = main_build.BuildInvocation(context)
+            env = invocation.get_build_env()
+            self.assertEqual(env["BUILDBUCKET_ID"], "8670925737098591985")
+            self.assertEqual(env["BUILDBUCKET_BUILDER"], "fuchsia-builder")
+            self.assertEqual(env["SWARMING_TASK_ID"], "616a9bc24f0")
+
     def test_get_build_env_no_status(self) -> None:
         context = self.create_context(status=False)
         context.env = {"TERM": "xterm"}

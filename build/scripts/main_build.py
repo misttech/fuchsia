@@ -821,6 +821,9 @@ class BuildInvocation(object):
             "FX_BUILD_RBE_STATS",
             "FX_BUILD_QUIET",
             "FX_REMOTE_BUILD_METRICS",  # Honor environment variable to disable RBE build metrics.
+            "BUILDBUCKET_ID",  # Propagated in infra environments to tag ResultStore/BES uploads
+            "BUILDBUCKET_BUILDER",
+            "SWARMING_TASK_ID",
         ]
         for var in forward_vars:
             if var in self.context.env:
