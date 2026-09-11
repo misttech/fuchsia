@@ -100,6 +100,9 @@ func GetBotDimensions(shard *Shard, params *proto.Params, botDimensionOverrides 
 			dimensions["kvm"] = "1"
 		}
 		dimensions["cpu"] = testBotCpu
+		if hdt := shard.Env.Dimensions.HostDeviceType(); hdt != "" {
+			dimensions["host_device_type"] = hdt
+		}
 	} else if isGCEType {
 		// Have any GCE shards target the GCE executors, which are e2-2
 		// machines running Linux.

@@ -159,6 +159,11 @@ func (ds DimensionSet) OS() string {
 	return ds["os"]
 }
 
+// HostDeviceType represents the class of host device the test should run on.
+func (ds DimensionSet) HostDeviceType() string {
+	return ds["host_device_type"]
+}
+
 // CPU is architecture that the test is meant to run on.
 func (ds DimensionSet) CPU() string {
 	return ds["cpu"]

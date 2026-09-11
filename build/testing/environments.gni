@@ -34,6 +34,14 @@ device_types = {
   vim3 = "Vim3"
 }
 
+# The 'enum' of supported host device types. These values, like all referenced
+# under environment dimensions, are known to Infrastructure.
+host_device_types = {
+  ampere_altra = "AmpereAltraMax-M128-30"
+  ampere_one = "AmpereOne-A192-32X"
+  gcp_c4a_highmem_96_bm = "GCP_C4A_HIGHMEM_96_BM"
+}
+
 ### Individual test environments
 # Please keep alphabetized.
 
@@ -236,6 +244,50 @@ wlan_iris_ap_env = {
     pool = "fuchsia.dev.tests.connectivity.openwrt"
   }
 }
+ampere_altra_env = {
+  dimensions = {
+    device_type = device_types.qemu
+    host_device_type = host_device_types.ampere_altra
+  }
+}
+_all_named_fuchsia_envs += [
+  {
+    name = "ampere_altra"
+    env = ampere_altra_env
+  },
+]
+
+ampere_one_env = {
+  dimensions = {
+    device_type = device_types.qemu
+    host_device_type = host_device_types.ampere_one
+  }
+}
+_all_named_fuchsia_envs += [
+  {
+    name = "ampere_one"
+    env = ampere_one_env
+  },
+]
+
+c4a_env = {
+  dimensions = {
+    device_type = device_types.qemu
+    host_device_type = host_device_types.gcp_c4a_highmem_96_bm
+  }
+}
+_all_named_fuchsia_envs += [
+  {
+    name = "c4a"
+    env = c4a_env
+  },
+]
+
+all_arm64_qemu_envs = [
+  ampere_altra_env,
+  ampere_one_env,
+  c4a_env,
+]
 
 linux_env = {
   dimensions = {
@@ -374,6 +426,9 @@ _all_named_fuchsia_envs += [
 qemu_env = {
   dimensions = {
     device_type = device_types.qemu
+    if (target_cpu == "arm64") {
+      host_device_type = host_device_types.gcp_c4a_highmem_96_bm
+    }
   }
 }
 _all_named_fuchsia_envs += [
@@ -448,11 +503,12 @@ if (current_os == "linux") {
 }
 
 # Allow selection of AEMU as the default EMU.
-emu_env = qemu_env
 if (target_cpu == "x64") {
-  emu_env = {
-  }
   emu_env = aemu_env
+} else if (target_cpu == "arm64") {
+  emu_env = c4a_env
+} else {
+  emu_env = qemu_env
 }
 _all_named_fuchsia_envs += [
   {

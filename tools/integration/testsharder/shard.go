@@ -559,6 +559,7 @@ func environmentName(env build.Environment) string {
 	addToken(env.Dimensions.OS())
 	addToken(env.Dimensions.Testbed())
 	addToken(env.Dimensions.Pool())
+	addToken(env.Dimensions.HostDeviceType())
 	if env.ServiceAccount != "" {
 		addToken(strings.Split(env.ServiceAccount, "@")[0])
 	}

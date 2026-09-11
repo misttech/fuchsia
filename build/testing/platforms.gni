@@ -23,6 +23,7 @@ all_dimension_keys = [
   "os",
   "pool",
   "testbed",
+  "host_device_type",
 ]
 
 # Scopes of dimensions for every available platform.
@@ -42,6 +43,21 @@ test_platforms = [
   {
     device_type = "QEMU"
     cpu = "arm64"
+  },
+  {
+    device_type = "QEMU"
+    cpu = "arm64"
+    host_device_type = "AmpereAltraMax-M128-30"
+  },
+  {
+    device_type = "QEMU"
+    cpu = "arm64"
+    host_device_type = "AmpereOne-A192-32X"
+  },
+  {
+    device_type = "QEMU"
+    cpu = "arm64"
+    host_device_type = "GCP_C4A_HIGHMEM_96_BM"
   },
   {
     device_type = "QEMU"

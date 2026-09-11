@@ -53,6 +53,7 @@ type testsharderFlags struct {
 	depsFile                    string
 	ignoreMultiplyIsolatedLimit bool
 	allowedDeviceTypes          flagmisc.StringsValue
+	allowedHostDeviceTypes      flagmisc.StringsValue
 	botDimensionsOverride       flagmisc.StringMapValue
 }
 
@@ -72,6 +73,7 @@ func parseFlags() testsharderFlags {
 	flag.StringVar(&flags.depsFile, "deps-file", "", "path to a file to write all the builder deps to in the format expected from `cas archive -paths-json`.")
 	flag.BoolVar(&flags.ignoreMultiplyIsolatedLimit, "ignore-multiply-limit", false, "whether to ignore the limit on multiplied runs per isolated test")
 	flag.Var(&flags.allowedDeviceTypes, "allowed-device-type", "the device types to run tests on. If disabled_device_types is set in the testsharder params, that will take precedence.")
+	flag.Var(&flags.allowedHostDeviceTypes, "allowed-host-device-type", "the host device types to run tests on.")
 	flag.Var(&flags.botDimensionsOverride, "bot-dimension", "swarming dimension of the bot to run tests on: id, pool, etc. Set a key-value pair (e.g., -bot-dimension key=value). Can be repeated.")
 
 	flag.Usage = usage
@@ -226,17 +228,19 @@ func execute(ctx context.Context, flags testsharderFlags, params *proto.Params, 
 
 	var shardsToRun []*testsharder.Shard
 	for _, s := range shards {
-		if s.Env.Dimensions.DeviceType() == "" {
-			shardsToRun = append(shardsToRun, s)
+		dt := s.Env.Dimensions.DeviceType()
+		if dt != "" && slices.Contains(params.DisabledDeviceTypes, dt) {
+			logger.Debugf(ctx, "skipping shard %s with disabled device type: %s", s.Name, dt)
 			continue
 		}
-		if slices.Contains(params.DisabledDeviceTypes, s.Env.Dimensions.DeviceType()) {
-			logger.Debugf(ctx, "skipping shard %s with disabled device type: %s", s.Name, s.Env.Dimensions.DeviceType())
+		if dt != "" && len(flags.allowedDeviceTypes) > 0 && !slices.Contains(flags.allowedDeviceTypes, dt) {
 			continue
 		}
-		if len(flags.allowedDeviceTypes) == 0 || slices.Contains(flags.allowedDeviceTypes, s.Env.Dimensions.DeviceType()) {
-			shardsToRun = append(shardsToRun, s)
+		hdt := s.Env.Dimensions.HostDeviceType()
+		if hdt != "" && len(flags.allowedHostDeviceTypes) > 0 && !slices.Contains(flags.allowedHostDeviceTypes, hdt) {
+			continue
 		}
+		shardsToRun = append(shardsToRun, s)
 	}
 	shards = shardsToRun
 

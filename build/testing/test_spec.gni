@@ -12,6 +12,10 @@ declare_args() {
   # A list of device types this build is allowed to run tests on. If set, only
   # these device types will be used for tests.
   allowed_test_device_types = []
+
+  # A list of host device types this build is allowed to run tests on. If set,
+  # only these host device types will be used for tests.
+  allowed_test_host_device_types = []
 }
 
 _log_severity_allowed_val = [
@@ -72,6 +76,7 @@ foreach(platform, test_platforms) {
 # a function of this.
 # TODO(joshuaseaton): Use board_name instead of cpu in the reasoning above.
 allowed_device_types = allowed_test_device_types
+allowed_host_device_types = allowed_test_host_device_types
 
 # If the build specified no test device types, add the default set.
 # If they _did_ specify test device types, don't add any.
@@ -119,6 +124,13 @@ if (allowed_device_types == []) {
     allowed_device_types = [ "Sorrel" ]
   } else if (board_name == "iris") {
     allowed_device_types = [ "Iris" ]
+  }
+}
+
+# If the build specified no test host device types, add the default set.
+if (allowed_host_device_types == []) {
+  if (board_name == "arm64") {
+    allowed_host_device_types = [ host_device_types.gcp_c4a_highmem_96_bm ]
   }
 }
 
@@ -549,10 +561,12 @@ template("test_spec") {
       not_needed([ "emu_config" ])
     }
 
-    has_allowed_device_type = defined(dims.device_type) &&
-                              allowed_device_types + [ dims.device_type ] -
-                              [ dims.device_type ] != allowed_device_types
-    if (has_allowed_device_type || !defined(dims.device_type)) {
+    if ((!defined(dims.device_type) ||
+         allowed_device_types + [ dims.device_type ] - [ dims.device_type ] !=
+         allowed_device_types) &&
+        (!defined(dims.host_device_type) ||
+         allowed_host_device_types + [ dims.host_device_type ] -
+         [ dims.host_device_type ] != allowed_host_device_types)) {
       # GN idiom for adding to a list without adding duplicate elements.
       _environments += [ env ]
       _environments -= [ env ]
@@ -707,5 +721,8 @@ template("test_spec") {
 
   # When an unreferenced board_name is used, the allowed_device_types
   # assignment will have no effect.
-  not_needed([ "allowed_device_types" ])
+  not_needed([
+               "allowed_device_types",
+               "allowed_host_device_types",
+             ])
 }

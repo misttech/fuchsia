@@ -582,6 +582,53 @@ func TestMakeShards(t *testing.T) {
 		// The PkgRepo dirname should be the same so no change is expected in the shards.
 		assertEqual(t, expected, actual)
 	})
+
+	t.Run("shards with multiple host device types", func(t *testing.T) {
+		envAmpereAltra := build.Environment{
+			Dimensions: build.DimensionSet{
+				"device_type":      "QEMU",
+				"cpu":              "arm64",
+				"host_device_type": "AmpereAltraMax-M128-30",
+			},
+		}
+		envAmpereOne := build.Environment{
+			Dimensions: build.DimensionSet{
+				"device_type":      "QEMU",
+				"cpu":              "arm64",
+				"host_device_type": "AmpereOne-A192-32X",
+			},
+		}
+		spec := build.TestSpec{
+			Test:       makeTest(1, "").Test,
+			Envs:       []build.Environment{envAmpereAltra, envAmpereOne},
+			ExpectsSSH: true,
+		}
+		opts := basicOpts
+		opts.DefaultCPU = "arm64"
+		actual, err := MakeShards([]build.TestSpec{spec}, nil, opts, nil)
+		if err != nil {
+			t.Fatalf("MakeShards failed: %v", err)
+		}
+		expected := []*Shard{
+			{
+				Name:       environmentName(envAmpereAltra),
+				Tests:      []Test{makeTest(1, "")},
+				Env:        populateEnvDefaults(envAmpereAltra, "arm64", false),
+				ExpectsSSH: true,
+				HostCPU:    "arm64",
+				EnvName:    makeEnvName("QEMU", "", "arm64"),
+			},
+			{
+				Name:       environmentName(envAmpereOne),
+				Tests:      []Test{makeTest(1, "")},
+				Env:        populateEnvDefaults(envAmpereOne, "arm64", false),
+				ExpectsSSH: true,
+				HostCPU:    "arm64",
+				EnvName:    makeEnvName("QEMU", "", "arm64"),
+			},
+		}
+		assertEqual(t, expected, actual)
+	})
 }
 
 func TestMakeShardNamesUnique(t *testing.T) {

@@ -296,6 +296,22 @@ func TestGetBotDimensions(t *testing.T) {
 			want: map[string]string{"pool": "pool", "kvm": "1", "os": "Debian", "cpu": "arm64"},
 		},
 		{
+			name: "arm64 c4a emulator",
+			env: build.Environment{
+				Dimensions: build.DimensionSet{
+					"device_type":      "QEMU",
+					"cpu":              "arm64",
+					"host_device_type": "GCP_C4A_HIGHMEM_96_BM",
+				},
+			},
+			cpu:        "arm64",
+			expectsSSH: true,
+			params: &proto.Params{
+				Pool: "pool",
+			},
+			want: map[string]string{"pool": "pool", "kvm": "1", "os": "Debian", "cpu": "arm64", "host_device_type": "GCP_C4A_HIGHMEM_96_BM"},
+		},
+		{
 			name:       "arm64 emulator tcg",
 			env:        arm64EmuEnv,
 			cpu:        "arm64",
