@@ -42,6 +42,7 @@ group("tests") {
     "drivers:tests",
     "lib:tests",
     "testing/fake-display-stack-host:tests",
+    "testing/globally-ordered-mock-mmio:tests",
     "testing/software-compositor:tests",
   ]
 }
