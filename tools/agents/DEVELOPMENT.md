@@ -2,7 +2,9 @@
 
 ## Overview
 
-`tools/agents` provides the backend implementation for `fx agents`, an extensible CLI tool managing AI coding agent configurations, permission profiles, command expansion regexes, and environment lifecycle for Fuchsia developers.
+`tools/agents` provides the backend implementation for `fx agents`, a CLI tool that manages
+AI coding assistant configurations, permission profiles, command regexes, Git index staging
+isolation, and commit hooks for Fuchsia developers.
 
 ---
 
@@ -11,25 +13,51 @@
 ```text
 tools/agents/
 ├── BUILD.gn                         # GN build definitions with python_library("agents_lib")
+├── DEVELOPMENT.md                   # Developer & architecture documentation
 ├── OWNERS                           # Tool ownership
-├── __init__.py                      # Top-level agents package marker
-├── main.py                          # CLI dispatcher & subcommand routing entrypoint
+├── README.md                        # User-facing guide for fx agents
+├── __init__.py
+├── main.py                          # CLI parser and subcommand dispatcher
 ├── commands/
 │   ├── __init__.py
-│   └── setup.py                     # CLI argument parsing and setup orchestration
+│   └── setup.py                     # CLI argument parsing and setup subcommand handler
+├── docs/                            # Subsystem architecture & deep-dive guides
+│   ├── git_hooks.md                 # Git staging & commit hooks subsystem architecture guide
+│   └── permissions.md               # Permissions, 3-way reconciliation & regex expansion guide
 ├── lib/
 │   ├── __init__.py
 │   ├── config.py                    # Atomic JSON I/O, .tmp swap, and backup creation
+│   ├── git_staging/                 # Git index staging partition & stash isolation helpers
+│   │   ├── __init__.py
+│   │   └── engine.py                # StashGuard, partition_staged_files, run_staged_pipeline
+│   ├── githooks/                    # Fuchsia platform hook adapters and dispatcher runner
+│   │   ├── __init__.py
+│   │   ├── adapters.py              # fx format-code, SHAC commit_msg_checker
+│   │   ├── installer.py             # Multi-repo checkout discovery & hook installation
+│   │   ├── reporters.py             # ConsoleReporter (TTY/ASCII)
+│   │   └── runner.py                # Hook CLI dispatcher for pre-commit & commit-msg
+│   ├── paths.py                     # Root discovery, repository and git path resolution
 │   ├── permissions.py               # Command regex generator, profile manifests loader
 │   ├── services.py                  # Multi-repo daemon discovery and systemctl restart
-│   └── state.py                     # State journal, rolling backups, and 3-way reconciliation
+│   └── state.py                     # State tracking, rolling backups, and 3-way reconciliation
+├── testing/
+│   ├── __init__.py
+│   ├── base.py                      # Hermetic base test case with tempdir & stream capture
+│   └── workspace.py                 # Fast git workspace test fixture with template cache
 └── tests/
     ├── __init__.py
-    ├── main_test.py                 # CLI dispatcher unit tests
-    ├── setup_test.py                # Setup command integration unit tests
     ├── config_test.py               # Config I/O & atomic write unit tests
+    ├── e2e_githooks_test.py         # End-to-end Git hooks test harness
+    ├── git_staging_test.py          # Git staging engine unit tests
+    ├── githooks_adapters_test.py    # Hook adapter unit tests
+    ├── githooks_installer_test.py   # Hook installer unit tests
+    ├── githooks_reporters_test.py   # Console reporter unit tests
+    ├── githooks_runner_test.py      # Hook CLI dispatcher unit tests
+    ├── main_test.py                 # CLI dispatcher unit tests
+    ├── paths_test.py                # Path resolution unit tests
     ├── permissions_test.py          # Regex expansion & profile unit tests
     ├── services_test.py             # Daemon discovery & restart unit tests
+    ├── setup_test.py                # Setup command integration unit tests
     └── state_test.py                # State journal, rollback & reconciliation unit tests
 ```
 
@@ -38,123 +66,134 @@ tools/agents/
 ## Module Responsibilities
 
 ### 1. `main.py` (CLI Dispatcher)
+
 - Top-level `argparse` configuration for `fx agents`.
 - Dynamically registers subcommands under `commands/`.
 - Routes execution to the selected subcommand handler (`args.func(args)`).
 
-### 2. `commands/setup.py` (Setup Orchestrator)
-- Defines arguments for `--profile`, `--status`, `--rollback`, `--reset`, `--state-dir`, `--allow`, `--deny`, `--ask`, `--allow-list`, `--deny-list`, `--ask-list`, `--config`, and `--dry-run`.
-- Coordinates grant aggregation across profiles and ad-hoc flags, configuration persistence, and daemon service restarts.
+### 2. `commands/setup.py` (Setup Subcommand)
 
-### 3. `lib/config.py` (Atomic JSON Configuration Management)
-- **`load_config(path)`**: Safely loads JSON dictionaries, returning `{}` if missing or malformed.
-- **`save_config_atomic(path, data)`**: Writes to a hidden temporary file `.{name}.tmp` in the target directory, formats JSON with 2-space indentation and trailing newline, and atomically swaps it using `Path.replace`.
-- **`apply_grants(...)`**: Orchestrates three-way reconciliation, backup creation, atomic config persistence, and state journal logging.
+- Defines arguments for `--profile`, `--status`, `--rollback`, `--reset`, `--state-dir`, `--allow`,
+  `--deny`, `--ask`, `--allow-list`, `--deny-list`, `--ask-list`, `--config`, `--git-hooks`,
+  `--no-git-hooks`, and `--dry-run`.
+- Collects grants from profiles and flags, writes config files, and restarts daemons.
 
-### 4. `lib/permissions.py` (Command Expansion & Profile Engine)
+### 3. `lib/config.py` (Atomic JSON Configuration)
+
+- **`load_config(path)`**: Safely loads JSON dictionaries, returning `{}` if missing or not a JSON
+  object, and raising `json.JSONDecodeError` on malformed syntax.
+- **`save_config_atomic(path, data)`**: Writes to a hidden temporary file `.{name}.tmp` in the
+  target directory, formats JSON with 2-space indentation and trailing newline, and atomically swaps
+  it using `Path.replace`.
+- **`apply_grants(...)`**: Handles three-way reconciliation, backup creation, atomic config
+  writes, and state tracking.
+
+### 4. `lib/paths.py` (Path Resolution & Git Discovery)
+
+- Resolves filesystem and Git repository paths (`find_fuchsia_dir`, `find_checkout_git_repos`,
+  `find_config_dirs`, `find_permission_dirs`, `get_git_dir`, `get_hooks_dir`, `get_repo_root`).
+
+### 5. `lib/permissions.py` (Command Expansion & Profiles)
+
 - Defines profile specifications (`read-only`, `local-changes`, `external-changes`, `full-access`).
-- Generates anchored regex patterns `command(regex:...)` with support for:
-  - Environment variable prefixes (`VAR=value ...`).
-  - Git global flags (`-C <dir>`, `--no-pager`, etc.) and subcommand flag placement.
-  - Sed in-place flags (`-i`, `--in-place`).
-  - System binary PATH resolution and `/usr/bin/` <-> `/bin/` aliases.
-- Discovers and loads public and vendor-extended permission manifests.
+- Generates anchored regex patterns `command(regex:...)` matching environment variable prefixes,
+  Git global flags, force-push flags, sed in-place flags, and prebuilt toolchain paths.
+- For regex expansion details and manifest structure, see
+  [`docs/permissions.md`](docs/permissions.md).
 
-### 5. `lib/services.py` (Multi-Repo Daemon Management)
+### 6. `lib/services.py` (Multi-Repo Daemon Management)
+
 - Discovers daemon service lists across public and vendor directories (`services.txt`).
 - Restarts running user daemons non-blockingly using `systemctl --user try-restart <service>`.
 
-### 6. `lib/state.py` (State Journal & Reconciliation Engine)
-- Manages `StateJournal` schema in `~/.local/share/Fuchsia/agents/setup/state.json` (adhering to `$XDG_STATE_HOME` / `$XDG_DATA_HOME`).
-- Implements timestamped rolling backups in `~/.local/share/Fuchsia/agents/setup/backups/` capped at `MAX_BACKUPS = 10`.
-- Executes three-way grant reconciliation, multi-step rollback (`rollback`), configuration reset (`reset`), and status reporting (`format_status`).
+### 7. `lib/state.py` (State Tracking & Reconciliation)
+
+- Tracks state in `~/.local/share/Fuchsia/agents/setup/state.json` (adhering to
+  `$XDG_STATE_HOME` / `$XDG_DATA_HOME`).
+- Implements timestamped rolling backups in `~/.local/share/Fuchsia/agents/setup/backups/` capped at
+  `MAX_BACKUPS = 10`.
+- Executes three-way grant reconciliation, multi-step rollback (`rollback`), configuration reset
+  (`reset`), and status reporting (`format_status`).
+- For the three-way reconciliation algorithm, see [`docs/permissions.md`](docs/permissions.md).
+
+### 8. `lib/git_staging/` (Git Staging & Stash Isolation)
+
+- **`engine.py`**: Helpers for partitioning staged files and isolating unstaged edits.
+  - **`partition_staged_files(repo_root)`**: Identifies `fully_staged` and `partially_staged` files.
+  - **`StashGuard(repo_root)`**: Context manager that applies the diff between `stash^2` and
+    `stash` to safely isolate unstaged working tree edits during hook execution.
+  - **`run_staged_pipeline(context, actions)`**: Executes a sequence of `HookAction` operations
+    under `StashGuard` isolation, managing re-staging and conflict reporting.
+  - For details on stash isolation and failure recovery, see
+    [`docs/git_hooks.md`](docs/git_hooks.md).
+
+### 9. `lib/githooks/` (Fuchsia Platform Hook Adapters & Dispatcher)
+
+- **`adapters.py`**: Fuchsia-specific adapters bridging the staging engine with platform tools:
+  - `fx format-code` adapter (mutating formatting on fully staged files, read-only verification on
+    partially staged files).
+  - `commit_msg_checker.py` adapter (validating subject length, body wrapping, and required
+    footers).
+- **`installer.py`**: Installs, uninstalls, and checks status of Git hooks across repositories
+  (`install_git_hooks`, `uninstall_git_hooks`, `get_git_hooks_status`) targeting
+  `.git/hooks/<hook_name>.d/10-fuchsia-agent.sh`.
+- **`reporters.py`**: `ConsoleReporter` supporting colored UTF-8 symbols on interactive terminals
+  and falling back to ASCII tags (`[FIXED]`, `[WARN]`, `[ERROR]`) on plain terminals.
+- **`runner.py`**: Hook CLI entrypoint executing `pre-commit` and `commit-msg` pipelines, handling
+  agent detection (`is_invoked_by_agent()`, `AGENT_ENV_VARS`) and bypasses (`FUCHSIA_SKIP_HOOKS`).
+- For hook architecture, coexistence, and recovery, see [`docs/git_hooks.md`](docs/git_hooks.md).
 
 ---
 
-## Three-Way Set Reconciliation Mathematics
+## Subsystem Architecture Guides
 
-To prevent configuration drift, lingering rule conflicts, or loss of developer-authored custom rules, `lib/state.py` implements a deterministic 3-way set reconciliation model:
+For deep-dive architecture and design details, see the guides in `docs/`:
 
-Let $\text{cat} \in \{\text{allow}, \text{deny}, \text{ask}\}$ represent the grant categories.
-
-### 1. User Custom Rule Extraction
-Let $E[\text{cat}]$ be the list of existing grants in `config.json`, and $M_{\text{prev}}[\text{cat}]$ be the grants recorded as managed by the previous setup transaction in `state.json`.
-The developer's custom rules $U[\text{cat}]$ are computed as:
-$$U[\text{cat}] = E[\text{cat}] \setminus M_{\text{prev}}[\text{cat}]$$
-
-### 2. Opposing Category Conflict Resolution
-When transitioning across profiles (e.g., from `read-only` where `local_changes.txt` is denied, to `local-changes` where it is allowed), rules moving into $M_{\text{target}}[\text{cat}]$ must not be blocked by lingering entries in opposing categories:
-$$\forall \text{cat} \in \{\text{allow}, \text{deny}, \text{ask}\}, \forall r \in M_{\text{target}}[\text{cat}], \forall \text{other} \neq \text{cat}: \quad U[\text{other}] \leftarrow U[\text{other}] \setminus \{r\}$$
-
-### 3. Obsolete Rule Pruning
-Rules previously managed that are no longer part of $M_{\text{target}}[\text{cat}]$ (i.e., $r \in M_{\text{prev}}[\text{cat}] \setminus M_{\text{target}}[\text{cat}]$) are automatically retired and excluded from the final grants.
-
-### 4. Final Grant Construction
-The final grant list $\text{final}[\text{cat}]$ combines user custom rules and target managed rules, preserving deterministic ordering:
-$$\text{final}[\text{cat}] = U[\text{cat}] \cup M_{\text{target}}[\text{cat}]$$
+- **[Permissions & Configuration Architecture (`docs/permissions.md`)](docs/permissions.md)**:
+  - Profile definitions (`read-only`, `local-changes`, `external-changes`, `full-access`).
+  - Three-way reconciliation algorithm (preserving user custom rules across profile changes).
+  - Regex expansion mechanics (environment variables, Git global flags, force-push detection, sed
+    in-place, tool chaining).
+  - Multi-repository overlay discovery across `//` and `//vendor/*`.
+- **[Git Staging & Commit Hooks Architecture (`docs/git_hooks.md`)](docs/git_hooks.md)**:
+  - Staged partition isolation (mutating formatting on fully staged files vs read-only checks on
+    partially staged files).
+  - Stash isolation (applying the diff between `stash^2` and `stash` to protect unstaged edits).
+  - Modular `.git/hooks/<hook_name>.d/` coexistence with Jiri's universal dispatcher.
+  - Failure policies and stash recovery.
 
 ---
 
-## Command Variant Expansion and Regex Generator Mechanics
+## Developer Workflows
 
-Grant entries in `config.json` must reliably match how AI agents and developers invoke commands from shells or subagents. `lib/permissions.py` expands human-readable lines into robust grant variants:
+### 1. Adding or Modifying Permission Rules
 
-### 1. Environment Variable Prefixes
-Commands frequently execute with leading environment variables (e.g. `GIT_PAGER=cat git status`). Regexes prepend `ENV_VARS_PREFIX_PATTERN`:
-```python
-ENV_VARS_PREFIX_PATTERN = rf"([A-Za-z_][A-Za-z0-9_]*={_ARG_VALUE_PATTERN}\s+)*"
-```
+- **Manifest Files**: Permission lists reside under `.agents/config/permissions/` (e.g.
+  `read_only.txt`, `local_changes.txt`). Add commands as simple strings (e.g. `fx format-code`).
+- **Tool Global Flags**: To support global flags for a new tool (e.g. `jj`, `cipd`), update
+  `TOOL_SPECS` in `lib/permissions.py` and verify regex expansion in `tests/permissions_test.py`.
+- **Profile Definitions**: Update `PROFILE_DEFINITIONS` in `lib/permissions.py` to change which
+  manifest categories belong to `allow`, `deny`, or `ask`.
 
-### 2. Git Global Flags & Force-Push Detection
-Git commands allow global flags before the subcommand (e.g. `git -C //src status`) and flags anywhere in the argument list (e.g. `git push origin main --force` vs `git push -f origin HEAD`):
-```python
-GIT_GLOBAL_FLAGS_PATTERN = (
-    rf"(\s+(-C\s+{_ARG_VALUE_PATTERN}"
-    rf"|--no-pager|--no-color|--literal-pathspecs|--no-optional-locks|-c\s+{_ARG_VALUE_PATTERN}))*"
-)
-```
+### 2. Adding or Modifying Hook Actions
 
-### 3. Fuchsia Tool Global Flags & Chaining (fx, ffx, jiri)
-Fuchsia wrapper tools emit direct regexes matching any binary path (`fx`, `scripts/fx`, `/abs/path/fx`) and supported global flags:
-- **`fx`**: Handles `-t <target>`, `--dir <out_dir>`, `--enable=...`, `--disable=...`, `-x`, `-xx`, `-i`, `--`.
-- **`ffx`**: Handles standalone `ffx` as well as chained `fx [flags] ffx [flags]`, including `--machine json`, `-t <target>`, `-c <config>`, `-v`, and `--isolate-dir`.
-- **`jiri`**: Handles `-j <N>`, `-root <dir>`, `-color <mode>`, `-time`, `-v`, `-vv`, and `--show-progress`.
+- Hook actions are defined in `lib/githooks/adapters.py` using `HookAction`.
+- Register new actions in `DEFAULT_PRE_COMMIT_ACTIONS`.
+- Set `extensions` on `HookAction` (or reuse `DEFAULT_FORMATTABLE_EXTENSIONS`) to ensure actions
+  only run when relevant file types are staged.
+- Ensure all mutating actions support a `check_only: bool` flag for safe execution on partially
+  staged files.
 
-### 4. Sed In-Place Expansion
-Sed in-place invocations (`-i`, `-i.bak`, `--in-place`) can execute with combined flags (e.g., `sed -Ei '...'`). The generator creates specialized regexes matching any `-i` flag variant:
-```python
-pattern = (
-    f"command(regex:{ENV_VARS_PREFIX_PATTERN}(\\S+/)?sed\\b"
-    f"(?:\\s+{_ARG_VALUE_PATTERN})*\\s+(-[a-zA-Z]*i\\S*|--in-place(\\S*)?)(?:\\s+.*)?)"
-)
-```
+### 3. Writing Tests with `GitWorkspaceTestCase`
 
-### 5. Binary PATH and System Aliases
-For general binaries (e.g. `grep`, `jq`):
-- Resolves full absolute path via `shutil.which`.
-- Generates mirrored `/usr/bin/` $\leftrightarrow$ `/bin/` aliases if both paths exist.
-- For absolute paths passed as inputs, generates basename variants so invocations via `$PATH` are allowed.
+When writing tests that interact with Git:
 
----
-
-## Multi-Repo Overlay Discovery Model
-
-Fuchsia uses a multi-repository structure managed by `jiri`. `fx agents` implements transparent overlay discovery across public and vendor trees:
-
-```python
-def find_config_dirs(fuchsia_dir: pathlib.Path) -> list[pathlib.Path]:
-    candidates = [fuchsia_dir / ".agents" / "config"]
-    vendor_dir = fuchsia_dir / "vendor"
-    if vendor_dir.is_dir():
-        for vendor_child in sorted(vendor_dir.iterdir()):
-            if vendor_child.is_dir():
-                cfg_dir = vendor_child / ".agents" / "config"
-                if cfg_dir.is_dir():
-                    candidates.append(cfg_dir)
-    return candidates
-```
-- **Permission Manifests**: `find_permission_dirs` aggregates all `permissions/` directories. Manifests with matching filenames across public and vendor overlays are concatenated.
-- **Daemon Services**: `services.txt` files across all overlays are parsed and aggregated in order.
+- Inherit from `GitWorkspaceTestCase` (`from agents_testing.workspace import GitWorkspaceTestCase`).
+- Use `self.commit_file("path/to/file", "content")` to create commits.
+- Use `self.stage_partial("path/to/file", "staged content", "unstaged content")` to test partial
+  staging scenarios.
+- Verify state with `self.assertStaged("path/to/file")`, `self.assertStashEmpty()`, or
+  `self.git("status", "--porcelain")`.
 
 ---
 
@@ -162,50 +201,57 @@ def find_config_dirs(fuchsia_dir: pathlib.Path) -> list[pathlib.Path]:
 
 ### GN Build Rules (`tools/agents/BUILD.gn`)
 
-The package is structured as a host Python library and individual host unit tests prefixed with `agents_` to prevent target name collisions across the Fuchsia build graph:
+The package is structured as a host Python library and individual host unit tests prefixed with
+`agents_` to prevent target name collisions across the Fuchsia build graph:
 
 ```gn
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
 
-_agents_sources = [
-  "__init__.py",
-  "commands/__init__.py",
-  "commands/setup.py",
-  "lib/__init__.py",
-  "lib/config.py",
-  "lib/permissions.py",
-  "lib/services.py",
-  "lib/state.py",
-  "main.py",
-]
-
 if (is_host) {
   python_library("agents_lib") {
     library_name = "agents"
     source_root = "."
-    sources = _agents_sources
+    sources = [ ... ]
   }
 
-  python_host_test("agents_main_test") {
-    main_source = "tests/main_test.py"
-    libraries = [ ":agents_lib" ]
+  python_library("agents_testing") {
+    testonly = true
+    library_name = "agents_testing"
+    source_root = "testing"
+    sources = [ "base.py", "workspace.py" ]
   }
-  # ...
-}
 
-group("tests") {
-  testonly = true
-  deps = [
-    ":agents_config_test($host_toolchain)",
-    ":agents_main_test($host_toolchain)",
-    ":agents_permissions_test($host_toolchain)",
-    ":agents_services_test($host_toolchain)",
-    ":agents_setup_test($host_toolchain)",
-    ":agents_state_test($host_toolchain)",
-  ]
+  python_host_test("agents_setup_test") {
+    main_source = "tests/setup_test.py"
+    libraries = [ ":agents_lib", ":agents_testing" ]
+  }
 }
 ```
+
+See [`tools/agents/BUILD.gn`](BUILD.gn) for the full list of library sources and test targets.
+
+### Test Infrastructure & Common Fixtures (`agents_testing`)
+
+Most tests in `tools/agents/tests` inherit from common hermetic test classes provided by
+`agents_testing`:
+
+- **`BaseTestCase`** (`from agents_testing.base import BaseTestCase`):
+  - Automatically isolates temporary directories (`self.test_dir`).
+  - Redirects `sys.stdout` and `sys.stderr` to `io.StringIO` buffers accessible via `self.stdout`
+    and `self.stderr`.
+  - Helpers for creating files (`self.write_file("rel/path", "content")`) and registering mock
+    cleanups (`self.patch_object(...)`, `self.patch_environ(...)`).
+- **`GitWorkspaceTestCase`** (`from agents_testing.workspace import GitWorkspaceTestCase`):
+  - Inherits from `BaseTestCase` and clones a cached template repository (via `shutil.copytree`)
+    instead of running `git init` for each test.
+  - Configures safe hermetic git environments (`GIT_CONFIG_GLOBAL=/dev/null`,
+    `GIT_CONFIG_NOSYSTEM=1`, `commit.gpgsign=false`, `.fx-root` marker).
+  - Helpers for running git commands (`self.git(...)`), staging and committing files
+    (`self.commit_file(...)`), and creating linked worktrees (`self.create_worktree(...)`).
+
+Pure unit tests (such as `githooks_reporters_test.py`) or specialized suites (such as
+`e2e_githooks_test.py`) may use standard `unittest.TestCase` or dedicated fixtures.
 
 ### Running Tests (Golden Path)
 
@@ -220,7 +266,10 @@ The standard, golden path workflow for configuring and running the test suite:
    fx test //tools/agents
    ```
 
-> **Note**: `//tools/agents:tests` is the GN aggregator target (`group("tests")`) used when configuring build targets (`fx add-host-test` or in `args.gn`). For running tests with `fx test`, provide the directory path `//tools/agents` (or `tools/agents`), which matches all test target labels declared under that directory.
+> **Note**: `//tools/agents:tests` is the GN aggregator target (`group("tests")`) used when
+> configuring build targets (`fx add-host-test` or in `args.gn`). For running tests with `fx test`,
+> provide the directory path `//tools/agents` (or `tools/agents`), which matches all test target
+> labels declared under that directory.
 
 ### Running Individual Sub-Tests
 
@@ -236,20 +285,6 @@ The standard, golden path workflow for configuring and running the test suite:
   # Or filter by substring with '-k':
   fx test agents_setup_test -- -k dry_run
   ```
-
-### Rapid Direct Testing (Standalone Python)
-
-For fast inner-loop iteration (e.g. tweaking regex patterns or unit test logic), tests can be run directly with Python unittest without waiting for GN/Ninja build graph checks:
-
-```bash
-# Run all unit tests directly:
-PYTHONPATH=tools python3 -m unittest discover -s tools/agents/tests -p "*_test.py"
-
-# Run a specific test module:
-PYTHONPATH=tools python3 -m unittest tools/agents/tests/setup_test.py
-```
-
-> **Important**: Rapid direct testing executes local `.py` source files directly and bypasses GN hermetic `.pyz` packaging. **Always run `fx test //tools/agents` before committing** to verify that all build definitions, library dependencies, and hermetic packaging artifacts build and pass cleanly in parity with CI/CQ.
 
 ### Code Formatting & Linting
 
@@ -300,5 +335,7 @@ To add a new subcommand `fx agents <subcommand>`:
        <subcommand>.register_subcommand(subparsers)
        return parser
    ```
-4. **Update `BUILD.gn`**: Add `"commands/<subcommand>.py"` to `_agents_sources` in `tools/agents/BUILD.gn`.
-5. **Add Tests**: Create `tools/agents/tests/<subcommand>_test.py` and declare `python_host_test("agents_<subcommand>_test")` in `BUILD.gn`.
+4. **Update `BUILD.gn`**: Add `"commands/<subcommand>.py"` to `_agents_sources` in
+   `tools/agents/BUILD.gn`.
+5. **Add Tests**: Create `tools/agents/tests/<subcommand>_test.py` and declare
+   `python_host_test("agents_<subcommand>_test")` in `BUILD.gn`.
