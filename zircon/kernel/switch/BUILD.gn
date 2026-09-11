@@ -393,6 +393,11 @@ variant("kernel_config") {
   if (console_enable_history) {
     rustflags += [ "--cfg=feature=\"console_enable_history\"" ]
   }
+  if (experimental_continuous_per_vmo_attribution_enabled) {
+    rustflags += [
+      "--cfg=feature=\"experimental_continuous_per_vmo_attribution_enabled\"",
+    ]
+  }
 
   if (kernel_no_userabi) {
     defines += [ "KERNEL_NO_USERABI" ]

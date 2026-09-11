@@ -11,6 +11,8 @@
 #include <zircon/compiler.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
+
 #include "vm/vm_cow_pages.h"
 
 __BEGIN_CDECLS
@@ -37,6 +39,16 @@ bool cpp_vm_cow_pages_reclaim_page(VmCowPages* cow, vm_page_t* page, uint64_t of
                                    VmCowReclaimFailure* out_failure);
 zx_status_t cpp_vm_cow_pages_debug_lookup_readable(VmCowPages* cow, VmCowRange range, void* ctx,
                                                    cpp_vm_cow_pages_lookup_readable_fn callback);
+
+void* cpp_vm_cow_pages_get_lock(const VmCowPages* cow);
+void cpp_vm_cow_pages_deferred_ops_construct(ffi::Uninitialized<VmCowPages::DeferredOps>* ops,
+                                             VmCowPages* cow);
+void cpp_vm_cow_pages_deferred_ops_destroy(VmCowPages::DeferredOps* ops);
+zx_status_t cpp_vm_cow_pages_add_new_pages_locked(VmCowPages* cow, uint64_t start_offset,
+                                                  VmPageDoublyLinkedList* pages,
+                                                  VmCowPages::CanOverwriteSlot overwrite, bool zero,
+                                                  VmCowPages::DeferredOps* deferred);
+uint32_t cpp_vm_cow_pages_debug_get_populated_slots_count(const VmCowPages* cow);
 
 __END_CDECLS
 

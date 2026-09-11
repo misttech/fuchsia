@@ -4,18 +4,23 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::page::VmPagePtr;
+use super::page::{VmPageDoublyLinkedList, VmPagePtr};
 use crate::kernel::types::PAddr;
 use crate::vm::compressor::VmCompressor;
 use crate::vm::discardable_vmo_tracker::DiscardableVmoTracker;
 use crate::vm::pmm_node::PmmOptDelayReuse;
-use core::marker::PhantomPinned;
+use core::convert::Infallible;
+use core::ffi::c_void;
+use core::marker::{PhantomData, PhantomPinned};
 use core::mem::MaybeUninit;
+use core::pin::Pin;
 use core::ptr::{self, NonNull};
 use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr};
 use kalloc::AllocError;
+use ksync::{KMutex, KMutexGuard, LockClass, LockToken, RawCriticalMutex};
+use pin_init::{PinInit, pin_data};
 use vm_cow_pages_bindings as bindings;
-use zr::Opaque;
+use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
 use zx_status::Status;
 use zx_types::zx_status_t;
 
@@ -24,6 +29,52 @@ pub type VmCowReclaimFailure = bindings::VmCowReclaimFailure;
 pub type VmCowReclaimSuccess = bindings::VmCowReclaimSuccess;
 pub type VmCowReclaimType = bindings::VmCowReclaimSuccess_Type;
 pub type PageSourceType = bindings::PageSourceType;
+
+/// Controls the type of `VmPageOrMarker` slot in `self` `VmCowPages`' `page_list_` that can be
+/// overwritten by the `add_[new_]page[s]_locked` functions. It is the caller's responsibility to
+/// ensure that the previous content is dealt with correctly (e.g. any pages and compressed
+/// references are freed).
+pub type CanOverwriteSlot = bindings::VmCowPages_CanOverwriteSlot;
+
+#[derive(Debug, Copy, Clone)]
+pub struct VmCowPagesLockClass;
+
+impl LockClass for VmCowPagesLockClass {
+    const ID: *mut c_void = core::ptr::null_mut();
+}
+
+pub type VmCowPagesLock = KMutex<VmCowPagesLockClass, RawCriticalMutex>;
+
+/// Helper object for finishing VmCowPages operations that must occur after the lock is dropped.
+/// This is necessary due to some operations being externally locked. Consider this sequence:
+///
+/// ```
+/// stack_pin_init!(let deferred = DeferredOps::new(&cow_object));
+/// ksync::lock!(let guard = cow_object.lock());
+/// cow_object.do_operation_locked(&deferred);
+/// ```
+///
+/// The destruction order will then allow `deferred` to perform its actions after `guard` is
+/// destructed and the lock is dropped.
+///
+/// This struct is not thread safe.
+#[pin_data(PinnedDrop)]
+#[repr(transparent)]
+pub struct DeferredOps<'a> {
+    opaque: Opaque<bindings::VmCowPages_DeferredOps>,
+    phantom: PhantomData<&'a VmCowPages>,
+}
+
+unsafe_pinned_drop_ffi!(DeferredOps<'_>, bindings::cpp_vm_cow_pages_deferred_ops_destroy);
+
+impl<'a> DeferredOps<'a> {
+    /// Construct a `DeferredOps` for the given `VmCowPages`. Must be constructed, and
+    /// deconstructed, without the lock held. It is the caller's responsibility to ensure the
+    /// pointer remains valid over the lifetime of the object.
+    pub fn new(cow: &'a VmCowPages) -> impl PinInit<Self> {
+        pin_init_ffi!(bindings::cpp_vm_cow_pages_deferred_ops_construct, cow.as_raw())
+    }
+}
 
 /// Used to track dirty_state in the vm_page_t.
 ///
@@ -300,6 +351,65 @@ impl VmCowPages {
             )
         };
         Status::ok(status)
+    }
+
+    /// Acquires the lock via pin-init for use with `ksync::lock!`.
+    #[inline]
+    pub fn lock(
+        &self,
+    ) -> impl PinInit<KMutexGuard<'_, VmCowPagesLockClass, RawCriticalMutex>, Infallible> {
+        // SAFETY: `self.as_raw()` points to a live VmCowPages.
+        let lock = unsafe { bindings::cpp_vm_cow_pages_get_lock(self.as_raw()) };
+        let lock: *mut VmCowPagesLock = lock.cast();
+        // SAFETY: `lock` is valid for reads for the lifetime of `self`.
+        let lock = unsafe { lock.as_ref_unchecked() };
+        lock.lock()
+    }
+
+    /// Adds a set of pages consecutively starting from the given offset. Regardless of the
+    /// return result ownership of the pages is taken. Pages are assumed to be in the ALLOC state
+    /// and can be optionally zeroed before inserting. `start_offset` must be page aligned.
+    ///
+    /// `overwrite` controls how the function handles pre-existing content in the range, however
+    /// it is not valid to specify the `CanOverwriteSlot::PageOrRef` option, as any pages or
+    /// compressed references that would get released as a consequence cannot be returned.
+    pub fn add_new_pages_locked(
+        &self,
+        _token: &LockToken<'_, VmCowPagesLockClass>,
+        start_offset: u64,
+        list: Pin<&mut VmPageDoublyLinkedList>,
+        overwrite: CanOverwriteSlot,
+        zero: bool,
+        deferred: Pin<&mut DeferredOps<'_>>,
+    ) -> Result<(), Status> {
+        // SAFETY: We do not move `list`.
+        let list: &mut VmPageDoublyLinkedList = unsafe { list.get_unchecked_mut() };
+        let list: *mut VmPageDoublyLinkedList = list;
+        let list: *mut bindings::VmPageDoublyLinkedList = list.cast();
+        // SAFETY: We do not move `deferred`.
+        let deferred: &mut DeferredOps<'_> = unsafe { deferred.get_unchecked_mut() };
+        let deferred: *mut bindings::VmCowPages_DeferredOps = deferred.opaque.get();
+        // SAFETY: `self.as_raw()` is a live VmCowPages.
+        let status = unsafe {
+            bindings::cpp_vm_cow_pages_add_new_pages_locked(
+                self.as_raw(),
+                start_offset,
+                list,
+                overwrite,
+                zero,
+                deferred,
+            )
+        };
+        Status::ok(status)
+    }
+
+    /// Test-only interface to get the current populated slots count.
+    ///
+    /// This method panics if the kernel is built without support for the functional continuous
+    /// attribution tracker (EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED).
+    pub fn debug_get_populated_slots_count(&self) -> u32 {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
+        unsafe { bindings::cpp_vm_cow_pages_debug_get_populated_slots_count(self.as_raw()) }
     }
 }
 

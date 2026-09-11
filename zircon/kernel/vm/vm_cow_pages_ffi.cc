@@ -9,6 +9,7 @@
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
+#include <ktl/memory.h>
 
 #include "vm/vm_cow_pages.h"
 
@@ -86,6 +87,28 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_cow_pages_debug_lookup_readable(
     VmCowPages* cow, VmCowRange range, void* ctx, cpp_vm_cow_pages_lookup_readable_fn callback) {
   return cow->DebugLookupReadable(
       range, [ctx, callback](uint64_t offset, paddr_t pa) { return callback(ctx, offset, pa); });
+}
+
+FFI_ALWAYS_INLINE void* cpp_vm_cow_pages_get_lock(const VmCowPages* cow) { return cow->lock(); }
+
+FFI_ALWAYS_INLINE void cpp_vm_cow_pages_deferred_ops_construct(
+    ffi::Uninitialized<VmCowPages::DeferredOps>* ops, VmCowPages* cow) {
+  ops->Initialize(cow);
+}
+
+FFI_ALWAYS_INLINE void cpp_vm_cow_pages_deferred_ops_destroy(VmCowPages::DeferredOps* ops) {
+  ktl::destroy_at(ops);
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_cow_pages_add_new_pages_locked(
+    VmCowPages* cow, uint64_t start_offset, VmPageDoublyLinkedList* pages,
+    VmCowPages::CanOverwriteSlot overwrite, bool zero,
+    VmCowPages::DeferredOps* deferred) TA_NO_THREAD_SAFETY_ANALYSIS {
+  return cow->AddNewPagesLocked(start_offset, pages, overwrite, zero, deferred);
+}
+
+FFI_ALWAYS_INLINE uint32_t cpp_vm_cow_pages_debug_get_populated_slots_count(const VmCowPages* cow) {
+  return cow->DebugGetPopulatedSlotsCount();
 }
 
 }  // extern "C"

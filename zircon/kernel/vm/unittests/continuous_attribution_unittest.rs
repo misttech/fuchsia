@@ -9,7 +9,36 @@ mod tests {
     use crate::vm::continuous_attribution_tracker::{
         ContinuousAttributionTracker, StubContinuousAttributionTracker,
     };
-    use unittest::expect_eq;
+    use crate::vm::page::VmPageDoublyLinkedList;
+    use crate::vm::pmm::{self, ALLOC_FLAG_ANY};
+    use crate::vm::scanner::AutoVmScannerDisable;
+    use crate::vm::vm_cow_pages::{CanOverwriteSlot, DeferredOps, VmCowPages};
+    use crate::vm::vm_object_paged::VmObjectPaged;
+    use core::pin::Pin;
+    use fbl::RefPtr;
+    use kprint::kprintln;
+    use ksync::lock;
+    use page::SIZE as PAGE_SIZE_USIZE;
+    use pin_init::stack_pin_init;
+    use unittest::{assert_ok, expect_eq, unwrap_ok};
+    use zx_status::Status;
+
+    const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
+
+    macro_rules! should_skip_no_feature {
+        () => {
+            if cfg!(feature = "experimental_continuous_per_vmo_attribution_enabled") {
+                false
+            } else {
+                kprintln!(
+                    "Skipping {:s}:{:u}; no support for continuous attribution feature detected.",
+                    file!(),
+                    line!()
+                );
+                true
+            }
+        };
+    }
 
     /// Test that the continuous attribution tracker supports a "stubbed out" state.
     #[test]
@@ -116,5 +145,63 @@ mod tests {
         let mut tracker = ContinuousAttributionTracker::new();
         tracker.increment(u32::MAX);
         expect_eq!(u32::MAX, tracker.fetch_current());
+    }
+
+    /// Test that failing to add pages updates populated slots count on cleanup.
+    #[test]
+    fn continuous_attribution_tracker_add_pages() {
+        // Test that failing to add a sequence of pages correctly updates the populated slots count
+        // on cleanup.
+        if should_skip_no_feature!() {
+            return true;
+        }
+
+        let _disable_scanner = AutoVmScannerDisable::new();
+
+        let vmo: RefPtr<VmObjectPaged> =
+            unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, 4 * PAGE_SIZE));
+        let vmo_cow: RefPtr<VmCowPages> = vmo.debug_get_cow_pages().unwrap();
+
+        expect_eq!(0u32, vmo_cow.debug_get_populated_slots_count());
+
+        assert_ok!(vmo.commit_range(PAGE_SIZE, PAGE_SIZE));
+
+        expect_eq!(1u32, vmo_cow.debug_get_populated_slots_count());
+
+        {
+            struct CleanupList<'a>(Pin<&'a mut VmPageDoublyLinkedList>);
+
+            impl Drop for CleanupList<'_> {
+                fn drop(&mut self) {
+                    // SAFETY: Pages on `self.0` are valid allocated PMM pages that have not
+                    // already been freed.
+                    unsafe {
+                        pmm::free_list(self.0.as_mut());
+                    }
+                }
+            }
+
+            stack_pin_init!(let deferred = DeferredOps::new(&vmo_cow));
+            lock!(let guard = vmo_cow.lock());
+
+            stack_pin_init!(let list = VmPageDoublyLinkedList::new());
+            let count: usize = 3;
+            assert_ok!(pmm::alloc_pages(count, 0, list.as_mut()));
+            let mut cleanup = CleanupList(list);
+
+            expect_eq!(
+                Status::ALREADY_EXISTS.into_raw(),
+                Status::result_into_raw(vmo_cow.add_new_pages_locked(
+                    guard.token(),
+                    0,
+                    cleanup.0.as_mut(),
+                    CanOverwriteSlot::Empty,
+                    /*zero=*/ true,
+                    deferred.as_mut(),
+                ))
+            );
+        }
+
+        expect_eq!(1u32, vmo_cow.debug_get_populated_slots_count());
     }
 }

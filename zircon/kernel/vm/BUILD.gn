@@ -1102,6 +1102,11 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_debug_get_discardable_tracker",
     "cpp_vm_cow_pages_reclaim_page",
     "cpp_vm_cow_pages_debug_lookup_readable",
+    "cpp_vm_cow_pages_get_lock",
+    "cpp_vm_cow_pages_deferred_ops_construct",
+    "cpp_vm_cow_pages_deferred_ops_destroy",
+    "cpp_vm_cow_pages_add_new_pages_locked",
+    "cpp_vm_cow_pages_debug_get_populated_slots_count",
   ]
   type_allowlist = [
     "DirtyState",
@@ -1109,6 +1114,8 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "PageSourceType",
     "VmCompressor",
     "VmCowPages",
+    "VmCowPages_CanOverwriteSlot",
+    "VmCowPages_DeferredOps",
     "VmCowPagesOptions",
     "VmCowRange",
     "VmCowReclaimFailure",
@@ -1122,12 +1129,13 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCompressor",
     "VmCompressor_CompressedRef",
     "VmCompressor_CompressResult",
+    "VmPageDoublyLinkedList",
     "vm_page_t",
     "zx_status_t",
     "VmCowPages_AddPageTransaction",
     "VmCowPages_AttributionCounts",
-    "VmCowPages_CanOverwriteSlot",
     "VmCowPages_DirtyRangeEnumerateFunction",
+    "VmCowPages_DeferredOps_DeferredRangeOp",
     "VmCowPages_DiscardablePageCounts",
     "VmCowPages_LockedPtr",
     "VmCowPages_LockedRefPtr",
@@ -1140,9 +1148,11 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
   opaque_types = [
     "VmCompressor",
     "VmCowPages",
+    "VmCowPages_DeferredOps",
   ]
   rustified_enum = [
     "PageSourceType",
+    "VmCowPages_CanOverwriteSlot",
     "VmCowPages_DirtyState",
     "VmCowPages_EvictionAction",
     "VmCowReclaimFailure",
@@ -1174,7 +1184,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "pub use compressor_bindings::VmCompressor;",
     "use discardable_vmo_tracker_bindings::DiscardableVmoTracker;",
     "use page_bindings::vm_page_t;",
-    "use pmm_bindings::PmmOptDelayReuse;",
+    "pub use pmm_bindings::{PmmOptDelayReuse, VmPageDoublyLinkedList};",
     "use zx_types::zx_status_t;",
   ]
 }
@@ -1323,10 +1333,14 @@ kernel_rust_mod("vm-rs-unittests") {
   ]
   deps = [
     ":test-helper-bindings",
+    "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kprint",
+    "//src/lib/ksync",
+    "//third_party/rust_crates:pin-init",
     "//third_party/rust_crates:rand",
     "//zircon/kernel/lib/debug",
+    "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
