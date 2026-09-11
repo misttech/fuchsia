@@ -10,6 +10,7 @@ if (is_host) {
     testonly = true
     main_source = "verify_build_commands.py"
     sources = [
+      "//build/api/gn_ninja_outputs.py",
       "//build/bazel/scripts/bazel_build_args.py",
       "//build/bazel/scripts/build_utils.py",
       "//build/beads/scripts/build_command_query_utils.py",
@@ -29,18 +30,13 @@ if (is_host) {
     binary_label = ":verify_build_commands"
     outputs = [ "${target_out_dir}/verify_build_commands_for_example.stamp" ]
 
-    _ninja_outputs_json = "${root_build_dir}/ninja_outputs.json"
     _manifest = "//build/beads/verifications/targets_to_compare.json"
+
     args = [
       "--fuchsia-dir",
       rebase_path("//", root_build_dir),
       "--build-dir",
       rebase_path(root_build_dir, root_build_dir),
-      "--ninja_outputs_json",
-      rebase_path(_ninja_outputs_json, root_build_dir),
-      "--ninja_bin",
-      rebase_path("//prebuilt/third_party/ninja/${host_platform}/ninja",
-                  root_build_dir),
       "--manifest",
       rebase_path(_manifest, root_build_dir),
       "--temp_dir",
@@ -49,7 +45,7 @@ if (is_host) {
       rebase_path(outputs[0], root_build_dir),
     ]
     inputs = [
-      _ninja_outputs_json,
+      "${root_build_dir}/ninja_outputs.json",
       "//prebuilt/third_party/ninja/${host_platform}/ninja",
       _manifest,
 

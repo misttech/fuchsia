@@ -43,17 +43,6 @@ def main() -> int:
     build_utils.BuildPaths.add_parser_arguments(parser)
 
     parser.add_argument(
-        "--ninja_outputs_path",
-        type=pathlib.Path,
-        help="Path to ninja outputs JSON file",
-    )
-    parser.add_argument(
-        "--ninja_bin",
-        type=pathlib.Path,
-        default=_DEFAULT_NINJA_BIN,
-        help="Path to ninja binary",
-    )
-    parser.add_argument(
         "--gn_label", required=True, help="GN Rust target label"
     )
     parser.add_argument(
@@ -87,20 +76,16 @@ def main() -> int:
     except ValueError as e:
         parser.error(str(e))
 
-    ninja_outputs_path = args.ninja_outputs_path or (
-        paths.build_dir / "ninja_outputs.json"
-    )
-
     debug(f"Fuchsia Dir: {paths.fuchsia_dir}")
     debug(f"Build Dir: {paths.build_dir}")
-    debug(f"Ninja outputs path: {ninja_outputs_path}")
-    debug(f"Ninja Path: {args.ninja_bin}")
     debug(f"GN Label: {args.gn_label}")
     debug(f"Bazel Label: {args.bazel_label}")
 
-    ninja_runner = ninja_artifacts.NinjaRunner(args.ninja_bin, paths.build_dir)
+    ninja_runner = ninja_artifacts.NinjaRunner(
+        paths.ninja_path, paths.build_dir
+    )
     gn_cmd_raw = build_command_query_utils.query_ninja_command(
-        ninja_runner, ninja_outputs_path, args.gn_label
+        ninja_runner, args.gn_label
     )
     gn_cmd = shell_utils.ShellCommand(gn_cmd_raw)
 

@@ -37,28 +37,13 @@ def debug(s: T.Any) -> None:
         print(f"DEBUG: {s}", file=sys.stderr)
 
 
-def try_get_build_dir(fuchsia_dir: pathlib.Path) -> T.Optional[pathlib.Path]:
-    fx_build_dir_file = fuchsia_dir / ".fx-build-dir"
-    if not fx_build_dir_file.exists():
-        return None
-    return pathlib.Path(fx_build_dir_file.read_text().strip())
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify GN and Bazel build commands for a list of targets."
     )
+
     build_utils.BuildPaths.add_parser_arguments(parser)
-    parser.add_argument(
-        "--ninja_outputs_json",
-        type=pathlib.Path,
-        help="Path to ninja_outputs.json (auto-detected)",
-    )
-    parser.add_argument(
-        "--ninja_bin",
-        type=pathlib.Path,
-        help="Path to ninja binary (auto-detected)",
-    )
+
     parser.add_argument(
         "--manifest",
         required=True,
@@ -93,11 +78,6 @@ def main() -> int:
     except ValueError as e:
         parser.error(str(e))
 
-    ninja_bin = args.ninja_bin.resolve() if args.ninja_bin else paths.ninja_path
-
-    if not args.ninja_outputs_json:
-        args.ninja_outputs_json = paths.build_dir / "ninja_outputs.json"
-
     build_command_query_utils.set_debug(args.verbose)
 
     with open(args.manifest) as f:
@@ -113,15 +93,13 @@ def main() -> int:
 
     debug(f"Fuchsia Dir: {paths.fuchsia_dir}")
     debug(f"Build Dir: {paths.build_dir}")
-    debug(f"Ninja Outputs JSON: {args.ninja_outputs_json}")
-    debug(f"Ninja Path: {ninja_bin}")
     debug(f"Manifest Path: {args.manifest}")
     debug(f"GN labels: {gn_labels}")
     debug(f"Bazel labels: {bazel_labels}")
 
-    ninja_runner = build_utils.NinjaRunner(ninja_bin, paths.build_dir)
+    ninja_runner = build_utils.NinjaRunner(paths.ninja_path, paths.build_dir)
     gn_cmds_raw = build_command_query_utils.query_ninja_commands(
-        ninja_runner, args.ninja_outputs_json, gn_labels
+        ninja_runner, gn_labels
     )
 
     bazel_paths = build_utils.BazelPaths(paths.fuchsia_dir, paths.build_dir)

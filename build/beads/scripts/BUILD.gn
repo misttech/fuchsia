@@ -59,6 +59,7 @@ if (is_host) {
   python_library("build_command_query_utils") {
     sources = [ "build_command_query_utils.py" ]
     library_deps = [
+      "//build/api:gn_ninja_outputs",
       "//build/bazel/scripts:bazel_build_args",
       "//build/bazel/scripts:build_utils",
     ]

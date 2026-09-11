@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import json
 import pathlib
 import shlex
 import sys
@@ -11,6 +10,9 @@ from itertools import zip_longest
 
 # Root directory of the Fuchsia source tree.
 _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
+
+sys.path.insert(0, str(_FUCHSIA_DIR / "build/api"))
+import gn_ninja_outputs
 
 sys.path.insert(0, str(_FUCHSIA_DIR / "build/bazel/scripts"))
 import bazel_build_args
@@ -31,7 +33,6 @@ def debug(s: T.Any) -> None:
 
 def query_ninja_commands(
     ninja_runner: NinjaRunner,
-    ninja_outputs_path: pathlib.Path,
     gn_labels: list[str],
 ) -> dict[str, str]:
     """
@@ -39,27 +40,29 @@ def query_ninja_commands(
 
     Args:
         ninja_runner: The NinjaRunner instance to use.
-        ninja_outputs_path: Path to the ninja outputs JSON file, it stores a mapping from GN labels
-            to Ninja outputs.
         gn_labels: The GN labels to fetch the command line for.
 
     Returns:
         A dictionary mapping GN labels to their corresponding Ninja build commands.
+    Raises:
+        ValueError if one of gn_labels is not in the GN graph, or no output is found
+          for it in the Ninja build plan.
     """
     debug(f"Querying Ninja commands for GN labels {gn_labels}...")
 
     if not gn_labels:
         return {}
 
-    with ninja_outputs_path.open("r") as f:
-        ninja_outputs: dict[str, list[str]] = json.load(f)
+    ninja_outputs = gn_ninja_outputs.load_from_build_dir(ninja_runner.build_dir)
+    if not ninja_outputs:
+        raise ValueError(f"Could not find Ninja outputs database")
 
     all_outputs = []
     for gn_label in gn_labels:
-        outputs = ninja_outputs.get(gn_label)
+        outputs = ninja_outputs.gn_label_to_paths(gn_label)
         if not outputs:
             raise ValueError(
-                f"Could not find outputs for label {gn_label} in {ninja_outputs_path}"
+                f"Could not find outputs for label {gn_label} in Ninja outputs database"
             )
         all_outputs.append((gn_label, outputs))
     debug(f"Found Ninja outputs: {all_outputs}")
@@ -101,7 +104,6 @@ def query_ninja_commands(
 
 def query_ninja_command(
     ninja_runner: NinjaRunner,
-    ninja_outputs_path: pathlib.Path,
     gn_label: str,
 ) -> str:
     """
@@ -109,16 +111,13 @@ def query_ninja_command(
 
     Args:
         ninja_runner: The NinjaRunner instance to use.
-        ninja_outputs_path: Path to the ninja outputs JSON file.
         gn_label: The GN label to fetch the command line for.
 
     Returns:
         A string representing the Ninja build command for the given GN label.
     """
     debug(f"Fetching Ninja command for GN label {gn_label}...")
-    return query_ninja_commands(ninja_runner, ninja_outputs_path, [gn_label])[
-        gn_label
-    ]
+    return query_ninja_commands(ninja_runner, [gn_label])[gn_label]
 
 
 def query_bazel_commands(

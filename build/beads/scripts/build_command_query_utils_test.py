@@ -3,144 +3,165 @@
 # found in the LICENSE file.
 
 import json
-import pathlib
+import tempfile
 import unittest
-from unittest import mock
+from pathlib import Path
 
 import build_command_query_utils
 import build_utils
+from build_utils import MockCommandRunner, NinjaRunner
 
 
 class TestBuildCommandQueryUtils(unittest.TestCase):
+    MOCK_NINJA_BIN = "/mock-ninja"
+
+    def setUp(self) -> None:
+        self._td = tempfile.TemporaryDirectory()
+        self.root_dir = Path(self._td.name)
+        self.build_dir = self.root_dir / "out/default"
+        self.build_dir.mkdir(parents=True)
+        self.ninja_outputs_json = self.build_dir / "ninja_outputs.json"
+        self.ninja_outputs_json.write_text("{}")
+
+    def tearDown(self) -> None:
+        self._td.cleanup()
+
+    def _write_ninja_outputs(self, mapping: dict[str, list[str]]) -> None:
+        """Write new ninja_outputs.json file."""
+        with self.ninja_outputs_json.open("w") as f:
+            json.dump(mapping, f)
+
+    def _get_ninja_runners(
+        self, output: None | str = None
+    ) -> tuple[MockCommandRunner, NinjaRunner]:
+        """Return a MockCommandRunner and mock NinjaRunner.
+
+        Args:
+            output: Optional string. If not None, a (0, output, "")
+               result will be pushed to mock_runner before this function exits.
+        Returns:
+            a (MockCommandRunner, NinjaRunner) tuple.
+        """
+        mock_runner = MockCommandRunner()
+        mock_ninja = NinjaRunner(
+            Path(self.MOCK_NINJA_BIN), self.build_dir, mock_runner
+        )
+        if output is not None:
+            mock_runner.push_result(0, output, "")
+        return mock_runner, mock_ninja
+
     def test_query_ninja_commands(self) -> None:
-        mock_ninja = build_utils.MockNinjaRunner(
-            pathlib.Path("/fuchsia/out/default"),
+        mock_runner, mock_ninja = self._get_ninja_runners(
             "rustc --crate-name bar obj/foo/bar.o\n"
             + "rustc --crate-name baz obj/foo/baz.o\n",
         )
 
-        with mock.patch(
-            "pathlib.Path.open",
-            mock.mock_open(
-                read_data=json.dumps(
-                    {
-                        "//foo:foo": ["obj/foo/foo.o"],
-                        "//foo:bar": ["obj/foo/bar.o"],
-                        "//foo:baz": ["obj/foo/baz.o"],
-                    }
-                )
+        self._write_ninja_outputs(
+            {
+                "//foo:foo": ["obj/foo/foo.o"],
+                "//foo:bar": ["obj/foo/bar.o"],
+                "//foo:baz": ["obj/foo/baz.o"],
+            }
+        )
+        self.assertDictEqual(
+            build_command_query_utils.query_ninja_commands(
+                mock_ninja,
+                ["//foo:bar", "//foo:baz"],
             ),
-        ):
-            self.assertDictEqual(
-                build_command_query_utils.query_ninja_commands(
-                    mock_ninja,
-                    pathlib.Path("ninja_outputs.json"),
-                    ["//foo:bar", "//foo:baz"],
-                ),
-                {
-                    "//foo:bar": "rustc --crate-name bar obj/foo/bar.o",
-                    "//foo:baz": "rustc --crate-name baz obj/foo/baz.o",
-                },
-            )
+            {
+                "//foo:bar": "rustc --crate-name bar obj/foo/bar.o",
+                "//foo:baz": "rustc --crate-name baz obj/foo/baz.o",
+            },
+        )
 
-        self.assertEqual(
-            mock_ninja.last_ninja_args(),
-            ["-t", "commands", "-s", "obj/foo/bar.o", "obj/foo/baz.o"],
+        self.assertListEqual(
+            mock_runner.results[-1].args,
+            [
+                self.MOCK_NINJA_BIN,
+                "-C",
+                str(self.build_dir),
+                "-t",
+                "commands",
+                "-s",
+                "obj/foo/bar.o",
+                "obj/foo/baz.o",
+            ],
         )
 
     def test_query_ninja_commands_empty_labels(self) -> None:
-        mock_ninja = mock.Mock()
-        self.assertEqual(
-            build_command_query_utils.query_ninja_commands(
-                mock_ninja, pathlib.Path("ninja_outputs.json"), []
-            ),
+        mock_runner, mock_ninja = self._get_ninja_runners("")
+
+        self.assertDictEqual(
+            build_command_query_utils.query_ninja_commands(mock_ninja, []),
             {},
         )
-        mock_ninja.run_and_extract_output.assert_not_called()
+        self.assertListEqual(mock_runner.commands, [])
 
     def test_query_ninja_commands_ninja_error(self) -> None:
-        mock_ninja = mock.Mock()
-        mock_ninja.run_and_extract_output.side_effect = Exception(
-            "Ninja failed"
-        )
+        mock_runner, mock_ninja = self._get_ninja_runners()
+        mock_runner.push_result(1, "", "Ninja failed!")
 
-        with mock.patch(
-            "pathlib.Path.open",
-            mock.mock_open(
-                read_data=json.dumps({"//foo:bar": ["obj/foo/bar.o"]})
-            ),
-        ):
-            with self.assertRaisesRegex(Exception, "Ninja failed"):
-                build_command_query_utils.query_ninja_commands(
-                    mock_ninja,
-                    pathlib.Path("ninja_outputs.json"),
-                    ["//foo:bar"],
-                )
+        self._write_ninja_outputs(
+            {
+                "//foo:bar": ["obj/foo/bar.o"],
+            }
+        )
+        with self.assertRaisesRegex(
+            ValueError, "Could not find command for label: //foo:bar"
+        ) as cm:
+            build_command_query_utils.query_ninja_commands(
+                mock_ninja, ["//foo:bar"]
+            )
 
     def test_query_ninja_commands_mismatch(self) -> None:
-        mock_ninja = build_utils.MockNinjaRunner(
-            pathlib.Path("/fuchsia/out/default"),
+        _, mock_ninja = self._get_ninja_runners(
             "rustc --crate-name bar obj/foo/BLOOP.o\n"
             + "rustc --crate-name baz obj/foo/baz.o\n",
         )
 
-        with mock.patch(
-            "pathlib.Path.open",
-            mock.mock_open(
-                read_data=json.dumps(
-                    {
-                        "//foo:bar": ["obj/foo/bar.o"],
-                        "//foo:baz": ["obj/foo/baz.o"],
-                    }
-                )
-            ),
-        ):
-            with self.assertRaisesRegex(ValueError, "Could not find command"):
-                build_command_query_utils.query_ninja_commands(
-                    mock_ninja,
-                    pathlib.Path("ninja_outputs.json"),
-                    ["//foo:bar", "//foo:baz"],
-                )
+        self._write_ninja_outputs(
+            {
+                "//foo:bar": ["obj/foo/bar.o"],
+                "//foo:baz": ["obj/foo/baz.o"],
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "Could not find command"):
+            build_command_query_utils.query_ninja_commands(
+                mock_ninja,
+                ["//foo:bar", "//foo:baz"],
+            )
 
     def test_query_ninja_commands_missing_command(self) -> None:
-        mock_ninja = build_utils.MockNinjaRunner(
-            pathlib.Path("/fuchsia/out/default"),
+        _, mock_ninja = self._get_ninja_runners(
             "rustc --crate-name bar obj/foo/bar.o\n",
         )
-        with mock.patch(
-            "pathlib.Path.open",
-            mock.mock_open(
-                read_data=json.dumps(
-                    {
-                        "//foo:bar": ["obj/foo/bar.o"],
-                        "//foo:baz": ["obj/foo/baz.o"],
-                    }
-                )
-            ),
-        ):
-            with self.assertRaisesRegex(ValueError, "Could not find command"):
-                build_command_query_utils.query_ninja_commands(
-                    mock_ninja,
-                    pathlib.Path("ninja_outputs.json"),
-                    ["//foo:bar", "//foo:baz"],
-                )
+        self._write_ninja_outputs(
+            {
+                "//foo:bar": ["obj/foo/bar.o"],
+                "//foo:baz": ["obj/foo/baz.o"],
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "Could not find command"):
+            build_command_query_utils.query_ninja_commands(
+                mock_ninja,
+                ["//foo:bar", "//foo:baz"],
+            )
 
     def test_query_ninja_commands_missing_label(self) -> None:
-        mock_ninja = mock.Mock()
-        with mock.patch(
-            "pathlib.Path.open",
-            mock.mock_open(
-                read_data=json.dumps({"//foo:bar": ["obj/foo/bar.o"]})
-            ),
+        mock_runner, mock_ninja = self._get_ninja_runners()
+
+        self._write_ninja_outputs(
+            {
+                "//foo:bar": ["obj/foo/bar.o"],
+            }
+        )
+        with self.assertRaisesRegex(
+            ValueError, "Could not find outputs for label"
         ):
-            with self.assertRaisesRegex(
-                ValueError, "Could not find outputs for label"
-            ):
-                build_command_query_utils.query_ninja_commands(
-                    mock_ninja,
-                    pathlib.Path("ninja_outputs.json"),
-                    ["//foo:baz"],
-                )
+            build_command_query_utils.query_ninja_commands(
+                mock_ninja,
+                ["//foo:baz"],
+            )
 
     def test_query_bazel_commands(self) -> None:
         mock_bazel_launcher = build_utils.MockBazelLauncher()
