@@ -96,8 +96,10 @@ template("bazel_host_tool") {
         },
       ]
 
-      # Add an additional copy in the host tools outdir if requested.
-      if (defined(invoker.install_host_tool) && invoker.install_host_tool) {
+      # Add an additional copy in the host tools outdir if requested,
+      if (defined(invoker.install_host_tool) && invoker.install_host_tool &&
+          # but only in the "real" host toolchain.
+          current_toolchain == host_toolchain) {
         copy_outputs += [
           {
             bazel = invoker.bazel_output_path
