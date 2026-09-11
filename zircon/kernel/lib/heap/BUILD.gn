@@ -64,8 +64,7 @@ kernel_bindgen_crate("heap-bindings") {
 }
 
 kernel_rust_mod("heap-rs") {
-  output_name = "heap"
-  sources = []
+  sources = [ "heap.rs" ]
   deps = [ ":heap-bindings" ]
 }
 

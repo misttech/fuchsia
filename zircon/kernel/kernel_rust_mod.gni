@@ -9,399 +9,76 @@ import("//build/rust/build.gni")
 import("//build/rust/rustc_library.gni")
 import("kernel_test_deps.gni")
 
-template("_kernel_rust_mod_impl") {
-  gen_dir = "$target_gen_dir/$target_name"
-  gen_dir_to_root_build_dir = rebase_path(root_build_dir, gen_dir)
-
-  output_name = invoker.output_name
-  assert(string_replace(output_name, "-", "_") == output_name,
-         "no - allowed in mod names, only _")
-  assert(string_replace(output_name, ".", "_") == output_name,
-         "no . allowed in mod names, only _")
-
-  # A label starts with // and so is already a Rust comment!
-  label = get_label_info(":$target_name", "label_with_toolchain")
-  gen_file_comment = [
-    label,
-    "// This is a generated file. DO NOT EDIT!",
-    "",
-  ]
-
-  assert(defined(invoker.sources), "kernel_rust_mod() requires `sources` list")
-  foreach(file, invoker.sources) {
-    assert(get_path_info(file, "extension") == "rs",
-           "only .rs files go in `source` list; use `inputs` for others")
-  }
-  _rust_sources = invoker.sources
-
-  # This is semantically in Rust generating a single source file that contains:
-  # ```
-  # <... the $source_root file's contents ...>
-  # #[allow(unused_attributes)]
-  # #[path "$gen_dir_to_root_build_dir"]
-  # mod _imports {
-  #   #[path "../path/from/root_build_dir/to/foo/source/dir"]
-  #   mod foo;
-  #   <... pair of such lines for each foo in deps + public_deps ...>
-  # }
-  # #[allow(unused_imports)]
-  # use _imports::{
-  #   foo,
-  #   <... for each foo in deps ...>
-  # }
-  # #[allow(unused_imports)]
-  # pub use _imports::{
-  #   bar,
-  #   <... for each bar in public_deps ...>
-  # }
-  # ```
-  #
-  # However, it's accomplished with three generated_file() targets to generate
-  # three files at `gn gen` time, and the Rust include! macro, so there's no
-  # need for a build-time action to concatenate things.
-  #
-  # * The first file is the main $target_name target, the actual Rust source
-  #   file to be compiled.
-  #   * It contains the preamble, which is include!($source_root).
-  #   * It then has the `mod _imports { ... }` item.
-  #   * Finally, it has an include! for each of the other two files.
-  #   * All this is collected via the `rust_mod_import_lines` metadata key.
-  #   * The metadata walk include both $deps and $public_deps.
-  #
-  # * The second file contains the `use _imports::{ ... }` item.
-  #   * This is collected via the `rust_mod_use_lines` metadata key.
-  #
-  # * The third file contains the `pub use _imports::{ ... }` item.
-  #   * This is collected via the `rust_mod_pub_use_lines` metadata key.
-  #
-  # Each file has some prologue lines, then the lines collected from deps
-  # and/or public_deps, and then some epilogue lines.  Two group() targets are
-  # defined solely to hold the prologue and epilogue metadata, respectively.
-  # Each file's metadata collection is across the ordered deps list of:
-  # prologue + {deps and/or public_deps} + epilogue.
-  #
-  # The individual lines for the $output_name module itself are contributed to
-  # all three metadata lists by the $target_name target's own metadata to roll
-  # up into the dependent kernel_rust_mod() target.
-
-  gen_files = [
-    # This list controls how each file will be generated.  First, list
-    # the secondary generated files: the `use` and `pub use` lists.
-    {
-      name = "$target_name.use"
-      output = name
-      vars = {
-        visibility = [ ":$target_name" ]
-      }
-      metadata = {
-      }
-      prologue = {  # Start the file.
-        rust_mod_use_lines = gen_file_comment + [
-                               "#[allow(unused_imports)]",
-                               "use _imports::{",
-                             ]
-      }
-      key = "rust_mod_use_lines"  # Comma-separated list comes from here.
-      if (defined(invoker.deps)) {
-        deps = invoker.deps
-      } else {
-        deps = []
-      }
-      epilogue = {  # End the file.
-        rust_mod_use_lines = [ "};" ]
-      }
-    },
-    {
-      name = "$target_name.pub_use"
-      output = name
-      vars = {
-        visibility = [ ":$target_name" ]
-      }
-      metadata = {
-      }
-      prologue = {  # Start the file.
-        rust_mod_pub_use_lines = gen_file_comment + [
-                                   "#[allow(unused_imports)]",
-                                   "pub use _imports::{",
-                                 ]
-      }
-      key = "rust_mod_pub_use_lines"  # Comma-separated list comes from here.
-      if (defined(invoker.public_deps)) {
-        deps = invoker.public_deps
-      } else {
-        deps = []
-      }
-      epilogue = {  # End the file.
-        rust_mod_pub_use_lines = [ "};" ]
-      }
-    },
-  ]
-
-  test_deps = []
-  if (defined(invoker.test_deps)) {
-    test_deps_target = "kernel_rust_mod.${target_name}.test_deps"
-    test_deps += [ ":$test_deps_target" ]
-
-    kernel_test_deps(test_deps_target) {
-      visibility = [ ":*" ]
-      public_deps = invoker.test_deps
-    }
-  }
-
-  # The primary generated file's details are partially derived from those.
-  gen_deps = test_deps
-  gen_includes = []
-  foreach(gen, gen_files) {
-    gen_deps += [ ":${gen.name}" ]
-    gen_includes += [ "include!(\"${gen.name}.rs\");" ]
-  }
-
-  gen_files += [
-    {
-      name = target_name
-      output = output_name
-      vars = {
-        # The data_deps here do nothing but propagate to dependent targets.
-        forward_variables_from(invoker,
-                               [
-                                 "data_deps",
-                                 "visibility",
-                               ])
-
-        # The data_deps on the other generated files just gets them into the
-        # graph.  Since their outputs are used via include! and tracked via
-        # rustc's depfile generation, no GN target needs them in inputs and so
-        # no target needs to have direct deps on them.
-        if (!defined(data_deps)) {
-          data_deps = []
-        }
-        data_deps += gen_deps
-      }
-
-      _mod_import_lines = []
-      _mod_use_list = []
-      if (invoker.upward_metadata) {
-        _mod_path = rebase_path("$gen_dir/$output.rs", root_build_dir)
-        _mod_use_list = [ "    $output_name," ]
-
-        # Contribute this mod's own lines to the next kernel_rust_mod() up.
-        # It's always `pub mod` here because that's inside the `mod _imports`
-        # when collected, so it's still actually private to the collecting
-        # kernel_rust_mod() unless it re-exports it via
-        # rust_mod_pub_use_lines.
-        _mod_import_lines += [
-          "    #[path = \"${_mod_path}\"]",
-          "    pub mod $output_name;  $label",
-        ]
-      }
-      metadata = {
-        # Start the empty lists before forwarding any invoker metadata.
-        rust_mod_barrier = []
-        rust_mod_import_lines = []
-        rust_mod_use_lines = []
-        rust_mod_pub_use_lines = []
-        rust_sources = []
-
-        if (defined(invoker.metadata)) {
-          forward_variables_from(invoker.metadata, "*")
-        }
-
-        if (invoker.upward_metadata) {
-          rust_mod_import_lines += _mod_import_lines
-          rust_mod_use_lines += _mod_use_list
-          rust_mod_pub_use_lines += _mod_use_list
-        }
-
-        # The common code in the loop below includes each generated file in the
-        # $rust_sources list.  Also contribute anything else from the invoker.
-        rust_sources = rebase_path(_rust_sources, root_build_dir)
-        if (defined(invoker.inputs)) {
-          rust_sources += rebase_path(invoker.inputs, root_build_dir)
-        }
-
-        _toolchain_name = get_label_info(current_toolchain, "name")
-        _is_test_kernel =
-            string_replace(_toolchain_name, "lk_debug_level_2", "") !=
-            _toolchain_name
-        if (_is_test_kernel) {
-          _kernel_bin_name = "vmzircon.with-tests"
-        } else {
-          _kernel_bin_name = "vmzircon"
-        }
-        rust_target_mapping = [
-          {
-            disable_rustdoc = true
-            disable_clippy = false
-            clippy_label =
-                get_label_info("//zircon/kernel/bin:${_kernel_bin_name}.clippy",
-                               "label_with_toolchain")
-            actual_label =
-                get_label_info("//zircon/kernel/bin:${_kernel_bin_name}",
-                               "label_with_toolchain")
-            original_label =
-                get_label_info(":$target_name", "label_with_toolchain")
-            target_is_fuchsia = is_fuchsia
-            target = current_target_tuple
-            clippy_output = rebase_path(
-                    "$root_gen_dir/zircon/kernel/bin/${_kernel_bin_name}.clippy",
-                    root_build_dir)
-            src = rust_sources
-          },
-        ]
-      }
-
-      prologue = {  # Start the file.
-        rust_mod_import_lines = gen_file_comment + invoker.preamble
-        rust_mod_import_lines += [
-          "",
-          "// kernel_rust_mod() source paths are relative to root_build_dir.",
-          "// The `_imports` module exists just to make the collected paths",
-          "// below resolve relative to this generated file.",
-          "#[allow(unused_attributes)]",
-          "#[path = \"${gen_dir_to_root_build_dir}\"]",
-          "mod _imports {",
-        ]
-      }
-      key = "rust_mod_import_lines"
-      if (defined(invoker.deps)) {
-        deps = invoker.deps
-      } else {
-        deps = []
-      }
-      if (defined(invoker.public_deps)) {
-        deps += invoker.public_deps
-      }
-      epilogue = {  # End the file.
-        rust_mod_import_lines =
-            [
-              "}",
-              "",
-              "// Now bring those modules into the outer scope.",
-            ] + gen_includes
-      }
-    },
-  ]
-
-  gen_visibility = []
-  foreach(gen, gen_files) {
-    gen_visibility += [ ":${gen.name}" ]
-  }
-
-  # These groups are used in all the generated_file() metadata walks, and exist
-  # just to contribute their metadata before and after others, respectively.
-  # The deps and/or public_deps will come between them in the metadata walks.
-  prologue_deps = [ ":$target_name.prologue" ]
-  epilogue_deps = [ ":$target_name.epilogue" ]
-  foreach(which,
-          [
-            "prologue",
-            "epilogue",
-          ]) {
-    group("$target_name.$which") {
-      visibility = gen_visibility
-      forward_variables_from(invoker, [ "testonly" ])
-      metadata = {
-        foreach(gen, gen_files) {
-          forward_variables_from(gen[which], "*")
-        }
-      }
-    }
-  }
-
-  foreach(gen, gen_files) {
-    generated_file(gen.name) {
-      forward_variables_from(invoker, [ "testonly" ])
-      forward_variables_from(gen.vars, "*")
-      outputs = [ "$gen_dir/${gen.output}.rs" ]
-      output_conversion = "list lines"
-      data_keys = [ gen.key ]
-      walk_keys = [
-        "rust_barrier",
-        "rust_mod_barrier",
-        "rust_mod_preamble_barrier",
-      ]
-      deps = prologue_deps + gen.deps + epilogue_deps
-      metadata = {
-        rust_sources = []
-        forward_variables_from(gen.metadata, "*")
-        rust_sources += rebase_path(outputs, root_build_dir)
-      }
-    }
-  }
-}
-
 # Define a Rust module of code going into a kernel crate.
 #
-# This is analogous to source_set() as used for C++ and assembly code, but for
-# Rust code.  Using kernel_rust_mod() targets is an alternative to structuring
-# Rust source code in the usual Rust way where each `mod foo;` line in a source
-# file leads to an adjacent `foo.rs` file or a subdirectory `foo/mod.rs` file.
-# Both methods can be interspersed, but where the `mod ...;` lines are used in
-# source code, all the sources they lead to must be included in the same one GN
-# target's $sources list.  The kernel_rust_mod() target acts as a `mod.rs` file
-# containing nothing but `mod ...;` lines for each file in $sources.
+# This template defines a GN group that registers source files for depfile
+# verification and IDE/Clippy tooling metadata, and aggregates their
+# dependencies.
+#
+# Because all kernel Rust code is compiled into a single unified crate (rooted
+# at `//zircon/kernel/main.rs`), `kernel_rust_mod` targets do not build
+# standalone `.rlib` libraries. Instead, a module defined by `kernel_rust_mod`
+# must be wired up into the Rust module tree using a `#[path = "..."]`
+# attribute:
+#
+#   1. Add the `kernel_rust_mod` label to the consumer's GN `deps` (e.g., in a
+#      parent `kernel_rust_mod` or the kernel executable).
+#
+#   2. In Rust source, register the module using `#[path = "..."]` with the
+#      relative path to the module's entry `.rs` file:
+#
+#      * In `zircon/kernel/main.rs` (for top-level modules):
+#        ```rust
+#        #[path = "lib/cbuf/src/mod.rs"]
+#        pub mod cbuf;
+#        ```
+#
+#      * In a subsystem's `mod.rs` (e.g., `zircon/kernel/vm/mod.rs`):
+#        ```rust
+#        #[path = "../lib/heap/heap.rs"]
+#        pub mod heap;
+#        ```
+#
+#      This makes the library's contents accessible as `crate::<mod_name>` or
+#      `crate::<subsystem>::<mod_name>`.
+#
+#   3. Ensure all `.rs` source files belonging to the module are listed in
+#      `sources` so they are registered in the build graph for depfile
+#      verification and IDE/Clippy support.
 #
 # Parameters
 #
-#   * output_name
-#     - Optional: Name of the Rust module, as if `mod $output_name` appeared in
-#     the parent mod / crate source file.  Usually this should not be used and
-#     instead the target name should just be chosen to match instead.
+#   * output_name, source_root
+#     - TODO: Remove once callers are cleaned up.
 #     - Type: string
-#     - Default: "$target_name"
-#
-#   * source_root
-#     - Optional: Root `.rs` source file of the module.  Whatever the name
-#     of this source file, $target_name will be the Rust "path" component.
-#     - Type: path
-#     - Default: "$output_name.rs"
 #
 #   * sources
-#     - Required: This should list `.rs` files reached from $source_root
-#     via `mod` lines, except for those included in other kernel_rust_mod()
-#     targets.  (No file should appear in more than one $sources list; nor
-#     in both any $sources list and any $source_root, even a default one.)
-#     It can be empty if $source_root is the only file, but must be present.
+#     - Optional: List of `.rs` files that belong to this module for depfile
+#       verification and tooling.
 #     - Type: list(path)
 #
 #   * inputs
-#     - Optional: This should list any files the Rust compiler will read when
-#     compiling $source_root and $sources that aren't `.rs` files in $sources,
-#     via `include!` or the like.
+#     - Optional: Non-source files read by the compiler during compilation.
 #     - Type: list(path)
 #
 #   * data_deps
 #     - Optional: Extra files or ZBI items to go with the kernel.
-#     This works the same as in source_set() et al.
 #     - Type: list(label)
 #
 #   * deps
-#     - Optional: Bring more things into the eventual Rust crate to satisfy
-#     references made by Rust code in $source_root or $sources.  These can be:
-#       * other kernel_rust_mod("foo") targets, which will appear under this
-#         in Rust paths "...::$target_name::foo" as if `mod foo;` appeared in
-#         $source_root and there was a `foo.rs` file in $sources.
-#       * rustc_library() or kernel_rust_crate() targets for crates referred
-#         to in $source_root or $sources code.
-#       * source_set(), static_library(), etc. targets of non-Rust code
-#       * group() targets leading to any and all of these
+#     - Optional: Dependencies of this module.
 #     - Type: list(label)
 #
 #   * public_deps
-#     - Optional: Same as $deps, but other kernel_rust_mod("foo") targets
-#     reached are as if `pub mod foo;` rather than `mod foo;`.  **NOTE:**
-#     This does not behave like $public_deps in source_set() and other targets,
-#     e.g. to propagate $public_configs.  It's exactly like $deps in every way
-#     except for `pub mod` declarations instead of `mod` declarations in Rust.
-#     To get the usual $public_deps effects on dependents of this target,
-#     instead use a group() or source_set() target to hold the public_deps
-#     as well as deps on this target.
+#     - Optional: Public dependencies of this module.
+#     - Type: list(label)
+#
+#   * public_configs
+#     - Optional: Public configs to propagate to dependents.
 #     - Type: list(label)
 #
 #   * test_deps
-#     - Optional: Dependencies only used in the unit tests within the module.
-#       Note that unlike rustc_library(), none of these dependencies may be
-#       testonly. (See `kernel_test_deps()`.)
+#     - Optional: Dependencies only used in unit tests within the module.
 #     - Type: list(label)
 #     - Default: []
 #
@@ -409,167 +86,115 @@ template("_kernel_rust_mod_impl") {
 #     - Optional: Usual GN meanings.
 #
 template("kernel_rust_mod") {
-  _kernel_rust_mod_impl(target_name) {
-    sources = []
-    forward_variables_from(invoker,
-                           "*",
-                           [
-                             "preamble",
-                             "upward_metadata",
-                             "vars",
-                           ])
-    if (!defined(output_name)) {
-      output_name = target_name
-    }
-    if (defined(invoker.source_root)) {
-      source_root = invoker.source_root
-      assert(get_path_info(source_root, "extension") == "rs",
-             "`source_root` must be a .rs file name")
-    } else {
-      source_root = "$output_name.rs"
-    }
+  not_needed(invoker,
+             [
+               "output_name",
+               "source_root",
+             ])
 
-    sources += [ source_root ]
-    source_root = rebase_path(source_root, "$target_gen_dir/$target_name")
-    preamble = [
-      "// Textually include the kernel_rust_mod() source_root file.",
-      "include!(\"${source_root}\");",
-    ]
-
-    upward_metadata = true
+  test_deps = []
+  if (defined(invoker.test_deps)) {
+    test_deps_target = "kernel_rust_mod.${target_name}.test_deps"
+    test_deps += [ ":$test_deps_target" ]
+    kernel_test_deps(test_deps_target) {
+      visibility = [ ":*" ]
+      public_deps = invoker.test_deps
+    }
   }
-}
 
-# Define a Rust crate-level attribute that can go into a kernel crate.
-#
-# This defines a target whose effect is to insert `#![$target_name]` at the top
-# of the kernel crate's root source file, when this target is in the $deps
-# graph of a kernel_executable() target.
-#
-# The recommended practice is to put this into deps of the kernel_rust_mod()
-# target whose sources necessitate using this crate-wide attribute.
-#
-# Parameters
-#
-#   * output_name
-#     - Optional: The line "#![$output_name]" is what will be emitted.
-#     Usually this is not used, and the target is just named appropriately.
-#     But this can be set to a more complex string like "attr = val" too.
-#     - Type: string
-#     - Default: "$target_name"
-#
-#   * deps, metadata, testonly, visibility
-#     - Optional: Usual GN meanings.
-#
-template("kernel_rust_mod_attr") {
   group(target_name) {
     forward_variables_from(invoker,
                            [
-                             "deps",
-                             "visibility",
+                             "data_deps",
+                             "public_configs",
+                             "public_deps",
                              "testonly",
+                             "visibility",
                            ])
-    if (defined(invoker.output_name)) {
-      _attr = invoker.output_name
-    } else {
-      _attr = target_name
+    deps = test_deps
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
     }
-    _label = get_label_info(":$target_name", "label_with_toolchain")
+
     metadata = {
-      kernel_rust_mod_preamble = []
+      rust_sources = []
+      if (defined(invoker.source_root)) {
+        rust_sources += [ rebase_path(invoker.source_root, root_build_dir) ]
+      }
+      if (defined(invoker.sources)) {
+        rust_sources += rebase_path(invoker.sources, root_build_dir)
+      }
+      if (defined(invoker.inputs)) {
+        rust_sources += rebase_path(invoker.inputs, root_build_dir)
+      }
       if (defined(invoker.metadata)) {
         forward_variables_from(invoker.metadata, "*")
       }
-      kernel_rust_mod_preamble += [ "#![$_attr]  $_label" ]
+
+      _is_test_kernel = toolchain_variant.tags + [ "kernel-with-tests" ] -
+                        [ "kernel-with-tests" ] != toolchain_variant.tags
+      if (_is_test_kernel) {
+        _kernel_bin_name = "vmzircon.with-tests"
+      } else {
+        _kernel_bin_name = "vmzircon"
+      }
+      rust_target_mapping = [
+        {
+          disable_rustdoc = true
+          disable_clippy = false
+          clippy_label =
+              get_label_info("//zircon/kernel/bin:${_kernel_bin_name}.clippy",
+                             "label_with_toolchain")
+          actual_label =
+              get_label_info("//zircon/kernel/bin:${_kernel_bin_name}",
+                             "label_with_toolchain")
+          original_label =
+              get_label_info(":$target_name", "label_with_toolchain")
+          target_is_fuchsia = is_fuchsia
+          target = current_target_tuple
+          clippy_output = rebase_path(
+                  "$root_gen_dir/zircon/kernel/bin/${_kernel_bin_name}.clippy",
+                  root_build_dir)
+          src = rust_sources
+        },
+      ]
     }
   }
 }
 
-# Roll up kernel_rust_mod() targets into a $crate_root source file.
-#
-# This defines a generated_file() target emitting a `.rs` source file to be
-# used as the $crate_root in a Rust crate target.  Its get_target_outputs()
-# will yield a single `.rs` source file to use as $crate_root.  The target must
-# also go into the direct $deps list of the crate target to propagate necessary
-# $public_configs and $public_deps.
+# Collects compiler flags and RSP files for kernel external Rust dependencies.
 #
 # Parameters
 #
+#   * executable_target
+#     - Optional: Output name of the kernel executable to associate with tooling.
+#     - Type: string
+#
 #   * deps
-#     - Required: Should reach kernel_rust_mod() and kernel_rust_mod_attr()
-#     targets; can be the sole path to anything else to link into the crate.
+#     - Required: Dependencies to walk for external Rust crates.
+#     - Type: list(label)
+#
+#   * test_deps
+#     - Optional: Test dependencies.
 #     - Type: list(label)
 #
 #   * public_configs, public_deps, metadata, testonly, visibility
 #     - Optional: Usual GN meanings.
 #
 template("kernel_rust_mod_crate_root") {
-  source_root_file = "$target_gen_dir/$target_name.rs"
-
-  # GN's support for Rust targets only handles other Rust crates (ultimately,
-  # rust_library() or rust_proc_macro() targets) in "direct" deps.  That is,
-  # either literal `deps` list in target itself, or their equivalent via
-  # `public_deps` propagation.  These get tool() substitutions in {{externs}}
-  # of `--extern name=...` switches for each of those; the Rust compiler in
-  # turn makes those available for `name::` use, and indeed warns if there is
-  # none.  Those, and all transitive Rust crate deps---only via "direct" deps
-  # at each Rust crate target, get tool() substitutions in {{rustdeps}} of
-  # `-Ldependency=...` switches so that the Rust compiler can find all the
-  # dependencies of those `--extern` crates.
-  #
-  # The kernel executable() has no Rust crates as direct deps.  Everything
-  # comes only via indirect deps on group() and source_set() targets.  So GN
-  # puts nothing into {{externs}} or {{rustdeps}}.  The code here must make up
-  # some equivalent plumbing for the kernel's dependencies on Rust crates.
-
   targets = {
     main = target_name
     label = get_label_info(":$main", "label_with_toolchain")
     prefix = "_kernel_rust_mod_crate_root.$target_name"
-    mod = "$prefix.mod"
-    preamble = "$prefix.preamble"
-    postamble = "$prefix.postamble"
     config = "$prefix.config"
-    deps = "$prefix.deps"
-    common = {
-      visibility = [ ":$main" ]
-      forward_variables_from(invoker, [ "testonly" ])
-    }
   }
-
-  # The .rs file generated by _kernel_rust_mod_impl() will be `include!`d into
-  # the crate root.  The deps ensure all the non-Rust code goes into the link.
-  # What's not handled is any Rust crates used by the kernel's Rust sources,
-  # i.e. rust_library() or rust_proc_macro() targets that appear in the deps
-  # graph.  There are a few ways that a Rust crate can be referenced:
-  #
-  #  1. Kernel Rust sources use `crate_name::...` items in some fashion.
-  #     * The defining crate should appear in $deps of the kernel_rust_mod()
-  #       that lists the `.rs` source file where it's used.
-  #
-  #  2. A crate referred to via #1 has another crate in its $deps list.
-  #
-  #  3. A kernel_rust_crate() target is in the $deps graph.
-  #     * This is used when the crate defines `extern "C"` symbols that are
-  #       used by non-Rust code.
-  #     * The source_set() containing the non-Rust source that refers to such a
-  #       symbol should have the kernel_rust_crate() target in its $deps.
-  #     * The _kernel_rust_mod_impl() target effectively transforms this into a
-  #       case of #1 via `use crate_name as _;` in a source file.
 
   gen_rsp_files = [
     {
-      # For #1, --extern switches are needed for each rust_library() or
-      # rust_proc_macro() that appears in the transitive deps graph across
-      # kernel_rust_mod() and non-Rust targets.
       key = "kernel_rust_externs"
-
-      # This excludes any that are only indirect deps via another Rust crate.
       barrier = [ "rust_barrier" ]
     },
     {
-      # For #2, -Ldependency=... switches are needed for each rust_library() or
-      # rust_proc_macro() that appears in the whole transitive deps graph.
       key = "rust_aux_searchdir"
       barrier = []
     },
@@ -596,26 +221,21 @@ template("kernel_rust_mod_crate_root") {
       forward_variables_from(invoker, [ "testonly" ])
       outputs = [ "$target_gen_dir/$target_name" ]
       output_conversion = "list lines"
-      walk_keys = gen.barrier + [ "rust_mod_preamble_barrier" ]
+      walk_keys = gen.barrier
       data_keys = [ gen.key ]
       deps = invoker.deps
       metadata = {
-        # No further walks will look through this to find the real deps.
         rust_barrier = []
-        rust_mod_barrier = []
-        rust_mod_preamble_barrier = []
       }
     }
     gen_deps += [ gen.label ]
     gen_inputs += get_target_outputs(gen.label)
   }
 
-  # The config() adds in the switches that enable what _kernel_rust_mod_impl()
-  # generates to work.
   config(targets.config) {
     visibility = [ ":${targets.main}" ]
     rustflags = []
-    inputs = gen_inputs + [ source_root_file ]
+    inputs = gen_inputs
     foreach(file, gen_inputs) {
       rustflags += [ "@" + rebase_path(file, root_build_dir) ]
     }
@@ -625,114 +245,51 @@ template("kernel_rust_mod_crate_root") {
     }
   }
 
-  # The crate_root file gets preamble lines collected from metadata.
-  generated_file(targets.main) {
+  group(targets.main) {
     forward_variables_from(invoker,
                            [
-                             "metadata",
-                             "public_configs",
-                             "public_deps",
-                             "visibility",
                              "testonly",
-                           ])
-    outputs = [ source_root_file ]
-    output_conversion = "list lines"
-    walk_keys = [ "rust_barrier" ]
-    data_keys = [ "kernel_rust_mod_preamble" ]
-
-    # The order matters here.  Separate += lines is the surest way to avoid any
-    # label sorting by `gn format`.  First, the preamble.
-    deps = [ ":${targets.preamble}" ]
-
-    # Next, the real deps, via a group() that prevents the other metadata walks
-    # from reaching those deps too early.  This finds kernel_rust_mod_attr()s.
-    deps += [ ":${targets.deps}" ]
-
-    # Finally, the postamble.
-    deps += [ ":${targets.postamble}" ]
-
-    # The crate target needs the switches collected into the config().
-    if (!defined(public_configs)) {
-      public_configs = []
-    }
-    public_configs += [ ":${targets.config}" ]
-
-    # The config() inputs are generated by the $gen_deps, so these need to be
-    # propagated as "direct" deps of the crate target using the config().
-    if (!defined(public_deps)) {
-      public_deps = []
-    }
-    public_deps += gen_deps
-
-    # Likewise for the source_root file.
-    public_deps += [ ":${targets.mod}" ]
-  }
-
-  # The _kernel_rust_mod_impl() target here rolls up all the Rust source files
-  # for the kernel crate itself.  kernel_rust_mod() targets in the deps graph
-  # contribute `mod ...;` lines to define Rust modules for the kernel crate.
-  # Submodules have already been rolled up by the most-direct kernel_rust_mod()
-  # targets; the ones collected here are the top-level modules of the crate.
-  #
-  # kernel_rust_crate() targets instead contribute `use ... as _;` lines here
-  # to tell Rust to link that crate in despite no other apparent reason.
-  _kernel_rust_mod_impl(targets.mod) {
-    forward_variables_from(invoker,
-                           [
                              "visibility",
-                             "testonly",
                            ])
+    public_configs = [ ":${targets.config}" ]
+    public_deps = gen_deps + invoker.deps
 
-    # This will roll up all the "top-level" kernel_rust_mod() targets as
-    # submodules of the `_imports` module within the `kernel` crate.  All those
-    # top-level modules are reexported as `$crate::<name>`.
-    output_name = "crate"
-    sources = []
-    deps = invoker.deps
-
-    preamble = [
-      "// Top-level collection for kernel_rust_mod_crate_root() target:",
-      get_label_info(":${targets.main}", "label_with_toolchain"),
-    ]
-    upward_metadata = false
-  }
-
-  mod_outputs = get_target_outputs(":${targets.mod}")
-  mod_file_relpath = rebase_path(mod_outputs[0], target_gen_dir)
-
-  group(targets.preamble) {
-    forward_variables_from(targets.common, "*")
-    metadata = {
-      kernel_rust_mod_preamble = [
-        targets.label,
-        "// This is a generated file. DO NOT EDIT!",
-        "",
-      ]
+    if (defined(invoker.executable_target)) {
+      _kernel_bin_name = invoker.executable_target
+    } else {
+      _is_test_kernel = toolchain_variant.tags + [ "kernel-with-tests" ] -
+                        [ "kernel-with-tests" ] != toolchain_variant.tags
+      if (_is_test_kernel) {
+        _kernel_bin_name = "vmzircon.with-tests"
+      } else {
+        _kernel_bin_name = "vmzircon"
+      }
     }
-  }
-
-  group(targets.deps) {
-    forward_variables_from(targets.common, "*")
-    deps = invoker.deps
     metadata = {
-      # The walks above and inside _kernel_rust_mod_impl() will stop here so
-      # they don't reach the deps before they should be reached.
-      rust_mod_preamble_barrier = []
-    }
-  }
-
-  group(targets.postamble) {
-    forward_variables_from(targets.common, "*")
-    metadata = {
-      kernel_rust_mod_preamble = [
-        "",
-        "// Textually include the generated rust_kernel_mod() imports.",
-        "include!(\"$mod_file_relpath\");",
-        "",
-        "// Make each top-level rust_kernel_mod() visible as crate::mod_name.",
-        "#[allow(unused_imports)]",
-        "pub(crate) use _imports::*;",
+      rust_sources = [ rebase_path("//zircon/kernel/main.rs", root_build_dir) ]
+      rust_target_mapping = [
+        {
+          disable_rustdoc = true
+          disable_clippy = false
+          clippy_label =
+              get_label_info("//zircon/kernel/bin:${_kernel_bin_name}.clippy",
+                             "label_with_toolchain")
+          actual_label =
+              get_label_info("//zircon/kernel/bin:${_kernel_bin_name}",
+                             "label_with_toolchain")
+          original_label =
+              get_label_info(":$target_name", "label_with_toolchain")
+          target_is_fuchsia = is_fuchsia
+          target = current_target_tuple
+          clippy_output = rebase_path(
+                  "$root_gen_dir/zircon/kernel/bin/${_kernel_bin_name}.clippy",
+                  root_build_dir)
+          src = [ rebase_path("//zircon/kernel/main.rs", root_build_dir) ]
+        },
       ]
+      if (defined(invoker.metadata)) {
+        forward_variables_from(invoker.metadata, "*")
+      }
     }
   }
 }

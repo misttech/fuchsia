@@ -12,6 +12,8 @@ pub mod continuous_attribution_tracker;
 pub mod discardable_vmo_tracker;
 pub mod evictor;
 pub mod fault;
+#[path = "../lib/heap/heap.rs"]
+pub mod heap;
 pub mod page;
 pub mod page_queues;
 pub mod page_slab_allocator;

@@ -5,12 +5,24 @@
 // https://opensource.org/licenses/MIT
 
 #[cfg(target_arch = "aarch64")]
+#[path = "../arm64/src/mod.rs"]
+pub mod arch_arm64;
+
+#[cfg(target_arch = "aarch64")]
 #[allow(unused_imports)]
 pub use arch_arm64::{self as arm64, *};
 
 #[cfg(target_arch = "riscv64")]
+#[path = "../riscv64/src/mod.rs"]
+pub mod arch_riscv64;
+
+#[cfg(target_arch = "riscv64")]
 #[allow(unused_imports)]
 pub use arch_riscv64::{self as riscv64, *};
+
+#[cfg(target_arch = "x86_64")]
+#[path = "../x86/src/mod.rs"]
+pub mod arch_x86;
 
 #[cfg(target_arch = "x86_64")]
 #[allow(unused_imports)]

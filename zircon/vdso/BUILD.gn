@@ -178,21 +178,27 @@ group("private") {
   metadata = barrier_metadata
 }
 
-kernel_rust_mod("syscall-signatures") {
-  output_name = "syscall_signatures"
+_vdso_gen_dir =
+    get_label_info(":zx_zither.kernel($fidl_toolchain)", "target_gen_dir")
+_syscall_sigs_rs =
+    rebase_path("$_vdso_gen_dir/zx/zither/kernel/lib/syscalls/syscall_sigs.rs",
+                root_build_dir)
+
+config("syscall-signatures.path") {
+  visibility = [ "*" ]
+  rustenv = [ "SYSCALL_SIGS_PATH=${_syscall_sigs_rs}" ]
+}
+
+group("syscall-signatures") {
   visibility = [
     ":*",
-    "//zircon/kernel/lib/syscalls/*",
+    "//zircon/kernel/*",
   ]
-  _vdso_gen_dir =
-      get_label_info(":zx_zither.kernel($fidl_toolchain)", "target_gen_dir")
-  source_root = "$_vdso_gen_dir/zx/zither/kernel/lib/syscalls/syscall_sigs.rs"
-  sources = [ source_root ]
-  deps = [
-    ":zx_zither.kernel.gen($default_toolchain)",
-    "//sdk/rust/zx-status",
-    "//sdk/rust/zx-types",
-  ]
+  public_configs = [ ":syscall-signatures.path" ]
+  public_deps = [ ":zx_zither.kernel.gen($default_toolchain)" ]
+  metadata = {
+    rust_sources = [ _syscall_sigs_rs ]
+  }
 }
 
 zither_golden_files("zx.rust_syscall.checked-in") {

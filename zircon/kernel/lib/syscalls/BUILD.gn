@@ -131,8 +131,8 @@ kernel_rust_mod("syscalls-rs") {
     "iob.rs",
     "iommu.rs",
     "job.rs",
-    "lib.rs",
     "membarrier.rs",
+    "mod.rs",
     "msi.rs",
     "nanosleep.rs",
     "object_info.rs",
@@ -165,13 +165,14 @@ kernel_rust_mod("syscalls-rs") {
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
     "//third_party/rust_crates:zerocopy",
+    "//zircon/kernel/bin/rustenv_path",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
     "//zircon/vdso:private",
-    "//zircon/vdso:syscall-signatures",
   ]
+  public_deps = [ "//zircon/vdso:syscall-signatures" ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }

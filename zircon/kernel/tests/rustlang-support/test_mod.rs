@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Normal Rust file-finding works with "test_submod.rs" in the GN sources list.
+pub mod test_dep_pub_mod;
+#[path = "test_dep_was_renamed_mod.rs"]
+mod test_dep_renamed_mod;
 mod test_submod;
 
 use test_submod::*;

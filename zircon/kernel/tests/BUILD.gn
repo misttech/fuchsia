@@ -162,7 +162,7 @@ if (toolchain_environment == "kernel") {
 
   kernel_rust_mod("unused_rust") {
     testonly = true
-    sources = []
+    sources = [ "unused_rust.rs" ]
     deps = [
       "//src/lib/ksync",
       "//zircon/kernel/lib/counters:counters-rs",
@@ -172,6 +172,6 @@ if (toolchain_environment == "kernel") {
 
   kernel_rust_mod("arch_rs_tests") {
     testonly = true
-    sources = []
+    sources = [ "arch_rs_tests.rs" ]
   }
 }

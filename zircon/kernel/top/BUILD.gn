@@ -21,8 +21,6 @@ group("top") {
     "//zircon/kernel/arch/$zircon_cpu",
     "//zircon/kernel/kernel",
     "//zircon/kernel/lib/flow-id",  # Used by <kernel/thread.h>.
-    "//zircon/kernel/switch:no_main",
-    "//zircon/kernel/switch:no_std",
   ]
 }
 
@@ -83,7 +81,7 @@ source_set("main") {
 }
 
 kernel_rust_mod("rust_panic") {
-  sources = []
+  sources = [ "rust_panic.rs" ]
   deps = [ "//zircon/system/ulib/fbl/rust:fbl" ]
 }
 

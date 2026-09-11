@@ -146,3 +146,187 @@ There is no longer a singular 'kernel' to build. For a more minimal build while
 iterating on kernel build, it is recommended that one build kernel images
 directly (e.g., `fx build '//zircon/kernel/image/eng'` or
 `fx build -- kernel.eng.zbi`).
+
+# Rust Code Organization in the Zircon Kernel
+
+## Single Crate Architecture
+
+The Zircon kernel is compiled as a single, monolithic Rust executable crate
+(`--crate-name=kernel`), rooted at [`zircon/kernel/main.rs`](/zircon/kernel/main.rs).
+
+Key properties:
+- **`#![no_std]` and `#![no_main]`**: The kernel operates in a bare-metal
+  environment without standard library runtime support or default entry points.
+- **Checked-in Root**: `main.rs` explicitly declares the kernel's top-level submodules using
+  `#[path = "..."]` attributes (for example, `#[path = "kernel/mod.rs"] pub mod kernel;`).
+- **Conditional Compilation**: Target-specific modules (e.g. `platform_pc` on
+  `x86_64`) and test modules (under `#[cfg(ktest)]`) are conditionally declared
+  in `main.rs`.
+
+## Module Organization & Hierarchy
+
+Rust source code within the kernel follows a hierarchical module structure:
+
+```
+zircon/kernel/
+├── main.rs                 # Root of the kernel crate
+├── kernel/                 # Core kernel primitives (threads, sync, scheduler)
+│   ├── mod.rs              # pub mod thread; pub mod mp; ...
+│   ├── thread.rs
+│   └── ...
+├── vm/                     # Virtual memory subsystem
+│   ├── mod.rs              # Declares VM submodules & external module paths
+│   ├── page_slab_allocator.rs
+│   └── ...
+├── lib/
+│   ├── heap/               # Kernel heap library (e.g., heap.rs)
+│   ├── user_copy/          # User-memory copying primitives
+│   └── ...
+└── platform/               # Architecture- and board-specific code
+```
+
+The kernel is a mix of C++ and Rust code. The directory structure follows the structure of the C++
+kernel. When the conversion to Rust is complete, we will restructure the code to more closely match
+Rust conventions.
+
+### Subsystem Modules (`mod.rs`)
+
+Each major kernel subsystem typically has a `mod.rs` file that defines its
+public API and internal modules:
+
+- Standard intra-directory modules are declared normally (e.g., `pub mod thread;`
+  in `zircon/kernel/kernel/mod.rs`).
+- Modules defined in other directories (such as under `zircon/kernel/lib/`) that
+  are consumed as submodules of a subsystem are declared using relative `#[path]`
+  attributes. For example, `zircon/kernel/vm/mod.rs` declares the `heap` module:
+
+  ```rust
+  #[path = "../lib/heap/heap.rs"]
+  pub mod heap;
+  ```
+
+  This makes the module available as `crate::vm::heap`.
+
+## GN Build Templates & Infrastructure
+
+Because all kernel Rust code is compiled into a single crate, GN targets do not
+compile separate `.rlib` archives for each kernel submodule. Instead, GN
+templates coordinate source tracking and dependency propagation.
+
+### `kernel_rust_mod`
+
+Defined in [`//zircon/kernel/kernel_rust_mod.gni`](/zircon/kernel/kernel_rust_mod.gni).
+
+Represents a logical Rust module within the kernel crate. Example:
+```gn
+kernel_rust_mod("heap-rs") {
+  sources = [ "heap.rs" ]
+  deps = [ ":heap-bindings" ]
+}
+```
+
+Note: **Always list all `.rs` files in `sources`**. Omitting a file from
+  `sources` will cause depfile verification to fail during the build.
+
+### `kernel_rust_crate`
+
+Defined in [`//zircon/kernel/kernel_rust_crate.gni`](/zircon/kernel/kernel_rust_crate.gni).
+
+Defines an external Rust library crate (`rustc_library`) built specifically for the kernel environment.
+
+### `kernel_bindgen_crate`
+
+Defined in [`//zircon/kernel/kernel_bindgen_crate.gni`](/zircon/kernel/kernel_bindgen_crate.gni).
+
+Generates Rust FFI bindings from C/C++ kernel headers using `rustc_bindgen` and exposes them as an
+external crate. Example:
+```gn
+kernel_bindgen_crate("heap-bindings") {
+  headers = [ "include/lib/heap_ffi.h" ]
+  non_rust_deps = [ ":heap" ]
+  output_name = "heap_bindings.rs"
+  cpp = true
+}
+```
+In Rust code:
+```rust
+use heap_bindings as bindings;
+```
+
+## How to Manage Libraries and Dependencies
+
+### Adding a New Source File to an Existing Module
+
+1. Add the `.rs` file to `sources` in the corresponding `kernel_rust_mod` target
+   in `BUILD.gn`:
+   ```gn
+   kernel_rust_mod("kernel-rs") {
+     sources = [
+       ...
+       "new_feature.rs",
+     ]
+   }
+   ```
+2. Declare the submodule in `mod.rs`:
+   ```rust
+   pub mod new_feature;
+   ```
+
+### Wiring Up a Library Module (`kernel_rust_mod`)
+
+When a subsystem needs to use a Rust module located in another directory (for
+instance, a library in `//zircon/kernel/lib/<libname>`):
+
+1. **Define the library module**: Ensure `//zircon/kernel/lib/<libname>/BUILD.gn`
+   defines a `kernel_rust_mod` listing its source files:
+   ```gn
+   kernel_rust_mod("<libname>-rs") {
+     sources = [ "<libname>.rs" ]
+     deps = [ ... ]
+   }
+   ```
+2. **Add GN dependency**: In the consumer's `BUILD.gn`, add the library target to
+   the consumer's `kernel_rust_mod` `deps`:
+   ```gn
+   kernel_rust_mod("vm-rs") {
+     ...
+     deps = [
+       ...
+       "//zircon/kernel/lib/<libname>:<libname>-rs",
+     ]
+   }
+   ```
+3. **Declare the module in Rust**:
+   - If the library belongs under a specific subsystem (e.g., `crate::vm::<libname>`),
+     declare it in that subsystem's `mod.rs`:
+     ```rust
+     #[path = "../lib/<libname>/<libname>.rs"]
+     pub mod <libname>;
+     ```
+   - If the library is a top-level kernel module (e.g., `crate::<libname>`),
+     declare it in `zircon/kernel/main.rs`:
+     ```rust
+     #[path = "lib/<libname>/<libname>.rs"]
+     pub mod <libname>;
+     ```
+
+### Force-Linking C Entry Points
+
+If an external crate provides `extern "C"` functions that are called by C++
+code but not referenced directly by Rust code, Rust's dead-code elimination may
+strip the crate. To prevent this, add an explicit reference in
+`zircon/kernel/main.rs`:
+
+```rust
+use <crate_name> as _;
+```
+
+## Testing
+
+- **In-Kernel Unit Tests**: Kernel unit tests use `#[cfg(ktest)]` and the
+  `#[unittest::suite]` macro from the kernel `unittest` framework.
+- **Test Dependencies**: Add test-only dependencies to `test_deps` in
+  `kernel_rust_mod`.
+- **Running Tests**:
+  - Run with `fx core-tests --kernel-unittest <suite_name>` or
+    `fx run-boot-test core-tests.eng`.

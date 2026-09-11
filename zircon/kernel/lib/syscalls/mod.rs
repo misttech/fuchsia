@@ -4,6 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+pub mod syscall_signatures {
+    include!(rustenv_path::envpath!("SYSCALL_SIGS_PATH"));
+}
+
 mod bti;
 mod clock;
 mod counter;

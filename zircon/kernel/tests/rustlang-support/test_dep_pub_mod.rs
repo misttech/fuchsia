@@ -4,5 +4,6 @@
 
 pub const TEST_DEP_CONST: i32 = test_lib::TEST_CONST;
 
-// This module has a `mod test_dep_priv_mod;` via GN.
+#[path = "test_dep_priv_mod.rs"]
+mod test_dep_priv_mod;
 pub use test_dep_priv_mod::*;

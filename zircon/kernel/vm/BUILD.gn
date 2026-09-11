@@ -1265,7 +1265,6 @@ kernel_rust_mod("vm-rs") {
     "//zircon/kernel/lib/init:init_rust",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/kernel/lib/page:page-rs",
-    "//zircon/kernel/switch:allow_dead_code",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
@@ -1343,7 +1342,10 @@ kernel_rust_mod("vm-rs-unittests") {
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
-  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
+  test_deps = [
+    ":test-helper-bindings",
+    "//zircon/kernel/lib/unittest:unittest-rs",
+  ]
 }
 
 config("suppress-nonheap-warning") {

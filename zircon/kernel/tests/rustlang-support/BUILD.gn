@@ -32,7 +32,10 @@ kernel_rust_crate("trivial_tests") {
 kernel_rust_mod("test_mod") {
   testonly = true
   visibility = [ ":*" ]
-  sources = [ "test_submod.rs" ]
+  sources = [
+    "test_mod.rs",
+    "test_submod.rs",
+  ]
   public_deps = [ ":test_dep_pub_mod" ]
   deps = [ ":test_dep_rename_mod" ]
 }
@@ -40,7 +43,7 @@ kernel_rust_mod("test_mod") {
 kernel_rust_mod("test_dep_pub_mod") {
   testonly = true
   visibility = [ ":*" ]
-  sources = []
+  sources = [ "test_dep_pub_mod.rs" ]
   deps = [
     ":test_dep_priv_mod",
     "test_lib",
@@ -50,7 +53,7 @@ kernel_rust_mod("test_dep_pub_mod") {
 kernel_rust_mod("test_dep_priv_mod") {
   testonly = true
   visibility = [ ":*" ]
-  sources = []
+  sources = [ "test_dep_priv_mod.rs" ]
   deps = [ "test_macro" ]
 }
 

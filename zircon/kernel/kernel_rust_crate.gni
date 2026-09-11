@@ -59,7 +59,6 @@ template("kernel_rust_crate") {
                            "*",
                            [
                              "edition",
-                             "metadata",
                              "name",
                              "output_name",
                              "test_deps",
@@ -73,22 +72,6 @@ template("kernel_rust_crate") {
       deps = []
     }
     deps += test_deps
-
-    metadata = {
-      rust_mod_import_lines = []
-      if (defined(invoker.metadata)) {
-        forward_variables_from(invoker.metadata, "*")
-      }
-      if (is_kernel) {
-        # rust_library() itself (BUILDCONFIG.gn) adds rust_kernel_crate_flags.
-        # See kernel_rust_mod() and kernel_executable().
-        rust_mod_import_lines += [
-          # A label starts with // and so is already a Rust comment!
-          "    " + get_label_info(":$target_name", "label_with_toolchain"),
-          "    use $crate_name as _;",
-        ]
-      }
-    }
   }
 }
 
