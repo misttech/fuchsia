@@ -17,6 +17,7 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <fbl/alloc_checker.h>
+#include <soc/aml-s905d2/s905d2-hw.h>
 
 #include "a1-blocks.h"
 #include "a113-blocks.h"
@@ -688,13 +689,25 @@ void AmlGpio::SetPull(const AmlGpioBlock* block, uint32_t pinindex,
 }
 
 uint64_t AmlGpio::GetFunction(uint32_t index, const AmlGpioBlock* block) {
-  // Validity Check: pin_to_block must return a block that contains `pin`
-  //                 therefore `pin` must be greater than or equal to the first
-  //                 pin of the block.
   ZX_DEBUG_ASSERT(index >= block->start_pin);
 
-  // Each Pin Mux is controlled by a 4 bit wide field in `reg`
-  // Compute the offset for this pin.
+  if (pid_ == PDEV_PID_AMLOGIC_S905D2) {
+    if (index == S905D2_WIFI_SDIO_CLK) {
+      constexpr uint32_t kOffset = S905D2_PREG_PAD_GPIO5_O * sizeof(uint32_t);
+      constexpr uint32_t kMask = 0x00020000;
+      if (mmios_[MMIO_GPIO].Read32(kOffset) & kMask) {
+        return S905D2_WIFI_SDIO_CLK_FN;
+      }
+    } else if ((index >= S905D2_WIFI_SDIO_D0 && index <= S905D2_WIFI_SDIO_D3) ||
+               index == S905D2_WIFI_SDIO_CMD) {
+      constexpr uint32_t kOffset = S905D2_PERIPHS_PIN_MUX_2 * sizeof(uint32_t);
+      constexpr uint32_t kMask = 0x01000000;
+      if (mmios_[MMIO_GPIO].Read32(kOffset) & kMask) {
+        return S905D2_WIFI_SDIO_D0_FN;
+      }
+    }
+  }
+
   uint32_t pin_shift = (index - block->start_pin) * 4;
   pin_shift += block->output_shift;
 
@@ -705,6 +718,39 @@ uint64_t AmlGpio::GetFunction(uint32_t index, const AmlGpioBlock* block) {
 // Configure a pin for an alternate function
 void AmlGpio::SetFunction(uint32_t index, const AmlGpioBlock* block, uint64_t function) {
   ZX_DEBUG_ASSERT(index >= block->start_pin);
+
+  if (pid_ == PDEV_PID_AMLOGIC_S905D2) {
+    // This is product-specific behavior (e.g. for Astro) where SDMMC port B output is routed to
+    // GPIOX via undocumented mux bits instead of the standard pinmux registers.
+    if (index == S905D2_WIFI_SDIO_CLK) {
+      // PREG_PAD_GPIO5_O[17] is an undocumented bit that selects between (0) GPIO and (1) SDMMC
+      // port B as outputs to GPIOX_4 (the SDIO clock pin). This mux is upstream of the alt
+      // function mux, so in order for port B to use GPIOX, the alt function value must also be set
+      // to zero. Note that the output enable signal does not seem to be muxed here, and must be set
+      // separately in order for clock output to work.
+      constexpr uint32_t kOffset = S905D2_PREG_PAD_GPIO5_O * sizeof(uint32_t);
+      constexpr uint32_t kMask = 0x00020000;
+      if (function == S905D2_WIFI_SDIO_CLK_FN) {
+        mmios_[MMIO_GPIO].SetBits32(kMask, kOffset);
+        function = 0;  // Upstream mux requires alt-fn mux = 0
+      } else {
+        mmios_[MMIO_GPIO].ClearBits32(kMask, kOffset);
+      }
+    } else if ((index >= S905D2_WIFI_SDIO_D0 && index <= S905D2_WIFI_SDIO_D3) ||
+               index == S905D2_WIFI_SDIO_CMD) {
+      // PERIPHS_PIN_MUX_2[24] is another undocumented bit that controls the corresponding mux for
+      // the rest of the SDIO pins (data and cmd). Unlike GPIOX_4, the output enable signals are
+      // also muxed, so the pin directions don't need to be set manually.
+      constexpr uint32_t kOffset = S905D2_PERIPHS_PIN_MUX_2 * sizeof(uint32_t);
+      constexpr uint32_t kMask = 0x01000000;
+      if (function == S905D2_WIFI_SDIO_D0_FN) {
+        mmios_[MMIO_GPIO].SetBits32(kMask, kOffset);
+        function = 0;  // Upstream mux requires alt-fn mux = 0
+      } else {
+        mmios_[MMIO_GPIO].ClearBits32(kMask, kOffset);
+      }
+    }
+  }
 
   uint32_t pin_shift = (index - block->start_pin) * 4;
   pin_shift += block->output_shift;

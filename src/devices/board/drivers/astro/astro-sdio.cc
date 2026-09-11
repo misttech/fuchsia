@@ -13,7 +13,6 @@
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/zbi-format/zbi.h>
-#include <lib/zircon-internal/align.h>
 
 #include <bind/fuchsia/broadcom/platform/cpp/bind.h>
 #include <bind/fuchsia/broadcom/platform/sdio/cpp/bind.h>
@@ -36,15 +35,6 @@ using namespace fuchsia_driver_framework;
 
 namespace astro {
 namespace fpbus = fuchsia_hardware_platform_bus;
-
-namespace {
-
-uint32_t GpioBase() {
-  return fbl::round_down<uint32_t, uint32_t>(S905D2_GPIO_BASE, zx_system_get_page_size());
-}
-uint32_t GpioBaseOffset() { return S905D2_GPIO_BASE - GpioBase(); }
-
-}  // namespace
 
 static const std::vector<fpbus::BootMetadata> wifi_boot_metadata{
     {{
@@ -109,44 +99,11 @@ const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioInitProperties =
 };
 
 zx_status_t Astro::SdEmmcConfigurePortB() {
-  size_t aligned_size =
-      ZX_ROUNDUP((S905D2_GPIO_BASE - GpioBase()) + S905D2_GPIO_LENGTH, zx_system_get_page_size());
-  zx::unowned_resource resource(get_mmio_resource(parent()));
-  zx::vmo vmo;
-  zx_status_t status = zx::vmo::create_physical(*resource, GpioBase(), aligned_size, &vmo);
-  if (status != ZX_OK) {
-    zxlogf(ERROR, "failed to create VMO: %s", zx_status_get_string(status));
-    return status;
-  }
-
-  zx::result<fdf::MmioBuffer> gpio_base =
-      fdf::MmioBuffer::Create(0, aligned_size, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
-  if (gpio_base.is_error()) {
-    zxlogf(ERROR, "Create(gpio) error: %s", gpio_base.status_string());
-  }
-
-  // TODO(https://fxbug.dev/42155334): Figure out if we need gpio protocol ops to modify these
-  // gpio registers.
-
-  // PREG_PAD_GPIO5_O[17] is an undocumented bit that selects between (0) GPIO and (1) SDMMC port B
-  // as outputs to GPIOX_4 (the SDIO clock pin). This mux is upstream of the alt function mux, so in
-  // order for port B to use GPIOX, the alt function value must also be set to zero. Note that the
-  // output enable signal does not seem to be muxed here, and must be set separately in order for
-  // clock output to work.
-  gpio_base->SetBits32(AML_SDIO_PORTB_GPIO_REG_5_VAL,
-                       GpioBaseOffset() + (S905D2_PREG_PAD_GPIO5_O << 2));
-
-  // PERIPHS_PIN_MUX_2[24] is another undocumented bit that controls the corresponding mux for the
-  // rest of the SDIO pins (data and cmd). Unlike GPIOX_4, the output enable signals are also muxed,
-  // so the pin directions don't need to be set manually.
-  gpio_base->SetBits32(AML_SDIO_PORTB_PERIPHS_PINMUX2_VAL,
-                       GpioBaseOffset() + (S905D2_PERIPHS_PIN_MUX_2 << 2));
-
   auto sdio_pin = [](uint32_t pin) {
     return fuchsia_hardware_pinimpl::InitStep::WithCall({{
         .pin = pin,
         .call = fuchsia_hardware_pinimpl::InitCall::WithPinConfig({{
-            .function = 0,
+            .function = 1,
             .drive_strength_ua = 4'000,
         }}),
     }});
@@ -175,8 +132,10 @@ zx_status_t Astro::SdEmmcConfigurePortB() {
 
   // Configure clock settings
 
+  zx::unowned_resource resource(get_mmio_resource(parent()));
+  zx::vmo vmo;
   const size_t vmo_size = fbl::round_up<size_t>(S905D2_HIU_LENGTH, zx_system_get_page_size());
-  status = zx::vmo::create_physical(*resource, S905D2_HIU_BASE, vmo_size, &vmo);
+  zx_status_t status = zx::vmo::create_physical(*resource, S905D2_HIU_BASE, vmo_size, &vmo);
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to create VMO: %s", zx_status_get_string(status));
     return status;
@@ -185,15 +144,16 @@ zx_status_t Astro::SdEmmcConfigurePortB() {
       0, S905D2_HIU_LENGTH, std::move(vmo), ZX_CACHE_POLICY_UNCACHED_DEVICE);
   if (hiu_base.is_error()) {
     zxlogf(ERROR, "Create(hiu) error: %s", hiu_base.status_string());
+    return hiu_base.status_value();
   }
 
   uint32_t hhi_gclock_val =
       hiu_base->Read32(HHI_GCLK_MPEG0_OFFSET << 2) | AML_SDIO_PORTB_HHI_GCLK_MPEG0_VAL;
   hiu_base->Write32(hhi_gclock_val, HHI_GCLK_MPEG0_OFFSET << 2);
 
-  uint32_t hh1_sd_emmc_clock_val =
+  uint32_t hhi_sd_emmc_clock_val =
       hiu_base->Read32(HHI_SD_EMMC_CLK_CNTL_OFFSET << 2) & AML_SDIO_PORTB_SDMMC_CLK_VAL;
-  hiu_base->Write32(hh1_sd_emmc_clock_val, HHI_SD_EMMC_CLK_CNTL_OFFSET << 2);
+  hiu_base->Write32(hhi_sd_emmc_clock_val, HHI_SD_EMMC_CLK_CNTL_OFFSET << 2);
 
   return status;
 }
@@ -367,7 +327,10 @@ zx_status_t Astro::SdioInit() {
   gpio_init_steps_.push_back(
       GpioPull(S905D2_WIFI_SDIO_WAKE_HOST, fuchsia_hardware_pin::Pull::kNone));
 
-  SdEmmcConfigurePortB();
+  if (zx_status_t status = SdEmmcConfigurePortB(); status != ZX_OK) {
+    zxlogf(ERROR, "Failed to configure sd-emmc port B: %s", zx_status_get_string(status));
+    return status;
+  }
 
   if (zx::result result = AddSdEmmcNode(pbus_); result.is_error()) {
     zxlogf(ERROR, "Failed to add sd-emmc node: %s", result.status_string());

@@ -10,6 +10,8 @@
 
 #include <gtest/gtest.h>
 #include <mock-mmio-reg/mock-mmio-reg.h>
+#include <soc/aml-s905d2/s905d2-gpio.h>
+#include <soc/aml-s905d2/s905d2-hw.h>
 
 #include "src/lib/testing/predicates/status.h"
 
@@ -308,6 +310,48 @@ TEST_F(S905d2AmlGpioTest, S905d2AltMode) {
   fdf::WireUnownedResult result = client().buffer(arena)->Configure(0x00, config);
   ASSERT_TRUE(result.ok());
   EXPECT_TRUE(result->is_ok());
+}
+
+TEST_F(S905d2AmlGpioTest, S905d2SdioClkAltMode) {
+  WithMmio([](auto& mmio) {
+    mmio[S905D2_PREG_PAD_GPIO5_O * sizeof(uint32_t)].ExpectRead(0x00000000).ExpectWrite(0x00020000);
+    mmio[S905D2_PERIPHS_PIN_MUX_3 * sizeof(uint32_t)]
+        .ExpectRead(0x00000000)
+        .ExpectWrite(0x00000000);
+    // Verification read for GetPull
+    mmio[S905D2_PAD_PULL_UP_EN_REG2 * sizeof(uint32_t)].ExpectRead(0x00000000);
+    // Verification read for GetFunction
+    mmio[S905D2_PREG_PAD_GPIO5_O * sizeof(uint32_t)].ExpectRead(0x00020000);
+  });
+
+  fdf::Arena arena('GPIO');
+  auto config = fuchsia_hardware_pin::wire::Configuration::Builder(arena).function(1).Build();
+  fdf::WireUnownedResult result = client().buffer(arena)->Configure(S905D2_WIFI_SDIO_CLK, config);
+  ASSERT_TRUE(result.ok());
+  EXPECT_TRUE(result->is_ok());
+  EXPECT_EQ(result.value()->new_config.function(), 1u);
+}
+
+TEST_F(S905d2AmlGpioTest, S905d2SdioDataCmdAltMode) {
+  WithMmio([](auto& mmio) {
+    mmio[S905D2_PERIPHS_PIN_MUX_2 * sizeof(uint32_t)]
+        .ExpectRead(0x00000000)
+        .ExpectWrite(0x01000000);
+    mmio[S905D2_PERIPHS_PIN_MUX_3 * sizeof(uint32_t)]
+        .ExpectRead(0x00000000)
+        .ExpectWrite(0x00000000);
+    // Verification read for GetPull
+    mmio[S905D2_PAD_PULL_UP_EN_REG2 * sizeof(uint32_t)].ExpectRead(0x00000000);
+    // Verification read for GetFunction
+    mmio[S905D2_PERIPHS_PIN_MUX_2 * sizeof(uint32_t)].ExpectRead(0x01000000);
+  });
+
+  fdf::Arena arena('GPIO');
+  auto config = fuchsia_hardware_pin::wire::Configuration::Builder(arena).function(1).Build();
+  fdf::WireUnownedResult result = client().buffer(arena)->Configure(S905D2_WIFI_SDIO_D0, config);
+  ASSERT_TRUE(result.ok());
+  EXPECT_TRUE(result->is_ok());
+  EXPECT_EQ(result.value()->new_config.function(), 1u);
 }
 
 TEST_F(A113AmlGpioTest, AltModeFail1) {
