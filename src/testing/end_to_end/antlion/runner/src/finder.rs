@@ -49,32 +49,58 @@ pub(crate) struct MulticastDns {}
 impl Finder for FfxDevice {
     /// Queries FFX for a registered device
     fn find_device(&self, device_name: Option<String>) -> Result<Answer> {
-        let program = self.ffx_binary.clone().into_os_string().into_string().unwrap();
+        let program = self
+            .ffx_binary
+            .to_str()
+            .ok_or_else(|| format_err!("FFX binary path is not valid UTF-8"))?;
         let mut args: Vec<&str> = vec!["--machine", "json"];
-        if device_name.is_some() {
+        if let Some(ref device) = device_name {
             args.push("-t");
-            args.push(device_name.as_ref().unwrap());
+            args.push(device);
         }
         args.push("target");
         args.push("show");
 
         println!("Querying FFX for device parameters: {} {}", program, args.iter().format(" "));
 
-        let output = Command::new(program).args(args).output().expect("failed to execute process");
+        let output = Command::new(program)
+            .args(args)
+            .output()
+            .with_context(|| format!("Failed to execute process: {program}"))?;
         if output.status.success() {
-            let output_str = String::from_utf8(output.stdout).unwrap();
-            let output_json: serde_json::Value = serde_json::from_str(&output_str).unwrap();
-            let target = output_json["target"].as_object().unwrap();
-            let name = target["name"].as_str().unwrap();
-            let ssh_address = target["ssh_address"].as_object().unwrap();
-            let host = ssh_address["host"].as_str().unwrap();
-            let port = ssh_address["port"].as_u64().unwrap();
+            let output_str =
+                String::from_utf8(output.stdout).context("Failed to parse FFX stdout as UTF-8")?;
+            let output_json: serde_json::Value =
+                serde_json::from_str(&output_str).context("Failed to parse FFX output as JSON")?;
+            let target = output_json
+                .get("target")
+                .and_then(|t| t.as_object())
+                .context("Missing 'target' object in FFX target show output")?;
+            let name = target
+                .get("name")
+                .and_then(|n| n.as_str())
+                .context("Missing 'name' in FFX target show output")?;
+            let ssh_address = target
+                .get("ssh_address")
+                .and_then(|a| a.as_object())
+                .with_context(|| {
+                    format!(
+                        "Target '{name}' has no direct SSH address in FFX target show (e.g. connected via USB)"
+                    )
+                })?;
+            let host = ssh_address
+                .get("host")
+                .and_then(|h| h.as_str())
+                .context("Missing 'ssh_address.host' in FFX target show output")?;
+            let port = ssh_address
+                .get("port")
+                .and_then(|p| p.as_u64())
+                .context("Missing 'ssh_address.port' in FFX target show output")?;
             let ip = host
                 .replace("[", "") // FFX returns IPv6 addresses wrapped in brackets, which doesn't work with `.parse()`
                 .replace("]", "")
                 .parse()
-                .context(format!("Attempting to parse string into IP address: {}", host))
-                .unwrap();
+                .with_context(|| format!("Attempting to parse string into IP address: {}", host))?;
 
             let answer = Answer { name: name.to_string(), ip, ssh_port: Some(port as u16) };
             println!("Device {} at {}:{:?}", answer.name, answer.ip, port);
@@ -83,8 +109,8 @@ impl Finder for FfxDevice {
             return Err(format_err!(
                 "FFX exited with status {}: {} {}",
                 output.status,
-                String::from_utf8(output.stdout).unwrap(),
-                String::from_utf8(output.stderr).unwrap()
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
             ));
         }
     }
