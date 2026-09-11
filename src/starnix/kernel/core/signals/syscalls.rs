@@ -940,8 +940,7 @@ pub fn sys_waitid(
         _ => return error!(EINVAL),
     };
 
-    // wait_on_pid returns None if the task was not waited on. In that case, we don't write out a
-    // siginfo. This seems weird but is the correct behavior according to the waitid(2) man page.
+    // wait_on_pid returns None if no child changed state.
     if let Some(waitable_process) = wait_on_pid(current_task, &task_selector, &waiting_options)? {
         if !user_rusage.is_null() {
             let usage = rusage {
@@ -968,6 +967,16 @@ pub fn sys_waitid(
         //     waitid(2) will immediately return the error EAGAIN rather
         //     than blocking.
         return error!(EAGAIN);
+    } else {
+        // Under Linux, when WNOHANG is specified and no child changed state,
+        // waitid returns 0 and zeroes the siginfo_t structure (and rusage if provided).
+        if !user_rusage.is_null() {
+            current_task.write_multi_arch_object(user_rusage, rusage::default())?;
+        }
+
+        if !user_info.is_null() {
+            SignalInfo::zero(current_task, user_info)?;
+        }
     }
 
     Ok(())

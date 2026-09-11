@@ -668,6 +668,20 @@ impl SignalInfo {
         Ok(())
     }
 
+    /// Zeroes out a `siginfo_t` at the given user address.
+    pub fn zero<MA: MemoryAccessor>(
+        ma: &MA,
+        addr: MultiArchUserRef<uapi::siginfo_t, uapi::arch32::siginfo_t>,
+    ) -> Result<(), Errno> {
+        let size = if addr.is_arch32() {
+            std::mem::size_of::<uapi::arch32::siginfo_t>()
+        } else {
+            std::mem::size_of::<uapi::siginfo_t>()
+        };
+        ma.zero(addr.addr(), size)?;
+        Ok(())
+    }
+
     pub fn as_siginfo_bytes(
         &self,
         arch_width: ArchWidth,

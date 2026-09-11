@@ -67,9 +67,6 @@
                 // TODO(https://fxbug.dev/558315291): pidfd polls prematurely on execve.
                 "PidFdTest.PidFdPollAcrossExecve",
 
-                // TODO(https://fxbug.dev/558315291): waitid(WNOHANG) does not clear siginfo_t.
-                "PidFdTest.WaitidWNOHANGZeroesSiginfo",
-
                 // TODO(https://fxbug.dev/351037863)
                 "AshmemTest.SetNameOverflow",
 
