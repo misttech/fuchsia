@@ -19,6 +19,7 @@ pub mod syscalls;
 use crate::bpf::attachments::EbpfAttachments;
 use crate::bpf::map::{BpfMapHandle, BpfMapId, WeakBpfMapHandle};
 use crate::bpf::program::{ProgramHandle, ProgramId, WeakProgramHandle};
+use ebpf::MapFlags;
 use starnix_sync::{EbpfStateLock, LockDepMutex};
 use starnix_uapi::{bpf_map_type, bpf_map_type_BPF_MAP_TYPE_SK_STORAGE};
 use std::collections::BTreeMap;
@@ -95,6 +96,21 @@ impl EbpfState {
                 && let Some(map) = entry.weak_map.upgrade()
             {
                 let _ = map.delete(cookie.as_bytes());
+            }
+        });
+    }
+
+    /// Clones `sk_storage` map entries with `BPF_F_CLONE` from `parent_cookie` socket to
+    /// `child_cookie` socket.
+    pub fn clone_sk_storage_entries(&self, parent_cookie: u64, child_cookie: u64) {
+        self.maps.lock().iter().for_each(|(_, entry)| {
+            if entry.map_type == bpf_map_type_BPF_MAP_TYPE_SK_STORAGE
+                && let Some(map) = entry.weak_map.upgrade()
+                && map.schema.flags.contains(MapFlags::Clone)
+            {
+                if let Some(mut val) = map.load(parent_cookie.as_bytes()) {
+                    let _ = map.update(child_cookie.as_bytes(), (&mut val[..]).into(), 0);
+                }
             }
         });
     }

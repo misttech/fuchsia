@@ -23,7 +23,7 @@ use fidl_fuchsia_posix_socket as fposix_socket;
 use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
 use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 use linux_uapi::{IP_MULTICAST_ALL, IP_PASSSEC};
-use starnix_logging::{log_warn, track_stub};
+use starnix_logging::{log_error, log_warn, track_stub};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_uapi::auth::{CAP_NET_ADMIN, CAP_NET_RAW};
 use starnix_uapi::errors::{ENOTSUP, Errno, ErrnoCode};
@@ -544,8 +544,20 @@ impl SocketOps for ZxioBackedSocket {
             .map_err(|status| from_status_like_fdio!(status))?
             .map_err(|out_code| errno_from_zxio_code!(out_code))?;
 
+        let accepted = Self::new_with_zxio(current_task, zxio);
+
+        // Clone sk_storage entries marked with BPF_F_CLONE.
+        fn log_cookie_error(err: &Errno) {
+            log_error!("Failed to get socket cookie: {err:?}");
+        }
+        let parent_cookie = self.get_socket_cookie().inspect_err(log_cookie_error);
+        let child_cookie = accepted.get_socket_cookie().inspect_err(log_cookie_error);
+        if let (Ok(parent_cookie), Ok(child_cookie)) = (parent_cookie, child_cookie) {
+            current_task.kernel().ebpf_state.clone_sk_storage_entries(parent_cookie, child_cookie);
+        }
+
         Ok(Socket::new_with_ops_and_info(
-            Box::new(Self::new_with_zxio(current_task, zxio)),
+            Box::new(accepted),
             socket.domain,
             socket.socket_type,
             socket.protocol,

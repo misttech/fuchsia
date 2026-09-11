@@ -1054,4 +1054,68 @@ mod ebpf_test {
         // ringbuf_reserve failed as expected.
         assert_eq!(test_result.retval, 1);
     }
+
+    #[test]
+    #[serial]
+    fn ebpf_sk_storage_clone() {
+        root_required!();
+
+        let clone_map_fd = bpf_map_create(&MapDefinition {
+            name: Some("sk_storage_clone_map".into()),
+            schema: ebpf::MapSchema {
+                map_type: bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+                key_size: 4,
+                value_size: 4,
+                max_entries: 0,
+                flags: ebpf::MapFlags::Clone,
+            },
+        })
+        .expect("Failed to create clone map");
+
+        let no_clone_map_fd = bpf_map_create(&MapDefinition {
+            name: Some("sk_storage_no_clone_map".into()),
+            schema: ebpf::MapSchema {
+                map_type: bpf_map_type_BPF_MAP_TYPE_SK_STORAGE,
+                key_size: 4,
+                value_size: 4,
+                max_entries: 0,
+                flags: ebpf::MapFlags::empty(),
+            },
+        })
+        .expect("Failed to create no-clone map");
+
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("Failed to bind TCP listener");
+        let listener_addr = listener.local_addr().expect("Failed to get local addr");
+
+        bpf_map_update_elem(clone_map_fd.as_fd(), listener.as_raw_fd(), 42u32)
+            .expect("Failed to update clone map");
+        bpf_map_update_elem(no_clone_map_fd.as_fd(), listener.as_raw_fd(), 100u32)
+            .expect("Failed to update no-clone map");
+
+        let _client = std::net::TcpStream::connect(listener_addr).expect("Failed to connect");
+        let (accepted_socket, _) = listener.accept().expect("Failed to accept");
+
+        // The clone map should have the value cloned from the listener.
+        let val: u32 = bpf_map_lookup_elem(clone_map_fd.as_fd(), accepted_socket.as_raw_fd())
+            .expect("Failed to lookup clone map elem");
+        assert_eq!(val, 42);
+
+        // The no-clone map should not have an entry for the accepted socket.
+        assert!(
+            bpf_map_lookup_elem::<_, u32>(no_clone_map_fd.as_fd(), accepted_socket.as_raw_fd())
+                .is_err()
+        );
+
+        // Mutating the accepted socket's storage should not affect the listener.
+        bpf_map_update_elem(clone_map_fd.as_fd(), accepted_socket.as_raw_fd(), 43u32)
+            .expect("Failed to update clone map on accepted socket");
+        let listener_val: u32 = bpf_map_lookup_elem(clone_map_fd.as_fd(), listener.as_raw_fd())
+            .expect("Failed to lookup clone map on listener");
+        assert_eq!(listener_val, 42);
+        let accepted_val: u32 =
+            bpf_map_lookup_elem(clone_map_fd.as_fd(), accepted_socket.as_raw_fd())
+                .expect("Failed to lookup clone map on accepted");
+        assert_eq!(accepted_val, 43);
+    }
 }
