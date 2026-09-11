@@ -7,6 +7,9 @@
 //! FFL is a fixed-point arithmetic library ported from C++. It provides:
 //! - [`Fixed`]: The primary fixed-point type, parameterized by the underlying
 //!   integer type and fractional bit count.
+//! - [`FastFixed`]: A wrapper type designed for high-performance arithmetic
+//!   operations on 64-bit platforms, by saturating to 64-bit intermediates
+//!   instead of standard 128-bit intermediates.
 //! - [`ExponentialAverage`]: A utility for tracking exponential moving averages
 //!   and variance using fixed-point values.
 //! - Expression templates: Deferred-evaluation expression structures like
@@ -17,6 +20,7 @@
 
 pub mod exponential_average;
 pub mod expression;
+pub mod fast;
 pub mod fixed;
 pub mod fixed_format;
 pub mod num_traits;
@@ -27,6 +31,7 @@ pub(crate) mod utility;
 // Re-export public API
 pub use exponential_average::ExponentialAverage;
 pub use expression::{from_ratio, to_resolution};
+pub use fast::FastFixed;
 pub use fixed::{Fixed, compare_fixed};
 pub use string::{Mode, String};
 

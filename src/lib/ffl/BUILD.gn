@@ -10,6 +10,7 @@ rustc_library("ffl") {
   sources = [
     "src/exponential_average.rs",
     "src/expression.rs",
+    "src/fast.rs",
     "src/fixed.rs",
     "src/fixed_format.rs",
     "src/lib.rs",

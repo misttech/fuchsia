@@ -19,6 +19,13 @@ saturating arithmetic and convergent rounding (round-half-to-even) are required.
    multiplication, division, negation), relational operators, and
    formatting/display.
 
+2. **`FastFixed<I, const FRAC: usize>`**:
+   A wrapper around `Fixed` that forces intermediate calculations to be
+   performed in 64-bit saturating space for maximum execution efficiency on
+   64-bit targets.  For performance-sensitive code paths (like scheduler tick
+   math), `FastFixed` can be used to avoid 128-bit intermediates where 64-bit
+   intermediates are known not to overflow or where saturation to 64-bit limits
+   is acceptable.
 ## General Usage
 
 ```rust
