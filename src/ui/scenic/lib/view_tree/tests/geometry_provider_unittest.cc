@@ -543,15 +543,8 @@ TEST_F(GeometryProviderTest, ExtractObservationSnapshotTest) {
       EXPECT_FLOAT_EQ(extent_in_context.height(), node_logical_height);
       EXPECT_FLOAT_EQ(extent_in_context.angle_degrees(), 0.);
 
-      ASSERT_TRUE(vd.extent_in_parent().has_value());
-      auto& extent_in_parent = *vd.extent_in_parent();
-
-      // For the context view, |extent_in_parent| should be the same as its |layout|.
-      EXPECT_FLOAT_EQ(extent_in_parent.origin().x(), 0.);
-      EXPECT_FLOAT_EQ(extent_in_parent.origin().y(), 0.);
-      EXPECT_FLOAT_EQ(extent_in_parent.width(), node_logical_width);
-      EXPECT_FLOAT_EQ(extent_in_parent.height(), node_logical_height);
-      EXPECT_FLOAT_EQ(extent_in_parent.angle_degrees(), 0.);
+      // The context view isn't allowed to see into the parent.
+      ASSERT_FALSE(vd.extent_in_parent().has_value());
 
       ASSERT_TRUE(vd.children().has_value());
       EXPECT_THAT(*vd.children(),

@@ -42,9 +42,7 @@ follows:-
 * `ViewDescriptor.extent_in_context.height` : 5
 * `ViewDescriptor.extent_in_context.angle_degrees` : 0
 
-`ViewDescriptor.extent_in_parent` will be the same as
-`ViewDescriptor.extent_in_context` as the parent view is the only view in the
-scene.
+`ViewDescriptor.extent_in_parent` is not present because this is the context view. By design, the layout geometry of the context view relative to its parent (which is outside the observation scope) is not disclosed.
 
 The snapshot generated from the second frame has child view attached to the
 parent view. Response of a

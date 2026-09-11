@@ -329,7 +329,11 @@ fuchsia_ui_observation_geometry::ViewDescriptor GeometryProvider::ExtractViewDes
   view_descriptor.view_ref_koid(view_ref_koid);
   view_descriptor.layout(std::move(layout));
   view_descriptor.extent_in_context(std::move(extent_in_context));
-  view_descriptor.extent_in_parent(std::move(extent_in_parent));
+  // The context view is not allowed to see into the parent (which is outside the observation
+  // scope). Enforce these semantics by omitting |extent_in_parent| for the context view.
+  if (view_ref_koid != context_view) {
+    view_descriptor.extent_in_parent(std::move(extent_in_parent));
+  }
 
   FX_DCHECK(view_node.children.size() <= fuchsia_ui_observation_geometry::kMaxViewCount)
       << "invariant.";
