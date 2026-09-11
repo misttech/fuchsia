@@ -59,9 +59,7 @@ if (is_host) {
     deps = [
       "//src/developer/ffx/lib/version:lib",
       "//src/lib/analytics/rust:lib",
-      "//src/lib/fuchsia-async",
       "//third_party/rust_crates:anyhow",
-      "//third_party/rust_crates:log",
     ]
   }
 }

@@ -21,8 +21,6 @@ rustc_library(
     deps = [
         "//src/developer/ffx/lib/version:lib",
         "//src/lib/analytics/rust:lib",
-        "//src/lib/fuchsia-async",
         "//third_party/rust_crates/vendor:anyhow",
-        "//third_party/rust_crates/vendor:log",
     ],
 )
