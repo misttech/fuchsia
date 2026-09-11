@@ -318,6 +318,48 @@ impl<T: Filesystem> Benchmark<T> for CreateFile {
     }
 }
 
+/// A benchmark that measures how long it takes to unlink a file.
+#[derive(Clone)]
+pub struct UnlinkFile {
+    file_count: u64,
+}
+
+impl UnlinkFile {
+    pub fn new() -> Self {
+        Self { file_count: 100 }
+    }
+}
+
+#[async_trait]
+impl<T: Filesystem> Benchmark<T> for UnlinkFile {
+    async fn run(&self, fs: &mut T) -> Vec<OperationDuration> {
+        storage_trace::duration!("benchmark", "UnlinkFile");
+
+        let root = fs.benchmark_dir().to_path_buf();
+        let root_fd =
+            open_path(&path_buf_to_c_string(root), libc::O_DIRECTORY | libc::O_RDONLY).unwrap();
+
+        for i in 0..self.file_count {
+            let path = path_buf_to_c_string(file_name(i));
+            let _file = open_path_at(&root_fd, &path, libc::O_CREAT | libc::O_RDWR).unwrap();
+        }
+
+        let mut durations = Vec::with_capacity(self.file_count as usize);
+        for i in 0..self.file_count {
+            let path = path_buf_to_c_string(file_name(i));
+            storage_trace::duration!("benchmark", "unlink", "file" => i);
+            let timer = OperationTimer::start();
+            unlink_path_at(&root_fd, &path).unwrap();
+            durations.push(timer.stop());
+        }
+        durations
+    }
+
+    fn name(&self) -> String {
+        "UnlinkFile".to_string()
+    }
+}
+
 /// A benchmark that measures how long it takes to open a file from a path that contains multiple
 /// directories. A distinct path and file is used for each iteration.
 #[derive(Clone)]
@@ -512,6 +554,11 @@ pub fn open_path_at(
     if result >= 0 { Ok(OpenFd(result)) } else { Err(std::io::Error::last_os_error()) }
 }
 
+pub fn unlink_path_at(dir: &OpenFd, path: &CStr) -> Result<(), std::io::Error> {
+    let result = unsafe { libc::unlinkat(dir.0, path.as_ptr(), 0) };
+    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -688,6 +735,16 @@ mod tests {
     async fn create_file_test() {
         let mut test_fs = Box::new(TestFilesystem::new());
         let benchmark = CreateFile { file_count: 5 };
+        let results = benchmark.run(test_fs.as_mut()).await;
+        assert_eq!(results.len(), 5);
+        assert_eq!(test_fs.clear_cache_count().await, 0);
+        test_fs.shutdown().await;
+    }
+
+    #[fuchsia::test]
+    async fn unlink_file_test() {
+        let mut test_fs = Box::new(TestFilesystem::new());
+        let benchmark = UnlinkFile { file_count: 5 };
         let results = benchmark.run(test_fs.as_mut()).await;
         assert_eq!(results.len(), 5);
         assert_eq!(test_fs.clear_cache_count().await, 0);

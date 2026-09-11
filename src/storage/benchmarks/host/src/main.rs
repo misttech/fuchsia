@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use storage_benchmarks::block_device::PanickingBlockDeviceFactory;
 use storage_benchmarks::directory_benchmarks::{
     CreateFile, DirectoryTreeStructure, GitStatus, OpenDeeplyNestedFile, OpenFile, StatPath,
-    WalkDirectoryTreeWarm,
+    UnlinkFile, WalkDirectoryTreeWarm,
 };
 use storage_benchmarks::filesystem::MountedFilesystem;
 use storage_benchmarks::io_benchmarks::{
@@ -61,6 +61,7 @@ fn build_benchmark_set(fs: MountedFilesystem) -> BenchmarkSet {
             WriteRandomCold::new(OP_SIZE, OP_COUNT),
             StatPath::new(),
             CreateFile::new(),
+            UnlinkFile::new(),
             OpenFile::new(),
             OpenDeeplyNestedFile::new(),
             GitStatus::new(),

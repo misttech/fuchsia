@@ -17,7 +17,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use storage_benchmarks::directory_benchmarks::{
     CreateFile, DirectoryTreeStructure, GitStatus, OpenDeeplyNestedFile, OpenFile, StatPath,
-    WalkDirectoryTreeCold, WalkDirectoryTreeWarm,
+    UnlinkFile, WalkDirectoryTreeCold, WalkDirectoryTreeWarm,
 };
 use storage_benchmarks::io_benchmarks::{
     ReadRandomCold, ReadRandomWarm, ReadSequentialCold, ReadSequentialWarm, ReadSparseCold,
@@ -114,6 +114,7 @@ fn add_directory_benchmarks(benchmark_set: &mut BenchmarkSet) {
         [
             StatPath::new(),
             CreateFile::new(),
+            UnlinkFile::new(),
             OpenFile::new(),
             OpenDeeplyNestedFile::new(),
             WalkDirectoryTreeWarm::new(dts, 20),

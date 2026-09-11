@@ -42,6 +42,9 @@ internally traverse directories.
 ### CreateFile Benchmarks
 The `CreateFile` benchmark measures how long it takes for a filesystem to create a file.
 
+### UnlinkFile Benchmarks
+The `UnlinkFile` benchmark measures how long it takes for a filesystem to unlink a file.
+
 ### StatPath Benchmark
 The `StatPath` benchmark measure how long it takes to call `stat` on a path to a file.
 

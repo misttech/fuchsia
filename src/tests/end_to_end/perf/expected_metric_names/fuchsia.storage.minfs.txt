@@ -9,6 +9,7 @@ fuchsia.storage: ReadSequentialCold/8192/minfs
 fuchsia.storage: ReadSequentialWarm/8192/minfs
 fuchsia.storage: ReadSparseCold/8192/minfs
 fuchsia.storage: StatPath/minfs
+fuchsia.storage: UnlinkFile/minfs
 fuchsia.storage: WalkDirectoryTreeCold/Files3/Dirs2/Depth5/minfs
 fuchsia.storage: WalkDirectoryTreeWarm/Files3/Dirs2/Depth5/minfs
 fuchsia.storage: WriteRandomCold/8192/minfs

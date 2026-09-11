@@ -6,6 +6,7 @@ fuchsia.storage: OpenFile/memfs
 fuchsia.storage: ReadRandomWarm/8192/memfs
 fuchsia.storage: ReadSequentialWarm/8192/memfs
 fuchsia.storage: StatPath/memfs
+fuchsia.storage: UnlinkFile/memfs
 fuchsia.storage: WalkDirectoryTreeWarm/Files3/Dirs2/Depth5/memfs
 fuchsia.storage: WriteRandomCold/8192/memfs
 fuchsia.storage: WriteRandomWarm/8192/memfs
