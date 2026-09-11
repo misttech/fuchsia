@@ -228,14 +228,16 @@ impl Region {
 }
 
 impl WavlTreeKeyable<u64> for Region {
-    fn get_key(&self) -> &u64 {
-        &self.span.base
+    type Key<'a> = u64;
+    fn get_key(&self) -> u64 {
+        self.span.base
     }
 }
 
 impl WavlTreeKeyable<RegionKey> for Region {
-    fn get_key(&self) -> &RegionKey {
-        &self.key_size
+    type Key<'a> = RegionKey;
+    fn get_key(&self) -> RegionKey {
+        self.key_size
     }
 }
 

@@ -6,6 +6,7 @@ use crate::ptr_traits::{ManagedPtr, PtrTraits};
 use crate::sentinel::{is_sentinel_ptr, make_sentinel, make_sentinel_null, valid_sentinel_ptr};
 use crate::size_tracker::{NonTrackingSize, SizeTracker};
 use crate::tag::DefaultObjectTag;
+use core::borrow::Borrow;
 use core::cell::UnsafeCell;
 use core::pin::Pin;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
@@ -353,9 +354,17 @@ pub trait WavlTreeContainable<T, Tag = DefaultObjectTag> {
 }
 
 /// Trait that types must implement to expose a key for `WavlTree` sorting and lookup.
-pub trait WavlTreeKeyable<K> {
-    /// Returns a reference to the key of this object.
-    fn get_key(&self) -> &K;
+pub trait WavlTreeKeyable<K: ?Sized> {
+    /// The type of key yielded by `get_key`, borrowing `K`.
+    ///
+    /// Implementations may return an owned/by-value key (e.g. `(u64, usize)` or `i32`)
+    /// or a borrowed/by-reference key (e.g. `&'a KeyStruct`).
+    type Key<'a>: Borrow<K>
+    where
+        Self: 'a;
+
+    /// Returns the key of this object.
+    fn get_key(&self) -> Self::Key<'_>;
 }
 
 #[allow(dead_code)]
@@ -1293,6 +1302,7 @@ where
             }
 
             let key = (*raw).get_key();
+            let key_borrow = key.borrow();
             let mut is_left_most = true;
             let mut is_right_most = true;
             let mut parent = self.root;
@@ -1300,9 +1310,10 @@ where
 
             loop {
                 let parent_key = (*parent).get_key();
+                let parent_key_borrow = parent_key.borrow();
                 self.observer.record_insert_traverse(raw, parent);
 
-                if key == parent_key {
+                if key_borrow == parent_key_borrow {
                     *collision = parent;
                     self.observer.record_insert_collision(raw, parent);
                     return Err(P::from_raw(raw));
@@ -1310,7 +1321,7 @@ where
 
                 let parent_ns = Self::get_node_ref(parent);
 
-                if key < parent_key {
+                if key_borrow < parent_key_borrow {
                     owner = parent_ns.left.get();
                     is_right_most = false;
                 } else {
@@ -1477,7 +1488,7 @@ where
             debug_assert!(!old_node.is_null());
             let new_raw = P::into_raw(new_node);
             debug_assert!(!new_raw.is_null());
-            debug_assert!((*old_node).get_key() == (*new_raw).get_key());
+            debug_assert!((*old_node).get_key().borrow() == (*new_raw).get_key().borrow());
 
             let old_ns = Self::get_node_ref(old_node);
             let new_ns = Self::get_node_ref(new_raw);
@@ -1795,11 +1806,12 @@ where
             let mut node = self.root;
             while valid_sentinel_ptr(node) {
                 let node_key = (*node).get_key();
-                if key == node_key {
+                let b = node_key.borrow();
+                if key == b {
                     return node;
                 }
                 let ns = Self::get_node_ref(node);
-                node = if key < node_key { ns.get_left() } else { ns.get_right() };
+                node = if key < b { ns.get_left() } else { ns.get_right() };
             }
             self.get_sentinel()
         }
@@ -1820,7 +1832,8 @@ where
 
             while valid_sentinel_ptr(node) {
                 let node_key = (*node).get_key();
-                let is_eligible = if strictly_greater { node_key > key } else { node_key >= key };
+                let b = node_key.borrow();
+                let is_eligible = if strictly_greater { b > key } else { b >= key };
                 if is_eligible {
                     found = node;
                     node = Self::get_node_ref(node).get_left();
@@ -2575,8 +2588,9 @@ mod tests {
     }
 
     impl WavlTreeKeyable<i32> for TestObject {
-        fn get_key(&self) -> &i32 {
-            &self.value
+        type Key<'a> = i32;
+        fn get_key(&self) -> i32 {
+            self.value
         }
     }
 
@@ -2618,8 +2632,9 @@ mod tests {
     }
 
     impl WavlTreeKeyable<i32> for UniqueTestObject {
-        fn get_key(&self) -> &i32 {
-            &self.value
+        type Key<'a> = i32;
+        fn get_key(&self) -> i32 {
+            self.value
         }
     }
 
@@ -2639,8 +2654,9 @@ mod tests {
     }
 
     impl WavlTreeKeyable<i32> for RefTestObject {
-        fn get_key(&self) -> &i32 {
-            &self.value
+        type Key<'a> = i32;
+        fn get_key(&self) -> i32 {
+            self.value
         }
     }
 
@@ -3083,8 +3099,9 @@ mod tests {
     }
 
     impl WavlTreeKeyable<i32> for MultiTreeObject {
-        fn get_key(&self) -> &i32 {
-            &self.value
+        type Key<'a> = i32;
+        fn get_key(&self) -> i32 {
+            self.value
         }
     }
 
@@ -3229,8 +3246,9 @@ mod tests {
     }
 
     impl WavlTreeKeyable<u64> for BalanceTestObj {
-        fn get_key(&self) -> &u64 {
-            &self.key
+        type Key<'a> = u64;
+        fn get_key(&self) -> u64 {
+            self.key
         }
     }
 
@@ -4103,5 +4121,58 @@ mod tests {
             cpp_destroy_ref_tree(cpp_tree);
         }
         assert!(destroyed1.load(Ordering::Relaxed));
+    }
+
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+    struct LargeKey {
+        name: [u8; 32],
+    }
+
+    #[derive(crate::WavlTreeContainable, crate::Recyclable)]
+    struct TestRefKeyObject {
+        key: LargeKey,
+        #[wavl_node]
+        node: WavlTreeNode<TestRefKeyObject>,
+    }
+
+    impl TestRefKeyObject {
+        fn new(name: [u8; 32]) -> Self {
+            Self { key: LargeKey { name }, node: WavlTreeNode::new() }
+        }
+    }
+
+    impl WavlTreeKeyable<LargeKey> for TestRefKeyObject {
+        type Key<'a> = &'a LargeKey;
+        fn get_key(&self) -> &LargeKey {
+            &self.key
+        }
+    }
+
+    #[test]
+    fn test_by_reference_key() {
+        use crate::UniquePtr;
+
+        type TestTree = WavlTree<LargeKey, UniquePtr<TestRefKeyObject>>;
+        stack_pin_init!(let tree = TestTree::new());
+        let tree = unsafe { tree.get_unchecked_mut() };
+
+        let mut key1 = [0u8; 32];
+        key1[0] = 10;
+        let mut key2 = [0u8; 32];
+        key2[0] = 20;
+
+        let obj1 = UniquePtr::try_new(TestRefKeyObject::new(key1)).unwrap();
+        let obj2 = UniquePtr::try_new(TestRefKeyObject::new(key2)).unwrap();
+        tree.insert(obj1);
+        tree.insert(obj2);
+
+        let query = LargeKey { name: key1 };
+        let found = tree.find(&query);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().key, query);
+
+        let erased = tree.erase(&query);
+        assert!(erased.is_some());
+        assert_eq!(erased.unwrap().key, query);
     }
 }
