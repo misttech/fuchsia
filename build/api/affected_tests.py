@@ -16,6 +16,8 @@ from build_utils import BazelLauncher, NinjaRunner
 # Set this to True to debug operations locally in this script.
 _DEBUG = False
 
+_SECONDARY_BUILD_DIR_PREFIX = "build/secondary/"
+
 
 def debug_log(msg: str) -> None:
     """Log a message to stderr if _DEBUG is True.
@@ -69,6 +71,31 @@ class TestTargetInfo:
     # to read here. For Bazel tests, this must be obtained with a query.
     runtime_deps: str = ""
 
+    # The full GN label of the package for this test.
+    package_label: str = ""
+
+
+def gn_label_to_build_gn_path(label: str) -> str:
+    """Return the relative path to the BUILD.gn file defining a GN label.
+
+    For example:
+      //src/foo:bar(//build/toolchain:arm64) -> src/foo/BUILD.gn
+      //src/foo/bar:bar                      -> src/foo/bar/BUILD.gn
+      //:root_target                         -> BUILD.gn
+    """
+    if not label or label.startswith("@"):
+        return ""
+    # Strip toolchain if present: //foo:bar(//build/toolchain:...)
+    target = label.partition("(")[0]
+    # Strip // prefix
+    if target.startswith("//"):
+        target = target[2:]
+    # Strip target name after :
+    pkg_dir = target.partition(":")[0]
+    if pkg_dir:
+        return os.path.normpath(os.path.join(pkg_dir, "BUILD.gn"))
+    return "BUILD.gn"
+
 
 def parse_tests_json(build_dir: Path) -> list[TestTargetInfo]:
     """Parse the tests.json file and return a list of TestTargetInfo values.
@@ -88,6 +115,10 @@ def parse_tests_json(build_dir: Path) -> list[TestTargetInfo]:
         test = entry["test"]
         test_label = test["label"]
         test_os = test["os"]
+
+        package_label = test.get("package_label", "")
+        if package_label:
+            assert isinstance(package_label, str)
 
         path = test.get("path", "")
         if path:
@@ -118,6 +149,7 @@ def parse_tests_json(build_dir: Path) -> list[TestTargetInfo]:
                 package_manifests=package_manifests,
                 package_manifest_deps=package_manifest_deps_path,
                 runtime_deps=runtime_deps_path,
+                package_label=package_label,
             )
         )
 
@@ -455,6 +487,44 @@ def find_bazel_tests_affected_by_changed_files(
     return result
 
 
+def _normalize_build_gn_path(path: str) -> str:
+    """Normalize a path to a BUILD.gn file, stripping secondary tree prefixes."""
+    normalized = os.path.normpath(path)
+    if normalized.startswith(_SECONDARY_BUILD_DIR_PREFIX):
+        return normalized[len(_SECONDARY_BUILD_DIR_PREFIX) :]
+    return normalized
+
+
+def _find_gn_tests_affected_by_build_gn_files(
+    gn_tests: list[TestTargetInfo],
+    changed_sources: set[str],
+) -> set[AffectedTestTarget]:
+    """Find GN tests whose BUILD.gn file was directly changed.
+
+    In Ninja's graph, BUILD.gn is an input to GN regeneration (build.ninja.stamp),
+    not directly to test targets, so ninja -t affected only reports build.ninja.stamp.
+    This explicitly associates changed BUILD.gn files with the tests whose target
+    or package is defined within them.
+    """
+    changed_build_gns = {
+        _normalize_build_gn_path(source)
+        for source in changed_sources
+        if os.path.basename(source) == "BUILD.gn"
+    }
+    if not changed_build_gns:
+        return set()
+
+    return {
+        AffectedTestTarget(label=test.label, os_name=test.os_name)
+        for test in gn_tests
+        if (
+            gn_label_to_build_gn_path(test.label) in changed_build_gns
+            or gn_label_to_build_gn_path(test.package_label)
+            in changed_build_gns
+        )
+    }
+
+
 def find_tests_affected_by_changed_files(
     changed_files: list[str],
     fuchsia_dir: Path,
@@ -509,6 +579,10 @@ def find_tests_affected_by_changed_files(
     ninja_results: set[AffectedTestTarget] = set()
 
     if gn_tests:
+        ninja_results.update(
+            _find_gn_tests_affected_by_build_gn_files(gn_tests, changed_sources)
+        )
+
         # Read the content of tests.json to determine which important artifacts
         # each test requires at runtime.
         gn_test_artifacts = _create_gn_test_artifacts_mapping(
@@ -545,11 +619,13 @@ def find_tests_affected_by_changed_files(
 
         affected_ninja_artifacts = set(tool_output.splitlines())
 
-        ninja_results = {
-            AffectedTestTarget(label=test_label, os_name=test_info.os_name)
-            for test_label, test_info in gn_test_artifacts.items()
-            if bool(test_info.ninja_artifacts & affected_ninja_artifacts)
-        }
+        ninja_results.update(
+            {
+                AffectedTestTarget(label=test_label, os_name=test_info.os_name)
+                for test_label, test_info in gn_test_artifacts.items()
+                if bool(test_info.ninja_artifacts & affected_ninja_artifacts)
+            }
+        )
 
     bazel_results: set[AffectedTestTarget] = set()
 

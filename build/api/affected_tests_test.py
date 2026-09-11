@@ -5,7 +5,6 @@
 
 import json
 import os
-import re
 import sys
 import tempfile
 import typing as T
@@ -18,6 +17,8 @@ import affected_tests
 import ninja_artifacts
 
 sys.path.insert(0, os.path.join(_SCRIPT_DIR, "../bazel/scripts"))
+import re
+
 from build_utils import (
     BazelPaths,
     CommandResult,
@@ -586,6 +587,138 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
             "set(@@//src/bazel:test1)",
             get_query_str(mock_bazel_launcher.queries[4]),
         )
+
+    def test_gn_label_to_build_gn_path(self) -> None:
+        self.assertEqual(
+            affected_tests.gn_label_to_build_gn_path(
+                "//src/foo/bar:bar(//build/toolchain/fuchsia:x64)"
+            ),
+            "src/foo/bar/BUILD.gn",
+        )
+        self.assertEqual(
+            affected_tests.gn_label_to_build_gn_path("//src/foo/bar:bar"),
+            "src/foo/bar/BUILD.gn",
+        )
+        self.assertEqual(
+            affected_tests.gn_label_to_build_gn_path("//src/foo"),
+            "src/foo/BUILD.gn",
+        )
+        self.assertEqual(
+            affected_tests.gn_label_to_build_gn_path("//:root_target"),
+            "BUILD.gn",
+        )
+        self.assertEqual(
+            affected_tests.gn_label_to_build_gn_path("@@//src/foo:bar"),
+            "",
+        )
+        self.assertEqual(
+            affected_tests.gn_label_to_build_gn_path(""),
+            "",
+        )
+
+    def test_gn_test_affected_by_build_gn(self) -> None:
+        tests_json = [
+            {
+                "test": {
+                    "label": "//src/foo:foo_test(//build/toolchain:x64)",
+                    "package_label": "//src/foo:foo_pkg(//build/toolchain:x64)",
+                    "os": "fuchsia",
+                },
+            },
+            {
+                "test": {
+                    "label": "//src/bar/sub:bar_test(//build/toolchain:x64)",
+                    "package_label": "//src/bar/pkg:bar_pkg(//build/toolchain:x64)",
+                    "os": "linux",
+                },
+            },
+        ]
+        with self.tests_json_path.open("wt") as f:
+            json.dump(tests_json, f)
+
+        # MockNinjaRunner returns only build.ninja.stamp as ninja -t affected does for BUILD.gn
+        def new_mock_ninja_runner() -> MockNinjaRunner:
+            return MockNinjaRunner(self.build_dir, "build.ninja.stamp\n")
+
+        mock_bazel_launcher = MockBazelLauncher.new_with_empty_outputs()
+
+        # 1. Modifying the test's target BUILD.gn marks it as affected
+        targets = affected_tests.find_tests_affected_by_changed_files(
+            ["src/foo/BUILD.gn"],
+            self.root,
+            new_mock_ninja_runner(),
+            mock_bazel_launcher,
+        )
+        self.assertSetEqual(
+            targets,
+            {
+                affected_tests.AffectedTestTarget(
+                    "//src/foo:foo_test(//build/toolchain:x64)", "fuchsia"
+                )
+            },
+        )
+
+        # 2. Modifying the test package's BUILD.gn marks it as affected
+        targets = affected_tests.find_tests_affected_by_changed_files(
+            ["src/bar/pkg/BUILD.gn"],
+            self.root,
+            new_mock_ninja_runner(),
+            mock_bazel_launcher,
+        )
+        self.assertSetEqual(
+            targets,
+            {
+                affected_tests.AffectedTestTarget(
+                    "//src/bar/sub:bar_test(//build/toolchain:x64)", "linux"
+                )
+            },
+        )
+
+        # 3. Modifying secondary overlay BUILD.gn marks it as affected
+        tests_json_secondary = [
+            {
+                "test": {
+                    "label": "//third_party/libfoo:libfoo_test(//build/toolchain:x64)",
+                    "os": "linux",
+                },
+            }
+        ]
+        with self.tests_json_path.open("wt") as f:
+            json.dump(tests_json_secondary, f)
+
+        targets = affected_tests.find_tests_affected_by_changed_files(
+            ["build/secondary/third_party/libfoo/BUILD.gn"],
+            self.root,
+            new_mock_ninja_runner(),
+            mock_bazel_launcher,
+        )
+        self.assertSetEqual(
+            targets,
+            {
+                affected_tests.AffectedTestTarget(
+                    "//third_party/libfoo:libfoo_test(//build/toolchain:x64)",
+                    "linux",
+                )
+            },
+        )
+
+        # 4. Modifying unrelated BUILD.gn does not mark any test as affected
+        targets = affected_tests.find_tests_affected_by_changed_files(
+            ["src/unrelated/BUILD.gn"],
+            self.root,
+            new_mock_ninja_runner(),
+            mock_bazel_launcher,
+        )
+        self.assertSetEqual(targets, set())
+
+        # 5. Modifying only non-BUILD.gn files does not match BUILD.gn logic
+        targets = affected_tests.find_tests_affected_by_changed_files(
+            ["src/foo/some_file.cc"],
+            self.root,
+            new_mock_ninja_runner(),
+            mock_bazel_launcher,
+        )
+        self.assertSetEqual(targets, set())
 
 
 if __name__ == "__main__":
