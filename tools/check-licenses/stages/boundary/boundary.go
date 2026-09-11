@@ -6,6 +6,7 @@ package boundary
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -114,6 +115,12 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 				}
 			}
 			physicalReadmes[absLogicalDir] = append(manifests, physicalPath)
+		}
+		if _, hasRoot := physicalReadmes[g.FuchsiaDir]; !hasRoot {
+			rootVirtual := filepath.Join(g.FuchsiaDir, "tools/check-licenses/assets/readmes/README.fuchsia")
+			if _, err := os.Stat(rootVirtual); err == nil {
+				physicalReadmes[g.FuchsiaDir] = append(physicalReadmes[g.FuchsiaDir], rootVirtual)
+			}
 		}
 
 		// PHASE 2: Parse all READMEs to establish exact project boundaries
@@ -394,19 +401,7 @@ func (g *Grouper) BelongsToProject(targetPath, projectRoot string) bool {
 	if err != nil || r == nil {
 		return true
 	}
-	var pLogicalRoot string
-	for logPath, physPath := range g.Config.OutOfTreeReadmes {
-		if physPath == readmePath {
-			pLogicalRoot = filepath.Join(g.FuchsiaDir, logPath)
-			break
-		}
-	}
-	if pLogicalRoot == "" {
-		pLogicalRoot = filepath.Dir(readmePath)
-	}
-	if r.Location != "" {
-		pLogicalRoot = filepath.Join(pLogicalRoot, r.Location)
-	}
+	pLogicalRoot := readme.ResolveProjectRoot(r, readmePath, g.FuchsiaDir, g.Config.OutOfTreeReadmes)
 	pRelRoot, _ := filepath.Rel(g.FuchsiaDir, pLogicalRoot)
 	if pRelRoot == "." {
 		pRelRoot = ""

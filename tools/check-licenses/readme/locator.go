@@ -61,6 +61,9 @@ func FindProjectReadme(absPath, fuchsiaDir string, outOfTreeReadmes map[string]s
 					break
 				}
 			}
+			if strings.HasSuffix(filepath.ToSlash(bestPath), "assets/readmes/README.fuchsia") {
+				logicalDir = fuchsiaDir
+			}
 
 			relToFile, relErr := filepath.Rel(logicalDir, absPath)
 			if relErr == nil {
@@ -135,6 +138,18 @@ func IsProjectBoundary(dir, fuchsiaDir string, outOfTreeReadmes map[string]strin
 	if err == nil {
 		if virtualPath, ok := outOfTreeReadmes[relDir]; ok {
 			foundReadmePaths = append(foundReadmePaths, virtualPath)
+		} else if relDir == "." || relDir == "" {
+			if virtualPath, ok := outOfTreeReadmes["."]; ok {
+				foundReadmePaths = append(foundReadmePaths, virtualPath)
+			} else if virtualPath, ok := outOfTreeReadmes[""]; ok {
+				foundReadmePaths = append(foundReadmePaths, virtualPath)
+			}
+		}
+	}
+	if len(foundReadmePaths) == 0 && (dir == fuchsiaDir || relDir == "." || relDir == "") {
+		rootVirtual := filepath.Join(fuchsiaDir, "tools/check-licenses/assets/readmes/README.fuchsia")
+		if _, err := os.Stat(rootVirtual); err == nil {
+			foundReadmePaths = append(foundReadmePaths, rootVirtual)
 		}
 	}
 
@@ -206,6 +221,9 @@ func ResolveProjectRoot(r *Readme, readmePath, fuchsiaDir string, outOfTreeReadm
 			logicalRoot = filepath.Join(fuchsiaDir, logPath)
 			break
 		}
+	}
+	if strings.HasSuffix(filepath.ToSlash(readmePath), "assets/readmes/README.fuchsia") {
+		logicalRoot = fuchsiaDir
 	}
 	if r != nil && r.Location != "" && r.Location != "." {
 		logicalRoot = filepath.Join(logicalRoot, r.Location)

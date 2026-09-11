@@ -35,6 +35,13 @@ func (w *ReadmeWriter) Run(ctx context.Context, projects []*pipeline.Project, er
 			continue
 		}
 
+		if proj.IsFirstParty() {
+			if !w.PrintStdout {
+				fmt.Printf("ℹ️  Skipping 1st-party project %s (governed by virtual %s)\n", proj.RootPath, proj.Readme.Path)
+			}
+			continue
+		}
+
 		readme.UpdateWithClassifiedFiles(w.FuchsiaDir, proj.RootPath, proj.Readme.UpdatedSegments(), proj.FoundLicenses(), w.PreserveExisting)
 		formatted := readme.Format(proj.Readme.UpdatedSegments())
 

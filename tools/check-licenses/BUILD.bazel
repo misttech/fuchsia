@@ -249,6 +249,7 @@ host_go_test(
         "readme/dart_test.go",
         "readme/formatter_test.go",
         "readme/golib_test.go",
+        "readme/locator_test.go",
         "readme/parser_test.go",
         "readme/rust_test.go",
     ],

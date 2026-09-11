@@ -134,10 +134,31 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 			}
 		}
 
-		// Execute the pipeline on crawlRoot to discover, group, prune, classify, and verify compliance.
+		// For first-party code, the project root is the entire Fuchsia repository (FuchsiaDir).
+		// When --fast is not specified, avoid walking the entire repository by scoping the crawler's
+		// roots to the specific directories containing the targeted files.
+		var crawlRoots []string
+		if projectRoot == inputCtx.FuchsiaDir && !c.fast {
+			targetDirs := make(map[string]bool)
+			for _, t := range targets {
+				if info, err := os.Stat(t); err == nil && info.IsDir() {
+					targetDirs[t] = true
+				} else {
+					targetDirs[filepath.Dir(t)] = true
+				}
+			}
+			for td := range targetDirs {
+				crawlRoots = append(crawlRoots, td)
+			}
+			sort.Strings(crawlRoots)
+		} else {
+			crawlRoots = []string{crawlRoot}
+		}
+
+		// Execute the pipeline on crawlRoots to discover, group, prune, classify, and verify compliance.
 		renderers := pipeline.MultiRenderer{verifier, passPrinter}
 		orchestrator := pipeline.NewOrchestrator(disc, grouper, iterPruner, classifier, validator, renderers)
-		runErr := orchestrator.Run(ctx, []string{crawlRoot})
+		runErr := orchestrator.Run(ctx, crawlRoots)
 		if runErr != nil {
 			fmt.Fprintf(os.Stderr, "❌ Error in %s: %v\n", projectRoot, runErr)
 			hasErrors = true

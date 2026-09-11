@@ -586,3 +586,154 @@ func TestProjectCommand_Check_FileListAndMultiTarget(t *testing.T) {
 		t.Errorf("Expected ExitSuccess for multi-target check, got %v", status)
 	}
 }
+
+func TestProjectCommand_Check_FirstParty(t *testing.T) {
+	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
+
+	// 1. Setup BSD and MIT patterns
+	bsdPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "BSD")
+	os.MkdirAll(bsdPatternDir, 0755)
+	os.WriteFile(filepath.Join(bsdPatternDir, "bsd.txt"), []byte("Redistribution and use in source and binary forms"), 0644)
+
+	mitPatternDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "patterns", "Permissive", "MIT")
+	os.MkdirAll(mitPatternDir, 0755)
+	os.WriteFile(filepath.Join(mitPatternDir, "mit.txt"), []byte(mockMITLicenseText), 0644)
+
+	// 2. Setup configs (including copyright_extensions)
+	copyrightExtDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs", "copyright_extensions")
+	os.MkdirAll(copyrightExtDir, 0755)
+	os.WriteFile(filepath.Join(copyrightExtDir, "default.json"), []byte(`{"copyright_extensions": {"extensions": [".cc", ".h"]}}`), 0644)
+
+	// 3. Setup root virtual README with First Party: yes
+	virtualDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "readmes")
+	os.MkdirAll(virtualDir, 0755)
+	virtualContent := `Name: Fuchsia
+Security Critical: yes
+First Party: yes
+
+License File: LICENSE
+  License: BSD-2-Clause, Copyright
+`
+	os.WriteFile(filepath.Join(virtualDir, "README.fuchsia"), []byte(virtualContent), 0644)
+
+	// Root LICENSE
+	os.WriteFile(filepath.Join(tempDir, "LICENSE"), []byte(mockBSDLicenseText), 0644)
+
+	// 4. Create 1st-party files
+	srcDir := filepath.Join(tempDir, "src", "lib", "foo")
+	os.MkdirAll(srcDir, 0755)
+
+	validHeader := `// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+int valid() { return 1; }
+`
+	validFile := filepath.Join(srcDir, "valid.cc")
+	os.WriteFile(validFile, []byte(validHeader), 0644)
+
+	missingCopyrightFile := filepath.Join(srcDir, "missing_copyright.cc")
+	os.WriteFile(missingCopyrightFile, []byte("int missing() { return 0; }"), 0644)
+
+	undeclaredLicenseContent := `// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+/* ` + mockMITLicenseText + ` */
+int undeclared() { return 2; }
+`
+	undeclaredLicenseFile := filepath.Join(srcDir, "undeclared_license.cc")
+	os.WriteFile(undeclaredLicenseFile, []byte(undeclaredLicenseContent), 0644)
+
+	cmd := &ProjectCommand{fuchsiaDir: tempDir}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Case 1: Valid 1st-party file passes in normal mode
+	fs1 := flag.NewFlagSet("test1", flag.ContinueOnError)
+	cmd.SetFlags(fs1)
+	fs1.Parse([]string{"--fuchsia_dir", tempDir, "check", validFile})
+	if status := cmd.Execute(ctx, fs1); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for valid 1st-party file, got %v", status)
+	}
+
+	// Case 2: Valid 1st-party file passes in --fast mode
+	fs2 := flag.NewFlagSet("test2", flag.ContinueOnError)
+	cmd.SetFlags(fs2)
+	fs2.Parse([]string{"--fuchsia_dir", tempDir, "check", "--fast", validFile})
+	if status := cmd.Execute(ctx, fs2); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for valid 1st-party file with --fast, got %v", status)
+	}
+
+	// Case 3: Missing copyright header fails
+	fs3 := flag.NewFlagSet("test3", flag.ContinueOnError)
+	cmd.SetFlags(fs3)
+	fs3.Parse([]string{"--fuchsia_dir", tempDir, "check", "--fast", missingCopyrightFile})
+	if status := cmd.Execute(ctx, fs3); status != subcommands.ExitFailure {
+		t.Errorf("Expected ExitFailure for missing copyright header, got %v", status)
+	}
+
+	// Case 4: Undeclared 3rd-party license in 1st-party file fails
+	fs4 := flag.NewFlagSet("test4", flag.ContinueOnError)
+	cmd.SetFlags(fs4)
+	fs4.Parse([]string{"--fuchsia_dir", tempDir, "check", "--fast", undeclaredLicenseFile})
+	if status := cmd.Execute(ctx, fs4); status != subcommands.ExitFailure {
+		t.Errorf("Expected ExitFailure for undeclared license in 1st-party file, got %v", status)
+	}
+}
+
+func TestProjectCommand_Update_FirstParty(t *testing.T) {
+	tempDir := t.TempDir()
+	scaffoldV2Config(t, tempDir)
+
+	virtualDir := filepath.Join(tempDir, "tools", "check-licenses", "assets", "readmes")
+	os.MkdirAll(virtualDir, 0755)
+	virtualContent := `Name: Fuchsia
+Security Critical: yes
+First Party: yes
+
+License File: LICENSE
+  License: BSD-2-Clause, Copyright
+`
+	virtualReadmePath := filepath.Join(virtualDir, "README.fuchsia")
+	os.WriteFile(virtualReadmePath, []byte(virtualContent), 0644)
+	os.WriteFile(filepath.Join(tempDir, "LICENSE"), []byte(mockBSDLicenseText), 0644)
+
+	srcDir := filepath.Join(tempDir, "src", "lib", "foo")
+	os.MkdirAll(srcDir, 0755)
+	validHeader := `// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+int valid() { return 1; }
+`
+	validFile := filepath.Join(srcDir, "valid.cc")
+	os.WriteFile(validFile, []byte(validHeader), 0644)
+
+	cmd := &ProjectCommand{fuchsiaDir: tempDir}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Run project update on 1st party file
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetFlags(fs)
+	fs.Parse([]string{"--fuchsia_dir", tempDir, "update", validFile})
+	if status := cmd.Execute(ctx, fs); status != subcommands.ExitSuccess {
+		t.Errorf("Expected ExitSuccess for 1st-party update (skipped), got %v", status)
+	}
+
+	// Verify no in-tree README.fuchsia was created in src/lib/foo or tempDir
+	if _, err := os.Stat(filepath.Join(srcDir, "README.fuchsia")); !os.IsNotExist(err) {
+		t.Errorf("Expected no README.fuchsia in srcDir, but found one")
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "README.fuchsia")); !os.IsNotExist(err) {
+		t.Errorf("Expected no README.fuchsia in tempDir, but found one")
+	}
+
+	// Verify virtual README was not modified
+	readContent, err := os.ReadFile(virtualReadmePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(readContent) != virtualContent {
+		t.Errorf("Expected virtual README to remain unchanged, got:\n%s", string(readContent))
+	}
+}

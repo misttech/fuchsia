@@ -102,6 +102,15 @@ func (c *ProjectUpdateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ .
 
 	for _, projectRoot := range projectRoots {
 		targets := projectTargets[projectRoot]
+
+		// First-party projects are governed by virtual READMEs and do not require in-tree manifests.
+		r, _, err := readme.FindProjectReadme(projectRoot, inputCtx.FuchsiaDir, inputCtx.Config.Boundary.OutOfTreeReadmes)
+		if err == nil && r != nil && r.FirstParty == "yes" {
+			if !c.printStdout {
+				fmt.Printf("ℹ️  Skipping 1st-party project %s (governed by virtual README)\n", projectRoot)
+			}
+			continue
+		}
 		startTime := time.Now()
 
 		var renderers pipeline.MultiRenderer

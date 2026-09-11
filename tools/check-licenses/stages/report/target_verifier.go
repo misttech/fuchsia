@@ -48,6 +48,59 @@ func (v *TargetComplianceVerifier) Run(ctx context.Context, projects []*pipeline
 		return nil
 	}
 
+	// 1. Check compliance and policy errors for target paths.
+	// First-party code is governed by repository compliance policies (e.g. required Fuchsia
+	// copyright headers) rather than in-tree README manifests. The validate stage produces
+	// ComplianceErrors for policy violations; match them against the targeted files/directories.
+	if len(errors) > 0 {
+		var matchedIssues []string
+		for _, e := range errors {
+			filePath := e.FilePath
+			if !filepath.IsAbs(filePath) && filePath != "" && v.FuchsiaDir != "" {
+				filePath = filepath.Join(v.FuchsiaDir, filePath)
+			}
+			projPath := e.Project
+			if !filepath.IsAbs(projPath) && projPath != "" && v.FuchsiaDir != "" {
+				projPath = filepath.Join(v.FuchsiaDir, projPath)
+			}
+
+			for _, targetPath := range v.TargetPaths {
+				if targetPath == "" {
+					continue
+				}
+				info, statErr := os.Stat(targetPath)
+				isDir := statErr == nil && info.IsDir()
+
+				matches := false
+				if isDir {
+					if filePath != "" {
+						rel, err := filepath.Rel(targetPath, filePath)
+						if err == nil && !strings.HasPrefix(rel, "..") {
+							matches = true
+						}
+					}
+					if !matches && filePath == "" && projPath != "" {
+						if projPath == targetPath {
+							matches = true
+						}
+					}
+				} else {
+					if filePath == targetPath {
+						matches = true
+					}
+				}
+
+				if matches {
+					matchedIssues = append(matchedIssues, e.Issue)
+					break
+				}
+			}
+		}
+		if len(matchedIssues) > 0 {
+			return fmt.Errorf("%s", strings.Join(matchedIssues, "\n\n"))
+		}
+	}
+
 	for _, targetPath := range v.TargetPaths {
 		if targetPath == "" {
 			continue
@@ -73,7 +126,13 @@ func (v *TargetComplianceVerifier) Run(ctx context.Context, projects []*pipeline
 
 			for _, cf := range proj.FoundLicenses() {
 				relCf, _ := filepath.Rel(proj.RootPath, cf.Path)
-				if !isDir && filepath.Clean(relCf) != filepath.Clean(relTargetClean) {
+				// For directory targets, only evaluate files that reside within the targeted sub-directory.
+				if isDir {
+					relToTarget, err := filepath.Rel(absTarget, cf.Path)
+					if err != nil || strings.HasPrefix(relToTarget, "..") {
+						continue
+					}
+				} else if filepath.Clean(relCf) != filepath.Clean(relTargetClean) {
 					continue
 				}
 				for _, match := range cf.Matches {
@@ -86,11 +145,21 @@ func (v *TargetComplianceVerifier) Run(ctx context.Context, projects []*pipeline
 			}
 
 			if isDir {
+				// 1st-party projects are governed by virtual READMEs and do not maintain in-tree README.fuchsia
+				// manifests, so skip manifest parity checks.
+				if proj.IsFirstParty() {
+					continue
+				}
 				origs := proj.Readme.OriginalSegments()
 				updated := proj.Readme.UpdatedSegments()
 				if !readme.DeclarationsMatchAll(origs, updated) {
 					return fmt.Errorf("License declarations in README.fuchsia are out of date")
 				}
+				continue
+			}
+
+			// 1st-party projects do not declare individual LicenseFiles entries in README.fuchsia.
+			if proj.IsFirstParty() {
 				continue
 			}
 
