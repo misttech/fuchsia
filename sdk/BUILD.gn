@@ -870,6 +870,7 @@ if (current_toolchain == default_toolchain) {
       "//products/*",
       "//sdk/lib/driver/*",
       "//src/*",
+      "//tools/*",
       "//vendor/*",
     ]
     deps = [ ":bazel_in_tree_idk" ]

@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_fuchsia_test_package.gni")
 import("//build/bazel/drivers/bazel_driver_package.gni")
 
 bazel_driver_package("bazel_package") {
@@ -14,4 +15,14 @@ bazel_driver_package("bazel_package") {
     "meta/dw-i2c.bind",
     "meta/dw-i2c.cml",
   ]
+}
+
+bazel_fuchsia_test_package("dw-i2c-test") {
+  bazel_target = ":dw-i2c-test-package"
+  test_component_names = [ "dw-i2c-test-bin" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }

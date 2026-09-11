@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_fuchsia_test_package.gni")
 import("//build/host.gni")
 import("//tools/create/goldens/golden_test.gni")
 
@@ -32,6 +33,7 @@ group("tests") {
   ]
   if (is_fuchsia) {
     deps += [
+      ":test_pkg",
       "my-component-test-cpp:tests",
       "my-component-test-rust:tests",
       "my-component-v2-cpp:tests",
@@ -42,7 +44,17 @@ group("tests") {
     ]
   }
 }
-
+if (is_fuchsia) {
+  # This isn't the best place for this, but this can't be in the goldens
+  # BUILD.gn file as that is for a driver that's defined in GN. So this is
+  # defined here to make sure that the golden file is processed and the driver
+  # in question is built by Bazel.
+  bazel_fuchsia_test_package("test_pkg") {
+    bazel_target = "//tools/create/goldens/my-driver-cpp:test_pkg"
+    test_package_name = "my_driver_cpp_test"
+    test_component_names = [ "my_driver_cpp_test" ]
+  }
+}
 if (is_host) {
   # Create a C++ v2 component project named `my-component-v2-cpp` and
   # compare its file contents to the golden project of the same name.
