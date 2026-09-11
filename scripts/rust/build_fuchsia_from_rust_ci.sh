@@ -52,13 +52,6 @@ fi
 
 rust_prefix=$RUST_INSTALL_DIR
 
-# Stub out rustfmt.
-cat <<END >$rust_prefix/bin/rustfmt
-#!/usr/bin/env bash
-cat
-END
-chmod +x $rust_prefix/bin/rustfmt
-
 # Generate a minimal runtime.json.
 (
   cd $rust_prefix/lib
@@ -127,7 +120,7 @@ set -x
 #   compiler version.
 # - Disable debuginfo, which speeds up the build by about 8%.
 # - Disable some rustc wrapper scripts that perform unnecessary build checks.
-# - Build the bundle of unit tests called "minimal".
+# - Build the bundle of unit tests called "workbench".
 #
 # `fx set` creates a file called `out/default/args.gn` with the build arguments
 # and then runs GN, Fuchsia's meta-build system which generates ninja files. You
@@ -140,12 +133,6 @@ $fx set \
     --with '//bundles/buildbot/workbench' \
     workbench_eng.x64 \
     ; echo
-
-# FIXME(https://fxbug.dev/503768468): `fx build` is responsible for setting up some files, like
-# `last_bazel_build_invocations.json`. We'll run the build in quiet dry-run mode to get them
-# created. We can remove this once `fx clippy` is using the same infrastructure as `fx build` to set
-# up the build environment.
-$fx build --quiet -- -n
 
 # Now run the build. We use `fx clippy` to drive the build because it reduces the
 # amount of Rust code that we actually need to produce binaries for. Under the
