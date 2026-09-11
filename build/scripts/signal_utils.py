@@ -11,7 +11,8 @@ import os
 import signal
 import subprocess
 import sys
-from typing import Any, Sequence
+import time
+from typing import Any, Callable, Sequence
 
 
 class BuildInterruptedError(KeyboardInterrupt):
@@ -38,6 +39,14 @@ class SignalManagedProcess:
         *,
         separate_pgrp: bool = True,
         verbose: bool = False,
+        timeout: float | None = None,
+        timeout_callback: (
+            Callable[[subprocess.Popen[Any], float], None] | None
+        ) = None,
+        initial_timeout: float | None = None,
+        post_spawn_callback: (
+            Callable[[subprocess.Popen[Any]], None] | None
+        ) = None,
         **kwargs: Any,
     ) -> None:
         """Initializes the managed process.
@@ -46,6 +55,12 @@ class SignalManagedProcess:
             command: The command to run as a sequence of strings.
             separate_pgrp: Whether to isolate the child in a new process group.
             verbose: Whether to log signal receipt and forwarding.
+            timeout: Optional interval in seconds to invoke timeout_callback.
+            timeout_callback: Callback invoked when timeout expires while waiting.
+            initial_timeout: Optional initial timeout before the first timeout_callback.
+                If no timeout is set, we only timeout once and then wait
+                indefinitely.
+            post_spawn_callback: Callback invoked immediately after Popen spawns.
             **kwargs: Additional arguments passed to subprocess.Popen.
         """
         if "preexec_fn" in kwargs:
@@ -55,6 +70,10 @@ class SignalManagedProcess:
         self._command = command
         self._separate_pgrp = separate_pgrp
         self._verbose = verbose
+        self._timeout = timeout
+        self._timeout_callback = timeout_callback
+        self._initial_timeout = initial_timeout
+        self._post_spawn_callback = post_spawn_callback
         self._popen_kwargs = kwargs
 
     def run(self) -> int:
@@ -71,6 +90,20 @@ class SignalManagedProcess:
             preexec_fn=functools.partial(_preexec_setup, self._separate_pgrp),
             **self._popen_kwargs,
         )
+        if self._post_spawn_callback:
+            self._post_spawn_callback(process)
+        if (
+            self._timeout is not None
+            or self._timeout_callback is not None
+            or self._initial_timeout is not None
+        ):
+            return _wait_and_forward_signals(
+                process,
+                verbose=self._verbose,
+                timeout=self._timeout,
+                timeout_callback=self._timeout_callback,
+                initial_timeout=self._initial_timeout,
+            )
         return _wait_and_forward_signals(process, verbose=self._verbose)
 
 
@@ -113,7 +146,13 @@ def _preexec_setup(separate_pgrp: bool = True) -> None:
 
 
 def _wait_and_forward_signals(
-    process: subprocess.Popen[Any], verbose: bool = False
+    process: subprocess.Popen[Any],
+    verbose: bool = False,
+    timeout: float | None = None,
+    timeout_callback: (
+        Callable[[subprocess.Popen[Any], float], None] | None
+    ) = None,
+    initial_timeout: float | None = None,
 ) -> int:
     """Relays signals to the given process and waits for it to terminate.
 
@@ -134,6 +173,9 @@ def _wait_and_forward_signals(
     Args:
         process: The subprocess to forward signals to and wait for.
         verbose: If True, log signal receipt and forwarding to stderr.
+        timeout: Optional interval in seconds to invoke timeout_callback.
+        timeout_callback: Callback invoked when timeout expires while waiting.
+        initial_timeout: Optional initial timeout before the first timeout_callback.
 
     Returns:
         The return code of the process, converted to a shell-style positive
@@ -191,11 +233,33 @@ def _wait_and_forward_signals(
     try:
         # Block until the process exits.
         # We handle the return code conversion to shell status codes.
-        rc = process.wait()
-        if rc < 0:
-            # Child died from a signal.
-            return 128 - rc
-        return rc
+        first_timeout = (
+            initial_timeout if initial_timeout is not None else timeout
+        )
+        if first_timeout is None:
+            rc = process.wait()
+            return 128 - rc if rc < 0 else rc
+
+        start_time = time.monotonic()
+        next_timeout = start_time + first_timeout
+        while True:
+            try:
+                wait_timeout = max(0.0, next_timeout - time.monotonic())
+                rc = process.wait(timeout=wait_timeout)
+                return 128 - rc if rc < 0 else rc
+            except subprocess.TimeoutExpired:
+                elapsed = time.monotonic() - start_time
+                if timeout_callback:
+                    timeout_callback(process, elapsed)
+                if timeout is not None and timeout > 0:
+                    next_timeout += timeout
+                    if next_timeout <= time.monotonic():
+                        # This happens if the timeout handler takes longer than the
+                        # next timeout interval, in which case we just reset the
+                        # timeout.
+                        next_timeout = time.monotonic() + timeout
+                else:
+                    next_timeout = float("inf")
     finally:
         # Restore old handlers.
         for sig, handler in old_handlers.items():
