@@ -20,6 +20,7 @@ typedef struct zx_exception_report zx_exception_report_t;
 // using arch_dump_exception_context(). Implemented by non-arch code.
 zx_status_t dispatch_user_exception(uint exception_type, const arch_exception_context_t* context);
 
+extern "C" {
 // Dispatches an exception that was raised by a syscall using
 // thread_signal_policy_exception() (see <kernel/thread.h>), causing
 // dispatch_user_exception() to be called with the current context. Implemented
@@ -53,5 +54,6 @@ bool arch_install_exception_context(Thread* thread, const arch_exception_context
 
 // Undo a previous call to |arch_install_exception_context()|.
 void arch_remove_exception_context(Thread* thread);
+}
 
 #endif  // ZIRCON_KERNEL_INCLUDE_ARCH_EXCEPTION_H_

@@ -98,7 +98,7 @@ if (toolchain_base_environment == "kernel") {
       "crashlog.cc",
       "debugger.cc",
       "exceptions.S",
-      "exceptions_c.cc",
+      "exceptions.cc",
       "fpu_asm.S",
       "handoff.cc",
       "mmu.cc",
@@ -341,6 +341,7 @@ if (toolchain_base_environment == "kernel") {
       "src/cache.rs",
       "src/crashlog.rs",
       "src/debugger.rs",
+      "src/exceptions.rs",
       "src/feature.rs",
       "src/fpu.rs",
       "src/mod.rs",
@@ -367,6 +368,7 @@ if (toolchain_base_environment == "kernel") {
       "//zircon/kernel/arch:arch-types-bindings",
       "//zircon/kernel/lib/arch:arch-rs",
       "//zircon/kernel/lib/debug",
+      "//zircon/system/ulib/pretty/rust:pretty",
     ]
     test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
   }
