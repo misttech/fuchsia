@@ -7,10 +7,29 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <zircon/compiler.h>
 
-#include <ktl/algorithm.h>
 #include <ktl/type_traits.h>
-#include <ktl/utility.h>
+#include <object/opaque_storage.h>
+
+class ContinuousAttributionTracker;
+
+__BEGIN_CDECLS
+
+void rust_continuous_attribution_tracker_move_init(ContinuousAttributionTracker* tracker,
+                                                   ContinuousAttributionTracker* source);
+void rust_continuous_attribution_tracker_move_assign(ContinuousAttributionTracker* tracker,
+                                                     ContinuousAttributionTracker* source);
+uint32_t rust_continuous_attribution_tracker_fetch_current(
+    const ContinuousAttributionTracker* tracker);
+uint32_t rust_continuous_attribution_tracker_fetch_hwm_and_reset(
+    ContinuousAttributionTracker* tracker);
+void rust_continuous_attribution_tracker_increment(ContinuousAttributionTracker* tracker,
+                                                   uint32_t by);
+void rust_continuous_attribution_tracker_decrement(ContinuousAttributionTracker* tracker,
+                                                   uint32_t by);
+
+__END_CDECLS
 
 // Tracks the number of populated slots in the VmCowPages' local page list. If the VmCowPages
 // changes a slot to being populated, or vice versa, that should be reported to
@@ -24,46 +43,36 @@ class ContinuousAttributionTracker final {
   ~ContinuousAttributionTracker() = default;
 
   // Move and move assignment zero the |source|.
-  ContinuousAttributionTracker(ContinuousAttributionTracker&& source);
-  ContinuousAttributionTracker& operator=(ContinuousAttributionTracker&& source);
+  ContinuousAttributionTracker(ContinuousAttributionTracker&& source) {
+    rust_continuous_attribution_tracker_move_init(this, &source);
+  }
+  ContinuousAttributionTracker& operator=(ContinuousAttributionTracker&& source) {
+    if (this != &source) {
+      rust_continuous_attribution_tracker_move_assign(this, &source);
+    }
+    return *this;
+  }
   ContinuousAttributionTracker(ContinuousAttributionTracker&) = delete;
   ContinuousAttributionTracker& operator=(ContinuousAttributionTracker&) = delete;
 
   // Returns the tracked count of populated slots.
-  uint32_t FetchCurrent() const;
+  uint32_t FetchCurrent() const { return rust_continuous_attribution_tracker_fetch_current(this); }
 
   // Get the greatest number of populated slots since the statistic was last reset.
   //
   // Resets the high-water mark.
-  uint32_t FetchHwmAndReset();
+  uint32_t FetchHwmAndReset() {
+    return rust_continuous_attribution_tracker_fetch_hwm_and_reset(this);
+  }
 
   // Increments the count by |by|. This quantity must be strictly positive.
-  void Increment(uint32_t by) {
-    DEBUG_ASSERT(by > 0);
-    [[maybe_unused]] const bool did_overflow = add_overflow(current_slots_, by, &current_slots_);
-    DEBUG_ASSERT(!did_overflow);
-    hwm_slots_ = ktl::max(hwm_slots_, current_slots_);
-  }
+  void Increment(uint32_t by) { rust_continuous_attribution_tracker_increment(this, by); }
 
   // Decrements the count by |by|. This quantity must be strictly positive.
-  void Decrement(uint32_t by) {
-    DEBUG_ASSERT(by > 0);
-    [[maybe_unused]] const bool did_overflow = sub_overflow(current_slots_, by, &current_slots_);
-    // This overflows when there is untracked addition of content: addition of pages, references, or
-    // parent content markers to the page list of a VmCowPages that is not paired with updates to
-    // this continuous attribution tracker.
-    DEBUG_ASSERT(!did_overflow);
-    DEBUG_ASSERT(hwm_slots_ >= current_slots_);
-  }
+  void Decrement(uint32_t by) { rust_continuous_attribution_tracker_decrement(this, by); }
 
  private:
-  // The number of populated slots in the local page list.
-  uint32_t current_slots_ = 0;
-
-  // The greatest number of current_slots_ since the high-water mark value was last reset.
-  //
-  // Always greater than or equal to |current_slots_|.
-  uint32_t hwm_slots_ = 0;
+  [[maybe_unused]] OpaqueStorage<8, 4> storage_{};
 };
 
 // ContinuousAttributionTracker uses a 32-bit count to represent the number of populated slots in
@@ -71,6 +80,7 @@ class ContinuousAttributionTracker final {
 // VmCowPages, reducing its size (by not using a 64-bit count) is a substantial memory saving for
 // the system.
 static_assert(sizeof(ContinuousAttributionTracker) == 8);
+static_assert(alignof(ContinuousAttributionTracker) == 4);
 
 // The stub continuous attribution tracker. This object stores no data. Intended to be used in place
 // of the regular continuous attribution tracker, unless users opt-in to its existence.
@@ -96,5 +106,6 @@ class StubContinuousAttributionTracker final {
 
 // The continuous attribution tracker supports an empty "stubbed out" state.
 static_assert(ktl::is_empty_v<StubContinuousAttributionTracker>);
+static_assert(alignof(StubContinuousAttributionTracker) == 1);
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_CONTINUOUS_ATTRIBUTION_TRACKER_H_

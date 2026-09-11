@@ -28,7 +28,6 @@ source_set("vm-cpp") {
     "compression.cc",
     "compression_ffi.cc",
     "compressor.cc",
-    "continuous_attribution_tracker.cc",
     "debug_compressor.cc",
     "discardable_vmo_tracker.cc",
     "discardable_vmo_tracker_ffi.cc",
@@ -1188,6 +1187,7 @@ kernel_rust_mod("vm-rs") {
     "attribution.rs",
     "compression.rs",
     "compressor.rs",
+    "continuous_attribution_tracker.rs",
     "discardable_vmo_tracker.rs",
     "evictor.rs",
     "fault.rs",
@@ -1315,6 +1315,7 @@ kernel_rust_mod("vm-rs-unittests") {
   source_root = "unittests/mod.rs"
   sources = [
     "unittests/aspace_unittest.rs",
+    "unittests/continuous_attribution_unittest.rs",
     "unittests/slab_unittest.rs",
     "unittests/test_helper.rs",
     "unittests/vmo_unittest.rs",
