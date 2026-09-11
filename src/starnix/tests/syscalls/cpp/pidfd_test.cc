@@ -15,6 +15,7 @@
 #include <linux/sched.h>
 
 #include "src/lib/files/file.h"
+#include "src/lib/files/path.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
@@ -40,6 +41,10 @@ namespace {
 
 #ifndef P_PIDFD
 #define P_PIDFD static_cast<idtype_t>(3)
+#endif
+
+#ifndef PIDFD_NONBLOCK
+#define PIDFD_NONBLOCK 2048
 #endif
 
 pid_t ForkUsingClone3(const clone_args* cl_args, size_t size) {
@@ -292,6 +297,164 @@ TEST(PidFdTest, PidFdSendSignalZeroSignal) {
   info_send.si_signo = SIGCHLD;
   EXPECT_THAT(syscall(SYS_pidfd_send_signal, pid_fd.get(), 0, &info_send, 0),
               SyscallFailsWithErrno(EINVAL));
+}
+
+std::string GetExecChildBinaryPath() {
+  std::string test_binary = "data/tests/deps/procfs_test_exec_child";
+  if (!files::IsFile(test_binary)) {
+    char self_path[PATH_MAX];
+    realpath("/proc/self/exe", self_path);
+    test_binary = files::JoinPath(files::GetDirectoryName(self_path), "procfs_test_exec_child");
+  }
+  return test_binary;
+}
+
+// Verify that polling a pidfd across execve does not wake up prematurely.
+TEST(PidFdTest, PidFdPollAcrossExecve) {
+  test_helper::ForkHelper helper;
+  test_helper::ScopedPipe child_stdin;
+  test_helper::ScopedPipe child_stdout;
+  test_helper::Rendezvous exec_ready = test_helper::MakeRendezvous();
+
+  pid_t pid = helper.RunInForkedProcess([&child_stdin, &child_stdout, &exec_ready]() mutable {
+    SAFE_SYSCALL(dup2(child_stdin.ReadSide().get(), STDIN_FILENO));
+    child_stdin.ReadSide().reset();
+    child_stdin.WriteSide().reset();
+
+    SAFE_SYSCALL(dup2(child_stdout.WriteSide().get(), STDOUT_FILENO));
+    child_stdout.ReadSide().reset();
+    child_stdout.WriteSide().reset();
+
+    // Wait until the parent has opened the pidfd.
+    exec_ready.holder.hold();
+
+    std::string binary_path = GetExecChildBinaryPath();
+    char* const argv[] = {const_cast<char*>(binary_path.c_str()), nullptr};
+    SAFE_SYSCALL(execve(binary_path.c_str(), argv, nullptr));
+    _exit(127);
+  });
+
+  child_stdin.ReadSide().reset();
+  child_stdout.WriteSide().reset();
+
+  auto pid_fd = DoPidFdOpen(pid);
+  ASSERT_TRUE(pid_fd.is_valid()) << strerror(errno);
+
+  // Trigger execve.
+  exec_ready.poker.poke();
+
+  // Wait for the exec'd process to start running and indicate readiness via stdout.
+  char buf[5] = {};
+  ASSERT_THAT(HANDLE_EINTR(read(child_stdout.ReadSide().get(), buf, sizeof(buf))),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  EXPECT_STREQ(buf, "poke");
+
+  // At this point, execve has completed and the child process is alive, waiting on stdin.
+  // Verify that poll does not return POLLIN while the child process is still alive.
+  pollfd pfd = {.fd = pid_fd.get(), .events = POLLIN};
+  EXPECT_THAT(HANDLE_EINTR(poll(&pfd, 1, 0)), SyscallSucceedsWithValue(0));
+
+  // Verify that waitid with WNOHANG reports no state change.
+  siginfo_t info = {};
+  ASSERT_THAT(HANDLE_EINTR(waitid(P_PIDFD, pid_fd.get(), &info, WEXITED | WNOHANG)),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(info.si_pid, 0);
+
+  // Close the child stdin pipe to signal the exec'd process to exit.
+  child_stdin.WriteSide().reset();
+
+  // Wait for the child to exit via pidfd polling.
+  ASSERT_THAT(HANDLE_EINTR(poll(&pfd, 1, 5000)), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(pfd.revents, POLLIN);
+
+  // Reap the child using waitid on the pidfd.
+  memset(&info, 0, sizeof(info));
+  ASSERT_THAT(HANDLE_EINTR(waitid(P_PIDFD, pid_fd.get(), &info, WEXITED)), SyscallSucceeds());
+  EXPECT_EQ(info.si_pid, pid);
+  EXPECT_EQ(info.si_code, CLD_EXITED);
+  EXPECT_EQ(info.si_status, 0);
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Verify that a zombie process can be reaped via waitid on its pidfd.
+TEST(PidFdTest, ReapZombieViaPidFd) {
+  test_helper::ForkHelper helper;
+  helper.ExpectExitValue(42);
+
+  pid_t pid = helper.RunInForkedProcess([] { _exit(42); });
+
+  // Wait until the child has exited and become a zombie without reaping it.
+  siginfo_t info = {};
+  ASSERT_THAT(HANDLE_EINTR(waitid(P_PID, pid, &info, WEXITED | WNOWAIT)), SyscallSucceeds());
+  EXPECT_EQ(info.si_pid, pid);
+
+  // Open a pidfd for the zombie process.
+  auto pid_fd = DoPidFdOpen(pid);
+  ASSERT_TRUE(pid_fd.is_valid()) << strerror(errno);
+
+  // A pidfd for a zombie process must be immediately readable.
+  pollfd pfd = {.fd = pid_fd.get(), .events = POLLIN};
+  EXPECT_THAT(HANDLE_EINTR(poll(&pfd, 1, 0)), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(pfd.revents, POLLIN);
+
+  // Reap the zombie process using waitid on the pidfd without WNOWAIT.
+  memset(&info, 0, sizeof(info));
+  ASSERT_THAT(HANDLE_EINTR(waitid(P_PIDFD, pid_fd.get(), &info, WEXITED)), SyscallSucceeds());
+  EXPECT_EQ(info.si_pid, pid);
+  EXPECT_EQ(info.si_code, CLD_EXITED);
+  EXPECT_EQ(info.si_status, 42);
+
+  // Verify that the child process was reaped. A subsequent wait must fail with ECHILD.
+  int wait_status = 0;
+  EXPECT_THAT(HANDLE_EINTR(waitpid(pid, &wait_status, WNOHANG)), SyscallFailsWithErrno(ECHILD));
+
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+// Verify that waitid with WNOHANG clears siginfo_t when no child changed state.
+TEST(PidFdTest, WaitidWNOHANGZeroesSiginfo) {
+  test_helper::ForkHelper helper;
+  test_helper::Rendezvous sync = test_helper::MakeRendezvous();
+
+  pid_t pid = helper.RunInForkedProcess([holder = std::move(sync.holder)]() mutable {
+    // Keep the child blocked until the parent finishes inspecting waitid.
+    holder.hold();
+    _exit(0);
+  });
+
+  auto pid_fd = DoPidFdOpen(pid);
+  ASSERT_TRUE(pid_fd.is_valid()) << strerror(errno);
+
+  // Under Linux, when WNOHANG is specified and no child changed state,
+  // waitid succeeds and zeroes siginfo_t (setting si_pid to 0).
+  siginfo_t info;
+  memset(&info, 0xFF, sizeof(info));
+  ASSERT_THAT(HANDLE_EINTR(waitid(P_PIDFD, pid_fd.get(), &info, WEXITED | WNOHANG)),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(info.si_pid, 0);
+  EXPECT_EQ(info.si_signo, 0);
+
+  // Also test with a non-blocking pidfd.
+  fbl::unique_fd nonblock_pid_fd(static_cast<int>(syscall(SYS_pidfd_open, pid, PIDFD_NONBLOCK)));
+  if (nonblock_pid_fd.is_valid()) {
+    memset(&info, 0xFF, sizeof(info));
+    ASSERT_THAT(HANDLE_EINTR(waitid(P_PIDFD, nonblock_pid_fd.get(), &info, WEXITED | WNOHANG)),
+                SyscallSucceedsWithValue(0));
+    EXPECT_EQ(info.si_pid, 0);
+    EXPECT_EQ(info.si_signo, 0);
+  }
+
+  // Also test with P_PID.
+  memset(&info, 0xFF, sizeof(info));
+  ASSERT_THAT(HANDLE_EINTR(waitid(P_PID, pid, &info, WEXITED | WNOHANG)),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(info.si_pid, 0);
+  EXPECT_EQ(info.si_signo, 0);
+
+  // Unblock child and wait for the child to exit.
+  sync.poker.poke();
+  ASSERT_TRUE(helper.WaitForChildren());
 }
 
 }  // namespace
