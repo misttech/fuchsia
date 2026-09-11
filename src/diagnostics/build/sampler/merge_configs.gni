@@ -5,11 +5,9 @@
 import("//build/compiled_action.gni")
 
 # Generates a single file containing all possible sampler configurations for
-# usage in assembly. If `cobalt_registry` is specified, validates the
-# sampler configurations against the Cobalt metrics registry to ensure project
-# IDs, metric IDs, and metric types match, and that dimension counts in Sampler
-# do not exceed Cobalt's dimension counts. It'll generate a
-# JSON file containing the contents of the input files as:
+# usage in assembly. This command doesn't validate or perform any logic beyond
+# ensuring that the schemas are as expected. It'll generate a JSON file
+# containing the contents of the input files as:
 #
 # {
 #    project_configs: [ project configs objects ],
@@ -24,11 +22,6 @@ import("//build/compiled_action.gni")
 #   output:
 #     Required: Path to the output file. This should usually be something like
 #     "$target_gen_dir/my_config.json"
-#     Type: file
-#
-#   cobalt_registry:
-#     Optional: Path to the binary proto (.pb) file representing the Cobalt
-#     registry to validate the configs against.
 #     Type: file
 #
 #   fire_project_templates:
@@ -65,7 +58,6 @@ template("merged_sampler_config") {
     forward_variables_from(invoker,
                            "*",
                            [
-                             "cobalt_registry",
                              "fire_project_templates",
                              "fire_component_configs",
                              "project_configs",
@@ -78,13 +70,6 @@ template("merged_sampler_config") {
       "--output",
       rebase_path(invoker.output, root_build_dir),
     ]
-    if (defined(invoker.cobalt_registry)) {
-      inputs += [ invoker.cobalt_registry ]
-      args += [
-        "--cobalt-registry",
-        rebase_path(invoker.cobalt_registry, root_build_dir),
-      ]
-    }
     foreach(project_path, fire_project_templates) {
       args += [
         "--fire-project-template",

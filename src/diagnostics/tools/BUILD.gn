@@ -11,8 +11,5 @@ group("tools") {
 
 group("tests") {
   testonly = true
-  deps = [
-    "inspect-hierarchy-analyzer:tests($host_toolchain)",
-    "merge_sampler_configs:tests($host_toolchain)",
-  ]
+  deps = [ "inspect-hierarchy-analyzer:tests($host_toolchain)" ]
 }
