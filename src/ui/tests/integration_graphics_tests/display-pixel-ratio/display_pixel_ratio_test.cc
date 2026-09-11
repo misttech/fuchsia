@@ -61,7 +61,7 @@ class DisplayPixelRatioTest
     ui_testing::UITestRealm::Config config;
     config.use_scene_owner = true;
     config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
-    config.ui_to_client_services.push_back(fuchsia::ui::composition::Flatland::Name_);
+    config.ui_to_client_services.push_back(fuchsia::ui::composition::FlatlandFactory::Name_);
     config.device_pixel_ratio = device_pixel_ratio;
     config.display_config = {
         .active_width_px = display_config.width_px,

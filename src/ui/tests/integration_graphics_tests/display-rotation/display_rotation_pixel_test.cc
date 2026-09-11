@@ -44,7 +44,7 @@ class DisplayRotationPixelTestBase : public gtest::RealLoopFixture {
     config.use_scene_owner = true;
     config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
     config.device_pixel_ratio = ui_testing::kDefaultDevicePixelRatio;
-    config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_,
+    config.ui_to_client_services = {fuchsia::ui::composition::FlatlandFactory::Name_,
                                     fuchsia::ui::composition::Allocator::Name_};
     config.display_rotation = display_rotation_;
     ui_test_manager_.emplace(config);

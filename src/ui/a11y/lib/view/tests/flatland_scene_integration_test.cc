@@ -44,7 +44,7 @@ class AccessibilitySceneTest
     ui_testing::UITestRealm::Config config;
     config.accessibility_owner = GetParam();
     config.use_scene_owner = true;
-    config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_,
+    config.ui_to_client_services = {fuchsia::ui::composition::FlatlandFactory::Name_,
                                     fuchsia::ui::composition::Allocator::Name_};
     ui_test_manager_.emplace(std::move(config));
 
@@ -60,9 +60,10 @@ class AccessibilitySceneTest
     realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::app::ViewProvider::Name_}},
                            .source = ChildRef{kViewProvider},
                            .targets = {ParentRef()}});
-    realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::composition::Flatland::Name_}},
-                           .source = ParentRef(),
-                           .targets = {ChildRef{kViewProvider}}});
+    realm_->AddRoute(
+        Route{.capabilities = {Protocol{fuchsia::ui::composition::FlatlandFactory::Name_}},
+              .source = ParentRef(),
+              .targets = {ChildRef{kViewProvider}}});
 
     ui_test_manager_->BuildRealm();
   }

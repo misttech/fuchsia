@@ -50,7 +50,7 @@ class MagnificationPixelTest : public gtest::RealLoopFixture {
     ui_testing::UITestRealm::Config config;
     config.use_scene_owner = true;
     config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
-    config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_};
+    config.ui_to_client_services = {fuchsia::ui::composition::FlatlandFactory::Name_};
     ui_test_manager_.emplace(std::move(config));
 
     // Build realm.
@@ -69,9 +69,10 @@ class MagnificationPixelTest : public gtest::RealLoopFixture {
     realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::app::ViewProvider::Name_}},
                            .source = ChildRef{kViewProvider},
                            .targets = {ParentRef()}});
-    realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::composition::Flatland::Name_}},
-                           .source = ParentRef(),
-                           .targets = {ChildRef{kViewProvider}}});
+    realm_->AddRoute(
+        Route{.capabilities = {Protocol{fuchsia::ui::composition::FlatlandFactory::Name_}},
+              .source = ParentRef(),
+              .targets = {ChildRef{kViewProvider}}});
 
     ui_test_manager_->BuildRealm();
     realm_exposed_services_ = ui_test_manager_->CloneExposedServicesDirectory();

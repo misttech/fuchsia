@@ -137,6 +137,7 @@ class TestView final : public fuchsia::ui::app::ViewProvider,
   bool child_view_is_nested = false;
 
   // Scenic session resources.
+  fuchsia::ui::composition::FlatlandFactoryPtr flatland_factory_;
   fuchsia::ui::composition::FlatlandPtr flatland_;
 
   // Used to retrieve a11y view layout info. These should not change over the

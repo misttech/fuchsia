@@ -58,7 +58,7 @@ class FlatlandAccessibilityViewTest : public gtest::RealLoopFixture {
 
   void SetUp() override {
     ui_testing::UITestRealm::Config config;
-    config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_};
+    config.ui_to_client_services = {fuchsia::ui::composition::FlatlandFactory::Name_};
     config.exposed_client_services = {fuchsia::accessibility::scene::Provider::Name_,
                                       fuchsia::ui::app::ViewProvider::Name_};
     ui_test_manager_.emplace(std::move(config));
@@ -75,9 +75,10 @@ class FlatlandAccessibilityViewTest : public gtest::RealLoopFixture {
     realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::app::ViewProvider::Name_}},
                            .source = ChildRef{kViewProvider},
                            .targets = {ParentRef()}});
-    realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::composition::Flatland::Name_}},
-                           .source = ParentRef(),
-                           .targets = {ChildRef{kViewProvider}}});
+    realm_->AddRoute(
+        Route{.capabilities = {Protocol{fuchsia::ui::composition::FlatlandFactory::Name_}},
+              .source = ParentRef(),
+              .targets = {ChildRef{kViewProvider}}});
 
     nested_view_access_ = std::make_shared<ui_testing::TestViewAccess>();
     // Create another TestView that can be nested inside test_view_ if desired
@@ -89,9 +90,10 @@ class FlatlandAccessibilityViewTest : public gtest::RealLoopFixture {
     realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::app::ViewProvider::Name_}},
                            .source = ChildRef{kNestedViewProvider},
                            .targets = {ChildRef{kViewProvider}}});
-    realm_->AddRoute(Route{.capabilities = {Protocol{fuchsia::ui::composition::Flatland::Name_}},
-                           .source = ParentRef(),
-                           .targets = {ChildRef{kNestedViewProvider}}});
+    realm_->AddRoute(
+        Route{.capabilities = {Protocol{fuchsia::ui::composition::FlatlandFactory::Name_}},
+              .source = ParentRef(),
+              .targets = {ChildRef{kNestedViewProvider}}});
 
     ui_test_manager_->BuildRealm();
     realm_exposed_services_ = ui_test_manager_->CloneExposedServicesDirectory();
@@ -118,9 +120,15 @@ class FlatlandAccessibilityViewTest : public gtest::RealLoopFixture {
     flatland_display_ =
         realm_exposed_services()->template Connect<fuchsia::ui::composition::FlatlandDisplay>();
 
+    auto flatland_factory =
+        realm_exposed_services()->template Connect<fuchsia::ui::composition::FlatlandFactory>();
+    fuchsia::ui::composition::FlatlandPtr a11y_flatland;
+    fuchsia::ui::composition::FlatlandPtr highlight_flatland;
+    flatland_factory->CreateFlatland(a11y_flatland.NewRequest(), {}, [](auto) {});
+    flatland_factory->CreateFlatland(highlight_flatland.NewRequest(), {}, [](auto) {});
+
     a11y_view_ = std::make_unique<a11y::FlatlandAccessibilityView>(
-        realm_exposed_services()->template Connect<fuchsia::ui::composition::Flatland>(),
-        realm_exposed_services()->template Connect<fuchsia::ui::composition::Flatland>(),
+        std::move(a11y_flatland), std::move(highlight_flatland),
         realm_exposed_services()->template Connect<fuchsia::ui::observation::scope::Registry>(),
         realm_exposed_services()->template Connect<fuchsia::ui::pointer::augment::LocalHit>());
 

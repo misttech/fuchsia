@@ -42,7 +42,7 @@ class PresentationTest : public gtest::RealLoopFixture {
     ui_testing::UITestRealm::Config config;
     config.use_scene_owner = true;
     config.accessibility_owner = ui_testing::UITestRealm::AccessibilityOwnerType::FAKE;
-    config.ui_to_client_services = {fuchsia::ui::composition::Flatland::Name_,
+    config.ui_to_client_services = {fuchsia::ui::composition::FlatlandFactory::Name_,
                                     fuchsia::ui::composition::Allocator::Name_};
     ui_test_manager_.emplace(config);
 

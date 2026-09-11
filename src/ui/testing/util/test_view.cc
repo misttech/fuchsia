@@ -141,7 +141,19 @@ void TestView::ResizeChildViewport() {
 }
 
 void TestView::CreateView2(fuchsia::ui::app::CreateView2Args args) {
-  flatland_ = svc().Connect<fuchsia::ui::composition::Flatland>();
+  flatland_factory_ = svc().Connect<fuchsia::ui::composition::FlatlandFactory>();
+  flatland_factory_.set_error_handler([](zx_status_t status) {
+    FX_LOGS(ERROR) << "Error from fuchsia::ui::composition::FlatlandFactory: "
+                   << zx_status_get_string(status);
+  });
+  flatland_factory_->CreateFlatland(
+      flatland_.NewRequest(), fuchsia::ui::composition::FlatlandConfig(),
+      [](fuchsia::ui::composition::FlatlandFactory_CreateFlatland_Result result) {
+        if (result.is_err()) {
+          FX_LOGS(ERROR) << "FlatlandFactory::CreateFlatland failed: "
+                         << static_cast<uint32_t>(result.err());
+        }
+      });
   flatland_.set_error_handler([](zx_status_t status) {
     FX_LOGS(ERROR) << "Error from fuchsia::ui::composition::Flatland: "
                    << zx_status_get_string(status);
