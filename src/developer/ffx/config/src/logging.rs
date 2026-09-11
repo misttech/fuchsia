@@ -390,6 +390,7 @@ pub fn init(
     log_destination: &Option<LogDestination>,
 ) -> Result<(), LoggingError> {
     let mut destinations = vec![];
+    let mut log_file_err = None;
 
     // We log to a file if config(log.enabled) is true, AND if either of the following are true:
     // * no destination is specified (in which case we log to <log.dir>/<LOG_PREFIX>.log
@@ -399,12 +400,14 @@ pub fn init(
     if is_enabled(ctx) {
         match log_destination {
             None => {
-                init_global_log_file(
+                match init_global_log_file(
                     ctx,
                     &PathBuf::from(LOG_FILENAME),
                     LogDirHandling::WithDirWithRotate,
-                )?;
-                destinations.push(LogDestination::Global);
+                ) {
+                    Ok(()) => destinations.push(LogDestination::Global),
+                    Err(e) => log_file_err = Some(e),
+                }
             }
             Some(f @ LogDestination::File(_)) => {
                 destinations.push(f.clone());
@@ -426,6 +429,10 @@ pub fn init(
     }
 
     setup_logging_with_log(ctx, destinations)?;
+
+    if let Some(e) = log_file_err {
+        log::debug!("Could not initialize global log file: {e}");
+    }
 
     log::info!("ffx logging initialized. ffx version info: {:?}", ffx_build_version::build_info());
 
@@ -627,5 +634,20 @@ mod tests {
 
         let target_content = std::fs::read_to_string(&target_path).unwrap();
         assert_eq!(target_content, "sensitive info\n");
+    }
+
+    #[test]
+    fn test_init_succeeds_with_unresolvable_log_dir() {
+        let ctx = EnvironmentContext::no_context(
+            crate::environment::ExecutableKind::Test,
+            Default::default(),
+            None,
+            true,
+        )
+        .unwrap();
+
+        // When log_destination is None and log.dir is unresolvable, init() should succeed gracefully.
+        let res = init(&ctx, false, &None);
+        assert!(res.is_ok(), "init should succeed even if default log file cannot be initialized");
     }
 }
