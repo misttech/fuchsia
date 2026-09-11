@@ -2032,7 +2032,6 @@ TEST_F(UsbPeripheralFunctionTest, RejectConfigureWhileStopping) {
   auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
 
   // Intercept SetConfigured(false) to stall teardown in kStopping state.
-  libsync::Completion unconfigure_received;
   std::mutex completer_lock;
   std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> saved_completer;
   fake_function->set_on_set_configured_async(
@@ -2040,7 +2039,6 @@ TEST_F(UsbPeripheralFunctionTest, RejectConfigureWhileStopping) {
         if (!configured) {
           std::lock_guard lock(completer_lock);
           saved_completer = std::move(completer);
-          unconfigure_received.Signal();
         } else {
           completer.ReplySuccess();
         }
@@ -2100,7 +2098,10 @@ TEST_F(UsbPeripheralFunctionTest, RejectConfigureWhileStopping) {
   });
 
   // Wait until FakeUsbFunction receives SetConfigured(false).
-  ASSERT_OK(unconfigure_received.Wait(zx::sec(5)));
+  dut().runtime().RunUntil([&]() {
+    std::lock_guard lock(completer_lock);
+    return saved_completer.has_value();
+  });
 
   // The state is now kStopping (since unconfiguring is asynchronous).
   WaitUntilState(UsbPeripheral::DeviceState::kStopping);

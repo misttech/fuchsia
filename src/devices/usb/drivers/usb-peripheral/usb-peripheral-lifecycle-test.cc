@@ -1494,16 +1494,21 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostDisconnectPowerCutRaceTrap) {
   ASSERT_TRUE(connected_res.ok());
   ExpectState(UsbPeripheral::DeviceState::kHostConnected);
 
+  std::mutex completer_lock;
   std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_completer;
   auto completer_cleanup = fit::defer([&]() {
-    if (deferred_completer.has_value()) {
-      deferred_completer->ReplySuccess();
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> completer_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completer_to_run = std::move(deferred_completer);
       deferred_completer.reset();
+    }
+    if (completer_to_run.has_value()) {
+      completer_to_run->ReplySuccess();
     }
   });
   auto callback_cleanup =
       fit::defer([&]() { function_clients->fakes[0]->set_on_set_configured_async(nullptr); });
-  libsync::Completion unconfigure_invoked;
 
   // Intercept SetConfigured(false) on fake function driver and trigger endpoint disable.
   function_clients->fakes[0]->set_on_set_configured_async(
@@ -1521,8 +1526,8 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostDisconnectPowerCutRaceTrap) {
             EXPECT_TRUE(res_in->is_ok())
                 << "DisableEndpoint IN failed: " << zx_status_get_string(res_in->error_value());
           }
+          std::lock_guard lock(completer_lock);
           deferred_completer.emplace(std::move(completer));
-          unconfigure_invoked.Signal();
         } else {
           completer.ReplySuccess();
         }
@@ -1533,7 +1538,10 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostDisconnectPowerCutRaceTrap) {
   ASSERT_TRUE(disconnected_res.ok());
 
   // Wait for the unconfiguration callback to be invoked and disable endpoints.
-  ASSERT_OK(unconfigure_invoked.Wait(zx::sec(5)));
+  this->dut().runtime().RunUntil([&]() {
+    std::lock_guard lock(completer_lock);
+    return deferred_completer.has_value();
+  });
 
   // Allow any pending dispatcher tasks to settle.
   this->dut().runtime().RunUntilIdle();
@@ -1550,7 +1558,6 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostDisconnectPowerCutRaceTrap) {
   ExpectState(UsbPeripheral::DeviceState::kHostConnected);
 
   // Complete the unconfigure operation.
-  ASSERT_TRUE(deferred_completer.has_value());
   completer_cleanup.call();
 
   // Let the async promise join chain finish.
@@ -1574,12 +1581,14 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, AsynchronousUnconfigureTeardownCompleter
   ExpectState(UsbPeripheral::DeviceState::kHostConnected);
 
   // Defer SetConfigured(false) completion to simulate slow network flushes.
+  std::mutex completer_lock;
   std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_completer;
   auto callback_cleanup =
       fit::defer([&]() { fake_function->set_on_set_configured_async(nullptr); });
   fake_function->set_on_set_configured_async(
       [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
         if (!configured) {
+          std::lock_guard lock(completer_lock);
           deferred_completer.emplace(std::move(completer));
         } else {
           completer.ReplySuccess();
@@ -1602,9 +1611,14 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, AsynchronousUnconfigureTeardownCompleter
   // completer_cleanup is declared after clear_promise so that upon test failure or exception,
   // its destructor runs before ~future() blocks waiting on ClearFunctions().
   auto completer_cleanup = fit::defer([&]() {
-    if (deferred_completer.has_value()) {
-      deferred_completer->ReplySuccess();
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> completer_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completer_to_run = std::move(deferred_completer);
       deferred_completer.reset();
+    }
+    if (completer_to_run.has_value()) {
+      completer_to_run->ReplySuccess();
     }
   });
 
@@ -1612,7 +1626,10 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, AsynchronousUnconfigureTeardownCompleter
   dut().runtime().RunUntilIdle();
 
   // Block until the background thread fully finishes the SetConfigured(false) callback.
-  fake_function->WaitUntilCalled();
+  dut().runtime().RunUntil([&]() {
+    std::lock_guard lock(completer_lock);
+    return deferred_completer.has_value();
+  });
 
   // Assert that ClearFunctions remains blocked and the hardware controller is kept live
   // while the SetConfigured(false) completer is outstanding.
@@ -1621,7 +1638,6 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, AsynchronousUnconfigureTeardownCompleter
       [](UsbPeripheralTestEnvironment& env) { EXPECT_TRUE(env.dci().controller_started()); });
 
   // Signal logical teardown completion.
-  ASSERT_TRUE(deferred_completer.has_value());
   completer_cleanup.call();
 
   // Process the completion reply and execute hardware shutdown.
@@ -1652,11 +1668,17 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostReconnectDuringAsyncUnconfigure) {
   ExpectState(UsbPeripheral::DeviceState::kHostConnected);
 
   // Defer SetConfigured(false) completion to simulate delayed mock teardown.
+  std::mutex completer_lock;
   std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_completer;
   auto completer_cleanup = fit::defer([&]() {
-    if (deferred_completer.has_value()) {
-      deferred_completer->ReplySuccess();
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> completer_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completer_to_run = std::move(deferred_completer);
       deferred_completer.reset();
+    }
+    if (completer_to_run.has_value()) {
+      completer_to_run->ReplySuccess();
     }
   });
   auto callback_cleanup =
@@ -1664,6 +1686,7 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostReconnectDuringAsyncUnconfigure) {
   fake_function->set_on_set_configured_async(
       [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
         if (!configured) {
+          std::lock_guard lock(completer_lock);
           deferred_completer.emplace(std::move(completer));
         } else {
           completer.ReplySuccess();
@@ -1675,8 +1698,10 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostReconnectDuringAsyncUnconfigure) {
 
   // Allow the dispatcher to process the SetConnected(false) task and wait for
   // SetConfigured(false) to arrive at the fake function.
-  dut().runtime().RunUntilIdle();
-  fake_function->WaitUntilCalled();
+  dut().runtime().RunUntil([&]() {
+    std::lock_guard lock(completer_lock);
+    return deferred_completer.has_value();
+  });
 
   // Assertion: The state should still be kHostConnected because the unconfigure
   // promise is currently blocked waiting for the completer.
@@ -1687,7 +1712,6 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostReconnectDuringAsyncUnconfigure) {
   dut().runtime().RunUntilIdle();
 
   // Now resolve the captured completer to allow the async promise join task to finish.
-  ASSERT_TRUE(deferred_completer.has_value());
   completer_cleanup.call();
 
   // Run the dispatcher until idle to flush the promise join chain.
@@ -1715,18 +1739,25 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
 
   // Track all in-flight SetConfigured(false) completers in a vector to ensure no
   // completer is dropped without replying if multiple disconnect events arrive.
+  std::mutex completers_lock;
   std::vector<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_completers;
   auto completers_cleanup = fit::defer([&]() {
-    for (auto& completer : deferred_completers) {
+    std::vector<FakeUsbFunction::SetConfiguredCompleterAsync> completers_to_run;
+    {
+      std::lock_guard lock(completers_lock);
+      completers_to_run = std::move(deferred_completers);
+      deferred_completers.clear();
+    }
+    for (auto& completer : completers_to_run) {
       completer.ReplySuccess();
     }
-    deferred_completers.clear();
   });
   auto callback_cleanup =
       fit::defer([&]() { fake_function->set_on_set_configured_async(nullptr); });
   fake_function->set_on_set_configured_async(
       [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
         if (!configured) {
+          std::lock_guard lock(completers_lock);
           deferred_completers.push_back(std::move(completer));
         } else {
           completer.ReplySuccess();
@@ -1735,9 +1766,14 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
 
   // Disconnect 1: Starts async unconfigure task 1.
   ASSERT_OK(dci()->SetConnected(false).status());
-  dut().runtime().RunUntilIdle();
-  fake_function->WaitUntilCalled();
-  ASSERT_EQ(deferred_completers.size(), 1u);
+  dut().runtime().RunUntil([&]() {
+    std::lock_guard lock(completers_lock);
+    return !deferred_completers.empty();
+  });
+  {
+    std::lock_guard lock(completers_lock);
+    ASSERT_EQ(deferred_completers.size(), 1u);
+  }
   ExpectState(UsbPeripheral::DeviceState::kHostConnected);
 
   // Rapid Reconnect: host connects again.
@@ -1791,13 +1827,14 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostReconnectSetConfigurationDeferredDur
   ASSERT_TRUE(set_res->is_ok());
 
   // Intercept SetConfigured(false) to hold disconnect unconfiguration in-flight.
+  std::mutex completer_lock;
   std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_unconfigure;
   auto callback_cleanup =
       fit::defer([&]() { fake_function->set_on_set_configured_async(nullptr); });
-  fake_function->ResetCalled();
   fake_function->set_on_set_configured_async(
       [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
         if (!configured) {
+          std::lock_guard lock(completer_lock);
           deferred_unconfigure.emplace(std::move(completer));
         } else {
           completer.ReplySuccess();
@@ -1806,8 +1843,10 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostReconnectSetConfigurationDeferredDur
 
   // Host disconnects -> begins asynchronous unconfiguration.
   ASSERT_OK(dci()->SetConnected(false).status());
-  fake_function->WaitUntilCalled();
-  ASSERT_TRUE(deferred_unconfigure.has_value());
+  dut().runtime().RunUntil([&]() {
+    std::lock_guard lock(completer_lock);
+    return deferred_unconfigure.has_value();
+  });
 
   // Host rapidly reconnects.
   ASSERT_OK(dci()->SetConnected(true).status());
@@ -1826,9 +1865,14 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, HostReconnectSetConfigurationDeferredDur
   // completer_cleanup is declared after configure_future so that upon test failure or exception,
   // its destructor runs before ~future() blocks waiting on Control().
   auto completer_cleanup = fit::defer([&]() {
-    if (deferred_unconfigure.has_value()) {
-      deferred_unconfigure->ReplySuccess();
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> completer_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completer_to_run = std::move(deferred_unconfigure);
       deferred_unconfigure.reset();
+    }
+    if (completer_to_run.has_value()) {
+      completer_to_run->ReplySuccess();
     }
   });
 
@@ -1894,13 +1938,14 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
   ASSERT_TRUE(set_res->is_ok());
 
   // Intercept SetConfigured(false) to hold disconnect unconfiguration in-flight.
+  std::mutex completers_lock;
   std::vector<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_unconfigures;
   auto callback_cleanup =
       fit::defer([&]() { fake_function->set_on_set_configured_async(nullptr); });
-  fake_function->ResetCalled();
   fake_function->set_on_set_configured_async(
       [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
         if (!configured) {
+          std::lock_guard lock(completers_lock);
           deferred_unconfigures.push_back(std::move(completer));
         } else {
           completer.ReplySuccess();
@@ -1909,8 +1954,10 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
 
   // Host disconnects -> begins asynchronous unconfiguration.
   ASSERT_OK(dci()->SetConnected(false).status());
-  fake_function->WaitUntilCalled();
-  ASSERT_FALSE(deferred_unconfigures.empty());
+  dut().runtime().RunUntil([&]() {
+    std::lock_guard lock(completers_lock);
+    return !deferred_unconfigures.empty();
+  });
 
   // Host rapidly reconnects.
   ASSERT_OK(dci()->SetConnected(true).status());
@@ -1930,10 +1977,15 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
     configure_finished.store(true);
   });
   auto completer_cleanup = fit::defer([&]() {
-    for (auto& comp : deferred_unconfigures) {
+    std::vector<FakeUsbFunction::SetConfiguredCompleterAsync> completers_to_run;
+    {
+      std::lock_guard lock(completers_lock);
+      completers_to_run = std::move(deferred_unconfigures);
+      deferred_unconfigures.clear();
+    }
+    for (auto& comp : completers_to_run) {
       comp.ReplySuccess();
     }
-    deferred_unconfigures.clear();
   });
 
   // Wait until the driver receives and registers the deferred SET_CONFIGURATION.
@@ -1971,12 +2023,14 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
   auto fake_function = function_clients_res.value().fakes[0];
   ASSERT_NE(nullptr, fake_function);
 
+  std::mutex completer_lock;
   std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_completer;
   auto callback_cleanup =
       fit::defer([&]() { fake_function->set_on_set_configured_async(nullptr); });
   fake_function->set_on_set_configured_async(
       [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
         if (!configured) {
+          std::lock_guard lock(completer_lock);
           deferred_completer.emplace(std::move(completer));
         } else {
           completer.ReplySuccess();
@@ -1994,8 +2048,10 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
   });
 
   dut().runtime().RunUntilIdle();
-  fake_function->WaitUntilCalled();
-  ASSERT_TRUE(deferred_completer.has_value());
+  dut().runtime().RunUntil([&]() {
+    std::lock_guard lock(completer_lock);
+    return deferred_completer.has_value();
+  });
 
   // Second ClearFunctions arrives while first teardown is awaiting SetConfigured(false).
   std::atomic<bool> second_clear_finished = false;
@@ -2007,9 +2063,14 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
   // completer_cleanup is declared after both clear promises so that upon test failure or exception,
   // its destructor runs before ~future() blocks waiting on ClearFunctions().
   auto completer_cleanup = fit::defer([&]() {
-    if (deferred_completer.has_value()) {
-      deferred_completer->ReplySuccess();
+    std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> completer_to_run;
+    {
+      std::lock_guard lock(completer_lock);
+      completer_to_run = std::move(deferred_completer);
       deferred_completer.reset();
+    }
+    if (completer_to_run.has_value()) {
+      completer_to_run->ReplySuccess();
     }
   });
 
