@@ -2360,6 +2360,11 @@ TEST_P(SdmmcBlockDeviceTest, Inspect) {
   ASSERT_NOT_NULL(io_retries);
   EXPECT_EQ(io_retries->value(), 0);
 
+  const auto* serial_number =
+      root->node().get_property<inspect::UintPropertyValue>("serial_number");
+  ASSERT_NOT_NULL(serial_number);
+  EXPECT_EQ(serial_number->value(), 0);
+
   const auto* clock_rate = root->node().get_property<inspect::UintPropertyValue>("clock_rate");
   ASSERT_NOT_NULL(clock_rate);
   EXPECT_EQ(clock_rate->value(), 26'000'000);
@@ -2515,6 +2520,27 @@ TEST_P(SdmmcBlockDeviceTest, InspectInvalidLifetime) {
       root->node().get_property<inspect::UintPropertyValue>("max_lifetime_used");
   ASSERT_NOT_NULL(max_lifetime);
   EXPECT_EQ(max_lifetime->value(), 6);  // Only the valid value should be used.
+}
+
+TEST_P(SdmmcBlockDeviceTest, InspectSerialNumber) {
+  constexpr uint32_t kExpectedSerial = 0x12345678;
+  sdmmc_.set_command_callback(SDMMC_ALL_SEND_CID, [kExpectedSerial](uint32_t out_response[4]) {
+    uint8_t* raw_cid = reinterpret_cast<uint8_t*>(out_response);
+    memcpy(&raw_cid[MMC_CID_SERIAL], &kExpectedSerial, sizeof(kExpectedSerial));
+  });
+
+  ASSERT_OK(StartDriverForMmc());
+
+  inspect::InspectTestHelper inspector;
+  inspector.ReadInspect(block_device_->inspect());
+
+  const inspect::Hierarchy* root = inspector.hierarchy().GetByPath({"sdmmc_core"});
+  ASSERT_NOT_NULL(root);
+
+  const auto* serial_number =
+      root->node().get_property<inspect::UintPropertyValue>("serial_number");
+  ASSERT_NOT_NULL(serial_number);
+  EXPECT_EQ(serial_number->value(), kExpectedSerial);
 }
 
 TEST_P(SdmmcBlockDeviceTest, PowerSuspendResume) {

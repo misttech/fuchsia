@@ -41,9 +41,6 @@ zx_status_t DecodeCid(const std::array<uint8_t, SDMMC_CID_SIZE>& raw_cid) {
             raw_cid[MMC_CID_PRODUCT_NAME_START + 5]);
   fdf::info("       revision={}.{}", (raw_cid[MMC_CID_REVISION] >> 4) & 0xf,
             raw_cid[MMC_CID_REVISION] & 0xf);
-  uint32_t serial;
-  memcpy(&serial, reinterpret_cast<const std::byte*>(&raw_cid[MMC_CID_SERIAL]), sizeof(uint32_t));
-  fdf::info("       serial={}", serial);
   return ZX_OK;
 }
 
@@ -606,6 +603,10 @@ zx_status_t SdmmcBlockDevice::MmcTryHs() {
 }
 
 void SdmmcBlockDevice::MmcSetInspectProperties() {
+  uint32_t serial;
+  memcpy(&serial, reinterpret_cast<const std::byte*>(&raw_cid_[MMC_CID_SERIAL]), sizeof(uint32_t));
+  properties_.serial_number_ = root_.CreateUint("serial_number", serial);
+
   properties_.clock_rate_ = root_.CreateUint("clock_rate", clock_rate_);
   uint8_t bus_width_bits;
   switch (bus_width_) {

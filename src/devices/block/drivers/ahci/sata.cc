@@ -100,7 +100,6 @@ zx_status_t SataDevice::Init() {
   serial_number = std::string(serial_number.c_str());
   firmware_rev = std::string(firmware_rev.c_str());
   fdf::info("Model number:  '{}'", model_number.c_str());
-  fdf::info("Serial number: '{}'", serial_number.c_str());
   fdf::info("Firmware rev.: '{}'", firmware_rev.c_str());
 
   auto inspect_device = controller_->inspect_node().CreateChild(DriverName());

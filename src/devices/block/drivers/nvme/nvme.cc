@@ -422,7 +422,6 @@ static void PopulateControllerInspect(const IdentifyController& identify,
   serial_number = std::string(serial_number.c_str());
   firmware_rev = std::string(firmware_rev.c_str());
   fdf::info("Model number:  '{}'", model_number.c_str());
-  fdf::info("Serial number: '{}'", serial_number.c_str());
   fdf::info("Firmware rev.: '{}'", firmware_rev.c_str());
   controller.RecordString("model_number", model_number);
   controller.RecordString("serial_number", serial_number);
