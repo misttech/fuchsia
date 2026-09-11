@@ -20,6 +20,7 @@ config("android_config_no_thread_safety_analysis") {
 }
 
 config("android_config") {
+  configs = [ "//build/config:Wno-nontrivial-memaccess" ]
   cflags_cc = [
     "-Wno-c++98-compat-extra-semi",
     "-Wno-c99-designator",

@@ -826,10 +826,6 @@ config("default_warnings") {
   }
 
   configs = [
-    # TODO(https://fxbug.dev/376323001): Disable "-Wnontrivial-memaccess" until
-    # all instances are fixed.
-    ":Wno-nontrivial-memaccess",
-
     # TODO(https://fxbug.dev/415133536): Disable "-Wunterminated-string-initialization"
     # until all instances are fixed.
     ":Wno-unterminated-string-initialization",
@@ -1579,6 +1575,10 @@ config("no-tlsdesc") {
 # TODO(https://fxbug.dev/376323001): Disable "-Wnontrivial-memaccess" until
 # all instances are fixed.
 config("Wno-nontrivial-memaccess") {
+  visibility = [
+    "//src/lib/android:*",
+    "//third_party/openweave-core/src/include:*",
+  ]
   if (!is_gcc) {
     cflags = [ "-Wno-nontrivial-memaccess" ]
   }

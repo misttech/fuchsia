@@ -224,10 +224,6 @@ _flag_configs = struct(
             "-Wno-unknown-warning-option",
             "-Wno-missing-field-initializers",
 
-            # TODO(https://fxbug.dev/376323001): Disable "-Wnontrivial-memaccess" until
-            # all instances are fixed.
-            "-Wno-nontrivial-memaccess",
-
             # TODO(https://fxbug.dev/477786942): Fix violations and enable the following checks.
             # "-Wconversion",
             # "-Wimplicit-fallthrough",
