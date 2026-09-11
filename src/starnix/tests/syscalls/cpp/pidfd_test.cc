@@ -300,13 +300,7 @@ TEST(PidFdTest, PidFdSendSignalZeroSignal) {
 }
 
 std::string GetExecChildBinaryPath() {
-  std::string test_binary = "data/tests/deps/procfs_test_exec_child";
-  if (!files::IsFile(test_binary)) {
-    char self_path[PATH_MAX];
-    realpath("/proc/self/exe", self_path);
-    test_binary = files::JoinPath(files::GetDirectoryName(self_path), "procfs_test_exec_child");
-  }
-  return test_binary;
+  return test_helper::GetTestResourcePath("procfs_test_exec_child");
 }
 
 // Verify that polling a pidfd across execve does not wake up prematurely.
