@@ -4,14 +4,42 @@
 
 use crate::TargetEvent;
 use crate::error::Error;
+use crate::events::TargetHandle;
+use crate::instance_watcher::{InstanceSource, InstanceWatcher};
 use emulator_instance::EmulatorInstances;
-use fuchsia_async::Task;
 use futures::channel::mpsc::UnboundedSender;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+struct EmulatorSource;
+
+impl InstanceSource for EmulatorSource {
+    fn recursive(&self) -> bool {
+        true
+    }
+
+    fn get_all_targets(&self, root: &Path) -> Vec<TargetHandle> {
+        let emu_instances = EmulatorInstances::new(root.to_path_buf());
+        emulator_instance::get_all_targets(&emu_instances)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|t| TargetHandle::try_from(t).ok())
+            .collect()
+    }
+
+    fn instance_name_from_path(&self, root: &Path, path: &Path) -> Option<String> {
+        emulator_instance::instance_name_from_path(root, path)
+    }
+
+    fn read_target_handle(&self, root: &Path, path: &Path) -> Option<TargetHandle> {
+        let name = self.instance_name_from_path(root, path)?;
+        let emu_instances = EmulatorInstances::new(root.to_path_buf());
+        let info = emulator_instance::get_target(&emu_instances, &name).ok()??;
+        TargetHandle::try_from(info).ok()
+    }
+}
 
 pub struct EmulatorWatcher {
-    // Task for the drain loop
-    drain_task: Option<Task<()>>,
+    _watcher: InstanceWatcher,
 }
 
 impl EmulatorWatcher {
@@ -19,33 +47,9 @@ impl EmulatorWatcher {
         instance_root: PathBuf,
         sender: UnboundedSender<TargetEvent>,
     ) -> Result<Self, Error> {
-        let emu_instances = EmulatorInstances::new(instance_root.clone());
-        let existing = emulator_instance::get_all_targets(&emu_instances).map_err(|err| {
-            Error::EmulatorWatcher { path: instance_root.clone(), err: err.to_string() }
+        let watcher = InstanceWatcher::new(instance_root, sender, EmulatorSource, |path, err| {
+            Error::EmulatorWatcher { path, err }
         })?;
-        for i in existing {
-            let handle = i.try_into();
-            if let Ok(h) = handle {
-                let _ = sender.unbounded_send(TargetEvent::Added(h));
-            }
-        }
-        let mut res = Self { drain_task: None };
-
-        // Emulator (and therefore notify thread) lifetime should last as long as the task,
-        // because it is moved into the loop
-        let mut watcher = emulator_instance::start_emulator_watching(instance_root.clone())
-            .map_err(|err| Error::EmulatorWatcher { path: instance_root, err: err.to_string() })?;
-        let task = Task::local(async move {
-            loop {
-                if let Some(act) = watcher.emulator_target_detected().await {
-                    let event = act.try_into();
-                    if let Ok(e) = event {
-                        let _ = sender.unbounded_send(e);
-                    }
-                }
-            }
-        });
-        res.drain_task.replace(task);
-        Ok(res)
+        Ok(Self { _watcher: watcher })
     }
 }

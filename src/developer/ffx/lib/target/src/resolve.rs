@@ -420,6 +420,11 @@ pub(crate) fn build_discovery_builder(
         builder = builder.with_usb_vsock_driver_socket_path(usb_driver_socket);
     }
 
+    if sources.contains(DiscoverySources::GCE) {
+        let gce_instance_root = ctx.get(ffx_config::keys::GCE_INSTANCE_ROOT_DIR).ok();
+        builder = builder.with_gce_instance_root(gce_instance_root);
+    }
+
     builder
 }
 
@@ -518,8 +523,10 @@ pub fn get_discovery_stream(
     mdns: bool,
     ctx: &EnvironmentContext,
 ) -> std::result::Result<impl Stream<Item = TargetHandle>, crate::FfxTargetCrateError> {
-    let mut sources =
-        DiscoverySources::MANUAL | DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
+    let mut sources = DiscoverySources::MANUAL
+        | DiscoverySources::EMULATOR
+        | DiscoverySources::FASTBOOT_FILE
+        | DiscoverySources::GCE;
     if usb {
         sources = sources | DiscoverySources::USB_FASTBOOT;
 
@@ -544,8 +551,10 @@ pub async fn get_discovered_targets(
     mdns: bool,
     ctx: &EnvironmentContext,
 ) -> std::result::Result<Vec<TargetHandle>, crate::FfxTargetCrateError> {
-    let mut sources =
-        DiscoverySources::MANUAL | DiscoverySources::EMULATOR | DiscoverySources::FASTBOOT_FILE;
+    let mut sources = DiscoverySources::MANUAL
+        | DiscoverySources::EMULATOR
+        | DiscoverySources::FASTBOOT_FILE
+        | DiscoverySources::GCE;
     if usb {
         sources = sources | DiscoverySources::USB_FASTBOOT;
 

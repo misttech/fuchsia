@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 use discovery::emulator_watcher::EmulatorWatcher;
 use discovery::fastboot_file_watcher::FastbootWatcher;
+use discovery::gce_watcher::GceWatcher;
 use discovery::query::TargetInfoQuery;
 use discovery::{
     DiscoveryBuilder, DiscoverySources, TargetEvent, TargetHandle, TargetStream, TargetStreamConfig,
@@ -89,6 +90,7 @@ pub(crate) fn build_discovery_stream(
             format!("unable to get `{}`", ffx_config::keys::EMU_INSTANCE_ROOT_DIR)
         })?;
     let fastboot_file_path: Option<PathBuf> = ctx.get(ffx_config::keys::FASTBOOT_FILE_PATH).ok();
+    let gce_instance_root: Option<PathBuf> = ctx.get(ffx_config::keys::GCE_INSTANCE_ROOT_DIR).ok();
 
     let mut config = TargetStreamConfig::new();
     let (sender, queue) = mpsc::unbounded();
@@ -134,8 +136,14 @@ pub(crate) fn build_discovery_stream(
     if sources.contains(DiscoverySources::FASTBOOT_FILE) {
         if let Some(fastboot_devices_file) = fastboot_file_path {
             config.set_fastboot_file_watcher(
-                FastbootWatcher::new(fastboot_devices_file, sender).bug()?,
+                FastbootWatcher::new(fastboot_devices_file, sender.clone()).bug()?,
             )
+        }
+    }
+
+    if sources.contains(DiscoverySources::GCE) {
+        if let Some(gce_root) = gce_instance_root {
+            config.set_gce_watcher(GceWatcher::new(gce_root, sender).bug()?)
         }
     }
 

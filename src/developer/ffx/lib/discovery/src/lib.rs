@@ -9,6 +9,7 @@ pub use crate::events::{
     FastbootConnectionState, FastbootTargetState, TargetEvent, TargetHandle, TargetState,
 };
 use crate::fastboot_file_watcher::FastbootWatcher;
+use crate::gce_watcher::GceWatcher;
 use crate::query::TargetInfoQuery;
 use crate::usb_vsock_watcher::UsbVsockWatcher;
 use bitflags::bitflags;
@@ -39,6 +40,8 @@ pub mod emulator_watcher;
 pub mod error;
 pub mod events;
 pub mod fastboot_file_watcher;
+pub mod gce_watcher;
+pub mod instance_watcher;
 mod merge;
 pub mod query;
 mod usb_vsock_watcher;
@@ -65,6 +68,9 @@ pub struct TargetStream {
 
     /// Watches for Emulator events
     fastboot_file_watcher: Option<FastbootWatcher>,
+
+    /// Watches for GCE instance events
+    gce_watcher: Option<GceWatcher>,
 
     /// This is where results from the various watchers are published.
     queue: UnboundedReceiver<TargetEvent>,
@@ -93,6 +99,9 @@ where
 
     /// Fastboot file watcher.
     pub fastboot_file_watcher: Option<FastbootWatcher>,
+
+    /// GCE watcher.
+    pub gce_watcher: Option<GceWatcher>,
 }
 
 impl<Mdns, Fusb, Man> TargetStreamConfig<Mdns, Fusb, Man>
@@ -110,6 +119,7 @@ where
             emulator_watcher: None,
             usb_vsock_watcher: None,
             fastboot_file_watcher: None,
+            gce_watcher: None,
         }
     }
 
@@ -136,6 +146,10 @@ where
     pub fn set_fastboot_file_watcher(&mut self, f: FastbootWatcher) {
         self.fastboot_file_watcher = Some(f)
     }
+
+    pub fn set_gce_watcher(&mut self, g: GceWatcher) {
+        self.gce_watcher = Some(g);
+    }
 }
 
 impl TargetStream {
@@ -160,6 +174,7 @@ impl TargetStream {
             emulator_watcher: config.emulator_watcher,
             usb_vsock_watcher: config.usb_vsock_watcher,
             fastboot_file_watcher: config.fastboot_file_watcher,
+            gce_watcher: config.gce_watcher,
             queue,
         }
     }
@@ -169,6 +184,7 @@ pub struct DiscoveryBuilder {
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
     usb_vsock_driver_socket_path: Option<PathBuf>,
+    gce_instance_root: Option<PathBuf>,
     sources: DiscoverySources,
     timeout: Option<Duration>,
     state_filter: TargetStateFilter,
@@ -217,6 +233,14 @@ impl DiscoveryBuilder {
         self
     }
 
+    pub fn with_gce_instance_root(mut self, gce_instance_root: Option<PathBuf>) -> Self {
+        if gce_instance_root.is_some() {
+            self.gce_instance_root = gce_instance_root;
+            self.sources.insert(DiscoverySources::GCE);
+        }
+        self
+    }
+
     /// Specify the timeout in milliseconds. (Specified as u64 instead of
     /// Duration because the value will normally come from config, so we'll do
     /// the conversion here rather then having every caller do it.)
@@ -243,6 +267,7 @@ impl DiscoveryBuilder {
             emulator_instance_root: self.emulator_instance_root,
             fastboot_devices_file_path: self.fastboot_devices_file_path,
             usb_vsock_driver_socket_path: self.usb_vsock_driver_socket_path,
+            gce_instance_root: self.gce_instance_root,
             sources: self.sources,
             timeout: self.timeout,
             state_filter: self.state_filter,
@@ -281,6 +306,7 @@ impl Default for DiscoveryBuilder {
             emulator_instance_root: None,
             fastboot_devices_file_path: None,
             usb_vsock_driver_socket_path: None,
+            gce_instance_root: None,
             sources: DiscoverySources::default(),
             timeout: Some(DEFAULT_TIMEOUT),
             state_filter: TargetStateFilter::default(),
@@ -320,6 +346,7 @@ pub struct Discovery {
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
     usb_vsock_driver_socket_path: Option<PathBuf>,
+    gce_instance_root: Option<PathBuf>,
     sources: DiscoverySources,
     timeout: Option<Duration>,
     state_filter: TargetStateFilter,
@@ -355,6 +382,7 @@ impl Discovery {
             self.emulator_instance_root.clone(),
             self.fastboot_devices_file_path.clone(),
             self.usb_vsock_driver_socket_path.clone(),
+            self.gce_instance_root.clone(),
             self.sources,
         )?;
         if let Some(timeout) = self.timeout {
@@ -441,6 +469,7 @@ bitflags! {
         const EMULATOR = 1 << 3;
         const FASTBOOT_FILE = 1 << 4;
         const USB_VSOCK = 1 << 5;
+        const GCE = 1 << 6;
     }
 }
 
@@ -455,6 +484,7 @@ fn wait_for_devices(
     emulator_instance_root: Option<PathBuf>,
     fastboot_devices_file_path: Option<PathBuf>,
     usb_vsock_driver_socket_path: Option<PathBuf>,
+    gce_instance_root: Option<PathBuf>,
     sources: DiscoverySources,
 ) -> Result<TargetStream> {
     let mut config = TargetStreamConfig::new();
@@ -507,7 +537,16 @@ fn wait_for_devices(
 
     if sources.contains(DiscoverySources::FASTBOOT_FILE) {
         if let Some(fastboot_devices_file) = fastboot_devices_file_path {
-            config.set_fastboot_file_watcher(FastbootWatcher::new(fastboot_devices_file, sender)?)
+            config.set_fastboot_file_watcher(FastbootWatcher::new(
+                fastboot_devices_file,
+                sender.clone(),
+            )?)
+        }
+    }
+
+    if sources.contains(DiscoverySources::GCE) {
+        if let Some(instance_root) = gce_instance_root {
+            config.set_gce_watcher(GceWatcher::new(instance_root, sender)?)
         }
     }
 
@@ -593,6 +632,21 @@ pub mod test {
         );
     }
 
+    #[test]
+    fn test_discovery_builder_with_gce_root() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let discovery = DiscoveryBuilder::default()
+            .set_source(DiscoverySources::MANUAL)
+            .with_gce_instance_root(Some(PathBuf::from_str("/tmp").expect("tmp is a valid path")))
+            .build(&env.context);
+
+        assert_eq!(discovery.sources, DiscoverySources::MANUAL | DiscoverySources::GCE);
+        assert_eq!(
+            discovery.gce_instance_root,
+            Some(PathBuf::from_str("/tmp").expect("tmp is a valid path"))
+        );
+    }
+
     ///////////////////////////////////////////////////////////////////////////
     ///  TargetStream tests
     ///////////////////////////////////////////////////////////////////////////
@@ -608,6 +662,7 @@ pub mod test {
             usb_vsock_watcher: None,
             emulator_watcher: None,
             fastboot_file_watcher: None,
+            gce_watcher: None,
             queue,
         };
 
@@ -873,6 +928,7 @@ pub mod test {
         let mut stream = wait_for_devices(
             &env.context,
             Some(instance_dir.clone()),
+            None,
             None,
             None,
             DiscoverySources::EMULATOR,

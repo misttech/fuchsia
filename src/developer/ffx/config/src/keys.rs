@@ -34,6 +34,9 @@ pub const FASTBOOT_FILE_PATH: &str = "fastboot.devices_file.path";
 /// should create a subdirectory in this directory to store data.
 pub const EMU_INSTANCE_ROOT_DIR: &'static str = "emu.instance_dir";
 
+/// The root directory for storing instance specific GCE data.
+pub const GCE_INSTANCE_ROOT_DIR: &'static str = "gce.instance_dir";
+
 /// Whether or not to enable vsock connectivity.
 pub const VSOCK_ENABLED: &'static str = "connectivity.enable_vsock";
 

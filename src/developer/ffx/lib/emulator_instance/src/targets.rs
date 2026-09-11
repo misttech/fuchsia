@@ -345,6 +345,35 @@ pub fn get_all_targets(instances: &EmulatorInstances) -> Result<Vec<ffx::TargetI
     let items = instances.get_all_instances()?;
     Ok(items.iter().flat_map(|i| EmulatorWatcher::make_target(i)).collect())
 }
+
+pub fn get_target(instances: &EmulatorInstances, name: &str) -> Result<Option<ffx::TargetInfo>> {
+    let instance_dir = instances.get_instance_dir(name, false)?;
+    match crate::read_from_disk(&instance_dir) {
+        Ok(EngineOption::DoesExist(emu_instance)) => {
+            Ok(EmulatorWatcher::handle_instance(&emu_instance))
+        }
+        _ => Ok(None),
+    }
+}
+
+pub fn instance_name_from_path(instance_dir: &Path, path: &Path) -> Option<String> {
+    if let Some(ext) = path.extension() {
+        if ext == "log" || ext == "serial" {
+            return None;
+        }
+    }
+    let relative = path.strip_prefix(instance_dir).ok()?;
+    let mut name: String = "".into();
+    if let Some(instance_name) = relative.parent() {
+        name = instance_name.to_string_lossy().to_string();
+        if name.is_empty() {
+            name = relative.to_string_lossy().to_string();
+        }
+    } else if !relative.to_string_lossy().is_empty() {
+        name = relative.to_string_lossy().to_string();
+    }
+    if !name.is_empty() { Some(name) } else { None }
+}
 #[cfg(test)]
 mod tests {
     pub(crate) use super::*;

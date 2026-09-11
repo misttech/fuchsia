@@ -41,6 +41,7 @@ fn sources_from_query(query: &TargetInfoQuery) -> DiscoverySources {
                 | DiscoverySources::FASTBOOT_FILE
                 | DiscoverySources::EMULATOR
                 | DiscoverySources::MANUAL
+                | DiscoverySources::GCE
         }
     }
 }
@@ -70,6 +71,13 @@ where
                 "No fastboot file set in the config under {}",
                 ffx_config::keys::FASTBOOT_FILE_PATH
             ))?,
+        }
+    }
+    if sources.contains(DiscoverySources::GCE) {
+        let gce_instance_root: Option<PathBuf> =
+            ctx.get(ffx_config::keys::GCE_INSTANCE_ROOT_DIR).ok();
+        if let Some(p) = gce_instance_root {
+            notifier.info(format!("Searching for GCE instances at {}", p.display()))?;
         }
     }
     Ok(())

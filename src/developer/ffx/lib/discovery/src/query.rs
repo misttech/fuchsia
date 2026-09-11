@@ -104,7 +104,10 @@ impl TargetInfoQuery {
     pub fn discovery_sources(&self) -> DiscoverySources {
         match self {
             TargetInfoQuery::Addr(_) => {
-                DiscoverySources::MDNS | DiscoverySources::MANUAL | DiscoverySources::EMULATOR
+                DiscoverySources::MDNS
+                    | DiscoverySources::MANUAL
+                    | DiscoverySources::EMULATOR
+                    | DiscoverySources::GCE
             }
             TargetInfoQuery::Id(_) => DiscoverySources::USB_FASTBOOT,
             TargetInfoQuery::VSock(_) => DiscoverySources::EMULATOR,
@@ -115,6 +118,7 @@ impl TargetInfoQuery {
                     | DiscoverySources::EMULATOR
                     | DiscoverySources::USB_FASTBOOT
                     | DiscoverySources::USB_VSOCK
+                    | DiscoverySources::GCE
             }
         }
     }
@@ -281,6 +285,7 @@ mod test {
                 | DiscoverySources::EMULATOR
                 | DiscoverySources::USB_FASTBOOT
                 | DiscoverySources::USB_VSOCK
+                | DiscoverySources::GCE
         );
 
         // IP Address shouldn't use USB source
@@ -288,7 +293,10 @@ mod test {
         let sources = query.discovery_sources();
         assert_eq!(
             sources,
-            DiscoverySources::MDNS | DiscoverySources::MANUAL | DiscoverySources::EMULATOR
+            DiscoverySources::MDNS
+                | DiscoverySources::MANUAL
+                | DiscoverySources::EMULATOR
+                | DiscoverySources::GCE
         );
 
         // ID should only use USB source

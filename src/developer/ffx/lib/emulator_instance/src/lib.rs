@@ -82,7 +82,8 @@ pub type Result<T> = std::result::Result<T, EmulatorInstanceError>;
 use fletcher64::get_file_hash;
 pub use instances::{EmulatorInstances, read_from_disk, read_from_disk_untyped, write_to_disk};
 pub use targets::{
-    EmulatorTargetAction, EmulatorWatcher, get_all_targets, start_emulator_watching,
+    EmulatorTargetAction, EmulatorWatcher, get_all_targets, get_target, instance_name_from_path,
+    start_emulator_watching,
 };
 
 /// Holds a single mapping from a host port to the guest.

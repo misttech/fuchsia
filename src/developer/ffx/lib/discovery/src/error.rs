@@ -12,6 +12,9 @@ pub enum Error {
     #[error("could not create emulator watcher from path {path:?}: {err}")]
     EmulatorWatcher { path: PathBuf, err: String },
 
+    #[error("could not create gce watcher from path {path:?}: {err}")]
+    GceWatcher { path: PathBuf, err: String },
+
     #[error("could not create fastboot watcher from path {path:?}: {err}")]
     FastbootWatcher { path: PathBuf, err: String },
 

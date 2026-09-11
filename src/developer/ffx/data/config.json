@@ -38,6 +38,9 @@
             "path": "$HOME/.fastboot/devices"
         }
     },
+    "gce": {
+        "instance_dir": "$SHARED_DATA/gce_instances"
+    },
     "proxy": {
         "timeout_secs": 10.1
     },
