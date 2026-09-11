@@ -10,16 +10,21 @@ use crate::vfs::{
     Anon, FileHandle, FileObject, FileOps, fileops_impl_dataless, fileops_impl_nonseekable,
     fileops_impl_noop_sync,
 };
-use starnix_uapi::error;
+use fuchsia_async as fasync;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::FdEvents;
+use starnix_uapi::{error, from_status_like_fdio};
 
 pub struct PidFdFileObject {
     /// The process represented by this file.
     pid: Pid,
 
     /// Receives a notification when the tracked process terminates.
+    ///
+    /// The peer is held by the task monitoring the process, which drops it once the process has
+    /// been fully released. Dropping this endpoint in turn tells that task to stop monitoring.
+    ///
     /// `None` if the process was already terminated when the pidfd was created.
     terminated_event: Option<zx::EventPair>,
 }
@@ -44,6 +49,62 @@ impl PidFdFileObject {
     }
 }
 
+/// Returns an event that is signalled with `EVENTPAIR_PEER_CLOSED` when the current memory manager
+/// of the process identified by `pid` is dropped.
+///
+/// Returns `None` if the process no longer has a reachable memory manager.
+fn get_memory_manager_drop_event(pid: &Pid) -> Option<zx::EventPair> {
+    let Some(ProcessEntryRef::Process(proc)) = pid.get_process() else {
+        return None;
+    };
+    let task = pid.get_task().or_else(|_| proc.read().get_running_task());
+    task.ok().and_then(|task| task.mm().ok()).map(|mm| mm.drop_notifier.event())
+}
+
+/// Waits until the process identified by `pid` has terminated and all of its resources have been
+/// released.
+///
+/// The memory manager is monitored first.  Once no memory manager remains, the Zircon process is
+/// monitored for termination.
+async fn wait_for_process_release(
+    pid: Pid,
+    initial_mm_event: Option<zx::EventPair>,
+    zx_process: zx::Process,
+) {
+    let mut mm_event = initial_mm_event;
+    while let Some(event) = mm_event {
+        if fasync::OnSignals::new(&event, zx::Signals::EVENTPAIR_PEER_CLOSED).await.is_err() {
+            break;
+        }
+
+        // The memory manager has been dropped. If the process has a new one, it was replaced by
+        // an `execve` and monitoring must continue with the new memory manager.
+        mm_event = get_memory_manager_drop_event(&pid);
+    }
+
+    let _ = fasync::OnSignals::new(&zx_process, zx::Signals::PROCESS_TERMINATED).await;
+}
+
+/// Signals the pidfd holding the peer of `local_event` once the process identified by `pid` has
+/// been fully released.
+///
+/// Stops early if the pidfd is closed first, which drops the peer and asserts
+/// `EVENTPAIR_PEER_CLOSED` on `local_event`.
+async fn monitor_pidfd(
+    pid: Pid,
+    initial_mm_event: Option<zx::EventPair>,
+    zx_process: zx::Process,
+    local_event: zx::EventPair,
+) {
+    let pidfd_closed =
+        std::pin::pin!(fasync::OnSignals::new(&local_event, zx::Signals::EVENTPAIR_PEER_CLOSED));
+    let released = std::pin::pin!(wait_for_process_release(pid, initial_mm_event, zx_process));
+    let _ = futures::future::select(pidfd_closed, released).await;
+
+    // Returning drops `local_event`, which signals `EVENTPAIR_PEER_CLOSED` on the peer, waking any
+    // poller still waiting on the pidfd.
+}
+
 pub fn new_pidfd(
     current_task: &CurrentTask,
     pid: Pid,
@@ -51,17 +112,23 @@ pub fn new_pidfd(
 ) -> Result<FileHandle, Errno> {
     let terminated_event = match pid.get_process() {
         Some(ProcessEntryRef::Process(proc)) => {
-            // Ideally monitor the ThreadGroup's drop_notifier instead, but the pidfd must not be
-            // signalled until after all memory resources associated with the process are
-            // released. In the current Starnix codebase, there is a 1:1 correspondence between
-            // ThreadGroups (i.e. processes) and MemoryManagers, and the MemoryManager of a process
-            // may outlive the ThreadGroup in some circumstances. Therefore, as a temporary
-            // workaround, monitor the MemoryManager's drop_notifier, which is guaranteed to only
-            // fire when all the memory mappings associated with the process have been released.
-            // To be revisited once Starnix implements explicit cleanup of resources on process exit.
-            let task = pid.get_task().or_else(|_| proc.read().get_running_task());
-            let mm = task.and_then(|task| task.mm());
-            mm.ok().map(|mm| mm.drop_notifier.event())
+            let zx_process = proc
+                .process
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .map_err(|status| from_status_like_fdio!(status))?;
+            // Look up the memory manager here rather than in the monitoring task: the process is
+            // known to be alive at this point, whereas it may already have been zombified, and
+            // hence have an unreachable memory manager, by the time the task first runs.
+            let initial_mm_event = get_memory_manager_drop_event(&pid);
+            let (local_event, terminated_event) = zx::EventPair::create();
+            let monitored_pid = pid.clone();
+
+            current_task.kernel().kthreads.spawn_future(
+                move || monitor_pidfd(monitored_pid, initial_mm_event, zx_process, local_event),
+                "pidfd-monitor",
+            );
+
+            Some(terminated_event)
         }
         Some(ProcessEntryRef::Zombie) => None,
         None => {

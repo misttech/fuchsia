@@ -64,9 +64,6 @@
         {
             type: "expect_failure",
             matchers: [
-                // TODO(https://fxbug.dev/558315291): pidfd polls prematurely on execve.
-                "PidFdTest.PidFdPollAcrossExecve",
-
                 // TODO(https://fxbug.dev/351037863)
                 "AshmemTest.SetNameOverflow",
 
