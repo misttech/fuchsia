@@ -222,10 +222,12 @@ maybe_profile_wrap=()
 if [[ "$collect_system_profile" -eq 1 ]]
 then
   debug "Profiling enabled."
+  # LINT.IfChange(build_profile_filenames)
   readonly profile_log_dir="$log_dir/build_profile"
   mkdir -p "$profile_log_dir"
   readonly system_profile_log="${profile_log_dir}/system_profile.json"
   readonly hardware_profile_log="${profile_log_dir}/hardware_profile.json"
+  # LINT.ThenChange(//build/scripts/main_build.py:build_profile_filenames)
 
   # Determine workspace cache file path (under the parsed build_dir)
   readonly cache_file="${build_dir}/hardware_profile.cache.json"

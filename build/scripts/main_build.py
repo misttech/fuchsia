@@ -661,6 +661,23 @@ class BuildInvocation(object):
         if gn_trace:
             metadata["gn_trace"] = gn_trace
 
+        # LINT.IfChange(build_profile_filenames)
+        profile_dir = log_dir / "build_profile"
+        system_profile_path = profile_dir / "system_profile.json"
+        hardware_profile_path = profile_dir / "hardware_profile.json"
+
+        build_profile: JSONObject = {}
+        if system_profile_path.exists():
+            build_profile["system_profile"] = str(system_profile_path.resolve())
+        if hardware_profile_path.exists():
+            build_profile["hardware_profile"] = str(
+                hardware_profile_path.resolve()
+            )
+
+        if build_profile:
+            metadata["build_profile"] = build_profile
+        # LINT.ThenChange(//build/scripts/top_build_wrap.sh:build_profile_filenames)
+
         rbe_metadata = _collect_rbe_metadata(log_dir)
         if rbe_metadata:
             metadata["rbe"] = rbe_metadata

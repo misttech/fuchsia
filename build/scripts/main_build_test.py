@@ -14,6 +14,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from contextlib import contextmanager
@@ -1132,6 +1133,16 @@ class ContextPropertiesAndLoggingTest(unittest.TestCase):
             )
             main_build.write_text(reproxy_log_dir / "reproxy_run.rrpl", "rrpl")
 
+            # Create mock build_profile files
+            build_profile_dir = log_dir / "build_profile"
+            main_build.mkdir(build_profile_dir)
+            main_build.write_text(
+                build_profile_dir / "system_profile.json", "{}"
+            )
+            main_build.write_text(
+                build_profile_dir / "hardware_profile.json", "{}"
+            )
+
             config = main_build.FuchsiaBuildConfig(
                 rbe=True,
                 resultstore="all",
@@ -1199,6 +1210,14 @@ class ContextPropertiesAndLoggingTest(unittest.TestCase):
                 data["rbe"]["reproxy_log_pb"],
                 str((reproxy_log_dir / "reproxy_log.pb").resolve()),
             )
+            self.assertEqual(
+                data["build_profile"]["system_profile"],
+                str((build_profile_dir / "system_profile.json").resolve()),
+            )
+            self.assertEqual(
+                data["build_profile"]["hardware_profile"],
+                str((build_profile_dir / "hardware_profile.json").resolve()),
+            )
 
     @mock.patch.object(subprocess, "check_output")
     def test_fint_artifact_dir_success(
@@ -1264,6 +1283,159 @@ class ContextPropertiesAndLoggingTest(unittest.TestCase):
             config=config,
         )
         self.assertIsNone(context.fint_artifact_dir)
+
+    def test_write_metadata_json_no_profile_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            log_dir = tmp_path / "logs"
+            out_dir = tmp_path / "out"
+            build_dir = tmp_path / "out/default"
+            output_json_path = tmp_path / "metadata.json"
+
+            main_build.mkdir(log_dir)
+            main_build.mkdir(build_dir)
+            main_build.mkdir(out_dir)
+
+            config = main_build.FuchsiaBuildConfig(
+                rbe=False,
+                resultstore="none",
+                profile=True,
+                tui=False,
+                verbose=False,
+                dry_run=False,
+                fint_params_path=None,
+                fint_context_path=None,
+                output_metadata_json=output_json_path,
+            )
+
+            context = main_build.FuchsiaBuildContext(
+                source_dir=pathlib.Path("/tmp"),
+                out_dir=out_dir,
+                build_dir=build_dir,
+                env={"USER": "fake-user"},
+                config=config,
+            )
+
+            invocation = main_build.BuildInvocation(context)
+            with mock.patch.object(
+                main_build.BuildInvocation,
+                "log_dir",
+                new_callable=mock.PropertyMock,
+                return_value=log_dir,
+            ):
+                invocation.write_metadata_json(output_json_path)
+                with open(output_json_path, "r") as f:
+                    data = json.load(f)
+                self.assertNotIn("build_profile", data)
+
+    def test_write_metadata_json_empty_profile_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            log_dir = tmp_path / "logs"
+            out_dir = tmp_path / "out"
+            build_dir = tmp_path / "out/default"
+            output_json_path = tmp_path / "metadata.json"
+
+            main_build.mkdir(log_dir)
+            main_build.mkdir(build_dir)
+            main_build.mkdir(out_dir)
+
+            build_profile_dir = log_dir / "build_profile"
+            main_build.mkdir(build_profile_dir)
+
+            config = main_build.FuchsiaBuildConfig(
+                rbe=False,
+                resultstore="none",
+                profile=True,
+                tui=False,
+                verbose=False,
+                dry_run=False,
+                fint_params_path=None,
+                fint_context_path=None,
+                output_metadata_json=output_json_path,
+            )
+
+            context = main_build.FuchsiaBuildContext(
+                source_dir=pathlib.Path("/tmp"),
+                out_dir=out_dir,
+                build_dir=build_dir,
+                env={"USER": "fake-user"},
+                config=config,
+            )
+
+            invocation = main_build.BuildInvocation(context)
+            with mock.patch.object(
+                main_build.BuildInvocation,
+                "log_dir",
+                new_callable=mock.PropertyMock,
+                return_value=log_dir,
+            ):
+                invocation.write_metadata_json(output_json_path)
+                with open(output_json_path, "r") as f:
+                    data = json.load(f)
+                self.assertNotIn("build_profile", data)
+
+    def test_write_metadata_json_partial_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = pathlib.Path(tmp_dir)
+            log_dir = tmp_path / "logs"
+            out_dir = tmp_path / "out"
+            build_dir = tmp_path / "out/default"
+            output_json_path = tmp_path / "metadata.json"
+
+            main_build.mkdir(log_dir)
+            main_build.mkdir(build_dir)
+            main_build.mkdir(out_dir)
+
+            build_profile_dir = log_dir / "build_profile"
+            main_build.mkdir(build_profile_dir)
+
+            config = main_build.FuchsiaBuildConfig(
+                rbe=False,
+                resultstore="none",
+                profile=True,
+                tui=False,
+                verbose=False,
+                dry_run=False,
+                fint_params_path=None,
+                fint_context_path=None,
+                output_metadata_json=output_json_path,
+            )
+
+            context = main_build.FuchsiaBuildContext(
+                source_dir=pathlib.Path("/tmp"),
+                out_dir=out_dir,
+                build_dir=build_dir,
+                env={"USER": "fake-user"},
+                config=config,
+            )
+
+            invocation = main_build.BuildInvocation(context)
+            with mock.patch.object(
+                main_build.BuildInvocation,
+                "log_dir",
+                new_callable=mock.PropertyMock,
+                return_value=log_dir,
+            ):
+                # 1. Only system_profile.json exists
+                system_profile = build_profile_dir / "system_profile.json"
+                main_build.write_text(system_profile, "{}")
+                invocation.write_metadata_json(output_json_path)
+                with open(output_json_path, "r") as f:
+                    data = json.load(f)
+                self.assertIn("build_profile", data)
+                self.assertIn("system_profile", data["build_profile"])
+                self.assertNotIn("hardware_profile", data["build_profile"])
+
+                # 2. Both exist
+                hardware_profile = build_profile_dir / "hardware_profile.json"
+                main_build.write_text(hardware_profile, "{}")
+                invocation.write_metadata_json(output_json_path)
+                with open(output_json_path, "r") as f:
+                    data = json.load(f)
+                self.assertIn("build_profile", data)
+                self.assertIn("system_profile", data["build_profile"])
+                self.assertIn("hardware_profile", data["build_profile"])
 
 
 if __name__ == "__main__":
