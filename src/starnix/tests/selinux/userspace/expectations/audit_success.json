@@ -2014,6 +2014,12 @@
             ]
         },
         {
+            "name": "TaskTest.GetSidZeroSkipsGetsessionCheck",
+            "audit_expectations": [
+                "avc:  denied  { getsession } for scontext=test_u:test_r:test_task_no_getsession_self_t:s0 tcontext=test_u:test_r:test_task_no_getsession_self_t:s0 tclass=process permissive=0"
+            ]
+        },
+        {
             "name": "TimerslackNsPermsTest/TimerslackNsTestWithParam.Read/0",
             "audit_expectations": [
                 "avc:  denied  { sys_nice } for capability=23  scontext=test_u:test_r:timerslack_no_perms_t:s0 tcontext=test_u:test_r:timerslack_no_perms_t:s0 tclass=capability permissive=0"

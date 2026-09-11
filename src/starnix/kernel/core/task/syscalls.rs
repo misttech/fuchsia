@@ -366,7 +366,9 @@ fn get_task_or_current(current_task: &CurrentTask, pid: pid_t) -> Result<Arc<Tas
 
 pub fn sys_getsid(current_task: &CurrentTask, pid: pid_t) -> Result<pid_t, Errno> {
     let target_task = get_task_or_current(current_task, pid)?;
-    security::check_task_getsid(current_task, &target_task)?;
+    if pid != 0 {
+        security::check_task_getsid(current_task, &target_task)?;
+    }
     let sid = target_task.thread_group().read().process_group.session.leader.id;
     Ok(sid)
 }

@@ -147,6 +147,10 @@ userspace_policy("syslog_policy") {
   sources = [ "syslog_policy.conf" ]
 }
 
+userspace_policy("task_policy") {
+  sources = [ "task_policy.conf" ]
+}
+
 userspace_policy("timerslack_policy") {
   sources = [ "timerslack_policy.conf" ]
 }
@@ -198,6 +202,7 @@ group("policies") {
     ":selinuxfs_policy",
     ":socket_policy",
     ":syslog_policy",
+    ":task_policy",
     ":timerslack_policy",
     ":tun_policy",
     ":userspace_initial_context_policy",
