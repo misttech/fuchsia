@@ -1880,21 +1880,21 @@ where
         cursor.erase()
     }
 
-    /// Erases an element by reference.
+    /// Erases an element by raw pointer.
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `obj` is currently contained within this tree instance.
-    pub unsafe fn erase_raw(&mut self, obj: &P::Target) -> Option<P> {
+    /// The caller must ensure that `obj` is a valid pointer to an object that is currently
+    /// contained within this tree instance.
+    pub unsafe fn erase_raw(&mut self, obj: *mut P::Target) -> Option<P> {
         // SAFETY: The caller guarantees that `obj` is currently contained in this WavlTree.
-        // Converting to raw pointer is safe, and `internal_erase` is safe to execute on a contained pointer.
+        // `internal_erase` is safe to execute on a contained pointer.
         unsafe {
-            let ptr = obj as *const P::Target as *mut P::Target;
-            let node = obj.get_node();
+            let node = (*obj).get_node();
             if !node.in_container() {
                 return None;
             }
-            self.internal_erase(ptr)
+            self.internal_erase(obj)
         }
     }
 
@@ -2986,7 +2986,7 @@ mod tests {
     );
 
     #[test]
-    fn test_erase_by_reference() {
+    fn test_erase_by_raw_pointer() {
         stack_pin_init!(let tree = WavlTree::<i32, *mut TestObject, DefaultObjectTag, TrackingSize>::new());
         let tree = unsafe { tree.get_unchecked_mut() };
         let mut obj1 = TestObject::new(10);
@@ -2994,15 +2994,15 @@ mod tests {
         let mut obj3 = TestObject::new(30);
 
         unsafe {
-            tree.insert_raw(&mut obj1);
-            tree.insert_raw(&mut obj2);
-            tree.insert_raw(&mut obj3);
+            tree.insert_raw(core::ptr::addr_of_mut!(obj1));
+            tree.insert_raw(core::ptr::addr_of_mut!(obj2));
+            tree.insert_raw(core::ptr::addr_of_mut!(obj3));
         }
 
         assert_eq!(tree.len(), 3);
 
         // Erase obj2 directly
-        let erased = unsafe { tree.erase_raw(&obj2) };
+        let erased = unsafe { tree.erase_raw(core::ptr::addr_of_mut!(obj2)) };
         assert!(erased.is_some());
         assert_eq!(unsafe { &*erased.unwrap() }.value, 20);
         assert_eq!(tree.len(), 2);
@@ -3024,9 +3024,9 @@ mod tests {
         let mut obj3 = TestObject::new(30);
 
         unsafe {
-            tree.insert_raw(&mut obj1);
-            tree.insert_raw(&mut obj2);
-            tree.insert_raw(&mut obj3);
+            tree.insert_raw(core::ptr::addr_of_mut!(obj1));
+            tree.insert_raw(core::ptr::addr_of_mut!(obj2));
+            tree.insert_raw(core::ptr::addr_of_mut!(obj3));
         }
 
         assert_eq!(tree.len(), 3);
@@ -3832,7 +3832,7 @@ mod tests {
                     check_augmented_invariants(tree);
                     WavlTreeChecker::sanity_check(tree);
                     let raw_target = objects[i].erase_deck_ptr.get();
-                    let erased = tree.erase_raw(&*raw_target);
+                    let erased = tree.erase_raw(raw_target);
                     assert!(erased.is_some());
                     assert_eq!(erased.unwrap(), raw_target);
                     check_augmented_invariants(tree);
@@ -3865,7 +3865,7 @@ mod tests {
                     check_augmented_invariants(tree);
                     WavlTreeChecker::sanity_check(tree);
                     let raw_target = objects[i].erase_deck_ptr.get();
-                    let erased = tree.erase_raw(&*raw_target);
+                    let erased = tree.erase_raw(raw_target);
                     assert!(erased.is_some());
                     assert_eq!(erased.unwrap(), raw_target);
                     check_augmented_invariants(tree);
