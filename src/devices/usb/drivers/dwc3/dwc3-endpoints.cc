@@ -117,22 +117,27 @@ void Dwc3::EpServer::CancelAll(zx_status_t reason) {
              uep_->ep.ep_num, zx_status_get_string(reason), uep_->server->active_reqs.size(),
              uep_->server->queued_reqs.size(), dwc3_->controller_started_);
 
-  // Any request that hasn't being enqueued yet is immediately returned.
-  for (; !queued_reqs.empty(); queued_reqs.pop()) {
-    RequestComplete(reason, 0, std::move(queued_reqs.front()));
-  }
-
   // Likely performing a full reset. We can't stop any ongoing transfers and
   // assume everything is back to original state.
   if (!dwc3_->controller_started_) {
     for (; !active_reqs.empty(); active_reqs.pop()) {
-      RequestComplete(reason, 0, std::move(active_reqs.front().request));
+      RequestComplete(reason, 0, std::move(active_reqs.front().request), /*send_now=*/false);
     }
+    for (; !queued_reqs.empty(); queued_reqs.pop()) {
+      RequestComplete(reason, 0, std::move(queued_reqs.front()), /*send_now=*/false);
+    }
+    SendCompletions();
     uep_->ep.transfer_state = Endpoint::TransferState::kIdle;
     uep_->ep.rsrc_id = Endpoint::kInvalidResourceId;
     FlushCancelCompleters(reason);
     return;
   }
+
+  // Any request that hasn't been enqueued yet is immediately returned.
+  for (; !queued_reqs.empty(); queued_reqs.pop()) {
+    RequestComplete(reason, 0, std::move(queued_reqs.front()), /*send_now=*/false);
+  }
+  SendCompletions();
 
   switch (uep_->ep.transfer_state) {
     case Endpoint::TransferState::kIdle:
@@ -217,8 +222,8 @@ void Dwc3::UserEpQueueNextSingle(UserEndpoint& uep) {
   }
 
   if (uep.fifo.AvailableSlots() < trb_count) {
-    fdf::warn("Dwc3::UserEpQueueNext ep {} not enough FIFO slots for {}-TRB request", uep.ep.ep_num,
-              trb_count);
+    fdf::debug("Dwc3::UserEpQueueNext ep {} not enough FIFO slots for {}-TRB request",
+               uep.ep.ep_num, trb_count);
     return;
   }
 
@@ -292,8 +297,8 @@ void Dwc3::UserEpQueueNextOngoing(UserEndpoint& uep, bool start_transfer) {
     }
 
     if (uep.fifo.AvailableSlots() < trb_count) {
-      fdf::warn("Dwc3::UserEpQueueNext ep {} not enough FIFO slots for {}-TRB request",
-                uep.ep.ep_num, trb_count);
+      fdf::debug("Dwc3::UserEpQueueNext ep {} not enough FIFO slots for {}-TRB request",
+                 uep.ep.ep_num, trb_count);
       break;
     }
 

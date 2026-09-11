@@ -1505,15 +1505,17 @@ void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
   if (!uep_->ep.enabled || !dwc3_->power_on()) {
     // If the device is powered on, the rejection must be due to the endpoint being disabled.
     if (dwc3_->power_on()) {
-      fdf::info(
+      fdf::debug(
           "Dwc3: ep({}) QueueRequests rejected: endpoint disabled (expected during teardown or stack reset)",
           uep_->ep.ep_num);
     } else {
-      fdf::info("Dwc3: ep({}) QueueRequests rejected: power off", uep_->ep.ep_num);
+      fdf::debug("Dwc3: ep({}) QueueRequests rejected: power off", uep_->ep.ep_num);
     }
     for (auto& req : request.req()) {
-      RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, usb::FidlRequest{std::move(req)});
+      RequestComplete(ZX_ERR_IO_NOT_PRESENT, 0, usb::FidlRequest{std::move(req)},
+                      /*send_now=*/false);
     }
+    SendCompletions();
     return;
   }
 
