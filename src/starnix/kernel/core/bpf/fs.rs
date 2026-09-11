@@ -177,6 +177,7 @@ impl FileOps for BpfHandle {
             &bpf_map.security_state,
             PermissionFlags::READ | PermissionFlags::WRITE,
         )?;
+        let options = options | MappingOptions::DONT_EXPAND;
         default_mmap(file, current_task, addr, memory_offset, length, prot_flags, options)
     }
 

@@ -205,28 +205,38 @@ impl BpfMap {
                 if length > 2 * page_size + 2 * self.schema.max_entries as usize {
                     return error!(EINVAL);
                 }
-                if state.memory_object.is_none() {
-                    let clone_size = 2 * page_size + self.schema.max_entries as usize;
-                    let user_vmo = self
+                if length <= page_size && prot.contains(ProtectionFlags::WRITE) {
+                    if let Some(memory) = state.memory_object.as_ref() {
+                        return Ok(memory.clone());
+                    }
+                    let consumer_vmo = self
                         .vmo()
                         .create_child(
                             zx::VmoChildOptions::SLICE,
                             page_size as u64,
-                            clone_size as u64,
+                            page_size as u64,
                         )
                         .map_err(|_| errno!(EIO))?;
-                    let rights =
-                        user_vmo.basic_info().map_err(|_| errno!(EIO))?.rights - zx::Rights::WRITE;
-                    let readonly_vmo =
-                        user_vmo.duplicate_handle(rights).map_err(|_| errno!(EIO))?;
-                    state.memory_object = Some(Arc::new(MemoryObject::from(user_vmo)));
-                    state.readonly_memory_object =
-                        Some(Arc::new(MemoryObject::RingBuf(readonly_vmo.into())));
-                }
-                if length <= page_size && prot.contains(ProtectionFlags::WRITE) {
-                    Ok(state.memory_object.as_ref().unwrap().clone())
+                    let memory = Arc::new(MemoryObject::from(consumer_vmo));
+                    state.memory_object = Some(memory.clone());
+                    Ok(memory)
                 } else {
-                    Ok(state.readonly_memory_object.as_ref().unwrap().clone())
+                    if let Some(memory) = state.readonly_memory_object.as_ref() {
+                        return Ok(memory.clone());
+                    }
+                    let clone_size = 2 * page_size + self.schema.max_entries as usize;
+                    let vmo_dup = self
+                        .vmo()
+                        .create_child(
+                            zx::VmoChildOptions::SLICE | zx::VmoChildOptions::NO_WRITE,
+                            page_size as u64,
+                            clone_size as u64,
+                        )
+                        .map_err(|_| errno!(EIO))?
+                        .into();
+                    let memory = Arc::new(MemoryObject::RingBuf(vmo_dup));
+                    state.readonly_memory_object = Some(memory.clone());
+                    Ok(memory)
                 }
             }
 

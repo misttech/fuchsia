@@ -829,6 +829,49 @@ TEST_F(BpfMapTest, MMapRingBufTest) {
   ASSERT_THAT(mmap_5_pages_ro_result, SyscallResultIsErrno(EINVAL));
 }
 
+TEST_F(BpfMapTest, MMapRingBufMremapNoWriteEscalation) {
+  // 1. Map the consumer page (offset 0, 1 page) with PROT_READ | PROT_WRITE.
+  auto consumer_mmap = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, ringbuf_fd(), 0));
+
+  // 2. Also map the full ring buffer read-only to observe the producer position.
+  auto ro_mmap = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, 4 * getpagesize(), PROT_READ, MAP_SHARED, ringbuf_fd(), 0));
+
+  // 3. Attempt to mremap the consumer page to grow across the producer page.
+  // In Linux and Starnix, expanding a DONT_EXPAND mapping fails with EFAULT.
+  void* remapped =
+      mremap(consumer_mmap.mapping(), getpagesize(), 2 * getpagesize(), MREMAP_MAYMOVE);
+  EXPECT_EQ(remapped, MAP_FAILED);
+  EXPECT_EQ(errno, EFAULT);
+
+  // Ensure producer position was not corrupted.
+  std::atomic<unsigned long>* producer_pos = reinterpret_cast<std::atomic<unsigned long>*>(
+      reinterpret_cast<uintptr_t>(ro_mmap.mapping()) + getpagesize());
+  EXPECT_EQ(producer_pos->load(std::memory_order_acquire), 0u);
+}
+
+TEST_F(BpfMapTest, MMapArrayMremapFails) {
+  bpf_attr attr = {
+      .map_type = BPF_MAP_TYPE_ARRAY,
+      .key_size = sizeof(int),
+      .value_size = static_cast<uint32_t>(getpagesize()),
+      .max_entries = 1,
+      .map_flags = BPF_F_MMAPABLE,
+  };
+  fbl::unique_fd mappable_map_fd(SAFE_SYSCALL_SKIP_ON_EPERM(bpf(BPF_MAP_CREATE, &attr)));
+  ASSERT_TRUE(mappable_map_fd.is_valid());
+
+  auto mapping = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, mappable_map_fd.get(), 0));
+
+  // Attempt to mremap the array map mapping to grow.
+  // In Linux and Starnix, expanding a DONT_EXPAND mapping fails with EFAULT.
+  void* remapped = mremap(mapping.mapping(), getpagesize(), 2 * getpagesize(), MREMAP_MAYMOVE);
+  EXPECT_EQ(remapped, MAP_FAILED);
+  EXPECT_EQ(errno, EFAULT);
+}
+
 TEST_F(BpfMapTest, WriteRingBufTest) {
   auto pagewr = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
       nullptr, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, ringbuf_fd(), 0));

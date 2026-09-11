@@ -997,6 +997,11 @@ impl MemoryManagerState {
         if old_range.end > original_range.end {
             return error!(EFAULT);
         }
+
+        if mapping.flags().contains(MappingFlags::DONT_EXPAND) {
+            return error!(EFAULT);
+        }
+
         let original_range = original_range.clone();
         let original_mapping = mapping.clone();
 
