@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import concurrent.futures
 import pathlib
 import shlex
 import sys
@@ -31,10 +32,18 @@ def debug(s: T.Any) -> None:
         print(f"DEBUG: {s}", file=sys.stderr)
 
 
+class GnCommandMap(dict[str, str]):
+    """A type mapping GN labels to the command generating their outputs."""
+
+
+class BazelCommandMap(dict[str, str]):
+    """A typre mapping Bazel labels to the command generating their outputs."""
+
+
 def query_ninja_commands(
     ninja_runner: NinjaRunner,
     gn_labels: list[str],
-) -> dict[str, str]:
+) -> GnCommandMap:
     """
     Fetch the ninja build commands for the given GN labels.
 
@@ -51,7 +60,7 @@ def query_ninja_commands(
     debug(f"Querying Ninja commands for GN labels {gn_labels}...")
 
     if not gn_labels:
-        return {}
+        return GnCommandMap()
 
     ninja_outputs = gn_ninja_outputs.load_from_build_dir(ninja_runner.build_dir)
     if not ninja_outputs:
@@ -80,7 +89,8 @@ def query_ninja_commands(
     # associated with it.
     #
     # We check that this is true by checking that each command contains the expected output.
-    results = {}
+    results = GnCommandMap()
+
     for (gn_label, outputs), cmd in zip_longest(all_outputs, commands):
         # This happens if the ninja query returned a shorter output than expected.
         if not cmd:
@@ -125,7 +135,7 @@ def query_bazel_commands(
     bazel_execroot: str | pathlib.Path,
     bazel_labels: list[str],
     read_response_files: bool = False,
-) -> dict[str, str]:
+) -> BazelCommandMap:
     """
     Query Bazel for the command lines of the rustc commands for the given Bazel labels.
 
@@ -139,7 +149,7 @@ def query_bazel_commands(
         A dictionary mapping Bazel labels to their corresponding rustc command lines.
     """
     if not bazel_labels:
-        return {}
+        return BazelCommandMap()
 
     def normalize_label(label: str) -> str:
         """Remove optional @@ and @ prefix for root workspace labels."""
@@ -186,7 +196,7 @@ def query_bazel_commands(
         cmd_str = shlex.join(full_args)
         commands_map.setdefault(normalize_label(action.target), cmd_str)
 
-    result: dict[str, str] = {}
+    result = BazelCommandMap()
     missing_labels = []
     for label in bazel_labels:
         command = commands_map.get(normalize_label(label), "")
@@ -227,3 +237,50 @@ def query_bazel_command(
         [bazel_label],
         read_response_files=read_response_files,
     )[bazel_label]
+
+
+def query_ninja_and_bazel_commands(
+    gn_labels: list[str],
+    bazel_labels: list[str],
+    ninja_runner: NinjaRunner,
+    bazel_launcher: BazelLauncher,
+    bazel_execroot: str | pathlib.Path,
+    read_response_files: bool = False,
+) -> tuple[GnCommandMap, BazelCommandMap]:
+    """Query both GN and Bazel commands in parallel.
+
+    This invokes query_ninja_commands() and query_bazel_commands() in
+    parallel for getting the results faster.
+
+    Args:
+        gn_labels: A list of GN target labels.
+        bazel_labels: A list of Bazel target labels.
+        ninja_runner: A NinjaRunner used to perform Ninja tool calls.
+        bazel_launcher; A BazelLauncher used to perform Bazel queries.
+        bazel_execroot: Path to the Bazel execroot directory.
+        read_response_files: Optional flag. Set to True to read response files
+            directly from disk instead of using queries. Only impacts Bazel
+            queries.
+    Returns:
+        A (GnCommandMap, BazelCommandMap) pair.
+    Raises:
+        ValueError in case of error.
+    """
+    # Query GN and Bazel commands in parallel using batched queries
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        ninja_future = executor.submit(
+            query_ninja_commands,
+            ninja_runner,
+            gn_labels,
+        )
+        bazel_future = executor.submit(
+            query_bazel_commands,
+            bazel_launcher,
+            bazel_execroot,
+            bazel_labels,
+            read_response_files=read_response_files,
+        )
+        gn_cmds: GnCommandMap = ninja_future.result()
+        bazel_cmds: BazelCommandMap = bazel_future.result()
+
+    return gn_cmds, bazel_cmds

@@ -14,6 +14,7 @@ import tempfile
 import typing as T
 
 import build_command_query_utils
+import build_utils
 import normalize_rustc_args
 import path_normalizer
 import shell_utils
@@ -72,7 +73,7 @@ def main() -> int:
     build_command_query_utils.set_debug(args.verbose)
 
     try:
-        paths = build_utils.BuildPaths.from_parse_args(args)
+        paths = build_utils.BuildPaths.from_parser_args(args)
     except ValueError as e:
         parser.error(str(e))
 
@@ -81,24 +82,27 @@ def main() -> int:
     debug(f"GN Label: {args.gn_label}")
     debug(f"Bazel Label: {args.bazel_label}")
 
-    ninja_runner = ninja_artifacts.NinjaRunner(
-        paths.ninja_path, paths.build_dir
-    )
-    gn_cmd_raw = build_command_query_utils.query_ninja_command(
-        ninja_runner, args.gn_label
-    )
-    gn_cmd = shell_utils.ShellCommand(gn_cmd_raw)
+    ninja_runner = build_utils.NinjaRunner(paths.ninja_path, paths.build_dir)
 
     bazel_paths = build_utils.BazelPaths(paths.fuchsia_dir, paths.build_dir)
     bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
 
-    bazel_cmd_raw = build_command_query_utils.query_bazel_command(
+    (
+        gn_cmds_map,
+        bazel_cmds_map,
+    ) = build_command_query_utils.query_ninja_and_bazel_commands(
+        [args.gn_label],
+        [args.bazel_label],
+        ninja_runner,
         bazel_launcher,
         bazel_paths.execroot,
-        args.bazel_label,
         read_response_files=args.read_response_files,
     )
-    bazel_cmd = shell_utils.ShellCommand(bazel_cmd_raw)
+
+    gn_cmd = shell_utils.ShellCommand(gn_cmds_map.get(args.gn_label, ""))
+    bazel_cmd = shell_utils.ShellCommand(
+        bazel_cmds_map.get(args.bazel_label, "")
+    )
 
     gn_rustc_cmd = shell_utils.find_command_with_tool(gn_cmd.split(), "rustc")
     bazel_rustc_cmd = shell_utils.find_command_with_tool(
@@ -117,9 +121,7 @@ def main() -> int:
     gn_path_normalizer = path_normalizer.GnPathNormalizer(
         paths.fuchsia_dir, paths.build_dir
     )
-    bazel_path_normalizer = path_normalizer.BazelPathNormalizer(
-        paths.fuchsia_dir, paths.build_dir
-    )
+    bazel_path_normalizer = path_normalizer.BazelPathNormalizer(bazel_paths)
 
     normalized_gn_args = normalize_rustc_args.normalize_rustc_cmd(
         str(gn_rustc_cmd), gn_path_normalizer

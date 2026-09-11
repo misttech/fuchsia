@@ -368,6 +368,87 @@ class TestBuildCommandQueryUtils(unittest.TestCase):
                 mock_launcher, "execroot", ["//foo:bar"]
             )
 
+    def test_query_ninja_and_bazel_commands(self) -> None:
+        mock_runner, mock_ninja = self._get_ninja_runners(
+            "rustc --crate-name bar obj/foo/bar.o\n"
+            + "rustc --crate-name baz obj/foo/baz.o\n",
+        )
+
+        self._write_ninja_outputs(
+            {
+                "//foo:foo": ["obj/foo/foo.o"],
+                "//foo:bar": ["obj/foo/bar.o"],
+                "//foo:baz": ["obj/foo/baz.o"],
+            }
+        )
+
+        mock_bazel_launcher = build_utils.MockBazelLauncher()
+        mock_bazel_launcher.push_expected_outputs(
+            [
+                json.dumps(
+                    {
+                        "targets": [
+                            {"id": "1", "label": "//foo:bar"},
+                            {"id": "2", "label": "//foo:baz"},
+                        ],
+                        "actions": [
+                            {
+                                "targetId": "1",
+                                "arguments": ["rustc", "--crate-name", "bar"],
+                                "mnemonic": "Rustc",
+                            },
+                            {
+                                "targetId": "2",
+                                "arguments": ["rustc", "--crate-name", "baz"],
+                                "mnemonic": "Rustc",
+                            },
+                        ],
+                    }
+                )
+            ]
+        )
+
+        (
+            gn_cmds_map,
+            bazel_cmds_map,
+        ) = build_command_query_utils.query_ninja_and_bazel_commands(
+            ["//foo:bar", "//foo:baz"],
+            ["//foo:bar", "//foo:baz"],
+            mock_ninja,
+            mock_bazel_launcher,
+            "execroot",
+        )
+
+        self.assertDictEqual(
+            gn_cmds_map,
+            {
+                "//foo:bar": "rustc --crate-name bar obj/foo/bar.o",
+                "//foo:baz": "rustc --crate-name baz obj/foo/baz.o",
+            },
+        )
+
+        self.assertDictEqual(
+            bazel_cmds_map,
+            {
+                "//foo:bar": "rustc --crate-name bar",
+                "//foo:baz": "rustc --crate-name baz",
+            },
+        )
+
+        self.assertListEqual(
+            mock_runner.results[-1].args,
+            [
+                "/mock-ninja",
+                "-C",
+                str(self.build_dir),
+                "-t",
+                "commands",
+                "-s",
+                "obj/foo/bar.o",
+                "obj/foo/baz.o",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

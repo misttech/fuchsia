@@ -98,17 +98,18 @@ def main() -> int:
     debug(f"Bazel labels: {bazel_labels}")
 
     ninja_runner = build_utils.NinjaRunner(paths.ninja_path, paths.build_dir)
-    gn_cmds_raw = build_command_query_utils.query_ninja_commands(
-        ninja_runner, gn_labels
-    )
-
     bazel_paths = build_utils.BazelPaths(paths.fuchsia_dir, paths.build_dir)
     bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
 
-    bazel_cmds_raw = build_command_query_utils.query_bazel_commands(
+    (
+        gn_cmds_map,
+        bazel_cmds_map,
+    ) = build_command_query_utils.query_ninja_and_bazel_commands(
+        gn_labels,
+        bazel_labels,
+        ninja_runner,
         bazel_launcher,
         bazel_paths.execroot,
-        bazel_labels,
         read_response_files=args.read_response_files,
     )
 
@@ -123,8 +124,8 @@ def main() -> int:
         gn_label = target["gn"]
         bazel_label = target["bazel"]
 
-        gn_cmd_raw = gn_cmds_raw.get(gn_label, "")
-        bazel_cmd_raw = bazel_cmds_raw.get(bazel_label, "")
+        gn_cmd_raw = gn_cmds_map.get(gn_label, "")
+        bazel_cmd_raw = bazel_cmds_map.get(bazel_label, "")
 
         if not gn_cmd_raw or not bazel_cmd_raw:
             print(
