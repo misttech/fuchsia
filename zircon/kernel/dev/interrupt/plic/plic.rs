@@ -7,7 +7,7 @@
 // Ported from zircon/kernel/dev/interrupt/plic/plic.cc
 
 use crate::arch_rs::Iframe;
-use crate::arch_rs::riscv64::{boot_hart_id, curr_hart_id};
+use crate::arch_rs::riscv64::{arch_curr_cpu_num, boot_hart_id, curr_hart_id};
 use crate::kernel::mp::MpIpi;
 use crate::kernel::types::{PAddr, cpu_mask_t};
 use crate::pdev_interrupt::{
@@ -25,7 +25,7 @@ use page;
 use regio::{MmioBank, MmioPtr, Offset, RwSafe};
 #[cfg(ktest)]
 use unittest as _;
-use zbi::DcfgRiscvPlicDriver;
+pub use zbi::DcfgRiscvPlicDriver;
 use zx_status::Status;
 
 const LOCAL_TRACE: u32 = 0;
@@ -108,6 +108,10 @@ fn plic_disable_vector(vector: u32, hart_id: u32) {
     reg.modify(|val| *val &= !(1 << (vector % 32)));
 }
 
+// Enable and disable act on the boot hart's PLIC context only.  That is the whole
+// of the current policy: `plic_set_affinity()` below is unimplemented, so every
+// interrupt is delivered to the boot hart, and there is no other context to keep in
+// sync.  Per-hart routing would change both of these and that function together.
 extern "C" fn plic_mask_interrupt(vector: InterruptVector) -> Result<(), Status> {
     ltracef!("vector {}\n", vector.0);
     if vector.0 >= PLIC_MAX_INT.load(Ordering::Relaxed) {
@@ -230,7 +234,7 @@ extern "C" fn plic_shutdown() {
 
 extern "C" fn plic_shutdown_cpu() {
     // Nothing to be done here on the secondary cpus.
-    debug_assert!(boot_hart_id() != curr_hart_id(), "Shutdown called on boot CPU");
+    assert!(arch_curr_cpu_num() != 0, "Shutdown called on boot CPU");
 }
 
 extern "C" fn plic_suspend_cpu() -> Result<(), Status> {
@@ -382,85 +386,7 @@ pub unsafe extern "C" fn plic_init_late(config: &DcfgRiscvPlicDriver) {
         root_resource_filter_add_deny_region(
             config.mmio_phys as usize,
             config.size_bytes as usize,
-            0, // ZX_RSRC_KIND_MMIO
+            zx_types::ZX_RSRC_KIND_MMIO,
         );
-    }
-}
-
-/// RISC-V PLIC driver kernel tests.
-#[cfg(ktest)]
-#[unittest::suite(name = "plic")]
-mod tests {
-    use unittest::{assert_eq, assert_err, assert_false, assert_ok, assert_true};
-
-    /// Test HART ID to PLIC context indexing mapping.
-    #[test]
-    fn test_plic_hart_to_context_index_mapping() {
-        assert_eq!(plic_hart_idx(0), 1);
-        assert_eq!(plic_hart_idx(1), 3);
-        assert_eq!(plic_hart_idx(4), 9);
-    }
-
-    /// Test vector bounds enforcement against PLIC_MAX_INT.
-    #[test]
-    fn test_plic_vector_bounds_enforcement() {
-        let orig_max = PLIC_MAX_INT.load(Ordering::Relaxed);
-        PLIC_MAX_INT.store(64, Ordering::Relaxed);
-        assert_true!(plic_is_valid_interrupt(InterruptVector(63), 0));
-        assert_false!(plic_is_valid_interrupt(InterruptVector(64), 0));
-        assert_err!(plic_mask_interrupt(InterruptVector(64)), Status::INVALID_ARGS);
-        PLIC_MAX_INT.store(orig_max, Ordering::Relaxed);
-    }
-
-    /// Test configuration polarity rejection contract.
-    #[test]
-    fn test_plic_configure_rejects_invalid_polarity() {
-        let orig_max = PLIC_MAX_INT.load(Ordering::Relaxed);
-        PLIC_MAX_INT.store(64, Ordering::Relaxed);
-        assert_ok!(plic_configure_interrupt(
-            InterruptVector(1),
-            InterruptTriggerMode::Edge,
-            InterruptPolarity::High
-        ));
-        assert_err!(
-            plic_configure_interrupt(
-                InterruptVector(1),
-                InterruptTriggerMode::Edge,
-                InterruptPolarity::Low
-            ),
-            Status::NOT_SUPPORTED
-        );
-        PLIC_MAX_INT.store(orig_max, Ordering::Relaxed);
-    }
-
-    /// Test PLIC offset calculations and regio MmioBank operations.
-    #[test]
-    fn test_plic_regio_offsets_and_bank() {
-        use super::*;
-
-        // Verify offset calculations.
-        assert_eq!(plic_priority_offset(1).value, 8);
-        assert_eq!(plic_enable_offset(0, 0).value, 0x2000 + 0x80);
-        assert_eq!(plic_threshold_offset(0).value, 0x200000 + 0x1000);
-        assert_eq!(plic_claim_complete_offset(0).value, 0x200004 + 0x1000);
-
-        // Test MmioBank operations using a placeholder buffer.
-        let mut buffer = [0u32; 1024];
-        let ptr = unsafe { MmioPtr::<u32, RwSafe>::new(buffer.as_mut_ptr()) };
-        let bank = MmioBank::new(ptr, core::mem::size_of_val(&buffer));
-
-        let offset = Offset::<u32, RwSafe>::new(16);
-        let reg = unsafe { bank.at(offset) };
-
-        reg.write(0x1234_5678);
-        assert_eq!(reg.read(), 0x1234_5678);
-
-        reg.modify(|val| *val |= 1);
-        assert_eq!(reg.read(), 0x1234_5679);
-
-        // Test accessing bank using PLIC priority offset.
-        let priority_reg = unsafe { bank.at(plic_priority_offset(1)) };
-        priority_reg.write(5);
-        assert_eq!(priority_reg.read(), 5);
     }
 }

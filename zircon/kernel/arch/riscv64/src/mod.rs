@@ -76,6 +76,7 @@ mod tests {
 pub use arch::{
     arch_early_init, arch_enter_idle_state, arch_init, arch_late_init_percpu, arch_prevm_init,
 };
+pub use mp::arch_curr_cpu_num;
 pub use restricted::{
     ArchSavedNormalState, Iframe, SyscallRegs, boot_hart_id, curr_hart_id, dump, enter_full,
     enter_restricted, redirect_restricted_exception_to_normal, save_restricted_exception_state,

@@ -222,8 +222,6 @@ extern "C" syscall_result riscv64_syscall_dispatcher(iframe_t* frame);
 extern "C" void riscv64_timer_exception();
 extern "C" void riscv64_software_exception();
 
-extern "C" void platform_irq(iframe_t* frame);
-
 extern "C" void riscv64_init_percpu();
 
 // Runs the boot cpu init routine with the boot hart id. This will do basic
