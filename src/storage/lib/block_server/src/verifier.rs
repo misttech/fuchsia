@@ -5,7 +5,8 @@
 use delivery_blob::compression::{ChunkedArchiveError, DataBuffer};
 use fuchsia_sync::Mutex;
 use mapping::{
-    DELIVERY_DATA_COMMAND, PENDING_DELIVERY_COMMANDS_CAPACITY, PageRequest, RawDeliveryCommand,
+    DELIVERY_DATA_SIZE, DeliveryCommand, DeliveryHandler, PENDING_DELIVERY_COMMANDS_CAPACITY,
+    PageRequest, RawDeliveryCommand,
 };
 use std::ops::Range;
 use std::sync::Arc;
@@ -34,16 +35,38 @@ impl Verifier {
         };
         Self { sender: Mutex::new(sender) }
     }
+}
+
+impl DeliveryHandler for Verifier {
+    type Request = Buffer;
 
     /// Returns a [`PageRequest`] implementation for delivering page-in data.
-    pub fn get_page_request(self: &Arc<Self>, key: u64, original_range: Range<u64>) -> Buffer {
+    fn get_page_request(self: &Arc<Self>, key: u64, original_range: Range<u64>) -> Buffer {
         Buffer {
             verifier: Arc::clone(self),
             key,
             read_range: original_range,
-            committed_len: 0,
+            write_cursor: 0,
+            delivered_len: 0,
             data: Vec::new(),
         }
+    }
+
+    /// Registers a blob's Merkle tree leaf hashes with the verifier via the delivery queue.
+    fn register_blob(&self, key: u64, merkle_leaves: &[[u8; 32]]) -> Result<(), anyhow::Error> {
+        let mut sender_guard = self.sender.lock();
+        if let Some(sender) = sender_guard.as_mut() {
+            let leaf_bytes: &[u8] = merkle_leaves.as_flattened();
+            let mut payload = sender.reserve_payload(leaf_bytes.len())?;
+            payload.data().copy_from_slice(leaf_bytes);
+            let cmd = DeliveryCommand::RegisterBlob {
+                key,
+                offset: payload.offset(),
+                length: leaf_bytes.len() as u32,
+            };
+            payload.commit(cmd.into())?;
+        }
+        Ok(())
     }
 }
 
@@ -53,8 +76,43 @@ pub struct Buffer {
     verifier: Arc<Verifier>,
     key: u64,
     read_range: Range<u64>,
-    committed_len: usize,
+    // Write cursor into `self.data` advanced by calls to [`DataBuffer::commit`].
+    write_cursor: usize,
+    // Bytes delivered to the verifier queue so far.
+    delivered_len: usize,
     data: Vec<u8>,
+}
+
+impl Buffer {
+    fn deliver_chunk(&mut self, size: usize) -> Result<(), ChunkedArchiveError> {
+        // TODO(https://fxbug.dev/530494057): Optimize buffer management / payload reservations.
+        let chunk_data = &self.data[self.delivered_len..self.delivered_len + size];
+        let offset = self.read_range.start + self.delivered_len as u64;
+
+        let mut sender_guard = self.verifier.sender.lock();
+        if let Some(sender) = sender_guard.as_mut() {
+            let page_size = zx::system_get_page_size() as usize;
+            let aligned_size = size.next_multiple_of(page_size);
+            let mut payload = sender.reserve_payload(aligned_size).map_err(|e| {
+                log::error!(e:?; "Verifier::deliver_chunk: reserve_payload failed");
+                ChunkedArchiveError::IntegrityError
+            })?;
+
+            let payload_data = payload.data();
+            payload_data.subslice_mut(0..size).copy_from_slice(chunk_data);
+            payload_data.subslice_mut(size..aligned_size).fill(0);
+            let cmd = DeliveryCommand::Data {
+                key: self.key,
+                target_offset: offset,
+                length: aligned_size as u32,
+                offset: payload.offset(),
+            };
+            payload.commit(cmd.into()).map_err(|_| ChunkedArchiveError::IntegrityError)?;
+        }
+
+        self.delivered_len += size;
+        Ok(())
+    }
 }
 
 impl DataBuffer for Buffer {
@@ -69,42 +127,22 @@ impl DataBuffer for Buffer {
     /// Panics if `prepare()` has not been called prior to accessing this method.
     fn mut_ptr_slice(&mut self) -> MutPtrByteSlice<'_> {
         assert!(!self.data.is_empty(), "prepare must be called before accessing mut_ptr_slice");
-        MutPtrByteSlice::from(&mut self.data[self.committed_len..])
+        MutPtrByteSlice::from(&mut self.data[self.write_cursor..])
     }
 
     fn commit(&mut self, size: usize) -> Result<(), ChunkedArchiveError> {
-        if size == 0 {
-            return Ok(());
-        }
-        // TODO(https://fxbug.dev/530494057): Add support for verification and optimize buffer
-        // management / payload reservations.
-        let chunk_data = &self.data[self.committed_len..self.committed_len + size];
-        let offset = self.read_range.start + self.committed_len as u64;
+        self.write_cursor += size;
 
-        let mut sender_guard = self.verifier.sender.lock();
-        if let Some(sender) = sender_guard.as_mut() {
-            let page_size = zx::system_get_page_size() as usize;
-            let aligned_size = size.next_multiple_of(page_size);
-            let mut payload = sender.reserve_payload(aligned_size).map_err(|e| {
-                log::error!(e:?; "Verifier::commit: reserve_payload failed");
-                ChunkedArchiveError::IntegrityError
-            })?;
-
-            let payload_data = payload.data();
-            payload_data.subslice_mut(0..size).copy_from_slice(chunk_data);
-            payload_data.subslice_mut(size..aligned_size).fill(0);
-            let cmd = RawDeliveryCommand {
-                opcode: DELIVERY_DATA_COMMAND,
-                _padding: 0,
-                key: self.key,
-                target_offset: offset,
-                length: aligned_size as u32,
-                offset: payload.offset(),
-            };
-            payload.commit(cmd).map_err(|_| ChunkedArchiveError::IntegrityError)?;
+        // Deliver complete DELIVERY_DATA_SIZE chunks to the verifier queue as data is committed.
+        while self.write_cursor - self.delivered_len >= DELIVERY_DATA_SIZE {
+            self.deliver_chunk(DELIVERY_DATA_SIZE)?;
         }
 
-        self.committed_len += size;
+        // Deliver any trailing remainder once the entire prepared range has been committed.
+        if self.write_cursor == self.data.len() && self.delivered_len < self.write_cursor {
+            self.deliver_chunk(self.write_cursor - self.delivered_len)?;
+        }
+
         Ok(())
     }
 }
@@ -122,6 +160,7 @@ impl PageRequest for Buffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mapping::DELIVERY_DATA_COMMAND;
 
     #[fuchsia::test]
     fn test_verifier_buffer_incremental_commit() {
@@ -145,6 +184,8 @@ mod tests {
 
         // Verify mut_ptr_slice advanced to second page
         assert_eq!(request.mut_ptr_slice().len(), 4096);
+        // Not all data has been committed yet, so no command should be delivered yet.
+        assert!(receiver.is_empty());
 
         // Fill second page (4096 bytes) with 0xBB
         let page2_data = vec![0xBBu8; 4096];
@@ -154,26 +195,17 @@ mod tests {
         // Verify remaining space is 0
         assert_eq!(request.mut_ptr_slice().len(), 0);
 
-        // Check messages delivered on queue
-        let msg1 = receiver.peek().expect("msg1");
-        assert_eq!(msg1.opcode, DELIVERY_DATA_COMMAND);
-        assert_eq!(msg1.key, key);
-        assert_eq!(msg1.length, 4096);
-        assert_eq!(msg1.target_offset, 0);
-        let mut buf1 = vec![0u8; 4096];
-        msg1.payload_slice(msg1.offset, msg1.length).copy_to_slice(&mut buf1);
-        assert_eq!(buf1, page1_data);
-        msg1.pop().expect("pop msg1");
-
-        let msg2 = receiver.peek().expect("msg2");
-        assert_eq!(msg2.opcode, DELIVERY_DATA_COMMAND);
-        assert_eq!(msg2.key, key);
-        assert_eq!(msg2.length, 4096);
-        assert_eq!(msg2.target_offset, 4096);
-        let mut buf2 = vec![0u8; 4096];
-        msg2.payload_slice(msg2.offset, msg2.length).copy_to_slice(&mut buf2);
-        assert_eq!(buf2, page2_data);
-        msg2.pop().expect("pop msg2");
+        // Check single consolidated message delivered on queue
+        let msg = receiver.peek().expect("msg");
+        assert_eq!(msg.opcode, DELIVERY_DATA_COMMAND);
+        assert_eq!(msg.key, key);
+        assert_eq!(msg.length, 8192);
+        assert_eq!(msg.target_offset, 0);
+        let mut buf = vec![0u8; 8192];
+        msg.payload_slice(msg.offset, msg.length).copy_to_slice(&mut buf);
+        assert_eq!(&buf[..4096], &page1_data[..]);
+        assert_eq!(&buf[4096..], &page2_data[..]);
+        msg.pop().expect("pop msg");
     }
 
     #[fuchsia::test]
@@ -188,32 +220,76 @@ mod tests {
         let verifier = Arc::new(Verifier::new(delivery_queue));
         let key = 43u64;
 
-        let mut request = verifier.get_page_request(key, 0..8192);
-        request.prepare(0..8192).expect("prepare");
+        let mut request = verifier.get_page_request(key, 0..5000);
+        request.prepare(0..5000).expect("prepare");
 
-        let mut data = vec![0xCCu8; 5000];
-        data.resize(8192, 0);
+        let data = vec![0xCCu8; 5000];
 
-        // Commit page 1 (4096 bytes)
+        // Commit first 4096 bytes
         request.mut_ptr_slice().subslice_mut(0..4096).copy_from_slice(&data[..4096]);
         request.commit(4096).expect("commit 4096 bytes");
+        assert!(receiver.is_empty());
 
-        // Commit page 2 (rounded up to 4096 bytes: 904 bytes payload + padding 0s)
-        request.mut_ptr_slice().subslice_mut(0..4096).copy_from_slice(&data[4096..8192]);
-        request.commit(4096).expect("commit 4096 bytes");
+        // Commit remaining 904 bytes (completes the prepared range)
+        request.mut_ptr_slice().subslice_mut(0..904).copy_from_slice(&data[4096..5000]);
+        request.commit(904).expect("commit 904 bytes");
 
+        // Check single message delivered, page-aligned to 8192
+        let msg = receiver.peek().expect("msg");
+        assert_eq!(msg.target_offset, 0);
+        assert_eq!(msg.length, 8192);
+        let mut buf = vec![0u8; 8192];
+        msg.payload_slice(msg.offset, msg.length).copy_to_slice(&mut buf);
+        assert_eq!(&buf[..5000], &data[..]);
+        assert_eq!(&buf[5000..], &[0u8; 3192]);
+        msg.pop().expect("pop msg");
+    }
+
+    #[fuchsia::test]
+    fn test_verifier_buffer_delivery_data_size_chunking() {
+        let total_size = DELIVERY_DATA_SIZE * 2;
+        let delivery_queue = zx::Vmo::create(total_size as u64 + 65536).unwrap();
+        let mut receiver = vmo_fifo::Receiver::<RawDeliveryCommand>::new(
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .unwrap();
+
+        let verifier = Arc::new(Verifier::new(delivery_queue));
+        let key = 44u64;
+
+        let mut request = verifier.get_page_request(key, 0..total_size as u64);
+        request.prepare(0..total_size as u64).expect("prepare");
+
+        let chunk_32k = vec![0x55u8; 32 * 1024];
+
+        // Push 3 chunks of 32 KiB (96 KiB) - less than DELIVERY_DATA_SIZE
+        for _ in 0..3 {
+            request.mut_ptr_slice().subslice_mut(0..32 * 1024).copy_from_slice(&chunk_32k);
+            request.commit(32 * 1024).expect("commit");
+        }
+        assert!(receiver.is_empty());
+
+        // Push 4th chunk (now 128 KiB == DELIVERY_DATA_SIZE)
+        request.mut_ptr_slice().subslice_mut(0..32 * 1024).copy_from_slice(&chunk_32k);
+        request.commit(32 * 1024).expect("commit");
+
+        // 1st 128 KiB message delivered
         let msg1 = receiver.peek().expect("msg1");
         assert_eq!(msg1.target_offset, 0);
-        let mut buf1 = vec![0u8; 4096];
-        msg1.payload_slice(msg1.offset, msg1.length).copy_to_slice(&mut buf1);
-        assert_eq!(&buf1[..], &data[..4096]);
+        assert_eq!(msg1.length, DELIVERY_DATA_SIZE as u32);
         msg1.pop().expect("pop msg1");
 
+        // Push remaining 4 chunks (another 128 KiB)
+        for _ in 0..4 {
+            request.mut_ptr_slice().subslice_mut(0..32 * 1024).copy_from_slice(&chunk_32k);
+            request.commit(32 * 1024).expect("commit");
+        }
+
+        // 2nd 128 KiB message delivered
         let msg2 = receiver.peek().expect("msg2");
-        assert_eq!(msg2.target_offset, 4096);
-        let mut buf2 = vec![0u8; 4096];
-        msg2.payload_slice(msg2.offset, msg2.length).copy_to_slice(&mut buf2);
-        assert_eq!(&buf2[..], &data[4096..8192]);
+        assert_eq!(msg2.target_offset, DELIVERY_DATA_SIZE as u64);
+        assert_eq!(msg2.length, DELIVERY_DATA_SIZE as u32);
         msg2.pop().expect("pop msg2");
     }
 
@@ -271,5 +347,31 @@ mod tests {
         paged_vmo.read(&mut read_buf, 0).expect("read paged_vmo");
         assert_eq!(&read_buf[..4096], &page1_data[..]);
         assert_eq!(&read_buf[4096..8192], &page2_data[..]);
+    }
+
+    #[fuchsia::test]
+    fn test_verifier_register_blob() {
+        let delivery_queue = zx::Vmo::create(65536).unwrap();
+        let mut receiver = vmo_fifo::Receiver::<RawDeliveryCommand>::new(
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .unwrap();
+
+        let verifier = Arc::new(Verifier::new(delivery_queue));
+        let key = 42u64;
+        let leaves = [[0xABu8; 32], [0xCDu8; 32]];
+
+        verifier.register_blob(key, &leaves).expect("register_blob failed");
+
+        let msg = receiver.peek().expect("peek msg");
+        assert_eq!(msg.opcode, mapping::DELIVERY_REGISTER_BLOB_COMMAND);
+        assert_eq!(msg.key, key);
+        assert_eq!(msg.length, 64);
+        let mut buf = vec![0u8; 64];
+        msg.payload_slice(msg.offset, msg.length).copy_to_slice(&mut buf);
+        assert_eq!(&buf[..32], &[0xABu8; 32]);
+        assert_eq!(&buf[32..], &[0xCDu8; 32]);
+        msg.pop().expect("pop msg failed");
     }
 }

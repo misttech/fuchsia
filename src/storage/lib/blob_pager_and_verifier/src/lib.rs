@@ -89,7 +89,8 @@ struct CachedBlob {
     // The parent pager-backed VMO. We should only ever vend children of this VMO to clients
     // so we can correctly track when all children are dropped to evict the blob from cache.
     vmo: zx::Vmo,
-    identifier: [u8; 32],
+    /// The Merkle root hash of the blob, which also serves as its unique identifier.
+    root_hash: [u8; 32],
     // Hold a weak reference to avoid a circular reference as the cache holds `CachedBlob`.
     cache: Weak<PagerVmoCache>,
     vmo_key: u32,
@@ -114,7 +115,7 @@ impl Drop for CachedBlob {
         if let Some(cache) = self.cache.upgrade() {
             {
                 let mut map = cache.map.lock();
-                if let hash_map::Entry::Occupied(entry) = map.entry(self.identifier) {
+                if let hash_map::Entry::Occupied(entry) = map.entry(self.root_hash) {
                     if let BlobState::Ready(weak) = entry.get() {
                         // Ensure we only remove the cache entry if it still points to this expiring
                         // instance.
@@ -129,6 +130,7 @@ impl Drop for CachedBlob {
                 if let hash_map::Entry::Occupied(entry) = key_map.entry(self.vmo_key) {
                     if entry.get().strong_count() == 0 {
                         entry.remove();
+                        cache.pending_leaves.lock().remove(&self.vmo_key);
                     }
                 }
             }
@@ -198,6 +200,15 @@ enum CacheLookup {
 struct PagerVmoCache {
     map: Mutex<HashMap<[u8; 32], BlobState>>,
     blobs_by_key: Mutex<HashMap<u32, Weak<CachedBlob>>>,
+    // Stages Merkle leaf hashes if `RegisterBlob` commands arrives before `session.open()` returns
+    // the key over FIDL to populate `blobs_by_key`. Staged leaves are transferred once `create_vmo`
+    // finishes.
+    //
+    // TODO(https://fxbug.dev/535489428): Consider switching to client-allocated keys in
+    // MappingSession.Open(key, identifier). If the client allocates the key upfront, we eliminate
+    // the early arrival of `RegisterBlob` before the session key is returned over FIDL and we won't
+    // need `pending_leaves`.
+    pending_leaves: Mutex<HashMap<u32, Box<[Hash]>>>,
     mapping_session: fmapping::MappingSessionProxy,
     pager: Arc<zx::Pager>,
     delivery_vmo: zx::Vmo,
@@ -214,6 +225,7 @@ impl PagerVmoCache {
         Self {
             map: Mutex::new(HashMap::new()),
             blobs_by_key: Mutex::new(HashMap::new()),
+            pending_leaves: Mutex::new(HashMap::new()),
             mapping_session,
             pager,
             delivery_vmo,
@@ -294,11 +306,38 @@ impl PagerVmoCache {
             entry.insert(BlobState::Ready(Arc::downgrade(cached)));
             let mut key_map = self.blobs_by_key.lock();
             key_map.insert(cached.vmo_key, Arc::downgrade(cached));
+            if let Some(hashes) = self.pending_leaves.lock().remove(&cached.vmo_key) {
+                if let Err(error) = Self::initialize_merkle_verifier(cached, hashes) {
+                    log::error!(error:?; "Failed to initialize verifier from early leaves");
+                }
+            }
         } else {
             entry.remove();
         }
 
         event.notify(usize::MAX);
+    }
+
+    fn initialize_merkle_verifier(blob: &CachedBlob, hashes: Box<[Hash]>) -> Result<(), Error> {
+        // For blobs <= 8192 bytes (a single block), the Merkle tree consists of only a single leaf,
+        // which is identical to the root hash itself. Fxfs omits storing leaf hashes on disk for
+        // single-block blobs to save space, resulting in empty leaf metadata read by the block
+        // server. In that case, synthesise the single leaf from the blob's Merkle root hash.
+        let hashes =
+            if hashes.is_empty() { Box::new([Hash::from(blob.root_hash)]) } else { hashes };
+
+        match MerkleVerifier::new(Hash::from(blob.root_hash), hashes) {
+            Ok(verifier) => {
+                let sized_verifier =
+                    ReadSizedMerkleVerifier::new(verifier, delivery::DELIVERY_DATA_SIZE)
+                        .map_err(|e| anyhow!("Failed to create ReadSizedMerkleVerifier: {e:?}"))?;
+                let _ = blob.merkle_verifier.set(sized_verifier);
+                Ok(())
+            }
+            Err(e) => {
+                bail!("Failed to verify merkle leaves for key {}: {e:?}", blob.vmo_key);
+            }
+        }
     }
 
     fn report_pager_failure(&self, vmo: &zx::Vmo, range: Range<u64>, status: zx::Status) {
@@ -394,6 +433,19 @@ impl delivery::DeliveryQueueProvider for PagerVmoCache {
     }
 
     fn register_blob(&self, key: u64, leaf_data: PtrByteSlice<'_>) -> Result<(), Error> {
+        if leaf_data.len() % HASH_SIZE != 0 {
+            bail!("RegisterBlob invalid leaf length must be a multiple of HAHS_SIZE");
+        }
+
+        let hashes: Vec<Hash> = (0..(leaf_data.len() / HASH_SIZE))
+            .map(|i| {
+                let chunk = leaf_data.subslice(i * HASH_SIZE..(i + 1) * HASH_SIZE);
+                let mut hash_bytes = [0u8; HASH_SIZE];
+                chunk.copy_to_slice(&mut hash_bytes);
+                Hash::from(hash_bytes)
+            })
+            .collect();
+
         let cached_blob = self.get_by_key(key as u32);
 
         if let Some(blob) = cached_blob {
@@ -401,35 +453,15 @@ impl delivery::DeliveryQueueProvider for PagerVmoCache {
                 log::warn!("RegisterBlob received for blob {key} but it is already initialized");
                 return Ok(());
             }
-
-            if leaf_data.len() % HASH_SIZE != 0 {
-                bail!("RegisterBlob invalid leaf length");
-            }
-
-            let hashes: Vec<Hash> = (0..(leaf_data.len() / HASH_SIZE))
-                .map(|i| {
-                    let chunk = leaf_data.subslice(i * HASH_SIZE..(i + 1) * HASH_SIZE);
-                    let mut hash_bytes = [0u8; HASH_SIZE];
-                    chunk.copy_to_slice(&mut hash_bytes);
-                    Hash::from(hash_bytes)
-                })
-                .collect();
-
-            match MerkleVerifier::new(Hash::from(blob.identifier), hashes.into_boxed_slice()) {
-                Ok(verifier) => {
-                    let sized_verifier =
-                        ReadSizedMerkleVerifier::new(verifier, delivery::DELIVERY_DATA_SIZE)
-                            .map_err(|e| {
-                                anyhow!("Failed to create ReadSizedMerkleVerifier: {e:?}")
-                            })?;
-                    let _ = blob.merkle_verifier.set(sized_verifier);
-                }
-                Err(e) => {
-                    bail!("Failed to verify merkle leaves for key {key}: {e:?}");
-                }
-            }
+            Self::initialize_merkle_verifier(&blob, hashes.into_boxed_slice())?;
         } else {
-            bail!("Unknown or expired key {key} in RegisterBlob");
+            // `RegisterBlob` can arrive before `create_vmo` registers the cached blob. When Fxfs
+            // commits the blob's extent mappings  during `Open`, it immediately signals the block
+            // driver over the shared `mapping_vmo`. The driver processes the mappings and sends
+            // `RegisterBlob` over `delivery_vmo`. This can all occur before FIDL response of
+            // `session.open().await`. Stash the leaf hashes so that `finalize_pending_request` can
+            // initialise the verifier once `create_vmo` finishes.
+            self.pending_leaves.lock().insert(key as u32, hashes.into_boxed_slice());
         }
         Ok(())
     }
@@ -581,7 +613,7 @@ impl BlobPagerAndVerifier {
 
                     let cached = Arc::new(CachedBlob {
                         vmo,
-                        identifier: *identifier,
+                        root_hash: *identifier,
                         cache: Arc::downgrade(&self.vmo_cache),
                         vmo_key: key,
                         len: size,

@@ -120,9 +120,8 @@ pub trait Interface: Send + Sync + Unpin + 'static {
         &self,
         _mapping_vmo: &zx::Vmo,
         delivery_queue: zx::Vmo,
-    ) -> Result<Arc<Verifier>, zx::Status> {
-        let verifier = Arc::new(Verifier::new(delivery_queue));
-        Ok(verifier)
+    ) -> Result<Verifier, zx::Status> {
+        Ok(Verifier::new(delivery_queue))
     }
 
     /// Called whenever a VMO is attached, prior to the VMO's usage in any other methods. Whilst
@@ -1006,8 +1005,8 @@ mod tests {
             &self,
             _mapping_vmo: &zx::Vmo,
             delivery_queue: zx::Vmo,
-        ) -> Result<Arc<Verifier>, zx::Status> {
-            Ok(Arc::new(Verifier::new(delivery_queue)))
+        ) -> Result<Verifier, zx::Status> {
+            Ok(Verifier::new(delivery_queue))
         }
 
         fn get_info(&self) -> Cow<'_, DeviceInfo> {

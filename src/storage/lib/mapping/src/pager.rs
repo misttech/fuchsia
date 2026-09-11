@@ -3,21 +3,16 @@
 // found in the LICENSE file.
 
 use crate::reader::BlockService;
-use crate::{Files, PageRequest};
-use std::ops::Range;
+use crate::{DeliveryHandler, Files};
 use std::sync::Arc;
 use zx::sys::zx_page_request_command_t::ZX_PAGER_VMO_READ;
 use zx::{Packet, PacketContents, Port, Rights, UserPacket};
 
 /// Runs a synchronous event loop that listens on `port` for pager page requests
 /// and dispatches them to `files.handle_page_request`.
-pub fn run_pager_loop<
-    S: BlockService + ?Sized,
-    R: PageRequest,
-    F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
->(
+pub fn run_pager_loop<S: BlockService + ?Sized, D: DeliveryHandler>(
     port: &Port,
-    files: &Files<S, F, R>,
+    files: &Files<S, D>,
 ) {
     loop {
         match port.wait(zx::MonotonicInstant::INFINITE) {
@@ -46,13 +41,9 @@ pub struct PagerThread {
 
 impl PagerThread {
     /// Spawns a background thread running `run_pager_loop`.
-    pub fn spawn<
-        S: BlockService + ?Sized + 'static,
-        R: PageRequest + 'static,
-        F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
-    >(
+    pub fn spawn<S: BlockService + ?Sized + 'static, D: DeliveryHandler>(
         port: Port,
-        files: Arc<Files<S, F, R>>,
+        files: Arc<Files<S, D>>,
     ) -> Self {
         let thread_port = port.duplicate_handle(Rights::SAME_RIGHTS).expect("duplicate port");
         let thread = std::thread::spawn(move || {
@@ -76,13 +67,16 @@ impl Drop for PagerThread {
 mod tests {
     use super::*;
     use crate::reader::tests::FakeBlockService;
-    use crate::testing::TestVecBuffer;
+    use crate::testing::{TestDeliveryHandler, TestVecBuffer};
 
     #[fuchsia::test]
     fn test_pager_thread_lifecycle() {
         let port = Port::create();
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
-        let files = Arc::new(Files::new(service, |_key, _range| TestVecBuffer::new(4096).0));
+        let files = Arc::new(Files::new(
+            service,
+            TestDeliveryHandler(|_key, _range| TestVecBuffer::new(4096).0),
+        ));
         let thread = PagerThread::spawn(port, files);
         drop(thread);
     }

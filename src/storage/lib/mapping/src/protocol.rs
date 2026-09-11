@@ -151,6 +151,16 @@ pub const DELIVERY_REGISTER_BLOB_COMMAND: u32 = 2;
 pub const DELIVERY_VMO_SIZE: u64 = 8 * 1024 * 1024;
 pub const PENDING_DELIVERY_COMMANDS_CAPACITY: u32 = 256;
 
+/// The chunk size requirement for delivering payloads from the block driver across the delivery
+/// queue. The driver must supply [`DeliveryCommand::Data`] chunks where the `target_offset` and
+/// `length` align to `DELIVERY_DATA_SIZE` boundaries (unless representing the final chunk of the
+/// blob).
+///
+/// This chunk size is set as 128 KiB size, matching Fxfs's target read-ahead size. This is used to
+/// set the read size of `fuchsia_merkle::ReadSizedMerkleVerifier`, which optimizes memory usage
+/// when verifying reads. See `fuchsia_merkle::ReadSizedMerkleVerifier` for more information.
+pub const DELIVERY_DATA_SIZE: usize = 128 * 1024;
+
 /// A command packet used by the driver to deliver merkle leaves and data chunks for verification.
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Copy, Clone, Debug, PartialEq)]
 #[repr(C)]

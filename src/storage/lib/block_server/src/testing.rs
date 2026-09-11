@@ -41,7 +41,7 @@ impl Interface for MockInterface {
         &self,
         _mapping_vmo: &zx::Vmo,
         delivery_queue: zx::Vmo,
-    ) -> Result<Arc<Verifier>, zx::Status> {
-        Ok(Arc::new(Verifier::new(delivery_queue)))
+    ) -> Result<Verifier, zx::Status> {
+        Ok(Verifier::new(delivery_queue))
     }
 }

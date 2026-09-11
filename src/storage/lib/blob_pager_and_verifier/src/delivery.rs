@@ -10,13 +10,7 @@ use std::sync::Arc;
 use storage_ptr_slice::PtrByteSlice;
 use zx;
 
-/// The size requirement for verifying payloads delivered from the block driver. The driver must
-/// supply `DeliveryCommand::Data` chunks where `offset` and `length` aligns to `DELIVERY_DATA_SIZE`
-/// boundaries (unless representing the final chunk of the original data source).
-///
-/// Having this requirement means we can use `ReadSizedMerkleVerifier`, which optimizes memory usage
-/// when verifying reads.
-pub const DELIVERY_DATA_SIZE: usize = 128 * 1024;
+pub use mapping::DELIVERY_DATA_SIZE;
 
 /// Unverified data pages delivered from the driver to be verified.
 #[derive(Copy, Clone)]

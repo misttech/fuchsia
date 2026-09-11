@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::PageRequest;
+use crate::{DeliveryHandler, PageRequest};
 use delivery_blob::compression::{ChunkedArchiveError, DataBuffer};
 use fuchsia_sync::Mutex;
 use std::ops::Range;
@@ -117,5 +117,27 @@ impl PageRequest for TestVecBuffer {
         self.range = read_range.clone();
         self.offset = read_range.start;
         Ok(())
+    }
+}
+
+/// A [`DeliveryHandler`] test adapter that implements `get_page_request` via a closure.
+///
+/// The closure takes `(key: u64, range: Range<u64>)` where:
+/// - `key`: The pager port key identifying the mapped file.
+/// - `range`: The byte range requested to be paged in.
+///
+/// And returns `R: PageRequest` (any type implementing [`PageRequest`]) to receive the paged data.
+///
+/// [`DeliveryHandler::register_blob`] defaults to a no-op `Ok(())`.
+pub struct TestDeliveryHandler<F>(pub F);
+
+impl<F, R: PageRequest> DeliveryHandler for TestDeliveryHandler<F>
+where
+    F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
+{
+    type Request = R;
+
+    fn get_page_request(self: &Arc<Self>, key: u64, range: Range<u64>) -> Self::Request {
+        (self.0)(key, range)
     }
 }

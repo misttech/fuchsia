@@ -5,7 +5,7 @@
 use crate::reader::{BlockService, read_aligned_range};
 use crate::{Extents, MappingCommand, NullPageRequest, PageRequest, RawMappingCommand};
 use anyhow::{Error, anyhow, bail};
-use blob_metadata::{BlobFormat, BlobMetadata};
+use blob_metadata::{BlobFormat, BlobMetadata, MerkleLeaves};
 use byteorder::{LittleEndian, ReadBytesExt};
 use delivery_blob::compression::{CompressionAlgorithm, CompressionInfo, StreamingDecompressor};
 use fuchsia_sync::Mutex;
@@ -34,14 +34,14 @@ pub fn read_ahead_size_for_chunk_size(chunk_size: u64, suggested_read_ahead_size
 pub struct File {
     extents: Extents,
     uncompressed_size: u64,
-    compression_info: Option<CompressionInfo>,
+    compression_info: Option<Arc<CompressionInfo>>,
 }
 
 impl File {
     pub fn new(
         extents: Extents,
         uncompressed_size: u64,
-        compression_info: Option<CompressionInfo>,
+        compression_info: Option<Arc<CompressionInfo>>,
     ) -> Self {
         Self { extents, uncompressed_size, compression_info }
     }
@@ -58,7 +58,7 @@ impl File {
 
     /// Returns decompression metadata if the file is compressed.
     pub fn compression_info(&self) -> Option<&CompressionInfo> {
-        self.compression_info.as_ref()
+        self.compression_info.as_deref()
     }
 
     /// Streams and decodes the uncompressed range requested by `page_request`, applying readahead.
@@ -160,24 +160,56 @@ impl<R> Default for FileEntry<R> {
     }
 }
 
-/// A thread-safe registry of active [`File`] instances indexed by their Zircon pager port key.
-pub struct Files<S: ?Sized, F, R> {
-    service: Arc<S>,
-    request_factory: F,
-    map: Mutex<HashMap<u64, FileEntry<R>>>,
+/// Trait for handling deliveries (page request buffers and blob registrations) from [`Files`].
+pub trait DeliveryHandler: Send + Sync + 'static {
+    type Request: PageRequest;
+
+    /// Produces a [`PageRequest`] to receive decompressed or uncompressed page data.
+    fn get_page_request(self: &Arc<Self>, key: u64, range: Range<u64>) -> Self::Request;
+
+    /// Registers a blob's Merkle tree leaf hashes with the downstream verifier.
+    fn register_blob(&self, _key: u64, _merkle_leaves: &[[u8; 32]]) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
-impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static>
-    Files<S, F, R>
-{
-    /// Creates a new file registry with the provided block service and request factory.
-    pub fn new(service: Arc<S>, request_factory: F) -> Self {
-        Self { service, request_factory, map: Mutex::new(HashMap::new()) }
+/// A no-op [`DeliveryHandler`] for sessions that do not run a kernel pager or verify blobs
+/// (such as intermediate partition mapping sessions).
+pub struct NoopDeliveryHandler;
+
+impl DeliveryHandler for NoopDeliveryHandler {
+    type Request = NullPageRequest;
+
+    fn get_page_request(self: &Arc<Self>, _key: u64, _range: Range<u64>) -> NullPageRequest {
+        NullPageRequest
+    }
+}
+
+/// A thread-safe registry of active [`File`] instances indexed by their Zircon pager port key.
+pub struct Files<S: ?Sized, D: DeliveryHandler> {
+    service: Arc<S>,
+    delivery_handler: Arc<D>,
+    map: Mutex<HashMap<u64, FileEntry<D::Request>>>,
+}
+
+impl<S: BlockService + ?Sized, D: DeliveryHandler> Files<S, D> {
+    /// Creates a new file registry with the provided block service and delivery handler.
+    pub fn new(service: Arc<S>, delivery_handler: D) -> Self {
+        Self {
+            service,
+            delivery_handler: Arc::new(delivery_handler),
+            map: Mutex::new(HashMap::new()),
+        }
     }
 
     /// Returns a reference to the block service.
     pub fn service(&self) -> &Arc<S> {
         &self.service
+    }
+
+    /// Registers a blob's Merkle tree leaf hashes with the downstream delivery handler.
+    pub fn register_blob(&self, key: u64, merkle_leaves: &[[u8; 32]]) -> Result<(), Error> {
+        self.delivery_handler.register_blob(key, merkle_leaves)
     }
 
     /// Handles a page request from `PagerThread`.
@@ -186,7 +218,7 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
     /// If the file is currently loading or unmapped, queues the request to be fulfilled
     /// when loaded.
     pub fn handle_page_request(&self, key: u64, range: Range<u64>) {
-        let req = (self.request_factory)(key, range);
+        let req = self.delivery_handler.get_page_request(key, range);
         let mut map = self.map.lock();
         match map.entry(key) {
             Entry::Occupied(mut entry) => match entry.get_mut() {
@@ -297,10 +329,10 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
     }
 }
 
-impl<S: BlockService + ?Sized> Files<S, fn(u64, Range<u64>) -> NullPageRequest, NullPageRequest> {
+impl<S: BlockService + ?Sized> Files<S, NoopDeliveryHandler> {
     /// Creates a file registry without a pager for intermediate (e.g. partition) sessions.
     pub fn new_without_pager(service: Arc<S>) -> Self {
-        Self::new(service, |_, _| NullPageRequest)
+        Self::new(service, NoopDeliveryHandler)
     }
 }
 
@@ -327,23 +359,35 @@ fn deserialize_blob_metadata(mut bytes: &[u8]) -> Result<BlobMetadata, anyhow::E
         .map_err(|e| anyhow!("Failed to deserialize BlobMetadata: {e:?}"))
 }
 
+/// Metadata decoded from on-disk storage describing a blob's uncompressed size, compression info,
+/// and Merkle leaves. Compression info will be None if blob is uncompressed.
+pub struct DecodedBlobMetadata {
+    pub uncompressed_size: u64,
+    pub compression_info: Option<Arc<CompressionInfo>>,
+    pub merkle_leaves: MerkleLeaves,
+}
+
 /// Reads blob metadata asynchronously from `metadata_extents` using `service`.
 /// Once the metadata is retrieved, deserialized, and parsed, `callback` is invoked with
-/// `(uncompressed_size, Option<CompressionInfo>)`.
+/// [`DecodedBlobMetadata`].
 ///
 /// On failure or if the operation is aborted, `callback` is dropped without being invoked.
 pub fn read_blob_metadata(
     service: &(impl BlockService + ?Sized),
     metadata_extents: &Extents,
     stored_data_size: u64,
-    callback: impl FnOnce((u64, Option<CompressionInfo>)) + Send + 'static,
+    callback: impl FnOnce(DecodedBlobMetadata) + Send + 'static,
 ) {
     let mut total_metadata_len = 0u64;
     for extent in metadata_extents.iter_extents(0) {
         total_metadata_len += extent.len();
     }
     if total_metadata_len == 0 {
-        callback((stored_data_size, None));
+        callback(DecodedBlobMetadata {
+            uncompressed_size: stored_data_size,
+            compression_info: None,
+            merkle_leaves: MerkleLeaves::new(),
+        });
         return;
     }
 
@@ -371,8 +415,13 @@ pub fn read_blob_metadata(
             }
         };
 
+        let merkle_leaves = metadata.merkle_leaves;
         let res = match metadata.format {
-            BlobFormat::Uncompressed => (stored_data_size, None),
+            BlobFormat::Uncompressed => DecodedBlobMetadata {
+                uncompressed_size: stored_data_size,
+                compression_info: None,
+                merkle_leaves,
+            },
             BlobFormat::ChunkedZstd { uncompressed_size, chunk_size, compressed_offsets } => {
                 match CompressionInfo::new(
                     chunk_size,
@@ -380,7 +429,11 @@ pub fn read_blob_metadata(
                     &compressed_offsets,
                     CompressionAlgorithm::Zstd,
                 ) {
-                    Ok(info) => (uncompressed_size, Some(info)),
+                    Ok(compression_info) => DecodedBlobMetadata {
+                        uncompressed_size,
+                        compression_info: Some(Arc::new(compression_info)),
+                        merkle_leaves,
+                    },
                     Err(error) => {
                         log::error!(error:?; "Failed to parse Zstd CompressionInfo");
                         return ControlFlow::Break(());
@@ -394,7 +447,11 @@ pub fn read_blob_metadata(
                     &compressed_offsets,
                     CompressionAlgorithm::Lz4,
                 ) {
-                    Ok(info) => (uncompressed_size, Some(info)),
+                    Ok(compression_info) => DecodedBlobMetadata {
+                        uncompressed_size,
+                        compression_info: Some(Arc::new(compression_info)),
+                        merkle_leaves,
+                    },
                     Err(error) => {
                         log::error!(error:?; "Failed to parse Lz4 CompressionInfo");
                         return ControlFlow::Break(());
@@ -418,21 +475,12 @@ pub fn read_blob_metadata(
 ///   error, corrupted metadata, or session teardown), the `Drop` implementation cleans up the
 ///   entry by removing `key` from [`Files`]. Dropping the loading slot drops all queued
 ///   [`PageRequest`] objects, which fails the pending page requests in the kernel pager.
-struct LoadingFileGuard<
-    S: BlockService + ?Sized + 'static,
-    R: PageRequest,
-    F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
-> {
-    files: Option<Arc<Files<S, F, R>>>,
+struct LoadingFileGuard<S: BlockService + ?Sized + 'static, D: DeliveryHandler> {
+    files: Option<Arc<Files<S, D>>>,
     key: u64,
 }
 
-impl<
-    S: BlockService + ?Sized + 'static,
-    R: PageRequest,
-    F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
-> LoadingFileGuard<S, R, F>
-{
+impl<S: BlockService + ?Sized + 'static, D: DeliveryHandler> LoadingFileGuard<S, D> {
     /// Commits the loaded file to the registry, transferring ownership and draining all queued
     /// page requests.
     fn commit(mut self, file: Arc<File>) {
@@ -440,12 +488,7 @@ impl<
     }
 }
 
-impl<
-    S: BlockService + ?Sized + 'static,
-    R: PageRequest,
-    F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
-> Drop for LoadingFileGuard<S, R, F>
-{
+impl<S: BlockService + ?Sized + 'static, D: DeliveryHandler> Drop for LoadingFileGuard<S, D> {
     fn drop(&mut self) {
         if let Some(files) = self.files.take() {
             files.remove(self.key);
@@ -454,14 +497,11 @@ impl<
 }
 
 /// Processes a raw mapping command (`RawMappingCommand`), decoding extent descriptors,
-/// reading blob metadata from storage, and inserting/removing the file from `files`.
-pub fn process_mapping_command<
-    S: BlockService + ?Sized + 'static,
-    R: PageRequest,
-    F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
->(
+/// reading blob metadata from storage, registering Merkle leaves via `files`, and
+/// inserting/removing the file from `files`.
+pub fn process_mapping_command<S: BlockService + ?Sized + 'static, D: DeliveryHandler>(
     msg: &Message<'_, RawMappingCommand>,
-    files: &Arc<Files<S, F, R>>,
+    files: &Arc<Files<S, D>>,
 ) -> Result<(), Error> {
     let cmd = **msg;
     match MappingCommand::try_from(cmd)? {
@@ -498,16 +538,19 @@ pub fn process_mapping_command<
             files.begin_loading(key);
             let service = files.service().clone();
             let guard = LoadingFileGuard { files: Some(files.clone()), key };
-            read_blob_metadata(
-                service.as_ref(),
-                &metadata_extents,
-                stored_size,
-                move |(uncompressed_size, compression_info)| {
-                    let file =
-                        Arc::new(File::new(data_extents, uncompressed_size, compression_info));
-                    guard.commit(file);
-                },
-            );
+            let files_clone = files.clone();
+            read_blob_metadata(service.as_ref(), &metadata_extents, stored_size, move |metadata| {
+                if let Err(error) = files_clone.register_blob(key, &metadata.merkle_leaves) {
+                    log::error!(error:?; "Failed to register blob {key}");
+                    return;
+                }
+                let file = Arc::new(File::new(
+                    data_extents,
+                    metadata.uncompressed_size,
+                    metadata.compression_info,
+                ));
+                guard.commit(file);
+            });
             Ok(())
         }
         MappingCommand::CloseBlob { key } => {
@@ -522,7 +565,7 @@ mod tests {
     use super::*;
     use crate::reader::OwnedBuffer;
     use crate::reader::tests::FakeBlockService;
-    use crate::testing::TestVecBuffer;
+    use crate::testing::{TestDeliveryHandler, TestVecBuffer};
     use crate::{BLOCK_SIZE, Extent};
     use anyhow::Error;
     use bincode::Options;
@@ -597,7 +640,11 @@ mod tests {
             CompressionAlgorithm::Zstd,
         )
         .unwrap();
-        let file = Arc::new(File::new(extents, uncompressed_size as u64, Some(compression_info)));
+        let file = Arc::new(File::new(
+            extents,
+            uncompressed_size as u64,
+            Some(Arc::new(compression_info)),
+        ));
 
         let dest_alloc_size = uncompressed_size.next_multiple_of(chunk_size);
         let (mut page_request, rx) = TestVecBuffer::new_with_range(0..(uncompressed_size as u64));
@@ -655,7 +702,11 @@ mod tests {
             CompressionAlgorithm::Lz4,
         )
         .unwrap();
-        let file = Arc::new(File::new(extents, uncompressed_size as u64, Some(compression_info)));
+        let file = Arc::new(File::new(
+            extents,
+            uncompressed_size as u64,
+            Some(Arc::new(compression_info)),
+        ));
 
         let (page_request, rx) = TestVecBuffer::new_with_range(0..(uncompressed_size as u64));
         file.read_range(&service, page_request);
@@ -690,7 +741,7 @@ mod tests {
         let file_compressed = File::new(
             Extents::try_new([Extent::new(0..8192, Some(0))], 0).unwrap(),
             uncompressed_size,
-            Some(compression_info),
+            Some(Arc::new(compression_info)),
         );
         assert!(file_compressed.compression_info().is_some());
     }
@@ -885,7 +936,7 @@ mod tests {
             CompressionAlgorithm::Zstd,
         )
         .unwrap();
-        let file = File::new(extents, uncompressed_size as u64, Some(compression_info));
+        let file = File::new(extents, uncompressed_size as u64, Some(Arc::new(compression_info)));
 
         // Request 1 block in the second 128 KiB readahead window (e.g. 135168..139264).
         // Readahead should expand to 131072..262144 (chunks 4, 5, 6, 7).
@@ -941,7 +992,7 @@ mod tests {
             CompressionAlgorithm::Zstd,
         )
         .unwrap();
-        let file = File::new(extents, uncompressed_size as u64, Some(compression_info));
+        let file = File::new(extents, uncompressed_size as u64, Some(Arc::new(compression_info)));
 
         // Pre-fill destination buffer with 0xFF bytes to verify tail zeroing
         let (mut page_request, rx) = TestVecBuffer::new_with_range(0..(uncompressed_size as u64));
@@ -959,7 +1010,8 @@ mod tests {
         let extents = Extents::try_new([Extent::new(0..4096, Some(0))], 0).unwrap();
         let file = Arc::new(File::new(extents, 4096, None));
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
-        let files = Files::new(service, |_key, _range| TestVecBuffer::new(4096).0);
+        let files =
+            Files::new(service, TestDeliveryHandler(|_key, _range| TestVecBuffer::new(4096).0));
 
         assert!(!files.is_loading(100));
         files.begin_loading(100);
@@ -1036,7 +1088,7 @@ mod tests {
         let chunk_size = 32768u64;
         let compressed_offsets = vec![0u64, 1200u64];
         let metadata = BlobMetadata {
-            merkle_leaves: vec![],
+            merkle_leaves: MerkleLeaves::new(),
             format: BlobFormat::ChunkedZstd {
                 uncompressed_size,
                 chunk_size,
@@ -1058,16 +1110,17 @@ mod tests {
         // Trigger delayed storage read completion.
         service.wait_and_trigger_sync();
 
-        let (size, info) = rx.recv().unwrap();
-        assert_eq!(size, uncompressed_size);
-        assert!(info.is_some());
+        let metadata = rx.recv().unwrap();
+        assert_eq!(metadata.uncompressed_size, uncompressed_size);
+        assert!(metadata.compression_info.is_some());
+        assert_eq!(metadata.merkle_leaves, MerkleLeaves::new());
     }
 
     #[fuchsia::test]
     fn test_read_blob_metadata_error_drops_callback() {
         // Corrupt CompressionInfo where compressed_offsets are invalid (descending)
         let metadata = BlobMetadata {
-            merkle_leaves: vec![],
+            merkle_leaves: MerkleLeaves::new(),
             format: BlobFormat::ChunkedZstd {
                 uncompressed_size: 65536,
                 chunk_size: 32768,
@@ -1113,7 +1166,7 @@ mod tests {
     #[fuchsia::test]
     fn test_process_mapping_command_error_cleans_up_blob() {
         let metadata = BlobMetadata {
-            merkle_leaves: vec![],
+            merkle_leaves: MerkleLeaves::new(),
             format: BlobFormat::ChunkedZstd {
                 uncompressed_size: 65536,
                 chunk_size: 32768,
@@ -1126,7 +1179,10 @@ mod tests {
             .copy_from_slice(&encoded_metadata);
 
         let service = DelayedBlockService::new(device_data);
-        let files = Arc::new(Files::new(service.clone(), |_k, _r| TestVecBuffer::new(4096).0));
+        let files = Arc::new(Files::new(
+            service.clone(),
+            TestDeliveryHandler(|_k, _r| TestVecBuffer::new(4096).0),
+        ));
 
         let data_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
         let meta_extents =
@@ -1173,6 +1229,92 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_process_mapping_command_registers_blob_merkle_leaves() {
+        let leaf1 = [1u8; 32];
+        let leaf2 = [2u8; 32];
+
+        // Prepare serialized BlobMetadata with Merkle leaves on a mock block device.
+        let metadata =
+            BlobMetadata { merkle_leaves: vec![leaf1, leaf2], format: BlobFormat::Uncompressed };
+        let encoded_metadata = serialize_metadata(&metadata);
+        let mut device_data = vec![0u8; (2 * BLOCK_SIZE) as usize];
+        device_data[BLOCK_SIZE as usize..BLOCK_SIZE as usize + encoded_metadata.len()]
+            .copy_from_slice(&encoded_metadata);
+
+        // Use DelayedBlockService to hold back the block read completion for the blob's metadata.
+        let service = DelayedBlockService::new(device_data);
+        let registered = Arc::new(std::sync::Mutex::new(None));
+        let registered_clone = registered.clone();
+        struct TestRegisterHandler(Arc<std::sync::Mutex<Option<(u64, Vec<[u8; 32]>)>>>);
+        impl DeliveryHandler for TestRegisterHandler {
+            type Request = TestVecBuffer;
+            fn get_page_request(self: &Arc<Self>, _key: u64, _range: Range<u64>) -> Self::Request {
+                TestVecBuffer::new(4096).0
+            }
+            fn register_blob(&self, key: u64, leaves: &[[u8; 32]]) -> Result<(), Error> {
+                *self.0.lock().unwrap() = Some((key, leaves.to_vec()));
+                Ok(())
+            }
+        }
+        let files = Arc::new(Files::new(service.clone(), TestRegisterHandler(registered_clone)));
+
+        // Encode extent descriptors for data (block 0) and metadata (block 1).
+        let data_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
+        let meta_extents =
+            Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))], 0).unwrap();
+        let data_extent_words = Extents::encode_extents(&data_extents);
+        let meta_extent_words = Extents::encode_extents(&meta_extents);
+        let mut payload_bytes = Vec::new();
+        for w in data_extent_words.chain(meta_extent_words) {
+            payload_bytes.extend_from_slice(&w.to_le_bytes());
+        }
+
+        // Inject the Mappings command and extent payload into the VMO FIFO.
+        let vmo = zx::Vmo::create(65536).unwrap();
+        let mut sender = vmo_fifo::SyncSender::<crate::RawMappingCommand>::new(
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            1024,
+            16,
+        )
+        .unwrap();
+        let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
+        payload_buf.data().copy_from_slice(&payload_bytes);
+        let cmd = crate::RawMappingCommand {
+            opcode: crate::MAPPINGS_COMMAND,
+            offset: payload_buf.offset(),
+            key: 42,
+            stored_size: 4096,
+            device_offset: 0,
+            metadata_count: 1,
+            blob_count: 1,
+        };
+        payload_buf.commit(cmd).unwrap();
+        let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
+
+        // Process the mapping command.
+        let msg = receiver.peek().unwrap();
+        process_mapping_command(&msg, &files).unwrap();
+
+        // While the block read for metadata is pending completion, the file is in the "loading"
+        // state and leaves are not yet registered.
+        assert!(files.is_loading(42));
+        assert!(registered.lock().unwrap().is_none());
+
+        // Trigger completion of the pending block read.
+        service.wait_and_trigger_sync();
+
+        // Once the block read completes and metadata is decoded, verify that:
+        // - The file transitioned out of "loading" and is committed into `Files`.
+        // - The `register_blob` callback was invoked with the expected key and Merkle leaves.
+        assert!(!files.is_loading(42));
+        assert!(files.get_file(42).is_some());
+        let (reg_key, reg_leaves) =
+            registered.lock().unwrap().take().expect("registered callback called");
+        assert_eq!(reg_key, 42);
+        assert_eq!(reg_leaves, vec![leaf1, leaf2]);
+    }
+
+    #[fuchsia::test]
     fn test_loading_page_request_buffer_dropped_on_failure() {
         use delivery_blob::compression::{ChunkedArchiveError, DataBuffer};
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -1206,7 +1348,7 @@ mod tests {
         }
 
         let metadata = BlobMetadata {
-            merkle_leaves: vec![],
+            merkle_leaves: MerkleLeaves::new(),
             format: BlobFormat::ChunkedZstd {
                 uncompressed_size: 65536,
                 chunk_size: 32768,
@@ -1221,11 +1363,14 @@ mod tests {
         let service = DelayedBlockService::new(device_data);
         let dropped = Arc::new(AtomicBool::new(false));
         let dropped_clone = dropped.clone();
-        let files = Arc::new(Files::new(service.clone(), move |_k, r| DroppingBuffer {
-            data: vec![0u8; 4096],
-            range: r,
-            dropped: dropped_clone.clone(),
-        }));
+        let files = Arc::new(Files::new(
+            service.clone(),
+            TestDeliveryHandler(move |_k, r| DroppingBuffer {
+                data: vec![0u8; 4096],
+                range: r,
+                dropped: dropped_clone.clone(),
+            }),
+        ));
 
         let data_extents = Extents::try_new([Extent::new(0..BLOCK_SIZE, Some(0))], 0).unwrap();
         let meta_extents =
@@ -1280,7 +1425,8 @@ mod tests {
         use vmo_fifo::SyncSender;
         use zx::{Pager, PagerOptions, Port, Rights, Vmo, VmoOptions};
 
-        let metadata = BlobMetadata { merkle_leaves: vec![], format: BlobFormat::Uncompressed };
+        let metadata =
+            BlobMetadata { merkle_leaves: MerkleLeaves::new(), format: BlobFormat::Uncompressed };
         let encoded_metadata = serialize_metadata(&metadata);
         let mut device_data = vec![0u8; (2 * BLOCK_SIZE) as usize];
         // Metadata stored at physical block 1
@@ -1296,9 +1442,10 @@ mod tests {
         let page_request_holder = Arc::new(Mutex::new(Some(page_request)));
         let page_request_clone = page_request_holder.clone();
 
-        let files = Arc::new(Files::new(service.clone(), move |_key, _range| {
-            page_request_clone.lock().take().unwrap()
-        }));
+        let files = Arc::new(Files::new(
+            service.clone(),
+            TestDeliveryHandler(move |_key, _range| page_request_clone.lock().take().unwrap()),
+        ));
 
         let _pager_thread = crate::PagerThread::spawn(
             port.duplicate_handle(Rights::SAME_RIGHTS).unwrap(),
@@ -1378,7 +1525,8 @@ mod tests {
         use vmo_fifo::SyncSender;
         use zx::{Pager, PagerOptions, Port, Rights, Vmo, VmoOptions};
 
-        let metadata = BlobMetadata { merkle_leaves: vec![], format: BlobFormat::Uncompressed };
+        let metadata =
+            BlobMetadata { merkle_leaves: MerkleLeaves::new(), format: BlobFormat::Uncompressed };
         let encoded_metadata = serialize_metadata(&metadata);
         let mut device_data = vec![0u8; (2 * BLOCK_SIZE) as usize];
         // Metadata stored at physical block 1
@@ -1394,9 +1542,10 @@ mod tests {
         let page_request_holder = Arc::new(Mutex::new(Some(page_request)));
         let page_request_clone = page_request_holder.clone();
 
-        let files = Arc::new(Files::new(service.clone(), move |_key, _range| {
-            page_request_clone.lock().take().unwrap()
-        }));
+        let files = Arc::new(Files::new(
+            service.clone(),
+            TestDeliveryHandler(move |_key, _range| page_request_clone.lock().take().unwrap()),
+        ));
 
         let _pager_thread = crate::PagerThread::spawn(
             port.duplicate_handle(Rights::SAME_RIGHTS).unwrap(),
@@ -1470,7 +1619,8 @@ mod tests {
     #[fuchsia::test]
     fn test_process_mapping_command_close_blob() {
         let service = Arc::new(FakeBlockService::new(vec![0u8; 8192]));
-        let files = Arc::new(Files::new(service, |_k, _r| TestVecBuffer::new(4096).0));
+        let files =
+            Arc::new(Files::new(service, TestDeliveryHandler(|_k, _r| TestVecBuffer::new(4096).0)));
 
         let vmo = zx::Vmo::create(65536).unwrap();
         let mut sender = vmo_fifo::SyncSender::<crate::RawMappingCommand>::new(
@@ -1545,7 +1695,8 @@ mod tests {
 
     #[test]
     fn test_deserialize_blob_metadata() {
-        let metadata = BlobMetadata { merkle_leaves: vec![], format: BlobFormat::Uncompressed };
+        let metadata =
+            BlobMetadata { merkle_leaves: MerkleLeaves::new(), format: BlobFormat::Uncompressed };
 
         // Valid metadata with version 53.
         let bytes = serialize_metadata(&metadata);

@@ -15,18 +15,18 @@ pub trait MapperHandler: Send + Sync + 'static {
         &self,
         mapping_vmo: &zx::Vmo,
         delivery_queue: zx::Vmo,
-    ) -> Result<Arc<Verifier>, zx::Status>;
+    ) -> Result<Verifier, zx::Status>;
 }
 
 impl<F> MapperHandler for F
 where
-    F: Fn(&zx::Vmo, zx::Vmo) -> Result<Arc<Verifier>, zx::Status> + Send + Sync + 'static,
+    F: Fn(&zx::Vmo, zx::Vmo) -> Result<Verifier, zx::Status> + Send + Sync + 'static,
 {
     fn on_open_mapper_session(
         &self,
         mapping_vmo: &zx::Vmo,
         delivery_queue: zx::Vmo,
-    ) -> Result<Arc<Verifier>, zx::Status> {
+    ) -> Result<Verifier, zx::Status> {
         self(mapping_vmo, delivery_queue)
     }
 }
@@ -37,12 +37,9 @@ struct MapperVmoThread {
 }
 
 impl MapperVmoThread {
-    fn spawn<
-        F: Fn(u64, std::ops::Range<u64>) -> R + Send + Sync + 'static,
-        R: mapping::PageRequest + 'static,
-    >(
+    fn spawn<D: mapping::DeliveryHandler>(
         mapping_vmo: &zx::Vmo,
-        files: Arc<mapping::Files<dyn mapping::reader::BlockService, F, R>>,
+        files: Arc<mapping::Files<dyn mapping::reader::BlockService, D>>,
     ) -> Result<Self, Error> {
         let mapping_vmo_dup = mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let thread_vmo = mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
@@ -83,16 +80,12 @@ impl Drop for MapperVmoThread {
     }
 }
 
-async fn run_mapper_session_loop<
-    H: MapperHandler + ?Sized,
-    F: Fn(u64, std::ops::Range<u64>) -> R + Send + Sync + 'static,
-    R: mapping::PageRequest + 'static,
->(
-    handler: Arc<H>,
+async fn run_mapper_session_loop<M: MapperHandler + ?Sized, D: mapping::DeliveryHandler>(
+    handler: Arc<M>,
     service: Arc<dyn mapping::reader::BlockService>,
     session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
     mapping_vmo: zx::Vmo,
-    files: Arc<mapping::Files<dyn mapping::reader::BlockService, F, R>>,
+    files: Arc<mapping::Files<dyn mapping::reader::BlockService, D>>,
 ) -> Result<(), Error> {
     let _mapper_vmo_thread = MapperVmoThread::spawn(&mapping_vmo, files.clone())?;
 
@@ -152,8 +145,8 @@ async fn run_mapper_session_loop<
     Ok(())
 }
 
-pub fn serve_mapper_session<H: MapperHandler + ?Sized>(
-    handler: Arc<H>,
+pub fn serve_mapper_session<M: MapperHandler + ?Sized>(
+    handler: Arc<M>,
     service: Arc<dyn mapping::reader::BlockService>,
     session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
     mapping_vmo: zx::Vmo,
@@ -163,9 +156,7 @@ pub fn serve_mapper_session<H: MapperHandler + ?Sized>(
     match (port, delivery_queue) {
         (Some(port), Some(delivery_queue)) => {
             let verifier = handler.on_open_mapper_session(&mapping_vmo, delivery_queue)?;
-            let files = Arc::new(mapping::Files::new(service.clone(), move |key, range| {
-                verifier.get_page_request(key, range)
-            }));
+            let files = Arc::new(mapping::Files::new(service.clone(), verifier));
             let pager_thread = mapping::PagerThread::spawn(port, files.clone());
             Ok(async move {
                 let _pager_thread = pager_thread;

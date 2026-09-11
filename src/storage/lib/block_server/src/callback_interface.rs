@@ -70,9 +70,8 @@ pub trait Interface: Send + Sync + Unpin + 'static {
         &self,
         _mapping_vmo: &zx::Vmo,
         delivery_queue: zx::Vmo,
-    ) -> Result<Arc<Verifier>, zx::Status> {
-        let verifier = Arc::new(Verifier::new(delivery_queue));
-        Ok(verifier)
+    ) -> Result<Verifier, zx::Status> {
+        Ok(Verifier::new(delivery_queue))
     }
 }
 

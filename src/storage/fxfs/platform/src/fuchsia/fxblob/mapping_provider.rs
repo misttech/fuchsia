@@ -584,11 +584,8 @@ mod tests {
         )
         .unwrap();
 
-        let verifier = Arc::new(block_server::verifier::Verifier::new(delivery_queue));
-        let verifier_clone = verifier.clone();
-        let files = Arc::new(mapping::Files::new(service, move |key, range| {
-            verifier_clone.get_page_request(key, range)
-        }));
+        let verifier = block_server::verifier::Verifier::new(delivery_queue);
+        let files = Arc::new(mapping::Files::new(service, verifier));
 
         let id: [u8; 32] = hash.into();
         let (blob_size, blob_key) = session_proxy

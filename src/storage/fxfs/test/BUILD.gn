@@ -23,6 +23,7 @@ rustc_test("fxfs_mapper_integration_test_bin") {
     "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
     "//src/storage/lib/blob_pager_and_verifier",
     "//src/storage/lib/blob_writer:blob-writer",
+    "//src/storage/lib/block_client/rust",
     "//src/storage/lib/block_matcher",
     "//src/storage/lib/block_server/vmo_backed",
     "//src/storage/lib/delivery_blob",

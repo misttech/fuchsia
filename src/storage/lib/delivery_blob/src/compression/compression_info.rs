@@ -20,7 +20,6 @@ pub trait DataBuffer: Send + 'static {
     fn commit(&mut self, size: usize) -> Result<(), ChunkedArchiveError>;
 }
 
-#[derive(Clone)]
 pub struct CompressionInfo {
     chunk_size: u64,
     compressed_size: u64,
