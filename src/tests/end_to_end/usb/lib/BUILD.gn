@@ -20,5 +20,6 @@ group("tests") {
   deps = [
     ":usb_lib",
     "testusb:tests",
+    "zero_function:tests",
   ]
 }

@@ -8,6 +8,7 @@ from .usbtest_controller import UsbTestController
 from .zero_function import (
     ALL_SUPPORTED_TEST_IDS,
     KNOWN_TEST_DEVICES,
+    USB_ZERO_FUNCTION_DRIVER_URL,
     USB_ZERO_PID,
     USB_ZERO_VID,
     ZeroFunctionBaseTest,
@@ -18,6 +19,7 @@ from .zero_function import (
 __all__ = [
     "ALL_SUPPORTED_TEST_IDS",
     "KNOWN_TEST_DEVICES",
+    "USB_ZERO_FUNCTION_DRIVER_URL",
     "USB_ZERO_PID",
     "USB_ZERO_VID",
     "UsbTestController",

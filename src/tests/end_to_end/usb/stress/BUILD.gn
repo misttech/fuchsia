@@ -102,57 +102,22 @@ if (is_host) {
     environments = [ sorrel_env ]
     timeout_secs = 1200
   }
+}
 
-  group("tests") {
-    testonly = true
-    public_deps = [
-      ":adb_fastboot_stress_test($host_toolchain)",
-      ":adb_root_unroot_stress_test($host_toolchain)",
-      ":cdc_stress_test($host_toolchain)",
-      ":usb_disconnect_test($host_toolchain)",
-      ":usb_fastboot_loop_test($host_toolchain)",
-      ":usb_virtual_disconnect_test($host_toolchain)",
-    ]
-  }
-} else {
-  # Redirection from target toolchain to host toolchain
-  group("cdc_stress_test") {
-    testonly = true
-    public_deps = [ ":cdc_stress_test($host_toolchain)" ]
-  }
-  group("usb_fastboot_loop_test") {
-    testonly = true
-    public_deps = [ ":usb_fastboot_loop_test($host_toolchain)" ]
-  }
+group("zero_function_stress_test") {
+  testonly = true
+  public_deps = [ "zero_function:tests($host_toolchain)" ]
+}
 
-  group("usb_virtual_disconnect_test") {
-    testonly = true
-    public_deps = [ ":usb_virtual_disconnect_test($host_toolchain)" ]
-  }
-
-  group("usb_disconnect_test") {
-    testonly = true
-    public_deps = [ ":usb_disconnect_test($host_toolchain)" ]
-  }
-
-  group("adb_root_unroot_stress_test") {
-    testonly = true
-    public_deps = [ ":adb_root_unroot_stress_test($host_toolchain)" ]
-  }
-
-  group("adb_fastboot_stress_test") {
-    testonly = true
-    public_deps = [ ":adb_fastboot_stress_test($host_toolchain)" ]
-  }
-  group("tests") {
-    testonly = true
-    public_deps = [
-      ":adb_fastboot_stress_test($host_toolchain)",
-      ":adb_root_unroot_stress_test($host_toolchain)",
-      ":cdc_stress_test($host_toolchain)",
-      ":usb_disconnect_test($host_toolchain)",
-      ":usb_fastboot_loop_test($host_toolchain)",
-      ":usb_virtual_disconnect_test($host_toolchain)",
-    ]
-  }
+group("tests") {
+  testonly = true
+  public_deps = [
+    ":adb_fastboot_stress_test($host_toolchain)",
+    ":adb_root_unroot_stress_test($host_toolchain)",
+    ":cdc_stress_test($host_toolchain)",
+    ":usb_disconnect_test($host_toolchain)",
+    ":usb_fastboot_loop_test($host_toolchain)",
+    ":usb_virtual_disconnect_test($host_toolchain)",
+    "zero_function:tests($host_toolchain)",
+  ]
 }

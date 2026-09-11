@@ -9,19 +9,25 @@ Provides Zero-Function-specific constants, device node discovery, and a reusable
 `sysfs_usb` modules.
 """
 
-import json
+import collections.abc
 import logging
 import os
-import re
-import shlex
-import shutil
-import subprocess
-import sys
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 import fuchsia_base_test
-from mobly import asserts
+from honeydew.transports.ffx import errors as ffx_errors
+from honeydew.transports.ffx.types import MachineFormat
+from mobly import asserts, records
+from testusb import (
+    ALL_TEST_CASES,
+    TestParams,
+    TestResult,
+    TestRunner,
+    TestStatus,
+    USBTestBackend,
+    USBTestIoctlBackend,
+)
 from usb_lib.sysfs_usb import find_usb_device_node, wait_for_usb_device
 from usb_lib.usb_config import (
     get_dut_serial,
@@ -29,21 +35,24 @@ from usb_lib.usb_config import (
     parse_usb_config_functions,
     set_usb_config,
 )
-
-try:
-    from .usbtest_controller import UsbTestController
-except ImportError:
-    from usbtest_controller import UsbTestController
+from zero_function.usbtest_controller import UsbTestController
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 USB_ZERO_VID: int = 0x18D1
 USB_ZERO_PID: int = 0xA022
-KNOWN_TEST_DEVICES: Tuple[Tuple[int, int], ...] = (
+KNOWN_TEST_DEVICES: tuple[tuple[int, int], ...] = (
     (USB_ZERO_VID, USB_ZERO_PID),  # Fuchsia USB Zero Function
 )
 
-ALL_SUPPORTED_TEST_IDS: Tuple[int, ...] = (
+USB_ZERO_FUNCTION_DRIVER_URL: str = (
+    "fuchsia-pkg://fuchsia.com/usb-zero-function#meta/usb-zero-function.cm"
+)
+
+# 27 supported test IDs. Isochronous tests (15, 16, 22, 23, 26) are excluded
+# because zero function only exposes bulk/control endpoints. Loopback
+# tests (32-35) are tested separately.
+ALL_SUPPORTED_TEST_IDS: tuple[int, ...] = (
     0,
     1,
     2,
@@ -72,18 +81,19 @@ ALL_SUPPORTED_TEST_IDS: Tuple[int, ...] = (
     30,
     31,
 )
-"""27 supported test IDs. Isochronous tests (15, 16, 22, 23, 26) are excluded because
-zero function only exposes bulk/control endpoints. Loopback tests (32-35) are tested separately."""
 
 
 def find_zero_function_device_node(
-    dut: Optional[Any] = None,
-    target_serial: Optional[str] = None,
-) -> Optional[str]:
-    """Scan Linux sysfs to locate the active Zero Function /dev/bus/usb/BBB/DDD node.
+    dut: Any | None = None,
+    target_serial: str | None = None,
+) -> str | None:
+    """Scan Linux sysfs to locate the active Zero Function node.
+
+    Locates the active /dev/bus/usb/BBB/DDD node.
 
     Args:
-        dut: Optional Honeydew FuchsiaDevice object (serial is extracted automatically if provided).
+        dut: Optional Honeydew FuchsiaDevice object (serial is extracted
+            automatically if provided).
         target_serial: Optional serial number string override.
 
     Returns:
@@ -97,15 +107,16 @@ def find_zero_function_device_node(
 
 
 def wait_for_zero_function(
-    dut: Optional[Any] = None,
-    target_serial: Optional[str] = None,
+    dut: Any | None = None,
+    target_serial: str | None = None,
     timeout_sec: float = 30.0,
     poll_interval_sec: float = 0.5,
 ) -> str:
     """Poll until the Zero Function device node is enumerated and accessible.
 
     Args:
-        dut: Optional Honeydew FuchsiaDevice object (serial is extracted automatically if provided).
+        dut: Optional Honeydew FuchsiaDevice object (serial is extracted
+            automatically if provided).
         target_serial: Optional serial number string override.
         timeout_sec: Maximum wait time in seconds.
         poll_interval_sec: Polling interval in seconds.
@@ -125,8 +136,23 @@ def wait_for_zero_function(
 class ZeroFunctionBaseTest(fuchsia_base_test.FuchsiaBaseTest):
     """Base Mobly test class for USB Zero Function test suites."""
 
+    def __init__(
+        self,
+        mobly_configs: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(mobly_configs, *args, **kwargs)
+        self._any_test_failed: bool = False
+        self.dev_node: str | None = None
+        self.target_serial: str | None = None
+        self._initial_config_raw: str = ""
+        self._initial_functions: list[str] = []
+        self.driver_controller: UsbTestController | None = None
+        self.test_case_path: str = ""
+
     async def setup_class(self) -> None:
-        """Record the initial USB peripheral configuration and initialize test harness."""
+        """Record initial USB configuration and initialize test harness."""
         await super().setup_class()
 
         self.snapshot_on = fuchsia_base_test.SnapshotOn.NEVER
@@ -147,57 +173,143 @@ class ZeroFunctionBaseTest(fuchsia_base_test.FuchsiaBaseTest):
         try:
             self.driver_controller.load_driver()
         except Exception as e:
-            _LOGGER.warning(f"Could not load usbtest driver: {e}")
+            _LOGGER.warning("Could not load usbtest driver: %s", e)
 
-        self._initial_config_raw: str = get_usb_config(self.dut)
-        self._initial_functions: List[str] = parse_usb_config_functions(
+        self._initial_config_raw = get_usb_config(self.dut)
+        self._initial_functions = parse_usb_config_functions(
             self._initial_config_raw
         )
         _LOGGER.info(
-            f"Saved initial USB peripheral configuration: {self._initial_functions}"
+            "Saved initial USB peripheral configuration: %s",
+            self._initial_functions,
         )
-        self.dev_node: str = self.configure_zero_function("sourcesink;loopback")
-        _LOGGER.info(f"Configured Zero Function device node: {self.dev_node}")
+        # Register the usb-zero-function driver package from the test repository
+        # before switching USB peripheral mode to Zero Function.
+        raw_driver_url = self.user_params.get("driver_url")
+        if not raw_driver_url:
+            driver_url = USB_ZERO_FUNCTION_DRIVER_URL
+        elif isinstance(raw_driver_url, str):
+            driver_url = raw_driver_url.strip()
+            if not driver_url.startswith("fuchsia-pkg://"):
+                raise ValueError(
+                    f"Invalid driver_url '{raw_driver_url}': must start with "
+                    "'fuchsia-pkg://'"
+                )
+        else:
+            raise ValueError(
+                f"Invalid driver_url type '{type(raw_driver_url)}': "
+                "expected string"
+            )
+
+        # Pre-resolve package blobs into local blobfs while CDC is active,
+        # ensuring driver binaries are available after USB peripheral switching
+        # drops networking.
+        pkg_url = driver_url.split("#")[0]
+        ffx_inst = getattr(self.dut, "ffx", None)
+        if ffx_inst and hasattr(ffx_inst, "run_ssh_cmd"):
+            try:
+                _LOGGER.info("Pre-resolving package blobs for %s...", pkg_url)
+                ffx_inst.run_ssh_cmd(f"pkgctl resolve {pkg_url}")
+            except Exception as resolve_err:
+                _LOGGER.warning("pkgctl resolve returned: %s", resolve_err)
+
+        # Query whether driver is already registered before registering.
+        is_registered = False
+        try:
+            driver_list = self.dut.ffx.run(
+                ["driver", "list"],
+                machine=MachineFormat.RAW,
+                timeout=60,
+            )
+            if driver_url in driver_list:
+                _LOGGER.info(
+                    "Driver %s is already registered on target.", driver_url
+                )
+                is_registered = True
+        except Exception as list_err:
+            _LOGGER.warning("Could not query registered drivers: %s", list_err)
+
+        if not is_registered:
+            try:
+                _LOGGER.info("Registering ephemeral driver: %s", driver_url)
+                res = self.dut.ffx.run(
+                    ["driver", "register", driver_url],
+                    machine=MachineFormat.RAW,
+                    timeout=60,
+                )
+                _LOGGER.info("Driver registration output: %s", res.strip())
+            except ffx_errors.FfxCommandError as e:
+                if (
+                    "ALREADY_EXISTS" in str(e)
+                    or "already exists" in str(e).lower()
+                ):
+                    _LOGGER.info(
+                        "Driver %s already registered; restarting driver "
+                        "host: %s",
+                        driver_url,
+                        e,
+                    )
+                    try:
+                        self.dut.ffx.run(
+                            ["driver", "restart", driver_url],
+                            machine=MachineFormat.RAW,
+                            timeout=60,
+                        )
+                    except Exception as restart_err:
+                        _LOGGER.warning(
+                            "Driver restart failed (may not be bound yet): %s",
+                            restart_err,
+                        )
+                else:
+                    _LOGGER.error(
+                        "Failed to register driver %s: %s", driver_url, e
+                    )
+                    raise
+
+        self.dev_node = self.configure_zero_function("sourcesink;loopback")
+        _LOGGER.info("Configured Zero Function device node: %s", self.dev_node)
 
     async def setup_test(self) -> None:
-        """Override to avoid FuchsiaBaseTest trying to log via FFX when device is in Zero Function mode."""
+        """Override to avoid FuchsiaBaseTest logging in Zero Function mode."""
         self._devices_not_healthy = False
         self.test_case_path = os.path.join(
             self.log_path, self.current_test_info.name
         )
         os.makedirs(self.test_case_path, exist_ok=True)
-        _LOGGER.info(f"Starting test case '{self.current_test_info.name}'")
+        _LOGGER.info("Starting test case '%s'", self.current_test_info.name)
 
     async def teardown_test(self) -> None:
-        """Override to avoid FuchsiaBaseTest trying to run health checks via FFX when in Zero Function mode."""
-        _LOGGER.info(f"Finished test case '{self.current_test_info.name}'")
+        """Override to avoid FuchsiaBaseTest health checks in test mode."""
+        _LOGGER.info("Finished test case '%s'", self.current_test_info.name)
         if hasattr(self, "test_case_path") and os.path.exists(
             self.test_case_path
         ):
             try:
-                if len(os.listdir(self.test_case_path)) == 0:
+                if not os.listdir(self.test_case_path):
                     os.rmdir(self.test_case_path)
             except OSError:
                 pass
 
-    async def on_fail(self, record: Any) -> None:
-        """Override to record failure while preserving FatalDeviceError propagation."""
+    async def on_fail(self, record: records.TestResultRecord) -> None:
+        """Override to record failure while preserving error propagation."""
         self._any_test_failed = True
-        _LOGGER.warning(f"Test case failed: {record}")
+        _LOGGER.warning("Test case failed: %s", record)
         await super().on_fail(record)
 
     async def _collect_snapshot(self, directory: str) -> None:
-        """Bypass network snapshot collection when target is in USB peripheral test mode."""
+        """Bypass network snapshot collection in USB peripheral test mode."""
         _LOGGER.info("Bypassing snapshot collection in Zero Function mode.")
 
     async def teardown_class(self) -> None:
-        """Restore the initial USB peripheral configuration and clean up."""
+        """Restore initial USB configuration and clean up test resources."""
         try:
-            initial_funcs = getattr(self, "_initial_functions", None)
-            if initial_funcs:
-                restore_str = ",".join(initial_funcs)
+            # Restoring initial functions unbinds usb-zero-function. Ephemerally
+            # registered drivers remain cached until reboot and do not persist.
+            if self._initial_functions:
+                restore_str = ",".join(self._initial_functions)
                 _LOGGER.info(
-                    f"Restoring initial USB peripheral configuration: {restore_str}"
+                    "Restoring initial USB peripheral configuration: %s",
+                    restore_str,
                 )
                 try:
                     set_usb_config(
@@ -205,23 +317,24 @@ class ZeroFunctionBaseTest(fuchsia_base_test.FuchsiaBaseTest):
                     )
                 except Exception as e:
                     _LOGGER.warning(
-                        f"Failed to restore initial USB peripheral configuration: {e}"
+                        "Failed to restore initial USB configuration: %s",
+                        e,
                     )
-            driver_ctrl = getattr(self, "driver_controller", None)
-            if driver_ctrl:
+            if self.driver_controller:
                 try:
-                    driver_ctrl.unload_driver()
+                    self.driver_controller.unload_driver()
                 except Exception as e:
-                    _LOGGER.warning(f"Failed unloading usbtest driver: {e}")
+                    _LOGGER.warning("Failed unloading usbtest driver: %s", e)
             _LOGGER.info("Teardown class completed.")
         finally:
             await super().teardown_class()
 
     def configure_zero_function(self, config_name: str = "sourcesink") -> str:
-        """Switch the device to Zero Function mode and wait for host enumeration."""
-        old_node = getattr(self, "dev_node", None)
+        """Switch device to Zero Function mode and wait for host enumeration."""
+        old_node = self.dev_node
         set_usb_config(self.dut, config_name)
-        # If an old device node was already present, wait for it to disconnect before polling.
+        # If an old device node was already present, wait for it to disconnect
+        # before polling.
         if old_node and os.path.exists(old_node):
             disconnect_deadline = time.monotonic() + 5.0
             while time.monotonic() < disconnect_deadline:
@@ -229,186 +342,227 @@ class ZeroFunctionBaseTest(fuchsia_base_test.FuchsiaBaseTest):
                     break
                 time.sleep(0.1)
         dev_node = wait_for_zero_function(
-            dut=self.dut, target_serial=getattr(self, "target_serial", None)
+            dut=self.dut, target_serial=self.target_serial
         )
         self.dev_node = dev_node
         return dev_node
 
-    def execute_testusb_cli(
+    def require_dev_node(self) -> str:
+        """Return active device node path, asserting it is not None."""
+        asserts.assert_is_not_none(
+            self.dev_node,
+            "Expected active USB Zero Function device node in sysfs/devfs",
+        )
+        assert self.dev_node is not None
+        return self.dev_node
+
+    def execute_testusb(
         self,
         dev_node: str,
-        test_ids: Optional[List[int]] = None,
+        test_ids: collections.abc.Sequence[int] | None = None,
         mode: str = "both",
         iterations: int = 10,
-        extra_args: Optional[List[str]] = None,
-        timeout_sec: float = 60.0,
-        testusb_bin: Optional[str] = None,
-    ) -> subprocess.CompletedProcess[str]:
-        """Run the testusb runner against the specified device node via subprocess."""
-        testusb_tool = (
-            testusb_bin
-            or os.environ.get("TESTUSB_SCRIPT")
-            or shutil.which("testusb")
-            or os.path.join(
-                os.path.dirname(__file__), "..", "testusb", "testusb.py"
-            )
-        )
-        cmd = (
-            [sys.executable, "-u", testusb_tool]
-            if testusb_tool.endswith(".py")
-            else [testusb_tool]
-        )
-        cmd.extend(
-            [
-                "-D",
-                dev_node,
-                "-m",
-                mode,
-                "-c",
-                str(iterations),
-            ]
-        )
-        if test_ids:
-            cmd.extend(["-t", ",".join(str(tid) for tid in test_ids)])
-        if extra_args:
-            cmd.extend(extra_args)
+        length: int = 1024,
+        vary: int = 1024,
+        sglen: int = 32,
+        timeout_ms: int = 5000,
+        quiet: bool = False,
+        backend: USBTestBackend | None = None,
+    ) -> list[TestResult]:
+        """Run the testusb runner against the specified device node.
 
-        _LOGGER.info(f"Executing testusb command: {shlex.join(cmd)}")
-        try:
-            res = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout_sec
+        Args:
+            dev_node: Character device node (/dev/bus/usb/BBB/DDD).
+            test_ids: Optional sequence of test IDs to execute.
+            mode: Operating mode ('sourcesink', 'loopback', 'both', or 'auto').
+            iterations: Number of transfer iterations per test.
+            length: Buffer length in bytes.
+            vary: Transfer size variation in bytes.
+            sglen: Scatter-gather entries count.
+            timeout_ms: I/O completion timeout in milliseconds.
+            quiet: If True, suppresses runner stdout progress spam.
+            backend: Optional existing USBTestBackend instance to reuse.
+
+        Returns:
+            List of TestResult instances representing executed test outcomes.
+        """
+        _LOGGER.info(
+            "Running testusb on %s: test_ids=%s, mode='%s', iterations=%d",
+            dev_node,
+            test_ids,
+            mode,
+            iterations,
+        )
+        params = TestParams(
+            iterations=iterations,
+            length=length,
+            vary=vary,
+            sglen=sglen,
+            timeout_ms=timeout_ms,
+        )
+        target_ids = (
+            list(test_ids)
+            if test_ids is not None
+            else list(ALL_TEST_CASES.keys())
+        )
+
+        if backend is not None:
+            runner = TestRunner(
+                backend=backend,
+                params=params,
+                mode=mode,
+                quiet=quiet,
             )
-        except subprocess.TimeoutExpired as e:
-            _LOGGER.error(f"testusb timed out after {timeout_sec}s: {e}")
-            out_str = (
-                e.stdout.decode(errors="replace")
-                if isinstance(e.stdout, bytes)
-                else (e.stdout or "")
-            )
-            err_str = (
-                e.stderr.decode(errors="replace")
-                if isinstance(e.stderr, bytes)
-                else (e.stderr or "")
-            )
-            if out_str:
-                _LOGGER.error(f"testusb stdout before timeout:\n{out_str}")
-            if err_str:
-                _LOGGER.error(f"testusb stderr before timeout:\n{err_str}")
-            return subprocess.CompletedProcess(
-                cmd,
-                returncode=124,
-                stdout=out_str,
-                stderr=f"TimeoutExpired after {timeout_sec}s: {err_str}",
-            )
-        _LOGGER.info(f"testusb exit code: {res.returncode}")
-        if res.returncode != 0:
-            _LOGGER.error(f"testusb stdout:\n{res.stdout}")
-            if res.stderr:
-                _LOGGER.error(f"testusb stderr:\n{res.stderr}")
+            results = runner.run(target_ids)
         else:
-            _LOGGER.info(f"testusb stdout:\n{res.stdout}")
-            if res.stderr:
-                _LOGGER.warning(f"testusb stderr:\n{res.stderr}")
-        return res
+            with USBTestIoctlBackend(device_path=dev_node) as created_backend:
+                runner = TestRunner(
+                    backend=created_backend,
+                    params=params,
+                    mode=mode,
+                    quiet=quiet,
+                )
+                results = runner.run(target_ids)
+
+        for r in results:
+            if r.error_message:
+                _LOGGER.info(
+                    "Test %d (%s): %s in %.3fs - %s",
+                    r.test_id,
+                    r.test_name,
+                    r.status.value,
+                    r.duration_secs,
+                    r.error_message,
+                )
+            else:
+                _LOGGER.debug(
+                    "Test %d (%s): %s in %.3fs",
+                    r.test_id,
+                    r.test_name,
+                    r.status.value,
+                    r.duration_secs,
+                )
+        return results
 
     def execute_testusb_timed(
         self,
         dev_node: str,
-        test_ids: Optional[List[int]] = None,
+        test_ids: collections.abc.Sequence[int] | None = None,
         mode: str = "both",
         duration_sec: float = 120.0,
         iterations_per_batch: int = 10,
-        extra_args: Optional[List[str]] = None,
+        length: int = 1024,
+        vary: int = 1024,
+        sglen: int = 32,
+        timeout_ms: int = 5000,
     ) -> None:
         """Run testusb repeatedly in batches until duration_sec has elapsed.
 
         Args:
             dev_node: Character device node (/dev/bus/usb/BBB/DDD).
-            test_ids: Optional list of test numbers.
+            test_ids: Optional sequence of test numbers.
             mode: Mode ('sourcesink', 'loopback', 'both', or 'auto').
             duration_sec: Duration to sustain the stress loop in seconds.
             iterations_per_batch: Number of iterations per testusb invocation.
-            extra_args: Additional command line flags for testusb.py.
+            length: Buffer length in bytes.
+            vary: Transfer size variation in bytes.
+            sglen: Scatter-gather entries count.
+            timeout_ms: Transfer timeout in milliseconds.
         """
         start_time = time.monotonic()
         batch = 0
         total_iterations = 0
 
         _LOGGER.info(
-            f"Starting timed stress execution: test_ids={test_ids}, mode='{mode}', "
-            f"target_duration={duration_sec:.1f}s, iterations_per_batch={iterations_per_batch}"
+            "Starting timed stress execution: test_ids=%s, mode='%s', "
+            "target_duration=%.1fs, iterations_per_batch=%d",
+            test_ids,
+            mode,
+            duration_sec,
+            iterations_per_batch,
         )
 
-        while True:
-            elapsed = time.monotonic() - start_time
-            if elapsed >= duration_sec:
-                break
+        with USBTestIoctlBackend(device_path=dev_node) as backend:
+            while True:
+                elapsed = time.monotonic() - start_time
+                if elapsed >= duration_sec:
+                    break
 
-            batch += 1
-            remaining = duration_sec - elapsed
-            _LOGGER.info(
-                f"[Batch {batch}] Running testusb (Elapsed: {elapsed:.1f}s / {duration_sec:.1f}s, "
-                f"Remaining: {remaining:.1f}s)..."
-            )
+                batch += 1
+                remaining = duration_sec - elapsed
+                _LOGGER.info(
+                    "[Batch %d] Running testusb (Elapsed: %.1fs / %.1fs, "
+                    "Remaining: %.1fs)...",
+                    batch,
+                    elapsed,
+                    duration_sec,
+                    remaining,
+                )
 
-            proc = self.execute_testusb_cli(
-                dev_node=dev_node,
-                test_ids=test_ids,
-                mode=mode,
-                iterations=iterations_per_batch,
-                extra_args=extra_args,
-            )
-            self.assert_testusb_cli_success(
-                proc,
-                f"Stress test batch {batch} failed for test_ids={test_ids} at elapsed {elapsed:.1f}s",
-            )
-            total_iterations += iterations_per_batch
+                results = self.execute_testusb(
+                    dev_node=dev_node,
+                    test_ids=test_ids,
+                    mode=mode,
+                    iterations=iterations_per_batch,
+                    length=length,
+                    vary=vary,
+                    sglen=sglen,
+                    timeout_ms=timeout_ms,
+                    backend=backend,
+                )
+                self.assert_testusb_success(
+                    results,
+                    f"Stress test batch {batch} failed for test_ids={test_ids} "
+                    f"at elapsed {elapsed:.1f}s",
+                )
+                total_iterations += iterations_per_batch
+                time.sleep(0.01)
 
         total_elapsed = time.monotonic() - start_time
         _LOGGER.info(
-            f"Completed timed stress test successfully: {batch} batches, "
-            f"{total_iterations} total iterations across {total_elapsed:.2f}s."
+            "Completed timed stress test successfully: %d batches, "
+            "%d total iterations across %.2fs.",
+            batch,
+            total_iterations,
+            total_elapsed,
         )
 
-    def assert_testusb_cli_success(
-        self, proc: subprocess.CompletedProcess[str], msg: Optional[str] = None
+    def assert_testusb_success(
+        self,
+        results: list[TestResult],
+        msg: str | None = None,
     ) -> None:
-        """Assert that testusb CLI execution completed with returncode 0."""
-        if proc.returncode != 0 and proc.stdout:
-            # When all requested tests are skipped (e.g. unsupported by the host kernel
-            # usbtest driver), testusb exits with non-zero (1). If no tests failed or
-            # encountered errors, mark the Mobly test case as skipped instead of failing.
-            m = re.search(
-                r"Summary:\s*\d+\s*executed,\s*0\s*passed,\s*0\s*failed,\s*(\d+)\s*skipped,\s*0\s*errors",
-                proc.stdout,
-            )
-            if m and int(m.group(1)) > 0:
-                asserts.skip(
-                    f"Test case skipped: not supported by host kernel usbtest driver:\n{proc.stdout.strip()}"
-                )
-            if proc.stdout.strip().startswith("{"):
-                try:
-                    data = json.loads(proc.stdout)
-                    summary = data.get("summary", {})
-                    if (
-                        summary.get("passed") == 0
-                        and summary.get("failed") == 0
-                        and summary.get("errors") == 0
-                        and summary.get("skipped", 0) > 0
-                    ):
-                        asserts.skip(
-                            f"Test case skipped: not supported by host kernel usbtest driver:\n{proc.stdout.strip()}"
-                        )
-                except Exception:
-                    pass
+        """Assert all executed testusb test cases succeeded or were skipped.
 
-        err_detail = (
-            f"\nStdout:\n{proc.stdout}\nStderr:\n{proc.stderr}"
-            if proc.returncode != 0
-            else ""
+        Args:
+            results: List of TestResult objects returned by execute_testusb.
+            msg: Optional failure message prefix.
+        """
+        asserts.assert_true(
+            len(results) > 0,
+            f"{msg or 'No test results returned'}: results list is empty",
         )
-        asserts.assert_equal(
-            proc.returncode,
-            0,
-            f"{msg or 'testusb CLI execution failed with non-zero exit code'}: {proc.returncode}{err_detail}",
-        )
+
+        all_skipped = all(r.status == TestStatus.SKIP for r in results)
+        if all_skipped:
+            skip_msgs = [
+                f"Test {r.test_id}: {r.error_message or 'unsupported'}"
+                for r in results
+            ]
+            asserts.skip(
+                "All tests skipped (unsupported by host kernel usbtest "
+                f"driver): {'; '.join(skip_msgs)}"
+            )
+
+        failed = [
+            r
+            for r in results
+            if r.status in (TestStatus.FAIL, TestStatus.ERROR)
+        ]
+        if failed:
+            details = "\n".join(
+                f"Test {r.test_id} ({r.test_name}): {r.status.value} - "
+                f"{r.error_message or 'Unknown error'}"
+                for r in failed
+            )
+            asserts.fail(f"{msg or 'testusb execution failed'}:\n{details}")

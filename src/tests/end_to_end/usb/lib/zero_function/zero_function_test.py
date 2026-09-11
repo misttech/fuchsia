@@ -4,99 +4,24 @@
 
 """Host unit tests for the zero_function test harness library."""
 
-import subprocess
-import sys
-import types
 import unittest
 from typing import Any
 from unittest import mock
 
-# Provide fallback stubs for hermetic external libraries if running in standalone host test environment
-for mod_name in (
-    "fuchsia_base_test",
-    "honeydew",
-    "honeydew.errors",
-    "usb_lib",
-    "usb_lib.sysfs_usb",
-    "usb_lib.usb_config",
-    "mobly",
-    "mobly.asserts",
-    "mobly.config_parser",
-):
-    if mod_name not in sys.modules:
-        m = types.ModuleType(mod_name)
-        m.__path__ = []  # type: ignore[attr-defined]
-        sys.modules[mod_name] = m
-
-if not hasattr(sys.modules["fuchsia_base_test"], "FuchsiaBaseTest"):
-
-    class _MockFuchsiaBaseTest:
-        def __init__(self, config: Any = None) -> None:
-            self.dut = mock.MagicMock()
-            self.log_path = "/tmp"
-            self.current_test_info = mock.MagicMock()
-            self.current_test_info.name = "test_mock"
-            self._any_test_failed = False
-
-        async def setup_class(self) -> None:
-            pass
-
-        async def teardown_class(self) -> None:
-            pass
-
-        async def on_fail(self, record: Any) -> None:
-            pass
-
-    sys.modules["fuchsia_base_test"].FuchsiaBaseTest = _MockFuchsiaBaseTest  # type: ignore[attr-defined]
-    sys.modules["fuchsia_base_test"].SnapshotOn = mock.MagicMock()  # type: ignore[attr-defined]
-    sys.modules["fuchsia_base_test"].TracingOn = mock.MagicMock()  # type: ignore[attr-defined]
-
-if not hasattr(sys.modules["usb_lib.sysfs_usb"], "find_usb_device_node"):
-    sys.modules["usb_lib.sysfs_usb"].find_usb_device_node = mock.MagicMock(  # type: ignore[attr-defined]
-        return_value="/dev/bus/usb/001/002"
-    )
-    sys.modules["usb_lib.sysfs_usb"].wait_for_usb_device = mock.MagicMock(  # type: ignore[attr-defined]
-        return_value="/dev/bus/usb/001/002"
-    )
-
-if not hasattr(sys.modules["usb_lib.usb_config"], "set_usb_config"):
-    sys.modules["usb_lib.usb_config"].get_dut_serial = mock.MagicMock(  # type: ignore[attr-defined]
-        return_value="test_serial"
-    )
-    sys.modules["usb_lib.usb_config"].get_usb_config = mock.MagicMock(  # type: ignore[attr-defined]
-        return_value="sourcesink"
-    )
-    sys.modules["usb_lib.usb_config"].parse_usb_config_functions = mock.MagicMock(  # type: ignore[attr-defined]
-        return_value=["sourcesink"]
-    )
-    sys.modules["usb_lib.usb_config"].set_usb_config = mock.MagicMock()  # type: ignore[attr-defined]
-
-if not hasattr(sys.modules["mobly.asserts"], "assert_equal"):
-    sys.modules["mobly.asserts"].skip = mock.MagicMock()  # type: ignore[attr-defined]
-    sys.modules["mobly.asserts"].assert_equal = unittest.TestCase().assertEqual  # type: ignore[attr-defined]
-
-try:
-    from zero_function import (
-        ALL_SUPPORTED_TEST_IDS,
-        KNOWN_TEST_DEVICES,
-        USB_ZERO_PID,
-        USB_ZERO_VID,
-        ZeroFunctionBaseTest,
-        find_zero_function_device_node,
-        wait_for_zero_function,
-    )
-    from zero_function.usbtest_controller import UsbTestController
-except ImportError:
-    from usbtest_controller import UsbTestController  # type: ignore[no-redef]
-    from zero_function import (  # type: ignore[no-redef]
-        ALL_SUPPORTED_TEST_IDS,
-        KNOWN_TEST_DEVICES,
-        USB_ZERO_PID,
-        USB_ZERO_VID,
-        ZeroFunctionBaseTest,
-        find_zero_function_device_node,
-        wait_for_zero_function,
-    )
+import fuchsia_base_test
+from honeydew.transports.ffx import errors as ffx_errors
+from mobly import records
+from testusb import TestResult, TestStatus
+from zero_function import (
+    ALL_SUPPORTED_TEST_IDS,
+    KNOWN_TEST_DEVICES,
+    USB_ZERO_FUNCTION_DRIVER_URL,
+    USB_ZERO_PID,
+    USB_ZERO_VID,
+    ZeroFunctionBaseTest,
+)
+from zero_function import zero_function as zf_mod
+from zero_function.usbtest_controller import UsbTestController
 
 
 class ZeroFunctionConstantsTest(unittest.TestCase):
@@ -166,7 +91,9 @@ class UsbTestControllerTest(unittest.TestCase):
     ) -> None:
         controller = UsbTestController()
         controller._dmc_path = None
-        with self.assertRaises(RuntimeError):
+        with self.assertRaisesRegex(
+            RuntimeError, "usbtest kernel module is not loaded on host"
+        ):
             controller.load_driver()
 
     @mock.patch("subprocess.run")
@@ -186,11 +113,65 @@ class UsbTestControllerTest(unittest.TestCase):
 class ZeroFunctionBaseTestLifecycleTest(unittest.IsolatedAsyncioTestCase):
     """Tests ZeroFunctionBaseTest lifecycle and execution."""
 
+    def setUp(self) -> None:
+        super().setUp()
+        self._patchers = [
+            mock.patch.object(
+                fuchsia_base_test.FuchsiaBaseTest,
+                "setup_class",
+                new_callable=mock.AsyncMock,
+            ),
+            mock.patch.object(
+                fuchsia_base_test.FuchsiaBaseTest,
+                "teardown_class",
+                new_callable=mock.AsyncMock,
+            ),
+            mock.patch.object(
+                zf_mod, "get_dut_serial", return_value="test_serial"
+            ),
+            mock.patch.object(
+                zf_mod, "get_usb_config", return_value="sourcesink"
+            ),
+            mock.patch.object(
+                zf_mod,
+                "parse_usb_config_functions",
+                return_value=["sourcesink"],
+            ),
+            mock.patch.object(zf_mod, "set_usb_config"),
+            mock.patch.object(
+                zf_mod,
+                "find_usb_device_node",
+                return_value="/dev/bus/usb/001/002",
+            ),
+            mock.patch.object(
+                zf_mod,
+                "wait_for_zero_function",
+                return_value="/dev/bus/usb/001/002",
+            ),
+        ]
+        for patcher in self._patchers:
+            patcher.start()
+
+    def tearDown(self) -> None:
+        for patcher in reversed(self._patchers):
+            patcher.stop()
+        super().tearDown()
+
+    def _create_test_instance(
+        self, user_params: dict[str, Any] | None = None
+    ) -> ZeroFunctionBaseTest:
+        configs = mock.MagicMock()
+        test_instance = ZeroFunctionBaseTest(configs)
+        test_instance.user_params = user_params or {}
+        test_instance.log_path = "/tmp"
+        test_instance.dut = mock.MagicMock()
+        test_instance.current_test_info = mock.MagicMock()
+        test_instance.current_test_info.name = "test_mock"
+        return test_instance
+
     async def test_teardown_class_without_setup_does_not_crash(self) -> None:
-        """Verifies teardown_class handles uninitialized attributes gracefully."""
-        test_instance = ZeroFunctionBaseTest()
-        # Simulate setup_class never running or failing before setting attributes:
-        # _initial_functions and driver_controller do not exist.
+        """Verifies teardown_class handles uninitialized attributes."""
+        test_instance = self._create_test_instance()
         with mock.patch.object(
             test_instance, "teardown_class", wraps=test_instance.teardown_class
         ):
@@ -198,42 +179,275 @@ class ZeroFunctionBaseTestLifecycleTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_on_fail_delegates_to_super(self) -> None:
         """Verifies on_fail sets failure flag and delegates to super."""
-        test_instance = ZeroFunctionBaseTest()
-        record = mock.MagicMock()
-        await test_instance.on_fail(record)
-        self.assertTrue(test_instance._any_test_failed)
+        test_instance = self._create_test_instance()
+        record = mock.MagicMock(spec=records.TestResultRecord)
+        with mock.patch.object(
+            fuchsia_base_test.FuchsiaBaseTest,
+            "on_fail",
+            new_callable=mock.AsyncMock,
+        ) as mock_super_on_fail:
+            await test_instance.on_fail(record)
+            self.assertTrue(test_instance._any_test_failed)
+            mock_super_on_fail.assert_awaited_once_with(record)
 
-    @mock.patch("subprocess.run")
-    def test_execute_testusb_cli(self, mock_run: mock.MagicMock) -> None:
-        """Verifies execute_testusb_cli builds command and executes subprocess."""
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="Summary: 1 passed", stderr=""
-        )
-        test_instance = ZeroFunctionBaseTest()
-        proc = test_instance.execute_testusb_cli(
+    @mock.patch.object(zf_mod, "TestRunner")
+    @mock.patch.object(zf_mod, "USBTestIoctlBackend")
+    def test_execute_testusb(
+        self,
+        mock_backend_cls: mock.MagicMock,
+        mock_runner_cls: mock.MagicMock,
+    ) -> None:
+        """Verifies execute_testusb instantiates backend and runner.
+
+        Ensures runner.run() is called with test IDs.
+        """
+        mock_backend = mock.MagicMock()
+        mock_backend_cls.return_value.__enter__.return_value = mock_backend
+
+        expected_results = [
+            TestResult(
+                test_id=0,
+                test_name="Control NOP",
+                status=TestStatus.PASS,
+                duration_secs=0.01,
+            )
+        ]
+        mock_runner = mock.MagicMock()
+        mock_runner.run.return_value = expected_results
+        mock_runner_cls.return_value = mock_runner
+
+        test_instance = self._create_test_instance()
+        results = test_instance.execute_testusb(
             dev_node="/dev/bus/usb/001/002",
             test_ids=[0],
             mode="sourcesink",
             iterations=5,
-            testusb_bin="/custom/bin/testusb",
         )
-        self.assertEqual(proc.returncode, 0)
-        mock_run.assert_called_once_with(
-            [
-                "/custom/bin/testusb",
-                "-D",
-                "/dev/bus/usb/001/002",
-                "-m",
-                "sourcesink",
-                "-c",
-                "5",
-                "-t",
-                "0",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60.0,
+        self.assertEqual(results, expected_results)
+        mock_backend_cls.assert_called_once_with(
+            device_path="/dev/bus/usb/001/002"
         )
+        mock_runner.run.assert_called_once_with([0])
+
+    @mock.patch.object(zf_mod, "TestRunner")
+    @mock.patch.object(zf_mod, "USBTestIoctlBackend")
+    def test_execute_testusb_with_existing_backend(
+        self,
+        mock_backend_cls: mock.MagicMock,
+        mock_runner_cls: mock.MagicMock,
+    ) -> None:
+        """Verifies execute_testusb reuses existing backend if provided."""
+        existing_backend = mock.MagicMock()
+        mock_runner = mock.MagicMock()
+        mock_runner.run.return_value = []
+        mock_runner_cls.return_value = mock_runner
+
+        test_instance = self._create_test_instance()
+        results = test_instance.execute_testusb(
+            dev_node="/dev/bus/usb/001/002",
+            test_ids=[0],
+            backend=existing_backend,
+        )
+        self.assertEqual(results, [])
+        mock_backend_cls.assert_not_called()
+        mock_runner_cls.assert_called_once()
+        self.assertEqual(
+            mock_runner_cls.call_args[1]["backend"], existing_backend
+        )
+
+    def test_assert_testusb_success_all_pass(self) -> None:
+        """Verifies assert_testusb_success succeeds when all results passed."""
+        test_instance = self._create_test_instance()
+        results = [
+            TestResult(
+                test_id=0,
+                test_name="Control NOP",
+                status=TestStatus.PASS,
+                duration_secs=0.01,
+            ),
+            TestResult(
+                test_id=1,
+                test_name="Bulk OUT",
+                status=TestStatus.PASS,
+                duration_secs=0.02,
+            ),
+        ]
+        test_instance.assert_testusb_success(results)
+
+    def test_assert_testusb_success_all_skipped(self) -> None:
+        """Verifies assert_testusb_success skips when all tests are skipped."""
+        test_instance = self._create_test_instance()
+        results = [
+            TestResult(
+                test_id=15,
+                test_name="ISO OUT",
+                status=TestStatus.SKIP,
+                duration_secs=0.0,
+                error_message="not supported",
+            )
+        ]
+        with mock.patch("mobly.asserts.skip") as mock_skip:
+            test_instance.assert_testusb_success(results)
+            mock_skip.assert_called_once()
+
+    def test_assert_testusb_success_failure_raises(self) -> None:
+        """Verifies assert_testusb_success fails on test execution errors."""
+        test_instance = self._create_test_instance()
+        results = [
+            TestResult(
+                test_id=1,
+                test_name="Bulk OUT",
+                status=TestStatus.FAIL,
+                duration_secs=0.05,
+                error_message="I/O error",
+            )
+        ]
+        with mock.patch("mobly.asserts.fail") as mock_fail:
+            test_instance.assert_testusb_success(results)
+            mock_fail.assert_called_once()
+
+    @mock.patch.object(zf_mod, "USBTestIoctlBackend")
+    @mock.patch.object(ZeroFunctionBaseTest, "execute_testusb")
+    @mock.patch.object(ZeroFunctionBaseTest, "assert_testusb_success")
+    def test_execute_testusb_timed(
+        self,
+        mock_assert: mock.MagicMock,
+        mock_exec: mock.MagicMock,
+        mock_backend_cls: mock.MagicMock,
+    ) -> None:
+        """Verifies execute_testusb_timed runs batches until completion."""
+        test_instance = self._create_test_instance()
+        mock_exec.return_value = []
+        test_instance.execute_testusb_timed(
+            dev_node="/dev/bus/usb/001/002",
+            test_ids=[0],
+            mode="sourcesink",
+            duration_sec=0.01,
+            iterations_per_batch=1,
+        )
+        self.assertGreaterEqual(mock_exec.call_count, 1)
+        self.assertGreaterEqual(mock_assert.call_count, 1)
+        mock_backend_cls.assert_called_once_with(
+            device_path="/dev/bus/usb/001/002"
+        )
+
+    @mock.patch("zero_function.UsbTestController")
+    async def test_setup_class_registers_driver_successfully(
+        self, _mock_controller: mock.MagicMock
+    ) -> None:
+        """Verifies setup_class registers the driver if not already present."""
+        test_instance = self._create_test_instance()
+        dut: Any = test_instance.dut
+        dut.ffx.run.side_effect = (
+            lambda cmd, **kwargs: ""
+            if cmd[:2] == ["driver", "list"]
+            else "Registered"
+        )
+        with mock.patch.object(
+            test_instance,
+            "configure_zero_function",
+            return_value="/dev/bus/usb/001/002",
+        ):
+            await test_instance.setup_class()
+
+        calls = [call[0][0] for call in dut.ffx.run.call_args_list]
+        self.assertIn(["driver", "list"], calls)
+        self.assertIn(
+            ["driver", "register", USB_ZERO_FUNCTION_DRIVER_URL],
+            calls,
+        )
+
+    @mock.patch("zero_function.UsbTestController")
+    async def test_setup_class_skips_registration_when_already_in_driver_list(
+        self, _mock_controller: mock.MagicMock
+    ) -> None:
+        """Verifies setup_class skips registration if URL is already present."""
+        test_instance = self._create_test_instance()
+        dut: Any = test_instance.dut
+        dut.ffx.run.return_value = f"Registered: {USB_ZERO_FUNCTION_DRIVER_URL}"
+        with mock.patch.object(
+            test_instance,
+            "configure_zero_function",
+            return_value="/dev/bus/usb/001/002",
+        ):
+            await test_instance.setup_class()
+
+        calls = [call[0][0] for call in dut.ffx.run.call_args_list]
+        self.assertIn(["driver", "list"], calls)
+        register_calls = [c for c in calls if c[:2] == ["driver", "register"]]
+        self.assertEqual(register_calls, [])
+
+    @mock.patch("zero_function.UsbTestController")
+    async def test_setup_class_handles_already_exists_error(
+        self, _mock_controller: mock.MagicMock
+    ) -> None:
+        """Verifies setup_class restarts driver when registration exists."""
+        test_instance = self._create_test_instance()
+        dut: Any = test_instance.dut
+
+        def ffx_run(cmd: list[str], **kwargs: Any) -> str:
+            if cmd[:2] == ["driver", "list"]:
+                return ""
+            if cmd[:2] == ["driver", "register"]:
+                raise ffx_errors.FfxCommandError(
+                    "ALREADY_EXISTS: driver is already registered"
+                )
+            return "Restarted"
+
+        dut.ffx.run.side_effect = ffx_run
+        with mock.patch.object(
+            test_instance,
+            "configure_zero_function",
+            return_value="/dev/bus/usb/001/002",
+        ):
+            await test_instance.setup_class()
+
+        calls = [call[0][0] for call in dut.ffx.run.call_args_list]
+        self.assertIn(
+            ["driver", "restart", USB_ZERO_FUNCTION_DRIVER_URL],
+            calls,
+        )
+
+    @mock.patch("zero_function.UsbTestController")
+    async def test_setup_class_raises_on_invalid_driver_url(
+        self, _mock_controller: mock.MagicMock
+    ) -> None:
+        """Verifies setup_class raises ValueError on invalid driver URL."""
+        test_instance = self._create_test_instance(
+            user_params={"driver_url": "http://invalid-driver-url"}
+        )
+        with self.assertRaisesRegex(
+            ValueError, "must start with 'fuchsia-pkg://'"
+        ):
+            await test_instance.setup_class()
+
+    @mock.patch("zero_function.UsbTestController")
+    async def test_setup_class_propagates_unexpected_registration_error(
+        self, _mock_controller: mock.MagicMock
+    ) -> None:
+        """Verifies setup_class propagates unexpected FfxCommandError."""
+        test_instance = self._create_test_instance()
+        dut: Any = test_instance.dut
+
+        def ffx_run(cmd: list[str], **kwargs: Any) -> str:
+            if cmd[:2] == ["driver", "list"]:
+                return ""
+            if cmd[:2] == ["driver", "register"]:
+                raise ffx_errors.FfxCommandError(
+                    "DEVICE_UNREACHABLE: failed to communicate"
+                )
+            return ""
+
+        dut.ffx.run.side_effect = ffx_run
+        with mock.patch.object(
+            test_instance,
+            "configure_zero_function",
+            return_value="/dev/bus/usb/001/002",
+        ):
+            with self.assertRaisesRegex(
+                ffx_errors.FfxCommandError, "DEVICE_UNREACHABLE"
+            ):
+                await test_instance.setup_class()
 
 
 if __name__ == "__main__":

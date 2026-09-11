@@ -34,31 +34,18 @@ if (is_host) {
       iris_env,
     ]
   }
+}
 
-  group("tests") {
-    testonly = true
-    public_deps = [
-      ":usb_fastboot_e2e_test($host_toolchain)",
-      ":usb_test($host_toolchain)",
-    ]
-  }
-} else {
-  # Redirection from target toolchain to host toolchain
-  group("usb_test") {
-    testonly = true
-    public_deps = [ ":usb_test($host_toolchain)" ]
-  }
+group("zero_function_test") {
+  testonly = true
+  public_deps = [ "zero_function:tests($host_toolchain)" ]
+}
 
-  group("usb_fastboot_e2e_test") {
-    testonly = true
-    public_deps = [ ":usb_fastboot_e2e_test($host_toolchain)" ]
-  }
-
-  group("tests") {
-    testonly = true
-    public_deps = [
-      ":usb_fastboot_e2e_test($host_toolchain)",
-      ":usb_test($host_toolchain)",
-    ]
-  }
+group("tests") {
+  testonly = true
+  public_deps = [
+    ":usb_fastboot_e2e_test($host_toolchain)",
+    ":usb_test($host_toolchain)",
+    "zero_function:tests($host_toolchain)",
+  ]
 }

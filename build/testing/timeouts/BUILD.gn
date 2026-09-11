@@ -55,7 +55,7 @@ group("per_test_timeout_allowlist") {
     # test (and not in CQ/CI builders), local testing still enforces test_spec
     # timeouts.
     "//src/tests/end_to_end/reboot_hang:reboot_hang_test",
-    "//src/tests/end_to_end/usb/stress:*",
+    "//src/tests/end_to_end/usb/stress/*",
     "//src/virtualization/tests:termina_container_tests_pkg_test_termina_container_tests_cmp",
 
     # TODO(https://issues.fuchsia.dev/318529127): Shard syscall tests so that
