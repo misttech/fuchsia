@@ -33,6 +33,10 @@ const auto* kHexIgnorePrefixes = new std::vector<std::string>({"elf:", "build_id
 // Obfuscated gaia ids
 constexpr std::string_view kGaiaPattern = R"((\b1[0-9]{20}\b))";
 
+// Serial numbers
+constexpr std::string_view kSerialPattern =
+    R"((?i)\bserial(?:[ _]number)?\s*[:=]\s*['"]?[0-9a-zA-Z_-]+['"]?)";
+
 constexpr std::string_view kUnredactedCanary =
     R"(Email: alice@website.tld,
 IPv4: 8.8.8.8,
@@ -72,7 +76,9 @@ v6LinkLocal: feB2:111:222:333:444:555:666:777,
 v6LocalMulticast: ff72:111:222:333:444:555:666:777,
 v6Multicast: ff77:111:222:333:444:555:666:777,
 obfuscatedGaiaId: 106986199446298680449,
-Sensitive: SENSITIVE{sensitive_data})";
+Sensitive: SENSITIVE{sensitive_data},
+Serial: 12345ABC,
+serial=3125592196)";
 
 constexpr std::string_view kRedactedCanary =
     R"(Email: <REDACTED-EMAIL>,
@@ -113,7 +119,9 @@ v6LinkLocal: feB2:<REDACTED-IPV6-LL: 12>,
 v6LocalMulticast: ff72:111:222:333:444:555:666:777,
 v6Multicast: ff77:<REDACTED-IPV6-MULTI: 13>,
 obfuscatedGaiaId: <REDACTED-OBFUSCATED-GAIA-ID: 20>,
-Sensitive: <REDACTED-SENSITIVE>)";
+Sensitive: <REDACTED-SENSITIVE>,
+<REDACTED-SERIAL>,
+<REDACTED-SERIAL>)";
 
 }  // namespace
 
@@ -144,6 +152,7 @@ Redactor::Redactor(const int starting_id, inspect::UintProperty cache_size,
       .AddJsonReplacer(ReplaceSsid())
       .AddTextReplacer(kEmailPattern, "<REDACTED-EMAIL>")
       .AddTextReplacer(kUuidPattern, "<REDACTED-UUID>")
+      .AddTextReplacer(kSerialPattern, "<REDACTED-SERIAL>")
       .AddIdReplacer(k16HexPattern, "<REDACTED-HEX: %d>", *kHexIgnorePrefixes)
       .AddIdReplacer(k32HexPattern, "<REDACTED-HEX: %d>", *kHexIgnorePrefixes)
       .AddIdReplacer(kGaiaPattern, "<REDACTED-OBFUSCATED-GAIA-ID: %d>", /*ignore_prefixes=*/{});

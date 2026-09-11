@@ -24,6 +24,7 @@ class IdentityRedactorTest : public ::testing::Test {
 
 TEST_F(IdentityRedactorTest, Check) {
   EXPECT_EQ(Redact("Email: alice@website.tld"), "Email: alice@website.tld");
+  EXPECT_EQ(Redact("Serial number: '12345678'"), "Serial number: '12345678'");
 }
 
 class RedactorTest : public ::testing::Test {
@@ -69,6 +70,16 @@ TEST_F(RedactorTest, RedactsIpv6LinkLocal) {
 
 TEST_F(RedactorTest, RedactsUuid) {
   EXPECT_EQ(Redact("UUID: ddd0fA34-1016-11eb-adc1-0242ac120002"), "UUID: <REDACTED-UUID>");
+}
+
+TEST_F(RedactorTest, RedactsSerialNumber) {
+  EXPECT_EQ(Redact("Serial number: '12345678'"), "<REDACTED-SERIAL>");
+  EXPECT_EQ(Redact("       serial=3125592196"), "       <REDACTED-SERIAL>");
+  EXPECT_EQ(Redact("serial_number: ABC-DEF_123"), "<REDACTED-SERIAL>");
+  EXPECT_EQ(Redact("serial = 'foo'"), "<REDACTED-SERIAL>");
+  EXPECT_EQ(Redact("SERIAL: 99999"), "<REDACTED-SERIAL>");
+  EXPECT_EQ(Redact("deserialization error"), "deserialization error");
+  EXPECT_EQ(Redact("serial port initialized"), "serial port initialized");
 }
 
 TEST_F(RedactorTest, RedactsMacAddress) {
