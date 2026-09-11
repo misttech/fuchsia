@@ -141,7 +141,7 @@ class FakeEndpoint : public fake_usb_endpoint::FakeEndpoint {
       for (auto& req : reqs_to_cancel) {
         fuchsia_hardware_usb_endpoint::Completion completion;
         completion.request(std::move(req));
-        completion.status(ZX_ERR_IO_NOT_PRESENT);
+        completion.status(ZX_ERR_CANCELED);
         completion.transfer_size(0);
         completions.push_back(std::move(completion));
       }
@@ -740,13 +740,16 @@ class VsockUsbTest : public ::testing::Test {
       EXPECT_EQ(driver.BulkInAddress(), kBulkInEndpoint);
       EXPECT_EQ(driver.BulkOutAddress(), kBulkOutEndpoint);
     });
+    driver_stopped_ = false;
   }
 
   void TearDown() override {
     FDF_LOG(DEBUG, "TearDown start");
 
-    zx::result<> result = driver_test().StopDriver();
-    ASSERT_TRUE(result.is_ok());
+    if (!driver_stopped_) {
+      zx::result<> result = driver_test().StopDriver();
+      ASSERT_TRUE(result.is_ok());
+    }
     driver_test().runtime().RunUntilIdle();
     FDF_LOG(DEBUG, "TearDown finished");
   }
@@ -769,14 +772,12 @@ class VsockUsbTest : public ::testing::Test {
     ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
   }
 
-  void ResetWithSetInterface() {
-    FDF_LOG(DEBUG, "Resetting device by calling SetInterface on it");
-    ExpectConfigureEndpoints();
-    fidl::Result result = function_client_->SetInterface({{
-        .interface = kInterfaceNum,
-        .alt_setting = 0,
-    }});
-    ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+  void ResetDevice(std::unique_ptr<TestCallback>& callback) {
+    FDF_LOG(DEBUG, "Resetting device via UnconfigureDevice() and ConfigureDevice()");
+    UnconfigureDevice();
+    driver_test().runtime().RunUntilIdle();
+    callback = SetupCallback(1);
+    ConfigureDevice();
   }
 
   void ExpectConfigureEndpoints() {
@@ -818,6 +819,7 @@ class VsockUsbTest : public ::testing::Test {
   fdf_testing::BackgroundDriverTest<VsockUsbTestConfig> driver_test_;
   fidl::SyncClient<fuchsia_hardware_usb_function::UsbFunctionInterface> function_client_;
   fidl::WireSyncClient<fuchsia_hardware_vsockbridge::Usb> client_;
+  bool driver_stopped_ = false;
 };
 
 // Tests that the driver initializes and starts up cleanly in the driver test realm.
@@ -913,7 +915,7 @@ TEST_F(VsockUsbTest, DataFromHostQueuedDatagrams) {
 
 TEST_F(VsockUsbTest, Reset) {
   ConfigureDevice();
-  auto callback = SetupCallback(2);
+  auto callback = SetupCallback(1);
   zx::socket socket0 = WaitForSocket(*callback);
   ASSERT_TRUE(socket0.is_valid());
 
@@ -928,8 +930,8 @@ TEST_F(VsockUsbTest, Reset) {
                              test_data_b.size()));
   ASSERT_TRUE(
       GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data_b.data()), test_data_b.size()));
-  ResetWithSetInterface();
 
+  ResetDevice(callback);
   zx::socket socket1 = WaitForSocket(*callback);
   ASSERT_TRUE(socket1.is_valid());
 
@@ -952,7 +954,7 @@ TEST_F(VsockUsbTest, Reset) {
 
 TEST_F(VsockUsbTest, ResetMoreData) {
   ConfigureDevice();
-  auto callback = SetupCallback(2);
+  auto callback = SetupCallback(1);
   zx::socket socket0 = WaitForSocket(*callback);
   ASSERT_TRUE(socket0.is_valid());
 
@@ -981,8 +983,7 @@ TEST_F(VsockUsbTest, ResetMoreData) {
     ASSERT_TRUE(GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data_d.data()),
                                   test_data_d.size()));
   }
-  ResetWithSetInterface();
-
+  ResetDevice(callback);
   zx::socket socket1 = WaitForSocket(*callback);
   ASSERT_TRUE(socket1.is_valid());
 
@@ -1219,6 +1220,197 @@ TEST_F(VsockUsbTest, DISABLED_ReadErrorDisconnectLoopRegression) {
   });
 }
 
+TEST_F(VsockUsbTest, CleanShutdownWithCanceledRequestsInFlight) {
+  ConfigureDevice();
+  // While running, RX requests are queued in flight on the out endpoint.
+  driver_test().RunInDriverContext(
+      [](VsockUsb& driver) { EXPECT_TRUE(driver.HasPendingRxRequests()); });
+
+  // Connect socket and queue a TX write request so both RX and TX requests are in flight.
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
+
+  std::string_view test_data = "shutdown_tx_data";
+  ASSERT_TRUE(SocketWriteAll(&socket, reinterpret_cast<const uint8_t*>(test_data.data()),
+                             test_data.size()));
+  driver_test().runtime().RunUntil([&]() {
+    bool has_tx = false;
+    driver_test().RunInDriverContext(
+        [&](VsockUsb& driver) { has_tx = driver.HasPendingTxRequests(); });
+    return has_tx;
+  });
+
+  // Stop the driver with both RX and TX requests in flight. StopDriver() invokes VsockUsb::Stop ->
+  // Shutdown(), which cancels all in-flight requests and waits for them to drain back into the
+  // request pool.
+  zx::result<> result = driver_test().StopDriver();
+  EXPECT_TRUE(result.is_ok());
+  driver_stopped_ = true;
+}
+
+TEST_F(VsockUsbTest, SetInterfaceCompliance) {
+  // 1. SetInterface called while device is unconfigured returns ZX_ERR_BAD_STATE.
+  fidl::Result unconfigured_res = function_client_->SetInterface({{
+      .interface = kInterfaceNum,
+      .alt_setting = 0,
+  }});
+  ASSERT_TRUE(unconfigured_res.is_error());
+  ASSERT_TRUE(unconfigured_res.error_value().is_domain_error());
+  EXPECT_EQ(unconfigured_res.error_value().domain_error(), ZX_ERR_BAD_STATE);
+
+  ConfigureDevice();
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
+
+  // 2. Bidirectional data transfer over active socket before SetInterface.
+  std::string_view test_target_data = "Data from target before SetInterface";
+  ASSERT_TRUE(SocketWriteAll(&socket, reinterpret_cast<const uint8_t*>(test_target_data.data()),
+                             test_target_data.size()));
+  ASSERT_TRUE(GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_target_data.data()),
+                                test_target_data.size()));
+
+  std::string_view test_host_data = "Data from host before SetInterface";
+  ASSERT_TRUE(
+      SendTx(reinterpret_cast<const uint8_t*>(test_host_data.data()), test_host_data.size()));
+  ASSERT_TRUE(SocketReadExpect(&socket, reinterpret_cast<const uint8_t*>(test_host_data.data()),
+                               test_host_data.size()));
+
+  // 3. Standard host enumeration SET_INTERFACE(kInterfaceNum, 0).
+  // Must return ZX_OK and NOT reconfigure endpoints or destroy the active socket.
+  fidl::Result result = function_client_->SetInterface({{
+      .interface = kInterfaceNum,
+      .alt_setting = 0,
+  }});
+  ASSERT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
+  driver_test().runtime().RunUntilIdle();
+
+  // Socket must remain active and not closed.
+  zx_signals_t pending = 0;
+  zx_status_t wait_status =
+      socket.wait_one(ZX_SOCKET_PEER_CLOSED, zx::time::infinite_past(), &pending);
+  EXPECT_EQ(wait_status, ZX_ERR_TIMED_OUT);
+
+  // In-flight RX requests remain queued and pending.
+  driver_test().RunInDriverContext([](VsockUsb& driver) {
+    EXPECT_TRUE(driver.HasPendingRxRequests());
+    EXPECT_FALSE(driver.HasPendingTxRequests());
+  });
+
+  // 4. Bidirectional data transfer continues seamlessly on the existing socket.
+  std::string_view test_target_data_b = "Data from target after SetInterface";
+  ASSERT_TRUE(SocketWriteAll(&socket, reinterpret_cast<const uint8_t*>(test_target_data_b.data()),
+                             test_target_data_b.size()));
+  ASSERT_TRUE(GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_target_data_b.data()),
+                                test_target_data_b.size()));
+
+  std::string_view test_host_data_b = "Data from host after SetInterface";
+  ASSERT_TRUE(
+      SendTx(reinterpret_cast<const uint8_t*>(test_host_data_b.data()), test_host_data_b.size()));
+  ASSERT_TRUE(SocketReadExpect(&socket, reinterpret_cast<const uint8_t*>(test_host_data_b.data()),
+                               test_host_data_b.size()));
+
+  // 5. Unexpected interface returns ZX_ERR_NOT_SUPPORTED.
+  fidl::Result bad_interface = function_client_->SetInterface({{
+      .interface = static_cast<uint8_t>(kInterfaceNum + 1),
+      .alt_setting = 0,
+  }});
+  ASSERT_TRUE(bad_interface.is_error());
+  ASSERT_TRUE(bad_interface.error_value().is_domain_error());
+  EXPECT_EQ(bad_interface.error_value().domain_error(), ZX_ERR_NOT_SUPPORTED);
+
+  // 6. Unexpected alternate setting returns ZX_ERR_NOT_SUPPORTED.
+  fidl::Result bad_alt = function_client_->SetInterface({{
+      .interface = kInterfaceNum,
+      .alt_setting = 1,
+  }});
+  ASSERT_TRUE(bad_alt.is_error());
+  ASSERT_TRUE(bad_alt.error_value().is_domain_error());
+  EXPECT_EQ(bad_alt.error_value().domain_error(), ZX_ERR_NOT_SUPPORTED);
+
+  UnconfigureDevice();
+}
+
+TEST_F(VsockUsbTest, UnconfigureEndpointsCancelsInFlightRequests) {
+  ConfigureDevice();
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
+
+  // Queue a TX request into bulk IN so HasPendingTxRequests() becomes true.
+  std::string_view tx_data = "Pending TX in-flight payload";
+  ASSERT_TRUE(
+      SocketWriteAll(&socket, reinterpret_cast<const uint8_t*>(tx_data.data()), tx_data.size()));
+  driver_test().runtime().RunUntil([&]() {
+    bool has_tx = false;
+    driver_test().RunInDriverContext(
+        [&](VsockUsb& driver) { has_tx = driver.HasPendingTxRequests(); });
+    return has_tx;
+  });
+
+  // Both RX and TX requests are now in flight.
+  driver_test().RunInDriverContext([](VsockUsb& driver) {
+    EXPECT_TRUE(driver.HasPendingRxRequests());
+    EXPECT_TRUE(driver.HasPendingTxRequests());
+  });
+
+  // UnconfigureDevice invokes UnconfigureEndpoints(), which calls CancelAllEndpoints()
+  // on both endpoints and flushes/reclaims all in-flight RX and TX requests back to the pool.
+  UnconfigureDevice();
+  driver_test().runtime().RunUntil([&]() {
+    bool has_pending = true;
+    driver_test().RunInDriverContext([&](VsockUsb& driver) {
+      has_pending = driver.HasPendingRxRequests() || driver.HasPendingTxRequests();
+    });
+    return !has_pending;
+  });
+
+  // Verify all requests are back in the pool and no requests remain in flight.
+  driver_test().RunInDriverContext([](VsockUsb& driver) {
+    EXPECT_FALSE(driver.HasPendingRxRequests());
+    EXPECT_FALSE(driver.HasPendingTxRequests());
+  });
+
+  // Reconfigure immediately to confirm all requests can be re-queued without starvation.
+  ConfigureDevice();
+  driver_test().RunInDriverContext([](VsockUsb& driver) {
+    EXPECT_TRUE(driver.HasPendingRxRequests());
+    EXPECT_FALSE(driver.HasPendingTxRequests());
+  });
+
+  UnconfigureDevice();
+}
+
+TEST_F(VsockUsbTest, ReconfigurationDeliversSocketWithoutResettingCallback) {
+  ConfigureDevice();
+  // Expect two socket deliveries on the same callback across reconfiguration.
+  auto callback = SetupCallback(2);
+  zx::socket socket0 = WaitForSocket(*callback);
+  ASSERT_TRUE(socket0.is_valid());
+
+  // Simulate USB disconnect / bus reset (e.g. adbd restarting on adb root/unroot).
+  UnconfigureDevice();
+  driver_test().runtime().RunUntilIdle();
+
+  // Re-configure without re-registering SetCallback.
+  ConfigureDevice();
+  zx::socket socket1 = WaitForSocket(*callback);
+  ASSERT_TRUE(socket1.is_valid());
+
+  // Verify that the old socket was torn down and peer was closed.
+  zx_signals_t pending;
+  ASSERT_EQ(socket0.wait_one(ZX_SOCKET_PEER_CLOSED, zx::time::infinite(), &pending), ZX_OK);
+  ASSERT_NE(pending & ZX_SOCKET_PEER_CLOSED, 0u);
+
+  // Verify that data can be transmitted across the reconfigured socket.
+  std::string_view test_data = "reconfigured_socket_data";
+  ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(test_data.data()), test_data.size()));
+  ASSERT_TRUE(SocketReadExpect(&socket1, reinterpret_cast<const uint8_t*>(test_data.data()),
+                               test_data.size()));
+
+  UnconfigureDevice();
+}
 // NOLINTEND(readability-container-data-pointer)
 // NOLINTEND(readability-convert-member-functions-to-static)
 // NOLINTEND(misc-use-anonymous-namespace)

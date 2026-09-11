@@ -201,7 +201,7 @@ zx_status_t VsockUsb::ConfigureEndpoints() {
     return ZX_ERR_BAD_STATE;
   }
 
-  if (!std::holds_alternative<Unconfigured>(state_)) {
+  if (endpoints_configured_) {
     FDF_LOG(DEBUG, "ConfigureEndpoints: endpoints already configured");
     return ZX_OK;
   }
@@ -239,6 +239,8 @@ zx_status_t VsockUsb::ConfigureEndpoints() {
   HandleSocketAvailable();
   ProcessReadsFromSocket();
 
+  endpoints_configured_ = true;
+
   std::vector<fuchsia_hardware_usb_request::Request> requests;
   while (auto req = bulk_out_ep_.GetRequest()) {
     req->reset_buffers(bulk_out_ep_.GetMapped());
@@ -272,15 +274,18 @@ zx_status_t VsockUsb::UnconfigureEndpoints() {
     return ZX_OK;
   }
 
-  if (std::holds_alternative<Unconfigured>(state_)) {
-    FDF_LOG(DEBUG, "UnconfigureEndpoints: Endpoint already unconfigured");
+  if (!endpoints_configured_) {
+    FDF_LOG(DEBUG, "UnconfigureEndpoints: Endpoints already unconfigured");
     return ZX_OK;
   }
+
+  endpoints_configured_ = false;
 
   FDF_LOG(TRACE, "UnconfigureEndpoints: Setting endpoint state to unconfigured");
   state_ = Unconfigured();
   SyncInspectState();
-  callback_ = std::nullopt;
+
+  CancelAllEndpoints();
 
   for (const uint8_t ep_addr : {BulkInAddress(), BulkOutAddress()}) {
     fidl::Result result = function_->DisableEndpoint({ep_addr});
@@ -293,6 +298,25 @@ zx_status_t VsockUsb::UnconfigureEndpoints() {
     }
   }
   return ZX_OK;
+}
+
+void VsockUsb::CancelAllEndpoints() {
+  if (bulk_out_ep_.client().is_valid()) {
+    bulk_out_ep_->CancelAll().Then([](fidl::Result<fendpoint::Endpoint::CancelAll>& result) {
+      if (result.is_error()) {
+        FDF_LOG(WARNING, "Failed to cancel all for bulk out endpoint: %s",
+                result.error_value().FormatDescription().c_str());
+      }
+    });
+  }
+  if (bulk_in_ep_.client().is_valid()) {
+    bulk_in_ep_->CancelAll().Then([](fidl::Result<fendpoint::Endpoint::CancelAll>& result) {
+      if (result.is_error()) {
+        FDF_LOG(WARNING, "Failed to cancel all for bulk in endpoint: %s",
+                result.error_value().FormatDescription().c_str());
+      }
+    });
+  }
 }
 
 void VsockUsb::SetConfigured(SetConfiguredRequest& request,
@@ -313,16 +337,22 @@ void VsockUsb::SetConfigured(SetConfiguredRequest& request,
 }
 
 void VsockUsb::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) {
+  if (!endpoints_configured_) {
+    FDF_LOG(WARNING, "SetInterface called while endpoints are not configured");
+    completer.Reply(zx::error(ZX_ERR_BAD_STATE));
+    return;
+  }
   if (request.interface() != descriptors_.data_interface.b_interface_number ||
       request.alt_setting() != descriptors_.data_interface.b_alternate_setting) {
-    FDF_LOG(WARNING, "SetInterface called on unexpected interface or alt setting (expected %x, %x)",
+    FDF_LOG(WARNING,
+            "SetInterface unexpected parameters: got (interface=%u, alt=%u), expected (%u, %u)",
+            request.interface(), request.alt_setting(),
             descriptors_.data_interface.b_interface_number,
             descriptors_.data_interface.b_alternate_setting);
     completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
     return;
   }
-  ResetState();
-  completer.Reply(zx::make_result(ConfigureEndpoints()));
+  completer.Reply(zx::ok());
 }
 
 void VsockUsb::handle_unknown_method(
@@ -372,6 +402,7 @@ void VsockUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_st
 
   if (!addr.has_value()) {
     FDF_LOG(ERROR, "Failed to map request");
+    ZX_ASSERT(!bulk_in_ep_.RequestsFull());
     bulk_in_ep_.PutRequest(std::move(*request));
     bulk_in_inspect_.UpdateTxQueue(bulk_in_ep_.GetInFlightCount());
     return;
@@ -396,6 +427,7 @@ void VsockUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_st
     status = request->CacheFlush(bulk_in_ep_.GetMapped());
     if (status != ZX_OK) {
       FDF_SLOG(ERROR, "Cache flush failed", KV("status", zx_status_get_string(status)));
+      ZX_ASSERT(!bulk_in_ep_.RequestsFull());
       bulk_in_ep_.PutRequest(std::move(*request));
     } else {
       std::vector<fuchsia_hardware_usb_request::Request> requests;
@@ -492,9 +524,13 @@ VsockUsb::State VsockUsb::Running::Writable() && {
 void VsockUsb::SetCallback(fuchsia_hardware_vsockbridge::wire::UsbSetCallbackRequest* request,
                            SetCallbackCompleter::Sync& completer) {
   FDF_LOG(TRACE, "SetCallback");
-  callback_ = Callback(
-      fidl::WireSharedClient(std::move(request->callback), dispatcher_,
-                             fidl::ObserveTeardown([this]() { callback_ = std::nullopt; })));
+  uint64_t id = ++callback_id_;
+  callback_ = Callback(fidl::WireSharedClient(std::move(request->callback), dispatcher_,
+                                              fidl::ObserveTeardown([this, id]() {
+                                                if (callback_id_ == id) {
+                                                  callback_ = std::nullopt;
+                                                }
+                                              })));
   HandleSocketAvailable();
 
   completer.Reply();
@@ -686,7 +722,7 @@ void VsockUsb::WriteComplete(fendpoint::Completion completion) {
   size_t size = request.length();
   if (status == ZX_OK) {
     bulk_in_inspect_.AddTxBytes(completion.transfer_size().value_or(0));
-  } else {
+  } else if (status != ZX_ERR_CANCELED) {
     bulk_in_inspect_.AddFailedTxBytes(size);
   }
   ZX_ASSERT(!bulk_in_ep_.RequestsFull());
@@ -714,25 +750,11 @@ void VsockUsb::Shutdown(fit::function<void()> callback) {
   if (throughput_tracker_) {
     throughput_tracker_->Stop();
   }
-  // Cancel all requests in the pipeline -- the completion handler will free these requests as they
-  // come in.
-  //
-  // Do not hold locks when calling this method. It might result in deadlock as completion callbacks
-  // could be invoked during this call.
-  bulk_out_ep_->CancelAll().Then([](fidl::Result<fendpoint::Endpoint::CancelAll>& result) {
-    if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to cancel all for bulk out endpoint %s",
-              result.error_value().FormatDescription().c_str());
-    }
-  });
-  bulk_in_ep_->CancelAll().Then([](fidl::Result<fendpoint::Endpoint::CancelAll>& result) {
-    if (result.is_error()) {
-      FDF_LOG(ERROR, "Failed to cancel all for bulk in endpoint %s",
-              result.error_value().FormatDescription().c_str());
-    }
-  });
+  // Transition to ShuttingDown before canceling endpoints so any completions delivered
+  // as a result of CancelAll observe the ShuttingDown state and drain into the pool.
   state_ = ShuttingDown(std::move(callback));
   SyncInspectState();
+  CancelAllEndpoints();
 
   if (!HasPendingRequests()) {
     ShutdownComplete();

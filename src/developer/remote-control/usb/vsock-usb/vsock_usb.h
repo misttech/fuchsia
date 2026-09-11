@@ -91,6 +91,9 @@ class VsockUsb : public fdf::DriverBase2,
   // into the Unconfigured state if it's not already there.
   zx_status_t UnconfigureEndpoints();
 
+  // Cancels all pending requests on bulk IN and OUT endpoints.
+  void CancelAllEndpoints();
+
   // Called whenever the socket from RCS is readable. Reads data out of the socket and places it
   // into bulk IN requests.
   void HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_status_t status,
@@ -103,12 +106,12 @@ class VsockUsb : public fdf::DriverBase2,
   // Connect a FIDL interface.
   void FidlConnect(fidl::ServerEnd<fuchsia_hardware_vsockbridge::Usb> request);
 
-  // Internal state machine for this driver. There are four states:
+  // Internal state machine for this driver. There are three states:
   //
   // Unconfigured, Running, Shutting Down.
   //
   // We can transition from the Unconfigured to the Running state if
-  // UsbFunctionInterfaceSetConfigured or UsbFunctionSetInterface is called.
+  // UsbFunctionInterfaceSetConfigured is called.
   //
   // We transition from Running to Unconfigured if any faults happen while handling the connection
   //
@@ -370,6 +373,7 @@ class VsockUsb : public fdf::DriverBase2,
   static constexpr uint16_t kMaxPacketSize = 512;
 
   std::optional<Callback> callback_;
+  uint64_t callback_id_ = 0;
   std::optional<zx::socket> peer_socket_;
 
   fidl::SyncClient<fuchsia_driver_framework::NodeController> node_controller_;
@@ -429,6 +433,11 @@ class VsockUsb : public fdf::DriverBase2,
           .b_interval = 0,
       }};
 
+  // Tracks whether the hardware USB endpoints have been configured via the function driver.
+  // Kept distinct from `state_` because `state_` tracks socket connection and data streaming
+  // lifecycle (which resets to Unconfigured when a client socket disconnects while hardware
+  // endpoints remain configured).
+  bool endpoints_configured_ = false;
   async_dispatcher_t* dispatcher_ = fdf::Dispatcher::GetCurrent()->async_dispatcher();
 };
 
