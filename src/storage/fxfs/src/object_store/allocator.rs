@@ -2282,6 +2282,7 @@ mod tests {
     use crate::object_store::allocator::{
         Allocator, AllocatorKey, AllocatorValue, CoalescingIterator, EXTENT_HASH_BUCKET_SIZE,
     };
+    use crate::object_store::extent::MIN_BLOCK_SIZE;
     use crate::object_store::transaction::{Options, TRANSACTION_METADATA_MAX_AMOUNT, lock_keys};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{Directory, FxfsError, LockKey, NewChildStoreOptions, ObjectStore};
@@ -2332,11 +2333,11 @@ mod tests {
 
     #[test]
     fn test_allocator_key_search_key() {
-        let key = AllocatorKey { device_range: (100..200).into() };
+        let key = AllocatorKey { device_range: (MIN_BLOCK_SIZE.get()..3 * MIN_BLOCK_SIZE).into() };
         assert!(!key.is_search_key());
         let search_key = key.search_key().unwrap();
         assert!(search_key.is_search_key());
-        assert_eq!(search_key.device_range, (100..101).into());
+        assert_eq!(search_key.device_range, (MIN_BLOCK_SIZE.get()..2 * MIN_BLOCK_SIZE).into());
     }
 
     #[test]

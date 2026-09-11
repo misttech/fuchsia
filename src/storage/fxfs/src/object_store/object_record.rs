@@ -1141,6 +1141,7 @@ impl std::fmt::Display for AttributeId {
 mod tests {
     use super::{AttributeId, ObjectKey, ObjectKeyV54, TimestampV49};
     use crate::lsm_tree::types::{FuzzyHash as _, LayerKey};
+    use crate::object_store::extent::MIN_BLOCK_SIZE;
     use std::ops::Add;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -1192,8 +1193,10 @@ mod tests {
     #[test]
     fn test_next_key() {
         assert_eq!(
-            ObjectKey::extent(1, AttributeId::TEST_ID, 25..100).next_key().unwrap(),
-            ObjectKey::extent(1, AttributeId::TEST_ID, 100..101)
+            ObjectKey::extent(1, AttributeId::TEST_ID, 25 * MIN_BLOCK_SIZE..100 * MIN_BLOCK_SIZE)
+                .next_key()
+                .unwrap(),
+            ObjectKey::extent(1, AttributeId::TEST_ID, 100 * MIN_BLOCK_SIZE..101 * MIN_BLOCK_SIZE)
         );
         assert_eq!(ObjectKey::object(100).next_key(), None);
     }

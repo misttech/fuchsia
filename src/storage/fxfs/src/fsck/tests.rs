@@ -14,6 +14,7 @@ use crate::object_store::data_object_handle::OverwriteOptions;
 use crate::object_store::directory::{
     self, Directory, MutableAttributesInternal, encrypt_filename,
 };
+use crate::object_store::extent::MIN_BLOCK_SIZE;
 use crate::object_store::transaction::{self, LockKey, ObjectStoreMutation, Options, lock_keys};
 use crate::object_store::volume::root_volume;
 use crate::object_store::{
@@ -440,7 +441,11 @@ async fn test_misaligned_extent_in_child_store() {
         transaction.add(
             store.store_object_id(),
             Mutation::insert_object(
-                ObjectKey::extent(555, AttributeId::TEST_ID, 1..fs.block_size().get()),
+                ObjectKey::extent(
+                    555,
+                    AttributeId::TEST_ID,
+                    MIN_BLOCK_SIZE.get()..fs.block_size().get(),
+                ),
                 ObjectValue::Extent(ExtentValue::new_raw(1, VOLUME_DATA_KEY_ID)),
             ),
         );
@@ -873,11 +878,15 @@ async fn test_misordered_layer_file() {
             store.as_ref(),
             vec![
                 Item::new(
-                    ObjectKey::extent(5, AttributeId::TEST_ID, 10..20),
+                    ObjectKey::extent(
+                        5,
+                        AttributeId::TEST_ID,
+                        MIN_BLOCK_SIZE.get()..2 * MIN_BLOCK_SIZE,
+                    ),
                     ObjectValue::deleted_extent(),
                 ),
                 Item::new(
-                    ObjectKey::extent(1, AttributeId::TEST_ID, 0..5),
+                    ObjectKey::extent(1, AttributeId::TEST_ID, 0..MIN_BLOCK_SIZE.get()),
                     ObjectValue::deleted_extent(),
                 ),
             ],
@@ -918,15 +927,23 @@ async fn test_overlapping_keys_in_layer_file() {
             store.as_ref(),
             vec![
                 Item::new(
-                    ObjectKey::extent(1, AttributeId::TEST_ID, 0..20),
+                    ObjectKey::extent(1, AttributeId::TEST_ID, 0..2 * MIN_BLOCK_SIZE),
                     ObjectValue::deleted_extent(),
                 ),
                 Item::new(
-                    ObjectKey::extent(1, AttributeId::TEST_ID, 10..30),
+                    ObjectKey::extent(
+                        1,
+                        AttributeId::TEST_ID,
+                        MIN_BLOCK_SIZE.get()..3 * MIN_BLOCK_SIZE,
+                    ),
                     ObjectValue::deleted_extent(),
                 ),
                 Item::new(
-                    ObjectKey::extent(1, AttributeId::TEST_ID, 15..40),
+                    ObjectKey::extent(
+                        1,
+                        AttributeId::TEST_ID,
+                        2 * MIN_BLOCK_SIZE..4 * MIN_BLOCK_SIZE,
+                    ),
                     ObjectValue::deleted_extent(),
                 ),
             ],
@@ -956,15 +973,23 @@ async fn test_overlapping_keys_in_root_store_layer_file() {
             &fs.root_store(),
             vec![
                 Item::new(
-                    ObjectKey::extent(1, AttributeId::TEST_ID, 0..20),
+                    ObjectKey::extent(1, AttributeId::TEST_ID, 0..2 * MIN_BLOCK_SIZE),
                     ObjectValue::deleted_extent(),
                 ),
                 Item::new(
-                    ObjectKey::extent(1, AttributeId::TEST_ID, 10..30),
+                    ObjectKey::extent(
+                        1,
+                        AttributeId::TEST_ID,
+                        MIN_BLOCK_SIZE.get()..3 * MIN_BLOCK_SIZE,
+                    ),
                     ObjectValue::deleted_extent(),
                 ),
                 Item::new(
-                    ObjectKey::extent(1, AttributeId::TEST_ID, 15..40),
+                    ObjectKey::extent(
+                        1,
+                        AttributeId::TEST_ID,
+                        2 * MIN_BLOCK_SIZE..4 * MIN_BLOCK_SIZE,
+                    ),
                     ObjectValue::deleted_extent(),
                 ),
             ],

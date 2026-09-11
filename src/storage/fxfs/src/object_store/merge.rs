@@ -257,6 +257,7 @@ mod tests {
     use crate::checksum::Checksums;
     use crate::lsm_tree::types::{Item, LayerIterator, MergeableKey, Value};
     use crate::lsm_tree::{LSMTree, Query};
+    use crate::object_store::extent::MIN_BLOCK_SIZE;
     use crate::object_store::extent_record::ExtentValue;
     use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectValue, Timestamp};
     use crate::object_store::{AttributeId, ProjectId, VOLUME_DATA_KEY_ID};
@@ -1160,6 +1161,9 @@ mod tests {
 
         let base_options = vec![49..101, 49..100, 50..101, 48..102, 100..101, 100..102, 30..90];
 
+        let scale_range =
+            |r: std::ops::Range<u64>| r.start * MIN_BLOCK_SIZE..r.end * MIN_BLOCK_SIZE;
+
         let calculate_expected = |top: std::ops::Range<u64>,
                                   middle: std::ops::Range<u64>,
                                   base: std::ops::Range<u64>| {
@@ -1224,7 +1228,7 @@ mod tests {
 
                 // Base layer (Layer 2)
                 tree.insert(Item::new(
-                    ObjectKey::extent(object_id, attr_id, base_range.clone()),
+                    ObjectKey::extent(object_id, attr_id, scale_range(base_range.clone())),
                     ObjectValue::Extent(ExtentValue::new_raw(0, 3)), // key_id = 3
                 ))
                 .expect("insert error");
@@ -1232,7 +1236,7 @@ mod tests {
 
                 // Middle layer (Layer 1)
                 tree.insert(Item::new(
-                    ObjectKey::extent(object_id, attr_id, middle_range.clone()),
+                    ObjectKey::extent(object_id, attr_id, scale_range(middle_range.clone())),
                     ObjectValue::Extent(ExtentValue::new_raw(0, 2)), // key_id = 2
                 ))
                 .expect("insert error");
@@ -1240,7 +1244,7 @@ mod tests {
 
                 // Top layer (Layer 0)
                 tree.insert(Item::new(
-                    ObjectKey::extent(object_id, attr_id, top_range.clone()),
+                    ObjectKey::extent(object_id, attr_id, scale_range(top_range.clone())),
                     ObjectValue::Extent(ExtentValue::new_raw(0, 1)), // key_id = 1
                 ))
                 .expect("insert error");
@@ -1253,7 +1257,7 @@ mod tests {
                     .query(Query::LimitedRange(&ObjectKey::extent(
                         object_id,
                         attr_id,
-                        expected[0].0.start..expected.last().unwrap().0.end,
+                        scale_range(expected[0].0.start..expected.last().unwrap().0.end),
                     )))
                     .await
                     .expect("seek failed");
@@ -1265,7 +1269,7 @@ mod tests {
                         iter.get().expect("get failed");
                     if let ObjectKeyData::Attribute(aid, AttributeKey::Extent(extent)) = &key.data {
                         assert_eq!(aid, &attr_id);
-                        assert_eq!(&**extent, &e.0);
+                        assert_eq!(&**extent, &scale_range(e.0));
                     } else {
                         panic!("Unexpected key type");
                     }
@@ -1291,14 +1295,14 @@ mod tests {
 
         // Layer 1 (older)
         tree.insert(Item::new(
-            ObjectKey::extent(object_id, attr_id, 50..101),
+            ObjectKey::extent(object_id, attr_id, 50 * MIN_BLOCK_SIZE..101 * MIN_BLOCK_SIZE),
             ObjectValue::Extent(ExtentValue::new_raw(0, VOLUME_DATA_KEY_ID)),
         ))?;
         tree.seal();
 
         // Layer 0 (newer)
         tree.insert(Item::new(
-            ObjectKey::extent(object_id, attr_id, 0..100),
+            ObjectKey::extent(object_id, attr_id, 0..100 * MIN_BLOCK_SIZE),
             ObjectValue::Extent(ExtentValue::new_raw(16384, VOLUME_DATA_KEY_ID)),
         ))?;
 
@@ -1306,16 +1310,23 @@ mod tests {
         let mut merger = layer_set.merger();
 
         let mut iter = merger
-            .query(Query::LimitedRange(&ObjectKey::extent(object_id, attr_id, 0..100)))
+            .query(Query::LimitedRange(&ObjectKey::extent(
+                object_id,
+                attr_id,
+                0..100 * MIN_BLOCK_SIZE,
+            )))
             .await?;
 
         let item = iter.get().expect("missing item");
-        assert_eq!(item.key, &ObjectKey::extent(object_id, attr_id, 0..100));
+        assert_eq!(item.key, &ObjectKey::extent(object_id, attr_id, 0..100 * MIN_BLOCK_SIZE));
 
         iter.advance().await.expect("advance failed");
 
         let item = iter.get().expect("missing item");
-        assert_eq!(item.key, &ObjectKey::extent(object_id, attr_id, 100..101));
+        assert_eq!(
+            item.key,
+            &ObjectKey::extent(object_id, attr_id, 100 * MIN_BLOCK_SIZE..101 * MIN_BLOCK_SIZE,)
+        );
 
         iter.advance().await.expect("advance failed");
         assert!(iter.get().is_none());

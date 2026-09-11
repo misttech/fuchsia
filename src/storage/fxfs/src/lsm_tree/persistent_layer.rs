@@ -68,6 +68,7 @@ use crate::lsm_tree::types::{
 };
 use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes};
 use crate::object_store::caching_object_handle::{CHUNK_SIZE, CachedChunk, CachingObjectHandle};
+use crate::object_store::extent::MIN_BLOCK_SIZE;
 use crate::serialized_types::{
     LATEST_VERSION, REMOVE_ITEM_SEQUENCE_VERSION, Version, Versioned, VersionedLatest,
 };
@@ -164,8 +165,6 @@ impl std::io::Read for BufferCursor {
         Ok(to_read)
     }
 }
-
-const MIN_BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
 
 // For small layer files, don't bother with the bloom filter.  Arbitrarily chosen.
 const MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER: usize = 4;
@@ -1041,6 +1040,7 @@ mod tests {
     };
     use crate::object_handle::WriteBytes;
     use crate::object_store::AttributeId;
+    use crate::object_store::extent::MIN_BLOCK_SIZE;
     use crate::object_store::object_record::ObjectKey;
     use crate::round::round_up;
     use crate::serialized_types::{LATEST_VERSION, Version};
@@ -1356,7 +1356,7 @@ mod tests {
                 ObjectKey::extent(
                     object_id,
                     AttributeId::TEST_ID,
-                    base_offset + i..base_offset + i + 1,
+                    (base_offset + i) * MIN_BLOCK_SIZE..(base_offset + i + 1) * MIN_BLOCK_SIZE,
                 ),
                 object_id,
             ));
@@ -1403,17 +1403,19 @@ mod tests {
                 to_find.push(ObjectKey::extent(
                     object_id,
                     AttributeId::TEST_ID,
-                    base_extent_offset..base_extent_offset + 1,
+                    base_extent_offset * MIN_BLOCK_SIZE..(base_extent_offset + 1) * MIN_BLOCK_SIZE,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
                     AttributeId::TEST_ID,
-                    base_extent_offset + (count / 2)..base_extent_offset + (count / 2) + 1,
+                    (base_extent_offset + count / 2) * MIN_BLOCK_SIZE
+                        ..(base_extent_offset + count / 2 + 1) * MIN_BLOCK_SIZE,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
                     AttributeId::TEST_ID,
-                    base_extent_offset + (count - 1)..base_extent_offset + count,
+                    (base_extent_offset + count - 1) * MIN_BLOCK_SIZE
+                        ..(base_extent_offset + count) * MIN_BLOCK_SIZE,
                 ));
                 object_id = next_object_id;
             }
@@ -1437,17 +1439,19 @@ mod tests {
                 to_find.push(ObjectKey::extent(
                     object_id,
                     AttributeId::TEST_ID,
-                    base_extent_offset..base_extent_offset + 1,
+                    base_extent_offset * MIN_BLOCK_SIZE..(base_extent_offset + 1) * MIN_BLOCK_SIZE,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
                     AttributeId::TEST_ID,
-                    base_extent_offset + (count / 2)..base_extent_offset + (count / 2) + 1,
+                    (base_extent_offset + count / 2) * MIN_BLOCK_SIZE
+                        ..(base_extent_offset + count / 2 + 1) * MIN_BLOCK_SIZE,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
                     AttributeId::TEST_ID,
-                    base_extent_offset + (count - 1)..base_extent_offset + count,
+                    (base_extent_offset + count - 1) * MIN_BLOCK_SIZE
+                        ..(base_extent_offset + count) * MIN_BLOCK_SIZE,
                 ));
                 object_id = next_object_id;
             }
@@ -1471,17 +1475,19 @@ mod tests {
                 to_find.push(ObjectKey::extent(
                     object_id,
                     AttributeId::TEST_ID,
-                    base_extent_offset..base_extent_offset + 1,
+                    base_extent_offset * MIN_BLOCK_SIZE..(base_extent_offset + 1) * MIN_BLOCK_SIZE,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
                     AttributeId::TEST_ID,
-                    base_extent_offset + (count / 2)..base_extent_offset + (count / 2) + 1,
+                    (base_extent_offset + count / 2) * MIN_BLOCK_SIZE
+                        ..(base_extent_offset + count / 2 + 1) * MIN_BLOCK_SIZE,
                 ));
                 to_find.push(ObjectKey::extent(
                     object_id,
                     AttributeId::TEST_ID,
-                    base_extent_offset + (count - 1)..base_extent_offset + count,
+                    (base_extent_offset + count - 1) * MIN_BLOCK_SIZE
+                        ..(base_extent_offset + count) * MIN_BLOCK_SIZE,
                 ));
             }
 

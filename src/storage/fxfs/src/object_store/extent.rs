@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::errors::FxfsError;
 use crate::lsm_tree::types::{OrdLowerBound, OrdUpperBound};
 use crate::serialized_types::serialized_key::{KeyDeserializer, KeySerializer, SerializeKey};
 use crate::serialized_types::varint::Buffer;
@@ -12,10 +13,31 @@ use std::cmp::{max, min};
 use std::hash::Hash;
 use std::ops::Range;
 use storage_units::BlockSize;
-use zx_status::Status;
+
+/// Minimum block size supported by Fxfs.
+/// Extents must be aligned to block size and must be a multiple of this.
+pub const MIN_BLOCK_SIZE: BlockSize = BlockSize::SIZE_512B;
+
+/// We use serde's try_from attribute here to allow deserialization to fail if
+/// an unaligned extent is encountered.
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
+struct SerdeExtent(Range<u64>);
+
+impl TryFrom<SerdeExtent> for Extent {
+    type Error = &'static str;
+
+    fn try_from(val: SerdeExtent) -> Result<Self, Self::Error> {
+        if !MIN_BLOCK_SIZE.is_aligned(&val.0) {
+            return Err("Extent bounds must be aligned to MIN_BLOCK_SIZE");
+        }
+        Ok(Extent(val.0))
+    }
+}
 
 /// Extent represents a physical or logical range of bytes, aligned to a 512-byte boundary.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, TypeFingerprint)]
+#[serde(try_from = "SerdeExtent")]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
 pub struct Extent(pub Range<u64>);
 
@@ -43,7 +65,7 @@ impl Extent {
     /// Similar to previous, but from an offset.  Returns a search key that will find the first
     /// extent that touches offset..
     pub fn search_key_from_offset(offset: u64) -> Self {
-        Self(offset..offset + 1)
+        Self(offset..offset + MIN_BLOCK_SIZE)
     }
 
     /// Returns the merge key for this extent; that is, a key which is <= this extent and any other
@@ -70,31 +92,36 @@ impl Extent {
     }
 
     pub fn is_search_key(&self) -> bool {
-        self.0.end == self.0.start + 1
+        self.0.end == self.0.start + MIN_BLOCK_SIZE
     }
 }
 
 impl SerializeKey for Extent {
     fn serialize_key_to<B: Buffer>(&self, serializer: &mut KeySerializer<'_, B>) {
-        assert_eq!(self.0.end % 512, 0, "Extent end must be 512-byte aligned");
-        assert_eq!(self.0.start % 512, 0, "Extent start must be 512-byte aligned");
+        assert!(
+            MIN_BLOCK_SIZE.is_aligned(&self.0),
+            "Extent bounds must be aligned to MIN_BLOCK_SIZE"
+        );
         assert!(self.0.start < self.0.end, "Extent length must be non-zero");
-        serializer.write_u64(self.0.end / 512);
-        serializer.write_u64((self.0.end - self.0.start) / 512);
+        serializer.write_u64(self.0.end / MIN_BLOCK_SIZE);
+        serializer.write_u64((self.0.end - self.0.start) / MIN_BLOCK_SIZE);
     }
 
     fn deserialize_key_from(deserializer: &mut KeyDeserializer<'_>) -> Result<Self, anyhow::Error> {
         let end = deserializer
             .read_u64()?
-            .checked_mul(512)
-            .ok_or(Status::IO_DATA_INTEGRITY)
+            .checked_mul(MIN_BLOCK_SIZE.get())
+            .ok_or(FxfsError::Inconsistent)
             .context("Overflow")?;
         let len_raw = deserializer.read_u64()?;
         if len_raw == 0 {
-            return Err(Status::IO_DATA_INTEGRITY).context("Zero-length extent");
+            return Err(FxfsError::Inconsistent).context("Zero-length extent");
         }
-        let len = len_raw.checked_mul(512).ok_or(Status::IO_DATA_INTEGRITY).context("Overflow")?;
-        let start = end.checked_sub(len).ok_or(Status::IO_DATA_INTEGRITY).context("Underflow")?;
+        let len = len_raw
+            .checked_mul(MIN_BLOCK_SIZE.get())
+            .ok_or(FxfsError::Inconsistent)
+            .context("Overflow")?;
+        let start = end.checked_sub(len).ok_or(FxfsError::Inconsistent).context("Underflow")?;
         Ok(Self(start..end))
     }
 }
@@ -125,6 +152,13 @@ impl From<Extent> for Range<u64> {
 }
 
 impl<T: storage_units::BlockSizeSpec> storage_units::IsAligned<T> for &Extent {
+    #[inline(always)]
+    fn is_aligned(self, block_size: storage_units::GenericBlockSize<T>) -> bool {
+        block_size.is_aligned(&self.0)
+    }
+}
+
+impl<T: storage_units::BlockSizeSpec> storage_units::IsAligned<T> for Extent {
     #[inline(always)]
     fn is_aligned(self, block_size: storage_units::GenericBlockSize<T>) -> bool {
         block_size.is_aligned(&self.0)
@@ -206,7 +240,7 @@ impl PartialOrd for Extent {
 
 #[cfg(test)]
 mod tests {
-    use super::{EXTENT_HASH_BUCKET_SIZE, Extent};
+    use super::{EXTENT_HASH_BUCKET_SIZE, Extent, MIN_BLOCK_SIZE};
     use crate::lsm_tree::types::{OrdLowerBound, OrdUpperBound};
     use crate::serialized_types::serialized_key::{KeyDeserializer, SerializeKey};
     use std::cmp::Ordering;
@@ -274,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Extent end must be 512-byte aligned")]
+    #[should_panic(expected = "Extent bounds must be aligned to MIN_BLOCK_SIZE")]
     fn test_extent_key_serialization_unaligned_end_panics() {
         let key = Extent(1024..2049);
         let mut buf = Vec::new();
@@ -283,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Extent start must be 512-byte aligned")]
+    #[should_panic(expected = "Extent bounds must be aligned to MIN_BLOCK_SIZE")]
     fn test_extent_key_serialization_unaligned_start_panics() {
         let key = Extent(1025..2048);
         let mut buf = Vec::new();
@@ -321,20 +355,20 @@ mod tests {
 
     #[test]
     fn test_extent_search_and_insertion_key() {
-        let extent = Extent(100..150);
+        let extent = Extent(MIN_BLOCK_SIZE.get()..3 * MIN_BLOCK_SIZE);
         assert!(!extent.is_search_key());
-        assert_eq!(extent.search_key(), Extent(100..101));
+        assert_eq!(extent.search_key(), Extent(MIN_BLOCK_SIZE.get()..2 * MIN_BLOCK_SIZE));
         assert!(extent.search_key().is_search_key());
         assert_eq!(extent.cmp_lower_bound(&extent.search_key()), Ordering::Equal);
         assert_eq!(extent.cmp_upper_bound(&extent.search_key()), Ordering::Greater);
-        assert_eq!(extent.key_for_merge_into(), Extent(100..100));
+        assert_eq!(extent.key_for_merge_into(), Extent(MIN_BLOCK_SIZE.get()..MIN_BLOCK_SIZE.get()));
         assert_eq!(extent.cmp_lower_bound(&extent.key_for_merge_into()), Ordering::Equal);
         assert_eq!(extent.cmp_upper_bound(&extent.key_for_merge_into()), Ordering::Greater);
 
         // A search key must always be <= the key it came from under OrdUpperBound.
-        let extent = Extent(100..101);
+        let extent = Extent(MIN_BLOCK_SIZE.get()..2 * MIN_BLOCK_SIZE);
         assert!(extent.is_search_key());
-        assert_eq!(extent.search_key(), Extent(100..101));
+        assert_eq!(extent.search_key(), Extent(MIN_BLOCK_SIZE.get()..2 * MIN_BLOCK_SIZE));
         assert_eq!(extent.cmp_lower_bound(&extent.search_key()), Ordering::Equal);
         assert_eq!(extent.cmp_upper_bound(&extent.search_key()), Ordering::Equal);
     }
@@ -343,8 +377,8 @@ mod tests {
     fn test_extent_cmp_same_end_descending_start() {
         // If ends are identical, a higher start offset (shorter len) sorts BEFORE
         // a lower start offset (longer len) to match the (end, len) serialization layout.
-        let short_extent = Extent(100 * 512..200 * 512);
-        let long_extent = Extent(50 * 512..200 * 512);
+        let short_extent = Extent(100 * MIN_BLOCK_SIZE..200 * MIN_BLOCK_SIZE);
+        let long_extent = Extent(50 * MIN_BLOCK_SIZE..200 * MIN_BLOCK_SIZE);
         assert_eq!(short_extent.cmp_upper_bound(&long_extent), Ordering::Less);
         assert_eq!(long_extent.cmp_upper_bound(&short_extent), Ordering::Greater);
     }
@@ -374,7 +408,7 @@ mod tests {
         assert_eq!(iter.size_hint(), (0, Some(0)));
         assert_eq!(iter.next(), None);
 
-        let mut iter = Extent(0..512).fuzzy_hash_partition();
+        let mut iter = Extent(0..MIN_BLOCK_SIZE.get()).fuzzy_hash_partition();
         assert_eq!(iter.len(), 1);
         assert_eq!(iter.size_hint(), (1, Some(1)));
         assert_eq!(iter.next(), Some(0..EXTENT_HASH_BUCKET_SIZE.get()));
@@ -400,7 +434,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Extent length must be non-zero")]
     fn test_extent_key_serialization_zero_length_panics() {
-        let key = Extent(1024..1024);
+        let key = Extent(2 * MIN_BLOCK_SIZE..2 * MIN_BLOCK_SIZE);
         let mut buf = Vec::new();
         let mut ser = crate::serialized_types::serialized_key::KeySerializer::new(&mut buf, None);
         key.serialize_key_to(&mut ser);
@@ -421,5 +455,20 @@ mod tests {
         let result = Extent::deserialize_key_from(&mut deser);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "Zero-length extent");
+    }
+
+    #[test]
+    fn test_extent_serde_deserialization_unaligned_fails() {
+        use bincode::Options as _;
+        let options = bincode::DefaultOptions::new().allow_trailing_bytes();
+
+        let unaligned_start_bytes = options.serialize(&(1u64..1024u64)).unwrap();
+        assert!(options.deserialize::<Extent>(&unaligned_start_bytes).is_err());
+
+        let unaligned_end_bytes = options.serialize(&(0u64..1000u64)).unwrap();
+        assert!(options.deserialize::<Extent>(&unaligned_end_bytes).is_err());
+
+        let aligned_bytes = options.serialize(&(512u64..1024u64)).unwrap();
+        assert_eq!(options.deserialize::<Extent>(&aligned_bytes).unwrap(), Extent(512..1024));
     }
 }
