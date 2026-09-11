@@ -90,6 +90,7 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
         _LOGGER.info("Pre-disconnect Boot ID: %s", pre_disconnect_boot_id)
         self.dut.fuchsia_controller.before_usb_disconnect()
         try:
+            self.dut.ffx.notify_intentional_disconnect()
             self._usb_power_hub.power_off(port=self._usb_port)
             _LOGGER.info("Waiting for the device to go offline...")
             await asyncio.to_thread(self.dut.wait_for_offline)

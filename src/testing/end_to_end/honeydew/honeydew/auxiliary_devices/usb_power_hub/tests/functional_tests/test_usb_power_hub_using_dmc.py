@@ -32,7 +32,7 @@ class UsbPowerHubUsingDmcTest(fuchsia_base_test.FuchsiaBaseTest):
         _LOGGER.debug("Instantiating UsbPowerDmc module")
         self._usb_power_hub: usb_power_hub.UsbPowerHub = (
             usb_power_hub_using_dmc.UsbPowerHubUsingDmc(
-                device_name=self.dut.device_name, ffx=self.dut.ffx
+                device_name=self.dut.device_name
             )
         )
 
@@ -44,6 +44,7 @@ class UsbPowerHubUsingDmcTest(fuchsia_base_test.FuchsiaBaseTest):
         # We should go back to testing ths behavior while booted in Fuchsia once the bug is fixed
         await self.dut.fastboot.boot_to_fastboot_mode()
         try:
+            self.dut.ffx.notify_intentional_disconnect()
             self._usb_power_hub.power_off()
             _LOGGER.info("Waiting 10 seconds for the usb to disconnect")
             await asyncio.sleep(10)

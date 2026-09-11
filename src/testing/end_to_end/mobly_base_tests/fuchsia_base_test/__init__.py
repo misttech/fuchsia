@@ -545,14 +545,13 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                 usb_power_hub_impl["class"],
             )
             return (
-                usb_power_hub_class(ffx=fx_device.ffx, **usb_power_hub_hw),
+                usb_power_hub_class(**usb_power_hub_hw),
                 usb_power_hub_port,
             )
         else:
             return (
                 usb_power_hub_using_dmc.UsbPowerHubUsingDmc(
                     device_name=fx_device.device_name,
-                    ffx=fx_device.ffx,
                 ),
                 None,
             )

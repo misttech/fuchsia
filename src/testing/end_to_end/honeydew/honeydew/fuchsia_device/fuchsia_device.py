@@ -1113,6 +1113,7 @@ class FuchsiaDevice(
 
         self.fuchsia_controller.before_usb_disconnect()
 
+        self.ffx.notify_intentional_disconnect()
         self._usb_power_hub.power_off(self._usb_power_hub_port)
         await asyncio.to_thread(self.wait_for_offline)
 

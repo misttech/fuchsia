@@ -528,6 +528,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
 
             try:
                 # Cut physical VBUS power via hardware USB hub
+                self.dut.ffx.notify_intentional_disconnect()
                 self._usb_power_hub.power_off(port=self._usb_port)
                 _LOGGER.info(
                     "Powered off USB port %s. Waiting for offline...",

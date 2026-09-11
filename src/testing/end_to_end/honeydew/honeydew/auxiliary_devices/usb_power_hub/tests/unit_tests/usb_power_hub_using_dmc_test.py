@@ -14,7 +14,6 @@ from honeydew.auxiliary_devices.usb_power_hub import (
     usb_power_hub,
     usb_power_hub_using_dmc,
 )
-from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.utils import host_shell
 from parameterized import param, parameterized
 
@@ -39,12 +38,11 @@ class UsbPowerHubUsingDmcTests(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
 
-        self.mock_ffx = mock.MagicMock(spec=ffx_transport.FFX)
         with mock.patch.dict(os.environ, _MOCK_OS_ENVIRON, clear=True):
             self.usb_power_hub_using_dmc_obj: (
                 usb_power_hub_using_dmc.UsbPowerHubUsingDmc
             ) = usb_power_hub_using_dmc.UsbPowerHubUsingDmc(
-                device_name="fx-emu", ffx=self.mock_ffx
+                device_name="fx-emu"
             )
 
     def test_instantiate_usb_power_hub_using_dmc_when_dmc_path_not_set(
@@ -56,9 +54,7 @@ class UsbPowerHubUsingDmcTests(unittest.TestCase):
             usb_power_hub_using_dmc.UsbPowerDmcError,
             "environmental variable is not set",
         ):
-            usb_power_hub_using_dmc.UsbPowerHubUsingDmc(
-                device_name="fx-emu", ffx=self.mock_ffx
-            )
+            usb_power_hub_using_dmc.UsbPowerHubUsingDmc(device_name="fx-emu")
 
     def test_usb_power_hub_using_dmc_is_a_usb_power(self) -> None:
         """Test case to make sure UsbPowerHubUsingDmc is UsbPower."""
@@ -77,7 +73,6 @@ class UsbPowerHubUsingDmcTests(unittest.TestCase):
         """Test case for UsbPowerHubUsingDmc.power_off()."""
         self.usb_power_hub_using_dmc_obj.power_off()
         mock_usb_power_hub_using_dmc_run.assert_called_once()
-        self.mock_ffx.notify_intentional_disconnect.assert_called_once()
 
     @mock.patch.object(
         usb_power_hub_using_dmc.UsbPowerHubUsingDmc,

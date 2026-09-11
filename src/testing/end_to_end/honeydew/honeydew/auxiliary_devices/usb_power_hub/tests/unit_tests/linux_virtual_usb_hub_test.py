@@ -13,7 +13,6 @@ from honeydew.auxiliary_devices.usb_power_hub import (
     linux_virtual_usb_hub,
     usb_power_hub,
 )
-from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.utils import host_shell
 
 
@@ -24,14 +23,6 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.mock_ffx = mock.MagicMock(spec=ffx_transport.FFX)
-
-        # Default target info returns None for serial number to avoid unexpected serial matching
-        self.mock_target_info = mock.MagicMock()
-        self.mock_target_info.device.serial_number = None
-        self.mock_ffx.get_target_information.return_value = (
-            self.mock_target_info
-        )
 
         # Default to Linux host for tests, unless overridden
         self.platform_patcher = mock.patch.object(
@@ -65,7 +56,7 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
 
         mock_open_file.side_effect = mock_open_side_effect
 
-        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(ffx=self.mock_ffx)
+        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub()
         self.assertEqual(hub._usb_bus_id, "1-6")
         self.assertIsInstance(hub, usb_power_hub.UsbPowerHub)
 
@@ -77,7 +68,7 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
                 usb_power_hub.UsbPowerHubError,
                 "LinuxVirtualUsbPowerHub is only supported on Linux",
             ):
-                linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(ffx=self.mock_ffx)
+                linux_virtual_usb_hub.LinuxVirtualUsbPowerHub()
         self.platform_patcher.start()
 
     @mock.patch("glob.glob", return_value=[])
@@ -86,7 +77,7 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
     ) -> None:
         """Test instantiation fails when no matching device is found."""
         with self.assertRaisesRegex(ValueError, "No USB device with vendor"):
-            linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(ffx=self.mock_ffx)
+            linux_virtual_usb_hub.LinuxVirtualUsbPowerHub()
 
     @mock.patch("builtins.open", new_callable=mock.mock_open)
     @mock.patch("os.path.exists", return_value=True)
@@ -114,7 +105,7 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
         mock_open_file.side_effect = mock_open_side_effect
 
         with self.assertRaisesRegex(ValueError, "Multiple USB devices"):
-            linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(ffx=self.mock_ffx)
+            linux_virtual_usb_hub.LinuxVirtualUsbPowerHub()
 
     @mock.patch.object(
         linux_virtual_usb_hub.LinuxVirtualUsbPowerHub,
@@ -126,7 +117,7 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
     ) -> None:
         """Test instantiation with invalid bus ID pattern raises error."""
         with self.assertRaisesRegex(ValueError, "Invalid usb_bus_id format"):
-            linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(ffx=self.mock_ffx)
+            linux_virtual_usb_hub.LinuxVirtualUsbPowerHub()
 
     @mock.patch.object(
         linux_virtual_usb_hub.LinuxVirtualUsbPowerHub,
@@ -138,14 +129,11 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
         self, mock_run: mock.Mock, mock_find_bus_id: mock.Mock
     ) -> None:
         """Test power_off success path without sudo."""
-        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(
-            ffx=self.mock_ffx, use_sudo=False
-        )
+        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(use_sudo=False)
         hub.power_off()
         mock_run.assert_called_once_with(
             cmd=["sh", "-c", "echo 0 > /sys/bus/usb/devices/1-6/authorized"]
         )
-        self.mock_ffx.notify_intentional_disconnect.assert_called_once()
 
     @mock.patch.object(
         linux_virtual_usb_hub.LinuxVirtualUsbPowerHub,
@@ -157,9 +145,7 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
         self, mock_run: mock.Mock, mock_find_bus_id: mock.Mock
     ) -> None:
         """Test power_off success path with sudo."""
-        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(
-            ffx=self.mock_ffx, use_sudo=True
-        )
+        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(use_sudo=True)
         hub.power_off()
         mock_run.assert_called_once_with(
             cmd=[
@@ -185,7 +171,7 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
         self, mock_run: mock.Mock, mock_find_bus_id: mock.Mock
     ) -> None:
         """Test power_off failure raises UsbPowerHubError."""
-        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(ffx=self.mock_ffx)
+        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub()
         with self.assertRaises(usb_power_hub.UsbPowerHubError):
             hub.power_off()
 
@@ -199,9 +185,7 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
         self, mock_run: mock.Mock, mock_find_bus_id: mock.Mock
     ) -> None:
         """Test power_on success path without sudo."""
-        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(
-            ffx=self.mock_ffx, use_sudo=False
-        )
+        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(use_sudo=False)
         hub.power_on()
         mock_run.assert_called_once_with(
             cmd=["sh", "-c", "echo 1 > /sys/bus/usb/devices/1-6/authorized"]
@@ -222,47 +206,11 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
         self, mock_run: mock.Mock, mock_find_bus_id: mock.Mock
     ) -> None:
         """Test power_on failure raises UsbPowerHubError."""
-        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(ffx=self.mock_ffx)
+        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub()
         with self.assertRaises(usb_power_hub.UsbPowerHubError):
             hub.power_on()
 
     # Tests for discovery with serial number matching
-    @mock.patch("builtins.open", new_callable=mock.mock_open)
-    @mock.patch("os.path.exists", return_value=True)
-    @mock.patch(
-        "glob.glob",
-        return_value=["/sys/bus/usb/devices/1-6", "/sys/bus/usb/devices/1-7"],
-    )
-    def test_init_discovery_with_serial_success(
-        self,
-        mock_glob: mock.Mock,
-        mock_exists: mock.Mock,
-        mock_open_file: mock.Mock,
-    ) -> None:
-        """Test discovery matches serial number when multiple devices exist."""
-        # Setup ffx mock to return serial number
-        mock_target_info = mock.MagicMock()
-        mock_target_info.device.serial_number = "MY_SERIAL"
-        self.mock_ffx.get_target_information.return_value = mock_target_info
-
-        def mock_open_side_effect(
-            filepath: str, *args: Any, **kwargs: Any
-        ) -> Any:
-            if "idVendor" in filepath:
-                return mock.mock_open(read_data="18d1\n")()
-            elif "idProduct" in filepath:
-                return mock.mock_open(read_data="a02b\n")()
-            elif "1-6/serial" in filepath:
-                return mock.mock_open(read_data="OTHER_SERIAL\n")()
-            elif "1-7/serial" in filepath:
-                return mock.mock_open(read_data="MY_SERIAL\n")()
-            return mock.mock_open()()
-
-        mock_open_file.side_effect = mock_open_side_effect
-
-        hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(ffx=self.mock_ffx)
-        self.assertEqual(hub._usb_bus_id, "1-7")
-
     @mock.patch("builtins.open", new_callable=mock.mock_open)
     @mock.patch("os.path.exists", return_value=True)
     @mock.patch(
@@ -276,8 +224,6 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
         mock_open_file: mock.Mock,
     ) -> None:
         """Test discovery matches serial number passed in constructor."""
-        # FFX target show should not be called since we pass serial explicitly
-        self.mock_ffx.get_target_information.assert_not_called()
 
         def mock_open_side_effect(
             filepath: str, *args: Any, **kwargs: Any
@@ -295,6 +241,40 @@ class LinuxVirtualUsbPowerHubTests(unittest.TestCase):
         mock_open_file.side_effect = mock_open_side_effect
 
         hub = linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(
-            ffx=self.mock_ffx, target_serial="MY_SERIAL"
+            target_serial="MY_SERIAL"
         )
         self.assertEqual(hub._usb_bus_id, "1-7")
+
+    @mock.patch("builtins.open", new_callable=mock.mock_open)
+    @mock.patch("os.path.exists", return_value=True)
+    @mock.patch(
+        "glob.glob",
+        return_value=["/sys/bus/usb/devices/1-6", "/sys/bus/usb/devices/1-7"],
+    )
+    def test_init_discovery_with_non_matching_serial_raises_error(
+        self,
+        mock_glob: mock.Mock,
+        mock_exists: mock.Mock,
+        mock_open_file: mock.Mock,
+    ) -> None:
+        """Test discovery fails when specified target_serial does not match."""
+
+        def mock_open_side_effect(
+            filepath: str, *args: Any, **kwargs: Any
+        ) -> Any:
+            if "idVendor" in filepath:
+                return mock.mock_open(read_data="18d1\n")()
+            elif "idProduct" in filepath:
+                return mock.mock_open(read_data="a02b\n")()
+            elif "1-6/serial" in filepath:
+                return mock.mock_open(read_data="OTHER_SERIAL\n")()
+            elif "1-7/serial" in filepath:
+                return mock.mock_open(read_data="MY_SERIAL\n")()
+            return mock.mock_open()()
+
+        mock_open_file.side_effect = mock_open_side_effect
+
+        with self.assertRaisesRegex(ValueError, "No USB device with vendor"):
+            linux_virtual_usb_hub.LinuxVirtualUsbPowerHub(
+                target_serial="NON_EXISTENT_SERIAL"
+            )

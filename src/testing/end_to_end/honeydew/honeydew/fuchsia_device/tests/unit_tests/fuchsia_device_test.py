@@ -1499,6 +1499,11 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
             await self.fd_fc_obj.suspend()
 
     @mock.patch.object(
+        ffx.FFX,
+        "notify_intentional_disconnect",
+        autospec=True,
+    )
+    @mock.patch.object(
         fuchsia_device.FuchsiaDevice,
         "boot_id",
         autospec=True,
@@ -1519,6 +1524,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         mock_wait_for_offline: mock.Mock,
         mock_before_usb_disconnect: mock.Mock,
         mock_boot_id: mock.Mock,
+        mock_ffx_notify_intentional_disconnect: mock.Mock,
     ) -> None:
         """Testcase for FuchsiaDevice.suspend()"""
         mock_usb_power_hub = mock.MagicMock(
@@ -1531,6 +1537,7 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
 
         mock_boot_id.assert_called()
         mock_before_usb_disconnect.assert_called()
+        mock_ffx_notify_intentional_disconnect.assert_called()
         mock_usb_power_hub.power_off.assert_called_with(1)
         mock_wait_for_offline.assert_called()
 

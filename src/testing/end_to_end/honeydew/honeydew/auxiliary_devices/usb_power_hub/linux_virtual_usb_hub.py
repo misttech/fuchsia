@@ -11,8 +11,7 @@ import re
 
 from honeydew import errors
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
-from honeydew.transports.ffx import ffx as ffx_transport
-from honeydew.utils import decorators, host_shell
+from honeydew.utils import host_shell
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -35,21 +34,18 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
         Replace the vendor/product IDs if your device uses different ones.
 
     Args:
-        ffx: FFX transport.
         target_serial: The serial number of the Fuchsia device. Used for
-                       discovery. If not provided, it will be auto-detected
-                       (works if only one Google USB device is connected).
+            discovery to match against connected USB devices.
         use_sudo: Whether to use `sudo` to write to the authorized file.
-                  Defaults to False.
+            Defaults to False.
     """
 
     def __init__(
         self,
-        ffx: ffx_transport.FFX,
         target_serial: str | None = None,
         use_sudo: bool = False,
     ) -> None:
-        super().__init__(ffx=ffx)
+        super().__init__()
         if platform.system() != "Linux":
             raise usb_power_hub.UsbPowerHubError(
                 "LinuxVirtualUsbPowerHub is only supported on Linux hosts."
@@ -62,7 +58,6 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
         if not re.match(r"^[a-zA-Z0-9.-]+$", self._usb_bus_id):
             raise ValueError(f"Invalid usb_bus_id format: {self._usb_bus_id}")
 
-    @decorators.notify_intentional_disconnect
     def power_off(self, port: int | None = None) -> None:
         """Deauthorizes (virtually unplugs) the USB device.
 
@@ -119,14 +114,6 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
         product_ids = {p.lower() for p in ["a02b", "a025", "d00d"]}
 
         serial = self._target_serial
-        if not serial:
-            try:
-                target_info = self.ffx.get_target_information()
-                serial = target_info.device.serial_number
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                _LOGGER.warning(
-                    "Could not get target serial number from FFX: %s", e
-                )
 
         matching_devices = []
         for dev_path in glob.glob("/sys/bus/usb/devices/*"):
@@ -168,6 +155,6 @@ class LinuxVirtualUsbPowerHub(usb_power_hub.UsbPowerHub):
         if len(matching_devices) > 1:
             raise ValueError(
                 f"Multiple USB devices found: {matching_devices}. "
-                "Please specify usb_bus_id or target_serial explicitly."
+                "Please specify target_serial explicitly."
             )
         return matching_devices[0]
