@@ -80,12 +80,42 @@ pub fn json_to_json5(json_str: &str) -> String {
     result
 }
 
-pub fn generate_board_cml_file(name: &str, program: &DmlProgram) -> Result<String, anyhow::Error> {
+pub fn generate_board_cml_file(
+    name: &str,
+    program: &DmlProgram,
+    use_entries: &[Value],
+    capabilities: &[Value],
+    expose: &[Value],
+) -> Result<String, anyhow::Error> {
     let driver_name = program.driver_name.as_deref().unwrap_or(name);
     let binary = format!("driver/{}.so", driver_name);
     let bind = format!("meta/bind/{}.bindbc", driver_name);
 
-    let cml = serde_json::json!({
+    let mut all_use = vec![
+        serde_json::json!({ "service": "fuchsia.hardware.platform.bus.Service" }),
+        serde_json::json!({ "protocol": "fuchsia.driver.framework.CompositeNodeManager" }),
+    ];
+    for entry in use_entries {
+        if !all_use.contains(entry) {
+            all_use.push(entry.clone());
+        }
+    }
+
+    let mut all_capabilities = Vec::new();
+    for entry in capabilities {
+        if !all_capabilities.contains(entry) {
+            all_capabilities.push(entry.clone());
+        }
+    }
+
+    let mut all_expose = Vec::new();
+    for entry in expose {
+        if !all_expose.contains(entry) {
+            all_expose.push(entry.clone());
+        }
+    }
+
+    let mut cml = serde_json::json!({
         "include": [
             "inspect/client.shard.cml",
             "syslog/client.shard.cml"
@@ -97,11 +127,15 @@ pub fn generate_board_cml_file(name: &str, program: &DmlProgram) -> Result<Strin
             "default_dispatcher_opts": [ "allow_sync_calls" ],
             "colocate": "true"
         },
-        "use": [
-            { "service": "fuchsia.hardware.platform.bus.Service" },
-            { "protocol": "fuchsia.driver.framework.CompositeNodeManager" }
-        ]
+        "use": all_use,
     });
+
+    if !all_capabilities.is_empty() {
+        cml["capabilities"] = serde_json::Value::Array(all_capabilities);
+    }
+    if !all_expose.is_empty() {
+        cml["expose"] = serde_json::Value::Array(all_expose);
+    }
 
     let cml_code = serde_json::to_string_pretty(&cml).context("Failed to serialize CML")?;
     Ok(json_to_json5(&cml_code))
@@ -196,5 +230,32 @@ mod tests {
                 "default": false
             })
         );
+    }
+
+    #[test]
+    fn test_generate_board_cml_file_capabilities_and_expose() {
+        let program = DmlProgram::default();
+        let use_entries = vec![];
+
+        // When capabilities and expose are empty, they are not present in the generated CML.
+        let cml_empty = generate_board_cml_file("test_board", &program, &use_entries, &[], &[])
+            .expect("Failed to generate CML");
+        assert!(!cml_empty.contains("capabilities"));
+        assert!(!cml_empty.contains("expose"));
+
+        // When capabilities and expose are provided, they are present in the generated CML.
+        let capabilities = vec![serde_json::json!({
+            "service": "fuchsia.hardware.platform.bus.Service"
+        })];
+        let expose = vec![serde_json::json!({
+            "service": "fuchsia.hardware.platform.bus.Service",
+            "from": "self"
+        })];
+        let cml_with_entries =
+            generate_board_cml_file("test_board", &program, &use_entries, &capabilities, &expose)
+                .expect("Failed to generate CML");
+        assert!(cml_with_entries.contains("capabilities"));
+        assert!(cml_with_entries.contains("expose"));
+        assert!(cml_with_entries.contains("fuchsia.hardware.platform.bus.Service"));
     }
 }

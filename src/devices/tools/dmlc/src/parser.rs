@@ -76,6 +76,12 @@ pub struct DmlInput {
     pub offers: Vec<DmlOffer>,
     #[serde(default)]
     pub metadata_mappings: Vec<MetadataMapping>,
+    #[serde(default, rename = "use")]
+    pub use_entries: Vec<Value>,
+    #[serde(default)]
+    pub capabilities: Vec<Value>,
+    #[serde(default)]
+    pub expose: Vec<Value>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -252,6 +258,9 @@ pub fn load_dml_file(
     let mut all_children = Vec::new();
     let mut all_offers = Vec::new();
     let mut all_mappings = Vec::new();
+    let mut all_use_entries = Vec::new();
+    let mut all_capabilities = Vec::new();
+    let mut all_expose = Vec::new();
 
     for include in &input.include {
         let include_path = parent_dir.join(include);
@@ -259,15 +268,24 @@ pub fn load_dml_file(
         all_children.extend(include_input.children);
         all_offers.extend(include_input.offers);
         all_mappings.extend(include_input.metadata_mappings);
+        all_use_entries.extend(include_input.use_entries);
+        all_capabilities.extend(include_input.capabilities);
+        all_expose.extend(include_input.expose);
     }
 
     all_children.extend(input.children);
     all_offers.extend(input.offers);
     all_mappings.extend(input.metadata_mappings);
+    all_use_entries.extend(input.use_entries);
+    all_capabilities.extend(input.capabilities);
+    all_expose.extend(input.expose);
 
     input.children = all_children;
     input.offers = all_offers;
     input.metadata_mappings = all_mappings;
+    input.use_entries = all_use_entries;
+    input.capabilities = all_capabilities;
+    input.expose = all_expose;
 
     visiting.remove(&canonical);
     processed.insert(canonical);

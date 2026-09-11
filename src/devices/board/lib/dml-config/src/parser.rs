@@ -171,11 +171,8 @@ fn apply_rule(
         .iter()
         .find_map(|source| resolve_value(provider, provider_id, source, res, constraint));
 
-    let val = match resolved {
-        Some(v) => v,
-        None => {
-            bail!("Failed to resolve required property {}", rule.bind_key);
-        }
+    let Some(val) = resolved else {
+        return Ok(());
     };
 
     let property_value = match (val, rule.value_type) {
@@ -235,13 +232,29 @@ pub fn generate_parent_spec_generic(
         config.service_configs.get(service_name).unwrap_or(&DEFAULT_SERVICE_BIND_CONFIG);
 
     match service_config.transport {
-        TransportType::Zircon | TransportType::Driver => {
+        TransportType::Zircon => {
             add_rule_and_property(
                 &mut bind_rules,
                 &mut properties,
                 "fuchsia.Service",
                 property_string(service_name),
             );
+            properties.push(make_property2(
+                service_name,
+                property_string(&format!("{service_name}.ZirconTransport")),
+            ));
+        }
+        TransportType::Driver => {
+            add_rule_and_property(
+                &mut bind_rules,
+                &mut properties,
+                "fuchsia.Service",
+                property_string(service_name),
+            );
+            properties.push(make_property2(
+                service_name,
+                property_string(&format!("{service_name}.DriverTransport")),
+            ));
         }
         TransportType::None => {}
     }
@@ -260,7 +273,7 @@ pub fn generate_parent_spec_generic(
         }
     }
 
-    if !bind_rules.iter().any(|r| r.key == "fuchsia.ID") {
+    if service_config.rules.is_empty() && !bind_rules.iter().any(|r| r.key == "fuchsia.ID") {
         // TODO(https://fxbug.dev/555962083): Remove this hack
         let id_opt =
             crate::get_int64(constraint, "node_id").or_else(|| crate::get_int64(constraint, "id"));
@@ -293,7 +306,7 @@ pub fn generate_parent_spec_generic(
 fn get_aggregate_id(agg: &AggregateEntry, devices: &[Device], fallback_id: u32) -> u32 {
     let device = devices.iter().find(|d| d.name.as_deref() == agg.provider.as_deref());
     let id = device.and_then(|d| d.id).unwrap_or(fallback_id);
-    log::info!(
+    log::debug!(
         "get_aggregate_id: provider={:?}, device_found={}, device_id={:?}, final_id={}, fallback={}",
         agg.provider,
         device.is_some(),
@@ -473,7 +486,14 @@ pub async fn publish_dml_devices(
                             };
                             if let Some((parent, key)) = parent_and_key {
                                 if generated_keys.insert(key) {
-                                    resource_parents.push(parent);
+                                    if matches!(
+                                        agg.provider.as_deref(),
+                                        Some("parent") | Some("pdev")
+                                    ) {
+                                        resource_parents.insert(0, parent);
+                                    } else {
+                                        resource_parents.push(parent);
+                                    }
                                 }
                             }
                         }
@@ -510,6 +530,7 @@ pub async fn publish_dml_devices(
                     make_accept_bind_rule("fuchsia.COMPATIBLE", property_string(compatible)),
                 ],
                 properties: vec![
+                    make_property2("fuchsia.NAME", property_string("pdev")),
                     make_property2("fuchsia.BIND_PROTOCOL", property_int(BIND_PROTOCOL_DEVICE)),
                     make_property2(
                         "fuchsia.BIND_PLATFORM_DEV_VID",
@@ -525,6 +546,10 @@ pub async fn publish_dml_devices(
                     ),
                     make_property2("fuchsia.COMPATIBLE", property_string(compatible)),
                     make_property2(
+                        "fuchsia.devicetree.FIRST_COMPATIBLE",
+                        property_string(compatible),
+                    ),
+                    make_property2(
                         "fuchsia.Service",
                         property_string("fuchsia.hardware.platform.device.Service"),
                     ),
@@ -535,28 +560,23 @@ pub async fn publish_dml_devices(
 
         parents2.extend(resource_parents);
 
-        if parents2.is_empty() {
-            bail!(
-                "Device {} has no parents (no compatible string and no resource parents)",
-                dev_name
+        if !parents2.is_empty() {
+            spec.parents2 = Some(parents2);
+
+            log::debug!(
+                "DML-CONFIG: Adding composite spec: name={:?}, parents2={:?}",
+                spec.name,
+                spec.parents2
             );
+            composite_manager
+                .add_spec_with(spec)
+                .await
+                .context("AddSpec request failed")?
+                .map_err(|e| anyhow!("AddSpec failed: {e:?}"))?;
         }
 
-        spec.parents2 = Some(parents2);
-
-        log::info!(
-            "DML-CONFIG: Adding composite spec: name={:?}, parents2={:?}",
-            spec.name,
-            spec.parents2
-        );
-        composite_manager
-            .add_spec_with(spec)
-            .await
-            .context("AddSpec request failed")?
-            .map_err(|e| anyhow!("AddSpec failed: {e:?}"))?;
-
         if dev.compatible.is_some() {
-            log::info!("DML-CONFIG: Adding node: {}", dev_name);
+            log::debug!("DML-CONFIG: Adding node: {}", dev_name);
             pbus.node_add(node)
                 .await
                 .context("NodeAdd request failed")?

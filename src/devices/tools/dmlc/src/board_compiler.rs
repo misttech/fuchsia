@@ -436,7 +436,13 @@ pub fn compile_board(args: &CompileBoardArgs, year: &str) -> Result<(), anyhow::
     let empty_bind = DmlBind::default();
     let bind_config = board_dml.program.bind.as_ref().unwrap_or(&empty_bind);
     let bind_code = generate_bind_file(&board_name, bind_config, &[], year)?;
-    let cml_code = generate_board_cml_file(&board_name, &board_dml.program)?;
+    let cml_code = generate_board_cml_file(
+        &board_name,
+        &board_dml.program,
+        &board_dml.use_entries,
+        &board_dml.capabilities,
+        &board_dml.expose,
+    )?;
 
     let bind_output_path = match &args.bind_output {
         Some(path) => PathBuf::from(path),
