@@ -33,6 +33,7 @@ _tools = [
   "driver",
   "echo",
   "efi",
+  "gce",
   "monitor",
   "power",
   "profiler",

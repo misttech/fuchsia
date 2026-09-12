@@ -21,6 +21,7 @@ libs = [
   "fastboot",
   "fastboot_file_discovery",
   "fho",
+  "gce",
   "isolate",
   "logging",
   "manual_targets",
