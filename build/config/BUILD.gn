@@ -537,10 +537,10 @@ foreach(primary,
             "thinlto",
           ]) {
     config("optimize_${primary}_${lto}") {
-      configs = [ ":optimize_${primary}" ]
-      if (lto_is_compatible) {
-        configs += [ "//build/config/lto:${lto}" ]
-      }
+      configs = [
+        ":optimize_${primary}",
+        "//build/config/lto:${lto}-if-compatible",
+      ]
     }
   }
 }

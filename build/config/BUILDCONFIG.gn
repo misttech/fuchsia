@@ -1374,11 +1374,6 @@ is_host_lto_variant =
 # Deprecated alias for is_fuchsia_lto_variant
 is_lto_variant = is_fuchsia_lto_variant
 
-# This determines whether LTO can be safely enabled for this toolchain.
-# - Do not enable LTO for the instrumented variants.
-# - Do not enable LTO (here) for the lto or thinlto variants.
-lto_is_compatible = !is_instrumented && !is_lto_variant && !is_gcc
-
 # Whether heapdump variant is enabled.
 is_heapdump = fuchsia_toolchain_tags + [ "heapdump" ] - [ "heapdump" ] !=
               fuchsia_toolchain_tags

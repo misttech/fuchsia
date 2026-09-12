@@ -81,9 +81,6 @@ if (toolchain_environment == "kernel") {
 # Now set the value that will actually be used in GN
 optimize = _optimize
 
-# This catches both full and thin lto.
-optimize_has_lto = string_replace(optimize, "lto", "") != optimize
-
 declare_args() {
   # * `none` means no debugging information
   # * `backtrace` means sufficient debugging information to symbolize backtraces

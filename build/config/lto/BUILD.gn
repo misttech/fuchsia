@@ -199,10 +199,9 @@ variant("lto") {
 # This config is used to opt-in targets to LTO while automatically excluding
 # scenarios where LTO is incompatible or redundant.
 config("lto-if-compatible") {
-  # In addition to the normal compatibility checks, do not enable LTO if the
-  # default optimize setting already uses some form of LTO. This ensures we
-  # don't end up mixing LTO'd and ThinLTO'd code in the same binary.
-  if (lto_is_compatible && !optimize_has_lto) {
+  # Do not enable LTO for the instrumented variants.
+  # Do not enable LTO (here) for the lto or thinlto variants.
+  if (!is_instrumented && !is_lto_variant && !is_gcc) {
     configs = [ ":lto" ]
   }
 }
@@ -277,10 +276,9 @@ variant("thinlto") {
 # This config is used to opt-in targets to ThinLTO while automatically excluding
 # scenarios where LTO is incompatible or redundant.
 config("thinlto-if-compatible") {
-  # In addition to the normal compatibility checks, do not enable LTO if the
-  # default optimize setting already uses some form of LTO. This ensures we
-  # don't end up mixing LTO'd and ThinLTO'd code in the same binary.
-  if (lto_is_compatible && !optimize_has_lto) {
+  # Do not enable ThinLTO for the instrumented variants.
+  # Do not enable ThinLTO (here) for the lto or thinlto variants.
+  if (!is_instrumented && !is_lto_variant && !is_gcc) {
     configs = [ ":thinlto" ]
   }
 }
