@@ -9,6 +9,7 @@
 
 #include <vector>
 
+#include "src/ui/scenic/lib/allocation/image_metadata.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/uber_struct.h"
 #include "src/ui/scenic/lib/types/id_type.h"
@@ -87,6 +88,20 @@ struct LayerObject {
   // `CreateLayerStackData()`, `ReleaseLayerObject()`, stack teardown); the layer is
   // destroyed when it reaches zero.
   int32_t ref_count = 0;
+};
+
+// A GPU/display image imported through the buffer collection importers, as a
+// session-owned resource.  Keyed in Flatland::image_objects_ by its
+// never-reused GlobalImageId.
+struct ImageObject {
+  allocation::ImageMetadata metadata;
+  // Number of live LayerObjects whose image_mode binds this image, plus one
+  // while a Flatland2 client ImageId refers to it (client ids arrive with
+  // CreateImage2; the Flatland1 facade holds none, so its images have exactly
+  // one ref, the layer binding).  Born at zero; every increment has a visible
+  // owner with a matching decrement in ReleaseImageObject(), which destroys
+  // the object when the count reaches zero.
+  uint32_t ref_count = 0;
 };
 
 struct LayerStackData {

@@ -187,8 +187,10 @@ Flatland::Flatland(
       layer_objects_(&pool_),
       layer_stacks_(&pool_),
       layer_stack_handles_(&pool_),
+      image_objects_(&pool_),
       error_reporter_(scenic_impl::ErrorReporter::DefaultUnique()),
-      images_to_release_(std::make_shared<std::unordered_set<allocation::GlobalImageId>>()),
+      pending_image_releases_(&pool_),
+      images_to_release_on_present_(&pool_),
       import_tokens_(
           std::make_shared<
               std::unordered_map<allocation::GlobalImageId,
@@ -274,28 +276,35 @@ void Flatland::BindingData::CloseConnection(FlatlandError error) {
 Flatland::~Flatland() {
   // TODO(https://fxbug.dev/42132996): consider if Link tokens should be returned or not.
 
-  // Clear the scene graph, then collect the images to release.
+  // Clear the scene graph and process dead transforms (they're all dead after clearing).
+  // This guarantees that all images will be available to release.
   Clear();
   auto data = transform_graph_.ComputeAndCleanup(GetRoot(), std::numeric_limits<uint64_t>::max());
-
-  // We don't care about the images returned by `ProcessDeadTransforms()` because we want to release
-  // all the images in `images_to_release_`, which potentially includes some added by
-  // `ProcessDeadTransforms()`.
   ProcessDeadTransforms(data);
+  FX_CHECK(image_objects_.empty());
+
+  // Gather all unreleased images; if any exist they will be released by a closure that outlives
+  // this Flatland session, hence the heap-allocated vector.
+  std::vector<allocation::GlobalImageId> images_to_release(images_to_release_on_present_.begin(),
+                                                           images_to_release_on_present_.end());
+  for (const auto& pending : pending_image_releases_) {
+    images_to_release.insert(images_to_release.end(), pending.ids.begin(), pending.ids.end());
+  }
+  pending_image_releases_.clear();  // cancels every pending wait, on this thread
 
   // If there are any images to release, set up a waiter, and pass the event-to-be-signaled to
   // `FlatlandPresenter::RemoveSession`.  This will schedule another frame and signal the event
   // just like any other release fence.
   std::optional<zx::event> image_release_fence;
-  if (!images_to_release_->empty()) {
+  if (!images_to_release.empty()) {
     zx::event evt = utils::CreateEvent();
     image_release_fence = utils::CopyZxHandle(evt);
 
     auto wait = std::make_shared<async::WaitOnce>(evt.get(), ZX_EVENT_SIGNALED);
     zx_status_t status = wait->Begin(
         dispatcher(),
-        [importer_refs = buffer_collection_importers_, images_to_release = images_to_release_,
-         import_tokens = import_tokens_,
+        [importer_refs = buffer_collection_importers_,
+         images_to_release = std::move(images_to_release), import_tokens = import_tokens_,
          // We keep several objects alive in the closure:
          //   - the dispatcher, which is about to be released by the Flatland and FlatlandManager.
          //   - the wait object keeps itself alive via the ref in this closure
@@ -304,13 +313,12 @@ Flatland::~Flatland() {
          keepalive_dispatcher = dispatcher_holder_, keepalive_wait = wait,
          keepalive_evt = std::move(evt)](async_dispatcher_t*, async::WaitOnce*, zx_status_t status,
                                          const zx_packet_signal_t* /*signal*/) mutable {
-          for (auto& image_id : *images_to_release) {
+          for (auto& image_id : images_to_release) {
             import_tokens->erase(image_id);
             for (auto& importer : importer_refs) {
               importer->ReleaseBufferImage(image_id);
             }
           }
-          images_to_release->clear();
         });
     FX_DCHECK(status == ZX_OK);
   }
@@ -435,63 +443,35 @@ void Flatland::Present(fuchsia_ui_composition::wire::PresentArgs& args) {
 
   FX_DCHECK(data.sorted_transforms[0].handle == root_handle);
 
-  // Cleanup released resources. Here we also collect the list of unused images so they can be
-  // released by the buffer collection importers.
-  auto images_to_release = ProcessDeadTransforms(data);
+  // Drop dead transforms and the layer stacks they hosted.  Any image whose last ref this releases
+  // is queued in `images_to_release_on_present_`, which the block below drains.
+  ProcessDeadTransforms(data);
 
-  // If there are images ready for release, create a release fence for the current Present() and
-  // delay release until that fence is reached to ensure that the images are no longer referenced
-  // in any render data.
-  if (!images_to_release.empty()) {
-    // Create a release fence specifically for the images.
-    zx::event image_release_fence;
-    zx_status_t status = zx::event::create(0, &image_release_fence);
+  if (!images_to_release_on_present_.empty()) {
+    zx::event fence;
+    zx_status_t status = zx::event::create(0, &fence);
     FX_DCHECK(status == ZX_OK);
+    zx::event fence_for_presenter = utils::CopyZxHandle(fence);
 
-    // Use a self-referencing async::WaitOnce to perform ImageImporter deregistration.
-    // This is primarily so the handler does not have to live in the Flatland instance, which may
-    // be destroyed before the release fence is signaled.  `WaitOnce` moves the handler to the stack
-    // prior to invoking it, so it is safe for the handler to delete the WaitOnce on exit.
-    // Specifically, we move the wait object into the lambda function via |copy_ref = wait| to
-    // ensure that the wait object lives. The callback will not trigger without this.
-    auto wait = std::make_shared<async::WaitOnce>(image_release_fence.get(), ZX_EVENT_SIGNALED);
-    status = wait->Begin(
-        dispatcher(),
-        [copy_ref = wait, importer_refs = buffer_collection_importers_, images_to_release,
-         all_images_to_release = images_to_release_, import_tokens = import_tokens_,
-         session_id = session_id_](async_dispatcher_t*, async::WaitOnce*, zx_status_t status,
-                                   const zx_packet_signal_t* /*signal*/) mutable {
-          // The wait is canceled if the dispatcher is destroyed before the event is signaled.
-          // In this case, we expect the images to have already been released by the wait in the
-          // ~Flatland() destructor.
-          FX_DCHECK(status == ZX_OK || status == ZX_ERR_CANCELED)
-              << "status is: " << zx_status_get_string(status) << " (" << status << ")";
-          if (status == ZX_ERR_CANCELED) {
-            FX_DCHECK(all_images_to_release->empty());
-            return;
-          }
-
-          for (auto& image_id : images_to_release) {
-            if (!all_images_to_release->erase(image_id)) {
-              // This is harmless, but typically shouldn't happen.  The rare exception is a race
-              // when the Flatland session is being torn down, if this runs after the session is
-              // destroyed, but before the session's loop/thread is stopped.
-              FX_LOGS(WARNING) << "Flatland session << " << session_id
-                               << " did not find expected image " << image_id.value()
-                               << " in images_to_release_";
-              continue;
-            }
-
-            import_tokens->erase(image_id);
-            for (auto& importer : importer_refs) {
-              importer->ReleaseBufferImage(image_id);
-            }
-          }
+    // The `PendingImageRelease` record owns its fence dup and its wait; the handler captures only
+    // `this` and the record's iterator.  If the session is destroyed first, `~Flatland()` cancels
+    // this wait, taking responsibility for cleaning up all remaining images in the session.
+    pending_image_releases_.emplace_back(std::move(fence),
+                                         std::move(images_to_release_on_present_));
+    images_to_release_on_present_.clear();
+    auto it = std::prev(pending_image_releases_.end());
+    status =
+        it->wait.Begin(dispatcher(), [this, it](async_dispatcher_t*, async::WaitOnce*,
+                                                zx_status_t status, const zx_packet_signal_t*) {
+          // Cancellation never reaches this handler: the wait is cancelled by
+          // its own destructor, on this thread, before the dispatcher dies.
+          FX_DCHECK(status == ZX_OK) << "status is: " << zx_status_get_string(status);
+          ReleaseImages(it->ids);
+          pending_image_releases_.erase(it);
         });
     FX_DCHECK(status == ZX_OK) << "status is: " << status;
 
-    // Push the new release fence into the user-provided list.
-    release_fences.push_back(std::move(image_release_fence));
+    release_fences.push_back(std::move(fence_for_presenter));
   }
 
   {
@@ -871,6 +851,7 @@ void Flatland::Clear() {
   // Clear user-defined mappings and local matrices.
   transforms_.clear();
   content_handles_.clear();
+  ClearFlatland2State();
   matrices_.clear();
 
   // We always preserve the link origin when clearing the graph. This call will place all other
@@ -1120,26 +1101,28 @@ void Flatland::SetClipBoundaryInternal(TransformHandle handle, TransformClipRegi
   clip_regions_[handle] = bounds;
 }
 
-std::vector<allocation::GlobalImageId> Flatland::ProcessDeadTransforms(
-    const TransformGraph::TopologyData& data) {
-  std::vector<allocation::GlobalImageId> images_to_release;
+void Flatland::ClearFlatland2State() {
+  for (const auto& [layer_id, handle] : layer_handles_) {
+    ReleaseLayerObject(handle);
+  }
+  layer_handles_.clear();
+  // The stacks' transforms die with ResetGraph(); the dead-transform cleanup
+  // drops their LayerStackData.
+  layer_stack_handles_.clear();
+}
+
+void Flatland::ProcessDeadTransforms(const TransformGraph::TopologyData& data) {
   for (const auto& dead_handle : data.dead_transforms) {
     matrices_.erase(dead_handle);
 
     auto it = layer_stacks_.find(dead_handle);
     if (it != layer_stacks_.end()) {
       for (const auto& layer_handle : it->second.layers) {
-        auto released = ReleaseLayerObject(layer_handle);
-        if (released != allocation::kInvalidImageId) {
-          images_to_release_->insert(released);
-          images_to_release.push_back(released);
-        }
+        ReleaseLayerObject(layer_handle);
       }
       layer_stacks_.erase(it);
     }
   }
-
-  return images_to_release;
 }
 
 void Flatland::AddChild(AddChildRequestView request, AddChildCompleter::Sync& completer) {
@@ -1562,26 +1545,16 @@ void Flatland::CreateImage(ContentId image_id,
     return;
   }
 
-  allocation::ImageMetadata metadata;
-  metadata.identifier = allocation::GenerateUniqueImageId();
-  metadata.collection_id = global_collection_id;
-  metadata.vmo_index = vmo_index;
-  metadata.width = properties.size().width;
-  metadata.height = properties.size().height;
-
-  TransformHandle handle;  // Lifted from if/else branches to be used in FLATLAND_VERBOSE_LOG below.
-
   LayerHandle layer_handle = CreateLayerObject();
   UberStructLayer::ImageModeProperties content{
+      // Defaults are correct for all properties except for the sample rect and the image binding.
+      // The latter is modified by `BindLayerImage()` below.
       .sample_rect = {{
           .x = 0.f,
           .y = 0.f,
           .width = static_cast<float>(properties.size().width),
           .height = static_cast<float>(properties.size().height),
       }},
-      .image_id = metadata.identifier,
-      .image_width = properties.size().width,
-      .image_height = properties.size().height,
   };
   auto& layer_object = layer_objects_[layer_handle];
   layer_object.mode = LayerObject::Mode::kImage;
@@ -1593,13 +1566,24 @@ void Flatland::CreateImage(ContentId image_id,
       .height = static_cast<int32_t>(properties.size().height),
   }};
 
-  handle = CreateLayerStackData();
-  SetLayerStackData(handle, {layer_handle});
-  content_handles_[image_id] = handle;
+  allocation::ImageMetadata metadata;
+  metadata.identifier = allocation::GenerateUniqueImageId();
+  metadata.collection_id = global_collection_id;
+  metadata.vmo_index = vmo_index;
+  metadata.width = properties.size().width;
+  metadata.height = properties.size().height;
+
+  image_objects_.try_emplace(metadata.identifier,
+                             ImageObject{.metadata = metadata, .ref_count = 0});
+  BindLayerImage(layer_object, metadata.identifier);  // Increments image ref-count.
+
+  TransformHandle stack_handle = CreateLayerStackData();
+  SetLayerStackData(stack_handle, {layer_handle});
+  content_handles_[image_id] = stack_handle;
 
   FLATLAND_VERBOSE_LOG << "Flatland::CreateImage() session_id=" << session_id_
                        << "  image_id=" << image_id << "  size=" << properties.size().width << "x"
-                       << properties.size().height << "  handle=" << handle;
+                       << properties.size().height << "  handle=" << stack_handle;
 
   import_tokens_->emplace(metadata.identifier, std::move(import_token));
 
@@ -1618,7 +1602,8 @@ void Flatland::CreateImage(ContentId image_id,
   }
   auto join_promise =
       fpromise::join_promise_vector(std::move(promises))
-          .and_then([this, id = metadata.identifier, fence = std::move(create_image_fence_dup)](
+          .and_then([this, layer_handle, id = metadata.identifier,
+                     fence = std::move(create_image_fence_dup)](
                         std::vector<fpromise::result<>>& results) mutable -> fpromise::result<> {
             bool ok = std::ranges::all_of(results, [](auto& result) { return result.is_ok(); });
 
@@ -1627,15 +1612,17 @@ void Flatland::CreateImage(ContentId image_id,
               fence.signal(0, ZX_EVENT_SIGNALED);
               return fpromise::ok();
             }
-            // If this importer fails, we need to release the image from all of the importers that
-            // it passed on. Luckily we can do this right here instead of waiting for a fence since
-            // we know this image isn't being used by anything yet.
-            for (uint32_t i = 0; i < results.size(); i++) {
-              if (results[i].is_ok()) {
-                buffer_collection_importers_[i]->ReleaseBufferImage(id);
-              }
+
+            // Drop the reference taken by the layer.  In Flatland1 this is the only reference,
+            // guaranteeing that the image will be cleaned up properly.  If the layer is gone, the
+            // client released the content and presented, and the layer dropped it when it died.
+            if (auto layer_it = layer_objects_.find(layer_handle);
+                layer_it != layer_objects_.end()) {
+              // Facade layers are never rebound and handles are never reused.
+              FX_CHECK(layer_it->second.image_mode.image_id == id);
+              UnbindLayerImage(layer_it->second);
             }
-            import_tokens_->erase(id);
+
             error_reporter_->ERROR() << "Importer could not import image.";
             CloseConnection(FlatlandError::kBadOperation);
             return fpromise::error();
@@ -2654,6 +2641,8 @@ void Flatland::ReleaseImageImmediately(ContentId image_id) {
   }
   identifier = image_content->image_id;
   image_content->image_id = allocation::kInvalidImageId;  // revert to invisible
+  image_content->image_width = 0;
+  image_content->image_height = 0;
 
   FLATLAND_VERBOSE_LOG << "Flatland::ReleaseImageImmediately() session_id=" << session_id_
                        << "  client_image_id=" << image_id
@@ -2662,6 +2651,15 @@ void Flatland::ReleaseImageImmediately(ContentId image_id) {
   bool erased_from_graph = transform_graph_.ReleaseTransform(content_kv->second);
   FX_DCHECK(erased_from_graph);
   content_handles_.erase(image_id);
+
+  // Immediate release bypasses the ImageObject ref count on purpose: this is
+  // the trusted, synchronous path, and on the Flatland1 facade the binding
+  // cleared above is the image's only ref.
+  {
+    auto image_it = image_objects_.find(identifier);
+    FX_CHECK(image_it != image_objects_.end() && image_it->second.ref_count == 1);
+    image_objects_.erase(image_it);
+  }
 
   // Release the image from all importers immediately.
   for (auto& importer : buffer_collection_importers_) {
@@ -3272,35 +3270,66 @@ LayerHandle Flatland::CreateLayerObject() {
   return handle;
 }
 
-allocation::GlobalImageId Flatland::ReleaseLayerObject(LayerHandle handle) {
+void Flatland::ReleaseImageObject(allocation::GlobalImageId id) {
+  auto it = image_objects_.find(id);
+  FX_CHECK(it != image_objects_.end()) << "Image not found: " << id.value();
+  FX_CHECK(it->second.ref_count > 0) << "Image ref_count underflow: " << id.value();
+  if (--it->second.ref_count > 0) {
+    return;
+  }
+  image_objects_.erase(it);
+  images_to_release_on_present_.push_back(id);
+}
+
+void Flatland::UnbindLayerImage(LayerObject& layer) {
+  auto& image_mode = layer.image_mode;
+  if (image_mode.image_id == allocation::kInvalidImageId) {
+    return;
+  }
+  const allocation::GlobalImageId id = image_mode.image_id;
+  image_mode.image_id = allocation::kInvalidImageId;
+  image_mode.image_width = 0;
+  image_mode.image_height = 0;
+  ReleaseImageObject(id);
+}
+
+void Flatland::BindLayerImage(LayerObject& layer, allocation::GlobalImageId id) {
+  FX_CHECK(id != allocation::kInvalidImageId);
+  if (layer.image_mode.image_id == id) {
+    return;
+  }
+  UnbindLayerImage(layer);
+
+  auto it = image_objects_.find(id);
+  FX_CHECK(it != image_objects_.end()) << "Image not found: " << id.value();
+  ++it->second.ref_count;
+
+  auto& image_mode = layer.image_mode;
+  image_mode.image_id = id;
+  image_mode.image_width = it->second.metadata.width;
+  image_mode.image_height = it->second.metadata.height;
+}
+
+void Flatland::ReleaseImages(std::span<const allocation::GlobalImageId> ids) {
+  for (const auto& image_id : ids) {
+    import_tokens_->erase(image_id);
+    for (auto& importer : buffer_collection_importers_) {
+      importer->ReleaseBufferImage(image_id);
+    }
+  }
+}
+
+void Flatland::ReleaseLayerObject(LayerHandle handle) {
   auto it = layer_objects_.find(handle);
   FX_CHECK(it != layer_objects_.end()) << "Layer not found: " << handle;
-  if (it == layer_objects_.end()) {
-    return allocation::kInvalidImageId;
-  }
   FX_DCHECK(it->second.ref_count > 0);
   it->second.ref_count--;
   if (it->second.ref_count > 0) {
-    return allocation::kInvalidImageId;
+    return;
   }
 
-  // Release the image associated with the layer, if any, regardless of the current mode.
-  // Layers that never bound an image yield kInvalidImageId, which callers ignore.
-  //
-  // TODO(https://fxbug.dev/543944546): this works for the Flatland1 facade, where the
-  // FIDL client "image" corresponds 1-1 to:
-  //   - a layer stack
-  //   - a layer in the layer stack
-  //   - an image assigned to the layer
-  // ... but it won't work later when e.g. the same image is assigned to multiple layers.
-  const allocation::GlobalImageId released_image = it->second.image_mode.image_id;
+  UnbindLayerImage(it->second);
   layer_objects_.erase(it);
-  if (released_image != allocation::kInvalidImageId) {
-    images_to_release_->insert(released_image);
-    return released_image;
-  }
-
-  return allocation::kInvalidImageId;
 }
 
 TransformHandle Flatland::CreateLayerStackData() {
@@ -3329,7 +3358,7 @@ void Flatland::SetLayerStackData(TransformHandle stack_handle,
 
 std::vector<allocation::GlobalImageId> Flatland::CleanupFlatland2StateForTest(
     const std::vector<TransformHandle>& dead_handles) {
-  std::vector<allocation::GlobalImageId> images_to_release;
+  const size_t initial_size = images_to_release_on_present_.size();
 
   // Drop stacks whose content_handle is dead.
   for (const auto& dead_handle : dead_handles) {
@@ -3340,26 +3369,27 @@ std::vector<allocation::GlobalImageId> Flatland::CleanupFlatland2StateForTest(
     if (it != layer_stacks_.end()) {
       // Decrement ref_count of all layers in the stack.
       for (const auto& layer_handle : it->second.layers) {
-        auto released = ReleaseLayerObject(layer_handle);
-        if (released != allocation::kInvalidImageId) {
-          images_to_release.push_back(released);
-        }
+        ReleaseLayerObject(layer_handle);
       }
       layer_stacks_.erase(it);
     }
   }
 
-  return images_to_release;
+  return std::vector<allocation::GlobalImageId>(
+      images_to_release_on_present_.begin() + initial_size, images_to_release_on_present_.end());
 }
 
 void Flatland::SetLayerImageForTest(LayerHandle handle, allocation::GlobalImageId image) {
   auto it = layer_objects_.find(handle);
   FX_CHECK(it != layer_objects_.end()) << "Layer not found: " << handle;
-  if (it == layer_objects_.end()) {
+  it->second.mode = LayerObject::Mode::kImage;
+  if (image == allocation::kInvalidImageId) {
+    UnbindLayerImage(it->second);
     return;
   }
-  it->second.mode = LayerObject::Mode::kImage;
-  it->second.image_mode.image_id = image;
+  // Tests bind ids that were never imported; give them an ImageObject.
+  image_objects_.try_emplace(image, ImageObject{.ref_count = 0});
+  BindLayerImage(it->second, image);
 }
 
 void Flatland::SetLayerSolidColorForTest(LayerHandle handle) {
@@ -3374,6 +3404,14 @@ void Flatland::SetLayerSolidColorForTest(LayerHandle handle) {
 LayerObject* Flatland::GetLayerObjectForTest(LayerHandle handle) {
   auto it = layer_objects_.find(handle);
   if (it == layer_objects_.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+ImageObject* Flatland::GetImageObjectForTest(allocation::GlobalImageId id) {
+  auto it = image_objects_.find(id);
+  if (it == image_objects_.end()) {
     return nullptr;
   }
   return &it->second;
@@ -3414,5 +3452,7 @@ std::optional<TransformHandle> Flatland::GetLayerStackHandleForTest(
   }
   return it->second;
 }
+
+size_t Flatland::PendingImageReleaseCountForTest() const { return pending_image_releases_.size(); }
 
 }  // namespace flatland

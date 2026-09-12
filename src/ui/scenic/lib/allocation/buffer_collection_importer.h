@@ -56,7 +56,11 @@ class BufferCollectionImporter {
   virtual fpromise::promise<> ImportBufferImage(const ImageMetadata& metadata,
                                                 BufferCollectionUsage usage_type) = 0;
 
-  // Releases the provided image from the service.
+  // Releases the provided image from the service.  Safe to call for an image id this importer
+  // never imported or has already released; such calls are no-ops.
+  // TODO(https://fxbug.dev/560366075): semantics are undefined if called while an image
+  // is still being imported.  Currently not an issue because implementations are all
+  // (almost: see bug) synchronous.
   virtual void ReleaseBufferImage(GlobalImageId image_id) = 0;
 
   virtual ~BufferCollectionImporter() = default;

@@ -4963,26 +4963,26 @@ TEST_F(FlatlandTest, ReleaseImageErrorCases) {
   }
 }
 
-// If we have multiple BufferCollectionImporters, some of them may properly import
-// an image while others do not. We have to therefore make sure that if importer A
-// properly imports an image and then importer B fails, that Flatland automatically
-// releases the image from importer A.
-TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
+// One importer imports the image and the other fails.  The failed CreateImage() drops the
+// layer's ref, and the image is released from every importer exactly once, through the
+// session-teardown fence: once on the importer that succeeded, and once on the importer that
+// failed, for which the release is a no-op (see BufferCollectionImporter::ReleaseBufferImage).
+TEST_F(FlatlandTest, ImportFailureOnOneImporterReleasesEveryImporterOnce) {
   // Create a second buffer collection importer.
   auto local_mock_buffer_collection_importer = new MockBufferCollectionImporter();
   auto local_buffer_collection_importer =
       std::shared_ptr<allocation::BufferCollectionImporter>(local_mock_buffer_collection_importer);
 
-  // Create flatland and allocator instances that has two BufferCollectionImporters.
+  // Create flatland and allocator instances that have two BufferCollectionImporters.
   std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> importers(
       {buffer_collection_importer_, local_buffer_collection_importer});
   std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> screenshot_importers;
   std::shared_ptr<Allocator> allocator = std::make_shared<Allocator>(
       dispatcher(), context_provider_.context(), importers, screenshot_importers,
-      utils::CreateSysmemAllocatorClient(dispatcher(),
-                                         "ImageImportPassesFailsOnDiffImportersTest"));
+      utils::CreateSysmemAllocatorClient(dispatcher(), "ImportFailureReleasesEveryImporterOnce"));
   auto session_id = scheduling::GetNextSessionId();
 
+  std::optional<std::string> error_log;
   auto [flatland_client_end, flatland_server_end] =
       fidl::Endpoints<fuchsia_ui_composition::Flatland>::Create();
   auto flatland = Flatland::New(
@@ -4992,6 +4992,7 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
       uber_struct_system_->AllocateQueueForSession(session_id), importers, [](auto...) {},
       [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {},
       FlatlandConfig{.use_trusted_flatland_api = true});
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
   // Wait for Bind() to occur within Flatland::New().
   RunLoopUntilIdle();
 
@@ -5006,15 +5007,28 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
                         .size(fuchsia_math::wire::SizeU{100, 200})
                         .Build();
 
-  // We have the first importer return true, signifying a successful import, and the second one
-  // returning false. This should trigger the first importer to call ReleaseBufferImage().
+  allocation::GlobalImageId image_id = allocation::kInvalidImageId;
   EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
-      .WillOnce(ReturnPromise(fpromise::ok()));
+      .WillOnce([&image_id](const allocation::ImageMetadata& metadata,
+                            allocation::BufferCollectionUsage) {
+        image_id = metadata.identifier;
+        return fpromise::make_ok_promise();
+      });
   EXPECT_CALL(*local_mock_buffer_collection_importer, ImportBufferImage(_, _))
       .WillOnce(ReturnPromise(fpromise::error()));
-  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).WillOnce(Return());
+
   flatland->CreateImage(ContentId(1), ToWire(std::move(ref_pair.import_token)), /*vmo_idx*/ 0,
                         properties);
+  RunLoopUntilIdle();
+  ASSERT_TRUE(error_log.has_value());
+  ASSERT_NE(image_id, allocation::kInvalidImageId);
+
+  // Nothing has been released yet.  The id rides the session-teardown fence, which the fixture's
+  // default RemoveSession() action signals.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(image_id)).Times(1);
+  EXPECT_CALL(*local_mock_buffer_collection_importer, ReleaseBufferImage(image_id)).Times(1);
+  flatland.reset();
+  RunLoopUntilIdle();
 }
 
 // Test to make sure that if a buffer collection importer returns |false|
@@ -5661,14 +5675,19 @@ TEST_F(FlatlandTest, ReleaseImageImmediatelyTrusted) {
   ImageProperties properties;
   properties.size(SizeU{100, 200});
   auto ref_pair = BufferCollectionImportExportTokens::New();
-  CreateImage(flatland.get(), allocator.get(), kImageId, std::move(ref_pair),
-              std::move(properties));
+  const auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
+                                          std::move(ref_pair), std::move(properties));
+  const auto global_image_id = global_id_pair.image_id;
+  EXPECT_NE(flatland->GetImageObjectForTest(global_image_id), nullptr);
 
   // Verify the image is present.
   EXPECT_TRUE(flatland->GetContentHandle(kImageId).has_value());
 
   // Calling ReleaseImageImmediately on a trusted session should succeed (one-way call).
   flatland->ReleaseImageImmediately(kImageId);
+
+  // Verify ImageObject is gone right after the call without needing Present().
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_image_id), nullptr);
 
   RunLoopUntilIdle();
 
@@ -5879,9 +5898,813 @@ TEST_F(FlatlandTest, ImageReleaseRidesExistingMachinery) {
   auto released_images = flatland->CleanupFlatland2StateForTest({stack_content_handle});
   EXPECT_THAT(released_images, ::testing::ElementsAre(global_image_id));
 
-  // The destructor of Flatland will release the images in images_to_release_.
+  // The Flatland destructor will release all images.
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
   flatland.reset();
+  RunLoopUntilIdle();
+}
+
+TEST_F(FlatlandTest, StackRemovalReleasesImageAtPresent) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  const ContentId kImageId(1);
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+
+  ImageProperties properties;
+  properties.size(SizeU{100, 200});
+
+  auto import_token_dup = ref_pair.DuplicateImportToken();
+  const auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
+                                          std::move(ref_pair), std::move(properties));
+  auto& global_collection_id = global_id_pair.collection_id;
+  auto global_image_id = global_id_pair.image_id;
+
+  LayerHandle layer = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer, global_image_id);
+
+  auto stack_content_handle = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack_content_handle, {layer});
+
+  // Release the buffer collection.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(global_collection_id, _))
+      .Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  import_token_dup.value().reset();
+  RunLoopUntilIdle();
+
+  // Release the classic image. Since it is bound to our live layer, it should NOT be released yet.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  flatland->ReleaseImage(kImageId);
+  Present(flatland, true);
+
+  // Set the stack to {}. Since the layer was only referenced by this stack, it is destroyed.
+  flatland->SetLayerStackData(stack_content_handle, {});
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer), nullptr);
+
+  // Call Present(); the image is queued for release behind that frame's release fence.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  Present(flatland, true);
+
+  // Signal the release fence: ReleaseBufferImage(id) is called once.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_image_id), nullptr);
+}
+
+TEST_F(FlatlandTest, SharedImageReleasedWhenLastLayerDies) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  const ContentId kImageId(1);
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+
+  ImageProperties properties;
+  properties.size(SizeU{100, 200});
+
+  auto import_token_dup = ref_pair.DuplicateImportToken();
+  const auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
+                                          std::move(ref_pair), std::move(properties));
+  auto& global_collection_id = global_id_pair.collection_id;
+  auto global_image_id = global_id_pair.image_id;
+
+  // Release the buffer collection.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(global_collection_id, _))
+      .Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  import_token_dup.value().reset();
+  RunLoopUntilIdle();
+
+  // Bind the same image to two test layers.
+  LayerHandle layer1 = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer1, global_image_id);
+  LayerHandle layer2 = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer2, global_image_id);
+
+  auto* image_object = flatland->GetImageObjectForTest(global_image_id);
+  ASSERT_NE(image_object, nullptr);
+  // Facade layer has 1 ref, and layer1 and layer2 each hold 1 ref via SetLayerImageForTest.
+  EXPECT_EQ(image_object->ref_count, 3u);
+
+  // Put both layers in a stack.
+  auto stack = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack, {layer1, layer2});
+
+  // Release the facade content. The image remains live because layer1 and layer2 hold refs.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  flatland->ReleaseImage(kImageId);
+  Present(flatland, true);
+  EXPECT_EQ(image_object->ref_count, 2u);
+
+  // Remove layer1 from the stack.
+  flatland->SetLayerStackData(stack, {layer2});
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer1), nullptr);
+  EXPECT_EQ(image_object->ref_count, 1u);
+
+  // Present: image should not be released yet.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  Present(flatland, true);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+  EXPECT_NE(flatland->GetImageObjectForTest(global_image_id), nullptr);
+
+  // Remove layer2 from the stack.
+  flatland->SetLayerStackData(stack, {});
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer2), nullptr);
+
+  // Present: image queued for release, released once the release fence signals.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  Present(flatland, true);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_image_id), nullptr);
+}
+
+TEST_F(FlatlandTest, PerPresentReleaseFencesAreIndependent) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  // Create image 1.
+  const ContentId kImageId1(1);
+  auto ref_pair1 = BufferCollectionImportExportTokens::New();
+  ImageProperties properties1;
+  properties1.size(SizeU{100, 200});
+  const auto global_id_pair1 = CreateImage(flatland.get(), allocator.get(), kImageId1,
+                                           std::move(ref_pair1), std::move(properties1));
+  auto global_image_id1 = global_id_pair1.image_id;
+
+  LayerHandle layer1 = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer1, global_image_id1);
+  auto stack1 = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack1, {layer1});
+  flatland->ReleaseImage(kImageId1);
+  Present(flatland, true);
+
+  // Create image 2.
+  const ContentId kImageId2(2);
+  auto ref_pair2 = BufferCollectionImportExportTokens::New();
+  ImageProperties properties2;
+  properties2.size(SizeU{100, 200});
+  const auto global_id_pair2 = CreateImage(flatland.get(), allocator.get(), kImageId2,
+                                           std::move(ref_pair2), std::move(properties2));
+  auto global_image_id2 = global_id_pair2.image_id;
+
+  LayerHandle layer2 = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer2, global_image_id2);
+  auto stack2 = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack2, {layer2});
+  flatland->ReleaseImage(kImageId2);
+  Present(flatland, true);
+
+  // Drop stack 1 -> layer 1 dies -> ref_count of image 1 drops to 0.
+  flatland->SetLayerStackData(stack1, {});
+
+  // Present 1: capture its release fence, but skip automatic signaling.
+  fuchsia_ui_composition::wire::PresentArgs present_args1;
+  flatland->Present(present_args1);
+
+  std::vector<zx::event> fences1;
+  EXPECT_CALL(*mock_flatland_presenter_,
+              ScheduleUpdateForSession(::testing::_, ::testing::_, ::testing::_, ::testing::_,
+                                       ::testing::_, ::testing::_, ::testing::_))
+      .WillOnce([&fences1](zx::time, scheduling::SchedulingIdPair, bool,
+                           std::vector<zx::event> release_fences, std::vector<zx::counter>,
+                           std::vector<zx::counter>,
+                           bool) { fences1 = std::move(release_fences); });
+  RunLoopUntilIdle();
+  flatland->OnNextFrameBegin(1, {});
+  ASSERT_EQ(fences1.size(), 1u);
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 1u);
+
+  // Drop stack 2 -> layer 2 dies -> ref_count of image 2 drops to 0.
+  flatland->SetLayerStackData(stack2, {});
+
+  // Present 2: capture its release fence, but skip automatic signaling.
+  fuchsia_ui_composition::wire::PresentArgs present_args2;
+  flatland->Present(present_args2);
+
+  std::vector<zx::event> fences2;
+  EXPECT_CALL(*mock_flatland_presenter_,
+              ScheduleUpdateForSession(::testing::_, ::testing::_, ::testing::_, ::testing::_,
+                                       ::testing::_, ::testing::_, ::testing::_))
+      .WillOnce([&fences2](zx::time, scheduling::SchedulingIdPair, bool,
+                           std::vector<zx::event> release_fences, std::vector<zx::counter>,
+                           std::vector<zx::counter>,
+                           bool) { fences2 = std::move(release_fences); });
+  RunLoopUntilIdle();
+  flatland->OnNextFrameBegin(1, {});
+  ASSERT_EQ(fences2.size(), 1u);
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 2u);
+
+  // Signal the second fence and run the loop: only the second image is released, count is 1.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id1)).Times(0);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id2)).Times(1);
+  fences2[0].signal(0, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 1u);
+
+  // Signal the first fence: the first image is released, count is 0.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id1)).Times(1);
+  fences1[0].signal(0, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 0u);
+}
+
+TEST_F(FlatlandTest, PendingReleasesDrainedAtTeardown) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  const ContentId kImageId(1);
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  ImageProperties properties;
+  properties.size(SizeU{100, 200});
+
+  const auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
+                                          std::move(ref_pair), std::move(properties));
+  auto global_image_id = global_id_pair.image_id;
+
+  LayerHandle layer = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer, global_image_id);
+  auto stack = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack, {layer});
+  flatland->ReleaseImage(kImageId);
+  Present(flatland, true);
+
+  // Drop stack -> layer dies -> ref_count of image drops to 0.
+  flatland->SetLayerStackData(stack, {});
+
+  // Present, but skip signalling the release fence.
+  PresentArgs args;
+  args.skip_session_update_and_release_fences = true;
+  PresentWithArgs(flatland, std::move(args), true);
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 1u);
+
+  // Destroy the session. Capture the RemoveSession release fence.
+  std::optional<zx::event> teardown_fence;
+  EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(flatland->GetSessionId(), ::testing::_))
+      .WillOnce([&teardown_fence](scheduling::SessionId, std::optional<zx::event> fence) {
+        teardown_fence = std::move(fence);
+      });
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(0);
+  flatland.reset();
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(teardown_fence.has_value());
+
+  // Signal the teardown fence: the image is released.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
+  teardown_fence->signal(0, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+}
+
+TEST_F(FlatlandTest, NoDoubleReleaseWhenPerPresentFenceSignalsAfterTeardown) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  const ContentId kImageId(1);
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  ImageProperties properties;
+  properties.size(SizeU{100, 200});
+
+  const auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
+                                          std::move(ref_pair), std::move(properties));
+  auto global_image_id = global_id_pair.image_id;
+
+  LayerHandle layer = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer, global_image_id);
+  auto stack = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack, {layer});
+  flatland->ReleaseImage(kImageId);
+  Present(flatland, true);
+
+  // Drop stack -> layer dies -> ref_count of image drops to 0.
+  flatland->SetLayerStackData(stack, {});
+
+  // 1. Present: capture that Present's release fence.
+  fuchsia_ui_composition::wire::PresentArgs present_args;
+  flatland->Present(present_args);
+
+  std::vector<zx::event> per_present_fences;
+  EXPECT_CALL(*mock_flatland_presenter_,
+              ScheduleUpdateForSession(::testing::_, ::testing::_, ::testing::_, ::testing::_,
+                                       ::testing::_, ::testing::_, ::testing::_))
+      .WillOnce([&per_present_fences](zx::time, scheduling::SchedulingIdPair, bool,
+                                      std::vector<zx::event> release_fences,
+                                      std::vector<zx::counter>, std::vector<zx::counter>,
+                                      bool) { per_present_fences = std::move(release_fences); });
+  RunLoopUntilIdle();
+  flatland->OnNextFrameBegin(1, {});
+  ASSERT_EQ(per_present_fences.size(), 1u);
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 1u);
+
+  // 2. Destroy the session; capture the RemoveSession fence.
+  std::optional<zx::event> teardown_fence;
+  EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(flatland->GetSessionId(), ::testing::_))
+      .WillOnce([&teardown_fence](scheduling::SessionId, std::optional<zx::event> fence) {
+        teardown_fence = std::move(fence);
+      });
+
+  flatland.reset();
+  RunLoopUntilIdle();
+  ASSERT_TRUE(teardown_fence.has_value());
+
+  // 3. Signal the per-Present fence and run the loop: ReleaseBufferImage is NOT called.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(0);
+  per_present_fences[0].signal(0, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+
+  // 4. Signal the RemoveSession fence and run the loop: ReleaseBufferImage(id) exactly once.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
+  teardown_fence->signal(0, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+}
+
+TEST_F(FlatlandTest, TeardownGathersRecordsAndAccumulator) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  // Create image A.
+  const ContentId kImageIdA(1);
+  auto ref_pair_a = BufferCollectionImportExportTokens::New();
+  ImageProperties properties_a;
+  properties_a.size(SizeU{100, 200});
+  const auto global_id_pair_a = CreateImage(flatland.get(), allocator.get(), kImageIdA,
+                                            std::move(ref_pair_a), std::move(properties_a));
+  auto global_image_id_a = global_id_pair_a.image_id;
+
+  LayerHandle layer_a = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer_a, global_image_id_a);
+  auto stack_a = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack_a, {layer_a});
+  flatland->ReleaseImage(kImageIdA);
+  Present(flatland, true);
+
+  // Create image B.
+  const ContentId kImageIdB(2);
+  auto ref_pair_b = BufferCollectionImportExportTokens::New();
+  ImageProperties properties_b;
+  properties_b.size(SizeU{100, 200});
+  const auto global_id_pair_b = CreateImage(flatland.get(), allocator.get(), kImageIdB,
+                                            std::move(ref_pair_b), std::move(properties_b));
+  auto global_image_id_b = global_id_pair_b.image_id;
+
+  LayerHandle layer_b = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer_b, global_image_id_b);
+  auto stack_b = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack_b, {layer_b});
+  flatland->ReleaseImage(kImageIdB);
+  Present(flatland, true);
+
+  // 1. Image A: drop last ref, Present.
+  flatland->SetLayerStackData(stack_a, {});
+  fuchsia_ui_composition::wire::PresentArgs present_args;
+  flatland->Present(present_args);
+  EXPECT_CALL(*mock_flatland_presenter_,
+              ScheduleUpdateForSession(::testing::_, ::testing::_, ::testing::_, ::testing::_,
+                                       ::testing::_, ::testing::_, ::testing::_));
+  RunLoopUntilIdle();
+  flatland->OnNextFrameBegin(1, {});
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 1u);
+
+  // 2. Image B: drop last ref, no Present (B stays in images_to_release_on_present_).
+  flatland->SetLayerStackData(stack_b, {});
+
+  // 3. Destroy session; capture RemoveSession fence.
+  std::optional<zx::event> teardown_fence;
+  EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(flatland->GetSessionId(), ::testing::_))
+      .WillOnce([&teardown_fence](scheduling::SessionId, std::optional<zx::event> fence) {
+        teardown_fence = std::move(fence);
+      });
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id_a)).Times(0);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id_b)).Times(0);
+  flatland.reset();
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(teardown_fence.has_value());
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id_a)).Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id_b)).Times(1);
+  teardown_fence->signal(0, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+}
+
+// Present() appends one internal fence to the client's release fences ONLY when there are one or
+// more images to be released.  This test prevents a class of regressions where a fence is appended
+// even though there were no images to be released.
+TEST_F(FlatlandTest, ImageReleaseFenceAddedOnlyWhenImagesQueued) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  // Create an image and keep it alive on a stack.
+  const ContentId kImageId(1);
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  ImageProperties properties;
+  properties.size(SizeU{100, 200});
+  const auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
+                                          std::move(ref_pair), std::move(properties));
+  auto global_image_id = global_id_pair.image_id;
+
+  LayerHandle layer = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer, global_image_id);
+  auto stack = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack, {layer});
+  flatland->ReleaseImage(kImageId);
+  Present(flatland, true);
+
+  // Present with one client-supplied release fence and nothing to release:
+  zx::event client_fence1 = utils::CreateEvent();
+  std::vector<zx::event> client_fences1;
+  client_fences1.push_back(utils::CopyZxHandle(client_fence1));
+
+  fidl::Arena arena1;
+  auto builder1 = fuchsia_ui_composition::wire::PresentArgs::Builder(arena1);
+  builder1.release_fences(fidl::VectorView<zx::event>::FromExternal(client_fences1));
+  auto present_args1 = builder1.Build();
+  flatland->Present(present_args1);
+
+  std::vector<zx::event> scheduled_fences1;
+  EXPECT_CALL(*mock_flatland_presenter_,
+              ScheduleUpdateForSession(::testing::_, ::testing::_, ::testing::_, ::testing::_,
+                                       ::testing::_, ::testing::_, ::testing::_))
+      .WillOnce([&scheduled_fences1](zx::time, scheduling::SchedulingIdPair, bool,
+                                     std::vector<zx::event> release_fences,
+                                     std::vector<zx::counter>, std::vector<zx::counter>,
+                                     bool) { scheduled_fences1 = std::move(release_fences); });
+  RunLoopUntilIdle();
+  flatland->OnNextFrameBegin(1, {});
+
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 0u);
+  EXPECT_EQ(scheduled_fences1.size(), 1u);
+
+  // Now drop the stack: image has 0 refs, will be released on next Present.
+  flatland->SetLayerStackData(stack, {});
+
+  zx::event client_fence2 = utils::CreateEvent();
+  std::vector<zx::event> client_fences2;
+  client_fences2.push_back(utils::CopyZxHandle(client_fence2));
+
+  fidl::Arena arena2;
+  auto builder2 = fuchsia_ui_composition::wire::PresentArgs::Builder(arena2);
+  builder2.release_fences(fidl::VectorView<zx::event>::FromExternal(client_fences2));
+  auto present_args2 = builder2.Build();
+  flatland->Present(present_args2);
+
+  std::vector<zx::event> scheduled_fences2;
+  EXPECT_CALL(*mock_flatland_presenter_,
+              ScheduleUpdateForSession(::testing::_, ::testing::_, ::testing::_, ::testing::_,
+                                       ::testing::_, ::testing::_, ::testing::_))
+      .WillOnce([&scheduled_fences2](zx::time, scheduling::SchedulingIdPair, bool,
+                                     std::vector<zx::event> release_fences,
+                                     std::vector<zx::counter>, std::vector<zx::counter>,
+                                     bool) { scheduled_fences2 = std::move(release_fences); });
+  RunLoopUntilIdle();
+  flatland->OnNextFrameBegin(1, {});
+
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 1u);
+  EXPECT_EQ(scheduled_fences2.size(), 2u);
+
+  // Signal the image release fence to cleanly finish.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
+  scheduled_fences2[1].signal(0, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+}
+
+TEST_F(FlatlandTest, OnePresentBatchesReleasesBehindOneFence) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  // Image 1.
+  const ContentId kImageId1(1);
+  auto ref_pair1 = BufferCollectionImportExportTokens::New();
+  ImageProperties properties1;
+  properties1.size(SizeU{100, 200});
+  const auto global_id_pair1 = CreateImage(flatland.get(), allocator.get(), kImageId1,
+                                           std::move(ref_pair1), std::move(properties1));
+  auto global_image_id1 = global_id_pair1.image_id;
+
+  LayerHandle layer1 = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer1, global_image_id1);
+  auto stack1 = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack1, {layer1});
+  flatland->ReleaseImage(kImageId1);
+  Present(flatland, true);
+
+  // Image 2.
+  const ContentId kImageId2(2);
+  auto ref_pair2 = BufferCollectionImportExportTokens::New();
+  ImageProperties properties2;
+  properties2.size(SizeU{100, 200});
+  const auto global_id_pair2 = CreateImage(flatland.get(), allocator.get(), kImageId2,
+                                           std::move(ref_pair2), std::move(properties2));
+  auto global_image_id2 = global_id_pair2.image_id;
+
+  LayerHandle layer2 = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer2, global_image_id2);
+  auto stack2 = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack2, {layer2});
+  flatland->ReleaseImage(kImageId2);
+  Present(flatland, true);
+
+  // Drop last refs of both images before presenting.
+  flatland->SetLayerStackData(stack1, {});
+  flatland->SetLayerStackData(stack2, {});
+
+  fuchsia_ui_composition::wire::PresentArgs present_args;
+  flatland->Present(present_args);
+
+  std::vector<zx::event> release_fences;
+  EXPECT_CALL(*mock_flatland_presenter_,
+              ScheduleUpdateForSession(::testing::_, ::testing::_, ::testing::_, ::testing::_,
+                                       ::testing::_, ::testing::_, ::testing::_))
+      .WillOnce([&release_fences](zx::time, scheduling::SchedulingIdPair, bool,
+                                  std::vector<zx::event> fences, std::vector<zx::counter>,
+                                  std::vector<zx::counter>,
+                                  bool) { release_fences = std::move(fences); });
+  RunLoopUntilIdle();
+  flatland->OnNextFrameBegin(1, {});
+
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 1u);
+  ASSERT_EQ(release_fences.size(), 1u);
+
+  // Signal the single fence: both images are released, count is 0.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id1)).Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id2)).Times(1);
+  release_fences[0].signal(0, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 0u);
+}
+
+// The "test seam" is `SetLayerImageForTest()`, the stand-in for the not-yet-implemented Flatland2
+// `SetLayerImage` FIDL method.  Until then, there is no way to trigger `BindLayerImage()` on a
+// layer that already has a binding.
+TEST_F(FlatlandTest, RebindViaTestSeamReleasesOldImage) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  // Create image A.
+  const ContentId kImageIdA(1);
+  auto ref_pair_a = BufferCollectionImportExportTokens::New();
+  ImageProperties properties_a;
+  properties_a.size(SizeU{100, 200});
+  const auto global_id_pair_a = CreateImage(flatland.get(), allocator.get(), kImageIdA,
+                                            std::move(ref_pair_a), std::move(properties_a));
+  auto global_image_id_a = global_id_pair_a.image_id;
+
+  // Create image B.
+  const ContentId kImageIdB(2);
+  auto ref_pair_b = BufferCollectionImportExportTokens::New();
+  ImageProperties properties_b;
+  properties_b.size(SizeU{100, 200});
+  const auto global_id_pair_b = CreateImage(flatland.get(), allocator.get(), kImageIdB,
+                                            std::move(ref_pair_b), std::move(properties_b));
+  auto global_image_id_b = global_id_pair_b.image_id;
+
+  // Bind A to a test layer and B to a holder layer so they survive facade release.
+  LayerHandle layer = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer, global_image_id_a);
+
+  LayerHandle layer_b = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer_b, global_image_id_b);
+  auto stack = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack, {layer, layer_b});
+
+  // Release their facade contents so only seam refs remain.
+  flatland->ReleaseImage(kImageIdA);
+  flatland->ReleaseImage(kImageIdB);
+  Present(flatland, true);
+
+  // Image A has exactly 1 ref (layer), image B has exactly 1 ref (layer_b).
+  EXPECT_NE(flatland->GetImageObjectForTest(global_image_id_a), nullptr);
+  EXPECT_NE(flatland->GetImageObjectForTest(global_image_id_b), nullptr);
+
+  // Now rebind to image B on the same layer.
+  flatland->SetLayerImageForTest(layer, global_image_id_b);
+  // Image A's ref count dropped to 0 and its ImageObject was destroyed.
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_image_id_a), nullptr);
+  EXPECT_NE(flatland->GetImageObjectForTest(global_image_id_b), nullptr);
+
+  // Present: image A queued for release.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  Present(flatland, true);
+
+  // Signal fence: A released once, B not released.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id_a)).Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id_b)).Times(0);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(flatland->GetImageObjectForTest(global_image_id_a), nullptr);
+  EXPECT_NE(flatland->GetImageObjectForTest(global_image_id_b), nullptr);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id_b)).Times(1);
+}
+
+// The "test seam" is `SetLayerImageForTest()`, the stand-in for the not-yet-implemented Flatland2
+// `SetLayerImage` FIDL method.  Until then, there is no way to trigger `BindLayerImage()` on a
+// layer that already has a binding.
+TEST_F(FlatlandTest, RebindSameImageViaTestSeamIsNoOp) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  // Create image A.
+  const ContentId kImageIdA(1);
+  auto ref_pair_a = BufferCollectionImportExportTokens::New();
+  ImageProperties properties_a;
+  properties_a.size(SizeU{100, 200});
+  const auto global_id_pair_a = CreateImage(flatland.get(), allocator.get(), kImageIdA,
+                                            std::move(ref_pair_a), std::move(properties_a));
+  auto global_image_id_a = global_id_pair_a.image_id;
+
+  // Bind A to a test layer via the seam.
+  LayerHandle layer = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer, global_image_id_a);
+  auto stack = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack, {layer});
+
+  // Release the facade content so only the seam ref remains.
+  flatland->ReleaseImage(kImageIdA);
+  Present(flatland, true);
+
+  // Image A has exactly 1 ref (the seam layer).
+  auto* image_object = flatland->GetImageObjectForTest(global_image_id_a);
+  ASSERT_NE(image_object, nullptr);
+  EXPECT_EQ(image_object->ref_count, 1u);
+
+  // Rebind the same image to the layer.
+  flatland->SetLayerImageForTest(layer, global_image_id_a);
+  image_object = flatland->GetImageObjectForTest(global_image_id_a);
+  ASSERT_NE(image_object, nullptr);
+  EXPECT_EQ(image_object->ref_count, 1u);
+  auto* layer_object = flatland->GetLayerObjectForTest(layer);
+  ASSERT_NE(layer_object, nullptr);
+  EXPECT_EQ(layer_object->image_mode.image_id, global_image_id_a);
+
+  // Present, then signal the fence and run the loop: ReleaseBufferImage Times(0).
+  // PendingImageReleaseCountForTest() == 0 after the Present (nothing was queued).
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  Present(flatland, true);
+  EXPECT_EQ(flatland->PendingImageReleaseCountForTest(), 0u);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id_a)).Times(1);
+}
+
+TEST_F(FlatlandTest, CreateImageImportFailureRollsBackImageObject) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::optional<std::string> error_log;
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+
+  const ContentId kImageId(1);
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator.get(), std::move(ref_pair.export_token), CreateToken(), true);
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{150, 175})
+                        .Build();
+
+  allocation::GlobalImageId failed_image_id = allocation::kInvalidImageId;
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce([&failed_image_id](const allocation::ImageMetadata& metadata,
+                                   allocation::BufferCollectionUsage) {
+        failed_image_id = metadata.identifier;
+        return fpromise::make_error_promise();
+      });
+
+  flatland->CreateImage(kImageId, ToWire(ref_pair.DuplicateImportToken()), /*vmo_idx*/ 0,
+                        properties);
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(error_log.has_value());
+  ASSERT_NE(failed_image_id, allocation::kInvalidImageId);
+
+  // The import failure closed the FIDL connection, but the fixture's destroy-instance callback
+  // is a no-op and this test still holds a shared_ptr, so `flatland` is alive and inspectable.
+  // It is destroyed explicitly in step 3.
+
+  // 1. GetImageObjectForTest(id) is nullptr.
+  EXPECT_EQ(flatland->GetImageObjectForTest(failed_image_id), nullptr);
+
+  // 2. The facade layer's binding is cleared.
+  auto content_handle = flatland->GetContentHandle(kImageId);
+  ASSERT_TRUE(content_handle.has_value());
+  auto* stack_data = flatland->GetLayerStackDataForTest(*content_handle);
+  ASSERT_NE(stack_data, nullptr);
+  ASSERT_FALSE(stack_data->layers.empty());
+  auto* layer_obj = flatland->GetLayerObjectForTest(stack_data->layers[0]);
+  ASSERT_NE(layer_obj, nullptr);
+  EXPECT_EQ(layer_obj->image_mode.image_id, allocation::kInvalidImageId);
+
+  // 3. Destroying the session releases the image exactly once, through the RemoveSession
+  // fence: the binding was dropped through the ref count, so the id rides the normal path
+  // and the importer ignores it.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(failed_image_id)).Times(1);
+
+  std::optional<zx::event> teardown_fence;
+  EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(flatland->GetSessionId(), ::testing::_))
+      .WillOnce([&teardown_fence](scheduling::SessionId, std::optional<zx::event> fence) {
+        teardown_fence = std::move(fence);
+      });
+
+  flatland.reset();
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(teardown_fence.has_value());
+  teardown_fence->signal(0, ZX_EVENT_SIGNALED);
+  RunLoopUntilIdle();
+}
+
+// The first image's import fails only after the client has released it and reused its content
+// id for a second image.  The rollback must find the first image's layer by its handle and leave
+// the second image alone.
+TEST_F(FlatlandTest, LateImportFailureLeavesReusedContentIdIntact) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::optional<std::string> error_log;
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+
+  const ContentId kImageId(1);
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+  RegisterBufferCollection(allocator.get(), std::move(ref_pair.export_token), CreateToken(), true);
+
+  fidl::Arena arena;
+  auto properties = fuchsia_ui_composition::wire::ImageProperties::Builder(arena)
+                        .size(fuchsia_math::wire::SizeU{150, 175})
+                        .Build();
+
+  fpromise::bridge<> first_import;
+  allocation::GlobalImageId first_id = allocation::kInvalidImageId;
+  allocation::GlobalImageId second_id = allocation::kInvalidImageId;
+  EXPECT_CALL(*mock_buffer_collection_importer_, ImportBufferImage(_, _))
+      .WillOnce([&](const allocation::ImageMetadata& metadata, allocation::BufferCollectionUsage) {
+        first_id = metadata.identifier;
+        return first_import.consumer.promise();
+      })
+      .WillOnce([&](const allocation::ImageMetadata& metadata, allocation::BufferCollectionUsage) {
+        second_id = metadata.identifier;
+        return fpromise::make_ok_promise();
+      });
+
+  flatland->CreateImage(kImageId, ToWire(ref_pair.DuplicateImportToken()), /*vmo_idx*/ 0,
+                        properties);
+  RunLoopUntilIdle();
+  EXPECT_FALSE(error_log.has_value());
+
+  flatland->ReleaseImage(kImageId);
+  flatland->CreateImage(kImageId, ToWire(ref_pair.DuplicateImportToken()), /*vmo_idx*/ 0,
+                        properties);
+  RunLoopUntilIdle();
+
+  first_import.completer.complete_error();
+  RunLoopUntilIdle();
+  ASSERT_TRUE(error_log.has_value());
+
+  // Assertions after the failure:
+  // - GetImageObjectForTest(first_id) is null (the released layer was still
+  //   alive, so its binding was dropped and the object died with its last ref).
+  EXPECT_EQ(flatland->GetImageObjectForTest(first_id), nullptr);
+
+  // - GetImageObjectForTest(second_id) is non-null with ref_count == 1u.
+  auto* image_obj_2 = flatland->GetImageObjectForTest(second_id);
+  ASSERT_NE(image_obj_2, nullptr);
+  EXPECT_EQ(image_obj_2->ref_count, 1u);
+
+  // - The layer under GetContentHandle(kImageId) (stack data, layers[0])
+  //   has image_mode.image_id == second_id.
+  auto content_handle = flatland->GetContentHandle(kImageId);
+  ASSERT_TRUE(content_handle.has_value());
+  auto* stack_data = flatland->GetLayerStackDataForTest(*content_handle);
+  ASSERT_NE(stack_data, nullptr);
+  ASSERT_FALSE(stack_data->layers.empty());
+  auto* layer_obj = flatland->GetLayerObjectForTest(stack_data->layers[0]);
+  ASSERT_NE(layer_obj, nullptr);
+  EXPECT_EQ(layer_obj->image_mode.image_id, second_id);
+
+  // Teardown: capture the RemoveSession fence, flatland.reset(),
+  // RunLoopUntilIdle(), expect ReleaseBufferImage(first_id) once and
+  // ReleaseBufferImage(second_id) once, signal the fence, RunLoopUntilIdle().
+  std::optional<zx::event> teardown_fence;
+  EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(flatland->GetSessionId(), ::testing::_))
+      .WillOnce([&teardown_fence](scheduling::SessionId, std::optional<zx::event> fence) {
+        teardown_fence = std::move(fence);
+      });
+
+  flatland.reset();
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(teardown_fence.has_value());
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(first_id)).Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(second_id)).Times(1);
+  teardown_fence->signal(0, ZX_EVENT_SIGNALED);
   RunLoopUntilIdle();
 }
 
@@ -5983,50 +6806,80 @@ TEST_F(Flatland2Test, ReorderIsRefCountNeutral) {
   EXPECT_THAT(stack_data->layers, ::testing::ElementsAre(layer_b, layer_a));
 }
 
-// TODO(https://fxbug.dev/540952629): Use CreateFlatland2() once CreateImage2/ReleaseImage2 are
-// implemented in later steps. For now, this test requires classic Flatland1
-// CreateImage/ReleaseImage to set up the image.
-TEST_F(Flatland2Test, RemovalReleasesBoundImage) {
-  std::shared_ptr<Allocator> allocator = CreateAllocator();
-  std::shared_ptr<Flatland> flatland = FlatlandTest::CreateFlatland();
+TEST_F(Flatland2Test, ReleaseLayerReleasesBoundImage) {
+  auto flatland = CreateFlatland2();
+  const LayerId kId(1);
+  flatland->CreateLayer(kId);
+  LayerHandle handle = flatland->GetLayerHandleForTest(kId);
+  ASSERT_NE(handle, LayerHandle());
 
-  const ContentId kImageId(1);
-  auto ref_pair = BufferCollectionImportExportTokens::New();
+  const allocation::GlobalImageId image_id = allocation::GenerateUniqueImageId();
+  flatland->SetLayerImageForTest(handle, image_id);
+  EXPECT_NE(flatland->GetImageObjectForTest(image_id), nullptr);
 
-  ImageProperties properties;
-  properties.size(SizeU{100, 200});
+  flatland->ReleaseLayer(kId);
 
-  auto import_token_dup = ref_pair.DuplicateImportToken();
-  const auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
-                                          std::move(ref_pair), std::move(properties));
-  auto& global_collection_id = global_id_pair.collection_id;
-  auto global_image_id = global_id_pair.image_id;
-
-  LayerHandle layer = flatland->CreateLayerObject();
-  flatland->SetLayerImageForTest(layer, global_image_id);
-
-  auto stack_content_handle = flatland->CreateLayerStackData();
-  flatland->SetLayerStackData(stack_content_handle, {layer});
-
-  // Release the buffer collection.
-  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(global_collection_id, _))
-      .Times(1);
+  // Present: image queued for release, released once the release fence signals.
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
-  import_token_dup.value().reset();
-  RunLoopUntilIdle();
-
-  // Release the classic image. Since it is bound to our live layer, it should NOT be released yet.
-  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
-  flatland->ReleaseImage(kImageId);
   Present(flatland, true);
 
-  // Set the stack to {}. Since the layer was only referenced by this stack, it is destroyed.
-  flatland->SetLayerStackData(stack_content_handle, {});
-  EXPECT_EQ(flatland->GetLayerObjectForTest(layer), nullptr);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(image_id)).Times(1);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
 
-  // The destructor of Flatland will release the images in images_to_release_.
-  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
+  EXPECT_EQ(flatland->GetImageObjectForTest(image_id), nullptr);
+}
+
+TEST_F(Flatland2Test, ClearReleasesClientHeldLayers) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kId(1);
+  flatland->CreateLayer(kId);
+  LayerHandle handle = flatland->GetLayerHandleForTest(kId);
+  ASSERT_NE(handle, LayerHandle());
+
+  const allocation::GlobalImageId image_id = allocation::GenerateUniqueImageId();
+  flatland->SetLayerImageForTest(handle, image_id);
+  EXPECT_NE(flatland->GetImageObjectForTest(image_id), nullptr);
+
+  flatland->Clear();
+
+  flatland->CreateLayer(kId);
+  EXPECT_FALSE(error_log.has_value());
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  Present(flatland, true);
+
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(image_id)).Times(1);
+  ApplySessionUpdatesAndSignalFences();
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(flatland->GetImageObjectForTest(image_id), nullptr);
+}
+
+TEST_F(Flatland2Test, TeardownReleasesClientHeldLayerImage) {
+  auto flatland = CreateFlatland2();
+  const LayerId kId(1);
+  flatland->CreateLayer(kId);
+  LayerHandle handle = flatland->GetLayerHandleForTest(kId);
+  ASSERT_NE(handle, LayerHandle());
+
+  const allocation::GlobalImageId image_id = allocation::GenerateUniqueImageId();
+  flatland->SetLayerImageForTest(handle, image_id);
+  EXPECT_NE(flatland->GetImageObjectForTest(image_id), nullptr);
+
+  std::optional<zx::event> teardown_fence;
+  EXPECT_CALL(*mock_flatland_presenter_, RemoveSession(flatland->GetSessionId(), ::testing::_))
+      .WillOnce([&teardown_fence](scheduling::SessionId, std::optional<zx::event> fence) {
+        teardown_fence = std::move(fence);
+      });
+
   flatland.reset();
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(teardown_fence.has_value());
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(image_id)).Times(1);
+  teardown_fence->signal(0, ZX_EVENT_SIGNALED);
   RunLoopUntilIdle();
 }
 

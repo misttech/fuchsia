@@ -16,6 +16,7 @@
 
 #include <functional>
 #include <initializer_list>
+#include <list>
 #include <map>
 #include <memory>
 #include <memory_resource>
@@ -465,18 +466,14 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   // not have an external ID that they are mapped to.
   void SetClipBoundaryInternal(TransformHandle handle, TransformClipRegion bounds);
 
+  // Called by `Clear()`.  Releases every Flatland2 object referenced by a client ID.
+  // All IDs are immediately safe to reuse.
+  void ClearFlatland2State();
+
   // For each dead transform:
-  //   1) remove the corresponding matrix
-  //   2) record any corresponding image which needs to be released
-  // The images found by 2) are handled in two ways:
-  //   - by adding them to `images_to_release_` (to ensure that they're properly released even if
-  //     the Flatland session is destroyed before releasing the images)
-  //   - returned from this function, so that they can be released as soon as the corresponding
-  //     release fence is signaled.
-  // The images with allocation::kInvalidImageId correspond to filled rects, which do not need to be
-  // released.
-  std::vector<allocation::GlobalImageId> ProcessDeadTransforms(
-      const TransformGraph::TopologyData& data);
+  // 1) Remove the corresponding matrix
+  // 2) If it hosts a layer stack, drop the stack and release its layers via `ReleaseLayerObject()`.
+  void ProcessDeadTransforms(const TransformGraph::TopologyData& data);
 
   // The dispatcher this Flatland instance is running on.
   async_dispatcher_t* dispatcher() const { return dispatcher_holder_->dispatcher(); }
@@ -548,6 +545,8 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
 
   // A mapping from user-generated ID to the LayerHandle that owns that layer object.
   std::pmr::unordered_map<LayerId, LayerHandle> layer_handles_;
+  // Supplies the session-unique suffix for new LayerHandles.
+  uint64_t next_layer_handle_ = 1;
 
   // Flatland2 layer state authored by this session, keyed by session-internal handles.
   // `layer_objects_` owns the layers; `layer_stacks_` maps a stack's content handle (its
@@ -559,8 +558,8 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   std::pmr::unordered_map<TransformHandle, LayerStackData> layer_stacks_;
   std::pmr::unordered_map<LayerStackId, TransformHandle> layer_stack_handles_;
 
-  // Supplies the session-unique suffix for new LayerHandles.
-  uint64_t next_layer_handle_ = 1;
+  // Image resources, keyed by the never-reused GlobalImageId.  See ImageObject.
+  std::pmr::unordered_map<allocation::GlobalImageId, ImageObject> image_objects_;
 
   // TODO(https://fxbug.dev/523371761): public for tests.  Later, revisit whether any can be
   // made private (if so, they'll be reordered in the file).
@@ -568,13 +567,9 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
  public:
   LayerHandle CreateLayerObject();
 
-  // Releases a reference to the internal layer. If this is the last reference
-  // to the layer (ref_count reaches 0), the layer is destroyed.
-  // Returns the ID of the bound image if the layer was destroyed AND it had
-  // an image bound to it; otherwise returns kInvalidImageId.
-  // The returned ID is primarily used by CleanupFlatland2StateForTest() to
-  // verify correct image lifecycle behavior in unit tests.
-  allocation::GlobalImageId ReleaseLayerObject(LayerHandle handle);
+  // Decrements `LayerObject` ref count, destroying it at zero.  When destroyed, any bound image is
+  // released via `UnbindLayerImage()`.
+  void ReleaseLayerObject(LayerHandle handle);
   TransformHandle CreateLayerStackData();
 
   // Replaces the stack's entire existing layer list with `layers`. This operation
@@ -597,12 +592,33 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   void SetLayerImageForTest(LayerHandle handle, allocation::GlobalImageId image);
   void SetLayerSolidColorForTest(LayerHandle handle);
   LayerObject* GetLayerObjectForTest(LayerHandle handle);
+  ImageObject* GetImageObjectForTest(allocation::GlobalImageId id);
   const LayerStackData* GetLayerStackDataForTest(TransformHandle handle);
   void ReleaseTransformForTest(TransformHandle handle);
   void SetPriorityChildForTest(TransformId parent, TransformHandle child);
   LayerHandle GetLayerHandleForTest(LayerId layer_id);
+  size_t PendingImageReleaseCountForTest() const;
 
  private:
+  // The only place that `ImageObject::ref_count` is decremented.  At zero the object is erased,
+  // but the image may still be on-screen, so it is not released yet.  Instead, the global image ID
+  // is queued in `images_to_release_on_present_`, and the next `Present()` releases it once a
+  // release fence signals (or `~Flatland()` does, if the session dies before presenting).
+  void ReleaseImageObject(allocation::GlobalImageId id);
+
+  // Clears any image bound to the layer, and calls `ReleaseImageObject()` on it.
+  // No-op for a layer with no bound image.
+  void UnbindLayerImage(LayerObject& layer);
+
+  // Binds `id` to `layer`, replacing any current binding.  `id` must map to an existing image;
+  // rebinding the same image is a no-op.  Manages ref-counts of incoming/outgoing images.
+  // The incoming image's width/height are copied into the layer's `ImageModeProperties`.
+  void BindLayerImage(LayerObject& layer, allocation::GlobalImageId id);
+
+  // Releases `ids` through the buffer collection importers and forgets their
+  // import tokens.  Called when a frame's release fence signals.
+  void ReleaseImages(std::span<const allocation::GlobalImageId> ids);
+
   // TODO(https://fxbug.dev/523371761): after transition to Flatland2 UberStruct schema is complete,
   // revisit order of public/private sections, and verify "methods-first, fields-last" declaration
   // order (as mandated by style guide).
@@ -705,14 +721,28 @@ class Flatland : public fidl::WireServer<fuchsia_ui_composition::Flatland>,
   // Error reporter used for printing debug logs.
   std::unique_ptr<scenic_impl::ErrorReporter> error_reporter_;
 
-  // These images no longer exist in the Flatland session.  They will be released as soon as the
-  // corresponding (internally generated) release fence is signaled, indicating that they are no
-  // longer in use by the compositor/display-coordinator.  Additionally, if the session is
-  // destroyed, this allows the images to be released without waiting for a release fence; see
-  // ~Flatland(). The indirection through a shared_ptr is so this can be captured and used in a
-  // closure after this Flatland session is destroyed (this happens only in tests, at least when
-  // this code was written).
-  std::shared_ptr<std::unordered_set<allocation::GlobalImageId>> images_to_release_;
+  // One frame's images-to-be-released, waiting on that frame's release fence.
+  // `Present()` populates a `PendingImageRelease` struct from the images accumulated in
+  // `images_to_release_on_present_` since the last `Present()`.
+  //
+  // Safety: owned by the session: `~WaitOnce()` cancels a pending wait synchronously,
+  // so no handler can run after `~Flatland()`.  Lives in a `std::pmr::list` because
+  // `async::WaitOnce` is not movable and needs a stable address.
+  struct PendingImageRelease {
+    PendingImageRelease(zx::event fence_in, std::pmr::vector<allocation::GlobalImageId> ids_in)
+        : fence(std::move(fence_in)), wait(fence.get(), ZX_EVENT_SIGNALED), ids(std::move(ids_in)) {
+      FX_CHECK(!ids.empty()) << "PendingImageRelease with no images";
+    }
+
+    zx::event fence;  // declared first: `wait` references its handle
+    async::WaitOnce wait;
+    std::pmr::vector<allocation::GlobalImageId> ids;
+  };
+  std::pmr::list<PendingImageRelease> pending_image_releases_;
+
+  // Images whose last ref was dropped since the previous `Present()`.
+  // `Present()` moves the contents into a `PendingImageRelease` record for that frame.
+  std::pmr::vector<allocation::GlobalImageId> images_to_release_on_present_;
 
   // Keeps the BufferCollectionImportToken alive for each active image. Dropping these tokens
   // triggers garbage collection of the associated BufferCollection in the Allocator. We keep them
