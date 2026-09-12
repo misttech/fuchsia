@@ -7,11 +7,9 @@
 from __future__ import annotations
 
 import dataclasses
-import os
 import pathlib
 import re
 import shlex
-import shutil
 from collections.abc import Sequence
 
 from agents.lib import paths
@@ -274,57 +272,38 @@ def _expand_git_clean_force_variants() -> list[str]:
     ]
 
 
-def _expand_sed_variants(
-    base_command: str, command_line: str, arguments: str
-) -> list[str]:
+def _expand_sed_variants(base_command: str, arguments: str) -> list[str]:
     """Expand sed command variants, providing dedicated regex matching for in-place flags."""
-    results = _expand_binary_variants(base_command, command_line, arguments)
     if _is_sed_inplace(arguments):
-        pattern = (
+        return [
             f"command(regex:{ENV_VARS_PREFIX_PATTERN}(\\S+/)?sed\\b"
             f"(?:\\s+{_ARG_VALUE_PATTERN})*\\s+(-[a-zA-Z]*i\\S*|--in-place(\\S*)?)(?:\\s+.*)?)"
-        )
-        if pattern not in results:
-            results.append(pattern)
-
-    return results
+        ]
+    return _expand_binary_variants(base_command, arguments)
 
 
-def _expand_binary_variants(
-    base_command: str, command_line: str, arguments: str
-) -> list[str]:
-    """Expand general system binaries, resolving full paths and basenames."""
-    results = [f"command({command_line})"]
-    argument_suffix = f" {arguments}" if arguments else ""
+def _expand_binary_variants(base_command: str, arguments: str) -> list[str]:
+    """Expand general system binaries into anchored regex pattern grants."""
+    base_name = pathlib.Path(base_command).name
+    escaped_base = re.escape(base_name)
+    prefix = f"{ENV_VARS_PREFIX_PATTERN}(\\S+/)?"
 
-    # If base_command is an absolute path, also emit the basename variant
-    # so that invoking via $PATH / alias is permitted.
-    # Note: We intentionally do not perform alternative prefix expansion
-    # (/usr/bin <-> /bin) here because an explicitly provided absolute path
-    # is treated as an intentional, specific user choice.
-    if os.path.isabs(base_command):
-        basename = pathlib.Path(base_command).name
-        basename_grant = f"command({basename}{argument_suffix})"
-        if basename_grant not in results:
-            results.append(basename_grant)
-        return results
+    if not arguments:
+        return [f"command(regex:{prefix}{escaped_base}\\b(?:\\s+.*)?)"]
 
-    # If base_command is a short name, resolve its absolute path via $PATH.
-    resolved_path = shutil.which(base_command)
-    if not resolved_path or resolved_path == base_command:
-        return results
+    if arguments.endswith("/"):
+        escaped_args = re.escape(arguments.rstrip("/"))
+        arg_suffix = "/+(?:\\s+.*)?"
+    elif arguments.endswith("~"):
+        escaped_args = re.escape(arguments)
+        arg_suffix = "/*(?:\\s+.*)?"
+    else:
+        escaped_args = re.escape(arguments)
+        arg_suffix = "(?:\\s+.*)?"
 
-    results.append(f"command({resolved_path}{argument_suffix})")
-
-    alternative_prefixes = [("/usr/bin/", "/bin/"), ("/bin/", "/usr/bin/")]
-    for source_prefix, target_prefix in alternative_prefixes:
-        if resolved_path.startswith(source_prefix):
-            alternate_path = pathlib.Path(
-                target_prefix + resolved_path.removeprefix(source_prefix)
-            )
-            if alternate_path.exists():
-                results.append(f"command({alternate_path}{argument_suffix})")
-    return results
+    return [
+        f"command(regex:{prefix}{escaped_base}\\b\\s+{escaped_args}{arg_suffix})"
+    ]
 
 
 def _clean_command_line(raw_line: str) -> str:
@@ -373,9 +352,9 @@ def expand_command_variants(raw_line: str) -> list[str]:
     elif base_name in PYTHON_COMMAND_NAMES:
         results.extend(_expand_python_variants(arguments))
     elif base_name == "sed":
-        results.extend(_expand_sed_variants(base_command, line, arguments))
+        results.extend(_expand_sed_variants(base_command, arguments))
     else:
-        results.extend(_expand_binary_variants(base_command, line, arguments))
+        results.extend(_expand_binary_variants(base_command, arguments))
 
     return results
 

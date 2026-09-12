@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 import unittest
-from unittest import mock
 
 from agents.lib import permissions
 from agents_testing.base import BaseTestCase
@@ -379,11 +378,7 @@ class PermissionsTest(BaseTestCase):
         )
 
     def test_expand_sed_inplace_regex(self) -> None:
-        sed_grants = permissions.expand_command_variants("sed -i 's/foo/bar/g'")
-        self.assertIn("command(sed -i 's/foo/bar/g')", sed_grants)
-        regex_grants = [g for g in sed_grants if g.startswith("command(regex:")]
-        self.assertTrue(len(regex_grants) > 0)
-        pattern = regex_grants[0][14:-1]
+        pattern = self._single_pattern("sed -i 's/foo/bar/g'")
 
         self.assertTrue(re.fullmatch(pattern, "sed -i 's/foo/bar/g' file.txt"))
         self.assertTrue(re.fullmatch(pattern, "/usr/bin/sed -i.bak 's/a/b/' f"))
@@ -393,21 +388,85 @@ class PermissionsTest(BaseTestCase):
         )
 
         # Read-only stream commands containing '-i' in expressions must not trigger in-place regex
-        readonly_grants = permissions.expand_command_variants(
+        readonly_pattern = self._single_pattern(
             "sed 's/foo -i bar/baz/' file.txt"
         )
-        readonly_regexes = [
-            g for g in readonly_grants if g.startswith("command(regex:")
-        ]
-        self.assertEqual(len(readonly_regexes), 0)
+        self.assertTrue(
+            re.fullmatch(readonly_pattern, "sed 's/foo -i bar/baz/' file.txt")
+        )
+        self.assertTrue(
+            re.fullmatch(
+                readonly_pattern, "/usr/bin/sed 's/foo -i bar/baz/' file.txt"
+            )
+        )
+        self.assertFalse(re.fullmatch(readonly_pattern, "sed -i file.txt"))
 
-    def test_expand_system_binary_resolution(self) -> None:
-        with mock.patch("shutil.which", return_value="/usr/bin/ls"):
-            with mock.patch("pathlib.Path.exists", return_value=True):
-                grants = permissions.expand_command_variants("ls -la")
-                self.assertIn("command(ls -la)", grants)
-                self.assertIn("command(/usr/bin/ls -la)", grants)
-                self.assertIn("command(/bin/ls -la)", grants)
+    def test_expand_system_binary_regex(self) -> None:
+        # Bare command without arguments
+        cat_pattern = self._single_pattern("cat")
+        for cmd in (
+            "cat",
+            "cat file.txt",
+            "/bin/cat file.txt",
+            "/usr/bin/cat file.txt",
+            "LC_ALL=C cat file.txt",
+        ):
+            self.assertTrue(re.fullmatch(cat_pattern, cmd), cmd)
+        for cmd in ("catalog file.txt", "cat_file"):
+            self.assertFalse(re.fullmatch(cat_pattern, cmd), cmd)
+
+        # Commands with arguments and trailing path wildcards
+        cases = [
+            (
+                "ls -la",
+                [
+                    "ls -la",
+                    "ls -la /some/dir",
+                    "/bin/ls -la",
+                    "/usr/bin/ls -la",
+                    "FOO=bar ls -la",
+                ],
+                [
+                    "ls -l",
+                    "ls",
+                ],
+            ),
+            (
+                "rm -rf /",
+                [
+                    "rm -rf /",
+                    "rm -rf //",
+                    "/bin/rm -rf /",
+                    "rm -rf / home",
+                ],
+                [
+                    "rm -rf /var",
+                    "rm -rf /tmp/foo",
+                    "rm -rf",
+                ],
+            ),
+            (
+                "rm -rf ~",
+                [
+                    "rm -rf ~",
+                    "rm -rf ~/",
+                    "rm -rf ~//",
+                    "rm -rf ~ home",
+                ],
+                [
+                    "rm -rf ~/dir",
+                    "rm -rf ~other",
+                    "rm -rf ~/fuchsia/out",
+                ],
+            ),
+        ]
+        for template, positive_cases, negative_cases in cases:
+            with self.subTest(template=template):
+                pattern = self._single_pattern(template)
+                for cmd in positive_cases:
+                    self.assertTrue(re.fullmatch(pattern, cmd), cmd)
+                for cmd in negative_cases:
+                    self.assertFalse(re.fullmatch(pattern, cmd), cmd)
 
     def test_read_command_list_file(self) -> None:
         list_file = self.mock_root / "commands.txt"

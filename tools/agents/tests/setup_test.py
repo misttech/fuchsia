@@ -218,7 +218,12 @@ class SetupCommandTest(BaseTestCase):
         with config_path.open("r", encoding="utf-8") as fh:
             data = json.load(fh)
         grants = data["userSettings"]["globalPermissionGrants"]
-        self.assertIn("command(my_custom_tool)", grants["allow"])
+        self.assertTrue(
+            any(
+                g.startswith("command(regex:") and "my_custom_tool" in g
+                for g in grants["allow"]
+            )
+        )
 
     def test_run_status(self) -> None:
         """Verify --status option prints status summary."""
