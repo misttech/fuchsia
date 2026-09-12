@@ -23,7 +23,15 @@ pub struct ForensicsConfig {
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct FeedbackConfig {
+    /// The disk size tier of the device. This affects report and snapshot persistence limits,
+    /// as well as on-disk log buffer size.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub disk_size: DiskSize,
+
     /// If true, Feedback will persist snapshots to disk if the network is unavailable.
+    ///
+    /// NOTE: Deprecated. Use `disk_size` instead.
+    #[deprecated(note = "use disk_size instead")]
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub large_disk: bool,
 
@@ -124,3 +132,12 @@ pub enum SpontaneousRebootReason {
     HardReset,
 }
 // LINT.ThenChange(//src/developer/forensics/feedback/config.cc)
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DiskSize {
+    #[default]
+    Small,
+    Medium,
+    Large,
+}

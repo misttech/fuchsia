@@ -8,7 +8,7 @@ use assembly_config_schema::developer_overrides::{
     DeveloperOnlyOptions, FeedbackBuildTypeConfig, ForensicsOptions,
 };
 use assembly_config_schema::platform_settings::forensics_config::{
-    FeedbackIdComponentUrl, ForensicsConfig, SpontaneousRebootReason,
+    DiskSize, FeedbackIdComponentUrl, ForensicsConfig, SpontaneousRebootReason,
 };
 use assembly_config_schema::platform_settings::session_config::PlatformSessionConfig;
 use assembly_constants::{FileEntry, PackageDestination, PackageSetDestination};
@@ -19,15 +19,32 @@ const FEEDBACK_CONFIG_DIRECTORY: &str = "feedback-config";
 // Filename of FeedbackInternalConfig file within feedback domain config.
 const FEEDBACK_CONFIG_FILENAME: &str = "feedback_config.json";
 
-// Even on disk-constrained devices, we want to store a few reports in /cache if possible.
-const DEFAULT_REPORT_CACHE_SIZE_KIB: u64 = 512;
-const DEFAULT_REPORT_TMP_SIZE_KIB: u64 = 4608;
-const LARGE_DISK_REPORT_CACHE_SIZE_KIB: u64 = 10240;
-const LARGE_DISK_REPORT_TMP_SIZE_KIB: u64 = 10240;
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DiskSizedParams {
+    report_cache_size_kib: u64,
+    report_tmp_size_kib: u64,
+    snapshot_storage_size_mib: i64,
+}
 
-// -1 as the default value indicates that snapshots should not be persisted to disk.
-const DEFAULT_SNAPSHOT_STORAGE_SIZE_MIB: i64 = -1;
-const LARGE_DISK_SNAPSHOT_STORAGE_SIZE_MIB: i64 = 10;
+// Even on disk-constrained devices, we want to store a few reports in /cache if possible.
+const SMALL_DISK: DiskSizedParams = DiskSizedParams {
+    report_cache_size_kib: 512,
+    report_tmp_size_kib: 4608,
+    // -1 indicates that snapshots should not be persisted to disk.
+    snapshot_storage_size_mib: -1,
+};
+
+const MEDIUM_DISK: DiskSizedParams = DiskSizedParams {
+    report_cache_size_kib: 10240,
+    report_tmp_size_kib: 10240,
+    snapshot_storage_size_mib: 10,
+};
+
+const LARGE_DISK: DiskSizedParams = DiskSizedParams {
+    report_cache_size_kib: 25600,
+    report_tmp_size_kib: 25600,
+    snapshot_storage_size_mib: 25,
+};
 
 pub(crate) struct ForensicsSubsystem;
 impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
@@ -98,22 +115,19 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
                 &serde_json::to_string_pretty(&config.feedback.snapshot_exclusion)?,
             )?;
 
-            let report_persistence_max_cache_size_kib = if config.feedback.large_disk {
-                LARGE_DISK_REPORT_CACHE_SIZE_KIB
-            } else {
-                DEFAULT_REPORT_CACHE_SIZE_KIB
+            // For backward compatibility, legacy configurations specifying `large_disk: true`
+            // map to `Medium`.
+            #[allow(deprecated)]
+            let effective_disk_size = match (config.feedback.disk_size, config.feedback.large_disk)
+            {
+                (_, true) => DiskSize::Medium,
+                (size, _) => size,
             };
 
-            let report_persistence_max_tmp_size_kib = if config.feedback.large_disk {
-                LARGE_DISK_REPORT_TMP_SIZE_KIB
-            } else {
-                DEFAULT_REPORT_TMP_SIZE_KIB
-            };
-
-            let snapshot_storage_size_mib = if config.feedback.large_disk {
-                LARGE_DISK_SNAPSHOT_STORAGE_SIZE_MIB
-            } else {
-                DEFAULT_SNAPSHOT_STORAGE_SIZE_MIB
+            let disk_sized_params = match effective_disk_size {
+                DiskSize::Small => SMALL_DISK,
+                DiskSize::Medium => MEDIUM_DISK,
+                DiskSize::Large => LARGE_DISK,
             };
 
             #[allow(deprecated)]
@@ -121,10 +135,11 @@ impl DefineSubsystemConfiguration<(&ForensicsConfig, &PlatformSessionConfig)>
                 || !matches!(component_url, FeedbackIdComponentUrl::None);
 
             let feedback_config = FeedbackInternalConfig {
-                report_persistence_max_cache_size_kib,
-                report_persistence_max_tmp_size_kib,
-                snapshot_persistence_max_cache_size_mib: snapshot_storage_size_mib,
-                snapshot_persistence_max_tmp_size_mib: snapshot_storage_size_mib,
+                report_persistence_max_cache_size_kib: disk_sized_params.report_cache_size_kib,
+                report_persistence_max_tmp_size_kib: disk_sized_params.report_tmp_size_kib,
+                snapshot_persistence_max_cache_size_mib: disk_sized_params
+                    .snapshot_storage_size_mib,
+                snapshot_persistence_max_tmp_size_mib: disk_sized_params.snapshot_storage_size_mib,
                 spontaneous_reboot_reason: config.feedback.spontaneous_reboot_reason,
                 crash_report_upload_policy: build_type_config.crash_report_upload_policy,
                 daily_per_product_crash_report_quota: build_type_config
@@ -286,7 +301,7 @@ struct FeedbackInternalConfig {
 #[cfg(test)]
 mod test {
     use assembly_config_schema::developer_overrides::{DeveloperOnlyOptions, ForensicsOptions};
-    use assembly_config_schema::platform_settings::forensics_config::FeedbackConfig;
+    use assembly_config_schema::platform_settings::forensics_config::{DiskSize, FeedbackConfig};
     use camino::Utf8Path;
 
     use super::*;
@@ -619,16 +634,20 @@ mod test {
         let config =
             get_feedback_config(BuildType::Eng, ForensicsConfig::default(), Default::default());
 
-        assert_eq!(config.report_persistence_max_cache_size_kib, DEFAULT_REPORT_CACHE_SIZE_KIB);
-        assert_eq!(config.report_persistence_max_tmp_size_kib, DEFAULT_REPORT_TMP_SIZE_KIB);
+        assert_eq!(config.report_persistence_max_cache_size_kib, SMALL_DISK.report_cache_size_kib);
+        assert_eq!(config.report_persistence_max_tmp_size_kib, SMALL_DISK.report_tmp_size_kib);
         assert_eq!(
             config.snapshot_persistence_max_cache_size_mib,
-            DEFAULT_SNAPSHOT_STORAGE_SIZE_MIB
+            SMALL_DISK.snapshot_storage_size_mib
         );
-        assert_eq!(config.snapshot_persistence_max_tmp_size_mib, DEFAULT_SNAPSHOT_STORAGE_SIZE_MIB);
+        assert_eq!(
+            config.snapshot_persistence_max_tmp_size_mib,
+            SMALL_DISK.snapshot_storage_size_mib
+        );
     }
 
     #[test]
+    #[allow(deprecated)]
     fn feedback_config_large_disk() {
         let forensics_config = ForensicsConfig {
             feedback: FeedbackConfig { large_disk: true, ..Default::default() },
@@ -636,15 +655,75 @@ mod test {
         };
         let config = get_feedback_config(BuildType::Eng, forensics_config, Default::default());
 
-        assert_eq!(config.report_persistence_max_cache_size_kib, LARGE_DISK_REPORT_CACHE_SIZE_KIB);
-        assert_eq!(config.report_persistence_max_tmp_size_kib, LARGE_DISK_REPORT_TMP_SIZE_KIB);
+        assert_eq!(config.report_persistence_max_cache_size_kib, MEDIUM_DISK.report_cache_size_kib);
+        assert_eq!(config.report_persistence_max_tmp_size_kib, MEDIUM_DISK.report_tmp_size_kib);
         assert_eq!(
             config.snapshot_persistence_max_cache_size_mib,
-            LARGE_DISK_SNAPSHOT_STORAGE_SIZE_MIB
+            MEDIUM_DISK.snapshot_storage_size_mib
         );
         assert_eq!(
             config.snapshot_persistence_max_tmp_size_mib,
-            LARGE_DISK_SNAPSHOT_STORAGE_SIZE_MIB
+            MEDIUM_DISK.snapshot_storage_size_mib
+        );
+    }
+
+    #[test]
+    fn feedback_config_disk_size_small() {
+        let forensics_config = ForensicsConfig {
+            feedback: FeedbackConfig { disk_size: DiskSize::Small, ..Default::default() },
+            ..Default::default()
+        };
+        let config = get_feedback_config(BuildType::Eng, forensics_config, Default::default());
+
+        assert_eq!(config.report_persistence_max_cache_size_kib, SMALL_DISK.report_cache_size_kib);
+        assert_eq!(config.report_persistence_max_tmp_size_kib, SMALL_DISK.report_tmp_size_kib);
+        assert_eq!(
+            config.snapshot_persistence_max_cache_size_mib,
+            SMALL_DISK.snapshot_storage_size_mib
+        );
+        assert_eq!(
+            config.snapshot_persistence_max_tmp_size_mib,
+            SMALL_DISK.snapshot_storage_size_mib
+        );
+    }
+
+    #[test]
+    fn feedback_config_disk_size_medium() {
+        let forensics_config = ForensicsConfig {
+            feedback: FeedbackConfig { disk_size: DiskSize::Medium, ..Default::default() },
+            ..Default::default()
+        };
+        let config = get_feedback_config(BuildType::Eng, forensics_config, Default::default());
+
+        assert_eq!(config.report_persistence_max_cache_size_kib, MEDIUM_DISK.report_cache_size_kib);
+        assert_eq!(config.report_persistence_max_tmp_size_kib, MEDIUM_DISK.report_tmp_size_kib);
+        assert_eq!(
+            config.snapshot_persistence_max_cache_size_mib,
+            MEDIUM_DISK.snapshot_storage_size_mib
+        );
+        assert_eq!(
+            config.snapshot_persistence_max_tmp_size_mib,
+            MEDIUM_DISK.snapshot_storage_size_mib
+        );
+    }
+
+    #[test]
+    fn feedback_config_disk_size_large() {
+        let forensics_config = ForensicsConfig {
+            feedback: FeedbackConfig { disk_size: DiskSize::Large, ..Default::default() },
+            ..Default::default()
+        };
+        let config = get_feedback_config(BuildType::Eng, forensics_config, Default::default());
+
+        assert_eq!(config.report_persistence_max_cache_size_kib, LARGE_DISK.report_cache_size_kib);
+        assert_eq!(config.report_persistence_max_tmp_size_kib, LARGE_DISK.report_tmp_size_kib);
+        assert_eq!(
+            config.snapshot_persistence_max_cache_size_mib,
+            LARGE_DISK.snapshot_storage_size_mib
+        );
+        assert_eq!(
+            config.snapshot_persistence_max_tmp_size_mib,
+            LARGE_DISK.snapshot_storage_size_mib
         );
     }
 
