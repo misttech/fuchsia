@@ -27,6 +27,7 @@ rustc_binary("wlanix_bin") {
 
   deps = [
     ":fuchsia.wlan.wlanix_rust",
+    ":wlanix-config",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker_rust",
     "//sdk/fidl/fuchsia.power.system:fuchsia.power.system_rust",
@@ -97,9 +98,17 @@ rustc_binary("wlanix_bin") {
   configs += [ "//build/config/rust/lints:clippy_warn_all" ]
 }
 
-fuchsia_component("component") {
-  manifest = "meta/wlanix.cml"
+fuchsia_component_manifest("wlanix-manifest") {
   component_name = "wlanix"
+  manifest = "meta/wlanix.cml"
+}
+
+fuchsia_structured_config_rust_lib("wlanix-config") {
+  cm_label = ":wlanix-manifest"
+}
+
+fuchsia_component("component") {
+  cm_label = ":wlanix-manifest"
   deps = [ ":wlanix_bin" ]
 }
 

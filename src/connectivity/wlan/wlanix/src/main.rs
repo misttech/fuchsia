@@ -26,7 +26,7 @@ use fuchsia_component::server::ServiceFs;
 use fuchsia_sync::Mutex;
 use fuchsia_trace_provider as trace_provider;
 use futures::channel::mpsc;
-use futures::{FutureExt, StreamExt, TryFutureExt};
+use futures::{FutureExt, StreamExt, TryFutureExt, future};
 use ieee80211::{Bssid, MacAddrBytes};
 use log::{debug, error, info, warn};
 use netlink_packet_core::{NetlinkDeserializable, NetlinkHeader, NetlinkSerializable};
@@ -3308,37 +3308,47 @@ async fn main() {
             .enable_metatag(diagnostics_log::Metatag::Target),
     )
     .expect("Failed to initialize wlanix logs");
-    info!("Starting Wlanix");
+    let config = wlanix_config::Config::take_from_startup_handle();
+    info!("Starting Wlanix (power_framework_enabled: {})", config.power_framework_enabled);
 
     // Register for suspend/resume events
-    let proxies = match (
-        client::connect_to_protocol::<fsystem::ActivityGovernorMarker>(),
-        client::connect_to_protocol::<fidl_fuchsia_power_broker::TopologyMarker>(),
-    ) {
-        (Ok(ag), Ok(pb)) => Some((ag, pb)),
-        (ag_res, pb_res) => {
-            if let Err(e) = ag_res {
-                warn!("Failed to connect to fuchsia.power.system.ActivityGovernor: {:?}", e);
+    let proxies = if config.power_framework_enabled {
+        match (
+            client::connect_to_protocol::<fsystem::ActivityGovernorMarker>(),
+            client::connect_to_protocol::<fidl_fuchsia_power_broker::TopologyMarker>(),
+        ) {
+            (Ok(ag), Ok(pb)) => Some((ag, pb)),
+            (ag_res, pb_res) => {
+                if let Err(e) = ag_res {
+                    warn!("Failed to connect to fuchsia.power.system.ActivityGovernor: {:?}", e);
+                }
+                if let Err(e) = pb_res {
+                    warn!("Failed to connect to fuchsia.power.broker.Topology: {:?}", e);
+                }
+                None
             }
-            if let Err(e) = pb_res {
-                warn!("Failed to connect to fuchsia.power.broker.Topology: {:?}", e);
-            }
-            None
         }
+    } else {
+        None
     };
     let power_manager = Arc::new(DevicePowerManager::new(proxies));
-    let (suspend_blocker_client, suspend_blocker_requests) =
-        fidl::endpoints::create_request_stream::<fsystem::SuspendBlockerMarker>();
-    // The registration returns a wake lease, which we can hold until we're done with init
-    let suspend_blocker_lease = match power_manager
-        .register_suspend_blocker(suspend_blocker_client, "wlanix-suspend-blocker")
-        .await
-    {
-        Ok(lease) => Some(lease),
-        Err(e) => {
-            warn!("Failed to register suspend blocker: {:?}", e);
-            None
-        }
+    let (suspend_blocker_lease, suspend_blocker_requests) = if config.power_framework_enabled {
+        let (suspend_blocker_client, suspend_blocker_requests) =
+            fidl::endpoints::create_request_stream::<fsystem::SuspendBlockerMarker>();
+        // The registration returns a wake lease, which we can hold until we're done with init
+        let lease = match power_manager
+            .register_suspend_blocker(suspend_blocker_client, "wlanix-suspend-blocker")
+            .await
+        {
+            Ok(lease) => Some(lease),
+            Err(e) => {
+                warn!("Failed to register suspend blocker: {:?}", e);
+                None
+            }
+        };
+        (lease, Some(suspend_blocker_requests))
+    } else {
+        (None, None)
     };
 
     let monitor_svc = client::connect_to_protocol::<fidl_device_service::DeviceMonitorMarker>()
@@ -3392,6 +3402,17 @@ async fn main() {
     let scheduled_scan_controller =
         Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
 
+    let suspend_blocker_fut: future::BoxFuture<'static, Result<(), Error>> =
+        if let Some(requests) = suspend_blocker_requests {
+            Box::pin(serve_suspend_blocker(
+                Arc::clone(&wifi_state),
+                Arc::clone(&power_manager),
+                requests,
+            ))
+        } else {
+            Box::pin(future::pending())
+        };
+
     drop(suspend_blocker_lease);
     let res = futures::try_join!(
         serve_telemetry_fut,
@@ -3402,11 +3423,7 @@ async fn main() {
         )
         .map(Ok),
         handle_scheduled_scan_events(Arc::clone(&wifi_state), event_receiver).map(|()| Ok(())),
-        serve_suspend_blocker(
-            Arc::clone(&wifi_state),
-            Arc::clone(&power_manager),
-            suspend_blocker_requests,
-        ),
+        suspend_blocker_fut,
         serve_fidl(
             Arc::clone(&wifi_state),
             Arc::clone(&iface_manager),

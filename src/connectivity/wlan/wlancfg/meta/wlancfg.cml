@@ -24,6 +24,13 @@
     ],
     use: [
         {
+            // TODO(fxb/552519222): Capability is currently named SuspendEnabled, but it really
+            // means PowerFrameworkEnabled (when false, no power framework calls should be made).
+            config: "fuchsia.power.SuspendEnabled",
+            key: "power_framework_enabled",
+            type: "bool",
+        },
+        {
             config: "fuchsia.wlan.RecoveryProfile",
             key: "recovery_profile",
             type: "string",

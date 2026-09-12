@@ -304,6 +304,7 @@ async fn run_all_futures() -> Result<(), Error> {
     // Get the recovery settings.
     info!("Recovery Profile: {}", cfg.recovery_profile);
     info!("Recovery Enabled: {}", cfg.recovery_enabled);
+    info!("Power Framework Enabled: {}", cfg.power_framework_enabled);
     let phy_manager = Arc::new(Mutex::new(PhyManager::new(
         monitor_svc.clone(),
         recovery::lookup_recovery_profile(&cfg.recovery_profile),

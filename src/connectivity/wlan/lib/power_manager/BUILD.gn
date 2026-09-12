@@ -22,6 +22,12 @@ rustc_library("power_manager") {
 
   sources = [ "src/lib.rs" ]
 
+  test_deps = [
+    "//src/lib/fuchsia-async",
+    "//third_party/rust_crates:assert_matches",
+    "//third_party/rust_crates:futures",
+  ]
+
   features = []
 }
 

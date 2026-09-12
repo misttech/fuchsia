@@ -12,6 +12,7 @@ pub const POWER_LEVEL_OFF: u8 = 0;
 pub const POWER_LEVEL_SUSPEND: u8 = 1;
 pub const POWER_LEVEL_ACTIVE: u8 = 2;
 
+#[cfg_attr(test, derive(Debug))]
 pub struct WakeLease {
     _token: fsystem::LeaseToken,
 }
@@ -115,5 +116,201 @@ impl PowerManager for DevicePowerManager {
             Ok(Err(e)) => Err(anyhow::anyhow!("RegisterSuspendBlocker error: {:?}", e)),
             Err(e) => Err(anyhow::anyhow!("FIDL error: {:?}", e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use fuchsia_async as fasync;
+    use futures::StreamExt;
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_power_manager_disabled_take_wake_lease() {
+        let pm = DevicePowerManager::new(None);
+        assert!(pm.take_wake_lease("test-lease").await.is_none());
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_power_manager_disabled_power_element_lease() {
+        let pm = DevicePowerManager::new(None);
+        let token = zx::Event::create();
+        assert!(pm.power_element_lease("test-lease", token, 1).await.is_err());
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_power_manager_disabled_register_suspend_blocker() {
+        let pm = DevicePowerManager::new(None);
+        let (client, _) = fidl::endpoints::create_endpoints::<fsystem::SuspendBlockerMarker>();
+        assert!(pm.register_suspend_blocker(client, "test-blocker").await.is_err());
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_power_manager_take_wake_lease_success() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fsystem::ActivityGovernorMarker>();
+        let (topology_proxy, _topology_server) =
+            fidl::endpoints::create_proxy::<fbroker::TopologyMarker>();
+        let pm = DevicePowerManager::new(Some((proxy, topology_proxy)));
+
+        let server_fut = async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fsystem::ActivityGovernorRequest::AcquireWakeLease { name, responder } => {
+                        assert_eq!(name, "test-wake-lease");
+                        let (_server_token, client_token) = fsystem::LeaseToken::create();
+                        let _ = responder.send(Ok(client_token));
+                    }
+                    other => panic!("Unexpected request: {:?}", other),
+                }
+            }
+        };
+        let client_fut = async move {
+            let lease = pm.take_wake_lease("test-wake-lease").await;
+            assert!(lease.is_some());
+        };
+        futures::join!(server_fut, client_fut);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_power_manager_take_wake_lease_error() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fsystem::ActivityGovernorMarker>();
+        let (topology_proxy, _topology_server) =
+            fidl::endpoints::create_proxy::<fbroker::TopologyMarker>();
+        let pm = DevicePowerManager::new(Some((proxy, topology_proxy)));
+
+        let server_fut = async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fsystem::ActivityGovernorRequest::AcquireWakeLease { name, responder } => {
+                        assert_eq!(name, "test-wake-lease");
+                        let _ = responder.send(Err(fsystem::AcquireWakeLeaseError::Internal));
+                    }
+                    other => panic!("Unexpected request: {:?}", other),
+                }
+            }
+        };
+        let client_fut = async move {
+            let lease = pm.take_wake_lease("test-wake-lease").await;
+            assert!(lease.is_none());
+        };
+        futures::join!(server_fut, client_fut);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_power_manager_register_suspend_blocker_success() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fsystem::ActivityGovernorMarker>();
+        let (topology_proxy, _topology_server) =
+            fidl::endpoints::create_proxy::<fbroker::TopologyMarker>();
+        let pm = DevicePowerManager::new(Some((proxy, topology_proxy)));
+
+        let server_fut = async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fsystem::ActivityGovernorRequest::RegisterSuspendBlocker {
+                        payload,
+                        responder,
+                    } => {
+                        assert_eq!(payload.name.as_deref(), Some("test-blocker"));
+                        let (_server_token, client_token) = fsystem::LeaseToken::create();
+                        let _ = responder.send(Ok(client_token));
+                    }
+                    other => panic!("Unexpected request: {:?}", other),
+                }
+            }
+        };
+        let client_fut = async move {
+            let (client, _server) =
+                fidl::endpoints::create_endpoints::<fsystem::SuspendBlockerMarker>();
+            let lease = pm.register_suspend_blocker(client, "test-blocker").await;
+            assert_matches!(lease, Ok(_));
+        };
+        futures::join!(server_fut, client_fut);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_power_manager_register_suspend_blocker_error() {
+        let (proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fsystem::ActivityGovernorMarker>();
+        let (topology_proxy, _topology_server) =
+            fidl::endpoints::create_proxy::<fbroker::TopologyMarker>();
+        let pm = DevicePowerManager::new(Some((proxy, topology_proxy)));
+
+        let server_fut = async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fsystem::ActivityGovernorRequest::RegisterSuspendBlocker {
+                        payload,
+                        responder,
+                    } => {
+                        assert_eq!(payload.name.as_deref(), Some("test-blocker"));
+                        let _ = responder.send(Err(fsystem::RegisterSuspendBlockerError::Internal));
+                    }
+                    other => panic!("Unexpected request: {:?}", other),
+                }
+            }
+        };
+        let client_fut = async move {
+            let (client, _server) =
+                fidl::endpoints::create_endpoints::<fsystem::SuspendBlockerMarker>();
+            let lease = pm.register_suspend_blocker(client, "test-blocker").await;
+            assert_matches!(lease, Err(_));
+        };
+        futures::join!(server_fut, client_fut);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_power_manager_power_element_lease_success() {
+        let (ag_proxy, _ag_server) =
+            fidl::endpoints::create_proxy::<fsystem::ActivityGovernorMarker>();
+        let (topology_proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fbroker::TopologyMarker>();
+        let pm = DevicePowerManager::new(Some((ag_proxy, topology_proxy)));
+
+        let server_fut = async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fbroker::TopologyRequest::Lease { responder, .. } => {
+                        let _ = responder.send(Ok(()));
+                    }
+                    other => panic!("Unexpected request: {:?}", other),
+                }
+            }
+        };
+        let client_fut = async move {
+            let token = zx::Event::create();
+            let lease = pm.power_element_lease("test-lease", token, 1).await;
+            assert_matches!(lease, Ok(_));
+        };
+        futures::join!(server_fut, client_fut);
+    }
+
+    #[fasync::run_singlethreaded(test)]
+    async fn test_power_manager_power_element_lease_error() {
+        let (ag_proxy, _ag_server) =
+            fidl::endpoints::create_proxy::<fsystem::ActivityGovernorMarker>();
+        let (topology_proxy, mut stream) =
+            fidl::endpoints::create_proxy_and_stream::<fbroker::TopologyMarker>();
+        let pm = DevicePowerManager::new(Some((ag_proxy, topology_proxy)));
+
+        let server_fut = async move {
+            while let Some(Ok(req)) = stream.next().await {
+                match req {
+                    fbroker::TopologyRequest::Lease { responder, .. } => {
+                        let _ = responder.send(Err(fbroker::LeaseError::Internal));
+                    }
+                    other => panic!("Unexpected request: {:?}", other),
+                }
+            }
+        };
+        let client_fut = async move {
+            let token = zx::Event::create();
+            let lease = pm.power_element_lease("test-lease", token, 1).await;
+            assert_matches!(lease, Err(_));
+        };
+        futures::join!(server_fut, client_fut);
     }
 }

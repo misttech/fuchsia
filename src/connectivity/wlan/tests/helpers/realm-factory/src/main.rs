@@ -324,11 +324,18 @@ async fn create_wlan_components(
             }))
             .await?;
         builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.power.SuspendEnabled".parse()?,
+                value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(false)),
+            }))
+            .await?;
+        builder
             .add_route(
                 Route::new()
                     .capability(Capability::configuration("fuchsia.wlan.RecoveryProfile"))
                     .capability(Capability::configuration("fuchsia.wlan.RecoveryEnabled"))
                     .capability(Capability::configuration("fuchsia.wlan.RoamingPolicy"))
+                    .capability(Capability::configuration("fuchsia.power.SuspendEnabled"))
                     .from(Ref::self_())
                     .to(&wlancfg),
             )

@@ -72,6 +72,7 @@ group("tests") {
     "lib/ieee80211-testutils:ieee80211-testutils-tests",
     "lib/mlme/fullmac:wlan-fullmac-mlme-tests",
     "lib/mlme/rust:wlan-mlme-tests",
+    "lib/power_manager:wlan-power-manager-tests",
     "lib/rsn:wlan-rsn-tests",
     "lib/sme:wlan-sme-tests",
     "lib/statemachine:wlan-statemachine-tests",
