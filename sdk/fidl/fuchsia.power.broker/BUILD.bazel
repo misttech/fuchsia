@@ -34,6 +34,7 @@ fidl_library(
         "//sdk/lib/driver/power/rust:__subpackages__",
         "//src/connectivity/network/netstack3:__pkg__",
         "//src/connectivity/network/tests/integration/power:__subpackages__",
+        "//src/connectivity/wlan/lib/power_manager:__subpackages__",
         "//src/connectivity/wlan/wlandevicemonitor:__subpackages__",
         "//src/connectivity/wlan/wlanix:__subpackages__",
         "//src/developer/forensics:__subpackages__",

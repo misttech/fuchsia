@@ -56,7 +56,6 @@ pub(crate) trait IfaceManager: Send + Sync {
     async fn power_down(&self, phy_id: u16) -> Result<(), Error>;
     async fn power_up(&self, phy_id: u16) -> Result<(), Error>;
     async fn get_power_state(&self, phy_id: u16) -> Result<bool, Error>;
-    #[expect(dead_code)]
     async fn get_power_element_dependency_token(
         &self,
         phy_id: u16,
@@ -1465,9 +1464,7 @@ pub mod test_utils {
         }
     }
 
-    // Iface IDs are not currently read out of this struct anywhere, but keep them for future tests.
-    #[expect(dead_code)]
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, PartialEq)]
     pub enum IfaceManagerCall {
         ListPhys,
         ListIfaces,
@@ -1736,7 +1733,7 @@ pub mod test_utils {
             phy_id: u16,
         ) -> Result<fidl_fuchsia_power_broker::DependencyToken, Error> {
             self.calls.lock().push(IfaceManagerCall::GetPowerElementDependencyToken(phy_id));
-            Err(format_err!("mock get_power_element_dependency_token not fully implemented"))
+            Ok(zx::Event::create())
         }
 
         async fn reset_tx_power_scenario(&self, phy_id: u16) -> Result<(), Error> {

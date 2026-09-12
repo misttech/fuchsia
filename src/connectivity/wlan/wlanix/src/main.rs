@@ -52,7 +52,9 @@ use nl80211::{
     Nl80211SchedScanMatchAttr, Nl80211SchedScanPlanAttr,
 };
 use scheduled_scans::ScheduledScanController;
-use wlan_power_manager::{DevicePowerManager, PowerManager};
+use wlan_power_manager::{
+    DevicePowerManager, POWER_LEVEL_ACTIVE, POWER_LEVEL_SUSPEND, PowerManager,
+};
 
 // TODO(https://fxbug.dev/368005870): Need to reconsider the consequences of using
 // the same iface name, even when an iface is recreated.
@@ -701,6 +703,11 @@ struct WifiState {
     callback: Option<fidl_wlanix::WifiEventCallbackProxy>,
     scan_multicast_proxies: ScanMulticastProxySet,
     mlme_multicast_proxies: MlmeMulticastProxySet,
+    power_dependency_leases: Vec<(
+        u16,
+        fidl_fuchsia_power_broker::DependencyToken,
+        fidl_fuchsia_power_broker::LeaseToken,
+    )>,
 }
 
 async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
@@ -750,6 +757,63 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
                 } else {
                     warn!("Phy {} already started", phy_id);
                 }
+
+                // Query the PHY driver for its power element dependency token to check if power
+                // element control is supported.
+                let power_elem_dependency_token = iface_manager
+                    .get_power_element_dependency_token(phy_id)
+                    .await
+                    .inspect_err(|e| {
+                        warn!("Failed to get power dependency token for phy {}: {}", phy_id, e);
+                        driver_started = false;
+                        result = Err(zx::sys::ZX_ERR_BAD_STATE);
+                    })
+                    .ok();
+                // Duplicate the dependency token (if available) so we can keep a copy.
+                let token_dup = power_elem_dependency_token.as_ref().and_then(|token| {
+                    token
+                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                        .inspect_err(|e| {
+                            warn!("Failed to duplicate token: {}", e);
+                            driver_started = false;
+                            result = Err(zx::sys::ZX_ERR_BAD_STATE);
+                        })
+                        .ok()
+                });
+                // If the driver supports power element control, acquire an active lease.
+                if let (Some(token_dup), Some(token_orig)) =
+                    (token_dup, power_elem_dependency_token)
+                {
+                    let lease_name = format!("wlanix-phy-{}-dependency", phy_id);
+                    match power_manager
+                        .power_element_lease(&lease_name, token_orig, POWER_LEVEL_ACTIVE)
+                        .await
+                    {
+                        Ok(lease_token_local) => {
+                            // Retain the active lease to keep the hardware powered.
+                            // Also hold a copy of the dependency token, so subsequent
+                            // suspend/resume transitions can take leases without querying the
+                            // driver again.
+                            let mut state_lock = state.lock();
+                            state_lock.power_dependency_leases.push((
+                                phy_id,
+                                token_dup,
+                                lease_token_local,
+                            ));
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to acquire power dependency lease {:?} for phy {}: {:?}",
+                                lease_name, phy_id, e
+                            );
+                            driver_started = false;
+                            result = Err(zx::sys::ZX_ERR_BAD_STATE);
+                        }
+                    }
+                } else {
+                    // Power elements are unsupported or unavailable on this PHY; proceed unmanaged.
+                    info!("Skipping power element leases due to missing dependency token")
+                }
             }
             let mut state = state.lock();
             state.started = driver_started;
@@ -762,6 +826,8 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
 
                 let event = wlan_telemetry::ClientConnectionsToggleEvent::Enabled;
                 telemetry_sender.send(TelemetryEvent::ClientConnectionsToggle { event });
+            } else {
+                state.power_dependency_leases.clear();
             }
             responder.send(result).context("send Start response")?;
         }
@@ -806,6 +872,7 @@ async fn handle_wifi_request<I: IfaceManager, P: PowerManager>(
             let mut state = state.lock();
             state.started = !driver_stopped;
             if driver_stopped {
+                state.power_dependency_leases.clear();
                 maybe_run_callback(
                     "WifiEventCallbackProxy::OnStop",
                     fidl_wlanix::WifiEventCallbackProxy::on_stop,
@@ -3127,6 +3194,111 @@ async fn handle_scheduled_scan_events(
     info!("Scheduled scan event stream terminated");
 }
 
+async fn serve_suspend_blocker<P: PowerManager>(
+    state: Arc<Mutex<WifiState>>,
+    power_manager: Arc<P>,
+    mut requests: fsystem::SuspendBlockerRequestStream,
+) -> Result<(), Error> {
+    while let Some(req) = requests.next().await {
+        match req {
+            Ok(fsystem::SuspendBlockerRequest::BeforeSuspend { responder }) => {
+                info!("Modifying WLAN driver lease to 'suspend' level");
+                let tokens: Vec<(u16, fidl_fuchsia_power_broker::DependencyToken)> = {
+                    let state_lock = state.lock();
+                    state_lock
+                        .power_dependency_leases
+                        .iter()
+                        .map(|(id, token, _)| {
+                            (*id, token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+                        })
+                        .collect()
+                };
+
+                let mut new_leases = Vec::new();
+                for (phy_id, token) in tokens {
+                    let lease_name = format!("wlanix-phy-{}-dependency-suspend", phy_id);
+                    match power_manager
+                        .power_element_lease(&lease_name, token, POWER_LEVEL_SUSPEND)
+                        .await
+                    {
+                        Ok(lease) => new_leases.push((phy_id, lease)),
+                        Err(e) => error!("Failed to get suspend lease for phy {}: {}", phy_id, e),
+                    }
+                }
+
+                {
+                    let mut state_lock = state.lock();
+                    for (phy_id, lease) in new_leases {
+                        if let Some(pos) = state_lock
+                            .power_dependency_leases
+                            .iter()
+                            .position(|(id, _, _)| *id == phy_id)
+                        {
+                            state_lock.power_dependency_leases[pos].2 = lease;
+                        }
+                    }
+                }
+
+                if let Err(e) = responder.send() {
+                    warn!("Failed to respond to BeforeSuspend: {}", e);
+                }
+            }
+            Ok(fsystem::SuspendBlockerRequest::AfterResume { responder }) => {
+                info!("Modifying WLAN driver lease to 'on' level");
+                let tokens: Vec<(u16, fidl_fuchsia_power_broker::DependencyToken)> = {
+                    let state_lock = state.lock();
+                    state_lock
+                        .power_dependency_leases
+                        .iter()
+                        .map(|(id, token, _)| {
+                            (*id, token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap())
+                        })
+                        .collect()
+                };
+
+                let mut new_leases = Vec::new();
+                for (phy_id, token) in tokens {
+                    let lease_name = format!("wlanix-phy-{}-dependency", phy_id);
+                    match power_manager
+                        .power_element_lease(&lease_name, token, POWER_LEVEL_ACTIVE)
+                        .await
+                    {
+                        Ok(lease) => new_leases.push((phy_id, lease)),
+                        Err(e) => error!("Failed to get active lease for phy {}: {}", phy_id, e),
+                    }
+                }
+
+                {
+                    let mut state_lock = state.lock();
+                    for (phy_id, lease) in new_leases {
+                        if let Some(pos) = state_lock
+                            .power_dependency_leases
+                            .iter()
+                            .position(|(id, _, _)| *id == phy_id)
+                        {
+                            state_lock.power_dependency_leases[pos].2 = lease;
+                        }
+                    }
+                }
+
+                if let Err(e) = responder.send() {
+                    warn!("Failed to respond to AfterResume: {}", e);
+                }
+            }
+            Ok(fsystem::SuspendBlockerRequest::_UnknownMethod { ordinal, .. }) => {
+                warn!("Unknown SuspendBlocker method: {}", ordinal);
+            }
+            Err(e) => {
+                error!("SuspendBlocker request stream error: {}", e);
+                return Err(e.into());
+            }
+        }
+    }
+
+    // The suspend blocker stream dropping means ActivityGovernor disconnected.
+    // Return an error to stop wlanix so it can be restarted to reconnect to power management.
+    Err(anyhow::anyhow!("SuspendBlocker request stream terminated unexpectedly"))
+}
 #[fuchsia::main(logging = false)]
 async fn main() {
     trace_provider::trace_provider_create_with_fdio();
@@ -3137,6 +3309,37 @@ async fn main() {
     )
     .expect("Failed to initialize wlanix logs");
     info!("Starting Wlanix");
+
+    // Register for suspend/resume events
+    let proxies = match (
+        client::connect_to_protocol::<fsystem::ActivityGovernorMarker>(),
+        client::connect_to_protocol::<fidl_fuchsia_power_broker::TopologyMarker>(),
+    ) {
+        (Ok(ag), Ok(pb)) => Some((ag, pb)),
+        (ag_res, pb_res) => {
+            if let Err(e) = ag_res {
+                warn!("Failed to connect to fuchsia.power.system.ActivityGovernor: {:?}", e);
+            }
+            if let Err(e) = pb_res {
+                warn!("Failed to connect to fuchsia.power.broker.Topology: {:?}", e);
+            }
+            None
+        }
+    };
+    let power_manager = Arc::new(DevicePowerManager::new(proxies));
+    let (suspend_blocker_client, suspend_blocker_requests) =
+        fidl::endpoints::create_request_stream::<fsystem::SuspendBlockerMarker>();
+    // The registration returns a wake lease, which we can hold until we're done with init
+    let suspend_blocker_lease = match power_manager
+        .register_suspend_blocker(suspend_blocker_client, "wlanix-suspend-blocker")
+        .await
+    {
+        Ok(lease) => Some(lease),
+        Err(e) => {
+            warn!("Failed to register suspend blocker: {:?}", e);
+            None
+        }
+    };
 
     let monitor_svc = client::connect_to_protocol::<fidl_device_service::DeviceMonitorMarker>()
         .expect("failed to connect to device monitor");
@@ -3179,15 +3382,6 @@ async fn main() {
     let log_throttler =
         Arc::new(Mutex::new(ThrottledErrorLogger::new(MIN_MINUTES_BETWEEN_FREQUENT_ERRORS)));
 
-    let activity_governor = client::connect_to_protocol::<fsystem::ActivityGovernorMarker>()
-        .map_err(|e| {
-            warn!("Failed to connect to fuchsia.power.system.ActivityGovernor: {:?}", e);
-            e
-        })
-        .ok();
-
-    let power_manager = DevicePowerManager::new(activity_governor);
-
     let iface_manager = Arc::new(
         ifaces::DeviceMonitorIfaceManager::new(monitor_svc, telemetry_sender.clone())
             .expect("Failed to connect wlanix to wlandevicemonitor"),
@@ -3198,6 +3392,7 @@ async fn main() {
     let scheduled_scan_controller =
         Arc::new(ScheduledScanController::new(telemetry_sender.clone(), event_sender));
 
+    drop(suspend_blocker_lease);
     let res = futures::try_join!(
         serve_telemetry_fut,
         report_battery_updates(
@@ -3207,10 +3402,15 @@ async fn main() {
         )
         .map(Ok),
         handle_scheduled_scan_events(Arc::clone(&wifi_state), event_receiver).map(|()| Ok(())),
+        serve_suspend_blocker(
+            Arc::clone(&wifi_state),
+            Arc::clone(&power_manager),
+            suspend_blocker_requests,
+        ),
         serve_fidl(
             Arc::clone(&wifi_state),
             Arc::clone(&iface_manager),
-            Arc::new(power_manager),
+            Arc::clone(&power_manager),
             telemetry_sender,
             Arc::clone(&log_throttler),
             Arc::clone(&scheduled_scan_controller),
@@ -3323,15 +3523,26 @@ mod tests {
         );
         assert_eq!(response.is_started, Some(true));
 
-        let power_manager_calls = test_helper.power_manager.calls.lock();
-        assert_eq!(power_manager_calls.len(), 2);
-        assert_eq!(power_manager_calls[1], "wlanix-power-up");
-        let calls = test_helper.iface_manager.calls.lock();
-        assert!(!calls.is_empty());
-        assert_matches!(
-            &calls[calls.len() - 1],
-            ifaces::test_utils::IfaceManagerCall::GetPowerState(_)
-        );
+        {
+            let power_manager_calls = test_helper.power_manager.calls.lock();
+            let calls = test_helper.iface_manager.calls.lock();
+            assert_eq!(
+                *power_manager_calls,
+                vec!["wlanix-create-iface", "wlanix-power-up", "wlanix-phy-1-dependency"]
+                    .into_iter()
+                    .map(String::from)
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                *calls,
+                vec![
+                    ifaces::test_utils::IfaceManagerCall::CreateClientIface(1),
+                    ifaces::test_utils::IfaceManagerCall::ListPhys,
+                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
+                    ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
+                ]
+            );
+        }
 
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
@@ -3363,10 +3574,21 @@ mod tests {
             Poll::Ready(Ok(response)) => response
         );
         assert_eq!(response.is_started, Some(true));
-        let calls = test_helper.iface_manager.calls.lock();
-        assert_matches!(calls.len(), 5);
-        assert_matches!(&calls[2], ifaces::test_utils::IfaceManagerCall::GetPowerState(_));
-        assert_matches!(&calls[1], ifaces::test_utils::IfaceManagerCall::ListPhys);
+        {
+            let calls = test_helper.iface_manager.calls.lock();
+            assert_eq!(
+                *calls,
+                vec![
+                    ifaces::test_utils::IfaceManagerCall::CreateClientIface(1),
+                    ifaces::test_utils::IfaceManagerCall::ListPhys,
+                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
+                    ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
+                    ifaces::test_utils::IfaceManagerCall::ListPhys,
+                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
+                    ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
+                ]
+            );
+        }
 
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
@@ -3416,9 +3638,42 @@ mod tests {
         );
         assert_eq!(response1.is_started, Some(false));
         assert_eq!(response2.is_started, Some(true));
-        let calls = test_helper.iface_manager.calls.lock();
-        assert!(!calls.is_empty());
-        assert_matches!(&calls[calls.len() - 1], ifaces::test_utils::IfaceManagerCall::PowerUp(_));
+        {
+            let power_manager_calls = test_helper.power_manager.calls.lock();
+            let calls = test_helper.iface_manager.calls.lock();
+            assert_eq!(
+                *power_manager_calls,
+                vec![
+                    "wlanix-create-iface",
+                    "wlanix-power-up",
+                    "wlanix-phy-1-dependency",
+                    "wlanix-power-down",
+                    "wlanix-power-up",
+                    "wlanix-phy-1-dependency",
+                ]
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                *calls,
+                vec![
+                    ifaces::test_utils::IfaceManagerCall::CreateClientIface(1),
+                    ifaces::test_utils::IfaceManagerCall::ListPhys,
+                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
+                    ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
+                    ifaces::test_utils::IfaceManagerCall::ListPhys,
+                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
+                    ifaces::test_utils::IfaceManagerCall::ListIfaces,
+                    ifaces::test_utils::IfaceManagerCall::DestroyIface(1),
+                    ifaces::test_utils::IfaceManagerCall::PowerDown(1),
+                    ifaces::test_utils::IfaceManagerCall::ListPhys,
+                    ifaces::test_utils::IfaceManagerCall::GetPowerState(1),
+                    ifaces::test_utils::IfaceManagerCall::PowerUp(1),
+                    ifaces::test_utils::IfaceManagerCall::GetPowerElementDependencyToken(1),
+                ]
+            );
+        }
 
         assert_matches!(
             test_helper.telemetry_receiver.try_next(),
