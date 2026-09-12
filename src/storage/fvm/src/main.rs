@@ -39,7 +39,6 @@ use futures::future::BoxFuture;
 use futures::stream::{FuturesUnordered, TryStreamExt as _};
 use log::{debug, error, info, warn};
 use mapping::{Mapping, MappingExt as _};
-use regex_lite::Regex;
 use sha2::{Digest, Sha256};
 use static_assertions::const_assert;
 use std::alloc;
@@ -1487,8 +1486,13 @@ impl Component {
         check_disk_format: bool,
     ) -> Result<(MountedVolume, Filesystem), Error> {
         // For now we only support URIs of the form: "#meta/<component_name>.cm".
-        let re = Regex::new(r"^#meta/(.*)\.cm$").unwrap();
-        let Some(caps) = re.captures(uri) else { bail!(zx::Status::INVALID_ARGS) };
+        let Some(component) = uri
+            .strip_prefix("#meta/")
+            .and_then(|s| s.strip_suffix(".cm"))
+            .filter(|s| !s.is_empty())
+        else {
+            bail!(zx::Status::INVALID_ARGS);
+        };
 
         struct ComponentName(String, StartOptions);
         impl FSConfig for ComponentName {
@@ -1512,7 +1516,7 @@ impl Component {
 
         let volume = MountedVolume::new(block_server);
         if check_disk_format {
-            let expected_format = match &caps[1] {
+            let expected_format = match component {
                 "minfs" => Some(DiskFormat::Minfs),
                 "f2fs" => Some(DiskFormat::F2fs),
                 _ => None,
@@ -1527,7 +1531,8 @@ impl Component {
                 ensure!(detected_format == expected_format, zx::Status::WRONG_TYPE);
             }
         }
-        let fs = Filesystem::new(volume.clone(), ComponentName(caps[1].to_string(), start_options));
+        let fs =
+            Filesystem::new(volume.clone(), ComponentName(component.to_string(), start_options));
         Ok((volume, fs))
     }
 
