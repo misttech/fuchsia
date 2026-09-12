@@ -59,6 +59,16 @@ PYTHON_TOOL_PREFIXES: tuple[str, ...] = (
     ".jiri_root/bin/fuchsia-vendored-python",
 )
 
+TRUSTED_HELP_TOOLS: set[str] = {
+    "fx",
+    "ffx",
+    "jiri",
+    "git",
+    "jj",
+    "bb",
+    "cipd",
+}
+
 
 def _is_sed_inplace(arguments: str) -> bool:
     """Check if sed arguments include an in-place modification flag."""
@@ -180,13 +190,18 @@ class ToolSpec:
     global_flags_pattern: str = ""
     allow_flags_anywhere: bool = False
 
-    def expand(self, arguments: str) -> list[str]:
-        """Expand tool arguments into anchored regex pattern grants."""
-        prefix = (
+    @property
+    def prefix(self) -> str:
+        """Anchored prefix matching environment variables, binary path, and global flags."""
+        return (
             f"{ENV_VARS_PREFIX_PATTERN}"
             f"{self.binary_prefix}\\b"
             f"{self.global_flags_pattern}"
         )
+
+    def expand(self, arguments: str) -> list[str]:
+        """Expand tool arguments into anchored regex pattern grants."""
+        prefix = self.prefix
         if not arguments:
             return [f"command(regex:{prefix}(\\s+.*)?)"]
 
@@ -243,6 +258,22 @@ TOOL_SPECS: dict[str, ToolSpec] = {
         allow_flags_anywhere=True,
     ),
 }
+
+
+def _tool_prefix(base_name: str) -> str:
+    """Return anchored regex prefix for a tool, reusing ToolSpec when available."""
+    if base_name in TOOL_SPECS:
+        return TOOL_SPECS[base_name].prefix
+    escaped_base = re.escape(base_name)
+    return f"{ENV_VARS_PREFIX_PATTERN}(\\S+/)?{escaped_base}\\b"
+
+
+def _expand_help_variants(base_name: str) -> list[str]:
+    """Expand trusted tool help commands into subcommands and --help flag."""
+    prefix = _tool_prefix(base_name)
+    return [
+        f"command(regex:{prefix}(?:\\s+help(?:\\s+.*)?|(?:\\s+{_ARG_VALUE_PATTERN})*\\s+--help))"
+    ]
 
 
 def _expand_python_variants(arguments: str) -> list[str]:
@@ -343,6 +374,9 @@ def expand_command_variants(raw_line: str) -> list[str]:
         return []
 
     base_name = pathlib.Path(base_command).name
+    if arguments == "help" and base_name in TRUSTED_HELP_TOOLS:
+        return _expand_help_variants(base_name)
+
     results: list[str] = []
     if base_name in TOOL_SPECS:
         if base_name == "git" and _is_git_clean_force(arguments):

@@ -468,6 +468,37 @@ class PermissionsTest(BaseTestCase):
                 for cmd in negative_cases:
                     self.assertFalse(re.fullmatch(pattern, cmd), cmd)
 
+    def test_expand_trusted_help_variants(self) -> None:
+        # ToolSpec tool (ffx) with global flags and subcommands
+        pattern = self._single_pattern("ffx help")
+        for cmd in (
+            "ffx --help",
+            "ffx help target",
+            "ffx target --help",
+            "ffx component list --help",
+            "ffx -t dev target --help",
+        ):
+            self.assertTrue(re.fullmatch(pattern, cmd), cmd)
+
+        for cmd in (
+            "ffx target",
+            "ffx target reboot",
+            "ffx target reboot now",
+        ):
+            self.assertFalse(re.fullmatch(pattern, cmd), cmd)
+
+        # Non-ToolSpec tool (cipd)
+        cipd_pattern = self._single_pattern("cipd help")
+        self.assertTrue(re.fullmatch(cipd_pattern, "cipd --help"))
+        self.assertTrue(re.fullmatch(cipd_pattern, "cipd help ensure"))
+        self.assertTrue(re.fullmatch(cipd_pattern, "cipd ensure --help"))
+        self.assertFalse(re.fullmatch(cipd_pattern, "cipd ensure"))
+
+        # Untrusted tools do not get help expansion
+        echo_pattern = self._single_pattern("echo help")
+        self.assertTrue(re.fullmatch(echo_pattern, "echo help"))
+        self.assertFalse(re.fullmatch(echo_pattern, "echo --help"))
+
     def test_read_command_list_file(self) -> None:
         list_file = self.mock_root / "commands.txt"
         list_file.write_text(

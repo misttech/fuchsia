@@ -269,6 +269,7 @@ ffx config get
 ffx doctor
 ffx emu list
 ffx emu show
+ffx help
 ffx inspect show
 ffx log dump
 ffx package list
@@ -322,5 +323,6 @@ logdog cat
 
 # LUCI CIPD package queries
 cipd describe
+cipd help
 cipd ls
 fx cipd
