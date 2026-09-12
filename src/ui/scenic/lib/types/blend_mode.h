@@ -105,7 +105,7 @@ constexpr BlendMode BlendMode::From(const fuchsia_ui_composition::BlendMode2& fi
     case fuchsia_ui_composition::BlendMode2::kStraightAlpha:
       return BlendMode::kStraightAlpha();
     default:
-      FX_LOGS(ERROR) << "Unsupported BlendMode, defaulting to REPLACE BlendMode";
+      FX_CHECK(false) << "Unsupported BlendMode: " << static_cast<uint32_t>(fidl_mode);
       return BlendMode::kReplace();
   }
 }

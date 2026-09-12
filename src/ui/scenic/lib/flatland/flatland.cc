@@ -1776,6 +1776,14 @@ void Flatland::SetImageBlendingFunction(SetImageBlendingFunctionRequestView requ
 
 void Flatland::SetImageBlendMode(SetImageBlendModeRequestView request,
                                  SetImageBlendModeCompleter::Sync& completer) {
+  // Typically we do checks in the "real implementation" of the method, i.e. the one
+  // that takes internal Scenic types rather than FIDL types.  However in this case we
+  // need to validate before calling `BlendMode::From()`.
+  if (request->blend_mode.IsUnknown()) {
+    error_reporter_->ERROR() << "SetImageBlendMode: unknown blend mode";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
   SetImageBlendMode(ContentId(request->image_id.value), BlendMode::From(request->blend_mode));
 }
 
@@ -2963,6 +2971,11 @@ void Flatland::SetLayerProperties(LayerId layer_id,
   }
 
   if (properties.has_blend_mode()) {
+    if (properties.blend_mode().IsUnknown()) {
+      error_reporter_->ERROR() << "SetLayerProperties: unknown blend mode";
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
     layer_object.common.blend_mode = types::BlendMode::From(properties.blend_mode());
   }
 
@@ -3001,25 +3014,35 @@ void Flatland::SetLayerProperties(LayerId layer_id,
   }
 
   if (properties.has_transform()) {
-    // TODO(https://fxbug.dev/474444799): stub; will use a `types::RotateFlip::From()` helper to
-    // handle the translation.
-    error_reporter_->ERROR() << "SetLayerProperties[transform]: NOT IMPLEMENTED";
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
+    layer_object.image_mode.transform = types::RotateFlip::From(properties.transform());
   }
 
   if (properties.has_hint_damage_rects()) {
-    // TODO(https://fxbug.dev/474444799): stub
-    error_reporter_->ERROR() << "SetLayerProperties[hint_damage_rects]: NOT IMPLEMENTED";
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
+    std::vector<types::Rectangle> damage_rects;
+    damage_rects.reserve(properties.hint_damage_rects().size());
+    for (const auto& rect : properties.hint_damage_rects()) {
+      if (!types::Rectangle::IsValid(rect)) {
+        error_reporter_->ERROR() << "SetLayerProperties: hint_damage_rects entry is invalid";
+        CloseConnection(FlatlandError::kBadOperation);
+        return;
+      }
+      damage_rects.push_back(types::Rectangle::From(rect));
+    }
+    layer_object.hint_damage_rects = std::move(damage_rects);
   }
 
   if (properties.has_hint_visible_rects()) {
-    // TODO(https://fxbug.dev/474444799): stub
-    error_reporter_->ERROR() << "SetLayerProperties[hint_visible_rects]: NOT IMPLEMENTED";
-    CloseConnection(FlatlandError::kBadOperation);
-    return;
+    std::vector<types::Rectangle> visible_rects;
+    visible_rects.reserve(properties.hint_visible_rects().size());
+    for (const auto& rect : properties.hint_visible_rects()) {
+      if (!types::Rectangle::IsValid(rect)) {
+        error_reporter_->ERROR() << "SetLayerProperties: hint_visible_rects entry is invalid";
+        CloseConnection(FlatlandError::kBadOperation);
+        return;
+      }
+      visible_rects.push_back(types::Rectangle::From(rect));
+    }
+    layer_object.hint_visible_rects = std::move(visible_rects);
   }
 
   if (properties.has_composition_mode()) {
@@ -3060,8 +3083,14 @@ void Flatland::ResetLayer(LayerId layer_id) {
   }
   LayerObject& layer_object = GetLayerObject(it->second);
 
-  error_reporter_->ERROR() << "ResetLayer: NOT IMPLEMENTED";
-  CloseConnection(FlatlandError::kBadOperation);
+  // TODO(https://fxbug.dev/540952629): When SetLayerImage is implemented, ResetLayer must end any
+  // image binding on this layer, signal its release fence, and add the image to images_to_release_.
+  layer_object.common = UberStructLayer::CommonProperties{};
+  layer_object.image_mode = UberStructLayer::ImageModeProperties{};
+  layer_object.solid_color_mode = UberStructLayer::SolidColorModeProperties{};
+  layer_object.mode = LayerObject::Mode::kInvisible;
+  layer_object.hint_damage_rects.clear();
+  layer_object.hint_visible_rects.clear();
 }
 
 void Flatland::OnNextFrameBegin(uint32_t additional_present_credits,

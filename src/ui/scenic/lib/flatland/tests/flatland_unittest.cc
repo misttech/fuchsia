@@ -35,8 +35,8 @@
 #include "src/ui/scenic/lib/flatland/flatland_display.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
-#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
+#include "src/ui/scenic/lib/flatland/scene_dumper.h"
 #include "src/ui/scenic/lib/flatland/tests/flatland_unittest.h"
 #include "src/ui/scenic/lib/flatland/tests/logging_event_loop.h"
 #include "src/ui/scenic/lib/flatland/tests/mock_flatland_presenter.h"
@@ -82,6 +82,7 @@ using flatland::LinkSystem;
 using flatland::MockFlatlandPresenter;
 using flatland::NoViewProtocols;
 using flatland::PresentArgs;
+using flatland::SrcToDest;
 using flatland::TestErrorReporter;
 using flatland::TransformGraph;
 using flatland::TransformHandle;
@@ -6538,25 +6539,7 @@ TEST_F(Flatland2Test, MonostateLayersProduceNoRenderables) {
 
   Present(flatland, true);
 
-  auto snapshot = uber_struct_system_->Snapshot();
-  auto links = link_system_->GetResolvedTopologyLinks();
-  auto root_transform = flatland->GetRoot();
-  auto topology_data = GlobalTopologyData::ComputeGlobalTopologyData(
-      snapshot.map, links, link_system_->GetInstanceId(), root_transform);
-
-  GlobalMatrixVector global_matrices;
-  ComputeGlobalMatrices(global_matrices, topology_data.topology_vector,
-                        topology_data.parent_indices, snapshot.map);
-
-  GlobalTransformClipRegionVector clip_regions;
-  ComputeGlobalTransformClipRegions(clip_regions, topology_data.topology_vector,
-                                    topology_data.parent_indices, global_matrices, snapshot.map);
-
-  auto inherited_opacities = ComputeGlobalOpacityValues(topology_data.topology_vector,
-                                                        topology_data.parent_indices, snapshot.map);
-
-  auto resolved_layers = ComputeGlobalResolvedLayers(topology_data, snapshot.map, global_matrices,
-                                                     clip_regions, inherited_opacities);
+  auto resolved_layers = ComputeResolvedLayers(flatland.get());
   EXPECT_TRUE(resolved_layers.empty());
 }
 
@@ -6836,6 +6819,1065 @@ TEST_F(Flatland2Test, SetTransformContentFailsWhenDisabled) {
   flatland->SetTransformContent(kTransformId, kStackId);
   ASSERT_TRUE(error_log.has_value());
   Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, PropertiesStickyAcrossModeChanges) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayer(2);
+  const LayerStackId kStack(3);
+
+  fidl::Arena arena;
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayer);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayer});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  // Set properties across all groups.
+  fuchsia_ui_composition::LayerProperties props;
+  props.display_rect(fuchsia_math::RectU{10, 20, 100, 200});
+  props.opacity(0.75f);
+  props.blend_mode(fuchsia_ui_composition::BlendMode2::kPremultipliedAlpha);
+  props.color(fuchsia_ui_composition::ColorRgba{0.2f, 0.4f, 0.6f, 0.8f});
+  props.sample_rect(fuchsia_math::RectF{5.f, 10.f, 50.f, 100.f});
+  props.transform(fuchsia_ui_composition::FlipThenRotate::kFlipH |
+                  fuchsia_ui_composition::FlipThenRotate::kRotate90);
+  props.composition_mode(fuchsia_ui_composition::CompositionMode::kImage);
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  auto layer_handle = flatland->GetLayerHandleForTest(kLayer);
+
+  // 1. IMAGE mode: common + image_mode active.
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    EXPECT_EQ(us_layer.common.display_rect,
+              (types::Rectangle({.x = 10, .y = 20, .width = 100, .height = 200})));
+    EXPECT_EQ(us_layer.common.opacity, 0.75f);
+    EXPECT_EQ(us_layer.common.blend_mode, types::BlendMode::kPremultipliedAlpha());
+    ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageModeProperties>(us_layer.content));
+    const auto& img = std::get<UberStructLayer::ImageModeProperties>(us_layer.content);
+    EXPECT_EQ(img.sample_rect,
+              (types::RectangleF({.x = 5.f, .y = 10.f, .width = 50.f, .height = 100.f})));
+    EXPECT_EQ(img.transform, types::RotateFlip::kRotateCcw90ReflectY());
+  }
+
+  // 2. Switch to SOLID_COLOR mode.
+  fuchsia_ui_composition::LayerProperties solid_mode_props;
+  solid_mode_props.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(solid_mode_props)));
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    EXPECT_EQ(us_layer.common.display_rect,
+              (types::Rectangle({.x = 10, .y = 20, .width = 100, .height = 200})));
+    EXPECT_EQ(us_layer.common.opacity, 0.75f);
+    EXPECT_EQ(us_layer.common.blend_mode, types::BlendMode::kPremultipliedAlpha());
+    ASSERT_TRUE(
+        std::holds_alternative<UberStructLayer::SolidColorModeProperties>(us_layer.content));
+    const auto& solid = std::get<UberStructLayer::SolidColorModeProperties>(us_layer.content);
+    EXPECT_EQ(solid.color, (std::array<float, 4>{0.2f, 0.4f, 0.6f, 0.8f}));
+  }
+
+  // 3. Switch back to IMAGE mode (second leg of double round trip).
+  fuchsia_ui_composition::LayerProperties image_mode_props;
+  image_mode_props.composition_mode(fuchsia_ui_composition::CompositionMode::kImage);
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(image_mode_props)));
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageModeProperties>(us_layer.content));
+    const auto& img = std::get<UberStructLayer::ImageModeProperties>(us_layer.content);
+    EXPECT_EQ(img.sample_rect,
+              (types::RectangleF({.x = 5.f, .y = 10.f, .width = 50.f, .height = 100.f})));
+    EXPECT_EQ(img.transform, types::RotateFlip::kRotateCcw90ReflectY());
+  }
+
+  // 4. Switch back to SOLID_COLOR mode again.
+  fuchsia_ui_composition::LayerProperties solid_mode_props2;
+  solid_mode_props2.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(solid_mode_props2)));
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    ASSERT_TRUE(
+        std::holds_alternative<UberStructLayer::SolidColorModeProperties>(us_layer.content));
+    const auto& solid = std::get<UberStructLayer::SolidColorModeProperties>(us_layer.content);
+    EXPECT_EQ(solid.color, (std::array<float, 4>{0.2f, 0.4f, 0.6f, 0.8f}));
+  }
+}
+
+TEST_F(Flatland2Test, MergeAccumulatesSparseTables) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayer(2);
+  const LayerStackId kStack(3);
+
+  fidl::Arena arena;
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayer);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayer});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  // Set mode to IMAGE.
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.composition_mode(fuchsia_ui_composition::CompositionMode::kImage);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  // Sparse call 1: display_rect
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.display_rect(fuchsia_math::RectU{0, 0, 80, 80});
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  // Sparse call 2: opacity
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.opacity(0.5f);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  // Sparse call 3: blend_mode
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.blend_mode(fuchsia_ui_composition::BlendMode2::kPremultipliedAlpha);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  // Sparse call 4: sample_rect
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.sample_rect(fuchsia_math::RectF{0.f, 0.f, 40.f, 40.f});
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  // Sparse call 5: transform
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.transform(fuchsia_ui_composition::FlipThenRotate::kFlipV);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  // Sparse call 6: color (authored while in IMAGE mode!)
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.color(fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.4f});
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  auto layer_handle = flatland->GetLayerHandleForTest(kLayer);
+
+  // In IMAGE mode: all accumulated properties for common and image_mode appear.
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    EXPECT_EQ(us_layer.common.display_rect,
+              (types::Rectangle({.x = 0, .y = 0, .width = 80, .height = 80})));
+    EXPECT_EQ(us_layer.common.opacity, 0.5f);
+    EXPECT_EQ(us_layer.common.blend_mode, types::BlendMode::kPremultipliedAlpha());
+    ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageModeProperties>(us_layer.content));
+    const auto& img = std::get<UberStructLayer::ImageModeProperties>(us_layer.content);
+    EXPECT_EQ(img.sample_rect,
+              (types::RectangleF({.x = 0.f, .y = 0.f, .width = 40.f, .height = 40.f})));
+    EXPECT_EQ(img.transform, types::RotateFlip::kReflectX());
+  }
+
+  // Switch to SOLID_COLOR mode: previously-authored color takes effect!
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    ASSERT_TRUE(
+        std::holds_alternative<UberStructLayer::SolidColorModeProperties>(us_layer.content));
+    const auto& solid = std::get<UberStructLayer::SolidColorModeProperties>(us_layer.content);
+    EXPECT_EQ(solid.color, (std::array<float, 4>{0.1f, 0.2f, 0.3f, 0.4f}));
+  }
+}
+
+TEST_F(Flatland2Test, ModeIsStickyAndMergeable) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayer(2);
+  const LayerStackId kStack(3);
+
+  fidl::Arena arena;
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayer);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayer});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  auto layer_handle = flatland->GetLayerHandleForTest(kLayer);
+
+  // Set initial state with SOLID_COLOR mode.
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+    props.color(fuchsia_ui_composition::ColorRgba{1.f, 0.f, 0.f, 1.f});
+    props.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    EXPECT_TRUE(std::holds_alternative<UberStructLayer::SolidColorModeProperties>(
+        uber_struct->layers.at(layer_handle).content));
+  }
+
+  // Call carrying only properties (no composition_mode) leaves mode unchanged.
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.opacity(0.5f);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    EXPECT_EQ(us_layer.common.opacity, 0.5f);
+    EXPECT_TRUE(
+        std::holds_alternative<UberStructLayer::SolidColorModeProperties>(us_layer.content));
+  }
+
+  // Call carrying only composition_mode switches mode leaving stored properties intact.
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.composition_mode(fuchsia_ui_composition::CompositionMode::kImage);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    EXPECT_EQ(us_layer.common.opacity, 0.5f);
+    EXPECT_TRUE(std::holds_alternative<UberStructLayer::ImageModeProperties>(us_layer.content));
+  }
+
+  // Call carrying both properties and composition_mode applies both together.
+  {
+    fuchsia_ui_composition::LayerProperties props;
+    props.color(fuchsia_ui_composition::ColorRgba{0.f, 1.f, 0.f, 1.f});
+    props.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  }
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    ASSERT_TRUE(
+        std::holds_alternative<UberStructLayer::SolidColorModeProperties>(us_layer.content));
+    EXPECT_EQ(std::get<UberStructLayer::SolidColorModeProperties>(us_layer.content).color,
+              (std::array<float, 4>{0.f, 1.f, 0.f, 1.f}));
+  }
+}
+
+TEST_F(Flatland2Test, ResetLayerForgetsEverything) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayer(2);
+  const LayerStackId kStack(3);
+
+  fidl::Arena arena;
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayer);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayer});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  auto layer_handle = flatland->GetLayerHandleForTest(kLayer);
+
+  // Fully populate layer.
+  fuchsia_ui_composition::LayerProperties props;
+  props.display_rect(fuchsia_math::RectU{10, 20, 30, 40});
+  props.opacity(0.3f);
+  props.blend_mode(fuchsia_ui_composition::BlendMode2::kPremultipliedAlpha);
+  props.color(fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.4f});
+  props.sample_rect(fuchsia_math::RectF{1.f, 2.f, 3.f, 4.f});
+  props.transform(fuchsia_ui_composition::FlipThenRotate::kFlipH);
+  props.hint_damage_rects({{fuchsia_math::RectU{0, 0, 10, 10}}});
+  props.hint_visible_rects({{fuchsia_math::RectU{0, 0, 20, 20}}});
+  props.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+
+  Present(flatland, true);
+
+  // ResetLayer.
+  flatland->ResetLayer(kLayer);
+  EXPECT_FALSE(error_log.has_value());
+
+  auto* obj = flatland->GetLayerObjectForTest(layer_handle);
+  ASSERT_NE(obj, nullptr);
+  EXPECT_TRUE(obj->hint_damage_rects.empty());
+  EXPECT_TRUE(obj->hint_visible_rects.empty());
+  EXPECT_EQ(obj->mode, LayerObject::Mode::kInvisible);
+
+  Present(flatland, true);
+
+  // In snapshot, mode is monostate (invisible), common properties are reset to defaults.
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    EXPECT_EQ(us_layer.common.display_rect, types::Rectangle{});
+    EXPECT_EQ(us_layer.common.opacity, 1.0f);
+    EXPECT_EQ(us_layer.common.blend_mode, types::BlendMode::kReplace());
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(us_layer.content));
+  }
+
+  // Entering solid-color mode now sees defaults, not stale values.
+  {
+    fuchsia_ui_composition::LayerProperties p;
+    p.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(p)));
+  }
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    ASSERT_TRUE(
+        std::holds_alternative<UberStructLayer::SolidColorModeProperties>(us_layer.content));
+    EXPECT_EQ(std::get<UberStructLayer::SolidColorModeProperties>(us_layer.content).color,
+              (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
+  }
+
+  // Entering image mode now sees defaults, not stale values.
+  {
+    fuchsia_ui_composition::LayerProperties p;
+    p.composition_mode(fuchsia_ui_composition::CompositionMode::kImage);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(p)));
+  }
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageModeProperties>(us_layer.content));
+    const auto& img = std::get<UberStructLayer::ImageModeProperties>(us_layer.content);
+    EXPECT_EQ(img.sample_rect, types::RectangleF{});
+    EXPECT_EQ(img.transform, types::RotateFlip::kIdentity());
+  }
+}
+
+TEST_F(Flatland2Test, InvisibleRoundTripLosesNothing) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayer(2);
+  const LayerStackId kStack(3);
+
+  fidl::Arena arena;
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayer);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayer});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  auto layer_handle = flatland->GetLayerHandleForTest(kLayer);
+
+  // 1. Fully configure layer in SOLID_COLOR mode.
+  fuchsia_ui_composition::LayerProperties props;
+  props.display_rect(fuchsia_math::RectU{5, 15, 25, 35});
+  props.opacity(0.85f);
+  props.color(fuchsia_ui_composition::ColorRgba{0.3f, 0.6f, 0.9f, 1.f});
+  props.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+
+  Present(flatland, true);
+
+  // 2. Switch to INVISIBLE mode.
+  {
+    fuchsia_ui_composition::LayerProperties p;
+    p.composition_mode(fuchsia_ui_composition::CompositionMode::kInvisible);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(p)));
+  }
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    EXPECT_TRUE(
+        std::holds_alternative<std::monostate>(uber_struct->layers.at(layer_handle).content));
+    EXPECT_TRUE(ComputeResolvedLayers(flatland.get()).empty());
+  }
+
+  // 3. Switch back to SOLID_COLOR mode without re-sending any properties.
+  {
+    fuchsia_ui_composition::LayerProperties p;
+    p.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(p)));
+  }
+  Present(flatland, true);
+
+  {
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    EXPECT_EQ(us_layer.common.display_rect,
+              (types::Rectangle({.x = 5, .y = 15, .width = 25, .height = 35})));
+    EXPECT_EQ(us_layer.common.opacity, 0.85f);
+    ASSERT_TRUE(
+        std::holds_alternative<UberStructLayer::SolidColorModeProperties>(us_layer.content));
+    EXPECT_EQ(std::get<UberStructLayer::SolidColorModeProperties>(us_layer.content).color,
+              (std::array<float, 4>{0.3f, 0.6f, 0.9f, 1.f}));
+  }
+}
+
+TEST_F(Flatland2Test, InvisibleLayerInStack) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayer1(2);
+  const LayerId kLayer2(3);
+  const LayerId kLayer3(4);
+  const LayerStackId kStack(5);
+
+  fidl::Arena arena;
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayer1);
+  flatland->CreateLayer(kLayer2);
+  flatland->CreateLayer(kLayer3);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayer1, kLayer2, kLayer3});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  // Layer 1: Solid Red
+  fuchsia_ui_composition::LayerProperties props1;
+  props1.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+  props1.color(fuchsia_ui_composition::ColorRgba{1.f, 0.f, 0.f, 1.f});
+  props1.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayer1, fidl::ToWire(arena, std::move(props1)));
+
+  // Layer 2: Invisible
+  fuchsia_ui_composition::LayerProperties props2;
+  props2.display_rect(fuchsia_math::RectU{0, 0, 50, 50});
+  props2.composition_mode(fuchsia_ui_composition::CompositionMode::kInvisible);
+  flatland->SetLayerProperties(kLayer2, fidl::ToWire(arena, std::move(props2)));
+
+  // Layer 3: Solid Green
+  fuchsia_ui_composition::LayerProperties props3;
+  props3.display_rect(fuchsia_math::RectU{10, 10, 80, 80});
+  props3.color(fuchsia_ui_composition::ColorRgba{0.f, 1.f, 0.f, 1.f});
+  props3.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayer3, fidl::ToWire(arena, std::move(props3)));
+
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  auto uber_struct = GetUberStruct(flatland.get());
+  ASSERT_NE(uber_struct, nullptr);
+  auto handle2 = flatland->GetLayerHandleForTest(kLayer2);
+  ASSERT_TRUE(uber_struct->layers.contains(handle2));
+  EXPECT_TRUE(std::holds_alternative<std::monostate>(uber_struct->layers.at(handle2).content));
+
+  auto resolved_layers = ComputeResolvedLayers(flatland.get());
+  ASSERT_EQ(resolved_layers.size(), 2u);
+
+  // Scene dump prints without crashing.
+  std::ostringstream str;
+  auto snapshot = uber_struct_system_->Snapshot();
+  auto links = link_system_->GetResolvedTopologyLinks();
+  auto root_transform = flatland->GetRoot();
+  auto topology_data = GlobalTopologyData::ComputeGlobalTopologyData(
+      snapshot.map, links, link_system_->GetInstanceId(), root_transform);
+  DumpScene(snapshot.map, topology_data, resolved_layers, str);
+  EXPECT_FALSE(str.str().empty());
+
+  // Layer 1 (Red)
+  EXPECT_EQ(resolved_layers[0].geometry, (SrcToDest(types::RectangleF({0, 0, 100, 100}))));
+  EXPECT_EQ(std::get<ResolvedLayer::SolidColorContent>(resolved_layers[0].content).color,
+            (std::array<float, 4>{1.f, 0.f, 0.f, 1.f}));
+  // Layer 3 (Green)
+  EXPECT_EQ(resolved_layers[1].geometry, (SrcToDest(types::RectangleF({10, 10, 80, 80}))));
+  EXPECT_EQ(std::get<ResolvedLayer::SolidColorContent>(resolved_layers[1].content).color,
+            (std::array<float, 4>{0.f, 1.f, 0.f, 1.f}));
+}
+
+TEST_F(Flatland2Test, StraightAlphaSolidNormalizedAtResolve) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayerA(2);
+  const LayerId kLayerB(3);
+  const LayerStackId kStack(4);
+
+  fidl::Arena arena;
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayer(kLayerB);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayerA, kLayerB});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  // Layer A: set STRAIGHT_ALPHA directly in solid mode.
+  fuchsia_ui_composition::LayerProperties props_a;
+  props_a.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+  props_a.blend_mode(fuchsia_ui_composition::BlendMode2::kStraightAlpha);
+  props_a.color(fuchsia_ui_composition::ColorRgba{1.f, 0.5f, 0.25f, 0.5f});
+  props_a.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayerA, fidl::ToWire(arena, std::move(props_a)));
+
+  // Layer B: set STRAIGHT_ALPHA while in IMAGE mode, then switch to SOLID_COLOR mode.
+  fuchsia_ui_composition::LayerProperties props_b_image;
+  props_b_image.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+  props_b_image.blend_mode(fuchsia_ui_composition::BlendMode2::kStraightAlpha);
+  props_b_image.color(fuchsia_ui_composition::ColorRgba{1.f, 0.5f, 0.25f, 0.5f});
+  props_b_image.composition_mode(fuchsia_ui_composition::CompositionMode::kImage);
+  flatland->SetLayerProperties(kLayerB, fidl::ToWire(arena, std::move(props_b_image)));
+
+  fuchsia_ui_composition::LayerProperties props_b_solid;
+  props_b_solid.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayerB, fidl::ToWire(arena, std::move(props_b_solid)));
+
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  auto uber_struct = GetUberStruct(flatland.get());
+  ASSERT_NE(uber_struct, nullptr);
+  auto handle_a = flatland->GetLayerHandleForTest(kLayerA);
+  auto handle_b = flatland->GetLayerHandleForTest(kLayerB);
+
+  // Snapshot holds kStraightAlpha verbatim for both layers.
+  EXPECT_EQ(uber_struct->layers.at(handle_a).common.blend_mode, types::BlendMode::kStraightAlpha());
+  EXPECT_EQ(uber_struct->layers.at(handle_b).common.blend_mode, types::BlendMode::kStraightAlpha());
+
+  // Resolved layers emit kPremultipliedAlpha and premultiplied content color for both layers.
+  auto resolved_layers = ComputeResolvedLayers(flatland.get());
+  ASSERT_EQ(resolved_layers.size(), 2u);
+  const std::array<float, 4> expected_color = {0.5f, 0.25f, 0.125f, 0.5f};
+
+  EXPECT_EQ(resolved_layers[0].blend_mode, types::BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(std::get<ResolvedLayer::SolidColorContent>(resolved_layers[0].content).color,
+            expected_color);
+
+  EXPECT_EQ(resolved_layers[1].blend_mode, types::BlendMode::kPremultipliedAlpha());
+  EXPECT_EQ(std::get<ResolvedLayer::SolidColorContent>(resolved_layers[1].content).color,
+            expected_color);
+}
+
+TEST_F(Flatland2Test, DefaultsOnFirstModeEntry) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayer(2);
+  const LayerStackId kStack(3);
+
+  fidl::Arena arena;
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayer);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayer});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  // Fresh layer entering SOLID_COLOR mode with no color authored.
+  fuchsia_ui_composition::LayerProperties props;
+  props.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+  props.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  auto resolved_layers = ComputeResolvedLayers(flatland.get());
+  ASSERT_EQ(resolved_layers.size(), 1u);
+  EXPECT_EQ(std::get<ResolvedLayer::SolidColorContent>(resolved_layers[0].content).color,
+            (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
+}
+
+TEST_F(Flatland2Test, TransformStoredAsRotateFlip) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayer(2);
+  const LayerStackId kStack(3);
+
+  fidl::Arena arena;
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayer);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayer});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  auto layer_handle = flatland->GetLayerHandleForTest(kLayer);
+
+  using fuchsia_ui_composition::FlipThenRotate;
+  const std::vector<std::pair<FlipThenRotate, types::RotateFlip>> cases = {
+      {FlipThenRotate(0), types::RotateFlip::kIdentity()},
+      {FlipThenRotate::kFlipH, types::RotateFlip::kReflectY()},
+      {FlipThenRotate::kFlipV, types::RotateFlip::kReflectX()},
+      {FlipThenRotate::kFlipH | FlipThenRotate::kFlipV, types::RotateFlip::kRotateCcw180()},
+      {FlipThenRotate::kRotate90, types::RotateFlip::kRotateCcw270()},
+      {FlipThenRotate::kFlipH | FlipThenRotate::kRotate90,
+       types::RotateFlip::kRotateCcw90ReflectY()},
+      {FlipThenRotate::kFlipV | FlipThenRotate::kRotate90,
+       types::RotateFlip::kRotateCcw90ReflectX()},
+      {FlipThenRotate::kFlipH | FlipThenRotate::kFlipV | FlipThenRotate::kRotate90,
+       types::RotateFlip::kRotateCcw90()},
+  };
+
+  for (const auto& [flip_then_rotate, expected_rf] : cases) {
+    fuchsia_ui_composition::LayerProperties props;
+    props.transform(flip_then_rotate);
+    props.composition_mode(fuchsia_ui_composition::CompositionMode::kImage);
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+    Present(flatland, true);
+
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    ASSERT_TRUE(uber_struct->layers.contains(layer_handle));
+    const auto& us_layer = uber_struct->layers.at(layer_handle);
+    ASSERT_TRUE(std::holds_alternative<UberStructLayer::ImageModeProperties>(us_layer.content));
+    EXPECT_EQ(std::get<UberStructLayer::ImageModeProperties>(us_layer.content).transform,
+              expected_rf);
+  }
+}
+
+TEST_F(Flatland2Test, SetLayerPropertiesStoresHintRects) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kLayer(1);
+  flatland->CreateLayer(kLayer);
+
+  const fuchsia_math::RectU kDamageRect{0, 0, 10, 10};
+  const fuchsia_math::RectU kVisibleRect{0, 0, 20, 20};
+
+  fuchsia_ui_composition::LayerProperties props;
+  props.hint_damage_rects({{kDamageRect}});
+  props.hint_visible_rects({{kVisibleRect}});
+  fidl::Arena arena;
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  EXPECT_FALSE(error_log.has_value());
+
+  auto* obj = flatland->GetLayerObjectForTest(flatland->GetLayerHandleForTest(kLayer));
+  ASSERT_NE(obj, nullptr);
+  EXPECT_EQ(obj->hint_damage_rects,
+            std::vector<types::Rectangle>{types::Rectangle::From(kDamageRect)});
+  EXPECT_EQ(obj->hint_visible_rects,
+            std::vector<types::Rectangle>{types::Rectangle::From(kVisibleRect)});
+}
+
+TEST_F(Flatland2Test, SetLayerPropertiesUnknownLayerFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  fuchsia_ui_composition::LayerProperties props;
+  props.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+  fidl::Arena arena;
+  flatland->SetLayerProperties(LayerId(1), fidl::ToWire(arena, std::move(props)));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetLayerPropertiesFailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+  fuchsia_ui_composition::LayerProperties props;
+  props.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+  fidl::Arena arena;
+  flatland->SetLayerProperties(LayerId(1), fidl::ToWire(arena, std::move(props)));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetLayerPropertiesInvalidDisplayRectFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kLayer(1);
+  flatland->CreateLayer(kLayer);
+
+  fuchsia_ui_composition::LayerProperties props;
+  props.display_rect(fuchsia_math::RectU{std::numeric_limits<uint32_t>::max(), 0, 100, 100});
+  fidl::Arena arena;
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetLayerPropertiesInvalidOpacityFails) {
+  for (float opacity : {-0.1f, 1.1f, std::numeric_limits<float>::quiet_NaN(),
+                        std::numeric_limits<float>::infinity()}) {
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+    const LayerId kLayer(1);
+    flatland->CreateLayer(kLayer);
+
+    fuchsia_ui_composition::LayerProperties props;
+    props.opacity(opacity);
+    fidl::Arena arena;
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+    ASSERT_TRUE(error_log.has_value());
+    Present(flatland, false);
+  }
+}
+
+TEST_F(Flatland2Test, SetLayerPropertiesInvalidColorFails) {
+  const std::vector<fuchsia_ui_composition::ColorRgba> bad_colors = {
+      fuchsia_ui_composition::ColorRgba{-0.1f, 0.f, 0.f, 1.f},
+      fuchsia_ui_composition::ColorRgba{1.1f, 0.f, 0.f, 1.f},
+      fuchsia_ui_composition::ColorRgba{0.f, -0.1f, 0.f, 1.f},
+      fuchsia_ui_composition::ColorRgba{0.f, 1.1f, 0.f, 1.f},
+      fuchsia_ui_composition::ColorRgba{0.f, 0.f, -0.1f, 1.f},
+      fuchsia_ui_composition::ColorRgba{0.f, 0.f, 1.1f, 1.f},
+      fuchsia_ui_composition::ColorRgba{0.f, 0.f, 0.f, -0.1f},
+      fuchsia_ui_composition::ColorRgba{0.f, 0.f, 0.f, 1.1f},
+      fuchsia_ui_composition::ColorRgba{std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f, 1.f},
+      fuchsia_ui_composition::ColorRgba{0.f, std::numeric_limits<float>::infinity(), 0.f, 1.f},
+  };
+
+  for (const auto& color : bad_colors) {
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+    const LayerId kLayer(1);
+    flatland->CreateLayer(kLayer);
+
+    fuchsia_ui_composition::LayerProperties props;
+    props.color(color);
+    fidl::Arena arena;
+    flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+    ASSERT_TRUE(error_log.has_value());
+    Present(flatland, false);
+  }
+}
+
+TEST_F(Flatland2Test, SetLayerPropertiesInvalidSampleRectFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kLayer(1);
+  flatland->CreateLayer(kLayer);
+
+  fuchsia_ui_composition::LayerProperties props;
+  props.sample_rect(fuchsia_math::RectF{0.f, 0.f, -10.f, 10.f});
+  fidl::Arena arena;
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetLayerPropertiesInvalidDamageHintsFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kLayer(1);
+  flatland->CreateLayer(kLayer);
+
+  fuchsia_ui_composition::LayerProperties props;
+  props.hint_damage_rects(
+      {{fuchsia_math::RectU{std::numeric_limits<uint32_t>::max(), 0, 100, 100}}});
+  fidl::Arena arena;
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, SetLayerPropertiesInvalidVisibleHintsFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const LayerId kLayer(1);
+  flatland->CreateLayer(kLayer);
+
+  fuchsia_ui_composition::LayerProperties props;
+  props.hint_visible_rects(
+      {{fuchsia_math::RectU{std::numeric_limits<uint32_t>::max(), 0, 100, 100}}});
+  fidl::Arena arena;
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ResetLayerUnknownLayerFails) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  flatland->ResetLayer(LayerId(1));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, ResetLayerFailsWhenDisabled) {
+  std::optional<std::string> error_log;
+  auto flatland = FlatlandTest::CreateFlatland();
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(error_log));
+  flatland->ResetLayer(LayerId(1));
+  ASSERT_TRUE(error_log.has_value());
+  Present(flatland, false);
+}
+
+TEST_F(Flatland2Test, TranslucentReplaceSolidCulls) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayerA(2);
+  const LayerId kLayerB(3);
+  const LayerStackId kStack(4);
+
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+
+  flatland->CreateLayer(kLayerA);
+  flatland->CreateLayer(kLayerB);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayerA, kLayerB});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  // Layer A (bottom): full-screen 100x100, opaque blue, REPLACE, opacity 1.0.
+  fidl::Arena arena;
+  fuchsia_ui_composition::LayerProperties props_a;
+  props_a.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+  props_a.color(fuchsia_ui_composition::ColorRgba{0.f, 0.f, 1.f, 1.f});
+  props_a.blend_mode(fuchsia_ui_composition::BlendMode2::kReplace);
+  props_a.opacity(1.0f);
+  props_a.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayerA, fidl::ToWire(arena, std::move(props_a)));
+
+  // Layer B (top): full-screen 100x100, translucent red (alpha 0.5), REPLACE, opacity 1.0.
+  fuchsia_ui_composition::LayerProperties props_b;
+  props_b.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+  props_b.color(fuchsia_ui_composition::ColorRgba{1.f, 0.f, 0.f, 0.5f});
+  props_b.blend_mode(fuchsia_ui_composition::BlendMode2::kReplace);
+  props_b.opacity(1.0f);
+  props_b.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayerB, fidl::ToWire(arena, std::move(props_b)));
+
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  // A REPLACE solid with color.a < 1.0 and opacity == 1.0 retains REPLACE blend mode
+  // (this is the hole-punch path) and therefore occludes/culls the layer underneath.
+  auto renderables = GetRenderables(flatland.get(), 100, 100);
+  ASSERT_EQ(renderables.size(), 1u);
+  EXPECT_EQ(renderables[0].blend_mode, types::BlendMode::kReplace());
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(renderables[0].content));
+  EXPECT_EQ(std::get<ResolvedLayer::SolidColorContent>(renderables[0].content).color,
+            (std::array<float, 4>{0.5f, 0.f, 0.f, 0.5f}));
+}
+
+TEST_F(Flatland2Test, OpacityDemotesReplace) {
+  {
+    // Sub-case 1: Layer-level opacity < 1.0 demotes REPLACE to PREMULTIPLIED_ALPHA -> lower layer
+    // survives.
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+    const TransformId kRoot(1);
+    const LayerId kLayerA(2);
+    const LayerId kLayerB(3);
+    const LayerStackId kStack(4);
+
+    flatland->CreateTransform(kRoot);
+    flatland->SetRootTransform(kRoot);
+    flatland->CreateLayer(kLayerA);
+    flatland->CreateLayer(kLayerB);
+    flatland->CreateLayerStack(kStack);
+    flatland->SetStackLayers(kStack, {kLayerA, kLayerB});
+    flatland->SetTransformContent(kRoot, kStack);
+
+    fidl::Arena arena;
+    fuchsia_ui_composition::LayerProperties props_a;
+    props_a.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+    props_a.color(fuchsia_ui_composition::ColorRgba{0.f, 0.f, 1.f, 1.f});
+    props_a.blend_mode(fuchsia_ui_composition::BlendMode2::kReplace);
+    props_a.opacity(1.0f);
+    props_a.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+    flatland->SetLayerProperties(kLayerA, fidl::ToWire(arena, std::move(props_a)));
+
+    fuchsia_ui_composition::LayerProperties props_b;
+    props_b.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+    props_b.color(fuchsia_ui_composition::ColorRgba{1.f, 0.f, 0.f, 0.5f});
+    props_b.blend_mode(fuchsia_ui_composition::BlendMode2::kReplace);
+    props_b.opacity(0.5f);  // Layer opacity < 1.0!
+    props_b.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+    flatland->SetLayerProperties(kLayerB, fidl::ToWire(arena, std::move(props_b)));
+
+    Present(flatland, true);
+
+    auto renderables = GetRenderables(flatland.get(), 100, 100);
+    ASSERT_EQ(renderables.size(), 2u);
+    EXPECT_EQ(renderables[1].blend_mode, types::BlendMode::kPremultipliedAlpha());
+  }
+
+  {
+    // Sub-case 2: Ancestor transform opacity < 1.0 demotes REPLACE to PREMULTIPLIED_ALPHA -> lower
+    // layer survives.
+    std::optional<std::string> error_log;
+    auto flatland = CreateFlatland2(&error_log);
+    const TransformId kRoot(1);
+    const TransformId kChild(2);
+    const LayerId kLayerA(3);
+    const LayerId kLayerB(4);
+    const LayerStackId kStackA(5);
+    const LayerStackId kStackB(6);
+
+    flatland->CreateTransform(kRoot);
+    flatland->SetRootTransform(kRoot);
+    flatland->CreateTransform(kChild);
+    flatland->AddChild(kRoot, kChild);
+    flatland->SetOpacity(kChild, 0.5f);  // Ancestor transform opacity < 1.0!
+
+    flatland->CreateLayer(kLayerA);
+    flatland->CreateLayer(kLayerB);
+    flatland->CreateLayerStack(kStackA);
+    flatland->CreateLayerStack(kStackB);
+    flatland->SetStackLayers(kStackA, {kLayerA});
+    flatland->SetStackLayers(kStackB, {kLayerB});
+    flatland->SetTransformContent(kRoot, kStackA);
+    flatland->SetTransformContent(kChild, kStackB);
+
+    fidl::Arena arena;
+    fuchsia_ui_composition::LayerProperties props_a;
+    props_a.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+    props_a.color(fuchsia_ui_composition::ColorRgba{0.f, 0.f, 1.f, 1.f});
+    props_a.blend_mode(fuchsia_ui_composition::BlendMode2::kReplace);
+    props_a.opacity(1.0f);
+    props_a.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+    flatland->SetLayerProperties(kLayerA, fidl::ToWire(arena, std::move(props_a)));
+
+    fuchsia_ui_composition::LayerProperties props_b;
+    props_b.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+    props_b.color(fuchsia_ui_composition::ColorRgba{1.f, 0.f, 0.f, 0.5f});
+    props_b.blend_mode(fuchsia_ui_composition::BlendMode2::kReplace);
+    props_b.opacity(1.0f);  // Layer opacity is 1.0, but effective opacity is 0.5.
+    props_b.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+    flatland->SetLayerProperties(kLayerB, fidl::ToWire(arena, std::move(props_b)));
+
+    Present(flatland, true);
+
+    auto renderables = GetRenderables(flatland.get(), 100, 100);
+    ASSERT_EQ(renderables.size(), 2u);
+    EXPECT_EQ(renderables[1].blend_mode, types::BlendMode::kPremultipliedAlpha());
+  }
+}
+
+TEST_F(Flatland2Test, SolidColorLayerRenders) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayer(2);
+  const LayerStackId kStack(3);
+
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayer);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayer});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  fidl::Arena arena;
+  fuchsia_ui_composition::LayerProperties props;
+  props.display_rect(fuchsia_math::RectU{10, 20, 50, 60});
+  props.color(fuchsia_ui_composition::ColorRgba{0.2f, 0.4f, 0.6f, 1.0f});
+  props.blend_mode(fuchsia_ui_composition::BlendMode2::kPremultipliedAlpha);
+  props.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayer, fidl::ToWire(arena, std::move(props)));
+
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  auto resolved_layers = ComputeResolvedLayers(flatland.get());
+  ASSERT_EQ(resolved_layers.size(), 1u);
+  EXPECT_EQ(resolved_layers[0].geometry, (SrcToDest(types::RectangleF({10, 20, 50, 60}))));
+  EXPECT_EQ(resolved_layers[0].blend_mode, types::BlendMode::kPremultipliedAlpha());
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(resolved_layers[0].content));
+  EXPECT_EQ(std::get<ResolvedLayer::SolidColorContent>(resolved_layers[0].content).color,
+            (std::array<float, 4>{0.2f, 0.4f, 0.6f, 1.0f}));
+}
+
+TEST_F(Flatland2Test, TwoSolidLayersZOrder) {
+  std::optional<std::string> error_log;
+  auto flatland = CreateFlatland2(&error_log);
+  const TransformId kRoot(1);
+  const LayerId kLayer1(2);
+  const LayerId kLayer2(3);
+  const LayerStackId kStack(4);
+
+  flatland->CreateTransform(kRoot);
+  flatland->SetRootTransform(kRoot);
+  flatland->CreateLayer(kLayer1);
+  flatland->CreateLayer(kLayer2);
+  flatland->CreateLayerStack(kStack);
+  flatland->SetStackLayers(kStack, {kLayer1, kLayer2});
+  flatland->SetTransformContent(kRoot, kStack);
+
+  // Layer 1: Red
+  fidl::Arena arena;
+  fuchsia_ui_composition::LayerProperties props1;
+  props1.display_rect(fuchsia_math::RectU{0, 0, 100, 100});
+  props1.color(fuchsia_ui_composition::ColorRgba{1.f, 0.f, 0.f, 1.f});
+  props1.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayer1, fidl::ToWire(arena, std::move(props1)));
+
+  // Layer 2: Blue
+  fuchsia_ui_composition::LayerProperties props2;
+  props2.display_rect(fuchsia_math::RectU{10, 10, 50, 50});
+  props2.color(fuchsia_ui_composition::ColorRgba{0.f, 0.f, 1.f, 1.f});
+  props2.composition_mode(fuchsia_ui_composition::CompositionMode::kSolidColor);
+  flatland->SetLayerProperties(kLayer2, fidl::ToWire(arena, std::move(props2)));
+
+  EXPECT_FALSE(error_log.has_value());
+  Present(flatland, true);
+
+  auto resolved_layers = ComputeResolvedLayers(flatland.get());
+  ASSERT_EQ(resolved_layers.size(), 2u);
+  // Layer 1 is back-most (index 0)
+  EXPECT_EQ(resolved_layers[0].geometry, (SrcToDest(types::RectangleF({0, 0, 100, 100}))));
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(resolved_layers[0].content));
+  EXPECT_EQ(std::get<ResolvedLayer::SolidColorContent>(resolved_layers[0].content).color,
+            (std::array<float, 4>{1.f, 0.f, 0.f, 1.f}));
+
+  // Layer 2 is front-most (index 1)
+  EXPECT_EQ(resolved_layers[1].geometry, (SrcToDest(types::RectangleF({10, 10, 50, 50}))));
+  ASSERT_TRUE(std::holds_alternative<ResolvedLayer::SolidColorContent>(resolved_layers[1].content));
+  EXPECT_EQ(std::get<ResolvedLayer::SolidColorContent>(resolved_layers[1].content).color,
+            (std::array<float, 4>{0.f, 0.f, 1.f, 1.f}));
 }
 
 // These tests exercise the legacy bridging logic where Flatland1 mutator calls

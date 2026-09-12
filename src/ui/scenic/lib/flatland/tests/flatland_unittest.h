@@ -35,6 +35,7 @@
 #include "src/ui/scenic/lib/flatland/flatland_display.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
+#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
 #include "src/ui/scenic/lib/flatland/tests/logging_event_loop.h"
 #include "src/ui/scenic/lib/flatland/tests/mock_flatland_presenter.h"
@@ -760,6 +761,36 @@ class Flatland2Test : public FlatlandTest {
       flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(*error_log));
     }
     return flatland;
+  }
+
+  std::vector<ResolvedLayer> ComputeResolvedLayers(Flatland* flatland) {
+    auto snapshot = uber_struct_system_->Snapshot();
+    auto links = link_system_->GetResolvedTopologyLinks();
+    auto root_transform = flatland->GetRoot();
+    auto topology_data = GlobalTopologyData::ComputeGlobalTopologyData(
+        snapshot.map, links, link_system_->GetInstanceId(), root_transform);
+
+    GlobalMatrixVector global_matrices;
+    ComputeGlobalMatrices(global_matrices, topology_data.topology_vector,
+                          topology_data.parent_indices, snapshot.map);
+
+    GlobalTransformClipRegionVector clip_regions;
+    ComputeGlobalTransformClipRegions(clip_regions, topology_data.topology_vector,
+                                      topology_data.parent_indices, global_matrices, snapshot.map);
+
+    GlobalOpacityVector inherited_opacities;
+    ComputeGlobalOpacityValues(inherited_opacities, topology_data.topology_vector,
+                               topology_data.parent_indices, snapshot.map);
+
+    return flatland::ComputeGlobalResolvedLayers(topology_data, snapshot.map, global_matrices,
+                                                 clip_regions, inherited_opacities);
+  }
+
+  std::vector<ResolvedLayer> GetRenderables(Flatland* flatland, uint64_t display_width = 1000,
+                                            uint64_t display_height = 1000) {
+    auto resolved_layers = ComputeResolvedLayers(flatland);
+    CullLayersInPlace(&resolved_layers, display_width, display_height);
+    return resolved_layers;
   }
 };
 

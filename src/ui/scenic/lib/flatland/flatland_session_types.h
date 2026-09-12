@@ -12,6 +12,7 @@
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/uber_struct.h"
 #include "src/ui/scenic/lib/types/id_type.h"
+#include "src/ui/scenic/lib/types/rectangle.h"
 
 namespace flatland {
 
@@ -75,6 +76,10 @@ struct LayerObject {
   UberStructLayer::ImageModeProperties image_mode;
   UberStructLayer::SolidColorModeProperties solid_color_mode;
   Mode mode = Mode::kInvisible;
+
+  // Stored optimization hints from LayerProperties.
+  std::vector<types::Rectangle> hint_damage_rects;
+  std::vector<types::Rectangle> hint_visible_rects;
 
   // The number of references to this layer: one for the client's LayerId binding
   // (Flatland2 sessions; the facade holds none) and one per layer-stack membership.

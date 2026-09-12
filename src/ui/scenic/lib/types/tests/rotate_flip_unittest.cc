@@ -62,6 +62,39 @@ TEST(RotateFlipTest, FromOrientationAndImageFlip) {
             RotateFlip::kRotateCcw90ReflectX());
 }
 
+TEST(RotateFlipTest, FromFlipThenRotate) {
+  using fuchsia_ui_composition::FlipThenRotate;
+
+  // 0: Identity
+  EXPECT_EQ(RotateFlip::From(FlipThenRotate(0)), RotateFlip::kIdentity());
+
+  // FLIP_H (flip horizontally across Y axis -> reflect Y)
+  EXPECT_EQ(RotateFlip::From(FlipThenRotate::kFlipH), RotateFlip::kReflectY());
+
+  // FLIP_V (flip vertically across X axis -> reflect X)
+  EXPECT_EQ(RotateFlip::From(FlipThenRotate::kFlipV), RotateFlip::kReflectX());
+
+  // FLIP_H | FLIP_V (180 rotation)
+  EXPECT_EQ(RotateFlip::From(FlipThenRotate::kFlipH | FlipThenRotate::kFlipV),
+            RotateFlip::kRotateCcw180());
+
+  // ROTATE_90 (90 CW -> 270 CCW)
+  EXPECT_EQ(RotateFlip::From(FlipThenRotate::kRotate90), RotateFlip::kRotateCcw270());
+
+  // FLIP_H | ROTATE_90 (FLIP_H then 90 CW -> 90 CCW + reflect Y)
+  EXPECT_EQ(RotateFlip::From(FlipThenRotate::kFlipH | FlipThenRotate::kRotate90),
+            RotateFlip::kRotateCcw90ReflectY());
+
+  // FLIP_V | ROTATE_90 (FLIP_V then 90 CW -> 90 CCW + reflect X)
+  EXPECT_EQ(RotateFlip::From(FlipThenRotate::kFlipV | FlipThenRotate::kRotate90),
+            RotateFlip::kRotateCcw90ReflectX());
+
+  // FLIP_H | FLIP_V | ROTATE_90 (180 + 90 CW -> 90 CCW)
+  EXPECT_EQ(
+      RotateFlip::From(FlipThenRotate::kFlipH | FlipThenRotate::kFlipV | FlipThenRotate::kRotate90),
+      RotateFlip::kRotateCcw90());
+}
+
 TEST(RotateFlipTest, FromDisplayCoordinateTransformation) {
   EXPECT_EQ(RotateFlip::From(CoordinateTransformation::kIdentity), RotateFlip::kIdentity());
   EXPECT_EQ(RotateFlip::From(CoordinateTransformation::kReflectX), RotateFlip::kReflectX());

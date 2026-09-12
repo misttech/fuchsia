@@ -104,7 +104,7 @@ class RotateFlip {
     //
     // Example:
     // |a b c d|      |a e i|
-    // |e f g h|  ->  |b f k|
+    // |e f g h|  ->  |b f j|
     // |i j k l|      |c g k|
     //                |d h l|
     kRotateCcw90ReflectX = 5,
@@ -152,6 +152,8 @@ class RotateFlip {
   // values, converted by cast.
   [[nodiscard]] static constexpr RotateFlip From(
       const fuchsia_hardware_display_types::wire::CoordinateTransformation& coordinate_transform);
+  [[nodiscard]] static constexpr RotateFlip From(
+      const fuchsia_ui_composition::FlipThenRotate& flip_then_rotate);
 
   // Static "constructors".
   [[nodiscard]] static constexpr RotateFlip kIdentity();
@@ -260,6 +262,44 @@ constexpr RotateFlip RotateFlip::From(
     const fuchsia_hardware_display_types::wire::CoordinateTransformation& coordinate_transform) {
   uint8_t val = static_cast<uint8_t>(coordinate_transform);
   return RotateFlip(RotateFlip::Enum(val));
+}
+
+// static
+constexpr RotateFlip RotateFlip::From(
+    const fuchsia_ui_composition::FlipThenRotate& flip_then_rotate) {
+  using fuchsia_ui_composition::FlipThenRotate;
+
+  const bool flip_h = (flip_then_rotate & FlipThenRotate::kFlipH) == FlipThenRotate::kFlipH;
+  const bool flip_v = (flip_then_rotate & FlipThenRotate::kFlipV) == FlipThenRotate::kFlipV;
+  const bool rotate_90 =
+      (flip_then_rotate & FlipThenRotate::kRotate90) == FlipThenRotate::kRotate90;
+
+  if (!rotate_90) {
+    if (!flip_h && !flip_v) {
+      return RotateFlip::kIdentity();
+    }
+    if (flip_h && !flip_v) {
+      return RotateFlip::kReflectY();
+    }
+    if (!flip_h && flip_v) {
+      return RotateFlip::kReflectX();
+    }
+    // flip_h && flip_v
+    return RotateFlip::kRotateCcw180();
+  }
+
+  // rotate_90 is true (90 degrees clockwise rotation)
+  if (!flip_h && !flip_v) {
+    return RotateFlip::kRotateCcw270();
+  }
+  if (flip_h && !flip_v) {
+    return RotateFlip::kRotateCcw90ReflectY();
+  }
+  if (!flip_h && flip_v) {
+    return RotateFlip::kRotateCcw90ReflectX();
+  }
+  // flip_h && flip_v
+  return RotateFlip::kRotateCcw90();
 }
 
 // static
