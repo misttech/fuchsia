@@ -12,7 +12,6 @@
 #include "codec_adapter_sw.h"
 #include "fuchsia/media/cpp/fidl.h"
 #include "lib/media/codec_impl/codec_port.h"
-#include "sbc_encoder.h"
 
 namespace {
 
@@ -24,6 +23,10 @@ constexpr uint32_t kInputPerPacketBufferBytesMax = 4 * 1024 * 1024;
 
 constexpr char kSbcMimeType[] = "audio/sbc";
 constexpr char kMsbcMimeType[] = "audio/msbc";
+
+constexpr uint32_t kMsbcFramesPerSecond = 16000;
+constexpr size_t kMsbcReservedByte1Offset = 1;
+constexpr size_t kMsbcReservedByte2Offset = 2;
 
 // Parameters used for MSBC (WBS HFP) encoding.
 constexpr SBC_ENC_PARAMS kMsbcEncodingParams = {
@@ -80,7 +83,15 @@ void CodecAdapterSbcEncoder::ProcessInputLoop() {
   }
 }
 
-void CodecAdapterSbcEncoder::CleanUpAfterStream() { context_ = std::nullopt; }
+void CodecAdapterSbcEncoder::CleanUpAfterStream() {
+  context_ = std::nullopt;
+  chunk_input_stream_.reset();
+
+  // SBC_Encoder_Init resets internal filter state (EncMaxShiftCounter, ShiftCounter,
+  // and s16X via SbcAnalysisInit) so stale audio samples don't linger in .bss memory.
+  SBC_ENC_PARAMS dummy_params = kMsbcEncodingParams;
+  SBC_Encoder_Init(&dummy_params);
+}
 
 std::pair<fuchsia::media::FormatDetails, size_t> CodecAdapterSbcEncoder::OutputFormatDetails() {
   FX_DCHECK(context_);
@@ -197,25 +208,6 @@ CodecAdapterSbcEncoder::InputLoopStatus CodecAdapterSbcEncoder::CreateContext(
     return kShouldTerminate;
   }
 
-  int16_t sampling_freq;
-  switch (input_format.frames_per_second) {
-    case 48000:
-      sampling_freq = SBC_sf48000;
-      break;
-    case 44100:
-      sampling_freq = SBC_sf44100;
-      break;
-    case 32000:
-      sampling_freq = SBC_sf32000;
-      break;
-    case 16000:
-      sampling_freq = SBC_sf16000;
-      break;
-    default:
-      events_->onCoreCodecFailCodec("SBC Encoder received input with unsupported frequency.");
-      return kShouldTerminate;
-  }
-
   if (!format_details.has_encoder_settings() || (!format_details.encoder_settings().is_sbc() &&
                                                  !format_details.encoder_settings().is_msbc())) {
     events_->onCoreCodecFailCodec("SBC Encoder received input without encoder settings.");
@@ -227,12 +219,41 @@ CodecAdapterSbcEncoder::InputLoopStatus CodecAdapterSbcEncoder::CreateContext(
   bool is_msbc = false;
 
   if (format_details.encoder_settings().is_msbc()) {
+    if (input_format.frames_per_second != kMsbcFramesPerSecond) {
+      events_->onCoreCodecFailCodec(
+          "SBC Encoder received mSBC request with unsupported frequency (requires 16000 Hz).");
+      return kShouldTerminate;
+    }
     is_msbc = true;
     params = kMsbcEncodingParams;
-    // Only channel_mode is used, to determine the frame length.
+    // mSBC specification mandates mono audio.
     channel_mode = fuchsia::media::SbcChannelMode::MONO;
   } else {
-    fuchsia::media::SbcEncoderSettings settings = format_details.encoder_settings().sbc();
+    int16_t sampling_freq;
+    switch (input_format.frames_per_second) {
+      case 48000:
+        sampling_freq = SBC_sf48000;
+        break;
+      case 44100:
+        sampling_freq = SBC_sf44100;
+        break;
+      case 32000:
+        sampling_freq = SBC_sf32000;
+        break;
+      case 16000:
+        sampling_freq = SBC_sf16000;
+        break;
+      default:
+        events_->onCoreCodecFailCodec("SBC Encoder received input with unsupported frequency.");
+        return kShouldTerminate;
+    }
+
+    const fuchsia::media::SbcEncoderSettings& settings = format_details.encoder_settings().sbc();
+    if (settings.bit_pool > 255) {
+      events_->onCoreCodecFailCodec("SBC Encoder received invalid bit_pool (must be <= 255).");
+      return kShouldTerminate;
+    }
+
     channel_mode = settings.channel_mode;
 
     params.s16SamplingFreq = sampling_freq;
@@ -240,13 +261,18 @@ CodecAdapterSbcEncoder::InputLoopStatus CodecAdapterSbcEncoder::CreateContext(
     params.s16NumOfSubBands = static_cast<int16_t>(settings.sub_bands);
     params.s16NumOfBlocks = static_cast<int16_t>(settings.block_count);
     params.s16AllocationMethod = static_cast<int16_t>(settings.allocation);
-    SBC_Encoder_Init(&params);
-
-    // The encoder will suggest a value for the bitpool, but since the client
-    // provides that we ignore the suggestion and set it after
-    // SBC_Encoder_Init.
     params.s16BitPool = static_cast<int16_t>(settings.bit_pool);
   }
+
+  // SBC_Encoder_Init resets internal filter state (EncMaxShiftCounter, ShiftCounter,
+  // s16X) and computes frame headers. However, SBC_Encoder_Init attempts to derive
+  // s16BitPool from u16BitRate. Because u16BitRate is 0 here (the client or mSBC
+  // specification explicitly dictates the target bitpool), SBC_Encoder_Init calculates
+  // a non-positive value and clamps s16BitPool to 0. We therefore preserve the configured
+  // target bitpool and restore it immediately after initialization.
+  const int16_t target_bit_pool = params.s16BitPool;
+  SBC_Encoder_Init(&params);
+  params.s16BitPool = target_bit_pool;
 
   if (channel_mode == fuchsia::media::SbcChannelMode::MONO &&
       input_format.channel_map.size() != 1) {
@@ -266,10 +292,12 @@ CodecAdapterSbcEncoder::InputLoopStatus CodecAdapterSbcEncoder::CreateContext(
 
   const uint64_t bytes_per_second =
       input_format.frames_per_second * sizeof(uint16_t) * input_format.channel_map.size();
-  context_ = {{.channel_mode = channel_mode,
-               .input_format = input_format,
-               .is_msbc = is_msbc,
-               .params = params}};
+  context_ = {
+      {.channel_mode = channel_mode,
+       .input_format = input_format,
+       .is_msbc = is_msbc,
+       .params = params,
+       .precomputed_sbc_frame_length = Context::ComputeSbcFrameLength(channel_mode, params)}};
   chunk_input_stream_.emplace(
       context_->pcm_batch_size(),
       format_details.has_timebase()
@@ -303,6 +331,13 @@ CodecAdapterSbcEncoder::InputLoopStatus CodecAdapterSbcEncoder::CreateContext(
           return ChunkInputStream::kTerminate;
         }
         FX_DCHECK(output_buffer_);
+
+        if (context_->is_msbc) {
+          // EncPacking skips writing reserved bytes 1 and 2 for mSBC before CRC
+          // calculation, so explicitly zero them to avoid dirty memory in the CRC.
+          output[kMsbcReservedByte1Offset] = 0;
+          output[kMsbcReservedByte2Offset] = 0;
+        }
 
         SBC_Encode(&context_->params,
                    reinterpret_cast<int16_t*>(const_cast<uint8_t*>(input_block.data)), output);

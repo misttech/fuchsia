@@ -19,6 +19,16 @@
 // that conflict with the SBC types.
 #include <sbc_encoder.h>
 
+// Note on concurrency and global state:
+// The underlying third-party SBC encoder library (//third_party/.../embdrv/sbc)
+// relies on mutable process-global variables (EncMaxShiftCounter, ShiftCounter,
+// and s16X) without synchronization. Therefore, CodecAdapterSbcEncoder is not
+// thread-safe across multiple instances in the same process and cannot support
+// concurrent encoder instances within a single address space.
+// In Fuchsia, each software codec component isolate hosts at most a single codec
+// instance (via LocalSingleCodecFactory) and serializes processing on
+// input_processing_thread_. Sequential stream reuse within an instance is supported
+// by re-initializing global state via SBC_Encoder_Init.
 class CodecAdapterSbcEncoder : public CodecAdapterSW<fit::deferred_action<fit::closure>> {
  public:
   CodecAdapterSbcEncoder(std::mutex& lock, CodecAdapterEvents* codec_adapter_events);
@@ -48,15 +58,18 @@ class CodecAdapterSbcEncoder : public CodecAdapterSW<fit::deferred_action<fit::c
     fuchsia::media::PcmFormat input_format;
     bool is_msbc;
     SBC_ENC_PARAMS params;
+    size_t precomputed_sbc_frame_length = 0;
 
-    size_t sbc_frame_length() const {
-      const size_t part = 4 + params.s16NumOfSubBands * channel_count() / 2;
+    static size_t ComputeSbcFrameLength(fuchsia::media::SbcChannelMode channel_mode,
+                                        const SBC_ENC_PARAMS& params) {
+      const size_t channel_count = params.s16ChannelMode == SBC_MONO ? 1 : 2;
+      const size_t part = 4 + params.s16NumOfSubBands * channel_count / 2;
       switch (channel_mode) {
         case fuchsia::media::SbcChannelMode::MONO:
         case fuchsia::media::SbcChannelMode::DUAL:
           return part +
                  static_cast<size_t>(std::ceil(static_cast<double>(params.s16NumOfBlocks) *
-                                               static_cast<double>(channel_count()) *
+                                               static_cast<double>(channel_count) *
                                                static_cast<double>(params.s16BitPool) / 8.0));
         case fuchsia::media::SbcChannelMode::JOINT_STEREO:
           return part +
@@ -73,6 +86,8 @@ class CodecAdapterSbcEncoder : public CodecAdapterSW<fit::deferred_action<fit::c
                          << static_cast<int>(channel_mode);
       }
     }
+
+    size_t sbc_frame_length() const { return precomputed_sbc_frame_length; }
 
     size_t pcm_frames_per_sbc_frame() const {
       return params.s16NumOfBlocks * params.s16NumOfSubBands;

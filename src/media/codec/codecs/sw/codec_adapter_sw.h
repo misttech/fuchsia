@@ -125,12 +125,11 @@ class CodecAdapterSW : public CodecAdapter {
 
   void CoreCodecQueueInputFormatDetails(
       const fuchsia::media::FormatDetails& per_stream_override_format_details) override {
-    // TODO(turnage): Accept midstream and interstream input format changes.
-    // For now these should always be 0, so assert to notice if anything
-    // changes.
     ZX_ASSERT(per_stream_override_format_details.has_format_details_version_ordinal() &&
-              per_stream_override_format_details.format_details_version_ordinal() ==
+              per_stream_override_format_details.format_details_version_ordinal() >=
                   input_format_details_version_ordinal_);
+    input_format_details_version_ordinal_ =
+        per_stream_override_format_details.format_details_version_ordinal();
     input_queue_.Push(CodecInputItem::FormatDetails(per_stream_override_format_details));
   }
 
