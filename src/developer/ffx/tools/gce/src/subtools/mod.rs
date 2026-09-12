@@ -3,5 +3,7 @@
 // found in the LICENSE file.
 
 pub mod list;
+pub mod show;
 
 pub use list::ListTool;
+pub use show::ShowTool;

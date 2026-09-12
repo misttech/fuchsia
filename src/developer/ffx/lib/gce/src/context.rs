@@ -37,6 +37,21 @@ impl GceContext {
 
         Ok(Self { env_context, project, zone, client })
     }
+
+    /// Derives the GCE SSH serial port gateway endpoint for this context's zone.
+    /// e.g. "us-central1-a" -> "us-central1-ssh-serialport.googleapis.com:9600"
+    pub fn serial_endpoint(&self) -> String {
+        get_serial_endpoint(&self.zone)
+    }
+}
+
+/// Derives the GCE SSH serial port gateway endpoint for a given zone.
+/// e.g. "us-central1-a" -> "us-central1-ssh-serialport.googleapis.com:9600"
+pub fn get_serial_endpoint(zone: &str) -> String {
+    let parts: Vec<&str> = zone.split('-').collect();
+    let region =
+        if parts.len() > 1 { parts[..parts.len() - 1].join("-") } else { zone.to_string() };
+    format!("{}-ssh-serialport.googleapis.com:9600", region.to_lowercase())
 }
 
 fn resolve_setting(
@@ -118,5 +133,17 @@ mod tests {
         assert_eq!(ctx.project, "test-proj");
         assert_eq!(ctx.zone, "test-zone");
         assert_eq!(ctx.env_context.get::<String, _>("gce.project").ok(), Some("".to_string()));
+    }
+
+    #[test]
+    fn test_serial_endpoint() {
+        assert_eq!(
+            get_serial_endpoint("us-central1-a"),
+            "us-central1-ssh-serialport.googleapis.com:9600"
+        );
+        assert_eq!(
+            get_serial_endpoint("europe-west1-b"),
+            "europe-west1-ssh-serialport.googleapis.com:9600"
+        );
     }
 }

@@ -18,6 +18,10 @@ pub struct Instance {
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creation_timestamp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub self_link: Option<String>,
 }
 
 impl Instance {

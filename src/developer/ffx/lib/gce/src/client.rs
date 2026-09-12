@@ -66,6 +66,24 @@ impl GceClient {
         Ok(parsed)
     }
 
+    pub async fn get_instance(
+        &self,
+        project: &str,
+        zone: &str,
+        instance_name: &str,
+    ) -> Result<Instance> {
+        let mut url = self.base_url.clone();
+        url.path_segments_mut().map_err(|_| anyhow::anyhow!("Invalid base URL"))?.extend(&[
+            "projects",
+            project,
+            "zones",
+            zone,
+            "instances",
+            instance_name,
+        ]);
+        self.send_request(Method::GET, url, None).await
+    }
+
     pub async fn list_instances(&self, project: &str, zone: &str) -> Result<Vec<Instance>> {
         let mut url = self.base_url.clone();
         url.path_segments_mut().map_err(|_| anyhow::anyhow!("Invalid base URL"))?.extend(&[
@@ -98,6 +116,24 @@ mod tests {
         assert_eq!(
             url.as_str(),
             "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/instances"
+        );
+    }
+
+    #[test]
+    fn test_get_instance_url_construction() {
+        let client = GceClient::new("token123".to_string());
+        let mut url = client.base_url.clone();
+        url.path_segments_mut().unwrap().extend(&[
+            "projects",
+            "test-p",
+            "zones",
+            "test-z",
+            "instances",
+            "test-inst",
+        ]);
+        assert_eq!(
+            url.as_str(),
+            "https://compute.googleapis.com/compute/v1/projects/test-p/zones/test-z/instances/test-inst"
         );
     }
 }

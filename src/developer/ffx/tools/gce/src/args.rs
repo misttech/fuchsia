@@ -20,11 +20,32 @@ pub struct GceCommand {
 #[argh(subcommand)]
 pub enum GceSubCommand {
     List(ListCommand),
+    Show(ShowCommand),
 }
 
 #[derive(ArgsInfo, FromArgs, Debug, Default, PartialEq)]
 #[argh(subcommand, name = "list", description = "List Fuchsia GCE virtual machine instances.")]
 pub struct ListCommand {
+    /// GCP Project ID. If unset, uses default from config.
+    #[argh(option)]
+    pub project: Option<String>,
+
+    /// GCE zone. If unset, uses default from config.
+    #[argh(option)]
+    pub zone: Option<String>,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, Default, PartialEq)]
+#[argh(
+    subcommand,
+    name = "show",
+    description = "Show detailed information about a Fuchsia GCE virtual machine instance."
+)]
+pub struct ShowCommand {
+    /// name of the instance.
+    #[argh(positional)]
+    pub name: String,
+
     /// GCP Project ID. If unset, uses default from config.
     #[argh(option)]
     pub project: Option<String>,

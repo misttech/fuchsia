@@ -94,6 +94,7 @@ mod tests {
                 network_ip: Some("10.0.0.2".to_string()),
                 access_configs: vec![AccessConfig { nat_ip: Some("34.0.0.1".to_string()) }],
             }],
+            ..Default::default()
         }
     }
 

@@ -19,6 +19,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:argh",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:prettytable-rs",
+    "//third_party/rust_crates:serde",
   ]
 
   test_deps = [ "//third_party/rust_crates:serde_json" ]
@@ -28,6 +29,7 @@ rustc_library("lib") {
     "src/lib.rs",
     "src/subtools/list.rs",
     "src/subtools/mod.rs",
+    "src/subtools/show.rs",
   ]
 }
 

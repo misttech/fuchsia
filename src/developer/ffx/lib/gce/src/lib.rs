@@ -7,5 +7,5 @@ pub mod context;
 pub mod models;
 
 pub use client::GceClient;
-pub use context::GceContext;
+pub use context::{GceContext, get_serial_endpoint};
 pub use models::{Instance, InstanceList, NetworkInterface};
