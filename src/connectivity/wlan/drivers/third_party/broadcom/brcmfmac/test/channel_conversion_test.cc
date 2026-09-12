@@ -16,6 +16,8 @@
 
 #include <fidl/fuchsia.wlan.ieee80211/cpp/wire.h>
 
+#include <array>
+
 #include <gtest/gtest.h>
 
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/brcmu_d11.h"
@@ -289,5 +291,112 @@ TEST(ChannelConversion, RoundTrip40MHz) {
   for (uint8_t ch : five_ghz_40m_minus_channels) {
     verify_round_trip({.band = WlanBand::kFiveGhz, .number = ch}, ChannelBandwidth::kCbw40Below);
   }
+}
+
+TEST(ChannelConversion, ChanspecD11acToD11nSuccess) {
+  brcmu_d11inf d11n_inf = {.io_type = BRCMU_D11N_IOTYPE};
+  brcmu_d11_attach(&d11n_inf);
+
+  auto verify_d11ac_to_d11n = [&](uint8_t ctl_ch, uint32_t bw, uint8_t expected_center_ch,
+                                  uint8_t expected_band, enum brcmu_chan_bw expected_bw,
+                                  enum brcmu_chan_sb expected_sb) {
+    chanspec_t d11ac_chanspec = 0;
+    ASSERT_EQ(channel2chspec(ctl_ch, bw, &d11ac_chanspec), ZX_OK);
+
+    chanspec_t d11n_chanspec = 0;
+    ASSERT_EQ(chanspec_d11ac_to_d11n(d11ac_chanspec, &d11n_chanspec), ZX_OK);
+
+    brcmu_chan decoded_d11n = {.chspec = d11n_chanspec};
+    d11n_inf.decchspec(&decoded_d11n);
+
+    EXPECT_EQ(decoded_d11n.chnum, expected_center_ch);
+    EXPECT_EQ(decoded_d11n.control_ch_num, ctl_ch);
+    EXPECT_EQ(decoded_d11n.bw, expected_bw);
+    EXPECT_EQ(decoded_d11n.band, expected_band);
+    EXPECT_EQ(decoded_d11n.sb, expected_sb);
+  };
+
+  // 2.4 GHz 20 MHz channels (1 to 14)
+  for (uint8_t ch = 1; ch <= 14; ++ch) {
+    verify_d11ac_to_d11n(ch, WL_CHANSPEC_BW_20, ch, BRCMU_CHAN_BAND_2G, BRCMU_CHAN_BW_20,
+                         BRCMU_CHAN_SB_NONE);
+  }
+
+  // 5 GHz 20 MHz channels
+  constexpr auto five_ghz_20m_channels = std::to_array<uint8_t>(
+      {36,  40,  44,  48,  52,  56,  60,  64,  100, 104, 108, 112, 116, 120,
+       124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165, 169, 173, 177});
+  for (uint8_t ch : five_ghz_20m_channels) {
+    verify_d11ac_to_d11n(ch, WL_CHANSPEC_BW_20, ch, BRCMU_CHAN_BAND_5G, BRCMU_CHAN_BW_20,
+                         BRCMU_CHAN_SB_NONE);
+  }
+
+  // There is a limitation imposed on 5GHz 40MHz channel widths.
+  // //third_party/bcmdhd/crossdriver/bcmwifi_channels.cc defines the allowed 40MHz 5GHz channels
+  // as
+  //
+  // wf_5g_40m_chans[] = {38, 46, 54, 62, 102, 110, 118, 126, 134, 142, 151, 159};
+
+  // 5 GHz 40+ MHz channels (Cbw40 / lower primary)
+  constexpr auto five_ghz_40m_plus_channels =
+      std::to_array<uint8_t>({36, 44, 52, 60, 100, 108, 116, 124, 132, 140, 149, 157});
+  for (uint8_t ch : five_ghz_40m_plus_channels) {
+    verify_d11ac_to_d11n(ch, WL_CHANSPEC_BW_40, static_cast<uint8_t>(ch + CH_10MHZ_APART),
+                         BRCMU_CHAN_BAND_5G, BRCMU_CHAN_BW_40, BRCMU_CHAN_SB_L);
+  }
+
+  // 5 GHz 40- MHz channels (Cbw40Below / upper primary)
+  constexpr auto five_ghz_40m_minus_channels =
+      std::to_array<uint8_t>({40, 48, 56, 64, 104, 112, 120, 128, 136, 144, 153, 161});
+  for (uint8_t ch : five_ghz_40m_minus_channels) {
+    verify_d11ac_to_d11n(ch, WL_CHANSPEC_BW_40, static_cast<uint8_t>(ch - CH_10MHZ_APART),
+                         BRCMU_CHAN_BAND_5G, BRCMU_CHAN_BW_40, BRCMU_CHAN_SB_U);
+  }
+}
+
+TEST(ChannelConversion, ChanspecD11acToD11nUnsupportedBandwidth) {
+  chanspec_t d11n_chanspec = 0;
+
+  // 80 MHz channel
+  chanspec_t d11ac_80m = 0;
+  ASSERT_EQ(channel2chspec(36, WL_CHANSPEC_BW_80, &d11ac_80m), ZX_OK);
+  EXPECT_EQ(chanspec_d11ac_to_d11n(d11ac_80m, &d11n_chanspec), ZX_ERR_NOT_SUPPORTED);
+
+  // 160 MHz channel
+  chanspec_t d11ac_160m = 0;
+  ASSERT_EQ(channel2chspec(36, WL_CHANSPEC_BW_160, &d11ac_160m), ZX_OK);
+  EXPECT_EQ(chanspec_d11ac_to_d11n(d11ac_160m, &d11n_chanspec), ZX_ERR_NOT_SUPPORTED);
+
+  // 80+80 MHz channel
+  const chanspec_t d11ac_8080m = WL_CHANSPEC_BAND_5G | WL_CHANSPEC_BW_8080 |
+                                 (0 << WL_CHANSPEC_CHAN1_SHIFT) | (1 << WL_CHANSPEC_CHAN2_SHIFT) |
+                                 WL_CHANSPEC_CTL_SB_LL;
+  EXPECT_EQ(chanspec_d11ac_to_d11n(d11ac_8080m, &d11n_chanspec), ZX_ERR_NOT_SUPPORTED);
+}
+
+TEST(ChannelConversion, ChanspecD11acToD11nInvalidArgs) {
+  chanspec_t d11n_chanspec = 0;
+
+  // Nullptr output
+  EXPECT_EQ(chanspec_d11ac_to_d11n(0x1006, nullptr), ZX_ERR_INVALID_ARGS);
+
+  // Invalid band (3G)
+  const chanspec_t invalid_band_chanspec = WL_CHANSPEC_BAND_3G | WL_CHANSPEC_BW_20 | 6;
+  EXPECT_EQ(chanspec_d11ac_to_d11n(invalid_band_chanspec, &d11n_chanspec), ZX_ERR_INVALID_ARGS);
+
+  // Invalid channel (> MAXCHANNEL)
+  const chanspec_t invalid_chan_chanspec =
+      WL_CHANSPEC_BAND_5G | WL_CHANSPEC_BW_20 | (MAXCHANNEL + 1);
+  EXPECT_EQ(chanspec_d11ac_to_d11n(invalid_chan_chanspec, &d11n_chanspec), ZX_ERR_INVALID_ARGS);
+
+  // 40 MHz with invalid sideband (> U)
+  const chanspec_t invalid_sb_40m =
+      WL_CHANSPEC_BAND_5G | WL_CHANSPEC_BW_40 | WL_CHANSPEC_CTL_SB_LUU | 38;
+  EXPECT_EQ(chanspec_d11ac_to_d11n(invalid_sb_40m, &d11n_chanspec), ZX_ERR_INVALID_ARGS);
+
+  // 20 MHz with invalid non-zero sideband
+  const chanspec_t invalid_sb_20m =
+      WL_CHANSPEC_BAND_5G | WL_CHANSPEC_BW_20 | WL_CHANSPEC_CTL_SB_U | 36;
+  EXPECT_EQ(chanspec_d11ac_to_d11n(invalid_sb_20m, &d11n_chanspec), ZX_ERR_INVALID_ARGS);
 }
 }  // namespace

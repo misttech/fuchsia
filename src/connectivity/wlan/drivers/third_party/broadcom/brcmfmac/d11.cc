@@ -352,3 +352,47 @@ fuchsia_wlan_ieee80211::ChannelBandwidth enforce_bandwidth_limitations(
 
   return cbw;
 }
+
+zx_status_t chanspec_d11ac_to_d11n(chanspec_t d11ac_chanspec, chanspec_t* d11n_chanspec) {
+  if (d11n_chanspec == nullptr) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  if (chspec_malformed(d11ac_chanspec)) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  uint16_t d11n_bw = 0;
+  uint16_t d11n_sb = 0;
+
+  if (CHSPEC_IS20(d11ac_chanspec)) {
+    d11n_bw = BRCMU_CHSPEC_D11N_BW_20;
+    d11n_sb = BRCMU_CHSPEC_D11N_SB_N;
+  } else if (CHSPEC_IS40(d11ac_chanspec)) {
+    d11n_bw = BRCMU_CHSPEC_D11N_BW_40;
+    const uint16_t sb = d11ac_chanspec & WL_CHANSPEC_CTL_SB_MASK;
+    if (sb == WL_CHANSPEC_CTL_SB_L) {
+      d11n_sb = BRCMU_CHSPEC_D11N_SB_L;
+    } else if (sb == WL_CHANSPEC_CTL_SB_U) {
+      d11n_sb = BRCMU_CHSPEC_D11N_SB_U;
+    } else {
+      return ZX_ERR_INVALID_ARGS;
+    }
+  } else {
+    // 80MHz, 160MHz, 80+80MHz and other bandwidths are not supported by d11n.
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  uint16_t d11n_band = 0;
+  if (CHSPEC_IS2G(d11ac_chanspec)) {
+    d11n_band = BRCMU_CHSPEC_D11N_BND_2G;
+  } else if (CHSPEC_IS5G(d11ac_chanspec)) {
+    d11n_band = BRCMU_CHSPEC_D11N_BND_5G;
+  } else {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  const uint8_t chan = d11ac_chanspec & WL_CHANSPEC_CHAN_MASK;
+  *d11n_chanspec = static_cast<chanspec_t>(d11n_band | d11n_bw | d11n_sb | chan);
+  return ZX_OK;
+}

@@ -194,4 +194,10 @@ zx::result<chanspec_t> channel_to_chanspec(const brcmu_d11inf* d11inf, uint8_t c
                                            fuchsia_wlan_ieee80211::WlanBand band,
                                            fuchsia_wlan_ieee80211::ChannelBandwidth cbw);
 
+// Convert a chanspec_t from d11ac format to d11n format.
+// Returns ZX_OK on success, ZX_ERR_NOT_SUPPORTED if the chanspec has a bandwidth or feature not
+// supported by d11n (e.g. 80MHz, 160MHz, 80+80MHz), or ZX_ERR_INVALID_ARGS if the chanspec is
+// malformed or d11n_chanspec is nullptr.
+zx_status_t chanspec_d11ac_to_d11n(chanspec_t d11ac_chanspec, chanspec_t* d11n_chanspec);
+
 #endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_BRCMU_D11_H_
