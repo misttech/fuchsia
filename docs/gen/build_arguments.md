@@ -92,6 +92,15 @@ these device types will be used for tests.
 
 From //build/testing/test_spec.gni:14
 
+### allowed_test_host_device_types
+
+A list of host device types this build is allowed to run tests on. If set,
+only these host device types will be used for tests.
+
+**Current value (from the default):** `[]`
+
+From //build/testing/test_spec.gni:18
+
 ### amlogic_decoder_firmware_path
 
 Path to the amlogic decoder firmware file. Overrides the default in the
@@ -945,7 +954,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
