@@ -52,70 +52,21 @@ ffx emu stop
 git add
 git apply
 git branch
-git branch --copy
-git branch --move
-git branch --set-upstream-to
-git branch -C
-git branch -D
-git branch -M
-git branch -c
-git branch -d
-git branch -m
-git branch -u
 git checkout
 git cherry-pick
-git cherry-pick --abort
-git cherry-pick --continue
-git cherry-pick --skip
 git commit
-git commit --amend
 git merge
-git merge --abort
-git merge --continue
-git merge --quit
 git mv
 git notes
-git notes add
-git notes append
-git notes edit
-git notes prune
-git notes remove
-git notes show
 git rebase
-git rebase --abort
-git rebase --continue
-git rebase --quit
-git rebase --skip
-git rebase -i
 git reset
-git reset --keep
-git reset --merge
-git reset --mixed
-git reset --soft
 git restore
 git revert
-git revert --abort
-git revert --continue
 git rm
 git stash
-git stash apply
-git stash clear
-git stash drop
-git stash pop
-git stash push
-git stash save
 git switch
 git tag
-git tag -a
-git tag -d
-git tag -f
 git worktree
-git worktree add
-git worktree lock
-git worktree move
-git worktree prune
-git worktree remove
-git worktree unlock
 
 # Local Jujutsu operations (mutates working copy & local jj history)
 jj abandon

@@ -78,8 +78,8 @@ $$U[\text{cat}] = E[\text{cat}] \setminus M_{\text{prev}}[\text{cat}]$$
 
 ### 3.2 Resolving Category Conflicts
 
-When transitioning across profiles (e.g., from `read-only` where `local_changes.txt` is denied, to
-`local-changes` where it is allowed), rules moving into $M_{\text{target}}[\text{cat}]$ must not be
+When transitioning across profiles (e.g., from `local-changes` where `external_changes.txt` is
+prompted, to `external-changes` where it is allowed), rules moving into $M_{\text{target}}[\text{cat}]$ must not be
 blocked by lingering entries in opposing categories:
 $$\forall \text{cat} \in \{\text{allow}, \text{deny}, \text{ask}\}, \forall r \in M_{\text{target}}[\text{cat}], \forall \text{other} \neq \text{cat}: \quad U[\text{other}] \leftarrow U[\text{other}] \setminus \{r\}$$
 

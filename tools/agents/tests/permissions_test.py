@@ -452,6 +452,9 @@ class PermissionsTest(BaseTestCase):
         (perm_dir / "local_changes.txt").write_text(
             "git commit\n", encoding="utf-8"
         )
+        (perm_dir / "external_changes.txt").write_text(
+            "git push\n", encoding="utf-8"
+        )
         (perm_dir / "never_allow.txt").write_text(
             "git reset --hard\n", encoding="utf-8"
         )
@@ -465,7 +468,12 @@ class PermissionsTest(BaseTestCase):
 
         grants = permissions.load_profile_grants(fuchsia_dir, "read-only")
         self.assertTrue(any("git" in g and "status" in g for g in grants.allow))
-        self.assertTrue(any("git" in g and "commit" in g for g in grants.deny))
+        self.assertTrue(any("git" in g and "reset" in g for g in grants.deny))
+        self.assertFalse(any("git" in g and "commit" in g for g in grants.deny))
+        self.assertFalse(
+            any("git" in g and "commit" in g for g in grants.allow)
+        )
+        self.assertTrue(any("git" in g and "push" in g for g in grants.ask))
         self.assertTrue(any("fx" in g and "ota" in g for g in grants.ask))
         self.assertTrue(any("find" in g for g in grants.ask))
 
@@ -475,10 +483,19 @@ class PermissionsTest(BaseTestCase):
         self.assertTrue(
             any("git" in g and "commit" in g for g in grants_local.allow)
         )
+        self.assertTrue(
+            any("git" in g and "push" in g for g in grants_local.ask)
+        )
+        self.assertTrue(
+            any("git" in g and "reset" in g for g in grants_local.deny)
+        )
         self.assertTrue(any("find" in g for g in grants_local.ask))
 
         grants_ext = permissions.load_profile_grants(
             fuchsia_dir, "external-changes"
+        )
+        self.assertTrue(
+            any("git" in g and "push" in g for g in grants_ext.allow)
         )
         self.assertTrue(any("find" in g for g in grants_ext.ask))
 

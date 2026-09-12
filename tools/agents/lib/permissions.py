@@ -120,14 +120,11 @@ class PermissionGrants:
 
 PROFILE_DEFINITIONS: dict[str, ProfileDefinition] = {
     "read-only": ProfileDefinition(
-        description="Harmless inspection and build/test commands. Device, cache, and batch ops prompt.",
+        description="Harmless inspection and build/test commands. Workspace edits, external ops, cache, and device ops prompt.",
         allow=("read_only.txt",),
-        deny=(
-            "never_allow.txt",
-            "local_changes.txt",
-            "external_changes.txt",
-        ),
+        deny=("never_allow.txt",),
         ask=(
+            "external_changes.txt",
             "device_ops.txt",
             "cache_destruction.txt",
             "batch_execution.txt",
