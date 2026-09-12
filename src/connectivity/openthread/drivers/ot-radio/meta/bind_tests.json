@@ -86,7 +86,7 @@
         ]
     },
     {
-        "parent": "gpio-init",
+        "parent": "gpio-init-0",
         "tests": [
             {
                 "name": "Match",

@@ -250,7 +250,8 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   // 4th parent is PIN STATES.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
-        fdf::MakeProperty2(bind_fuchsia::ID, static_cast<uint32_t>(0))}},
+        fdf::MakeProperty2(bind_fuchsia::ID, static_cast<uint32_t>(0)),
+        fdf::MakeProperty2(bind_fuchsia::NAME, std::string("pin-states-0"))}},
       (*mgr_request_audio.parents2())[3].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
@@ -267,7 +268,8 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   // 2nd and 3rd parents are GPIO INIT of different gpio controllers.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-        fdf::MakeProperty2(bind_fuchsia::ID, static_cast<uint32_t>(0))}},
+        fdf::MakeProperty2(bind_fuchsia::ID, static_cast<uint32_t>(0)),
+        fdf::MakeProperty2(bind_fuchsia::NAME, std::string("gpio-init-0"))}},
       (*mgr_request_video.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
@@ -276,7 +278,8 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-        fdf::MakeProperty2(bind_fuchsia::ID, static_cast<uint32_t>(1))}},
+        fdf::MakeProperty2(bind_fuchsia::ID, static_cast<uint32_t>(1)),
+        fdf::MakeProperty2(bind_fuchsia::NAME, std::string("gpio-init-1"))}},
       (*mgr_request_video.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),

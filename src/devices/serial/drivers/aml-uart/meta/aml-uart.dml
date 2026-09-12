@@ -48,7 +48,7 @@
     },
     {
       service: "fuchsia.gpio.Init",
-      name: "gpio-init",
+      name: "gpio-init-0",
       availability: "optional"
     },
     {

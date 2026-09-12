@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <format>
 #include <memory>
 #include <optional>
 #include <set>
@@ -316,6 +317,7 @@ zx::result<> GpioImplVisitor::AddInitNodeSpec(fdf_devicetree::Node& child, uint3
           {
               fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
               fdf::MakeProperty2(bind_fuchsia::ID, controller_index),
+              fdf::MakeProperty2(bind_fuchsia::NAME, std::format("gpio-init-{}", controller_index)),
           },
   }};
   child.AddNodeSpec(gpio_init_node);
@@ -338,6 +340,8 @@ zx::result<> GpioImplVisitor::AddPinStatesNodeSpec(fdf_devicetree::Node& child,
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
               fdf::MakeProperty2(bind_fuchsia::ID, controller_index),
+              fdf::MakeProperty2(bind_fuchsia::NAME,
+                                 std::format("pin-states-{}", controller_index)),
           },
   }};
   child.AddNodeSpec(pin_states_node);

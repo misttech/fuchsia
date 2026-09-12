@@ -16,7 +16,7 @@ parent "gpio-fault" {
   fuchsia.NAME == "gpio-fault";
 }
 
-optional parent "gpio-init" {
+optional parent "gpio-init-0" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }
 

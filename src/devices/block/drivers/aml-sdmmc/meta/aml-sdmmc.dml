@@ -38,7 +38,7 @@
     {
       service: "fuchsia.gpio.Init",
       availability: "optional",
-      name: "gpio-init",
+      name: "gpio-init-0",
     },
     {
       service: "fuchsia.hardware.clock.Service",
