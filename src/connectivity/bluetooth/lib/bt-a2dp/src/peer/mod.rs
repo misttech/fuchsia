@@ -12,7 +12,7 @@ use fidl_fuchsia_bluetooth_avrcp as avrcp;
 use fidl_fuchsia_bluetooth_bredr::{
     ConnectParameters, L2capParameters, PSM_AVDTP, ProfileDescriptor, ProfileProxy,
 };
-use fuchsia_async::{self as fasync, DurationExt};
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::inspect::DebugExt;
 use fuchsia_bluetooth::types::{Channel, PeerId};
 use fuchsia_inspect as inspect;
@@ -58,9 +58,18 @@ pub struct Peer {
     closed_wakers: Arc<Mutex<Option<Vec<Waker>>>>,
     /// Used to report peer metrics to Cobalt.
     metrics: bt_metrics::MetricsLogger,
-    /// A task waiting to start a stream if it hasn't been started yet.
-    start_stream_task: Mutex<Option<fasync::Task<avdtp::Result<()>>>>,
 }
+
+/// How long to wait after a stream is opened for the peer to start it before we start it
+/// ourselves.  Chosen to produce reasonably quick startup while allowing for a peer start.
+const STREAM_DWELL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(500);
+
+/// How long to wait before trying to start a stream again after a start attempt failed.
+const START_RETRY_DELAY: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(1);
+
+/// How many times to try to start a stream, `START_RETRY_DELAY` apart, before giving up and
+/// waiting for a new reason to start it.
+const START_ATTEMPTS: usize = 3;
 
 /// StreamPermits handles reserving and retrieving permits for streaming audio.
 /// Reservations are automatically retrieved for streams that are revoked, and when the
@@ -210,6 +219,7 @@ impl Peer {
         metrics: bt_metrics::MetricsLogger,
     ) -> Self {
         let inner = Arc::new(Mutex::new(PeerInner::new(peer, id, streams, avrcp, metrics.clone())));
+        inner.lock().self_weak = Arc::downgrade(&inner);
         let reservations_receiver = if let Some(permits) = permits {
             let (stream_permits, receiver) =
                 StreamPermits::new(Arc::downgrade(&inner), id, permits);
@@ -226,7 +236,6 @@ impl Peer {
             descriptor: Mutex::new(None),
             closed_wakers: Arc::new(Mutex::new(Some(Vec::new()))),
             metrics,
-            start_stream_task: Mutex::new(None),
         };
         res.start_requests_task(reservations_receiver);
         res
@@ -241,25 +250,18 @@ impl Peer {
         self.inner.lock().volume_relay_task = Some(task);
     }
 
-    /// How long to wait after a non-local establishment of a stream to start the stream.
-    /// Chosen to produce reasonably quick startup while allowing for peer start.
-    const STREAM_DWELL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(500);
-
     /// Receive a channel from the peer that was initiated remotely.
     /// This function should be called whenever the peer associated with this opens an L2CAP channel.
-    /// If this completes opening a stream, streams that are suspended will be scheduled to start.
+    /// If this completes opening a stream, the stream will be scheduled to start locally when the
+    /// audio becomes active, or after a dwell if the peer doesn't start it first.
     pub fn receive_channel(&self, channel: Channel) -> avdtp::Result<()> {
-        let mut lock = self.inner.lock();
-        if lock.receive_channel(channel)? {
-            let weak = Arc::downgrade(&self.inner);
-            let mut task_lock = self.start_stream_task.lock();
-            *task_lock = Some(fasync::Task::local(async move {
-                trace!("Dwelling to start remotely-opened stream..");
-                fasync::Timer::new(Self::STREAM_DWELL.after_now()).await;
-                PeerInner::start_opened(weak).await
-            }));
+        let opened_stream = {
+            let mut lock = self.inner.lock();
+            lock.receive_channel(channel)?
+        };
+        if let Some(stream_id) = opened_stream {
+            PeerInner::schedule_start(Arc::downgrade(&self.inner), stream_id);
         }
-        drop(lock);
         PeerInner::maybe_start_volume_relay(&self.inner);
         Ok(())
     }
@@ -437,41 +439,27 @@ impl Peer {
                 Ok(c) => c,
             };
 
-            {
+            let opened_stream = {
                 let strong = PeerInner::upgrade(peer.clone())?;
-                let _ = strong.lock().receive_channel(channel)?;
+                let mut lock = strong.lock();
+                lock.receive_channel(channel)?
+            };
+            if let Some(stream_id) = opened_stream {
+                PeerInner::schedule_start(peer, stream_id);
             }
-            // Start streams immediately if the channel is locally initiated.
-            PeerInner::start_opened(peer).await
+            Ok(())
         }
     }
 
     /// Query whether any streams are currently started or scheduled to start.
     pub fn streaming_active(&self) -> bool {
-        self.inner.lock().is_streaming() || self.will_start_streaming()
+        self.inner.lock().is_streaming()
     }
 
     /// Returns true if there are any streams that are currently started.
     #[cfg(test)]
     fn is_streaming_now(&self) -> bool {
         self.inner.lock().is_streaming_now()
-    }
-
-    /// Polls the task scheduled to start streaming, returning true if the task is still scheduled
-    /// to start streaming.
-    fn will_start_streaming(&self) -> bool {
-        let mut task_lock = self.start_stream_task.lock();
-        if task_lock.is_none() {
-            return false;
-        }
-        // This is the only thing that can poll the start task, so it is okay to ignore the wakeup.
-        let mut cx = Context::from_waker(&std::task::Waker::noop());
-        if let Poll::Pending = task_lock.as_mut().unwrap().poll_unpin(&mut cx) {
-            return true;
-        }
-        // Reset the task to None so that we don't try to re-poll it.
-        let _ = task_lock.take();
-        false
     }
 
     /// Suspend a media transport stream `local_id`.
@@ -597,6 +585,9 @@ struct PeerInner {
     permits: Option<StreamPermits>,
     /// Tasks watching for the end of a started stream. Key is the local stream id.
     started: HashMap<StreamEndpointId, WatchedStream>,
+    /// Tasks deciding whether a stream that is not started should be: waiting for the stream to
+    /// become activated, or cleaning up after a stream that finished and may start again.
+    waiting_start_tasks: HashMap<StreamEndpointId, fasync::Task<()>>,
     /// The inspect node for this peer
     inspect: fuchsia_inspect::Node,
     /// The set of discovered remote endpoints. None until set.
@@ -607,6 +598,8 @@ struct PeerInner {
     metrics: bt_metrics::MetricsLogger,
     /// AVRCP client to control the peer's volume.
     avrcp: Option<avrcp::PeerManagerProxy>,
+    /// Weak reference to self for background tasks.
+    self_weak: Weak<Mutex<PeerInner>>,
     /// Task that runs the AVRCP Absolute Volume relay loop.
     volume_relay_task: Option<fasync::Task<()>>,
 }
@@ -636,11 +629,13 @@ impl PeerInner {
             local,
             permits: None,
             started: HashMap::new(),
+            waiting_start_tasks: HashMap::new(),
             inspect: Default::default(),
             remote_endpoints: None,
             remote_inspect: Default::default(),
             metrics,
             avrcp,
+            self_weak: Weak::new(),
             volume_relay_task: None,
         }
     }
@@ -722,7 +717,7 @@ impl PeerInner {
 
     /// Returns true if there is at least one stream that has started or is starting for this peer.
     fn is_streaming(&self) -> bool {
-        self.is_streaming_now() || self.opening.is_some()
+        self.is_streaming_now() || self.opening.is_some() || !self.waiting_start_tasks.is_empty()
     }
 
     /// Returns true if there is at least one stream in the started state for this peer.
@@ -753,30 +748,156 @@ impl PeerInner {
         weak.upgrade().ok_or(avdtp::Error::PeerDisconnected)
     }
 
-    /// Start the stream that is opening, completing the opened procedure.
-    async fn start_opened(weak: Weak<Mutex<Self>>) -> avdtp::Result<()> {
-        let (avdtp, stream_pairs) = {
-            let peer = Self::upgrade(weak.clone())?;
-            let peer = peer.lock();
-            let stream_pairs: Vec<(StreamEndpointId, StreamEndpointId)> = peer
-                .local
-                .open()
-                .filter_map(|stream| {
-                    let endpoint = stream.endpoint();
-                    endpoint.remote_id().map(|id| (endpoint.local_id().clone(), id.clone()))
-                })
-                .collect();
-            (peer.peer.clone(), stream_pairs)
+    /// Schedule a task to start streaming on `local_id` when it should be started locally:
+    /// when the audio becomes active for source streams, or after a dwell waiting for the peer to
+    /// start for sink streams.
+    fn schedule_start(weak: Weak<Mutex<Self>>, local_id: StreamEndpointId) {
+        let Ok(peer) = Self::upgrade(weak.clone()) else {
+            return;
         };
-        for (local_id, remote_id) in stream_pairs {
-            let permit_result =
-                Self::upgrade(weak.clone())?.lock().get_permit_or_reserve(&local_id);
-            if let Ok(permit) = permit_result {
-                Self::initiated_start(avdtp.clone(), weak.clone(), permit, &local_id, &remote_id)
-                    .await?;
+        let mut peer_lock = peer.lock();
+        if peer_lock.started.contains_key(&local_id) {
+            return;
+        }
+        if let Some(waiting_start_task) = peer_lock.waiting_start_tasks.get_mut(&local_id) {
+            let mut noop_cx = Context::from_waker(futures::task::noop_waker_ref());
+            if let Poll::Pending = waiting_start_task.poll_unpin(&mut noop_cx) {
+                return;
             }
         }
-        Ok(())
+        let task = fasync::Task::spawn(Self::wait_and_start(weak, local_id.clone()));
+        let _ = peer_lock.waiting_start_tasks.insert(local_id, task);
+    }
+
+    /// Forget the task that is waiting to start `local_id`, which is no longer waiting to start it.
+    /// The task handle is detached rather than dropped, since dropping it would cancel the task
+    /// that is calling this.
+    fn forget_waiting_start(weak: &Weak<Mutex<Self>>, local_id: &StreamEndpointId) {
+        let Ok(peer) = Self::upgrade(weak.clone()) else {
+            return;
+        };
+        let waiting_start_task = peer.lock().waiting_start_tasks.remove(local_id);
+        if let Some(task) = waiting_start_task {
+            task.detach();
+        }
+    }
+
+    /// Wait until `local_id` should be started locally, then start it.
+    ///
+    /// Source streams are started when the audio becomes active, and are not started while the
+    /// audio is inactive since there would be nothing to send.  If the audio goes inactive and
+    /// becomes active again later, the stream is started again.
+    ///
+    /// Sink streams are normally started by the peer, which is the source of the audio.  If the
+    /// peer hasn't started the stream `STREAM_DWELL` after it was opened, we start it once
+    /// ourselves.  After that the peer is in control: if it suspends the stream, we wait for the
+    /// peer to start it again instead of starting it for them.
+    ///
+    /// Either way, a start that fails is retried up to `START_ATTEMPTS` times, `START_RETRY_DELAY`
+    /// apart, for as long as the reason to start the stream holds.
+    async fn wait_and_start(weak: Weak<Mutex<Self>>, local_id: StreamEndpointId) {
+        // Returns a future that resolves to true when the audio becomes active and false when it
+        // becomes inactive, or None if the stream is gone.  Only changes are reported, so this can
+        // stay pending forever: see `MediaTaskRunner::watch_active`.
+        let watch_active = |weak: &Weak<Mutex<Self>>, local_id| {
+            let Ok(peer) = Self::upgrade(weak.clone()) else {
+                return None;
+            };
+            let mut peer = peer.lock();
+            let Ok(stream) = peer.get_mut(local_id) else {
+                return None;
+            };
+            Some(stream.watch_active())
+        };
+
+        let is_source = {
+            let Ok(peer) = Self::upgrade(weak.clone()) else {
+                return;
+            };
+            let mut peer = peer.lock();
+            let Ok(stream) = peer.get_mut(&local_id) else {
+                return;
+            };
+            stream.endpoint().endpoint_type() == &avdtp::EndpointType::Source
+        };
+
+        'wait_start: loop {
+            if is_source {
+                let Some(mut wait_start_fut) = watch_active(&weak, &local_id) else {
+                    return;
+                };
+                while !wait_start_fut.await {
+                    // The audio is inactive, there would be nothing to send.  Wait again.
+                    let Some(new_wait_start_fut) = watch_active(&weak, &local_id) else {
+                        return;
+                    };
+                    wait_start_fut = new_wait_start_fut;
+                }
+            } else {
+                // Give the peer a chance to start the stream before we do.
+                fasync::Timer::new(fasync::MonotonicInstant::after(STREAM_DWELL)).await;
+            }
+
+            for attempt in 1..=START_ATTEMPTS {
+                let Err(e) = Self::start_stream(&weak, &local_id).await else {
+                    return;
+                };
+                warn!(local_id:%, attempt, e:?; "Error starting stream");
+                if attempt == START_ATTEMPTS {
+                    break;
+                }
+                let mut retry_timer = std::pin::pin!(fasync::Timer::new(
+                    fasync::MonotonicInstant::after(START_RETRY_DELAY)
+                ));
+                if !is_source {
+                    retry_timer.await;
+                    continue;
+                }
+                let Some(wait_stop_fut) = watch_active(&weak, &local_id) else {
+                    return;
+                };
+                match futures::future::select(retry_timer.as_mut(), wait_stop_fut).await {
+                    // The audio stopped: wait until it becomes active again to start.
+                    Either::Right((false, _)) => continue 'wait_start,
+                    // Still active.  Stop watching and wait out the rest of the delay: watching
+                    // again here would spin for sources that are always active.
+                    Either::Right((true, _)) => retry_timer.await,
+                    // The retry delay elapsed, try again.
+                    Either::Left(_) => {}
+                }
+            }
+
+            if !is_source {
+                // We only start a sink stream when it is opened.  The peer is the source of the
+                // audio, so if it wants to stream later it can start the stream itself.
+                Self::forget_waiting_start(&weak, &local_id);
+                return;
+            }
+        }
+    }
+
+    /// Attempt to start the stream `local_id` locally.
+    /// Returns Ok if the stream was started, or if no permit was available to stream, in which
+    /// case a reservation has been made and the stream will be started when one is available.
+    async fn start_stream(
+        weak: &Weak<Mutex<Self>>,
+        local_id: &StreamEndpointId,
+    ) -> avdtp::Result<()> {
+        let peer = Self::upgrade(weak.clone())?;
+        let (avdtp, remote_id, permit_result) = {
+            let mut peer = peer.lock();
+            let stream = peer.get_mut(local_id).map_err(|e| avdtp::Error::RequestInvalid(e))?;
+            let remote_id =
+                stream.endpoint().remote_id().cloned().ok_or(avdtp::Error::InvalidState)?;
+            let avdtp = peer.peer.clone();
+            let permit_result = peer.get_permit_or_reserve(local_id);
+            (avdtp, remote_id, permit_result)
+        };
+        let Ok(permit) = permit_result else {
+            // A reservation was made, we will be started when a permit is available.
+            return Ok(());
+        };
+        Self::initiated_start(avdtp, weak.clone(), permit, local_id, &remote_id).await
     }
 
     async fn start_permit(weak: Weak<Mutex<Self>>, permit: StreamPermit) -> avdtp::Result<()> {
@@ -901,11 +1022,12 @@ impl PeerInner {
 
         info!(peer_id:%, stream:?; "Starting");
         let stream_finished = stream.start().map_err(|c| avdtp::Error::RequestInvalid(c))?;
-        // TODO(https://fxbug.dev/42147239): if streaming stops unexpectedly, send a suspend to match to peer
-        let watched_stream = WatchedStream::new(permit, stream_finished);
+        let watched_stream =
+            WatchedStream::new(permit, stream_finished, self.self_weak.clone(), local_id.clone());
         if self.started.insert(local_id.clone(), watched_stream).is_some() {
             warn!(peer_id:%, local_id:%; "Stream that was already started");
         }
+        let _ = self.waiting_start_tasks.remove(local_id);
         Ok(())
     }
 
@@ -927,8 +1049,8 @@ impl PeerInner {
     /// Provide a new established L2CAP channel to this remote peer.
     /// This function should be called whenever the remote associated with this peer opens an
     /// L2CAP channel after the first.
-    /// Returns true if this channel completed the opening sequence.
-    fn receive_channel(&mut self, channel: Channel) -> avdtp::Result<bool> {
+    /// Returns Some(stream_id) if this channel completed the opening sequence.
+    fn receive_channel(&mut self, channel: Channel) -> avdtp::Result<Option<StreamEndpointId>> {
         let stream_id = self.opening.as_ref().cloned().ok_or(avdtp::Error::InvalidState)?;
         let stream = self.get_mut(&stream_id).map_err(|e| avdtp::Error::RequestInvalid(e))?;
         let done = !stream.endpoint_mut().receive_channel(channel)?;
@@ -936,7 +1058,7 @@ impl PeerInner {
             self.opening = None;
         }
         info!(peer_id:% = self.peer_id, stream_id:%; "Transport connected");
-        Ok(done)
+        Ok(done.then_some(stream_id))
     }
 
     /// Handle a single request event from the avdtp peer.
@@ -968,6 +1090,7 @@ impl PeerInner {
                     }
                 }
                 Close { responder, stream_id } => {
+                    let _ = self.waiting_start_tasks.remove(&stream_id);
                     let peer = self.peer.clone();
                     let Ok(stream) = self.get_mut(&stream_id) else {
                         break 'result responder.reject(ErrorCode::BadAcpSeid);
@@ -1061,6 +1184,7 @@ impl PeerInner {
                     responder.send()
                 }
                 Abort { responder, stream_id } => {
+                    let _ = self.waiting_start_tasks.remove(&stream_id);
                     let Ok(stream) = self.get_mut(&stream_id) else {
                         // No response is sent on an invalid ID for an Abort
                         break 'result Ok(());
@@ -1111,12 +1235,47 @@ impl WatchedStream {
     fn new(
         permit: Option<StreamPermit>,
         finish_fut: BoxFuture<'static, Result<MediaTaskStatus, anyhow::Error>>,
+        weak: Weak<Mutex<PeerInner>>,
+        local_id: StreamEndpointId,
     ) -> Self {
         let permit_task = fasync::Task::spawn(async move {
-            let _ = finish_fut.await;
+            let finish_result = finish_fut.await;
             drop(permit);
+            let Some(peer) = weak.upgrade() else {
+                return;
+            };
+            // Handle the stream finished in waiting_start_tasks, since this task will be
+            // dropped when the stream is removed from `started`
+            let finished_task = fasync::Task::spawn(Self::handle_stream_finished(
+                finish_result,
+                weak,
+                local_id.clone(),
+            ));
+            let _ = peer.lock().waiting_start_tasks.insert(local_id, finished_task);
         });
         Self { _permit_task: permit_task }
+    }
+
+    async fn handle_stream_finished(
+        finish_result: Result<MediaTaskStatus, anyhow::Error>,
+        weak: Weak<Mutex<PeerInner>>,
+        local_id: StreamEndpointId,
+    ) {
+        let is_audio_disabled = matches!(finish_result, Ok(MediaTaskStatus::AudioDisabled));
+        let is_stopped = matches!(finish_result, Ok(MediaTaskStatus::Stopped));
+
+        let stream_id = local_id.clone();
+        info!("Audio stopped {finish_result:?} - suspending A2DP stream for {stream_id:?}");
+        if !is_stopped {
+            if let Err(e) = PeerInner::suspend(weak.clone(), stream_id.clone()).await {
+                warn!("Error suspending stream after audio stopped: {e:?}");
+            }
+        }
+        // Forget (detached) the current task before maybe scheduling a new start.
+        PeerInner::forget_waiting_start(&weak, &local_id);
+        if is_audio_disabled {
+            PeerInner::schedule_start(weak, stream_id);
+        }
     }
 }
 
@@ -1807,6 +1966,16 @@ mod tests {
             codec_extra: vec![0x11, 0x45, 51, 51],
         };
 
+        // Set the remote endpoint so the compatible local source endpoint is selected.
+        let remote_endpoint = avdtp::StreamEndpoint::new(
+            2,
+            avdtp::MediaType::Audio,
+            avdtp::EndpointType::Sink,
+            vec![codec_params.clone()],
+        )
+        .expect("valid endpoint");
+        peer.inner.lock().set_remote_endpoints(&[remote_endpoint]);
+
         let start_future = peer.stream_start(remote_seid, vec![codec_params]);
         let mut start_future = pin!(start_future);
 
@@ -1841,24 +2010,18 @@ mod tests {
             x => panic!("Should have sent a open l2cap request, but got {:?}", x),
         };
 
-        match exec.run_until_stalled(&mut start_future) {
-            Poll::Pending => {}
-            Poll::Ready(Err(e)) => panic!("Expected to be pending but error: {:?}", e),
-            Poll::Ready(Ok(_)) => panic!("Expected to be pending but finished!"),
-        };
+        // Setup is complete once the media transport is connected. The start is sent by the task
+        // that starts the stream when the audio is active.
+        exec.run_until_stalled(&mut start_future)
+            .expect("start setup finished")
+            .expect("stream setup is ok");
 
         receive_simple_accept(&mut exec, &mut remote, 0x07); // Start
 
-        // Should return the media stream (which should be connected)
-        // Should be done without an error, but with no streams.
-        match exec.run_until_stalled(&mut start_future) {
-            Poll::Pending => panic!("Should be ready after start succeeds"),
-            Poll::Ready(Err(e)) => panic!("Shouldn't be an error but returned {:?}", e),
-            // TODO: confirm the stream is usable
-            Poll::Ready(Ok(())) => {
-                assert!(peer.is_streaming_now());
-            }
-        }
+        // The stream should be started, with the media stream connected.
+        // TODO: confirm the stream is usable
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        assert!(peer.is_streaming_now());
     }
 
     #[test_case(Transport::Socket ; "socket")]
@@ -2169,6 +2332,16 @@ mod tests {
             codec_extra: vec![0x11, 0x45, 51, 51],
         };
 
+        // Set the remote endpoint so the compatible local source endpoint is selected.
+        let remote_endpoint = avdtp::StreamEndpoint::new(
+            2,
+            avdtp::MediaType::Audio,
+            avdtp::EndpointType::Sink,
+            vec![codec_params.clone()],
+        )
+        .expect("valid endpoint");
+        peer.inner.lock().set_remote_endpoints(&[remote_endpoint]);
+
         let start_future = peer.stream_start(remote_seid, vec![codec_params]);
         let mut start_future = pin!(start_future);
 
@@ -2195,7 +2368,12 @@ mod tests {
             x => panic!("Should have sent a open l2cap request, but got {:?}", x),
         };
 
-        exec.run_until_stalled(&mut start_future).expect_pending("waiting for media transport");
+        // Setup finishes when the media transport is connected, and the start is sent by the
+        // task which takes the permit and starts the stream.
+        exec.run_until_stalled(&mut start_future)
+            .expect("start setup finished")
+            .expect("stream setup is ok");
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
         assert!(!peer.is_streaming_now());
 
         // Before peer responds to start, the permit gets taken.
@@ -2205,18 +2383,13 @@ mod tests {
 
         // Streaming should not locally begin because there is no available permit. The Start
         // response is handled gracefully.
-        exec.run_until_stalled(&mut start_future)
-            .expect_pending("waiting to send outgoing suspend");
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
         assert!(!peer.is_streaming_now());
         // We should issue an outgoing suspend request to synchronize state with the remote peer.
         receive_simple_accept(&mut exec, &mut remote, 0x09); // Suspend
 
-        // The start future should resolve without Error, and A2DP should not have started
-        // streaming.
-        let () = exec
-            .run_until_stalled(&mut start_future)
-            .expect("start finished")
-            .expect("suspended stream is ok");
+        // A2DP should not have started streaming.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
         assert!(!peer.is_streaming_now());
     }
 
@@ -2501,7 +2674,7 @@ mod tests {
         let mut exec = fasync::TestExecutor::new();
 
         let mut streams = Streams::default();
-        let mut test_builder = TestMediaTaskBuilder::new();
+        let mut test_builder = TestMediaTaskBuilder::new_inactive();
         streams.insert(Stream::build(
             make_sbc_endpoint(1, avdtp::EndpointType::Source),
             test_builder.builder(),
@@ -2597,6 +2770,82 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
+    fn peer_source_stream_suspends_and_resumes_on_audio_disabled(transport: Transport) {
+        let mut exec = fasync::TestExecutor::new();
+
+        let mut streams = Streams::default();
+        let mut test_builder = TestMediaTaskBuilder::new_inactive();
+        let _ = test_builder.with_direction(avdtp::EndpointType::Source);
+        streams.insert(Stream::build(
+            make_sbc_endpoint(1, avdtp::EndpointType::Source),
+            test_builder.builder(),
+        ));
+
+        let (remote, _requests, _, peer) = setup_test_peer(transport, false, streams, None);
+        let remote_peer = avdtp::Peer::new(remote);
+
+        let sbc_endpoint_id = 1_u8.try_into().expect("sbc endpoint id");
+        let sbc_caps = sbc_capabilities();
+
+        // Configure and open from remote
+        let mut set_config_fut =
+            pin!(remote_peer.set_configuration(&sbc_endpoint_id, &sbc_endpoint_id, &sbc_caps));
+        assert!(exec.run_until_stalled(&mut set_config_fut).is_ready());
+
+        let mut open_fut = pin!(remote_peer.open(&sbc_endpoint_id));
+        assert!(exec.run_until_stalled(&mut open_fut).is_ready());
+
+        // Establish media transport
+        let (transport_chan, _remote_transport) = create_test_channels(transport);
+        assert!(peer.receive_channel(transport_chan).is_ok());
+
+        // Start stream
+        let stream_ids = vec![sbc_endpoint_id.clone()];
+        let mut start_fut = pin!(remote_peer.start(&stream_ids));
+        assert!(exec.run_until_stalled(&mut start_fut).is_ready());
+
+        // Media task is running
+        let media_task = test_builder.expect_task();
+        assert!(media_task.is_started());
+
+        // End media task prematurely with AudioDisabled (channels went silent)
+        media_task.end_prematurely(Some(Ok(MediaTaskStatus::AudioDisabled)));
+
+        // Remote peer should receive an AVDTP Suspend request from local peer
+        let mut remote_events = remote_peer.take_request_stream();
+        let mut req_fut = remote_events.next();
+        let Poll::Ready(Some(Ok(avdtp::Request::Suspend { responder, stream_ids }))) =
+            exec.run_until_stalled(&mut req_fut)
+        else {
+            panic!("Expected Suspend request from peer");
+        };
+        assert_eq!(stream_ids, vec![sbc_endpoint_id.clone()]);
+        responder.send().expect("suspend response should send");
+
+        // Media task should now be stopped
+        assert!(!media_task.is_started());
+
+        // Reactivate audio channels
+        test_builder.set_active(true);
+
+        // Remote peer should now receive an AVDTP Start request from local peer
+        let mut req_fut = remote_events.next();
+        let Poll::Ready(Some(Ok(avdtp::Request::Start { responder, stream_ids }))) =
+            exec.run_until_stalled(&mut req_fut)
+        else {
+            panic!("Expected Start request from peer");
+        };
+        assert_eq!(stream_ids, vec![sbc_endpoint_id.clone()]);
+        responder.send().expect("start response should send");
+
+        // A new media task should be created and started
+        let new_media_task =
+            exec.run_until_stalled(&mut test_builder.next_task()).expect("ready").unwrap();
+        assert!(new_media_task.is_started());
+    }
+
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
     fn peer_set_config_reject_first(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
 
@@ -2646,6 +2895,265 @@ mod tests {
         };
     }
 
+    /// When a start that we initiate because the audio became active fails, we should try again
+    /// while the audio is still active.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    fn peer_retries_failed_start_while_audio_active(transport_mode: Transport) {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000_000_000));
+
+        let mut streams = Streams::default();
+        let mut test_builder = TestMediaTaskBuilder::new_inactive();
+        let _ = test_builder.with_direction(avdtp::EndpointType::Source);
+        streams.insert(Stream::build(
+            make_sbc_endpoint(1, avdtp::EndpointType::Source),
+            test_builder.builder(),
+        ));
+
+        let (remote, _requests, _, peer) = setup_test_peer(transport_mode, false, streams, None);
+        let remote_peer = avdtp::Peer::new(remote);
+
+        let sbc_endpoint_id: StreamEndpointId = 1_u8.try_into().expect("sbc endpoint id");
+        let sbc_caps = sbc_capabilities();
+
+        let mut set_config_fut =
+            pin!(remote_peer.set_configuration(&sbc_endpoint_id, &sbc_endpoint_id, &sbc_caps));
+        match exec.run_until_stalled(&mut set_config_fut) {
+            Poll::Ready(Ok(())) => {}
+            x => panic!("Set capabilities should be ready but got {:?}", x),
+        };
+
+        let mut open_fut = pin!(remote_peer.open(&sbc_endpoint_id));
+        match exec.run_until_stalled(&mut open_fut) {
+            Poll::Ready(Ok(())) => {}
+            x => panic!("Open should be ready but got {:?}", x),
+        };
+
+        // Establish a media transport stream
+        let (transport, _remote_transport) = create_test_channels(transport_mode);
+        assert_eq!(Some(()), peer.receive_channel(transport).ok());
+
+        let mut remote_requests = remote_peer.take_request_stream();
+
+        // Signal that audio has become active, which should start the stream.
+        test_builder.set_active(true);
+
+        // Reject the start request, as if the peer was in a state where it couldn't start.
+        let mut next_remote_request_fut = pin!(remote_requests.next());
+        match exec.run_until_stalled(&mut next_remote_request_fut) {
+            Poll::Ready(Some(Ok(avdtp::Request::Start { responder, stream_ids }))) => {
+                assert_eq!(stream_ids, vec![sbc_endpoint_id.clone()]);
+                responder
+                    .reject(&sbc_endpoint_id, avdtp::ErrorCode::BadState)
+                    .expect("reject response should send");
+            }
+            x => panic!("Expected to receive a start request for the stream, got {:?}", x),
+        };
+
+        // The stream shouldn't have been started.
+        assert!(exec.run_until_stalled(&mut test_builder.next_task()).is_pending());
+        assert!(!peer.is_streaming_now());
+
+        // The audio is still active, so we should try to start again after the retry delay.
+        let mut next_remote_request_fut = pin!(remote_requests.next());
+        assert!(exec.run_until_stalled(&mut next_remote_request_fut).is_pending());
+
+        exec.set_fake_time(fasync::MonotonicInstant::after(
+            START_RETRY_DELAY + zx::MonotonicDuration::from_micros(1),
+        ));
+        assert!(exec.wake_expired_timers());
+
+        match exec.run_until_stalled(&mut next_remote_request_fut) {
+            Poll::Ready(Some(Ok(avdtp::Request::Start { responder, stream_ids }))) => {
+                assert_eq!(stream_ids, vec![sbc_endpoint_id.clone()]);
+                responder.send().expect("start response should send");
+            }
+            x => panic!("Expected to receive a second start request, got {:?}", x),
+        };
+
+        // The second start succeeded, so the media task should be started now.
+        let media_task =
+            exec.run_until_stalled(&mut test_builder.next_task()).expect("ready").unwrap();
+        assert!(media_task.is_started());
+    }
+
+    /// Builds a peer with a single SBC sink stream with the endpoint id `seid`, and configures and
+    /// opens it from the remote peer, leaving the stream open but not started by anyone.
+    /// Returns the endpoint id, the peer, the remote peer, and the remote end of the media
+    /// transport, which keeps the transport open while it is held.
+    fn setup_open_sink_stream(
+        exec: &mut fasync::TestExecutor,
+        test_builder: &TestMediaTaskBuilder,
+        seid: u8,
+        transport_mode: Transport,
+    ) -> (StreamEndpointId, Peer, avdtp::Peer, Channel) {
+        let mut streams = Streams::default();
+        streams.insert(Stream::build(
+            make_sbc_endpoint(seid, avdtp::EndpointType::Sink),
+            test_builder.builder(),
+        ));
+
+        let (remote, _requests, _, peer) = setup_test_peer(transport_mode, false, streams, None);
+        let remote_peer = avdtp::Peer::new(remote);
+
+        let local_id: StreamEndpointId = seid.try_into().expect("sbc endpoint id");
+        let sbc_caps = sbc_capabilities();
+        let mut set_config_fut =
+            pin!(remote_peer.set_configuration(&local_id, &local_id, &sbc_caps));
+        match exec.run_until_stalled(&mut set_config_fut) {
+            Poll::Ready(Ok(())) => {}
+            x => panic!("Set configuration should be ready but got {:?}", x),
+        };
+
+        let mut open_fut = pin!(remote_peer.open(&local_id));
+        match exec.run_until_stalled(&mut open_fut) {
+            Poll::Ready(Ok(())) => {}
+            x => panic!("Open should be ready but got {:?}", x),
+        };
+
+        // Establish a media transport stream, which opens the stream.
+        let (transport, remote_transport) = create_test_channels(transport_mode);
+        assert_eq!(Some(()), peer.receive_channel(transport).ok());
+
+        // Let the task waiting to start the stream run, so that it is dwelling.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+
+        (local_id, peer, remote_peer, remote_transport)
+    }
+
+    /// Sink streams are normally started by the peer, since it is the source of the audio.  If the
+    /// peer doesn't start the stream it opened, we start it ourselves once the dwell has expired.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    fn peer_starts_sink_stream_after_dwell(transport_mode: Transport) {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000_000_000));
+
+        let mut test_builder = TestMediaTaskBuilder::new();
+        let (sbc_endpoint_id, _peer, remote_peer, _remote_transport) =
+            setup_open_sink_stream(&mut exec, &test_builder, 1, transport_mode);
+        let mut remote_requests = remote_peer.take_request_stream();
+
+        // The peer gets a chance to start the stream itself first.
+        let mut next_remote_request_fut = pin!(remote_requests.next());
+        assert!(exec.run_until_stalled(&mut next_remote_request_fut).is_pending());
+
+        // When the dwell expires without the peer starting the stream, we start it.
+        exec.set_fake_time(fasync::MonotonicInstant::after(
+            STREAM_DWELL + zx::MonotonicDuration::from_micros(1),
+        ));
+        assert!(exec.wake_expired_timers());
+
+        match exec.run_until_stalled(&mut next_remote_request_fut) {
+            Poll::Ready(Some(Ok(avdtp::Request::Start { responder, stream_ids }))) => {
+                assert_eq!(stream_ids, vec![sbc_endpoint_id.clone()]);
+                responder.send().expect("start response should send");
+            }
+            x => panic!("Expected to receive a start request for the stream, got {:?}", x),
+        };
+
+        let media_task =
+            exec.run_until_stalled(&mut test_builder.next_task()).expect("ready").unwrap();
+        assert!(media_task.is_started());
+    }
+
+    /// When the peer starts the sink stream it opened, we don't start it, and we leave the stream
+    /// to the peer afterwards: if it suspends the stream we wait for it to start it again.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    fn peer_does_not_start_sink_stream_started_by_peer(transport_mode: Transport) {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000_000_000));
+
+        let mut test_builder = TestMediaTaskBuilder::new();
+        let (sbc_endpoint_id, _peer, remote_peer, _remote_transport) =
+            setup_open_sink_stream(&mut exec, &test_builder, 1, transport_mode);
+        let mut remote_requests = remote_peer.take_request_stream();
+
+        // The peer starts the stream before the dwell expires.
+        let mut start_fut = pin!(remote_peer.start(&[sbc_endpoint_id.clone()]));
+        match exec.run_until_stalled(&mut start_fut) {
+            Poll::Ready(Ok(())) => {}
+            x => panic!("Start should be ready but got {:?}", x),
+        };
+
+        let media_task = test_builder.expect_task();
+        assert!(media_task.is_started());
+
+        // We shouldn't send anything once the dwell would have expired.
+        exec.set_fake_time(fasync::MonotonicInstant::after(
+            STREAM_DWELL + zx::MonotonicDuration::from_micros(1),
+        ));
+        let _ = exec.wake_expired_timers();
+        let mut next_remote_request_fut = pin!(remote_requests.next());
+        assert!(exec.run_until_stalled(&mut next_remote_request_fut).is_pending());
+        assert!(media_task.is_started());
+
+        // The peer suspends the stream, which stops the media task.
+        let mut suspend_fut = pin!(remote_peer.suspend(&[sbc_endpoint_id.clone()]));
+        match exec.run_until_stalled(&mut suspend_fut) {
+            Poll::Ready(Ok(())) => {}
+            x => panic!("Suspend should be ready but got {:?}", x),
+        };
+        assert!(!media_task.is_started());
+
+        // We don't start it again, the peer will start it when it has audio to send.
+        exec.set_fake_time(fasync::MonotonicInstant::after(STREAM_DWELL + START_RETRY_DELAY));
+        let _ = exec.wake_expired_timers();
+        let mut next_remote_request_fut = pin!(remote_requests.next());
+        assert!(exec.run_until_stalled(&mut next_remote_request_fut).is_pending());
+    }
+
+    /// When the peer refuses to start the sink stream we opened for it, we stop trying after a few
+    /// attempts instead of asking forever.
+    #[test_case(Transport::Socket ; "socket")]
+    #[test_case(Transport::Fidl ; "fidl")]
+    fn peer_stops_starting_sink_stream_after_attempts(transport_mode: Transport) {
+        let mut exec = fasync::TestExecutor::new_with_fake_time();
+        exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000_000_000));
+
+        let test_builder = TestMediaTaskBuilder::new();
+        let (sbc_endpoint_id, peer, remote_peer, _remote_transport) =
+            setup_open_sink_stream(&mut exec, &test_builder, 1, transport_mode);
+        let mut remote_requests = remote_peer.take_request_stream();
+
+        // The peer doesn't start the stream, so we try to after the dwell.
+        exec.set_fake_time(fasync::MonotonicInstant::after(
+            STREAM_DWELL + zx::MonotonicDuration::from_micros(1),
+        ));
+        assert!(exec.wake_expired_timers());
+
+        for attempt in 1..=START_ATTEMPTS {
+            let mut next_remote_request_fut = pin!(remote_requests.next());
+            match exec.run_until_stalled(&mut next_remote_request_fut) {
+                Poll::Ready(Some(Ok(avdtp::Request::Start { responder, stream_ids }))) => {
+                    assert_eq!(stream_ids, vec![sbc_endpoint_id.clone()]);
+                    responder
+                        .reject(&sbc_endpoint_id, avdtp::ErrorCode::BadState)
+                        .expect("reject response should send");
+                }
+                x => panic!("Expected start request number {attempt}, got {:?}", x),
+            };
+            // Let the failed start be processed, which sets up the retry.
+            let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+            exec.set_fake_time(fasync::MonotonicInstant::after(
+                START_RETRY_DELAY + zx::MonotonicDuration::from_micros(1),
+            ));
+            let retried = exec.wake_expired_timers();
+            assert_eq!(retried, attempt < START_ATTEMPTS, "attempt {attempt} retry");
+        }
+
+        // We have given up: the peer can start the stream itself if it wants to stream.  Give any
+        // dwell that was started again a chance to expire.
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
+        exec.set_fake_time(fasync::MonotonicInstant::after(STREAM_DWELL + START_RETRY_DELAY));
+        assert!(!exec.wake_expired_timers());
+        let mut next_remote_request_fut = pin!(remote_requests.next());
+        assert!(exec.run_until_stalled(&mut next_remote_request_fut).is_pending());
+        assert!(!peer.streaming_active());
+    }
+
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
     fn peer_starts_waiting_streams(transport_mode: Transport) {
@@ -2653,7 +3161,7 @@ mod tests {
         exec.set_fake_time(fasync::MonotonicInstant::from_nanos(5_000_000_000));
 
         let mut streams = Streams::default();
-        let mut test_builder = TestMediaTaskBuilder::new();
+        let mut test_builder = TestMediaTaskBuilder::new_inactive();
         streams.insert(Stream::build(
             make_sbc_endpoint(1, avdtp::EndpointType::Source),
             test_builder.builder(),
@@ -2685,17 +3193,16 @@ mod tests {
         let (transport, _remote_transport) = create_test_channels(transport_mode);
         assert_eq!(Some(()), peer.receive_channel(transport).ok());
 
-        // The remote end should get a start request after the timeout.
+        // The remote end should get a start request after audio becomes active.
         let mut remote_requests = remote_peer.take_request_stream();
         let next_remote_request_fut = remote_requests.next();
         let mut next_remote_request_fut = pin!(next_remote_request_fut);
 
-        // Nothing should happen immediately.
+        // Nothing should happen while inactive.
         assert!(exec.run_until_stalled(&mut next_remote_request_fut).is_pending());
 
-        // After the timeout has passed..
-        exec.set_fake_time(zx::MonotonicDuration::from_seconds(3).after_now());
-        let _ = exec.wake_expired_timers();
+        // Signal that audio has become active.
+        test_builder.set_active(true);
 
         let stream_ids = match exec.run_until_stalled(&mut next_remote_request_fut) {
             Poll::Ready(Some(Ok(avdtp::Request::Start { responder, stream_ids }))) => {
@@ -3291,7 +3798,7 @@ mod tests {
             fidl::endpoints::create_proxy_and_stream::<avrcp::PeerManagerMarker>();
 
         let mut streams = Streams::default();
-        let test_builder = TestMediaTaskBuilder::new();
+        let test_builder = TestMediaTaskBuilder::new_inactive();
         streams.insert(Stream::build(
             make_sbc_endpoint(1, avdtp::EndpointType::Source),
             test_builder.builder(),
@@ -3349,7 +3856,6 @@ mod tests {
 
     #[test_case(Transport::Socket ; "socket")]
     #[test_case(Transport::Fidl ; "fidl")]
-    #[fuchsia::test]
     fn test_volume_relay_starts_on_stream_start(transport: Transport) {
         let mut exec = fasync::TestExecutor::new();
         let (avrcp_proxy, mut avrcp_stream) =
@@ -3402,13 +3908,13 @@ mod tests {
             x => panic!("Expected Connect request, got {:?}", x),
         };
 
-        assert!(exec.run_until_stalled(&mut start_future).is_pending());
+        // Setup finishes when the media transport is connected, then the stream is started by
+        // the task that starts the stream when the audio is active.
+        exec.run_until_stalled(&mut start_future)
+            .expect("start setup finished")
+            .expect("stream setup is ok");
         receive_simple_accept(&mut exec, &mut remote, 0x07); // Start
-
-        match exec.run_until_stalled(&mut start_future) {
-            Poll::Ready(Ok(())) => {}
-            x => panic!("Expected start_future to succeed, got {:?}", x),
-        }
+        let _ = exec.run_until_stalled(&mut futures::future::pending::<()>());
 
         // Verify that GetControllerForTarget request is sent on avrcp_stream.
         let mut get_controller_fut = avrcp_stream.select_next_some();

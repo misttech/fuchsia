@@ -129,6 +129,9 @@ pub trait MediaTaskRunner: Send {
 
     /// Watch for active channel state changes on the media source.
     /// Resolves to true when active, false when inactive.
+    /// Only transitions are reported: the returned future does not resolve if the state has not
+    /// changed since it was last reported, and may never resolve.  The end of the media task is
+    /// not reported here, `MediaTask::finished` reports that instead.
     /// Default implementation is Ready(true) for tasks that are always active.
     fn watch_active(&mut self) -> BoxFuture<'static, bool> {
         futures::future::ready(true).boxed()
@@ -319,7 +322,9 @@ pub mod tests {
             };
             futures::future::poll_fn(move |cx| match receiver.lock().poll_next_unpin(cx) {
                 Poll::Ready(Some(val)) => Poll::Ready(val),
-                Poll::Ready(None) => Poll::Ready(false),
+                // No one can change the active state anymore, so it will never change again.
+                // Real implementations never signal termination here, they just stop changing.
+                Poll::Ready(None) => Poll::Pending,
                 Poll::Pending => Poll::Pending,
             })
             .boxed()
@@ -342,6 +347,22 @@ pub mod tests {
 
     impl TestMediaTaskBuilder {
         pub fn new() -> Self {
+            let (sender, receiver) = mpsc::channel(5);
+            let (active_sender, active_receiver) = mpsc::unbounded();
+            let _ = active_sender.unbounded_send(true);
+            Self {
+                sender: Mutex::new(sender),
+                receiver,
+                active_sender,
+                active_receiver: Arc::new(Mutex::new(active_receiver)),
+                reconfigurable: false,
+                supports_set_delay: false,
+                configs: vec![crate::codec::MediaCodecConfig::min_sbc()],
+                direction: EndpointType::Sink,
+            }
+        }
+
+        pub fn new_inactive() -> Self {
             let (sender, receiver) = mpsc::channel(5);
             let (active_sender, active_receiver) = mpsc::unbounded();
             Self {
