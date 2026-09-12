@@ -396,13 +396,17 @@ where
     if !(4..=6).contains(&dict_len) {
         return None;
     }
-    let floor = dict.get(&Key::from_str("floor").ok().unwrap())?;
-    let step = dict.get(&Key::from_str("step").ok().unwrap());
-    let initial_step = dict.get(&Key::from_str("initial_step").ok().unwrap());
-    let step_multiplier = dict.get(&Key::from_str("step_multiplier").ok().unwrap());
-    let counts = dict.get(&Key::from_str("counts").ok().unwrap());
-    let indexes = dict.get(&Key::from_str("indexes").ok().unwrap());
-    let size = dict.get(&Key::from_str("size").ok().unwrap());
+    let get_key = |name: &str| -> Option<&FieldValue<Key>> {
+        let key = Key::from_str(name).ok()?;
+        dict.get(&key)
+    };
+    let floor = get_key("floor")?;
+    let step = get_key("step");
+    let initial_step = get_key("initial_step");
+    let step_multiplier = get_key("step_multiplier");
+    let counts = get_key("counts");
+    let indexes = get_key("indexes");
+    let size = get_key("size");
     // Indexes may be None if the histogram isn't condensed.
     match (step, initial_step, step_multiplier, counts, indexes, size) {
         (Some(step), None, None, Some(counts), indexes, Some(size)) => {

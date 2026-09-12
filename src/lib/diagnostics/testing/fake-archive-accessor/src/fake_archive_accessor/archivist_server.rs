@@ -35,29 +35,25 @@ impl AccessorServer {
     }
 
     pub async fn send(mut self, data: &str) -> Result<(), ServerError> {
-        if let Some(res) = self.requests.next().await {
+        let mut has_sent_data = false;
+        while let Some(res) = self.requests.next().await {
             match res? {
                 BatchIteratorRequest::GetNext { responder } => {
-                    let response = self.build_vmo(data)?;
-                    responder.send(Ok(response))?;
+                    if !has_sent_data {
+                        has_sent_data = true;
+                        let response = self.build_vmo(data)?;
+                        responder.send(Ok(response))?;
+                    } else {
+                        responder.send(Ok(vec![]))?;
+                    }
                 }
                 BatchIteratorRequest::WaitForReady { responder } => responder.send()?,
                 BatchIteratorRequest::_UnknownMethod { .. } => {
                     unreachable!("Unexpected method call");
                 }
-            };
-            if let Some(res) = self.requests.next().await {
-                match res? {
-                    BatchIteratorRequest::GetNext { responder } => responder.send(Ok(vec![]))?,
-                    BatchIteratorRequest::WaitForReady { responder } => responder.send()?,
-                    BatchIteratorRequest::_UnknownMethod { .. } => {
-                        unreachable!("Unexpected method call");
-                    }
-                };
-            } else {
-                return Err(ServerError::TooFewBatchRequests);
             }
-        } else {
+        }
+        if !has_sent_data {
             return Err(ServerError::TooFewBatchRequests);
         }
         Ok(())

@@ -37,7 +37,7 @@ class InspectMetadataError:
 
 class Timestamp:
     def __init__(self, timestamp_nanos: int):
-        self._seconds: float = float(timestamp_nanos) / 1e9
+        self._nanos: int = int(timestamp_nanos)
 
     def seconds(self) -> float:
         """The number of seconds represented by this timestamp.
@@ -45,7 +45,7 @@ class Timestamp:
         Returns:
             float: Timestamp in seconds, as a float.
         """
-        return self._seconds
+        return self._nanos / 1e9
 
     def nanoseconds(self) -> int:
         """The number of nanoseconds represented by this timestamp.
@@ -53,7 +53,7 @@ class Timestamp:
         Returns:
             int: Timestamp in nanoseconds, as an int.
         """
-        return int(self._seconds * 1e9)
+        return self._nanos
 
 
 @dataclass

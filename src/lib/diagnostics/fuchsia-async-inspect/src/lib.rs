@@ -60,7 +60,7 @@ impl Hooks for InspectHooks {
 
     fn task_poll_end(&mut self) {
         let duration = fuchsia_async::BootInstant::now().into_zx() - self.poll_start_time;
-        let duration_micros = duration.into_micros() as u64;
+        let duration_micros = duration.into_micros().max(0) as u64;
         if duration_micros > self.max_poll_duration_micros {
             self.max_poll_duration_micros = duration_micros;
             self.task_node.max_poll_duration_micros.set(duration_micros);

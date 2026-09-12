@@ -10,7 +10,7 @@ __all__ = [
     "InspectDataError",
     "InspectMetadata",
     "InspectMetadataError",
-    "Timestamp",
+    "InvalidDataTypeError",
     "InvalidFieldError",
     "MissingFieldError",
     "Timestamp",

@@ -275,7 +275,7 @@ macro_rules! assert_data_tree {
         use zx::MonotonicDuration;
 
         let tree_assertion = $crate::tree_assertion!($($rest)+);
-        let max_retries = $times;
+        let max_retries = std::cmp::max(1, $times);
 
         for i in 0..max_retries {
             let result = tree_assertion.run(
