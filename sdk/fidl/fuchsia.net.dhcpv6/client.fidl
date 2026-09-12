@@ -367,6 +367,13 @@ closed protocol PrefixControl {
         };
     });
 
+    /// Requests prefix acquisition to stop.
+    ///
+    /// When called, the server tears down active DHCPv6 client PD on the
+    /// upstream interface, cleans up internal state, emits [`OnExit`] with
+    /// [`PrefixControlExitReason.STOPPED`], and closes the server channel.
+    strict Stop();
+
     /// Terminal event yielded by the server before the server end is closed.
     ///
     /// - response `reason` the reason this prefix acquisition stopped.
@@ -389,6 +396,8 @@ closed protocol PrefixControl {
             DOUBLE_WATCH = 5;
             /// Acquiring prefixes is not supported.
             NOT_SUPPORTED = 6;
+            /// Prefix acquisition was stopped by client request.
+            STOPPED = 7;
         };
     });
 };

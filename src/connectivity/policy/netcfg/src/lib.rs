@@ -1812,6 +1812,16 @@ impl<'a> NetCfg<'a> {
                             .context("handle PrefixControl.WatchPrefix")
                             .unwrap_or_else(accept_error);
                     }
+                    Ok(Some(fnet_dhcpv6::PrefixControlRequest::Stop { control_handle })) => {
+                        self.on_dhcpv6_prefix_control_close(dns_watchers).await;
+                        match control_handle
+                            .send_on_exit(fnet_dhcpv6::PrefixControlExitReason::Stopped)
+                        {
+                            Ok(()) => {}
+                            Err(e) if e.is_closed() => {}
+                            Err(e) => warn!("failed to send OnExit on Stop: {:?}", e),
+                        }
+                    }
                 };
             }
             ProvisioningEvent::Dhcpv6Prefixes(prefixes) => {

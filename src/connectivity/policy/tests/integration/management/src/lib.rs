@@ -1482,6 +1482,66 @@ async fn test_prefix_provider_already_acquiring<M: Manager, N: Netstack>(name: &
     }
 }
 
+/// Tests that calling `Stop()` on `PrefixControl` synchronously tears down prefix
+/// acquisition before emitting `OnExit(Stopped)`. This ensures that subsequent
+/// calls to `AcquirePrefix` on rapid restart cycles do not encounter the
+/// `AlreadyAcquiring` race condition.
+#[netstack_test]
+#[variant(M, Manager)]
+#[variant(N, Netstack)]
+async fn test_prefix_provider_stop_rapid_cycles<M: Manager, N: Netstack>(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox
+        .create_netstack_realm_with::<N, _, _>(
+            name,
+            [
+                KnownServiceProvider::Manager {
+                    agent: M::MANAGEMENT_AGENT,
+                    config: ManagerConfig::Dhcpv6,
+                    use_dhcp_server: false,
+                    use_out_of_stack_dhcp_client: N::USE_OUT_OF_STACK_DHCP_CLIENT,
+                    socket_proxy_type: SocketProxyType::None,
+                },
+                KnownServiceProvider::DnsResolver,
+                KnownServiceProvider::FakeClock,
+                KnownServiceProvider::Dhcpv6Client,
+            ]
+            .into_iter()
+            .chain(
+                N::USE_OUT_OF_STACK_DHCP_CLIENT
+                    .then_some(KnownServiceProvider::DhcpClient)
+                    .into_iter(),
+            ),
+        )
+        .expect("create netstack realm");
+
+    let prefix_provider = realm
+        .connect_to_protocol::<fnet_dhcpv6::PrefixProviderMarker>()
+        .expect("connect to fuchsia.net.dhcpv6/PrefixProvider server");
+
+    for _ in 0..1000 {
+        let (prefix_control, server_end) =
+            fidl::endpoints::create_proxy::<fnet_dhcpv6::PrefixControlMarker>();
+        prefix_provider
+            .acquire_prefix(&fnet_dhcpv6::AcquirePrefixConfig::default(), server_end)
+            .expect("acquire prefix");
+        prefix_control.stop().expect("stop prefix acquisition");
+        let mut event_stream = prefix_control.take_event_stream();
+        let event = event_stream
+            .try_next()
+            .await
+            .expect("fetch next event")
+            .expect("expected OnExit event");
+        assert_matches!(
+            event,
+            fnet_dhcpv6::PrefixControlEvent::OnExit {
+                reason: fnet_dhcpv6::PrefixControlExitReason::Stopped
+            }
+        );
+        assert_matches!(event_stream.try_next().await, Ok(None));
+    }
+}
+
 #[netstack_test]
 #[variant(M, Manager)]
 #[variant(N, Netstack)]
