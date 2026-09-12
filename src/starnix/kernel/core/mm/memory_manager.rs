@@ -4648,9 +4648,21 @@ impl DynamicFileSource for ProcSmapsFile {
             return Ok(());
         };
 
-        // Ensure all mappings are mapped into the user vmar.
-        let max_addr = mm.maximum_valid_user_address;
-        mm.ensure_range_mapped_in_user_vmar(UserAddress::from(0), Some(max_addr.ptr()))?;
+        // Ensure any lazy mappings are mapped into the user vmar so their committed
+        // bytes can be discovered through Zircon map info. We only map actual mappings
+        // in `state.mappings` rather than the entire 48-bit address space.
+        let lazy_ranges: SmallVec<[_; 4]> = {
+            let state = mm.state.read();
+            state
+                .mappings
+                .iter()
+                .filter(|(_, m)| m.mapping_mode() == MappingMode::Lazy)
+                .map(|(range, _)| (range.start, Some(range.end - range.start)))
+                .collect()
+        };
+        if !lazy_ranges.is_empty() {
+            mm.state.write().ensure_ranges_mapped_in_user_vmar(lazy_ranges, &mm.mapping_context)?;
+        }
 
         let state = mm.state.read();
         let committed_bytes_vec = mm.with_zx_mappings(current_task, |zx_mappings| {
