@@ -20,8 +20,11 @@ _ARG_VALUE_PATTERN = r"""(?:[^\s"']*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')+[^\s
 
 ENV_VARS_PREFIX_PATTERN = rf"([A-Za-z_][A-Za-z0-9_]*={_ARG_VALUE_PATTERN}\s+)*"
 GIT_GLOBAL_FLAGS_PATTERN = (
-    rf"(\s+(-C\s+{_ARG_VALUE_PATTERN}"
-    rf"|--no-pager|--no-color|--literal-pathspecs|--no-optional-locks|-c\s+{_ARG_VALUE_PATTERN}))*"
+    rf"(\s+("
+    rf"(-C|--git-dir|--work-tree|-c)(\s+|=){_ARG_VALUE_PATTERN}"
+    rf"|--namespace(\s+|=){_ARG_VALUE_PATTERN}"
+    rf"|--no-pager|--no-color|--literal-pathspecs|--no-optional-locks|--bare|-p|--paginate"
+    r"))*"
 )
 FX_GLOBAL_FLAGS_PATTERN = (
     rf"(\s+("
@@ -72,6 +75,26 @@ def _is_sed_inplace(arguments: str) -> bool:
         if token.startswith("-") and not token.startswith("--"):
             # Matches short option bundle containing 'i' (e.g. -i, -i.bak, -Ei, -in)
             if re.match(r"^-[a-zA-Z]*i", token):
+                return True
+    return False
+
+
+def _is_git_clean_force(arguments: str) -> bool:
+    """Check if git clean arguments include a force flag."""
+    try:
+        tokens = shlex.split(arguments)
+    except ValueError:
+        tokens = arguments.split()
+
+    if not tokens or tokens[0] != "clean":
+        return False
+
+    for token in tokens[1:]:
+        if token == "--force" or token.startswith("--force="):
+            return True
+        if token.startswith("-") and not token.startswith("--"):
+            # Matches short option bundle containing 'f' (e.g. -f, -df, -fd, -fdx, -fxd)
+            if "f" in token:
                 return True
     return False
 
@@ -186,7 +209,16 @@ class ToolSpec:
                 if flags and not positional:
                     # Note: When multiple flags are defined in the template,
                     # they are matched in the sequence specified.
-                    flag_pattern = "\\s+".join(re.escape(f) for f in flags)
+                    flag_patterns: list[str] = []
+                    for f in flags:
+                        escaped = re.escape(f)
+                        if f.startswith("--") and "=" not in f:
+                            flag_patterns.append(
+                                rf"{escaped}(?:={_ARG_VALUE_PATTERN})?"
+                            )
+                        else:
+                            flag_patterns.append(escaped)
+                    flag_pattern = "\\s+".join(flag_patterns)
                     escaped_subcmd = re.escape(subcmd)
                     return [
                         f"command(regex:{prefix}\\s+{escaped_subcmd}"
@@ -230,6 +262,19 @@ def _expand_python_variants(arguments: str) -> list[str]:
         if candidate not in results:
             results.append(candidate)
     return results
+
+
+def _expand_git_clean_force_variants() -> list[str]:
+    """Expand git clean force variants into an anchored regex matching any force flag."""
+    prefix = (
+        f"{ENV_VARS_PREFIX_PATTERN}"
+        f"{TOOL_SPECS['git'].binary_prefix}\\b"
+        f"{TOOL_SPECS['git'].global_flags_pattern}"
+    )
+    return [
+        f"command(regex:{prefix}\\s+clean"
+        f"(?:\\s+{_ARG_VALUE_PATTERN})*\\s+(-[a-zA-Z]*f\\S*|--force(?:={_ARG_VALUE_PATTERN})?)(?:\\s+.*)?)"
+    ]
 
 
 def _expand_sed_variants(
@@ -324,7 +369,10 @@ def expand_command_variants(raw_line: str) -> list[str]:
     base_name = pathlib.Path(base_command).name
     results: list[str] = []
     if base_name in TOOL_SPECS:
-        results.extend(TOOL_SPECS[base_name].expand(arguments))
+        if base_name == "git" and _is_git_clean_force(arguments):
+            results.extend(_expand_git_clean_force_variants())
+        else:
+            results.extend(TOOL_SPECS[base_name].expand(arguments))
     elif base_name in PYTHON_COMMAND_NAMES:
         results.extend(_expand_python_variants(arguments))
     elif base_name == "sed":

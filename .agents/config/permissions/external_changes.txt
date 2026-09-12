@@ -10,6 +10,12 @@ jiri upload
 jj git fetch
 jj git push
 
+# User & system VCS configuration
+git config --global
+git config --system
+git config --file
+git config -f
+
 # LUCI Buildbucket build scheduling & mutation
 bb add
 bb batch

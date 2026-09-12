@@ -79,12 +79,67 @@ class PermissionsTest(BaseTestCase):
         # Boundary checks
         self.assertFalse(re.fullmatch(pattern, "git-lfs status"))
 
-    def test_expand_git_force_push_matching(self) -> None:
-        grants = permissions.expand_command_variants("git push --force")
+    def _single_pattern(self, template: str) -> str:
+        grants = permissions.expand_command_variants(template)
         self.assertEqual(len(grants), 1)
         self.assertTrue(grants[0].startswith("command(regex:"))
-        pattern = grants[0][14:-1]
+        return grants[0][14:-1]
 
+    def test_expand_git_bare(self) -> None:
+        pattern = self._single_pattern("git pull")
+
+        # Basic subcommand and path variants
+        self.assertTrue(re.fullmatch(pattern, "git pull"))
+        self.assertTrue(re.fullmatch(pattern, "/usr/bin/git pull"))
+        self.assertTrue(re.fullmatch(pattern, "git pull origin main"))
+        self.assertTrue(re.fullmatch(pattern, "/usr/bin/git pull origin main"))
+        self.assertFalse(re.fullmatch(pattern, "git-lfs pull"))
+
+    def test_expand_git_config_scoped(self) -> None:
+        cases = [
+            (
+                "git config --global",
+                [
+                    "git config --global user.email 'a@b.com'",
+                    "git -C /dir config --global -l",
+                ],
+            ),
+            (
+                "git config --system",
+                [
+                    "git config --system user.email 'a@b.com'",
+                    "git -C /dir config --system -l",
+                ],
+            ),
+            (
+                "git config --file",
+                [
+                    "git config --file ~/.gitconfig user.email 'a@b.com'",
+                    "git config --file=/etc/gitconfig user.email 'a@b.com'",
+                    "git -C /dir config --file ~/.gitconfig -l",
+                ],
+            ),
+            (
+                "git config -f",
+                [
+                    "git config -f ~/.gitconfig user.email 'a@b.com'",
+                ],
+            ),
+        ]
+        for template, positive_cases in cases:
+            with self.subTest(template=template):
+                pattern = self._single_pattern(template)
+                for cmd in positive_cases:
+                    self.assertTrue(re.fullmatch(pattern, cmd), cmd)
+                self.assertFalse(
+                    re.fullmatch(pattern, "git config user.email 'a@b.com'")
+                )
+                self.assertFalse(
+                    re.fullmatch(pattern, "git config --get user.email")
+                )
+
+    def test_expand_git_force_push_matching(self) -> None:
+        pattern = self._single_pattern("git push --force")
         self.assertTrue(re.fullmatch(pattern, "git push --force"))
         self.assertTrue(re.fullmatch(pattern, "git push origin main --force"))
         self.assertTrue(
@@ -94,6 +149,51 @@ class PermissionsTest(BaseTestCase):
             re.fullmatch(pattern, "git -C /dir push origin HEAD --force")
         )
         self.assertFalse(re.fullmatch(pattern, "git push origin main"))
+
+        # Test --force-with-lease matching including =<ref> syntax
+        lease_pattern = self._single_pattern("git push --force-with-lease")
+        for cmd in (
+            "git push --force-with-lease",
+            "git push origin main --force-with-lease",
+            "git push origin main --force-with-lease=main",
+            "git -C /dir push -u origin HEAD --force-with-lease=refs/heads/main:refs/heads/main",
+        ):
+            self.assertTrue(re.fullmatch(lease_pattern, cmd), cmd)
+        self.assertFalse(re.fullmatch(lease_pattern, "git push origin main"))
+
+    def test_expand_git_clean_force(self) -> None:
+        pattern = self._single_pattern("git clean -f")
+        # All flag variations and permutations must match
+        for cmd in (
+            "git clean -f",
+            "git clean -fd",
+            "git clean -df",
+            "git clean -fdx",
+            "git clean -fxd",
+            "git clean -dfx",
+            "git clean -dxf",
+            "git clean -xfd",
+            "git clean -xdf",
+            "git clean -fX",
+            "git clean -Xf",
+            "git clean --force",
+            "git clean --force=true",
+            "git clean -d -x -f",
+            "git -C /dir clean -fxd",
+            "git --git-dir=/dir clean -fxd",
+        ):
+            self.assertTrue(re.fullmatch(pattern, cmd), cmd)
+
+        # Non-destructive clean commands must NOT match
+        for cmd in (
+            "git clean",
+            "git clean -n",
+            "git clean -nd",
+            "git clean -n -d -x",
+            "git clean -i",
+            "git clean --dry-run",
+        ):
+            self.assertFalse(re.fullmatch(pattern, cmd), cmd)
 
     def test_expand_git_quoted_arguments(self) -> None:
         grants = permissions.expand_command_variants(

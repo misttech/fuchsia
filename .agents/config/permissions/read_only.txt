@@ -181,7 +181,6 @@ git ls-tree
 git merge-base
 git name-rev
 git patch-id
-git remote
 git remote -v
 git remote get-url
 git remote show

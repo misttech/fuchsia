@@ -114,11 +114,12 @@ before the command binary.
 Git commands allow global flags before the subcommand (e.g. `git -C //src status`) and flags
 anywhere in the argument list (e.g. `git push origin main --force` vs `git push -f origin HEAD`):
 
-- **Global Flags**: Supports `-C <dir>`, `--no-pager`, `--no-color`, `--literal-pathspecs`,
-  `--no-optional-locks`, and `-c <config>`.
-- **Force-Push Detection**: The generator scans all arguments in `git push` commands to identify
-  force flags (`--force`, `-f`, `+<ref>`) regardless of argument positioning, preventing agents from
-  overwriting remote history unless explicitly granted.
+- **Global Flags**: Supports `-C <dir>`, `--git-dir <dir>`, `--work-tree <dir>`, `--namespace <name>`,
+  `--bare`, `--no-pager`, `--no-color`, `--literal-pathspecs`, `--no-optional-locks`, `-p`, `--paginate`,
+  and `-c <config>` (supporting both space and `=` delimiters).
+- **Force-Push Detection**: Scans arguments in `git push` commands to match force flags
+  (`--force`, `--force-with-lease[=<ref>]`, `-f`) regardless of argument positioning, preventing agents
+  from overwriting remote history unless explicitly granted.
 
 ### 4.3 Fuchsia Tool Global Flags & Chaining (`fx`, `ffx`, `jiri`)
 

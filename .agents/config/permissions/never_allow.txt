@@ -6,18 +6,12 @@
 # ALWAYS hard-denied across all profiles (including Full Access).
 
 # Irrecoverable loss of uncommitted files
-git clean --force
-git clean -df
 git clean -f
-git clean -fd
-git clean -fdx
-git clean -fx
-git clean -xdf
-git clean -xf
 git reset --hard
 
 # Destructive force pushing
 git push --force
+git push --force-with-lease
 git push -f
 
 # Destructive filesystem operations
