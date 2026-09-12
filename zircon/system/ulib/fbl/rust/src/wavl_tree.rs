@@ -8,6 +8,7 @@ use crate::size_tracker::{NonTrackingSize, SizeTracker};
 use crate::tag::DefaultObjectTag;
 use core::borrow::Borrow;
 use core::cell::UnsafeCell;
+use core::marker::PhantomData;
 use core::pin::Pin;
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 
@@ -140,14 +141,216 @@ pub trait WavlTreeObserver {
     fn verify_balance(&self, _size: usize, _depth: usize) {}
 }
 
-pub struct DefaultWavlTreeObserver<T>(core::marker::PhantomData<T>);
+pub struct DefaultWavlTreeObserver<T>(PhantomData<T>);
 impl<T> Default for DefaultWavlTreeObserver<T> {
     fn default() -> Self {
-        Self(core::marker::PhantomData)
+        Self(PhantomData)
     }
 }
 impl<T> WavlTreeObserver for DefaultWavlTreeObserver<T> {
     type Target = T;
+}
+
+/// Traits to implement to use `WavlTreeAugmentedInvariantObserver`.
+pub trait WavlTreeAugmentedInvariantObserverTraits {
+    /// The type of the node.
+    type Target;
+    /// The type of the invariant value.
+    type Value: Copy;
+
+    /// Returns the invariant value for the given node.
+    fn get_node_value(node: &Self::Target) -> Self::Value;
+
+    /// Returns the invariant value for the given node's subtree.
+    fn get_subtree_value(node: &Self::Target) -> Self::Value;
+
+    /// Combines subtree and node invariant values to produce a new subtree invariant value.
+    ///
+    /// Values are combined in in-order (left-to-right) sequence:
+    /// `left_subtree_value` is combined with `node_value`, and the result is combined
+    /// with `right_subtree_value`.
+    ///
+    /// The operation must be associative: `(a ∘ b) ∘ c == a ∘ (b ∘ c)`.
+    /// Non-commutative operations (such as string concatenation or sequence tracking)
+    /// are supported because child and node values are strictly combined in
+    /// in-order sequence across insertions, erasures, and rotations.
+    fn combine_values(a: Self::Value, b: Self::Value) -> Self::Value;
+
+    /// Sets the node's subtree invariant value.
+    fn set_subtree_value(node: &mut Self::Target, val: Self::Value);
+
+    /// Resets the node's subtree invariant value.
+    fn reset_subtree_value(node: &mut Self::Target);
+}
+
+/// A WAVL tree observer that maintains augmented invariants.
+pub struct WavlTreeAugmentedInvariantObserver<
+    Tag,
+    Traits,
+    const ALLOW_FIND_COLLISION: bool = true,
+    const ALLOW_REPLACE_COLLISION: bool = true,
+> {
+    _phantom: PhantomData<(Tag, Traits)>,
+}
+
+impl<Tag, Traits, const ALLOW_FIND_COLLISION: bool, const ALLOW_REPLACE_COLLISION: bool> Default
+    for WavlTreeAugmentedInvariantObserver<
+        Tag,
+        Traits,
+        ALLOW_FIND_COLLISION,
+        ALLOW_REPLACE_COLLISION,
+    >
+{
+    fn default() -> Self {
+        Self { _phantom: PhantomData }
+    }
+}
+
+impl<Tag, Traits, const ALLOW_FIND_COLLISION: bool, const ALLOW_REPLACE_COLLISION: bool>
+    WavlTreeAugmentedInvariantObserver<Tag, Traits, ALLOW_FIND_COLLISION, ALLOW_REPLACE_COLLISION>
+where
+    Traits: WavlTreeAugmentedInvariantObserverTraits,
+    Traits::Target: WavlTreeContainable<Traits::Target, Tag>,
+{
+    unsafe fn recompute_until_root(&self, mut current: *mut Traits::Target) {
+        while valid_sentinel_ptr(current) {
+            let current_ref = unsafe { &*current };
+            let node_value = Traits::get_node_value(current_ref);
+            let parent = current_ref.get_node().get_parent();
+            unsafe {
+                self.update_subtree_value(node_value, current);
+            }
+            current = parent;
+        }
+    }
+
+    unsafe fn update_subtree_value(&self, mut value: Traits::Value, node: *mut Traits::Target) {
+        let node_ref = unsafe { &*node };
+        let ns = node_ref.get_node();
+
+        let left = ns.get_left();
+        if valid_sentinel_ptr(left) {
+            let left_ref = unsafe { &*left };
+            let left_val = Traits::get_subtree_value(left_ref);
+            value = Traits::combine_values(left_val, value);
+        }
+
+        let right = ns.get_right();
+        if valid_sentinel_ptr(right) {
+            let right_ref = unsafe { &*right };
+            let right_val = Traits::get_subtree_value(right_ref);
+            value = Traits::combine_values(value, right_val);
+        }
+
+        let node_mut = unsafe { &mut *node };
+        Traits::set_subtree_value(node_mut, value);
+    }
+}
+
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+impl<Tag, Traits, const ALLOW_FIND_COLLISION: bool, const ALLOW_REPLACE_COLLISION: bool>
+    WavlTreeObserver
+    for WavlTreeAugmentedInvariantObserver<
+        Tag,
+        Traits,
+        ALLOW_FIND_COLLISION,
+        ALLOW_REPLACE_COLLISION,
+    >
+where
+    Traits: WavlTreeAugmentedInvariantObserverTraits,
+    Traits::Target: WavlTreeContainable<Traits::Target, Tag>,
+{
+    type Target = Traits::Target;
+
+    fn record_insert(&self, node: *mut Self::Target) {
+        let node_ref = unsafe { &*node };
+        let parent = node_ref.get_node().get_parent();
+        let val = Traits::get_node_value(node_ref);
+        let node_mut = unsafe { &mut *node };
+        Traits::set_subtree_value(node_mut, val);
+        if valid_sentinel_ptr(parent) {
+            unsafe { self.recompute_until_root(parent) };
+        }
+    }
+
+    fn record_insert_traverse(&self, _node: *mut Self::Target, _ancestor: *mut Self::Target) {}
+
+    fn record_insert_collision(&self, _node: *mut Self::Target, _collision: *mut Self::Target) {
+        debug_assert!(ALLOW_FIND_COLLISION);
+    }
+
+    fn record_insert_replace(&self, node: *mut Self::Target, replacement: *mut Self::Target) {
+        debug_assert!(ALLOW_REPLACE_COLLISION);
+        let replacement_ref = unsafe { &*replacement };
+
+        let parent = unsafe {
+            self.update_subtree_value(Traits::get_node_value(replacement_ref), node);
+            let ns = (*node).get_node();
+            ns.get_parent()
+        };
+        if valid_sentinel_ptr(parent) {
+            unsafe {
+                self.recompute_until_root(parent);
+            }
+        }
+
+        let replacement_mut = unsafe { &mut *replacement };
+        let node_mut = unsafe { &mut *node };
+        Traits::set_subtree_value(replacement_mut, Traits::get_subtree_value(node_mut));
+        Traits::reset_subtree_value(node_mut);
+    }
+
+    fn record_rotation(
+        &self,
+        pivot: *mut Self::Target,
+        lr_child: *mut Self::Target,
+        _rl_child: *mut Self::Target,
+        parent: *mut Self::Target,
+        sibling: *mut Self::Target,
+    ) {
+        let parent_ref = unsafe { &*parent };
+        let parent_subtree_val = Traits::get_subtree_value(parent_ref);
+        let parent_ns = parent_ref.get_node();
+
+        // Determine rotation direction before links are updated.
+        // If pivot is parent's right child, it is a left rotation; otherwise a right rotation.
+        let is_left_rotation = parent_ns.get_right() == pivot;
+        let (left_child, right_child) = if is_left_rotation {
+            // Left rotation: sibling remains left child, lr_child becomes right child
+            (sibling, lr_child)
+        } else {
+            // Right rotation: lr_child becomes left child, sibling remains right child
+            (lr_child, sibling)
+        };
+
+        let mut parent_value = Traits::get_node_value(parent_ref);
+
+        if valid_sentinel_ptr(left_child) {
+            let left_ref = unsafe { &*left_child };
+            let left_val = Traits::get_subtree_value(left_ref);
+            parent_value = Traits::combine_values(left_val, parent_value);
+        }
+
+        if valid_sentinel_ptr(right_child) {
+            let right_ref = unsafe { &*right_child };
+            let right_val = Traits::get_subtree_value(right_ref);
+            parent_value = Traits::combine_values(parent_value, right_val);
+        }
+
+        let pivot_mut = unsafe { &mut *pivot };
+        Traits::set_subtree_value(pivot_mut, parent_subtree_val);
+
+        let parent_mut = unsafe { &mut *parent };
+        Traits::set_subtree_value(parent_mut, parent_value);
+    }
+
+    fn record_erase(&self, node: *mut Self::Target, invalidated: *mut Self::Target) {
+        if valid_sentinel_ptr(invalidated) {
+            unsafe { self.recompute_until_root(invalidated) };
+        }
+        let node_mut = unsafe { &mut *node };
+        Traits::reset_subtree_value(node_mut);
+    }
 }
 
 /// Trait abstracting WAVL rank operations.
@@ -2540,11 +2743,11 @@ where
 mod tests {
     use super::*;
     use crate::intrusive_container_test_support::*;
-    use crate::recyclable::Recyclable;
     use crate::ref_counted::HasRefCount;
     use crate::ref_ptr::RefPtr;
     use crate::size_tracker::TrackingSize;
     use crate::unique_ptr::UniquePtr;
+    use crate::{Recyclable, WavlTreeContainable};
     use core::ffi::c_void;
     use pin_init::stack_pin_init;
 
@@ -4174,5 +4377,266 @@ mod tests {
         let erased = tree.erase(&query);
         assert!(erased.is_some());
         assert_eq!(erased.unwrap().key, query);
+    }
+
+    #[derive(WavlTreeContainable, Recyclable)]
+    struct TestAugmentedObject {
+        value: i32,
+        subtree_sum: i32,
+        #[wavl_node]
+        node: WavlTreeNode<TestAugmentedObject>,
+    }
+
+    impl TestAugmentedObject {
+        fn new(value: i32) -> Self {
+            Self { value, subtree_sum: 0, node: WavlTreeNode::new() }
+        }
+    }
+
+    impl WavlTreeKeyable<i32> for TestAugmentedObject {
+        type Key<'a> = i32;
+        fn get_key(&self) -> i32 {
+            self.value
+        }
+    }
+
+    struct SubtreeSumTraits;
+    impl WavlTreeAugmentedInvariantObserverTraits for SubtreeSumTraits {
+        type Target = TestAugmentedObject;
+        type Value = i32;
+
+        fn get_node_value(node: &Self::Target) -> Self::Value {
+            node.value
+        }
+
+        fn get_subtree_value(node: &Self::Target) -> Self::Value {
+            node.subtree_sum
+        }
+
+        fn combine_values(a: Self::Value, b: Self::Value) -> Self::Value {
+            a + b
+        }
+
+        fn set_subtree_value(node: &mut Self::Target, val: Self::Value) {
+            node.subtree_sum = val;
+        }
+
+        fn reset_subtree_value(node: &mut Self::Target) {
+            node.subtree_sum = 0;
+        }
+    }
+
+    #[test]
+    fn test_augmented_invariant_observer() {
+        type TestObserver = WavlTreeAugmentedInvariantObserver<DefaultObjectTag, SubtreeSumTraits>;
+        type TestTree = WavlTree<
+            i32,
+            UniquePtr<TestAugmentedObject>,
+            DefaultObjectTag,
+            TrackingSize,
+            TestObserver,
+        >;
+
+        stack_pin_init!(let tree = TestTree::new_with_observer(TestObserver::default()));
+        let tree = unsafe { tree.get_unchecked_mut() };
+
+        // Helper to verify subtree sums recursively
+        fn verify_subtree_sums(node: *mut TestAugmentedObject) -> i32 {
+            if !valid_sentinel_ptr(node) {
+                return 0;
+            }
+            let node_ref = unsafe { &*node };
+            let ns = node_ref.get_node();
+            let left_sum = verify_subtree_sums(ns.get_left());
+            let right_sum = verify_subtree_sums(ns.get_right());
+            let expected_sum = node_ref.value + left_sum + right_sum;
+            assert_eq!(
+                node_ref.subtree_sum, expected_sum,
+                "Subtree sum mismatch at node {}",
+                node_ref.value
+            );
+            expected_sum
+        }
+
+        // Insert some nodes
+        let values = [10, 20, 5, 15, 25, 2, 7];
+        for &val in &values {
+            let obj = UniquePtr::try_new(TestAugmentedObject::new(val)).unwrap();
+            tree.insert(obj);
+            // Verify after each insert
+            if !tree.root.is_null() {
+                verify_subtree_sums(tree.root);
+            }
+        }
+
+        // Verify final sum at root
+        let expected_total_sum: i32 = values.iter().sum();
+        assert_eq!(unsafe { &*tree.root }.subtree_sum, expected_total_sum);
+
+        // Erase some nodes
+        let to_erase = [15, 5, 20];
+        let mut current_sum = expected_total_sum;
+        for &val in &to_erase {
+            let erased = tree.erase(&val);
+            assert!(erased.is_some());
+            assert_eq!(erased.as_ref().unwrap().value, val);
+            current_sum -= val;
+            if !tree.root.is_null() {
+                assert_eq!(unsafe { &*tree.root }.subtree_sum, current_sum);
+                verify_subtree_sums(tree.root);
+            }
+        }
+    }
+
+    #[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+    struct NonCommutativeVal {
+        hash: u64,
+        len: u32,
+    }
+
+    impl NonCommutativeVal {
+        fn single(val: i32) -> Self {
+            Self { hash: (val as u64) & 0xffff, len: 1 }
+        }
+
+        fn combine(left: Self, right: Self) -> Self {
+            if left.len == 0 {
+                return right;
+            }
+            if right.len == 0 {
+                return left;
+            }
+            let mut power = 1u64;
+            for _ in 0..right.len {
+                power = power.wrapping_mul(31);
+            }
+            Self {
+                hash: left.hash.wrapping_mul(power).wrapping_add(right.hash),
+                len: left.len + right.len,
+            }
+        }
+    }
+
+    #[derive(WavlTreeContainable, Recyclable)]
+    struct TestNonCommutativeObject {
+        value: i32,
+        subtree_val: NonCommutativeVal,
+        #[wavl_node]
+        node: WavlTreeNode<TestNonCommutativeObject>,
+    }
+
+    impl TestNonCommutativeObject {
+        fn new(value: i32) -> Self {
+            Self { value, subtree_val: NonCommutativeVal::default(), node: WavlTreeNode::new() }
+        }
+    }
+
+    impl WavlTreeKeyable<i32> for TestNonCommutativeObject {
+        type Key<'a> = i32;
+        fn get_key(&self) -> i32 {
+            self.value
+        }
+    }
+
+    struct NonCommutativeTraits;
+    impl WavlTreeAugmentedInvariantObserverTraits for NonCommutativeTraits {
+        type Target = TestNonCommutativeObject;
+        type Value = NonCommutativeVal;
+
+        fn get_node_value(node: &Self::Target) -> Self::Value {
+            NonCommutativeVal::single(node.value)
+        }
+
+        fn get_subtree_value(node: &Self::Target) -> Self::Value {
+            node.subtree_val
+        }
+
+        fn combine_values(a: Self::Value, b: Self::Value) -> Self::Value {
+            NonCommutativeVal::combine(a, b)
+        }
+
+        fn set_subtree_value(node: &mut Self::Target, val: Self::Value) {
+            node.subtree_val = val;
+        }
+
+        fn reset_subtree_value(node: &mut Self::Target) {
+            node.subtree_val = NonCommutativeVal::default();
+        }
+    }
+
+    #[test]
+    fn test_augmented_invariant_observer_non_commutative() {
+        type TestObserver =
+            WavlTreeAugmentedInvariantObserver<DefaultObjectTag, NonCommutativeTraits>;
+        type TestTree = WavlTree<
+            i32,
+            UniquePtr<TestNonCommutativeObject>,
+            DefaultObjectTag,
+            TrackingSize,
+            TestObserver,
+        >;
+
+        stack_pin_init!(let tree = TestTree::new_with_observer(TestObserver::default()));
+        let tree = unsafe { tree.get_unchecked_mut() };
+
+        // Helper to verify non-commutative subtree values recursively
+        fn verify_subtree_values(node: *mut TestNonCommutativeObject) -> NonCommutativeVal {
+            if !valid_sentinel_ptr(node) {
+                return NonCommutativeVal::default();
+            }
+            let node_ref = unsafe { &*node };
+            let ns = node_ref.get_node();
+            let left_val = verify_subtree_values(ns.get_left());
+            let node_val = NonCommutativeVal::single(node_ref.value);
+            let right_val = verify_subtree_values(ns.get_right());
+            let expected = NonCommutativeVal::combine(
+                NonCommutativeVal::combine(left_val, node_val),
+                right_val,
+            );
+            assert_eq!(
+                node_ref.subtree_val, expected,
+                "Subtree non-commutative value mismatch at node {}",
+                node_ref.value
+            );
+            expected
+        }
+
+        // Helper to compute expected in-order value from a list of sorted keys
+        fn expected_in_order(keys: &[i32]) -> NonCommutativeVal {
+            let mut sorted: alloc::vec::Vec<i32> = keys.iter().copied().collect();
+            sorted.sort();
+            let mut acc = NonCommutativeVal::default();
+            for &k in &sorted {
+                acc = NonCommutativeVal::combine(acc, NonCommutativeVal::single(k));
+            }
+            acc
+        }
+
+        // Insert nodes in an order that triggers single and double rotations in both directions
+        let values = [10, 20, 5, 15, 25, 2, 7, 1, 3, 6, 8, 12, 17, 22, 30];
+        for (i, &val) in values.iter().enumerate() {
+            let obj = UniquePtr::try_new(TestNonCommutativeObject::new(val)).unwrap();
+            tree.insert(obj);
+            if !tree.root.is_null() {
+                verify_subtree_values(tree.root);
+                let expected = expected_in_order(&values[..=i]);
+                assert_eq!(unsafe { &*tree.root }.subtree_val, expected);
+            }
+        }
+
+        // Erase nodes causing rebalancings/rotations
+        let to_erase = [5, 20, 15, 2, 25];
+        let mut remaining: alloc::vec::Vec<i32> = values.iter().copied().collect();
+        for &val in &to_erase {
+            let erased = tree.erase(&val);
+            assert!(erased.is_some());
+            assert_eq!(erased.as_ref().unwrap().value, val);
+            remaining.retain(|&x| x != val);
+            if !tree.root.is_null() {
+                verify_subtree_values(tree.root);
+                let expected = expected_in_order(&remaining);
+                assert_eq!(unsafe { &*tree.root }.subtree_val, expected);
+            }
+        }
     }
 }

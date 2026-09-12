@@ -71,7 +71,9 @@ pub use tag::DefaultObjectTag;
 pub use unique_ptr::UniquePtr;
 pub use vector::Vector;
 pub use wavl_tree::{
-    Cursor, CursorMut, WavlTree, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode,
+    Cursor, CursorMut, WavlTree, WavlTreeAugmentedInvariantObserver,
+    WavlTreeAugmentedInvariantObserverTraits, WavlTreeContainable, WavlTreeKeyable, WavlTreeNode,
+    WavlTreeObserver,
 };
 
 #[doc(hidden)]
