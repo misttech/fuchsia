@@ -954,7 +954,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -1823,7 +1823,7 @@ Enable compression of debug sections.
 
 **Current value (from the default):** `"zstd"`
 
-From //build/config/compiler.gni:126
+From //build/config/compiler.gni:123
 
 ### config_example_cpp_greeting
 
@@ -2053,7 +2053,7 @@ From //src/storage/fshost/generated_fshost_config.gni:12
 
 **Current value (from the default):** `"debug"`
 
-From //build/config/compiler.gni:91
+From //build/config/compiler.gni:88
 
 ### default_configs
 
@@ -3460,7 +3460,7 @@ Explicitly specify DWARF version used.
 
 **Current value (from the default):** `5`
 
-From //build/config/compiler.gni:105
+From //build/config/compiler.gni:102
 
 ### e2e_test_labels
 
