@@ -102,6 +102,18 @@ if (is_host) {
     environments = [ sorrel_env ]
     timeout_secs = 1200
   }
+  python_mobly_test("adb_random_stress_test") {
+    main_source = "test_adb_random_stress.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+    ]
+    params = {
+      num_iterations = 20
+    }
+    environments = [ sorrel_env ]
+    timeout_secs = 1200
+  }
 }
 
 group("zero_function_stress_test") {
@@ -113,6 +125,7 @@ group("tests") {
   testonly = true
   public_deps = [
     ":adb_fastboot_stress_test($host_toolchain)",
+    ":adb_random_stress_test($host_toolchain)",
     ":adb_root_unroot_stress_test($host_toolchain)",
     ":cdc_stress_test($host_toolchain)",
     ":usb_disconnect_test($host_toolchain)",
