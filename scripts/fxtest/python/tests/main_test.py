@@ -3780,11 +3780,25 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         """Calling has_package_server_connected_to_device multiple times does not reuse awaited coroutine."""
         exec_env = mock.MagicMock()
-        exec_env.fx_cmd_line.return_value = ["fx", "is-package-server-running"]
+        exec_env.fx_cmd_line.side_effect = lambda *args: ["fx"] + list(args)
         recorder = mock.MagicMock()
 
         with mock.patch("execution.run_command") as mock_run:
-            mock_run.return_value = mock.MagicMock(return_code=0)
+            mock_run.return_value = mock.MagicMock(
+                return_code=0,
+                stdout=json.dumps(
+                    {
+                        "ok": {
+                            "data": [
+                                {
+                                    "name": "devhost",
+                                    "aliases": ["fuchsia.com"],
+                                }
+                            ]
+                        }
+                    }
+                ),
+            )
             res1 = await main.has_package_server_connected_to_device(
                 exec_env, recorder
             )
@@ -3793,6 +3807,44 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(res1)
             self.assertTrue(res2)
+            self.assertEqual(mock_run.call_count, 4)
+
+    async def test_has_package_server_connected_to_device_host_not_running(
+        self,
+    ) -> None:
+        """has_package_server_connected_to_device returns False when host server is not running."""
+        exec_env = mock.MagicMock()
+        exec_env.fx_cmd_line.side_effect = lambda *args: ["fx"] + list(args)
+        recorder = mock.MagicMock()
+
+        with mock.patch("execution.run_command") as mock_run:
+            mock_run.return_value = mock.MagicMock(return_code=1, stdout="")
+            res = await main.has_package_server_connected_to_device(
+                exec_env, recorder
+            )
+            self.assertFalse(res)
+            self.assertEqual(mock_run.call_count, 1)
+
+    async def test_has_package_server_connected_to_device_not_registered_on_target(
+        self,
+    ) -> None:
+        """has_package_server_connected_to_device returns False when host server is running but not registered on target."""
+        exec_env = mock.MagicMock()
+        exec_env.fx_cmd_line.side_effect = lambda *args: ["fx"] + list(args)
+        recorder = mock.MagicMock()
+
+        with mock.patch("execution.run_command") as mock_run:
+            mock_run.side_effect = [
+                mock.MagicMock(return_code=0, stdout=""),
+                mock.MagicMock(
+                    return_code=0,
+                    stdout=json.dumps({"ok": {"data": []}}),
+                ),
+            ]
+            res = await main.has_package_server_connected_to_device(
+                exec_env, recorder
+            )
+            self.assertFalse(res)
             self.assertEqual(mock_run.call_count, 2)
 
     async def test_post_build_checklist_corrupt_base_packages(self) -> None:
@@ -3813,3 +3865,38 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             # Should return False safely without raising JSONDecodeError
             res = await app._post_build_checklist(tests, event.Id(1))
             self.assertFalse(res)
+
+    def test_is_fuchsia_repo_registered(self) -> None:
+        """_is_fuchsia_repo_registered correctly identifies repository registration."""
+        # JSON with aliases containing fuchsia.com
+        data_aliases = json.dumps(
+            {"ok": {"data": [{"name": "devhost", "aliases": ["fuchsia.com"]}]}}
+        )
+        self.assertTrue(main._is_fuchsia_repo_registered(data_aliases))
+
+        # JSON with name equal to fuchsia.com
+        data_name = json.dumps(
+            {"ok": {"data": [{"name": "fuchsia.com", "aliases": []}]}}
+        )
+        self.assertTrue(main._is_fuchsia_repo_registered(data_name))
+
+        # JSON with name equal to fuchsia-pkg://fuchsia.com
+        data_pkg = json.dumps(
+            {
+                "ok": {
+                    "data": [
+                        {"name": "fuchsia-pkg://fuchsia.com", "aliases": []}
+                    ]
+                }
+            }
+        )
+        self.assertTrue(main._is_fuchsia_repo_registered(data_pkg))
+
+        # JSON empty data
+        self.assertFalse(
+            main._is_fuchsia_repo_registered(json.dumps({"ok": {"data": []}}))
+        )
+
+        # Invalid JSON raises JSONDecodeError
+        with self.assertRaises(json.JSONDecodeError):
+            main._is_fuchsia_repo_registered("not json")

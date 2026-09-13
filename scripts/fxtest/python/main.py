@@ -2457,18 +2457,8 @@ class AsyncMain:
         assert exec_env is not None
         for _ in range(30):
             try:
-                output = await execution.run_command(
-                    *exec_env.fx_cmd_line(
-                        "ffx", "target", "repository", "list"
-                    ),
-                    recorder=recorder,
-                    quiet_mode=True,
-                    timeout=_PACKAGE_SERVER_PROBE_TIMEOUT_SECONDS,
-                )
-                if (
-                    output is not None
-                    and output.return_code == 0
-                    and '"fuchsia.com"' in output.stdout
+                if await is_fuchsia_repo_registered_on_device(
+                    exec_env, recorder
                 ):
                     return True
             except Exception:
@@ -2729,15 +2719,16 @@ async def has_package_server_connected_to_device(
     parent: event.Id | None = None,
     timeout: float = _PACKAGE_SERVER_PROBE_TIMEOUT_SECONDS,
 ) -> bool:
-    """Check if a device is connected for running target tests.
+    """Check if a package server is running and registered to the device.
 
     Args:
+        exec_env (environment.ExecutionEnvironment): Execution environment.
         recorder (event.EventRecorder): Recorder for events.
         parent (event.Id, optional): Parent task ID. Defaults to None.
         timeout (float, optional): Subprocess timeout in seconds.
 
     Returns:
-        bool: True only if a device is available to run target tests.
+        bool: True only if a package server is running and registered to the device.
     """
     output = await execution.run_command(
         *exec_env.fx_cmd_line(
@@ -2747,7 +2738,64 @@ async def has_package_server_connected_to_device(
         parent=parent,
         timeout=timeout,
     )
-    return output is not None and output.return_code == 0
+    if output is None or output.return_code != 0:
+        return False
+
+    return await is_fuchsia_repo_registered_on_device(
+        exec_env, recorder, parent=parent, timeout=timeout
+    )
+
+
+async def is_fuchsia_repo_registered_on_device(
+    exec_env: environment.ExecutionEnvironment,
+    recorder: event.EventRecorder,
+    parent: event.Id | None = None,
+    timeout: float = _PACKAGE_SERVER_PROBE_TIMEOUT_SECONDS,
+) -> bool:
+    """Check whether fuchsia.com repository is registered on the device."""
+    repo_output = await execution.run_command(
+        *exec_env.fx_cmd_line(
+            "ffx",
+            "--machine",
+            "json",
+            "target",
+            "repository",
+            "list",
+        ),
+        recorder=recorder,
+        parent=parent,
+        timeout=timeout,
+        quiet_mode=True,
+    )
+    return (
+        repo_output is not None
+        and repo_output.return_code == 0
+        and _is_fuchsia_repo_registered(repo_output.stdout)
+    )
+
+
+def _is_fuchsia_repo_registered(output: str) -> bool:
+    """Check whether fuchsia.com repository is registered in ffx output."""
+    parsed = json.loads(output)
+    # Expected format from ffx --machine json: {"ok": {"data": [...]}}
+    entries = []
+    if isinstance(parsed, dict) and "ok" in parsed:
+        data = parsed["ok"].get("data", [])
+        if isinstance(data, list):
+            entries = data
+    elif isinstance(parsed, list):
+        entries = parsed
+    for entry in entries:
+        if isinstance(entry, dict):
+            name = entry.get("name", "")
+            aliases = entry.get("aliases", [])
+            if (
+                name == "fuchsia.com"
+                or name == "fuchsia-pkg://fuchsia.com"
+                or "fuchsia.com" in aliases
+            ):
+                return True
+    return False
 
 
 def _emit_build_failure(
