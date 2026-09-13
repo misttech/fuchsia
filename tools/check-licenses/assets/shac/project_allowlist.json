@@ -8,6 +8,7 @@
         "src/storage/f2fs/third_party/ext2_hash/",
         "src/virtualization/third_party/fdt/",
         "third_party/bazel_vendor/",
+        "third_party/bazel_registries/",
         "third_party/rust_crates/",
         "tools/check-licenses/assets/readmes/third_party/lz4/",
         "tools/debug/covargs/api/third_party/codecoverage/",
