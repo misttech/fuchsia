@@ -131,6 +131,7 @@ bazel2gn_verification_targets = [
   "//src/storage/lib/vfs/cpp:verify_bazel2gn",
   "//src/storage/lib/vfs/rust/name:verify_bazel2gn",
   "//src/sys/lib/bitflags-serde-legacy:verify_bazel2gn",
+  "//src/sys/lib/cm_graph:verify_bazel2gn",
   "//src/sys/lib/fuchsia_backoff:verify_bazel2gn",
   "//src/sys/lib/notify-batch-watcher:verify_bazel2gn",
   "//src/sys/pkg/lib/repo:verify_bazel2gn",
