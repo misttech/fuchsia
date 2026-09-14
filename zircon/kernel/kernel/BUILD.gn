@@ -4,12 +4,15 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/cpp/library_headers.gni")
 import("//build/zircon/zircon_cpu.gni")
 import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
 source_set("kernel") {
+  public_deps = [ ":headers" ]
+
   sources = [
     "brwlock.cc",
     "cpu_distance_map.cc",
@@ -47,7 +50,6 @@ source_set("kernel") {
   ]
 
   deps = [
-    ":kernel-rs",
     "//sdk/lib/fit",
     "//src/lib/lazy_init",
     "//zircon/kernel/dev/interrupt",
@@ -93,6 +95,10 @@ source_set("kernel") {
   }
 }
 
+library_headers("headers") {
+  headers = []
+}
+
 source_set("tests") {
   testonly = true
   sources = [
@@ -115,38 +121,10 @@ group("kernel-tests") {
   deps = [ ":tests" ]
 }
 
-group("bindgen_common_deps") {
-  public_configs = [
-    "//zircon/kernel/switch:headers",
-    "//zircon/kernel/switch:kernel_config",
-    "//build/config/fuchsia:compiler_fuchsia_api_level",
-  ]
-  public_deps = [
-    "//src/performance/lib/fxt:headers",
-    "//zircon/kernel/lib/backtrace:headers",
-    "//zircon/kernel/lib/fbl:headers",
-    "//zircon/kernel/lib/heap:headers",
-    "//zircon/kernel/lib/kconcurrent:headers",
-    "//zircon/kernel/lib/ktl:headers",
-    "//zircon/kernel/lib/libc:headers",
-    "//zircon/kernel/lib/lockup_detector:headers",
-    "//zircon/kernel/lib/mmu_rcu:headers",
-    "//zircon/kernel/lib/page-map:headers",
-    "//zircon/kernel/lib/percpu_writer:headers",
-    "//zircon/kernel/lib/power-management:headers",
-    "//zircon/kernel/lib/sched:headers",
-    "//zircon/kernel/lib/spsc_buffer:headers",
-    "//zircon/kernel/lib/stall:headers",
-    "//zircon/kernel/lib/wake-vector:headers",
-    "//zircon/kernel/object:headers",
-    "//zircon/system/ulib/page_tables:headers",
-  ]
-}
-
 kernel_bindgen_crate("event-bindings") {
   visibility = [ "//zircon/kernel/*" ]
   headers = [ "//zircon/kernel/include/kernel/event_ffi.h" ]
-  non_rust_deps = [ ":bindgen_common_deps" ]
+  non_rust_deps = [ ":kernel" ]
   output_name = "event_bindings.rs"
   cpp = true
 

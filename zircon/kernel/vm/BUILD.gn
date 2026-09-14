@@ -11,14 +11,7 @@ import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
-group("vm") {
-  public_deps = [
-    ":vm-cpp",
-    ":vm-rs",
-  ]
-}
-
-source_set("vm-cpp") {
+source_set("vm") {
   public_deps = [ ":headers" ]
 
   sources = [
@@ -119,7 +112,7 @@ source_set("vm-cpp") {
 kernel_bindgen_crate("scanner-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/scanner_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "scanner_bindings.rs"
   cpp = true
 
@@ -137,7 +130,7 @@ kernel_bindgen_crate("scanner-bindings") {
 kernel_bindgen_crate("discardable-vmo-tracker-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/discardable_vmo_tracker_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "discardable_vmo_tracker_bindings.rs"
   cpp = true
 
@@ -171,7 +164,7 @@ kernel_bindgen_crate("discardable-vmo-tracker-bindings") {
 kernel_bindgen_crate("evictor-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/evictor_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "evictor_bindings.rs"
   cpp = true
 
@@ -246,7 +239,7 @@ kernel_bindgen_crate("vm-constants-rs") {
   headers = [ "include/vm/vm_constants.h" ]
   cpp = true
 
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
 
   notice_year = 2026
   var_allowlist = [
@@ -264,7 +257,7 @@ kernel_bindgen_crate("vm-constants-rs") {
 kernel_bindgen_crate("physmap-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/physmap_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "physmap_bindings.rs"
   cpp = true
 
@@ -291,7 +284,7 @@ kernel_bindgen_crate("physmap-bindings") {
 kernel_bindgen_crate("pmm-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/pmm_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "pmm_bindings.rs"
   cpp = true
 
@@ -346,7 +339,7 @@ kernel_bindgen_crate("pmm-bindings") {
 kernel_bindgen_crate("pmm-checker-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/pmm_checker_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "pmm_checker_bindings.rs"
   cpp = true
 
@@ -387,7 +380,7 @@ kernel_bindgen_crate("pmm-checker-bindings") {
 kernel_bindgen_crate("pmm-node-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/pmm_node_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "pmm_node_bindings.rs"
   cpp = true
 
@@ -493,7 +486,7 @@ kernel_bindgen_crate("pmm-node-bindings") {
 kernel_bindgen_crate("pmm-arena-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/pmm_arena.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "pmm_arena_bindings.rs"
   cpp = true
 
@@ -532,7 +525,7 @@ kernel_bindgen_crate("pmm-arena-bindings") {
 kernel_bindgen_crate("page-queues-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/page_queues_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "page_queues_bindings.rs"
   cpp = true
 
@@ -600,7 +593,7 @@ kernel_bindgen_crate("page-queues-bindings") {
 kernel_bindgen_crate("page-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/page_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "page_bindings.rs"
   cpp = true
 
@@ -646,7 +639,7 @@ kernel_bindgen_crate("page-bindings") {
 kernel_bindgen_crate("vm-fault-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/fault.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "vm_fault_bindings.rs"
   cpp = true
 
@@ -661,7 +654,7 @@ kernel_bindgen_crate("vm-fault-bindings") {
 kernel_bindgen_crate("vm-aspace-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_aspace.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "vm_aspace_bindings.rs"
   cpp = true
 
@@ -679,7 +672,7 @@ kernel_bindgen_crate("vm-aspace-bindings") {
 kernel_bindgen_crate("vm-address-region-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_address_region.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "vm_address_region_bindings.rs"
   cpp = true
 
@@ -744,7 +737,7 @@ kernel_bindgen_crate("vm-address-region-bindings") {
 kernel_bindgen_crate("attribution-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/attribution_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "attribution_bindings.rs"
   cpp = true
 
@@ -773,7 +766,7 @@ kernel_bindgen_crate("attribution-bindings") {
 kernel_bindgen_crate("page-source-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/page_source_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "page_source_bindings.rs"
   cpp = true
 
@@ -796,7 +789,7 @@ kernel_bindgen_crate("page-source-bindings") {
 kernel_bindgen_crate("vm-page-list-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_page_list_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "vm_page_list_bindings.rs"
   cpp = true
 
@@ -848,7 +841,7 @@ kernel_bindgen_crate("vm-page-list-bindings") {
 kernel_bindgen_crate("vm-object-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_object_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "vm_object_bindings.rs"
   cpp = true
 
@@ -973,7 +966,7 @@ kernel_bindgen_crate("vm-object-bindings") {
 kernel_bindgen_crate("vm-object-paged-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_object_paged_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "vm_object_paged_bindings.rs"
   cpp = true
 
@@ -1029,7 +1022,7 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
 kernel_bindgen_crate("compression-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/compression_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "compression_bindings.rs"
   cpp = true
 
@@ -1058,7 +1051,7 @@ kernel_bindgen_crate("compression-bindings") {
 kernel_bindgen_crate("compressor-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/compressor_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "compressor_bindings.rs"
   cpp = true
 
@@ -1082,7 +1075,7 @@ kernel_bindgen_crate("compressor-bindings") {
 kernel_bindgen_crate("vm-cow-pages-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_cow_pages_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "vm_cow_pages_bindings.rs"
   cpp = true
 
@@ -1272,7 +1265,7 @@ kernel_rust_mod("vm-rs") {
 kernel_bindgen_crate("test-helper-bindings") {
   visibility = [ ":*" ]
   headers = [ "unittests/test_helper_ffi.h" ]
-  non_rust_deps = [ ":vm-cpp" ]
+  non_rust_deps = [ ":vm" ]
   output_name = "test_helper_bindings.rs"
   cpp = true
 

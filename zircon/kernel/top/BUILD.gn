@@ -20,6 +20,7 @@ group("top") {
     "//zircon/kernel/arch:ffi",
     "//zircon/kernel/arch/$zircon_cpu",
     "//zircon/kernel/kernel",
+    "//zircon/kernel/kernel:kernel-rs",
     "//zircon/kernel/lib/flow-id",  # Used by <kernel/thread.h>.
   ]
 }
@@ -78,6 +79,7 @@ source_set("main") {
     "//zircon/kernel/platform",
     "//zircon/kernel/platform:platform-rs",
     "//zircon/kernel/vm",
+    "//zircon/kernel/vm:vm-rs",
   ]
 }
 
