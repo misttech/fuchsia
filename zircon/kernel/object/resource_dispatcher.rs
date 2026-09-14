@@ -4,11 +4,11 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::counters::define_kcounter;
 use core::ffi::CStr;
 use core::mem::MaybeUninit;
 use core::pin::Pin;
 use core::ptr;
-use counters_rs::define_kcounter;
 use fbl::{
     Canary, DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode, RefPtr, UniquePtr,
 };

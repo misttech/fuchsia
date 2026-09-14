@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::counters::define_kcounter;
 use crate::object::ProcessDispatcher;
 use crate::platform_rs::timer::current_mono_time;
-use counters_rs::define_kcounter;
 use debug::ltracef;
 use syscalls_macro::syscall;
 use zx_status::Status;

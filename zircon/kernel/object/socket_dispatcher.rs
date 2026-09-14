@@ -11,10 +11,10 @@ use super::dispatcher::{
 use super::handle::KernelHandle;
 use super::mbuf::MBufChain;
 use super::socket_dispatcher_ffi::cpp_socket_dispatcher_create;
+use crate::counters::define_kcounter;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::convert::Infallible;
 use core::pin::Pin;
-use counters_rs::define_kcounter;
 use debug::ltrace_entry;
 use fbl::{Canary, RefPtr};
 use ksync::{KMutex, PhantomMutex, RawCriticalMutex, guarded};

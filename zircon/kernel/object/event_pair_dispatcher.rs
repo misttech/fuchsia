@@ -10,9 +10,9 @@ use super::dispatcher::{
 };
 use super::event_pair_dispatcher_ffi::cpp_event_pair_dispatcher_create;
 use super::handle::KernelHandle;
+use crate::counters::define_kcounter;
 use core::convert::Infallible;
 use core::pin::Pin;
-use counters_rs::define_kcounter;
 use fbl::{Canary, RefPtr};
 use ksync::guarded;
 use object_constants_rs::{

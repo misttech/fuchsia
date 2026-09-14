@@ -14,12 +14,12 @@ use crate::arch_rs::{
     UserCopyCaptureFaultsError, arch_copy_from_user_capture_faults,
     arch_copy_to_user_capture_faults,
 };
+use crate::counters::define_kcounter;
 use crate::kernel::thread::soft_fault;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::convert::Infallible;
 use core::pin::Pin;
 use core::ptr::slice_from_raw_parts_mut;
-use counters_rs::define_kcounter;
 use fbl::{Canary, RefPtr};
 use kalloc::Box;
 use ksync::{KMutex, PhantomMutex, guarded};

@@ -265,7 +265,6 @@ kernel_rust_mod("object-rs") {
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",
     "//third_party/rust_crates:zerocopy",
-    "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/init:init_rust",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/kernel/lib/page:page-rs",

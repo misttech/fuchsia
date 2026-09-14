@@ -45,6 +45,9 @@ pub mod cbuf;
 #[path = "lib/console/mod.rs"]
 pub mod console_rust;
 
+#[path = "lib/counters/src/lib.rs"]
+pub mod counters;
+
 #[path = "lib/debuglog/debuglog.rs"]
 pub mod debuglog_rs;
 

@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::counters::define_kcounter;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use crate::vm::page::{VmPage, VmPageDoublyLinkedList, VmPagePtr};
 use crate::vm::page_state::VmPageState;
@@ -15,7 +16,6 @@ use core::mem::{MaybeUninit, align_of, size_of};
 use core::pin::Pin;
 use core::ptr::NonNull;
 use core::slice::{from_raw_parts, from_raw_parts_mut};
-use counters_rs::define_kcounter;
 use fbl::{DoublyLinkedList, DoublyLinkedListContainable, DoublyLinkedListNode};
 use page;
 use page_bindings::vm_page_state;

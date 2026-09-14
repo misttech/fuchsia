@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::counters::define_kcounter;
 use core::mem::MaybeUninit;
-use counters_rs::define_kcounter;
 use debug::ltrace_entry;
 use fbl::{Canary, RefPtr};
 use ksync::{KMutex, RawCriticalMutex, guarded};

@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use counters_rs::define_kcounter;
+use crate::counters::define_kcounter;
 use syscalls_macro::syscall;
 use zx_types::{zx_instant_boot_t, zx_instant_mono_t};
 

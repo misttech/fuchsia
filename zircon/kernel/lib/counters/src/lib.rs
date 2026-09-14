@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#![no_std]
-
 use counters_bindings as bindings;
 
 /// The maximum number of CPUs that this counter descriptor supports.
@@ -56,10 +54,10 @@ zr::static_assert!(
     core::mem::offset_of!(Descriptor, type_)
         == core::mem::offset_of!(bindings::counters_Descriptor, type_)
 );
-zr::static_assert!(Type::Padding as u64 == bindings::counters_Type_kPadding as u64);
-zr::static_assert!(Type::Sum as u64 == bindings::counters_Type_kSum as u64);
-zr::static_assert!(Type::Min as u64 == bindings::counters_Type_kMin as u64);
-zr::static_assert!(Type::Max as u64 == bindings::counters_Type_kMax as u64);
+zr::static_assert!(Type::Padding as u64 == bindings::counters_Type_kPadding);
+zr::static_assert!(Type::Sum as u64 == bindings::counters_Type_kSum);
+zr::static_assert!(Type::Min as u64 == bindings::counters_Type_kMin);
+zr::static_assert!(Type::Max as u64 == bindings::counters_Type_kMax);
 
 impl Descriptor {
     /// Create a new raw `Descriptor` instance with the given packed name and type value.
@@ -172,17 +170,25 @@ impl Counter {
 #[macro_export]
 macro_rules! define_kcounter {
     ($rust_var:ident, $name:expr, $type:ident) => {
-        pub static $rust_var: $crate::Counter = {
+        pub static $rust_var: $crate::counters::Counter = {
             #[unsafe(link_section = concat!(".bss.kcounter.", $name))]
             #[used]
-            static mut ARENA: [i64; $crate::SMP_MAX_CPUS] = [0; $crate::SMP_MAX_CPUS];
+            static mut ARENA: [i64; $crate::counters::SMP_MAX_CPUS] =
+                [0; $crate::counters::SMP_MAX_CPUS];
 
             #[unsafe(link_section = concat!("kcountdesc.", $name))]
             #[used]
-            static DESC: $crate::Descriptor =
-                $crate::Descriptor::new($crate::to_array::<56>($name), $crate::Type::$type as u64);
+            static DESC: $crate::counters::Descriptor = $crate::counters::Descriptor::new(
+                $crate::counters::to_array::<56>($name),
+                $crate::counters::Type::$type as u64,
+            );
 
-            unsafe { $crate::Counter::new_with_ptr(&DESC as *const $crate::Descriptor) }
+            unsafe {
+                $crate::counters::Counter::new_with_ptr(
+                    &DESC as *const $crate::counters::Descriptor,
+                )
+            }
         };
     };
 }
+pub use define_kcounter;

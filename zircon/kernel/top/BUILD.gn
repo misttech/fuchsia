@@ -64,6 +64,7 @@ source_set("main") {
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/console:console_rust",
     "//zircon/kernel/lib/counters",
+    "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/cxxabi-dynamic-init:headers",
     "//zircon/kernel/lib/heap",
     "//zircon/kernel/lib/init",

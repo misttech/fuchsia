@@ -4,12 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::counters::define_kcounter;
 use crate::object::{
     Dispatcher, HandleValue, ProcessDispatcher, ProfileDispatcher, ThreadDispatcher,
     VmAddressRegionDispatcher, validate_resource_kind_base,
 };
 use crate::user_copy::UserInPtr;
-use counters_rs::define_kcounter;
 use debug::ltracef;
 use syscalls_macro::syscall;
 use zx_status::Status;

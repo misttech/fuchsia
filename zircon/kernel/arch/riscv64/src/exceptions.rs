@@ -14,6 +14,7 @@ use super::thread::GeneralRegsSource;
 use super::user_copy::{
     RISCV_CAPTURE_USER_COPY_FAULTS_BIT, arch_copy_from_user, is_user_accessible,
 };
+use crate::counters;
 use core::fmt::Write;
 use debug::ltrace::KernelConsoleWriter;
 use debug::{dprintf, ltracef};
@@ -162,19 +163,15 @@ fn format_iframe<W: Write>(w: &mut W, frame: &Iframe) -> core::fmt::Result {
     writeln!(w, "status {:#18x}", frame.status)
 }
 
-counters_rs::define_kcounter!(EXCEPTIONS_BREAKPOINT, "exceptions.breakpoint", Sum);
-counters_rs::define_kcounter!(
-    EXCEPTIONS_ILLEGAL_INSTRUCTION,
-    "exceptions.illegal_instruction",
-    Sum
-);
-counters_rs::define_kcounter!(EXCEPTIONS_IPI, "exceptions.ipi", Sum);
-counters_rs::define_kcounter!(EXCEPTIONS_IRQ, "exceptions.irq", Sum);
-counters_rs::define_kcounter!(EXCEPTIONS_MISALIGNED, "exceptions.misaligned", Sum);
-counters_rs::define_kcounter!(EXCEPTIONS_PAGE_FAULT, "exceptions.page_fault", Sum);
-counters_rs::define_kcounter!(EXCEPTIONS_SYSCALL, "exceptions.syscall", Sum);
-counters_rs::define_kcounter!(EXCEPTIONS_TIMER, "exceptions.timer", Sum);
-counters_rs::define_kcounter!(EXCEPTIONS_USER, "exceptions.user", Sum);
+counters::define_kcounter!(EXCEPTIONS_BREAKPOINT, "exceptions.breakpoint", Sum);
+counters::define_kcounter!(EXCEPTIONS_ILLEGAL_INSTRUCTION, "exceptions.illegal_instruction", Sum);
+counters::define_kcounter!(EXCEPTIONS_IPI, "exceptions.ipi", Sum);
+counters::define_kcounter!(EXCEPTIONS_IRQ, "exceptions.irq", Sum);
+counters::define_kcounter!(EXCEPTIONS_MISALIGNED, "exceptions.misaligned", Sum);
+counters::define_kcounter!(EXCEPTIONS_PAGE_FAULT, "exceptions.page_fault", Sum);
+counters::define_kcounter!(EXCEPTIONS_SYSCALL, "exceptions.syscall", Sum);
+counters::define_kcounter!(EXCEPTIONS_TIMER, "exceptions.timer", Sum);
+counters::define_kcounter!(EXCEPTIONS_USER, "exceptions.user", Sum);
 
 /// Print an iframe to the kernel debug log.
 fn print_frame(frame: &Iframe) {

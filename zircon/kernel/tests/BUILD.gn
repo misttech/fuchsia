@@ -165,7 +165,6 @@ if (toolchain_environment == "kernel") {
     sources = [ "unused_rust.rs" ]
     deps = [
       "//src/lib/ksync",
-      "//zircon/kernel/lib/counters:counters-rs",
       "//zircon/kernel/lib/debug",
     ]
   }

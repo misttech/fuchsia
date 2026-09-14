@@ -28,8 +28,8 @@ pub const fn is_smccc_fast_call(function_id: u32) -> bool {
 #[cfg(target_arch = "aarch64")]
 mod arch {
     use super::*;
+    use crate::counters::define_kcounter;
     use boot_options::BootOptions;
-    use counters_rs::define_kcounter;
 
     define_kcounter!(ARM_SMCCC_FAST_CALLS, "arm_smccc.fast_calls", Sum);
     define_kcounter!(ARM_SMCCC_YIELDING_CALLS, "arm_smccc.yielding_calls", Sum);

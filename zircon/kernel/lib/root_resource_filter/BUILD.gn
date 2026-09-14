@@ -19,7 +19,6 @@ kernel_rust_mod("root_resource_filter_rs") {
     "//sdk/rust/zx-types",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
-    "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/init:init_rust",
     "//zircon/kernel/lib/page:page-rs",

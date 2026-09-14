@@ -9,9 +9,9 @@
 // Tracks denied resource regions (such as RAM and exclusive peripherals) to ensure
 // that userspace access cannot be granted even with the root resource.
 
+use crate::counters::define_kcounter;
 use core::mem::MaybeUninit;
 use core::ptr;
-use counters_rs::define_kcounter;
 use debug::dprintf::{SPEW, dprintf_enabled};
 use debug::{dprintf, ltracef};
 use pin_init::{InPlaceWrite as _, PinInit, pin_data, pin_init};

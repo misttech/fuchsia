@@ -4,13 +4,13 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::counters::define_kcounter;
 use crate::kernel::types::PAddr;
 use crate::vm::page::{VmPage, VmPageDoublyLinkedList};
 use crate::vm::page_state::{VmPageState, page_state_to_string};
 use crate::vm::physmap;
 use crate::vm::pmm_node::PmmNode;
 use core::ptr::NonNull;
-use counters_rs::define_kcounter;
 use debug::{dprintf, ltracef};
 use kprint::kprintln;
 use page_bindings::{self, vm_page_state};

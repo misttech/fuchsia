@@ -9,8 +9,8 @@ use super::event_dispatcher_ffi::{
     cpp_event_dispatcher_create, cpp_event_dispatcher_get_mem_pressure_event,
     cpp_memory_stall_event_dispatcher_create,
 };
+use crate::counters::define_kcounter;
 use core::mem::MaybeUninit;
-use counters_rs::define_kcounter;
 use fbl::Canary;
 use ksync::{KMutex, RawCriticalMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};

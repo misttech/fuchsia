@@ -14,6 +14,7 @@ use super::io_buffer_dispatcher_ffi::{
 };
 use super::io_buffer_shared_region_dispatcher::IoBufferSharedRegionDispatcher;
 use super::vm_object_dispatcher::VmObjectDispatcher;
+use crate::counters::define_kcounter;
 use crate::kernel::koid;
 use crate::kernel::types::VAddr;
 use crate::user_copy::UserInPtr;
@@ -28,7 +29,6 @@ use crate::vm::vm_object_paged::VmObjectPaged;
 use core::convert::Infallible;
 use core::pin::Pin;
 use core::{ptr, slice};
-use counters_rs::define_kcounter;
 use fbl::{Array, Canary, Recyclable, RefPtr, pin_make_ref_counted, ref_counted};
 use iob::{BlobIdAllocator, ZeroFill};
 use kalloc::{AllocError, Box};

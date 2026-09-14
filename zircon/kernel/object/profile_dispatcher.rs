@@ -22,6 +22,7 @@ use super::profile_dispatcher_ffi::{
 };
 use super::thread_dispatcher::{SchedulerStateBaseProfile, ThreadDispatcher};
 use super::vm_address_region_dispatcher::{MemoryPriority, VmAddressRegionDispatcher};
+use crate::counters;
 use crate::kernel::types::cpu_mask_t;
 
 use object_constants_rs as object_constants;
@@ -36,17 +37,17 @@ zr::static_assert_size_and_align!(
     object_constants::kProfileDispatcherStateAlign,
 );
 
-counters_rs::define_kcounter!(DISPATCHER_PROFILE_CREATE_COUNT, "dispatcher.profile.create", Sum);
-counters_rs::define_kcounter!(DISPATCHER_PROFILE_DESTROY_COUNT, "dispatcher.profile.destroy", Sum);
+counters::define_kcounter!(DISPATCHER_PROFILE_CREATE_COUNT, "dispatcher.profile.create", Sum);
+counters::define_kcounter!(DISPATCHER_PROFILE_DESTROY_COUNT, "dispatcher.profile.destroy", Sum);
 
 fn parse_cpu_mask(set: &zx_cpu_set_t) -> cpu_mask_t {
     // The code below only supports reading up to 1 word in the mask.
-    zr::static_assert!(counters_rs::SMP_MAX_CPUS <= core::mem::size_of::<u64>() * 8);
-    zr::static_assert!(counters_rs::SMP_MAX_CPUS <= core::mem::size_of::<cpu_mask_t>() * 8);
-    zr::static_assert!(counters_rs::SMP_MAX_CPUS <= zx_types::ZX_CPU_SET_MAX_CPUS);
+    zr::static_assert!(counters::SMP_MAX_CPUS <= core::mem::size_of::<u64>() * 8);
+    zr::static_assert!(counters::SMP_MAX_CPUS <= core::mem::size_of::<cpu_mask_t>() * 8);
+    zr::static_assert!(counters::SMP_MAX_CPUS <= zx_types::ZX_CPU_SET_MAX_CPUS);
 
     // We throw away any bits beyond SMP_MAX_CPUs.
-    (set.mask[0] as cpu_mask_t) & crate::kernel::bits::bit_mask_u32(counters_rs::SMP_MAX_CPUS)
+    (set.mask[0] as cpu_mask_t) & crate::kernel::bits::bit_mask_u32(counters::SMP_MAX_CPUS)
 }
 
 fn validate_and_create_profile(
