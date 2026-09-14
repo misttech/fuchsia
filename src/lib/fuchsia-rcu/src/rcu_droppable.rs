@@ -41,6 +41,9 @@ impl_rcu_droppable!(
     str,
     bstr::BString,
     bstr::BStr,
+    fuchsia_runtime::UtcTimeline,
+    fuchsia_trace::Id,
+    shared_buffer::SharedBuffer,
     std::collections::hash_map::RandomState,
     std::num::NonZeroU8,
     std::num::NonZeroU16,
@@ -68,6 +71,11 @@ impl_rcu_droppable!(
     std::ops::RangeFull,
     std::time::Duration,
     std::time::Instant,
+    zx::BootTimeline,
+    zx::Koid,
+    zx::MonotonicTimeline,
+    zx::Rights,
+    zx::Vmo,
 );
 
 // SAFETY: Static references have no drop implementation and thus no drop side effects.
@@ -84,6 +92,8 @@ unsafe impl<T: RcuDroppable, E: RcuDroppable> RcuDroppable for Result<T, E> {}
 unsafe impl<T: ?Sized + RcuDroppable> RcuDroppable for Box<T> {}
 // SAFETY: Arc<T> decrements the reference count and only drops T (which is RcuDroppable + Sync) when the last strong reference is released.
 unsafe impl<T: ?Sized + RcuDroppable + Sync> RcuDroppable for std::sync::Arc<T> {}
+// SAFETY: OnceLock<T> drops its inner value T when the last strong reference is released.
+unsafe impl<T: RcuDroppable + Sync> RcuDroppable for std::sync::OnceLock<T> {}
 // SAFETY: Weak<T> decrements the weak reference count without dropping the inner T value.
 unsafe impl<T: ?Sized + Send + Sync + 'static> RcuDroppable for std::sync::Weak<T> {}
 // SAFETY: Vec<T> deallocates buffer memory and drops elements of type T, which are RcuDroppable.
@@ -132,12 +142,16 @@ unsafe impl<T: RcuDroppable + Sync> RcuDroppable for crate::RcuOptionBox<T> {}
 unsafe impl<T: Send + Sync + 'static> RcuDroppable for crate::RcuWeak<T> {}
 // SAFETY: rcu_drop of an RcuArc will rcu_drop T which is safe since T: RcuDroppable.
 unsafe impl<T: RcuDroppable + Sync> RcuDroppable for crate::RcuArc<T> {}
-
 // Synchronization primitives
 // SAFETY: Mutex drops its inner value T, which is RcuDroppable.
 unsafe impl<T: ?Sized + RcuDroppable> RcuDroppable for fuchsia_sync::Mutex<T> {}
 // SAFETY: RwLock drops its inner value T, which is RcuDroppable.
 unsafe impl<T: ?Sized + RcuDroppable> RcuDroppable for fuchsia_sync::RwLock<T> {}
+
+// SAFETY: Dropping `zx::Clock` closes the underlying Zircon kernel handle, which is
+// non-blocking and has no thread affinity. The timeline parameters `T` and `U` are
+// phantom markers with no drop side-effects.
+unsafe impl<T: Send + 'static, U: Send + 'static> RcuDroppable for zx::Clock<T, U> {}
 
 // Tuples
 // SAFETY: 1-element tuple drops its constituent element, which is RcuDroppable.

@@ -5,6 +5,7 @@
 use crate::mm::{
     MappingOptions, MemoryManager, PAGE_SIZE, VMEX_RESOURCE, ZX_VM_SPECIFIC_OVERWRITE,
 };
+use fuchsia_rcu::RcuDroppable;
 use fuchsia_runtime::UtcClock;
 use mapped_clock::{CLOCK_SIZE, MappedClock};
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, set_zx_name};
@@ -16,7 +17,7 @@ use zerocopy::FromBytes;
 use zx::Koid;
 
 // This tracks a VMO handle along with basic information about the handle.
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 pub struct VmoAndBasicInfo {
     vmo: zx::Vmo,
     info: OnceLock<(Koid, zx::Rights)>,
@@ -67,7 +68,7 @@ impl Drop for VmoAndBasicInfo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, RcuDroppable)]
 pub enum MemoryObject {
     Vmo(VmoAndBasicInfo),
     /// The memory object is a bpf ring buffer. The layout it represents is:

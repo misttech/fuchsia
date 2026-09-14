@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::perf::lockless_ring_buffer::LocklessRingBuffer;
 use crate::task::Kernel;
 use crate::vfs::OutputBuffer;
+use fuchsia_rcu::RcuDroppableArc;
 use starnix_logging::log_error;
 use starnix_uapi::errors::Errno;
 use zerocopy::native_endian::{I32, U16, U32, U64};
@@ -120,7 +121,7 @@ impl TraceEvent {
 /// Stores all trace events.
 pub struct TraceEventQueue {
     /// The trace events.
-    ring_buffer: Arc<LocklessRingBuffer>,
+    ring_buffer: RcuDroppableArc<LocklessRingBuffer>,
 
     /// Async ID for read track grouping.
     pub async_id_read: fuchsia_trace::Id,
@@ -164,7 +165,12 @@ impl<'a> TraceEventQueue {
         );
         ring_buffer.disable()?;
 
-        Ok(Self { ring_buffer, async_id_read, async_id_write, cpu_id })
+        Ok(Self {
+            ring_buffer: RcuDroppableArc::new(ring_buffer),
+            async_id_read,
+            async_id_write,
+            cpu_id,
+        })
     }
 
     pub fn read_track_name(&self) -> std::borrow::Cow<'static, str> {
@@ -184,13 +190,13 @@ impl<'a> TraceEventQueue {
     }
 
     fn enable(&self) -> Result<zx::BootInstant, Errno> {
-        self.ring_buffer.enable()
+        self.ring_buffer.read().enable()
     }
 
     /// Disables the event queue and resets it to empty.
     /// The number of dropped pages are recorded for reading via tracefs.
     fn disable(&self) -> Result<u64, Errno> {
-        self.ring_buffer.disable()
+        self.ring_buffer.read().disable()
     }
 
     /// Reads a page worth of events. Currently only reads pages that are full.
@@ -198,7 +204,7 @@ impl<'a> TraceEventQueue {
     /// From https://docs.kernel.org/trace/ring-buffer-design.html, when memory is mapped, a reader
     /// page can be swapped with the header page to avoid copying memory.
     pub fn read(&self, buf: &mut dyn OutputBuffer) -> Result<usize, Errno> {
-        self.ring_buffer.read(buf)
+        self.ring_buffer.read().read(buf)
     }
 
     /// Write `event` into `ring_buffer`.
@@ -213,8 +219,9 @@ impl<'a> TraceEventQueue {
         data: &[u8],
     ) -> Result<zx::Duration<BootTimeline>, Errno> {
         let size = event.size();
+        let ring_buffer = self.ring_buffer.read();
 
-        let (res, _timestamp, delta) = match self.ring_buffer.reserve(size) {
+        let (res, _timestamp, delta) = match ring_buffer.reserve(size) {
             Ok(res) => res,
             Err(e) if e == starnix_uapi::errno!(EINVAL) => {
                 log_error!("Invalid reservation size: {}", size);
@@ -235,7 +242,7 @@ impl<'a> TraceEventQueue {
         res.write_at(bytes.len(), data);
         res.write_at(bytes.len() + data.len(), b"\n");
 
-        self.ring_buffer.commit(res);
+        ring_buffer.commit(res);
 
         Ok(delta)
     }
@@ -339,11 +346,11 @@ mod tests {
     #[fuchsia::test]
     fn enable_disable_queue() {
         let queue = TraceEventQueue::new(0).expect("create queue");
-        assert!(!queue.ring_buffer.is_enabled());
+        assert!(!queue.ring_buffer.read().is_enabled());
 
         // Enable tracing and check the queue's state.
         assert!(queue.enable().is_ok());
-        assert_eq!(queue.ring_buffer.size_bytes(), DEFAULT_RING_BUFFER_SIZE_BYTES);
+        assert_eq!(queue.ring_buffer.read().size_bytes(), DEFAULT_RING_BUFFER_SIZE_BYTES);
 
         // Confirm we can push an event.
         let data = b"B|1234|slice_name";
@@ -355,7 +362,7 @@ mod tests {
 
         // Disable tracing and check that the queue's state has been reset.
         assert!(queue.disable().is_ok());
-        assert!(!queue.ring_buffer.is_enabled());
+        assert!(!queue.ring_buffer.read().is_enabled());
     }
 
     #[fuchsia::test]

@@ -5,6 +5,7 @@
 //! This is a lockless ring buffer modeled after https://docs.kernel.org/trace/ring-buffer-design.html
 use crate::mm::memory::MemoryObject;
 use crate::vfs::OutputBuffer;
+use fuchsia_rcu::RcuDroppable;
 use fuchsia_runtime::vmar_root_self;
 use fuchsia_trace;
 use shared_buffer::SharedBuffer;
@@ -15,6 +16,7 @@ use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, error, from_status_like_fdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[derive(RcuDroppable)]
 struct Node {
     // page_data is the memory view for this page.
     page_data: SharedBuffer,
@@ -120,6 +122,7 @@ static_assertions::const_assert!(std::mem::size_of::<usize>() == 8);
 // which is disabled, an easy value to reason about. And the ref count is the lower 63 bits.
 const RING_ENABLED_BIT: usize = 1 << 63;
 
+#[derive(RcuDroppable)]
 pub struct LocklessRingBuffer {
     vmo: MemoryObject,
     mapping: SharedBuffer,
@@ -956,6 +959,7 @@ impl Drop for LocklessRingBuffer {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -35,7 +35,13 @@ rustc_library("fuchsia-rcu") {
   deps = [
     ":fuchsia-rcu-derive",
     "//sdk/rust/zx",
+    "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
+    "//src/lib/shared-buffer",
+
+    # TODO(b/559178925): Refactor RcuDroppable trait to avoid all implementers
+    # as dependencies.
+    "//src/lib/trace/rust:trace",
     "//third_party/rust_crates:bstr",
     "//third_party/rust_crates:futures",
   ]
