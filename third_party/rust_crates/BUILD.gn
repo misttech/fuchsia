@@ -2253,11 +2253,11 @@ group("siphasher-1.0.2") {
 }
 
 group("slab") {
-  public_deps = [ ":slab-v0_4_11" ]
+  public_deps = [ ":slab-v0_4_12" ]
 }
 
-group("slab-0.4.11") {
-  public_deps = [ ":slab-v0_4_11" ]
+group("slab-0.4.12") {
+  public_deps = [ ":slab-v0_4_12" ]
 }
 
 group("smallvec") {
@@ -9797,7 +9797,7 @@ rustc_library("fuse3-v0_9_0") {
   deps += [ ":async-notify-v0_3_4" ]
   deps += [ ":bytes-v1_12_1" ]
   deps += [ ":futures-util-v0_3_31" ]
-  deps += [ ":slab-v0_4_11" ]
+  deps += [ ":slab-v0_4_12" ]
   deps += [ ":tracing-v0_1_44" ]
   deps += [ ":which-v8_0_4" ]
   deps += [ ":zerocopy-v0_8_48" ]
@@ -10233,7 +10233,7 @@ rustc_library("futures-util-v0_3_31") {
   deps += [ ":futures-task-v0_3_31" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
   deps += [ ":pin-utils-v0_1_0" ]
-  deps += [ ":slab-v0_4_11" ]
+  deps += [ ":slab-v0_4_12" ]
 
   rustenv = [ "CARGO_PKG_NAME=futures-util" ]
 
@@ -21920,15 +21920,15 @@ rustc_library("siphasher-v1_0_2") {
   applicable_licenses = [ ":siphasher-v1_0_2.license" ]
 }
 
-license("slab-v0_4_11.license") {
+license("slab-v0_4_12.license") {
   public_package_name = "slab"
-  license_files = [ "//third_party/rust_crates/vendor/slab-0.4.11/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/slab-0.4.12/LICENSE" ]
 }
 
-rustc_library("slab-v0_4_11") {
+rustc_library("slab-v0_4_12") {
   crate_name = "slab"
-  source_root = "//third_party/rust_crates/vendor/slab-0.4.11/src/lib.rs"
-  output_name = "slab-d361e45d2bc8338e"
+  source_root = "//third_party/rust_crates/vendor/slab-0.4.12/src/lib.rs"
+  output_name = "slab-988eda02a493b12"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -21940,15 +21940,15 @@ rustc_library("slab-v0_4_11") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=d361e45d2bc8338e",
-    "-Cextra-filename=-d361e45d2bc8338e",
+    "-Cmetadata=988eda02a493b12",
+    "-Cextra-filename=-988eda02a493b12",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":slab-v0_4_11.license" ]
+  applicable_licenses = [ ":slab-v0_4_12.license" ]
 }
 
 license("smallvec-v1_15_2.license") {

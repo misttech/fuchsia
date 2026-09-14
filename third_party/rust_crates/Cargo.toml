@@ -239,7 +239,7 @@ sha2-0_10 = { package = "sha2", version = "0.10.9" }
 # targetting fuchsia.
 simplelog = "0.10.2"
 siphasher = "1.0.2"
-slab = "0.4.11"
+slab = "0.4.12"
 smallvec = {version= "1.15.2", features = ["const_generics", "const_new", "union"]}
 socket2 = { version = "=0.6.4", features = ["all"] }
 splines = "5.0.0"
@@ -1254,7 +1254,7 @@ groups = [ { name = "sha2-0.10", visibility = [ ":*", "//src/microfuchsia/tee/ru
 [gn.package.signal-hook."0.4.4"]
 rustflags = []
 
-[gn.package.slab."0.4.11"]
+[gn.package.slab."0.4.12"]
 rustflags = []
 
 [gn.package.spki."0.7.3"]

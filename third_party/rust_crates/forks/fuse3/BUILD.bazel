@@ -83,7 +83,7 @@ rust_library(
         "//third_party/rust_crates/vendor/async-notify-0.3.4:async_notify",
         "//third_party/rust_crates/vendor/bytes-1.12.1:bytes",
         "//third_party/rust_crates/vendor/futures-util-0.3.31:futures_util",
-        "//third_party/rust_crates/vendor/slab-0.4.11:slab",
+        "//third_party/rust_crates/vendor/slab-0.4.12:slab",
         "//third_party/rust_crates/vendor/tracing-0.1.44:tracing",
         "//third_party/rust_crates/vendor/which-8.0.4:which",
         "//third_party/rust_crates/vendor/zerocopy-0.8.48:zerocopy",
