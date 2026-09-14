@@ -74,13 +74,22 @@ pub enum SagEvent {
 // Threshold duration for continuous holding boundaries, averaging of pulsing activity, and
 // truncation due to inactivity, as described by WakeLeaseSampler.
 const SAMPLING_THRESHOLD_NS: i64 = zx::BootDuration::from_minutes(1).into_nanos();
+
 /// `WakeLeaseSampler` aggregates wake lease activity into consolidated sample entries to minimize
 /// Inspect log traffic.
 ///
 /// 1. Sample Boundaries & Behavioral Transitions:
 ///    A sample ends and a new sample begins upon any of the following boundaries:
+
+///    - Continuous Holding Boundaries: Periods during which a lease is held continuously without
+///      state changes (`active_count > 0`) for >= `SAMPLING_THRESHOLD_NS` are represented as a
+///      single unbroken sample spanning the entire duration of the hold, even if it exceeds the
+///      sampling threshold. For example, with the current one-minute threshold, activity over
+///      interval [30s, 210s], yields a sample with duration = 180s, active_fraction = 1.0. If
+///      pulsing activity preceded the continuous hold, a sample boundary is retroactively
+///      established at the start of the hold.
 ///    - Pulsing Activity Duration Cap: Regular pulsing activity (acquire/drop cycles) continuing
-///      past 60 seconds is chunked in 60-second intervals.
+///      past `SAMPLING_THRESHOLD_NS` is chunked in intervals of length `SAMPLING_THRESHOLD_NS`.
 ///    - External Triggers: Inspect snapshot collection flushes in-flight samples.
 ///
 /// 2. Inspect Output Format:
@@ -109,10 +118,54 @@ impl WakeLeaseSampler {
         now: i64,
         buffer: &mut SagEventBuffer,
     ) {
-        // Only apply 60-second pulsing chunk boundaries while the lease is actively held. Inactive
-        // periods are not chunked mid-silence; they either remain in-flight until active pulses
-        // resume, or (TODO(https://fxbug.dev/554025327): complete this feature) are truncated upon
-        // reaching the silence threshold.
+        // If a lease has been held continuously without state changes for >=
+        // `SAMPLING_THRESHOLD_NS`, retroactively split any preceding pulsing activity and emit the
+        // continuous hold as an unbroken single sample.
+        if let SampleStatus::LeaseActive { active_count, active_since_ns } = sample.status {
+            let continuously_active_duration = now.saturating_sub(active_since_ns);
+            if continuously_active_duration >= SAMPLING_THRESHOLD_NS {
+                if sample.sample_start_ns < active_since_ns {
+                    // 1. Emit preceding pulsing sample up to active_since_ns
+                    let preceding_total_dur =
+                        active_since_ns.saturating_sub(sample.sample_start_ns);
+                    let preceding_active_dur = sample.active_duration_ns;
+                    let active_fraction =
+                        (preceding_active_dur as f64 / preceding_total_dur as f64).clamp(0.0, 1.0);
+
+                    buffer.push(
+                        active_since_ns,
+                        SagEvent::WakeLeaseSample {
+                            name: sample.name.clone(),
+                            id,
+                            sample_end_ns: active_since_ns,
+                            active_fraction,
+                            sample_duration_ns: preceding_total_dur,
+                        },
+                    );
+                }
+
+                // 2. Emit the continuous hold sample [active_since_ns, now]
+                buffer.push(
+                    now,
+                    SagEvent::WakeLeaseSample {
+                        name: sample.name.clone(),
+                        id,
+                        sample_end_ns: now,
+                        active_fraction: 1.0,
+                        sample_duration_ns: continuously_active_duration,
+                    },
+                );
+
+                sample.sample_start_ns = now;
+                sample.active_duration_ns = 0;
+                sample.status = SampleStatus::LeaseActive { active_count, active_since_ns: now };
+                return;
+            }
+        }
+        // Only apply pulsing chunk boundaries while the lease is actively held. Inactive periods
+        // are not chunked mid-silence; they either remain in-flight until active pulses resume, or
+        // (TODO(https://fxbug.dev/554025327): complete this feature) are truncated upon reaching
+        // the silence threshold.
         let SampleStatus::LeaseActive { active_count, mut active_since_ns } = sample.status else {
             return;
         };
@@ -707,7 +760,7 @@ mod tests {
 
             // Verify that before the first 60s boundary (6,000 cycles), no intermediate events are
             // logged.
-            if i < 5999 {
+            if (i as i64) < SAMPLING_THRESHOLD_NS / cycle_period_ns - 1 {
                 assert!(buffer.events.is_empty());
             }
         }
@@ -717,17 +770,18 @@ mod tests {
         assert_eq!(buffer.events.len(), 4);
 
         // Snapshot collection at T=270s flushes the final 30s sample.
-        sampler.on_snapshot_collection(270_000_000_000, &mut buffer);
+        let snapshot_time_ns = 4 * SAMPLING_THRESHOLD_NS + SAMPLING_THRESHOLD_NS / 2;
+        sampler.on_snapshot_collection(snapshot_time_ns, &mut buffer);
 
         // Expect 5 sample events with durations: [60s, 60s, 60s, 60s, 30s]
         assert_eq!(buffer.events.len(), 5);
 
         let expected_samples = [
-            (60_000_000_000i64, 60_000_000_000i64, 0.50f64),
-            (120_000_000_000i64, 60_000_000_000i64, 0.50f64),
-            (180_000_000_000i64, 60_000_000_000i64, 0.50f64),
-            (240_000_000_000i64, 60_000_000_000i64, 0.50f64),
-            (270_000_000_000i64, 30_000_000_000i64, 0.50f64),
+            (SAMPLING_THRESHOLD_NS, SAMPLING_THRESHOLD_NS, 0.50f64),
+            (2 * SAMPLING_THRESHOLD_NS, SAMPLING_THRESHOLD_NS, 0.50f64),
+            (3 * SAMPLING_THRESHOLD_NS, SAMPLING_THRESHOLD_NS, 0.50f64),
+            (4 * SAMPLING_THRESHOLD_NS, SAMPLING_THRESHOLD_NS, 0.50f64),
+            (snapshot_time_ns, SAMPLING_THRESHOLD_NS / 2, 0.50f64),
         ];
 
         for (i, (end, duration, fraction)) in expected_samples.iter().enumerate() {
@@ -854,8 +908,8 @@ mod tests {
             &buffer.events[0].event_info,
             name: "span_lease",
             id: 1,
-            end_ns: 60_000_000_000,
-            duration_ns: 60_000_000_000,
+            end_ns: SAMPLING_THRESHOLD_NS,
+            duration_ns: SAMPLING_THRESHOLD_NS,
             active_fraction: 0.5,
         );
 
@@ -914,9 +968,9 @@ mod tests {
             &buffer.events[0].event_info,
             name: "test_lease",
             id: 1,
-            end_ns: 60_000_000_000,
-            duration_ns: 60_000_000_000,
-            active_fraction: 50.0 / 60.0,
+            end_ns: SAMPLING_THRESHOLD_NS,
+            duration_ns: SAMPLING_THRESHOLD_NS,
+            active_fraction: 50_000_000_000.0 / SAMPLING_THRESHOLD_NS as f64,
         );
 
         // Snapshot at t=80s flushes remaining [60s, 80s] sample (10s active in 60s-70s).
@@ -929,6 +983,156 @@ mod tests {
             end_ns: 80_000_000_000,
             duration_ns: 20_000_000_000,
             active_fraction: 10.0 / 20.0,
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_sampler_mixed_2hz_and_continuous() {
+        let mut sampler = WakeLeaseSampler::new();
+        let mut buffer = SagEventBuffer::new(100);
+
+        // Phase 1: 30 seconds of 2 Hz activity (0s to 30s) -> 60 cycles of 500ms (250ms active,
+        // 250ms inactive)
+        let cycle_period_ns = 500_000_000i64;
+        let active_duration_ns = 250_000_000i64;
+        let phase1_duration_ns = SAMPLING_THRESHOLD_NS / 2;
+        let cycles_per_phase = (phase1_duration_ns / cycle_period_ns) as usize;
+
+        for i in 0..cycles_per_phase {
+            let acquire_time = (i as i64) * cycle_period_ns;
+            let drop_time = acquire_time + active_duration_ns;
+            sampler.on_lease_acquired(3, "mixed_lease", acquire_time, &mut buffer);
+            sampler.on_lease_dropped(3, "mixed_lease", drop_time, &mut buffer);
+        }
+
+        // Phase 2: 3 minutes (180s) of continuous active lease (30s to 210s)
+        let continuous_duration_ns = 3 * SAMPLING_THRESHOLD_NS;
+        let phase2_end_ns = phase1_duration_ns + continuous_duration_ns;
+        sampler.on_lease_acquired(3, "mixed_lease", phase1_duration_ns, &mut buffer);
+        sampler.on_lease_dropped(3, "mixed_lease", phase2_end_ns, &mut buffer);
+
+        // Phase 3: 30 seconds of 2 Hz activity (210s to 240s) -> 60 cycles
+        let phase3_duration_ns = SAMPLING_THRESHOLD_NS / 2;
+        let phase3_end_ns = phase2_end_ns + phase3_duration_ns;
+        for i in 0..cycles_per_phase {
+            let acquire_time = phase2_end_ns + (i as i64) * cycle_period_ns;
+            let drop_time = acquire_time + active_duration_ns;
+            sampler.on_lease_acquired(3, "mixed_lease", acquire_time, &mut buffer);
+            sampler.on_lease_dropped(3, "mixed_lease", drop_time, &mut buffer);
+        }
+
+        // Phase 4: Snapshot collection at 240s
+        sampler.on_snapshot_collection(phase3_end_ns, &mut buffer);
+
+        // EXACTLY 3 samples emitted: [0s, 30s], [30s, 210s], [210s, 240s]!
+        assert_eq!(buffer.events.len(), 3);
+
+        let expected_samples = [
+            // Sample 1: 30s 2Hz pulsing [0s, 30s]
+            (phase1_duration_ns, phase1_duration_ns, 0.50f64),
+            // Sample 2: 3 minutes continuous hold [30s, 210s]
+            (phase2_end_ns, continuous_duration_ns, 1.0f64),
+            // Sample 3: 30s 2Hz pulsing [210s, 240s]
+            (phase3_end_ns, phase3_duration_ns, 0.50f64),
+        ];
+
+        for (i, (end, duration, fraction)) in expected_samples.iter().enumerate() {
+            assert_wake_lease_sample!(
+                &buffer.events[i].event_info,
+                name: "mixed_lease",
+                id: 3,
+                end_ns: *end,
+                duration_ns: *duration,
+                active_fraction: *fraction,
+            );
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_sampler_pure_continuous_hold_no_preceding_activity() {
+        let mut sampler = WakeLeaseSampler::new();
+        let mut buffer = SagEventBuffer::new(100);
+
+        // Continuous lease held for 2 minutes from t=0 with no prior pulsing
+        let hold_duration_ns = 2 * SAMPLING_THRESHOLD_NS;
+        sampler.on_lease_acquired(1, "pure_hold", 0, &mut buffer);
+        sampler.on_lease_dropped(1, "pure_hold", hold_duration_ns, &mut buffer);
+
+        assert_eq!(buffer.events.len(), 1);
+        assert_wake_lease_sample!(
+            &buffer.events[0].event_info,
+            name: "pure_hold",
+            id: 1,
+            end_ns: hold_duration_ns,
+            duration_ns: hold_duration_ns,
+            active_fraction: 1.0,
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_sampler_snapshot_during_continuous_hold() {
+        let mut sampler = WakeLeaseSampler::new();
+        let mut buffer = SagEventBuffer::new(100);
+
+        sampler.on_lease_acquired(1, "active_hold", 0, &mut buffer);
+
+        // Snapshot at 1.5x threshold while lease is still actively held
+        let snapshot_time_ns = SAMPLING_THRESHOLD_NS + SAMPLING_THRESHOLD_NS / 2;
+        sampler.on_snapshot_collection(snapshot_time_ns, &mut buffer);
+
+        assert_eq!(buffer.events.len(), 1);
+        assert_wake_lease_sample!(
+            &buffer.events[0].event_info,
+            name: "active_hold",
+            id: 1,
+            end_ns: snapshot_time_ns,
+            duration_ns: snapshot_time_ns,
+            active_fraction: 1.0,
+        );
+
+        // Dropping 10s later at t=100s
+        let additional_active_dur_ns = zx::BootDuration::from_seconds(10).into_nanos();
+        let drop_time_ns = snapshot_time_ns + additional_active_dur_ns;
+        sampler.on_lease_dropped(1, "active_hold", drop_time_ns, &mut buffer);
+        sampler.on_snapshot_collection(drop_time_ns, &mut buffer);
+
+        assert_eq!(buffer.events.len(), 2);
+        assert_wake_lease_sample!(
+            &buffer.events[1].event_info,
+            name: "active_hold",
+            id: 1,
+            end_ns: drop_time_ns,
+            duration_ns: additional_active_dur_ns,
+            active_fraction: 1.0,
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_sampler_continuous_hold_boundary_59s_vs_60s() {
+        let mut sampler = WakeLeaseSampler::new();
+        let mut buffer = SagEventBuffer::new(100);
+
+        // 59 seconds: should not trigger continuous hold sample upon drop
+        let sub_threshold_ns =
+            SAMPLING_THRESHOLD_NS - zx::BootDuration::from_seconds(1).into_nanos();
+        sampler.on_lease_acquired(1, "sub_threshold", 0, &mut buffer);
+        sampler.on_lease_dropped(1, "sub_threshold", sub_threshold_ns, &mut buffer);
+        assert!(buffer.events.is_empty());
+
+        // Exactly 60 seconds: must trigger continuous hold sample upon drop
+        let mut sampler = WakeLeaseSampler::new();
+        let mut buffer = SagEventBuffer::new(100);
+
+        sampler.on_lease_acquired(2, "exact_threshold", 0, &mut buffer);
+        sampler.on_lease_dropped(2, "exact_threshold", SAMPLING_THRESHOLD_NS, &mut buffer);
+        assert_eq!(buffer.events.len(), 1);
+        assert_wake_lease_sample!(
+            &buffer.events[0].event_info,
+            name: "exact_threshold",
+            id: 2,
+            end_ns: SAMPLING_THRESHOLD_NS,
+            duration_ns: SAMPLING_THRESHOLD_NS,
+            active_fraction: 1.0,
         );
     }
 }
