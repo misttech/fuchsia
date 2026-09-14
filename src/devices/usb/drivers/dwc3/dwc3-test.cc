@@ -1154,4 +1154,217 @@ INSTANTIATE_TEST_SUITE_P(InterruptModeration, InterruptModeration, kInterruptMod
                            }
                            return std::format("{}", info.param.value());
                          });
+
+TEST_F(UnmanagedTestFixture, FrameLengthAdjustmentSupportedVersion) {
+  // Set version to 3.10a
+  ver_number_ = 0x5533310a;
+
+  auto gfladj_written_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto gfladj_written_flag = std::make_shared<std::atomic<bool>>(false);
+
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[GFLADJ::Get().addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
+
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.SetFrameLengthAdjustment(0xa0, /*refclk_lpm_sel=*/true);
+    ddk_fake::FakeMmioReg& gfladj_reg = env.reg_region()[GFLADJ::Get().addr()];
+    gfladj_reg.SetWriteCallback([gfladj_written_val, gfladj_written_flag](uint64_t value) {
+      gfladj_written_val->store(static_cast<uint32_t>(value));
+      gfladj_written_flag->store(true);
+    });
+  });
+
+  zx::result res = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_OK(res);
+  ASSERT_OK(WaitForPhy());
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_TRUE(drv.supports_gfladj());
+    EXPECT_EQ(drv.fladj(), 0xa0u);
+    EXPECT_TRUE(drv.fladj_refclk_lpm_sel());
+  });
+
+  EXPECT_TRUE(gfladj_written_flag->load());
+  auto written = GFLADJ::Get().FromValue(gfladj_written_val->load());
+  EXPECT_EQ(written.GFLADJ_30MHZ(), 0x20u);
+  EXPECT_EQ(written.GFLADJ_30MHZ_SDBND_SEL(), 1u);
+  EXPECT_EQ(written.GFLADJ_REFCLK_LPM_SEL(), 1u);
+
+  EXPECT_OK(dut_.StopDriver().status_value());
+}
+
+TEST_F(UnmanagedTestFixture, FrameLengthAdjustmentZeroValue) {
+  // Set version to 3.10a
+  ver_number_ = 0x5533310a;
+
+  auto gfladj_written_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto gfladj_written_flag = std::make_shared<std::atomic<bool>>(false);
+
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[GFLADJ::Get().addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
+
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.SetFrameLengthAdjustment(0x0, /*refclk_lpm_sel=*/false);
+    ddk_fake::FakeMmioReg& gfladj_reg = env.reg_region()[GFLADJ::Get().addr()];
+    gfladj_reg.SetWriteCallback([gfladj_written_val, gfladj_written_flag](uint64_t value) {
+      gfladj_written_val->store(static_cast<uint32_t>(value));
+      gfladj_written_flag->store(true);
+    });
+  });
+
+  zx::result res = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_OK(res);
+  ASSERT_OK(WaitForPhy());
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_TRUE(drv.supports_gfladj());
+    EXPECT_EQ(drv.fladj(), 0x0u);
+    EXPECT_FALSE(drv.fladj_refclk_lpm_sel());
+  });
+
+  EXPECT_TRUE(gfladj_written_flag->load());
+  auto written = GFLADJ::Get().FromValue(gfladj_written_val->load());
+  EXPECT_EQ(written.GFLADJ_30MHZ(), 0x0u);
+  EXPECT_EQ(written.GFLADJ_30MHZ_SDBND_SEL(), 1u);
+  EXPECT_EQ(written.GFLADJ_REFCLK_LPM_SEL(), 0u);
+
+  EXPECT_OK(dut_.StopDriver().status_value());
+}
+
+TEST_F(UnmanagedTestFixture, FrameLengthAdjustmentRefclkLpmSelOnly) {
+  // Set version to 3.10a
+  ver_number_ = 0x5533310a;
+
+  auto gfladj_written_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto gfladj_written_flag = std::make_shared<std::atomic<bool>>(false);
+
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[GFLADJ::Get().addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
+
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.SetFrameLengthAdjustment(std::nullopt, /*refclk_lpm_sel=*/true);
+    ddk_fake::FakeMmioReg& gfladj_reg = env.reg_region()[GFLADJ::Get().addr()];
+    gfladj_reg.SetWriteCallback([gfladj_written_val, gfladj_written_flag](uint64_t value) {
+      gfladj_written_val->store(static_cast<uint32_t>(value));
+      gfladj_written_flag->store(true);
+    });
+  });
+
+  zx::result res = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_OK(res);
+  ASSERT_OK(WaitForPhy());
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_TRUE(drv.supports_gfladj());
+    EXPECT_FALSE(drv.fladj().has_value());
+    EXPECT_TRUE(drv.fladj_refclk_lpm_sel());
+  });
+
+  EXPECT_TRUE(gfladj_written_flag->load());
+  auto written = GFLADJ::Get().FromValue(gfladj_written_val->load());
+  EXPECT_EQ(written.GFLADJ_30MHZ(), 0x0u);
+  EXPECT_EQ(written.GFLADJ_30MHZ_SDBND_SEL(), 0u);
+  EXPECT_EQ(written.GFLADJ_REFCLK_LPM_SEL(), 1u);
+
+  EXPECT_OK(dut_.StopDriver().status_value());
+}
+
+TEST_F(UnmanagedTestFixture, FrameLengthAdjustmentUnsupportedVersion) {
+  // 1.60a is default, which is prior to 2.50a
+  ver_number_ = 0x5533160a;
+
+  auto gfladj_written_flag = std::make_shared<std::atomic<bool>>(false);
+
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[GFLADJ::Get().addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
+
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    env.SetFrameLengthAdjustment(0xa0);
+    ddk_fake::FakeMmioReg& gfladj_reg = env.reg_region()[GFLADJ::Get().addr()];
+    gfladj_reg.SetWriteCallback(
+        [gfladj_written_flag](uint64_t value) { gfladj_written_flag->store(true); });
+  });
+
+  zx::result res = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_OK(res);
+  ASSERT_OK(WaitForPhy());
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_FALSE(drv.supports_gfladj());
+    EXPECT_EQ(drv.fladj(), 0xa0u);
+  });
+
+  EXPECT_FALSE(gfladj_written_flag->load());
+
+  EXPECT_OK(dut_.StopDriver().status_value());
+}
+
+TEST_F(UnmanagedTestFixture, FrameLengthAdjustmentNoMetadata) {
+  ver_number_ = 0x5533310a;
+
+  auto gfladj_written_flag = std::make_shared<std::atomic<bool>>(false);
+
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[GFLADJ::Get().addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
+
+  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+    ddk_fake::FakeMmioReg& gfladj_reg = env.reg_region()[GFLADJ::Get().addr()];
+    gfladj_reg.SetWriteCallback(
+        [gfladj_written_flag](uint64_t value) { gfladj_written_flag->store(true); });
+  });
+
+  zx::result res = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_OK(res);
+  ASSERT_OK(WaitForPhy());
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_TRUE(drv.supports_gfladj());
+    EXPECT_FALSE(drv.fladj().has_value());
+  });
+
+  EXPECT_FALSE(gfladj_written_flag->load());
+
+  EXPECT_OK(dut_.StopDriver().status_value());
+}
+
 }  // namespace dwc3

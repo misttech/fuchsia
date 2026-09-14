@@ -637,6 +637,29 @@ zx::result<uint32_t> GetUint32(const fuchsia_driver_metadata::Dictionary& dict,
   return zx::ok(static_cast<uint32_t>(val.int64().value()));
 }
 
+// Helper to get a boolean value or check property presence.
+zx::result<bool> GetBool(const fuchsia_driver_metadata::Dictionary& dict, std::string_view key) {
+  std::optional maybe_val = FindMetadataValue(dict, key);
+  if (!maybe_val) {
+    return zx::error(ZX_ERR_NOT_FOUND);
+  }
+  const auto& val = maybe_val->get();
+  if (val.boolean().has_value()) {
+    return zx::ok(val.boolean().value());
+  }
+  if (val.int64().has_value()) {
+    return zx::ok(val.int64().value() != 0);
+  }
+  if (val.int64_vec().has_value()) {
+    if (val.int64_vec().value().empty()) {
+      return zx::ok(true);
+    }
+    return zx::ok(val.int64_vec().value().front() != 0);
+  }
+  fdf::error("Metadata key '{}' is not a valid boolean", key);
+  return zx::error(ZX_ERR_INVALID_ARGS);
+}
+
 }  // namespace
 
 zx::result<> Dwc3::LoadMetadata(fdf::PDev& pdev) {
@@ -668,6 +691,33 @@ zx::result<> Dwc3::LoadMetadata(fdf::PDev& pdev) {
   } else {
     interrupt_moderation_ = 0;
   }
+
+  zx::result fladj_res = GetUint32(*meta, "quirk-frame-length-adjustment");
+  if (fladj_res.is_error() && fladj_res.error_value() == ZX_ERR_NOT_FOUND) {
+    fladj_res = GetUint32(*meta, "snps,quirk-frame-length-adjustment");
+  }
+  if (fladj_res.is_error() && fladj_res.error_value() != ZX_ERR_NOT_FOUND) {
+    return fladj_res.take_error();
+  }
+  if (fladj_res.is_ok()) {
+    fladj_ = fladj_res.value();
+    if (*fladj_ > 0x3fu) {
+      fdf::info(
+          "quirk-frame-length-adjustment value {:#x} exceeds maximum of 0x3f and will be masked",
+          *fladj_);
+    }
+  } else {
+    fladj_ = std::nullopt;
+  }
+
+  zx::result lpm_sel_res = GetBool(*meta, "gfladj-refclk-lpm-sel-quirk");
+  if (lpm_sel_res.is_error() && lpm_sel_res.error_value() == ZX_ERR_NOT_FOUND) {
+    lpm_sel_res = GetBool(*meta, "snps,gfladj-refclk-lpm-sel-quirk");
+  }
+  if (lpm_sel_res.is_error() && lpm_sel_res.error_value() != ZX_ERR_NOT_FOUND) {
+    return lpm_sel_res.take_error();
+  }
+  fladj_refclk_lpm_sel_ = lpm_sel_res.value_or(false);
 
   return zx::ok();
 }
@@ -941,6 +991,11 @@ zx_status_t Dwc3::CheckHwVersion() {
         major > 3
         || (major == 3 && minor > 10)
         || (major == 3 && minor == 10 && rev >= 0xa));
+
+    // GFLADJ is supported on core versions 2.50a+
+    supports_gfladj_ = (
+        major > 2
+        || (major == 2 && minor >= 50));
     // clang-format on
 
     fdf::info("Detected Synopsys DWC_usb3 core version {}.{:02d}{:x}", major, minor, rev);
@@ -952,6 +1007,7 @@ zx_status_t Dwc3::CheckHwVersion() {
     auto ver_type = USB31_VER_TYPE::Get().ReadFrom(mmio);
 
     poll_end_xfer_ = false;  // Unsupported.
+    supports_gfladj_ = true;
 
     fdf::info("Detected Synopsys DWC_usb31 core version number 0x{:08x} type 0x{:08x}",
               ver_num.reg_value(), ver_type.reg_value());
@@ -984,6 +1040,18 @@ zx_status_t Dwc3::ResetHw() {
 
   if (poll_end_xfer_) {
     GUCTL2::Get().ReadFrom(mmio).set_Rst_actbitlater(1).WriteTo(mmio);
+  }
+
+  if (supports_gfladj_ && (fladj_.has_value() || fladj_refclk_lpm_sel_)) {
+    auto gfladj = GFLADJ::Get().ReadFrom(mmio);
+    if (fladj_.has_value()) {
+      gfladj.set_GFLADJ_30MHZ(*fladj_ & 0x3f);
+      gfladj.set_GFLADJ_30MHZ_SDBND_SEL(1);
+    }
+    if (fladj_refclk_lpm_sel_) {
+      gfladj.set_GFLADJ_REFCLK_LPM_SEL(1);
+    }
+    gfladj.WriteTo(mmio);
   }
 
   return ZX_OK;

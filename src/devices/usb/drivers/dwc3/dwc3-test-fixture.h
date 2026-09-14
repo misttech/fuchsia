@@ -440,15 +440,38 @@ class Environment : public fdf_testing::Environment {
     pdev_.SetConfig(std::move(config));
   }
 
-  void SetInterruptModerationUs(uint32_t us) {
+  void SetDriverMetadata(std::optional<uint32_t> interrupt_moderation_us,
+                         std::optional<uint32_t> fladj = std::nullopt,
+                         bool refclk_lpm_sel = false) {
     fuchsia_driver_metadata::Dictionary dictionary;
     std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
-    entries.push_back(fuchsia_driver_metadata::DictionaryEntry{{
-        .key = "interrupt-moderation-us",
-        .value = fuchsia_driver_metadata::DictionaryValue::WithInt64(us),
-    }});
+    if (interrupt_moderation_us.has_value()) {
+      entries.push_back(fuchsia_driver_metadata::DictionaryEntry{{
+          .key = "interrupt-moderation-us",
+          .value = fuchsia_driver_metadata::DictionaryValue::WithInt64(*interrupt_moderation_us),
+      }});
+    }
+    if (fladj.has_value()) {
+      entries.push_back(fuchsia_driver_metadata::DictionaryEntry{{
+          .key = "quirk-frame-length-adjustment",
+          .value = fuchsia_driver_metadata::DictionaryValue::WithInt64(*fladj),
+      }});
+    }
+    if (refclk_lpm_sel) {
+      entries.push_back(fuchsia_driver_metadata::DictionaryEntry{{
+          .key = "gfladj-refclk-lpm-sel-quirk",
+          .value = fuchsia_driver_metadata::DictionaryValue::WithBoolean(true),
+      }});
+    }
     dictionary.entries() = std::move(entries);
     pdev_.AddFidlMetadata("fuchsia.driver.metadata.Dictionary", dictionary);
+  }
+
+  void SetInterruptModerationUs(uint32_t us) { SetDriverMetadata(us); }
+
+  void SetFrameLengthAdjustment(std::optional<uint32_t> fladj = std::nullopt,
+                                bool refclk_lpm_sel = false) {
+    SetDriverMetadata(std::nullopt, fladj, refclk_lpm_sel);
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& directory) override {

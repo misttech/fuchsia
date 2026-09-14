@@ -144,6 +144,9 @@ class Dwc3 : public fdf::DriverBase2,
 
   // For testing.
   bool poll_end_xfer() const { return poll_end_xfer_; }
+  bool supports_gfladj() const { return supports_gfladj_; }
+  std::optional<uint32_t> fladj() const { return fladj_; }
+  bool fladj_refclk_lpm_sel() const { return fladj_refclk_lpm_sel_; }
   void SetEnableEnqueueManyTrbs(bool enable) { enable_enqueue_many_trbs_ = enable; }
 
  private:
@@ -560,6 +563,9 @@ class Dwc3 : public fdf::DriverBase2,
   std::shared_ptr<fdf::Namespace> incoming_;
   std::optional<dwc3_config::Config> config_;
   uint32_t interrupt_moderation_ = 0;
+  std::optional<uint32_t> fladj_;
+  bool fladj_refclk_lpm_sel_ = false;
+  bool supports_gfladj_ = false;
 
   std::optional<inspect::ComponentInspector> inspector_;
 

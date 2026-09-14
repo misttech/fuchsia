@@ -420,6 +420,18 @@ class GSBUSCFG1 : public hwreg::RegisterBase<GSBUSCFG1, uint32_t> {
   static auto Get() { return hwreg::RegisterAddr<GSBUSCFG1>(0xc104); }
 };
 
+// Global Frame Length Adjustment Register
+class GFLADJ : public hwreg::RegisterBase<GFLADJ, uint32_t> {
+ public:
+  DEF_BIT(31, GFLADJ_240MHZDECR_PLS1);
+  DEF_FIELD(30, 24, GFLADJ_240MHZDECR);
+  DEF_BIT(23, GFLADJ_REFCLK_LPM_SEL);
+  DEF_FIELD(21, 8, GFLADJ_REFCLK_FLADJ);
+  DEF_BIT(7, GFLADJ_30MHZ_SDBND_SEL);
+  DEF_FIELD(5, 0, GFLADJ_30MHZ);
+  static auto Get() { return hwreg::RegisterAddr<GFLADJ>(0xc630); }
+};
+
 // Device Interrupt Moderation Register.
 class DEVIMOD : public hwreg::RegisterBase<DEVIMOD, uint32_t> {
  public:
