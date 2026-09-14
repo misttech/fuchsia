@@ -448,10 +448,15 @@ config("warnings") {
 config("lock_dep") {
   visibility = [ ":*" ]
   defines = []
+  rustflags = []
   if (enable_lock_dep) {
     defines += [
       "WITH_LOCK_DEP=1",
       "LOCK_DEP_ENABLED_FEATURE_LEVEL=2",
+    ]
+    rustflags += [
+      "--cfg=with_lock_dep",
+      "--cfg=lock_dep_enabled_feature_level=\"2\"",
     ]
   } else if (enable_lock_dep_metadata_only ||
              scheduler_lock_spin_tracing_enabled || lock_name_tracing_enabled) {
@@ -459,9 +464,14 @@ config("lock_dep") {
       "WITH_LOCK_DEP=1",
       "LOCK_DEP_ENABLED_FEATURE_LEVEL=1",
     ]
+    rustflags += [
+      "--cfg=with_lock_dep",
+      "--cfg=lock_dep_enabled_feature_level=\"1\"",
+    ]
   }
   if (enable_lock_dep_tests) {
     defines += [ "WITH_LOCK_DEP_TESTS=1" ]
+    rustflags += [ "--cfg=with_lock_dep_tests" ]
   }
 }
 
