@@ -21,6 +21,7 @@ import argparse
 import dataclasses
 import datetime
 import functools
+import getpass
 import json
 import os
 import pathlib
@@ -92,6 +93,7 @@ class FuchsiaBuildConfig(object):
       verbose: if True, enable verbose logging output
       dry_run: if True, execute in dry-run mode
       status: if True, show build status metrics
+      auth_mode: "auto", "user", "machine", or "none" (RBE/ResultStore auth)
       fint_params_path: path to Fint static parameters if Fint wrapping is triggered
       fint_context_path: path to Fint context parameters if Fint wrapping is triggered
       output_metadata_json: path to write the structured metadata JSON of build artifacts
@@ -105,6 +107,7 @@ class FuchsiaBuildConfig(object):
     tui: bool
     verbose: bool
     dry_run: bool
+    auth_mode: str
     status: bool = True
     fint_params_path: pathlib.Path | None = None
     fint_context_path: pathlib.Path | None = None
@@ -129,6 +132,7 @@ class FuchsiaBuildConfig(object):
             fint_params_path=args.fint_params_path,
             fint_context_path=args.fint_context_path,
             output_metadata_json=args.output_metadata_json,
+            auth_mode=args.auth_mode,
             remote_proxy_socket=args.remote_proxy_socket,
             resultstore_proxy_socket=args.resultstore_proxy_socket,
         )
@@ -136,6 +140,12 @@ class FuchsiaBuildConfig(object):
 
 def check_shell_command(cmd: str) -> bool:
     return shutil.which(cmd) is not None
+
+
+@functools.lru_cache()
+def has_loas() -> bool:
+    """Checks whether the host system supports LOAS/gcert authentication."""
+    return check_shell_command("gcert") and check_shell_command("gcertstatus")
 
 
 def _collect_rbe_metadata(log_dir: pathlib.Path) -> JSONObject:
@@ -420,6 +430,73 @@ class FuchsiaBuildContext(object):
         self.env = env
         self.config = config
 
+    @functools.cached_property
+    def authenticated_user(self) -> str:
+        """Resolves and caches the user identity for RBE/ResultStore authentication.
+
+        Returns:
+            The resolved user name string.
+
+        Raises:
+            BuildConfigurationError: If the user cannot be resolved and
+              gcert authentication is required.
+        """
+        user = None
+        if "USER" in self.env:
+            user = self.env["USER"]
+        else:
+            try:
+                user = getpass.getuser()
+            except Exception:
+                pass
+
+        if not user:
+            if self.loas_type != "skip":
+                raise BuildConfigurationError(
+                    "USER environment variable is not set and could not be "
+                    "inferred. This is required for RBE/ResultStore LOAS/gcert authentication."
+                )
+            user = "builder"
+        return user
+
+    @property
+    def auth_env(self) -> dict[str, str]:
+        """Returns a dictionary of authentication-related environment variables."""
+        env: dict[str, str] = {}
+        env["USER"] = self.authenticated_user
+
+        if not self.needs_auth:
+            return env
+
+        env["FX_BUILD_LOAS_TYPE"] = self.loas_type
+
+        # Forward Google Application Credentials if present or fallback to defaults safely
+        if "GOOGLE_APPLICATION_CREDENTIALS" in self.env:
+            env["GOOGLE_APPLICATION_CREDENTIALS"] = self.env[
+                "GOOGLE_APPLICATION_CREDENTIALS"
+            ]
+        elif self.resolved_auth_mode != "machine":
+            try:
+                default_adc = (
+                    pathlib.Path.home()
+                    / ".config/gcloud/application_default_credentials.json"
+                )
+                env["GOOGLE_APPLICATION_CREDENTIALS"] = str(default_adc)
+            except (RuntimeError, KeyError):
+                pass
+
+        # Forward GCE metadata host overrides to support Java/Bazel inside sandboxes.
+        # This automatically translates standard GCE_METADATA_HOST to the Java-specific
+        # G_CLOUD_METADATA_HOST and GCLOUD_METADATA_HOST variables, allowing Bazel to
+        # natively route credentials requests to our local metadata proxy.
+        if "GCE_METADATA_HOST" in self.env:
+            gce_host = self.env["GCE_METADATA_HOST"]
+            env["GCE_METADATA_HOST"] = gce_host
+            env["G_CLOUD_METADATA_HOST"] = gce_host
+            env["GCLOUD_METADATA_HOST"] = gce_host
+
+        return env
+
     @staticmethod
     def from_args(
         args: argparse.Namespace,
@@ -591,6 +668,22 @@ class FuchsiaBuildContext(object):
 
         return self._rbe_settings.get("final", {}).get("needs_auth", False)
 
+    @functools.cached_property
+    def resolved_auth_mode(self) -> str:
+        """Resolves the concrete authentication mode (user, machine, or none)."""
+        mode = self.config.auth_mode
+        if mode == "none" or not self.needs_auth:
+            return "none"
+
+        if mode == "auto":
+            # Auto-detect if we are in an infra/bot environment
+            infra_env_hints = ["BUILDBUCKET_ID", "SWARMING_TASK_ID"]
+            if any(hint in self.env for hint in infra_env_hints):
+                return "machine"
+            return "user"
+
+        return mode
+
     @property
     def concurrency(self) -> int:
         return choose_concurrency(self.rbe_enabled)
@@ -598,23 +691,31 @@ class FuchsiaBuildContext(object):
     @functools.cached_property
     def loas_type(self) -> str:
         """Automatically detect the LOAS type."""
-        if not self.needs_auth:
+        if self.resolved_auth_mode == "none":
             return "skip"
 
-        check_loas_script = self.check_loas_script
-        if is_executable(check_loas_script):
-            try:
-                output = subprocess.check_output(
-                    [str(check_loas_script)],
-                    text=True,
-                    stderr=subprocess.DEVNULL,
-                    env=self.env,
-                )
-                lines = output.strip().splitlines()
-                if lines:
-                    return lines[-1]
-            except subprocess.CalledProcessError:
-                pass
+        if self.resolved_auth_mode == "machine":
+            return "skip"
+
+        # Under 'user' mode: if we have LOAS, detect the specific restriction level
+        if has_loas():
+            check_loas_script = self.check_loas_script
+            if is_executable(check_loas_script):
+                try:
+                    output = subprocess.check_output(
+                        [str(check_loas_script)],
+                        text=True,
+                        stderr=subprocess.DEVNULL,
+                        env=self.env,
+                    )
+                    lines = output.strip().splitlines()
+                    if lines:
+                        return lines[-1]
+                except subprocess.CalledProcessError:
+                    pass
+            return "skip"
+
+        # If no LOAS is available but we are in 'user' mode, we must be using local OAuth/ADC
         return "skip"
 
 
@@ -745,6 +846,8 @@ class BuildInvocation(object):
         # LOAS handling
         yield "--loas-type"
         yield context.loas_type
+        if context.resolved_auth_mode == "machine":
+            yield "--use-machine-credentials"
 
         # Log directory setup
         yield "--build-dir"
@@ -806,7 +909,6 @@ class BuildInvocation(object):
 
         # Forwarded standard variables
         forward_vars = [
-            "USER",  # needs $USER for automatic auth with gcert (from re-client bootstrap)
             "SSH_AUTH_SOCK",  # need to forward the authentication socket (used by gnubby) for bazel
             "MAKEFLAGS",
             "TMPDIR",  # was passed for Goma on macOS, but it might have other uses.
@@ -829,31 +931,7 @@ class BuildInvocation(object):
             if var in self.context.env:
                 build_env[var] = self.context.env[var]
 
-        if self.context.needs_auth:
-            build_env["FX_BUILD_LOAS_TYPE"] = self.context.loas_type
-            user = None
-            if "USER" in self.context.env:
-                user = self.context.env["USER"]
-            elif hasattr(os, "getlogin"):
-                try:
-                    user = os.getlogin()
-                except OSError:
-                    pass
-
-            if not user:
-                raise BuildConfigurationError(
-                    "USER environment variable is not set and could not be "
-                    "inferred. This is required for RBE/ResultStore authentication."
-                )
-            build_env["USER"] = user
-
-            default_adc = (
-                pathlib.Path.home()
-                / ".config/gcloud/application_default_credentials.json"
-            )
-            build_env["GOOGLE_APPLICATION_CREDENTIALS"] = self.context.env.get(
-                "GOOGLE_APPLICATION_CREDENTIALS", str(default_adc)
-            )
+        build_env.update(self.context.auth_env)
 
         # Inject ResultStore induction signals to allow passive wrappers to dynamically
         # configure themselves at runtime.
@@ -1010,6 +1088,19 @@ class BuildCommandExecution(object):
             msg(
                 f"Running: {env_str} {' '.join(shlex.quote(c) for c in self.full_command)}"
             )
+
+        if config.verbose:
+            auth_summary = (
+                f"\n[Auth Configuration Resolved]:\n"
+                f"  Auth Mode:       {self.invocation.context.resolved_auth_mode}\n"
+                f"  LOAS Type:       {self.invocation.context.loas_type}\n"
+                f"  Auth User:       {self.invocation.context.authenticated_user}\n"
+                f"  Metadata Host:   {self.env.get('GCE_METADATA_HOST', 'NOT_SET')}\n"
+                f"  Java Metadata:   {self.env.get('G_CLOUD_METADATA_HOST', 'NOT_SET')}\n"
+                f"  G-A-C Path:      {self.env.get('GOOGLE_APPLICATION_CREDENTIALS', 'NOT_SET')}\n"
+                f"--------------------------------------------------"
+            )
+            msg(auth_summary)
         # Note: when config.dry_run is set, we still execute the command,
         # but we have forwarded --dry-run to the top_build_wrapper, which
         # will skip the actual build execution. This allows for high-fidelity
@@ -1290,6 +1381,13 @@ def _main_arg_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--tui", type=str_to_bool, nargs="?", const=True)
     parser.add_argument("--no-tui", action="store_false", dest="tui")
+
+    parser.add_argument(
+        "--auth-mode",
+        choices=["auto", "user", "machine", "none"],
+        default="auto",
+        help="Specify RBE/ResultStore authentication mode (auto, user, machine, or none; default: auto).",
+    )
 
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
