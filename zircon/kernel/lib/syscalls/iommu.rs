@@ -37,7 +37,7 @@ pub fn sys_iommu_create(
     // Copy the descriptor into the kernel and try to create the dispatcher
     // using it.
     let mut uninit_buf =
-        kalloc::Box::<[u8]>::try_new_uninit_slice(desc_size).map_err(|_| Status::NO_MEMORY)?;
+        fbl::Array::<u8>::try_new_uninit_slice(desc_size).map_err(|_| Status::NO_MEMORY)?;
     let _ = desc.copy_slice_from_user(&mut uninit_buf[..])?;
     // SAFETY: `uninit_buf` was successfully initialized with bytes from user space.
     let init_buf = unsafe { uninit_buf.assume_init() };

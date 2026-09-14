@@ -19,9 +19,7 @@ use crate::kernel::thread::soft_fault;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::convert::Infallible;
 use core::pin::Pin;
-use core::ptr::slice_from_raw_parts_mut;
-use fbl::{Canary, RefPtr};
-use kalloc::Box;
+use fbl::{Array, Canary, RefPtr};
 use ksync::{KMutex, PhantomMutex, guarded};
 use object_constants_rs::{
     kFifoDispatcherStateAlign, kFifoDispatcherStateOffset, kFifoDispatcherStateSize,
@@ -72,7 +70,7 @@ pub struct FifoDispatcherState {
     #[guarded_by(mu)]
     tail: u64,
     #[guarded_by(mu)]
-    data: Box<[u8]>,
+    data: Array<u8>,
 
     #[mutex(PeerHolderMuClass<FifoDispatcher>)]
     pub mu: KMutex<PhantomMutex>,
@@ -87,9 +85,9 @@ impl FifoDispatcherState {
     ) -> impl PinInit<Self, Infallible> {
         DISPATCHER_FIFO_CREATE_COUNT.add(1);
         let total_size = (count as usize) * (elem_size as usize);
-        // SAFETY: `data` points to a buffer allocated via Box::try_new_zeroed_slice of `total_size`
-        // bytes in FifoDispatcher::create and forgotten via core::mem::forget on success.
-        let data_box = unsafe { Box::from_raw(slice_from_raw_parts_mut(data, total_size)) };
+        // SAFETY: `data` points to a buffer allocated via Array::try_new_zeroed_slice of `total_size`
+        // bytes in FifoDispatcher::create and transferred via into_raw_parts on success.
+        let data_array = unsafe { Array::from_raw_parts(data, total_size) };
         pin_init!(Self {
             canary: Canary::new(),
             peered <- PeeredState::init(holder),
@@ -97,7 +95,7 @@ impl FifoDispatcherState {
             elem_size,
             head: 0.into(),
             tail: 0.into(),
-            data: data_box.into(),
+            data: data_array.into(),
             mu: KMutex::new(PhantomMutex),
         })
     }
@@ -143,26 +141,26 @@ impl FifoDispatcher {
         let holder0 = PeerHolder::<Self>::create().map_err(|_| Status::NO_MEMORY)?;
         let holder1 = holder0.clone();
 
-        let data0 = Box::<[u8]>::try_new_zeroed_slice(total_size).map_err(|_| Status::NO_MEMORY)?;
-        let data1 = Box::<[u8]>::try_new_zeroed_slice(total_size).map_err(|_| Status::NO_MEMORY)?;
+        let data0 = Array::<u8>::try_new_zeroed_slice(total_size).map_err(|_| Status::NO_MEMORY)?;
+        let data1 = Array::<u8>::try_new_zeroed_slice(total_size).map_err(|_| Status::NO_MEMORY)?;
 
         let create_single = |holder: RefPtr<PeerHolder<Self>>,
-                             mut data: Box<[u8]>|
+                             data: Array<u8>|
          -> Result<KernelHandle<Self>, Status> {
-            // SAFETY: `holder` transfers an acquired reference count, `data` is a valid buffer,
-            // and `cpp_fifo_dispatcher_create` initializes `handle` on success.
+            let (data_ptr, _) = data.into_raw_parts();
+            // SAFETY: `holder` transfers an acquired reference count, `data_ptr` is a valid buffer
+            // from `into_raw_parts`, and `cpp_fifo_dispatcher_create` initializes `handle` on success.
             let handle = unsafe {
                 KernelHandle::create(|out| {
                     cpp_fifo_dispatcher_create(
                         RefPtr::into_raw(holder) as *mut _,
                         count as u32,
                         elem_size as u32,
-                        data.as_mut_ptr(),
+                        data_ptr,
                         out,
                     )
                 })
             }?;
-            core::mem::forget(data);
             Ok(handle)
         };
 

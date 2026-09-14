@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::counters::define_kcounter;
-use fbl::{Canary, RefPtr};
+use fbl::{Array, Canary, RefPtr};
 use ksync::{KMutex, RawCriticalMutex, guarded};
 use pin_init::{PinInit, pin_data, pin_init, pinned_drop};
 use zx_status::Status;
@@ -90,10 +90,9 @@ impl IommuDispatcher {
     /// Creates a new IommuDispatcher and returns its kernel handle and rights.
     pub fn create(
         type_param: u32,
-        desc: kalloc::Box<[u8]>,
+        desc: Array<u8>,
     ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
-        let desc_len = desc.len();
-        let desc_ptr = kalloc::Box::into_raw(desc) as *const u8;
+        let (desc_ptr, desc_len) = desc.into_raw_parts();
         // SAFETY: `desc_ptr` points to `desc_len` bytes of valid heap-allocated memory that is
         // transferred to C++ (`cpp_iommu_dispatcher_create` takes ownership of `desc_ptr`), and
         // `cpp_iommu_dispatcher_create` initializes `handle` on success.

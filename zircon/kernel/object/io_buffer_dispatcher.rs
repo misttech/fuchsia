@@ -31,7 +31,7 @@ use core::pin::Pin;
 use core::{ptr, slice};
 use fbl::{Array, Canary, Recyclable, RefPtr, pin_make_ref_counted, ref_counted};
 use iob::{BlobIdAllocator, ZeroFill};
-use kalloc::{AllocError, Box};
+use kalloc::AllocError;
 use ksync::{KMutex, LockToken, PhantomMutex, guarded};
 use object_constants_rs::{
     kIoBufferDispatcherStateAlign, kIoBufferDispatcherStateOffset, kIoBufferDispatcherStateSize,
@@ -565,7 +565,7 @@ impl IoBufferDispatcher {
     fn create_regions(
         region_configs: &[zx_iob_region_t],
     ) -> Result<Array<IobRegionVariant>, Status> {
-        let mut regions = Box::<[IobRegionVariant]>::try_new_uninit_slice(region_configs.len())
+        let mut regions = Array::<IobRegionVariant>::try_new_uninit_slice(region_configs.len())
             .map_err(|_| Status::NO_MEMORY)?;
 
         for (i, config) in region_configs.iter().enumerate() {
@@ -659,7 +659,7 @@ impl IoBufferDispatcher {
             regions[i].write(variant);
         }
 
-        Ok(Array::from_box(unsafe { regions.assume_init() }))
+        Ok(unsafe { regions.assume_init() })
     }
 
     fn create_iob_region_variant(
