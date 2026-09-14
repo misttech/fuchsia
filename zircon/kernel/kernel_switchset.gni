@@ -246,7 +246,11 @@ template("kernel_switchset") {
       # the Fuchsia build never invoked it with corresponding
       # variant selectors. Using an exclude_variant_tag is
       # enough to fix the issue.
-      exclude_variant_tags = [ "fuzzer" ]
+      # No GCC toolchain variant for the core kernel.
+      exclude_variant_tags = [
+        "fuzzer",
+        "gcc",
+      ]
       if (cpu == "riscv64") {
         # TODO(https://fxbug.dev/42076027): no asan for riscv64 yet
         exclude_variant_tags += [ "asan" ]
@@ -256,7 +260,14 @@ template("kernel_switchset") {
         exclude_variant_tags += [ "asan" ]
       }
       if (defined(invoker.exclude_variant_tags)) {
-        exclude_variant_tags += invoker.exclude_variant_tags
+        # GN list subtraction in variant_toolchain_suite() fails if exclude_tags
+        # contains duplicate items. Use the `+= -= +=` idiom to insert tags as a
+        # set without introducing duplicates.
+        foreach(tag, invoker.exclude_variant_tags) {
+          exclude_variant_tags += [ tag ]
+          exclude_variant_tags -= [ tag ]
+          exclude_variant_tags += [ tag ]
+        }
       }
 
       # Always enable frame pointers in the kernel so there are panic
