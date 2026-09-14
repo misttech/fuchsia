@@ -239,7 +239,7 @@ impl PerCpu {
     }
 
     /// Call |func| with the current CPU's percpu struct with preemption disabled.
-    pub fn with_current_prrempt_disable<F: FnOnce(&Self)>(func: F) {
+    pub fn with_current_preempt_disable<F: FnOnce(&Self)>(func: F) {
         let _preempt_disable = crate::kernel::thread::AutoPreemptDisabler::new();
         func(Self::get_current());
     }
