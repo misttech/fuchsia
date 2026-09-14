@@ -32,10 +32,10 @@ common --vendor_dir=third_party/bazel_vendor
 # Note that Bazel uses --registry=url://bcr.bazel.build by default if no
 # --registry option is used, which points to the default Bazel Central Registry.
 # LINT.IfChange(bazel_registry_dir)
-common --registry=file://%workspace%/third_party/bazel_vendor/_registries/bcr.bazel.build
+common --registry=file://%workspace%/third_party/bazel_registries/bcr.bazel.build
 # LINT.ThenChange(
 #     //build/bazel_sdk/tests/scripts/bazel_test.py:bazel_registry_dir,
-#     //build/bazel/bazel_fuchsia_sdk.gni:bazel_vendor_dir,
+#     //build/bazel/bazel_fuchsia_sdk.gni:bazel_registry_dir,
 #     //tools/devshell/contrib/update-bazel-vendor-dir:bazel_registry_dir
 # )
 

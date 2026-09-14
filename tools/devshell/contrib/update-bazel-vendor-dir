@@ -53,7 +53,7 @@ readonly BAZEL_VENDOR_DIR="${FUCHSIA_DIR}/third_party/bazel_vendor"
 # LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_vendor_dir)
 
 # LINT.IfChange(bazel_registry_dir)
-readonly BAZEL_REGISTRY_DIR="${FUCHSIA_DIR}/third_party/bazel_registry"
+readonly BAZEL_REGISTRY_DIR="${FUCHSIA_DIR}/third_party/bazel_registries/bcr.bazel.build"
 # LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_registry_dir)
 
 "${PREBUILT_PYTHON3}" "${FUCHSIA_DIR}"/build/bazel/scripts/update_bazel_vendor_dir.py \

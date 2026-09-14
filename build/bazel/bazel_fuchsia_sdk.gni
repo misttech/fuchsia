@@ -140,7 +140,7 @@ template("generate_fuchsia_bazel_sdk") {
 #
 #    bazel_registry_dir: (optional)
 #       Path to the Bazel registry directory to use. Defaults to
-#       //third_party/bazel_vendor/_registries/bcr.bazel.build
+#       //third_party/bazel_registries/bcr.bazel.build
 #
 #    output_base: (optional)
 #       GN path to a Bazel output_base directory to use to run the
@@ -226,8 +226,7 @@ template("run_fuchsia_bazel_sdk_tests") {
     _bazel_registry_dir = invoker.bazel_registry_dir
   } else {
     # LINT.IfChange(bazel_registry_dir)
-    _bazel_registry_dir =
-        "//third_party/bazel_vendor/_registries/bcr.bazel.build"
+    _bazel_registry_dir = "//third_party/bazel_registries/bcr.bazel.build"
     # LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_registry_dir)
   }
 

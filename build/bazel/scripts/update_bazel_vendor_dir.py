@@ -55,6 +55,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # Check for empty values, otherwise the rmdir / copytree operations
+    # below will erase your complete Fuchsia checkout. Ask me how I know :)
+    assert args.bazel_vendor_dir, "Empty --bazel-vendor-dir!"
+    assert args.bazel_registry_dir, "Empty --bazel-registry-dir!"
+
     # Always do a clean vendor in a temporary directory to drop unwanted repos.
     with tempfile.TemporaryDirectory() as tmp:
         temp_dir = Path(tmp)
@@ -67,9 +72,6 @@ def main() -> int:
 
         print(" ".join(str(s) for s in cmd))
 
-        # Remove the existing local Bazel registry to force `bazel vendor` to update
-        # and create a new one.
-        shutil.rmtree(args.bazel_registry_dir, ignore_errors=True)
         subprocess.check_call(
             cmd,
             cwd=args.workspace,
@@ -101,6 +103,14 @@ def main() -> int:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+
+        # Update registry directory with new content.
+        if not args.bazel_registry_dir.is_relative_to(args.bazel_vendor_dir):
+            shutil.rmtree(args.bazel_registry_dir, ignore_errors=True)
+            shutil.move(
+                temp_dir / "_registries/bcr.bazel.build",
+                args.bazel_registry_dir,
+            )
 
         # Persist manually stubbed repos from the existing vendor dir.
         for repo in args.stub_repo:

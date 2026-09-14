@@ -62,9 +62,7 @@ _DEFAULT_BAZEL_VENDOR_DIR = "third_party/bazel_vendor"
 # LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_vendor_dir)
 
 # LINT.IfChange(bazel_registry_dir)
-_DEFAULT_BAZEL_REGISTRY_DIR = (
-    "third_party/bazel_vendor/_registries/bcr.bazel.build"
-)
+_DEFAULT_BAZEL_REGISTRY_DIR = "third_party/bazel_registries/bcr.bazel.build"
 # LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_registry_dir)
 
 # Maps from apparent repo names to canonical repo names.
