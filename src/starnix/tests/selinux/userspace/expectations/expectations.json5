@@ -68,6 +68,9 @@
                 "SeLinuxFsAccess.ClassIdMayHaveTrailingNonNumericData",
                 "SeLinuxFsAccess.FourthArgumentIsNotValidated",
 
+                // TODO: https://fxbug.dev/559523569 - Starnix does not check unix_may_send on datagram connect.
+                "SocketTest.UnixDomainDatagramConnectDeniedWithoutSendTo",
+
                 // TODO: https://fxbug.dev/455799917 - Fix test setup for Starnix to match Linux.
                 "UnlabeledFsTest.CreateFileInUnlabeledFs",
 

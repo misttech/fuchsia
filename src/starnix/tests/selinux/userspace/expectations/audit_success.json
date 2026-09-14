@@ -1898,6 +1898,12 @@
             ]
         },
         {
+            "name": "SocketTest.UnixDomainDatagramConnectDeniedWithoutSendTo",
+            "audit_expectations": [
+                "avc:  denied  { sendto } for path=00746573745F756E69785 scontext=test_u:test_r:socket_dgram_connect_sender_t:s0 tcontext=test_u:test_r:socket_dgram_connect_receiver_t:s0 tclass=unix_dgram_socket permissive=0"
+            ]
+        },
+        {
             "name": "SocketTest.WriteDenied",
             "audit_expectations": [
                 "avc:  denied  { write } for path=\"socket:[902]\" dev=\"sockfs\" ino=902 scontext=test_u:test_r:socket_sendmsg_test_t:s0 tcontext=test_u:test_r:socket_sendmsg_no_t:s0 tclass=unix_stream_socket permissive=0"

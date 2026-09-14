@@ -16,6 +16,10 @@
         "SchedTest.SchedSetschedulerDeniedWithoutSetsched",
         "SchedTest.SchedSetschedulerSucceedsWithSetsched",
 
+        // TODO: https://fxbug.dev/559523569 - Starnix does not check
+        // `unix_dgram_socket { sendto }` on datagram connect.
+        "SocketTest.UnixDomainDatagramConnectDeniedWithoutSendTo",
+
         // The permission is checked correctly, but Linux adds multiple logs for the same denial.
         "SyslogTest.ProcKmsgReadDeniedIfDroppedPermission",
 

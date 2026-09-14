@@ -904,4 +904,30 @@ INSTANTIATE_TEST_SUITE_P(
                                          "SucceedsWithSockFileAndDirPerms"}),
     [](const testing::TestParamInfo<SocketBindTestCase>& info) { return info.param.test_name; });
 
+// Verifies that `connect()` on a UNIX domain datagram socket checks `unix_dgram_socket { sendto }`
+// permission between the sender socket's SID and receiver socket's SID.
+TEST(SocketTest, UnixDomainDatagramConnectDeniedWithoutSendTo) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+  ASSERT_TRUE(RunSubprocessAs("test_u:test_r:socket_dgram_connect_test_t:s0", [&] {
+    auto receiver =
+        SocketWithLabel(AF_UNIX, SOCK_DGRAM, 0, "test_u:test_r:socket_dgram_connect_receiver_t:s0");
+    ASSERT_TRUE(receiver.is_ok()) << receiver.error_value();
+
+    struct sockaddr_un addr = {.sun_family = AF_UNIX};
+    const char name[] = "\0test_unix_dgram_connect_denied";
+    memcpy(addr.sun_path, name, sizeof(name));
+    ASSERT_THAT(
+        bind(receiver.value().get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+        SyscallSucceeds());
+
+    auto sender =
+        SocketWithLabel(AF_UNIX, SOCK_DGRAM, 0, "test_u:test_r:socket_dgram_connect_sender_t:s0");
+    ASSERT_TRUE(sender.is_ok()) << sender.error_value();
+
+    EXPECT_THAT(
+        connect(sender.value().get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+        SyscallFailsWithErrno(EACCES));
+  }));
+}
+
 }  // namespace
