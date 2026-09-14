@@ -168,6 +168,75 @@ kernel_bindgen_crate("event-bindings") {
   ]
 }
 
+kernel_bindgen_crate("percpu-bindings") {
+  visibility = [ "//zircon/kernel/*" ]
+  headers = [ "//zircon/kernel/include/kernel/percpu.h" ]
+  non_rust_deps = [ ":kernel" ]
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+
+  function_blocklist = [ ".*" ]
+
+  type_allowlist = [
+    "percpu",
+    "ktl::atomic",
+    "std::atomic",
+    "guest_stats",
+    "cpu_stats",
+    "TimerQueue",
+    "CpuSearchSet",
+    "Scheduler",
+    "IdlePowerThread",
+    "DpcRunner",
+    "vm_page_counts",
+    "vm_page_counts_t",
+    "Timer",
+    "StallAccumulator",
+    "PlatformCpuResumeState",
+    "lockdep::ThreadLockState",
+    "ChainLockTransaction",
+  ]
+  type_blocklist = [
+    "zx_duration_mono_t",
+    "zx_instant_mono_t",
+    "TimerQueue_.*",
+    "CpuSearchSet_.*",
+    "Scheduler_.*",
+    "IdlePowerThread_.*",
+    "DpcRunner_.*",
+    "Timer_.*",
+    "StallAccumulator_.*",
+    "PlatformCpuResumeState_.*",
+    "ChainLockTransaction_.*",
+  ]
+  var_blocklist = [ "percpu_.*" ]
+  opaque_types = [
+    "TimerQueue",
+    "CpuSearchSet",
+    "Scheduler",
+    "IdlePowerThread",
+    "DpcRunner",
+    "Timer",
+    "StallAccumulator",
+    "PlatformCpuResumeState",
+    "ktl::atomic",
+    "std::atomic",
+    "lockdep::ThreadLockState",
+    "vm_page_counts",
+    "ChainLockTransaction",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [ "//sdk/rust/zx-types" ]
+  expect_lints = [ "non_camel_case_types" ]
+  raw_lines = [
+    "#![no_std]",
+    "pub use zx_types::{zx_duration_mono_t, zx_instant_mono_t};",
+    "pub type ulong = ::core::ffi::c_ulong;",
+  ]
+}
+
 kernel_rust_mod("kernel-rs") {
   output_name = "kernel"
   source_root = "mod.rs"
@@ -179,6 +248,7 @@ kernel_rust_mod("kernel-rs") {
     "mod.rs",
     "mp.rs",
     "owned_wait_queue.rs",
+    "percpu.rs",
     "relaxed_atomic.rs",
     "restricted.rs",
     "restricted_state.rs",
@@ -189,6 +259,7 @@ kernel_rust_mod("kernel-rs") {
   ]
   deps = [
     ":event-bindings",
+    ":percpu-bindings",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",

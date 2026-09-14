@@ -38,6 +38,7 @@ pub mod ops;
 #[cfg(target_arch = "riscv64")]
 assert_arch_signatures!(riscv64);
 
+use crate::kernel::percpu::PerCpu;
 use zx_status::Status;
 
 unsafe extern "C" {
@@ -51,6 +52,7 @@ unsafe extern "C" {
     fn cpp_arch_max_num_cpus() -> u32;
     fn cpp_arch_set_blocking_disallowed(value: bool);
     fn cpp_arch_set_restricted_flag(restricted: bool);
+    fn cpp_arch_get_curr_percpu() -> *const core::ffi::c_void;
 }
 
 #[cfg(not(target_arch = "riscv64"))]
@@ -172,6 +174,12 @@ pub fn curr_cpu_num() -> u32 {
 #[inline(always)]
 pub fn max_num_cpus() -> u32 {
     unsafe { cpp_arch_max_num_cpus() }
+}
+
+/// Return a pointer to the high-level percpu struct for the calling CPU.
+#[inline(always)]
+pub fn get_curr_percpu() -> *const PerCpu {
+    unsafe { cpp_arch_get_curr_percpu().cast() }
 }
 
 /// Copies `len` bytes from user memory at `src` into kernel memory at `dst`.

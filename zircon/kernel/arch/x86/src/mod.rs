@@ -45,6 +45,10 @@ unsafe extern "C" {
     fn cpp_x86_set_general_regs(regs: *const zx_thread_state_general_regs_t) -> i32;
 }
 
+pub const MAX_CACHE_LINE: usize = 64;
+#[repr(align(64))]
+pub struct CpuAlignMarker;
+
 /// The mask of all RFLAGS bits that user code is permitted to set or modify:
 /// * CF (Carry Flag): bit 0 (`0x1`)
 /// * PF (Parity Flag): bit 2 (`0x4`)

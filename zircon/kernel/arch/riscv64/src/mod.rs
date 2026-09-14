@@ -25,6 +25,11 @@ pub const KERNEL_ASPACE_BASE: usize = 0xffff_ffc0_0000_0000;
 /// Size of the kernel address space.
 pub const KERNEL_ASPACE_SIZE: usize = 1usize << 38;
 
+/// Zic64b guarantees.
+pub const MAX_CACHE_LINE: usize = 64;
+#[repr(align(64))]
+pub struct CpuAlignMarker;
+
 /// Returns whether `va` is within the kernel address space.
 #[inline]
 pub fn is_kernel_address(va: usize) -> bool {

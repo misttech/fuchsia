@@ -40,6 +40,11 @@ unsafe extern "C" {
     fn cpp_arm64_cpu_num_to_mpidr(cpu_num: cpu_num_t) -> u64;
 }
 
+/// The maximum cache line seen on any known ARM hardware.
+pub const MAX_CACHE_LINE: usize = 64;
+#[repr(align(64))]
+pub struct CpuAlignMarker;
+
 /// Translates a CPU number back to the MPIDR of that CPU.
 ///
 /// Mirrors `arch_cpu_num_to_mpidr()` from

@@ -10,6 +10,7 @@ pub mod event;
 pub mod koid;
 pub mod mp;
 pub mod owned_wait_queue;
+pub mod percpu;
 pub mod relaxed_atomic;
 pub mod restricted;
 pub mod restricted_state;
