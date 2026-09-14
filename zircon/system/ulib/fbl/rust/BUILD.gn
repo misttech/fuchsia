@@ -51,6 +51,7 @@ rustc_library("fbl") {
     "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
+    "//third_party/rust_crates:zerocopy",
   ]
 
   # TODO(https://fxbug.dev/548748442): remove when all fixed in the code

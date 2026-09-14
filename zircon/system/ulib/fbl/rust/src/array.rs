@@ -4,8 +4,11 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
+use core::ptr::slice_from_raw_parts_mut;
 use kalloc::{AllocError, Allocator, Box, DefaultAllocator};
+use zerocopy::FromZeros;
 
 /// A fixed-size array that takes ownership of its elements.
 /// This is a Rust analog to `fbl::Array` in C++.
@@ -40,6 +43,53 @@ impl<T, A: Allocator> Array<T, A> {
         Ok(Self { buf: unsafe { b.assume_init() } })
     }
 
+    /// Allocates a new uninitialized array of the given length with the given allocator.
+    pub fn try_new_uninit_slice_in(
+        len: usize,
+        allocator: A,
+    ) -> Result<Array<MaybeUninit<T>, A>, AllocError> {
+        Ok(Array { buf: Box::<[T], A>::try_new_uninit_slice_in(len, allocator)? })
+    }
+
+    /// Consumes the array, returning a raw slice pointer and the allocator.
+    ///
+    /// The memory will be leaked, and never deallocated unless reconstructed.
+    pub fn into_raw_with_allocator(self) -> (*mut [T], A) {
+        Box::into_raw_with_allocator(self.buf)
+    }
+
+    /// Consumes the array, returning a pointer to the first element, the element count, and the
+    /// allocator.
+    ///
+    /// The memory will be leaked, and never deallocated unless reconstructed.
+    pub fn into_raw_parts_with_allocator(self) -> (*mut T, usize, A) {
+        let (slice_ptr, allocator) = self.into_raw_with_allocator();
+        (slice_ptr as *mut T, slice_ptr.len(), allocator)
+    }
+
+    /// Constructs an array from a raw slice pointer and allocator.
+    ///
+    /// # Safety
+    ///
+    /// - For non-zero-sized types, the pointer must be valid and have been allocated
+    ///   by `allocator` with a layout matching the slice length elements of `T`.
+    pub unsafe fn from_raw_in(ptr: *mut [T], allocator: A) -> Self {
+        Self { buf: unsafe { Box::from_raw_in(ptr, allocator) } }
+    }
+
+    /// Constructs an array from a raw pointer to elements and length with the given allocator.
+    ///
+    /// This is particularly convenient when receiving an array from C/FFI boundaries.
+    ///
+    /// # Safety
+    ///
+    /// - For non-zero-sized types, the pointer must be valid and have been allocated
+    ///   by `allocator` with a layout matching `len` elements of `T`.
+    pub unsafe fn from_raw_parts_in(ptr: *mut T, len: usize, allocator: A) -> Self {
+        let slice_ptr = slice_from_raw_parts_mut(ptr, len);
+        unsafe { Self::from_raw_in(slice_ptr, allocator) }
+    }
+
     /// Returns the number of elements in the array.
     pub fn len(&self) -> usize {
         self.buf.len()
@@ -56,6 +106,20 @@ impl<T, A: Allocator> Array<T, A> {
     }
 }
 
+impl<T: FromZeros, A: Allocator> Array<T, A> {
+    /// Allocates a new zero-initialized array of the given length with the given allocator.
+    pub fn try_new_zeroed_slice_in(len: usize, allocator: A) -> Result<Self, AllocError> {
+        Ok(Self { buf: Box::<[T], A>::try_new_zeroed_slice_in(len, allocator)? })
+    }
+}
+
+impl<T: FromZeros> Array<T, DefaultAllocator> {
+    /// Allocates a new zero-initialized array of the given length using the default allocator.
+    pub fn try_new_zeroed_slice(len: usize) -> Result<Self, AllocError> {
+        Self::try_new_zeroed_slice_in(len, DefaultAllocator)
+    }
+}
+
 impl<T> Array<T, DefaultAllocator> {
     /// Creates an empty array using the default allocator.
     pub const fn new() -> Self {
@@ -68,6 +132,63 @@ impl<T> Array<T, DefaultAllocator> {
         T: Default,
     {
         Self::try_new_in(len, DefaultAllocator)
+    }
+
+    /// Allocates a new uninitialized array of the given length using the default allocator.
+    pub fn try_new_uninit_slice(
+        len: usize,
+    ) -> Result<Array<MaybeUninit<T>, DefaultAllocator>, AllocError> {
+        Self::try_new_uninit_slice_in(len, DefaultAllocator)
+    }
+
+    /// Consumes the array, returning a raw slice pointer.
+    ///
+    /// The memory will be leaked, and never deallocated unless reconstructed.
+    pub fn into_raw(self) -> *mut [T] {
+        let (ptr, _) = self.into_raw_with_allocator();
+        ptr
+    }
+
+    /// Consumes the array, returning a pointer to the first element and the element count.
+    ///
+    /// This is particularly convenient when passing an array across C/FFI boundaries.
+    /// The memory will be leaked, and never deallocated unless reconstructed.
+    pub fn into_raw_parts(self) -> (*mut T, usize) {
+        let (ptr, len, _) = self.into_raw_parts_with_allocator();
+        (ptr, len)
+    }
+
+    /// Constructs an array from a raw slice pointer using the default allocator.
+    ///
+    /// # Safety
+    ///
+    /// - For non-zero-sized types, the pointer must be valid and have been allocated
+    ///   by the default allocator with a layout matching the slice length elements of `T`.
+    pub unsafe fn from_raw(ptr: *mut [T]) -> Self {
+        unsafe { Self::from_raw_in(ptr, DefaultAllocator) }
+    }
+
+    /// Constructs an array from a raw pointer to elements and length using the default allocator.
+    ///
+    /// This is particularly convenient when receiving an array from C/FFI boundaries.
+    ///
+    /// # Safety
+    ///
+    /// - For non-zero-sized types, the pointer must be valid and have been allocated
+    ///   by the default allocator with a layout matching `len` elements of `T`.
+    pub unsafe fn from_raw_parts(ptr: *mut T, len: usize) -> Self {
+        unsafe { Self::from_raw_parts_in(ptr, len, DefaultAllocator) }
+    }
+}
+
+impl<T, A: Allocator> Array<MaybeUninit<T>, A> {
+    /// Converts to `Array<T, A>`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee that all elements of the array are initialized.
+    pub unsafe fn assume_init(self) -> Array<T, A> {
+        Array { buf: unsafe { self.buf.assume_init() } }
     }
 }
 
@@ -358,5 +479,103 @@ mod tests {
             }
             .is_err()
         );
+    }
+
+    #[test]
+    fn test_try_new_zeroed_slice() {
+        let arr = Array::<u32>::try_new_zeroed_slice(4).unwrap();
+        assert_eq!(arr.len(), 4);
+        for &val in arr.iter() {
+            assert_eq!(val, 0);
+        }
+
+        let state = TestState::default();
+        let arr_alloc = Array::<u32, TestAllocator<'_>>::try_new_zeroed_slice_in(
+            3,
+            TestAllocator { state: &state },
+        )
+        .unwrap();
+        assert_eq!(arr_alloc.len(), 3);
+        assert_eq!(state.alloc_count.get(), 1);
+        for &val in arr_alloc.iter() {
+            assert_eq!(val, 0);
+        }
+    }
+
+    #[test]
+    fn test_try_new_uninit_slice_and_assume_init() {
+        let mut uninit = Array::<u32>::try_new_uninit_slice(3).unwrap();
+        assert_eq!(uninit.len(), 3);
+        for i in 0..3 {
+            uninit[i].write((i * 10) as u32);
+        }
+        let arr = unsafe { uninit.assume_init() };
+        assert_eq!(arr.len(), 3);
+        assert_eq!(&arr[..], &[0, 10, 20]);
+    }
+
+    #[test]
+    fn test_uninit_slice_drop_behavior() {
+        let state = TestState::default();
+        {
+            let mut uninit = Array::<TestObject<'_>, TestAllocator<'_>>::try_new_uninit_slice_in(
+                2,
+                TestAllocator { state: &state },
+            )
+            .unwrap();
+            uninit[0].write(TestObject::new(10, &state));
+            uninit[1].write(TestObject::new(20, &state));
+            let arr = unsafe { uninit.assume_init() };
+            assert_eq!(state.live_obj_count.get(), 2);
+            assert_eq!(arr[0].val, 10);
+            assert_eq!(arr[1].val, 20);
+        }
+        assert_eq!(state.live_obj_count.get(), 0);
+        assert_eq!(state.dtor_count.get(), 2);
+    }
+
+    #[test]
+    fn test_into_and_from_raw_parts() {
+        let mut arr = Array::<u32>::try_new(3).unwrap();
+        arr[0] = 100;
+        arr[1] = 200;
+        arr[2] = 300;
+
+        let (ptr, len) = arr.into_raw_parts();
+        assert_eq!(len, 3);
+        assert!(!ptr.is_null());
+
+        let reconstructed = unsafe { Array::<u32>::from_raw_parts(ptr, len) };
+        assert_eq!(reconstructed.len(), 3);
+        assert_eq!(&reconstructed[..], &[100, 200, 300]);
+    }
+
+    #[test]
+    fn test_into_and_from_raw() {
+        let mut arr = Array::<u32>::try_new(2).unwrap();
+        arr[0] = 42;
+        arr[1] = 84;
+
+        let slice_ptr = arr.into_raw();
+        assert_eq!(unsafe { &*slice_ptr }, &[42, 84]);
+
+        let reconstructed = unsafe { Array::<u32>::from_raw(slice_ptr) };
+        assert_eq!(&reconstructed[..], &[42, 84]);
+    }
+
+    #[test]
+    fn test_raw_parts_with_allocator() {
+        let state = TestState::default();
+        let alloc = TestAllocator { state: &state };
+        let mut arr = Array::<u32, TestAllocator<'_>>::try_new_in(2, alloc.clone()).unwrap();
+        arr[0] = 7;
+        arr[1] = 9;
+
+        let (ptr, len, returned_alloc) = arr.into_raw_parts_with_allocator();
+        assert_eq!(len, 2);
+
+        let reconstructed =
+            unsafe { Array::<u32, TestAllocator<'_>>::from_raw_parts_in(ptr, len, returned_alloc) };
+        assert_eq!(&reconstructed[..], &[7, 9]);
     }
 }
