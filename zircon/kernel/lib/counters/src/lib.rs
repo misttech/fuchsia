@@ -4,6 +4,11 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use core::cmp::{max, min};
+use core::ptr;
+use core::sync::atomic::{AtomicI64, Ordering};
+
+use crate::kernel::percpu::PerCpu;
 use counters_bindings as bindings;
 
 /// The maximum number of CPUs that this counter descriptor supports.
@@ -66,22 +71,41 @@ impl Descriptor {
     }
 }
 
+// Via magic in kernel.ld, all the descriptors wind up in a contiguous
+// array bounded by these two symbols, sorted by name.
 unsafe extern "C" {
-    fn kcounter_sum_across_all_cpus_ffi(desc: *const Descriptor) -> i64;
-    fn kcounter_max_across_all_cpus_ffi(desc: *const Descriptor) -> i64;
-    fn kcounter_min_across_all_cpus_ffi(desc: *const Descriptor) -> i64;
-    fn kcounter_value_curr_cpu_ffi(desc: *const Descriptor) -> i64;
-    fn kcounter_set_ffi(desc: *const Descriptor, delta: u64);
-    fn kcounter_add_ffi(desc: *const Descriptor, delta: i64);
-    fn kcounter_min_ffi(desc: *const Descriptor, value: i64);
-    fn kcounter_max_ffi(desc: *const Descriptor, value: i64);
+    static kcountdesc_begin: Descriptor;
+    static kcountdesc_end: Descriptor;
+}
+
+/// Diagnostic descriptor table metadata.
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub struct CounterDesc;
+
+impl CounterDesc {
+    pub const fn new() -> Self {
+        Self
+    }
+
+    pub fn begin(&self) -> *const Descriptor {
+        ptr::addr_of!(kcountdesc_begin)
+    }
+
+    pub fn end(&self) -> *const Descriptor {
+        ptr::addr_of!(kcountdesc_end)
+    }
+
+    pub fn size(&self) -> usize {
+        let begin = self.begin() as usize;
+        let end = self.end() as usize;
+        (end - begin) / size_of::<Descriptor>()
+    }
 }
 
 /// A thread-safe diagnostic handle representing a self-declared kernel counter.
 ///
 /// This structure contains a pointer to the counter's static `Descriptor` layout in memory,
-/// and delegates increment, minimum, and maximum operations to highly optimized C++ FFI
-/// handlers with zero runtime overhead under ThinLTO.
+/// and provides methods to directly query and manipulate the counter across per-CPU slots.
 pub struct Counter {
     descriptor: *const Descriptor,
 }
@@ -99,51 +123,82 @@ impl Counter {
         Self { descriptor }
     }
 
+    #[inline]
+    fn index(&self) -> usize {
+        let desc_addr = self.descriptor as usize;
+        let begin_addr = CounterDesc::new().begin() as usize;
+        (desc_addr - begin_addr) / size_of::<Descriptor>()
+    }
+
+    #[inline]
+    fn slot_for_cpu<'a>(&self, p: &'a PerCpu) -> &'a AtomicI64 {
+        // SAFETY: `p.counters` points to this CPU's slice of the counters arena,
+        // which contains an `int64_t` entry for each counter descriptor indexed by `index()`.
+        unsafe { &*p.counters.add(self.index()).cast::<AtomicI64>() }
+    }
+
+    #[inline]
+    fn slot(&self) -> &AtomicI64 {
+        self.slot_for_cpu(PerCpu::get_current())
+    }
+
     /// Return the sum of the per-cpu slots for this counter across all CPUs.
     #[inline]
     pub fn sum_across_all_cpus(&self) -> i64 {
-        unsafe { kcounter_sum_across_all_cpus_ffi(self.descriptor) }
+        let mut sum: i64 = 0;
+        PerCpu::for_each(|_cpu_num, p| {
+            sum = sum.wrapping_add(self.slot_for_cpu(p).load(Ordering::Relaxed));
+        });
+        sum
     }
 
-    // Return the max of the per-cpu slots for this counter.
+    /// Return the max of the per-cpu slots for this counter.
     #[inline]
     pub fn max_across_all_cpus(&self) -> i64 {
-        unsafe { kcounter_max_across_all_cpus_ffi(self.descriptor) }
+        let mut max_value = i64::MIN;
+        PerCpu::for_each(|_cpu_num, p| {
+            max_value = max(max_value, self.slot_for_cpu(p).load(Ordering::Relaxed));
+        });
+        max_value
     }
 
-    // Return the min of the per-cpu slots for this counter.
+    /// Return the min of the per-cpu slots for this counter.
     #[inline]
     pub fn min_across_all_cpus(&self) -> i64 {
-        unsafe { kcounter_min_across_all_cpus_ffi(self.descriptor) }
+        let mut min_value = i64::MAX;
+        PerCpu::for_each(|_cpu_num, p| {
+            min_value = min(min_value, self.slot_for_cpu(p).load(Ordering::Relaxed));
+        });
+        min_value
     }
 
-    // Return the value of the calling cpu's slot for this counter.
+    /// Return the value of the calling cpu's slot for this counter.
+    #[inline]
     pub fn value_curr_cpu(&self) -> i64 {
-        unsafe { kcounter_value_curr_cpu_ffi(self.descriptor) }
+        self.slot().load(Ordering::Relaxed)
     }
 
-    // Set the value of calling cpu's slot to |value|. No memory order is implied.
+    /// Set the value of calling cpu's slot to `value`. No memory order is implied.
     #[inline]
     pub fn set(&self, value: u64) {
-        unsafe {
-            kcounter_set_ffi(self.descriptor, value);
-        }
+        self.slot().store(value as i64, Ordering::Relaxed);
     }
 
     /// Add the given delta value to the calling CPU's counter slot.
     #[inline]
     pub fn add(&self, delta: i64) {
-        unsafe {
-            kcounter_add_ffi(self.descriptor, delta);
-        }
+        let slot = self.slot();
+        slot.store(slot.load(Ordering::Relaxed).wrapping_add(delta), Ordering::Relaxed);
     }
 
     /// Update the calling CPU's counter slot to the minimum of its current value and the given
     /// value.
     #[inline]
     pub fn min(&self, value: i64) {
-        unsafe {
-            kcounter_min_ffi(self.descriptor, value);
+        let slot = self.slot();
+        let current = slot.load(Ordering::Relaxed);
+        if value < current {
+            slot.store(value, Ordering::Relaxed);
         }
     }
 
@@ -151,8 +206,10 @@ impl Counter {
     /// value.
     #[inline]
     pub fn max(&self, value: i64) {
-        unsafe {
-            kcounter_max_ffi(self.descriptor, value);
+        let slot = self.slot();
+        let current = slot.load(Ordering::Relaxed);
+        if value > current {
+            slot.store(value, Ordering::Relaxed);
         }
     }
 }
