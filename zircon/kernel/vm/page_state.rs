@@ -19,6 +19,11 @@ impl VmPageState {
     pub const fn index(self) -> usize {
         self.0 as usize
     }
+
+    #[inline]
+    pub const fn as_raw(self) -> u8 {
+        self.0 as u8
+    }
 }
 
 /// Counts of VM pages by state.

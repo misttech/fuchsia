@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::page_state::VmPageState;
+use crate::kernel::percpu::PerCpu;
 use crate::kernel::types::PAddr;
 use bitflags::bitflags;
 use core::cell::UnsafeCell;
@@ -451,12 +452,13 @@ impl VmPage {
     /// The caller must ensure that it owns the page or holds the necessary locks to modify its
     /// state.
     pub unsafe fn set_state(&self, new_state: VmPageState) {
-        unsafe {
-            bindings::cpp_vm_page_set_state(
-                self as *const VmPage as *mut VmPage as *mut bindings::vm_page_t,
-                new_state.0,
-            )
-        }
+        let old_state = self.state();
+        self.state_priv.store(new_state.as_raw(), Ordering::Relaxed);
+
+        // See comment at percpu::vm_page_counts
+        let p = PerCpu::get_current();
+        p.vm_page_counts.by_state[old_state.index()].fetch_sub(1);
+        p.vm_page_counts.by_state[new_state.index()].fetch_add(1);
     }
 
     /// Returns the backlink object pointer for the page.

@@ -1111,11 +1111,8 @@ mod pmm_node_rust {
                 // run of FREE pages involving some of these pages.
                 // SAFETY: Setting page state for initialized test pages.
                 unsafe {
-                    page_bindings::cpp_vm_page_set_state(
-                        page as *const _ as *mut _,
-                        page_bindings::vm_page_state::FREE,
-                    );
-                };
+                    page.set_state(VmPageState(vm_page_state::FREE));
+                }
             }
             // SAFETY: Destructuring pinned ManagedPmmNode during setup.
             let this = unsafe { self.get_unchecked_mut() };
@@ -1231,11 +1228,8 @@ mod pmm_node_rust {
             for page in list.iter() {
                 // SAFETY: Resetting page state to ALLOC so they can be freed to pmm.
                 unsafe {
-                    page_bindings::cpp_vm_page_set_state(
-                        page as *const _ as *mut _,
-                        page_bindings::vm_page_state::ALLOC,
-                    );
-                };
+                    page.set_state(VmPageState(vm_page_state::ALLOC));
+                }
             }
             // SAFETY: list contains valid allocated pages to return to pmm.
             unsafe { crate::vm::pmm::free_list(list) };

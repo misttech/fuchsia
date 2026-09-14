@@ -6,6 +6,7 @@
 
 use crate::kernel::timer::Timer;
 use crate::kernel::types::cpu_num_t;
+use crate::vm::page_state::VmPageCounts;
 use core::mem::offset_of;
 use core::sync::atomic::AtomicU64;
 use percpu_bindings as bindings;
@@ -50,11 +51,6 @@ pub struct IdlePowerThread(pub bindings::IdlePowerThread);
 /// An opaque type representing the C++ `DpcRunner` class.
 #[repr(transparent)]
 pub struct DpcRunner(pub bindings::DpcRunner);
-
-/// Type alias for `vm_page_counts_t`.
-pub type VmPageCounts = bindings::vm_page_counts_t;
-#[allow(non_camel_case_types)]
-pub type vm_page_counts_t = bindings::vm_page_counts_t;
 
 /// An opaque type representing the C++ `StallAccumulator` class.
 #[repr(transparent)]

@@ -610,7 +610,6 @@ kernel_bindgen_crate("page-bindings") {
     "cpp_get_count",
     "cpp_add_to_initial_count",
     "cpp_vm_page_dump",
-    "cpp_vm_page_set_state",
   ]
   type_allowlist = [
     "vm_page_t",
