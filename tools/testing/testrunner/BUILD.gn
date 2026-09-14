@@ -5,11 +5,6 @@
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
 
-group("tests") {
-  testonly = true
-  deps = [ ":testrunner_lib_tests" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________
@@ -83,36 +78,5 @@ if (is_host) {
   go_library("constants") {
     sources = [ "constants/constants.go" ]
     visibility = [ "//*" ]
-  }
-}
-if (is_host) {
-  go_test("testrunner_lib_tests") {
-    sources = [
-      "lib_test.go",
-      "nsjail_test.go",
-      "outputs_test.go",
-      "tester_test.go",
-    ]
-    embed = [ ":lib" ]
-    visibility = [ "//*" ]
-    deps = [
-      "//third_party/golibs:github.com/google/go-cmp/cmp",
-      "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
-      "//tools/botanist:botanist_lib",
-      "//tools/botanist:constants",
-      "//tools/botanist:targets",
-      "//tools/build",
-      "//tools/integration/testsharder:metadata",
-      "//tools/integration/testsharder:testsharder_lib",
-      "//tools/lib/ffxutil",
-      "//tools/lib/ffxutil:constants",
-      "//tools/lib/iomisc",
-      "//tools/lib/osmisc",
-      "//tools/lib/retry",
-      "//tools/lib/subprocess",
-      "//tools/net/sshutil:constants",
-      "//tools/testing/runtests",
-      "//tools/testing/tap",
-    ]
   }
 }

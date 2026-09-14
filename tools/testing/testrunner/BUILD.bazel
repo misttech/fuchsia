@@ -59,6 +59,7 @@ go_library(
     visibility = ["//:__subpackages__"],
 )
 
+# @bazel2gn:skip
 host_go_test(
     name = "testrunner_lib_tests",
     srcs = [

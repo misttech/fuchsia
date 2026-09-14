@@ -11,6 +11,5 @@ group("tests") {
     "tap:tap_tests",
     "test_filterer:tests",
     "testparser:tests",
-    "testrunner:tests",
   ]
 }
