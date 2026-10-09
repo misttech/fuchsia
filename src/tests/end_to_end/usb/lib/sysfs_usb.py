@@ -10,16 +10,74 @@ device nodes (/dev/bus/usb/BBB/DDD), querying device speeds, and querying active
 configuration values via sysfs.
 """
 
+import dataclasses
 import logging
 import os
 import time
 from typing import Any, Optional, Sequence, Tuple
 
-from usb_lib.usb_config import get_dut_serial
+from usb_lib.usb_config import GOOGLE_USB_VID, get_dut_serial
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 SYSFS_USB_DEVICES_PATH = "/sys/bus/usb/devices"
+
+
+@dataclasses.dataclass
+class HostDevice:
+    """The DUT's USB device, as the host sees it in sysfs."""
+
+    pid: int
+    # /dev/bus/usb/BBB/DDD. It changes every time the device enumerates.
+    dev_path: str
+    # Sorted class/subclass/protocol of each interface, e.g. "ff/42/01".
+    interfaces: list[str]
+
+
+def _read_attr(directory: str, name: str) -> str:
+    try:
+        with open(os.path.join(directory, name)) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def find_host_device(serial: str) -> HostDevice | None:
+    """Returns the Google USB device with `serial` in host sysfs, if any."""
+    try:
+        entries = sorted(os.listdir(SYSFS_USB_DEVICES_PATH))
+    except OSError:
+        return None
+    for entry in entries:
+        path = os.path.join(SYSFS_USB_DEVICES_PATH, entry)
+        if _read_attr(path, "serial") != serial:
+            continue
+        try:
+            vid = int(_read_attr(path, "idVendor"), 16)
+            pid = int(_read_attr(path, "idProduct"), 16)
+            bus = int(_read_attr(path, "busnum"))
+            dev = int(_read_attr(path, "devnum"))
+        except ValueError:
+            continue
+        if vid != GOOGLE_USB_VID:
+            continue
+        # Interfaces sit next to their device, as "<device>:<config>.<n>".
+        # Sort them because usb-peripheral numbers interfaces in the order
+        # the function drivers bind, which can vary from config order.
+        interfaces = sorted(
+            "/".join(
+                _read_attr(os.path.join(SYSFS_USB_DEVICES_PATH, e), name)
+                for name in (
+                    "bInterfaceClass",
+                    "bInterfaceSubClass",
+                    "bInterfaceProtocol",
+                )
+            )
+            for e in entries
+            if e.startswith(f"{entry}:")
+        )
+        return HostDevice(pid, f"/dev/bus/usb/{bus:03d}/{dev:03d}", interfaces)
+    return None
 
 
 def find_usb_device_node(

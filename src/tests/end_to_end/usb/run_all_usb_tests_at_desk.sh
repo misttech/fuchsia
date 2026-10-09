@@ -45,6 +45,7 @@ cd "${FUCHSIA_DIR}"
 FUNCTIONAL_TESTS=(
   usb_enumeration_test
   usb_fastboot_e2e_test
+  usb_config_switch_test
   zero_function_test
 )
 
@@ -123,6 +124,7 @@ function list_tests() {
 Functional (-f):
   usb_enumeration_test
   usb_fastboot_e2e_test
+  usb_config_switch_test
   zero_function_test
 Stress (-s):
   usb_virtual_disconnect_test
