@@ -52,6 +52,32 @@ rustc_library("core") {
   test_deps = [ "//third_party/rust_crates:futures" ]
 }
 
+# Sources and dependencies shared by both builds of the driver_lab_rust crate.
+_driver_lab_rust_sources = [
+  "src/driver_lab_lib.rs",
+  "src/embedded.rs",
+  "src/fuchsia_backends.rs",
+  "src/platform_provider.rs",
+  "src/server.rs",
+  "src/trace.rs",
+]
+_driver_lab_rust_deps = [
+  ":core",
+  "fidl:fuchsia.driver.lab_rust",
+  "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_rust",
+  "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_rust",
+  "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust",
+  "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_rust",
+  "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",
+  "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust",
+  "//sdk/rust/zx",
+  "//src/lib/fidl/rust/fidl",
+  "//src/lib/fuchsia-async",
+  "//src/lib/trace/rust:trace",
+  "//third_party/rust_crates:futures",
+  "//third_party/rust_crates:log",
+]
+
 # Shared Fuchsia runtime library for both the standalone lab_proxy driver
 # and embedded in-situ debugging in existing DFv2 Rust drivers.
 rustc_library("driver_lab_rust") {
@@ -65,37 +91,41 @@ rustc_library("driver_lab_rust") {
   }
 
   source_root = "src/driver_lab_lib.rs"
-  sources = [
-    "src/driver_lab_lib.rs",
-    "src/embedded.rs",
-    "src/fuchsia_backends.rs",
-    "src/platform_provider.rs",
-    "src/server.rs",
-    "src/trace.rs",
-  ]
-  deps = [
-    ":core",
-    "fidl:fuchsia.driver.lab_rust",
-    "//sdk/fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_rust",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_rust",
-    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust",
-    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
-    "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_rust",
-    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_rust",
-    "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust",
-    "//sdk/lib/driver/component/rust",
-    "//sdk/lib/driver/mmio/rust:mmio",
-    "//sdk/lib/driver/platform-device/rust:pdev",
-    "//sdk/rust/zx",
-    "//src/lib/fidl/rust/fidl",
-    "//src/lib/fidl/rust_next/fidl_next",
-    "//src/lib/fuchsia-async",
-    "//src/lib/fuchsia-component",
-    "//src/lib/trace/rust:trace",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:log",
-  ]
+  sources = _driver_lab_rust_sources
+  deps = _driver_lab_rust_deps + [
+           "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_rust_next",
+           "//sdk/lib/driver/component/rust",
+           "//sdk/lib/driver/mmio/rust:mmio",
+           "//sdk/lib/driver/platform-device/rust:pdev",
+           "//src/lib/fidl/rust_next/fidl_next",
+           "//src/lib/fuchsia-component",
+         ]
   test_deps = [ "//src/lib/fuchsia" ]
+}
+
+# driver_lab_rust built without the `fdf_driver` feature, for the C ABI shim.
+#
+# The `fdf_driver` build depends on the platform-device driver-transport FIDL
+# bindings, which transitively depend on //src/devices/bin/driver_runtime.
+# C++ drivers link the shim into a `fuchsia_cc_driver`, whose
+# `assert_no_deps` rejects that dependency. The shim only needs the VMO
+# mapping path, which this variant provides via fuchsia-runtime.
+rustc_library("driver_lab_rust_no_fdf") {
+  name = "driver_lab_rust"
+  output_name = "driver_lab_rust_no_fdf"
+  edition = "2024"
+  visibility = [ ":*" ]
+
+  # Same sources and crate name as :driver_lab_rust, which is documented.
+  disable_rustdoc = true
+
+  if (enable_driver_lab) {
+    features = [ "driver_lab_enabled" ]
+  }
+
+  source_root = "src/driver_lab_lib.rs"
+  sources = _driver_lab_rust_sources
+  deps = _driver_lab_rust_deps + [ "//src/lib/fuchsia-runtime" ]
 }
 
 # Pure C ABI staticlib shim wrapping driver_lab_rust for C/C++ DFv2 drivers.
@@ -108,7 +138,7 @@ rustc_staticlib("driver_lab_c") {
   public = [ "cpp/include/lib/driver_lab/driver_lab_c.h" ]
   deps = [
     ":core",
-    ":driver_lab_rust",
+    ":driver_lab_rust_no_fdf",
     "//sdk/rust/zx",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",
@@ -221,6 +251,7 @@ test("driver_lab_cpp_test_bin") {
   deps = [
     ":driver_lab_cpp",
     "fidl:fuchsia.driver.lab_cpp",
+    "//src/devices/bin/driver_runtime",
     "//src/lib/fxl/test:gtest_main",
     "//third_party/googletest:gtest",
     "//zircon/system/ulib/zx",
