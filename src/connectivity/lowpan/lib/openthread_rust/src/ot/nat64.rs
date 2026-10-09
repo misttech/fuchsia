@@ -42,10 +42,19 @@ pub trait Nat64 {
         F: FnMut(OtMessageBox<'_>) + 'a;
 
     /// Send a message to NAT64 handler in OpenThread
+    ///
+    /// Returns [`Error::InvalidArgs`] if the message origin is
+    /// [`Origin::ThreadNetif`](ot::message::Origin::ThreadNetif).
     fn nat64_send(&self, message: OtMessageBox<'_>) -> Result;
 
     /// Send data to NAT64 handler in OpenThread
-    fn nat64_send_data_slice(&self, data_slice: &[u8]) -> Result;
+    ///
+    /// The message is tagged with `origin`. Traffic from the host network
+    /// stack that may have been forwarded from an untrusted network must use
+    /// [`Origin::HostUntrusted`](ot::message::Origin::HostUntrusted).
+    /// Returns [`Error::InvalidArgs`] for
+    /// [`Origin::ThreadNetif`](ot::message::Origin::ThreadNetif).
+    fn nat64_send_data_slice(&self, data_slice: &[u8], origin: ot::message::Origin) -> Result;
 
     /// Return AIL prefix to OpenThread
     fn nat64_infra_if_prefix_discover_done(
@@ -103,8 +112,8 @@ impl<T: Nat64 + ot::Boxable> Nat64 for ot::Box<T> {
     fn nat64_send(&self, message: OtMessageBox<'_>) -> Result {
         self.as_ref().nat64_send(message)
     }
-    fn nat64_send_data_slice(&self, data_slice: &[u8]) -> Result {
-        self.as_ref().nat64_send_data_slice(data_slice)
+    fn nat64_send_data_slice(&self, data_slice: &[u8], origin: ot::message::Origin) -> Result {
+        self.as_ref().nat64_send_data_slice(data_slice, origin)
     }
     fn nat64_infra_if_prefix_discover_done(
         &self,
@@ -201,12 +210,22 @@ impl Nat64 for Instance {
     }
 
     fn nat64_send(&self, message: OtMessageBox<'_>) -> Result {
+        // Unlike `otIp6Send()`, `otNat64Send()` does not validate the message
+        // origin. Reject messages claiming to come from the Thread netif so
+        // that host traffic can never be treated as if it came from the radio.
+        if message.origin() == ot::message::Origin::ThreadNetif {
+            return Err(Error::InvalidArgs);
+        }
         Error::from(unsafe { otNat64Send(self.as_ot_ptr(), message.take_ot_ptr()) }).into()
     }
 
-    fn nat64_send_data_slice(&self, data_slice: &[u8]) -> Result {
+    fn nat64_send_data_slice(&self, data_slice: &[u8], origin: ot::message::Origin) -> Result {
+        if origin == ot::message::Origin::ThreadNetif {
+            return Err(Error::InvalidArgs);
+        }
         if let Ok(mut msg) = Message::ip4_new(self, None) {
             msg.append(data_slice)?;
+            msg.set_origin(origin);
             self.nat64_send(msg)?;
             Ok(())
         } else if self.get_buffer_info().0.mFreeBuffers == 0 {

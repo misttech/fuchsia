@@ -35,6 +35,14 @@ impl IpFormat {
     }
 }
 
+/// Origin assigned to packets the netstack sends to the Thread network.
+///
+/// Packets from the netstack TUN interface may have been forwarded from the
+/// infrastructure link, so they must be tagged as untrusted, as on the
+/// OpenThread POSIX platform. This makes OpenThread apply the checks it reserves
+/// for untrusted host traffic, such as dropping IPv6-in-IPv6 and TMF packets.
+pub(super) const NETSTACK_PACKET_ORIGIN: ot::message::Origin = ot::message::Origin::HostUntrusted;
+
 /// Callbacks from netstack and other on-host systems.
 impl<OT, NI, BI> OtDriver<OT, NI, BI>
 where
@@ -235,13 +243,17 @@ where
             let mut result = Ok(());
             match IpFormat::for_packet(&packet) {
                 IpFormat::Ipv6 => {
-                    result = driver_state.ot_instance.ip6_send_data(packet.as_slice());
+                    result = driver_state
+                        .ot_instance
+                        .ip6_send_data(packet.as_slice(), NETSTACK_PACKET_ORIGIN);
                 }
                 IpFormat::Ipv4 => {
-                    result = driver_state.ot_instance.nat64_send_data_slice(packet.as_slice());
+                    result = driver_state
+                        .ot_instance
+                        .nat64_send_data_slice(packet.as_slice(), NETSTACK_PACKET_ORIGIN);
                 }
                 _ => {
-                    warn!("received unkonwn version of IP packet from netstack to thread");
+                    warn!("received unknown version of IP packet from netstack to thread");
                 }
             }
             if let Err(err) = result {

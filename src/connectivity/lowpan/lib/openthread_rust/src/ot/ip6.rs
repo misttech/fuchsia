@@ -79,14 +79,24 @@ impl<'a> Iterator for NetifMulticastAddressIterator<'a> {
 /// Methods from the [OpenThread "IPv6" Module](https://openthread.io/reference/group/api-ip6).
 pub trait Ip6 {
     /// Functional equivalent of [`otsys::otIp6Send`](crate::otsys::otIp6Send).
+    ///
+    /// Returns [`Error::InvalidArgs`] if the message origin is
+    /// [`Origin::ThreadNetif`](ot::message::Origin::ThreadNetif).
     fn ip6_send(&self, message: OtMessageBox<'_>) -> Result;
 
     /// Similar to [`ip6_send()`], but takes a byte slice instead
     /// of an [`OtMessageBox`](crate::OtMessageBox).
-    fn ip6_send_data(&self, data: &[u8]) -> Result;
+    ///
+    /// `origin` tells OpenThread where the packet came from, which determines
+    /// the security checks it applies. Packets from a host network stack that
+    /// may forward traffic from the infrastructure network must use
+    /// [`Origin::HostUntrusted`](ot::message::Origin::HostUntrusted).
+    /// Returns [`Error::InvalidArgs`] for
+    /// [`Origin::ThreadNetif`](ot::message::Origin::ThreadNetif).
+    fn ip6_send_data(&self, data: &[u8], origin: ot::message::Origin) -> Result;
 
     /// Similar to [`ip6_send_data()`], but sends the packet without layer-2 security.
-    fn ip6_send_data_direct(&self, data: &[u8]) -> Result;
+    fn ip6_send_data_direct(&self, data: &[u8], origin: ot::message::Origin) -> Result;
 
     /// Functional equivalent of [`otsys::otIp6IsEnabled`](crate::otsys::otIp6IsEnabled).
     fn ip6_is_enabled(&self) -> bool;
@@ -174,12 +184,12 @@ impl<T: Ip6 + ot::Boxable> Ip6 for ot::Box<T> {
         self.as_ref().ip6_send(message)
     }
 
-    fn ip6_send_data(&self, data: &[u8]) -> Result {
-        self.as_ref().ip6_send_data(data)
+    fn ip6_send_data(&self, data: &[u8], origin: ot::message::Origin) -> Result {
+        self.as_ref().ip6_send_data(data, origin)
     }
 
-    fn ip6_send_data_direct(&self, data: &[u8]) -> Result {
-        self.as_ref().ip6_send_data_direct(data)
+    fn ip6_send_data_direct(&self, data: &[u8], origin: ot::message::Origin) -> Result {
+        self.as_ref().ip6_send_data_direct(data, origin)
     }
 
     fn ip6_is_enabled(&self) -> bool {
@@ -259,11 +269,22 @@ impl<T: Ip6 + ot::Boxable> Ip6 for ot::Box<T> {
 
 impl Ip6 for Instance {
     fn ip6_send(&self, message: OtMessageBox<'_>) -> Result {
+        // `otIp6Send()` rejects messages originating from the Thread netif
+        // without taking ownership of them, which would leak the message once
+        // `take_ot_ptr()` has been called. Reject them here instead so that
+        // `message` is dropped (and freed) normally.
+        if message.origin() == ot::message::Origin::ThreadNetif {
+            return Err(Error::InvalidArgs);
+        }
         Error::from(unsafe { otIp6Send(self.as_ot_ptr(), message.take_ot_ptr()) }).into()
     }
 
-    fn ip6_send_data(&self, data: &[u8]) -> Result {
-        if let Ok(msg) = Message::ip6_new_from_bytes(self, data, None) {
+    fn ip6_send_data(&self, data: &[u8], origin: ot::message::Origin) -> Result {
+        if origin == ot::message::Origin::ThreadNetif {
+            return Err(Error::InvalidArgs);
+        }
+        if let Ok(mut msg) = Message::ip6_new_from_bytes(self, data, None) {
+            msg.set_origin(origin);
             self.ip6_send(msg)
         } else if self.get_buffer_info().0.mFreeBuffers == 0 {
             Err(ot::Error::NoBufs)
@@ -272,9 +293,13 @@ impl Ip6 for Instance {
         }
     }
 
-    fn ip6_send_data_direct(&self, data: &[u8]) -> Result {
+    fn ip6_send_data_direct(&self, data: &[u8], origin: ot::message::Origin) -> Result {
+        if origin == ot::message::Origin::ThreadNetif {
+            return Err(Error::InvalidArgs);
+        }
         if let Ok(mut msg) = Message::ip6_new_from_bytes(self, data, None) {
             msg.set_direct_transmission(true);
+            msg.set_origin(origin);
             self.ip6_send(msg)
         } else if self.get_buffer_info().0.mFreeBuffers == 0 {
             Err(ot::Error::NoBufs)

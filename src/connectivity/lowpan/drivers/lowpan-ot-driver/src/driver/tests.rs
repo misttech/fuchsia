@@ -4,6 +4,8 @@
 
 use super::*;
 
+use super::host_to_thread::NETSTACK_PACKET_ORIGIN;
+use assert_matches::assert_matches;
 use fuchsia_sync::Mutex;
 use futures::prelude::*;
 use lowpan_driver_common::Driver as _;
@@ -13,8 +15,15 @@ use lowpan_driver_common::lowpan_fidl::{
 use lowpan_driver_common::net::*;
 use lowpan_driver_common::spinel::mock::*;
 use lowpan_driver_common::spinel::*;
-use openthread::ot::Trel;
+use openthread::ot::{Ip6 as _, MessageBuffer as _, Nat64 as _, Trel};
 use openthread_fuchsia::Platform;
+use packet::{
+    InnerPacketBuilder as _, NestableSerializer as _, NoOpSerializationContext, Serializer as _,
+};
+use packet_formats::ip::{IpProto, Ipv6Proto};
+use packet_formats::ipv6::Ipv6PacketBuilder;
+use packet_formats::udp::UdpPacketBuilder;
+use std::num::NonZeroU16;
 use std::str::FromStr;
 use std::sync::{Arc, LazyLock};
 
@@ -780,4 +789,191 @@ async fn test_grind_lowpan_ot_driver() {
         }
     })
     .await;
+}
+
+// Tests for the host-to-Thread trust boundary (https://fxbug.dev/521638028).
+//
+// Packets that netstack writes to the Thread TUN interface may have been forwarded
+// from the untrusted infrastructure link, so OpenThread must treat them as
+// `OT_MESSAGE_ORIGIN_HOST_UNTRUSTED`. These tests send such packets through the
+// same `ip6_send_data` helper, with the same `NETSTACK_PACKET_ORIGIN`, used by
+// `on_netstack_packet_for_thread` and check that OpenThread receives them with
+// that origin.
+
+/// Default hop limit used for the synthesized IPv6 packets.
+const TEST_HOP_LIMIT: u8 = 64;
+
+/// IPv6 next-header value for an encapsulated IPv6 packet (IPv6-in-IPv6).
+const IPV6_IN_IPV6_NEXT_HEADER: u8 = 41;
+
+/// UDP port used by the Thread Management Framework (TMF).
+const TMF_UDP_PORT: NonZeroU16 = NonZeroU16::new(61631).unwrap();
+
+/// Arbitrary UDP port that is not the TMF port.
+const NON_TMF_UDP_PORT: NonZeroU16 = NonZeroU16::new(5683).unwrap();
+
+/// Payload carried by the synthesized UDP datagrams.
+const UDP_TEST_PAYLOAD: [u8; 4] = [0; 4];
+
+/// Address of a host on the infrastructure (Wi-Fi/Ethernet) link.
+const LAN_HOST_ADDR: net_types::ip::Ipv6Addr = net_declare::net_ip_v6!("2001:db8:1::1");
+
+/// Off-mesh-routable style address of a remote Thread node.
+const REMOTE_NODE_ADDR: net_types::ip::Ipv6Addr = net_declare::net_ip_v6!("2001:db8:2::1");
+
+/// Link-local address used as the inner source of an encapsulated TMF request.
+const INNER_SRC_LINK_LOCAL_ADDR: net_types::ip::Ipv6Addr = net_declare::net_ip_v6!("fe80::1");
+
+/// Link-local address of a Thread neighbor.
+const NEIGHBOR_LINK_LOCAL_ADDR: net_types::ip::Ipv6Addr = net_declare::net_ip_v6!("fe80::2");
+
+/// Builds an IPv6 packet from `src` to `dst` whose payload is `body`, where
+/// `proto` identifies the type of `body`.
+fn build_ipv6_packet(
+    src: net_types::ip::Ipv6Addr,
+    dst: net_types::ip::Ipv6Addr,
+    proto: Ipv6Proto,
+    body: &[u8],
+) -> Vec<u8> {
+    body.into_serializer()
+        .wrap_in(Ipv6PacketBuilder::new(src, dst, TEST_HOP_LIMIT, proto))
+        .serialize_vec_outer(&mut NoOpSerializationContext)
+        .expect("failed to serialize IPv6 packet")
+        .as_ref()
+        .to_vec()
+}
+
+/// Builds an IPv6 packet from `src` to `dst` carrying a UDP datagram that uses
+/// `port` as both its source and destination port.
+fn build_udp_packet(
+    src: net_types::ip::Ipv6Addr,
+    dst: net_types::ip::Ipv6Addr,
+    port: NonZeroU16,
+) -> Vec<u8> {
+    UDP_TEST_PAYLOAD
+        .into_serializer()
+        .wrap_in(UdpPacketBuilder::new(src, dst, Some(port), port))
+        .wrap_in(Ipv6PacketBuilder::new(src, dst, TEST_HOP_LIMIT, Ipv6Proto::Proto(IpProto::Udp)))
+        .serialize_vec_outer(&mut NoOpSerializationContext)
+        .expect("failed to serialize UDP packet")
+        .as_ref()
+        .to_vec()
+}
+
+/// Runs `fun` against a real OpenThread instance backed by the fake spinel RCP.
+///
+/// Unlike `test_harness`, this does not start the driver. It only exercises the
+/// `openthread_rust` send helpers that the driver uses for host-to-Thread traffic.
+fn with_ot_instance(fun: impl FnOnce(&ot::Instance)) {
+    // OpenThread is a singleton, so only one instance may exist at a time.
+    let _singleton_lock = TEST_HARNESS_SINGLETON_LOCK.lock();
+
+    let (sink, stream, ncp_task) = new_fake_spinel_pair();
+
+    // The fake RCP must be serviced on another executor thread while the
+    // instance is created and used.
+    let _ncp_task = fasync::Task::spawn(ncp_task);
+
+    let instance = ot::Instance::new(Platform::build().init(sink, stream));
+    ot::set_logging_level(ot::LogLevel::Crit);
+
+    fun(&instance);
+
+    ot::set_logging_level(ot::LogLevel::None);
+
+    // `instance` is dropped before `_ncp_task`, because locals drop in reverse
+    // declaration order.
+}
+
+/// Builds an IPv6-in-IPv6 packet from a host on the infrastructure link to a
+/// remote Thread node. The inner packet is a TMF request with link-local
+/// addresses, which a Thread node accepts once it removes the outer header.
+fn build_tunneled_tmf_packet() -> Vec<u8> {
+    let inner_packet =
+        build_udp_packet(INNER_SRC_LINK_LOCAL_ADDR, NEIGHBOR_LINK_LOCAL_ADDR, TMF_UDP_PORT);
+    build_ipv6_packet(
+        LAN_HOST_ADDR,
+        REMOTE_NODE_ADDR,
+        Ipv6Proto::from(IPV6_IN_IPV6_NEXT_HEADER),
+        &inner_packet,
+    )
+}
+
+/// A host packet that encapsulates another IPv6 packet (IPv6-in-IPv6) must be
+/// dropped. Otherwise a host on the infrastructure link can tunnel a TMF request
+/// with link-local addresses through the Border Router to a remote Thread node.
+///
+/// OpenThread only applies this check to untrusted host packets, so the same
+/// packet sent with the trusted host origin is not dropped by it.
+#[fuchsia::test(threads = 10)]
+async fn test_host_ip6_in_ip6_packet_is_dropped() {
+    let packet = build_tunneled_tmf_packet();
+
+    with_ot_instance(|instance| {
+        assert_matches!(
+            instance.ip6_send_data(&packet, ot::message::Origin::HostTrusted),
+            Err(ot::Error::NoRoute)
+        );
+        assert_matches!(
+            instance.ip6_send_data(&packet, NETSTACK_PACKET_ORIGIN),
+            Err(ot::Error::MessageDropped)
+        );
+    });
+}
+
+/// `ip6_send_data_direct` is also a host-to-Thread entry point, so it must drop
+/// IPv6-in-IPv6 packets too.
+#[fuchsia::test(threads = 10)]
+async fn test_host_ip6_in_ip6_packet_sent_direct_is_dropped() {
+    let packet = build_tunneled_tmf_packet();
+
+    with_ot_instance(|instance| {
+        assert_matches!(
+            instance.ip6_send_data_direct(&packet, NETSTACK_PACKET_ORIGIN),
+            Err(ot::Error::MessageDropped)
+        );
+    });
+}
+
+/// The send helpers must refuse to tag host data as coming from the Thread
+/// network interface, since that would bypass OpenThread's host-origin checks.
+#[fuchsia::test(threads = 10)]
+async fn test_host_send_data_rejects_thread_netif_origin() {
+    let packet = build_udp_packet(LAN_HOST_ADDR, NEIGHBOR_LINK_LOCAL_ADDR, NON_TMF_UDP_PORT);
+
+    with_ot_instance(|instance| {
+        let origin = ot::message::Origin::ThreadNetif;
+        assert_matches!(instance.ip6_send_data(&packet, origin), Err(ot::Error::InvalidArgs));
+        assert_matches!(
+            instance.ip6_send_data_direct(&packet, origin),
+            Err(ot::Error::InvalidArgs)
+        );
+        assert_matches!(
+            instance.nat64_send_data_slice(&[0x45u8; 20], origin),
+            Err(ot::Error::InvalidArgs)
+        );
+    });
+}
+
+/// `ip6_send` and `nat64_send` must reject a message tagged as coming from the
+/// Thread network interface and free it rather than leak it.
+#[fuchsia::test(threads = 10)]
+async fn test_host_send_rejects_thread_netif_message_without_leaking() {
+    let packet = build_udp_packet(LAN_HOST_ADDR, NEIGHBOR_LINK_LOCAL_ADDR, NON_TMF_UDP_PORT);
+
+    with_ot_instance(|instance| {
+        let free_buffers_before = instance.get_buffer_info().0.mFreeBuffers;
+
+        let mut msg = ot::Message::ip6_new_from_bytes(instance, &packet, None)
+            .expect("failed to allocate IPv6 message");
+        msg.set_origin(ot::message::Origin::ThreadNetif);
+        assert_matches!(instance.ip6_send(msg), Err(ot::Error::InvalidArgs));
+        assert_eq!(instance.get_buffer_info().0.mFreeBuffers, free_buffers_before);
+
+        let mut msg =
+            ot::Message::ip4_new(instance, None).expect("failed to allocate IPv4 message");
+        msg.set_origin(ot::message::Origin::ThreadNetif);
+        assert_matches!(instance.nat64_send(msg), Err(ot::Error::InvalidArgs));
+        assert_eq!(instance.get_buffer_info().0.mFreeBuffers, free_buffers_before);
+    });
 }

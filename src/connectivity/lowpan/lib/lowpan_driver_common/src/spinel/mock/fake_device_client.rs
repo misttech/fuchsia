@@ -15,6 +15,10 @@ use std::sync::Arc;
 
 const INBOUND_WINDOW_SIZE: u32 = 2;
 
+/// Receive sensitivity, in dBm, that the fake RCP reports for
+/// `SPINEL_PROP_PHY_RX_SENSITIVITY`.
+const FAKE_RX_SENSITIVITY_DBM: i8 = -100;
+
 pub const PROP_DEBUG_LOGGING_TEST: Prop = Prop::Unknown(2097151);
 pub const PROP_DEBUG_SAVED_PANID_TEST: Prop = Prop::Unknown(2097152);
 
@@ -56,6 +60,11 @@ impl FakeSpinelDevice {
         properties.insert(Prop::Phy(PropPhy::Chan), vec![11]);
         properties.insert(Prop::Phy(PropPhy::TxPower), vec![0]);
         properties.insert(Prop::Phy(PropPhy::Enabled), vec![0]);
+        // OpenThread reads this when it enables the radio, and asserts if the read fails.
+        properties.insert(
+            Prop::Phy(PropPhy::RxSensitivity),
+            FAKE_RX_SENSITIVITY_DBM.to_le_bytes().to_vec(),
+        );
         properties.insert(Prop::Phy(PropPhy::ChanPreferred), vec![11, 12, 13]);
         properties.insert(Prop::Phy(PropPhy::ChanSupported), vec![11, 12, 13]);
         properties.insert(Prop::Mac(PropMac::ScanMask), vec![11, 12, 13]);

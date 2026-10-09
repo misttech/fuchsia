@@ -67,6 +67,50 @@ impl From<Priority> for u8 {
     }
 }
 
+/// Message Origin.
+/// Functional equivalent of [`otsys::otMessageOrigin`](crate::otsys::otMessageOrigin).
+///
+/// OpenThread uses the origin to decide which security checks apply to a
+/// message. Messages injected from a host network stack that may forward
+/// traffic from an untrusted network must use [`Origin::HostUntrusted`].
+#[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq, FromPrimitive)]
+pub enum Origin {
+    /// Message received from the Thread network interface.
+    /// Equivalent to [`crate::otsys::OT_MESSAGE_ORIGIN_THREAD_NETIF`]
+    ThreadNetif = OT_MESSAGE_ORIGIN_THREAD_NETIF as isize,
+
+    /// Message from a trusted source on the host.
+    /// Equivalent to [`crate::otsys::OT_MESSAGE_ORIGIN_HOST_TRUSTED`]
+    ///
+    /// This is the origin OpenThread assigns to newly allocated messages.
+    HostTrusted = OT_MESSAGE_ORIGIN_HOST_TRUSTED as isize,
+
+    /// Message from an untrusted source on the host, such as a packet
+    /// forwarded from the infrastructure network by a Border Router.
+    /// Equivalent to [`crate::otsys::OT_MESSAGE_ORIGIN_HOST_UNTRUSTED`]
+    HostUntrusted = OT_MESSAGE_ORIGIN_HOST_UNTRUSTED as isize,
+}
+
+impl Origin {
+    /// Returns value as a [`otsys::otMessageOrigin`](crate::otsys::otMessageOrigin).
+    pub fn as_ot_message_origin(self) -> otMessageOrigin {
+        self as otMessageOrigin
+    }
+}
+
+impl From<otMessageOrigin> for Origin {
+    fn from(x: otMessageOrigin) -> Self {
+        use num_traits::FromPrimitive;
+        Self::from_u32(x).unwrap_or_else(|| panic!("Unknown otMessageOrigin value: {x}"))
+    }
+}
+
+impl From<Origin> for otMessageOrigin {
+    fn from(x: Origin) -> Self {
+        x.as_ot_message_origin()
+    }
+}
+
 /// Message Info.
 /// Functional equivalent of `otsys::otMessageInfo`.
 #[derive(Clone)]
@@ -390,6 +434,20 @@ impl Message<'_> {
         }
     }
 
+    /// Functional equivalent of [`otsys::otMessageGetOrigin`](crate::otsys::otMessageGetOrigin).
+    pub fn origin(&self) -> Origin {
+        unsafe { otMessageGetOrigin(self.as_ot_ptr()) }.into()
+    }
+
+    /// Functional equivalent of [`otsys::otMessageSetOrigin`](crate::otsys::otMessageSetOrigin).
+    ///
+    /// Default origin for a new message is [`Origin::HostTrusted`].
+    pub fn set_origin(&mut self, origin: Origin) {
+        unsafe {
+            otMessageSetOrigin(self.as_ot_ptr(), origin.into());
+        }
+    }
+
     /// Functional equivalent of [`otsys::otMessageGetRss`](crate::otsys::otMessageGetRss).
     pub fn rssi(&self) -> Decibels {
         unsafe { otMessageGetRss(self.as_ot_ptr()) }
@@ -497,5 +555,30 @@ impl MessageBuffer for Instance {
             otMessageGetBufferInfo(self.as_ot_ptr(), ret.as_ot_mut_ptr());
         }
         ret
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_origin_round_trips_through_ot_message_origin() {
+        for origin in [Origin::ThreadNetif, Origin::HostTrusted, Origin::HostUntrusted] {
+            assert_eq!(Origin::from(otMessageOrigin::from(origin)), origin);
+        }
+    }
+
+    #[test]
+    fn test_origin_matches_ot_constants() {
+        assert_eq!(otMessageOrigin::from(Origin::ThreadNetif), OT_MESSAGE_ORIGIN_THREAD_NETIF);
+        assert_eq!(otMessageOrigin::from(Origin::HostTrusted), OT_MESSAGE_ORIGIN_HOST_TRUSTED);
+        assert_eq!(otMessageOrigin::from(Origin::HostUntrusted), OT_MESSAGE_ORIGIN_HOST_UNTRUSTED);
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown otMessageOrigin value")]
+    fn test_origin_from_unknown_value_panics() {
+        let _ = Origin::from(OT_MESSAGE_ORIGIN_HOST_UNTRUSTED + 1);
     }
 }
