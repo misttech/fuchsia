@@ -24,6 +24,7 @@ pub const MISC_DYNANIC_MINOR_RANGE: Range<u32> = 52..128;
 pub const DYN_MAJOR_RANGE: Range<u32> = 234..252;
 
 pub const MMC_BLOCK_DEVICE_MAJOR: u32 = 179;
+pub const USB_DEVICE_MAJOR: u32 = 189;
 
 // Unclear if this device number is assigned dynamically, but this value is what abarth observed
 // once for /dev/block/zram0.

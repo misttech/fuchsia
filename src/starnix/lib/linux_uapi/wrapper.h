@@ -100,7 +100,9 @@
 #include <linux/uio.h>
 #include <linux/un.h>
 #include <linux/unistd.h>
+#include <linux/usb/ch9.h>
 #include <linux/usb/functionfs.h>
+#include <linux/usbdevice_fs.h>
 #include <linux/userfaultfd.h>
 #include <linux/utsname.h>
 #include <linux/vm_sockets.h>

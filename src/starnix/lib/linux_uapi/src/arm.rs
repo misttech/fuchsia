@@ -6475,6 +6475,28 @@ pub const USB3_LPM_MAX_U1_SEL_PEL: u32 = 255;
 pub const USB3_LPM_MAX_U2_SEL_PEL: u32 = 65535;
 pub const USB_SELF_POWER_VBUS_MAX_DRAW: u32 = 100;
 pub const USB_FFS_DMABUF_TRANSFER_MASK: u32 = 0;
+pub const USBDEVFS_MAXDRIVERNAME: u32 = 255;
+pub const USBDEVFS_URB_SHORT_NOT_OK: u32 = 1;
+pub const USBDEVFS_URB_ISO_ASAP: u32 = 2;
+pub const USBDEVFS_URB_BULK_CONTINUATION: u32 = 4;
+pub const USBDEVFS_URB_NO_FSBR: u32 = 32;
+pub const USBDEVFS_URB_ZERO_PACKET: u32 = 64;
+pub const USBDEVFS_URB_NO_INTERRUPT: u32 = 128;
+pub const USBDEVFS_URB_TYPE_ISO: u32 = 0;
+pub const USBDEVFS_URB_TYPE_INTERRUPT: u32 = 1;
+pub const USBDEVFS_URB_TYPE_CONTROL: u32 = 2;
+pub const USBDEVFS_URB_TYPE_BULK: u32 = 3;
+pub const USBDEVFS_CAP_ZERO_PACKET: u32 = 1;
+pub const USBDEVFS_CAP_BULK_CONTINUATION: u32 = 2;
+pub const USBDEVFS_CAP_NO_PACKET_SIZE_LIM: u32 = 4;
+pub const USBDEVFS_CAP_BULK_SCATTER_GATHER: u32 = 8;
+pub const USBDEVFS_CAP_REAP_AFTER_DISCONNECT: u32 = 16;
+pub const USBDEVFS_CAP_MMAP: u32 = 32;
+pub const USBDEVFS_CAP_DROP_PRIVILEGES: u32 = 64;
+pub const USBDEVFS_CAP_CONNINFO_EX: u32 = 128;
+pub const USBDEVFS_CAP_SUSPEND: u32 = 256;
+pub const USBDEVFS_DISCONNECT_CLAIM_IF_DRIVER: u32 = 1;
+pub const USBDEVFS_DISCONNECT_CLAIM_EXCEPT_DRIVER: u32 = 2;
 pub const USERFAULTFD_IOC: u32 = 170;
 pub const _UFFDIO_REGISTER: u32 = 0;
 pub const _UFFDIO_UNREGISTER: u32 = 1;
@@ -18125,6 +18147,198 @@ impl Default for usb_functionfs_event {
         }
     }
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_ctrltransfer {
+    pub bRequestType: __u8,
+    pub bRequest: __u8,
+    pub wValue: __u16,
+    pub wIndex: __u16,
+    pub wLength: __u16,
+    pub timeout: __u32,
+    pub data: crate::uaddr32,
+}
+impl Default for usbdevfs_ctrltransfer {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_bulktransfer {
+    pub ep: crate::types::arch32::c_uint,
+    pub len: crate::types::arch32::c_uint,
+    pub timeout: crate::types::arch32::c_uint,
+    pub data: crate::uaddr32,
+}
+impl Default for usbdevfs_bulktransfer {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_setinterface {
+    pub interface: crate::types::arch32::c_uint,
+    pub altsetting: crate::types::arch32::c_uint,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_disconnectsignal {
+    pub signr: crate::types::arch32::c_uint,
+    pub context: crate::uaddr32,
+}
+impl Default for usbdevfs_disconnectsignal {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_getdriver {
+    pub interface: crate::types::arch32::c_uint,
+    pub driver: [crate::types::arch32::c_char; 256usize],
+}
+impl Default for usbdevfs_getdriver {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_connectinfo {
+    pub devnum: crate::types::arch32::c_uint,
+    pub slow: crate::types::arch32::c_uchar,
+    pub __bindgen_padding_0: [u8; 3usize],
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_conninfo_ex {
+    pub size: __u32,
+    pub busnum: __u32,
+    pub devnum: __u32,
+    pub speed: __u32,
+    pub num_ports: __u8,
+    pub ports: [__u8; 7usize],
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_iso_packet_desc {
+    pub length: crate::types::arch32::c_uint,
+    pub actual_length: crate::types::arch32::c_uint,
+    pub status: crate::types::arch32::c_uint,
+}
+#[repr(C)]
+pub struct usbdevfs_urb {
+    pub type_: crate::types::arch32::c_uchar,
+    pub endpoint: crate::types::arch32::c_uchar,
+    pub __bindgen_padding_0: [u8; 2usize],
+    pub status: crate::types::arch32::c_int,
+    pub flags: crate::types::arch32::c_uint,
+    pub buffer: crate::uaddr32,
+    pub buffer_length: crate::types::arch32::c_int,
+    pub actual_length: crate::types::arch32::c_int,
+    pub start_frame: crate::types::arch32::c_int,
+    pub __bindgen_anon_1: usbdevfs_urb__bindgen_ty_1,
+    pub error_count: crate::types::arch32::c_int,
+    pub signr: crate::types::arch32::c_uint,
+    pub usercontext: crate::uaddr32,
+    pub iso_frame_desc: __IncompleteArrayField<usbdevfs_iso_packet_desc>,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union usbdevfs_urb__bindgen_ty_1 {
+    pub number_of_packets: crate::types::arch32::c_int,
+    pub stream_id: crate::types::arch32::c_uint,
+}
+impl Default for usbdevfs_urb__bindgen_ty_1 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+impl Default for usbdevfs_urb {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_ioctl {
+    pub ifno: crate::types::arch32::c_int,
+    pub ioctl_code: crate::types::arch32::c_int,
+    pub data: crate::uaddr32,
+}
+impl Default for usbdevfs_ioctl {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_hub_portinfo {
+    pub nports: crate::types::arch32::c_char,
+    pub port: [crate::types::arch32::c_char; 127usize],
+}
+impl Default for usbdevfs_hub_portinfo {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_disconnect_claim {
+    pub interface: crate::types::arch32::c_uint,
+    pub flags: crate::types::arch32::c_uint,
+    pub driver: [crate::types::arch32::c_char; 256usize],
+}
+impl Default for usbdevfs_disconnect_claim {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default)]
+pub struct usbdevfs_streams {
+    pub num_streams: crate::types::arch32::c_uint,
+    pub num_eps: crate::types::arch32::c_uint,
+    pub eps: __IncompleteArrayField<crate::types::arch32::c_uchar>,
+}
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct uffd_msg {
@@ -21273,6 +21487,117 @@ pub struct sched_param {
 }
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_ctrltransfer32 {
+    pub bRequestType: __u8,
+    pub bRequest: __u8,
+    pub wValue: __u16,
+    pub wIndex: __u16,
+    pub wLength: __u16,
+    pub timeout: __u32,
+    pub data: __u32,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_bulktransfer32 {
+    pub ep: crate::types::arch32::c_uint,
+    pub len: crate::types::arch32::c_uint,
+    pub timeout: crate::types::arch32::c_uint,
+    pub data: __u32,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_disconnectsignal32 {
+    pub signr: crate::types::arch32::c_uint,
+    pub context: __u32,
+}
+#[repr(C)]
+pub struct usbdevfs_urb32 {
+    pub type_: crate::types::arch32::c_uchar,
+    pub endpoint: crate::types::arch32::c_uchar,
+    pub __bindgen_padding_0: [u8; 2usize],
+    pub status: crate::types::arch32::c_int,
+    pub flags: crate::types::arch32::c_uint,
+    pub buffer: __u32,
+    pub buffer_length: crate::types::arch32::c_int,
+    pub actual_length: crate::types::arch32::c_int,
+    pub start_frame: crate::types::arch32::c_int,
+    pub __bindgen_anon_1: usbdevfs_urb32__bindgen_ty_1,
+    pub error_count: crate::types::arch32::c_int,
+    pub signr: crate::types::arch32::c_uint,
+    pub usercontext: __u32,
+    pub iso_frame_desc: __IncompleteArrayField<usbdevfs_iso_packet_desc>,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union usbdevfs_urb32__bindgen_ty_1 {
+    pub number_of_packets: crate::types::arch32::c_int,
+    pub stream_id: crate::types::arch32::c_uint,
+}
+impl Default for usbdevfs_urb32__bindgen_ty_1 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+impl Default for usbdevfs_urb32 {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
+pub struct usbdevfs_ioctl32 {
+    pub ifno: crate::types::arch32::c_int,
+    pub ioctl_code: crate::types::arch32::c_int,
+    pub data: __u32,
+}
+pub const USBDEVFS_CONTROL: __u32 = 3222295808;
+pub const USBDEVFS_CONTROL32: __u32 = 3222295808;
+pub const USBDEVFS_BULK: __u32 = 3222295810;
+pub const USBDEVFS_BULK32: __u32 = 3222295810;
+pub const USBDEVFS_RESETEP: __u32 = 2147767555;
+pub const USBDEVFS_SETINTERFACE: __u32 = 2148029700;
+pub const USBDEVFS_SETCONFIGURATION: __u32 = 2147767557;
+pub const USBDEVFS_GETDRIVER: __u32 = 1090802952;
+pub const USBDEVFS_SUBMITURB: __u32 = 2150389002;
+pub const USBDEVFS_SUBMITURB32: __u32 = 2150389002;
+pub const USBDEVFS_DISCARDURB: __u32 = 21771;
+pub const USBDEVFS_REAPURB: __u32 = 1074025740;
+pub const USBDEVFS_REAPURB32: __u32 = 1074025740;
+pub const USBDEVFS_REAPURBNDELAY: __u32 = 1074025741;
+pub const USBDEVFS_REAPURBNDELAY32: __u32 = 1074025741;
+pub const USBDEVFS_DISCSIGNAL: __u32 = 2148029710;
+pub const USBDEVFS_DISCSIGNAL32: __u32 = 2148029710;
+pub const USBDEVFS_CLAIMINTERFACE: __u32 = 2147767567;
+pub const USBDEVFS_RELEASEINTERFACE: __u32 = 2147767568;
+pub const USBDEVFS_CONNECTINFO: __u32 = 1074287889;
+pub const USBDEVFS_IOCTL: __u32 = 3222033682;
+pub const USBDEVFS_IOCTL32: __u32 = 3222033682;
+pub const USBDEVFS_HUB_PORTINFO: __u32 = 2155894035;
+pub const USBDEVFS_RESET: __u32 = 21780;
+pub const USBDEVFS_CLEAR_HALT: __u32 = 2147767573;
+pub const USBDEVFS_DISCONNECT: __u32 = 21782;
+pub const USBDEVFS_CONNECT: __u32 = 21783;
+pub const USBDEVFS_CLAIM_PORT: __u32 = 2147767576;
+pub const USBDEVFS_RELEASE_PORT: __u32 = 2147767577;
+pub const USBDEVFS_GET_CAPABILITIES: __u32 = 2147767578;
+pub const USBDEVFS_DISCONNECT_CLAIM: __u32 = 2164806939;
+pub const USBDEVFS_ALLOC_STREAMS: __u32 = 2148029724;
+pub const USBDEVFS_FREE_STREAMS: __u32 = 2148029725;
+pub const USBDEVFS_DROP_PRIVILEGES: __u32 = 1074025758;
+pub const USBDEVFS_GET_SPEED: __u32 = 21791;
+pub const USBDEVFS_FORBID_SUSPEND: __u32 = 21793;
+pub const USBDEVFS_ALLOW_SUSPEND: __u32 = 21794;
+pub const USBDEVFS_WAIT_FOR_RESUME: __u32 = 21795;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 pub struct xt_match {
     pub _address: u8,
 }
@@ -21471,6 +21796,7 @@ pub struct xt_target {
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/unistd.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/usb/ch9.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/usb/functionfs.h |
+//    //third_party/android/platform/bionic/libc/kernel/uapi/linux/usbdevice_fs.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/userfaultfd.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/utsname.h |
 //    //third_party/android/platform/bionic/libc/kernel/uapi/linux/vesa.h |

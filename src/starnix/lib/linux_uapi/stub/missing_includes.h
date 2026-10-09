@@ -344,4 +344,99 @@ C(FUSE_DEV_IOC_PASSTHROUGH_OPEN_V2);
 
 #endif  // #ifndef __arm__
 
+// 32-bit compatibility structures for USBDEVFS ioctls.
+// <linux/usbdevice_fs.h> references these structures in ioctl macros (such as
+// `USBDEVFS_CONTROL32` and `USBDEVFS_BULK32`), but does not define them in the
+// UAPI headers because in the Linux kernel they are defined internally in
+// `drivers/usb/core/devio.c` for 32-bit compat handling. They are defined here
+// so that the `_IOR`/`_IOWR` ioctl macros can compute their sizes and bindgen
+// can generate their Rust struct definitions.
+struct usbdevfs_ctrltransfer32 {
+  __u8 bRequestType;
+  __u8 bRequest;
+  __u16 wValue;
+  __u16 wIndex;
+  __u16 wLength;
+  __u32 timeout;
+  __u32 data;
+};
+
+struct usbdevfs_bulktransfer32 {
+  unsigned int ep;
+  unsigned int len;
+  unsigned int timeout;
+  __u32 data;
+};
+
+struct usbdevfs_disconnectsignal32 {
+  unsigned int signr;
+  __u32 context;
+};
+
+struct usbdevfs_urb32 {
+  unsigned char type;
+  unsigned char endpoint;
+  int status;
+  unsigned int flags;
+  __u32 buffer;
+  int buffer_length;
+  int actual_length;
+  int start_frame;
+  union {
+    int number_of_packets;
+    unsigned int stream_id;
+  };
+  int error_count;
+  unsigned int signr;
+  __u32 usercontext;
+  struct usbdevfs_iso_packet_desc iso_frame_desc[];
+};
+
+struct usbdevfs_ioctl32 {
+  int ifno;
+  int ioctl_code;
+  __u32 data;
+};
+
+// USBDEVFS ioctl request constants (defined via _IO/_IOR/_IOW/_IOWR macros in
+// <linux/usbdevice_fs.h>).
+C(USBDEVFS_CONTROL);
+C(USBDEVFS_CONTROL32);
+C(USBDEVFS_BULK);
+C(USBDEVFS_BULK32);
+C(USBDEVFS_RESETEP);
+C(USBDEVFS_SETINTERFACE);
+C(USBDEVFS_SETCONFIGURATION);
+C(USBDEVFS_GETDRIVER);
+C(USBDEVFS_SUBMITURB);
+C(USBDEVFS_SUBMITURB32);
+C(USBDEVFS_DISCARDURB);
+C(USBDEVFS_REAPURB);
+C(USBDEVFS_REAPURB32);
+C(USBDEVFS_REAPURBNDELAY);
+C(USBDEVFS_REAPURBNDELAY32);
+C(USBDEVFS_DISCSIGNAL);
+C(USBDEVFS_DISCSIGNAL32);
+C(USBDEVFS_CLAIMINTERFACE);
+C(USBDEVFS_RELEASEINTERFACE);
+C(USBDEVFS_CONNECTINFO);
+C(USBDEVFS_IOCTL);
+C(USBDEVFS_IOCTL32);
+C(USBDEVFS_HUB_PORTINFO);
+C(USBDEVFS_RESET);
+C(USBDEVFS_CLEAR_HALT);
+C(USBDEVFS_DISCONNECT);
+C(USBDEVFS_CONNECT);
+C(USBDEVFS_CLAIM_PORT);
+C(USBDEVFS_RELEASE_PORT);
+C(USBDEVFS_GET_CAPABILITIES);
+C(USBDEVFS_DISCONNECT_CLAIM);
+C(USBDEVFS_ALLOC_STREAMS);
+C(USBDEVFS_FREE_STREAMS);
+C(USBDEVFS_DROP_PRIVILEGES);
+C(USBDEVFS_GET_SPEED);
+C(USBDEVFS_FORBID_SUSPEND);
+C(USBDEVFS_ALLOW_SUSPEND);
+C(USBDEVFS_WAIT_FOR_RESUME);
+
 #endif  // SRC_STARNIX_LIB_LINUX_UAPI_STUB_MISSING_INCLUDES_H_
