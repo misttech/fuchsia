@@ -108,4 +108,5 @@ fx_package(
 fx_test(
     name = "profile-client-tests",
     package = ":profile-client-tests-package",
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
 )

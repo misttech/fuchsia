@@ -50,6 +50,5 @@ group("tests") {
     "fuchsia-audio-dai:tests",
     "fuchsia-audio-device:tests",
     "host-watcher:tests",
-    "profile-client:tests",
   ]
 }
