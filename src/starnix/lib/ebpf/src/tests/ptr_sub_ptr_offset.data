@@ -1,0 +1,15 @@
+# Test that the difference between two unrelated pointers is an uninitialized
+# scalar that cannot be masked into a bounded range and used as a pointer
+# offset.
+
+-- asm
+call 201
+mov %r7, %r0
+mov %r6, %r0
+sub %r6, %r10
+and %r6, 7
+add %r7, %r6
+ldxb %r0, [%r7]
+exit
+-- error
+pointer arithmetic with uninitialized scalar

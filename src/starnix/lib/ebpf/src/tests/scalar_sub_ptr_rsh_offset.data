@@ -1,0 +1,13 @@
+# Test that an uninitialized scalar produced by subtracting a pointer from a
+# scalar cannot be shifted into a bounded range and used as a pointer offset.
+
+-- asm
+call 201
+mov %r6, 0
+sub %r6, %r0
+rsh %r6, 61
+add %r0, %r6
+ldxb %r0, [%r0]
+exit
+-- error
+pointer arithmetic with uninitialized scalar

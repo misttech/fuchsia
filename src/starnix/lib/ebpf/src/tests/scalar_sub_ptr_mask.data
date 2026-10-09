@@ -1,0 +1,13 @@
+# Test that masking an uninitialized scalar produced by subtracting a pointer
+# from a scalar clears unwritten_mask only on the zeroed bits, preserving the
+# unknown_mask/unwritten_mask invariant while still rejecting the remaining
+# unwritten bits at exit.
+
+-- asm
+mov %r0, 0
+sub %r0, %r10
+and %r0, 1
+or %r0, 2
+exit
+-- error
+register 0 is incorrect at exit time

@@ -366,6 +366,7 @@ impl [< $t:upper ScalarValueData>] {
         let common_mask = if shift == [< $t >]::BITS { 0 } else { !0 << shift };
 
         let unknown_mask = unknown_mask & !common_mask;
+        let unwritten_mask = unwritten_mask & !common_mask;
         let value = (value & !common_mask) | (urange.min & common_mask);
 
         let urange = if unknown_mask == 0 {
@@ -381,6 +382,8 @@ impl [< $t:upper ScalarValueData>] {
             }
             [< $t:upper Range >]::new(min, max)
         };
+        debug_assert!(unknown_mask & unwritten_mask == unwritten_mask);
+        debug_assert!(value & unknown_mask == 0);
         Self { value, unknown_mask, unwritten_mask, urange, _guard: () }
     }
 
@@ -417,10 +420,7 @@ impl [< $t:upper ScalarValueData>] {
         if self.is_known() && rhs.is_known() {
             return self.value.checked_add(rhs.value).map(Into::into);
         }
-        Some(Self {
-            urange: self.urange.checked_add(rhs.urange)?,
-            .. self.base(rhs)
-        })
+        Some(self.base(rhs).update_range(self.urange.checked_add(rhs.urange)?))
     }
 
     pub fn checked_sub<T: Into<[< $t:upper ScalarValueData>]>>(self, rhs: T) -> Option<Self> {
@@ -428,10 +428,7 @@ impl [< $t:upper ScalarValueData>] {
         if self.is_known() && rhs.is_known() {
             return self.value.checked_sub(rhs.value).map(Into::into);
         }
-        Some(Self {
-            urange: self.urange.checked_sub(rhs.urange)?,
-            .. self.base(rhs)
-        })
+        Some(self.base(rhs).update_range(self.urange.checked_sub(rhs.urange)?))
     }
 
     /// Arithmetic right shift.
@@ -463,16 +460,6 @@ impl [< $t:upper ScalarValueData>] {
         )
     }
 
-    fn bitwise_operation(self,
-                        rhs: Self,
-                        urange: [< $t:upper Range >],
-                        op: impl Fn([< $t >], [< $t >]) -> [< $t >]) -> Self {
-        let unknown_mask = self.unknown_mask | rhs.unknown_mask;
-        let unwritten_mask = self.unwritten_mask | rhs.unwritten_mask;
-        let value = op(self.value, rhs.value) & !unknown_mask;
-        Self::new(value, unknown_mask, unwritten_mask, urange)
-    }
-
     fn shift_operation(self, rhs: [< $t >], urange: [< $t:upper Range >], op: impl Fn([< $t >], [< $t >]) -> [< $t >]) -> Self {
         let value = op(self.value, rhs);
         let unknown_mask = op(self.unknown_mask, rhs);
@@ -496,10 +483,7 @@ impl<T: Into<[< $t:upper ScalarValueData>]>> std::ops::Add<T> for [< $t:upper Sc
         if self.is_known() && rhs.is_known() {
             return self.value.overflowing_add(rhs.value).0.into();
         }
-        Self {
-            urange: self.urange + rhs.urange,
-            .. self.base(rhs)
-        }
+        self.base(rhs).update_range(self.urange + rhs.urange)
     }
 }
 
@@ -513,10 +497,7 @@ impl std::ops::Div for [< $t:upper ScalarValueData>] {
                 return (self.value / rhs.value).into();
             }
         }
-        Self {
-            urange: self.urange / rhs.urange,
-            .. self.base(rhs)
-        }
+        self.base(rhs).update_range(self.urange / rhs.urange)
     }
 }
 
@@ -526,10 +507,7 @@ impl std::ops::Mul for [< $t:upper ScalarValueData>] {
         if self.is_known() && rhs.is_known() {
             return self.value.overflowing_mul(rhs.value).0.into();
         }
-        Self {
-            urange: self.urange * rhs.urange,
-            .. self.base(rhs)
-        }
+        self.base(rhs).update_range(self.urange * rhs.urange)
     }
 }
 
@@ -539,15 +517,7 @@ impl std::ops::Neg for [< $t:upper ScalarValueData>] {
         if self.is_known() {
             return self.value.wrapping_neg().into();
         }
-        let base = if !self.is_fully_initialized() {
-            Self::UNINITIALIZED
-        } else {
-            Self::UNKNOWN_WRITTEN
-        };
-        Self {
-            urange: -self.urange,
-            .. base
-        }
+        self.base(self).update_range(-self.urange)
     }
 }
 
@@ -561,10 +531,7 @@ impl std::ops::Rem for [< $t:upper ScalarValueData>] {
                 return (self.value % rhs.value).into();
             }
         }
-        Self {
-            urange: self.urange % rhs.urange,
-            .. self.base(rhs)
-        }
+        self.base(rhs).update_range(self.urange % rhs.urange)
     }
 }
 
@@ -575,10 +542,7 @@ impl<T: Into<[< $t:upper ScalarValueData>]>> std::ops::Sub<T> for [< $t:upper Sc
         if self.is_known() && rhs.is_known() {
             return self.value.overflowing_sub(rhs.value).0.into();
         }
-        Self {
-            urange: self.urange - rhs.urange,
-            .. self.base(rhs)
-        }
+        self.base(rhs).update_range(self.urange - rhs.urange)
     }
 }
 
@@ -586,15 +550,24 @@ impl std::ops::BitAnd for [< $t:upper ScalarValueData>] {
     type Output = Self;
     fn bitand(self, rhs: Self) -> Self {
         let urange = [< $t:upper Range >]::new(0, std::cmp::min(self.max(), rhs.max()));
-        self.bitwise_operation(rhs, urange, |x, y| x & y)
+        // A bit can be 1 only if it is not known to be 0 in either operand.
+        let not_known_zero = (self.value | self.unknown_mask) & (rhs.value | rhs.unknown_mask);
+        let unknown_mask = (self.unknown_mask | rhs.unknown_mask) & not_known_zero;
+        let unwritten_mask = (self.unwritten_mask | rhs.unwritten_mask) & not_known_zero;
+        let value = self.value & rhs.value;
+        Self::new(value, unknown_mask, unwritten_mask, urange)
     }
 }
 
 impl std::ops::BitOr for [< $t:upper ScalarValueData>] {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self {
-        let urange = [< $t:upper Range >]::new( std::cmp::max(self.min(), rhs.min()), [< $t >]::MAX);
-        self.bitwise_operation(rhs, urange, |x, y| x | y)
+        let urange = [< $t:upper Range >]::new(std::cmp::max(self.min(), rhs.min()), [< $t >]::MAX);
+        // Any bit known to be 1 in either operand is known to be 1 in the result.
+        let value = self.value | rhs.value;
+        let unknown_mask = (self.unknown_mask | rhs.unknown_mask) & !value;
+        let unwritten_mask = (self.unwritten_mask | rhs.unwritten_mask) & !value;
+        Self::new(value, unknown_mask, unwritten_mask, urange)
     }
 }
 
@@ -602,7 +575,10 @@ impl std::ops::BitXor for [< $t:upper ScalarValueData>] {
     type Output = Self;
     fn bitxor(self, rhs: Self) -> Self {
         let urange = [< $t:upper Range >]::max();
-        self.bitwise_operation(rhs, urange, |x, y| x ^ y)
+        let unknown_mask = self.unknown_mask | rhs.unknown_mask;
+        let unwritten_mask = self.unwritten_mask | rhs.unwritten_mask;
+        let value = (self.value ^ rhs.value) & !unknown_mask;
+        Self::new(value, unknown_mask, unwritten_mask, urange)
     }
 }
 
@@ -619,10 +595,7 @@ impl std::ops::Shl for [< $t:upper ScalarValueData>] {
                 x.overflowing_shl(y).0
             });
         }
-        Self {
-            urange,
-            .. self.base(rhs)
-        }
+        self.base(rhs).update_range(urange)
     }
 }
 
@@ -639,10 +612,7 @@ impl std::ops::Shr for [< $t:upper ScalarValueData>] {
                 x.overflowing_shr(y).0
             });
         }
-        Self {
-            urange,
-            .. self.base(rhs)
-        }
+        self.base(rhs).update_range(urange)
     }
 }
 
@@ -801,5 +771,143 @@ mod tests {
         let data = U64ScalarValueData::new(0, 0b0111, 0, U64Range::new(4, 5));
         assert_eq!(data.unknown_mask, 0b0001);
         assert_eq!(data.value, 4);
+    }
+
+    #[test]
+    fn test_unwritten_mask_narrowing() {
+        // When urange narrows leading bits (e.g. [0, 1]), those bits become
+        // known and written, while the remaining bits stay unknown and
+        // unwritten.
+        let data = U64ScalarValueData::new(0, u64::MAX, u64::MAX, U64Range::new(0, 1));
+        assert!(!data.is_known());
+        assert!(!data.is_fully_initialized());
+        assert_eq!(data.unknown_mask, 1);
+        assert_eq!(data.unwritten_mask, 1);
+        assert_eq!(data.min(), 0);
+        assert_eq!(data.max(), 1);
+
+        // BitAnd with a non-contiguous mask clears unknown_mask and
+        // unwritten_mask on all 0 bits of the mask (even non-leading ones).
+        let masked = U64ScalarValueData::UNINITIALIZED & U64ScalarValueData::from(0x0f0fu64);
+        assert_eq!(masked.value, 0);
+        assert_eq!(masked.unknown_mask, 0x0f0f);
+        assert_eq!(masked.unwritten_mask, 0x0f0f);
+
+        // BitOr with a constant clears unknown_mask and unwritten_mask on all 1
+        // bits of the constant and sets those bits in value.
+        let ored = U64ScalarValueData::UNINITIALIZED | U64ScalarValueData::from(0x0f0fu64);
+        assert_eq!(ored.value, 0x0f0f);
+        assert_eq!(ored.unknown_mask, !0x0f0f);
+        assert_eq!(ored.unwritten_mask, !0x0f0f);
+
+        // Combining BitOr and BitAnd that together overwrite all bits yields a
+        // known, initialized constant.
+        let initialized = ored & U64ScalarValueData::from(0x0f0fu64);
+        assert!(initialized.is_known());
+        assert!(initialized.is_fully_initialized());
+        assert_eq!(initialized.value, 0x0f0f);
+        assert_eq!(initialized.unknown_mask, 0);
+        assert_eq!(initialized.unwritten_mask, 0);
+
+        // When urange is a single constant [0, 0] (e.g. `and %r0, 0`), all bits
+        // are overwritten with 0, so both unknown_mask and unwritten_mask
+        // become 0.
+        let zeroed = data & U64ScalarValueData::from(0u64);
+        assert!(zeroed.is_known());
+        assert!(zeroed.is_fully_initialized());
+        assert_eq!(zeroed.value, 0);
+        assert_eq!(zeroed.unknown_mask, 0);
+        assert_eq!(zeroed.unwritten_mask, 0);
+
+        // Symmetrically, BitOr with all ones (e.g. `or %r0, -1`) overwrites all
+        // bits with 1.
+        let all_ones = data | U64ScalarValueData::from(u64::MAX);
+        assert!(all_ones.is_known());
+        assert!(all_ones.is_fully_initialized());
+        assert_eq!(all_ones.value, u64::MAX);
+        assert_eq!(all_ones.unknown_mask, 0);
+        assert_eq!(all_ones.unwritten_mask, 0);
+
+        // BitAnd of an unwritten masked value with an unknown-but-written
+        // value: a bit can be 1 only where `masked` is not known to be 0, so
+        // the masks shrink to `masked`'s, and the unwritten bits of `masked`
+        // stay unwritten.
+        let unknown = U64ScalarValueData::UNKNOWN_WRITTEN;
+        let and_masked_unknown = masked & unknown;
+        assert_eq!(and_masked_unknown.value, 0);
+        assert_eq!(and_masked_unknown.unknown_mask, 0x0f0f);
+        assert_eq!(and_masked_unknown.unwritten_mask, 0x0f0f);
+        assert_eq!(and_masked_unknown.max(), 0x0f0f);
+
+        // BitAnd of a value with known 1 bits (`ored`) with an
+        // unknown-but-written value: the known 1 bits become unknown (as the
+        // other side is unknown there), but written, as they only depend on the
+        // written operand.
+        let and_ored_unknown = ored & unknown;
+        assert_eq!(and_ored_unknown.value, 0);
+        assert_eq!(and_ored_unknown.unknown_mask, u64::MAX);
+        assert_eq!(and_ored_unknown.unwritten_mask, !0x0f0f);
+
+        // BitOr of an unwritten masked value with an unknown-but-written value:
+        // no bit is known, and only the bits that may come from `masked` remain
+        // unwritten.
+        let or_masked_unknown = masked | unknown;
+        assert_eq!(or_masked_unknown.value, 0);
+        assert_eq!(or_masked_unknown.unknown_mask, u64::MAX);
+        assert_eq!(or_masked_unknown.unwritten_mask, 0x0f0f);
+
+        // BitOr of `ored` with an unknown-but-written value: the known 1 bits
+        // of `ored` are preserved as known and written; everything else is
+        // unknown and unwritten.
+        let or_ored_unknown = ored | unknown;
+        assert_eq!(or_ored_unknown.value, 0x0f0f);
+        assert_eq!(or_ored_unknown.unknown_mask, !0x0f0f);
+        assert_eq!(or_ored_unknown.unwritten_mask, !0x0f0f);
+        assert_eq!(or_ored_unknown.min(), 0x0f0f);
+
+        // Partially known and fully written: only the low byte is unknown.
+        let partial = unknown & U64ScalarValueData::from(0xffu64);
+        assert_eq!(partial.value, 0);
+        assert_eq!(partial.unknown_mask, 0xff);
+        assert_eq!(partial.unwritten_mask, 0);
+
+        // BitAnd of two partially unknown values with overlapping masks: only
+        // bits that are not known to be 0 on both sides (0xff & 0x0f0f) stay
+        // unknown, and among them only the bits unwritten in `masked` stay
+        // unwritten.
+        let and_partial_masked = partial & masked;
+        assert_eq!(and_partial_masked.value, 0);
+        assert_eq!(and_partial_masked.unknown_mask, 0x0f);
+        assert_eq!(and_partial_masked.unwritten_mask, 0x0f);
+        assert_eq!(and_partial_masked.max(), 0x0f);
+
+        // BitOr of the same two values: no bit is known to be 1, so the masks
+        // are simply unioned.
+        let or_partial_masked = partial | masked;
+        assert_eq!(or_partial_masked.value, 0);
+        assert_eq!(or_partial_masked.unknown_mask, 0x0fff);
+        assert_eq!(or_partial_masked.unwritten_mask, 0x0f0f);
+
+        // Known 1 bits in the low byte, unknown but written elsewhere.
+        let known_low = unknown | U64ScalarValueData::from(0xffu64);
+        assert_eq!(known_low.value, 0xff);
+        assert_eq!(known_low.unknown_mask, !0xff);
+        assert_eq!(known_low.unwritten_mask, 0);
+
+        // BitOr with `masked`: the known 1 bits overwrite the unwritten low
+        // bits of `masked`, leaving only its high nibble unwritten.
+        let or_known_low_masked = known_low | masked;
+        assert_eq!(or_known_low_masked.value, 0xff);
+        assert_eq!(or_known_low_masked.unknown_mask, !0xff);
+        assert_eq!(or_known_low_masked.unwritten_mask, 0x0f00);
+
+        // BitAnd with `ored`: bits known to be 1 on both sides (0xff & 0x0f0f)
+        // are known 1, all other bits are unknown, and only the bits unwritten
+        // in `ored` are unwritten.
+        let and_known_low_ored = known_low & ored;
+        assert_eq!(and_known_low_ored.value, 0x0f);
+        assert_eq!(and_known_low_ored.unknown_mask, !0x0f);
+        assert_eq!(and_known_low_ored.unwritten_mask, !0x0f0f);
+        assert_eq!(and_known_low_ored.min(), 0x0f);
     }
 }

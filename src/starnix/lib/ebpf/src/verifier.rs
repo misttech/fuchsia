@@ -1758,9 +1758,25 @@ impl ComputationContext {
             (
                 AluType::Add,
                 Type::ScalarValue(_),
-                Type::PtrToStack { .. } | Type::PtrToMemory { .. } | Type::PtrToStruct { .. },
+                Type::PtrToStack { .. }
+                | Type::PtrToMemory { .. }
+                | Type::PtrToStruct { .. }
+                | Type::PtrToArray { .. },
             ) => {
                 return Self::apply_computation(context, op2, op1, alu_type, op);
+            }
+            // Pointer arithmetic with a scalar that is not fully initialized (either never
+            // written, or derived from a pointer value) is prohibited: it would allow the
+            // pointer value to leak through the resulting offset.
+            (
+                alu_type,
+                Type::PtrToStack { .. }
+                | Type::PtrToMemory { .. }
+                | Type::PtrToStruct { .. }
+                | Type::PtrToArray { .. },
+                Type::ScalarValue(data),
+            ) if alu_type.is_ptr_compatible() && !data.is_fully_initialized() => {
+                return Err("pointer arithmetic with uninitialized scalar".to_string());
             }
             (alu_type, Type::PtrToStack { offset: x }, Type::ScalarValue(data))
                 if alu_type.is_ptr_compatible() =>
@@ -1784,11 +1800,15 @@ impl ComputationContext {
                 Type::PtrToStruct { id: id.clone(), offset, descriptor: descriptor.clone() }
             }
             (AluType::Add, Type::PtrToArray { id, offset: x }, Type::ScalarValue(data)) => {
-                let offset = x.checked_add(*data).ok_or_else(|| format!("XXX"))?;
+                let offset = x
+                    .checked_add(*data)
+                    .ok_or_else(|| "packet pointer offset overflow".to_string())?;
                 Type::PtrToArray { id: id.clone(), offset }
             }
             (AluType::Sub, Type::PtrToArray { id, offset: x }, Type::ScalarValue(data)) => {
-                let offset = x.checked_sub(*data).ok_or_else(|| format!("XXX"))?;
+                let offset = x
+                    .checked_sub(*data)
+                    .ok_or_else(|| "packet pointer offset underflow".to_string())?;
                 Type::PtrToArray { id: id.clone(), offset }
             }
             (
