@@ -347,10 +347,12 @@ filegroup(
         ":example_test",
         ":example_test_with_test_type",
         ":example_unittest_package",
+        ":example_unittest_package_default_name",
         ":verify_example_multi_component_test_realms",
         ":verify_example_multi_unittest_package_realms",
         ":verify_example_test_default_realm",
         ":verify_example_test_with_test_type",
+        ":verify_example_unittest_package_default_name_realms",
         ":verify_example_unittest_package_realms",
     ],
     visibility = ["//build/bazel/rules/tests:__pkg__"],
@@ -377,6 +379,22 @@ verify_fx_test_realms(
         "fx-unittest-package-example": "",
     },
     test = ":example_unittest_package",
+)
+
+# Tests that `fx_unittest_package()` names the package and component after
+# `name` when `package_name` is omitted.
+fx_unittest_package(
+    name = "example_unittest_package_default_name",
+    unit_tests = [":example_test_bin"],
+)
+
+verify_fx_test_realms(
+    name = "verify_example_unittest_package_default_name_realms",
+    testonly = True,
+    expected_realms = {
+        "example_unittest_package_default_name": "",
+    },
+    test = ":example_unittest_package_default_name",
 )
 
 # Tests `fx_unittest_package()` with multiple unit test binaries.

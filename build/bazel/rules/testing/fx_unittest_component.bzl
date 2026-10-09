@@ -183,6 +183,9 @@ fx_unittest_component = macro(
 
             Defaults to `name` to match the behavior of `fx_package` and
             `fx_component`. """,
+            # Otherwise an unset value reaches the impl as an always-truthy
+            # select(), and the `name` fallback never applies.
+            configurable = False,
         ),
         # Set internally by the macro.
         "compiled_manifest": None,

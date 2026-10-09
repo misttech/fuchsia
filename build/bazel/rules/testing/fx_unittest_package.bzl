@@ -78,6 +78,9 @@ fx_unittest_package = macro(
 
             Defaults to `name` to match the behavior of `fx_package`.
             """,
+            # Otherwise an unset value reaches the impl as an always-truthy
+            # select(), and the `name` fallback never applies.
+            configurable = False,
         ),
         "unit_tests": attr.label_list(
             doc = "The unit test binary targets to package and run.",
