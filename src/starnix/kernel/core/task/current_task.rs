@@ -14,7 +14,7 @@ use crate::task::loader::{
 use crate::task::{
     CurrentTaskCredentialsWriteGuard, ExitStatus, PageFaultExceptionReport, RobustListHeadPtr,
     RunState, SeccompFilter, SeccompFilterContainer, SeccompState, SeccompStateValue, Task,
-    TaskFlags, TaskRunningState, ThreadState, Waiter,
+    TaskRunningState, ThreadState, Waiter,
 };
 use crate::vfs::{
     AccessCheck, DirectoryMode, FdFlags, FdNumber, FdTable, FileHandle, FileMapping,
@@ -454,11 +454,7 @@ impl CurrentTask {
     where
         F: FnOnce(&CurrentTask) -> Result<T, Errno>,
     {
-        {
-            let mut state = self.write();
-            state.set_flags(TaskFlags::TEMPORARY_SIGNAL_MASK, true);
-            state.set_temporary_signal_mask(signal_mask);
-        }
+        self.write().set_temporary_signal_mask(signal_mask);
         wait_function(self)
     }
 

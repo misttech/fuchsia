@@ -429,9 +429,15 @@ pub fn process_completed_restricted_exit(
                 // loop back to process any pending signals before returning to userspace.
                 continue;
             }
+            // Restore signal mask if necessary, before returning to userspace.
+            if current_task.flags().contains(TaskFlags::TEMPORARY_SIGNAL_MASK) {
+                current_task.write().restore_signal_mask();
+                if current_task.should_check_for_pending_signals() {
+                    continue;
+                }
+            }
+
             result = None;
-            // Always restore signal mask before returning to userspace.
-            current_task.write().restore_signal_mask();
             break;
         }
     }

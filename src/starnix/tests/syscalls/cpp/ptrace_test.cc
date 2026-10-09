@@ -2633,9 +2633,13 @@ TEST(PtraceTest, PtraceAttachesDuringPpoll) {
 }
 
 TEST(PtraceTest, PtraceAttachesDuringPpollAndSignal) {
+  test_helper::ScopedPipe pipe;
+
   test_helper::ForkHelper helper;
   helper.OnlyWaitForForkedChildren();
-  pid_t child_pid = helper.RunInForkedProcess([&] {
+  pid_t child_pid = helper.RunInForkedProcess([&pipe] {
+    pipe.WriteSide().reset();
+
     sigset_t mask;
     sigemptyset(&mask);
     sigaddset(&mask, SIGUSR1);
@@ -2647,21 +2651,23 @@ TEST(PtraceTest, PtraceAttachesDuringPpollAndSignal) {
     sa.sa_handler = [](int) { sigusr1_received = 1; };
     sigaction(SIGUSR1, &sa, nullptr);
 
-    // Block on ppoll.
+    // Block on ppoll waiting for the pipe to become readable.
     sigset_t ppoll_mask;
     sigemptyset(&ppoll_mask);
-    struct timespec timeout = {.tv_sec = 2, .tv_nsec = 0};
+    struct pollfd pfd = {.fd = pipe.ReadSide().get(), .events = POLLIN};
+    struct timespec timeout = {.tv_sec = 10, .tv_nsec = 0};
 
     // While blocked on the first ppoll, the parent will ptrace-attach, and send a SIGUSR1 signal.
     // The parent will intercept this signal and suppress it, so that the signal is not delivered.
-    // On Linux, this happens transparently and ppoll returns success after 2 seconds, but on
-    // Starnix it returns EINTR after the signal is suppressed.
+    // On Linux, this happens transparently and ppoll returns success once unblocked, but on Starnix
+    // it returns EINTR after the signal is suppressed.
     // TODO(wintermelons): Fix this so that ppoll returns success.
-    ppoll(nullptr, 0, &timeout, &ppoll_mask);
+    ppoll(&pfd, 1, &timeout, &ppoll_mask);
 
     // Block on ppoll again. By doing 2 ppolls in quick succession, this occasionally triggers a
     // race condition where the signal mask is not updated correctly.
-    ASSERT_THAT(ppoll(nullptr, 0, &timeout, &ppoll_mask), SyscallSucceeds());
+    struct timespec zero_timeout = {};
+    ASSERT_THAT(ppoll(nullptr, 0, &zero_timeout, &ppoll_mask), SyscallSucceeds());
 
     // Check if temporary signal mask leaked
     sigset_t current_mask;
@@ -2670,7 +2676,9 @@ TEST(PtraceTest, PtraceAttachesDuringPpollAndSignal) {
 
     EXPECT_FALSE(sigusr1_received);
   });
+
   ASSERT_NE(child_pid, 0);
+  pipe.ReadSide().reset();
 
   ASSERT_TRUE(test_helper::WaitUntilBlocked(child_pid, true));
 
@@ -2694,6 +2702,10 @@ TEST(PtraceTest, PtraceAttachesDuringPpollAndSignal) {
 
   // Continue the child without delivering the captured signal.
   ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+
+  // Unblock the child if ppoll was restarted (as on Linux).
+  pipe.WriteSide().reset();
+  EXPECT_TRUE(helper.WaitForChildren());
 }
 
 TEST(PtraceTest, AttachDeniedWithoutCapSysPtrace) {

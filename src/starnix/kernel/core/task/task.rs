@@ -322,12 +322,6 @@ impl TaskMutableState {
         self.signals.saved_mask().is_some_and(|mask| mask.has_signal(signal))
     }
 
-    /// Removes the currently active, temporary, signal mask and restores the
-    /// previously active signal mask.
-    pub fn restore_signal_mask(&mut self) {
-        self.signals.restore_mask();
-    }
-
     /// Returns true if the task's current `RunState` is blocked.
     pub fn is_blocked(&self) -> bool {
         self.run_state.is_blocked()
@@ -458,7 +452,24 @@ impl TaskMutableState<Base = Task> {
     /// This mask should be removed by a matching call to `restore_signal_mask`.
     pub fn set_temporary_signal_mask(&mut self, mask: SigSet) {
         self.signals.set_temporary_mask(mask);
-        self.set_flags(TaskFlags::SIGNALS_AVAILABLE, self.signals.is_any_pending());
+        let (signals_clear, signals_set) = if self.signals.is_any_pending() {
+            (TaskFlags::empty(), TaskFlags::SIGNALS_AVAILABLE)
+        } else {
+            (TaskFlags::SIGNALS_AVAILABLE, TaskFlags::empty())
+        };
+        self.update_flags(signals_clear, signals_set | TaskFlags::TEMPORARY_SIGNAL_MASK);
+    }
+
+    /// Removes the currently active, temporary, signal mask and restores the
+    /// previously active signal mask.
+    pub fn restore_signal_mask(&mut self) {
+        self.signals.restore_mask();
+        let (signals_clear, signals_set) = if self.signals.is_any_pending() {
+            (TaskFlags::empty(), TaskFlags::SIGNALS_AVAILABLE)
+        } else {
+            (TaskFlags::SIGNALS_AVAILABLE, TaskFlags::empty())
+        };
+        self.update_flags(signals_clear | TaskFlags::TEMPORARY_SIGNAL_MASK, signals_set);
     }
 
     /// Returns the number of pending signals for this task, without considering the signal mask.
@@ -1656,7 +1667,7 @@ mod test {
     use crate::testing::*;
     use starnix_uapi::auth::{CAP_SYS_ADMIN, Capabilities};
     use starnix_uapi::resource_limits::Resource;
-    use starnix_uapi::signals::SIGCHLD;
+    use starnix_uapi::signals::{SIGCHLD, SIGUSR1};
     use starnix_uapi::{CLONE_SIGHAND, CLONE_THREAD, CLONE_VM, rlimit};
 
     #[::fuchsia::test]
@@ -1829,6 +1840,60 @@ mod test {
             // Consecutive calls to copy_state_from must preserve the existing snapshot.
             state.copy_state_from(current_task);
             assert!(state.captured_thread_state.as_ref().unwrap().dirty);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_temporary_signal_mask_without_pending_signals() {
+        spawn_kernel_and_run(async |current_task| {
+            assert!(!current_task.flags().contains(TaskFlags::TEMPORARY_SIGNAL_MASK));
+            assert!(!current_task.flags().contains(TaskFlags::SIGNALS_AVAILABLE));
+
+            current_task.write().set_temporary_signal_mask(SigSet::from(SIGUSR1));
+            assert!(current_task.flags().contains(TaskFlags::TEMPORARY_SIGNAL_MASK));
+            assert!(!current_task.flags().contains(TaskFlags::SIGNALS_AVAILABLE));
+
+            current_task.write().restore_signal_mask();
+            assert!(!current_task.flags().contains(TaskFlags::TEMPORARY_SIGNAL_MASK));
+            assert!(!current_task.flags().contains(TaskFlags::SIGNALS_AVAILABLE));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_temporary_signal_mask_masks_pending_signal() {
+        spawn_kernel_and_run(async |current_task| {
+            current_task.write().enqueue_signal(SignalInfo::kernel(SIGUSR1));
+            assert!(current_task.flags().contains(TaskFlags::SIGNALS_AVAILABLE));
+            assert!(!current_task.flags().contains(TaskFlags::TEMPORARY_SIGNAL_MASK));
+
+            current_task.write().set_temporary_signal_mask(SigSet::from(SIGUSR1));
+            assert!(current_task.flags().contains(TaskFlags::TEMPORARY_SIGNAL_MASK));
+            assert!(!current_task.flags().contains(TaskFlags::SIGNALS_AVAILABLE));
+
+            current_task.write().restore_signal_mask();
+            assert!(!current_task.flags().contains(TaskFlags::TEMPORARY_SIGNAL_MASK));
+            assert!(current_task.flags().contains(TaskFlags::SIGNALS_AVAILABLE));
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_temporary_signal_mask_unmasks_pending_signal() {
+        spawn_kernel_and_run(async |current_task| {
+            current_task.write().set_signal_mask(SigSet::from(SIGUSR1));
+            current_task.write().enqueue_signal(SignalInfo::kernel(SIGUSR1));
+            assert!(!current_task.flags().contains(TaskFlags::SIGNALS_AVAILABLE));
+            assert!(!current_task.flags().contains(TaskFlags::TEMPORARY_SIGNAL_MASK));
+
+            current_task.write().set_temporary_signal_mask(SigSet::default());
+            assert!(current_task.flags().contains(TaskFlags::TEMPORARY_SIGNAL_MASK));
+            assert!(current_task.flags().contains(TaskFlags::SIGNALS_AVAILABLE));
+
+            current_task.write().restore_signal_mask();
+            assert!(!current_task.flags().contains(TaskFlags::TEMPORARY_SIGNAL_MASK));
+            assert!(!current_task.flags().contains(TaskFlags::SIGNALS_AVAILABLE));
         })
         .await;
     }

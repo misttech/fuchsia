@@ -238,14 +238,6 @@ pub fn dequeue_signal(current_task: &mut CurrentTask) {
     // A syscall may have been waiting with a temporary mask which should be used to dequeue the
     // signal, but after the signal has been dequeued the old mask should be restored.
     task_state.restore_signal_mask();
-    {
-        let (clear, set) = if task_state.pending_signal_count() == 0 {
-            (TaskFlags::SIGNALS_AVAILABLE, TaskFlags::empty())
-        } else {
-            (TaskFlags::empty(), TaskFlags::SIGNALS_AVAILABLE)
-        };
-        task_state.update_flags(clear | TaskFlags::TEMPORARY_SIGNAL_MASK, set);
-    };
 
     if let Some(kernel_signal) = kernel_signal {
         let KernelSignal::Freeze(waiter) = kernel_signal;
