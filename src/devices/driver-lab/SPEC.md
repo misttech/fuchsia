@@ -919,6 +919,15 @@ Each entry contains:
 Never audit pointer values, physical addresses, channel handles, or unbounded
 caller strings.
 
+The driver layer mirrors each appended entry into system tracing through an
+append observer, keeping the core crate free of Fuchsia dependencies. Entries
+are written to the `driver_lab` trace category, or `driver_lab:irq` for
+interrupt taps, and successful writes also sample a per-resource counter.
+Mirroring must be a no-op unless a trace session enables the category, must
+not block, and must be disabled for embedded servers in builds without
+`enable_driver_lab`. Trace events are best-effort; the audit ring remains the
+authoritative record.
+
 ### 19. Stop
 
 `PrepareStop` must:
@@ -987,6 +996,7 @@ src/devices/driver-lab/
         embedded.rs              EmbeddedLabServer and DriverLabBuilder
         c_api.rs                 C FFI staticlib shim (driver_lab_c)
         server.rs                FIDL session server
+        trace.rs                 audit-to-trace mirroring (driver_lab categories)
         core.rs                  host-testable core crate root
         access_policy.rs
         audit_ring.rs

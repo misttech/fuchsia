@@ -4,6 +4,7 @@
 
 use driver_lab_rust::platform_provider;
 use driver_lab_rust::server::{self, ProxyState, SharedState, ZxClock};
+use driver_lab_rust::trace::AuditTracer;
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use fidl_fuchsia_driver_lab as flab;
 use fuchsia_async as fasync;
@@ -125,6 +126,7 @@ impl Driver for LabProxy {
                     res.kind == lab_proxy_core::access_policy::ResourceKind::Interrupt;
             }
         }
+        let tracer = Arc::new(AuditTracer::new(&node_identity, &bundle.resources));
         let mut sessions = SessionManager::with_limits(
             identity,
             bundle.resources,
@@ -147,6 +149,7 @@ impl Driver for LabProxy {
             },
         );
         let mut audit = AuditRing::new(config.audit_capacity as usize);
+        audit.set_observer(tracer.observer());
         audit.append(AuditRecord::lifecycle("driver_start", now_ns()));
         let state: SharedState = Arc::new(server::SharedStateData {
             inner: Mutex::new(ProxyState {
@@ -165,6 +168,7 @@ impl Driver for LabProxy {
         let mut irq_cancellers = Vec::new();
         for (irq_id, irq_handle) in interrupts {
             let state = state.clone();
+            let tracer = tracer.clone();
             if let Ok(dup) = irq_handle.duplicate_handle(zx::Rights::SAME_RIGHTS) {
                 irq_cancellers.push(dup);
             }
@@ -175,11 +179,14 @@ impl Driver for LabProxy {
                         match irq_handle.wait() {
                             Ok(timestamp) => {
                                 let ts_nanos = timestamp.into_nanos();
-                                {
+                                let event = {
                                     let mut guard = state.inner.lock().unwrap();
-                                    let _ = guard.interrupts.on_interrupt(irq_id, ts_nanos, None);
-                                }
+                                    guard.interrupts.on_interrupt(irq_id, ts_nanos, None)
+                                };
                                 let _ = irq_handle.ack();
+                                if let Ok(event) = event {
+                                    tracer.interrupt(irq_id, event.sequence, ts_nanos);
+                                }
                             }
                             Err(zx::Status::CANCELED) => {
                                 log::info!("IRQ {irq_id} listener canceled");

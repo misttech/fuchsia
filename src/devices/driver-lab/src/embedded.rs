@@ -15,6 +15,7 @@ use crate::fuchsia_backends::{
 };
 use crate::platform_provider::MappedMmio;
 use crate::server::{self, ProxyState, SharedState, SharedStateData, ZxClock};
+use crate::trace::AuditTracer;
 use fidl_fuchsia_driver_lab as flab;
 use fidl_fuchsia_hardware_clock as fclock;
 use fidl_fuchsia_hardware_gpio as fgpio;
@@ -418,6 +419,12 @@ impl DriverLabBuilder {
             }
         }
 
+        // Disabled servers, which include every embedded server in builds
+        // without `enable_driver_lab`, emit no trace events.
+        let tracer = self.config.enabled.then(|| {
+            Arc::new(AuditTracer::new(&self.bundle.node_identity, &self.bundle.resources))
+        });
+
         let limit_enforcer =
             AccessLimitEnforcer::new(self.config.max_ops_per_second, self.config.max_deadline_ns);
         let mut sessions = SessionManager::with_limits(
@@ -446,6 +453,9 @@ impl DriverLabBuilder {
             },
         );
         let mut audit = AuditRing::new(self.config.audit_capacity as usize);
+        if let Some(tracer) = &tracer {
+            audit.set_observer(tracer.observer());
+        }
         audit.append(AuditRecord::lifecycle("embedded_driver_start", now_ns()));
 
         let state: SharedState = Arc::new(SharedStateData {
@@ -460,7 +470,7 @@ impl DriverLabBuilder {
             abort_token: AtomicBool::new(false),
         });
 
-        Ok(EmbeddedLabServer { state, quiesce_flag })
+        Ok(EmbeddedLabServer { state, quiesce_flag, tracer })
     }
 }
 
@@ -470,6 +480,7 @@ impl DriverLabBuilder {
 pub struct EmbeddedLabServer {
     state: SharedState,
     quiesce_flag: Arc<AtomicBool>,
+    tracer: Option<Arc<AuditTracer>>,
 }
 
 impl EmbeddedLabServer {
@@ -567,6 +578,19 @@ impl EmbeddedLabServer {
     /// background loops can check quiesce status without locking.
     pub fn quiesce_flag(&self) -> Arc<AtomicBool> {
         self.quiesce_flag.clone()
+    }
+
+    /// Samples the `driver_lab` trace counter for `offset` on
+    /// `resource_id` with `value`.
+    ///
+    /// Successful host writes are sampled automatically. Call this when
+    /// the driver itself changes a register or knob that a host may also
+    /// write, so both sources share one counter track. No-op unless the
+    /// server is enabled and a trace session has enabled `driver_lab`.
+    pub fn trace_counter(&self, resource_id: ResourceId, offset: u64, value: u32) {
+        if let Some(tracer) = &self.tracer {
+            tracer.counter(resource_id, offset, value);
+        }
     }
 
     /// Taps an interrupt event from the driver's own interrupt service routine
@@ -889,6 +913,18 @@ mod tests {
         assert!(audit_page.entries.iter().any(|e| e.record.operation == "quiesce_engaged"));
         assert!(audit_page.entries.iter().any(|e| e.record.operation == "quiesce_released"));
         assert!(audit_page.entries.iter().any(|e| e.record.operation == "interrupt_tap"));
+    }
+
+    #[fuchsia::test]
+    fn embedded_server_mirrors_audit_into_tracing_only_when_enabled() {
+        let enabled = DriverLabBuilder::new("sample-driver").build().unwrap();
+        assert!(enabled.state().inner.lock().unwrap().audit.has_observer());
+        // Without an active trace session, sampling is a no-op.
+        enabled.trace_counter(0, 0x1c, 1);
+
+        let disabled = DriverLabBuilder::new("sample-driver").with_enabled(false).build().unwrap();
+        assert!(!disabled.state().inner.lock().unwrap().audit.has_observer());
+        disabled.trace_counter(0, 0x1c, 1);
     }
 
     #[fuchsia::test]

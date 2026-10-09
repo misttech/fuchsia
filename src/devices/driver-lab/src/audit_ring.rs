@@ -13,6 +13,7 @@
 
 use crate::access_policy::{Denial, ResourceId};
 use std::collections::VecDeque;
+use std::fmt;
 
 /// The policy outcome recorded for an attempted operation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,12 +107,33 @@ pub struct AuditPage {
     pub next_cursor: u64,
 }
 
+/// Callback invoked with each record and its assigned sequence number as
+/// the record is appended.
+///
+/// Observers run synchronously on the appending thread, typically while
+/// the caller holds the proxy state lock, so they must be cheap and must
+/// not call back into the ring. The driver layer uses this to mirror audit
+/// records into system tracing while keeping this crate free of Fuchsia
+/// dependencies.
+pub type AuditObserver = Box<dyn Fn(u64, &AuditRecord) + Send + Sync>;
+
 /// Fixed-capacity audit ring.
-#[derive(Debug)]
 pub struct AuditRing {
     capacity: usize,
     next_seq: u64,
     entries: VecDeque<AuditEntry>,
+    observer: Option<AuditObserver>,
+}
+
+impl fmt::Debug for AuditRing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AuditRing")
+            .field("capacity", &self.capacity)
+            .field("next_seq", &self.next_seq)
+            .field("entries", &self.entries)
+            .field("has_observer", &self.observer.is_some())
+            .finish()
+    }
 }
 
 impl AuditRing {
@@ -122,7 +144,19 @@ impl AuditRing {
     /// Panics if `capacity` is zero.
     pub fn new(capacity: usize) -> Self {
         assert!(capacity > 0, "audit ring capacity must be nonzero");
-        Self { capacity, next_seq: 0, entries: VecDeque::with_capacity(capacity) }
+        Self { capacity, next_seq: 0, entries: VecDeque::with_capacity(capacity), observer: None }
+    }
+
+    /// Installs `observer`, replacing any previous one. It sees every
+    /// record appended from this point on, including records that are
+    /// later overwritten before a host drains them.
+    pub fn set_observer(&mut self, observer: AuditObserver) {
+        self.observer = Some(observer);
+    }
+
+    /// Whether an observer is installed.
+    pub fn has_observer(&self) -> bool {
+        self.observer.is_some()
     }
 
     /// Appends a record, overwriting the oldest entry when full, and
@@ -130,6 +164,9 @@ impl AuditRing {
     pub fn append(&mut self, record: AuditRecord) -> u64 {
         let seq = self.next_seq;
         self.next_seq += 1;
+        if let Some(observer) = &self.observer {
+            observer(seq, &record);
+        }
         if self.entries.len() == self.capacity {
             self.entries.pop_front();
         }
@@ -219,6 +256,37 @@ mod tests {
         assert!(page.entries.is_empty());
         assert_eq!(page.oldest_retained, None);
         assert_eq!(page.next_cursor, 0);
+    }
+
+    #[test]
+    fn observer_sees_every_append_with_its_sequence() {
+        use std::sync::{Arc, Mutex};
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let mut ring = AuditRing::new(2);
+        ring.append(record("before_observer"));
+        let seen_by_observer = Arc::clone(&seen);
+        ring.set_observer(Box::new(move |seq, record| {
+            seen_by_observer.lock().unwrap().push((seq, record.operation));
+        }));
+        for op in ["a", "b", "c"] {
+            ring.append(record(op));
+        }
+        // The observer sees records appended after installation, including
+        // "a", which wrap overwrote before any host could drain it.
+        assert_eq!(*seen.lock().unwrap(), vec![(1, "a"), (2, "b"), (3, "c")]);
+        let page = ring.read(0, 10);
+        let ops: Vec<&str> = page.entries.iter().map(|entry| entry.record.operation).collect();
+        assert_eq!(ops, vec!["b", "c"]);
+    }
+
+    #[test]
+    fn debug_reports_observer_presence() {
+        let mut ring = AuditRing::new(1);
+        assert!(!ring.has_observer());
+        ring.set_observer(Box::new(|_, _| {}));
+        assert!(ring.has_observer());
+        assert!(format!("{ring:?}").contains("has_observer: true"));
     }
 
     #[test]

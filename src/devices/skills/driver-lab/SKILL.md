@@ -886,6 +886,34 @@ Phase 2 cooperative quiesce events):
 4.  **Inspect Serial:** Check `serial.log` for kernel panics, OOPS messages, or
     driver crashes.
 
+### 8.3 Correlating with System Traces
+
+The target also writes every audit record to Fuchsia tracing, so plan operations
+line up with scheduler, power rail, and driver events in one trace. For example,
+use this to check whether a knob change reduces CPU wakeups or rail power:
+
+```bash
+ffx trace start --background --categories '#default,driver_lab,driver_lab:irq'
+# ... run the plan or A/B arms ...
+ffx trace stop --output trace.fxt
+```
+
+* Each audit record is an instant event named after its `operation`, with
+  arguments named after `target-audit.jsonl` fields (`seq`, `session`,
+  `resource`, `offset`, `decision`, `denial`, `status`, `value`, `timestamp_ns`,
+  `run_id`, `item_index`) plus `node` and `resource_name`. Filter events by
+  `node`, then join them to a bundle's rows on `seq`.
+* Each successful `write32` samples the counter `<node>/<resource_name>` with
+  one series per offset (for example `0x1c`), so A/B arms appear as step
+  functions. Rust drivers can sample the same track for changes they make
+  themselves with `EmbeddedLabServer::trace_counter`.
+* Interrupt taps use the separate `driver_lab:irq` category. Enable it only when
+  needed, because high interrupt rates can fill the trace buffer.
+* Trace events are best-effort; `target-audit.jsonl` remains the authoritative
+  record of what executed.
+* For idle-power measurements, keep categories minimal and avoid
+  `--buffering-mode streaming`, which adds IPC traffic as buffers fill.
+
 ---
 
 ## 9. Translating Empirical Findings into Driver Code

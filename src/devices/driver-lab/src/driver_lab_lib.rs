@@ -12,11 +12,14 @@
 //! - [`fuchsia_backends`]: Fuchsia FIDL protocol backends (GPIO, I2C, SPI,
 //!   Clock, Reset, Serial).
 //! - [`server`]: `fuchsia.driver.lab` FIDL service and session server.
+//! - [`trace`]: mirrors audit records into the `driver_lab` and
+//!   `driver_lab:irq` trace categories.
 
 pub mod embedded;
 pub mod fuchsia_backends;
 pub mod platform_provider;
 pub mod server;
+pub mod trace;
 
 pub use embedded::{DriverLabBuilder, EmbeddedLabServer};
 pub use fuchsia_backends::LiveBackend;
