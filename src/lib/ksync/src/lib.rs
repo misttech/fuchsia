@@ -130,8 +130,9 @@ mod raw_kernel_brwlock;
 mod raw_userspace_brwlock;
 
 pub use kmutex::{
-    AliasedLock, KMutex, KMutexAliasedGuard, KMutexGuard, aliased_lock, aliased_lock_policy,
-    aliased_lock_policy_with, aliased_lock_with,
+    AliasedLock, KMutex, KMutexAliasedGuard, KMutexGuard, KMutexGuardMultiple, aliased_lock,
+    aliased_lock_policy, aliased_lock_policy_with, aliased_lock_with, guard_multiple,
+    guard_multiple_policy, guard_multiple_policy_with, guard_multiple_with,
 };
 pub use lock_token::LockToken;
 pub use lockdep::{LOCK_FLAGS_SINGLETON_LOCK, LockClass, LockClassRegistration, LockFlags};

@@ -574,4 +574,60 @@ mod ksync_tests {
             expect_true!(fields_mut.once_val == Some(&mut 42));
         }
     }
+
+    #[ksync::guarded]
+    struct GuardedMultiSpinlockObj {
+        #[mutex(flags = lockdep::LOCK_FLAGS_MULTI_ACQUIRE)]
+        mu: ksync::KMutex<ksync::RawSpinlock>,
+        #[guarded_by(mu)]
+        value: u32,
+    }
+
+    /// test explicit release() and KMutexGuardMultiple in kernel
+    #[test]
+    fn guard_multiple_and_release_test() {
+        stack_pin_init!(let s1 = pin_init!(GuardedMultiSpinlockObj {
+            mu <- ksync::KMutex::init(),
+            value: 10.into(),
+        }));
+        stack_pin_init!(let s2 = pin_init!(GuardedMultiSpinlockObj {
+            mu <- ksync::KMutex::init(),
+            value: 20.into(),
+        }));
+
+        // Test single guard early release
+        {
+            ksync::lock!(let mut g = s1.lock_mu());
+            *g.as_mut().value_mut() = 11;
+            g.as_mut().release();
+
+            ksync::lock!(let g2 = s1.lock_mu());
+            expect_true!(*g2.value() == 11);
+        }
+
+        // Test multi-lock in [s1, s2] and [s2, s1] order with early release
+        {
+            ksync::lock!(
+                let mut guards = GuardedMultiSpinlockObj::lock_mu_multiple([&*s1, &*s2])
+            );
+            let [t1, t2] = guards.as_mut().tokens_mut();
+            *s1.guard_mu_mut(t1).value_mut() = 100;
+            *s2.guard_mu_mut(t2).value_mut() = 200;
+        }
+
+        {
+            ksync::lock!(
+                let mut guards = GuardedMultiSpinlockObj::lock_mu_multiple([&*s2, &*s1])
+            );
+            let [t1, t2] = guards.tokens();
+            expect_true!(*s1.guard_mu(t1).value() == 100);
+            expect_true!(*s2.guard_mu(t2).value() == 200);
+            guards.as_mut().release();
+
+            ksync::lock!(let g1 = s1.lock_mu());
+            ksync::lock!(let g2 = s2.lock_mu());
+            expect_true!(*g1.value() == 100);
+            expect_true!(*g2.value() == 200);
+        }
+    }
 }

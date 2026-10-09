@@ -1122,6 +1122,10 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             format_ident!("lock_{mu_ident}_aliased", span = mu_ident.span());
         let lock_aliased_policy_method_ident =
             format_ident!("lock_{mu_ident}_aliased_policy", span = mu_ident.span());
+        let lock_multiple_method_ident =
+            format_ident!("lock_{mu_ident}_multiple", span = mu_ident.span());
+        let lock_multiple_policy_method_ident =
+            format_ident!("lock_{mu_ident}_multiple_policy", span = mu_ident.span());
 
         let lock_method_def = if mutex.is_phantom {
             quote! {
@@ -1196,6 +1200,36 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 > {
                     ::ksync::KMutexAliasedGuard::new_with_args(&self.#mu_ident, alias, args)
                 }
+                #[inline]
+                #struct_vis fn #lock_multiple_method_ident<'a, const __KSYNC_N: usize>(
+                    items: [&'a Self; __KSYNC_N],
+                    tag: ::ksync::SourceTag,
+                ) -> impl pin_init::PinInit<
+                    ::ksync::KMutexGuardMultiple<'a, __KSYNC_N, #class_type, #mutex_type>,
+                    ::core::convert::Infallible,
+                > {
+                    ::ksync::KMutexGuardMultiple::new_with_args(
+                        ::core::array::from_fn(|i| &items[i].#mu_ident),
+                        tag,
+                    )
+                }
+                #[inline]
+                #struct_vis fn #lock_multiple_policy_method_ident<
+                    'a,
+                    const __KSYNC_N: usize,
+                    P: ::ksync::LockPolicy<#mutex_type>,
+                >(
+                    items: [&'a Self; __KSYNC_N],
+                    args: P::AcquireArgs,
+                ) -> impl pin_init::PinInit<
+                    ::ksync::KMutexGuardMultiple<'a, __KSYNC_N, #class_type, #mutex_type, P>,
+                    ::core::convert::Infallible,
+                > {
+                    ::ksync::KMutexGuardMultiple::new_with_args(
+                        ::core::array::from_fn(|i| &items[i].#mu_ident),
+                        args,
+                    )
+                }
             }
         } else {
             let return_ty_generics = quote! { <'_, #(#ty_params),*> };
@@ -1246,6 +1280,28 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     ::core::convert::Infallible,
                 > {
                     ::ksync::KMutexAliasedGuard::new(&self.#mu_ident, alias)
+                }
+                #[inline]
+                #struct_vis fn #lock_multiple_method_ident<'a, const __KSYNC_N: usize>(
+                    items: [&'a Self; __KSYNC_N],
+                ) -> impl pin_init::PinInit<
+                    ::ksync::KMutexGuardMultiple<'a, __KSYNC_N, #class_type, #mutex_type>,
+                    ::core::convert::Infallible,
+                > {
+                    ::ksync::KMutexGuardMultiple::new(::core::array::from_fn(|i| &items[i].#mu_ident))
+                }
+                #[inline]
+                #struct_vis fn #lock_multiple_policy_method_ident<
+                    'a,
+                    const __KSYNC_N: usize,
+                    P: ::ksync::LockPolicy<#mutex_type, AcquireArgs = ()>,
+                >(
+                    items: [&'a Self; __KSYNC_N],
+                ) -> impl pin_init::PinInit<
+                    ::ksync::KMutexGuardMultiple<'a, __KSYNC_N, #class_type, #mutex_type, P>,
+                    ::core::convert::Infallible,
+                > {
+                    ::ksync::KMutexGuardMultiple::new(::core::array::from_fn(|i| &items[i].#mu_ident))
                 }
             }
         };
@@ -1337,6 +1393,13 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     let me = unsafe { self.get_unchecked_mut() };
                     let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
                     inner_pin.token_mut()
+                }
+
+                #[inline]
+                #struct_vis fn release(self: ::core::pin::Pin<&mut Self>) {
+                    let me = unsafe { self.get_unchecked_mut() };
+                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                    inner_pin.release();
                 }
 
                 #[inline]

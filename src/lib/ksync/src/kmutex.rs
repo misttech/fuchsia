@@ -129,6 +129,47 @@ impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
         KMutexAliasedGuard::new_with_args(self, alias, args)
     }
 
+    /// Acquires multiple locks of the same class and type in ascending memory address order,
+    /// using the default policy.
+    #[inline]
+    pub fn lock_multiple<'a, const N: usize>(
+        locks: [&'a Self; N],
+    ) -> impl PinInit<KMutexGuardMultiple<'a, N, Class, M>, core::convert::Infallible>
+    where
+        <M as RawLock>::DefaultPolicy: LockPolicy<M, AcquireArgs = ()>,
+    {
+        KMutexGuardMultiple::new(locks)
+    }
+
+    /// Acquires multiple locks of the same class and type in ascending memory address order with
+    /// arguments, using the default policy.
+    #[inline]
+    pub fn lock_multiple_with<'a, const N: usize>(
+        locks: [&'a Self; N],
+        args: <<M as RawLock>::DefaultPolicy as LockPolicy<M>>::AcquireArgs,
+    ) -> impl PinInit<KMutexGuardMultiple<'a, N, Class, M>, core::convert::Infallible> {
+        KMutexGuardMultiple::new_with_args(locks, args)
+    }
+
+    /// Acquires multiple locks of the same class and type in ascending memory address order,
+    /// using policy `P`.
+    #[inline]
+    pub fn lock_multiple_policy<'a, const N: usize, P: LockPolicy<M, AcquireArgs = ()>>(
+        locks: [&'a Self; N],
+    ) -> impl PinInit<KMutexGuardMultiple<'a, N, Class, M, P>, core::convert::Infallible> {
+        KMutexGuardMultiple::new(locks)
+    }
+
+    /// Acquires multiple locks of the same class and type in ascending memory address order with
+    /// policy `P` and arguments.
+    #[inline]
+    pub fn lock_multiple_policy_with<'a, const N: usize, P: LockPolicy<M>>(
+        locks: [&'a Self; N],
+        args: P::AcquireArgs,
+    ) -> impl PinInit<KMutexGuardMultiple<'a, N, Class, M, P>, core::convert::Infallible> {
+        KMutexGuardMultiple::new_with_args(locks, args)
+    }
+
     /// Returns a reference to the underlying raw lock.
     #[inline]
     pub fn raw_mutex(&self) -> &M {
@@ -162,7 +203,7 @@ pub struct KMutexGuard<
     M: RawLock = RawMutex,
     P: LockPolicy<M> = <M as RawLock>::DefaultPolicy,
 > {
-    mutex: &'a KMutex<Class, M>,
+    mutex: Option<&'a KMutex<Class, M>>,
 
     #[pin]
     lock_entry: M::LockEntry,
@@ -195,7 +236,7 @@ impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> KMutexGuard<'a, Class, 
                 // `KMutexGuard`.
 
                 let mutex_addr = addr_of_mut!((*this).mutex);
-                core::ptr::write(mutex_addr, mutex);
+                core::ptr::write(mutex_addr, Some(mutex));
 
                 let entry_addr = addr_of_mut!((*this).lock_entry);
                 core::ptr::write(entry_addr, M::LockEntry::default());
@@ -228,6 +269,21 @@ impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> KMutexGuard<'a, Class, 
         &mut me.token
     }
 
+    /// Explicitly releases the lock before the guard is dropped.
+    ///
+    /// If the lock has already been released, this is a no-op.
+    #[inline]
+    pub fn release(self: Pin<&mut Self>) {
+        // SAFETY: `lock_entry` is pinned on the stack and valid.
+        unsafe {
+            let me = self.get_unchecked_mut();
+            if let Some(mutex) = me.mutex.take() {
+                let entry_addr = addr_of_mut!(me.lock_entry);
+                P::release(&mutex.mutex, entry_addr, me.state);
+            }
+        }
+    }
+
     /// Temporarily releases the lock before executing the given callable `f` and then
     /// re-acquires the lock.
     #[inline]
@@ -235,10 +291,11 @@ impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> KMutexGuard<'a, Class, 
         // SAFETY: `lock_entry` is pinned on the stack and valid.
         unsafe {
             let me = self.get_unchecked_mut();
+            let mutex = me.mutex.expect("cannot call_unlocked on a released KMutexGuard");
             let entry_addr = addr_of_mut!(me.lock_entry);
-            P::release(&me.mutex.mutex, entry_addr, me.state);
+            P::release(&mutex.mutex, entry_addr, me.state);
             let result = f();
-            P::reacquire(&me.mutex.mutex, entry_addr, &mut me.state);
+            P::reacquire(&mutex.mutex, entry_addr, &mut me.state);
             result
         }
     }
@@ -272,16 +329,190 @@ impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> KMutexGuard<'a, Class, 
 impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> PinnedDrop
     for KMutexGuard<'a, Class, M, P>
 {
-    // SAFETY: The stack slot `lock_entry` remains valid and pinned on the stack until this drop
-    // block completes. Accessing the fields directly to release the raw lock and remove the
-    // active list node is safe and correct under the current thread context.
     fn drop(self: Pin<&mut Self>) {
-        unsafe {
-            let me = self.get_unchecked_mut();
-            let entry_addr = addr_of_mut!(me.lock_entry);
-            P::release(&me.mutex.mutex, entry_addr, me.state);
+        self.release();
+    }
+}
+
+/// Guards simultaneous acquisitions of multiple locks of the same class and type.
+///
+/// Locks are automatically sorted in-place by ascending memory address before acquisition to
+/// preserve the intra-class ordering invariant and prevent AB/BA deadlocks, matching C++
+/// `lockdep::GuardMultiple`.
+#[repr(C)]
+#[pin_data(PinnedDrop)]
+pub struct KMutexGuardMultiple<
+    'a,
+    const N: usize,
+    Class: LockClass,
+    M: RawLock = RawMutex,
+    P: LockPolicy<M> = <M as RawLock>::DefaultPolicy,
+> {
+    mutexes: [Option<&'a KMutex<Class, M>>; N],
+
+    #[pin]
+    lock_entries: [M::LockEntry; N],
+
+    states: [P::GuardState; N],
+
+    tokens: [LockToken<'a, Class>; N],
+}
+
+impl<'a, const N: usize, Class: LockClass, M: RawLock, P: LockPolicy<M>>
+    KMutexGuardMultiple<'a, N, Class, M, P>
+{
+    /// Sorts an array of lock references in-place by ascending memory address using insertion sort,
+    /// matching C++ `GuardMultiple::InsertionSortPointers`.
+    #[inline]
+    fn insertion_sort_locks(locks: &mut [&'a KMutex<Class, M>; N]) {
+        let mut i = 1;
+        while i < N {
+            let x = locks[i];
+            let x_addr = x as *const KMutex<Class, M> as usize;
+            let mut j = i;
+            while j > 0 && (locks[j - 1] as *const KMutex<Class, M> as usize) > x_addr {
+                locks[j] = locks[j - 1];
+                j -= 1;
+            }
+            locks[j] = x;
+            i += 1;
         }
     }
+
+    /// Creates a new stack-pinned multi-lock validation guard initialization block.
+    pub fn new(locks: [&'a KMutex<Class, M>; N]) -> impl PinInit<Self, core::convert::Infallible>
+    where
+        P: LockPolicy<M, AcquireArgs = ()>,
+    {
+        Self::new_with_args(locks, ())
+    }
+
+    /// Creates a new stack-pinned multi-lock validation guard initialization block with policy
+    /// acquire arguments.
+    pub fn new_with_args(
+        mut locks: [&'a KMutex<Class, M>; N],
+        args: P::AcquireArgs,
+    ) -> impl PinInit<Self, core::convert::Infallible> {
+        Self::insertion_sort_locks(&mut locks);
+        // SAFETY: The closure initializes all fields of `KMutexGuardMultiple` in-place.
+        unsafe {
+            pin_init_from_closure(move |this: *mut Self| -> Result<(), core::convert::Infallible> {
+                let mutexes_ptr =
+                    addr_of_mut!((*this).mutexes) as *mut Option<&'a KMutex<Class, M>>;
+                let entries_ptr = addr_of_mut!((*this).lock_entries) as *mut M::LockEntry;
+                let states_ptr = addr_of_mut!((*this).states) as *mut P::GuardState;
+
+                for (i, lock) in locks.into_iter().enumerate() {
+                    core::ptr::write(mutexes_ptr.add(i), Some(lock));
+                    let entry_addr = entries_ptr.add(i);
+                    core::ptr::write(entry_addr, M::LockEntry::default());
+                    let state = P::acquire(&lock.mutex, entry_addr, args);
+                    core::ptr::write(states_ptr.add(i), state);
+                }
+
+                core::ptr::write(
+                    addr_of_mut!((*this).tokens),
+                    core::array::from_fn(|_| LockToken::new()),
+                );
+
+                Ok(())
+            })
+        }
+    }
+
+    /// Returns shared references to the lock proof tokens.
+    #[inline]
+    pub fn tokens(&self) -> &[LockToken<'a, Class>; N] {
+        &self.tokens
+    }
+
+    /// Returns mutable references to the lock proof tokens.
+    #[inline]
+    pub fn tokens_mut(self: Pin<&mut Self>) -> &mut [LockToken<'a, Class>; N] {
+        // SAFETY: Modifying the non-pinned `tokens` field does not violate pinning invariants.
+        let me = unsafe { self.get_unchecked_mut() };
+        &mut me.tokens
+    }
+
+    /// Explicitly releases all held locks in reverse order before the guard is dropped.
+    ///
+    /// If the locks have already been released, this is a no-op.
+    #[inline]
+    pub fn release(self: Pin<&mut Self>) {
+        // SAFETY: `lock_entries` are pinned on the stack and valid. Locks are released in reverse
+        // acquisition order (matching C++ `GuardMultiple` destruction order).
+        unsafe {
+            let me = self.get_unchecked_mut();
+            let entries_ptr = addr_of_mut!(me.lock_entries) as *mut M::LockEntry;
+            for i in (0..N).rev() {
+                if let Some(mutex) = me.mutexes[i].take() {
+                    P::release(&mutex.mutex, entries_ptr.add(i), me.states[i]);
+                }
+            }
+        }
+    }
+}
+
+#[pinned_drop]
+impl<'a, const N: usize, Class: LockClass, M: RawLock, P: LockPolicy<M>> PinnedDrop
+    for KMutexGuardMultiple<'a, N, Class, M, P>
+{
+    fn drop(self: Pin<&mut Self>) {
+        self.release();
+    }
+}
+
+/// Acquires multiple `KMutex` instances of the same class and type in ascending memory address
+/// order, using the default policy.
+#[inline]
+pub fn guard_multiple<'a, const N: usize, Class: LockClass, M: RawLock>(
+    locks: [&'a KMutex<Class, M>; N],
+) -> impl PinInit<KMutexGuardMultiple<'a, N, Class, M>, core::convert::Infallible>
+where
+    <M as RawLock>::DefaultPolicy: LockPolicy<M, AcquireArgs = ()>,
+{
+    KMutexGuardMultiple::new(locks)
+}
+
+/// Acquires multiple `KMutex` instances of the same class and type in ascending memory address
+/// order with arguments, using the default policy.
+#[inline]
+pub fn guard_multiple_with<'a, const N: usize, Class: LockClass, M: RawLock>(
+    locks: [&'a KMutex<Class, M>; N],
+    args: <<M as RawLock>::DefaultPolicy as LockPolicy<M>>::AcquireArgs,
+) -> impl PinInit<KMutexGuardMultiple<'a, N, Class, M>, core::convert::Infallible> {
+    KMutexGuardMultiple::new_with_args(locks, args)
+}
+
+/// Acquires multiple `KMutex` instances of the same class and type in ascending memory address
+/// order, using policy `P`.
+#[inline]
+pub fn guard_multiple_policy<
+    'a,
+    const N: usize,
+    Class: LockClass,
+    M: RawLock,
+    P: LockPolicy<M, AcquireArgs = ()>,
+>(
+    locks: [&'a KMutex<Class, M>; N],
+) -> impl PinInit<KMutexGuardMultiple<'a, N, Class, M, P>, core::convert::Infallible> {
+    KMutexGuardMultiple::new(locks)
+}
+
+/// Acquires multiple `KMutex` instances of the same class and type in ascending memory address
+/// order with policy `P` and arguments.
+#[inline]
+pub fn guard_multiple_policy_with<
+    'a,
+    const N: usize,
+    Class: LockClass,
+    M: RawLock,
+    P: LockPolicy<M>,
+>(
+    locks: [&'a KMutex<Class, M>; N],
+    args: P::AcquireArgs,
+) -> impl PinInit<KMutexGuardMultiple<'a, N, Class, M, P>, core::convert::Infallible> {
+    KMutexGuardMultiple::new_with_args(locks, args)
 }
 
 /// Type tag to indicate aliased lock acquisition.
@@ -440,6 +671,14 @@ impl<'a, Class1: LockClass, Class2: LockClass, M1: RawLock, M2: RawLock, P: Lock
     pub fn inner_guard(self: Pin<&mut Self>) -> Pin<&mut KMutexGuard<'a, Class1, M1, P>> {
         let me = unsafe { self.get_unchecked_mut() };
         unsafe { Pin::new_unchecked(&mut me.inner) }
+    }
+
+    /// Explicitly releases the underlying lock before the guard is dropped.
+    ///
+    /// If the lock has already been released, this is a no-op.
+    #[inline]
+    pub fn release(self: Pin<&mut Self>) {
+        self.inner_guard().release();
     }
 
     /// Temporarily releases the lock before executing the given callable `f` and then
@@ -804,5 +1043,61 @@ mod tests {
         assert_eq!(*guard.seek(), 0);
         *guard.as_mut().seek_mut() = 1024;
         assert_eq!(*guard.seek(), 1024);
+    }
+
+    #[test]
+    fn test_guard_release() {
+        stack_pin_init!(let s = pin_init!(MyGuardedStruct {
+            mu <- KMutex::init(),
+            data1: 10.into(),
+            data2: 20.into(),
+        }));
+
+        lock!(let mut guard = s.lock_mu());
+        *guard.as_mut().data1_mut() = 50;
+        guard.as_mut().release();
+        // Calling release again is a no-op.
+        guard.as_mut().release();
+
+        // Since `guard` was explicitly released, we can re-acquire the lock in the same scope.
+        lock!(let guard2 = s.lock_mu());
+        assert_eq!(*guard2.data1(), 50);
+    }
+
+    #[test]
+    fn test_guard_multiple() {
+        stack_pin_init!(let s1 = pin_init!(MyGuardedStruct {
+            mu <- KMutex::init(),
+            data1: 1.into(),
+            data2: 2.into(),
+        }));
+        stack_pin_init!(let s2 = pin_init!(MyGuardedStruct {
+            mu <- KMutex::init(),
+            data1: 3.into(),
+            data2: 4.into(),
+        }));
+
+        // Acquire in [s1, s2] order.
+        {
+            lock!(let mut guards = MyGuardedStruct::lock_mu_multiple([&*s1, &*s2]));
+            let [t1, t2] = guards.as_mut().tokens_mut();
+            *s1.guard_mu_mut(t1).data1_mut() = 10;
+            *s2.guard_mu_mut(t2).data1_mut() = 30;
+        }
+
+        // Acquire in reverse [s2, s1] order and release early.
+        {
+            lock!(let mut guards = MyGuardedStruct::lock_mu_multiple([&*s2, &*s1]));
+            let [t1, t2] = guards.tokens();
+            assert_eq!(*s1.guard_mu(t1).data1(), 10);
+            assert_eq!(*s2.guard_mu(t2).data1(), 30);
+            guards.as_mut().release();
+
+            // Verify both locks were released by re-acquiring them individually.
+            lock!(let g1 = s1.lock_mu());
+            lock!(let g2 = s2.lock_mu());
+            assert_eq!(*g1.data1(), 10);
+            assert_eq!(*g2.data1(), 30);
+        }
     }
 }
