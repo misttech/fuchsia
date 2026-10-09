@@ -17,6 +17,7 @@ pub struct ArchSavedNormalState {
 zr::static_assert!(core::mem::size_of::<ArchSavedNormalState>() == 16);
 zr::static_assert!(core::mem::align_of::<ArchSavedNormalState>() == 8);
 
+pub mod cache;
 pub mod vm;
 
 use crate::kernel::types::cpu_num_t;

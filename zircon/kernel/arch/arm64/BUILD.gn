@@ -205,6 +205,7 @@ if (toolchain_environment == "kernel.phys" ||
     output_name = "arch_arm64"
     source_root = "src/mod.rs"
     sources = [
+      "src/cache.rs",
       "src/mod.rs",
       "src/vm.rs",
     ]

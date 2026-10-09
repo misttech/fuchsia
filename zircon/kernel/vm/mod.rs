@@ -22,6 +22,7 @@ pub mod page_slab_allocator;
 pub mod page_source;
 pub mod page_state;
 pub mod physical_page_borrowing_config;
+pub mod physical_page_provider;
 pub mod physmap;
 pub mod pinned_vm_object;
 pub mod pmm;

@@ -353,6 +353,7 @@ kernel_rust_mod("arch-x86-rs") {
   source_root = "src/mod.rs"
   sources = [
     "src/apic.rs",
+    "src/cache.rs",
     "src/fake_msr_access.rs",
     "src/feature.rs",
     "src/interrupts.rs",

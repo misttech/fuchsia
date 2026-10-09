@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 pub mod apic;
+pub mod cache;
 pub mod fake_msr_access;
 pub mod feature;
 pub mod interrupts;

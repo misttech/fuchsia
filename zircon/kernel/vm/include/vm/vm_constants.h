@@ -51,6 +51,14 @@ constexpr size_t kVmDebugCompressorStorageSize = 136;
 #endif
 constexpr size_t kVmDebugCompressorStorageAlign = 8;
 
+// Size and alignment for PhysicalPageProvider.
+#if WITH_LOCK_DEP
+constexpr size_t kPhysicalPageProviderStateSize = 120;
+#else
+constexpr size_t kPhysicalPageProviderStateSize = 104;
+#endif
+constexpr size_t kPhysicalPageProviderStateAlign = 8;
+
 // VM Page List Constants
 constexpr uint32_t kPmmNodeIndexZeroBits = 3;
 constexpr uint32_t kVmPageListTypeBits = 3;

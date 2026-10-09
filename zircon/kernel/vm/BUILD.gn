@@ -238,7 +238,7 @@ library_headers("headers") {
   ]
 
   public_configs = [
-    # <vm/physical_page_provider.h> has #include <object/port_dispatcher.h>.
+    # <vm/vm_object_physical.h> has #include <object/opaque_storage.h>.
     # But this is a circular dependency, so we can't use its :headers in deps.
     "//zircon/kernel/object:headers.config",
   ]
@@ -254,6 +254,7 @@ kernel_bindgen_crate("vm-constants-rs") {
   var_allowlist = [
     "kVmObjectPhysicalState.*",
     "kVmDebugCompressor.*",
+    "kPhysicalPageProviderState.*",
     "kVmPageList.*",
     "kPmmNodeIndexZeroBits",
   ]
@@ -1628,6 +1629,7 @@ kernel_rust_mod("vm-rs") {
     "page_source.rs",
     "page_state.rs",
     "physical_page_borrowing_config.rs",
+    "physical_page_provider.rs",
     "physmap.rs",
     "pinned_vm_object.rs",
     "pmm.rs",
@@ -1685,6 +1687,7 @@ kernel_rust_mod("vm-rs") {
     "//third_party/rust_crates:rand",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/debug",
+    "//zircon/kernel/lib/dump:dump-rs",
     "//zircon/kernel/lib/heap:heap-rs",
     "//zircon/kernel/lib/init:init_rust",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
