@@ -353,9 +353,11 @@ TEST_fx-build-with-fint() {
     local mock_state_file="${BT_TEMP_DIR}/tools/integration/fint/fint_build_test_state"
     BT_EXPECT_FILE_EXISTS "${mock_state_file}"
     source "${mock_state_file}"
-    # Verify that fint_build.py was executed with the correct static parameters path
+    # Verify that fint_build.py was executed with the correct static parameters path and build-dir
     BT_EXPECT_EQ "${BT_MOCK_ARGS[1]}" "--static"
     BT_EXPECT_EQ "${BT_MOCK_ARGS[2]}" "path/to/build_config.proto"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[3]}" "--build-dir"
+    BT_EXPECT_EQ "${BT_MOCK_ARGS[4]}" "${TEST_BUILD_DIR}"
 }
 
 TEST_fx-build-with-gn-label() {

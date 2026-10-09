@@ -1261,20 +1261,66 @@ def lookup_tool_path(
     return None
 
 
+def resolve_fallback_build_dir(
+    build_dir: pathlib.Path | None = None,
+) -> pathlib.Path:
+    """Resolves build directory when context spec is not provided.
+
+    Args:
+        build_dir: Optional explicit path to the build directory.
+
+    Returns:
+        The resolved absolute Path to the build directory.
+    """
+    if build_dir:
+        return build_dir.resolve()
+
+    fx_build_dir_file = fuchsia_root / ".fx-build-dir"
+    if fx_build_dir_file.is_file():
+        rel_dir = fx_build_dir_file.read_text().strip()
+        if rel_dir:
+            candidate = pathlib.Path(rel_dir)
+            if not candidate.is_absolute():
+                candidate = fuchsia_root / candidate
+            if candidate.is_dir():
+                return candidate.resolve()
+
+    default_out = fuchsia_root / "out" / "default"
+    if default_out.is_dir():
+        return default_out.resolve()
+
+    return pathlib.Path.cwd().resolve()
+
+
 def make_build_context(
     static_path: pathlib.Path,
     context_path: pathlib.Path | None,
     verbose: bool = False,
+    build_dir: pathlib.Path | None = None,
 ) -> BuildContext:
-    """Creates a BuildContext by loading and parsing specifications, auto-detecting host properties."""
+    """Creates a BuildContext by loading and parsing specifications, auto-detecting host properties.
+
+    Args:
+        static_path: Path to the static spec textproto.
+        context_path: Path to the context spec textproto, or None to generate
+            a fallback context spec.
+        verbose: Whether to enable verbose output logging.
+        build_dir: Path to the build directory. If omitted and context_path is
+            None, the build directory will be inferred from .fx-build-dir,
+            out/default, or the current working directory.
+
+    Returns:
+        The initialized BuildContext instance.
+    """
     static_spec = load_static_spec(static_path)
 
     if context_path:
         context_spec = load_context_spec(context_path)
     else:
+        resolved_build_dir = resolve_fallback_build_dir(build_dir=build_dir)
         context_spec = context_pb2.Context(
             checkout_dir=str(fuchsia_root.resolve()),
-            build_dir=str(pathlib.Path.cwd().resolve()),
+            build_dir=str(resolved_build_dir),
         )
 
     host = HostProperties.detect()
@@ -1304,6 +1350,13 @@ def _main_arg_parser() -> argparse.ArgumentParser:
         default=None,
         type=pathlib.Path,
         help="Path to context spec. If omitted, it will be automatically generated.",
+    )
+    parser.add_argument(
+        "--build-dir",
+        required=False,
+        default=None,
+        type=pathlib.Path,
+        help="Path to build directory. If omitted, inferred from --context or active build config.",
     )
     parser.add_argument(
         "--print-artifact-dir",
@@ -1402,6 +1455,7 @@ def main(argv: list[str]) -> int:
         static_path=args.static,
         context_path=args.context,
         verbose=args.verbose,
+        build_dir=args.build_dir,
     )
 
     # Select Build Strategy

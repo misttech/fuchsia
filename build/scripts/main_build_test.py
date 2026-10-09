@@ -1736,6 +1736,30 @@ class PrepareFunctionsTest(MainBuildTestBase):
                 )
             )
             self.assertEqual(len(exec_info.cleanup_files), 0)
+            fint_part = exec_info.full_command[
+                exec_info.full_command.index("--") + 1 :
+            ]
+            self.assertIn("--build-dir", fint_part)
+            self.assertIn(str(context.build_dir), fint_part)
+
+    def test_fint_with_explicit_context(self) -> None:
+        context = self.create_context()
+        context.config.fint_params_path = pathlib.Path("/tmp/static.proto")
+        context.config.fint_context_path = pathlib.Path(
+            "/tmp/explicit_context.proto"
+        )
+        with self.mock_invocation_context():
+            exec_info = main_build.new_other_build_command_execution(
+                context, ["ls", "-l"]
+            )
+            self.assertIsInstance(exec_info, main_build.BuildCommandExecution)
+            self.assertEqual(len(exec_info.cleanup_files), 0)
+            fint_part = exec_info.full_command[
+                exec_info.full_command.index("--") + 1 :
+            ]
+            self.assertIn("--context", fint_part)
+            self.assertIn("/tmp/explicit_context.proto", fint_part)
+            self.assertNotIn("--build-dir", fint_part)
 
     def test_other(self) -> None:
         context = self.create_context()
@@ -1986,6 +2010,8 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             str(context.fint_build_py),
             "--static",
             "/tmp/static.proto",
+            "--build-dir",
+            str(context.build_dir),
             "--",
         ]
         self.assertEqual(
@@ -2037,6 +2063,8 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             str(context.fint_build_py),
             "--static",
             "/tmp/static.proto",
+            "--build-dir",
+            str(context.build_dir),
             "--verbose",
             "--",
         ]
@@ -2071,6 +2099,8 @@ class ContextPropertiesAndLoggingTest(MainBuildTestBase):
             str(context.fint_build_py),
             "--static",
             "/tmp/static.proto",
+            "--build-dir",
+            str(context.build_dir),
             "--ninja-error-logging-output",
             "/tmp/errors.json",
             "--ninja-action-metrics-output",

@@ -964,6 +964,9 @@ class FuchsiaBuildContext(object):
         if context_path:
             yield "--context"
             yield str(context_path)
+        elif self.build_dir:
+            yield "--build-dir"
+            yield str(self.build_dir)
         if self.config.verbose:
             yield "--verbose"
         if print_artifact_dir:

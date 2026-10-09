@@ -1581,36 +1581,39 @@ class MainExecutionTest(unittest.TestCase):
     ) -> None:
         """Verifies that omitting --context automatically generates context_spec."""
         mock_load_json_list.return_value = []
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        with tempfile.TemporaryDirectory() as tmp_dir, tempfile.TemporaryDirectory() as fake_root_dir:
             mock_cwd.return_value = pathlib.Path(tmp_dir)
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".textproto", delete=False
-            ) as static_file:
-                static_file.write("")
-                static_path = static_file.name
+            fake_root = pathlib.Path(fake_root_dir)
+            (fake_root / ".jiri_manifest").touch()
+            with mock.patch.object(fint_build, "fuchsia_root", fake_root):
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".textproto", delete=False
+                ) as static_file:
+                    static_file.write("")
+                    static_path = static_file.name
 
-            try:
-                # Mock successful build command execution
-                mock_managed.return_value.run.return_value = 0
-                mock_run.return_value.returncode = 0
-                mock_run.return_value.stdout = "ninja: no work to do."
+                try:
+                    # Mock successful build command execution
+                    mock_managed.return_value.run.return_value = 0
+                    mock_run.return_value.returncode = 0
+                    mock_run.return_value.stdout = "ninja: no work to do."
 
-                real_argv = [
-                    "--static",
-                    static_path,
-                    "--",
-                    "ninja",
-                    "-j",
-                    "64",
-                    "target",
-                ]
+                    real_argv = [
+                        "--static",
+                        static_path,
+                        "--",
+                        "ninja",
+                        "-j",
+                        "64",
+                        "target",
+                    ]
 
-                # Run main() passing arguments directly without --context
-                exit_code = fint_build.main(real_argv)
-                self.assertEqual(exit_code, 0)
+                    # Run main() passing arguments directly without --context
+                    exit_code = fint_build.main(real_argv)
+                    self.assertEqual(exit_code, 0)
 
-            finally:
-                os.unlink(static_path)
+                finally:
+                    os.unlink(static_path)
 
     @mock.patch.object(signal_utils, "SignalManagedProcess")
     @mock.patch.object(fint_build.BuildContext, "wrap_bazel")
@@ -1846,14 +1849,79 @@ class MakeBuildContextTest(unittest.TestCase):
         mock_cwd.return_value = pathlib.Path("/mock/cwd")
         static_path = pathlib.Path("fake_static.textproto")
 
-        ctx = fint_build.make_build_context(static_path, None)
+        with tempfile.TemporaryDirectory() as fake_root_dir:
+            fake_root = pathlib.Path(fake_root_dir)
+            with mock.patch.object(fint_build, "fuchsia_root", fake_root):
+                ctx = fint_build.make_build_context(static_path, None)
 
-        mock_load_static.assert_called_once_with(static_path)
-        self.assertEqual(
-            ctx.context_spec.checkout_dir,
-            str(fint_build.fuchsia_root.resolve()),
-        )
-        self.assertEqual(ctx.context_spec.build_dir, "/mock/cwd")
+                mock_load_static.assert_called_once_with(static_path)
+                self.assertEqual(
+                    ctx.context_spec.checkout_dir,
+                    str(fake_root.resolve()),
+                )
+                self.assertEqual(ctx.context_spec.build_dir, "/mock/cwd")
+
+    def test_make_build_context_with_explicit_build_dir(self) -> None:
+        """Verifies make_build_context uses explicit build_dir if provided."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            static_path = pathlib.Path(tmp_dir) / "static.textproto"
+            static_path.write_text("")
+            out_dir = pathlib.Path(tmp_dir) / "out_custom"
+            out_dir.mkdir()
+
+            ctx = fint_build.make_build_context(
+                static_path,
+                None,
+                build_dir=out_dir,
+            )
+            self.assertEqual(ctx.context_spec.build_dir, str(out_dir.resolve()))
+
+
+class BuildDirResolutionTest(unittest.TestCase):
+    """Tests for resolving the build directory fallback."""
+
+    def test_resolve_fallback_explicit_build_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            explicit_dir = pathlib.Path(tmp_dir)
+            resolved = fint_build.resolve_fallback_build_dir(
+                build_dir=explicit_dir
+            )
+            self.assertEqual(resolved, explicit_dir.resolve())
+
+    def test_resolve_fallback_to_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as fake_root_dir, tempfile.TemporaryDirectory() as tmp_cwd:
+            fake_root = pathlib.Path(fake_root_dir)
+            with mock.patch.object(fint_build, "fuchsia_root", fake_root):
+                with mock.patch.object(pathlib.Path, "cwd") as mock_cwd:
+                    mock_cwd.return_value = pathlib.Path(tmp_cwd)
+                    resolved = fint_build.resolve_fallback_build_dir()
+                    self.assertEqual(resolved, pathlib.Path(tmp_cwd).resolve())
+
+    def test_resolve_fallback_from_fx_build_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as fake_root_dir:
+            fake_root = pathlib.Path(fake_root_dir)
+            fx_build_dir = fake_root / ".fx-build-dir"
+            custom_out = fake_root / "out/my_target"
+            custom_out.mkdir(parents=True)
+            fx_build_dir.write_text("out/my_target\n")
+
+            with mock.patch.object(pathlib.Path, "cwd") as mock_cwd:
+                mock_cwd.return_value = fake_root
+                with mock.patch.object(fint_build, "fuchsia_root", fake_root):
+                    resolved = fint_build.resolve_fallback_build_dir()
+                    self.assertEqual(resolved, custom_out.resolve())
+
+    def test_resolve_fallback_from_out_default(self) -> None:
+        with tempfile.TemporaryDirectory() as fake_root_dir:
+            fake_root = pathlib.Path(fake_root_dir)
+            default_out = fake_root / "out/default"
+            default_out.mkdir(parents=True)
+
+            with mock.patch.object(pathlib.Path, "cwd") as mock_cwd:
+                mock_cwd.return_value = fake_root
+                with mock.patch.object(fint_build, "fuchsia_root", fake_root):
+                    resolved = fint_build.resolve_fallback_build_dir()
+                    self.assertEqual(resolved, default_out.resolve())
 
 
 if __name__ == "__main__":
