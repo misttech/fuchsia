@@ -11,11 +11,15 @@ group("fuchsia_controller_tests") {
     ":echo_stress_test",
     ":fdomain_client_test",
     ":nuc_target_identity_tests",
-    ":reboot_test",
     ":tracing_test",
     ":vim3_target_identity_tests",
     ":x64_target_identity_tests",
   ]
+
+  # This test is flaky on balanced builders, so temporarily disable it.
+  if (!is_balanced) {
+    deps += [ ":reboot_test" ]
+  }
 }
 
 group("fuchsia_controller_tests_staging") {
