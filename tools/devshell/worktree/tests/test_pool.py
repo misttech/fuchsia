@@ -23,6 +23,7 @@ from subcommands import pool_add as pool_add_cmd
 from subcommands import pool_list as pool_list_cmd
 from subcommands import pool_remove as pool_remove_cmd
 from subcommands import remove as remove_cmd
+from utils import run_jiri
 from worktree import NoFreeWorktreesError, SyncStatus, Worktree, WorktreeState
 from worktree_pool import ADJECTIVES, NOUNS, WorktreePool
 from worktree_printer import WorktreePrinter, format_time_ago_plain
@@ -604,6 +605,46 @@ class TestFormatTimeAgo(unittest.TestCase):
         self.assertEqual(format_time_ago_plain(120), "2m ago")
         self.assertEqual(format_time_ago_plain(7200), "2h ago")
         self.assertEqual(format_time_ago_plain(172800), "2d ago")
+
+
+class TestRunJiri(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.fuchsia_dir = Path(self.temp_dir.name)
+        self.jiri_root = self.fuchsia_dir / ".jiri_root"
+        (self.jiri_root / "bin").mkdir(parents=True, exist_ok=True)
+        self.jiri_bin = self.jiri_root / "bin" / "jiri"
+        self.jiri_bin.write_text("")
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    @patch("utils.subprocess.run")
+    def test_run_jiri_defaults_cwd_to_jiri_root_parent(
+        self, mock_run: MagicMock
+    ) -> None:
+        with patch("sys.stdout", new_callable=StringIO):
+            run_jiri(self.jiri_root, ["worktree", "add", "/tmp/wt"], check=True)
+        mock_run.assert_called_once_with(
+            [str(self.jiri_bin), "worktree", "add", "/tmp/wt"],
+            check=True,
+            cwd=str(self.fuchsia_dir),
+        )
+
+    @patch("utils.subprocess.run")
+    def test_run_jiri_preserves_explicit_cwd(self, mock_run: MagicMock) -> None:
+        with patch("sys.stdout", new_callable=StringIO):
+            run_jiri(
+                self.jiri_root,
+                ["worktree", "sync"],
+                cwd="/custom/cwd",
+                check=True,
+            )
+        mock_run.assert_called_once_with(
+            [str(self.jiri_bin), "worktree", "sync"],
+            cwd="/custom/cwd",
+            check=True,
+        )
 
 
 if __name__ == "__main__":

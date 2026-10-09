@@ -54,6 +54,8 @@ def run_jiri(
         jiri_bin = Path("jiri")
 
     print(f"Running jiri {' '.join(args)}...")
+    if "cwd" not in kwargs:
+        kwargs["cwd"] = str(jiri_root.parent)
     return subprocess.run([str(jiri_bin)] + args, **kwargs)
 
 
