@@ -39,6 +39,7 @@ syscall_tests_without_deps = [
   "getrandom_test",
   "inotify_test",
   "io_uring_test",
+  "kcmp_test",
   "membarrier_test",
   "memfd_test",
   "mmap_test",
