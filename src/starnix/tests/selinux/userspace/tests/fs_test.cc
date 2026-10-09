@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <lib/fit/defer.h>
 #include <sys/sendfile.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -11,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
+#include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
@@ -123,6 +126,34 @@ TEST(FsTest, FallocateDenied) {
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_fs_no_write_t:s0", [&]() {
     EXPECT_THAT(fallocate(test_file.fd(), 0, 0, 1024), SyscallFailsWithErrno(EACCES));
   }));
+}
+
+// Verify that attempting a write from a domain denied write access fails with EACCES and
+// preserves the SUID and SGID bits on the file.
+TEST(FsTest, WriteDeniedPreservesSuid) {
+  auto test_file = ScopedTempFDWithLabel(kFallocateFileLabel);
+  ASSERT_TRUE(test_file.is_valid());
+
+  ASSERT_THAT(fchmod(test_file.fd(), S_ISUID | S_ISGID | S_IRWXU), SyscallSucceeds());
+
+  struct stat file_stat;
+  ASSERT_THAT(fstat(test_file.fd(), &file_stat), SyscallSucceeds());
+  ASSERT_NE(file_stat.st_mode & S_ISUID, 0u);
+  ASSERT_NE(file_stat.st_mode & S_ISGID, 0u);
+
+  test_helper::UnsetCapability(CAP_FSETID);
+  auto restore_cap = fit::defer([]() { test_helper::SetCapabilityEffective(CAP_FSETID); });
+
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_fs_no_write_t:s0", [&]() {
+    char buf[] = "x";
+    EXPECT_THAT(write(test_file.fd(), buf, sizeof(buf)), SyscallFailsWithErrno(EACCES));
+  }));
+
+  ASSERT_THAT(fstat(test_file.fd(), &file_stat), SyscallSucceeds());
+  EXPECT_NE(file_stat.st_mode & S_ISUID, 0u);
+  EXPECT_NE(file_stat.st_mode & S_ISGID, 0u);
 }
 
 constexpr char kSendfileDstLabel[] = "test_u:object_r:test_fs_sendfile_dst_t:s0";

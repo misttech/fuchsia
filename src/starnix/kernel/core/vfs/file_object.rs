@@ -1763,8 +1763,6 @@ impl FileObject {
         offset: usize,
         data: &mut dyn InputBuffer,
     ) -> Result<usize, Errno> {
-        security::file_permission(current_task, self, security::PermissionFlags::WRITE)?;
-
         // We need to cap the size of `data` to prevent us from growing the file too large,
         // according to <https://man7.org/linux/man-pages/man2/write.2.html>:
         //
@@ -1783,6 +1781,7 @@ impl FileObject {
         if !self.can_write() {
             return error!(EBADF);
         }
+        security::file_permission(current_task, self, security::PermissionFlags::WRITE)?;
         self.node().clear_suid_and_sgid_bits(current_task)?;
         let bytes_written = write()?;
         self.node().update_ctime_mtime();

@@ -512,6 +512,12 @@
             ]
         },
         {
+            "name": "FsTest.WriteDeniedPreservesSuid",
+            "audit_expectations": [
+                "avc:  denied  { write } for path=\"/tmp/proc_test_file_MdJDk7\" dev=\"tmpfs\" ino=5 scontext=test_u:test_r:test_fs_no_write_t:s0 tcontext=test_u:object_r:test_fs_fallocate_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "InheritTest.CloexecProcessedBeforeSelinuxCheck",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_bridge_t:s0 tcontext=test_u:test_r:test_inherit_child_no_use_fd_t:s0 tclass=process permissive=0",
