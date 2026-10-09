@@ -59,27 +59,32 @@ var randInt = func(n int) int {
 func GetEnabledExperiments(experiments []string) ([]string, error) {
 	enabledExperiments := []string{}
 	for _, exp := range experiments {
-		colonIndex := strings.LastIndex(exp, ":")
-		if colonIndex > 0 {
-			percentage, err := strconv.Atoi(exp[colonIndex+1:])
-			if err == nil {
-				if percentage < 0 || percentage > 100 {
-					return nil, fmt.Errorf("invalid experiment percentage %d, must be between 0 and 100", percentage)
-				}
-				exp = exp[:colonIndex]
-				if !slices.Contains(supportedExperiments, exp) {
-					return nil, fmt.Errorf("unsupported experiment %q", exp)
-				}
-				r := randInt(100)
-				if r >= percentage {
-					continue
-				}
+		if exp == "" {
+			return nil, fmt.Errorf("Experiments must be non-empty")
+		}
+		split := strings.Split(exp, ":")
+		percentage := 100
+		if len(split) > 2 {
+			return nil, fmt.Errorf("Invalid experiment format: %q:\nExperiments format is <experiment_name>[:<percentage>]. experiment_names must not contain ':' characters", exp)
+		}
+		name := split[0]
+		if !slices.Contains(supportedExperiments, name) {
+			return nil, fmt.Errorf("unsupported experiment %q. Supported experiments: %q", name, supportedExperiments)
+		}
+		if len(split) == 2 {
+			var err error
+			percentage, err = strconv.Atoi(split[1])
+			if err != nil {
+				return nil, fmt.Errorf("Invalid experiment format: %q:\nExperiments format is <experiment_name>[:<percentage>]. Could not parse percentage: %s", exp, err)
 			}
 		}
-		if !slices.Contains(supportedExperiments, exp) {
-			return nil, fmt.Errorf("unsupported experiment %q", exp)
+		if percentage < 0 || percentage > 100 {
+			return nil, fmt.Errorf("invalid experiment percentage %d, must be between 0 and 100", percentage)
 		}
-		enabledExperiments = append(enabledExperiments, exp)
+		r := randInt(100)
+		if r < percentage {
+			enabledExperiments = append(enabledExperiments, name)
+		}
 	}
 	return enabledExperiments, nil
 }

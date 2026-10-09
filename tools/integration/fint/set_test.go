@@ -215,23 +215,94 @@ func TestGetEnabledExperiments(t *testing.T) {
 		supportedExperiments = origSupported
 		randInt = origRandInt
 	}()
-	supportedExperiments = []string{"exp1", "exp2", "exp3", "exp5", "exp6"}
-	randInt = func(_ int) int {
-		return 49
+	supportedExperiments = []string{"exp0", "exp30", "exp50", "exp100", "exp_default"}
+
+	t.Run("stratification", func(t *testing.T) {
+		counts := make(map[string]int)
+		experiments := []string{"exp0:0", "exp30:30", "exp50:50", "exp100:100", "exp_default"}
+		for i := 0; i < 100; i++ {
+			randInt = func(n int) int {
+				if n != 100 {
+					t.Fatalf("unexpected randInt bound: got %d, want 100", n)
+				}
+				return i
+			}
+			got, err := GetEnabledExperiments(experiments)
+			if err != nil {
+				t.Fatalf("failed to get enabled experiments on iteration %d: %s", i, err)
+			}
+			for _, exp := range got {
+				counts[exp]++
+			}
+		}
+		wantCounts := map[string]int{
+			"exp30":       30,
+			"exp50":       50,
+			"exp100":      100,
+			"exp_default": 100,
+		}
+		if diff := cmp.Diff(counts, wantCounts); diff != "" {
+			t.Errorf("unexpected experiment enablement counts across 100 runs (-got +want):\n%s", diff)
+		}
+	})
+
+	errorTestCases := []struct {
+		name        string
+		experiments []string
+		wantErr     string
+	}{
+		{
+			name:        "empty experiment",
+			experiments: []string{""},
+			wantErr:     "Experiments must be non-empty",
+		},
+		{
+			name:        "too many colons",
+			experiments: []string{"exp30:50:60"},
+			wantErr:     `Invalid experiment format: "exp30:50:60"`,
+		},
+		{
+			name:        "unsupported experiment",
+			experiments: []string{"unsupported_exp"},
+			wantErr:     `unsupported experiment "unsupported_exp"`,
+		},
+		{
+			name:        "unsupported experiment with percentage",
+			experiments: []string{"unsupported_exp:50"},
+			wantErr:     `unsupported experiment "unsupported_exp"`,
+		},
+		{
+			name:        "non-integer percentage",
+			experiments: []string{"exp30:abc"},
+			wantErr:     `Invalid experiment format: "exp30:abc"`,
+		},
+		{
+			name:        "empty percentage after colon",
+			experiments: []string{"exp30:"},
+			wantErr:     `Invalid experiment format: "exp30:"`,
+		},
+		{
+			name:        "negative percentage",
+			experiments: []string{"exp30:-1"},
+			wantErr:     "invalid experiment percentage -1, must be between 0 and 100",
+		},
+		{
+			name:        "percentage over 100",
+			experiments: []string{"exp30:101"},
+			wantErr:     "invalid experiment percentage 101, must be between 0 and 100",
+		},
 	}
 
-	experiments := []string{"exp1:0", "exp2:50", "exp3:100", "exp5:40", "exp6"}
-	got, err := GetEnabledExperiments(experiments)
-	if err != nil {
-		t.Fatalf("failed to get enabled experiments: %s", err)
-	}
-	want := []string{"exp2", "exp3", "exp6"}
-	if diff := cmp.Diff(got, want); diff != "" {
-		t.Fatalf("unexpected enabled experiments (-got +want):\n%s", diff)
-	}
-
-	if _, err := GetEnabledExperiments([]string{"unsupported_exp"}); err == nil {
-		t.Errorf("got nil error, want error for unsupported experiment")
+	for _, tc := range errorTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := GetEnabledExperiments(tc.experiments)
+			if err == nil {
+				t.Fatalf("got nil error, want error containing %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("got error %q, want error containing %q", err.Error(), tc.wantErr)
+			}
+		})
 	}
 }
 
