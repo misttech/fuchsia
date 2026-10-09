@@ -14,8 +14,10 @@ from pathlib import Path
 from agents.lib.paths import find_checkout_git_repos, get_hooks_dir
 
 __all__ = [
+    "DEFAULT_HOOK_NAMES",
     "HookOperationResult",
     "HookStatusResult",
+    "LEGACY_HOOK_NAMES",
     "get_git_hooks_status",
     "install_git_hook",
     "install_git_hooks",
@@ -51,6 +53,8 @@ class HookStatusResult:
 
 
 AGENT_FRAGMENT_NAME = "10-fuchsia-agent.sh"
+DEFAULT_HOOK_NAMES: tuple[str, ...] = ("pre-push", "commit-msg")
+LEGACY_HOOK_NAMES: tuple[str, ...] = ("pre-commit",)
 
 AGENT_FRAGMENT_TEMPLATE = """#!/bin/sh
 # ==============================================================================
@@ -181,14 +185,14 @@ def uninstall_git_hook(
 
 def install_git_hooks(
     fuchsia_dir: Path,
-    hook_names: Sequence[str] = ("pre-commit", "commit-msg"),
+    hook_names: Sequence[str] = DEFAULT_HOOK_NAMES,
     dry_run: bool = False,
 ) -> HookOperationResult:
     """Installs Fuchsia git hooks across all discovered Git repositories in checkout.
 
     Args:
         fuchsia_dir: Root directory of the Fuchsia checkout.
-        hook_names: Base hook names to install (e.g. 'pre-commit', 'commit-msg').
+        hook_names: Base hook names to install (defaults to 'pre-push' and 'commit-msg').
         dry_run: If True, do not modify files on disk.
 
     Returns:
@@ -205,6 +209,20 @@ def install_git_hooks(
         except (RuntimeError, OSError) as e:
             failed.append((repo, str(e)))
             continue
+
+        # Actively clean up legacy pre-commit hook fragment if not being installed
+        for legacy_hook in LEGACY_HOOK_NAMES:
+            if legacy_hook not in hook_names:
+                try:
+                    uninstall_git_hook(
+                        repo,
+                        hook_name=legacy_hook,
+                        dry_run=dry_run,
+                        hooks_dir=hooks_dir,
+                    )
+                except (RuntimeError, OSError):
+                    pass
+
         for hook_name in hook_names:
             script_args = [hook_name]
             try:
@@ -224,14 +242,14 @@ def install_git_hooks(
 
 def uninstall_git_hooks(
     fuchsia_dir: Path,
-    hook_names: Sequence[str] = ("pre-commit", "commit-msg"),
+    hook_names: Sequence[str] = DEFAULT_HOOK_NAMES,
     dry_run: bool = False,
 ) -> HookOperationResult:
     """Uninstalls Fuchsia git hooks across all discovered Git repositories in checkout.
 
     Args:
         fuchsia_dir: Root directory of the Fuchsia checkout.
-        hook_names: Base hook names to uninstall (e.g. 'pre-commit', 'commit-msg').
+        hook_names: Base hook names to uninstall (defaults to 'pre-push' and 'commit-msg').
         dry_run: If True, do not modify files on disk.
 
     Returns:
@@ -240,13 +258,18 @@ def uninstall_git_hooks(
     repos = find_checkout_git_repos(fuchsia_dir)
     modified: list[Path] = []
     failed: list[tuple[Path, str]] = []
+    all_hook_names = list(hook_names)
+    for legacy_hook in LEGACY_HOOK_NAMES:
+        if legacy_hook not in all_hook_names:
+            all_hook_names.append(legacy_hook)
+
     for repo in repos:
         try:
             hooks_dir = get_hooks_dir(repo)
         except (RuntimeError, OSError) as e:
             failed.append((repo, str(e)))
             continue
-        for hook_name in hook_names:
+        for hook_name in all_hook_names:
             try:
                 removed = uninstall_git_hook(
                     repo,
@@ -263,7 +286,7 @@ def uninstall_git_hooks(
 
 def get_git_hooks_status(
     fuchsia_dir: Path,
-    hook_names: Sequence[str] = ("pre-commit", "commit-msg"),
+    hook_names: Sequence[str] = DEFAULT_HOOK_NAMES,
 ) -> HookStatusResult:
     """Checks Git hooks configuration status across checkout repositories.
 
@@ -272,7 +295,7 @@ def get_git_hooks_status(
 
     Args:
         fuchsia_dir: Root directory of the Fuchsia checkout.
-        hook_names: Base hook names to check (defaults to 'pre-commit' and 'commit-msg').
+        hook_names: Base hook names to check (defaults to 'pre-push' and 'commit-msg').
 
     Returns:
         HookStatusResult with total and configured repository counts.
