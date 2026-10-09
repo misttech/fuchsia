@@ -144,24 +144,21 @@ rustc_library("flex_fdomain") {
     "//src/lib/fidl/rust/fidl",
   ]
 }
-rustc_library("flex_fidl") {
-  sources = [ "src/flex.rs" ]
-  crate_name = "flex_client"
-  source_root = "src/flex.rs"
-  edition = "2024"
-  visibility = [
-    ":*",
-    "//src/*",
-  ]
-  with_unit_tests = true
-  deps = []
-  deps += [ "//src/lib/fidl/rust/fidl" ]
-  if (is_fuchsia) {
-    deps += [
+if (is_fuchsia) {
+  rustc_library("flex_fidl") {
+    sources = [ "src/flex.rs" ]
+    crate_name = "flex_client"
+    source_root = "src/flex.rs"
+    edition = "2024"
+    visibility = [
+      ":*",
+      "//src/*",
+    ]
+    with_unit_tests = true
+    deps = [
       "//sdk/rust/zx",
+      "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia-async",
     ]
-  } else {
-    deps += [ "//src/lib/fuchsia-emulated-handle" ]
   }
 }

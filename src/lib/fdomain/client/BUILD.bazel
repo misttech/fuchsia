@@ -75,17 +75,12 @@ rustc_library(
     crate_name = "flex_client",
     crate_root = "src/flex.rs",
     edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
     visibility = ["//src:__subpackages__"],
     with_unit_tests = True,
     deps = [
+        "//sdk/rust/zx",
         "//src/lib/fidl/rust/fidl",
-    ] + select({
-        "@platforms//os:fuchsia": [
-            "//sdk/rust/zx",
-            "//src/lib/fuchsia-async",
-        ],
-        "//conditions:default": [
-            "//src/lib/fuchsia-emulated-handle",
-        ],
-    }),
+        "//src/lib/fuchsia-async",
+    ],
 )

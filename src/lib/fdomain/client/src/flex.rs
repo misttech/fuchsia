@@ -47,12 +47,7 @@ pub use fdomain_client::fidl::Proxy as ProxyHasDomain;
 pub use ::fidl::*;
 
 #[cfg(not(feature = "fdomain"))]
-#[cfg(target_os = "fuchsia")]
 pub use zx::MessageBuf;
-
-#[cfg(not(feature = "fdomain"))]
-#[cfg(not(target_os = "fuchsia"))]
-pub use fuchsia_emulated_handle::MessageBuf;
 
 #[cfg(feature = "fdomain")]
 pub type NullableHandle = fdomain_client::Handle;
@@ -72,11 +67,7 @@ pub async fn wait_for_signals(
     handle: &impl AsHandleRef,
     signals: ::fidl::Signals,
 ) -> Result<::fidl::Signals, ::fidl::Status> {
-    #[cfg(target_os = "fuchsia")]
-    return fuchsia_async::OnSignalsRef::new(handle.as_handle_ref(), signals).await;
-    #[cfg(not(target_os = "fuchsia"))]
-    return fuchsia_emulated_handle::on_signals::OnSignalsRef::new(handle.as_handle_ref(), signals)
-        .await;
+    fuchsia_async::OnSignalsRef::new(handle.as_handle_ref(), signals).await
 }
 
 #[cfg(feature = "fdomain")]
