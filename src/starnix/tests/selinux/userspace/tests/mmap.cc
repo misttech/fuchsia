@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
 
 #include "src/starnix/tests/selinux/userspace/util.h"
@@ -43,6 +45,49 @@ TEST(MMapTest, MMapAllowed) {
     if (private_mapping.is_ok()) {
       EXPECT_STREQ(static_cast<const char*>(private_mapping->mapping()), kTestPayload);
     }
+  }));
+}
+
+// Verifies that attempting to mmap a file with access flags incompatible with its open mode
+// invokes the mmap_file LSM hook before validating the file open mode, generating an AVC denial
+// audit when the task domain lacks the corresponding file permission.
+TEST(MMapTest, MMapCheckedBeforeOpenMode) {
+  auto enforce = ScopedEnforcement::SetEnforcing();
+
+  ASSERT_TRUE(RunSubprocessAs(MakeTestSecurityContext("test_mmap_parent_t"), [&] {
+    auto test_file = ScopedTempFDWithLabel(kFileLabel);
+    ASSERT_THAT(test_file.fd(), SyscallSucceeds());
+    ASSERT_THAT(write(test_file.fd(), kTestPayload, sizeof(kTestPayload)),
+                SyscallSucceedsWithValue(sizeof(kTestPayload)));
+
+    // Transition to a domain lacking `file { read }`. Opening O_WRONLY succeeds, and mmap() with
+    // PROT_READ fails with EACCES in the mmap_file LSM hook (generating a `file { read }` denial
+    // audit) before VFS open-mode validation.
+    ASSERT_THAT(WriteTaskAttr("current", MakeTestSecurityContext("test_mmap_child_no_read_t")),
+                SyscallResultIsOk());
+    fbl::unique_fd write_only_fd(open(test_file.name().c_str(), O_WRONLY));
+    ASSERT_THAT(write_only_fd.get(), SyscallSucceeds());
+    EXPECT_THAT(test_helper::ScopedMMap::MMap(nullptr, sizeof(kTestPayload), PROT_READ, MAP_PRIVATE,
+                                              write_only_fd.get(), 0),
+                SyscallResultIsErrno(EACCES));
+  }));
+
+  ASSERT_TRUE(RunSubprocessAs(MakeTestSecurityContext("test_mmap_parent_t"), [&] {
+    auto test_file = ScopedTempFDWithLabel(kFileLabel);
+    ASSERT_THAT(test_file.fd(), SyscallSucceeds());
+    ASSERT_THAT(write(test_file.fd(), kTestPayload, sizeof(kTestPayload)),
+                SyscallSucceedsWithValue(sizeof(kTestPayload)));
+
+    // Transition to a domain lacking `file { write }`. Opening O_RDONLY succeeds, and mmap() with
+    // PROT_READ | PROT_WRITE and MAP_SHARED fails with EACCES in the mmap_file LSM hook
+    // (generating a `file { write }` denial audit) before VFS open-mode validation.
+    ASSERT_THAT(WriteTaskAttr("current", MakeTestSecurityContext("test_mmap_child_no_write_t")),
+                SyscallResultIsOk());
+    fbl::unique_fd read_only_fd(open(test_file.name().c_str(), O_RDONLY));
+    ASSERT_THAT(read_only_fd.get(), SyscallSucceeds());
+    EXPECT_THAT(test_helper::ScopedMMap::MMap(nullptr, sizeof(kTestPayload), PROT_READ | PROT_WRITE,
+                                              MAP_SHARED, read_only_fd.get(), 0),
+                SyscallResultIsErrno(EACCES));
   }));
 }
 

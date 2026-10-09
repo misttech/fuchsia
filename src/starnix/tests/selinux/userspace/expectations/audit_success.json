@@ -859,6 +859,13 @@
             ]
         },
         {
+            "name": "MMapTest.MMapCheckedBeforeOpenMode",
+            "audit_expectations": [
+                "avc:  denied  { read } for path=\"/tmp/proc_test_file_svWBo9\" dev=\"tmpfs\" ino=3 scontext=test_u:test_r:test_mmap_child_no_read_t:s0 tcontext=test_u:object_r:test_mmap_file_t:s0 tclass=file permissive=0",
+                "avc:  denied  { write } for path=\"/tmp/proc_test_file_9Eksu9\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_mmap_child_no_write_t:s0 tcontext=test_u:object_r:test_mmap_file_t:s0 tclass=file permissive=0"
+            ]
+        },
+        {
             "name": "MMapTest/MMapDeniedTest.MMapDenied/no_map",
             "audit_expectations": [
                 "avc:  denied  { map } for path=\"/tmp/proc_test_file_3sGUE2\" dev=\"tmpfs\" ino=4 scontext=test_u:test_r:test_mmap_child_no_map_t:s0 tcontext=test_u:object_r:test_mmap_file_t:s0 tclass=file permissive=0",
