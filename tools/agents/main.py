@@ -11,7 +11,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from agents.commands import setup
+from agents.commands import hooks, setup
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -25,6 +25,7 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="COMMAND",
         help="Subcommand to execute.",
     )
+    hooks.register_subcommand(subparsers)
     setup.register_subcommand(subparsers)
     return parser
 

@@ -9,6 +9,7 @@ if (is_host) {
   _agents_sources = [
     "__init__.py",
     "commands/__init__.py",
+    "commands/hooks.py",
     "commands/setup.py",
     "lib/__init__.py",
     "lib/config.py",
@@ -45,6 +46,14 @@ if (is_host) {
 
   python_host_test("agents_main_test") {
     main_source = "tests/main_test.py"
+    libraries = [
+      ":agents_lib",
+      ":agents_testing",
+    ]
+  }
+
+  python_host_test("agents_hooks_test") {
+    main_source = "tests/hooks_test.py"
     libraries = [
       ":agents_lib",
       ":agents_testing",
@@ -160,6 +169,7 @@ group("tests") {
     ":agents_githooks_installer_test($host_toolchain)",
     ":agents_githooks_reporters_test($host_toolchain)",
     ":agents_githooks_runner_test($host_toolchain)",
+    ":agents_hooks_test($host_toolchain)",
     ":agents_main_test($host_toolchain)",
     ":agents_paths_test($host_toolchain)",
     ":agents_permissions_test($host_toolchain)",

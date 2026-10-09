@@ -292,6 +292,18 @@ def run(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             has_repos=bool(paths.find_checkout_git_repos(fuchsia_dir)),
         )
+    else:
+        uninstalled = githooks.uninstall_git_hooks(
+            fuchsia_dir, dry_run=args.dry_run
+        )
+        _report_hook_results(
+            count=len(uninstalled.modified),
+            failed=uninstalled.failed,
+            action_verb="remove",
+            past_verb="Removed",
+            dry_run=args.dry_run,
+            has_repos=bool(paths.find_checkout_git_repos(fuchsia_dir)),
+        )
 
     _restart_daemons(fuchsia_dir, args.dry_run)
     return 0
