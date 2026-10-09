@@ -24,7 +24,55 @@ struct Node {
     // creating a linked list of pages.
     next: AtomicUsize,
     prev: AtomicUsize,
-    // offset to write new data in this page.
+    // Offset of the next free byte in `page_data`. Writers claim space with a CAS in
+    // `try_reserve_on_page()`, and resetting the page for reuse stores `PAGE_HEADER_SIZE`.
+    //
+    // Memory ordering: every access is Relaxed. Claims are read-modify-writes, so they are
+    // totally ordered in this field's modification order and each one sees all the others that
+    // came before it, whatever the memory ordering. A plain load has no such guarantee and can
+    // return an older value.
+    //
+    // Synchronizes with: nothing.
+    //
+    // Data ordering: no other data is published through this field. Records and `data_size`
+    // reach the reader through `active_writers` (see `finalize()`). The plain loads below must
+    // still see other threads' writes to this field. Each gets a happens-before edge from another
+    // atomic, which is enough: a load cannot return a value older than one written or read by an
+    // access that happens before it (coherence).
+    //
+    // The loads in `finalize()` and `release_writer()` must see the claims of the writers that
+    // released the page before them. For example, Writer A is the last to release a page that
+    // Writer B filled:
+    //
+    //   1. Writer A claims, moving `write_offset` to `PAGE_SIZE - 8`.
+    //   2. Writer B claims, moving `write_offset` to `PAGE_SIZE`.
+    //   3. Writer B: `active_writers.fetch_sub(1, Release)`, writer count 2 -> 1.
+    //   4. Writer A: `active_writers.fetch_sub(1, Release)`, writer count 1 -> 0.
+    //   5. Writer A, now the last writer: `fence(Acquire)`.
+    //   6. Writer A: `write_offset.load(Relaxed)`, to check whether the page is full.
+    //
+    // Step 4 reads the value that step 3 wrote, and step 5 is an acquire fence after step 4, so
+    // step 3 synchronizes with step 5. Then step 2 happens before step 6, so by coherence step 6
+    // cannot return the older `PAGE_SIZE - 8`, and Writer A finalizes the full page. Therefore
+    // Relaxed is enough for the claims and the load. The load in `finalize()` is ordered the
+    // same way, with its AcqRel `fetch_or` of `active_writers` in place of steps 4 and 5.
+    //
+    // A writer on a new tail page must see the page's reset. If its load in
+    // `try_reserve_on_page()` returned the offset from the page's last use, the writer could
+    // treat the page as full and finalize it:
+    //
+    //   1. Thread T, in `advance_to_next_page()`, resets `write_offset` to `PAGE_HEADER_SIZE`,
+    //      or sees that another thread already reset it.
+    //   2. Thread T moves the tail: `tail_page.compare_exchange(.., AcqRel)`.
+    //   3. Writer W, in `reserve()`: `tail_page.load(Acquire)` returns the new tail.
+    //   4. Writer W, in `try_reserve_on_page()`: `write_offset.load(Relaxed)`.
+    //
+    // Step 3 reads the value that step 2 wrote, so step 2 synchronizes with step 3. Then step 1
+    // happens before step 4, so by coherence step 4 returns the reset value or a later one.
+    // Therefore Relaxed is enough for the resets and the load. `enable()` uses `ref_count` in
+    // place of `tail_page`: it resets every page before its Release store of `ref_count`, and
+    // `reserve()` increments `ref_count` with Acquire, so a writer that enters after `enable()`
+    // synchronizes with that store.
     write_offset: AtomicUsize,
     // Number of active writers currently reserving or writing to this page.
     active_writers: AtomicUsize,
@@ -77,32 +125,49 @@ impl Node {
             return;
         }
 
-        // - Acquire: We load `write_offset` with Acquire ordering to synchronize with all concurrent
-        //   writers that updated it via CAS in `try_reserve_on_page`. This ensures that
-        //   all non-atomic writes to `page_data` performed by the writers before their reservation was completed
-        //   are fully visible to this finalizing thread.
-        let write_offset = self.write_offset.load(Ordering::Acquire);
+        // Relaxed: the Acquire half of the `fetch_or` above pairs with the Release `fetch_sub` of
+        // every writer that released before it, therefore, if we see 0 active writers, we are also
+        // guaranteed to see any writes to write_offset that they have written.
+        let write_offset = self.write_offset.load(Ordering::Relaxed);
         let data_size = std::cmp::min(write_offset, (*PAGE_SIZE) as usize)
             - LocklessRingBuffer::PAGE_HEADER_SIZE;
         self.page_data.write_at(8, &(data_size as u64).to_le_bytes());
 
-        // Clear the `PAGE_ACTIVE_BIT` from `active_writers` with Release ordering to publish the completed page.
-        // Release semantics here guarantees that if a reader observes the PAGE_ACTIVE_BIT being cleared,
-        // it is safe to read the page as it will also observe all the completed writes from the writers for that page.
+        // Clear `PAGE_ACTIVE_BIT` to publish the completed page.
+        // - Release: orders the `data_size` write above before this store. The reader's Acquire
+        //   load of `active_writers` in `swap_reader_page()` waits until `PAGE_ACTIVE_BIT` is clear
+        //   and the writer count is 0. Every later change to `active_writers` is a read-modify-write
+        //   (a writer's `fetch_sub` in `release_writer()`), so the value the reader sees belongs to
+        //   the release sequence headed by this `fetch_and`. The reader therefore synchronizes with
+        //   this `fetch_and`, and sees `data_size`, even when the last writer releases after it.
+        //   Likewise, each writer's Release `fetch_sub` heads a release sequence that the reader's
+        //   load reads from, so the reader also sees every record.
         self.active_writers.fetch_and(!PAGE_ACTIVE_BIT, Ordering::Release);
     }
 
     /// Releases a writer reservation on this node, and finalizes the node if it was the last writer.
     fn release_writer(&self) {
-        // Using Release ordering with fetch_sub make the loading part use Relaxed ordering, and the
-        // store part Release. This means the value will be updated before the Acquire loading.
+        // Release: orders this writer's claim and record writes before the decrement. It pairs
+        // with the `fetch_or` in `finalize()` and the fence below, so their loads see the claim.
+        // It also pairs with the Acquire loads of `active_writers` in `swap_reader_page()`, so
+        // the reader sees the record, and in `advance_to_next_page()`, so the page is reused
+        // only after the record is written.
         let prev_writers = self.active_writers.fetch_sub(1, Ordering::Release);
 
         // If this was the last writer finalizing an active page (`PAGE_ACTIVE_BIT | 1`), we ensure the page is finalized.
         // Note that if the page was already finalized by the advancing thread, `PAGE_FINALIZED_BIT` will be set,
         // meaning `prev_writers` will have it set and we won't enter this branch, which is correct since it's already finalized.
         if prev_writers == PAGE_ACTIVE_BIT | 1 {
-            let write_offset = self.write_offset.load(Ordering::Acquire);
+            // Acquire: pairs with the Release `fetch_sub` of every writer that released before us.
+            // Until the page is reset, only read-modify-writes change `active_writers`, so our
+            // `fetch_sub` reads from their release sequences and their claims happen before the
+            // load below. Without the fence, the load can return an older value, such as our own
+            // claim, and skip finalizing a page that another writer filled.
+            std::sync::atomic::fence(Ordering::Acquire);
+
+            // Relaxed: the fence above makes the other writers' claims happen before this load.
+            // See `Node::write_offset`.
+            let write_offset = self.write_offset.load(Ordering::Relaxed);
             if write_offset >= (*PAGE_SIZE) as usize {
                 // Since this thread holds a valid `Reservation`, `ref_count` remains > 0, which blocks
                 // `disable()` from completing and shrinking the VMO. This guarantees that the ring VMO
@@ -356,7 +421,8 @@ impl LocklessRingBuffer {
         // By verifying that `current_offset + size <= PAGE_SIZE` before executing the CAS,
         // we guarantee that failed reservations never advance `write_offset`, keeping it exactly
         // clamped to valid data boundaries.
-        let mut current_offset = tail_node.write_offset.load(Ordering::Acquire);
+        // Relaxed: see `Node::write_offset`.
+        let mut current_offset = tail_node.write_offset.load(Ordering::Relaxed);
         loop {
             if current_offset + size > (*PAGE_SIZE) as usize {
                 return Err(());
@@ -364,8 +430,8 @@ impl LocklessRingBuffer {
             match tail_node.write_offset.compare_exchange_weak(
                 current_offset,
                 current_offset + size,
-                Ordering::AcqRel,
-                Ordering::Acquire,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
             ) {
                 Ok(_) => break,
                 Err(actual) => current_offset = actual,
@@ -495,11 +561,12 @@ impl LocklessRingBuffer {
         }
 
         let next_node = &self.nodes[next_idx];
-        // Only the thread that successfully transitions write_offset from PAGE_SIZE (or full)
-        // to PAGE_HEADER_SIZE is allowed to reset the page and advance the tail pointer.
-        // This prevents the tail-advancing pointer race and slow-thread clobbering.
+        // Only the thread whose CAS moves `next_node.write_offset` from a used offset to
+        // `PAGE_HEADER_SIZE` resets the rest of the page. Any thread that still sees `tail_val` in
+        // `tail_page` then helps move the tail.
         let (should_advance, won_reset) = {
-            let mut current = next_node.write_offset.load(Ordering::Acquire);
+            // Relaxed: see `Node::write_offset`.
+            let mut current = next_node.write_offset.load(Ordering::Relaxed);
             loop {
                 // Another thread advanced the tail page.
                 if self.tail_page.load(Ordering::Acquire) != tail_val {
@@ -515,7 +582,7 @@ impl LocklessRingBuffer {
                 match next_node.write_offset.compare_exchange_weak(
                     current,
                     LocklessRingBuffer::PAGE_HEADER_SIZE,
-                    Ordering::AcqRel,
+                    Ordering::Relaxed,
                     Ordering::Relaxed,
                 ) {
                     Ok(_) => break (true, true),
@@ -917,9 +984,10 @@ impl LocklessRingBuffer {
         self.prev_timestamp.store(now.into_nanos() as u64, Ordering::Release);
 
         for i in 0..self.nodes.len() {
+            // Relaxed: see `Node::write_offset`.
             self.nodes[i]
                 .write_offset
-                .store(LocklessRingBuffer::PAGE_HEADER_SIZE, Ordering::Release);
+                .store(LocklessRingBuffer::PAGE_HEADER_SIZE, Ordering::Relaxed);
             self.nodes[i].active_writers.store(PAGE_ACTIVE_BIT, Ordering::Release);
         }
         for i in 0..initial_pages {
@@ -1970,7 +2038,7 @@ mod tests {
 
         // Check current write_offset of Node 0
         let expected_offset = LocklessRingBuffer::PAGE_HEADER_SIZE + num_msgs * msg_size;
-        assert_eq!(buffer.nodes[0].write_offset.load(Ordering::Acquire), expected_offset);
+        assert_eq!(buffer.nodes[0].write_offset.load(Ordering::Relaxed), expected_offset);
 
         // Now try a reservation that exceeds remaining space on Node 0.
         let (res, _, _) = buffer.reserve(msg_size).unwrap();
@@ -1980,6 +2048,6 @@ mod tests {
         // Check write_offset of Node 0.
         // Before CAS fix, write_offset was 4116 (> page_size).
         // After CAS fix, write_offset is exactly expected_offset (4016).
-        assert_eq!(buffer.nodes[0].write_offset.load(Ordering::Acquire), expected_offset);
+        assert_eq!(buffer.nodes[0].write_offset.load(Ordering::Relaxed), expected_offset);
     }
 }
