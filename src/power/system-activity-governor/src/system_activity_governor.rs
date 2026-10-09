@@ -33,7 +33,7 @@ use futures::stream::StreamExt;
 use power_broker_client::PowerElementContext;
 use sag_config::Config;
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -41,6 +41,7 @@ pub struct StoredWakeLease {
     pub name: String,
     pub server_token: fsystem::LeaseToken,
     pub is_unmonitored: bool,
+    pub previous_client_token: Option<fsystem::LeaseToken>,
 }
 
 pub struct StoredSuspendBlocker {
@@ -52,6 +53,62 @@ pub struct StoredSuspendBlocker {
 pub struct StoredApplicationActivityLease {
     pub name: String,
     pub server_token: fsystem::LeaseToken,
+}
+
+/// This request is a FIDL table, but our protocol requires:
+///   * a non-empty name
+///   * a server token
+///   * `previous_client_token`, if present, must:
+///     - NOT be a copy of `server_token`
+///     - NOT be the peer of `server_token`
+pub(crate) fn validate_acquire_wake_lease2_request(
+    payload: fsystem::ActivityGovernorAcquireWakeLease2Request,
+) -> Result<
+    (String, fsystem::LeaseToken, Option<fsystem::LeaseToken>, bool, zx::Koid),
+    fsystem::AcquireWakeLeaseError,
+> {
+    let name = match payload.name {
+        Some(s) if !s.is_empty() => s,
+        _ => {
+            log::warn!("Received invalid name while acquiring wake lease");
+            return Err(fsystem::AcquireWakeLeaseError::InvalidName);
+        }
+    };
+
+    let server_token = match payload.server_token {
+        Some(token) => token,
+        None => {
+            log::warn!("Received AcquireWakeLease2 request without server_token");
+            return Err(fsystem::AcquireWakeLeaseError::ServerTokenRequired);
+        }
+    };
+
+    let server_info = server_token.basic_info().map_err(|error| {
+        log::warn!(error:?; "Failed to get basic_info for server_token");
+        fsystem::AcquireWakeLeaseError::Internal
+    })?;
+
+    if let Some(ref prev_token) = payload.previous_client_token {
+        let prev_info = prev_token.basic_info().map_err(|error| {
+            log::warn!(error:?; "Failed to get basic_info for previous_client_token");
+            fsystem::AcquireWakeLeaseError::InvalidPreviousToken
+        })?;
+
+        if prev_info.koid == server_info.koid || prev_info.related_koid == server_info.koid {
+            log::warn!(
+                "Invalid AcquireWakeLease2 request: previous_client_token is identical or peered to server_token"
+            );
+            return Err(fsystem::AcquireWakeLeaseError::InvalidPreviousToken);
+        }
+    }
+
+    Ok((
+        name,
+        server_token,
+        payload.previous_client_token,
+        payload.unmonitored.unwrap_or(false),
+        server_info.koid,
+    ))
 }
 
 // TODO(https://fxbug.dev/491840509): Allow configurable timeouts when needed.
@@ -207,6 +264,107 @@ impl LeaseStatus {
     }
 }
 
+/// Maximum number of pre-allocated wake lease IDs retained while waiting for their corresponding
+/// predecessor `server_token` to arrive.
+///
+/// If a `previous_client_token`'s server peer never arrives at SAG (for example, due to client
+/// error or because the caller passed a token from another component such as Power Broker),
+/// bounding the tracker capacity prevents unbounded memory growth.
+const MAX_PREALLOCATED_LEASES: usize = 512;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+struct PreallocatedLease {
+    id: u64,
+    created_at: zx::BootInstant,
+}
+
+/// Tracks pre-allocated `lease_id`s for out-of-order wake lease exchanges across concurrent FIDL
+/// channels.
+///
+/// # Why this is needed
+/// In cross-channel wake lease exchanges, Component A may create an `EventPair`
+/// `(client_token, server_token)`, send `AcquireWakeLease2(server_token)` on its
+/// `ActivityGovernor` channel without waiting for a response, and immediately pass `client_token`
+/// to Component B, which calls `AcquireWakeLease2(previous_client_token = client_token)` on a
+/// separate `ActivityGovernor` channel. Because SAG services channels concurrently, Component B's
+/// successor lease request may be processed **before** Component A's predecessor lease request.
+///
+/// When a successor lease arrives before its predecessor, `PreallocatedLeaseTracker` pre-allocates
+/// a sequential `lease_id` (along with its preallocation timestamp) keyed by the predecessor's
+/// `server_token_koid` (`previous_client_token`'s `related_koid`). The successor lease can
+/// immediately record this ID in `replaces_lease_id`, and when Component A's `server_token`
+/// subsequently arrives, it claims that exact pre-allocated `lease_id`.
+///
+/// # Data structure optimization
+/// `by_server_koid` (`HashMap`) and `order_queue` (`VecDeque`) work together to bound memory and
+/// optimize lookups, evictions, and removals:
+/// - **Lookup ($O(1)$)**: `by_server_koid` maps `server_token_koid -> PreallocatedLease` for
+///   $O(1)$ lookup and removal.
+/// - **Oldest eviction ($O(1)$)**: `order_queue` stores `(server_token_koid, lease_id)` in
+///   insertion order. When `order_queue` reaches [`MAX_PREALLOCATED_LEASES`], the oldest entry is
+///   evicted from the front via `order_queue.pop_front()` in $O(1)$ time and removed from
+///   `by_server_koid` in $O(1)$ time.
+/// - **Matched removal on `take` ($O(\log n)$ lookup, $O(n)$ worst-case removal)**: Because
+///   `max_lease_id` increases strictly monotonically, `order_queue` is naturally maintained in
+///   strictly ascending order of `lease_id`. When the predecessor's `server_token` arrives in
+///   [`Self::take`], its [`PreallocatedLease`] is removed from `by_server_koid` in $O(1)$ time,
+///   located in `order_queue` via `binary_search_by_key` in $O(\log n)$ time, and removed from
+///   `order_queue` in $O(n)$ time in the worst case (with $n \le 512$).
+#[derive(Default)]
+struct PreallocatedLeaseTracker {
+    /// Maps a predecessor lease's `server_token_koid` (`previous_client_token`'s `related_koid`)
+    /// to its [`PreallocatedLease`] (pre-allocated `lease_id` and `created_at` timestamp) for
+    /// $O(1)$ lookup and removal.
+    by_server_koid: HashMap<u64, PreallocatedLease>,
+    /// Maintains `(server_token_koid, lease_id)` pairs in insertion order (which is also strictly
+    /// ascending order of `lease_id`), enabling $O(1)$ eviction of the oldest entry via
+    /// `pop_front()`, $O(\log n)$ lookup via `binary_search_by_key` on `lease_id`, and $O(n)$
+    /// worst-case removal.
+    order_queue: VecDeque<(u64, u64)>,
+}
+
+impl PreallocatedLeaseTracker {
+    /// Returns an existing pre-allocated `lease_id` for `server_token_koid`, or allocates a new
+    /// sequential `lease_id` from `max_lease_id` and records it with the current boot timestamp.
+    ///
+    /// If the tracker is at [`MAX_PREALLOCATED_LEASES`] capacity, the oldest entry (lowest
+    /// `lease_id`) is evicted from the front of `order_queue` and removed from `by_server_koid` in
+    /// $O(1)$ time before inserting the new entry.
+    fn get_or_preallocate(&mut self, server_token_koid: u64, max_lease_id: &AtomicU64) -> u64 {
+        if let Some(existing) = self.by_server_koid.get(&server_token_koid) {
+            return existing.id;
+        }
+
+        let lease_id = max_lease_id.fetch_add(1, Ordering::Relaxed);
+        let created_at = fasync::BootInstant::now().into_zx();
+        if self.order_queue.len() >= MAX_PREALLOCATED_LEASES {
+            log::info!("pre-allocated lease overflow, some wake lease associations may be lost");
+            if let Some((oldest_koid, _oldest_id)) = self.order_queue.pop_front() {
+                self.by_server_koid.remove(&oldest_koid);
+            }
+        }
+
+        self.by_server_koid
+            .insert(server_token_koid, PreallocatedLease { id: lease_id, created_at });
+        self.order_queue.push_back((server_token_koid, lease_id));
+        lease_id
+    }
+
+    /// Claims and removes the [`PreallocatedLease`] for `server_token_koid`, if present.
+    ///
+    /// Removes the entry from `by_server_koid` in $O(1)$ time, uses binary search on the
+    /// monotonically ordered `lease_id`s in `order_queue` to locate the queue entry in $O(\log n)$
+    /// time, and removes it in $O(n)$ time in the worst case.
+    fn take(&mut self, server_token_koid: u64) -> Option<PreallocatedLease> {
+        let preallocated = self.by_server_koid.remove(&server_token_koid)?;
+        if let Ok(idx) = self.order_queue.binary_search_by_key(&preallocated.id, |&(_koid, id)| id)
+        {
+            self.order_queue.remove(idx);
+        }
+        Some(preallocated)
+    }
+}
+
 /// Helper struct for LeaseManager.
 struct ActiveWakeLease {
     name: String,
@@ -214,6 +372,7 @@ struct ActiveWakeLease {
     is_unmonitored: bool,
     client_token_koid: u64,
     server_token_koid: u64,
+    replaces_lease_id: Option<u64>,
     status: RefCell<LeaseStatus>,
     error: RefCell<Option<String>>,
     timer_task: RefCell<Option<fasync::Task<()>>>,
@@ -237,6 +396,9 @@ struct LeaseManager {
     /// The active wake leases, ordered by lease ID. Because lease IDs are assigned
     /// sequentially, this is also ordered by lease creation time.
     active_wake_leases: Rc<RefCell<BTreeMap<u64, Rc<ActiveWakeLease>>>>,
+    /// Pre-allocated lease IDs for predecessor leases whose server tokens have not yet been
+    /// processed by SAG.
+    preallocated_leases: Rc<RefCell<PreallocatedLeaseTracker>>,
     /// Logger for system-wide activity governor events.
     sag_event_logger: SagEventLogger,
     /// Proxy to the power topology to create power elements.
@@ -253,7 +415,7 @@ struct LeaseManager {
     /// Used to block suspension in CpuManager while a lease is in-flight but not yet satisfied.
     suspend_block_manager: Rc<SuspendBlockManager>,
     /// The maximum lease ID that has been assigned.
-    max_lease_id: AtomicU64,
+    max_lease_id: Rc<AtomicU64>,
     /// A shared receiver that is set when the system is about to suspend.
     before_suspend_notifier: Rc<RefCell<Option<futures::future::Shared<oneshot::Receiver<()>>>>>,
     /// Sender for crash reports.
@@ -282,6 +444,7 @@ impl LeaseManager {
     ) -> Self {
         let active_wake_leases = Rc::new(RefCell::new(BTreeMap::<u64, Rc<ActiveWakeLease>>::new()));
         let active_wake_leases_clone = active_wake_leases.clone();
+        let preallocated_leases = Rc::new(RefCell::new(PreallocatedLeaseTracker::default()));
 
         let long_lease_detector = long_lease_threshold.map(|threshold| {
             LongLeaseDetector::new(
@@ -319,6 +482,10 @@ impl LeaseManager {
                         lease.client_token_koid,
                     );
                     lease_node.record_uint(fobs::WAKE_LEASE_ITEM_ID, *lease_id);
+                    if let Some(replaces_id) = lease.replaces_lease_id {
+                        lease_node
+                            .record_uint(fobs::WAKE_LEASE_ITEM_REPLACES_LEASE_ID, replaces_id);
+                    }
                     lease_node.record_string(
                         fobs::WAKE_LEASE_ITEM_STATUS,
                         lease.status.borrow().as_str(),
@@ -339,17 +506,94 @@ impl LeaseManager {
         Self {
             _wake_leases_node: wake_leases_node,
             active_wake_leases,
+            preallocated_leases,
             sag_event_logger,
             topology,
             execution_state_lessor,
             execution_state_suspending_lease: Rc::new(Mutex::new(std::rc::Weak::new())),
             application_activity_assertive_dependency_token,
             suspend_block_manager: suspend_blocker,
-            max_lease_id: AtomicU64::new(0),
+            max_lease_id: Rc::new(AtomicU64::new(0)),
             before_suspend_notifier,
             report_sender,
             long_lease_detector,
             active_unmonitored_lease_count: Rc::new(Cell::new(0)),
+        }
+    }
+
+    // Determine the wake lease that belongs to `previous_client_token` or create a pre-allocated
+    // lease if the `previous_client_token` is valid, but doesn't exist.
+    fn get_or_create_previous_lease_id(
+        previous_client_token: &fsystem::LeaseToken,
+        active_wake_leases: &Rc<RefCell<BTreeMap<u64, Rc<ActiveWakeLease>>>>,
+        preallocated_leases: &Rc<RefCell<PreallocatedLeaseTracker>>,
+        max_lease_id: &Rc<AtomicU64>,
+    ) -> Option<u64> {
+        let prev_info = match previous_client_token.basic_info() {
+            Ok(info) => info,
+            Err(error) => {
+                log::warn!(error:?; "Failed to get basic_info for previous_client_token");
+                return None;
+            }
+        };
+        let prev_client_koid = prev_info.koid.raw_koid();
+        let prev_server_koid = prev_info.related_koid.raw_koid();
+
+        // This seems like it must not be a peered object.
+        if prev_server_koid == 0 {
+            return None;
+        }
+
+        // Check if active wake leases contains the koid of the client side of the
+        // previous client token.
+        let existing_id = active_wake_leases
+            .borrow()
+            .iter()
+            .find(|(_, lease)| lease.client_token_koid == prev_client_koid)
+            .map(|(id, _)| *id);
+
+        if let Some(id) = existing_id {
+            return Some(id);
+        }
+
+        // `existing_id` is None, so we've either previously gotten a request that had
+        // this same token as a predecessor (maybe clones were sent to two different,
+        // downstream clients) or we'll make a preallocated lease now.
+        Some(preallocated_leases.borrow_mut().get_or_preallocate(prev_server_koid, max_lease_id))
+    }
+
+    pub(crate) fn remove_preallocated_lease(
+        &self,
+        server_token_koid: u64,
+        name: &str,
+        previous_client_token: Option<fsystem::LeaseToken>,
+    ) {
+        // Bind `preallocated` before the `if let` statement so the temporary `RefMut` borrow of
+        // `self.preallocated_leases` is dropped before `Self::get_or_create_previous_lease_id` runs
+        // and potentially borrows `self.preallocated_leases` mutably again.
+        let preallocated = self.preallocated_leases.borrow_mut().take(server_token_koid);
+        if let Some(preallocated) = preallocated {
+            let dropped_at = fasync::BootInstant::now().into_zx();
+            let replaces_lease_id = previous_client_token.as_ref().and_then(|token| {
+                Self::get_or_create_previous_lease_id(
+                    token,
+                    &self.active_wake_leases,
+                    &self.preallocated_leases,
+                    &self.max_lease_id,
+                )
+            });
+            self.sag_event_logger.log_with_time(
+                SagEvent::WakeLeaseCreated {
+                    name: name.to_string(),
+                    id: preallocated.id,
+                    replaces_lease_id,
+                },
+                preallocated.created_at,
+            );
+            self.sag_event_logger.log_with_time(
+                SagEvent::WakeLeaseDropped { name: name.to_string(), id: preallocated.id },
+                dropped_at,
+            );
         }
     }
 
@@ -446,7 +690,11 @@ impl LeaseManager {
         log::debug!("Acquiring application activity lease for '{}'", name);
         let sag_event_logger = self.sag_event_logger.clone();
         let lease_id = self.max_lease_id.fetch_add(1, Ordering::Relaxed);
-        sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone(), id: lease_id });
+        sag_event_logger.log(SagEvent::WakeLeaseCreated {
+            name: name.clone(),
+            id: lease_id,
+            replaces_lease_id: None,
+        });
 
         self.topology
             .lease(fbroker::LeaseSchema {
@@ -508,6 +756,7 @@ impl LeaseManager {
             is_unmonitored: true,
             client_token_koid: related_koid,
             server_token_koid: token_info.koid.raw_koid(),
+            replaces_lease_id: None,
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None),
@@ -555,6 +804,7 @@ impl LeaseManager {
         name: String,
         server_token: fsystem::LeaseToken,
         is_unmonitored: bool,
+        previous_client_token: Option<fsystem::LeaseToken>,
     ) -> Result<()> {
         let suspend_blocker = match self.suspend_block_manager.try_get_blocker() {
             None => {
@@ -570,13 +820,13 @@ impl LeaseManager {
         let execution_state_suspending_lease = self.execution_state_suspending_lease.clone();
         let before_suspend_notifier = self.before_suspend_notifier.clone();
         let active_wake_leases = self.active_wake_leases.clone();
+        let preallocated_leases = self.preallocated_leases.clone();
+        let max_lease_id = self.max_lease_id.clone();
         let execution_state_lessor = self.execution_state_lessor.clone();
         let long_lease_detector = self.long_lease_detector.clone();
 
         log::debug!("Acquiring wake lease for '{}'", name);
         let sag_event_logger = self.sag_event_logger.clone();
-        let lease_id = self.max_lease_id.fetch_add(1, Ordering::Relaxed);
-        sag_event_logger.log(SagEvent::WakeLeaseCreated { name: name.clone(), id: lease_id });
 
         let active_unmonitored_lease_count = self.active_unmonitored_lease_count.clone();
 
@@ -588,8 +838,33 @@ impl LeaseManager {
 
         fasync::Task::local(async move {
             let token_info = server_token.basic_info().expect("zx_object_get_info failed");
+            let server_koid = token_info.koid.raw_koid();
             let related_koid = token_info.related_koid.raw_koid();
             let created_at = fasync::BootInstant::now().into_zx();
+            // Check if the server_token previously arrived as a predecessor of another wake lease,
+            // otherwise allocate a new lease id.
+            let lease_id = preallocated_leases
+                .borrow_mut()
+                .take(server_koid)
+                .map(|preallocated| preallocated.id)
+                .unwrap_or_else(|| max_lease_id.fetch_add(1, Ordering::Relaxed));
+
+            // If there is a previous client token, we need to find the predecessor wake lease, if
+            // it exists.
+            let replaces_lease_id = previous_client_token.as_ref().and_then(|token| {
+                Self::get_or_create_previous_lease_id(
+                    token,
+                    &active_wake_leases,
+                    &preallocated_leases,
+                    &max_lease_id,
+                )
+            });
+
+            sag_event_logger.log(SagEvent::WakeLeaseCreated {
+                name: name.clone(),
+                id: lease_id,
+                replaces_lease_id,
+            });
 
             // Permitted unmonitored wake leases should not have their timers started.
             let timer_task = if !is_unmonitored && active_unmonitored_lease_count.get() == 0 {
@@ -610,7 +885,8 @@ impl LeaseManager {
                 lease_type: fobs::WAKE_LEASE_ITEM_TYPE_WAKE,
                 is_unmonitored,
                 client_token_koid: related_koid,
-                server_token_koid: token_info.koid.raw_koid(),
+                server_token_koid: server_koid,
+                replaces_lease_id,
                 status: RefCell::new(LeaseStatus::AwaitingSatisfaction),
                 error: RefCell::new(None),
                 timer_task: RefCell::new(timer_task),
@@ -619,6 +895,12 @@ impl LeaseManager {
             });
 
             active_wake_leases.borrow_mut().insert(lease_id, active_lease.clone());
+
+            // Drop `previous_client_token` now that the new wake lease is registered in
+            // `active_wake_leases`. It must be dropped explicitly here rather than at the end of
+            // the async block because this task awaits `server_token` closure for the entire
+            // lifetime of the new lease.
+            drop(previous_client_token);
 
             // If a suspend transition is currently in progress, race the wake lease token's
             // close signal with the BeforeSuspend callbacks. If the wake lease token is dropped
@@ -631,8 +913,8 @@ impl LeaseManager {
                 let dup_token = server_token
                     .duplicate_handle(zx::Rights::SAME_RIGHTS)
                     .expect("duplicate handle failed");
-                let token_closed = fasync::OnSignals::new(
-                    dup_token, zx::Signals::EVENTPAIR_PEER_CLOSED).fuse();
+                let token_closed =
+                    fasync::OnSignals::new(dup_token, zx::Signals::EVENTPAIR_PEER_CLOSED).fuse();
                 let before_suspend_done = rx.fuse();
 
                 futures::pin_mut!(token_closed);
@@ -648,8 +930,10 @@ impl LeaseManager {
                 if dropped_before_complete {
                     log::debug!(
                         "Wake lease '{}' dropped before BeforeSuspend completed, skipping power broker lease request",
-                        name);
-                    sag_event_logger.log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
+                        name
+                    );
+                    sag_event_logger
+                        .log(SagEvent::WakeLeaseDropped { name: name.clone(), id: lease_id });
                     Self::record_duration(lease_id, &active_wake_leases);
                     active_wake_leases.borrow_mut().remove(&lease_id);
                     Self::handle_unmonitored_lease_dropped(
@@ -745,7 +1029,7 @@ impl LeaseManager {
         is_unmonitored: bool,
     ) -> Result<fsystem::LeaseToken> {
         let (server_token, client_token) = fsystem::LeaseToken::create();
-        self.create_wake_lease_using_token(name, server_token, is_unmonitored).await?;
+        self.create_wake_lease_using_token(name, server_token, is_unmonitored, None).await?;
         Ok(client_token)
     }
 
@@ -1489,6 +1773,9 @@ impl SystemActivityGovernor {
                 }) => {
                     self.handle_acquire_wake_lease_with_token(responder, name, server_token).await;
                 }
+                Ok(fsystem::ActivityGovernorRequest::AcquireWakeLease2 { responder, payload }) => {
+                    self.handle_acquire_wake_lease2(responder, payload).await;
+                }
                 Ok(fsystem::ActivityGovernorRequest::AcquireUnmonitoredWakeLease {
                     responder,
                     name,
@@ -1682,6 +1969,12 @@ impl SystemActivityGovernor {
             .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
         {
             zx::WaitResult::Ok(_) => {
+                if let Ok(info) = server_token.basic_info() {
+                    // Handles the case where an `AcquireWakeLease2` request referencing this
+                    // lease as its predecessor was processed before this request was received,
+                    // and the current requester has already dropped its side of the lease.
+                    self.lease_manager.remove_preallocated_lease(info.koid.raw_koid(), &name, None);
+                }
                 log::debug!("Token already closed for '{}', skipping wake lease creation", name);
                 Ok(())
             }
@@ -1691,7 +1984,7 @@ impl SystemActivityGovernor {
                     Err(fsystem::AcquireWakeLeaseError::InvalidName)
                 } else {
                     self.lease_manager
-                        .create_wake_lease_using_token(name, server_token, false)
+                        .create_wake_lease_using_token(name, server_token, false, None)
                         .await
                         .or_else(|error| {
                             log::warn!(
@@ -1709,6 +2002,61 @@ impl SystemActivityGovernor {
             log::warn!(
                 error:?;
                 "Encountered error while responding to AcquireWakeLease request"
+            );
+        }
+    }
+
+    async fn handle_acquire_wake_lease2(
+        &self,
+        responder: fsystem::ActivityGovernorAcquireWakeLease2Responder,
+        payload: fsystem::ActivityGovernorAcquireWakeLease2Request,
+    ) {
+        let res = match validate_acquire_wake_lease2_request(payload) {
+            Ok((name, server_token, previous_client_token, is_unmonitored, server_koid)) => {
+                match server_token.wait_one(
+                    zx::Signals::EVENTPAIR_PEER_CLOSED,
+                    zx::MonotonicInstant::INFINITE_PAST,
+                ) {
+                    // Indicates the client already dropped the wake lease. Remove from
+                    // pre-allocated leases, if present.
+                    zx::WaitResult::Ok(_) => {
+                        self.lease_manager.remove_preallocated_lease(
+                            server_koid.raw_koid(),
+                            &name,
+                            previous_client_token,
+                        );
+                        log::debug!(
+                            "Token already closed for '{}', skipping wake lease creation",
+                            name
+                        );
+                        Ok(())
+                    }
+                    // Client still has the lease, create a wake lease.
+                    _ => self
+                        .lease_manager
+                        .create_wake_lease_using_token(
+                            name,
+                            server_token,
+                            is_unmonitored,
+                            previous_client_token,
+                        )
+                        .await
+                        .or_else(|error| {
+                            log::warn!(
+                                error:?;
+                                "Encountered error while registering wake lease"
+                            );
+                            Err(fsystem::AcquireWakeLeaseError::Internal)
+                        }),
+                }
+            }
+            Err(e) => Err(e),
+        };
+
+        if let Err(error) = responder.send(res) {
+            log::warn!(
+                error:?;
+                "Encountered error while responding to AcquireWakeLease2 request"
             );
         }
     }
@@ -1846,6 +2194,13 @@ impl SystemActivityGovernor {
                 .wait_one(zx::Signals::EVENTPAIR_PEER_CLOSED, zx::MonotonicInstant::INFINITE_PAST)
             {
                 zx::WaitResult::Ok(_) => {
+                    if let Ok(info) = lease.server_token.basic_info() {
+                        self.lease_manager.remove_preallocated_lease(
+                            info.koid.raw_koid(),
+                            &lease.name,
+                            lease.previous_client_token,
+                        );
+                    }
                     log::debug!(
                         "Token already closed for accumulated lease '{}', skipping",
                         lease.name
@@ -1861,6 +2216,7 @@ impl SystemActivityGovernor {
                     lease.name.clone(),
                     lease.server_token,
                     lease.is_unmonitored,
+                    lease.previous_client_token,
                 )
                 .await;
             if let Err(ref error) = res {
@@ -1878,7 +2234,7 @@ impl SystemActivityGovernor {
 
             let res = self
                 .lease_manager
-                .create_wake_lease_using_token(name.clone(), server_token, false)
+                .create_wake_lease_using_token(name.clone(), server_token, false, None)
                 .await
                 .map(|()| {
                     let id = self.suspend_blocker_id_generator.next_id();
@@ -2363,6 +2719,7 @@ mod tests {
             is_unmonitored: false,
             client_token_koid: 123,
             server_token_koid: 456,
+            replaces_lease_id: None,
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None),
@@ -2416,6 +2773,7 @@ mod tests {
                 is_unmonitored: false,
                 client_token_koid: 100 + lease_id,
                 server_token_koid: 200 + lease_id,
+                replaces_lease_id: None,
                 status: RefCell::new(LeaseStatus::Satisfied),
                 error: RefCell::new(None),
                 timer_task: RefCell::new(None),
@@ -2442,6 +2800,7 @@ mod tests {
             is_unmonitored: false,
             client_token_koid: 100 + lease_id,
             server_token_koid: 200 + lease_id,
+            replaces_lease_id: None,
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None),
@@ -2500,6 +2859,7 @@ mod tests {
             is_unmonitored: false,
             client_token_koid: 123,
             server_token_koid: 456,
+            replaces_lease_id: None,
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None),
@@ -2604,6 +2964,7 @@ mod tests {
             is_unmonitored: false,
             client_token_koid: 123,
             server_token_koid: 456,
+            replaces_lease_id: None,
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None), // No timer!
@@ -2694,6 +3055,7 @@ mod tests {
             is_unmonitored: false,
             client_token_koid: 123,
             server_token_koid: 456,
+            replaces_lease_id: None,
             status: RefCell::new(LeaseStatus::Satisfied),
             error: RefCell::new(None),
             timer_task: RefCell::new(None),
@@ -2768,6 +3130,7 @@ mod tests {
                 is_unmonitored: false,
                 client_token_koid: 100 + i as u64,
                 server_token_koid: 200 + i as u64,
+                replaces_lease_id: None,
                 status: RefCell::new(LeaseStatus::Satisfied),
                 error: RefCell::new(None),
                 timer_task: RefCell::new(None),
@@ -2884,6 +3247,7 @@ mod tests {
                 is_unmonitored: false,
                 client_token_koid: 100 + i as u64,
                 server_token_koid: 200 + i as u64,
+                replaces_lease_id: None,
                 status: RefCell::new(LeaseStatus::Satisfied),
                 error: RefCell::new(None),
                 timer_task: RefCell::new(None),
@@ -2938,5 +3302,175 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[fuchsia::test]
+    fn test_preallocated_lease_tracker_get_and_take() {
+        let executor = fasync::TestExecutor::new_with_fake_time();
+        let mut tracker = PreallocatedLeaseTracker::default();
+        let max_lease_id = AtomicU64::new(10);
+
+        // First call allocates a new ID (10) at fake time 1_000 ns
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(1_000));
+        assert_eq!(tracker.get_or_preallocate(1001, &max_lease_id), 10);
+        assert_eq!(max_lease_id.load(Ordering::Relaxed), 11);
+
+        // Repeat call for same server_koid returns existing ID (10) without incrementing max_lease_id
+        // or overwriting created_at
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(2_000));
+        assert_eq!(tracker.get_or_preallocate(1001, &max_lease_id), 10);
+        assert_eq!(max_lease_id.load(Ordering::Relaxed), 11);
+
+        // Allocate two more entries (11 and 12) at distinct fake timestamps
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(3_000));
+        assert_eq!(tracker.get_or_preallocate(1002, &max_lease_id), 11);
+        executor.set_fake_time(fasync::MonotonicInstant::from_nanos(4_000));
+        assert_eq!(tracker.get_or_preallocate(1003, &max_lease_id), 12);
+        assert_eq!(tracker.order_queue.len(), 3);
+
+        // Take middle entry (1002 -> 11) via binary search removal
+        assert_eq!(
+            tracker.take(1002),
+            Some(PreallocatedLease { id: 11, created_at: zx::BootInstant::from_nanos(3_000) })
+        );
+        assert_eq!(tracker.take(1002), None);
+        assert_eq!(tracker.order_queue.len(), 2);
+
+        // Remaining entries can still be taken in any order with their original created_at
+        assert_eq!(
+            tracker.take(1003),
+            Some(PreallocatedLease { id: 12, created_at: zx::BootInstant::from_nanos(4_000) })
+        );
+        assert_eq!(
+            tracker.take(1001),
+            Some(PreallocatedLease { id: 10, created_at: zx::BootInstant::from_nanos(1_000) })
+        );
+        assert!(tracker.order_queue.is_empty());
+        assert!(tracker.by_server_koid.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_preallocated_lease_tracker_fifo_eviction() {
+        let _executor = fasync::TestExecutor::new_with_fake_time();
+        let mut tracker = PreallocatedLeaseTracker::default();
+        let max_lease_id = AtomicU64::new(0);
+
+        // Fill tracker to capacity (MAX_PREALLOCATED_LEASES = 512)
+        for i in 0..(MAX_PREALLOCATED_LEASES as u64) {
+            let koid = 5000 + i;
+            assert_eq!(tracker.get_or_preallocate(koid, &max_lease_id), i);
+        }
+        assert_eq!(tracker.order_queue.len(), MAX_PREALLOCATED_LEASES);
+        assert_eq!(tracker.by_server_koid.len(), MAX_PREALLOCATED_LEASES);
+
+        // Adding a 513th entry should evict the oldest entry (koid 5000, id 0)
+        let new_koid = 5000 + (MAX_PREALLOCATED_LEASES as u64);
+        assert_eq!(
+            tracker.get_or_preallocate(new_koid, &max_lease_id),
+            MAX_PREALLOCATED_LEASES as u64
+        );
+        assert_eq!(tracker.order_queue.len(), MAX_PREALLOCATED_LEASES);
+        assert_eq!(tracker.by_server_koid.len(), MAX_PREALLOCATED_LEASES);
+
+        // Oldest entry (koid 5000) should have been evicted
+        assert_eq!(tracker.take(5000), None);
+
+        // Second oldest entry (koid 5001, id 1) and newest entry should still be present
+        assert_eq!(tracker.take(5001).map(|preallocated| preallocated.id), Some(1));
+        assert_eq!(
+            tracker.take(new_koid).map(|preallocated| preallocated.id),
+            Some(MAX_PREALLOCATED_LEASES as u64)
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_get_or_create_previous_lease_id() {
+        let _executor = fasync::TestExecutor::new_with_fake_time();
+        let active_wake_leases = Rc::new(RefCell::new(BTreeMap::<u64, Rc<ActiveWakeLease>>::new()));
+        let preallocated_leases = Rc::new(RefCell::new(PreallocatedLeaseTracker::default()));
+        let max_lease_id = Rc::new(AtomicU64::new(10));
+
+        // (a) Matching active lease in active_wake_leases returns its ID without preallocating.
+        let (server_active, client_active) = fsystem::LeaseToken::create();
+        let active_info = client_active.basic_info().unwrap();
+        active_wake_leases.borrow_mut().insert(
+            7,
+            Rc::new(ActiveWakeLease {
+                name: "active_lease".to_string(),
+                lease_type: "wake",
+                is_unmonitored: false,
+                client_token_koid: active_info.koid.raw_koid(),
+                server_token_koid: active_info.related_koid.raw_koid(),
+                replaces_lease_id: None,
+                status: RefCell::new(LeaseStatus::Satisfied),
+                error: RefCell::new(None),
+                timer_task: RefCell::new(None),
+                created_at: zx::BootInstant::from_nanos(500),
+                history_node: RefCell::new(None),
+            }),
+        );
+        assert_eq!(
+            LeaseManager::get_or_create_previous_lease_id(
+                &client_active,
+                &active_wake_leases,
+                &preallocated_leases,
+                &max_lease_id,
+            ),
+            Some(7)
+        );
+        assert!(preallocated_leases.borrow().by_server_koid.is_empty());
+        drop(server_active);
+
+        // (b) Non-active token with live server peer preallocates a lease ID.
+        let (server_pending, client_pending) = fsystem::LeaseToken::create();
+        let pending_server_koid = server_pending.koid().unwrap().raw_koid();
+        assert_eq!(
+            LeaseManager::get_or_create_previous_lease_id(
+                &client_pending,
+                &active_wake_leases,
+                &preallocated_leases,
+                &max_lease_id,
+            ),
+            Some(10)
+        );
+        assert_eq!(max_lease_id.load(Ordering::Relaxed), 11);
+        assert_eq!(
+            preallocated_leases
+                .borrow_mut()
+                .take(pending_server_koid)
+                .map(|preallocated| preallocated.id),
+            Some(10)
+        );
+        drop(server_pending);
+
+        // (c) Non-active token with related_koid == 0 (e.g. non-peered object) returns None.
+        let non_peered_token =
+            fsystem::LeaseToken::from(zx::NullableHandle::from(zx::Event::create()));
+        assert_eq!(non_peered_token.basic_info().unwrap().related_koid.raw_koid(), 0);
+        assert_eq!(
+            LeaseManager::get_or_create_previous_lease_id(
+                &non_peered_token,
+                &active_wake_leases,
+                &preallocated_leases,
+                &max_lease_id,
+            ),
+            None
+        );
+        assert_eq!(max_lease_id.load(Ordering::Relaxed), 11);
+        assert!(preallocated_leases.borrow().by_server_koid.is_empty());
+
+        // (d) Invalid handle where basic_info() fails logs a warning and returns None.
+        let invalid_token = fsystem::LeaseToken::from(zx::NullableHandle::invalid());
+        assert_eq!(
+            LeaseManager::get_or_create_previous_lease_id(
+                &invalid_token,
+                &active_wake_leases,
+                &preallocated_leases,
+                &max_lease_id,
+            ),
+            None
+        );
+        assert_eq!(max_lease_id.load(Ordering::Relaxed), 11);
+        assert!(preallocated_leases.borrow().by_server_koid.is_empty());
     }
 }
