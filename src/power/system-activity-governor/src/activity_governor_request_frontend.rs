@@ -6,7 +6,6 @@ use crate::cpu_manager::CpuManager;
 use crate::events::SagEventLogger;
 use crate::system_activity_governor::{
     StoredSuspendBlocker, StoredWakeLease, SystemActivityGovernor,
-    validate_acquire_wake_lease2_request,
 };
 use anyhow::Result;
 use async_lock::OnceCell;
@@ -138,7 +137,6 @@ impl ActivityGovernorRequestFrontend {
                     name,
                     server_token,
                     is_unmonitored: false,
-                    previous_client_token: None,
                 });
             }
             Ok(fsystem::ActivityGovernorRequest::AcquireWakeLeaseWithToken {
@@ -151,24 +149,7 @@ impl ActivityGovernorRequestFrontend {
                     name,
                     server_token,
                     is_unmonitored: false,
-                    previous_client_token: None,
                 });
-            }
-            Ok(fsystem::ActivityGovernorRequest::AcquireWakeLease2 { responder, payload }) => {
-                match validate_acquire_wake_lease2_request(payload) {
-                    Ok((name, server_token, previous_client_token, is_unmonitored, _)) => {
-                        let _ = responder.send(Ok(()));
-                        self.stored_wake_leases.borrow_mut().push(StoredWakeLease {
-                            name,
-                            server_token,
-                            is_unmonitored,
-                            previous_client_token,
-                        });
-                    }
-                    Err(e) => {
-                        let _ = responder.send(Err(e));
-                    }
-                }
             }
             Ok(fsystem::ActivityGovernorRequest::AcquireUnmonitoredWakeLease {
                 responder,
@@ -180,7 +161,6 @@ impl ActivityGovernorRequestFrontend {
                     name,
                     server_token,
                     is_unmonitored: true,
-                    previous_client_token: None,
                 });
             }
             Ok(fsystem::ActivityGovernorRequest::RegisterSuspendBlocker { responder, payload }) => {
@@ -566,107 +546,5 @@ mod tests {
         assert!(frontend.stored_suspend_blockers.borrow().is_empty());
         assert!(frontend.stored_application_activity_leases.borrow().is_empty());
         assert!(frontend.add_application_activity_dependency_queue.borrow().is_empty());
-    }
-
-    #[fuchsia::test]
-    async fn test_acquire_wake_lease2_accumulation_and_validation() {
-        let sag_cell = Rc::new(OnceCell::new());
-        let frontend = Rc::new(ActivityGovernorRequestFrontend::new(sag_cell));
-
-        let (proxy, stream) = create_proxy_and_stream::<fsystem::ActivityGovernorMarker>();
-
-        let frontend_clone = frontend.clone();
-        let _task = fasync::Task::local(async move {
-            frontend_clone.handle_activity_governor_stream(stream).await;
-        });
-
-        // 1. Missing name -> InvalidName
-        let (server_token, _client_token) = fsystem::LeaseToken::create();
-        let res = proxy
-            .acquire_wake_lease2(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                name: None,
-                server_token: Some(server_token),
-                ..Default::default()
-            })
-            .await
-            .expect("FIDL call should succeed");
-        assert_eq!(res, Err(fsystem::AcquireWakeLeaseError::InvalidName));
-        assert!(frontend.stored_wake_leases.borrow().is_empty());
-
-        // 2. Empty name -> InvalidName
-        let (server_token, _client_token) = fsystem::LeaseToken::create();
-        let res = proxy
-            .acquire_wake_lease2(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                name: Some("".to_string()),
-                server_token: Some(server_token),
-                ..Default::default()
-            })
-            .await
-            .expect("FIDL call should succeed");
-        assert_eq!(res, Err(fsystem::AcquireWakeLeaseError::InvalidName));
-        assert!(frontend.stored_wake_leases.borrow().is_empty());
-
-        // 3. Missing server_token -> ServerTokenRequired
-        let res = proxy
-            .acquire_wake_lease2(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                name: Some("test_lease".to_string()),
-                server_token: None,
-                ..Default::default()
-            })
-            .await
-            .expect("FIDL call should succeed");
-        assert_eq!(res, Err(fsystem::AcquireWakeLeaseError::ServerTokenRequired));
-        assert!(frontend.stored_wake_leases.borrow().is_empty());
-
-        // 4. Self-exchange guard (previous_client_token is client peer of server_token) -> InvalidPreviousToken
-        let (server_token, client_token) = fsystem::LeaseToken::create();
-        let res = proxy
-            .acquire_wake_lease2(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                name: Some("test_lease".to_string()),
-                server_token: Some(server_token),
-                previous_client_token: Some(client_token),
-                ..Default::default()
-            })
-            .await
-            .expect("FIDL call should succeed");
-        assert_eq!(res, Err(fsystem::AcquireWakeLeaseError::InvalidPreviousToken));
-        assert!(frontend.stored_wake_leases.borrow().is_empty());
-
-        // 5. Self-exchange guard (previous_client_token is duplicate of server_token) -> InvalidPreviousToken
-        let (server_token, _client_token) = fsystem::LeaseToken::create();
-        let dup_server_token =
-            server_token.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle");
-        let res = proxy
-            .acquire_wake_lease2(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                name: Some("test_lease".to_string()),
-                server_token: Some(server_token),
-                previous_client_token: Some(dup_server_token),
-                ..Default::default()
-            })
-            .await
-            .expect("FIDL call should succeed");
-        assert_eq!(res, Err(fsystem::AcquireWakeLeaseError::InvalidPreviousToken));
-        assert!(frontend.stored_wake_leases.borrow().is_empty());
-
-        // 6. Valid AcquireWakeLease2 request with previous_client_token and unmonitored=true
-        let (_prev_server_token, prev_client_token) = fsystem::LeaseToken::create();
-        let (server_token, _client_token) = fsystem::LeaseToken::create();
-        let res = proxy
-            .acquire_wake_lease2(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                name: Some("valid_exchange_lease".to_string()),
-                server_token: Some(server_token),
-                previous_client_token: Some(prev_client_token),
-                unmonitored: Some(true),
-                ..Default::default()
-            })
-            .await
-            .expect("FIDL call should succeed");
-        assert_eq!(res, Ok(()));
-
-        let stored = frontend.stored_wake_leases.borrow();
-        assert_eq!(stored.len(), 1);
-        assert_eq!(stored[0].name, "valid_exchange_lease");
-        assert!(stored[0].is_unmonitored);
-        assert!(stored[0].previous_client_token.is_some());
     }
 }

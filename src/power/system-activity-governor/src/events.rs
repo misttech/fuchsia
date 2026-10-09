@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use strum_macros::{Display, EnumIter};
 
-const SUSPEND_EVENT_BUFFER_SIZE_BYTES: usize = (2.625f32 * DEFAULT_VMO_SIZE_BYTES as f32) as usize; // 672K buffer
+const SUSPEND_EVENT_BUFFER_SIZE_BYTES: usize = (2.5f32 * DEFAULT_VMO_SIZE_BYTES as f32) as usize; // 640K buffer
 
 static INSPECT_FIELD_EVENT_CAPACITY: &str = "event_capacity";
 static INSPECT_FIELD_HISTORY_DURATION: &str = "history_duration_seconds";
@@ -44,7 +44,7 @@ pub enum SagEvent {
     /// A suspend lock has been dropped, so a suspend attempt has completed.
     SuspendLockDropped,
     /// A wake lease was created.
-    WakeLeaseCreated { name: String, id: u64, replaces_lease_id: Option<u64> },
+    WakeLeaseCreated { name: String, id: u64 },
     /// The underlying power broker lease for a wake lease failed to be satisfied.
     WakeLeaseSatisfactionFailed { name: String, id: u64, error: String },
     /// The underlying power broker lease for a wake lease was satisfied.
@@ -497,16 +497,10 @@ impl SagEventLogger {
                                     SagEvent::SuspendLockDropped => {
                                         root.record_int(fobs::SUSPEND_LOCK_DROPPED_AT, time);
                                     }
-                                    SagEvent::WakeLeaseCreated { name, id, replaces_lease_id } => {
+                                    SagEvent::WakeLeaseCreated { name, id } => {
                                         root.record_int(fobs::WAKE_LEASE_CREATED_AT, time);
                                         root.record_uint(fobs::WAKE_LEASE_ITEM_ID, id);
                                         root.record_string(fobs::WAKE_LEASE_ITEM_NAME, name);
-                                        if let Some(replaces_id) = replaces_lease_id {
-                                            root.record_uint(
-                                                fobs::WAKE_LEASE_ITEM_REPLACES_LEASE_ID,
-                                                replaces_id,
-                                            );
-                                        }
                                     }
                                     SagEvent::WakeLeaseSatisfactionFailed { name, id, error } => {
                                         root.record_int(
@@ -661,11 +655,7 @@ impl SagEventLogger {
     }
 
     pub fn log(&self, event: SagEvent) {
-        self.log_with_time(event, zx::BootInstant::get());
-    }
-
-    pub fn log_with_time(&self, event: SagEvent, time: zx::BootInstant) {
-        let time = time.into_nanos();
+        let time = zx::BootInstant::get().into_nanos();
         // Log event to internal ring buffer
         {
             let mut buffer = self.event_buffer.lock();
@@ -691,7 +681,6 @@ impl SagEventLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use test_util::assert_near;
 
     const FLOAT_TOLERANCE: f64 = 1e-8;
@@ -1145,38 +1134,5 @@ mod tests {
             duration_ns: SAMPLING_THRESHOLD_NS,
             active_fraction: 1.0,
         );
-    }
-
-    #[fuchsia::test]
-    async fn test_wake_lease_created_inspect_replaces_lease_id() {
-        let inspector = fuchsia_inspect::Inspector::default();
-        let logger = SagEventLogger::new(inspector.root(), 100);
-
-        logger.log(SagEvent::WakeLeaseCreated {
-            name: "lease_1".to_string(),
-            id: 1,
-            replaces_lease_id: None,
-        });
-        logger.log(SagEvent::WakeLeaseCreated {
-            name: "lease_2".to_string(),
-            id: 2,
-            replaces_lease_id: Some(42),
-        });
-
-        assert_data_tree!(inspector, root: contains {
-            suspend_events: contains {
-                "0": {
-                    wake_lease_created_at_ns: AnyProperty,
-                    wake_lease_id: 1u64,
-                    wake_lease_name: "lease_1",
-                },
-                "1": {
-                    wake_lease_created_at_ns: AnyProperty,
-                    wake_lease_id: 2u64,
-                    wake_lease_name: "lease_2",
-                    replaces_lease_id: 42u64,
-                },
-            },
-        });
     }
 }

@@ -8,9 +8,9 @@
 //! tests without breaking when new methods are added to the FIDL protocol:
 //!
 //! 1. **Ready-to-use wake lease fake ([`FakeActivityGovernor`] / [`FakeActivityGovernorServer`]):**
-//!    Handles `AcquireWakeLease`, `AcquireUnmonitoredWakeLease`, `AcquireWakeLeaseWithToken`, and
-//!    `AcquireWakeLease2` with a configurable [`FakeWakeLeaseBehavior`] (`Grant`, `Error`, `Close`,
-//!    or `CloseWithEpitaph`), tracking the call count and forwarding granted `server_token` handles
+//!    Handles `AcquireWakeLease`, `AcquireUnmonitoredWakeLease`, and `AcquireWakeLeaseWithToken`
+//!    with a configurable [`FakeWakeLeaseBehavior`] (`Grant`, `Error`, `Close`, or
+//!    `CloseWithEpitaph`), tracking the call count and forwarding granted `server_token` handles
 //!    over a channel.
 //!
 //!    ```ignore
@@ -94,16 +94,6 @@ pub trait ActivityGovernorTestServerHandler<
         }
     }
 
-    fn acquire_wake_lease2(
-        &mut self,
-        _request: fidl_next::Request<fsystem::activity_governor::AcquireWakeLease2, T>,
-        _responder: fidl_next::Responder<fsystem::activity_governor::AcquireWakeLease2, T>,
-    ) -> impl Future<Output = ()> + Send {
-        async move {
-            self.not_implemented("acquire_wake_lease2");
-        }
-    }
-
     fn take_application_activity_lease(
         &mut self,
         _request: fidl_next::Request<fsystem::activity_governor::TakeApplicationActivityLease, T>,
@@ -173,14 +163,6 @@ where
         self.0.acquire_wake_lease_with_token(request, responder)
     }
 
-    fn acquire_wake_lease2(
-        &mut self,
-        request: fidl_next::Request<fsystem::activity_governor::AcquireWakeLease2, T>,
-        responder: fidl_next::Responder<fsystem::activity_governor::AcquireWakeLease2, T>,
-    ) -> impl Future<Output = ()> + Send {
-        self.0.acquire_wake_lease2(request, responder)
-    }
-
     fn take_application_activity_lease(
         &mut self,
         request: fidl_next::Request<fsystem::activity_governor::TakeApplicationActivityLease, T>,
@@ -206,7 +188,7 @@ where
 }
 
 /// How [`FakeActivityGovernorServer`] responds to wake lease requests (`AcquireWakeLease`,
-/// `AcquireUnmonitoredWakeLease`, `AcquireWakeLeaseWithToken`, and `AcquireWakeLease2`).
+/// `AcquireUnmonitoredWakeLease`, and `AcquireWakeLeaseWithToken`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FakeWakeLeaseBehavior {
     /// Grant the lease and forward the `server_token` to the test (if a sender is configured).
@@ -226,9 +208,9 @@ pub enum FakeWakeLeaseBehavior {
 
 /// Fake implementation of `fuchsia.power.system/ActivityGovernor`.
 ///
-/// Serves wake lease acquisition methods (`AcquireWakeLease`, `AcquireUnmonitoredWakeLease`,
-/// `AcquireWakeLeaseWithToken`, and `AcquireWakeLease2`) according to [`FakeWakeLeaseBehavior`];
-/// every other method panics with `unimplemented!()`.
+/// Serves wake lease acquisition methods (`AcquireWakeLease`, `AcquireUnmonitoredWakeLease`, and
+/// `AcquireWakeLeaseWithToken`) according to [`FakeWakeLeaseBehavior`]; every other method panics
+/// with `unimplemented!()`.
 pub struct FakeActivityGovernorServer {
     behavior: FakeWakeLeaseBehavior,
     call_count: Arc<AtomicUsize>,
@@ -313,33 +295,6 @@ impl FakeActivityGovernorServer {
             return Err(fsystem::AcquireWakeLeaseError::InvalidName);
         }
         self.record_server_token(server_token);
-        Ok(())
-    }
-
-    fn grant_wake_lease2(
-        &self,
-        payload: fsystem::ActivityGovernorAcquireWakeLease2Request,
-    ) -> Result<(), fsystem::AcquireWakeLeaseError> {
-        let name = payload.name.as_deref().unwrap_or("");
-        if name.is_empty() {
-            return Err(fsystem::AcquireWakeLeaseError::InvalidName);
-        }
-        let server_token =
-            payload.server_token.ok_or(fsystem::AcquireWakeLeaseError::ServerTokenRequired)?;
-        let server_info =
-            server_token.basic_info().map_err(|_| fsystem::AcquireWakeLeaseError::Internal)?;
-        if let Some(ref prev_token) = payload.previous_client_token {
-            let prev_info = prev_token
-                .basic_info()
-                .map_err(|_| fsystem::AcquireWakeLeaseError::InvalidPreviousToken)?;
-            if prev_info.koid == server_info.koid || prev_info.related_koid == server_info.koid {
-                return Err(fsystem::AcquireWakeLeaseError::InvalidPreviousToken);
-            }
-        }
-        // Retain `previous_client_token` until `server_token` has been forwarded.
-        let previous_client_token = payload.previous_client_token;
-        self.grant_wake_lease_with_token(name, server_token)?;
-        drop(previous_client_token);
         Ok(())
     }
 
@@ -428,15 +383,6 @@ impl ActivityGovernorTestServerHandler for FakeActivityGovernorServer {
         })
         .await;
     }
-
-    async fn acquire_wake_lease2(
-        &mut self,
-        request: fidl_next::Request<fsystem::activity_governor::AcquireWakeLease2>,
-        responder: fidl_next::Responder<fsystem::activity_governor::AcquireWakeLease2>,
-    ) {
-        let payload = request.payload();
-        self.handle_wake_lease(responder, |this| this.grant_wake_lease2(payload)).await;
-    }
 }
 
 impl fsystem::ActivityGovernorServerHandler for FakeActivityGovernorServer {
@@ -469,14 +415,6 @@ impl fsystem::ActivityGovernorServerHandler for FakeActivityGovernorServer {
         responder: fidl_next::Responder<fsystem::activity_governor::AcquireWakeLeaseWithToken>,
     ) -> impl Future<Output = ()> + Send {
         ActivityGovernorTestServerHandler::acquire_wake_lease_with_token(self, request, responder)
-    }
-
-    fn acquire_wake_lease2(
-        &mut self,
-        request: fidl_next::Request<fsystem::activity_governor::AcquireWakeLease2>,
-        responder: fidl_next::Responder<fsystem::activity_governor::AcquireWakeLease2>,
-    ) -> impl Future<Output = ()> + Send {
-        ActivityGovernorTestServerHandler::acquire_wake_lease2(self, request, responder)
     }
 
     fn take_application_activity_lease(
@@ -582,22 +520,7 @@ mod tests {
         let server_token3 = sag.server_tokens.next().await.expect("Expected server_token 3");
         assert_eq!(sag.call_count.load(Ordering::SeqCst), 3);
 
-        // 4. AcquireWakeLease2 (exchanging lease1 -> lease4)
-        let (lease4, token4_server) = zx::EventPair::create();
-        client
-            .acquire_wake_lease2_with(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                name: Some("lease-4".to_string()),
-                server_token: Some(token4_server),
-                previous_client_token: Some(lease1),
-                unmonitored: Some(false),
-            })
-            .await
-            .expect("FIDL call should succeed")
-            .expect("AcquireWakeLease2 should succeed");
-        let server_token4 = sag.server_tokens.next().await.expect("Expected server_token 4");
-        assert_eq!(sag.call_count.load(Ordering::SeqCst), 4);
-
-        // lease1 was moved into AcquireWakeLease2 and dropped by the fake after registering lease4.
+        drop(lease1);
         fasync::OnSignals::new(&server_token1, zx::Signals::EVENTPAIR_PEER_CLOSED)
             .await
             .expect("server_token1 should observe PEER_CLOSED");
@@ -611,11 +534,6 @@ mod tests {
         fasync::OnSignals::new(&server_token3, zx::Signals::EVENTPAIR_PEER_CLOSED)
             .await
             .expect("server_token3 should observe PEER_CLOSED");
-
-        drop(lease4);
-        fasync::OnSignals::new(&server_token4, zx::Signals::EVENTPAIR_PEER_CLOSED)
-            .await
-            .expect("server_token4 should observe PEER_CLOSED");
     }
 
     #[fuchsia::test]
@@ -624,7 +542,7 @@ mod tests {
         let (client, _sag) =
             FakeActivityGovernor::spawn(&scope.to_handle(), FakeWakeLeaseBehavior::Grant);
 
-        // Empty name across all 4 methods -> InvalidName
+        // Empty name across all 3 methods -> InvalidName
         assert_eq!(
             client.acquire_wake_lease("").await.expect("FIDL call"),
             Err(fsystem::AcquireWakeLeaseError::InvalidName)
@@ -637,74 +555,6 @@ mod tests {
         assert_eq!(
             client.acquire_wake_lease_with_token("", server_tok).await.expect("FIDL call"),
             Err(fsystem::AcquireWakeLeaseError::InvalidName)
-        );
-        let (_client_tok, server_tok) = zx::EventPair::create();
-        assert_eq!(
-            client
-                .acquire_wake_lease2_with(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                    name: Some(String::new()),
-                    server_token: Some(server_tok),
-                    ..Default::default()
-                })
-                .await
-                .expect("FIDL call"),
-            Err(fsystem::AcquireWakeLeaseError::InvalidName)
-        );
-        let (_client_tok, server_tok) = zx::EventPair::create();
-        assert_eq!(
-            client
-                .acquire_wake_lease2_with(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                    name: None,
-                    server_token: Some(server_tok),
-                    ..Default::default()
-                })
-                .await
-                .expect("FIDL call"),
-            Err(fsystem::AcquireWakeLeaseError::InvalidName)
-        );
-
-        // Missing server_token on AcquireWakeLease2 -> ServerTokenRequired
-        assert_eq!(
-            client
-                .acquire_wake_lease2_with(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                    name: Some("valid-name".to_string()),
-                    server_token: None,
-                    ..Default::default()
-                })
-                .await
-                .expect("FIDL call"),
-            Err(fsystem::AcquireWakeLeaseError::ServerTokenRequired)
-        );
-
-        // Invalid previous_client_token (peer of server_token) -> InvalidPreviousToken
-        let (same_pair_client, same_pair_server) = zx::EventPair::create();
-        assert_eq!(
-            client
-                .acquire_wake_lease2_with(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                    name: Some("valid-name".to_string()),
-                    server_token: Some(same_pair_server),
-                    previous_client_token: Some(same_pair_client),
-                    ..Default::default()
-                })
-                .await
-                .expect("FIDL call"),
-            Err(fsystem::AcquireWakeLeaseError::InvalidPreviousToken)
-        );
-
-        // Invalid previous_client_token (duplicate of server_token) -> InvalidPreviousToken
-        let (_pair_client, pair_server) = zx::EventPair::create();
-        let server_dup = pair_server.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-        assert_eq!(
-            client
-                .acquire_wake_lease2_with(fsystem::ActivityGovernorAcquireWakeLease2Request {
-                    name: Some("valid-name".to_string()),
-                    server_token: Some(pair_server),
-                    previous_client_token: Some(server_dup),
-                    ..Default::default()
-                })
-                .await
-                .expect("FIDL call"),
-            Err(fsystem::AcquireWakeLeaseError::InvalidPreviousToken)
         );
     }
 

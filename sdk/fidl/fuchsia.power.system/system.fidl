@@ -61,20 +61,13 @@ alias LeaseToken = zx.Handle:<EVENTPAIR, zx.Rights.TRANSFER | zx.Rights.DUPLICAT
 @available(added=26)
 const MAX_ELEMENT_NAME_LEN uint8 = 64;
 
-/// Errors returned by `ActivityGovernor/AcquireWakeLease` and `AcquireWakeLease2`.
+/// Errors returned by `ActivityGovernor/AcquireWakeLease`.
 @available(added=26)
 type AcquireWakeLeaseError = flexible enum : uint32 {
     /// The service encountered an error while attempting to issue a wake lease.
     INTERNAL = 1;
     /// The name for the wake lease is empty or invalid.
     INVALID_NAME = 2;
-    /// The required `server_token` argument was not provided.
-    @available(added=HEAD)
-    SERVER_TOKEN_REQUIRED = 3;
-    /// The `previous_client_token` argument is invalid (for example, it refers
-    /// to the same token pair as `server_token`).
-    @available(added=HEAD)
-    INVALID_PREVIOUS_TOKEN = 4;
 };
 
 /// Execution state power levels
@@ -288,51 +281,6 @@ open protocol ActivityGovernor {
         /// suspension. The caller should give out handles to the client side
         /// of the `LeaseToken` which is peered to this `server_token`.
         server_token LeaseToken;
-    }) -> () error AcquireWakeLeaseError;
-
-    /// Creates a lease that blocks suspension of the hardware platform, optionally
-    /// associating it with a predecessor lease (`previous_client_token`).
-    ///
-    /// WARNING: Suspension can only be considered blocked after the client
-    /// receives the response to this call, unless `previous_client_token` is
-    /// provided and actively blocking suspension. When `previous_client_token`
-    /// is provided, SAG retains the `previous_client_token` handle until the new
-    /// wake lease is registered to prevent suspension.
-    ///
-    /// The hardware platform will remain resumed until `server_token` observes
-    /// `PEER_CLOSED`, indicating all handles to the client side of the
-    /// `LeaseToken` are closed.
-    @available(added=HEAD)
-    flexible AcquireWakeLease2(resource table {
-        /// The name of the lease.
-        ///
-        /// Required. The name cannot be empty but is not required to be globally unique.
-        1: name string:MAX_ELEMENT_NAME_LEN;
-
-        /// The server side of the token that blocks hardware platform
-        /// suspension.
-        ///
-        /// Required. The caller should give out handles to the client side
-        /// of the `LeaseToken` which is peered to this `server_token`.
-        2: server_token LeaseToken;
-
-        /// Optional predecessor client token for the lease being exchanged.
-        ///
-        /// If present, SAG holds this handle until the new wake lease is
-        /// registered in SAG's internal tracking structures, and records in
-        /// Inspect that the new wake lease is associated with the predecessor
-        /// lease (`replaces_lease_id`). Providing `previous_client_token` does
-        /// not destroy the previous lease if other handles to its client token
-        /// remain open.
-        3: previous_client_token LeaseToken;
-
-        /// Optional flag indicating whether the wake lease is unmonitored.
-        ///
-        /// If present and true, behaves like `AcquireUnmonitoredWakeLease`:
-        /// SAG does not monitor the duration of this lease and will not file a
-        /// crash report if it exceeds preconfigured alert thresholds.
-        /// Defaults to false if absent.
-        4: unmonitored bool;
     }) -> () error AcquireWakeLeaseError;
 
     /// Creates a lease that blocks the system from dropping below the Application
