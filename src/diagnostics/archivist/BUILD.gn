@@ -172,12 +172,7 @@ archivist_optimized_binary("bin") {
     "//third_party/rust_crates:log",
   ]
 
-  test_deps = [
-    "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
-    "//src/lib/diagnostics/selectors",
-    "//third_party/rust_crates:futures",
-    "//third_party/rust_crates:thiserror",
-  ]
+  test_deps = [ "//src/lib/fuchsia" ]
 
   sources = [ "src/main.rs" ]
 }
@@ -300,8 +295,16 @@ fuchsia_unittest_component("archivist-unittests") {
   deps = [ ":lib_test" ]
 }
 
+fuchsia_unittest_component("archivist-bin-unittests") {
+  manifest = "meta/archivist-bin-unittests.cml"
+  deps = [ ":bin_test" ]
+}
+
 fuchsia_test_package("archivist-tests") {
-  test_components = [ ":archivist-unittests" ]
+  test_components = [
+    ":archivist-unittests",
+    ":archivist-bin-unittests",
+  ]
 }
 
 group("archivist") {

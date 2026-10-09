@@ -350,3 +350,116 @@ async fn initial_interest() {
     )
     .await;
 }
+
+#[fuchsia::test]
+async fn set_interest_for_archivist() {
+    use futures::StreamExt;
+
+    const REALM_NAME: &str = "set_interest_for_archivist";
+
+    let realm_proxy = test_topology::create_realm(ftest::RealmOptions {
+        realm_name: Some(REALM_NAME.to_string()),
+        ..Default::default()
+    })
+    .await
+    .expect("create test topology");
+
+    let log_settings = realm_proxy
+        .connect_to_protocol::<LogSettingsMarker>()
+        .await
+        .expect("connect to log settings");
+
+    let mut logs = crate::utils::snapshot_and_stream_logs(&realm_proxy).await;
+    let archivist_moniker: ExtendedMoniker = "archivist".try_into().unwrap();
+
+    // 1. By default, archivist log level is INFO. Debug logs must not be emitted.
+    // Connect to trigger archivist's "fuchsia.diagnostics.LogSettings connection" debug log.
+    let _conn1 = realm_proxy.connect_to_protocol::<LogSettingsMarker>().await.unwrap();
+
+    let mut timer =
+        pin!(fuchsia_async::Timer::new(fuchsia_async::MonotonicDuration::from_millis(500)).fuse());
+    let mut found_initial_debug = false;
+    loop {
+        select! {
+            item = logs.next().fuse() => {
+                if let Some(Ok(log)) = item
+                    && log.moniker == archivist_moniker
+                    && log.metadata.severity == Severity::Debug
+                {
+                    found_initial_debug = true;
+                    break;
+                }
+            }
+            _ = timer => break,
+        }
+    }
+    assert!(!found_initial_debug, "Archivist should not emit debug logs at default INFO level");
+
+    // 2. Change archivist's interest to DEBUG.
+    log_settings.set_interest_for_component("archivist", Severity::Debug, false).await.unwrap();
+
+    // Connecting again should now emit the debug log.
+    let _conn2 = realm_proxy.connect_to_protocol::<LogSettingsMarker>().await.unwrap();
+
+    let mut found_debug_log = false;
+    let timeout = fuchsia_async::MonotonicDuration::from_seconds(5);
+    let mut timer = pin!(fuchsia_async::Timer::new(timeout).fuse());
+
+    loop {
+        select! {
+            item = logs.next().fuse() => {
+                if let Some(Ok(log)) = item
+                    && log.moniker == archivist_moniker
+                    && log.metadata.severity == Severity::Debug
+                {
+                    found_debug_log = true;
+                    break;
+                }
+            }
+            _ = timer => break,
+        }
+    }
+    assert!(found_debug_log, "Archivist should emit debug log when its severity is set to DEBUG");
+
+    // 3. Drop log_settings connection to clear the interest and revert to INFO.
+    drop(log_settings);
+
+    // Wait for the interest disconnection to process and drain any pending logs.
+    fuchsia_async::Timer::new(fuchsia_async::MonotonicDuration::from_millis(500)).await;
+    loop {
+        let mut drain_timer = pin!(
+            fuchsia_async::Timer::new(fuchsia_async::MonotonicDuration::from_millis(100)).fuse()
+        );
+        select! {
+            item = logs.next().fuse() => {
+                let _ = item;
+            }
+            _ = drain_timer => break,
+        }
+    }
+
+    // Connecting again should NOT emit debug logs because interest reverted to INFO.
+    let _conn3 = realm_proxy.connect_to_protocol::<LogSettingsMarker>().await.unwrap();
+
+    let mut found_debug_after_reset = false;
+    let mut timer2 =
+        pin!(fuchsia_async::Timer::new(fuchsia_async::MonotonicDuration::from_seconds(2)).fuse());
+    loop {
+        select! {
+            item = logs.next().fuse() => {
+                if let Some(Ok(log)) = item
+                    && log.moniker == archivist_moniker
+                    && log.metadata.severity == Severity::Debug
+                {
+                    found_debug_after_reset = true;
+                    break;
+                }
+            }
+            _ = timer2 => break,
+        }
+    }
+    assert!(
+        !found_debug_after_reset,
+        "Archivist should not emit debug logs after interest is cleared"
+    );
+}
