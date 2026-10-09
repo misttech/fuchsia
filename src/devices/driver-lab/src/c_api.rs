@@ -202,6 +202,58 @@ pub unsafe extern "C" fn driver_lab_builder_with_writable_registers(
     inner.set_writable_registers(resource_id, writable_registers);
 }
 
+/// Replaces the writable 32-bit registers on a previously registered MMIO or
+/// state-bank resource, limiting each register at `offsets_ptr[i]` to the
+/// bits set in `masks_ptr[i]`.
+///
+/// Host writes to a masked register must use a write mask within its allowed
+/// bits, so read-modify-write preserves the rest of the register. Use this
+/// for control registers that also hold reset or run/stop bits.
+///
+/// # Safety
+/// `builder` must be valid, and if `len > 0`, `offsets_ptr` and `masks_ptr`
+/// must each point to `len` valid elements.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn driver_lab_builder_with_masked_writable_registers(
+    builder: *mut DriverLabBuilderHandle,
+    resource_id: u32,
+    offsets_ptr: *const u64,
+    masks_ptr: *const u32,
+    len: usize,
+) {
+    let Some(handle) = (unsafe { builder.as_mut() }) else {
+        return;
+    };
+    let Some(inner) = handle.inner.as_mut() else {
+        return;
+    };
+    let (offsets, masks): (&[u64], &[u32]) =
+        if offsets_ptr.is_null() || masks_ptr.is_null() || len == 0 {
+            (&[], &[])
+        } else {
+            unsafe {
+                (
+                    std::slice::from_raw_parts(offsets_ptr, len),
+                    std::slice::from_raw_parts(masks_ptr, len),
+                )
+            }
+        };
+    let writable_registers = offsets
+        .iter()
+        .zip(masks)
+        .map(|(&offset, &allow_mask)| WritableRegister {
+            offset,
+            width: 4,
+            allow_mask,
+            allow_rmw: true,
+            require_precondition: false,
+            precondition_mask: 0,
+            readback: false,
+        })
+        .collect();
+    inner.set_writable_registers(resource_id, writable_registers);
+}
+
 /// Replaces the hard-denied byte ranges (`[starts[i], ends[i])`) on a
 /// previously registered MMIO resource.
 ///

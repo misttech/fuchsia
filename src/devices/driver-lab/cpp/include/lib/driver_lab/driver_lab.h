@@ -27,6 +27,13 @@ struct ByteRange {
   uint64_t end;
 };
 
+// A 32-bit writable register whose host-writable bits are limited to
+// `allow_mask`.
+struct MaskedRegister {
+  uint64_t offset;
+  uint32_t allow_mask;
+};
+
 // Shared-memory VMO bank for exposing internal driver state/telemetry and
 // host-tunable fault-injection knobs over `fuchsia.driver.lab` without custom
 // FIDL changes (Spec Phase 2 Section 3.2).
@@ -204,6 +211,23 @@ class Builder final {
   Builder& SetWritableRegisters(uint32_t resource_id, std::initializer_list<uint64_t> offsets) {
     return SetWritableRegisters(resource_id,
                                 cpp20::span<const uint64_t>(offsets.begin(), offsets.size()));
+  }
+
+  // Configures 32-bit writable registers on `resource_id` that each permit
+  // host changes only to the bits in `allow_mask`. Use this for control
+  // registers that also hold reset or run/stop bits.
+  //
+  // Like `SetWritableRegisters()`, this replaces any writable registers
+  // previously configured on `resource_id`. To mix full-width and masked
+  // registers on one resource, give the full-width ones a mask of
+  // `0xffffffff`.
+  Builder& SetMaskedWritableRegisters(uint32_t resource_id,
+                                      cpp20::span<const MaskedRegister> registers);
+
+  Builder& SetMaskedWritableRegisters(uint32_t resource_id,
+                                      std::initializer_list<MaskedRegister> registers) {
+    return SetMaskedWritableRegisters(
+        resource_id, cpp20::span<const MaskedRegister>(registers.begin(), registers.size()));
   }
 
   // Configures the hard-denied byte ranges (`[start, end)`) on `resource_id`.

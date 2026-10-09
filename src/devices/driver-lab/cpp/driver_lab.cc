@@ -241,6 +241,21 @@ Builder& Builder::SetWritableRegisters(uint32_t resource_id, cpp20::span<const u
   return *this;
 }
 
+Builder& Builder::SetMaskedWritableRegisters(uint32_t resource_id,
+                                             cpp20::span<const MaskedRegister> registers) {
+  std::vector<uint64_t> offsets;
+  std::vector<uint32_t> masks;
+  offsets.reserve(registers.size());
+  masks.reserve(registers.size());
+  for (const auto& reg : registers) {
+    offsets.push_back(reg.offset);
+    masks.push_back(reg.allow_mask);
+  }
+  driver_lab_builder_with_masked_writable_registers(handle_, resource_id, offsets.data(),
+                                                    masks.data(), offsets.size());
+  return *this;
+}
+
 Builder& Builder::SetHardDeniedRanges(uint32_t resource_id, cpp20::span<const ByteRange> ranges) {
   std::vector<uint64_t> starts;
   std::vector<uint64_t> ends;

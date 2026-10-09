@@ -53,6 +53,14 @@ void driver_lab_builder_with_writable_registers(DriverLabBuilderHandle* builder,
                                                 uint32_t resource_id, const uint64_t* offsets_ptr,
                                                 size_t offsets_len);
 
+// Replaces the writable 32-bit registers on `resource_id`, limiting the
+// register at `offsets_ptr[i]` to the bits set in `masks_ptr[i]`. Host writes
+// must use a write mask within those bits.
+void driver_lab_builder_with_masked_writable_registers(DriverLabBuilderHandle* builder,
+                                                       uint32_t resource_id,
+                                                       const uint64_t* offsets_ptr,
+                                                       const uint32_t* masks_ptr, size_t len);
+
 // Replaces the hard-denied byte ranges (`[starts_ptr[i], ends_ptr[i])`) on
 // `resource_id`.
 void driver_lab_builder_with_hard_denied_ranges(DriverLabBuilderHandle* builder,

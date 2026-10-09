@@ -289,5 +289,91 @@ TEST(DriverLabCppTest, RejectsHardDeniedRangeInSessionAllowlist) {
   EXPECT_EQ(open_res->error_value(), flab::wire::OpenSessionError::kRejectedAllowlist);
 }
 
+TEST(DriverLabCppTest, MaskedWritableRegisterLimitsWriteMask) {
+  // CTRL at 0x10 holds a run/stop bit (31) next to a host-tunable field in
+  // bits [11:8].
+  constexpr uint64_t kCtrl = 0x10;
+  constexpr uint32_t kTunableField = 0x0000'0F00u;
+  constexpr uint32_t kCtrlInitial = 0x8000'0001u;
+  zx::vmo mmio_vmo;
+  ASSERT_EQ(zx::vmo::create(4096, 0, &mmio_vmo), ZX_OK);
+  ASSERT_EQ(mmio_vmo.write(&kCtrlInitial, kCtrl, sizeof(kCtrlInitial)), ZX_OK);
+
+  Builder builder("cpp-masked-test");
+  builder.SetEnabled(true);
+  auto regs_id_res = builder.AddMmioVmo("regs", mmio_vmo.borrow(), 0, 0x100);
+  ASSERT_TRUE(regs_id_res.is_ok());
+  const uint32_t regs_id = *regs_id_res;
+  builder.SetMaskedWritableRegisters(regs_id, {{.offset = kCtrl, .allow_mask = kTunableField}});
+
+  auto server_res = builder.Build();
+  ASSERT_TRUE(server_res.is_ok());
+  EmbeddedServer server = std::move(*server_res);
+
+  auto proxy_endpoints = fidl::Endpoints<flab::Proxy>::Create();
+  ASSERT_TRUE(server.ServeProxy(std::move(proxy_endpoints.server)).is_ok());
+  fidl::WireSyncClient<flab::Proxy> proxy_client(std::move(proxy_endpoints.client));
+
+  auto desc_res = proxy_client->Describe();
+  ASSERT_TRUE(desc_res.ok());
+  const auto& desc = *desc_res;
+
+  fidl::Arena arena;
+  auto context = flab::wire::RunContext::Builder(arena)
+                     .run_id("run-masked")
+                     .case_id("case-masked")
+                     .plan_digest("sha256:masked")
+                     .host_tool_version("0.1.0")
+                     .Build();
+  auto expectations = flab::wire::Expectations::Builder(arena)
+                          .boot_id(desc.boot_id())
+                          .proxy_generation(desc.proxy_generation())
+                          .resource_digest(desc.resource_digest())
+                          .policy_digest(desc.policy_digest())
+                          .Build();
+  std::vector<flab::wire::AccessRule> rules = {
+      {
+          .resource = regs_id,
+          .offset = kCtrl,
+          .width = 4,
+          .class_ = flab::wire::AccessClass::kWrite,
+      },
+  };
+  auto session_endpoints = fidl::Endpoints<flab::Session>::Create();
+  auto open_res =
+      proxy_client->OpenSession(context, flab::wire::SessionMode::kMutating, expectations,
+                                fidl::VectorView<flab::wire::AccessRule>::FromExternal(rules),
+                                std::move(session_endpoints.server));
+  ASSERT_TRUE(open_res.ok()) << open_res.FormatDescription();
+  ASSERT_TRUE(open_res->is_ok());
+  fidl::WireSyncClient<flab::Session> session_client(std::move(session_endpoints.client));
+
+  auto read_ctrl = [&]() {
+    uint32_t value = 0;
+    EXPECT_EQ(mmio_vmo.read(&value, kCtrl, sizeof(value)), ZX_OK);
+    return value;
+  };
+
+  // A write within the allowed field is applied as read-modify-write and
+  // preserves the other bits.
+  {
+    auto write_res =
+        session_client->Write32(regs_id, kCtrl, 0x0000'0500u, kTunableField, nullptr, false);
+    ASSERT_TRUE(write_res.ok()) << write_res.FormatDescription();
+    ASSERT_TRUE(write_res->is_ok());
+    EXPECT_EQ(read_ctrl(), 0x8000'0501u);
+  }
+
+  // Writes that touch bits outside the allowed field are denied, including a
+  // full-width write, and leave the register unchanged.
+  for (uint32_t write_mask : {0x8000'0000u, kTunableField | 0x1u, 0xFFFF'FFFFu}) {
+    auto write_res = session_client->Write32(regs_id, kCtrl, 0u, write_mask, nullptr, false);
+    ASSERT_TRUE(write_res.ok()) << write_res.FormatDescription();
+    ASSERT_TRUE(write_res->is_error()) << "write_mask=" << write_mask;
+    EXPECT_EQ(write_res->error_value(), flab::wire::OperationError::kWriteNotPermitted);
+    EXPECT_EQ(read_ctrl(), 0x8000'0501u);
+  }
+}
+
 }  // namespace
 }  // namespace driver_lab
