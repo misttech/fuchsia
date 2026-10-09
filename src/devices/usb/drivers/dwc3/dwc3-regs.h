@@ -395,6 +395,12 @@ class DEPCMD : public hwreg::RegisterBase<DEPCMD, uint32_t> {
 // Global SoC Bus Configuration Register 0
 class GSBUSCFG0 : public hwreg::RegisterBase<GSBUSCFG0, uint32_t> {
  public:
+  DEF_FIELD(31, 28, DATRDREQINFO);
+  DEF_FIELD(27, 24, DESRDREQINFO);
+  DEF_FIELD(23, 20, DATWRREQINFO);
+  DEF_FIELD(19, 16, DESWRREQINFO);
+  DEF_BIT(11, DATBIGEND);
+  DEF_BIT(10, DESBIGEND);
   DEF_BIT(7, INCR256BRSTENA);
   DEF_BIT(6, INCR128BRSTENA);
   DEF_BIT(5, INCR64BRSTENA);

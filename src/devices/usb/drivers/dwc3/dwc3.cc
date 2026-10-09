@@ -1129,8 +1129,26 @@ zx_status_t Dwc3::ResetHw() {
   // while the controller is unconfigured or stopped.
   GEVNTSIZ::Get(0).FromValue(0).set_EVNTINTRPTMASK(1).WriteTo(mmio);
 
-  // Fuchsia's dwc3.cc doesn't parse snps,incr-burst-type-adjustment yet.
-  GSBUSCFG0::Get().FromValue(0).set_INCR4BRSTENA(1).WriteTo(mmio);
+  ConfigureCoreRegisters();
+
+  ep0_.out.stale_starts_to_end = 0;
+  ep0_.in.stale_starts_to_end = 0;
+  for (UserEndpoint& uep : user_endpoints_) {
+    uep.ep.stale_starts_to_end = 0;
+    uep.ep.stale_cancels_to_ignore = 0;
+  }
+  CancelAllEndpointIdleCallbacks();
+
+  return ZX_OK;
+}
+
+void Dwc3::ConfigureCoreRegisters() {
+  auto* mmio = get_mmio();
+
+  // Clear burst bits [7:0] (including reset default INCRBRSTENA) before enabling fixed INCR4
+  // bursts, while preserving upper SoC AXI cache/endianness bits [31:8].
+  auto gsbuscfg0 = GSBUSCFG0::Get().ReadFrom(mmio);
+  gsbuscfg0.set_reg_value(gsbuscfg0.reg_value() & ~0xffu).set_INCR4BRSTENA(1).WriteTo(mmio);
 
   if (poll_end_xfer_) {
     GUCTL2::Get().ReadFrom(mmio).set_Rst_actbitlater(1).WriteTo(mmio);
@@ -1147,16 +1165,6 @@ zx_status_t Dwc3::ResetHw() {
     }
     gfladj.WriteTo(mmio);
   }
-
-  ep0_.out.stale_starts_to_end = 0;
-  ep0_.in.stale_starts_to_end = 0;
-  for (UserEndpoint& uep : user_endpoints_) {
-    uep.ep.stale_starts_to_end = 0;
-    uep.ep.stale_cancels_to_ignore = 0;
-  }
-  CancelAllEndpointIdleCallbacks();
-
-  return ZX_OK;
 }
 
 void Dwc3::SetDeviceAddress(uint32_t address) {
@@ -1175,6 +1183,8 @@ void Dwc3::SetDeviceAddress(uint32_t address) {
 void Dwc3::StartPeripheralMode() {
   TRACE_DURATION("dwc3", "Dwc3::StartPeripheralMode");
   auto* mmio = get_mmio();
+
+  ConfigureCoreRegisters();
 
   if (interrupt_moderation_ != 0) {
     // Enable interrupt moderation.

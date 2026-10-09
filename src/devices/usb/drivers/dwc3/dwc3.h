@@ -463,6 +463,7 @@ class Dwc3 : public fdf::DriverBase2,
 
   [[nodiscard]] zx_status_t CheckHwVersion();
   [[nodiscard]] zx_status_t ResetHw();
+  void ConfigureCoreRegisters();
   void StartEvents();
   void StopEvents();
   void SetDeviceAddress(uint32_t address);

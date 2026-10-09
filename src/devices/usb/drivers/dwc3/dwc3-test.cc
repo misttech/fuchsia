@@ -1871,4 +1871,58 @@ TEST_F(UnmanagedTestFixture, Ep0QueueSetupIncrementsGenerationAndDropsStaleContr
   TearDownAndPowerOffDriver();
 }
 
+TEST_F(UnmanagedTestFixture, StartPeripheralModeRestoresCoreRegistersAfterExternalReset) {
+  ver_number_ = 0x5533310a;
+
+  auto gsbuscfg0_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto guctl2_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto gfladj_val = std::make_shared<std::atomic<uint32_t>>(0);
+
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[GSBUSCFG0::Get().addr()].SetReadCallback([]() -> uint64_t { return 0; });
+      env.reg_region()[GSBUSCFG0::Get().addr()].SetWriteCallback([](uint64_t) {});
+      env.reg_region()[GUCTL2::Get().addr()].SetWriteCallback([](uint64_t) {});
+      env.reg_region()[GFLADJ::Get().addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
+
+  dut_.RunInEnvironmentTypeContext([gsbuscfg0_val, guctl2_val, gfladj_val](Environment& env) {
+    env.SetFrameLengthAdjustment(0xa0, /*refclk_lpm_sel=*/true);
+    env.reg_region()[GSBUSCFG0::Get().addr()].SetReadCallback(
+        []() -> uint64_t { return 0xabcd00ffu; });
+    env.reg_region()[GSBUSCFG0::Get().addr()].SetWriteCallback(
+        [gsbuscfg0_val](uint64_t val) { gsbuscfg0_val->store(static_cast<uint32_t>(val)); });
+    env.reg_region()[GUCTL2::Get().addr()].SetWriteCallback(
+        [guctl2_val](uint64_t val) { guctl2_val->store(static_cast<uint32_t>(val)); });
+    env.reg_region()[GFLADJ::Get().addr()].SetWriteCallback(
+        [gfladj_val](uint64_t val) { gfladj_val->store(static_cast<uint32_t>(val)); });
+  });
+
+  SetUpAndPowerOnDriver();
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_service.is_ok());
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+
+  // Clear captured register values right before StartController() to simulate an external PHY/core
+  // reset occurring between ResetHw() and StartPeripheralMode().
+  gsbuscfg0_val->store(0);
+  guctl2_val->store(0);
+  gfladj_val->store(0);
+
+  auto start_res = dci->StartController();
+  ASSERT_TRUE(start_res.ok());
+  ASSERT_TRUE(start_res.value().is_ok());
+
+  EXPECT_EQ(gsbuscfg0_val->load(), 0xabcd0002u);
+  EXPECT_EQ(GUCTL2::Get().FromValue(guctl2_val->load()).Rst_actbitlater(), 1u);
+  auto gfladj = GFLADJ::Get().FromValue(gfladj_val->load());
+  EXPECT_EQ(gfladj.GFLADJ_30MHZ(), 0x20u);
+  EXPECT_EQ(gfladj.GFLADJ_30MHZ_SDBND_SEL(), 1u);
+  EXPECT_EQ(gfladj.GFLADJ_REFCLK_LPM_SEL(), 1u);
+
+  TearDownAndPowerOffDriver();
+}
+
 }  // namespace dwc3
