@@ -45,6 +45,7 @@ rustc_binary("bin") {
   inputs = [
     "configs/reboot_required_config.json",
     "configs/test_config.json",
+    "configs/named_tree_config.json",
     "configs/components.json5",
     "configs/fire_1.json5",
     "configs/fire_2.json5",

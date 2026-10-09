@@ -21,6 +21,22 @@ async fn wait_for_single_counter_inspect(ns: &InstalledNamespace) {
     let _ = ArchiveReader::inspect()
         .with_archive(accessor)
         .add_selector(format!("{}:root", test_topology::COUNTER_NAME))
+        .add_selector(format!(
+            "{}:[name={}]root",
+            test_topology::COUNTER_NAME,
+            test_topology::TARGET_TREE_NAME
+        ))
+        .add_selector(format!(
+            "{}:[name={}]root",
+            test_topology::COUNTER_NAME,
+            test_topology::UNRELATED_TREE_1_NAME
+        ))
+        .add_selector(format!(
+            "{}:[name={}]root",
+            test_topology::COUNTER_NAME,
+            test_topology::UNRELATED_TREE_2_NAME
+        ))
+        .with_minimum_schema_count(4)
         .snapshot()
         .await
         .expect("got inspect data");
@@ -273,6 +289,10 @@ async fn sampler_inspect_test() {
             "{}:root/sampler_executor_stats/project_13",
             test_topology::SAMPLER_NAME
         ))
+        .add_selector(format!(
+            "{}:root/sampler_executor_stats/project_7",
+            test_topology::SAMPLER_NAME
+        ))
         .add_selector(format!("{}:root/fuchsia.inspect.Health", test_topology::SAMPLER_NAME))
         .snapshot()
         .await
@@ -288,6 +308,11 @@ async fn sampler_inspect_test() {
             sampler_executor_stats: {
                 project_5: {
                     metrics_configured: 4u64,
+                    cobalt_logs_sent: AnyProperty,
+                    events: contains {},
+                },
+                project_7: {
+                    metrics_configured: 5u64,
                     cobalt_logs_sent: AnyProperty,
                     events: contains {},
                 },
@@ -391,4 +416,84 @@ async fn sampler_stress_test() {
         }
     );
     log::info!("Sampler stress test: daemon health verified. Test complete.");
+}
+
+/// Runs the Sampler against a test component that publishes several named Inspect trees, and
+/// verifies that selectors filtered by tree name (`[name=...]`) are sampled from exactly the tree
+/// they name.
+///
+/// `single_counter` publishes four trees: the default "root" tree, "target_tree", "unrelated_1",
+/// and "unrelated_2". Project 7 selects `samples:counter` (present on "root" and "target_tree"),
+/// `target_only:counter` (present only on "target_tree"), and a static `unrelated:val` property on
+/// each unrelated tree. Every snapshot therefore contains several trees that lack the selected
+/// properties; those trees must neither suppress nor duplicate the Occurrence diffs reported for
+/// the tree that owns them.
+#[fuchsia::test]
+async fn named_tree_isolation_test() {
+    let ns = test_topology::create_realm().await.expect("initialized topology");
+    let test_app_controller = connect_to_protocol_at::<SamplerTestControllerMarker>(&ns).unwrap();
+    wait_for_single_counter_inspect(&ns).await;
+    let logger_querier = connect_to_protocol_at::<MetricEventLoggerQuerierMarker>(&ns).unwrap();
+    let _sampler_binder = connect_to_protocol_at_path::<BinderMarker>(format!(
+        "{}/fuchsia.component.SamplerBinder",
+        ns.prefix()
+    ))
+    .unwrap();
+
+    let mut project_5_events = EventVerifier::new(&logger_querier, 5);
+    let mut project_7_events = EventVerifier::new(&logger_querier, 7);
+
+    project_5_events
+        .validate_with_count(
+            vec![
+                Event { id: 101, value: 0, codes: vec![0, 0] },
+                Event { id: 104, value: 0, codes: vec![0, 0] },
+                Event { id: 102, value: 10, codes: vec![0, 0] },
+                Event { id: 103, value: 20, codes: vec![0, 0] },
+            ],
+            "initial project 5 in named_tree_isolation_test",
+        )
+        .await;
+    project_7_events
+        .validate_with_count(
+            vec![
+                Event { id: 701, value: 0, codes: vec![0, 0] },
+                Event { id: 702, value: 10, codes: vec![0, 0] },
+                Event { id: 703, value: 0, codes: vec![0, 0] },
+                Event { id: 704, value: 0, codes: vec![0, 0] },
+                Event { id: 705, value: 0, codes: vec![0, 0] },
+            ],
+            "initial project 7 in named_tree_isolation_test",
+        )
+        .await;
+
+    for i in 1..=3 {
+        test_app_controller.increment_int(1).await.unwrap();
+        test_app_controller.wait_for_sample().await.unwrap().unwrap();
+
+        project_5_events
+            .validate_with_count(
+                vec![
+                    Event { id: 101, value: 1, codes: vec![0, 0] },
+                    Event { id: 102, value: 10, codes: vec![0, 0] },
+                ],
+                &format!("project 5 cycle {i} in named_tree_isolation_test"),
+            )
+            .await;
+        project_7_events
+            .validate_with_count(
+                vec![
+                    // `[name=target_tree]root/samples:counter` also exists on the default tree;
+                    // only the target tree's value may be reported.
+                    Event { id: 701, value: 1, codes: vec![0, 0] },
+                    Event { id: 702, value: 10, codes: vec![0, 0] },
+                    // `[name=target_tree]root/target_only:counter` is absent from the other three
+                    // trees in the snapshot; their missing values must not suppress this diff.
+                    Event { id: 703, value: 1, codes: vec![0, 0] },
+                    // 704 and 705 are static Occurrences and must not be re-reported.
+                ],
+                &format!("project 7 cycle {i} in named_tree_isolation_test"),
+            )
+            .await;
+    }
 }

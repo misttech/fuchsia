@@ -38,6 +38,7 @@ fn load_configs(index: Index) -> Vec<String> {
     let mut project_configs = vec![
         include_str!("../configs/reboot_required_config.json").to_string(),
         include_str!("../configs/test_config.json").to_string(),
+        include_str!("../configs/named_tree_config.json").to_string(),
     ];
     let mut components: ComponentIdInfoList =
         serde_json5::from_str(include_str!("../configs/components.json5")).unwrap();

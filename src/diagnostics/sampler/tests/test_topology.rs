@@ -10,6 +10,9 @@ pub(crate) const SAMPLER_NAME: &str = "sampler";
 pub(crate) const COUNTER_NAME: &str = "single_counter";
 pub(crate) const COBALT_NAME: &str = "cobalt";
 pub(crate) const ARCHIVIST_NAME: &str = "test_archivist";
+pub(crate) const TARGET_TREE_NAME: &str = "target_tree";
+pub(crate) const UNRELATED_TREE_1_NAME: &str = "unrelated_1";
+pub(crate) const UNRELATED_TREE_2_NAME: &str = "unrelated_2";
 
 pub(crate) async fn create_realm() -> Result<InstalledNamespace, Error> {
     inner_create_realm(fidl_test_sampler::RealmOptions {

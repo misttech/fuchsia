@@ -7,15 +7,17 @@ use crate::error::AccessorError;
 use crate::inspect::repository::InspectRepository;
 use crate::inspect::{PerformanceConfig, ReaderServer};
 use crate::pipeline::StaticHierarchyAllowlist;
-use diagnostics_data::InspectData;
-use diagnostics_hierarchy::{SelectResult, filter_tree, select_from_hierarchy};
+use diagnostics_data::{InspectData, InspectHandleName};
+use diagnostics_hierarchy::{
+    DiagnosticsHierarchy, SelectResult, filter_tree, select_from_hierarchy,
+};
 use fidl::endpoints::{ControlHandle, DiscoverableProtocolMarker, ServerEnd};
 use fidl_fuchsia_component_sandbox as fsandbox;
 use fidl_fuchsia_diagnostics::{
     BatchIteratorMarker, BatchIteratorRequestStream, ConfigurationError, DataType, Format,
     RuntimeError, SampleDatum, SampleMarker, SampleParameters, SampleReady, SampleRequest,
     SampleRequestStream, SampleSinkEvent, SampleSinkProxy, SampleSinkResult, SampleStrategy,
-    Selector, SelectorArgument, StreamMode, StreamParameters,
+    Selector, SelectorArgument, StreamMode, StreamParameters, TreeNames,
 };
 use fuchsia_async::{Interval, Scope};
 use fuchsia_inspect::Node;
@@ -23,6 +25,7 @@ use fuchsia_trace as ftrace;
 use futures::channel::oneshot;
 use futures::{StreamExt, TryStreamExt, select};
 use log::{debug, warn};
+use moniker::ExtendedMoniker;
 use selectors::{FastError, SelectorExt, ValidateExt, parse_selector};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -251,8 +254,8 @@ impl SampleServer {
     ) {
         let mut ticks: i64 = 0;
         // This cache holds the most recently sampled value for data in `data` with
-        // a SampleStrategy of OnDiff.
-        let mut on_diff_cache: HashMap<DataId, SelectResult<'static, _>> = HashMap::new();
+        // a SampleStrategy of OnDiff, keyed per (datum, moniker, tree name).
+        let mut on_diff_cache = OnDiffCache::new();
         let mut interval = Interval::new(sample_period).fuse();
 
         let mut client_events = sink.take_event_stream().fuse();
@@ -337,7 +340,7 @@ impl SampleServer {
     async fn take_sample(
         self: &Arc<Self>,
         batch: Vec<&Datum>,
-        on_diff_cache: &mut HashMap<DataId, SelectResult<'static, String>>,
+        on_diff_cache: &mut OnDiffCache,
     ) -> Option<Vec<InspectData>> {
         if batch.is_empty() {
             return None;
@@ -359,99 +362,46 @@ impl SampleServer {
 
         let selectors_to_read =
             batch.iter().map(|&datum| datum.selector.clone()).collect::<Vec<_>>();
-        let snapshot = self.read_inspect(selectors_to_read.clone(), performance_config).await;
-        let mut selectors_with_no_change = vec![];
+        let snapshot = self.read_inspect(selectors_to_read, performance_config).await;
 
-        for inspect_data in &snapshot {
-            let Some(ref current_hierarchy) = inspect_data.payload else {
-                continue;
-            };
-
-            for datum in
-                batch.iter().filter(|datum| matches!(datum.strategy, SampleStrategy::OnDiff))
-            {
-                if datum.selector.component_selector.as_ref().is_some_and(|m| {
-                    !selectors::matches_selectors(&inspect_data.moniker, std::slice::from_ref(m))
-                }) {
-                    // NB: If the datum provides a moniker selector, ensure we
-                    // only update the cache with inspect_data from that moniker.
-                    continue;
-                }
-
-                let Ok(current) = select_from_hierarchy(current_hierarchy, &datum.selector) else {
-                    continue;
-                };
-
-                match on_diff_cache.entry(datum.id) {
-                    // indicates the value has not updated
-                    Entry::Occupied(cached) if cached.get() == &current => {
-                        selectors_with_no_change.push(&datum.selector);
-                    }
-                    // indicates the value has changed
-                    Entry::Occupied(mut cached) => {
-                        *cached.get_mut() = current.into_owned();
-                    }
-                    Entry::Vacant(new_data) => {
-                        new_data.insert(current.into_owned());
-                    }
-                }
-            }
-        }
-
-        let filtered_snapshot =
-            filter_inspect_data(snapshot, &selectors_to_read, &selectors_with_no_change);
+        let filtered_snapshot = snapshot
+            .into_iter()
+            .filter_map(|inspect_data| filter_inspect_data(inspect_data, &batch, on_diff_cache))
+            .collect::<Vec<_>>();
 
         if filtered_snapshot.is_empty() { None } else { Some(filtered_snapshot) }
     }
 }
 
+/// Trims `inspect_data` down to the data selected by the members of `batch` that apply to it.
+///
+/// A datum applies to `inspect_data` if its selector matches both the moniker and the tree name,
+/// and, for `SampleStrategy::OnDiff`, if the value it selects from this particular tree has
+/// changed since the last time it was sampled. Returns `None` if no datum applies.
 fn filter_inspect_data(
-    raw: Vec<InspectData>,
-    all_selectors: &[Selector],
-    unchanged: &[&Selector],
-) -> Vec<InspectData> {
-    let mut filtered_snapshot = vec![];
-    for mut inspect_data in raw {
-        let Some(payload) = inspect_data.payload.take() else {
-            continue;
-        };
+    mut inspect_data: InspectData,
+    batch: &[&Datum],
+    on_diff_cache: &mut OnDiffCache,
+) -> Option<InspectData> {
+    let payload = inspect_data.payload.take()?;
 
-        let relevant_unchanged_selectors = inspect_data
-            .moniker
-            .match_against_selectors(unchanged.iter().copied())
-            .filter_map(|r| if let Ok(s) = r { Some(s.tree_selector.as_ref()) } else { None })
-            // unfortunate, but cloning the iterator and using `any` was not working
-            .collect::<Vec<_>>();
+    let active_tree_selectors = batch
+        .iter()
+        .filter(|datum| datum.matches(&inspect_data))
+        .filter(|datum| match datum.strategy {
+            SampleStrategy::OnDiff => datum.on_diff_changed(&inspect_data, &payload, on_diff_cache),
+            _ => true,
+        })
+        .filter_map(|datum| datum.selector.tree_selector.as_ref())
+        .collect::<Vec<_>>();
 
-        let mut selectors = inspect_data
-            .moniker
-            .match_against_selectors(all_selectors.iter())
-            .filter_map(|r| {
-                if let Ok(s) = r {
-                    if relevant_unchanged_selectors.contains(&s.tree_selector.as_ref()) {
-                        None
-                    } else {
-                        s.tree_selector.as_ref()
-                    }
-                } else {
-                    None
-                }
-            })
-            .peekable();
-
-        if selectors.peek().is_none() {
-            continue;
-        }
-
-        let Some(filtered) = filter_tree(payload, selectors) else {
-            continue;
-        };
-
-        inspect_data.payload = Some(filtered);
-        filtered_snapshot.push(inspect_data);
+    if active_tree_selectors.is_empty() {
+        return None;
     }
 
-    filtered_snapshot
+    let filtered = filter_tree(payload, active_tree_selectors)?;
+    inspect_data.payload = Some(filtered);
+    Some(inspect_data)
 }
 
 async fn serve_iterator(
@@ -514,11 +464,92 @@ fn extract_sample_period(data: &[Datum]) -> MonotonicDuration {
 
 type DataId = usize;
 
+/// Identifies one sampled value for the `OnDiff` strategy. A single `Datum` whose
+/// selector contains wildcards can match many (moniker, tree) pairs; each pair's
+/// value must be tracked independently so that one tree's (lack of) change can
+/// never suppress another tree's output.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct OnDiffCacheKey {
+    id: DataId,
+    moniker: ExtendedMoniker,
+    tree_name: InspectHandleName,
+}
+
+type OnDiffCache = HashMap<OnDiffCacheKey, SelectResult<'static, String>>;
+
 struct Datum {
     strategy: SampleStrategy,
     selector: Selector,
     interval_secs: i64,
     id: DataId,
+}
+
+impl Datum {
+    /// Returns true if this datum's selector applies to `inspect_data`'s moniker and tree name.
+    fn matches(&self, inspect_data: &InspectData) -> bool {
+        // Selectors were validated in `Datum::try_from`, so `Err` is unreachable in practice;
+        // treat it as a non-match.
+        if !inspect_data.moniker.matches_selector(&self.selector).unwrap_or(false) {
+            return false;
+        }
+        match &inspect_data.metadata.name {
+            InspectHandleName::Name(name) => {
+                selectors::match_tree_name_against_selector(name.as_str(), &self.selector)
+            }
+            InspectHandleName::Filename(_) => {
+                matches!(self.selector.tree_names.as_ref(), None | Some(TreeNames::All(_)))
+            }
+        }
+    }
+
+    /// Returns true if the value this datum selects from `payload` differs from the value
+    /// last observed for the same (datum, moniker, tree name), updating the cache as needed.
+    fn on_diff_changed(
+        &self,
+        inspect_data: &InspectData,
+        payload: &DiagnosticsHierarchy,
+        on_diff_cache: &mut OnDiffCache,
+    ) -> bool {
+        let current = match select_from_hierarchy(payload, &self.selector) {
+            Ok(current) => current,
+            Err(error) => {
+                warn!(error:?; "select_from_hierarchy failed for validated selector");
+                return true;
+            }
+        };
+
+        // A selector that matches nothing in this tree carries no information about change.
+        // It must neither seed nor be compared against the cache; otherwise a wildcard moniker
+        // selector (e.g. `bootstrap/*-drivers:*`) that happens to match other components'
+        // trees would cache an empty result and suppress the real tree's data
+        // (b/571622551, b/516487002).
+        let is_empty = match &current {
+            SelectResult::Properties(p) => p.is_empty(),
+            SelectResult::Nodes(n) => n.is_empty(),
+        };
+        if is_empty {
+            return false;
+        }
+
+        let key = OnDiffCacheKey {
+            id: self.id,
+            moniker: inspect_data.moniker.clone(),
+            tree_name: inspect_data.metadata.name.clone(),
+        };
+        match on_diff_cache.entry(key) {
+            // indicates the value has not updated
+            Entry::Occupied(cached) if cached.get() == &current => false,
+            // indicates the value has changed
+            Entry::Occupied(mut cached) => {
+                *cached.get_mut() = current.into_owned();
+                true
+            }
+            Entry::Vacant(vacant) => {
+                vacant.insert(current.into_owned());
+                true
+            }
+        }
+    }
 }
 
 impl TryFrom<(usize, SampleDatum)> for Datum {
@@ -631,6 +662,90 @@ mod tests {
         };
 
         (batch_iter, seconds_since_start)
+    }
+
+    /// Polls `fut` until the executor stalls, panicking if it did not complete.
+    #[track_caller]
+    fn run_ready<F: Future>(exec: &mut TestExecutor, fut: F) -> F::Output {
+        match exec.run_until_stalled(&mut std::pin::pin!(fut)) {
+            Poll::Ready(output) => output,
+            Poll::Pending => panic!("future did not complete before the executor stalled"),
+        }
+    }
+
+    /// Advances fake time by `secs` and wakes any timers that expired.
+    fn advance(exec: &mut TestExecutor, secs: i64) {
+        exec.set_fake_time(MonotonicInstant::after(zx::MonotonicDuration::from_seconds(secs)));
+        exec.wake_expired_timers();
+    }
+
+    /// Adds an inspector for `moniker` publishing a tree called `name` (or the default
+    /// tree when `None`).
+    fn add_test_inspector(
+        scope: &ScopeHandle,
+        inspect_repo: &Arc<InspectRepository>,
+        moniker: &str,
+        name: Option<&str>,
+    ) -> Inspector {
+        let moniker = ExtendedMoniker::parse_str(moniker).unwrap();
+        let identity = Arc::new(ComponentIdentity::new(moniker, TEST_URL));
+        let (proxy, inspector) = spawn_test_inspector(scope);
+        inspect_repo.add_inspect_handle(identity, InspectHandle::tree(proxy, name));
+        inspector
+    }
+
+    fn on_diff_datum(selector: &str, interval_secs: i64) -> SampleDatum {
+        SampleDatum {
+            selector: Some(SelectorArgument::RawSelector(selector.to_string())),
+            strategy: Some(SampleStrategy::OnDiff),
+            interval_secs: Some(interval_secs),
+            ..Default::default()
+        }
+    }
+
+    /// Commits `data` to a new `SampleServer` and returns the server along with the
+    /// stream of sample events.
+    fn start_sampling(
+        exec: &mut TestExecutor,
+        inspect_repo: &Arc<InspectRepository>,
+        data: Vec<SampleDatum>,
+    ) -> (Arc<SampleServer>, SampleSinkRequestStream) {
+        let sampler = Arc::new(SampleServer::new(
+            Arc::clone(inspect_repo),
+            MonotonicDuration::from_seconds(60),
+            exec.global_scope().new_child(),
+        ));
+        let (sample_proxy, stream) = fidl::endpoints::create_proxy_and_stream::<SampleMarker>();
+        sampler.spawn(stream);
+
+        let (sample_sink_client, sample_sink_server) =
+            fidl::endpoints::create_endpoints::<SampleSinkMarker>();
+        sample_proxy.set(&SampleParameters { data: Some(data), ..Default::default() }).unwrap();
+        run_ready(exec, sample_proxy.commit(sample_sink_client)).unwrap().unwrap();
+
+        (sampler, sample_sink_server.into_stream())
+    }
+
+    /// Waits for the next sample, asserts it was taken at `expected_runtime`, and returns its
+    /// contents sorted by moniker and tree name.
+    #[track_caller]
+    fn next_sample(
+        exec: &mut TestExecutor,
+        sample_sink_server: &mut SampleSinkRequestStream,
+        expected_runtime: i64,
+    ) -> Vec<InspectData> {
+        let (batch_iter, runtime) = run_ready(exec, extract(sample_sink_server));
+        assert_eq!(runtime, expected_runtime);
+        let mut actual = run_ready(exec, drain_batch(batch_iter));
+        actual.sort_by_key(|data| (data.moniker.to_string(), data.name().to_string()));
+        actual
+    }
+
+    /// Asserts that no sample is delivered before the executor stalls.
+    #[track_caller]
+    fn assert_no_sample(exec: &mut TestExecutor, sample_sink_server: &mut SampleSinkRequestStream) {
+        // Dropping a pending `next()` future does not lose stream items.
+        assert!(exec.run_until_stalled(&mut sample_sink_server.next()).is_pending());
     }
 
     #[fuchsia::test]
@@ -1244,6 +1359,227 @@ mod tests {
         exec.set_fake_time(MonotonicInstant::after(zx::MonotonicDuration::from_seconds(300)));
         exec.wake_expired_timers();
         assert_eq!(Poll::Ready(()), exec.run_until_stalled(&mut fut));
+    }
+
+    // A regression test for b/571622551 and b/516487002.
+    //
+    // A wildcard moniker selector matches several components, only one of which
+    // has the selected property. The components without the property must not
+    // seed or poison the on_diff cache for the component that has it.
+    #[fuchsia::test]
+    fn sample_server_on_diff_wildcard_moniker_not_suppressed_by_non_matching_trees() {
+        let mut exec = TestExecutor::new_with_fake_time();
+        let scope = exec.global_scope().clone();
+        let (_pipeline, inspect_repo) = permissive_pipeline(&scope);
+
+        let inspectors = (0..4)
+            .map(|i| add_test_inspector(&scope, &inspect_repo, &format!("./a/b/foo{i}"), None))
+            .collect::<Vec<_>>();
+        // Use an inspector in the middle so that trees without the property are
+        // processed both before and after it.
+        let prop = inspectors[2].root().create_int("foo", 0);
+        let expected_moniker = ExtendedMoniker::parse_str("./a/b/foo2").unwrap();
+
+        let (_sampler, mut sample_sink_server) =
+            start_sampling(&mut exec, &inspect_repo, vec![on_diff_datum("a/b/foo*:root:foo", 300)]);
+
+        // recall that serialization happens here, so positive integers will flip to uint
+        // values in the below tests
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 0);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].moniker, expected_moniker);
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 0u64 } }));
+
+        prop.set(5);
+        advance(&mut exec, 300);
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 300);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].moniker, expected_moniker);
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 5u64 } }));
+
+        // No change, so nothing is delivered.
+        advance(&mut exec, 300);
+        assert_no_sample(&mut exec, &mut sample_sink_server);
+    }
+
+    // When a wildcard moniker selector matches several components that each have
+    // the selected property, each component's value is tracked independently.
+    #[fuchsia::test]
+    fn sample_server_on_diff_wildcard_moniker_tracks_each_moniker_independently() {
+        let mut exec = TestExecutor::new_with_fake_time();
+        let scope = exec.global_scope().clone();
+        let (_pipeline, inspect_repo) = permissive_pipeline(&scope);
+
+        let inspector0 = add_test_inspector(&scope, &inspect_repo, "./a/b/foo0", None);
+        let inspector1 = add_test_inspector(&scope, &inspect_repo, "./a/b/foo1", None);
+        let moniker0 = ExtendedMoniker::parse_str("./a/b/foo0").unwrap();
+        let moniker1 = ExtendedMoniker::parse_str("./a/b/foo1").unwrap();
+        // Both start with the same value, which must not cause the second to be
+        // treated as "unchanged" relative to the first.
+        let prop0 = inspector0.root().create_int("foo", 0);
+        let prop1 = inspector1.root().create_int("foo", 0);
+
+        let (_sampler, mut sample_sink_server) =
+            start_sampling(&mut exec, &inspect_repo, vec![on_diff_datum("a/b/foo*:root:foo", 300)]);
+
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 0);
+        assert_eq!(actual.len(), 2);
+        assert_eq!(actual[0].moniker, moniker0);
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 0u64 } }));
+        assert_eq!(actual[1].moniker, moniker1);
+        assert_eq!(actual[1].payload, Some(hierarchy! { root: { foo: 0u64 } }));
+
+        prop1.set(1);
+        advance(&mut exec, 300);
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 300);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].moniker, moniker1);
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 1u64 } }));
+
+        prop0.set(2);
+        advance(&mut exec, 300);
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 600);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].moniker, moniker0);
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 2u64 } }));
+    }
+
+    // A selector that names a specific tree must only sample, and only track
+    // changes in, that tree.
+    #[fuchsia::test]
+    fn sample_server_on_diff_respects_tree_name_filter() {
+        let mut exec = TestExecutor::new_with_fake_time();
+        let scope = exec.global_scope().clone();
+        let (_pipeline, inspect_repo) = permissive_pipeline(&scope);
+
+        let alpha = add_test_inspector(&scope, &inspect_repo, "./a/b/foo", Some("alpha"));
+        let beta = add_test_inspector(&scope, &inspect_repo, "./a/b/foo", Some("beta"));
+        let alpha_prop = alpha.root().create_int("foo", 0);
+        let beta_prop = beta.root().create_int("foo", 0);
+
+        let (_sampler, mut sample_sink_server) = start_sampling(
+            &mut exec,
+            &inspect_repo,
+            vec![on_diff_datum("a/b/foo:[name=alpha]root:foo", 300)],
+        );
+
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 0);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].moniker, *MONIKER);
+        assert_eq!(actual[0].metadata.name, InspectHandleName::name("alpha"));
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 0u64 } }));
+
+        // A change in a tree that isn't selected is not delivered.
+        beta_prop.set(5);
+        advance(&mut exec, 300);
+        assert_no_sample(&mut exec, &mut sample_sink_server);
+
+        alpha_prop.set(7);
+        advance(&mut exec, 300);
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 600);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].moniker, *MONIKER);
+        assert_eq!(actual[0].metadata.name, InspectHandleName::name("alpha"));
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 7u64 } }));
+    }
+
+    // When a selector matches multiple trees on the same component (`[...]` tree name
+    // wildcard), each tree's value is tracked independently in the OnDiff cache.
+    #[fuchsia::test]
+    fn sample_server_on_diff_wildcard_tree_names_tracks_each_tree_independently() {
+        let mut exec = TestExecutor::new_with_fake_time();
+        let scope = exec.global_scope().clone();
+        let (_pipeline, inspect_repo) = permissive_pipeline(&scope);
+
+        let alpha = add_test_inspector(&scope, &inspect_repo, "./a/b/foo", Some("alpha"));
+        let beta = add_test_inspector(&scope, &inspect_repo, "./a/b/foo", Some("beta"));
+        // Both trees start with the same value on the same moniker; the second tree
+        // must not be suppressed as "unchanged" relative to the first.
+        let _alpha_prop = alpha.root().create_int("foo", 0);
+        let beta_prop = beta.root().create_int("foo", 0);
+
+        let (_sampler, mut sample_sink_server) = start_sampling(
+            &mut exec,
+            &inspect_repo,
+            vec![on_diff_datum("a/b/foo:[...]root:foo", 300)],
+        );
+
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 0);
+        assert_eq!(actual.len(), 2);
+        assert_eq!(actual[0].metadata.name, InspectHandleName::name("alpha"));
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 0u64 } }));
+        assert_eq!(actual[1].metadata.name, InspectHandleName::name("beta"));
+        assert_eq!(actual[1].payload, Some(hierarchy! { root: { foo: 0u64 } }));
+
+        beta_prop.set(5);
+        advance(&mut exec, 300);
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 300);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].metadata.name, InspectHandleName::name("beta"));
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 5u64 } }));
+    }
+
+    // Two data with an identical selector but different intervals each track their
+    // own last-seen value; one being unchanged must not suppress the other.
+    #[fuchsia::test]
+    fn sample_server_on_diff_same_tree_selector_different_datums_do_not_suppress_each_other() {
+        let mut exec = TestExecutor::new_with_fake_time();
+        let scope = exec.global_scope().clone();
+        let (_pipeline, inspect_repo) = permissive_pipeline(&scope);
+
+        let inspector = add_test_inspector(&scope, &inspect_repo, "./a/b/foo", None);
+        let prop = inspector.root().create_int("foo", 0);
+
+        let (_sampler, mut sample_sink_server) = start_sampling(
+            &mut exec,
+            &inspect_repo,
+            vec![on_diff_datum("**:root:foo", 300), on_diff_datum("**:root:foo", 600)],
+        );
+
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 0);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 0u64 } }));
+
+        // Only the 300s datum runs here, and it sees the change.
+        prop.set(1);
+        advance(&mut exec, 300);
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 300);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 1u64 } }));
+
+        // Both data run here. The 300s datum saw `1` last time and is unchanged, but
+        // the 600s datum last saw `0`, so the value must be delivered.
+        advance(&mut exec, 300);
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 600);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 1u64 } }));
+    }
+
+    // A selector that matches nothing must not seed the cache, so the first real
+    // value is delivered and subsequently deduplicated.
+    #[fuchsia::test]
+    fn sample_server_on_diff_empty_match_does_not_seed_cache() {
+        let mut exec = TestExecutor::new_with_fake_time();
+        let scope = exec.global_scope().clone();
+        let (_pipeline, inspect_repo) = permissive_pipeline(&scope);
+
+        let inspector = add_test_inspector(&scope, &inspect_repo, "./a/b/foo", None);
+
+        let (_sampler, mut sample_sink_server) =
+            start_sampling(&mut exec, &inspect_repo, vec![on_diff_datum("**:root:foo", 300)]);
+
+        // `foo` doesn't exist yet.
+        assert_no_sample(&mut exec, &mut sample_sink_server);
+
+        let _prop = inspector.root().create_int("foo", 0);
+        advance(&mut exec, 300);
+        let actual = next_sample(&mut exec, &mut sample_sink_server, 300);
+        assert_eq!(actual.len(), 1);
+        assert_eq!(actual[0].moniker, *MONIKER);
+        assert_eq!(actual[0].payload, Some(hierarchy! { root: { foo: 0u64 } }));
+
+        advance(&mut exec, 300);
+        assert_no_sample(&mut exec, &mut sample_sink_server);
     }
 
     #[fuchsia::test]

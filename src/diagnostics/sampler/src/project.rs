@@ -4,7 +4,7 @@
 
 use crate::config::ProjectStats;
 use crate::error::Error;
-use diagnostics_data::InspectData;
+use diagnostics_data::{InspectData, InspectHandleName};
 use diagnostics_hierarchy::{
     ArrayContent, ExponentialHistogram, LinearHistogram, Property, SelectResult,
     select_from_hierarchy,
@@ -90,6 +90,17 @@ impl<'a> Project<'a> {
                                     "Invalid selector. Fix config or file a bug against Sampler."
                                 );
                                 None
+                            }
+                        })
+                        .filter(|s| match &tree.metadata.name {
+                            InspectHandleName::Name(name) => {
+                                selectors::match_tree_name_against_selector(name.as_str(), s)
+                            }
+                            InspectHandleName::Filename(_) => {
+                                matches!(
+                                    s.tree_names.as_ref(),
+                                    None | Some(fdiagnostics::TreeNames::All(_))
+                                )
                             }
                         });
                     let Some(item) = Self::select_first_match(selectors_for_this_tree, tree) else {
@@ -563,7 +574,9 @@ impl<'a> Project<'a> {
 mod test {
     use super::*;
     use assert_matches::assert_matches;
-    use diagnostics_data::{DiagnosticsHierarchy, InspectDataBuilder, Timestamp};
+    use diagnostics_data::{
+        DiagnosticsHierarchy, InspectDataBuilder, InspectHandleName, Timestamp,
+    };
     use diagnostics_hierarchy::{
         ArrayContent, ExponentialHistogram, LinearHistogram, Property, SelectResult, hierarchy,
     };
@@ -776,6 +789,109 @@ mod test {
                 Err(Error::HistogramBucketCountDecreased { index: 1, old_count: 2, new_count: 1 })
             );
         }
+    }
+
+    fn named_tree_data(name: &str, hierarchy: DiagnosticsHierarchy) -> InspectData {
+        InspectDataBuilder::new(
+            "moniker/for/test".try_into().unwrap(),
+            "fuchsia-pkg://test",
+            Timestamp::from_nanos(0),
+        )
+        .with_name(InspectHandleName::name(name))
+        .with_hierarchy(hierarchy)
+        .build()
+    }
+
+    fn integer_metric_config(selector: &str, event_code: u32) -> MetricConfig {
+        MetricConfig {
+            selectors: vec![parse_verbose(selector).unwrap()],
+            metric_id: MetricId(0),
+            metric_type: MetricType::Integer,
+            event_codes: vec![EventCode(event_code)],
+            upload_once: false,
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_log_respects_tree_name_filter() {
+        let (logger, logger_server) = create_proxy_and_stream::<MetricEventLoggerMarker>();
+        let mut project = Project {
+            logger,
+            data_sets: vec![DataSetConfig {
+                metrics: vec![
+                    integer_metric_config("moniker/for/test:[name=alpha]root:foo", 1),
+                    integer_metric_config("moniker/for/test:[name=beta]root:foo", 2),
+                ],
+                poll_rate_sec: 1,
+            }],
+            cache: HashMap::new(),
+            stats: None,
+        };
+
+        let data_sink = Arc::new(Mutex::new(vec![]));
+        let scope = Scope::new();
+        scope.spawn(serve_mock_cobalt_logger(data_sink.clone(), logger_server));
+
+        let data = vec![
+            named_tree_data("alpha", hierarchy! { root: { foo: 1i64 } }),
+            named_tree_data("beta", hierarchy! { root: { foo: 2i64 } }),
+        ];
+        let upload_once =
+            project.log(&data, Some(zx::MonotonicDuration::from_seconds(0))).await.unwrap();
+
+        // Each tree only produces the metric whose selector names it.
+        let events = wait_for_data(&data_sink).await;
+        let expected = vec![
+            MetricEvent {
+                metric_id: 0,
+                payload: MetricEventPayload::IntegerValue(1),
+                event_codes: vec![1],
+            },
+            MetricEvent {
+                metric_id: 0,
+                payload: MetricEventPayload::IntegerValue(2),
+                event_codes: vec![2],
+            },
+        ];
+
+        assert!(upload_once.is_empty());
+        assert_eq!(expected, events);
+    }
+
+    #[fuchsia::test]
+    async fn test_log_default_tree_name_only_matches_root() {
+        let (logger, logger_server) = create_proxy_and_stream::<MetricEventLoggerMarker>();
+        let mut project = Project {
+            logger,
+            data_sets: vec![DataSetConfig {
+                metrics: vec![integer_metric_config("moniker/for/test:root:foo", 1)],
+                poll_rate_sec: 1,
+            }],
+            cache: HashMap::new(),
+            stats: None,
+        };
+
+        let data_sink = Arc::new(Mutex::new(vec![]));
+        let scope = Scope::new();
+        scope.spawn(serve_mock_cobalt_logger(data_sink.clone(), logger_server));
+
+        let data = vec![
+            named_tree_data("non_root", hierarchy! { root: { foo: 1i64 } }),
+            named_tree_data("root", hierarchy! { root: { foo: 2i64 } }),
+        ];
+        let upload_once =
+            project.log(&data, Some(zx::MonotonicDuration::from_seconds(0))).await.unwrap();
+
+        // A selector without a tree name filter only matches the default "root" tree.
+        let events = wait_for_data(&data_sink).await;
+        let expected = vec![MetricEvent {
+            metric_id: 0,
+            payload: MetricEventPayload::IntegerValue(2),
+            event_codes: vec![1],
+        }];
+
+        assert!(upload_once.is_empty());
+        assert_eq!(expected, events);
     }
 
     #[fuchsia::test]

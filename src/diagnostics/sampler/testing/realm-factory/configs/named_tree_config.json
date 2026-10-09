@@ -1,0 +1,55 @@
+{
+    "data_sets": [
+        {
+            "metrics": [
+                {
+                    "event_codes": [
+                        0,
+                        0
+                    ],
+                    "metric_id": 701,
+                    "metric_type": "Occurrence",
+                    "selector": "single_counter:[name=target_tree]root/samples:counter"
+                },
+                {
+                    "event_codes": [
+                        0,
+                        0
+                    ],
+                    "metric_id": 702,
+                    "metric_type": "Integer",
+                    "selector": "single_counter:[name=target_tree]root/samples:integer_1"
+                },
+                {
+                    "event_codes": [
+                        0,
+                        0
+                    ],
+                    "metric_id": 703,
+                    "metric_type": "Occurrence",
+                    "selector": "single_counter:[name=target_tree]root/target_only:counter"
+                },
+                {
+                    "event_codes": [
+                        0,
+                        0
+                    ],
+                    "metric_id": 704,
+                    "metric_type": "Occurrence",
+                    "selector": "single_counter:[name=unrelated_1]root/unrelated:val"
+                },
+                {
+                    "event_codes": [
+                        0,
+                        0
+                    ],
+                    "metric_id": 705,
+                    "metric_type": "Occurrence",
+                    "selector": "single_counter:[name=unrelated_2]root/unrelated:val"
+                }
+            ],
+            "poll_rate_sec": 3
+        }
+    ],
+    "project_id": 7
+}
