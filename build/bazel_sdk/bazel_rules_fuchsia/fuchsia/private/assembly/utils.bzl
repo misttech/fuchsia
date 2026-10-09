@@ -16,6 +16,8 @@ def select_root_dir_with_file(files, file):
     Returns:
         The top-most directory that contains the `file`.
     """
+    if len(files) == 1 and files[0].is_directory:
+        return files[0].path
     return paths.dirname(select_single_file(files, file).path)
 
 def select_root_dir(files):
@@ -27,6 +29,8 @@ def select_root_dir(files):
     Returns:
       The top-most directory.
     """
+    if len(files) == 1 and files[0].is_directory:
+        return files[0].path
     shortest = paths.dirname(files[0].path)
     for file in files:
         directory = paths.dirname(file.path)

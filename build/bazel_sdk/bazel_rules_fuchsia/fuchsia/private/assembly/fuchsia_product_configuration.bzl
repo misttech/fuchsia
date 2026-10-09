@@ -63,6 +63,7 @@ _fuchsia_prebuilt_product_configuration = rule(
     attrs = {
         "files": attr.label_list(
             doc = "All files referenced by the product config. This should be the entire contents of the product input artifacts directory.",
+            allow_files = True,
             mandatory = True,
         ),
         "build_type": attr.string(
@@ -88,21 +89,30 @@ _fuchsia_product_configuration = rule(
 
 def fuchsia_prebuilt_product_configuration(
         name,
-        product_config_dir,
-        build_type,
+        product_config_dir = None,
+        build_type = None,
+        files = None,
         # TODO(https://fxbug.dev/427811316): Flip this to False when all
         # products set it to True when necessary.
         allow_empty = True,
         **kwargs):
-    _all_files_target = "{}_all_files".format(name)
-    native.filegroup(
-        name = _all_files_target,
-        srcs = native.glob(["{}/**/*".format(product_config_dir)], allow_empty = allow_empty),
-    )
+    if product_config_dir and files:
+        fail("Cannot specify both `product_config_dir` and `files`.")
+    if product_config_dir:
+        _all_files_target = "{}_all_files".format(name)
+        native.filegroup(
+            name = _all_files_target,
+            srcs = native.glob(["{}/**/*".format(product_config_dir)], allow_empty = allow_empty),
+        )
+        files = [":{}".format(_all_files_target)]
+    elif not files:
+        fail("Either `product_config_dir` or `files` must be specified.")
+    elif type(files) == "string":
+        files = [files]
 
     _fuchsia_prebuilt_product_configuration(
         name = name,
-        files = [":{}".format(_all_files_target)],
+        files = files,
         build_type = build_type,
         **kwargs
     )

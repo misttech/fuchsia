@@ -102,10 +102,16 @@ class BazelSourcePathMapper:
                 # Bazel artifact path, not a source file.
                 return ""
 
-            if self._is_workspace_generated_file(path):
+            if path == "fuchsia_build_generated/jiri_snapshot.xml":
+                # jiri_snapshot.xml is a symlink in fuchsia_build_generated/ pointing
+                # to .jiri_root/update_history/latest in the Fuchsia checkout. Resolve
+                # it with realpath() below so Ninja depfiles track Jiri updates.
+                path = f"{self._workspace_prefix}{path}"
+
+            elif self._is_workspace_generated_file(path):
                 return ""
 
-            if path.startswith("external/"):
+            elif path.startswith("external/"):
                 # This file path belongs to an external repository, but could link to something
                 # else, hence will have to be resolved with realpath() below.
                 path = str(self._external_dir / path.removeprefix("external/"))

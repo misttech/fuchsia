@@ -319,6 +319,15 @@ if (is_host) {
     tests = [ "bazel_repository_utils_test.py" ]
     deps = [ ":bazel_repository_utils" ]
   }
+
+  python_library("fetch_cipd_prebuilt") {
+    sources = [ "fetch_cipd_prebuilt.py" ]
+  }
+
+  python_build_time_tests("fetch_cipd_prebuilt_test") {
+    tests = [ "fetch_cipd_prebuilt_test.py" ]
+    deps = [ ":fetch_cipd_prebuilt" ]
+  }
 }
 
 group("tests") {
@@ -338,6 +347,7 @@ group("tests") {
     ":bazel_tests_utils_test($host_toolchain)",
     ":build_utils_test($host_toolchain)",
     ":compute_content_hash_test($host_toolchain)",
+    ":fetch_cipd_prebuilt_test($host_toolchain)",
     ":generate_host_test_wrapper_test($host_toolchain)",
     ":generate_invocation_bazelrc_test($host_toolchain)",
     ":get_git_head_commit_test($host_toolchain)",

@@ -7,6 +7,7 @@
 
 import os
 import sys
+import tempfile
 import unittest
 
 # Import regenerator.py as a module.
@@ -114,6 +115,46 @@ class MetadataBazelrcTest(unittest.TestCase):
                 f"build:_bes_common --build_metadata=SIBLING_BUILDS_LINK={siblings_link}",
             },
         )
+
+
+class JiriPrebuiltBazelrcTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self.fuchsia_dir = os.path.realpath(self._temp_dir.name)
+        self.jiri_root = os.path.join(self.fuchsia_dir, ".jiri_root")
+        self.prebuilt_dir = os.path.join(self.fuchsia_dir, "prebuilt")
+        os.makedirs(self.jiri_root)
+        os.makedirs(self.prebuilt_dir)
+
+    def tearDown(self) -> None:
+        self._temp_dir.cleanup()
+
+    def test_sandbox_mounts(self) -> None:
+        rc = set(gen.jiri_prebuilt_bazelrc({"FUCHSIA_DIR": self.fuchsia_dir}))
+        self.assertEqual(
+            rc,
+            {
+                f"build --sandbox_add_mount_pair={self.jiri_root}",
+                f"build --sandbox_writable_path={self.jiri_root}",
+                f"build --sandbox_add_mount_pair={self.prebuilt_dir}",
+                f"build --sandbox_writable_path={self.prebuilt_dir}",
+            },
+        )
+
+    def test_symlinked_fuchsia_dir_resolved(self) -> None:
+        with tempfile.TemporaryDirectory() as link_parent:
+            symlink_dir = os.path.join(link_parent, "fuchsia_link")
+            os.symlink(self.fuchsia_dir, symlink_dir)
+            rc = set(gen.jiri_prebuilt_bazelrc({"FUCHSIA_DIR": symlink_dir}))
+            self.assertEqual(
+                rc,
+                {
+                    f"build --sandbox_add_mount_pair={self.jiri_root}",
+                    f"build --sandbox_writable_path={self.jiri_root}",
+                    f"build --sandbox_add_mount_pair={self.prebuilt_dir}",
+                    f"build --sandbox_writable_path={self.prebuilt_dir}",
+                },
+            )
 
 
 if __name__ == "__main__":

@@ -18,6 +18,9 @@ import sys
 from collections.abc import Iterable, Mapping
 
 _SCRIPT_DIR = os.path.dirname(__file__)
+_DEFAULT_FUCHSIA_DIR = os.path.abspath(
+    os.path.join(os.path.realpath(_SCRIPT_DIR), "..", "..", "..")
+)
 
 
 def bbid_link(bbid: str) -> str:
@@ -136,6 +139,26 @@ def service_proxies_bazelrc(env: Mapping[str, str]) -> Iterable[str]:
             "resultstore_infra", f"--bes_proxy=unix://{resultstore_socket_path}"
         )
     # LINT.ThenChange(//build/scripts/main_build.py:bazel_socket_env_vars)
+
+    yield from jiri_prebuilt_bazelrc(env)
+
+
+def jiri_prebuilt_bazelrc(env: Mapping[str, str]) -> Iterable[str]:
+    """Configure sandbox mounts for on-demand Jiri/CIPD prebuilts."""
+    env_fuchsia_dir = env.get("FUCHSIA_DIR")
+    fuchsia_dir = (
+        os.path.realpath(env_fuchsia_dir)
+        if env_fuchsia_dir
+        else _DEFAULT_FUCHSIA_DIR
+    )
+    for subdir in (".jiri_root", "prebuilt"):
+        dir_path = os.path.join(fuchsia_dir, subdir)
+        if os.path.isdir(dir_path):
+            yield f"build --sandbox_add_mount_pair={dir_path}"
+            yield f"build --sandbox_writable_path={dir_path}"
+
+    # TODO(https://fxbug.dev/570715338): Mount the Jiri proxy socket directory
+    # and forward its environment variable once jiri proxy is implemented.
 
 
 def generate_bazelrc(

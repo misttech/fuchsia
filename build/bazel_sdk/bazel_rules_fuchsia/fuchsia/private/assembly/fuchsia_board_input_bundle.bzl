@@ -307,6 +307,7 @@ fuchsia_prebuilt_board_input_bundle = rule(
     attrs = {
         "files": attr.label(
             doc = "All files belonging to the Board Input Bundles",
+            allow_files = True,
             mandatory = True,
         ),
     },

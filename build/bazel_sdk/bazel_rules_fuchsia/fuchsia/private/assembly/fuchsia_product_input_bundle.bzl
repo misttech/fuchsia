@@ -162,6 +162,7 @@ fuchsia_prebuilt_product_input_bundle = rule(
     attrs = {
         "files": attr.label(
             doc = "All files belonging to the Product Input Bundle",
+            allow_files = True,
             mandatory = True,
         ),
     },

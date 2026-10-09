@@ -355,6 +355,7 @@ _fuchsia_prebuilt_board_configuration = rule(
     attrs = {
         "files": attr.label(
             doc = "All files referenced by the board config.",
+            allow_files = True,
             mandatory = True,
         ),
     },

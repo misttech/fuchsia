@@ -7,6 +7,7 @@ package(default_applicable_licenses = ["//:license"])
 # The following files are exported for use by Bazel rules.
 exports_files([
     "build_utils.py",
+    "fetch_cipd_prebuilt.py",
     "generate_host_test_wrapper.py",
     "runfiles_utils.py",
 ])

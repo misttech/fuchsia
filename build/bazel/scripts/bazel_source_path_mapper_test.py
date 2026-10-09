@@ -136,6 +136,27 @@ class BazelSourcePathMapperTest(unittest.TestCase):
             self.mapper.resolve_path("fuchsia_build_generated/foo"), ""
         )
 
+        # fuchsia_build_generated/jiri_snapshot.xml is a symlink to
+        # .jiri_root/update_history/latest and should resolve to that path.
+        jiri_latest = (
+            self.fuchsia_dir / ".jiri_root" / "update_history" / "latest"
+        )
+        jiri_latest.parent.mkdir(parents=True, exist_ok=True)
+        jiri_latest.write_text("<manifest/>")
+        jiri_Redirect = (
+            self.bazel_paths.workspace
+            / "fuchsia_build_generated"
+            / "jiri_snapshot.xml"
+        )
+        jiri_Redirect.parent.mkdir(parents=True, exist_ok=True)
+        jiri_Redirect.symlink_to(jiri_latest)
+        self.assertEqual(
+            self.mapper.resolve_path(
+                "fuchsia_build_generated/jiri_snapshot.xml"
+            ),
+            ".jiri_root/update_history/latest",
+        )
+
     def test_resolve_execroot_source(self) -> None:
         execroot_source = f"{self.bazel_paths.execroot}/src/foo/bar.cc"
         self.assertEqual(
