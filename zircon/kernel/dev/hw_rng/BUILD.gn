@@ -9,22 +9,25 @@ import("//zircon/kernel/kernel_rust_mod.gni")
 
 kernel_rust_mod("hw_rng-rs") {
   visibility = [ ":*" ]
-  sources = [ "hw_rng.rs" ]
-  deps = [ "//src/lib/zr" ]
+  sources = [
+    "console.rs",
+    "hw_rng.rs",
+  ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//src/lib/kprint",
+    "//src/lib/zr",
+    "//third_party/rust_crates:zerocopy",
+    "//zircon/kernel/lib/debug",
+    "//zircon/system/ulib/pretty/rust:pretty",
+  ]
 }
 
 source_set("hw_rng") {
   public_deps = [ ":headers" ]
 
-  sources = [
-    "debug.cc",
-    "hw_rng_ffi.cc",
-  ]
-  deps = [
-    ":hw_rng-rs",
-    "//zircon/kernel/lib/console",
-    "//zircon/system/ulib/pretty",
-  ]
+  sources = [ "hw_rng_ffi.cc" ]
+  deps = [ ":hw_rng-rs" ]
 }
 
 library_headers("headers") {

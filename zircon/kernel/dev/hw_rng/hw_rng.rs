@@ -4,6 +4,11 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#[cfg(console_enabled)]
+pub mod console;
+#[cfg(not(console_enabled))]
+use {debug as _, kprint as _, pretty as _, zerocopy as _, zx_status as _};
+
 use core::ffi::c_void;
 use core::ptr::NonNull;
 
