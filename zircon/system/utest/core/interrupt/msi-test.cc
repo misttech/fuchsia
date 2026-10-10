@@ -135,12 +135,12 @@ struct Capability {
   uint8_t id;
   uint8_t next;
   uint16_t control;
-  uint64_t reserved1_;    // For 32 bit this is Address, Data, and a reserved field.
-                          // For 64 bit this is Address and Address Upper.
-  uint32_t mask_bits_32;  // For 64 bit this is Data and a reserved field.
+  uint32_t reserved1_[2];  // For 32 bit this is Address, Data, and a reserved field.
+                           // For 64 bit this is Address and Address Upper.
+  uint32_t mask_bits_32;   // For 64 bit this is Data and a reserved field.
   uint32_t mask_bits_64;
   uint32_t reserved2_;  // Pending Bits
-} __PACKED;
+};
 static_assert(offsetof(Capability, mask_bits_32) == 0x0C);
 static_assert(offsetof(Capability, mask_bits_64) == 0x10);
 static_assert(sizeof(Capability) == 24);

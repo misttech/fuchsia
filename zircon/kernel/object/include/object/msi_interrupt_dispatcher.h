@@ -113,12 +113,12 @@ struct MsiCapability {
   uint8_t id;
   uint8_t reserved0_;  // Next pointer
   uint16_t control;
-  uint64_t reserved1_;    // For 32 bit this is Address, Data, and a reserved field.
-                          // For 64 bit this is Address and Address Upper.
-  uint32_t mask_bits_32;  // For 64 bit this is Data and a reserved field.
+  uint32_t reserved1_[2];  // For 32 bit this is Address, Data, and a reserved field.
+                           // For 64 bit this is Address and Address Upper.
+  uint32_t mask_bits_32;   // For 64 bit this is Data and a reserved field.
   uint32_t mask_bits_64;
   uint32_t reserved2_;  // Pending Bits
-} __PACKED;
+};
 static_assert(offsetof(MsiCapability, mask_bits_32) == 0x0C);
 static_assert(offsetof(MsiCapability, mask_bits_64) == 0x10);
 static_assert(sizeof(MsiCapability) == 24);
@@ -133,7 +133,8 @@ class MsiInterruptDispatcherImpl : public MsiInterruptDispatcher {
         has_platform_pvm_(msi_supports_masking()),
         has_cap_pvm_(has_cap_pvm),
         has_64bit_(has_64bit),
-        capability_(reinterpret_cast<MsiCapability*>(this->mapping()->base() + reg_offset)) {}
+        capability_(reinterpret_cast<MMIO_PTR volatile MsiCapability*>(this->mapping()->base() +
+                                                                       reg_offset)) {}
   void MaskInterrupt() final;
   void UnmaskInterrupt() final;
 
@@ -148,7 +149,7 @@ class MsiInterruptDispatcherImpl : public MsiInterruptDispatcher {
   // A pointer to the MSI Mask Register for this specific device function. To
   // synchronize with other MSI interactions in the device it requires the MSI
   // allocation's lock.
-  volatile MsiCapability* const capability_ TA_GUARDED(allocation()->lock());
+  MMIO_PTR volatile MsiCapability* const capability_ TA_GUARDED(allocation()->lock());
 };
 
 // For MSI-X, the kernel only needs to interact with a given table entry for a specific vector.

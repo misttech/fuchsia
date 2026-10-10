@@ -123,12 +123,13 @@ zx_status_t MsiInterruptDispatcher::Create(fbl::RefPtr<MsiAllocation> alloc, uin
       return ZX_ERR_INVALID_ARGS;
     }
 
-    auto* cap = reinterpret_cast<MsiCapability*>(mapping_result->base + vmo_offset);
-    if (cap->id != kMsiCapabilityId) {
+    auto* cap =
+        reinterpret_cast<MMIO_PTR volatile MsiCapability*>(mapping_result->base + vmo_offset);
+    if (MmioRead8(&cap->id) != kMsiCapabilityId) {
       return ZX_ERR_INVALID_ARGS;
     }
 
-    uint16_t ctrl_val = cap->control;
+    uint16_t ctrl_val = MmioRead16(&cap->control);
     bool has_pvm = !!(ctrl_val & kMsiPvmSupported);
     bool has_64bit = !!(ctrl_val & kMsi64bitSupported);
     disp = fbl::AdoptRef<MsiInterruptDispatcher>(new (&ac) MsiInterruptDispatcherImpl(
@@ -211,12 +212,10 @@ void MsiInterruptDispatcherImpl::MaskInterrupt() {
   }
 
   if (has_cap_pvm_) {
-    const uint32_t mask = (1 << msi_id());
-    if (has_64bit_) {
-      capability_->mask_bits_64 = capability_->mask_bits_64 | mask;
-    } else {
-      capability_->mask_bits_32 = capability_->mask_bits_32 | mask;
-    }
+    const uint32_t mask = (1u << msi_id());
+    MMIO_PTR volatile uint32_t* mask_reg =
+        has_64bit_ ? &capability_->mask_bits_64 : &capability_->mask_bits_32;
+    MmioWrite32(MmioRead32(mask_reg) | mask, mask_reg);
     arch::DeviceMemoryBarrier();
   }
 }
@@ -230,12 +229,10 @@ void MsiInterruptDispatcherImpl::UnmaskInterrupt() {
 
   if (has_cap_pvm_) {
     Guard<SpinLock, IrqSave> guard{&allocation()->lock()};
-    const uint32_t mask = static_cast<uint32_t>(~(1 << msi_id()));
-    if (has_64bit_) {
-      capability_->mask_bits_64 = capability_->mask_bits_64 & mask;
-    } else {
-      capability_->mask_bits_32 = capability_->mask_bits_32 & mask;
-    }
+    const uint32_t mask = ~(1u << msi_id());
+    MMIO_PTR volatile uint32_t* mask_reg =
+        has_64bit_ ? &capability_->mask_bits_64 : &capability_->mask_bits_32;
+    MmioWrite32(MmioRead32(mask_reg) & mask, mask_reg);
     arch::DeviceMemoryBarrier();
   }
 }
