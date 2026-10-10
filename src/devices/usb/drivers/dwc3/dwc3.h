@@ -553,6 +553,7 @@ class Dwc3 : public fdf::DriverBase2,
   // `StopController()` was called most recently.
   bool controller_started_{false};
   bool power_on_{true};
+  bool link_connected_{false};
 
   // Returns true if PHY power is on and the controller has been started by the client.
   bool is_active() const { return power_on_ && controller_started_; }

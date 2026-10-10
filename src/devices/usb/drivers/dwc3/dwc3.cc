@@ -1949,11 +1949,13 @@ void Dwc3::OnConnectStatusChanged(
     return;
   }
 
+  link_connected_ = result->connected();
   if (result->connected()) {
     fdf::debug("OnConnectStatusChanged: now connected");
 
     if (platform_extension_) {
       if (zx::result result = platform_extension_->Resume(); result.is_error()) {
+        link_connected_ = false;
         return;
       }
       if (zx::result result = platform_extension_->SetConnectionSpeed(fdescriptor::UsbSpeed::kHigh);

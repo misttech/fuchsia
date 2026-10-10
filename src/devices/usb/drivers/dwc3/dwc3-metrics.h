@@ -54,6 +54,30 @@ class Dwc3Metrics {
     event_counts_[type]++;
   }
   void RecordEvent(std::string message);
+  void RecordCorePowerDown() {
+    core_power_down_count_++;
+    last_power_down_time_ns_ = zx_clock_get_boot();
+  }
+  void RecordCorePowerUp() {
+    core_power_up_count_++;
+    last_power_up_time_ns_ = zx_clock_get_boot();
+  }
+  void RecordDciDisconnectDuration(zx_duration_t duration) {
+    last_dci_disconnect_duration_ns_ = duration;
+    if (duration > max_dci_disconnect_duration_ns_) {
+      max_dci_disconnect_duration_ns_ = duration;
+    }
+  }
+  void RecordDciDisconnectSuperseded() { dci_disconnect_superseded_count_++; }
+  void RecordHaltTimeout() { halt_controller_timeouts_++; }
+  void RecordResetTimeout() { hw_reset_timeouts_++; }
+  void RecordCmdActTimeout() { cmd_act_timeouts_++; }
+  void RecordPlatformExtensionError() { platform_extension_errors_++; }
+  void RecordPhyRpcError() { phy_rpc_errors_++; }
+
+  uint64_t phy_rpc_errors() const { return phy_rpc_errors_; }
+  uint64_t hw_reset_timeouts() const { return hw_reset_timeouts_; }
+
   void UpdateMaxEventBatch(uint32_t batch_size) {
     if (batch_size > max_event_batch_size_) {
       max_event_batch_size_ = batch_size;
@@ -64,9 +88,21 @@ class Dwc3Metrics {
   friend struct std::formatter<MetricEventType>;
 
  private:
-  zx_time_t time_start_;
-  uint64_t event_counts_[static_cast<uint32_t>(MetricEventType::kDevtNumEventTypes)];
+  zx_time_t time_start_{0};
+  uint64_t event_counts_[static_cast<uint32_t>(MetricEventType::kDevtNumEventTypes)]{};
   uint32_t max_event_batch_size_{0};
+  uint64_t core_power_down_count_{0};
+  uint64_t core_power_up_count_{0};
+  zx_time_t last_power_down_time_ns_{0};
+  zx_time_t last_power_up_time_ns_{0};
+  zx_duration_t last_dci_disconnect_duration_ns_{0};
+  zx_duration_t max_dci_disconnect_duration_ns_{0};
+  uint64_t dci_disconnect_superseded_count_{0};
+  uint64_t halt_controller_timeouts_{0};
+  uint64_t hw_reset_timeouts_{0};
+  uint64_t cmd_act_timeouts_{0};
+  uint64_t platform_extension_errors_{0};
+  uint64_t phy_rpc_errors_{0};
 
   std::deque<EventLogEntry> event_history_;
   static constexpr size_t kEventHistoryCapacity = 50;

@@ -86,4 +86,26 @@ TEST(Dwc3MetricsTest, NullControllerSkipsMmioSampling) {
   EXPECT_EQ(nullptr, hierarchy.GetByPath({"DSTS"}));
 }
 
+TEST(Dwc3MetricsTest, RuntimePowerAndTeardownMetricsRecording) {
+  Dwc3Metrics metrics;
+  metrics.Init();
+
+  metrics.RecordCorePowerDown();
+  metrics.RecordCorePowerUp();
+  metrics.RecordDciDisconnectDuration(12345);
+  metrics.RecordDciDisconnectDuration(67890);
+  metrics.RecordDciDisconnectSuperseded();
+  metrics.RecordHaltTimeout();
+  metrics.RecordResetTimeout();
+  metrics.RecordCmdActTimeout();
+  metrics.RecordPlatformExtensionError();
+  metrics.RecordPhyRpcError();
+
+  // Resetting metrics via Init clears everything.
+  metrics.Init();
+  inspect::Inspector inspector = metrics.RecordMetrics(nullptr, nullptr);
+  auto hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo()).take_value();
+  EXPECT_NE(nullptr, hierarchy.node().get_property<inspect::UintPropertyValue>("time_start"));
+}
+
 }  // namespace dwc3

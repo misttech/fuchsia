@@ -29,6 +29,18 @@ void Dwc3Metrics::Init() {
     event_count = 0;
   }
   max_event_batch_size_ = 0;
+  core_power_down_count_ = 0;
+  core_power_up_count_ = 0;
+  last_power_down_time_ns_ = 0;
+  last_power_up_time_ns_ = 0;
+  last_dci_disconnect_duration_ns_ = 0;
+  max_dci_disconnect_duration_ns_ = 0;
+  dci_disconnect_superseded_count_ = 0;
+  halt_controller_timeouts_ = 0;
+  hw_reset_timeouts_ = 0;
+  cmd_act_timeouts_ = 0;
+  platform_extension_errors_ = 0;
+  phy_rpc_errors_ = 0;
 }
 
 // Lazily produce the Inspect data.
@@ -113,6 +125,54 @@ inspect::Inspector Dwc3Metrics::RecordMetrics(fdf::MmioBuffer* mmio, Dwc3* dwc3)
   }
 
   if (dwc3) {
+    auto power_node = root.CreateChild("power_and_connection_state");
+    power_node.RecordBool("power_on", dwc3->power_on_);
+    power_node.RecordBool("link_connected", dwc3->link_connected_);
+    const char* device_state_str = "Unknown";
+    switch (dwc3->device_state_) {
+      case fuchsia_hardware_usb_policy::DeviceState::kNotAttached:
+        device_state_str = "NotAttached";
+        break;
+      case fuchsia_hardware_usb_policy::DeviceState::kAttached:
+        device_state_str = "Attached";
+        break;
+      case fuchsia_hardware_usb_policy::DeviceState::kPowered:
+        device_state_str = "Powered";
+        break;
+      case fuchsia_hardware_usb_policy::DeviceState::kDefault:
+        device_state_str = "Default";
+        break;
+      case fuchsia_hardware_usb_policy::DeviceState::kAddress:
+        device_state_str = "Address";
+        break;
+      case fuchsia_hardware_usb_policy::DeviceState::kConfigured:
+        device_state_str = "Configured";
+        break;
+      case fuchsia_hardware_usb_policy::DeviceState::kSuspended:
+        device_state_str = "Suspended";
+        break;
+      default:
+        device_state_str = "Unknown";
+        break;
+    }
+    power_node.RecordString("device_state", device_state_str);
+    root.Record(std::move(power_node));
+
+    auto runtime_node = root.CreateChild("suspend_metrics");
+    runtime_node.RecordUint("core_power_down_count", core_power_down_count_);
+    runtime_node.RecordUint("core_power_up_count", core_power_up_count_);
+    runtime_node.RecordInt("last_power_down_time_ns", last_power_down_time_ns_);
+    runtime_node.RecordInt("last_power_up_time_ns", last_power_up_time_ns_);
+    runtime_node.RecordInt("last_dci_disconnect_duration_ns", last_dci_disconnect_duration_ns_);
+    runtime_node.RecordInt("max_dci_disconnect_duration_ns", max_dci_disconnect_duration_ns_);
+    runtime_node.RecordUint("dci_disconnect_superseded_count", dci_disconnect_superseded_count_);
+    runtime_node.RecordUint("halt_controller_timeouts", halt_controller_timeouts_);
+    runtime_node.RecordUint("hw_reset_timeouts", hw_reset_timeouts_);
+    runtime_node.RecordUint("cmd_act_timeouts", cmd_act_timeouts_);
+    runtime_node.RecordUint("platform_extension_errors", platform_extension_errors_);
+    runtime_node.RecordUint("phy_rpc_errors", phy_rpc_errors_);
+    root.Record(std::move(runtime_node));
+
     auto endpoints_node = root.CreateChild("endpoints");
     auto record_endpoint = [](const Dwc3::Endpoint& ep, inspect::Node& ep_node) {
       ep_node.RecordUint("type", fidl::ToUnderlying(ep.type));
@@ -149,6 +209,10 @@ inspect::Inspector Dwc3Metrics::RecordMetrics(fdf::MmioBuffer* mmio, Dwc3* dwc3)
       record_endpoint(ep, ep_node);
 
       if (uep.server.has_value()) {
+        ep_node.RecordUint("active_reqs_count", uep.server->active_reqs.size());
+        ep_node.RecordUint("queued_reqs_count", uep.server->queued_reqs.size());
+        ep_node.RecordUint("cancel_completers_pending", uep.server->cancel_completers.size());
+
         auto vmos_info = uep.server->GetRegisteredVmosInfo();
         if (!vmos_info.empty()) {
           auto vmos_node = ep_node.CreateChild("registered_vmos");
