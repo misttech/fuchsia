@@ -287,13 +287,19 @@ impl FileSystem {
     /// File systems that produce their own IDs for nodes should invoke this
     /// function. The ones who leave to this object to assign the IDs should
     /// call |create_node_and_allocate_node_id|.
+    ///
+    /// `info.blksize` will be overriden for some virtual filesystems based on
+    /// `ops.default_blksize()`.
     pub fn create_node_with_flags(
         self: &Arc<Self>,
         ino: Option<ino_t>,
         ops: impl Into<Box<dyn FsNodeOps>>,
-        info: FsNodeInfo,
+        mut info: FsNodeInfo,
         flags: FsNodeFlags,
     ) -> FsNodeHandle {
+        if let Some(blksize) = self.ops.default_blksize() {
+            info.blksize = blksize;
+        }
         let ino = ino.unwrap_or_else(|| self.allocate_ino());
         let node = FsNode::new_uncached(ino, ops, self, info, flags);
         self.node_cache.insert_node(&node);
@@ -325,9 +331,7 @@ impl FileSystem {
         info: FsNodeInfo,
     ) -> FsNodeHandle {
         assert!(info.mode.is_dir());
-        let node = FsNode::new_uncached(ino, ops, self, info, FsNodeFlags::empty());
-        self.node_cache.insert_node(&node);
-        node
+        self.create_node_with_flags(Some(ino), ops, info, FsNodeFlags::empty())
     }
 
     /// Create a root node for the filesystem.
@@ -605,6 +609,11 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
     /// Returns whether this filesystem supports casefolded directory lookups.
     fn has_casefold_support(&self) -> bool {
         false
+    }
+
+    /// Returns the default block size (`st_blksize`) for nodes in this filesystem, if any.
+    fn default_blksize(&self) -> Option<usize> {
+        None
     }
 
     /// Rename the given node.

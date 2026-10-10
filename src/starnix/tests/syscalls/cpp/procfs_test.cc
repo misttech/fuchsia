@@ -1732,4 +1732,31 @@ TEST(ProcHidePidTest, HidePidAndGidMountOptions) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+blksize_t ExpectedProcfsBlksize() {
+  // Linux's procfs sets s_blocksize = 1024 in proc_fill_super, whereas Starnix sets st_blksize to
+  // PAGE_SIZE so Bionic stdio buffers size to a full page.
+  return test_helper::IsStarnix() ? static_cast<blksize_t>(sysconf(_SC_PAGESIZE)) : 1024;
+}
+
+TEST(ProcfsBlksizeTest, FileFstatBlksize) {
+  const blksize_t expected_blksize = ExpectedProcfsBlksize();
+  for (const char* path : {"/proc/self/smaps", "/proc/self/maps", "/proc/uptime"}) {
+    fbl::unique_fd fd(open(path, O_RDONLY));
+    ASSERT_TRUE(fd.is_valid()) << "open failed for " << path << ": " << strerror(errno);
+    struct stat st;
+    ASSERT_EQ(fstat(fd.get(), &st), 0) << "fstat failed for " << path << ": " << strerror(errno);
+    EXPECT_EQ(st.st_blksize, expected_blksize) << "path: " << path;
+  }
+}
+
+TEST(ProcfsBlksizeTest, StatBlksize) {
+  const blksize_t expected_blksize = ExpectedProcfsBlksize();
+  for (const char* path :
+       {"/proc", "/proc/self", "/proc/self/fd", "/proc/sys", "/proc/self/attr", "/proc/kmsg"}) {
+    struct stat st;
+    ASSERT_EQ(stat(path, &st), 0) << "stat failed for " << path << ": " << strerror(errno);
+    EXPECT_EQ(st.st_blksize, expected_blksize) << "path: " << path;
+  }
+}
+
 }  // namespace

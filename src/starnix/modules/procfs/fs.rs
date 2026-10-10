@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::proc_directory::ProcDirectory;
+use starnix_core::mm::PAGE_SIZE;
 use starnix_core::task::{CurrentTask, Task, TaskContainer};
 use starnix_core::vfs::fs_args::MountParams;
 use starnix_core::vfs::{
@@ -111,6 +112,10 @@ impl FileSystemOps for ProcFs {
             let _ = write!(&mut opts, ",hidepid={hide_pid}");
         }
         Ok(opts.into())
+    }
+
+    fn default_blksize(&self) -> Option<usize> {
+        Some(*PAGE_SIZE as usize)
     }
 }
 
