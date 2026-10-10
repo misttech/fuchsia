@@ -2060,6 +2060,7 @@ mod handle_driver_event_tests {
             rssi_dbm: Some(1),
             snr_db: Some(2),
             tx_rate_500kbps: Some(0),
+            rx_rate_500kbps: Some(130),
             ..Default::default()
         };
         assert_matches!(
@@ -2076,6 +2077,7 @@ mod handle_driver_event_tests {
                 rssi_dbm: Some(1),
                 snr_db: Some(2),
                 tx_rate_500kbps: Some(0),
+                rx_rate_500kbps: Some(130),
                 ..Default::default()
             }
         );

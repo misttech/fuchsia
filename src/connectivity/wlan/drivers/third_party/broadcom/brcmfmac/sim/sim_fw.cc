@@ -188,6 +188,7 @@ zx_status_t SimFirmware::SetupIovarTable() {
       {"rxchain", sizeof(uint32_t), nullptr, &SimFirmware::IovarRxchainGet},
       {"snr", sizeof(int32_t), nullptr, &SimFirmware::IovarSnrGet},
       {"ssid", sizeof(brcmf_ssid_le), &SimFirmware::IovarSsidSet, nullptr},
+      {"sta_info", sizeof(brcmf_sta_info_le), nullptr, &SimFirmware::IovarStaInfoGet},
       {"stbc_tx", sizeof(int32_t), &SimFirmware::IovarStbcTxSet, &SimFirmware::IovarStbcTxGet},
       {"target_bss_info", std::nullopt, nullptr, &SimFirmware::IovarTargetBssInfoGet},
       {"tlv", sizeof(sim_iface_entry_t::tlv), &SimFirmware::IovarIfaceVarSet,
@@ -500,7 +501,7 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
       break;
     }
     case BRCMF_C_GET_RATE: {
-      uint32_t rate = 130;  // 65 Mbps (130 * 500kbps)
+      uint32_t rate = kDefaultSimFwTxRate;
       if ((status = SIM_FW_CHK_CMD_LEN(dcmd->len, sizeof(rate))) == ZX_OK) {
         std::memcpy(data, &rate, sizeof(rate));
       }
@@ -766,7 +767,7 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
     }
     case BRCMF_C_GET_RSSI: {
       if ((status = SIM_FW_CHK_CMD_LEN(dcmd->len, sizeof(int32_t))) == ZX_OK) {
-        int32_t rssi = -20;
+        int32_t rssi = kDefaultSimFwRssi;
         std::memcpy(data, &rssi, sizeof(rssi));
       }
       break;
@@ -2700,6 +2701,20 @@ zx_status_t SimFirmware::IovarStbcTxGet(SimIovarGetReq* req) {
   return ZX_OK;
 }
 
+zx_status_t SimFirmware::IovarStaInfoGet(SimIovarGetReq* req) {
+  if (req->value_len < sizeof(brcmf_sta_info_le)) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  struct brcmf_sta_info_le sta_info = {
+      .ver = 4,
+      .len = sizeof(brcmf_sta_info_le),
+      .tx_rate = kDefaultSimFwStaInfoTxRateKbps,
+      .rx_rate = kDefaultSimFwStaInfoRxRateKbps,
+  };
+  std::memcpy(req->value, &sta_info, sizeof(sta_info));
+  return ZX_OK;
+}
+
 zx_status_t SimFirmware::IovarTargetBssInfoGet(SimIovarGetReq* req) {
   if (assoc_state_.reassoc_opts == nullptr) {
     return ZX_ERR_BAD_STATE;
@@ -2928,7 +2943,7 @@ zx_status_t SimFirmware::IovarSnrGet(SimIovarGetReq* req) {
   if (!iface_tbl_[req->ifidx].allocated) {
     return ZX_ERR_BAD_STATE;
   }
-  int32_t sim_snr = 40;
+  int32_t sim_snr = kDefaultSimFwSnr;
   memcpy(req->value, &sim_snr, sizeof(sim_snr));
   return ZX_OK;
 }

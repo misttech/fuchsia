@@ -344,6 +344,7 @@ pub fn convert_signal_report_indication(
         rssi_dbm: ind.rssi_dbm,
         snr_db: ind.snr_db,
         tx_rate_500kbps: ind.tx_rate_500kbps,
+        rx_rate_500kbps: ind.rx_rate_500kbps,
         ..Default::default()
     }
 }

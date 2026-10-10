@@ -1109,12 +1109,14 @@ async fn test_signal_report() {
         let expected_rssi_dbm = -40 + i;
         let expected_snr_db = 30 + i;
         let expected_tx_rate = 100 + i as u32;
+        let expected_rx_rate = 200 + i as u32;
         fullmac_driver
             .ifc_proxy
             .signal_report(&fidl_fullmac::WlanFullmacSignalReportIndication {
                 rssi_dbm: Some(expected_rssi_dbm),
                 snr_db: Some(expected_snr_db),
                 tx_rate_500kbps: Some(expected_tx_rate),
+                rx_rate_500kbps: Some(expected_rx_rate),
                 ..Default::default()
             })
             .await
@@ -1127,12 +1129,14 @@ async fn test_signal_report() {
                     rssi_dbm: Some(rssi_dbm),
                     snr_db: Some(snr_db),
                     tx_rate_500kbps: Some(tx_rate_500kbps),
+                    rx_rate_500kbps: Some(rx_rate_500kbps),
                     ..
                 }
             })) => {
                 assert_eq!(rssi_dbm, expected_rssi_dbm);
                 assert_eq!(snr_db, expected_snr_db);
                 assert_eq!(tx_rate_500kbps, expected_tx_rate);
+                assert_eq!(rx_rate_500kbps, expected_rx_rate);
             }
         );
     }

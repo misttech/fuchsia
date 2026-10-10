@@ -2775,6 +2775,16 @@ static void cfg80211_signal_ind(net_device* ndev) {
                    brcmf_fil_get_errstr(fw_err));
       }
 
+      // Query sta_info to obtain Rx rate
+      struct brcmf_sta_info_le sta_info = {};
+      if (brcmf_cfg80211_get_station(ndev, ifp->vif->profile.bssid, &sta_info) == ZX_OK) {
+        // Firmware reports rx_rate in kbps, with 0 meaning that no rx rate is available. Leave the
+        // rx rate unset if it's unavailable.
+        if (sta_info.rx_rate != 0) {
+          builder.rx_rate_500kbps(sta_info.rx_rate / 500);
+        }
+      }
+
       // Store the value in ndev (dumped out when link goes down)
       ndev->last_known_rssi_dbm = rssi;
       ndev->last_known_snr_db = snr;

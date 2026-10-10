@@ -51,6 +51,16 @@
 namespace wlan::brcmfmac {
 
 const wlan::common::MacAddr kZeroMac({0x0, 0x0, 0x0, 0x0, 0x0, 0x0});
+// Default signal parameters returned by sim firmware
+constexpr int8_t kDefaultSimFwRssi = -20;
+constexpr uint8_t kDefaultSimFwSnr = 40;
+// Rate returned by BRCMF_C_GET_RATE, in units of 500 kbps. 65 Mbps (130 * 500 kbps).
+constexpr uint32_t kDefaultSimFwRate = 130;
+constexpr uint32_t kDefaultSimFwTxRate = kDefaultSimFwRate;
+// Rates returned by the "sta_info" iovar, in kbps. Unlike BRCMF_C_GET_RATE, sta_info reports rates
+// in kbps. The rx rate is deliberately not a multiple of 500 kbps.
+constexpr uint32_t kDefaultSimFwStaInfoTxRateKbps = 65'000;
+constexpr uint32_t kDefaultSimFwStaInfoRxRateKbps = 72'200;
 // The amount of time we will wait for an association response after an association request
 constexpr zx::duration kAssocTimeout = zx::sec(1);
 // The amount of time we will wait for an authentication response after an authentication request
@@ -420,6 +430,7 @@ class SimFirmware {
   zx_status_t IovarSsidSet(SimIovarSetReq* req);
   zx_status_t IovarStbcTxSet(SimIovarSetReq* req);
   zx_status_t IovarStbcTxGet(SimIovarGetReq* req);
+  zx_status_t IovarStaInfoGet(SimIovarGetReq* req);
   zx_status_t IovarTargetBssInfoGet(SimIovarGetReq* req);
   zx_status_t IovarTxstreamsSet(SimIovarSetReq* req);
   zx_status_t IovarTxstreamsGet(SimIovarGetReq* req);
