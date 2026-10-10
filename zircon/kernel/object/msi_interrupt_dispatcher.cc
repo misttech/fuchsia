@@ -114,17 +114,17 @@ zx_status_t MsiInterruptDispatcher::Create(fbl::RefPtr<MsiAllocation> alloc, uin
     disp = fbl::AdoptRef<MsiInterruptDispatcher>(new (&ac) MsixInterruptDispatcherImpl(
         ktl::move(alloc), base_irq_id, msi_id, ktl::move(mapping), vmo_offset, register_int_fn));
   } else {
-    auto* cap = reinterpret_cast<MsiCapability*>(mapping_result->base + vmo_offset);
-    if (cap->id != kMsiCapabilityId) {
-      return ZX_ERR_INVALID_ARGS;
-    }
-
     // MSI capabilities fit within a given device's configuration space which is either 256
     // or 4096 bytes. But in most cases the VMO containing config space is going to be at
     // least the size of a full PCI bus's worth of devices, and physical VMOs cannot be sliced
     // into children. We can validate that the capability fits within the offset given, but
     // otherwise cannot rely on the VMO's size for validation.
     if (add_overflow(vmo_offset, sizeof(MsiCapability), &add_result) || add_result > vmo->size()) {
+      return ZX_ERR_INVALID_ARGS;
+    }
+
+    auto* cap = reinterpret_cast<MsiCapability*>(mapping_result->base + vmo_offset);
+    if (cap->id != kMsiCapabilityId) {
       return ZX_ERR_INVALID_ARGS;
     }
 
