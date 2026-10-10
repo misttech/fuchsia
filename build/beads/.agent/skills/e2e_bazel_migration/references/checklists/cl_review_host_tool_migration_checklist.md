@@ -74,11 +74,9 @@ This checklist defines the review criteria and standards for code changes migrat
 
 * [ ] **Fully Migrated Directory (Delete `BUILD.gn`):**
   - If all targets in `{directory_path}/BUILD.gn` are migrated to Bazel and no external GN targets depend on them, `BUILD.gn` is deleted.
-  - Do not run `bazel2gn`, do not add `# @bazel2gn:skip`, and do not add `"//{directory_path}:verify_bazel2gn"`.
+  - Do not run `bazel2gn`, and do not add `# @bazel2gn:skip`.
 * [ ] **Partially Migrated Directory (Retain `BUILD.gn`):**
   - `# @bazel2gn:skip` is added on the line immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel`.
-  - `"//{directory_path}:verify_bazel2gn"` is added to `bazel2gn_verification_targets` in `//build/bazel2gn_verification_targets.gni`.
-  - Entries preserve alphabetical sorting inside the `# keep-sorted` block.
   - Synced `BUILD.gn` does not retain unreferenced internal library targets.
 * [ ] **Directive Clean-up:** `# @bazel2gn:skip` is removed (or omitted) if `BUILD.gn` is deleted.
 
@@ -99,4 +97,4 @@ This checklist defines the review criteria and standards for code changes migrat
 * [ ] **Direct Bazel Build:** `fx build --host @//{directory_path}:{target_name}` passes.
 * [ ] **Bazel-in-GN Build:** `fx build --host //{directory_path}:{target_name}` passes.
 * [ ] **Host Tests Execution:** `fx bazel test --config=host //{directory_path}:{test_target_name}` and aggregated `fx bazel test --config=host //tools:host_tests` pass.
-* [ ] **bazel2gn Verification:** `fx build --host //build:bazel2gn_verifications` passes.
+* [ ] **bazel2gn Verification:** Synced directories pass the bazel2gn sync check (Verify step of the `syncing-bazel-to-gn` skill).

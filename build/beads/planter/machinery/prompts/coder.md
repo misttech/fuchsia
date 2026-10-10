@@ -5,7 +5,7 @@ You are migrating a Fuchsia package directory from GN (BUILD.gn) to Bazel (BUILD
 ## How This Prompt and the Checks Fit Together
 Planter enforces most migration rules with deterministic checks (`run_checks.sh`), and every
 finding names the file, the problem and the fix. This prompt does not repeat what the checks
-enforce (for example visibility scoping, sentinel placement, `verify_bazel2gn` registration,
+enforce (for example visibility scoping, sentinel placement,
 redundant attributes, buildifier formatting, build-only scope, confidentiality). It covers what
 the checks cannot decide for you: the workflow, the techniques for expressing GN semantics in
 Bazel, and when to widen the change. Do not read the check scripts; run them and fix what they
@@ -23,8 +23,7 @@ report.
    and regenerate BUILD.gn with `fx bazel2gn -d <dir>`. Tests are the exception: they live only
    in Bazel and bazel2gn never translates them (see "Migrating Tests"). Only GN-only constructs
    (imports, `config()`, `bazel_test_suite`, `group("tests")`, forwarding groups below, and a
-   test that Bazel cannot express yet per "Migrating Tests") stay above the sentinel. Register
-   `//<dir>:verify_bazel2gn`.
+   test that Bazel cannot express yet per "Migrating Tests") stay above the sentinel.
 
 ## Workflow
 1. Read the package's BUILD.gn and list every target and its dependencies
@@ -80,8 +79,8 @@ Non-test `fuchsia_package`, `fuchsia_package_with_single_component`, `fuchsia_co
    - If nothing remains in `BUILD.gn`, delete `BUILD.gn` (`git rm <dir>/BUILD.gn`, Case 1). If
      `BUILD.gn` retains only GN-only targets (`bazel_test_suite`, `group("tests")`, a test package
      that must stay in GN, or an unmigratable library) and `BUILD.bazel` defines only `fx_*`
-     package/test targets, do NOT add `## BAZEL2GN SENTINEL`, do NOT run `fx bazel2gn`, and do
-     NOT register `verify_bazel2gn`. (If `BUILD.bazel` also dual-builds a library via `bazel2gn`,
+     package/test targets, do NOT add `## BAZEL2GN SENTINEL` and do NOT run `fx bazel2gn`.
+     (If `BUILD.bazel` also dual-builds a library via `bazel2gn`,
      annotate every `fx_*` target and packaged binary with `# @bazel2gn:skip`).
    - When `//bundles/assembly/bazel_inputs/<dir>/BUILD.gn` bridges the package: (a) replace
      `"//bundles/assembly/bazel_inputs/<dir>..."` with `"//<dir>:<pkg>"` in
@@ -267,14 +266,13 @@ When a vendored crate in `//third_party/rust_crates` fails to build in Bazel (ty
 
 ## Verify, Then Run the Checks Once
 `run_checks.sh` (on `$PATH`) runs every static check and `build_verification` (`fx build`, GN
-dependents, `fx build --host //build:bazel2gn_verifications`, and `fx bazel build` for fuchsia
-and host). Do NOT run full product builds by hand as well. From `$PLANTER_WORKDIR`:
+dependents, the shac `verify_bazel2gn` BUILD.gn/BUILD.bazel drift check, and `fx bazel build` for
+fuchsia and host). Do NOT run full product builds by hand as well. From `$PLANTER_WORKDIR`:
 1. While iterating, run `run_checks.sh --skip-build` (seconds) and fix every ERROR and WARNING.
    If CQ failed with `Failed to rebase` (`checkout|jiri patch`) or `cq_reachability` reports
    `upstream_rebase_conflict`, fetch and rebase onto the latest `origin/main`
-   (`git fetch origin main && git rebase origin/main`, resolve conflicts in shared lists such as
-   `build/bazel2gn_verification_targets.gni` keeping both `origin/main` and your entries in
-   alphabetical order, `git add <file>`, and `git -c core.editor=true rebase --continue`
+   (`git fetch origin main && git rebase origin/main`, resolve conflicts in shared lists keeping both
+   `origin/main` and your entries in alphabetical order, `git add <file>`, and `git -c core.editor=true rebase --continue`
    preserving `Change-Id`).
    For fast compile feedback, run `fx bazel2gn -d <dir>` and
    `fx bazel build --config=fuchsia_platform //<dir>:all` (for `fidl_library`/`validate_json`

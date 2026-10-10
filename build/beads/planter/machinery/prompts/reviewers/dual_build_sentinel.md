@@ -3,8 +3,8 @@
 Verify that Case 2 dual-build packages with `bazel2gn`-convertible targets contain
 `## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##` in BUILD.gn, have zero drift between
 BUILD.bazel and the generated BUILD.gn section, migrate all convertible library/code targets
-into BUILD.bazel without skipping them via `# @bazel2gn:skip`, and register
-`//<pkg>:verify_bazel2gn` in `//build/bazel2gn_verification_targets.gni`.
+into BUILD.bazel without skipping them via `# @bazel2gn:skip`, and pass the `verify_bazel2gn` step of
+`build_verification` without drift.
 
 ## Sentinel Completeness, Anti-Skip & Verification Audit
 1. **No Target-Level `# @bazel2gn:skip` on Convertible or Reference Libraries & No Duplicate GN Targets Above Sentinel**:
@@ -12,8 +12,8 @@ into BUILD.bazel without skipping them via `# @bazel2gn:skip`, and register
    - **Device Test Packages**: a `fuchsia_unittest_package`/`fuchsia_test_package` (C++ or Rust) left above the sentinel is a failing finding unless the summary names a real blocker (`test_specs` other than `log_settings`, `test_type` or custom realms, subpackages, `bootfs_test`, Ninja-generated inputs); such a kept GN test depends on a hand-written test executable above the sentinel, never on a bazel2gn-generated `:<name>_test`.
    - **Package-Only `BUILD.bazel` (`fx_package`) Exception**: `bazel2gn` does NOT convert `fx_package`, `fx_component`, `fx_component_manifest`, `fx_packaged_binary`, `fx_cc_binary`, or `resource`. When a package's `BUILD.bazel` only defines `fx_package` (and its component/manifest/binary/resource/`fx_test`/`exports_files` targets) while `BUILD.gn` retains only GN-only targets (`bazel_test_suite`, `group("tests")`, a test Bazel cannot express yet with its `testonly` test `executable`, or a library whose own deps are still GN-only), `BUILD.gn` MUST NOT have `## BAZEL2GN SENTINEL` or `verify_bazel2gn`. Conversely, if the migrated `fuchsia_package`/`fuchsia_package_with_single_component`/`fuchsia_component` was left behind in `BUILD.gn`, or if `//bundles/assembly/bazel_inputs/<pkg>` was not replaced in `//bundles/assembly/BUILD.bazel` and deleted, reject (`passed=false`).
    - Specifically reject skipping standalone reference or bitrot-prevention targets (such as a `static_library` of C++ reference routines depended upon by `group("tests")` in `BUILD.gn`). Require removing `# @bazel2gn:skip` in `BUILD.bazel`, deleting the manual `static_library` / `source_set` above the sentinel in `BUILD.gn`, using `# @bazel2gn:raw_overwrite:[ "<gn_config_1>", ... ]` on the closing `],` of `copts = [...]` when `copts` flags map to GN `configs`, and re-running `fx bazel2gn` so the target is generated below the sentinel.
-2. **Mandatory `verify_bazel2gn` Registration**:
-   - Verify that `//build/bazel2gn_verification_targets.gni` (or `//sdk/fidl/bazel2gn_verification_targets.gni` for `//sdk/fidl` packages) contains `"//<pkg>:verify_bazel2gn"` whenever `BUILD.gn` contains `verify_bazel2gn("verify_bazel2gn")`. Reject (`passed=false`) if the registration is missing.
+2. **bazel2gn Sync Verification**:
+   - Verify that the generated section below `## BAZEL2GN SENTINEL` matches BUILD.bazel: the `verify_bazel2gn` step of `build_verification` passes. Reject (`passed=false`) on drift.
 
 ## Dual-Build Visibility & bazel2gn Audit
 3. Prioritize Bazel-correctness over GN-workarounds: reject `":__pkg__"` inside `visibility = [...]` in `BUILD.bazel` even when used to trigger `":*"` generation in `BUILD.gn`. `fx bazel2gn` automatically adds `":*"` in `BUILD.gn` when converting restricted `visibility` lists.

@@ -19,7 +19,6 @@ Example:
 3. Remove fidl() target and import("//build/fidl/fidl.gni") from BUILD.gn.
 4. Run fx bazel2gn to sync back to GN build file.
 5. Register in category_lists.bzl if applicable.
-6. Register in bazel2gn_verification_targets.gni.
 
 
 #### Verifications
@@ -32,6 +31,9 @@ Example:
 * Verify compatibility tests:
 	`fx build //sdk/fidl:compatibility_tests`
 	`fx bazel build --config=fuchsia_platform //sdk/fidl:compatibility_tests`
+* Verify bazel2gn sync:
+	`fx bazel2gn`
+	`fx host-tool shac check --only verify_bazel2gn`
 * Run full build at the end:
 	`fx build`
 

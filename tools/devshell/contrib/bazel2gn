@@ -13,8 +13,8 @@
 ##   -d|--directory  Directory to sync, repeatable.
 ##   --no-build      Skip building required dependencies.
 ##
-## Updates BUILD.gn listed in this script based on the BUILD.bazel files in
-## their directories.
+## Updates BUILD.gn files from the BUILD.bazel files in their directories. Without
+## -d, syncs every directory whose BUILD.gn contains the bazel2gn sentinel.
 
 set -eo pipefail
 
@@ -34,10 +34,11 @@ declare -r BAZEL2GN_TARGET="//build/tools/bazel2gn"
 BAZEL2GN_BIN="$(fx-get-bazel-workspace)/bazel-bin/build/tools/bazel2gn/bazel2gn_/bazel2gn"
 readonly BAZEL2GN_BIN
 
+dir_list_file=""
+
 function main {
   local build=true
   local directories=()
-  local dir_list_file
   while [[ "${#}" -ge 1 ]]; do
     case "${1}" in
       -d|--directory)
@@ -59,25 +60,25 @@ function main {
     shift
   done
 
-  if [[ "${#directories[@]}" -eq 0 ]]; then
-    fx-gen # To make sure `dir_list_file` below is up-to-date.
-    dir_list_file="${FUCHSIA_BUILD_DIR}/bazel2gn_dir_list"
-  else
+  # Without explicit directories, bazel2gn discovers all directories whose
+  # BUILD.gn contains the bazel2gn sentinel.
+  local -a dir_list_args=()
+  if [[ "${#directories[@]}" -gt 0 ]]; then
     # Write the directories to a temporary file.
     dir_list_file="$(mktemp /tmp/bazel2gn-dirlist-XXXXXX)"
+    trap 'rm -f "${dir_list_file}"' EXIT
     for directory in "${directories[@]}"; do
         printf "%s\n" "${directory}" >> "${dir_list_file}"
     done
-    trap 'rm -f "${dir_list_file}"' EXIT
+    dir_list_args=(--directory_list "${dir_list_file}")
   fi
 
-  # This Bazel build needs to run after `fx-gen`, which can clear out the symlinks in bazel-bin.
   if [[ "${build}" == "true" ]]; then
     fx-run-bazel false "$(fx-get-bazel)" build --config=host "${BAZEL2GN_TARGET}"
   fi
 
   "${BAZEL2GN_BIN}" \
-    --directory_list "${dir_list_file}" \
+    "${dir_list_args[@]}" \
     --fuchsia_dir "${FUCHSIA_DIR}" \
     --gn_bin "${PREBUILT_GN}" \
     --buildifier_bin "${PREBUILT_BUILDIFIER}"

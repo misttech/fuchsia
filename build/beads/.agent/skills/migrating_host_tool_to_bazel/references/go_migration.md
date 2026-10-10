@@ -116,8 +116,8 @@ Bazel enforces strict dependency checking for Go compile steps.
 ### 6. Improper `BUILD.gn` Deletion & `bazel2gn` Handling
 - **Pitfall:** Deleting `BUILD.gn` when unmigrated or externally referenced GN targets still remain, OR retaining `verify_bazel2gn` targets when `BUILD.gn` has been deleted.
 - **Rule:**
-  - If all targets in original `BUILD.gn` are migrated and not referenced by targets in other GN build file (and not in `host_labels`): omit `# @bazel2gn:skip`, and do NOT add `verify_bazel2gn` to `bazel2gn_verification_targets.gni`.
-  - If any migrated target in `BUILD.gn` is referenced by targets in other GN build files: add `# @bazel2gn:skip` before the binary in `BUILD.bazel`, sync remaining targets with `bazel2gn`, and keep `"//{dir}:verify_bazel2gn"` in `//build/bazel2gn_verification_targets.gni`.
+  - If all targets in original `BUILD.gn` are migrated and not referenced by targets in other GN build file (and not in `host_labels`): omit `# @bazel2gn:skip`.
+  - If any migrated target in `BUILD.gn` is referenced by targets in other GN build files: add `# @bazel2gn:skip` before the binary in `BUILD.bazel`, and sync remaining targets with `bazel2gn`.
 
 ### 7. Creating Unnecessary Package-Level Test Suites
 - **Pitfall:** Defining an intermediate `test_suite(name = "tests", ...)` inside each tool's package `BUILD.bazel`.

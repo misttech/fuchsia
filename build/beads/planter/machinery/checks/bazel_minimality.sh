@@ -195,7 +195,6 @@ def is_allowed_scope(path: str) -> bool:
         "sdk/BUILD.gn",
         "sdk/atom_lists.bzl",
         "sdk/fidl/BUILD.gn",
-        "sdk/fidl/bazel2gn_verification_targets.gni",
         "sdk/fidl/category_lists.bzl",
     ):
         return True

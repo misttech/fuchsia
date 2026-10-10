@@ -90,14 +90,12 @@ rustc_binary(
 
 - **Deleting `BUILD.gn` When Fully Migrated:**
   - If all targets in `{directory_path}/BUILD.gn` are migrated to Bazel and no external GN targets depend on them, delete `BUILD.gn` directly.
-  - Do NOT run `bazel2gn`, do NOT add `# @bazel2gn:skip`, and do NOT add `"//{directory_path}:verify_bazel2gn"`.
+  - Do NOT run `bazel2gn`, and do NOT add `# @bazel2gn:skip`.
 - **`# @bazel2gn:skip` Directive:**
   - MUST add `# @bazel2gn:skip` on the line immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel` IF a `BUILD.gn` file remains in that directory for synced libraries/tests.
   - MUST REMOVE (or not add) `# @bazel2gn:skip` if the `BUILD.gn` file is completely deleted.
-- **Verification List (`bazel2gn_verification_targets.gni`):**
-  - Directories containing synced libraries or tests MUST have `"//{directory_path}:verify_bazel2gn"` added to `bazel2gn_verification_targets` in `//build/bazel2gn_verification_targets.gni`.
-  - Do NOT add `"//{directory_path}:verify_bazel2gn"` if `BUILD.gn` is deleted.
-  - Entries MUST preserve alphabetical sorting inside the `# keep-sorted` block.
+- **bazel2gn Sync Verification:**
+  - Directories containing synced libraries or tests MUST pass the bazel2gn sync check (Verify step of the `syncing-bazel-to-gn` skill).
 
 **GOOD:**
 

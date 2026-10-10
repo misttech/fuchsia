@@ -16,7 +16,4 @@ description: >
   The exception_list is as follows:
   - `api`
 * [ ] The `fidl` target is included in the correct list in `//sdk/fidl/category_lists.bzl` based on its category according to the rules in `references/idk_atom_target_registration_rules.md`.
-* [ ] For FIDL libraries under `//sdk/fidl` directory, the label of the verification target `//path/to/dir:verify_bazel2gn` is added to the
-    `fidl_bazel2gn_verification_targets` list in `//sdk/fidl/bazel2gn_verification_targets.gni`.
-* [ ] For FIDL libraries outside `//sdk/fidl` directory, the label of the verification target `//path/to/dir:verify_bazel2gn` is added to the
-    `bazel2gn_verification_targets` list in `//build/bazel2gn_verification_targets.gni`.
+* [ ] The synced BUILD.gn passes the bazel2gn sync check (Verify step of the `syncing-bazel-to-gn` skill).

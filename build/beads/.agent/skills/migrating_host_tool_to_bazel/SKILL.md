@@ -86,16 +86,15 @@ fx gn refs $(fx get-build-dir) "//{directory_path}/*"
 ```
 
 - **Case 1: All targets in `{directory_path}/BUILD.gn` are migrated / unreferenced (and not in `host_labels`):**
-  1. **Do NOT sync back from Bazel to GN:** Do NOT run `bazel2gn`, do NOT add `# @bazel2gn:skip` in `BUILD.bazel`, and do NOT add `verify_bazel2gn` to `//build/bazel2gn_verification_targets.gni`.
+  1. **Do NOT sync back from Bazel to GN:** Do NOT run `bazel2gn`, and do NOT add `# @bazel2gn:skip` in `BUILD.bazel`.
   2. Run `fx gen` to validate the GN build graph.
 
 - **Case 2: Unmigrated GN targets remain or external GN targets still depend on libraries in `{directory_path}`:**
   1. Remove the migrated targets from `{directory_path}/BUILD.gn`.
   2. **Prevent redundant binary syncs:** Add `# @bazel2gn:skip` on the line immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel` so they aren't generated in GN (see language guides for exceptions like `ffx_tool`).
   3. **Sync back to GN:** Sync required library targets back from Bazel to GN using `syncing-bazel-to-gn` (see `../syncing_bazel_to_gn/SKILL.md`).
-  4. **Add verification target:** Add `"//{directory_path}:verify_bazel2gn"` to the `bazel2gn_verification_targets` list in `//build/bazel2gn_verification_targets.gni` (or `//sdk/fidl/bazel2gn_verification_targets.gni` for FIDL).
-  5. Run `fx gen` to validate the GN build graph.
-  6. **Clean up redundant GN targets:** In the synced `BUILD.gn`, remove library targets that are not referenced by other GN targets. If no targets are referenced by external targets, remove `# @bazel2gn:skip` from `BUILD.bazel`, and remove `"//{directory_path}:verify_bazel2gn"` from `bazel2gn_verification_targets.gni`.
+  4. Run `fx gen` to validate the GN build graph.
+  5. **Clean up redundant GN targets:** In the synced `BUILD.gn`, remove library targets that are not referenced by other GN targets. If no targets are referenced by external targets, delete `BUILD.gn` and remove `# @bazel2gn:skip` from `BUILD.bazel`.
 
 ## Phase 5: Verification, Formatting & Full Build Check
 
@@ -129,6 +128,7 @@ fx set fuchsia.x64 --main-pb //products/core:product_bundle.x64 && fx build
 # 9. Build direct Bazel target (__ONLY__ for cross-toolchain libraries)
 fx bazel build --config=fuchsia_platform //{directory_path}:{target_name}
 
-# 10. Verify all bazel2gn drift check targets across the tree
-fx build --host //build:bazel2gn_verifications
+# 10. Verify BUILD.gn/BUILD.bazel sync for all BAZEL2GN SENTINEL directories
+fx bazel2gn
+fx host-tool shac check --only verify_bazel2gn
 ```

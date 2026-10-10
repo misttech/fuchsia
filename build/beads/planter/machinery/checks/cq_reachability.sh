@@ -11,10 +11,7 @@ set -euo pipefail
 #    in the migrated package must be wired into the package's `group("tests")`
 #    (or referenced by a test package in the same BUILD file that is wired into
 #    `tests`).
-# 2. The package must be registered in a Bazel verification list or parent BUILD
-#    file so CQ builds it. Note that the bazel2gn list .gni files only ensure
-#    that the GN (and maybe Bazel) file is processed; they do not ensure that
-#    any of the targets can be built successfully.
+# 2. The package must be registered in a parent BUILD file so CQ builds it.
 # 3. Every Bazel test that Fuchsia test runners can run (`fx_test`, `host_rustc_test`,
 #    `host_go_test`, `host_py_test`, `host_test`, `wrap_host_rust_test`, and the
 #    `<name>_test` host test of `rustc_*(with_unit_tests = "host"|"both")` or
@@ -31,9 +28,8 @@ set -euo pipefail
 #    Only runs when the checkout has `build/bazel/rules/testing/fx_test.bzl` (older
 #    checkouts keep tests in GN).
 # 5. The change must merge cleanly onto `origin/main` without rebase conflicts
-#    (`git merge-tree --write-tree`), leftover conflict markers, or unsorted/duplicate
-#    entries in `bazel2gn_verification_targets.gni` so Gerrit CQ (`checkout|jiri patch`)
-#    does not fail with `Failed to rebase`.
+#    (`git merge-tree --write-tree`) or leftover conflict markers so Gerrit CQ
+#    (`checkout|jiri patch`) does not fail with `Failed to rebase`.
 
 WORKDIR="${PLANTER_WORKDIR:-.}"
 TARGET_DIR="${PLANTER_TARGET_DIR:-}"
@@ -367,7 +363,7 @@ if active_rebase_or_merge or unmerged:
         "source": "cq_reachability",
         "category": "unresolved_rebase_or_conflict_markers",
         "severity": "error",
-        "file": unmerged[0] if unmerged else "build/bazel2gn_verification_targets.gni",
+        "file": unmerged[0] if unmerged else "",
         "line": 1,
         "message": (
             f"An unfinished git rebase/merge (`{state_desc}`) is in progress in the checkout"
@@ -502,7 +498,7 @@ if origin_main and head_sha and head_sha != origin_main:
                             conflicted_files.append(line)
                     elif line.startswith("CONFLICT "):
                         conflict_msgs.append(line)
-                first_file = conflicted_files[0] if conflicted_files else "build/bazel2gn_verification_targets.gni"
+                first_file = conflicted_files[0] if conflicted_files else ""
                 files_desc = ", ".join(f"'{f}'" for f in conflicted_files) if conflicted_files else "modified files"
                 detail_desc = f" ({'; '.join(conflict_msgs)})" if conflict_msgs else ""
                 findings.append({
@@ -520,77 +516,10 @@ if origin_main and head_sha and head_sha != origin_main:
                         "Rebase the change onto the latest `origin/main` so Gerrit CQ can patch it cleanly: "
                         "run `git fetch origin main && git rebase origin/main` (commit or `git stash` any uncommitted edits first), "
                         "resolve each conflicted file keeping both `origin/main`'s entries and this change's additions "
-                        "(in `build/bazel2gn_verification_targets.gni` or `sdk/fidl/bazel2gn_verification_targets.gni`, "
-                        "keep all `:verify_bazel2gn` labels in strict alphabetical order without conflict markers), "
                         "stage the resolved file(s) with `git add <file>`, and finish with "
                         "`git -c core.editor=true rebase --continue` (preserving the existing `Change-Id` footer)."
                     ),
                 })
-
-# 4. Check alphabetical sorting and uniqueness of newly added entries in bazel2gn_verification_targets.gni.
-for gni_rel in ("build/bazel2gn_verification_targets.gni", "sdk/fidl/bazel2gn_verification_targets.gni"):
-    if gni_rel not in changed_files:
-        continue
-    gni_abs = os.path.join(workdir, gni_rel)
-    if not os.path.isfile(gni_abs):
-        continue
-    try:
-        gni_text = open(gni_abs, "r", encoding="utf-8").read()
-    except OSError:
-        continue
-    diff_out = git_out(["diff", "-U0", effective_diff_base, "--", gni_rel])
-    added_labels = set()
-    for dline in diff_out.splitlines():
-        if dline.startswith("+") and not dline.startswith("+++"):
-            m = re.search(r'"(//[^"]+)"', dline)
-            if m:
-                added_labels.add(m.group(1))
-    for td in target_dirs:
-        added_labels.add(f"//{td}:verify_bazel2gn")
-    entries = []
-    for idx, line in enumerate(gni_text.splitlines(), 1):
-        s = line.strip()
-        if s.startswith("#"):
-            continue
-        m = re.match(r'^"(//[^"]+)",?\s*(?:#.*)?$', s)
-        if m:
-            entries.append((m.group(1), idx))
-    counts = {}
-    for lbl, _ in entries:
-        counts[lbl] = counts.get(lbl, 0) + 1
-    reported_labels = set()
-    for i, (lbl, lineno) in enumerate(entries):
-        if lbl not in added_labels or lbl in reported_labels:
-            continue
-        if counts.get(lbl, 0) > 1:
-            reported_labels.add(lbl)
-            findings.append({
-                "source": "cq_reachability",
-                "category": "unsorted_or_duplicate_verification_targets",
-                "severity": "error",
-                "file": gni_rel,
-                "line": lineno,
-                "message": f"Duplicate entry `\"{lbl}\"` in '{gni_rel}' at line {lineno}.",
-                "remediation": f"Remove the duplicate `\"{lbl}\"` line from '{gni_rel}' and run `fx format-code --files={gni_rel}`.",
-            })
-        elif (i > 0 and lbl < entries[i - 1][0]) or (i + 1 < len(entries) and lbl > entries[i + 1][0]):
-            reported_labels.add(lbl)
-            neighbor = entries[i - 1][0] if (i > 0 and lbl < entries[i - 1][0]) else entries[i + 1][0]
-            findings.append({
-                "source": "cq_reachability",
-                "category": "unsorted_or_duplicate_verification_targets",
-                "severity": "error",
-                "file": gni_rel,
-                "line": lineno,
-                "message": (
-                    f"Entry `\"{lbl}\"` in '{gni_rel}' at line {lineno} is out of alphabetical order "
-                    f"relative to `\"{neighbor}\"`."
-                ),
-                "remediation": (
-                    f"Sort `bazel2gn_verification_targets` in '{gni_rel}' in strict ASCII alphabetical order "
-                    f"(or run `fx format-code --files={gni_rel}`)."
-                ),
-            })
 
 unwired_reported = set()  # (gn_rel, suite) already reported as unwired
 for td in target_dirs:

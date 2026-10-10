@@ -29,11 +29,9 @@ This checklist defines the target-specific review criteria and standards for cod
 
 ---
 
-## 4. bazel2gn Verification Targets
+## 4. bazel2gn Sync Verification
 
-* [ ] **FIDL Verification List (`//sdk/fidl/bazel2gn_verification_targets.gni`):** For FIDL libraries under the `//sdk/fidl` directory, the label `"//{directory_path}:verify_bazel2gn"` is added to `fidl_bazel2gn_verification_targets` in `//sdk/fidl/bazel2gn_verification_targets.gni`.
-* [ ] **General Verification List (`//build/bazel2gn_verification_targets.gni`):** For FIDL libraries outside `//sdk/fidl`, the label `"//{directory_path}:verify_bazel2gn"` is added to `bazel2gn_verification_targets` in `//build/bazel2gn_verification_targets.gni`.
-* [ ] **Alphabetical Sorting:** Newly added entries preserve alphabetical sorting inside the `# keep-sorted` block.
+* [ ] **bazel2gn Sync Verification:** The synced `BUILD.gn` (containing the BAZEL2GN SENTINEL) passes the bazel2gn sync check (Verify step of the `syncing-bazel-to-gn` skill).
 
 ---
 

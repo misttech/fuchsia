@@ -13,13 +13,12 @@ load("./common.star", "os_exec")
 # 1. All the attributes in BUILD.bazel should have a mapped attribute in BUILD.gn.
 # 2. All the attributes in BUILD.gn should be mapped to attributes in BUILD.bazel.
 # 3. The copyright years in new created BUILD.bazel should be current year.
-# 4. All migrated targets should be added to the `deps` list of `bazel2gn_verifications` group.
-# 5. Migrated targets should be added to the targets_lists in `//sdk/fidl/category_lists.bzl`, according to its `category` and `stable` attributes.
-# 6. The "//build/tools/bazel2gn/bazel_migration.gni" should be imported in the BUILD.gn of migrated libraries.
-# 7. In the BUILD.bazel, the "fidl_library" should be loaded from "//build/bazel/rules/fidl:fidl_library.bzl".
-# 8. visibility attribute should exist in both BUILD.bazel and BUILD.gn.
-# 9. target name in BUILD.bazel should be the same as in BUILD.gn.
-# 10. Attributes in BUILD.bazel and BUILD.gn should have the same values.
+# 4. Migrated targets should be added to the targets_lists in `//sdk/fidl/category_lists.bzl`, according to its `category` and `stable` attributes.
+# 5. The "//build/tools/bazel2gn/bazel_migration.gni" should be imported in the BUILD.gn of migrated libraries.
+# 6. In the BUILD.bazel, the "fidl_library" should be loaded from "//build/bazel/rules/fidl:fidl_library.bzl".
+# 7. visibility attribute should exist in both BUILD.bazel and BUILD.gn.
+# 8. target name in BUILD.bazel should be the same as in BUILD.gn.
+# 9. Attributes in BUILD.bazel and BUILD.gn should have the same values.
 
 # Verified by changing copyright year to 2025.
 # The Gerrit SHAC does report the expected warning. It confirms:
@@ -106,7 +105,7 @@ def _check_build_files(ctx, target_files):
             )
             continue
 
-        # Check Item 9, target names should be the same.
+        # Check Item 8, target names should be the same.
         bazel_target_names = bazel_targets.keys()
         gn_target_names = gn_targets.keys()
 
@@ -140,7 +139,7 @@ def _check_build_files(ctx, target_files):
                         level = "error",
                     )
 
-        # Check Item 7, BUILD.bazel must load fidl_library from //build/bazel/rules/fidl:fidl_library.bzl
+        # Check Item 6, BUILD.bazel must load fidl_library from //build/bazel/rules/fidl:fidl_library.bzl
         load_matches = ctx.re.allmatches(r'load\(\s*"//build/bazel/rules/fidl:fidl_library.bzl"\s*,\s*"fidl_library"\s*\)', str(bazel_content))
         if not load_matches:
             ctx.emit.finding(
@@ -149,7 +148,7 @@ def _check_build_files(ctx, target_files):
                 level = "error",
             )
 
-        # Check Item 6, BUILD.gn must import //build/tools/bazel2gn/bazel_migration.gni
+        # Check Item 5, BUILD.gn must import //build/tools/bazel2gn/bazel_migration.gni
         if "import(\"//build/tools/bazel2gn/bazel_migration.gni\")" not in str(gn_content):
             ctx.emit.finding(
                 message = "BUILD.gn must import //build/tools/bazel2gn/bazel_migration.gni",
@@ -192,7 +191,7 @@ def _check_build_files(ctx, target_files):
                 _check_visibility(ctx, path, target, bazel_val, gn_val)
                 continue
 
-            # Skip name check, it's handled in Check Item 9.
+            # Skip name check, it's handled in Check Item 8.
             if attr == "name":
                 continue
 
@@ -240,84 +239,6 @@ def _check_build_files(ctx, target_files):
                     )
 
 # Check Item 4
-# Verify by removing the migrated target from the bazel2gn_verification_targets.gni in //sdk/fidl
-# It confirms:
-# 1. The BUILD.gn in //build directory is read correctly.
-# 2. The bazel2gn_verification_targets.gni in //sdk/fidl directory is read correctly.
-def _check_bazel2gn_verification_inclusion(ctx, target_files):
-    """Checks if migrated targets are added to bazel2gn_verifications."""
-
-    # Get the locations of `bazel2gn_verification_targets.gni` files from `//build` directory.
-    build_gn_path = "build/BUILD.gn"
-    build_gn_content = ctx.io.read_file(ctx.scm.root + "/" + build_gn_path)
-    if build_gn_content == None:
-        ctx.emit.finding(
-            message = "Could not read //build/BUILD.gn",
-            filepath = build_gn_path,
-            level = "error",
-        )
-        return
-
-    # Extract all imports of bazel2gn_verification_targets.gni
-    bazel2gn_verification_targets_gni_import = []
-    for line in str(build_gn_content).splitlines():
-        matches = ctx.re.allmatches(r'^import\("//([^"]*bazel2gn_verification_targets\.gni)"\)', line)
-        if matches:
-            bazel2gn_verification_targets_gni_import.append(matches[0].groups[1])
-
-    if not bazel2gn_verification_targets_gni_import:
-        ctx.emit.finding(
-            message = "Could not find any imports of `bazel2gn_verification_targets.gni` in `//build/BUILD.gn`.",
-            filepath = build_gn_path,
-            level = "error",
-        )
-        return
-
-    # Apply the check to the libraries in current CL with both BUILD.bazel and BUILD.gn.
-    for file_info in target_files:
-        path = file_info.path
-
-        dir_path = _get_dir_path(path)
-        if not dir_path:
-            ctx.emit.finding(
-                message = "Could not determine directory path for file.",
-                filepath = path,
-                level = "error",
-            )
-            continue
-
-        # Find matching .gni file
-        matching_gni = ""
-        longest_prefix_len = -1
-        for imp in bazel2gn_verification_targets_gni_import:
-            gni_dir = imp[:imp.rfind("/")] if "/" in imp else ""
-            if path.startswith(gni_dir) and len(gni_dir) > longest_prefix_len:
-                matching_gni = imp
-                longest_prefix_len = len(gni_dir)
-
-        if not matching_gni:
-            matching_gni = "build/bazel2gn_verification_targets.gni"
-
-        # Read matching .gni file
-        gni_content = ctx.io.read_file(ctx.scm.root + "/" + matching_gni)
-        if gni_content == None:
-            ctx.emit.finding(
-                message = "Could not read `.gni` file '%s'." % matching_gni,
-                filepath = path,
-                level = "error",
-            )
-            continue
-
-        expected_dep = '"//%s:verify_bazel2gn"' % dir_path
-
-        if expected_dep not in str(gni_content):
-            ctx.emit.finding(
-                message = "Migrated target '%s' should be added to `%s`." % (expected_dep, matching_gni),
-                filepath = path,
-                level = "error",
-            )
-
-# Check Item 5
 def _check_sdk_fidl_list_inclusion(ctx, target_files):
     """Checks if migrated targets are added to target lists in sdk/fidl/category_lists.bzl."""
 
@@ -749,7 +670,6 @@ def _fidl_gn2bazel_migration_check(ctx):
         return
 
     _check_build_files(ctx, target_files)
-    _check_bazel2gn_verification_inclusion(ctx, target_files)
     _check_sdk_fidl_list_inclusion(ctx, target_files)
 
 def register_bazel_migration_fidl_checks():

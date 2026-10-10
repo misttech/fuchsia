@@ -27,7 +27,7 @@ load("//build/bazel/rules/fidl:fidl_library.bzl", "fidl_library")
 
 ## 4. Graph Verification
 
-- **Build Verifications (`//sdk/fidl/bazel2gn_verification_targets.gni`):** Newly migrated library targets must be added to the `fidl_bazel2gn_verification_targets` list inside `//sdk/fidl/bazel2gn_verification_targets.gni`.
+- **bazel2gn Sync Verification:** The synced `BUILD.gn` must pass the bazel2gn sync check (Verify step of the `syncing-bazel-to-gn` skill).
 - **SDK Categorization (`//sdk/fidl/category_lists.bzl`):** The corresponding IDK atom target (`{target_name}_idk`) must be added to the correct target list in `//sdk/fidl/category_lists.bzl`, based strictly on its assigned `category` and `stable` properties.
 
 ## 5. Code Standards & Git Messages

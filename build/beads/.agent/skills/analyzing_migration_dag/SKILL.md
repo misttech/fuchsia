@@ -187,6 +187,6 @@ Once approved by the user, migrate targets in topological order starting from
 2. Whenever an upstream library in Wave $k$ is still referenced by unmigrated GN
    targets in Wave $> k$ (or external GN consumers), sync the library back from
    Bazel to GN using [`syncing-bazel-to-gn`](../syncing_bazel_to_gn/SKILL.md)
-   (`fx bazel2gn -d //path/to/dir`) and verify `fx build --host //build:bazel2gn_verifications`.
+   (`fx bazel2gn -d //path/to/dir`), including its Verify step.
 3. Commit each wave batch (at most 4-5 targets) as a stacked commit on the
    single migration branch before proceeding to the next wave.

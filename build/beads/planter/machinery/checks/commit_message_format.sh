@@ -119,10 +119,10 @@ if head and base_rev and head != base_rev:
                 add("test_footer_redundant_label", ln,
                     f"`Test:` footer label `//{pkg}:{name}` repeats the package name.",
                     f"Write `//{pkg}` instead of `//{pkg}:{name}`.")
-        if re.search(r"\bfx bazel2gn\s+\S", cmd) or re.search(r"bazel2gn_verifications|verify_bazel2gn", cmd):
+        if re.search(r"\bfx bazel2gn\s+\S", cmd) or re.search(r"verify_bazel2gn", cmd):
             add("test_footer_bazel2gn_form", ln,
                 f"`Test:` footer `{cmd}` verifies bazel2gn in a narrower or indirect form.",
-                "Use the single line `Test: fx bazel2gn` (covers all bazel2gn targets).")
+                "Use the single line `Test: fx host-tool shac check --only verify_bazel2gn` (covers affected bazel2gn targets).")
         if re.search(r"\bfx bazel build\b.*:all\b", cmd):
             add("test_footer_build_all_not_test", ln,
                 f"`Test:` footer `{cmd}` builds `:all` instead of building or running the migrated test target.",
@@ -179,7 +179,7 @@ if head and base_rev and head != base_rev:
                 f"The change edits `{f}`, which is not specific to the migrated targets, but the commit body "
                 "does not mention it.",
                 f"Describe the `{f}` change and why it is needed in the body (one bullet per topic). Wiring edits "
-                "(parent BUILD files, `*.gni` lists, verification registration) need no mention. Keep the body in "
+                "(parent BUILD files, `*.gni` lists) need no mention. Keep the body in "
                 "sync as changes are added or removed during review. First confirm the shared edit is needed at "
                 "all (e.g. test-only files belong in `test_data`, not in a rule edit forwarding `data`).")
     # Body: name only the rules/macros actually called in the migrated BUILD.bazel files.
@@ -221,7 +221,7 @@ if head and base_rev and head != base_rev:
                     f"Refer to the target by name and give the crate name separately, e.g. target \"{tgt}\" "
                     f"(crate name \"{crate}\"), and say which attribute generates \"{tgt}_test\".")
                 break
-    b2g = [ln for ln, l in test_lines if re.search(r"\bfx bazel2gn\b|bazel2gn_verifications|verify_bazel2gn", l)]
+    b2g = [ln for ln, l in test_lines if re.search(r"\bfx bazel2gn\b|verify_bazel2gn", l)]
     if b2g and test_lines and b2g[-1] != test_lines[-1][0]:
         add("test_footer_bazel2gn_not_last", b2g[-1],
             "The bazel2gn verification `Test:` line is not last.",

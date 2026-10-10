@@ -23,9 +23,10 @@ set -uo pipefail
 #                              GN test after a dependency label or edge changed)
 #                              that Bazel builds and the default `fx build` miss.
 #                              Skipped when gn_build fails.
-#   3. bazel2gn_verifications: `fx build --host //build:bazel2gn_verifications`,
-#                              which fails if a BUILD.gn has drifted from what
-#                              `fx bazel2gn` generates from BUILD.bazel.
+#   3. verify_bazel2gn:        `fx host-tool shac check --only verify_bazel2gn
+#                              <changed dirs' BUILD.bazel/BUILD.gn>`, which fails
+#                              if a BUILD.gn has drifted from what `fx bazel2gn`
+#                              generates from BUILD.bazel.
 #   4. bazel_build_fuchsia:    `fx bazel build --config=fuchsia_platform //<dir>:all`
 #                              for every changed directory with a BUILD.bazel
 #                              (host-only targets are skipped as incompatible;
@@ -487,8 +488,12 @@ def fmt_cmd(cmd):
 steps = [
     ("gn_build", [fx, "build"]),
     ("gn_build_dependents", None),  # Labels are computed once gn_build has regenerated the GN graph.
-    ("bazel2gn_verifications", [fx, "build", "--host", "//build:bazel2gn_verifications"]),
 ]
+sync_files = [
+    os.path.join(d, f) for d in dirs for f in ("BUILD.bazel", "BUILD.gn") if os.path.isfile(os.path.join(workdir, d, f))
+]
+if sync_files:
+    steps.append(("verify_bazel2gn", [fx, "host-tool", "shac", "check", "--only", "verify_bazel2gn"] + sync_files))
 if bazel_dirs:
     steps.append(("bazel_build_fuchsia", [fx, "bazel", "build", "--config=fuchsia_platform"] + bazel_target_args(bazel_dirs)))
 if host_dirs:
@@ -540,8 +545,8 @@ REMEDIATION = {
                            "`gn_dep_parity` findings and \"Keep Every GN Dependency Label and Edge Kind\" in the coder "
                            "instructions), re-run `fx bazel2gn -d <dir>` and `fx build <failing label>`. Never edit sources "
                            "or the dependents' BUILD files to make it pass.",
-    "bazel2gn_verifications": "BUILD.gn no longer matches BUILD.bazel. Run `fx bazel2gn -d <dir>` for every dual-build directory "
-                              "you touched (never hand-edit below the BAZEL2GN SENTINEL) and re-run `fx build --host //build:bazel2gn_verifications`.",
+    "verify_bazel2gn": "BUILD.gn no longer matches BUILD.bazel. Run `fx bazel2gn -d <dir>` for every dual-build directory "
+                       "you touched (never hand-edit below the BAZEL2GN SENTINEL) and re-run this check.",
     "bazel_build_fuchsia": "Fix BUILD.bazel so the `bazel_build_fuchsia` command passes. If a dependency has no "
                            "Bazel target yet, migrate that dependency's directory in this change (see the coder instructions).",
     "bazel_build_host": "Fix BUILD.bazel so the `bazel_build_host` command passes. If a dependency has no Bazel target "
@@ -622,8 +627,6 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                     ),
                 })
         if toolchains_map is not None and "fx build" in m_line:
-            if "--host" in m_line and "//build:bazel2gn_verifications" in m_line:
-                continue
             bad_lbls = []
             for lbl in re.findall(r"//[^\s,;\"'`]+", m_line):
                 base_lbl = lbl.split("(", 1)[0]

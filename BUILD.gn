@@ -2353,7 +2353,6 @@ group("default") {
     "//:host",
     "//:product_bundles.check",
     "//:test-list",
-    "//build:bazel2gn_dir_list",
     "//build/assembly:validate_product_defs",
     "//build/bazel:gn_build_variables_for_bazel",
     "//bundles/assembly",

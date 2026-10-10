@@ -14,7 +14,7 @@
         {
             "seat_id": "dual_build_sentinel",
             "name": "Dual-Build & Sentinel Reviewer",
-            "responsibility": "Verifies BAZEL2GN SENTINEL synchronization, rejects target-level # @bazel2gn:skip on convertible or reference libraries and rejects duplicate/unmigrated convertible targets above the sentinel in BUILD.gn, verifies verify_bazel2gn registration in //build/bazel2gn_verification_targets.gni, 3-tier visibility parity, build-only change scope, lint_config label parity (same-named GN config() next to the Bazel rust_lint_config, no new alias + forwarding-config wrapper pairs), and that the Rust public_deps forwarding group is the only hand-written dependency-routing target allowed above the sentinel.",
+            "responsibility": "Verifies BAZEL2GN SENTINEL synchronization, rejects target-level # @bazel2gn:skip on convertible or reference libraries and rejects duplicate/unmigrated convertible targets above the sentinel in BUILD.gn, 3-tier visibility parity, build-only change scope, lint_config label parity (same-named GN config() next to the Bazel rust_lint_config, no new alias + forwarding-config wrapper pairs), and that the Rust public_deps forwarding group is the only hand-written dependency-routing target allowed above the sentinel.",
             "prompt_file": "dual_build_sentinel.md",
             "allowed_tools": [
                 "inspect_target",

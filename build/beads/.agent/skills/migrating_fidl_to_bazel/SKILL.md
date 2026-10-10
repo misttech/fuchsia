@@ -42,9 +42,6 @@ GN to Bazel.
 ## 2. Register the target
 
 1.  If the newly created Bazel target has a `category` attribute, add its IDK atom target to the appropriate list in `//sdk/fidl/category_lists.bzl` based on the rules in `references/idk_atom_target_registration_rules.md`.
-2. If the migrated libraries are under `//sdk/fidl` directory, add the label of the verification target
-   `//path/to/dir:verify_bazel2gn` to the `fidl_bazel2gn_verification_targets` list in `//sdk/fidl/bazel2gn_verification_targets.gni`, else add to the
-   `bazel2gn_verification_targets` list in `//build/bazel2gn_verification_targets.gni`.
 
 ## 3. Sync FIDL targets back to GN
 
