@@ -6,8 +6,6 @@ package bazel2gn_test
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,12 +19,7 @@ import (
 func toSyntaxFile(t *testing.T, s string) *syntax.File {
 	t.Helper()
 
-	p := filepath.Join(t.TempDir(), "BUILD.bazel.test")
-	if err := os.WriteFile(p, []byte(s), 0600); err != nil {
-		t.Fatalf("Failed to write test Bazel file: %v", err)
-	}
-
-	f, err := bazel2gn.Parse(p)
+	f, err := bazel2gn.ParseBytes("BUILD.bazel.test", []byte(s))
 	if err != nil {
 		t.Fatalf("Failed to parse test Bazel build file: %v, file content:\n%s", err, s)
 	}

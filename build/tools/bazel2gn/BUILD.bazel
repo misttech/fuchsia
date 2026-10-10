@@ -67,3 +67,21 @@ host_go_test(
         "//third_party/golibs:go.starlark.net/syntax",
     ],
 )
+
+host_go_test(
+    name = "bazel2gn_cmd_tests",
+    srcs = [
+        "cmd/main.go",
+        "cmd/main_test.go",
+    ],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = [
+        "//build/tools:__pkg__",
+    ],
+    deps = [
+        ":bazel2gn_lib",
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
+        "//tools/lib/color",
+        "//tools/lib/logger",
+    ],
+)

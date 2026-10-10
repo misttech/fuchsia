@@ -6,11 +6,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,7 +75,17 @@ if (is_host) {
 }
 `
 
+	// LINT.IfChange(bazel2gn_output)
 	sentinelComment = "## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##"
+
+	// batchErrorPrefix prefixes each per-directory error in batch mode, which
+	// is followed by "<directory>: <error>". Parsed by shac.
+	batchErrorPrefix = "* syncing directory "
+
+	// outOfSyncMessage starts the error for a directory whose BUILD.gn is out
+	// of sync with BUILD.bazel in check-only mode.
+	outOfSyncMessage = "BUILD.gn is out of sync with BUILD.bazel"
+	// LINT.ThenChange(//scripts/shac/bazel_migration.star:bazel2gn_output)
 )
 
 func main() {
@@ -92,6 +104,33 @@ func main() {
 		log.Fatalf("--diff_output_path is set to %s, but --check_only is not set", *diffOutputPath)
 	}
 
+	// Batch mode is selected when --directory_list or --fuchsia_dir is set. If
+	// --directory_list is not set, the directories to sync are discovered by
+	// searching --fuchsia_dir for BUILD.gn files containing the bazel2gn
+	// sentinel.
+	isBatch := *directoryList != "" || *fuchsiaDir != ""
+	if isBatch {
+		if *bazelInputPath != "" || *gnOutputPath != "" {
+			log.Fatalf("Cannot specify both batch mode (--directory_list or --fuchsia_dir) and single-file mode (--bazel_input_path or --gn_output_path), see --help")
+		}
+		// This is racy in batch mode (multiple goroutines writing to the same file), so we don't
+		// support it for simplicity.
+		if *diffOutputPath != "" {
+			log.Fatalf("--diff_output_path is not supported in batch mode")
+		}
+		// Paths in --directory_list are relative to --fuchsia_dir.
+		if *fuchsiaDir == "" {
+			log.Fatalf("--fuchsia_dir is required when --directory_list is set, see --help")
+		}
+	} else {
+		if *bazelInputPath == "" {
+			log.Fatalf("--bazel_input_path is required in single-file mode, see --help")
+		}
+		if *gnOutputPath == "" {
+			log.Fatalf("--gn_output_path is required in single-file mode, see --help")
+		}
+	}
+
 	commonParams := syncParams{
 		buildifierBin:  *buildifierBin,
 		gnBin:          *gnBin,
@@ -100,37 +139,22 @@ func main() {
 		log:            log,
 	}
 
-	isBatch := *directoryList != ""
 	if isBatch {
-		if *bazelInputPath != "" || *gnOutputPath != "" {
-			log.Fatalf("Cannot specify both batch mode (--directory_list) and single file mode (--bazel_input_path or --gn_output_path)")
+		var dirs []string
+		var err error
+		if *directoryList != "" {
+			dirs, err = readDirectoryList(*directoryList)
+		} else {
+			dirs, err = discoverSentinelDirectories(*fuchsiaDir)
+		}
+		if err != nil {
+			log.Fatalf("%v", err)
 		}
 
-		// This is racy in batch mode (multiple goroutines writing to the same file), so we don't
-		// support it for simplicity.
-		if *diffOutputPath != "" {
-			log.Fatalf("--diff_output_path is not supported in batch mode")
-		}
-
-		if *fuchsiaDir == "" {
-			log.Fatalf("--fuchsia_dir is required in batch mode, see --help")
-		}
-
-		if err := runBatch(context.Background(), *directoryList, *fuchsiaDir, *workers, commonParams); err != nil {
+		if err := runBatch(context.Background(), dirs, *fuchsiaDir, *workers, commonParams); err != nil {
 			log.Fatalf("%v", err)
 		}
 	} else {
-		// Single-file mode
-		if *directoryList != "" || *fuchsiaDir != "" {
-			log.Fatalf("Cannot specify batch mode flags (--directory_list or --fuchsia_dir) in single-file mode, see --help")
-		}
-
-		if *bazelInputPath == "" {
-			log.Fatalf("--bazel_input_path is required in single-file mode, see --help")
-		}
-		if *gnOutputPath == "" {
-			log.Fatalf("--gn_output_path is required in single-file mode, see --help")
-		}
 		if err := syncDirectory(context.Background(), *bazelInputPath, *gnOutputPath, commonParams); err != nil {
 			log.Fatalf("Failed to sync: %v", err)
 		}
@@ -138,6 +162,10 @@ func main() {
 }
 
 type syncParams struct {
+	// relDir is the directory relative to the Fuchsia root, used to suggest a
+	// fix command in check-only mode, or empty if unknown.
+	relDir string
+
 	buildifierBin  string
 	gnBin          string
 	checkOnly      bool
@@ -151,11 +179,21 @@ func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath stri
 	// For example, buildifier can reorder attributes of targets in BUILD.bazel,
 	// resulting in different BUILD.gn outputs since `gn format` doesn't care
 	// about field order.
-	if err := formatBazelFileInPlace(p.buildifierBin, bazelInputPath); err != nil {
-		return fmt.Errorf("formatting %s in-place: %v", bazelInputPath, err)
+	//
+	// Formatting happens in memory. The formatted content is only written back
+	// when not in check-only mode, so --check_only never modifies the source
+	// tree (e.g. shac mounts the repository read-only).
+	original, formatted, err := formatBazelFile(ctx, p.buildifierBin, bazelInputPath)
+	if err != nil {
+		return fmt.Errorf("formatting %s: %v", bazelInputPath, err)
+	}
+	if !p.checkOnly && !bytes.Equal(original, formatted) {
+		if err := os.WriteFile(bazelInputPath, formatted, 0644); err != nil {
+			return fmt.Errorf("writing formatted %s: %v", bazelInputPath, err)
+		}
 	}
 
-	bazelIn, err := bazel2gn.Parse(bazelInputPath)
+	bazelIn, err := bazel2gn.ParseBytes(bazelInputPath, formatted)
 	if err != nil {
 		return fmt.Errorf("parsing input Bazel file %s: %v", bazelInputPath, err)
 	}
@@ -205,6 +243,10 @@ func syncDirectory(ctx context.Context, bazelInputPath string, gnOutputPath stri
 	if p.checkOnly {
 		diffPrintout := ""
 		if diff != "" {
+			fixCmd := "fx bazel2gn"
+			if p.relDir != "" {
+				fixCmd += " -d " + p.relDir
+			}
 			diffPrintout = fmt.Sprintf(`
 The following BUILD files are not in sync:
 
@@ -213,12 +255,12 @@ The following BUILD files are not in sync:
 
 Make sure you update the BUILD.bazel file, then run this command to sync BUILD.gn:
 
-  fx bazel2gn
+  %s
 
 Diff of GN targets (-actual, +expected):
 
 %s`,
-				bazelInputPath, gnOutputPath, diff)
+				bazelInputPath, gnOutputPath, fixCmd, diff)
 		}
 		if p.diffOutputPath != "" {
 			if err := writeDiffOutput(p.diffOutputPath, diffPrintout); err != nil {
@@ -226,7 +268,7 @@ Diff of GN targets (-actual, +expected):
 			}
 		}
 		if diffPrintout != "" {
-			return errors.New(diffPrintout)
+			return errors.New(outOfSyncMessage + diffPrintout)
 		}
 	} else {
 		// Avoid touching BUILD.gn when no changes are made, which can trigger unnecessary `gn gen`s.
@@ -246,14 +288,12 @@ Diff of GN targets (-actual, +expected):
 	return nil
 }
 
-// runBatch runs syncDirectory in parallel over a list of directories specified by `directoryList`,
-// which is a text file with one directory path per line, relative to `fuchsiaDir`.
-// `workers` controls the maximum number of goroutines to run in parallel.
-func runBatch(ctx context.Context, directoryList string, fuchsiaDir string, workers int, p syncParams) error {
+// readDirectoryList reads a text file with one directory path per line.
+func readDirectoryList(directoryList string) ([]string, error) {
 	var dirs []string
 	f, err := os.Open(directoryList)
 	if err != nil {
-		return fmt.Errorf("opening directory list file %s: %v", directoryList, err)
+		return nil, fmt.Errorf("opening directory list file %s: %v", directoryList, err)
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
@@ -264,32 +304,109 @@ func runBatch(ctx context.Context, directoryList string, fuchsiaDir string, work
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("reading directory list file %s: %v", directoryList, err)
+		return nil, fmt.Errorf("reading directory list file %s: %v", directoryList, err)
 	}
-
 	if len(dirs) == 0 {
-		return fmt.Errorf("no directories found in directory list file %s", directoryList)
+		return nil, fmt.Errorf("no directories found in directory list file %s", directoryList)
 	}
+	return dirs, nil
+}
 
+// discoverSentinelDirectories walks `fuchsiaDir` to find all directories
+// whose BUILD.gn files contain the bazel2gn sentinel comment, including those
+// in nested repositories such as vendor/google. Returned paths are relative to
+// `fuchsiaDir`.
+//
+// Symlinks are not followed, and directories matched by skipDiscovery are
+// skipped.
+func discoverSentinelDirectories(fuchsiaDir string) ([]string, error) {
+	var dirs []string
+	err := filepath.WalkDir(fuchsiaDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			rel, err := filepath.Rel(fuchsiaDir, path)
+			if err != nil {
+				return err
+			}
+			if skipDiscovery(rel) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != "BUILD.gn" || !d.Type().IsRegular() {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(content, []byte(sentinelComment)) {
+			rel, err := filepath.Rel(fuchsiaDir, filepath.Dir(path))
+			if err != nil {
+				return err
+			}
+			dirs = append(dirs, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("discovering bazel2gn sentinel directories in %s: %v", fuchsiaDir, err)
+	}
+	if len(dirs) == 0 {
+		return nil, fmt.Errorf("no BUILD.gn files containing the bazel2gn sentinel found in %s", fuchsiaDir)
+	}
+	return dirs, nil
+}
+
+// skipDiscovery returns whether to skip the directory `rel`, relative to the
+// Fuchsia root directory, when discovering bazel2gn-managed directories. These
+// are large directories known to not contain any.
+func skipDiscovery(rel string) bool {
+	switch rel {
+	case "out", "prebuilt", "third_party/golibs/vendor", "third_party/rust_crates/vendor":
+		return true
+	}
+	return filepath.Base(rel) == ".git"
+}
+
+// runBatch runs syncDirectory in parallel over a list of directories `dirs`,
+// with paths relative to `fuchsiaDir`. Absolute paths must be inside
+// `fuchsiaDir`.
+// `workers` controls the maximum number of goroutines to run in parallel.
+func runBatch(ctx context.Context, dirs []string, fuchsiaDir string, workers int, p syncParams) error {
+	type dirError struct {
+		dir string
+		err error
+	}
 	sem := make(chan struct{}, workers)
-	errChan := make(chan error, len(dirs))
+	errChan := make(chan dirError, len(dirs))
 	for _, dir := range dirs {
 		sem <- struct{}{}
 		go func(d string) {
 			defer func() { <-sem }()
 
-			var absDir string
+			relDir := d
 			if filepath.IsAbs(d) {
-				absDir = d
-			} else {
-				absDir = filepath.Join(fuchsiaDir, d)
+				var err error
+				relDir, err = filepath.Rel(fuchsiaDir, d)
+				if err != nil || !filepath.IsLocal(relDir) {
+					errChan <- dirError{d, fmt.Errorf("directory is not inside --fuchsia_dir %s", fuchsiaDir)}
+					return
+				}
 			}
 
+			absDir := filepath.Join(fuchsiaDir, relDir)
 			bazelInput := filepath.Join(absDir, "BUILD.bazel")
 			gnOutput := filepath.Join(absDir, "BUILD.gn")
-			if err := syncDirectory(ctx, bazelInput, gnOutput, p); err != nil {
-				errChan <- fmt.Errorf("syncing directory %s: %w", d, err)
+			dirParams := p
+			dirParams.relDir = relDir
+			err := syncDirectory(ctx, bazelInput, gnOutput, dirParams)
+			if err == nil {
+				return
 			}
+			errChan <- dirError{relDir, err}
 		}(dir)
 	}
 	for i := 0; i < workers; i++ {
@@ -298,15 +415,15 @@ func runBatch(ctx context.Context, directoryList string, fuchsiaDir string, work
 	close(sem)
 	close(errChan)
 
-	var errs []error
-	for err := range errChan {
-		errs = append(errs, err)
+	var errs []dirError
+	for e := range errChan {
+		errs = append(errs, e)
 	}
 	if len(errs) > 0 {
 		var sb strings.Builder
 		sb.WriteString("syncing in batch mode:\n")
-		for _, err := range errs {
-			sb.WriteString(fmt.Sprintf("* %v\n", err))
+		for _, e := range errs {
+			sb.WriteString(fmt.Sprintf("%s%s: %v\n", batchErrorPrefix, e.dir, e.err))
 		}
 		return errors.New(sb.String())
 	}
@@ -351,12 +468,21 @@ func gnFormatted(ctx context.Context, gnBin string, original string) (string, er
 	return string(out), nil
 }
 
-// formatBazelFileInPlace formats the given Bazel file using `buildifier -mode=fix` in-place.
-func formatBazelFileInPlace(buildifierBin string, path string) error {
-	cmd := exec.Command(buildifierBin, "-mode=fix", path)
-	out, err := cmd.CombinedOutput()
+// formatBazelFile formats the given Bazel file in memory by piping its content
+// through `buildifier -mode=fix -type=build`, without modifying the file on
+// disk. It returns both the original and the formatted content.
+func formatBazelFile(ctx context.Context, buildifierBin string, path string) ([]byte, []byte, error) {
+	content, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("`buildifier` error: %v\nCombinedOutput:\n%s", err, string(out))
+		return nil, nil, fmt.Errorf("reading %s: %v", path, err)
 	}
-	return nil
+	cmd := exec.CommandContext(ctx, buildifierBin, "-mode=fix", "-type=build")
+	cmd.Stdin = bytes.NewReader(content)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, nil, fmt.Errorf("`buildifier` error: %v\nStderr:\n%s", err, stderr.String())
+	}
+	return content, out, nil
 }

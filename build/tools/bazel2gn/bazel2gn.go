@@ -12,15 +12,13 @@ import (
 	"go.starlark.net/syntax"
 )
 
-// Parse takes a path to a starlark file and returns a parsed AST.
-//
-// This delegates to the starlark parser library we are using.
-// Create a function wrapper here to capture the settings and modes we use during parsing.
-func Parse(path string) (*syntax.File, error) {
+// ParseBytes parses the given Starlark source content in memory. `path` is
+// only used for error reporting.
+func ParseBytes(path string, src []byte) (*syntax.File, error) {
 	opts := syntax.FileOptions{
 		// Empty means default file-level settings for parsing.
 	}
-	return opts.Parse(path, nil, syntax.RetainComments)
+	return opts.Parse(path, src, syntax.RetainComments)
 }
 
 // indent indents input lines by input levels.

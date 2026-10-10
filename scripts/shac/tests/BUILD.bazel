@@ -11,6 +11,7 @@ package(default_applicable_licenses = ["//:license"])
 test_suite(
     name = "host_tests",
     tests = [
+        ":bazel2gn_test",
         ":bazel_migration_test",
         ":bazel_test",
         ":bug_urls_test",
@@ -24,6 +25,12 @@ test_suite(
         ":python_test",
         ":underscore_vs_dash_test",
     ],
+)
+
+host_shac_test(
+    name = "bazel2gn_test",
+    src = "bazel2gn_test.star",
+    data = ["//scripts/shac:starlark_files"],
 )
 
 host_shac_test(
