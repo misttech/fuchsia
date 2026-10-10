@@ -15,7 +15,7 @@ per-file             build-logs,rbe,resultstore,set-build-dir,use           = fi
 per-file             tests/subcommands/fx_bazel_test = file: /build/OWNERS
 per-file             tests/subcommands/fx_build_test = file: /build/OWNERS
 
-per-file             format-code = olivernewman@google.com
+per-file             format-code,format_code.py = jcecil@google.com
 
 per-file             lint,lint.py = jcecil@google.com
 
