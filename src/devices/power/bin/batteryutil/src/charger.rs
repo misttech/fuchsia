@@ -6,7 +6,9 @@
 //! fuchsia.hardware.power.charger and fuchsia.power.battery.Charger).
 
 use crate::common::{
-    MEMBER_CHARGER, MEMBER_DEBUG, MEMBER_DEVICE, MicroUnit, append_member_suffix, select_instance,
+    MEMBER_CHARGER, MEMBER_DEBUG, MEMBER_DEVICE, MicroUnit, WatchEvent, WatchEventStream,
+    append_member_suffix, discover_instances, parse_micro_value, report_instance,
+    run_watch_streams, select_instance,
 };
 use crate::spmi::{self, PowerSource};
 use anyhow::{Context, Result, anyhow};
@@ -14,6 +16,8 @@ use fidl::endpoints::ServiceMarker;
 use fidl_fuchsia_hardware_power_charger as fcharger;
 use fidl_fuchsia_power_battery as fpowerbattery;
 use fuchsia_component::client::connect_to_protocol_at_path;
+use futures::StreamExt;
+use futures::stream::{self, BoxStream};
 use std::fmt;
 
 struct DisplayOperatingMode(fcharger::OperatingMode);
@@ -220,30 +224,161 @@ impl fmt::Display for DisplayChargerStatus<'_> {
     }
 }
 
-pub(crate) async fn get_modern_charger_info_at(path: &str) -> Result<()> {
-    let charger_path = append_member_suffix(path, MEMBER_CHARGER);
-    let charger_path_str = charger_path.to_str().context("invalid UTF-8 path")?;
-    let proxy = connect_to_protocol_at_path::<fcharger::ChargerMarker>(charger_path_str)
-        .with_context(|| format!("Failed to connect to Charger at {charger_path_str}"))?;
+/// A discovered or user-specified `fuchsia.hardware.power.charger.Service` instance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChargerInstance(pub String);
 
-    if let Ok(Ok(spec)) = proxy.get_spec().await {
-        print!("{}", DisplayChargerSpec(&spec));
+impl ChargerInstance {
+    /// Discovers `fuchsia.hardware.power.charger.Service` instances under `/svc`.
+    pub fn discover() -> Vec<Self> {
+        discover_instances(fcharger::ServiceMarker::SERVICE_NAME).into_iter().map(Self).collect()
     }
 
-    let status = proxy
-        .get_status()
-        .await
-        .context("Charger GetStatus call failed")?
-        .map_err(|e| anyhow!("Charger GetStatus returned domain error: {:?}", e))?;
+    /// Queries and prints telemetry for this charger instance.
+    pub async fn query_info(&self) -> Result<()> {
+        Self::get_modern_info_at(&self.0).await
+    }
 
-    print!("{}", DisplayChargerStatus(&status));
-    Ok(())
+    /// Queries and prints telemetry for this instance, framing its output with a section header
+    /// when `show_header` is set. Returns whether the query succeeded.
+    pub async fn report(&self, show_header: bool) -> bool {
+        report_instance("Charger Telemetry", &self.0, show_header, self.query_info()).await
+    }
+
+    /// Queries and prints telemetry for `instances`, returning whether at least one instance
+    /// succeeded.
+    pub async fn report_all(instances: &[Self], show_headers: bool) -> bool {
+        let mut succeeded = false;
+        for inst in instances {
+            succeeded |= inst.report(show_headers).await;
+        }
+        succeeded
+    }
+
+    /// Queries charger telemetry at `path` (or across all discovered charger instances when `path`
+    /// is `None`).
+    pub async fn get_info(path: Option<&str>) -> Result<()> {
+        if let Some(p) = path {
+            if p.contains(fcharger::DebugServiceMarker::SERVICE_NAME) {
+                anyhow::bail!(
+                    "DebugService path '{p}' is control-only; pass a {} path for telemetry, or \
+                     omit --path to use discovery",
+                    fcharger::ServiceMarker::SERVICE_NAME
+                );
+            }
+            return Self::get_modern_info_at(p).await;
+        }
+
+        let instances = Self::discover();
+        if instances.is_empty() {
+            anyhow::bail!("No charger service instances found under /svc");
+        }
+        if !Self::report_all(&instances, instances.len() > 1).await {
+            anyhow::bail!("Failed to query any charger instances");
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn get_modern_info_at(path: &str) -> Result<()> {
+        let charger_path = append_member_suffix(path, MEMBER_CHARGER);
+        let charger_path_str = charger_path.to_str().context("invalid UTF-8 path")?;
+        let proxy = connect_to_protocol_at_path::<fcharger::ChargerMarker>(charger_path_str)
+            .with_context(|| format!("Failed to connect to Charger at {charger_path_str}"))?;
+
+        if let Ok(Ok(spec)) = proxy.get_spec().await {
+            print!("{}", DisplayChargerSpec(&spec));
+        }
+
+        let status = proxy
+            .get_status()
+            .await
+            .context("Charger GetStatus call failed")?
+            .map_err(|e| anyhow!("Charger GetStatus returned domain error: {:?}", e))?;
+
+        print!("{}", DisplayChargerStatus(&status));
+        Ok(())
+    }
+
+    /// Connects a watch stream for this charger instance.
+    pub fn watch_stream(&self) -> Result<WatchEventStream> {
+        let target_path = append_member_suffix(&self.0, MEMBER_CHARGER);
+        let target_path_str = target_path.to_str().context("invalid UTF-8 path")?;
+        let proxy = connect_to_protocol_at_path::<fcharger::ChargerMarker>(target_path_str)
+            .with_context(|| format!("Failed to connect to Charger at {target_path_str}"))?;
+        let inst = self.0.clone();
+        Ok(charger_watch_stream(proxy)
+            .map(move |res| WatchEvent {
+                kind: "Charger",
+                instance: inst.clone(),
+                status: res.map(|s| DisplayChargerStatus(&s).to_string()),
+            })
+            .boxed())
+    }
+
+    /// Connects watch streams for all discovered `fuchsia.hardware.power.charger.Service`
+    /// instances.
+    pub fn discover_watch_streams() -> Result<Vec<WatchEventStream>> {
+        Self::discover().iter().map(Self::watch_stream).collect()
+    }
+
+    /// Watches charger telemetry events at `path` (or across all discovered charger instances when
+    /// `path` is `None`).
+    pub async fn watch(path: Option<&str>) -> Result<()> {
+        if let Some(p) = path {
+            if p.contains(fcharger::DebugServiceMarker::SERVICE_NAME) {
+                anyhow::bail!(
+                    "DebugService path '{p}' is control-only; pass a {} path for telemetry, or \
+                     omit --path to use discovery",
+                    fcharger::ServiceMarker::SERVICE_NAME
+                );
+            }
+            return Self::watch_at(p).await;
+        }
+
+        let streams = Self::discover_watch_streams()?;
+        if streams.is_empty() {
+            anyhow::bail!("No charger service instances found under /svc");
+        }
+        run_watch_streams(streams, "charger").await
+    }
+
+    async fn watch_at(path: &str) -> Result<()> {
+        let target_path = append_member_suffix(path, MEMBER_CHARGER);
+        let target_path_str = target_path.to_str().context("invalid UTF-8 path")?;
+        let proxy = connect_to_protocol_at_path::<fcharger::ChargerMarker>(target_path_str)
+            .with_context(|| format!("Failed to connect to Charger at {target_path_str}"))?;
+
+        println!("Watching charger events on {} (press Ctrl+C to exit)...\n", target_path_str);
+
+        let mut stream = charger_watch_stream(proxy);
+        let mut received_any = false;
+        let mut last_err = None;
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(status) => {
+                    received_any = true;
+                    println!("=== Charger Telemetry Update ===");
+                    print!("{}", DisplayChargerStatus(&status));
+                    println!();
+                }
+                Err(e) => {
+                    eprintln!("Warning: received charger watch error: {:#}", e);
+                    last_err = Some(e);
+                }
+            }
+        }
+        if !received_any {
+            return Err(
+                last_err.unwrap_or_else(|| anyhow!("Charger watch stream closed immediately"))
+            );
+        }
+        Ok(())
+    }
 }
 
 pub fn charger_watch_stream(
     proxy: fcharger::ChargerProxy,
-) -> futures::stream::BoxStream<'static, Result<fcharger::Status>> {
-    use futures::stream;
+) -> BoxStream<'static, Result<fcharger::Status>> {
     Box::pin(stream::unfold(Some(proxy), |proxy_opt| async move {
         let proxy = proxy_opt?;
         match proxy.watch(None).await {
@@ -252,38 +387,6 @@ pub fn charger_watch_stream(
             Err(e) => Some((Err(anyhow!("Charger Watch FIDL error: {:#}", e)), None)),
         }
     }))
-}
-
-pub(crate) async fn watch_charger_at(path: &str) -> Result<()> {
-    use futures::StreamExt;
-    let target_path = append_member_suffix(path, MEMBER_CHARGER);
-    let target_path_str = target_path.to_str().context("invalid UTF-8 path")?;
-    let proxy = connect_to_protocol_at_path::<fcharger::ChargerMarker>(target_path_str)
-        .with_context(|| format!("Failed to connect to Charger at {target_path_str}"))?;
-
-    println!("Watching charger events on {} (press Ctrl+C to exit)...\n", target_path_str);
-
-    let mut stream = charger_watch_stream(proxy);
-    let mut received_any = false;
-    let mut last_err = None;
-    while let Some(item) = stream.next().await {
-        match item {
-            Ok(status) => {
-                received_any = true;
-                println!("=== Charger Telemetry Update ===");
-                print!("{}", DisplayChargerStatus(&status));
-                println!();
-            }
-            Err(e) => {
-                eprintln!("Warning: received charger watch error: {:#}", e);
-                last_err = Some(e);
-            }
-        }
-    }
-    if !received_any {
-        return Err(last_err.unwrap_or_else(|| anyhow!("Charger watch stream closed immediately")));
-    }
-    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -323,10 +426,6 @@ pub async fn set_charger_mode(path: Option<&str>, mode: fcharger::OperatingMode)
         DisplayOperatingMode(mode)
     );
     Ok(())
-}
-
-fn build_mode_control_options(mode: fcharger::OperatingMode) -> fcharger::ControlOptions {
-    fcharger::ControlOptions { operating_mode: Some(mode), ..Default::default() }
 }
 
 async fn set_charger_mode_at_path(
@@ -389,10 +488,9 @@ async fn set_sorrel_fallback_mode(
     legacy_enable: Option<bool>,
 ) -> Result<Option<String>> {
     // Quiet presence check: `set_spmi_power_source` selects (and reports) the instance itself.
-    let spmi_present = !crate::common::discover_instances(
-        fidl_fuchsia_hardware_spmi::DebugServiceMarker::SERVICE_NAME,
-    )
-    .is_empty();
+    let spmi_present =
+        !discover_instances(fidl_fuchsia_hardware_spmi::DebugServiceMarker::SERVICE_NAME)
+            .is_empty();
     match mode {
         fcharger::OperatingMode::Discharging => {
             if spmi_present {
@@ -455,22 +553,26 @@ fn connect_debug(path: &str) -> Result<(fcharger::DebugProxy, String)> {
     Ok((proxy, format!("fuchsia.hardware.power.charger.Debug ({debug_path_str})")))
 }
 
-async fn set_debug_charger_mode(path: &str, mode: fcharger::OperatingMode) -> Result<String> {
+async fn set_debug_control(path: &str, options: &fcharger::ControlOptions) -> Result<String> {
     let (proxy, target) = connect_debug(path)?;
-    set_debug_charger_mode_with_proxy(&proxy, mode).await?;
+    set_debug_control_with_proxy(&proxy, options).await?;
     Ok(target)
 }
 
-async fn set_debug_charger_mode_with_proxy(
+async fn set_debug_control_with_proxy(
     proxy: &fcharger::DebugProxy,
-    mode: fcharger::OperatingMode,
+    options: &fcharger::ControlOptions,
 ) -> Result<()> {
-    let options = build_mode_control_options(mode);
     proxy
-        .set_control(&options)
+        .set_control(options)
         .await
         .context("Debug SetControl call failed")?
         .map_err(|status| anyhow!("Debug SetControl rejected with error: {:?}", status))
+}
+
+async fn set_debug_charger_mode(path: &str, mode: fcharger::OperatingMode) -> Result<String> {
+    let options = fcharger::ControlOptions { operating_mode: Some(mode), ..Default::default() };
+    set_debug_control(path, &options).await
 }
 
 async fn set_legacy_charger_enable(path: &str, enable: bool) -> Result<String> {
@@ -515,6 +617,115 @@ impl std::str::FromStr for ModeArg {
     }
 }
 
+/// Argument for `batteryutil charger charge-current`: a fast charge current limit in microamps, or
+/// `auto` to clear the fast charge current limit override applied through the charger
+/// `DebugService`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CurrentLimitArg {
+    /// Applies a sticky fast charge current limit (in `uA`) through the charger `DebugService`.
+    Set(u32),
+    /// Clears the fast charge current limit override applied through the charger `DebugService`.
+    Auto,
+}
+
+impl std::str::FromStr for CurrentLimitArg {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("auto") {
+            return Ok(Self::Auto);
+        }
+        parse_micro_value(s, "A").map(Self::Set).map_err(|e| {
+            format!("Invalid charge current '{s}' ({e}). Use e.g. 2.5A, 2500mA, 2500000, or auto.")
+        })
+    }
+}
+
+/// Argument for `batteryutil charger float-voltage`: a battery float voltage limit in microvolts,
+/// or `auto` to clear the float voltage override applied through the charger `DebugService`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoltageLimitArg {
+    /// Applies a sticky battery float voltage limit (in `uV`) through the charger `DebugService`.
+    Set(u32),
+    /// Clears the battery float voltage override applied through the charger `DebugService`.
+    Auto,
+}
+
+impl std::str::FromStr for VoltageLimitArg {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("auto") {
+            return Ok(Self::Auto);
+        }
+        parse_micro_value(s, "V").map(Self::Set).map_err(|e| {
+            format!("Invalid float voltage '{s}' ({e}). Use e.g. 4.35V, 4350mV, 4350000, or auto.")
+        })
+    }
+}
+
+fn resolve_debug_instance(path: Option<&str>, command: &str) -> Result<String> {
+    match path {
+        Some(p) => debug_service_instance(p),
+        None => select_instance(fcharger::DebugServiceMarker::SERVICE_NAME).with_context(|| {
+            format!("'{command}' requires {}", fcharger::DebugServiceMarker::SERVICE_NAME)
+        }),
+    }
+}
+
+/// Applies a sticky fast charge current limit (in `uA`) through the charger `DebugService`.
+pub async fn set_charge_current(path: Option<&str>, current_ua: u32) -> Result<()> {
+    let instance = resolve_debug_instance(path, "charger charge-current")?;
+    let options = fcharger::ControlOptions {
+        charge_current_limit_ua: Some(current_ua),
+        ..Default::default()
+    };
+    let target = set_debug_control(&instance, &options).await?;
+    println!(
+        "Successfully set charger fast charge current limit to {} via {target}",
+        MicroUnit(current_ua, "A")
+    );
+    Ok(())
+}
+
+/// Withdraws the sticky fast charge current limit override applied through the charger
+/// `DebugService`, leaving any other debug overrides intact.
+pub(crate) async fn clear_charge_current_override(path: Option<&str>) -> Result<()> {
+    let options =
+        fcharger::ControlOptions { charge_current_limit_ua: Some(0), ..Default::default() };
+    clear_charger_overrides(
+        path,
+        &options,
+        "charger charge-current auto",
+        "charger fast charge current limit override",
+    )
+    .await
+}
+
+/// Applies a sticky battery float voltage limit (in `uV`) through the charger `DebugService`.
+pub async fn set_float_voltage(path: Option<&str>, voltage_uv: u32) -> Result<()> {
+    let instance = resolve_debug_instance(path, "charger float-voltage")?;
+    let options =
+        fcharger::ControlOptions { float_voltage_uv: Some(voltage_uv), ..Default::default() };
+    let target = set_debug_control(&instance, &options).await?;
+    println!(
+        "Successfully set charger float voltage to {} via {target}",
+        MicroUnit(voltage_uv, "V")
+    );
+    Ok(())
+}
+
+/// Withdraws the sticky battery float voltage override applied through the charger `DebugService`,
+/// leaving any other debug overrides intact.
+pub(crate) async fn clear_float_voltage_override(path: Option<&str>) -> Result<()> {
+    let options = fcharger::ControlOptions { float_voltage_uv: Some(0), ..Default::default() };
+    clear_charger_overrides(
+        path,
+        &options,
+        "charger float-voltage auto",
+        "charger float voltage override",
+    )
+    .await
+}
+
 /// Withdraws sticky overrides matching `options` (or all overrides when `options` is empty)
 /// through the charger `DebugService`, handing control back to the production policy client or
 /// the charger's autonomous defaults.
@@ -524,12 +735,7 @@ pub(crate) async fn clear_charger_overrides(
     command: &str,
     description: &str,
 ) -> Result<()> {
-    let instance = match path {
-        Some(p) => debug_service_instance(p)?,
-        None => select_instance(fcharger::DebugServiceMarker::SERVICE_NAME).with_context(|| {
-            format!("'{command}' requires {}", fcharger::DebugServiceMarker::SERVICE_NAME)
-        })?,
-    };
+    let instance = resolve_debug_instance(path, command)?;
     let target = clear_debug_overrides(&instance, options).await?;
     println!("Successfully cleared {description} via {target}");
     Ok(())
@@ -545,7 +751,8 @@ pub(crate) async fn clear_charger_mode_override(path: Option<&str>) -> Result<()
         operating_mode: Some(fcharger::OperatingMode::Charging),
         ..Default::default()
     };
-    clear_charger_overrides(path, &options, "mode auto", "charger operating mode override").await
+    clear_charger_overrides(path, &options, "charger mode auto", "charger operating mode override")
+        .await
 }
 
 /// Withdraws all sticky overrides applied through the charger `DebugService`, handing control of
@@ -554,18 +761,18 @@ pub(crate) async fn clear_all_charger_overrides(path: Option<&str>) -> Result<()
     clear_charger_overrides(
         path,
         &fcharger::ControlOptions::default(),
-        "clear",
+        "charger clear",
         "all charger overrides",
     )
     .await
 }
 
-/// Maps a charger service instance path to the matching `DebugService` instance, since overrides
-/// can only be cleared through `Debug`.
+/// Maps a charger service instance path to the matching `DebugService` instance, since sticky
+/// overrides are applied and cleared exclusively through `Debug`.
 fn debug_service_instance(path: &str) -> Result<String> {
     if path.contains(fpowerbattery::ChargerServiceMarker::SERVICE_NAME) {
         return Err(anyhow!(
-            "legacy ChargerService has no overrides to clear; use 'mode charging' instead"
+            "legacy ChargerService has no DebugService overrides; use 'charger mode charging' instead"
         ));
     }
     Ok(path
@@ -582,42 +789,31 @@ async fn clear_debug_overrides_with_proxy(
     proxy: &fcharger::DebugProxy,
     options: &fcharger::ControlOptions,
 ) -> Result<()> {
-    proxy
-        .clear_control(options)
-        .await
-        .context("Debug ClearControl call failed")?
-        .map_err(|domain_error| {
-            anyhow!("Debug ClearControl rejected with error: {:?}", domain_error)
-        })
+    proxy.clear_control(options).await.context("Debug ClearControl call failed")?.map_err(
+        |domain_error| anyhow!("Debug ClearControl rejected with error: {:?}", domain_error),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::StreamExt;
 
     #[test]
-    fn test_parse_and_build_charger_mode_options() {
+    fn test_parse_charger_mode_arg() {
         for s in ["charging", "charge", "usb"] {
-            let parsed = s.parse::<ChargerModeArg>().unwrap();
-            assert_eq!(parsed, ChargerModeArg(fcharger::OperatingMode::Charging));
             assert_eq!(
-                build_mode_control_options(parsed.0).operating_mode,
-                Some(fcharger::OperatingMode::Charging)
+                s.parse::<ChargerModeArg>(),
+                Ok(ChargerModeArg(fcharger::OperatingMode::Charging))
             );
         }
-        let parsed = "passthrough".parse::<ChargerModeArg>().unwrap();
-        assert_eq!(parsed, ChargerModeArg(fcharger::OperatingMode::Passthrough));
         assert_eq!(
-            build_mode_control_options(parsed.0).operating_mode,
-            Some(fcharger::OperatingMode::Passthrough)
+            "passthrough".parse::<ChargerModeArg>(),
+            Ok(ChargerModeArg(fcharger::OperatingMode::Passthrough))
         );
         for s in ["battery", "batt", "discharging", "discharge"] {
-            let parsed = s.parse::<ChargerModeArg>().unwrap();
-            assert_eq!(parsed, ChargerModeArg(fcharger::OperatingMode::Discharging));
             assert_eq!(
-                build_mode_control_options(parsed.0).operating_mode,
-                Some(fcharger::OperatingMode::Discharging)
+                s.parse::<ChargerModeArg>(),
+                Ok(ChargerModeArg(fcharger::OperatingMode::Discharging))
             );
         }
         assert_eq!(
@@ -675,6 +871,8 @@ mod tests {
             health: Some(fcharger::Health::Good),
             input_current_limit_ua: Some(1_500_000),
             input_current_ua: Some(1_200_000),
+            charge_current_limit_ua: Some(2_500_000),
+            float_voltage_uv: Some(4_350_000),
             ..Default::default()
         };
         let status_out = DisplayChargerStatus(&status).to_string();
@@ -685,6 +883,8 @@ mod tests {
         assert!(status_out.contains("Health: Good"));
         assert!(status_out.contains("Input Current Limit: 1.500 A"));
         assert!(status_out.contains("Input Current: 1.200 A"));
+        assert!(status_out.contains("Charge Current Limit: 2.500 A"));
+        assert!(status_out.contains("Float Voltage: 4.350 V"));
     }
 
     #[fuchsia::test]
@@ -739,9 +939,58 @@ mod tests {
             assert_eq!(options.operating_mode, Some(fcharger::OperatingMode::Discharging));
             responder.send(Ok(())).expect("send SetControl response");
         });
-        set_debug_charger_mode_with_proxy(&debug_proxy, fcharger::OperatingMode::Discharging)
-            .await
-            .expect("set_debug_charger_mode_with_proxy succeeded");
+        set_debug_control_with_proxy(
+            &debug_proxy,
+            &fcharger::ControlOptions {
+                operating_mode: Some(fcharger::OperatingMode::Discharging),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("set_debug_control_with_proxy succeeded");
+        debug_server.await;
+    }
+
+    #[fuchsia::test]
+    async fn test_set_debug_control_sends_charge_current_and_float_voltage() {
+        let (debug_proxy, mut debug_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fcharger::DebugMarker>();
+        let debug_server = fuchsia_async::Task::local(async move {
+            let Some(Ok(fcharger::DebugRequest::SetControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected first SetControl request");
+            };
+            assert_eq!(options.charge_current_limit_ua, Some(2_500_000));
+            assert!(options.operating_mode.is_none());
+            assert!(options.float_voltage_uv.is_none());
+            responder.send(Ok(())).expect("send first SetControl response");
+
+            let Some(Ok(fcharger::DebugRequest::SetControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected second SetControl request");
+            };
+            assert_eq!(options.float_voltage_uv, Some(4_350_000));
+            assert!(options.operating_mode.is_none());
+            assert!(options.charge_current_limit_ua.is_none());
+            responder.send(Ok(())).expect("send second SetControl response");
+        });
+        set_debug_control_with_proxy(
+            &debug_proxy,
+            &fcharger::ControlOptions {
+                charge_current_limit_ua: Some(2_500_000),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("set charge current succeeded");
+        set_debug_control_with_proxy(
+            &debug_proxy,
+            &fcharger::ControlOptions { float_voltage_uv: Some(4_350_000), ..Default::default() },
+        )
+        .await
+        .expect("set float voltage succeeded");
         debug_server.await;
     }
 
@@ -760,6 +1009,23 @@ mod tests {
         );
         let err = "automatic".parse::<ModeArg>().unwrap_err();
         assert!(err.contains("or auto"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_parse_current_and_voltage_limit_args() {
+        for s in ["auto", "AUTO", "Auto"] {
+            assert_eq!(s.parse::<CurrentLimitArg>(), Ok(CurrentLimitArg::Auto));
+            assert_eq!(s.parse::<VoltageLimitArg>(), Ok(VoltageLimitArg::Auto));
+        }
+        assert_eq!("2.5A".parse::<CurrentLimitArg>(), Ok(CurrentLimitArg::Set(2_500_000)));
+        assert_eq!("2500mA".parse::<CurrentLimitArg>(), Ok(CurrentLimitArg::Set(2_500_000)));
+        assert_eq!("2500000".parse::<CurrentLimitArg>(), Ok(CurrentLimitArg::Set(2_500_000)));
+        assert!("invalid".parse::<CurrentLimitArg>().is_err());
+
+        assert_eq!("4.35V".parse::<VoltageLimitArg>(), Ok(VoltageLimitArg::Set(4_350_000)));
+        assert_eq!("4350mV".parse::<VoltageLimitArg>(), Ok(VoltageLimitArg::Set(4_350_000)));
+        assert_eq!("4350000".parse::<VoltageLimitArg>(), Ok(VoltageLimitArg::Set(4_350_000)));
+        assert!("invalid".parse::<VoltageLimitArg>().is_err());
     }
 
     #[test]
@@ -789,30 +1055,60 @@ mod tests {
             let Some(Ok(fcharger::DebugRequest::ClearControl { options, responder })) =
                 debug_stream.next().await
             else {
-                panic!("expected a ClearControl request");
+                panic!("expected first ClearControl request");
             };
             assert!(options.operating_mode.is_some());
             assert!(options.input_current_limit_ua.is_none());
             assert!(options.charge_current_limit_ua.is_none());
             assert!(options.float_voltage_uv.is_none());
             responder.send(Ok(())).expect("send ClearControl response");
-
-            // 2. Empty table clears all overrides.
             let Some(Ok(fcharger::DebugRequest::ClearControl { options, responder })) =
                 debug_stream.next().await
             else {
-                panic!("expected a second ClearControl request");
+                panic!("expected second ClearControl request");
+            };
+            assert!(options.charge_current_limit_ua.is_some());
+            assert!(options.operating_mode.is_none());
+            assert!(options.float_voltage_uv.is_none());
+            responder.send(Ok(())).expect("send ClearControl response");
+
+            let Some(Ok(fcharger::DebugRequest::ClearControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected third ClearControl request");
+            };
+            assert!(options.float_voltage_uv.is_some());
+            assert!(options.operating_mode.is_none());
+            assert!(options.charge_current_limit_ua.is_none());
+            responder.send(Ok(())).expect("send ClearControl response");
+
+            let Some(Ok(fcharger::DebugRequest::ClearControl { options, responder })) =
+                debug_stream.next().await
+            else {
+                panic!("expected fourth ClearControl request");
             };
             assert_eq!(options, fcharger::ControlOptions::default());
             responder.send(Ok(())).expect("send ClearControl response");
         });
-        let mask = build_mode_control_options(fcharger::OperatingMode::Charging);
-        clear_debug_overrides_with_proxy(&debug_proxy, &mask)
+        let mode_mask = fcharger::ControlOptions {
+            operating_mode: Some(fcharger::OperatingMode::Charging),
+            ..Default::default()
+        };
+        clear_debug_overrides_with_proxy(&debug_proxy, &mode_mask)
             .await
-            .expect("clear_debug_overrides_with_proxy succeeded");
+            .expect("clear mode override succeeded");
+        let cc_mask =
+            fcharger::ControlOptions { charge_current_limit_ua: Some(0), ..Default::default() };
+        clear_debug_overrides_with_proxy(&debug_proxy, &cc_mask)
+            .await
+            .expect("clear charge current override succeeded");
+        let fv_mask = fcharger::ControlOptions { float_voltage_uv: Some(0), ..Default::default() };
+        clear_debug_overrides_with_proxy(&debug_proxy, &fv_mask)
+            .await
+            .expect("clear float voltage override succeeded");
         clear_debug_overrides_with_proxy(&debug_proxy, &fcharger::ControlOptions::default())
             .await
-            .expect("clear_debug_overrides_with_proxy clear-all succeeded");
+            .expect("clear all overrides succeeded");
         debug_server.await;
     }
 
@@ -829,7 +1125,10 @@ mod tests {
             assert!(options.operating_mode.is_some());
             responder.send(Err(fcharger::Error::Io)).expect("send ClearControl error");
         });
-        let mask = build_mode_control_options(fcharger::OperatingMode::Charging);
+        let mask = fcharger::ControlOptions {
+            operating_mode: Some(fcharger::OperatingMode::Charging),
+            ..Default::default()
+        };
         let err = clear_debug_overrides_with_proxy(&debug_proxy, &mask).await.unwrap_err();
         assert!(format!("{err:#}").contains("Io"), "unexpected error: {err:#}");
         debug_server.await;

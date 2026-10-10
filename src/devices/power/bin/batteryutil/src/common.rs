@@ -5,8 +5,21 @@
 //! Common formatting, path, and service discovery helpers for batteryutil.
 
 use anyhow::{Result, anyhow};
+use futures::StreamExt;
+use futures::stream::BoxStream;
 use std::fmt;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+
+/// A single status update or error from a watched battery or charger service instance.
+pub struct WatchEvent {
+    pub kind: &'static str,
+    pub instance: String,
+    pub status: Result<String>,
+}
+
+/// A boxed stream of [`WatchEvent`] updates.
+pub type WatchEventStream = BoxStream<'static, WatchEvent>;
 
 pub const MEMBER_BATTERY: &str = "battery";
 pub const MEMBER_DEVICE: &str = "device";
@@ -16,6 +29,43 @@ pub const MEMBER_DEBUG: &str = "debug";
 
 const KNOWN_MEMBER_SUFFIXES: &[&str] =
     &[MEMBER_BATTERY, MEMBER_CHARGER, MEMBER_CONTROLLER, MEMBER_DEBUG, MEMBER_DEVICE];
+
+/// Parses a user-supplied string representation of a current or voltage into integer micro-units
+/// (`uA` or `uV`). Supports raw micro-units (`"2500000"`, `"2500000uA"`), milli-units
+/// (`"2500mA"`, `"4350mV"`), or base units (`"2.5A"`, `"4.35V"`).
+pub fn parse_micro_value(input: &str, expected_unit: &str) -> Result<u32> {
+    let s = input.trim();
+    let unit_lower = expected_unit.to_ascii_lowercase();
+    let s_lower = s.to_ascii_lowercase();
+
+    let (num_str, multiplier) = if let Some(prefix) = s_lower.strip_suffix(&unit_lower) {
+        if let Some(stripped) = prefix.strip_suffix('u') {
+            (&s[..stripped.len()], 1.0)
+        } else if let Some(stripped) = prefix.strip_suffix('m') {
+            (&s[..stripped.len()], 1_000.0)
+        } else {
+            (&s[..prefix.len()], 1_000_000.0)
+        }
+    } else {
+        (s, 1.0)
+    };
+
+    let num: f64 =
+        num_str.trim().parse().map_err(|_| anyhow!("Invalid number format in '{input}'"))?;
+    if !num.is_finite() {
+        anyhow::bail!("Non-finite values are not permitted: {input}");
+    }
+    if num < 0.0 {
+        anyhow::bail!("Negative values are not permitted: {input}");
+    }
+
+    let val = (num * multiplier).round();
+    if val > u32::MAX as f64 {
+        anyhow::bail!("Value exceeds maximum 32-bit limit: {input}");
+    }
+
+    Ok(val as u32)
+}
 
 /// Formats micro-units (uA, uAh, uV) into human-readable quantities with appropriate prefixes.
 #[derive(Debug, PartialEq)]
@@ -91,9 +141,85 @@ pub fn append_member_suffix(path: impl AsRef<Path>, member_suffix: &str) -> Path
     path.join(member)
 }
 
+/// Runs `query` for one service instance, framing its output with a `title` header when
+/// `show_header` is set. Returns whether the query succeeded; a failure is reported on stderr so
+/// that the remaining instances are still queried.
+pub async fn report_instance(
+    title: &str,
+    inst: &str,
+    show_header: bool,
+    query: impl Future<Output = Result<()>>,
+) -> bool {
+    if show_header {
+        println!("=== {title} ({inst}) ===");
+    }
+    let succeeded = query.await.inspect_err(|e| eprintln!("Error querying {inst}: {e:#}")).is_ok();
+    if show_header {
+        println!();
+    }
+    succeeded
+}
+
+/// Multiplexes `streams` and prints each status update until all streams close.
+pub async fn run_watch_streams(streams: Vec<WatchEventStream>, label: &str) -> Result<()> {
+    println!("Watching {label} events on all instances (press Ctrl+C to exit)...\n");
+    let mut combined = futures::stream::select_all(streams);
+    let mut received_any = false;
+    let mut last_err = None;
+    while let Some(event) = combined.next().await {
+        match event.status {
+            Ok(formatted) => {
+                received_any = true;
+                println!("=== {} Telemetry Update ({}) ===", event.kind, event.instance);
+                print!("{formatted}");
+                println!();
+            }
+            Err(e) => {
+                eprintln!(
+                    "Warning ({}): received {} watch error: {e:#}",
+                    event.instance,
+                    event.kind.to_lowercase()
+                );
+                last_err = Some(e);
+            }
+        }
+    }
+    if !received_any {
+        return Err(last_err.unwrap_or_else(|| anyhow!("All {label} watch streams closed")));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[fuchsia::test]
+    async fn test_report_instance_returns_query_outcome() {
+        assert!(report_instance("Telemetry", "ok", true, async { Ok(()) }).await);
+        assert!(!report_instance("Telemetry", "err", true, async { Err(anyhow!("boom")) }).await);
+    }
+
+    #[test]
+    fn test_parse_micro_value() {
+        assert_eq!(parse_micro_value("2500000", "A").unwrap(), 2_500_000);
+        assert_eq!(parse_micro_value("2500000uA", "A").unwrap(), 2_500_000);
+        assert_eq!(parse_micro_value("2500mA", "A").unwrap(), 2_500_000);
+        assert_eq!(parse_micro_value("2.5A", "A").unwrap(), 2_500_000);
+        assert_eq!(parse_micro_value(" 1.5 a ", "A").unwrap(), 1_500_000);
+
+        assert_eq!(parse_micro_value("4350000", "V").unwrap(), 4_350_000);
+        assert_eq!(parse_micro_value("4350000uv", "V").unwrap(), 4_350_000);
+        assert_eq!(parse_micro_value("4350mV", "V").unwrap(), 4_350_000);
+        assert_eq!(parse_micro_value("4.35V", "V").unwrap(), 4_350_000);
+
+        assert!(parse_micro_value("-1.0A", "A").is_err());
+        assert!(parse_micro_value("NaN", "A").is_err());
+        assert!(parse_micro_value("infA", "A").is_err());
+        assert!(parse_micro_value("5000A", "A").is_err());
+        assert!(parse_micro_value("4.35V", "A").is_err());
+        assert!(parse_micro_value("invalid", "A").is_err());
+    }
 
     #[test]
     fn test_format_unit() {
