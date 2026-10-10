@@ -11,7 +11,7 @@ use assembly_config_schema::platform_settings::health_check_config::HealthCheckC
 use assembly_config_schema::platform_settings::memory_allocator_config::MemoryAllocatorConfig;
 use assembly_config_schema::platform_settings::starnix_config::PlatformStarnixConfig;
 use assembly_config_schema::product_settings::ComponentPolicyConfig;
-use assembly_constants::{BootfsDestination, FileEntry};
+use assembly_constants::{BoardFeature, BootfsDestination, FileEntry};
 use camino::Utf8PathBuf;
 use cm_config::{InjectedCapabilities, InjectedUse, InjectedUseProtocol};
 use component_manager_config::{Args, compile};
@@ -78,6 +78,9 @@ impl DefineSubsystemConfiguration<ComponentConfig<'_>> for ComponentSubsystem {
         // Apply platform policies specific to subsystems.
         if config.starnix.enabled {
             input.push(context.get_resource("component_manager_policy_starnix.json5"));
+        }
+        if context.board_config.provides_feature(BoardFeature::DebugUartSuspend) {
+            input.push(context.get_resource("component_manager_policy_debug_uart_suspend.json5"));
         }
 
         // LINT.IfChange(vulkan_loader_lavapipe)

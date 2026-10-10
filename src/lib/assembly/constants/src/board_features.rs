@@ -21,6 +21,11 @@ pub enum BoardFeature {
     CpuPowerBoost,
     /// Use a custom audio core component instead of the default.
     CustomAudioCore,
+    /// The driver for the kernel's debug UART powers it down across system suspend, which needs
+    /// the `fuchsia.kernel.DebugResource` capability. This includes
+    /// `component_manager_policy_debug_uart_suspend.json5`, which grants it only to the driver
+    /// monikers it lists (today Iris's `uart-db61000`). Other boards must add theirs there.
+    DebugUartSuspend,
     /// Eager startup for power-manager component.
     EagerPowerManager,
     /// Fake battery driver for testing or emulators.
@@ -120,6 +125,7 @@ impl AsRef<str> for BoardFeature {
             Self::BusPci => "fuchsia::bus_pci",
             Self::CpuPowerBoost => "fuchsia::cpu_power_boost",
             Self::CustomAudioCore => "fuchsia::custom_audio_core",
+            Self::DebugUartSuspend => "fuchsia::debug_uart_suspend",
             Self::EagerPowerManager => "fuchsia::eager_power_manager",
             Self::FakeBattery => "fuchsia::fake_battery",
             Self::FakeDisplay => "fuchsia::fake_display",

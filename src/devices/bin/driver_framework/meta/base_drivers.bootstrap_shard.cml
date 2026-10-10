@@ -50,6 +50,13 @@
             to: "#base-drivers",
         },
         {
+            // Lets the driver for the kernel's debug UART suspend and resume the kernel's use
+            // of it (`zx_debug_suspend` and `zx_debug_resume`) across system suspend.
+            protocol: "fuchsia.kernel.DebugResource",
+            from: "parent",
+            to: "#base-drivers",
+        },
+        {
             protocol: [ "fuchsia.scheduler.RoleManager" ],
             from: "#role_manager",
             to: "#base-drivers",

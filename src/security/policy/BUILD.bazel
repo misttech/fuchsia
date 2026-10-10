@@ -12,6 +12,7 @@ exports_files(
         "component_manager_policy_eng.json5",
         "component_manager_policy_user.json5",
         "component_manager_policy_userdebug.json5",
+        "subsystems/component_manager_policy_debug_uart_suspend.json5",
         "subsystems/component_manager_policy_starnix.json5",
         "subsystems/component_manager_policy_vulkan_loader.json5",
     ],

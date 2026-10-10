@@ -1,0 +1,27 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+{
+    // Included for boards that provide `fuchsia::debug_uart_suspend`. It grants the capability
+    // only to the driver monikers listed below, which today are Iris's debug UART node
+    // (`uart-db61000`). Other boards that provide the feature must add their debug UART's node
+    // here, or their driver won't get the capability.
+    security_policy: {
+        capability_policy: [
+            {
+                // Lets the driver for the kernel's debug UART call `zx_debug_suspend` and
+                // `zx_debug_resume` around powering the UART down and up across system suspend.
+                // The monikers name the debug UART's driver node, which runs as a boot or base
+                // driver depending on the product.
+                source_moniker: "<component_manager>",
+                source: "component",
+                source_name: "fuchsia.kernel.DebugResource",
+                capability: "protocol",
+                target_monikers: [
+                    "/bootstrap/base-drivers:uart-db61000",
+                    "/bootstrap/boot-drivers:uart-db61000",
+                ],
+            },
+        ],
+    },
+}
