@@ -80,7 +80,7 @@ impl StorageInfo {
         partition_provider: BlockProxyProvider,
     ) -> Result<Vec<Device>, Error> {
         let mut devices = Vec::new();
-        for entry in fs::read_dir("/gumshoe-dev-class-block")? {
+        for entry in fs::read_dir("/debug_block")? {
             let entry = entry?;
             let entry_path = entry.path();
             let block_path = entry_path.to_str().ok_or(anyhow::anyhow!("Invalid path"))?;

@@ -30,11 +30,9 @@
             to: "#gumshoe",
         },
         {
-            directory: "dev-class",
+            directory: "debug_block",
             from: "parent",
-            as: "dev-class-block",
             to: "#gumshoe",
-            subdir: "block",
         },
     ],
 }

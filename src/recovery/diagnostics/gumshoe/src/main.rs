@@ -36,7 +36,7 @@ async fn get_product_info() -> Result<ProductInfo, Error> {
 /// Connects to Partition FIDL at given path.
 fn partition_provider(path: &str) -> Result<fidl_fuchsia_storage_block::BlockProxy, Error> {
     fuchsia_component::client::connect_to_protocol_at_path::<fidl_fuchsia_storage_block::BlockMarker>(
-        path,
+        &format!("{path}/fuchsia.storage.block.Block"),
     )
 }
 

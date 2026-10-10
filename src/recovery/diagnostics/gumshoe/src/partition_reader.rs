@@ -32,7 +32,7 @@ impl PartitionReader {
         block_proxy_provider: BlockProxyProvider,
     ) -> Result<HashMap<String, (u64, u32)>, Error> {
         let mut sizes = HashMap::new();
-        for entry in fs::read_dir("/gumshoe-dev-class-block")? {
+        for entry in fs::read_dir("/debug_block")? {
             let entry = entry?;
             let entry_path = entry.path();
             let name = entry_path.file_name().ok_or(anyhow!("Invalid name (No OsString)"))?;
@@ -76,7 +76,7 @@ impl PartitionReader {
             block_size: u32,
             mut sender: Sender,
         ) -> Result<(), Error> {
-            let path = format!("/gumshoe-dev-class-block/{}", name);
+            let path = format!("/debug_block/{}", name);
             let proxy = block_proxy_provider(&path)?;
             let rbc = block_client::RemoteBlockClient::new(proxy).await?;
 
