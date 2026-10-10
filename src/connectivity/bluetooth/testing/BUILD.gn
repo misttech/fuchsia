@@ -23,7 +23,6 @@ group("tests") {
     "hci-emulator-client:tests",
     "mock-piconet-server:tests",
     "test-call-manager:tests",
-    "test-harness-tests:test-harness-crate-tests",
     "test-rfcomm-client:tests",
   ]
 }

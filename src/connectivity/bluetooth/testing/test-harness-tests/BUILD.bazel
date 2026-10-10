@@ -1,0 +1,72 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load(
+    "//build/bazel/rules/packages:fx_packaged_binary.bzl",
+    "fx_packaged_binary",
+)
+load("//build/bazel/rules/rust:defs.bzl", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_test(
+    name = "tests_bin",
+    srcs = ["src/lib.rs"],
+    crate_name = "test_harness_crate_tests",
+    edition = "2024",
+    rustc_flags = ["-Dunused_results"],
+    deps = [
+        "//src/connectivity/bluetooth/testing/test-harness",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+    ],
+)
+
+fx_packaged_binary(
+    name = "tests_bin_packaged_bin",
+    testonly = True,
+    binary = ":tests_bin",
+    binary_name = "test_harness_crate_tests",
+)
+
+fx_component_manifest(
+    name = "test-harness-crate-tests-manifest",
+    testonly = True,
+    component_name = "test-harness-crate-tests",
+    includes = [
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/test-harness-crate-tests.cml",
+)
+
+fx_test_component(
+    name = "test-harness-crate-tests-component",
+    compiled_manifest = ":test-harness-crate-tests-manifest",
+    component_name = "test-harness-crate-tests",
+    deps = [":tests_bin_packaged_bin"],
+)
+
+fx_package(
+    name = "test-harness-crate-tests-package",
+    package_name = "test-harness-crate-tests",
+    test_components = [":test-harness-crate-tests-component"],
+)
+
+fx_test(
+    name = "test-harness-crate-tests",
+    package = ":test-harness-crate-tests-package",
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
