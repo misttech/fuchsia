@@ -924,7 +924,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
 }
 }
@@ -1808,11 +1808,12 @@ From //build/config/compilation_modes.gni:39
 
 ### compress_debuginfo
 
+LINT.IfChange(compress_debuginfo)
 Enable compression of debug sections.
 
 **Current value (from the default):** `"zstd"`
 
-From //build/config/compiler.gni:123
+From //build/config/compiler.gni:129
 
 ### config_example_cpp_greeting
 
@@ -3475,11 +3476,12 @@ From //build/config/profile/config.gni:18
 
 ### dwarf_version
 
+LINT.IfChange(dwarf_version)
 Explicitly specify DWARF version used.
 
 **Current value (from the default):** `5`
 
-From //build/config/compiler.gni:102
+From //build/config/compiler.gni:103
 
 ### e2e_test_labels
 
