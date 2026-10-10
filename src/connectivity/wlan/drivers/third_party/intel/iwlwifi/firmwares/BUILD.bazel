@@ -7,38 +7,65 @@ load(
     "fuchsia_package_resource",
 )
 load("@rules_license//rules:license.bzl", "license")
+load("//build/bazel/rules:cipd_prebuilt.bzl", "cipd_prebuilt_file")
 
 package(
     default_applicable_licenses = [":license"],
     default_visibility = ["//visibility:public"],
 )
 
+cipd_prebuilt_file(
+    name = "license_text",
+    applicable_licenses = [],
+    path = "//prebuilt/connectivity/wlan/firmware/intel/iwlwifi/LICENCE.iwlwifi_firmware",
+)
+
 license(
     name = "license",
     package_name = "iwlwifi firmware",
-    license_text = "//:prebuilt/connectivity/wlan/firmware/intel/iwlwifi/LICENCE.iwlwifi_firmware",
+    license_text = ":license_text",
+)
+
+cipd_prebuilt_file(
+    name = "prebuilt_iwlwifi-7265D-29",
+    path = "//prebuilt/connectivity/wlan/firmware/intel/iwlwifi/iwlwifi-7265D-29.ucode",
 )
 
 fuchsia_package_resource(
     name = "iwlwifi-firmware-iwlwifi-7265D-29",
-    src = "//:prebuilt/connectivity/wlan/firmware/intel/iwlwifi/iwlwifi-7265D-29.ucode",
+    src = ":prebuilt_iwlwifi-7265D-29",
     dest = "lib/firmware/iwlwifi/iwlwifi-7265D-29.ucode",
+)
+
+cipd_prebuilt_file(
+    name = "prebuilt_iwlwifi-8265-31",
+    path = "//prebuilt/connectivity/wlan/firmware/intel/iwlwifi/iwlwifi-8265-31.ucode",
 )
 
 fuchsia_package_resource(
     name = "iwlwifi-firmware-iwlwifi-8265-31",
-    src = "//:prebuilt/connectivity/wlan/firmware/intel/iwlwifi/iwlwifi-8265-31.ucode",
+    src = ":prebuilt_iwlwifi-8265-31",
     dest = "lib/firmware/iwlwifi/iwlwifi-8265-31.ucode",
+)
+
+cipd_prebuilt_file(
+    name = "prebuilt_iwlwifi-9260-th-b0-jf-b0-43",
+    path = "//prebuilt/connectivity/wlan/firmware/intel/iwlwifi/iwlwifi-9260-th-b0-jf-b0-43.ucode",
 )
 
 fuchsia_package_resource(
     name = "iwlwifi-firmware-iwlwifi-9260-th-b0-jf-b0-43",
-    src = "//:prebuilt/connectivity/wlan/firmware/intel/iwlwifi/iwlwifi-9260-th-b0-jf-b0-43.ucode",
+    src = ":prebuilt_iwlwifi-9260-th-b0-jf-b0-43",
     dest = "lib/firmware/iwlwifi/iwlwifi-9260-th-b0-jf-b0-43.ucode",
+)
+
+cipd_prebuilt_file(
+    name = "prebuilt_iwlwifi-QuZ-a0-hr-b0-71",
+    path = "//prebuilt/connectivity/wlan/firmware/intel/iwlwifi/iwlwifi-QuZ-a0-hr-b0-71.ucode",
 )
 
 fuchsia_package_resource(
     name = "iwlwifi-firmware-iwlwifi-QuZ-a0-hr-b0-71",
-    src = "//:prebuilt/connectivity/wlan/firmware/intel/iwlwifi/iwlwifi-QuZ-a0-hr-b0-71.ucode",
+    src = ":prebuilt_iwlwifi-QuZ-a0-hr-b0-71",
     dest = "lib/firmware/iwlwifi/iwlwifi-QuZ-a0-hr-b0-71.ucode",
 )
