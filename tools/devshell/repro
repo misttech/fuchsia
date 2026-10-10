@@ -192,13 +192,13 @@ function repro {
   print_comment "If necessary, start an emulator or connect a device"
   print_spacer
 
-  print_comment "Run tests (use the flag '--e2e' if you also want to run E2E tests):"
-  repro_test_commands
-  print_spacer
-
   if [[ -n "$build_id" ]]; then
     repro_failed_test_commands
+  else
+    print_comment "Run tests (use the flag '--e2e' if you also want to run E2E tests):"
+    repro_test_commands
   fi
+  print_spacer
 
   if [[ "$(build_has_binary_sizes)" == "true" ]]; then
     print_comment "Check component sizes:"
@@ -229,22 +229,127 @@ function repro {
 function repro_failed_test_commands {
   local status
   status="$(get_build_status)"
-  if [[ "$status" != "FAILURE" ]]; then
-    return
-  fi
-
-  print_comment "Run only failed tests:"
-
   local failed_tests
   failed_tests="$(get_failed_tests)"
   if [[ -z "$failed_tests" ]]; then
-    print_comment "Could not find the failed_test_names property in this build."
-    print_comment "Maybe it failed in other stages, e.g. build, or it is an old build. Only recent builds export the names of failed tests as properties."
-    print_comment "If this is an old build, you may find failed tests in $build_url"
+    if [[ "$status" == "FAILURE" ]]; then
+      print_comment "Could not find the failed_test_names property in this build."
+      print_comment "Maybe it failed in other stages, e.g. build, or it is an old build. Only recent builds export the names of failed tests as properties."
+      print_comment "If this is an old build, you may find failed tests in $build_url"
+      print_comment "You can run all tests instead (use the flag '--e2e' if you also want to run E2E tests):"
+    else
+      print_comment "Run tests (use the flag '--e2e' if you also want to run E2E tests):"
+    fi
+    repro_test_commands
     return
   fi
-  repro_test_commands "$failed_tests"
-  print_spacer
+
+  # Fetch shards.json to find tests that depend on specific product bundles
+  local bbtool="${FUCHSIA_DIR}/prebuilt/tools/buildbucket/bb"
+  local shards_file
+  shards_file=$(mktemp)
+
+  local step_name
+  if ! step_name=$(fx-command-run jq -r '.steps[] | select(.logs[]?.name == "shards.json") | .name' <<< "$build" 2>/dev/null | tail -n 1); then
+    step_name=""
+  fi
+
+  if [[ -z "$step_name" ]] || ! "$bbtool" log "$build_id" "$step_name" shards.json > "$shards_file" 2> /dev/null; then
+    print_comment "Failed to fetch shards.json. Skipping product bundle detection."
+    print_spacer
+    # Print the list of all failed tests
+    print_comment "Run only failed tests:"
+    repro_test_commands "$failed_tests"
+  else
+    # Convert failed tests to JSON array for jq
+    local failed_tests_json
+    failed_tests_json=$(printf '%s\n' $failed_tests | fx-command-run jq -R . | fx-command-run jq -s .)
+
+    local default_pb
+    default_pb="$(get_default_product_bundle "$fint_params_file_relative")"
+
+    # Map the failed tests to their product bundle, skipping the builder's
+    # default product bundle.
+    # Note: Because failed_test_names only records test names (not which shard
+    # they failed on), if a test with the same name runs on multiple shards
+    # (e.g. across several product bundles, or once with a product bundle and
+    # once without), it will be listed under every non-default product bundle
+    # shard it appears in and omitted from tests_without_pb.
+    local mapping
+    if ! mapping=$(fx-command-run jq -r --argjson tests "$failed_tests_json" --arg default_pb "$default_pb" '
+      def get_product_bundle:
+        if (.product_bundle // "") != "" then
+          .product_bundle
+        else
+          .base_command
+          | index("-product-bundle-name") as $idx
+          | if $idx then .[$idx + 1] else null end
+        end;
+
+      .[]
+      | get_product_bundle as $pb
+      | select(($pb // "") != "" and $pb != $default_pb)
+      | (.environment.dimensions.device_type // "") as $dt
+      | ($dt == "QEMU" or $dt == "AEMU" or $dt == "crosvm") as $is_emu
+      | ([.deps[]? | select(endswith("/product_bundle.json")) | sub("/product_bundle\\.json$"; "")] | first // $pb) as $pb_path
+      | .tests[].name as $tn
+      | select($tn == $tests[])
+      | "\($tn) \($pb) \($pb_path) \($is_emu)"
+    ' "$shards_file" 2>/dev/null); then
+      mapping=""
+    fi
+
+    local tests_with_pb
+    tests_with_pb=$(echo "$mapping" | awk '{print $1}' | tr '\n' ' ')
+
+    local tests_without_pb=()
+    for test in $failed_tests; do
+      if [[ ! " $tests_with_pb " =~ " $test " ]]; then
+        tests_without_pb+=("$test")
+      fi
+    done
+
+    if [[ -n "$mapping" ]]; then
+      print_comment "Some failing tests require a specific product bundle."
+
+      local current_pb=""
+      local tests_for_pb=()
+      while read -r test pb pb_path is_emu; do
+        if [[ "$pb" != "$current_pb" ]]; then
+          if [[ "$current_pb" != "" ]]; then
+            repro_test_commands "${tests_for_pb[@]}"
+          fi
+          print_spacer
+          if [[ "$is_emu" == "true" ]]; then
+            print_comment "Start an emulator with product bundle '$pb':"
+            print_cmd "ffx emu start ${build_dir_name}/${pb_path}"
+          else
+            print_comment "Flash product bundle '$pb':"
+            print_cmd "ffx target flash --product-bundle ${build_dir_name}/${pb_path}"
+          fi
+          print_comment "Run failing tests that require this product bundle:"
+          current_pb="$pb"
+          tests_for_pb=()
+        fi
+        tests_for_pb+=("$test")
+      done < <(echo "$mapping" | sort -u -k2,2 -k1,1)
+
+      if [[ "$current_pb" != "" ]]; then
+        repro_test_commands "${tests_for_pb[@]}"
+      fi
+    fi
+
+    if [[ ${#tests_without_pb[@]} -gt 0 ]]; then
+      if [[ -n "$mapping" ]]; then
+        print_spacer
+        print_comment "Run failing tests that do not require a specific product bundle:"
+      else
+        print_comment "Run only failed tests:"
+      fi
+      repro_test_commands "${tests_without_pb[@]}"
+    fi
+  fi
+  rm -f "$shards_file"
 }
 
 function repro_test_commands {
@@ -302,6 +407,14 @@ function get_fint_params_path {
   jq '.output.properties.fint_params_path? // ""' "$build"
 }
 
+function get_default_product_bundle {
+  local fint_params_rel="$1"
+  local testsharder_params_file="${FUCHSIA_DIR}/${fint_params_rel/\/fint_params\//\/testsharder_params\/}"
+  if [[ -f "${testsharder_params_file}" ]]; then
+    grep '^product_bundle_name:' "${testsharder_params_file}" | head -n 1 | cut -d'"' -f2 || true
+  fi
+}
+
 # Returns "true" or "false" depending on whether the build exposes a
 # "binary_sizes" output property.
 function build_has_binary_sizes {
@@ -344,7 +457,7 @@ function check_bb_auth {
 
 function get_build {
   local build_id="$1"
-  "${FUCHSIA_DIR}/prebuilt/tools/buildbucket/bb" get "$build_id" -json -fields "status,builder,input.properties,output.properties"
+  "${FUCHSIA_DIR}/prebuilt/tools/buildbucket/bb" get "$build_id" -json -fields "status,builder,input.properties,output.properties,steps"
 }
 
 function main {
