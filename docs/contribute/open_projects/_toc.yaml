@@ -40,8 +40,6 @@ toc:
     path: /docs/contribute/open_projects/graduated/global_severity.md
   - title: "Layer Cake deprecation"
     path: /docs/contribute/open_projects/graduated/layer_cake_deprecation.md
-  - title: "Migrate driver unit tests to mock-ddk"
-    path: /docs/contribute/open_projects/graduated/mock_ddk_migration.md
   - title: "package() migration"
     path: /docs/contribute/open_projects/graduated/package_migration.md
   - title: "Low-level C++ typed channel migration"
