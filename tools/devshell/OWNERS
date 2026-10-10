@@ -17,7 +17,7 @@ per-file             tests/subcommands/fx_build_test = file: /build/OWNERS
 
 per-file             format-code = olivernewman@google.com
 
-per-file             lint = jcecil@google.com
+per-file             lint,lint.py = jcecil@google.com
 
 per-file             repro = olivernewman@google.com
 

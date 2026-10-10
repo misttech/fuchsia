@@ -5,256 +5,24 @@
 
 #### CATEGORY=Source tree
 #### PREBUILTS=${PREBUILT_BLACK_DIR} ${PREBUILT_BUILDIFIER} ${PREBUILT_CLANG_DIR} ${PREBUILT_DART_DIR} ${PREBUILT_GN} ${PREBUILT_GO_DIR} ${PREBUILT_KEEP_SORTED} ${PREBUILT_PYTHON3} ${PREBUILT_RUST_DIR} ${PREBUILT_SHAC}
-### runs static analysis checks on modified files
-
-## Usage: fx lint
-##           [--dry-run] [--verbose] [--fix] [--all]
-##           [--files=FILES,[FILES ...]]
-##           [--target=GN_TARGET]
-##           [--only=CHECK] [--skip=CHECK]
-##           [--commit-msg] [--json-output=PATH]
-##           [--git] [-- PATTERN]
+### runs static analysis checks on modified files via SHAC
+## Usage: fx lint [options] [files...] [-- shac_args...]
 ##
-##   --dry-run Stops the program short of running the linters
-##   --all     Lints all code in the git repo under the current working
-##             directory.
-##   --fix     Applies automated fixes/replacements emitted by linters.
-##   --files   Allows the user to specify files. Files are comma separated.
-##             Does not support globs. To lint all files in a directory, use
-##             `cd <dir> && fx lint --all`.
-##   --target  Allows the user to specify a gn target.
-##   --only    Runs only the specified SHAC check (e.g. `--only=buildifier_lint`).
-##   --skip    Skips the specified SHAC check (e.g. `--skip=clippy`).
-##   --commit-msg
-##             Runs commit message checks against the current commit.
-##   --json-output
-##             Path to write SARIF JSON report to.
-##   --git     The default; it uses `git diff` against the newest parent
-##             commit in the upstream branch (or against HEAD if no such commit
-##             is found). Files that are locally modified, staged or touched by
-##             any commits introduced on the local branch are linted.
-##   --parallel
-##             Lints all files in parallel where applicable.
-##   --verbose Print all lint commands prior to execution.
-##    -- PATTERN
-##             For --all or --git, passes along -- PATTERN to `git ls-files`
-##             to filter what files are affected.
+## Runs static analysis checks registered in SHAC on modified source files
+## (or on explicit files if specified).
 ##
-## Supported Ecosystems: Bazel/Starlark, C/C++, FIDL, Markdown, Python, Rust, Commit Messages
-
-set -e
+## Options:
+##   --fix              Apply automated fixes emitted by checks (runs 'shac fix').
+##   --all              Run checks across all tracked files in the repository.
+##   --only <check>     Run only the specified check(s) (comma-separated or repeated).
+##   --skip <check>     Skip the specified check(s) (comma-separated or repeated).
+##   --commit-msg       Lint commit message (alias for --only=commit_msg).
+##   --files <files>    Comma-separated list of specific files to lint.
+##   -v, --verbose      Print verbose command execution output.
+##   --dry-run          Print shac commands without executing.
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
-
-function usage() {
-  fx-command-help
-}
-
-function zap-commas() {
-  printf %s "$1" | tr ',' '\n'
-}
-
-function get-diff-base() {
-  local upstream=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null)
-  if [[ -z "${upstream}" ]]; then
-    # Make sure upstream is always an ancestor commit.
-    if git merge-base --is-ancestor origin/main HEAD; then
-      upstream="origin/main"
-    elif git merge-base --is-ancestor JIRI_HEAD HEAD; then
-      if git merge-base --is-ancestor JIRI_HEAD origin/main; then
-        upstream=$(git merge-base HEAD origin/main)
-      else
-        upstream="JIRI_HEAD"
-      fi
-    else
-      upstream="HEAD"
-    fi
-  fi
-  local local_commit=$(git rev-list HEAD ^${upstream} --  2>/dev/null | tail -1)
-  if [[ -z "${local_commit}" ]]; then
-    printf "HEAD"
-  else
-    git rev-parse "${local_commit}"^
-  fi
-}
-
-function print-and-execute() {
-  if [[ -n "${VERBOSE}" ]]; then
-    echo "$@"
-  fi
-  "$@"
-}
-
-function canonicalize() {
-  local root_dir="$1"
-  shift
-  for fileglob in "${@}"; do
-    if [[ "${fileglob}" = //* || "${fileglob}" = [^/]* ]]; then
-      local dir="${root_dir}"/
-    else
-      local dir=""
-    fi
-    for file in "${dir}""${fileglob#"//"}"; do
-      printf "${file}\n"
-    done
-  done
-}
-
-DRY_RUN=
-VERBOSE=
-FIX=
-PARALLEL=
-FILES_SPECIFIED=
-COMMIT_MSG=
-SHAC_EXTRA_ARGS=()
-
 fx-config-read
-
-GET_FILES=get_git_files
-while [ $# -gt 0 ]; do
-  ARG="$1"
-  case "$1" in
-    --verbose) VERBOSE="1" ;;
-    --dry-run) DRY_RUN="1" ;;
-    --fix) FIX="1" ;;
-    --parallel) PARALLEL="1" ;;
-    --commit-msg|--commit) COMMIT_MSG="1" ;;
-    --all)
-      GET_FILES=get_all_files
-      ;;
-    --git)
-      GET_FILES=get_git_files
-      ;;
-    --only=*)
-      SHAC_EXTRA_ARGS+=("${ARG}")
-      ;;
-    --skip=*)
-      SHAC_EXTRA_ARGS+=("${ARG}")
-      ;;
-    --json-output=*)
-      SHAC_EXTRA_ARGS+=("${ARG}")
-      ;;
-    --files=*)
-      FILES_SPECIFIED="1"
-      GET_FILES=:
-      OLDIFS=$IFS && IFS=$'\n' \
-      && FILES=( \
-        $(canonicalize "${PWD}" $(zap-commas "${ARG#--files=}")) \
-      ) \
-      && IFS=$OLDIFS
-      ;;
-    --target=*)
-      FILES_SPECIFIED="1"
-      GET_FILES=:
-      OLDIFS=$IFS && IFS=$'\n' \
-      && FILES=( \
-        $(canonicalize "${FUCHSIA_DIR}" \
-          $(fx-gn desc "${FUCHSIA_BUILD_DIR}" "${ARG#--target=}" sources)) \
-      ) \
-      && IFS=$OLDIFS
-      ;;
-    --help|-h)
-      usage
-      exit 0
-      ;;
-    --) break ;;
-    *) usage && printf "Unknown flag %s\n" "${ARG}" && exit 1 ;;
-  esac
-  shift
-done
-
-GIT_FILTER=(
-  "$@"
-  ":(top,exclude)third_party/bazel_vendor"
-  ":(top,exclude)third_party/golibs/vendor"
-  ":(top,exclude)third_party/rust_crates"
-  ":(top,exclude)src/devices/tools/fidlgen_banjo/tests"
-  ":(top,exclude)src/devices/tools/fidlgen_banjo/src/backends/templates/rust"
-  ":(top,exclude)build/bazel/fuchsia_idk/validation_data"
-  ":(top,exclude)build/sdk/generate_prebuild_idk/validation_data"
-  ":(exclude)*/goldens/*"
-)
-
-get_git_files() {
-  OLDIFS=$IFS && IFS=$'\n' \
-    && FILES=( \
-    $(canonicalize $(git rev-parse --show-toplevel) \
-      $(git diff --name-only $(get-diff-base) "${GIT_FILTER[@]}")) \
-    ) \
-    && IFS=$OLDIFS
-}
-
-get_all_files() {
-  OLDIFS=$IFS && IFS=$'\n' && FILES=( \
-    $(canonicalize "${PWD}" $(git ls-files "${GIT_FILTER[@]}")) \
-  ) \
-  && IFS=$OLDIFS
-}
-
-if [[ -n "${COMMIT_MSG}" ]]; then
-  SHAC_EXTRA_ARGS+=("--only=commit_msg")
-fi
-
-$GET_FILES
-
-if [[ -n "${VERBOSE}" ]]; then
-  printf "Files to be linted:\n%s\n" "${FILES[@]}"
-fi
-
-# Stage 1: Build required host tools just-in-time
-compiled_linter_extensions=(
-  "fidl-lint=.fidl"
-  "clippy-reporter=.rs"
-)
-
-tool_targets=()
-for entry in "${compiled_linter_extensions[@]}"; do
-  tool="${entry%%=*}"
-  extensions="${entry##*=}"
-  needed=false
-  for file in "${FILES[@]}"; do
-    for ext in ${extensions}; do
-      if [[ ${file} = *${ext} ]]; then
-        needed=true
-      fi
-    done
-  done
-
-  if $needed; then
-    tool_path="$( fx-command-run list-build-artifacts --expect-one --name "${tool}" tools 2>/dev/null || true )"
-    if [[ -n "${tool_path}" && ! -x "${FUCHSIA_BUILD_DIR}/${tool_path}" ]]; then
-      fx-info "${tool} not built; building now..."
-      tool_label="$( fx-command-run list-build-artifacts --show-label --expect-one --name "${tool}" tools 2>/dev/null || true )"
-      if [[ -n "${tool_label}" ]]; then
-        tool_targets+=("$tool_label")
-      fi
-    fi
-  fi
-done
-
-if [[ ${#tool_targets[@]} -gt 0 ]]; then
-  fx-command-run build "${tool_targets[@]}"
-fi
-
-[[ -n "${DRY_RUN}" ]] && exit 0
-
-shac_files=()
-for file in "${FILES[@]}"; do
-  if [[ ! -f "${file}" ]]; then
-    if [[ -n "${FILES_SPECIFIED}" ]]; then
-      fx-error "no such file: ${file}"
-    fi
-    continue
-  fi
-  shac_files+=("$file")
-done
-
-# Stage 2: Run SHAC for universal static analysis
-shac_workdir="$FUCHSIA_DIR"
-if [[ "$(git rev-parse --is-inside-work-tree 2> /dev/null)" == "true" ]] && \
-    [ -f "$(git rev-parse --show-toplevel)/shac.star" ]; then
-  shac_workdir="$(pwd)"
-fi
 
 if [[ -z "${JIRI_PACKAGES_DIR}" ]]; then
   if git_common_dir=$(git -C "${FUCHSIA_DIR}" rev-parse --git-common-dir 2>/dev/null) && [[ -d "${git_common_dir}" ]]; then
@@ -266,17 +34,6 @@ if [[ -z "${JIRI_PACKAGES_DIR}" ]]; then
   fi
 fi
 
-shac_subcommand="check"
-if [[ -n "${FIX}" ]]; then
-  shac_subcommand="fix"
-fi
-
-if [[ ${#shac_files[@]} -gt 0 || -n "${COMMIT_MSG}" || "${GET_FILES}" == "get_all_files" ]]; then
-  print-and-execute "${PREBUILT_SHAC}" "${shac_subcommand}" \
-    -C "${shac_workdir}" \
-    --var fuchsia_build_dir="${FUCHSIA_BUILD_DIR#"$FUCHSIA_DIR/"}" \
-    "${SHAC_EXTRA_ARGS[@]}" \
-    "${shac_files[@]}"
-fi
-
-exit 0
+export PREBUILT_SHAC
+export PYTHONPATH="${FUCHSIA_DIR}/tools/devshell/lib${PYTHONPATH:+:${PYTHONPATH}}"
+exec "${PREBUILT_PYTHON3}" "${FUCHSIA_DIR}/tools/devshell/lint.py" "$@"
