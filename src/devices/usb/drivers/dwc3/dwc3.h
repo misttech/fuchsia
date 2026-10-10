@@ -16,6 +16,7 @@
 #include <fidl/fuchsia.hardware.usb.policy/cpp/common_types_format.h>
 #include <fidl/fuchsia.hardware.usb.policy/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
+#include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <lib/async/cpp/irq.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/dma-buffer/buffer.h>
@@ -24,7 +25,6 @@
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/driver/platform-device/cpp/pdev.h>
-#include <lib/driver/power/cpp/suspend.h>
 #include <lib/inspect/component/cpp/component.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/zx/eventpair.h>
@@ -75,8 +75,7 @@ class PlatformExtension {
 // below.
 class Dwc3 : public fdf::DriverBase2,
              public fidl::Server<fuchsia_hardware_usb_dci::UsbDci>,
-             public fidl::Server<fuchsia_hardware_usb_policy::Controller>,
-             public fdf_power::Suspendable<Dwc3> {
+             public fidl::Server<fuchsia_hardware_usb_policy::Controller> {
  public:
   Dwc3() : fdf::DriverBase2("dwc3") {}
   ~Dwc3() override;
@@ -87,10 +86,6 @@ class Dwc3 : public fdf::DriverBase2,
   void Stop(fdf::StopCompleter completer) override;
 
   const std::shared_ptr<fdf::Namespace>& incoming() const { return incoming_; }
-
-  void Suspend(fdf_power::SuspendCompleter completer) override;
-  void Resume(fdf_power::ResumeCompleter completer) override;
-  bool SuspendEnabled() override;
 
   inspect::ComponentInspector& inspector() { return *inspector_; }
 

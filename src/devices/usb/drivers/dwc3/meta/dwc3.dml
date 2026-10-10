@@ -3,12 +3,14 @@
 // found in the LICENSE file.
 {
     name: "dwc3",
-    include: [ "driver/platform-device.shard.cml" ],
+    include: [
+        "//sdk/lib/driver_component/power_managed_dispatchers.shard.cml",
+        "driver/platform-device.shard.cml",
+    ],
     program: {
         default_dispatcher_opts: [ "allow_sync_calls" ],
         service_connect_validation: "true",
         default_dispatcher_scheduler_role: "fuchsia.devices.usb.drivers.dwc3.interrupt",
-        suspend_enabled: "false",
     },
     capabilities: [
         { protocol: "fuchsia.hardware.usb.endpoint.Endpoint" },
@@ -44,7 +46,6 @@
             availability: "optional",
             default: false,
         },
-        { protocol: "fuchsia.power.system.ActivityGovernor" },
         { service: "fuchsia.hardware.clock.Service" },
         {
             name: "usb-ddr",

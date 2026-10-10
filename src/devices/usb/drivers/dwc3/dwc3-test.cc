@@ -1394,49 +1394,6 @@ TEST_F(UnmanagedTestFixture, IrisExtensionCreatedWhenInterconnectAvailable) {
   EXPECT_OK(dut_.StopDriver().status_value());
 }
 
-TEST_F(UnmanagedTestFixture, IrisExtensionSuspendAndResumeBandwidthVotes) {
-  dut_.RunInEnvironmentTypeContext([](Environment& env) {
-    env.set_serve_platform_mocks(false);
-    env.usb_phy().set_initial_connected(true);
-  });
-
-  zx::result res = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
-    dwc3_config::Config cfg;
-    cfg.enable_suspend() = false;
-    cfg.bypass_platform_extension() = false;
-    args.config(cfg.ToVmo());
-  });
-  ASSERT_OK(res);
-  ASSERT_OK(WaitForPhy());
-
-  dut_.RunInEnvironmentTypeContext(
-      [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 40'000'000u); });
-
-  // Suspend
-  bool completer_called = false;
-  dut_.RunInDriverContext([&](Dwc3& drv) {
-    fdf_power::SuspendCompleter completer([&]() { completer_called = true; });
-    drv.Suspend(std::move(completer));
-  });
-  EXPECT_TRUE(completer_called);
-
-  dut_.RunInEnvironmentTypeContext(
-      [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u); });
-
-  // Resume
-  completer_called = false;
-  dut_.RunInDriverContext([&](Dwc3& drv) {
-    fdf_power::ResumeCompleter completer([&]() { completer_called = true; });
-    drv.Resume(std::move(completer));
-  });
-  EXPECT_TRUE(completer_called);
-
-  dut_.RunInEnvironmentTypeContext(
-      [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 40'000'000u); });
-
-  EXPECT_OK(dut_.StopDriver().status_value());
-}
-
 TEST_F(UnmanagedTestFixture, IrisExtensionHotplugMaintainsBandwidthAndResets) {
   auto reset_count = std::make_shared<std::atomic<uint32_t>>(0);
   dut_.RunInEnvironmentTypeContext([this, reset_count](Environment& env) {
@@ -1486,64 +1443,6 @@ TEST_F(UnmanagedTestFixture, IrisExtensionHotplugMaintainsBandwidthAndResets) {
   EXPECT_EQ(4u, reset_count->load());
   dut_.RunInEnvironmentTypeContext(
       [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u); });
-
-  EXPECT_OK(dut_.StopDriver().status_value());
-}
-
-TEST_F(UnmanagedTestFixture, IrisExtensionSuspendAndResumeWhileDisconnected) {
-  dut_.RunInEnvironmentTypeContext([](Environment& env) {
-    env.set_serve_platform_mocks(false);
-    env.usb_phy().set_initial_connected(false);
-  });
-
-  zx::result res = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
-    dwc3_config::Config cfg;
-    cfg.enable_suspend() = false;
-    cfg.bypass_platform_extension() = false;
-    args.config(cfg.ToVmo());
-  });
-  ASSERT_OK(res);
-  ASSERT_OK(WaitForPhy());
-
-  dut_.runtime().RunUntilIdle();
-
-  // Initially disconnected, bandwidth is 0 bps with no transient non-zero vote at startup.
-  dut_.RunInEnvironmentTypeContext([](Environment& env) {
-    EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u);
-    EXPECT_EQ(env.path().set_bandwidth_count(), 1u);
-  });
-
-  // Suspend while disconnected.
-  bool completer_called = false;
-  dut_.RunInDriverContext([&](Dwc3& drv) {
-    fdf_power::SuspendCompleter completer([&]() { completer_called = true; });
-    drv.Suspend(std::move(completer));
-  });
-  EXPECT_TRUE(completer_called);
-
-  dut_.RunInEnvironmentTypeContext(
-      [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u); });
-
-  // Resume while disconnected: must preserve disconnected state and vote 0 bps (not High-Speed).
-  completer_called = false;
-  dut_.RunInDriverContext([&](Dwc3& drv) {
-    fdf_power::ResumeCompleter completer([&]() { completer_called = true; });
-    drv.Resume(std::move(completer));
-  });
-  EXPECT_TRUE(completer_called);
-
-  dut_.RunInEnvironmentTypeContext([](Environment& env) {
-    EXPECT_EQ(env.path().last_average_bandwidth_bps(), 0u);
-    EXPECT_EQ(env.path().set_bandwidth_count(), 1u);
-  });
-
-  // Subsequent connect should transition bandwidth to provisional High-Speed (40 MB/s).
-  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
-  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().TriggerConnection(true); });
-  dut_.runtime().RunUntilIdle();
-  EXPECT_EQ(ZX_OK, WaitForPhy());
-  dut_.RunInEnvironmentTypeContext(
-      [](Environment& env) { EXPECT_EQ(env.path().last_average_bandwidth_bps(), 40'000'000u); });
 
   EXPECT_OK(dut_.StopDriver().status_value());
 }

@@ -578,11 +578,6 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
   power_element_runner_ = context.take_power_element_runner();
 #endif
 
-  if (zx::result result = InitializeSuspend(dispatcher(), *incoming_, "dwc3"); result.is_error()) {
-    fdf::error("Failed to initialize suspend: {}", result.status_string());
-    return result.take_error();
-  }
-
   auto phy_result = incoming()->Connect<fphy::Service::Device>("dwc3-phy");
   if (phy_result.is_ok()) {
     phy_ = fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy>(std::move(phy_result.value()));
@@ -1423,31 +1418,6 @@ void Dwc3::Stop(fdf::StopCompleter completer) {
   dci_bindings_.RemoveAll();
   policy_bindings_.RemoveAll();
   completer(zx::ok());
-}
-
-void Dwc3::Suspend(fdf_power::SuspendCompleter completer) {
-  TRACE_DURATION("dwc3", "Dwc3::Suspend");
-  if (platform_extension_) {
-    if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
-      fdf::error("platform_extension_->Suspend() failed: {}", result.status_string());
-    }
-  }
-  completer();
-}
-
-void Dwc3::Resume(fdf_power::ResumeCompleter completer) {
-  TRACE_DURATION("dwc3", "Dwc3::Resume");
-  if (platform_extension_) {
-    if (zx::result result = platform_extension_->Resume(); result.is_error()) {
-      fdf::error("platform_extension_->Resume() failed: {}", result.status_string());
-    }
-  }
-  completer();
-}
-
-bool Dwc3::SuspendEnabled() {
-  TRACE_INSTANT("dwc3", "Dwc3::SuspendEnabled", TRACE_SCOPE_THREAD);
-  return false;
 }
 
 void Dwc3::ConnectToEndpoint(ConnectToEndpointRequest& request,
