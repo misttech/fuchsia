@@ -678,6 +678,15 @@ pub fn get_repositories(
     Ok(repos)
 }
 
+fn canonicalize_best_effort(path: &Utf8Path) -> Utf8PathBuf {
+    for ancestor in path.ancestors().filter(|a| !a.as_str().is_empty()) {
+        if let (Ok(canon), Ok(rel)) = (ancestor.canonicalize_utf8(), path.strip_prefix(ancestor)) {
+            return if rel.as_str().is_empty() { canon } else { canon.join(rel) };
+        }
+    }
+    path.to_path_buf()
+}
+
 /// Compute `artifact_path` relative to `bundle_path` for local, `.zip`, or `gs://` bundles.
 pub fn relativize_bundle_path(
     bundle_path: impl AsRef<Utf8Path>,
@@ -688,7 +697,11 @@ pub fn relativize_bundle_path(
         return Ok(normalize_zip_path(artifact));
     }
     let s = bundle.as_str().trim_end_matches('/');
-    utf8_path::path_relative_from(artifact, s.strip_suffix("/product_bundle.json").unwrap_or(s))
+    let base = Utf8Path::new(s.strip_suffix("/product_bundle.json").unwrap_or(s));
+    utf8_path::path_relative_from(
+        canonicalize_best_effort(artifact),
+        canonicalize_best_effort(base),
+    )
 }
 
 trait ReadSeek: Read + Seek {}
@@ -1440,6 +1453,54 @@ mod tests {
             let (m, vds) = load_vd_with(u, &p.virtual_devices_path, true, &f)?;
             assert_eq!((m.recommended.as_deref(), vds.len()), (Some("d"), 2));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_relativize_bundle_path_symlink() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let root = Utf8Path::from_path(tmp.path()).unwrap();
+        let real_worktree = root.join("pool-slot");
+        let pb_rel = "out/test_remote/obj/build/images/fuchsia/product_bundle";
+        let real_pb_dir = real_worktree.join(pb_rel);
+        fs::create_dir_all(real_pb_dir.join("system_a"))?;
+        fs::write(real_pb_dir.join("system_a/zbi"), b"zbi")?;
+
+        let mut pb = make_sample_pbv2("generic-x64", None);
+        pb["system_a"] =
+            json!([{"type": "zbi", "name": "z", "path": "system_a/zbi", "signed": false}]);
+        fs::write(real_pb_dir.join("product_bundle.json"), serde_json::to_vec(&pb)?)?;
+
+        let symlink_worktree = root.join("task-name");
+        std::os::unix::fs::symlink(&real_worktree, &symlink_worktree)?;
+        let symlink_pb_dir = symlink_worktree.join(pb_rel);
+
+        let ProductBundle::V2(loaded) = ProductBundle::try_load_from(&symlink_pb_dir)?;
+        let loaded_zbi = loaded.system_a.as_ref().unwrap()[0].source();
+
+        assert_eq!(
+            relativize_bundle_path(&symlink_pb_dir, loaded_zbi)?,
+            Utf8PathBuf::from("system_a/zbi")
+        );
+        assert_eq!(
+            relativize_bundle_path(symlink_pb_dir.join("product_bundle.json"), loaded_zbi)?,
+            Utf8PathBuf::from("system_a/zbi")
+        );
+        assert_eq!(
+            relativize_bundle_path(&real_pb_dir, symlink_pb_dir.join("system_a/zbi"))?,
+            Utf8PathBuf::from("system_a/zbi")
+        );
+        assert_eq!(
+            relativize_bundle_path(&symlink_pb_dir, real_pb_dir.join("repository/targets.json"))?,
+            Utf8PathBuf::from("repository/targets.json")
+        );
+        assert_eq!(
+            relativize_bundle_path(
+                "/nonexistent/pb/product_bundle.json",
+                "/nonexistent/pb/system_a/zbi"
+            )?,
+            Utf8PathBuf::from("system_a/zbi")
+        );
         Ok(())
     }
 }
