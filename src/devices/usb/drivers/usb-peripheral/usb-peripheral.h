@@ -317,6 +317,14 @@ class UsbPeripheral : public fdf::DriverBase2,
 
   const usb_device_descriptor_t& device_desc() { return device_desc_; }
   void SetBcdUsbForTesting(uint16_t bcd_usb) { device_desc_.bcd_usb = htole16(bcd_usb); }
+  bool HasActiveFunctionsForTesting() const {
+    fbl::AutoLock lock(&lock_);
+    return HasActiveFunctionsLocked();
+  }
+  size_t functions_count_for_testing() const {
+    fbl::AutoLock lock(&lock_);
+    return functions_.size();
+  }
 
   // Updates host connection status and, on disconnect, drains `UsbFunction::Unconfigure()` across
   // all functions before transitioning back to `kPeripheralReady`.
@@ -457,6 +465,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   zx_status_t AllocStringDesc(std::optional<size_t> function_index, std::string desc,
                               uint8_t* out_index) __TA_EXCLUDES(lock_);
 
+  bool HasActiveFunctionsLocked() const __TA_REQUIRES(lock_);
   bool AllFunctionsRegistered() const __TA_REQUIRES(lock_);
 
   UsbFunction& GetFunction(size_t index) __TA_REQUIRES(lock_);

@@ -430,6 +430,9 @@ zx::result<uint8_t> UsbPeripheral::ValidateFunction(size_t function_index, void*
         fdf::error("{}: interface descriptor too short", __func__);
         return zx::error(ZX_ERR_INVALID_ARGS);
       }
+      if (function_index >= functions_.size() || functions_[function_index] == nullptr) {
+        return zx::error(ZX_ERR_BAD_STATE);
+      }
       auto* desc = reinterpret_cast<const usb_interface_descriptor_t*>(header);
       auto& function = GetFunction(function_index);
       ZX_ASSERT(function.configuration() < configurations_.size());
@@ -478,6 +481,11 @@ zx::result<uint8_t> UsbPeripheral::ValidateFunction(size_t function_index, void*
   return zx::ok(num_interfaces);
 }
 
+bool UsbPeripheral::HasActiveFunctionsLocked() const {
+  return std::any_of(functions_.begin(), functions_.end(),
+                     [](const auto& func) { return func != nullptr; });
+}
+
 bool UsbPeripheral::AllFunctionsRegistered() const {
   TRACE_DURATION("usb-peripheral", __func__);
   bool all_registered = true;
@@ -486,7 +494,7 @@ bool UsbPeripheral::AllFunctionsRegistered() const {
   bool first_registered = true;
   bool first_pending = true;
 
-  if (functions_.empty()) {
+  if (!HasActiveFunctionsLocked()) {
     return false;
   }
 
@@ -554,7 +562,7 @@ zx_status_t UsbPeripheral::CheckAndStartController() {
     if (state_ != DeviceState::kWaitForFunctionBind) {
       return ZX_OK;
     }
-    if (functions_.empty() || !AllFunctionsRegistered()) {
+    if (!HasActiveFunctionsLocked() || !AllFunctionsRegistered()) {
       return ZX_OK;
     }
 
@@ -892,6 +900,9 @@ void UsbPeripheral::SetStateLocked(DeviceState state) {
 
 zx_status_t UsbPeripheral::AllocInterfaceLocked(size_t function_index, uint8_t* out_intf_num) {
   TRACE_DURATION("usb-peripheral", __func__, "function_index", function_index);
+  if (function_index >= functions_.size() || functions_[function_index] == nullptr) {
+    return ZX_ERR_BAD_STATE;
+  }
   auto& function = GetFunction(function_index);
   ZX_ASSERT(function.configuration() < configurations_.size());
   auto& configuration = configurations_[function.configuration()];
@@ -1147,6 +1158,9 @@ zx::result<UsbPeripheral::ResourceAllocations> UsbPeripheral::AllocResources(
 
   auto cleanup = fit::defer([this, function_index, &allocations, &allocated_strings]() {
     fbl::AutoLock lock(&lock_);
+    if (function_index >= functions_.size() || functions_[function_index] == nullptr) {
+      return;
+    }
     auto& function = GetFunction(function_index);
     ZX_ASSERT(function.configuration() < configurations_.size());
     auto& configuration = configurations_[function.configuration()];
@@ -1171,6 +1185,10 @@ zx::result<UsbPeripheral::ResourceAllocations> UsbPeripheral::AllocResources(
   });
 
   fbl::AutoLock lock(&lock_);
+  if (function_index >= functions_.size() || functions_[function_index] == nullptr) {
+    cleanup.cancel();
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
 
   // Allocate interfaces
   for (uint8_t i = 0; i < interface_count; i++) {
@@ -1481,10 +1499,15 @@ void UsbPeripheral::SetConfiguration(uint8_t configuration,
       // back to the caller via `completer`.
       for (const auto& config : configurations_) {
         for (auto function_index : config.functions) {
-          if (function_index >= functions_.size() || !functions_[function_index]) {
-            fdf::error("Function index {} out of bounds or unregistered (size {})", function_index,
+          if (function_index >= functions_.size()) {
+            fdf::error("Function index {} out of bounds (size {})", function_index,
                        functions_.size());
             immediate_error = ZX_ERR_INVALID_ARGS;
+            break;
+          }
+          if (functions_[function_index] == nullptr) {
+            fdf::error("Function index {} is cleared", function_index);
+            immediate_error = ZX_ERR_BAD_STATE;
             break;
           }
           functions_to_configure.push_back(functions_[function_index]);
@@ -1901,7 +1924,7 @@ void UsbPeripheral::CompleteFunctionsTeardown(
   {
     fbl::AutoLock lock(&lock_);
     clear_in_progress_ = false;
-    if (!functions_.empty()) {
+    if (HasActiveFunctionsLocked()) {
       return;
     }
   }
@@ -1913,9 +1936,10 @@ void UsbPeripheral::CheckAllFunctionsCleared() {
   bool send_event = false;
   {
     fbl::AutoLock lock(&lock_);
-    if (!functions_.empty() || clear_in_progress_) {
+    if (HasActiveFunctionsLocked() || clear_in_progress_) {
       return;
     }
+    functions_.clear();
     config_generation_++;  // Increment configuration generation fence.
     if (state_ != DeviceState::kStoppingDriver) {
       if (configurations_.empty() || !on_all_functions_cleared_.empty()) {
@@ -1963,13 +1987,11 @@ void UsbPeripheral::FunctionCleared(size_t function_index, uint64_t config_gener
       return;
     }
 
-    if (function_index < functions_.size() && functions_[function_index]) {
+    if (function_index < functions_.size() && functions_[function_index] != nullptr) {
       fdf::info("UsbPeripheral: Removing function object for index {} from active list.",
                 function_index);
       deferred_destroy = std::move(functions_[function_index]);
-      if (std::ranges::all_of(functions_, [](const auto& f) { return f == nullptr; })) {
-        functions_.clear();
-      }
+      functions_[function_index] = nullptr;
       ReleaseResourcesLocked(function_index);
     }
   }
@@ -1982,6 +2004,9 @@ zx_status_t UsbPeripheral::AddFunctionDevices() {
   fdf::debug("{}", __func__);
   for (const auto& configuration : configurations_) {
     for (auto function_index : configuration.functions) {
+      if (function_index >= functions_.size() || functions_[function_index] == nullptr) {
+        continue;
+      }
       auto& function = GetFunction(function_index);
       zx::result result = function.AddChild(child_.node_, incoming_, outgoing());
       if (result.is_ok()) {
@@ -2678,7 +2703,7 @@ zx_status_t UsbPeripheral::SetDefaultConfig(std::vector<FunctionDescriptor>& fun
     if (zx_status_t status = AddFunctionDevices(); status != ZX_OK) {
       return status;
     }
-    if (!functions_.empty()) {
+    if (HasActiveFunctionsLocked()) {
       SetStateLocked(DeviceState::kWaitForFunctionBind);
     }
   }

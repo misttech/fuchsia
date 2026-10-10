@@ -3820,5 +3820,171 @@ TEST_F(UnmanagedUsbPeripheralReadyTest,
   ExpectStateEventual(UsbPeripheral::DeviceState::kWaitForFunctionBind);
 }
 
+TEST_F(UnmanagedUsbPeripheralReadyTest, FunctionRemovedIndexNoShift) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test", "cdc"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady(2);
+  ASSERT_OK(function_clients);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Set configuration to 1 so interface and device control requests are active.
+  fdescriptor::wire::UsbSetup set_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  auto set_res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(set_res.ok()) << set_res.FormatDescription();
+  ASSERT_TRUE(set_res->is_ok());
+
+  // Unbind the first function (index 0). Function 1 must remain at index 1 without shifting.
+  SimulateFunctionUnbind({"function-000"});
+  WaitUntilState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+  dut().runtime().RunUntilIdle();
+
+  // Verify that function 0's resources were released and function 1 retains its index and
+  // resources.
+  this->dut().RunInDriverContext([](UsbPeripheral& driver) {
+    EXPECT_TRUE(driver.HasActiveFunctionsForTesting());
+    EXPECT_EQ(driver.functions_count_for_testing(), 2u);
+
+    // Function 0 was cleared: allocations are empty.
+    auto alloc0 = driver.GetResourceAllocations(0);
+    EXPECT_TRUE(alloc0.interface_nums.empty());
+    EXPECT_TRUE(alloc0.endpoint_addrs.empty());
+
+    // Function 1 was NOT cleared: index 1 and its allocations remain intact.
+    auto alloc1 = driver.GetResourceAllocations(1);
+    EXPECT_FALSE(alloc1.interface_nums.empty());
+    EXPECT_EQ(alloc1.interface_nums[0], 1u);
+    EXPECT_FALSE(alloc1.endpoint_addrs.empty());
+  });
+
+  // Re-issuing SET_CONFIGURATION(1) cleanly returns ZX_ERR_BAD_STATE because function 0 is cleared.
+  auto set_res2 = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(set_res2.ok()) << set_res2.FormatDescription();
+  ASSERT_TRUE(set_res2->is_error());
+  EXPECT_EQ(set_res2->error_value(), ZX_ERR_BAD_STATE);
+
+  // Unbind the remaining function (index 1). Now all functions have been cleared.
+  SimulateFunctionUnbind({"function-001"});
+  WaitUntilChildNodeCount(0);
+  dut().runtime().RunUntil([&]() {
+    bool has_active = true;
+    dut().RunInDriverContext(
+        [&](UsbPeripheral& driver) { has_active = driver.HasActiveFunctionsForTesting(); });
+    return !has_active;
+  });
+
+  // All functions are cleared, functions_ vector is emptied, and device stays in
+  // kWaitForFunctionBind awaiting re-binding.
+  this->dut().RunInDriverContext([](UsbPeripheral& driver) {
+    EXPECT_FALSE(driver.HasActiveFunctionsForTesting());
+    EXPECT_EQ(driver.functions_count_for_testing(), 0u);
+  });
+  ExpectState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+}
+
+// Verifies that USB_RECIP_ENDPOINT control requests route through endpoint_map_ to the function
+// that owns the endpoint, and that unbinding function 0 releases only its endpoints while
+// function 1's endpoints remain mapped to index 1.
+TEST_F(UnmanagedUsbPeripheralReadyTest, FunctionRemovedEndpointRoutingNoShift) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test", "cdc"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady(2);
+  ASSERT_OK(function_clients);
+  auto fake0 = function_clients.value().fakes[0];
+  auto fake1 = function_clients.value().fakes[1];
+  ASSERT_NE(nullptr, fake0);
+  ASSERT_NE(nullptr, fake1);
+
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  fdescriptor::wire::UsbSetup set_config = {
+      .bm_request_type = fdescriptor::kStandardDeviceRequestOut,
+      .b_request = fidl::ToUnderlying(fdescriptor::StandardRequest::kSetConfiguration),
+      .w_value = 1,
+      .w_index = 0,
+      .w_length = 0,
+  };
+  auto set_res = dci()->Control(set_config, fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(set_res.ok()) << set_res.FormatDescription();
+  ASSERT_TRUE(set_res->is_ok());
+
+  uint8_t ep0_addr = 0;
+  uint8_t ep1_addr = 0;
+  this->dut().RunInDriverContext([&](UsbPeripheral& driver) {
+    auto alloc0 = driver.GetResourceAllocations(0);
+    auto alloc1 = driver.GetResourceAllocations(1);
+    ASSERT_FALSE(alloc0.endpoint_addrs.empty());
+    ASSERT_FALSE(alloc1.endpoint_addrs.empty());
+    ep0_addr = alloc0.endpoint_addrs[0];
+    ep1_addr = alloc1.endpoint_addrs[0];
+  });
+  ASSERT_NE(ep0_addr, ep1_addr);
+
+  auto class_endpoint_setup = [](uint8_t ep_addr) {
+    return fdescriptor::wire::UsbSetup{
+        .bm_request_type = static_cast<uint8_t>(fdescriptor::EndpointDirection::kIn |
+                                                fdescriptor::RequestRecipient::kEndpoint |
+                                                fdescriptor::RequestType::kClass),
+        .b_request = 0xAB,
+        .w_value = 0,
+        .w_index = ep_addr,
+        .w_length = 3,
+    };
+  };
+
+  // An endpoint request for function 1's endpoint reaches only function 1.
+  auto ctrl1 = dci()->Control(class_endpoint_setup(ep1_addr), fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(ctrl1.ok()) << ctrl1.FormatDescription();
+  ASSERT_TRUE(ctrl1->is_ok());
+  EXPECT_TRUE(fake1->control_called());
+  EXPECT_EQ(0xAB, fake1->control_req());
+  EXPECT_FALSE(fake0->control_called());
+
+  // An endpoint request for function 0's endpoint reaches function 0.
+  auto ctrl0 = dci()->Control(class_endpoint_setup(ep0_addr), fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(ctrl0.ok()) << ctrl0.FormatDescription();
+  ASSERT_TRUE(ctrl0->is_ok());
+  EXPECT_TRUE(fake0->control_called());
+  EXPECT_EQ(0xAB, fake0->control_req());
+
+  // Unbind function 0. Its endpoints are released; function 1 keeps its endpoint at index 1.
+  SimulateFunctionUnbind({"function-000"});
+  WaitUntilState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+  dut().runtime().RunUntilIdle();
+
+  this->dut().RunInDriverContext([&](UsbPeripheral& driver) {
+    EXPECT_EQ(driver.functions_count_for_testing(), 2u);
+    EXPECT_TRUE(driver.GetResourceAllocations(0).endpoint_addrs.empty());
+    auto alloc1 = driver.GetResourceAllocations(1);
+    ASSERT_FALSE(alloc1.endpoint_addrs.empty());
+    EXPECT_EQ(alloc1.endpoint_addrs[0], ep1_addr);
+  });
+
+  // The peripheral was taken offline (configuration reset to 0), so non-EP0 endpoint requests are
+  // rejected before any dispatch. Neither the freed endpoint nor function 1's endpoint may be
+  // routed to the wrong function.
+  auto ctrl0_after = dci()->Control(class_endpoint_setup(ep0_addr), fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(ctrl0_after.ok()) << ctrl0_after.FormatDescription();
+  ASSERT_TRUE(ctrl0_after->is_error());
+  EXPECT_EQ(ctrl0_after->error_value(), ZX_ERR_BAD_STATE);
+
+  auto ctrl1_after = dci()->Control(class_endpoint_setup(ep1_addr), fidl::VectorView<uint8_t>());
+  ASSERT_TRUE(ctrl1_after.ok()) << ctrl1_after.FormatDescription();
+  ASSERT_TRUE(ctrl1_after->is_error());
+  EXPECT_EQ(ctrl1_after->error_value(), ZX_ERR_BAD_STATE);
+}
+
 }  // namespace
 }  // namespace usb_peripheral::test
