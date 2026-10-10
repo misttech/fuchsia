@@ -448,6 +448,7 @@ class VsockUsb : public fdf::DriverBase2,
   bool bulk_out_cancelled_ = false;
   bool bulk_in_cancelled_ = false;
   std::optional<SetConfiguredCompleter::Async> unconfigure_completer_;
+  std::optional<SetConfiguredCompleter::Async> pending_configure_completer_;
 
   void CheckUnconfigureComplete();
 

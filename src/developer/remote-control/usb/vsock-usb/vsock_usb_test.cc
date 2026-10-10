@@ -1597,6 +1597,172 @@ TEST_F(VsockUsbTest, ConfigureEndpointsRollsBackInEpOnOutEpFailure) {
   ConfigureDevice();
   UnconfigureDevice();
 }
+
+TEST_F(VsockUsbTest, SetConfiguredTrueDeferredDuringUnconfigureDrainAndSupersede) {
+  ConfigureDevice();
+  auto callback = SetupCallback(2);
+  zx::socket socket0 = WaitForSocket(*callback);
+  ASSERT_TRUE(socket0.is_valid());
+
+  // Pop one OUT request out of FakeEndpoint so CancelAll() completes while HasPendingRequests()
+  // remains true (simulating an in-flight DMA request held by hardware).
+  auto held_req = WaitForRequestOn(kBulkOutEndpoint);
+  ASSERT_TRUE(held_req.has_value());
+
+  ExpectDisableEndpoints();
+  fidl::Client<fuchsia_hardware_usb_function::UsbFunctionInterface> async_fn(
+      function_client_.TakeClientEnd(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  std::atomic<bool> uncfg_done = false;
+  async_fn
+      ->SetConfigured({{
+          .configured = false,
+          .speed = fdescriptor::UsbSpeed::kHigh,
+      }})
+      .Then([&](auto& res) {
+        ASSERT_TRUE(res.is_ok()) << res.error_value().FormatDescription();
+        uncfg_done = true;
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_FALSE(uncfg_done.load());
+
+  // Send two back-to-back SetConfigured(true) calls while unconfigure is still draining:
+  // the first must be canceled with ZX_ERR_CANCELED (without panicking on completer drop),
+  // and the second must stay deferred until unconfigure drain completes.
+  std::atomic<zx_status_t> cfg1_error = ZX_OK;
+  std::atomic<bool> cfg2_done = false;
+  async_fn
+      ->SetConfigured({{
+          .configured = true,
+          .speed = fdescriptor::UsbSpeed::kHigh,
+      }})
+      .Then([&](auto& res) {
+        ASSERT_TRUE(res.is_error());
+        ASSERT_TRUE(res.error_value().is_domain_error());
+        cfg1_error = res.error_value().domain_error();
+      });
+  async_fn
+      ->SetConfigured({{
+          .configured = true,
+          .speed = fdescriptor::UsbSpeed::kHigh,
+      }})
+      .Then([&](auto& res) {
+        ASSERT_TRUE(res.is_ok()) << res.error_value().FormatDescription();
+        cfg2_done = true;
+      });
+
+  driver_test().runtime().RunUntil([&]() { return cfg1_error.load() == ZX_ERR_CANCELED; });
+  EXPECT_FALSE(uncfg_done.load());
+  EXPECT_FALSE(cfg2_done.load());
+
+  // Expect endpoints to be configured once unconfigure completes and release the held OUT request.
+  driver_test().RunInEnvironmentTypeContext([](VsockUsbEnvironment& env) {
+    env.fake_usb_->ExpectConfigureEndpoint(kBulkInEndpoint);
+    env.fake_usb_->ExpectConfigureEndpoint(kBulkOutEndpoint);
+  });
+  ASSERT_TRUE(CompleteMockUsbOutRequest(std::move(*held_req), kBulkOutEndpoint, nullptr, 0,
+                                        ZX_ERR_CANCELED));
+
+  driver_test().runtime().RunUntil([&]() { return uncfg_done.load() && cfg2_done.load(); });
+  zx::socket socket1 = WaitForSocket(*callback);
+  ASSERT_TRUE(socket1.is_valid());
+
+  function_client_.Bind(async_fn.UnbindMaybeGetEndpoint().value());
+  UnconfigureDevice();
+}
+
+TEST_F(VsockUsbTest, SetConfiguredFalseSupersedesPendingConfigure) {
+  ConfigureDevice();
+  auto callback = SetupCallback(1);
+  zx::socket socket0 = WaitForSocket(*callback);
+  ASSERT_TRUE(socket0.is_valid());
+
+  auto held_req = WaitForRequestOn(kBulkOutEndpoint);
+  ASSERT_TRUE(held_req.has_value());
+
+  ExpectDisableEndpoints();
+  fidl::Client<fuchsia_hardware_usb_function::UsbFunctionInterface> async_fn(
+      function_client_.TakeClientEnd(), fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  std::atomic<bool> uncfg1_done = false;
+  async_fn
+      ->SetConfigured({{
+          .configured = false,
+          .speed = fdescriptor::UsbSpeed::kHigh,
+      }})
+      .Then([&](auto& res) {
+        ASSERT_TRUE(res.is_ok()) << res.error_value().FormatDescription();
+        uncfg1_done = true;
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_FALSE(uncfg1_done.load());
+
+  std::atomic<zx_status_t> pending_cfg_error = ZX_OK;
+  async_fn
+      ->SetConfigured({{
+          .configured = true,
+          .speed = fdescriptor::UsbSpeed::kHigh,
+      }})
+      .Then([&](auto& res) {
+        ASSERT_TRUE(res.is_error());
+        ASSERT_TRUE(res.error_value().is_domain_error());
+        pending_cfg_error = res.error_value().domain_error();
+      });
+  driver_test().runtime().RunUntilIdle();
+  EXPECT_EQ(pending_cfg_error.load(), ZX_OK);
+
+  // A subsequent SetConfigured(false) supersedes pending SetConfigured(true) with ZX_ERR_CANCELED.
+  std::atomic<bool> uncfg2_done = false;
+  async_fn
+      ->SetConfigured({{
+          .configured = false,
+          .speed = fdescriptor::UsbSpeed::kHigh,
+      }})
+      .Then([&](auto& res) {
+        ASSERT_TRUE(res.is_ok()) << res.error_value().FormatDescription();
+        uncfg2_done = true;
+      });
+  driver_test().runtime().RunUntil(
+      [&]() { return pending_cfg_error.load() == ZX_ERR_CANCELED && uncfg2_done.load(); });
+  EXPECT_FALSE(uncfg1_done.load());
+
+  ASSERT_TRUE(CompleteMockUsbOutRequest(std::move(*held_req), kBulkOutEndpoint, nullptr, 0,
+                                        ZX_ERR_CANCELED));
+  driver_test().runtime().RunUntil([&]() { return uncfg1_done.load(); });
+
+  driver_test().RunInDriverContext(
+      [](VsockUsb& driver) { EXPECT_FALSE(VsockUsbTestHelper::Online(driver)); });
+
+  function_client_.Bind(async_fn.UnbindMaybeGetEndpoint().value());
+}
+
+TEST_F(VsockUsbTest, CanceledRxCompletionWhileOnlineReturnsToPoolWithoutRequeue) {
+  ConfigureDevice();
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
+
+  auto req = WaitForRequestOn(kBulkOutEndpoint);
+  ASSERT_TRUE(req.has_value());
+
+  size_t remaining_before = 0;
+  driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+    remaining_before = env.fake_usb_->fake_endpoint(kBulkOutEndpoint).pending_request_count();
+  });
+
+  // Completing an OUT request with ZX_ERR_CANCELED while Online() is true must return it to
+  // bulk_out_ep_ rather than re-queuing it onto the hardware endpoint.
+  ASSERT_TRUE(
+      CompleteMockUsbOutRequest(std::move(*req), kBulkOutEndpoint, nullptr, 0, ZX_ERR_CANCELED));
+  driver_test().runtime().RunUntilIdle();
+
+  driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+    EXPECT_EQ(env.fake_usb_->fake_endpoint(kBulkOutEndpoint).pending_request_count(),
+              remaining_before);
+  });
+
+  UnconfigureDevice();
+}
 // NOLINTEND(readability-container-data-pointer)
 // NOLINTEND(readability-convert-member-functions-to-static)
 // NOLINTEND(misc-use-anonymous-namespace)

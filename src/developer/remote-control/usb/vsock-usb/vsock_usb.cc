@@ -442,6 +442,13 @@ void VsockUsb::CheckUnconfigureComplete() {
   auto completer = std::move(*unconfigure_completer_);
   unconfigure_completer_.reset();
   completer.Reply(zx::make_result(status));
+
+  if (pending_configure_completer_.has_value()) {
+    auto cfg_completer = std::move(*pending_configure_completer_);
+    pending_configure_completer_.reset();
+    zx_status_t cfg_status = ConfigureEndpoints();
+    cfg_completer.Reply(zx::make_result(cfg_status));
+  }
 }
 
 void VsockUsb::SetConfigured(SetConfiguredRequest& request,
@@ -457,15 +464,27 @@ void VsockUsb::SetConfigured(SetConfiguredRequest& request,
 
   fdescriptor::UsbSpeed speed = request.speed();
   FDF_LOG(TRACE, "SetConfigured(%d, %d)", configured, static_cast<uint32_t>(speed));
-  if (unconfigure_completer_.has_value()) {
-    zx_status_t status = DisableEndpoints();
-    unconfigure_completer_->Reply(zx::make_result(status));
-    unconfigure_completer_.reset();
-  }
   if (configured) {
+    if (unconfigure_completer_.has_value()) {
+      FDF_LOG(
+          INFO,
+          "SetConfigured(true) arrived while SetConfigured(false) drain in flight; deferring configure");
+      if (pending_configure_completer_.has_value()) {
+        pending_configure_completer_->Reply(zx::error(ZX_ERR_CANCELED));
+        pending_configure_completer_.reset();
+      }
+      pending_configure_completer_.emplace(completer.ToAsync());
+      return;
+    }
     zx_status_t status = ConfigureEndpoints();
     completer.Reply(zx::make_result(status));
     return;
+  }
+
+  if (pending_configure_completer_.has_value()) {
+    FDF_LOG(INFO, "SetConfigured(false) supersedes pending SetConfigured(true)");
+    pending_configure_completer_->Reply(zx::error(ZX_ERR_CANCELED));
+    pending_configure_completer_.reset();
   }
 
   if (!endpoints_configured_) {
@@ -849,7 +868,7 @@ void VsockUsb::ReadComplete(fendpoint::Completion completion) {
     bulk_out_inspect_.AddFailedRxBytes(request.length());
   }
 
-  if (Online()) {
+  if (Online() && *completion.status() != ZX_ERR_CANCELED) {
     request.reset_buffers(bulk_out_ep_.GetMapped());
 
     // Only extract the underlying FIDL request when we are actively online and
@@ -928,6 +947,11 @@ void VsockUsb::Shutdown(fit::function<void()> callback) {
   if (unconfigure_completer_.has_value()) {
     unconfigure_completer_->Reply(zx::ok());
     unconfigure_completer_.reset();
+  }
+
+  if (pending_configure_completer_.has_value()) {
+    pending_configure_completer_->Reply(zx::error(ZX_ERR_CANCELED));
+    pending_configure_completer_.reset();
   }
 
   // Transition to ShuttingDown before canceling endpoints so any completions delivered
