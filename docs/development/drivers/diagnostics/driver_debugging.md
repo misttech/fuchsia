@@ -13,9 +13,9 @@ Fuchsia provides a productionized driver debugging framework that allows develop
 The debugging framework consists of four primary components:
 
 1. **`fuchsia.driver.debug.Debug` FIDL Protocol**: Defines the standardized interface for listing and executing debug commands across drivers.
-2. **Rust Helper Library (`sdk/lib/driver/debug/rust`)**: Simplifies the authoring of debug subcommands in Rust drivers with `argh` argument parsing, automatic `--help` generation, command discovery, and request dispatching.
+2. **Helper Libraries (`sdk/lib/driver/debug/rust` & `sdk/lib/driver/debug/cpp`)**: Simplifies the authoring of debug subcommands in Rust (via `argh::SubCommands` and `driver_debug`) and C++ (via `fdf_debug::DebugServer`) with argument parsing, automatic `--help` generation, command discovery, and request dispatching.
 3. **`debug` CLI Utility (`src/devices/bin/driver_debug`)**: A host/target CLI tool packaged for interactive execution inside `component explore`.
-4. **Driver Integration (`driver/debug.shard.cml`)**: DFv2 drivers include `driver/debug.shard.cml` in their component manifest and export `fuchsia.driver.debug.Debug` via `ServiceFs` in their outgoing directory (`/out/svc/fuchsia.driver.debug.Debug`).
+4. **Driver Integration (`driver/debug.shard.cml`)**: DFv2 drivers include `driver/debug.shard.cml` in their component manifest and export `fuchsia.driver.debug.Debug` via `ServiceFs` or `OutgoingDirectory` in their outgoing directory (`/out/svc/fuchsia.driver.debug.Debug`).
 
 ---
 
@@ -169,6 +169,121 @@ service_fs.dir("svc").add_fidl_service(move |stream: DebugRequestStream| {
 });
 
 context.serve_outgoing(&mut service_fs)?;
+```
+
+---
+
+## Implementing Debug Commands in a C++ Driver (`fdf_debug::DebugServer`)
+
+C++ DFv2 drivers can use the `//sdk/lib/driver/debug/cpp` library to register debug commands and serve `fuchsia.driver.debug.Debug`.
+
+### 1. Add Build Dependency
+
+Add `//sdk/lib/driver/debug/cpp` to your driver's target dependencies in GN (`BUILD.gn`) or Bazel (`BUILD.bazel`):
+
+GN (`BUILD.gn`):
+
+```gn
+fuchsia_cc_driver("my_driver") {
+  deps = [
+    "//sdk/lib/driver/component/cpp",
+    "//sdk/lib/driver/debug/cpp",
+  ]
+}
+```
+
+Bazel (`BUILD.bazel`):
+
+```bazel
+fuchsia_cc_driver(
+    name = "my_driver",
+    deps = [
+        "//sdk/lib/driver/debug/cpp",
+        "@fuchsia_sdk//pkg/driver_component_cpp",
+    ],
+)
+```
+
+### 2. Include Header and Declare `DebugServer`
+
+In your driver class, include `<lib/driver/debug/cpp/debug_server.h>` and add `fdf_debug::DebugServer` as a member:
+
+```cpp
+#include <lib/driver/component/cpp/driver_base2.h>
+#include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/driver/debug/cpp/debug_server.h>
+
+class MyDriver : public fdf::DriverBase2 {
+ public:
+  MyDriver() : fdf::DriverBase2("my_driver") {}
+
+  zx::result<> Start(fdf::DriverContext context) override;
+
+ private:
+  fdf_debug::DebugServer debug_server_;
+};
+```
+
+### 3. Register Commands and Serve in `Start()`
+
+Register synchronous, asynchronous, or string-returning commands and call `Serve(dispatcher(), outgoing())`:
+
+```cpp
+zx::result<> MyDriver::Start(fdf::DriverContext context) {
+  // Register synchronous string command:
+  debug_server_.RegisterCommand(
+      "ping", "Ping the driver.", "[-c <count>]",
+      [](cpp20::span<const std::string> args) -> fit::result<std::string, std::string> {
+        int count = 1;
+        for (size_t i = 0; i < args.size(); ++i) {
+          if (args[i] == "-c" && i + 1 < args.size()) {
+            count = std::stoi(std::string(args[++i]));
+          } else {
+            return fit::error("Unknown option: " + std::string(args[i]));
+          }
+        }
+        std::string out;
+        for (int i = 1; i <= count; ++i) {
+          out += "ping " + std::to_string(i) + "\n";
+        }
+        return fit::ok(out);
+      });
+
+  // Register full ExecutionResult command:
+  debug_server_.RegisterCommand(
+      "reset", "Reset the driver state.", "[--hard]",
+      [](cpp20::span<const std::string> args) -> fdf_debug::ExecutionResult {
+        bool hard = false;
+        for (const auto& arg : args) {
+          if (arg == "--hard") {
+            hard = true;
+          }
+        }
+        fdf_debug::ExecutionResult res;
+        res.exit_code() = 0;
+        res.stdout_() = hard ? "hard reset\n" : "soft reset\n";
+        res.stderr_() = "";
+        return res;
+      });
+
+  // Register asynchronous command:
+  debug_server_.RegisterCommand(
+      "async_action", "Run async diagnostic test.",
+      [this](cpp20::span<const std::string> args,
+             fit::callback<void(fdf_debug::ExecutionResult)> completer) {
+        // Run asynchronous workload and invoke completer when done
+      });
+
+  // Serve Debug protocol on the driver's outgoing directory:
+  zx::result result = debug_server_.Serve(dispatcher(), outgoing());
+  if (result.is_error()) {
+    return result.take_error();
+  }
+
+  return zx::ok();
+}
+
+FUCHSIA_DRIVER_EXPORT2(MyDriver);
 ```
 
 ---
