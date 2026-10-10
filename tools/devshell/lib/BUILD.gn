@@ -9,9 +9,20 @@ if (is_host) {
     main_source = "scm_test.py"
     sources = [ "scm.py" ]
   }
+
+  python_host_test("shac_runner_test") {
+    main_source = "shac_runner_test.py"
+    sources = [
+      "scm.py",
+      "shac_runner.py",
+    ]
+  }
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":scm_test($host_toolchain)" ]
+  deps = [
+    ":scm_test($host_toolchain)",
+    ":shac_runner_test($host_toolchain)",
+  ]
 }

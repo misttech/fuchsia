@@ -9,7 +9,7 @@ import dataclasses
 import os
 import pathlib
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 
 @dataclasses.dataclass(frozen=True)
@@ -126,8 +126,7 @@ def canonicalize_path(
         preserved.
     """
     if raw_path.startswith("//"):
-        relative_path = raw_path[2:].lstrip("/")
-        if relative_path:
+        if relative_path := raw_path[2:].lstrip("/"):
             path = fuchsia_dir / relative_path
         else:
             path = fuchsia_dir
@@ -145,7 +144,7 @@ def canonicalize_path(
 def get_repo_groups(
     fuchsia_dir: pathlib.Path,
     cwd: pathlib.Path,
-    explicit_files: Sequence[str] | None = None,
+    explicit_files: Collection[str] | None = None,
 ) -> Sequence[RepoGroup]:
     """Discovers active repositories and partitions explicit files if provided.
 
@@ -160,8 +159,8 @@ def get_repo_groups(
     Args:
         fuchsia_dir: Absolute path to the Fuchsia checkout root.
         cwd: Current working directory for resolving relative paths.
-        explicit_files: Optional sequence of user-specified file paths. If None,
-            returns all active repositories for whole-repo checks.
+        explicit_files: Optional collection of user-specified file paths. If
+            None, returns all active repositories for whole-repo checks.
 
     Returns:
         A deterministically sorted sequence of RepoGroups (root repo first,
