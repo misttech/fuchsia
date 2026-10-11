@@ -27,6 +27,7 @@
 #include <arch/x86/page_tables/constants.h>
 #elif __aarch64__
 #include <arch/arm64.h>
+#include <arch/arm64/feature.h>
 #endif
 
 static constexpr arch_mmu_flags_t kMmuFlags =
@@ -36,7 +37,7 @@ static bool hypervisor_supported() {
 #ifdef __x86_64__
   return true;
 #elif __aarch64__
-  return arm64_get_boot_el() >= 2;
+  return arm64_get_boot_el() >= 2 && arm64_mmu_features.vhe;
 #else
   return false;
 #endif

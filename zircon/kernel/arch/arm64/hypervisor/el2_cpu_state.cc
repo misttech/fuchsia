@@ -41,9 +41,6 @@ static void el2_off_task(void* arg) {
 
 // static
 zx::result<ktl::unique_ptr<El2CpuState>> El2CpuState::Create() {
-  if (arm64_get_boot_el() < 2) {
-    return zx::error(ZX_ERR_NOT_SUPPORTED);
-  }
   fbl::AllocChecker ac;
   ktl::unique_ptr<El2CpuState> cpu_state(new (&ac) El2CpuState);
   if (!ac.check()) {

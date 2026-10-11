@@ -7,6 +7,7 @@
 #include <align.h>
 #include <zircon/syscalls/hypervisor.h>
 
+#include <arch/arm64/feature.h>
 #include <arch/hypervisor.h>
 #include <dev/interrupt/arm_gic_hw_interface.h>
 #include <hypervisor/aspace.h>
@@ -19,7 +20,8 @@ static constexpr size_t kGicvSize = 0x2000;
 
 // static
 zx::result<ktl::unique_ptr<Guest>> Guest::Create() {
-  if (arm64_get_boot_el() < 2) {
+  // Check that the CPU supports VHE.
+  if (arm64_get_boot_el() < 2 || !arm64_mmu_features.vhe) {
     return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
