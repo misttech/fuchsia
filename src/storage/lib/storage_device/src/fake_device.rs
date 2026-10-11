@@ -192,6 +192,8 @@ impl Device for FakeDevice {
     }
 
     async fn flush(&self) -> Result<(), Error> {
+        ensure!(!self.closed.load(Ordering::Relaxed));
+        ensure!(!self.read_only.load(Ordering::Relaxed));
         self.inner.lock().blocks_written_since_last_barrier.clear();
         (self.operation_closure)(Op::Flush)
     }

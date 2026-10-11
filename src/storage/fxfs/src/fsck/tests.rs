@@ -90,7 +90,7 @@ impl FsckTest {
         let fs = self.filesystem.take().unwrap();
         fs.close().await.expect("Failed to close FS");
         let device = fs.take_device().await;
-        device.reopen(true);
+        device.reopen(false);
         self.filesystem = Some(
             FxFilesystemBuilder::new()
                 .read_only(false)

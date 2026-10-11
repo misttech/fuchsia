@@ -3620,7 +3620,7 @@ mod tests {
         }
         fs.close().await.unwrap();
         let device = fs.take_device().await;
-        device.reopen(/*read_only*/ true);
+        device.reopen(false);
         let fixture = TestFixture::open(
             device,
             TestFixtureOptions { encrypted: false, format: false, ..Default::default() },

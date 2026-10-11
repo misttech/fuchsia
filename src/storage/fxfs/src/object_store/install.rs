@@ -590,7 +590,7 @@ mod tests {
         fs.close().await.unwrap();
         let device = fs.take_device().await;
         device.reopen(/*read_only*/ true);
-        let fs = FxFilesystem::open(device).await.unwrap();
+        let fs = FxFilesystemBuilder::new().read_only(true).open(device).await.unwrap();
         do_fsck(&fs, DST_NAME).await;
     }
 
