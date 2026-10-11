@@ -84,9 +84,9 @@
 // Signals test completion by writing 0 to EXIT_TEST_ADDR.
 .macro test_complete_aarch32
     .word 0xE3A01000    // aarch32:     movw r1, 0
-    .word 0xE30F0000    // aarch32:     movw r0, [lower]EXIT_TEST_ADDR
-    .word 0xE34000FF    // aarch32:     movw r0, [upper]EXIT_TEST_ADDR
-    .word 0xE5801000    // aarch32:     str  r0, [r1]
+    .word 0xE3000000    // aarch32:     movw r0, [lower]EXIT_TEST_ADDR
+    .word 0xE34000FF    // aarch32:     movt r0, [upper]EXIT_TEST_ADDR
+    .word 0xE5801000    // aarch32:     str  r1, [r0]
     .word 0xEAFFFFFE    // aarch32: 1:  b    1b
 .endm
 
@@ -417,7 +417,7 @@ FUNCTION vcpu_system_registers
     msr    esr_el1, x12
     movlit x13, 0xfeedfacecafebabe
     msr    far_el1, x13
-    movlit x15, 0xab00000012345000
+    movlit x15, 0xab00000012345800
     msr    par_el1, x15
     mov    x16, 0x2
     msr    csselr_el1, x16

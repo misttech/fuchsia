@@ -115,10 +115,25 @@ fuchsia_driver_component("platform-bus-x86") {
   info = "meta/platform-bus-x86-info.json"
 }
 
-fuchsia_driver_package("package") {
-  package_name = "platform-bus-x86"
-  driver_components = [ ":platform-bus-x86" ]
-  export_to_bazel = true
+if (current_cpu == "x64") {
+  fuchsia_driver_package("package") {
+    package_name = "platform-bus-x86"
+    driver_components = [ ":platform-bus-x86" ]
+    export_to_bazel = true
+  }
+} else {
+  # Provide a placeholder for @gn_targets//src/devices/board/drivers/x86:package
+  # so unconfigured Bazel queries (e.g. genquery on //build/images/guest) can
+  # resolve all select() branches without pulling the x86 board driver into
+  # non-x64 builds and failing check_included_drivers.
+  generated_file("package") {
+    outputs = [ "$target_out_dir/package" ]
+    contents = ""
+  }
+
+  bazel_input_file("package.bazel_input") {
+    generator = ":package"
+  }
 }
 
 test("x86-ec-test-bin") {
