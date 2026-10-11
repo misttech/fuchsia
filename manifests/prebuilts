@@ -272,7 +272,7 @@
              path="prebuilt/third_party/tzres"/>
     <!--   IANA Time Zone DB -->
     <package name="fuchsia/third_party/zoneinfo"
-             version="version:2024a"
+             version="version:2026e"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/third_party/zoneinfo"/>
     <!--   Unicode UCD datafiles -->
