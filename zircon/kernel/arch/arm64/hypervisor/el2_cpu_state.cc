@@ -29,15 +29,11 @@ zx::result<> El2CpuState::OnTask(void* context, cpu_num_t cpu_num) {
   auto cpu_state = static_cast<El2CpuState*>(context);
   cpu_state->vtcr_.Write();
   __isb(ARM_MB_SY);
-  unmask_interrupt(kTimerVector);
   unmask_interrupt(kMaintenanceVector);
   return zx::ok();
 }
 
-static void el2_off_task(void* arg) {
-  mask_interrupt(kMaintenanceVector);
-  mask_interrupt(kTimerVector);
-}
+static void el2_off_task(void* arg) { mask_interrupt(kMaintenanceVector); }
 
 // static
 zx::result<ktl::unique_ptr<El2CpuState>> El2CpuState::Create() {
