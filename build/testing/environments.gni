@@ -591,7 +591,10 @@ foreach(named_env, _all_named_fuchsia_envs) {
 # 3. Zircon virtualizes guest Zircon/Linux (Machina)
 guest_envs = all_fuchsia_envs - [
                aemu_env,
+               astro_env,
                qemu_env,
+               sherlock_env,
+               vim3_env,
              ]
 
 # TODO(https://fxbug.dev/371274109): Unconditionally remove when
