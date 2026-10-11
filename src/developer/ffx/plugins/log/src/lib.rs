@@ -1406,4 +1406,102 @@ ffx log --force-set-severity.
         assert!(stdout.contains("log from archivist"));
         assert!(!stdout.contains("log from pipeline"));
     }
+
+    #[fuchsia::test]
+    async fn logger_dump_sorts_out_of_order_logs() {
+        Box::pin(logger_dump_test(
+            TestEnvironmentConfig {
+                messages: vec![
+                    testing_utils::test_log(1_300_000_000),
+                    testing_utils::test_log(1_100_000_000),
+                    testing_utils::test_log(1_200_000_000),
+                ],
+                ..Default::default()
+            },
+            LogCommand::default(),
+            concat!(
+                "[00001.100000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00001.200000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00001.300000][ffx] INFO: Hello world!\u{1b}[m\n",
+            ),
+        ))
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn logger_dump_does_not_reorder_bogus_timestamps() {
+        Box::pin(logger_dump_test(
+            TestEnvironmentConfig {
+                messages: vec![
+                    testing_utils::test_log(10_000_000_000),
+                    testing_utils::test_log(999_000_000_000),
+                    testing_utils::test_log(999_100_000_000),
+                    testing_utils::test_log(10_200_000_000),
+                    testing_utils::test_log(10_100_000_000),
+                    testing_utils::test_log(1_000_000_000),
+                    testing_utils::test_log(10_300_000_000),
+                ],
+                ..Default::default()
+            },
+            LogCommand::default(),
+            concat!(
+                "[00010.000000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00999.000000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00999.100000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "\u{1b}[38;5;6m[00010.100000]\u{1b}[m[ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00010.200000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "\u{1b}[38;5;6m[00001.000000]\u{1b}[m[ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00010.300000][ffx] INFO: Hello world!\u{1b}[m\n",
+            ),
+        ))
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn logger_watch_highlights_out_of_order_timestamps() {
+        let mut environment = TestEnvironment::new(TestEnvironmentConfig {
+            messages: vec![
+                testing_utils::test_log(1_300_000_000),
+                testing_utils::test_log(1_100_000_000),
+                testing_utils::test_log(1_200_000_000),
+                testing_utils::test_log(1_400_000_000),
+                testing_utils::test_log(999_000_000_000),
+                testing_utils::test_log(999_100_000_000),
+                testing_utils::test_log(5_500_000_000),
+                testing_utils::test_log(5_400_000_000),
+                testing_utils::test_log(5_600_000_000),
+            ],
+            ..Default::default()
+        })
+        .await;
+        let cmd = LogCommand {
+            sub_command: Some(LogSubCommand::Watch(RawWatchCommand::default())),
+            filters: LogFilterArgs { symbolize: Some(SymbolizeMode::Off), ..Default::default() },
+            ..LogCommand::default()
+        };
+        let rcs_connector = environment.rcs_connector().await;
+        let tool = LogTool { cmd, rcs_connector, context: environment.environment_context() };
+        let buffers = TestBuffers::default();
+        let writer = CommandOutputMachineWriter::new_test(None, &buffers);
+        let mut event_stream = environment.take_event_stream().unwrap();
+
+        let _result = fasync::Task::local(tool.main_no_timestamp(writer));
+        check_for_message(
+            &buffers,
+            concat!(
+                "[00001.300000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "\u{1b}[38;5;6m[00001.100000]\u{1b}[m[ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00001.200000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00001.400000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00999.000000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00999.100000][ffx] INFO: Hello world!\u{1b}[m\n",
+                "\u{1b}[38;5;6m[00005.500000]\u{1b}[m[ffx] INFO: Hello world!\u{1b}[m\n",
+                "\u{1b}[38;5;6m[00005.400000]\u{1b}[m[ffx] INFO: Hello world!\u{1b}[m\n",
+                "[00005.600000][ffx] INFO: Hello world!\u{1b}[m\n",
+            ),
+        )
+        .await;
+        environment.disconnect_target();
+        assert_matches!(event_stream.next().await, Some(TestEvent::LogSettingsClosed));
+    }
 }

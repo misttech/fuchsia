@@ -259,6 +259,8 @@ pub struct LogFormatterOptions {
     pub until: Option<DeviceOrLocalTimestamp>,
     /// Only display the last N log lines.
     pub tail: Option<usize>,
+    /// Sort logs by timestamp when flushing (used in snapshot/dump mode).
+    pub sort: bool,
 }
 
 impl Default for LogFormatterOptions {
@@ -268,6 +270,7 @@ impl Default for LogFormatterOptions {
             since: None,
             until: None,
             tail: None,
+            sort: false,
         }
     }
 }
@@ -292,6 +295,14 @@ impl FormatterError {
     }
 }
 
+/// Maximum number of log entries to retain in the reorder window during `dump` (`sort: true`).
+const REORDER_WINDOW_SIZE: usize = 64;
+
+/// Maximum timestamp difference (1 second) considered plausible for out-of-order arrival due to
+/// thread preemption between timestamp capture and IOBuffer write. Messages with larger skew are
+/// treated as having untrusted/bogus timestamps and are not reordered across each other.
+const MAX_REORDER_SKEW_NANOS: i64 = 1_000_000_000;
+
 /// Default formatter implementation
 pub struct DefaultLogFormatter<W>
 where
@@ -301,6 +312,9 @@ where
     filters: LogFilterCriteria,
     options: LogFormatterOptions,
     boot_ts_nanos: Option<Timestamp>,
+    /// Timestamp of the most recently emitted log entry in the current boot, used to highlight
+    /// timestamps that precede the immediately previous line.
+    last_timestamp: Option<Timestamp>,
     tail_queue: std::collections::VecDeque<LogEntry>,
     tail_limit: Option<usize>,
 }
@@ -346,6 +360,9 @@ where
             *offset = boot_ts_nanos.into_nanos();
         }
         self.boot_ts_nanos = Some(boot_ts_nanos);
+        // Reset timestamp tracking across target reboots so timestamps from the new boot (which
+        // restart near zero) are not treated as out-of-order relative to the previous boot.
+        self.last_timestamp = None;
     }
     fn get_boot_timestamp(&self) -> Timestamp {
         debug_assert!(self.boot_ts_nanos.is_some());
@@ -382,6 +399,7 @@ where
             writer,
             options,
             boot_ts_nanos: None,
+            last_timestamp: None,
             tail_queue: std::collections::VecDeque::new(),
             tail_limit,
         }
@@ -407,9 +425,47 @@ where
         self.push_log_internal(log_entry, false).await
     }
 
+    /// Inserts `log_entry` into `self.tail_queue`, bubbling it backwards past any preceding
+    /// entries whose timestamps are slightly newer (within `MAX_REORDER_SKEW_NANOS`).
+    ///
+    /// If `prev_ts - new_ts > MAX_REORDER_SKEW_NANOS`, either `prev_ts` is a bogus far-future
+    /// timestamp or `new_ts` is a bogus far-past timestamp; in both cases we stop and do not
+    /// reorder across the gap so that messages with untrusted timestamps remain in their original
+    /// arrival position.
+    fn insert_into_reorder_window(&mut self, log_entry: LogEntry) {
+        let LogData::TargetLog(new_data) = &log_entry.data;
+        let new_ts = new_data.metadata.timestamp.into_nanos();
+        let mut insert_pos = self.tail_queue.len();
+        while insert_pos > 0 {
+            let LogData::TargetLog(prev_data) = &self.tail_queue[insert_pos - 1].data;
+            let prev_ts = prev_data.metadata.timestamp.into_nanos();
+            let diff = prev_ts.saturating_sub(new_ts);
+            if diff > 0 && diff <= MAX_REORDER_SKEW_NANOS {
+                insert_pos -= 1;
+            } else {
+                break;
+            }
+        }
+        self.tail_queue.insert(insert_pos, log_entry);
+    }
+
     async fn flush_tail(&mut self) -> Result<(), LogError> {
+        // When both `sort` and `tail_limit` are active, `push_log_internal` retains up to
+        // `limit.max(REORDER_WINDOW_SIZE)` entries so that logs near the tail boundary can be
+        // reordered before we trim to the final `limit` entries here.
+        if let Some(limit) = self.tail_limit
+            && self.tail_queue.len() > limit
+        {
+            let drain_count = self.tail_queue.len() - limit;
+            self.tail_queue.drain(..drain_count);
+        }
         while let Some(log_entry) = self.tail_queue.pop_front() {
-            self.write_log_entry(log_entry, true)?;
+            if let Err(err) = self.write_log_entry(log_entry, true) {
+                if err.is_broken_pipe() {
+                    return Ok(());
+                }
+                return Err(err);
+            }
         }
         Ok(())
     }
@@ -419,8 +475,21 @@ where
         log_entry: LogEntry,
         enable_filters: bool,
     ) -> Result<(), LogError> {
+        let is_out_of_order = if enable_filters {
+            let LogData::TargetLog(data) = &log_entry.data;
+            let ts = data.metadata.timestamp;
+            // Highlight whenever a message's timestamp precedes the immediately previous message.
+            // Tracking only the previous timestamp keeps the check simple and self-correcting if
+            // one or more messages carry bogus timestamps.
+            let out_of_order = self.last_timestamp.is_some_and(|last_ts| ts < last_ts);
+            self.last_timestamp = Some(ts);
+            out_of_order
+        } else {
+            false
+        };
         match self.options.display {
-            Some(text_options) => {
+            Some(mut text_options) => {
+                text_options.highlight_timestamp = is_out_of_order;
                 let mut options_for_this_line_only = self.options.clone();
                 options_for_this_line_only.display = Some(text_options);
                 // For host logs, don't apply the boot time offset
@@ -456,6 +525,13 @@ where
             }
 
             if self.filter_by_timestamp(&log_entry, self.options.until.as_ref(), |a, b| a >= b) {
+                if self.options.sort {
+                    // When sorting in dump (snapshot) mode, logs may arrive slightly out of
+                    // timestamp order, or a single log may carry a bogus far-future timestamp.
+                    // Skip the record instead of exiting early so we don't miss subsequent
+                    // records in the snapshot whose timestamps are earlier than `until`.
+                    return Ok(LogProcessingResult::Continue);
+                }
                 return Ok(LogProcessingResult::Exit);
             }
 
@@ -464,7 +540,24 @@ where
             }
         }
 
-        if let Some(limit) = self.tail_limit {
+        if self.options.sort {
+            self.insert_into_reorder_window(log_entry);
+            if let Some(limit) = self.tail_limit {
+                // Keep at least `REORDER_WINDOW_SIZE` entries so out-of-order arrivals near the
+                // tail cutoff can be reordered before `flush_tail` trims to `limit`.
+                let window = limit.max(REORDER_WINDOW_SIZE);
+                while self.tail_queue.len() > window {
+                    self.tail_queue.pop_front();
+                }
+            } else {
+                // Emit entries once they fall behind the reorder window so dump output streams
+                // progressively with bounded memory.
+                while self.tail_queue.len() > REORDER_WINDOW_SIZE {
+                    let oldest = self.tail_queue.pop_front().unwrap();
+                    self.write_log_entry(oldest, enable_filters)?;
+                }
+            }
+        } else if let Some(limit) = self.tail_limit {
             self.tail_queue.push_back(log_entry);
             if self.tail_queue.len() > limit {
                 self.tail_queue.pop_front();
@@ -513,6 +606,7 @@ where
                         show_moniker: !cmd.hide_moniker(),
                         show_full_moniker: cmd.show_full_moniker(),
                         prefer_url_component_name: cmd.prefer_url_component_name(),
+                        highlight_timestamp: false,
                     })
                 },
                 since: DeviceOrLocalTimestamp::new(cmd.since(), cmd.since_boot().as_ref()),
@@ -521,6 +615,7 @@ where
                     Some(LogSubCommand::Dump(dump)) => dump.tail,
                     _ => None,
                 },
+                sort: matches!(cmd.sub_command, Some(LogSubCommand::Dump(..))),
             },
         ))
     }
@@ -1441,5 +1536,222 @@ mod test {
         assert!(!output.contains("msg1"));
         assert!(output.contains("msg2"));
         assert!(output.contains("msg3"));
+    }
+
+    #[fuchsia::test]
+    async fn test_default_formatter_sorts_when_enabled() {
+        let buffers = TestBuffers::default();
+        let stdout = JsonWriter::<LogEntry>::new_test(None, &buffers);
+        let options = LogFormatterOptions {
+            display: Some(LogTextDisplayOptions {
+                color: LogTextColor::BySeverity,
+                show_metadata: false,
+                ..Default::default()
+            }),
+            sort: true,
+            ..Default::default()
+        };
+        let mut formatter = DefaultLogFormatter::new(LogFilterCriteria::default(), stdout, options);
+
+        formatter
+            .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(1_300_000_000)) })
+            .await
+            .unwrap();
+        formatter
+            .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(1_100_000_000)) })
+            .await
+            .unwrap();
+        formatter
+            .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(1_200_000_000)) })
+            .await
+            .unwrap();
+
+        assert_eq!(buffers.stdout.clone().into_string(), "");
+        formatter.flush().await.unwrap();
+
+        assert_eq!(
+            buffers.into_stdout_str(),
+            concat!(
+                "[00001.100000][ffx] INFO: Hello world 1100000000!\u{1b}[m\n",
+                "[00001.200000][ffx] INFO: Hello world 1200000000!\u{1b}[m\n",
+                "[00001.300000][ffx] INFO: Hello world 1300000000!\u{1b}[m\n",
+            )
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_default_formatter_sort_window_flushes_progressively() {
+        let buffers = TestBuffers::default();
+        let stdout = JsonWriter::<LogEntry>::new_test(None, &buffers);
+        let options = LogFormatterOptions {
+            display: Some(LogTextDisplayOptions { show_metadata: false, ..Default::default() }),
+            sort: true,
+            ..Default::default()
+        };
+        let mut formatter = DefaultLogFormatter::new(LogFilterCriteria::default(), stdout, options);
+
+        formatter
+            .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(1_200_000_000)) })
+            .await
+            .unwrap();
+        formatter
+            .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(1_100_000_000)) })
+            .await
+            .unwrap();
+        for _ in 0..64 {
+            formatter
+                .push_log(LogEntry {
+                    data: LogData::TargetLog(make_log_with_timestamp(1_300_000_000)),
+                })
+                .await
+                .unwrap();
+        }
+
+        // Before flush() is called, the oldest 2 entries beyond the 64-entry reorder window
+        // should already be emitted in sorted order.
+        assert_eq!(
+            buffers.stdout.clone().into_string(),
+            concat!(
+                "[00001.100000][ffx] INFO: Hello world 1100000000!\n",
+                "[00001.200000][ffx] INFO: Hello world 1200000000!\n",
+            )
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_default_formatter_does_not_reorder_bogus_timestamps() {
+        let buffers = TestBuffers::default();
+        let stdout = JsonWriter::<LogEntry>::new_test(None, &buffers);
+        let options = LogFormatterOptions {
+            display: Some(LogTextDisplayOptions {
+                color: LogTextColor::BySeverity,
+                show_metadata: false,
+                ..Default::default()
+            }),
+            sort: true,
+            ..Default::default()
+        };
+        let mut formatter = DefaultLogFormatter::new(LogFilterCriteria::default(), stdout, options);
+
+        for ts in [
+            10_000_000_000,
+            999_000_000_000, // far-future outlier (> 1s skew): stay in place
+            999_100_000_000, // second far-future outlier: stay in place
+            10_200_000_000,
+            10_100_000_000, // within 1s skew of 10.2s: reorder before 10.2s
+            1_000_000_000,  // far-past outlier (> 1s skew): stay in place and highlight
+            10_300_000_000,
+        ] {
+            formatter
+                .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(ts)) })
+                .await
+                .unwrap();
+        }
+        formatter.flush().await.unwrap();
+
+        assert_eq!(
+            buffers.into_stdout_str(),
+            concat!(
+                "[00010.000000][ffx] INFO: Hello world 10000000000!\u{1b}[m\n",
+                "[00999.000000][ffx] INFO: Hello world 999000000000!\u{1b}[m\n",
+                "[00999.100000][ffx] INFO: Hello world 999100000000!\u{1b}[m\n",
+                "\u{1b}[38;5;6m[00010.100000]\u{1b}[m[ffx] INFO: Hello world 10100000000!\u{1b}[m\n",
+                "[00010.200000][ffx] INFO: Hello world 10200000000!\u{1b}[m\n",
+                "\u{1b}[38;5;6m[00001.000000]\u{1b}[m[ffx] INFO: Hello world 1000000000!\u{1b}[m\n",
+                "[00010.300000][ffx] INFO: Hello world 10300000000!\u{1b}[m\n",
+            )
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_default_formatter_sorts_before_tail_limit() {
+        let buffers = TestBuffers::default();
+        let stdout = JsonWriter::<LogEntry>::new_test(None, &buffers);
+        let options = LogFormatterOptions {
+            display: Some(LogTextDisplayOptions { show_metadata: false, ..Default::default() }),
+            sort: true,
+            tail: Some(2),
+            ..Default::default()
+        };
+        let mut formatter = DefaultLogFormatter::new(LogFilterCriteria::default(), stdout, options);
+
+        formatter
+            .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(1_300_000_000)) })
+            .await
+            .unwrap();
+        formatter
+            .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(1_100_000_000)) })
+            .await
+            .unwrap();
+        formatter
+            .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(1_200_000_000)) })
+            .await
+            .unwrap();
+
+        formatter.flush().await.unwrap();
+
+        assert_eq!(
+            buffers.into_stdout_str(),
+            concat!(
+                "[00001.200000][ffx] INFO: Hello world 1200000000!\n",
+                "[00001.300000][ffx] INFO: Hello world 1300000000!\n",
+            )
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_default_formatter_highlights_out_of_order_timestamps() {
+        let buffers = TestBuffers::default();
+        let stdout = JsonWriter::<LogEntry>::new_test(None, &buffers);
+        let options = LogFormatterOptions {
+            display: Some(LogTextDisplayOptions {
+                color: LogTextColor::BySeverity,
+                show_metadata: false,
+                ..Default::default()
+            }),
+            sort: false,
+            ..Default::default()
+        };
+        let mut formatter = DefaultLogFormatter::new(LogFilterCriteria::default(), stdout, options);
+
+        for ts in [
+            1_300_000_000,
+            1_100_000_000,
+            1_200_000_000,
+            1_400_000_000,
+            999_000_000_000, // far-future outlier #1
+            999_100_000_000, // far-future outlier #2
+            5_500_000_000, // normal timestamp (< 999.1s, highlights transition then self-corrects)
+            5_400_000_000, // out-of-order relative to 5.5s
+            5_600_000_000, // in-order relative to 5.4s
+        ] {
+            formatter
+                .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(ts)) })
+                .await
+                .unwrap();
+        }
+
+        // Rebooting resets state so a subsequent 1.0s log is not marked out-of-order.
+        formatter.set_boot_timestamp(Timestamp::from_nanos(0));
+        formatter
+            .push_log(LogEntry { data: LogData::TargetLog(make_log_with_timestamp(1_000_000_000)) })
+            .await
+            .unwrap();
+
+        assert_eq!(
+            buffers.into_stdout_str(),
+            concat!(
+                "[00001.300000][ffx] INFO: Hello world 1300000000!\u{1b}[m\n",
+                "\u{1b}[38;5;6m[00001.100000]\u{1b}[m[ffx] INFO: Hello world 1100000000!\u{1b}[m\n",
+                "[00001.200000][ffx] INFO: Hello world 1200000000!\u{1b}[m\n",
+                "[00001.400000][ffx] INFO: Hello world 1400000000!\u{1b}[m\n",
+                "[00999.000000][ffx] INFO: Hello world 999000000000!\u{1b}[m\n",
+                "[00999.100000][ffx] INFO: Hello world 999100000000!\u{1b}[m\n",
+                "\u{1b}[38;5;6m[00005.500000]\u{1b}[m[ffx] INFO: Hello world 5500000000!\u{1b}[m\n",
+                "\u{1b}[38;5;6m[00005.400000]\u{1b}[m[ffx] INFO: Hello world 5400000000!\u{1b}[m\n",
+                "[00005.600000][ffx] INFO: Hello world 5600000000!\u{1b}[m\n",
+                "[00001.000000][ffx] INFO: Hello world 1000000000!\u{1b}[m\n",
+            )
+        );
     }
 }

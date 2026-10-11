@@ -1139,6 +1139,9 @@ pub struct LogTextDisplayOptions {
 
     /// How to print timestamps for this log message.
     pub time_format: LogTimeDisplayFormat,
+
+    /// Whether to highlight the timestamp (e.g. when a log message is out of chronological order).
+    pub highlight_timestamp: bool,
 }
 
 impl Default for LogTextDisplayOptions {
@@ -1152,6 +1155,7 @@ impl Default for LogTextDisplayOptions {
             show_file: true,
             color: Default::default(),
             time_format: Default::default(),
+            highlight_timestamp: false,
         }
     }
 }
@@ -1184,6 +1188,31 @@ impl LogTextColor {
                 Severity::Trace => write!(f, "{}", color::Fg(color::LightMagenta))?,
             },
             LogTextColor::Highlight => write!(f, "{}", color::Fg(color::LightYellow))?,
+            LogTextColor::None => {}
+        }
+        Ok(())
+    }
+
+    fn begin_timestamp_highlight(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LogTextColor::BySeverity | LogTextColor::Highlight => {
+                write!(f, "{}", color::Fg(color::Cyan))?
+            }
+            LogTextColor::None => {}
+        }
+        Ok(())
+    }
+
+    fn end_timestamp_highlight(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        severity: Severity,
+    ) -> fmt::Result {
+        match self {
+            LogTextColor::BySeverity | LogTextColor::Highlight => {
+                write!(f, "{}", style::Reset)?;
+                self.begin_record(f, severity)?;
+            }
             LogTextColor::None => {}
         }
         Ok(())
@@ -1305,8 +1334,14 @@ impl Deref for LogTextPresenter<'_> {
 
 impl fmt::Display for LogTextPresenter<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.options.color.begin_record(f, self.log.severity())?;
-        self.options.time_format.write_timestamp(f, self.metadata.timestamp)?;
+        if self.options.highlight_timestamp {
+            self.options.color.begin_timestamp_highlight(f)?;
+            self.options.time_format.write_timestamp(f, self.metadata.timestamp)?;
+            self.options.color.end_timestamp_highlight(f, self.log.severity())?;
+        } else {
+            self.options.color.begin_record(f, self.log.severity())?;
+            self.options.time_format.write_timestamp(f, self.metadata.timestamp)?;
+        }
 
         if self.options.show_metadata {
             match self.pid() {
@@ -2164,6 +2199,81 @@ mod tests {
             )
             .to_string()
         )
+    }
+
+    #[fuchsia::test]
+    fn display_for_logs_highlight_timestamp() {
+        let info_data = LogsDataBuilder::new(BuilderArgs {
+            timestamp: Timestamp::from_nanos(12345678000i64),
+            component_url: Some(FlyStr::from("fake-url")),
+            moniker: ExtendedMoniker::parse_str("moniker").unwrap(),
+            severity: Severity::Info,
+        })
+        .set_pid(123)
+        .set_tid(456)
+        .set_message("some message".to_string())
+        .build();
+
+        assert_eq!(
+            format!(
+                "{}[00012.345678]{}[123][456][moniker] INFO: some message{}",
+                color::Fg(color::Cyan),
+                style::Reset,
+                style::Reset
+            ),
+            LogTextPresenter::new(
+                &info_data,
+                LogTextDisplayOptions {
+                    color: LogTextColor::BySeverity,
+                    highlight_timestamp: true,
+                    ..Default::default()
+                }
+            )
+            .to_string()
+        );
+
+        let error_data = LogsDataBuilder::new(BuilderArgs {
+            timestamp: Timestamp::from_nanos(12345678000i64),
+            component_url: Some(FlyStr::from("fake-url")),
+            moniker: ExtendedMoniker::parse_str("moniker").unwrap(),
+            severity: Severity::Error,
+        })
+        .set_pid(123)
+        .set_tid(456)
+        .set_message("error message".to_string())
+        .build();
+
+        assert_eq!(
+            format!(
+                "{}[00012.345678]{}{}[123][456][moniker] ERROR: error message{}",
+                color::Fg(color::Cyan),
+                style::Reset,
+                color::Fg(color::Red),
+                style::Reset
+            ),
+            LogTextPresenter::new(
+                &error_data,
+                LogTextDisplayOptions {
+                    color: LogTextColor::BySeverity,
+                    highlight_timestamp: true,
+                    ..Default::default()
+                }
+            )
+            .to_string()
+        );
+
+        assert_eq!(
+            "[00012.345678][123][456][moniker] ERROR: error message",
+            LogTextPresenter::new(
+                &error_data,
+                LogTextDisplayOptions {
+                    color: LogTextColor::None,
+                    highlight_timestamp: true,
+                    ..Default::default()
+                }
+            )
+            .to_string()
+        );
     }
 
     #[fuchsia::test]
