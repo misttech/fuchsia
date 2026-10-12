@@ -956,6 +956,23 @@ fn process_fxt_record(
             let mut blob_regs = bytes[offset..offset + REGS_BYTES].to_vec();
             offset += regs_size;
 
+            // The memory captures that follow the registers: the
+            // thread-state stack, then, for a thread sampled while
+            // running Starnix code, the restricted-state struct and
+            // (if it could be read) the stack at the guest SP.
+            let mut chunks = Vec::<(u64, &[u8])>::new();
+            while offset + 16 <= bytes.len() {
+                let chunk_base = u64::from_ne_bytes(bytes[offset..offset + 8].try_into().unwrap());
+                offset += 8;
+                let chunk_size = u64::from_ne_bytes(bytes[offset..offset + 8].try_into().unwrap());
+                offset += 8;
+                if offset + chunk_size as usize > bytes.len() {
+                    break;
+                }
+                chunks.push((chunk_base, &bytes[offset..offset + chunk_size as usize]));
+                offset += chunk_size as usize;
+            }
+
             if is_32bit {
                 // Zircon reports the AArch32 PC in the pc slot
                 // (index 32). 64-bit readers take it from there,
@@ -989,21 +1006,13 @@ fn process_fxt_record(
             // restricted-state struct, and a restricted-SP
             // stack); selecting by SP keeps the registers and the
             // stack bytes coherent.
-            let mut stack: &[u8] = &[];
-            while offset + 16 <= bytes.len() {
-                let chunk_base = u64::from_ne_bytes(bytes[offset..offset + 8].try_into().unwrap());
-                offset += 8;
-                let chunk_size = u64::from_ne_bytes(bytes[offset..offset + 8].try_into().unwrap());
-                offset += 8;
-                if offset + chunk_size as usize > bytes.len() {
-                    break;
-                }
-                let data = &bytes[offset..offset + chunk_size as usize];
-                offset += chunk_size as usize;
-                if stack.is_empty() && chunk_base <= sp && sp < chunk_base + chunk_size {
-                    stack = &data[(sp - chunk_base) as usize..];
-                }
-            }
+            let stack: &[u8] = chunks
+                .iter()
+                .find_map(|&(chunk_base, data)| {
+                    (chunk_base <= sp && sp - chunk_base < data.len() as u64)
+                        .then(|| &data[(sp - chunk_base) as usize..])
+                })
+                .unwrap_or(&[]);
             if stack.is_empty() {
                 // No capture covers the sampled SP; the sample
                 // cannot be unwound.
