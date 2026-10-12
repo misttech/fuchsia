@@ -148,7 +148,7 @@ if (is_host) {
   host_test_data("e2e_githooks_scripts") {
     sources = [
       "//scripts/shac/commit_msg_checker.py",
-      "//scripts/style/json-fmt.py",
+      "//scripts/shac/json_format.py",
     ]
   }
 

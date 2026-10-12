@@ -59,6 +59,7 @@ def _json_format(ctx):
         fuchsia_dir,
         platform,
     )
+    formatter_script = "%s/scripts/shac/json_format.py" % fuchsia_dir
 
     procs = []
     for f in json_files:
@@ -68,7 +69,13 @@ def _json_format(ctx):
             temp,
             os_exec(
                 ctx,
-                [python_bin, "scripts/shac/json_format.py", "--no-sort-keys", "--quiet", temp],
+                [
+                    python_bin,
+                    formatter_script,
+                    "--no-sort-keys",
+                    "--quiet",
+                    temp,
+                ],
                 ok_retcodes = (0, 1),
             ),
         ))

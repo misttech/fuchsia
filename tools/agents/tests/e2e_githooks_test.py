@@ -5,8 +5,6 @@
 
 """End-to-end Git hooks integration test suite validating real platform tools."""
 
-from __future__ import annotations
-
 import os
 import pathlib
 import shutil
@@ -14,22 +12,32 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Collection, Mapping
 
-from agents.lib import githooks
-from agents.lib.paths import find_fuchsia_dir
+from agents.lib import githooks, paths
 
 
-def _find_bundled_tool(rel_path: str) -> pathlib.Path | None:
-    """Locates a runtime dependency tool from the Fuchsia checkout."""
+def _find_bundled_tool(relative_path: str) -> pathlib.Path | None:
+    """Locates a runtime dependency tool from the Fuchsia checkout.
+
+    Args:
+        relative_path: Relative path from the Fuchsia root to the tool file.
+
+    Returns:
+        Resolved `pathlib.Path` to the tool if found, or `None` if the checkout
+        root cannot be located or the tool file does not exist.
+    """
     try:
-        fuchsia_dir = find_fuchsia_dir()
-        cand = fuchsia_dir / rel_path
-        return cand if cand.is_file() else None
+        fuchsia_dir = paths.find_fuchsia_dir()
     except RuntimeError:
         return None
+    candidate = fuchsia_dir / relative_path
+    if candidate.is_file():
+        return candidate
+    return None
 
 
-MOCK_FX_WRAPPER_TEMPLATE = r"""#!/usr/bin/env fuchsia-vendored-python
+_MOCK_FX_WRAPPER_TEMPLATE = r"""#!/usr/bin/env fuchsia-vendored-python
 import os
 import sys
 import subprocess
@@ -56,7 +64,7 @@ if args[0] == "format-code":
     for jf in json_files:
         if json_fmt and Path(json_fmt).is_file():
             res = subprocess.run(
-                [sys.executable, json_fmt, "--no-sort-keys", "--ignore-errors", "--quiet", jf],
+                [sys.executable, json_fmt, "--no-sort-keys", "--quiet", jf],
                 capture_output=True,
                 text=True,
             )
@@ -80,7 +88,7 @@ if args[0] == "lint":
     sys.exit(0)
 """
 
-MOCK_JIRI_DISPATCHER_TEMPLATE = (
+_MOCK_JIRI_DISPATCHER_TEMPLATE = (
     "#!/bin/sh\n"
     'HOOK_NAME="{hook_name}"\n'
     'GIT_HOOKS_DIR="$(git rev-parse --git-path hooks 2>/dev/null || echo "$PWD/.git/hooks")"\n'
@@ -106,42 +114,53 @@ def _init_git_repo(
     user_email: str,
     install_jiri_dispatchers: bool = True,
 ) -> None:
-    """Initializes a git repository with standard test config and mock dispatchers."""
-    git_env = {
-        **os.environ,
+    """Initializes a git repository with standard test config and mock dispatchers.
+
+    Args:
+        repo_dir: Directory where the git repository should be initialized.
+        user_name: Git `user.name` configuration value.
+        user_email: Git `user.email` configuration value.
+        install_jiri_dispatchers: Whether to install mock Jiri hook dispatchers.
+    """
+    git_env = os.environ | {
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_NOSYSTEM": "1",
     }
-    for cmd in (
+    for command in (
         ["git", "init", "--template=", "-b", "main"],
         ["git", "config", "user.name", user_name],
         ["git", "config", "user.email", user_email],
         ["git", "config", "commit.gpgsign", "false"],
     ):
         subprocess.run(
-            cmd, cwd=repo_dir, check=True, capture_output=True, env=git_env
+            command,
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
+            env=git_env,
         )
 
     if install_jiri_dispatchers:
         hooks_dir = repo_dir / ".git" / "hooks"
         hooks_dir.mkdir(parents=True, exist_ok=True)
-        for h in ("pre-commit", "commit-msg", "pre-push"):
-            hook_file = hooks_dir / h
+        for hook_name in ("pre-commit", "commit-msg", "pre-push"):
+            hook_file = hooks_dir / hook_name
             hook_file.write_text(
-                MOCK_JIRI_DISPATCHER_TEMPLATE.format(hook_name=h),
+                _MOCK_JIRI_DISPATCHER_TEMPLATE.format(hook_name=hook_name),
                 encoding="utf-8",
             )
             hook_file.chmod(0o755)
 
 
 class RealHooksWorkspaceFixture:
-    """Fixture creating an isolated Git workspace configured with real platform tools."""
+    """An isolated Git workspace configured with real platform tools."""
 
     def __init__(self) -> None:
+        """Initializes clean and hook-enabled workspace templates."""
         self.commit_msg_checker = _find_bundled_tool(
             "scripts/shac/commit_msg_checker.py"
         )
-        self.json_fmt = _find_bundled_tool("scripts/style/json-fmt.py")
+        self.json_fmt = _find_bundled_tool("scripts/shac/json_format.py")
 
         self.template_dir_clean = pathlib.Path(
             tempfile.mkdtemp(prefix="real_hooks_clean_template_")
@@ -157,6 +176,7 @@ class RealHooksWorkspaceFixture:
             raise
 
     def cleanup(self) -> None:
+        """Removes temporary template directories created by this fixture."""
         if self.template_dir_clean.exists():
             shutil.rmtree(self.template_dir_clean, ignore_errors=True)
         if self.template_dir_with_hooks.exists():
@@ -167,8 +187,7 @@ class RealHooksWorkspaceFixture:
         (root / ".jiri_root").mkdir(parents=True, exist_ok=True)
         (root / ".fx-root").touch(exist_ok=True)
 
-        git_env = {
-            **os.environ,
+        git_env = os.environ | {
             "GIT_CONFIG_GLOBAL": "/dev/null",
             "GIT_CONFIG_NOSYSTEM": "1",
         }
@@ -232,7 +251,7 @@ class RealHooksWorkspaceFixture:
         bin_dir.mkdir(parents=True, exist_ok=True)
 
         fx_script = bin_dir / "fx"
-        fx_script.write_text(MOCK_FX_WRAPPER_TEMPLATE, encoding="utf-8")
+        fx_script.write_text(_MOCK_FX_WRAPPER_TEMPLATE, encoding="utf-8")
         fx_script.chmod(0o755)
 
         python_bin = scripts_dir / "fuchsia-vendored-python"
@@ -240,14 +259,17 @@ class RealHooksWorkspaceFixture:
 
         shac_dir = scripts_dir / "shac"
         shac_dir.mkdir(parents=True, exist_ok=True)
-        if self.commit_msg_checker and self.commit_msg_checker.is_file():
+        if (
+            self.commit_msg_checker is not None
+            and self.commit_msg_checker.is_file()
+        ):
             (shac_dir / "commit_msg_checker.py").symlink_to(
                 self.commit_msg_checker
             )
 
         tools_dir = root / "tools"
         tools_dir.mkdir(parents=True, exist_ok=True)
-        fuchsia_root = find_fuchsia_dir()
+        fuchsia_root = paths.find_fuchsia_dir()
         shutil.copytree(
             fuchsia_root / "tools" / "agents",
             tools_dir / "agents",
@@ -261,23 +283,33 @@ class RealHooksWorkspaceFixture:
             dirs_exist_ok=True,
             symlinks=True,
         )
-        res = githooks.install_git_hooks(self.template_dir_with_hooks)
-        if res.failed:
+        install_result = githooks.install_git_hooks(
+            self.template_dir_with_hooks
+        )
+        if install_result.failed:
             raise RuntimeError(
-                f"Failed to pre-install dev hooks in template: {res.failed}"
+                f"Failed to pre-install dev hooks in template: {install_result.failed}"
             )
 
     def create_isolated_workspace(
         self, prefix: str = "real_hooks_test_", with_hooks: bool = True
     ) -> pathlib.Path:
+        """Creates an isolated workspace copy from the prepared template.
+
+        Args:
+            prefix: Temporary directory name prefix.
+            with_hooks: Whether to copy the template with pre-installed hooks.
+
+        Returns:
+            Path to the newly created temporary workspace directory.
+        """
         temp_dir = pathlib.Path(tempfile.mkdtemp(prefix=prefix))
-        src_template = (
-            self.template_dir_with_hooks
-            if with_hooks
-            else self.template_dir_clean
-        )
+        if with_hooks:
+            source_template = self.template_dir_with_hooks
+        else:
+            source_template = self.template_dir_clean
         shutil.copytree(
-            src_template, temp_dir, dirs_exist_ok=True, symlinks=True
+            source_template, temp_dir, dirs_exist_ok=True, symlinks=True
         )
         return temp_dir
 
@@ -293,20 +325,20 @@ class E2EGitHooksTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        if not shutil.which("git"):
+        if shutil.which("git") is None:
             raise unittest.SkipTest(
                 "git binary not available in test environment"
             )
         super().setUpClass()
         cls.fixture = RealHooksWorkspaceFixture()
         cls.addClassCleanup(cls.fixture.cleanup)
-        if not cls.fixture.commit_msg_checker:
+        if cls.fixture.commit_msg_checker is None:
             raise unittest.SkipTest(
                 "commit_msg_checker.py could not be located in test dependencies or checkout"
             )
-        if not cls.fixture.json_fmt:
+        if cls.fixture.json_fmt is None:
             raise unittest.SkipTest(
-                "json-fmt.py could not be located in test dependencies or checkout"
+                "json_format.py could not be located in test dependencies or checkout"
             )
 
     def _run_git(
@@ -314,36 +346,39 @@ class E2EGitHooksTest(unittest.TestCase):
         *args: str,
         cwd: pathlib.Path,
         check: bool = False,
-        extra_env: dict[str, str] | None = None,
-        remove_env: tuple[str, ...] = (),
+        extra_env: Mapping[str, str] | None = None,
+        remove_env: Collection[str] = (),
     ) -> subprocess.CompletedProcess[str]:
-        env = dict(os.environ)
         try:
-            top = find_fuchsia_dir(cwd)
+            top = paths.find_fuchsia_dir(cwd)
         except RuntimeError:
             try:
-                res = subprocess.run(
+                completed_process = subprocess.run(
                     ["git", "rev-parse", "--git-common-dir"],
                     cwd=cwd,
                     capture_output=True,
                     text=True,
                     check=True,
                 )
-                common = pathlib.Path(res.stdout.strip())
+            except (subprocess.CalledProcessError, OSError):
+                top = cwd
+            else:
+                common = pathlib.Path(completed_process.stdout.strip())
                 if not common.is_absolute():
                     common = (cwd / common).resolve()
-                top = find_fuchsia_dir(common.parent)
-            except Exception:
-                top = cwd
+                try:
+                    top = paths.find_fuchsia_dir(common.parent)
+                except RuntimeError:
+                    top = cwd
 
         bin_dir = str(top / "bin")
         scripts_dir = str(top / "scripts")
-        env["PATH"] = f"{bin_dir}:{scripts_dir}:{env.get('PATH', '')}"
+        if self.fixture.json_fmt is not None:
+            json_fmt_env = {"REAL_JSON_FMT": str(self.fixture.json_fmt)}
+        else:
+            json_fmt_env = {}
 
-        if self.fixture.json_fmt:
-            env["REAL_JSON_FMT"] = str(self.fixture.json_fmt)
-
-        sanitize_vars = (
+        excluded_vars = {
             "FUCHSIA_SKIP_HOOKS",
             "ANTIGRAVITY_AGENT",
             "GEMINI_CLI",
@@ -354,14 +389,22 @@ class E2EGitHooksTest(unittest.TestCase):
             "GIT_INDEX_FILE",
             "GIT_OBJECT_DIRECTORY",
             "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        }
+        base_env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in excluded_vars
+        }
+        env = (
+            base_env
+            | {
+                "PATH": f"{bin_dir}:{scripts_dir}:{os.environ.get('PATH', '')}",
+                "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "FUCHSIA_DIR": str(top),
+            }
+            | json_fmt_env
         )
-        for var in sanitize_vars:
-            env.pop(var, None)
-
-        env["GIT_CONFIG_GLOBAL"] = "/dev/null"
-        env["GIT_CONFIG_NOSYSTEM"] = "1"
-        env["FUCHSIA_DIR"] = str(top)
-
         for key in remove_env:
             env.pop(key, None)
         if extra_env:
@@ -393,18 +436,20 @@ class E2EGitHooksTest(unittest.TestCase):
         foo_json.write_text(unformatted_content, encoding="utf-8")
         self._run_git("add", "src/foo.json", cwd=workspace, check=True)
 
-        msg = (
+        commit_message = (
             "[test] Multi-language format\n\n"
             "Bug: 1234\n"
             "Test: none\n"
             "Change-Id: I0000000000000000000000000000000000000020\n"
         )
         # 1. Human developer commit: pre-commit hook is skipped; file is committed unformatted
-        res_human = self._run_git("commit", "-m", msg, cwd=workspace)
+        human_result = self._run_git(
+            "commit", "-m", commit_message, cwd=workspace
+        )
         self.assertEqual(
-            res_human.returncode,
+            human_result.returncode,
             0,
-            f"Human commit should succeed: {res_human.stderr}\n{res_human.stdout}",
+            f"Human commit should succeed: {human_result.stderr}\n{human_result.stdout}",
         )
         show_json_human = self._run_git(
             "show", "HEAD:src/foo.json", cwd=workspace, check=True
@@ -417,17 +462,17 @@ class E2EGitHooksTest(unittest.TestCase):
         self._run_git("add", "src/bar.json", cwd=workspace, check=True)
 
         # Agent commit: pre-commit hook runs, auto-formats and re-stages
-        res_agent = self._run_git(
+        agent_result = self._run_git(
             "commit",
             "-m",
-            msg,
+            commit_message,
             cwd=workspace,
             extra_env={"ANTIGRAVITY_AGENT": "1"},
         )
         self.assertEqual(
-            res_agent.returncode,
+            agent_result.returncode,
             0,
-            f"Agent commit should succeed with auto-formatting: {res_agent.stderr}\n{res_agent.stdout}",
+            f"Agent commit should succeed with auto-formatting: {agent_result.stderr}\n{agent_result.stdout}",
         )
 
         expected_formatted = (
@@ -441,10 +486,10 @@ class E2EGitHooksTest(unittest.TestCase):
             bar_json.read_text(encoding="utf-8"), expected_formatted
         )
 
-        status_res = self._run_git(
+        status_result = self._run_git(
             "status", "--porcelain", cwd=workspace, check=True
         )
-        self.assertEqual(status_res.stdout.strip(), "")
+        self.assertEqual(status_result.stdout.strip(), "")
 
     def test_e2e_pre_commit_blocks_partial_staging_conflict(self) -> None:
         """Verifies that a partially staged file with formatting violations blocks agent commit."""
@@ -467,21 +512,21 @@ class E2EGitHooksTest(unittest.TestCase):
         )
         foo_json.write_text(unstaged_content, encoding="utf-8")
 
-        msg = (
+        commit_message = (
             "[test] Partial staging conflict\n\n"
             "Bug: 1234\n"
             "Test: none\n"
             "Change-Id: I0000000000000000000000000000000000000031\n"
         )
-        res = self._run_git(
+        result = self._run_git(
             "commit",
             "-m",
-            msg,
+            commit_message,
             cwd=workspace,
             extra_env={"ANTIGRAVITY_AGENT": "1"},
         )
         self.assertEqual(
-            res.returncode,
+            result.returncode,
             1,
             "Commit must fail when partially staged file has formatting violations",
         )
@@ -493,7 +538,7 @@ class E2EGitHooksTest(unittest.TestCase):
         self.assertEqual(show_index.stdout, staged_content)
         self.assertIn(
             "Formatting or check failure on partially staged files",
-            res.stderr + res.stdout,
+            result.stderr + result.stdout,
         )
 
     def test_e2e_commit_msg_enforcement(self) -> None:
@@ -501,7 +546,7 @@ class E2EGitHooksTest(unittest.TestCase):
         workspace = self.fixture.create_isolated_workspace()
         self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
 
-        warning_msg = (
+        warning_message = (
             "[tools][agents] This commit message subject is excessively long and exceeds the sixty-five character limit\n\n"
             "This line is intentionally crafted to exceed the maximum seventy-two character limit for body wrapping.\n\n"
             "Bug: 1234\n"
@@ -510,35 +555,37 @@ class E2EGitHooksTest(unittest.TestCase):
             "TAG=agy\n"
         )
 
-        # Human developer (is_agent=False): commit passes with advisory warnings
-        res_human = self._run_git(
-            "commit", "--allow-empty", "-m", warning_msg, cwd=workspace
-        )
-        self.assertEqual(
-            res_human.returncode,
-            0,
-            f"Human commit should pass with advisory warnings: {res_human.stderr}",
-        )
-        output_human = res_human.stdout + res_human.stderr
-        self.assertIn("Subject line exceeds 65 characters", output_human)
-        self.assertIn("exceeds 72 characters", output_human)
+        with self.subTest(actor="human"):
+            # Human developer (is_agent=False): commit passes with advisory warnings
+            human_result = self._run_git(
+                "commit", "--allow-empty", "-m", warning_message, cwd=workspace
+            )
+            self.assertEqual(
+                human_result.returncode,
+                0,
+                f"Human commit should pass with advisory warnings: {human_result.stderr}",
+            )
+            output_human = human_result.stdout + human_result.stderr
+            self.assertIn("Subject line exceeds 65 characters", output_human)
+            self.assertIn("exceeds 72 characters", output_human)
 
-        # Agent developer (ANTIGRAVITY_AGENT=1): commit fails closed on style warnings
-        res_agent = self._run_git(
-            "commit",
-            "--allow-empty",
-            "-m",
-            warning_msg,
-            cwd=workspace,
-            extra_env={"ANTIGRAVITY_AGENT": "1"},
-        )
-        self.assertEqual(
-            res_agent.returncode,
-            1,
-            "Agent commit should fail strictly on style violations",
-        )
-        output_agent = res_agent.stdout + res_agent.stderr
-        self.assertIn("Subject line exceeds 65 characters", output_agent)
+        with self.subTest(actor="agent"):
+            # Agent developer (ANTIGRAVITY_AGENT=1): commit fails closed on style warnings
+            agent_result = self._run_git(
+                "commit",
+                "--allow-empty",
+                "-m",
+                warning_message,
+                cwd=workspace,
+                extra_env={"ANTIGRAVITY_AGENT": "1"},
+            )
+            self.assertEqual(
+                agent_result.returncode,
+                1,
+                "Agent commit should fail strictly on style violations",
+            )
+            output_agent = agent_result.stdout + agent_result.stderr
+            self.assertIn("Subject line exceeds 65 characters", output_agent)
 
     def test_e2e_worktree_execution(self) -> None:
         """Verifies that hooks function properly in a linked Git worktree."""
@@ -551,58 +598,58 @@ class E2EGitHooksTest(unittest.TestCase):
             script_args=["pre-commit"],
         )
 
-        wt_temp = pathlib.Path(tempfile.mkdtemp(prefix="e2e_wt_"))
-        self.addCleanup(shutil.rmtree, wt_temp, ignore_errors=True)
-        wt_dir = wt_temp / "wt1"
+        worktree_temp = pathlib.Path(tempfile.mkdtemp(prefix="e2e_wt_"))
+        self.addCleanup(shutil.rmtree, worktree_temp, ignore_errors=True)
+        worktree_dir = worktree_temp / "wt1"
         self._run_git(
             "worktree",
             "add",
-            str(wt_dir),
+            str(worktree_dir),
             "-b",
             "wt-branch",
             cwd=workspace,
             check=True,
         )
 
-        wt_json = wt_dir / "src" / "foo.json"
+        worktree_json = worktree_dir / "src" / "foo.json"
         unformatted_content = '{\n  "unformatted":   true,\n "key": "value" \n}'
-        wt_json.write_text(unformatted_content, encoding="utf-8")
-        self._run_git("add", "src/foo.json", cwd=wt_dir, check=True)
+        worktree_json.write_text(unformatted_content, encoding="utf-8")
+        self._run_git("add", "src/foo.json", cwd=worktree_dir, check=True)
 
-        msg = (
+        commit_message = (
             "[wt] Worktree commit\n\n"
             "Bug: 1234\n"
             "Test: none\n"
             "Change-Id: I0000000000000000000000000000000000000060\n"
         )
-        res = self._run_git(
+        result = self._run_git(
             "commit",
             "-m",
-            msg,
-            cwd=wt_dir,
+            commit_message,
+            cwd=worktree_dir,
             extra_env={"ANTIGRAVITY_AGENT": "1"},
             remove_env=("FUCHSIA_DIR",),
         )
         self.assertEqual(
-            res.returncode,
+            result.returncode,
             0,
-            f"Worktree commit failed: {res.stderr}\n{res.stdout}",
+            f"Worktree commit failed: {result.stderr}\n{result.stdout}",
         )
 
         expected_formatted = (
             '{\n    "unformatted": true,\n    "key": "value"\n}\n'
         )
-        show_res = self._run_git(
-            "show", "HEAD:src/foo.json", cwd=wt_dir, check=True
+        show_result = self._run_git(
+            "show", "HEAD:src/foo.json", cwd=worktree_dir, check=True
         )
-        self.assertEqual(show_res.stdout, expected_formatted)
+        self.assertEqual(show_result.stdout, expected_formatted)
         self.assertEqual(
-            wt_json.read_text(encoding="utf-8"), expected_formatted
+            worktree_json.read_text(encoding="utf-8"), expected_formatted
         )
-        status_res = self._run_git(
-            "status", "--porcelain", cwd=wt_dir, check=True
+        status_result = self._run_git(
+            "status", "--porcelain", cwd=worktree_dir, check=True
         )
-        self.assertEqual(status_res.stdout.strip(), "")
+        self.assertEqual(status_result.stdout.strip(), "")
 
     def test_e2e_commit_blocks_on_lint_failure(self) -> None:
         """Verifies that lint failures block agent and forced commits, but skip human commits."""
@@ -619,68 +666,72 @@ class E2EGitHooksTest(unittest.TestCase):
         target_file.write_text('{\n    "valid": true\n}\n', encoding="utf-8")
         self._run_git("add", "src/foo.json", cwd=workspace, check=True)
 
-        msg = (
+        commit_message = (
             "[root] Valid commit message\n\n"
             "Bug: 1234\n"
             "Test: none\n"
             "Change-Id: I0000000000000000000000000000000000000077\n"
         )
 
-        # Human developer commit skips pre-commit linting (succeeds).
-        res_human = self._run_git(
-            "commit",
-            "-m",
-            msg,
-            cwd=workspace,
-            extra_env={"FAIL_MOCK_LINT": "1"},
-        )
-        self.assertEqual(
-            res_human.returncode,
-            0,
-            f"Human commit should skip pre-commit linting: {res_human.stderr}",
-        )
+        with self.subTest(actor="human_skips_lint"):
+            # Human developer commit skips pre-commit linting (succeeds).
+            human_result = self._run_git(
+                "commit",
+                "-m",
+                commit_message,
+                cwd=workspace,
+                extra_env={"FAIL_MOCK_LINT": "1"},
+            )
+            self.assertEqual(
+                human_result.returncode,
+                0,
+                f"Human commit should skip pre-commit linting: {human_result.stderr}",
+            )
 
-        # Stage a modification so the staging pipeline has files to evaluate
+        # Stage a modification so the staging pipeline has files to evaluate.
         target_file.write_text('{\n    "valid": false\n}\n', encoding="utf-8")
         self._run_git("add", "src/foo.json", cwd=workspace, check=True)
 
-        # AI coding agent commit with a failing linter is blocked.
-        res_agent = self._run_git(
-            "commit",
-            "-m",
-            msg,
-            cwd=workspace,
-            extra_env={"GEMINI_CLI": "1", "FAIL_MOCK_LINT": "1"},
-        )
-        self.assertNotEqual(res_agent.returncode, 0)
-        self.assertIn(
-            "Mock lint failure on modified files",
-            res_agent.stderr + res_agent.stdout,
-        )
+        with self.subTest(actor="agent_failing_lint"):
+            # AI coding agent commit with a failing linter is blocked.
+            agent_result = self._run_git(
+                "commit",
+                "-m",
+                commit_message,
+                cwd=workspace,
+                extra_env={"GEMINI_CLI": "1", "FAIL_MOCK_LINT": "1"},
+            )
+            self.assertNotEqual(agent_result.returncode, 0)
+            self.assertIn(
+                "Mock lint failure on modified files",
+                agent_result.stderr + agent_result.stdout,
+            )
 
-        # Forced hook commit (FUCHSIA_FORCE_HOOKS=1) with a failing linter is blocked.
-        res_forced = self._run_git(
-            "commit",
-            "-m",
-            msg,
-            cwd=workspace,
-            extra_env={"FUCHSIA_FORCE_HOOKS": "1", "FAIL_MOCK_LINT": "1"},
-        )
-        self.assertNotEqual(res_forced.returncode, 0)
-        self.assertIn(
-            "Mock lint failure on modified files",
-            res_forced.stderr + res_forced.stdout,
-        )
+        with self.subTest(actor="forced_failing_lint"):
+            # Forced hook commit (FUCHSIA_FORCE_HOOKS=1) with a failing linter is blocked.
+            forced_result = self._run_git(
+                "commit",
+                "-m",
+                commit_message,
+                cwd=workspace,
+                extra_env={"FUCHSIA_FORCE_HOOKS": "1", "FAIL_MOCK_LINT": "1"},
+            )
+            self.assertNotEqual(forced_result.returncode, 0)
+            self.assertIn(
+                "Mock lint failure on modified files",
+                forced_result.stderr + forced_result.stdout,
+            )
 
-        # Commit succeeds once the linters pass.
-        res_ok = self._run_git(
-            "commit",
-            "-m",
-            msg,
-            cwd=workspace,
-            extra_env={"GEMINI_CLI": "1"},
-        )
-        self.assertEqual(res_ok.returncode, 0)
+        with self.subTest(actor="passing_lint"):
+            # Commit succeeds once the linters pass.
+            ok_result = self._run_git(
+                "commit",
+                "-m",
+                commit_message,
+                cwd=workspace,
+                extra_env={"GEMINI_CLI": "1"},
+            )
+            self.assertEqual(ok_result.returncode, 0)
 
     def test_e2e_commit_blocks_when_fix_pass_exits_zero(self) -> None:
         """Verifies the check pass gates even when `--fix` reports success.
@@ -702,11 +753,11 @@ class E2EGitHooksTest(unittest.TestCase):
         target_file.write_text('{\n    "valid": true\n}\n', encoding="utf-8")
         self._run_git("add", "src/foo.json", cwd=workspace, check=True)
 
-        msg = "[test] Lint gate regression\n\nBug: None\nTest: e2e"
-        res = self._run_git(
+        commit_message = "[test] Lint gate regression\n\nBug: None\nTest: e2e"
+        result = self._run_git(
             "commit",
             "-m",
-            msg,
+            commit_message,
             cwd=workspace,
             extra_env={
                 "GEMINI_CLI": "1",
@@ -714,9 +765,9 @@ class E2EGitHooksTest(unittest.TestCase):
                 "SHAC_FIX_SEMANTICS": "1",
             },
         )
-        self.assertNotEqual(res.returncode, 0)
+        self.assertNotEqual(result.returncode, 0)
         self.assertIn(
-            "Mock lint failure on modified files", res.stderr + res.stdout
+            "Mock lint failure on modified files", result.stderr + result.stdout
         )
 
     def test_e2e_multi_repo_setup_and_reset(self) -> None:
@@ -724,45 +775,52 @@ class E2EGitHooksTest(unittest.TestCase):
         workspace = self.fixture.create_isolated_workspace(with_hooks=False)
         self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
 
-        repos = [workspace, workspace / "vendor" / "google"]
+        repos = (workspace, workspace / "vendor" / "google")
 
-        status_init = githooks.get_git_hooks_status(workspace)
-        self.assertEqual(status_init.total_repos, 2)
-        self.assertEqual(status_init.configured_repos, 0)
+        with self.subTest(phase="initial_status"):
+            status_init = githooks.get_git_hooks_status(workspace)
+            self.assertEqual(status_init.total_repos, 2)
+            self.assertEqual(status_init.configured_repos, 0)
 
-        res_install = githooks.install_git_hooks(workspace)
-        self.assertEqual(res_install.failed, [])
-        self.assertTrue(len(res_install.modified) > 0)
+        with self.subTest(phase="install_hooks"):
+            install_result = githooks.install_git_hooks(workspace)
+            self.assertSequenceEqual(install_result.failed, ())
+            self.assertGreater(len(install_result.modified), 0)
 
-        for repo in repos:
-            hooks_dir = repo / ".git" / "hooks"
-            self.assertTrue(
-                (hooks_dir / "pre-push.d" / "10-fuchsia-agent.sh").is_file()
-            )
-            self.assertTrue(
-                (hooks_dir / "commit-msg.d" / "10-fuchsia-agent.sh").is_file()
-            )
+            for repo in repos:
+                hooks_dir = repo / ".git" / "hooks"
+                self.assertTrue(
+                    (hooks_dir / "pre-push.d" / "10-fuchsia-agent.sh").is_file()
+                )
+                self.assertTrue(
+                    (
+                        hooks_dir / "commit-msg.d" / "10-fuchsia-agent.sh"
+                    ).is_file()
+                )
 
-        status_installed = githooks.get_git_hooks_status(workspace)
-        self.assertEqual(status_installed.total_repos, 2)
-        self.assertEqual(status_installed.configured_repos, 2)
+            status_installed = githooks.get_git_hooks_status(workspace)
+            self.assertEqual(status_installed.total_repos, 2)
+            self.assertEqual(status_installed.configured_repos, 2)
 
-        res_uninstall = githooks.uninstall_git_hooks(workspace)
-        self.assertEqual(res_uninstall.failed, [])
-        self.assertTrue(len(res_uninstall.modified) > 0)
+        with self.subTest(phase="uninstall_hooks"):
+            uninstall_result = githooks.uninstall_git_hooks(workspace)
+            self.assertSequenceEqual(uninstall_result.failed, ())
+            self.assertGreater(len(uninstall_result.modified), 0)
 
-        for repo in repos:
-            hooks_dir = repo / ".git" / "hooks"
-            self.assertFalse(
-                (hooks_dir / "pre-push.d" / "10-fuchsia-agent.sh").exists()
-            )
-            self.assertFalse(
-                (hooks_dir / "commit-msg.d" / "10-fuchsia-agent.sh").exists()
-            )
+            for repo in repos:
+                hooks_dir = repo / ".git" / "hooks"
+                self.assertFalse(
+                    (hooks_dir / "pre-push.d" / "10-fuchsia-agent.sh").exists()
+                )
+                self.assertFalse(
+                    (
+                        hooks_dir / "commit-msg.d" / "10-fuchsia-agent.sh"
+                    ).exists()
+                )
 
-        status_uninstalled = githooks.get_git_hooks_status(workspace)
-        self.assertEqual(status_uninstalled.total_repos, 2)
-        self.assertEqual(status_uninstalled.configured_repos, 0)
+            status_uninstalled = githooks.get_git_hooks_status(workspace)
+            self.assertEqual(status_uninstalled.total_repos, 2)
+            self.assertEqual(status_uninstalled.configured_repos, 0)
 
 
 if __name__ == "__main__":
