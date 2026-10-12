@@ -784,8 +784,22 @@ fn shared_ioctl(
             error!(ENOSYS)
         }
         TIOCGSID => {
-            track_stub!(TODO("https://fxbug.dev/322894076"), "devpts ioctl TIOCGSID", is_main);
-            error!(ENOSYS)
+            if !is_main
+                && !current_task
+                    .thread_group()
+                    .controlling_terminal()
+                    .as_ref()
+                    .is_some_and(|ct| std::ptr::eq(terminal, Arc::as_ptr(&ct.terminal)))
+            {
+                return error!(ENOTTY);
+            }
+            let sid = terminal
+                .read()
+                .controlling_session()
+                .map(|sid| sid.id)
+                .ok_or_else(|| errno!(ENOTTY))?;
+            current_task.write_object(UserRef::<pid_t>::new(user_addr), &sid)?;
+            Ok(SUCCESS)
         }
         TIOCGRS485 => {
             track_stub!(TODO("https://fxbug.dev/322893728"), "devpts ioctl TIOCGRS485", is_main);
@@ -1289,6 +1303,45 @@ mod tests {
             assert!(task1.thread_group().controlling_terminal().is_some());
             assert_eq!(set_controlling_terminal(&task2, &opened_replica2, true), error!(EPERM));
             assert!(task1.thread_group().controlling_terminal().is_some());
+        })
+        .await;
+    }
+
+    #[fuchsia::test]
+    async fn test_tiocgsid() {
+        spawn_kernel_and_run(async |task1| {
+            let kernel = task1.kernel();
+            tty_device_init(kernel).expect("tty_device_init");
+            let task2 = task1.clone_task_for_test(0, Some(SIGCHLD));
+            task2.running_state().mm.update(Some(task1.mm().unwrap().clone()));
+            task2.thread_group().setsid().expect("setsid");
+
+            let fs = new_pts_fs(kernel);
+            let opened_main = open_ptmx_and_unlock(task1, &fs).expect("ptmx");
+            let opened_replica = open_file(&task2, &fs, "0".into()).expect("open file");
+
+            // Unattached terminal returns ENOTTY on both main and replica.
+            assert_eq!(ioctl::<pid_t>(task1, &opened_main, TIOCGSID, &0), error!(ENOTTY));
+            assert_eq!(ioctl::<pid_t>(&task2, &opened_replica, TIOCGSID, &0), error!(ENOTTY));
+
+            // Attach controlling session to task2.
+            set_controlling_terminal(&task2, &opened_replica, false)
+                .expect("set controlling terminal");
+            let expected_sid = task2.thread_group().read().session.id;
+
+            // Calling TIOCGSID on both main and replica from the controlling session returns SID.
+            assert_eq!(ioctl::<pid_t>(&task2, &opened_main, TIOCGSID, &0), Ok(expected_sid));
+            assert_eq!(ioctl::<pid_t>(&task2, &opened_replica, TIOCGSID, &0), Ok(expected_sid));
+
+            // From a task in a different session, TIOCGSID on the replica returns ENOTTY,
+            // whereas TIOCGSID on the main terminal succeeds and returns the controlling SID.
+            assert_eq!(ioctl::<pid_t>(task1, &opened_replica, TIOCGSID, &0), error!(ENOTTY));
+            assert_eq!(ioctl::<pid_t>(task1, &opened_main, TIOCGSID, &0), Ok(expected_sid));
+
+            // After detaching (TIOCNOTTY), TIOCGSID returns ENOTTY.
+            ioctl::<i32>(&task2, &opened_replica, TIOCNOTTY, &0).expect("detach terminal");
+            assert_eq!(ioctl::<pid_t>(&task2, &opened_main, TIOCGSID, &0), error!(ENOTTY));
+            assert_eq!(ioctl::<pid_t>(&task2, &opened_replica, TIOCGSID, &0), error!(ENOTTY));
         })
         .await;
     }

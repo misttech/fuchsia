@@ -709,14 +709,6 @@
                 "PtraceTest.ChangeRegSetInOptSyscall",
                 "PtraceTest.Sysemu_PokeUser",
 
-                // pty_test
-                // TODO(https://fxbug.dev/564607149)
-                "JobControlTest.GetSessionId",
-                "JobControlTest.GetSessionIdAfterRelease",
-                "JobControlTest.GetSessionIdMasterOutsideSession",
-                "JobControlTest.GetSessionIdNonControlling",
-                "JobControlTest.GetSessionIdNonLeader",
-
                 // rlimits_test
                 "RlimitTest.RlimitNProc",
 
