@@ -87,6 +87,13 @@ pub fn enumerate_devices() -> Result<Vec<DeviceHandle>> {
 
 /// Directly finds the USB DeviceHandle for a specific serial number by querying sysfs.
 pub fn find_device_by_serial(serial: &str) -> Result<Option<DeviceHandle>> {
+    find_device_by_serial_in_sysfs(serial, Path::new("/sys/bus/usb/devices"))
+}
+
+pub(crate) fn find_device_by_serial_in_sysfs(
+    serial: &str,
+    sysfs_dir: &Path,
+) -> Result<Option<DeviceHandle>> {
     use std::fs::{metadata, read_to_string};
     use std::os::unix::fs::MetadataExt;
     use std::str::FromStr;
@@ -96,7 +103,7 @@ pub fn find_device_by_serial(serial: &str) -> Result<Option<DeviceHandle>> {
         val.trim().parse::<F>().ok()
     }
 
-    let Ok(entries) = std::fs::read_dir("/sys/bus/usb/devices") else {
+    let Ok(entries) = std::fs::read_dir(sysfs_dir) else {
         return Ok(None);
     };
 
@@ -116,7 +123,9 @@ pub fn find_device_by_serial(serial: &str) -> Result<Option<DeviceHandle>> {
                 (file_val::<u32>(&path, "busnum"), file_val::<u32>(&path, "devnum"))
             {
                 let dev_path = format!("{}/{:03}/{:03}", USB_FS_DIR, busnum, devnum);
-                return Ok(Some(DeviceHandleInner::new(dev_path).into()));
+                return Ok(Some(
+                    DeviceHandleInner::new_with_sysfs(dev_path, serial.to_string(), path).into(),
+                ));
             }
 
             // Fallback: parse dev file major:minor and match against enumerated devices
@@ -132,7 +141,14 @@ pub fn find_device_by_serial(serial: &str) -> Result<Option<DeviceHandle>> {
                             .ok()
                             == Some((major, minor))
                         {
-                            return Ok(Some(dev));
+                            return Ok(Some(
+                                DeviceHandleInner::new_with_sysfs(
+                                    dev.debug_name(),
+                                    serial.to_string(),
+                                    path,
+                                )
+                                .into(),
+                            ));
                         }
                     }
                 }

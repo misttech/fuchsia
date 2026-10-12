@@ -39,10 +39,7 @@ impl From<usb_plat::DeviceHandleInner> for DeviceHandle {
 #[cfg(target_os = "linux")]
 impl DeviceHandle {
     pub fn from_path(path: impl AsRef<std::path::Path>) -> Self {
-        DeviceHandle(usb_plat::DeviceHandleInner {
-            hdl: path.as_ref().to_string_lossy().into_owned(),
-            serial: std::sync::OnceLock::new(),
-        })
+        DeviceHandle(usb_plat::DeviceHandleInner::new(path.as_ref().to_string_lossy().into_owned()))
     }
 }
 

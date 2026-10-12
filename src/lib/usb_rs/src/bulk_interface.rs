@@ -31,6 +31,9 @@ const MAX_IN_FLIGHT_URBS: usize = 16;
 /// at the minimum chunk size before failing the transfer.
 const MAX_ENOMEM_RETRIES: usize = 10;
 
+/// Default timeout for awaiting completion of an in-flight bulk write URB.
+pub const DEFAULT_BULK_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 fn is_out_of_memory(err: &crate::Error) -> bool {
     match err {
         crate::Error::IOError(io_err) => {
@@ -50,6 +53,7 @@ pub struct BulkInterface {
     write_future: Option<Pin<Box<dyn Future<Output = std::io::Result<usize>> + Send>>>,
     max_chunk_size: usize,
     enomem_retries: usize,
+    write_timeout: std::time::Duration,
 }
 
 impl std::fmt::Debug for BulkInterface {
@@ -59,6 +63,7 @@ impl std::fmt::Debug for BulkInterface {
             .field("write_future", &self.write_future.is_some())
             .field("max_chunk_size", &self.max_chunk_size)
             .field("enomem_retries", &self.enomem_retries)
+            .field("write_timeout", &self.write_timeout)
             .finish()
     }
 }
@@ -81,7 +86,17 @@ impl BulkInterface {
             write_future: None,
             max_chunk_size: MAX_USBFS_BULK_WRITE_SIZE,
             enomem_retries: 0,
+            write_timeout: DEFAULT_BULK_WRITE_TIMEOUT,
         }
+    }
+
+    pub fn with_write_timeout(mut self, write_timeout: std::time::Duration) -> Self {
+        self.write_timeout = write_timeout;
+        self
+    }
+
+    pub fn set_write_timeout(&mut self, write_timeout: std::time::Duration) {
+        self.write_timeout = write_timeout;
     }
 
     /// Handles an error returned by `try_write_defer_wait`.
@@ -290,10 +305,21 @@ impl AsyncWrite for BulkInterface {
                 in_flight.len()
             );
 
+            let write_timeout = self.write_timeout;
             let write_future = async move {
                 let _guard = guard;
                 while let Some(fut) = in_flight.pop_front() {
-                    fut.await.map_err(|e| {
+                    let res = tokio::time::timeout(write_timeout, fut).await.map_err(|_| {
+                        log::warn!(
+                            "Timed out after {:?} awaiting bulk URB completion",
+                            write_timeout
+                        );
+                        std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!("Timed out after {:?} writing to bulk endpoint", write_timeout),
+                        )
+                    })?;
+                    res.map_err(|e| {
                         log::warn!("Error awaiting bulk URB completion: {}", e);
                         std::io::Error::new(
                             std::io::ErrorKind::Other,

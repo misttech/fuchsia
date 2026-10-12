@@ -81,8 +81,8 @@ pub trait FastbootUsbTester: Send + 'static {
 pub struct UnversionedFastbootUsbTester;
 
 impl FastbootUsbTester for UnversionedFastbootUsbTester {
-    async fn is_fastboot_usb(&mut self, _serial: &str) -> bool {
-        true
+    async fn is_fastboot_usb(&mut self, serial: &str) -> bool {
+        !find_target_serial_in_sysfs(serial, Path::new("/sys/bus/usb/devices")).await.is_empty()
     }
 }
 
@@ -710,5 +710,57 @@ mod test {
             TargetSerialFinder::new_with_sysfs_path("fastboot-device-123", &sysfs_root);
         let results = finder.find_serial_numbers().await;
         assert_eq!(results, vec!["fastboot-device-123".to_string()]);
+    }
+
+    #[fuchsia::test]
+    async fn test_unversioned_fastboot_usb_tester_checks_interface_descriptors() {
+        struct TempSysfsDir(PathBuf);
+        impl Drop for TempSysfsDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let mut tester = UnversionedFastbootUsbTester {};
+        // A nonexistent serial must not be reported as a fastboot USB device.
+        assert!(!tester.is_fastboot_usb("nonexistent-device-serial").await);
+
+        let sysfs_root = std::env::temp_dir().join(format!(
+            "usb_fastboot_tester_sysfs_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let _guard = TempSysfsDir(sysfs_root.clone());
+
+        let dev_dir = sysfs_root.join("1-1");
+        let iface_dir = dev_dir.join("1-1:1.0");
+        std::fs::create_dir_all(&iface_dir).unwrap();
+
+        std::fs::write(dev_dir.join("serial"), "target-serial-456\n").unwrap();
+        std::fs::write(dev_dir.join("idVendor"), format!("{:04x}\n", USB_DEV_VENDOR)).unwrap();
+        std::fs::write(
+            iface_dir.join("bInterfaceClass"),
+            format!("{:02x}\n", FASTBOOT_USB_INTERFACE_CLASS),
+        )
+        .unwrap();
+        std::fs::write(
+            iface_dir.join("bInterfaceSubClass"),
+            format!("{:02x}\n", FASTBOOT_USB_INTERFACE_SUBCLASS),
+        )
+        .unwrap();
+        // Non-fastboot protocol (e.g. ADB 0x01 instead of Fastboot 0x03) must be rejected.
+        std::fs::write(iface_dir.join("bInterfaceProtocol"), "01\n").unwrap();
+        assert!(find_target_serial_in_sysfs("target-serial-456", &sysfs_root).await.is_empty());
+
+        // Matching Fastboot protocol (0x03) must be accepted.
+        std::fs::write(
+            iface_dir.join("bInterfaceProtocol"),
+            format!("{:02x}\n", FASTBOOT_USB_INTERFACE_PROTOCOL),
+        )
+        .unwrap();
+        assert_eq!(
+            find_target_serial_in_sysfs("target-serial-456", &sysfs_root).await,
+            vec!["target-serial-456".to_string()]
+        );
     }
 }

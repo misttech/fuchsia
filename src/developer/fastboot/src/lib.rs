@@ -32,6 +32,24 @@ pub const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 /// But we are leaving it at the maximum size to maximize compatibility
 const MAX_PACKET_SIZE: usize = 1024;
 const DEFAULT_READ_TIMEOUT_SECS: i64 = 30;
+const DEFAULT_WRITE_TIMEOUT_SECS: u64 = 30;
+
+async fn write_with_timeout<T: AsyncWrite + Unpin>(
+    interface: &mut T,
+    buf: &[u8],
+    timeout: std::time::Duration,
+) -> std::io::Result<()> {
+    let end_time = std::time::Instant::now() + timeout;
+    interface
+        .write_all(buf)
+        .on_timeout(end_time, || {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "timed out writing to fastboot interface",
+            ))
+        })
+        .await
+}
 
 #[derive(Debug, Clone)]
 pub struct FastbootContext {
@@ -410,12 +428,16 @@ pub async fn upload_with_read_timeout<
         }
     });
 
+    let write_timeout = std::cmp::min(
+        timeout.to_std().unwrap_or(std::time::Duration::from_secs(DEFAULT_WRITE_TIMEOUT_SECS)),
+        std::time::Duration::from_secs(DEFAULT_WRITE_TIMEOUT_SECS),
+    );
     let mut upload_err = None;
     while let Some(chunk_res) = rx.recv().await {
         match chunk_res {
             Ok(chunk) => {
                 let n = chunk.len();
-                match interface.write_all(&chunk).await {
+                match write_with_timeout(interface, &chunk, write_timeout).await {
                     Err(e) => {
                         let err = UploadError::CouldNotWriteToInterface(e);
                         log::error!("{}", err);
@@ -487,6 +509,10 @@ pub async fn upload_from_reader<T: AsyncRead + AsyncWrite + Unpin, R: Read + ?Si
     listener.on_started(size.try_into().unwrap()).await?;
     log::debug!("fastboot: writing {} bytes", size);
 
+    let write_timeout = std::cmp::min(
+        timeout.to_std().unwrap_or(std::time::Duration::from_secs(DEFAULT_WRITE_TIMEOUT_SECS)),
+        std::time::Duration::from_secs(DEFAULT_WRITE_TIMEOUT_SECS),
+    );
     let mut remaining = size as usize;
     let chunk_size = std::cmp::min(size as usize, BUFFER_SIZE);
     let mut bytes = vec![0; chunk_size];
@@ -499,7 +525,7 @@ pub async fn upload_from_reader<T: AsyncRead + AsyncWrite + Unpin, R: Read + ?Si
             Ok(0) => break,
             Ok(n) => {
                 remaining -= n;
-                match interface.write_all(&bytes[..n]).await {
+                match write_with_timeout(interface, &bytes[..n], write_timeout).await {
                     Err(e) => {
                         let err = UploadError::CouldNotWriteToInterface(e);
                         log::error!("{}", err);
@@ -985,5 +1011,115 @@ mod test {
                 .unwrap();
 
         assert_eq!(drained, DrainResult { info_count: 0, pending_reply: None });
+    }
+
+    struct MockWriteStallTransport {
+        replies: VecDeque<Vec<u8>>,
+        writes_allowed: usize,
+    }
+
+    impl MockWriteStallTransport {
+        fn new(replies: impl IntoIterator<Item = Vec<u8>>, writes_allowed: usize) -> Self {
+            Self { replies: replies.into_iter().collect(), writes_allowed }
+        }
+    }
+
+    impl AsyncRead for MockWriteStallTransport {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut [u8],
+        ) -> Poll<std::io::Result<usize>> {
+            if let Some(data) = self.replies.pop_front() {
+                buf[..data.len()].copy_from_slice(&data);
+                Poll::Ready(Ok(data.len()))
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+
+    impl AsyncWrite for MockWriteStallTransport {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            if self.writes_allowed > 0 {
+                self.writes_allowed -= 1;
+                Poll::Ready(Ok(buf.len()))
+            } else {
+                Poll::Pending
+            }
+        }
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_upload_with_read_timeout_fails_on_write_stall() {
+        let data: [u8; 1024] = [0; 1024];
+        // Allow 1 write (the "download:00000400" command), then stall on the payload write.
+        let mut transport = MockWriteStallTransport::new([b"DATA00000400".to_vec()], 1);
+        let events = Arc::new(Mutex::new(Vec::<UploadEvent>::new()));
+        let listener = PushEventsUploadProgressListener { event_queue: events.clone() };
+        let ctx = FastbootContext::new();
+
+        let res = upload_with_read_timeout(
+            ctx,
+            1024,
+            Cursor::new(data),
+            &mut transport,
+            &listener,
+            Duration::milliseconds(50),
+        )
+        .on_timeout(std::time::Instant::now() + std::time::Duration::from_millis(500), || {
+            panic!("upload_with_read_timeout hung on stalled write instead of timing out")
+        })
+        .await;
+
+        match res {
+            Err(FastbootError::Upload(UploadError::CouldNotWriteToInterface(ref e)))
+                if e.kind() == std::io::ErrorKind::TimedOut => {}
+            other => {
+                panic!("Expected UploadError::CouldNotWriteToInterface(TimedOut), got {other:?}")
+            }
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_upload_from_reader_fails_on_write_stall() {
+        let data: [u8; 1024] = [0; 1024];
+        // Allow 1 write (the "download:00000400" command), then stall on the payload write.
+        let mut transport = MockWriteStallTransport::new([b"DATA00000400".to_vec()], 1);
+        let events = Arc::new(Mutex::new(Vec::<UploadEvent>::new()));
+        let listener = PushEventsUploadProgressListener { event_queue: events.clone() };
+        let ctx = FastbootContext::new();
+        let mut reader = &data[..];
+
+        let res = upload_from_reader(
+            ctx,
+            1024,
+            &mut reader,
+            &mut transport,
+            &listener,
+            Duration::milliseconds(50),
+        )
+        .on_timeout(std::time::Instant::now() + std::time::Duration::from_millis(500), || {
+            panic!("upload_from_reader hung on stalled write instead of timing out")
+        })
+        .await;
+
+        match res {
+            Err(FastbootError::Upload(UploadError::CouldNotWriteToInterface(ref e)))
+                if e.kind() == std::io::ErrorKind::TimedOut => {}
+            other => {
+                panic!("Expected UploadError::CouldNotWriteToInterface(TimedOut), got {other:?}")
+            }
+        }
     }
 }

@@ -37,6 +37,7 @@ static SYSFS_DEVICES_DIR: &str = "/sys/bus/usb/devices";
 pub struct DeviceHandleInner {
     pub(crate) hdl: String,
     pub(crate) serial: std::sync::OnceLock<Option<String>>,
+    pub(crate) sysfs_path: std::sync::OnceLock<Option<std::path::PathBuf>>,
 }
 
 /// Represents a USB device with its major and minor numbers.
@@ -116,12 +117,32 @@ where
 
 impl DeviceHandleInner {
     pub(crate) fn new(hdl: String) -> DeviceHandleInner {
-        DeviceHandleInner { hdl, serial: std::sync::OnceLock::new() }
+        DeviceHandleInner {
+            hdl,
+            serial: std::sync::OnceLock::new(),
+            sysfs_path: std::sync::OnceLock::new(),
+        }
+    }
+
+    pub(crate) fn new_with_sysfs(
+        hdl: String,
+        serial: String,
+        sysfs_path: std::path::PathBuf,
+    ) -> DeviceHandleInner {
+        let serial_lock = std::sync::OnceLock::new();
+        let _ = serial_lock.set(Some(serial));
+        let sysfs_lock = std::sync::OnceLock::new();
+        let _ = sysfs_lock.set(Some(sysfs_path));
+        DeviceHandleInner { hdl, serial: serial_lock, sysfs_path: sysfs_lock }
     }
 
     pub fn sysfs_path(&self) -> Option<std::path::PathBuf> {
-        let devid = DeviceId::from_path(&self.hdl).ok()?;
-        find_sysfs_path(&devid)
+        self.sysfs_path
+            .get_or_init(|| {
+                let devid = DeviceId::from_path(&self.hdl).ok()?;
+                find_sysfs_path(&devid)
+            })
+            .clone()
     }
 
     pub fn serial(&self) -> Option<String> {
@@ -1138,6 +1159,9 @@ mod test {
         max_in_flight: AtomicUsize,
         current_in_flight: AtomicUsize,
         reap_delay_ms: AtomicU64,
+        stall_out_writes: std::sync::atomic::AtomicBool,
+        stalled_out_urbs: Mutex<Vec<*mut usbdevfs_urb>>,
+        discarded_out_urbs: AtomicUsize,
     }
 
     impl FakeDev {
@@ -1217,6 +1241,9 @@ mod test {
                 max_in_flight: AtomicUsize::new(usize::MAX),
                 current_in_flight: AtomicUsize::new(0),
                 reap_delay_ms: AtomicU64::new(0),
+                stall_out_writes: std::sync::atomic::AtomicBool::new(false),
+                stalled_out_urbs: Mutex::new(Vec::new()),
+                discarded_out_urbs: AtomicUsize::new(0),
             };
             self.fake_devs.lock().insert(ret.as_raw_fd(), Arc::new(fake_dev));
             ret
@@ -1347,6 +1374,11 @@ mod test {
             match endpoint.direction() {
                 EndpointDirection::Out => {
                     assert!(urb.flags == 0 || urb.flags == USBDEVFS_URB_ZERO_PACKET);
+                    if dev.stall_out_writes.load(Ordering::Relaxed) {
+                        dev.current_in_flight.fetch_add(1, Ordering::Relaxed);
+                        dev.stalled_out_urbs.lock().push(urb_ptr);
+                        return Ok(());
+                    }
                     // SAFETY: The crate under test should never pass us an invalid pointer.
                     let data = unsafe {
                         std::slice::from_raw_parts(
@@ -1389,6 +1421,7 @@ mod test {
         }
 
         fn discard_urb(&self, fd: RawFd, urb: *mut usbdevfs_urb) -> Result<(), std::io::Error> {
+            let urb_ptr = urb;
             // SAFETY: The crate under test should never pass us an invalid pointer.
             let urb = unsafe { urb.as_mut().unwrap() };
             let dev = self.get_dev(fd)?;
@@ -1401,7 +1434,26 @@ mod test {
             let buffer = buffers.entry(endpoint.address).or_default();
 
             match endpoint.direction() {
-                EndpointDirection::Out => Err(std::io::Error::from_raw_os_error(libc::ENOENT)),
+                EndpointDirection::Out => {
+                    let mut stalled = dev.stalled_out_urbs.lock();
+                    let mut found = false;
+                    stalled.retain(|x| {
+                        if std::ptr::addr_eq(*x, urb_ptr) {
+                            found = true;
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    if found {
+                        urb.status = -libc::ENOENT;
+                        dev.discarded_out_urbs.fetch_add(1, Ordering::Relaxed);
+                        let _ = dev.reap_sender.send(urb_ptr);
+                        Ok(())
+                    } else {
+                        Err(std::io::Error::from_raw_os_error(libc::ENOENT))
+                    }
+                }
                 EndpointDirection::In => {
                     let EndpointBuffer::WaitingReaders(readers) = buffer else {
                         return Err(std::io::Error::from_raw_os_error(libc::ENOENT));
@@ -1646,6 +1698,43 @@ mod test {
     }
 
     #[fuchsia::test]
+    async fn bulk_interface_write_timeout_cancels_in_flight_urbs() {
+        let env = FakeUSBEnv::new();
+        let descriptor = InterfaceDescriptor {
+            id: 0,
+            class: 0xff,
+            subclass: 0x42,
+            protocol: 22,
+            alternate: 64,
+            endpoints: vec![EndpointDescriptor { ty: EndpointType::Bulk, address: 1 }],
+        };
+        let iface = env.new_fake_dev(descriptor);
+        let fd = iface.inner.file.as_raw_fd();
+        let dev = env.get_dev(fd).unwrap();
+
+        // Simulate USB Bulk OUT endpoint stall where URBs are submitted but never complete.
+        dev.stall_out_writes.store(true, Ordering::Relaxed);
+
+        let mut bulk =
+            BulkInterface::new(iface).with_write_timeout(std::time::Duration::from_millis(30));
+        let payload = vec![0x55u8; 64 * 1024];
+
+        let write_res =
+            tokio::time::timeout(std::time::Duration::from_millis(300), bulk.write_all(&payload))
+                .await
+                .expect(
+                    "BulkInterface::write_all hung on stalled Bulk OUT URB instead of timing out",
+                );
+
+        let err = write_res.expect_err("Expected write_all to fail on stalled Bulk OUT URB");
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+        assert!(
+            dev.discarded_out_urbs.load(Ordering::Relaxed) > 0,
+            "Expected stalled in-flight Bulk OUT URBs to be discarded on timeout"
+        );
+    }
+
+    #[fuchsia::test]
     async fn submit_urb_cleans_up_on_submission_error() {
         let env = FakeUSBEnv::new();
         let descriptor = InterfaceDescriptor {
@@ -1729,5 +1818,24 @@ mod test {
         wait_fut.await.expect("Write should complete");
         assert_eq!(iface.inner.pending_urbs.load(Ordering::Relaxed), 0);
         assert_eq!(dev.endpoint_read_from_target(1).unwrap().as_ref(), b"hello");
+    }
+
+    #[fuchsia::test]
+    async fn find_device_by_serial_populates_sysfs_and_serial() {
+        let sysfs_root = tempfile::tempdir().unwrap();
+        let dev_dir = sysfs_root.path().join("1-2");
+        std::fs::create_dir_all(&dev_dir).unwrap();
+        std::fs::write(dev_dir.join("serial"), "test-serial-789\n").unwrap();
+        std::fs::write(dev_dir.join("busnum"), "1\n").unwrap();
+        std::fs::write(dev_dir.join("devnum"), "5\n").unwrap();
+        std::fs::write(dev_dir.join("speed"), "5000\n").unwrap();
+
+        let dev = discovery::find_device_by_serial_in_sysfs("test-serial-789", sysfs_root.path())
+            .unwrap()
+            .expect("Expected to find device by serial in sysfs");
+        assert_eq!(dev.debug_name(), "/dev/bus/usb/001/005");
+        assert_eq!(dev.serial().as_deref(), Some("test-serial-789"));
+        assert_eq!(dev.sysfs_path(), Some(dev_dir));
+        assert_eq!(dev.speed(), Some(crate::UsbSpeed::Super));
     }
 }
