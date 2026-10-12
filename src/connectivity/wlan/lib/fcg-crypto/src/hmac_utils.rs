@@ -176,6 +176,7 @@ mod tests {
     // explicitly; instead we test them against the test vectors for a step of an example SAE
     // exchange that exercises the construction.
     const TEST_GROUP: EcGroupId = EcGroupId::P256;
+    const TEST_P: &'static str = "ffffffff00000001000000000000000000000000ffffffffffffffffffffffff";
     const TEST_LABEL: &'static str = "SAE Hunting and Pecking";
     const TEST_H_1: &'static str =
         "a9025368ef78f7d65e8d4d556f0d1d0d758f2f7f1e116eb1d11307a7e8a9621a";
@@ -226,11 +227,9 @@ mod tests {
 
     #[test]
     fn test_kdf_sha256_256() {
-        let bignumctx = BignumCtx::new().unwrap();
         let group = EcGroup::new(TEST_GROUP).unwrap();
-        let p = group.get_params(&bignumctx).unwrap().p;
-        let p_vec = p.to_be_vec(p.len());
-        let p_bits = p.bits();
+        let p_vec = hex::decode(TEST_P).unwrap();
+        let p_bits = group.get_degree();
 
         let cand_1 =
             kdf_hash_length::<Sha256>(&hex::decode(TEST_H_1).unwrap(), TEST_LABEL, &p_vec, p_bits);
@@ -309,10 +308,8 @@ mod tests {
 
     #[test]
     fn test_hkdf_expand() {
-        let bignumctx = BignumCtx::new().unwrap();
         let group = EcGroup::new(TEST_GROUP).unwrap();
-        let p = group.get_params(&bignumctx).unwrap().p;
-        let p_len = p.len();
+        let p_len = group.get_degree().div_ceil(8);
 
         let okm_1 = hkdf_expand::<Sha256>(
             &hex::decode(TEST_PRK).unwrap(),

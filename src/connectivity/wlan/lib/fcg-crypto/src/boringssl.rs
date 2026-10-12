@@ -8,15 +8,14 @@
 use anyhow::{Error, bail, format_err};
 use bssl_sys::{
     BIGNUM, BN_CTX, BN_CTX_free, BN_CTX_new, BN_add, BN_asc2bn, BN_bin2bn, BN_bn2bin, BN_bn2dec,
-    BN_cmp, BN_copy, BN_equal_consttime, BN_free, BN_is_odd, BN_is_one, BN_is_zero, BN_mod_add,
-    BN_mod_exp, BN_mod_mul, BN_mod_sqrt, BN_new, BN_nnmod, BN_num_bits, BN_num_bytes, BN_one,
-    BN_rand_range, BN_rand_range_ex, BN_rshift1, BN_set_u64, BN_sub, BN_zero, EC_GROUP,
-    EC_GROUP_free, EC_GROUP_get_curve_GFp, EC_GROUP_get_order, EC_GROUP_get0_generator,
+    BN_cmp, BN_equal_consttime, BN_free, BN_is_one, BN_is_zero, BN_mod_add, BN_new, BN_nnmod,
+    BN_num_bytes, BN_one, BN_rand_range, BN_rand_range_ex, BN_set_u64, BN_sub, BN_zero, EC_GROUP,
+    EC_GROUP_free, EC_GROUP_get_degree, EC_GROUP_get_order, EC_GROUP_get0_generator,
     EC_GROUP_new_by_curve_name, EC_POINT, EC_POINT_add, EC_POINT_copy, EC_POINT_free,
     EC_POINT_get_affine_coordinates_GFp, EC_POINT_invert, EC_POINT_is_at_infinity, EC_POINT_mul,
     EC_POINT_new, EC_POINT_set_affine_coordinates_GFp, EC_POINT_set_compressed_coordinates_GFp,
-    EC_wpa3_sae_hash_to_curve_p256, ERR_get_error, ERR_reason_error_string, NID_X9_62_prime256v1,
-    OPENSSL_free,
+    EC_wpa3_sae_hash_to_curve_p256, EC_wpa3_sae_hunt_and_peck_p256, ERR_get_error,
+    ERR_reason_error_string, NID_X9_62_prime256v1, OPENSSL_free,
 };
 use num_derive::{FromPrimitive, ToPrimitive};
 use std::cmp::Ordering;
@@ -141,12 +140,6 @@ impl Bignum {
         Ok(bignum)
     }
 
-    pub fn copy(&self) -> Result<Self, Error> {
-        let mut copy = Self::new()?;
-        ptr_or_error(unsafe { BN_copy(copy.0.as_mut(), self.0.as_ptr()) })?;
-        Ok(copy)
-    }
-
     /// Returns the sum of this Bignum and b.
     /// Recycles b for the output to avoid unnecessary heap allocations.
     pub fn add(&self, mut b: Self) -> Result<Self, Error> {
@@ -185,53 +178,6 @@ impl Bignum {
         Ok(result)
     }
 
-    /// Returns the result of `self * b mod m`.
-    pub fn mod_mul(&self, b: &Self, m: &Self, ctx: &BignumCtx) -> Result<Self, Error> {
-        let mut result = Self::new()?;
-        one_or_error(unsafe {
-            BN_mod_mul(
-                result.0.as_mut(),
-                self.0.as_ptr(),
-                b.0.as_ptr(),
-                m.0.as_ptr(),
-                ctx.0.as_ptr(),
-            )
-        })?;
-        Ok(result)
-    }
-
-    /// Returns the result of `self^p mod m`.
-    pub fn mod_exp(&self, p: &Self, m: &Self, ctx: &BignumCtx) -> Result<Self, Error> {
-        let mut result = Self::new()?;
-        one_or_error(unsafe {
-            BN_mod_exp(
-                result.0.as_mut(),
-                self.0.as_ptr(),
-                p.0.as_ptr(),
-                m.0.as_ptr(),
-                ctx.0.as_ptr(),
-            )
-        })?;
-        Ok(result)
-    }
-
-    /// Returns a value `ret` such that `self mod m = ret^2 mod m`. Returns an error if no such
-    /// value exists.
-    pub fn mod_sqrt(&self, m: &Self, ctx: &BignumCtx) -> Result<Self, Error> {
-        let mut result = Self::new()?;
-        ptr_or_error(unsafe {
-            BN_mod_sqrt(result.0.as_mut(), self.0.as_ptr(), m.0.as_ptr(), ctx.0.as_ptr())
-        })?;
-        Ok(result)
-    }
-
-    /// Returns `self >> 1`, aka `self / 2`.
-    pub fn rshift1(&self) -> Result<Self, Error> {
-        let mut result = Self::new()?;
-        one_or_error(unsafe { BN_rshift1(result.0.as_mut(), self.0.as_ptr()) })?;
-        Ok(result)
-    }
-
     pub fn is_one(&self) -> bool {
         unsafe { BN_is_one(self.0.as_ptr()) == 1 }
     }
@@ -240,19 +186,9 @@ impl Bignum {
         unsafe { BN_is_zero(self.0.as_ptr()) == 1 }
     }
 
-    pub fn is_odd(&self) -> bool {
-        unsafe { BN_is_odd(self.0.as_ptr()) == 1 }
-    }
-
     /// Returns the length in bytes of the underlying byte array.
     pub fn len(&self) -> usize {
         unsafe { BN_num_bytes(self.0.as_ptr()) as usize }
-    }
-
-    /// Returns the number of significant bits in this Bignum, excluding leading zeroes. This is
-    /// *not* equal to `len() * 8`.
-    pub fn bits(&self) -> usize {
-        unsafe { BN_num_bits(self.0.as_ptr()) as usize }
     }
 
     /// Converts this bignum into a big-endian vector of at least the given minimum bytes, padded
@@ -330,15 +266,6 @@ impl EcGroupId {
 /// `y^2 = x^3 + ax + b  (mod p)`.
 pub struct EcGroup(NonNull<EC_GROUP>);
 
-pub struct EcGroupParams {
-    // Prime modulo
-    pub p: Bignum,
-
-    // Elliptic curve parameters: y^2 = x^3 + ax + b
-    pub a: Bignum,
-    pub b: Bignum,
-}
-
 impl Drop for EcGroup {
     fn drop(&mut self) {
         unsafe { EC_GROUP_free(self.0.as_mut()) }
@@ -350,22 +277,10 @@ impl EcGroup {
         ptr_or_error(unsafe { EC_GROUP_new_by_curve_name(id.nid()) }).map(Self)
     }
 
-    /// Returns the prime and curve parameters that constitute this group.
-    pub fn get_params(&self, ctx: &BignumCtx) -> Result<EcGroupParams, Error> {
-        let p = Bignum::new()?;
-        let a = Bignum::new()?;
-        let b = Bignum::new()?;
-
-        one_or_error(unsafe {
-            EC_GROUP_get_curve_GFp(
-                self.0.as_ptr(),
-                p.0.as_ptr(),
-                a.0.as_ptr(),
-                b.0.as_ptr(),
-                ctx.0.as_ptr(),
-            )
-        })?;
-        Ok(EcGroupParams { p, a, b })
+    /// Returns the number of bits needed to represent an element of the field underlying this
+    /// group.
+    pub fn get_degree(&self) -> usize {
+        unsafe { EC_GROUP_get_degree(self.0.as_ptr()) as usize }
     }
 
     /// Returns the order of this group, i.e. the number of integer points on the curve (mod p).
@@ -455,6 +370,27 @@ impl EcPoint {
                 salt.len(),
                 ikm.as_ptr(),
                 ikm.len(),
+            )
+        })?;
+        Ok(point)
+    }
+
+    pub fn new_wpa3_sae_hunt_and_peck_p256(
+        group: &EcGroup,
+        salt: &[u8],
+        password: &[u8],
+        min_iterations: u8,
+    ) -> Result<Self, Error> {
+        let point = Self::new(group)?;
+        one_or_error(unsafe {
+            EC_wpa3_sae_hunt_and_peck_p256(
+                group.0.as_ptr(),
+                point.0.as_ptr(),
+                salt.as_ptr(),
+                salt.len(),
+                password.as_ptr(),
+                password.len(),
+                min_iterations,
             )
         })?;
         Ok(point)
@@ -626,52 +562,6 @@ mod tests {
     }
 
     #[test]
-    fn bignum_mod_mul() {
-        let ctx = BignumCtx::new().unwrap();
-        let value = bn("4").mod_mul(&bn("5"), &bn("12"), &ctx).unwrap();
-        assert_eq!(value, bn("8"));
-    }
-
-    #[test]
-    fn bignum_mod_exp() {
-        let ctx = BignumCtx::new().unwrap();
-        let value = bn("4").mod_exp(&bn("2"), &bn("10"), &ctx).unwrap();
-        assert_eq!(value, bn("6"));
-    }
-
-    #[test]
-    fn bignum_mod_sqrt() {
-        let ctx = BignumCtx::new().unwrap();
-        let m = bn("13"); // base must be prime.
-        // https://en.wikipedia.org/wiki/Quadratic_residue#Table_of_quadratic_residues
-        let quadratic_residues = [1, 3, 4, 9, 10, 12];
-        for i in 1..12 {
-            let i_bn = Bignum::new_from_u64(i).unwrap();
-            let sqrt = i_bn.mod_sqrt(&m, &ctx);
-            if quadratic_residues.contains(&i) {
-                assert!(sqrt.is_ok());
-                assert_eq!(sqrt.unwrap().mod_exp(&bn("2"), &m, &ctx).unwrap(), i_bn);
-            } else {
-                assert!(sqrt.is_err());
-            }
-        }
-    }
-
-    #[test]
-    fn bignum_mod_sqrt_non_prime() {
-        let ctx = BignumCtx::new().unwrap();
-        let m = bn("100");
-        // 16 is a sqrt, but 100 is not prime so BoringSSL complains.
-        assert!(bn("16").mod_sqrt(&m, &ctx).is_err())
-    }
-
-    #[test]
-    fn bignum_rshift1() {
-        assert_eq!(bn("100").rshift1().unwrap(), bn("50"));
-        assert_eq!(bn("101").rshift1().unwrap(), bn("50"));
-    }
-
-    #[test]
     fn bignum_simple_fns() {
         assert!(bn("1").is_one());
         assert!(!bn("100000").is_one());
@@ -680,9 +570,6 @@ mod tests {
         assert!(bn("0").is_zero());
         assert!(!bn("1").is_zero());
         assert!(Bignum::zero().unwrap().is_zero());
-
-        assert!(bn("1000001").is_odd());
-        assert!(!bn("1000002").is_odd());
     }
 
     #[test]
@@ -706,8 +593,6 @@ mod tests {
     }
 
     // RFC 5903 section 3.1
-    const P: &'static str = "0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF";
-    const B: &'static str = "0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B";
     const ORDER: &'static str =
         "0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551";
     const GX: &'static str = "0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296";
@@ -726,18 +611,23 @@ mod tests {
     const TEST_SALT: &'static [u8] = b"byteme";
     const TEST_IKM: &'static [u8] = b"mekmitasdigoatpsk4internet";
 
+    const TEST_LOOP_PWE_X: &'static str =
+        "0xda6eb7b06a1ac5624974f90afdd6a8e9d5722634cf987c34defc91a9874e5658";
+    const TEST_LOOP_PWE_Y: &'static str =
+        "0xf4fefd130bd5be08fe68af3e4a290272ec065fd3671f3c25bf8ec419ddc9b822";
+    const TEST_LOOP_SALT: &'static [u8] =
+        &[0xa5, 0xd8, 0xaa, 0x95, 0x8e, 0x3c, 0x4d, 0x3f, 0x2f, 0xff, 0xe3, 0x87];
+    const TEST_LOOP_PASSWORD: &'static [u8] = b"mekmitasdigoat";
+
     #[test]
     fn ec_group_params() {
         let group = EcGroup::new(EcGroupId::P256).unwrap();
         let ctx = BignumCtx::new().unwrap();
-        let params = group.get_params(&ctx).unwrap();
+        let degree = group.get_degree();
         let order = group.get_order(&ctx).unwrap();
 
         // RFC 5903 section 3.1
-        assert_eq!(params.p, bn(P));
-        // 'a' is specified as -3, but boringssl returns the positive value congruent to -3 mod p.
-        assert_eq!(params.a, params.p.sub(bn("3")).unwrap());
-        assert_eq!(params.b, bn(B));
+        assert_eq!(degree, 256);
         assert_eq!(order, bn(ORDER));
     }
 
@@ -789,5 +679,21 @@ mod tests {
         let (x, y) = point.to_affine_coords(&group, &ctx).unwrap();
         assert_eq!(x, bn(TEST_PT_X));
         assert_eq!(y, bn(TEST_PT_Y));
+    }
+
+    #[test]
+    fn ec_wpa3_sae_hunt_and_peck_p256_test() {
+        let group = EcGroup::new(EcGroupId::P256).unwrap();
+        let ctx = BignumCtx::new().unwrap();
+        let point = EcPoint::new_wpa3_sae_hunt_and_peck_p256(
+            &group,
+            TEST_LOOP_SALT,
+            TEST_LOOP_PASSWORD,
+            40,
+        )
+        .unwrap();
+        let (x, y) = point.to_affine_coords(&group, &ctx).unwrap();
+        assert_eq!(x, bn(TEST_LOOP_PWE_X));
+        assert_eq!(y, bn(TEST_LOOP_PWE_Y));
     }
 }
