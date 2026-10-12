@@ -4,6 +4,7 @@
 
 mod tcp;
 
+use alloc::boxed::Box;
 use alloc::fmt::Debug;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
@@ -364,7 +365,7 @@ where
             Some(connection) => Connection::Shared(connection.clone()),
             None => match ConnectionExclusive::from_deconstructed_packet(bindings_ctx, &packet) {
                 None => return Ok(None),
-                Some(c) => Connection::Exclusive(c),
+                Some(c) => Connection::Exclusive(Box::new(c)),
             },
         };
 
@@ -701,7 +702,7 @@ pub(crate) enum GetConnectionError<I: IpExt, E, BT: FilterBindingsTypes> {
 pub enum Connection<I: IpExt, E, BT: FilterBindingsTypes> {
     /// A connection that is directly owned by the packet that originated the
     /// connection and no others. All fields are modifiable.
-    Exclusive(ConnectionExclusive<I, E, BT>),
+    Exclusive(Box<ConnectionExclusive<I, E, BT>>),
 
     /// This is an existing connection, and there are possibly many other
     /// packets that are concurrently modifying it.
@@ -1411,7 +1412,7 @@ mod tests {
         connection.inner.external_data = 1234;
 
         let connection = match connection_kind {
-            ConnectionKind::Exclusive => Connection::Exclusive(connection),
+            ConnectionKind::Exclusive => Connection::Exclusive(Box::new(connection)),
             ConnectionKind::Shared => Connection::Shared(connection.make_shared()),
         };
 
@@ -1440,7 +1441,7 @@ mod tests {
         let connection: ConnectionExclusive<_, (), _> =
             ConnectionExclusive::from_deconstructed_packet(&bindings_ctx, &packet).unwrap();
         let connection = match connection_kind {
-            ConnectionKind::Exclusive => Connection::Exclusive(connection),
+            ConnectionKind::Exclusive => Connection::Exclusive(Box::new(connection)),
             ConnectionKind::Shared => Connection::Shared(connection.make_shared()),
         };
 
@@ -1472,7 +1473,7 @@ mod tests {
             ConnectionExclusive::<_, (), _>::from_deconstructed_packet(&bindings_ctx, &packet)
                 .unwrap();
         let mut connection = match connection_kind {
-            ConnectionKind::Exclusive => Connection::Exclusive(connection),
+            ConnectionKind::Exclusive => Connection::Exclusive(Box::new(connection)),
             ConnectionKind::Shared => Connection::Shared(connection.make_shared()),
         };
 
@@ -1521,7 +1522,7 @@ mod tests {
             ConnectionExclusive::<_, (), _>::from_deconstructed_packet(&bindings_ctx, &packet)
                 .unwrap();
         let mut connection = match connection_kind {
-            ConnectionKind::Exclusive => Connection::Exclusive(connection),
+            ConnectionKind::Exclusive => Connection::Exclusive(Box::new(connection)),
             ConnectionKind::Shared => Connection::Shared(connection.make_shared()),
         };
 
@@ -1664,13 +1665,13 @@ mod tests {
             TransportPacketData::Udp { src_port: I::SRC_PORT + 1, dst_port: I::DST_PORT + 1 },
         );
 
-        let conn1 = Connection::Exclusive(
+        let conn1 = Connection::Exclusive(Box::new(
             ConnectionExclusive::<_, (), _>::from_deconstructed_packet(
                 &bindings_ctx,
                 &original_packet,
             )
             .unwrap(),
-        );
+        ));
 
         // Fake NAT that ends up allocating the same reply tuple as an existing
         // connection.
@@ -1680,7 +1681,7 @@ mod tests {
         )
         .unwrap();
         conn2.inner.original_tuple = nated_original_packet.tuple();
-        let conn2 = Connection::Exclusive(conn2);
+        let conn2 = Connection::Exclusive(Box::new(conn2));
 
         // Fake NAT that ends up allocating the same original tuple as an
         // existing connection.
@@ -1690,7 +1691,7 @@ mod tests {
         )
         .unwrap();
         conn3.inner.reply_tuple = nated_original_packet.tuple().invert();
-        let conn3 = Connection::Exclusive(conn3);
+        let conn3 = Connection::Exclusive(Box::new(conn3));
 
         assert_matches!(table.finalize_connection(&mut bindings_ctx, conn1), Ok((true, Some(_))));
         assert_matches!(
@@ -1719,25 +1720,25 @@ mod tests {
         // Simulate a race where two packets in the same flow both end up
         // creating identical exclusive connections.
 
-        let conn = Connection::Exclusive(
+        let conn = Connection::Exclusive(Box::new(
             ConnectionExclusive::<_, (), _>::from_deconstructed_packet(
                 &bindings_ctx,
                 &original_packet,
             )
             .unwrap(),
-        );
+        ));
         let finalized = assert_matches!(
             table.finalize_connection(&mut bindings_ctx, conn),
             Ok((true, Some(conn))) => conn
         );
 
-        let conn = Connection::Exclusive(
+        let conn = Connection::Exclusive(Box::new(
             ConnectionExclusive::<_, (), _>::from_deconstructed_packet(
                 &bindings_ctx,
                 &original_packet,
             )
             .unwrap(),
-        );
+        ));
         let conn = assert_matches!(
             table.finalize_connection(&mut bindings_ctx, conn),
             Ok((false, Some(conn))) => conn
