@@ -198,4 +198,5 @@ fx_package(
 fx_test(
     name = "starnix-selinux-unit-tests",
     package = ":starnix-selinux-unit-tests-package",
+    visibility = ["//src/starnix/lib:__pkg__"],
 )

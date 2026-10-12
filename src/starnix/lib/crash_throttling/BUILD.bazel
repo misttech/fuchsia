@@ -79,4 +79,5 @@ fx_package(
 fx_test(
     name = "crash-throttling-tests",
     package = ":crash-throttling-tests-package",
+    visibility = ["//src/starnix/lib:__pkg__"],
 )

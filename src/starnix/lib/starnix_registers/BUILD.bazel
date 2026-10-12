@@ -80,4 +80,5 @@ fx_package(
 fx_test(
     name = "starnix_registers_tests",
     package = ":starnix_registers_tests-package",
+    visibility = ["//src/starnix/lib:__pkg__"],
 )

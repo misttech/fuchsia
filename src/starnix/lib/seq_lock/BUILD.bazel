@@ -72,4 +72,5 @@ fx_package(
 fx_test(
     name = "seq_lock_tests",
     package = ":seq_lock_tests-package",
+    visibility = ["//src/starnix/lib:__pkg__"],
 )

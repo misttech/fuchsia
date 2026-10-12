@@ -2,18 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/bazel/bazel_test_suite.gni")
-
-bazel_test_suite("starnix_registers_tests") {
-  target_tests =
-      [ "//src/starnix/lib/starnix_registers:starnix_registers_tests" ]
-}
-
-group("tests") {
-  testonly = true
-  deps = [ ":starnix_registers_tests" ]
-}
-
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #
 #  ________  _________  ________  ________

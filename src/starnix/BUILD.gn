@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/bazel/bazel_test_suite.gni")
 import("//src/storage/fshost/generated_fshost_config.gni")
 
 group("starnix") {
@@ -18,6 +19,7 @@ group("starnix") {
 group("tests") {
   testonly = true
   deps = [
+    ":bazel_tests",
     "containers:tests",
     "examples:tests",
     "fakes",
@@ -38,6 +40,11 @@ group("tests") {
   if (data_filesystem_format == "minfs") {
     deps = []
   }
+}
+
+bazel_test_suite("bazel_tests") {
+  host_tests = [ "//src/starnix:host_tests" ]
+  target_tests = [ "//src/starnix:target_tests" ]
 }
 
 group("benchmarks") {

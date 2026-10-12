@@ -86,4 +86,5 @@ fx_package(
 fx_test(
     name = "page_buf_tests",
     package = ":page_buf_tests-package",
+    visibility = ["//src/starnix/lib:__pkg__"],
 )
