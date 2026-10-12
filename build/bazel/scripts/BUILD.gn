@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
 import("//build/testing/python_build_time_tests.gni")
 
@@ -186,36 +185,9 @@ if (is_host) {
     ]
   }
 
-  python_host_test("minimal_workspace_test") {
-    main_source = "minimal_workspace_test.py"
-
-    # IMPORTANT NOTE: Include the sources directly
-    # to ensure the files are copied to the top-level
-    # of the .pyz created by python_host_test(), as in:
-    #
-    #   minimal_workspace_test.pyz/
-    #     minimal_workspace_test.py
-    #     build_utils.py
-    #     remote_services_utils.py
-    #     minimal_workspace.py
-    #
-    # This is required for the simple `import` statements
-    # in the test (and its transitive deps) to work
-    # properly.
-    #
-    # If the libraries are added as dependencies instead
-    # this places them into their own named sub-directory
-    # and Python will treat them as package namespace
-    # instead so `import foo` should be `import foo.foo`
-    # to work inside the .pyz, but changing the libraries
-    # to use that breaks python_build_time_tests() and
-    # direct invocation of all the other tests.
-    #
-    sources = [
-      "build_utils.py",
-      "minimal_workspace.py",
-      "remote_services_utils.py",
-    ]
+  python_build_time_tests("minimal_workspace_test") {
+    tests = [ "minimal_workspace_test.py" ]
+    deps = [ ":minimal_workspace" ]
   }
 
   python_library("bazel_tests_utils") {

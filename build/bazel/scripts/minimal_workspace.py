@@ -25,7 +25,6 @@ import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 import build_utils
 import remote_services_utils
@@ -77,7 +76,7 @@ def write_file(dest: Path, content: str) -> None:
 
 
 def main(argv: Sequence[str]) -> int:
-    args = _MAIN_ARG_PARSER.parse_args()
+    args = _MAIN_ARG_PARSER.parse_args(argv)
     verbosity = args.verbose - args.quiet
 
     if args.fuchsia_dir:
@@ -172,14 +171,8 @@ def main(argv: Sequence[str]) -> int:
     )
 
     # Generate the content of .bazelrc
-    fuchsia_dir / "build" / "bazel" / "templates"
-
-    def expand_template_file(template_file: Path, **kwargs: Any) -> str:
-        return template_file.read_text().format(**kwargs)
-
-    bazelrc_content: str = ""
     # platform excerpt from template.bazelrc
-    bazelrc_content += """
+    bazelrc_content = """
 build --platforms=//build/bazel/platforms:{default_platform}
 build --host_platform=//build/bazel/platforms:{host_platform}
 import remote_services.bazelrc

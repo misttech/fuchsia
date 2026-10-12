@@ -3,43 +3,65 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).parent))
 import minimal_workspace
 import remote_services_utils
-
-_FAKE_RBE_SUBSTITUTIONS = {
-    "remote_download_outputs": "",
-    "remote_instance_name": "johnny/cache/instance/default",
-    "rbe_project": "cache-is-king",
-    "container_image": "docker://gcr.io/cloud-marketplace/google/debian11@sha256:69e2789c9f3d28c6a0f13b25062c240ee7772be1f5e6d41bb4680b63eae6b304",
-}
 
 
 class MainTests(unittest.TestCase):
     def test_generate(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            # Args such as --fuchsia-dir, --bazel-bin can point to
-            # arbitrary/default locations because this test will not
-            # actually try to access those paths.
+            td_path = Path(td)
+            topdir = td_path / "topdir"
+            fuchsia_dir = td_path / "fuchsia"
+            bazel_bin = td_path / "bazel_bin"
+            bazel_bin.touch()
+
+            # Create mock source directory tree expected by minimal_workspace
+            (
+                fuchsia_dir / "third_party" / "bazel_vendor" / "bazel_skylib+"
+            ).mkdir(parents=True)
+            (fuchsia_dir / "LICENSE").touch()
+
             with mock.patch.object(
-                Path, "read_text", return_value="template text\n"
-            ) as mock_read:
-                with mock.patch.object(
-                    remote_services_utils,
-                    "generate_rbe_template_substitutions",
-                    return_value=_FAKE_RBE_SUBSTITUTIONS,
-                ) as mock_build_config:
-                    status = minimal_workspace.main([f"--topdir={td}"])
+                remote_services_utils,
+                "generate_remote_services_bazelrc",
+                return_value=set(),
+            ) as mock_remote_services:
+                status = minimal_workspace.main(
+                    [
+                        f"--topdir={topdir}",
+                        f"--fuchsia-dir={fuchsia_dir}",
+                        f"--bazel-bin={bazel_bin}",
+                    ]
+                )
 
             self.assertEqual(status, 0)
-            mock_build_config.assert_called_once()
-            mock_read.assert_called()  # twice, once per template file
+            mock_remote_services.assert_called_once()
+            self.assertTrue((topdir / "bazel").is_symlink())
+            self.assertTrue(
+                (
+                    topdir
+                    / "workspace"
+                    / "fuchsia_build_generated"
+                    / "args.json"
+                ).is_file()
+            )
+
+            bazelrc_path = topdir / "workspace" / ".bazelrc"
+            self.assertTrue(bazelrc_path.is_file())
+            bazelrc_content = bazelrc_path.read_text()
+            self.assertIn("import remote_services.bazelrc", bazelrc_content)
+            self.assertIn(
+                "--platforms=//build/bazel/platforms:common", bazelrc_content
+            )
+            self.assertIn(
+                "--host_platform=//build/bazel/platforms:host", bazelrc_content
+            )
 
 
 if __name__ == "__main__":
