@@ -43,7 +43,6 @@ group("tests") {
     "bt-hfp:tests",
     "bt-map:tests",
     "bt-obex:tests",
-    "bt-rfcomm:tests",
     "fidl:tests",
     "fuchsia-audio-codec:tests",
     "fuchsia-audio-dai:tests",

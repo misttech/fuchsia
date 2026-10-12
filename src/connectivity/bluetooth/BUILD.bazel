@@ -12,6 +12,7 @@ test_suite(
     tests = [
         "//src/connectivity/bluetooth/lib/async-helpers:async-helpers-tests",
         "//src/connectivity/bluetooth/lib/bt-obex/objects:bt-obex-objects-tests",
+        "//src/connectivity/bluetooth/lib/bt-rfcomm:bt-rfcomm-lib-tests",
         "//src/connectivity/bluetooth/lib/fuchsia-bluetooth:bluetooth-crate-tests",
         "//src/connectivity/bluetooth/lib/packet-encoding:packet-encoding-tests",
         "//src/connectivity/bluetooth/lib/profile-client:profile-client-tests",

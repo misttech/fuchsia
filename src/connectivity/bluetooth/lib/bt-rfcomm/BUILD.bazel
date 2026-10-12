@@ -1,0 +1,57 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "bt-rfcomm",
+    srcs = [
+        "src/dlci.rs",
+        "src/error.rs",
+        "src/frame/command_response.rs",
+        "src/frame/error.rs",
+        "src/frame/fcs.rs",
+        "src/frame/field.rs",
+        "src/frame/mod.rs",
+        "src/frame/mux_commands/dlc_parameter_negotiation.rs",
+        "src/frame/mux_commands/flow_control.rs",
+        "src/frame/mux_commands/mod.rs",
+        "src/frame/mux_commands/modem_status.rs",
+        "src/frame/mux_commands/non_supported.rs",
+        "src/frame/mux_commands/remote_line_status.rs",
+        "src/frame/mux_commands/remote_port_negotiation.rs",
+        "src/frame/mux_commands/test_command.rs",
+        "src/lib.rs",
+        "src/profile.rs",
+    ],
+    edition = "2024",
+    rustc_flags = ["-Dunused_results"],
+    # @bazel2gn:skip
+    test_deps = ["//third_party/rust_crates/vendor:assert_matches"],
+    visibility = [
+        "//src/connectivity/bluetooth:__subpackages__",
+        "//src/testing/sl4f:__pkg__",
+    ],
+    # @bazel2gn:skip
+    with_unit_tests = True,
+    deps = [
+        "//sdk/fidl/fuchsia.bluetooth.bredr:fuchsia.bluetooth.bredr_rust",
+        "//src/connectivity/bluetooth/lib/fuchsia-bluetooth",
+        "//src/connectivity/bluetooth/lib/packet-encoding",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:bitfield",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "bt-rfcomm-lib-tests",
+    package_name = "bt-rfcomm-lib-tests",
+    unit_tests = [":bt-rfcomm_test"],
+    visibility = ["//src/connectivity/bluetooth:__pkg__"],
+)
