@@ -156,7 +156,11 @@ impl NewPolicy {
 
     /// Returns the [`PermissionId`] of the specified permission for the specified security
     /// [`Class`], looking up the permission in the class's common symbol, if any.
-    pub fn find_permission_id_by_name(&self, class: &Class, name: &str) -> Option<PermissionId> {
+    pub(crate) fn find_permission_id_by_name(
+        &self,
+        class: &Class,
+        name: &str,
+    ) -> Option<PermissionId> {
         let name = name.as_bytes();
         if let Some(permission) = class.permissions().get_by_name(name) {
             return Some(permission.id());

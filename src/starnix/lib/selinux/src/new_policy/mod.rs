@@ -24,6 +24,8 @@ pub(super) mod policy_cap;
 pub(super) mod roles;
 pub(super) mod rules;
 pub(super) mod security_context;
+#[cfg(test)]
+mod tests;
 pub(super) mod traits;
 pub(super) mod types;
 pub(super) mod u24_index;
@@ -277,7 +279,7 @@ impl NewPolicy {
 }
 
 #[cfg(test)]
-mod tests {
+mod parse_tests {
     use super::*;
     use crate::new_policy::traits::{Parse, Serialize};
 
