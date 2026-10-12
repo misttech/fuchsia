@@ -36,6 +36,7 @@ fuchsia_board_configuration(
     partitions_configuration = "//build/bazel/assembly/partitions_configurations:riscv64",
     provided_features = [
         # keep-sorted start
+        "fuchsia::bus_pci",
         "fuchsia::driver_framework_v2_support",
         # TODO: b/299320231 - Remove when ring is supported on riscv64.
         "fuchsia::soft_crypto",
