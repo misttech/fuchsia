@@ -147,7 +147,7 @@ TRBPromise DeviceState::AddressDeviceCommand(UsbXhci* hci, uint8_t slot, uint8_t
                                              uint16_t interrupter_target, CommandRing* command_ring,
                                              fdf::MmioBuffer* mmio, bool bsr) {
   if (!hub_info.has_value()) {
-    hci->GetPortState()[port - 1].slot_id = slot;
+    hci->GetPortState(port).slot_id = slot;
   }
   interrupter_target_ = interrupter_target;
   std::unique_ptr<dma_buffer::PagedBuffer> slot_context_buffer;

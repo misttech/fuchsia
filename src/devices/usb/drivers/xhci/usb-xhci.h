@@ -236,7 +236,15 @@ class UsbXhci : public fdf::DriverBase2,
 
   fbl::Array<fbl::RefPtr<DeviceState>>& GetDeviceState() { return device_state_; }
 
-  PortState* GetPortState() { return port_state_.get(); }
+  // Returns the state of a 1-based port index.
+  PortState& GetPortState(size_t port_id) {
+    ZX_ASSERT(port_id >= 1 && port_id <= port_state_.size());
+    return port_state_[port_id - 1];
+  }
+  const PortState& GetPortState(size_t port_id) const {
+    ZX_ASSERT(port_id >= 1 && port_id <= port_state_.size());
+    return port_state_[port_id - 1];
+  }
   // Indicates whether or not the controller supports cache coherency
   // for transfers.
   bool HasCoherentCache() const { return has_coherent_cache_; }

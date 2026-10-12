@@ -403,9 +403,9 @@ class XhciHarness : public ::testing::Test {
   FakeUsbDevice ConnectDevice(uint8_t port, usb_speed_t speed) {
     std::optional<HubInfo> hub;
     uint8_t slot = AllocateSlot();
-    driver_test().driver()->GetPortState()[port - 1].is_connected = true;
-    driver_test().driver()->GetPortState()[port - 1].link_active = true;
-    driver_test().driver()->GetPortState()[port - 1].slot_id = slot;
+    driver_test().driver()->GetPortState(port).is_connected = true;
+    driver_test().driver()->GetPortState(port).link_active = true;
+    driver_test().driver()->GetPortState(port).slot_id = slot;
     driver_test().driver()->SetDeviceInformation(slot, slot, hub);
     driver_test().driver()->AddressDeviceCommand(slot, port, hub, true);
     bus_.reset();
@@ -1059,5 +1059,39 @@ TEST_F(XhciMmioHarness, CancelAllStopEndpointFails) {
 }
 
 TEST_F(XhciMmioHarness, GetMaxDeviceCount) { ASSERT_EQ(GetMaxDeviceCount(), 34UL); }
+
+namespace {
+
+TEST_F(XhciMmioHarness, DeviceOnlineUsesOneBasedPortIndex) {
+  // GetPortState() uses 1-based port indexing matching the xHCI specification.
+  std::optional<HubInfo> hub;
+  driver_test().driver()->SetDeviceInformation(1, 1, hub);
+  driver_test().driver()->GetPortState(1).is_USB3 = true;
+  driver_test().driver()->GetPortState(2).is_USB3 = false;
+
+  bus_.reset();
+  EXPECT_OK(driver_test().driver()->DeviceOnline(1, 1, USB_SPEED_SUPER));
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([this]() { bus_.wait(); }));
+  ASSERT_EQ(bus_.devices().count(0), 1u);
+  EXPECT_EQ(bus_.devices().at(0).hub_id, GetMaxDeviceCount() - 1);
+
+  // Also verify port 2 (USB 2.0) routes to the USB 2.0 root hub (GetMaxDeviceCount()).
+  driver_test().driver()->SetDeviceInformation(2, 2, hub);
+  bus_.reset();
+  EXPECT_OK(driver_test().driver()->DeviceOnline(2, 2, USB_SPEED_HIGH));
+  EXPECT_OK(driver_test().RunOnBackgroundDispatcherSync([this]() { bus_.wait(); }));
+  ASSERT_EQ(bus_.devices().count(1), 1u);
+  EXPECT_EQ(bus_.devices().at(1).hub_id, GetMaxDeviceCount() - 2);
+}
+
+TEST_F(XhciMmioHarness, GetPortStateUsesOneBasedPortIndex) {
+  driver_test().driver()->GetPortState(1).slot_id = 42;
+  driver_test().driver()->GetPortState(2).slot_id = 84;
+
+  EXPECT_EQ(driver_test().driver()->GetPortState(1).slot_id, 42);
+  EXPECT_EQ(driver_test().driver()->GetPortState(2).slot_id, 84);
+}
+
+}  // namespace
 
 }  // namespace usb_xhci

@@ -153,7 +153,7 @@ fpromise::promise<void, zx_status_t> UsbXhci::DisableSlotCommand(DeviceState& st
     return fpromise::make_error_promise<zx_status_t>(ZX_ERR_BAD_STATE);
   }
   if (!connected_to_hub) {
-    port_state_[port - 1].slot_id = 0;
+    GetPortState(port).slot_id = 0;
   }
 
   return SubmitCommand(cmd, std::move(context))
@@ -326,8 +326,10 @@ zx_status_t UsbXhci::DeviceOnline(uint32_t slot, uint16_t port, usb_speed_t spee
       });
       return ZX_OK;
     }
-    is_usb_3 = GetPortState()[port].is_USB3;
+    is_usb_3 = GetPortState(port).is_USB3;
   }
+  fdf::info("xhci: DeviceOnline slot={} port={} speed={} is_usb_3={} -> calling bus.AddDevice",
+            slot, port, speed, is_usb_3);
   PostCallback([=, this](const ddk::UsbBusInterfaceProtocolClient& bus) {
     bus.AddDevice(slot - 1,
                   static_cast<uint32_t>(is_usb_3 ? UsbHciGetMaxDeviceCount() - 1
@@ -1371,9 +1373,10 @@ void UsbXhci::ParseSupportedProtocol() {
         auto word0 = CapabilityRegWord0::Get(current).ReadFrom(&mmio_.value());
         auto word2 = CapabilityRegWord2::Get(current).ReadFrom(&mmio_.value());
 
-        fdf::debug("Supported protocol info: Revision:{}:{} USB{} port offset {} port count {}",
-                   word0.MAJOR_REVISION(), word0.MINOR_REVISION(), word0.MAJOR_REVISION(),
-                   word2.PortOffset(), word2.PortCount());
+        fdf::info(
+            "xhci: Supported protocol info: Revision={}.{} USB{} port_offset={} port_count={}",
+            word0.MAJOR_REVISION(), word0.MINOR_REVISION(), word0.MAJOR_REVISION(),
+            word2.PortOffset(), word2.PortCount());
       }
       if (!current.NEXT()) {
         break;

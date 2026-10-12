@@ -230,6 +230,7 @@ class EventRingHarness : public ::testing::Test {
   }
 
   fdf_testing::ForegroundDriverTest<EmptyTestConfig>& driver_test() { return driver_test_; }
+  PORTSC& port_sc() { return port_sc_; }
 
  private:
   fdf_testing::ForegroundDriverTest<EmptyTestConfig> driver_test_;
@@ -572,5 +573,29 @@ TEST_F(EventRingHarness, Usb3DeviceAttach) {
   ASSERT_EQ(cmd->type, CommandType::EnumerateDevice);
   ASSERT_FALSE(cmd->hub);
 }
+
+namespace {
+
+TEST_F(EventRingHarness, Usb2DeviceAttachNonPollingPortSpeed) {
+  ConnectDevice();
+  // Simulate controller where PLS does not transition through Polling (e.g. RxDetect),
+  // but PortSpeed indicates USB 2.0 (speed 3 = High Speed).
+  port_sc().set_PLS(PORTSC::RxDetect);
+  port_sc().set_PortSpeed(3);
+  InsertPortStatusChangeEvent();
+  Interrupt();
+  ASSERT_TRUE(PortResetPending());
+  ASSERT_FALSE(HasCommand());
+  LinkUp();
+  InsertPortStatusChangeEvent();
+  Interrupt();
+  ASSERT_TRUE(HasCommand());
+  auto cmd = GetCommand();
+  ASSERT_EQ(cmd->port, kPortNo);
+  ASSERT_EQ(cmd->type, CommandType::EnumerateDevice);
+  ASSERT_FALSE(cmd->hub);
+}
+
+}  // namespace
 
 }  // namespace usb_xhci
