@@ -16,11 +16,6 @@ from typing import Any, FrozenSet
 from antlion import utils
 from antlion.capabilities.ssh import SSHConfig, SSHProvider
 from antlion.controllers.pdu import PduDevice, get_pdu_port_for_device
-from antlion.controllers.utils_lib.commands import (
-    ip,
-    route,
-)
-from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
 from honeydew.typing.custom_types import MacAddress
 from legacy_access_point.ap_lib import hostapd_constants
 from legacy_access_point.ap_lib.ap_get_interface import ApInterfaces
@@ -45,9 +40,12 @@ from legacy_access_point.ap_lib.wireless_network_management import (
 )
 from libs.commands import (
     command,
+    ip,
     journalctl,
+    route,
 )
 from libs.commands.date import LinuxDateCommand
+from libs.commands.tcpdump import LinuxTcpdumpCommand
 from libs.proc.runner import CalledProcessError
 from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json

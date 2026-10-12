@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from subprocess import CalledProcessError
 from typing import Any, Iterable
 
-from antlion.controllers.utils_lib.commands import shell
 from antlion.logger import LogLevel
 from honeydew.typing.custom_types import MacAddress
 from legacy_access_point.ap_lib import hostapd_constants
@@ -23,6 +22,7 @@ from legacy_access_point.ap_lib.hostapd_config import HostapdConfig
 from legacy_access_point.ap_lib.wireless_network_management import (
     BssTransitionManagementRequest,
 )
+from libs.commands import shell
 from libs.proc.runner import Runner
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 

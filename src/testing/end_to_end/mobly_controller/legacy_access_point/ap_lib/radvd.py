@@ -7,9 +7,9 @@ import shlex
 import tempfile
 import time
 
-from antlion.controllers.utils_lib.commands import shell
 from antlion.logger import LogLevel
 from legacy_access_point.ap_lib.radvd_config import RadvdConfig
+from libs.commands import shell
 from libs.proc import job
 from libs.proc.runner import Runner
 from tenacity import retry, retry_if_exception_type, stop_after_delay

@@ -10,8 +10,8 @@ from ipaddress import IPv4Address
 
 import dhcp_testing
 import fuchsia_wlan_base_test
-from antlion.controllers.utils_lib.commands import ip
 from legacy_access_point.ap_lib import dhcp_config
+from libs.commands import ip
 from mobly import asserts, signals, test_runner
 from openwrt_access_point import DhcpConfig, Dnsmasq
 from openwrt_access_point import InterfaceName as OpenWrtInterfaceName

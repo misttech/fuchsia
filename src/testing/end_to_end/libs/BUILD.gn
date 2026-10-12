@@ -18,6 +18,7 @@ python_library("libs") {
 
   visibility = [
     ":*",
+    "//src/connectivity/wlan/tests/wlancfg:*",
     "//src/testing/end_to_end/antlion:*",
     "//src/testing/end_to_end/libs/*",
     "//src/testing/end_to_end/mobly_base_tests/*",
@@ -31,9 +32,13 @@ python_library("libs") {
     "commands/__init__.py",
     "commands/command.py",
     "commands/date.py",
+    "commands/ip.py",
     "commands/journalctl.py",
     "commands/nmcli.py",
     "commands/pgrep.py",
+    "commands/route.py",
+    "commands/shell.py",
+    "commands/tcpdump.py",
     "exception_utils.py",
     "proc/__init__.py",
     "proc/job.py",

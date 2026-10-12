@@ -12,10 +12,6 @@ from libs.proc.runner import Runner
 from mobly import signals
 
 
-class Error(Exception):
-    """Exception thrown when a valid ip command experiences errors."""
-
-
 class LinuxRouteCommand(LinuxCommand):
     """Interface for doing standard ip route commands on a linux system."""
 

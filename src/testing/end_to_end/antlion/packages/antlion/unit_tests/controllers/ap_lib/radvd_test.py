@@ -12,12 +12,8 @@ from antlion.controllers.ap_lib import radvd_constants
 from antlion.controllers.ap_lib.radvd import Radvd, RadvdStartError
 from antlion.controllers.ap_lib.radvd_config import RadvdConfig
 
-SEARCH_FILE = (
-    "antlion.controllers.utils_lib.commands.shell." "ShellCommand.search_file"
-)
-DELETE_FILE = (
-    "antlion.controllers.utils_lib.commands.shell.ShellCommand." "delete_file"
-)
+SEARCH_FILE = "libs.commands.shell.ShellCommand.search_file"
+DELETE_FILE = "libs.commands.shell.ShellCommand.delete_file"
 
 CORRECT_COMPLEX_RADVD_CONFIG = """interface wlan0 {
     IgnoreIfMissing on;
@@ -91,19 +87,19 @@ def write_configs_mock(config_file_with_path, output_config):
 
 
 class RadvdTest(unittest.TestCase):
-    @patch("antlion.controllers.utils_lib.commands.shell.ShellCommand.kill")
+    @patch("libs.commands.shell.ShellCommand.kill")
     def test_radvd_ikill(self, kill):
         kill.return_value = True
         radvd_mock = Radvd("mock_runner", "wlan0")
         self.assertIsNone(radvd_mock.stop())
 
-    @patch("antlion.controllers.utils_lib.commands.shell.ShellCommand.is_alive")
+    @patch("libs.commands.shell.ShellCommand.is_alive")
     def test_radvd_is_alive_True(self, is_alive_mock):
         is_alive_mock.return_value = True
         radvd_mock = Radvd("mock_runner", "wlan0")
         self.assertTrue(radvd_mock.is_alive())
 
-    @patch("antlion.controllers.utils_lib.commands.shell.ShellCommand.is_alive")
+    @patch("libs.commands.shell.ShellCommand.is_alive")
     def test_radvd_is_alive_False(self, is_alive_mock):
         is_alive_mock.return_value = False
         radvd_mock = Radvd("mock_runner", "wlan0")
@@ -150,9 +146,7 @@ class RadvdTest(unittest.TestCase):
         self.assertIsNone(radvd_mock._scan_for_errors(True))
 
     @patch(DELETE_FILE)
-    @patch(
-        "antlion.controllers.utils_lib.commands.shell.ShellCommand.write_file"
-    )
+    @patch("libs.commands.shell.ShellCommand.write_file")
     def test_write_configs_simple(self, write_file, delete_file):
         delete_file.side_effect = delete_file_mock
         write_file.side_effect = write_configs_mock
@@ -165,9 +159,7 @@ class RadvdTest(unittest.TestCase):
             self.assertTrue(CORRECT_SIMPLE_RADVD_CONFIG == config_data)
 
     @patch(DELETE_FILE)
-    @patch(
-        "antlion.controllers.utils_lib.commands.shell.ShellCommand.write_file"
-    )
+    @patch("libs.commands.shell.ShellCommand.write_file")
     def test_write_configs_complex(self, write_file, delete_file):
         delete_file.side_effect = delete_file_mock
         write_file.side_effect = write_configs_mock

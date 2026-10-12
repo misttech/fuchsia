@@ -18,10 +18,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Dict, List
 
-from antlion.controllers.utils_lib.commands.tcpdump import LinuxTcpdumpCommand
 from honeydew.typing.custom_types import MacAddress
 from iperf.iperf_server import IPerfServerOverSsh
 from legacy_access_point.ap_lib import hostapd_constants
+from libs.commands.tcpdump import LinuxTcpdumpCommand
 from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator

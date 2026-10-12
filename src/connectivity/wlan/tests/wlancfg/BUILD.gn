@@ -277,7 +277,10 @@ group("tests_for_release_testing") {
 antlion_host_test("dhcpv4_duplicate_address_test") {
   main_source =
       "//src/connectivity/wlan/tests/wlancfg/Dhcpv4DuplicateAddressTest.py"
-  libraries = [ "//src/connectivity/wlan/tests/wlancfg/dhcp_testing" ]
+  libraries = [
+    "//src/connectivity/wlan/tests/wlancfg/dhcp_testing",
+    "//src/testing/end_to_end/libs",
+  ]
 }
 
 antlion_host_test("dhcpv4_interop_basic_test") {

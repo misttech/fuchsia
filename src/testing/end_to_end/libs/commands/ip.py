@@ -25,7 +25,6 @@ class LinuxIpCommand(LinuxCommand):
         Args:
             runner: Runner to use to execute this command.
             binary: Path to binary to use. Defaults to "ip".
-            sudo: Requires root permissions. Defaults to False.
         """
         super().__init__(runner, binary)
 
@@ -93,7 +92,6 @@ class LinuxIpCommand(LinuxCommand):
         self,
         net_interface: str,
         address: ipaddress.IPv4Interface | ipaddress.IPv4Address,
-        ignore_status: bool = False,
     ) -> None:
         """Remove an ipv4 address.
 
@@ -102,9 +100,6 @@ class LinuxIpCommand(LinuxCommand):
         Args:
             net_interface: The network interface to remove the ipv4 address from (eg. wlan0).
             address: The ip address to remove from the net_interface.
-            ignore_status: True if the exit status can be ignored
-        Returns:
-            The job result from a the command
         """
         try:
             self._run(
