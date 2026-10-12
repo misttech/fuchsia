@@ -34,10 +34,18 @@ impl std::fmt::Debug for ResolvedAddress {
     }
 }
 
+/// A single symbolized backtrace sample with its timestamp in nanoseconds.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SymbolizedSample {
+    pub timestamp: u64,
+    pub frames: Vec<ResolvedAddress>,
+}
+
 /// Symbolized record hash map. key: pid, value: all of the records belong to this pid.
 #[derive(Clone, Debug, Default)]
 pub struct SymbolizedRecords {
     pub records: Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)>,
+    pub modules: HashMap<Pid, Vec<ModuleWithMmapDetails>>,
 }
 
 /// Symbolized bt list for a single tid.
@@ -45,12 +53,12 @@ pub struct SymbolizedRecords {
 pub struct SymbolizedRecord {
     pub tid: Tid,
     pub thread_name: Option<String>,
-    pub call_stacks: Vec<Vec<ResolvedAddress>>,
+    pub samples: Vec<SymbolizedSample>,
 }
 
 impl SymbolizedRecord {
-    fn add_backtraces(&mut self, backtraces: Vec<ResolvedAddress>) {
-        self.call_stacks.push(backtraces);
+    fn add_sample(&mut self, timestamp: u64, frames: Vec<ResolvedAddress>) {
+        self.samples.push(SymbolizedSample { timestamp, frames });
     }
 }
 
@@ -63,31 +71,62 @@ pub fn create_unsymbolized_samples(
 
 fn find_debug_file(
     symbol_index: &symbol_index::SymbolIndex,
+    extra_build_id_dirs: &[std::path::PathBuf],
     binary_id: &str,
 ) -> Option<std::path::PathBuf> {
     if binary_id.len() <= 2 {
         return None;
     }
-    if let Some(p) = symbol_index.build_id_dirs.iter().find_map(|dir| {
-        let p = std::path::PathBuf::from(&dir.path)
-            .join(&binary_id[..2])
-            .join(format!("{}.debug", &binary_id[2..]));
-        p.exists().then_some(p)
-    }) {
-        return Some(p);
-    }
+    let probe_dir = |base: &Path| -> Option<std::path::PathBuf> {
+        let prefix = base.join(&binary_id[..2]);
+        let with_debug = prefix.join(format!("{}.debug", &binary_id[2..]));
+        if with_debug.exists() {
+            return Some(with_debug);
+        }
+        let plain = prefix.join(&binary_id[2..]);
+        if plain.exists() {
+            return Some(plain);
+        }
+        None
+    };
 
-    // Fallback to the default symbol cache directory
-    if let Ok(home) = std::env::var("HOME") {
-        let p = std::path::PathBuf::from(home)
-            .join(".fuchsia/debug/symbol-cache")
-            .join(&binary_id[..2])
-            .join(format!("{}.debug", &binary_id[2..]));
-        if p.exists() {
+    for dir in extra_build_id_dirs {
+        if let Some(p) = probe_dir(dir) {
             return Some(p);
         }
     }
+
+    if let Some(p) =
+        symbol_index.build_id_dirs.iter().find_map(|dir| probe_dir(Path::new(&dir.path)))
+    {
+        return Some(p);
+    }
+
+    // Fallback to the default symbol cache and build-id directories
+    if let Ok(home) = std::env::var("HOME") {
+        let home_path = std::path::PathBuf::from(home);
+        for rel in [".fuchsia/debug/symbol-cache", ".fuchsia/debug/build-id"] {
+            if let Some(p) = probe_dir(&home_path.join(rel)) {
+                return Some(p);
+            }
+        }
+    }
     None
+}
+
+/// The device reports a process's main executable as an anonymous VMO name (`<VMO#…=blob-…>`
+/// or `blob-…`) while shared libraries already carry their real names. Substitute the owning
+/// component/process name (minus `.cm`) for the former so Perfetto mappings stay readable.
+fn display_module_name(device_name: &str, process_name: Option<&str>) -> String {
+    if device_name.starts_with("<VMO#") || device_name.starts_with("blob-") {
+        if let Some(pname) = process_name {
+            let stripped = pname.strip_suffix(".cm").unwrap_or(pname).trim();
+            if !stripped.is_empty() {
+                return stripped.to_string();
+            }
+        }
+    }
+    device_name.to_string()
 }
 
 impl UnsymbolizedSamples {
@@ -97,12 +136,25 @@ impl UnsymbolizedSamples {
         pprof_conversion: bool,
         context: &ffx_config::EnvironmentContext,
     ) -> Result<SymbolizedRecords, SymbolizeError> {
+        if let Err(e) = symbol_index::ensure_symbol_index_registered(context) {
+            log::warn!("ensure_symbol_index_registered failed, error was: {:#?}", e);
+        }
         let symbol_index_path =
             symbol_index::global_symbol_index_path().unwrap_or_else(|_| "".to_string());
         let global_symbol_index = symbol_index::SymbolIndex::load_aggregate(&symbol_index_path)
             .unwrap_or_else(|_| symbol_index::SymbolIndex::new());
 
-        let handlers: Vec<(Pid, ProfilingRecordHandler)> = self.handlers.into_iter().collect();
+        let mut extra_build_id_dirs = Vec::new();
+        if let Some(bd) = context.build_dir() {
+            let bid = bd.join(".build-id");
+            if bid.exists() {
+                extra_build_id_dirs.push(bid);
+            }
+        }
+
+        let mut handlers: Vec<(Pid, ProfilingRecordHandler)> = self.handlers.into_iter().collect();
+        handlers.sort_by_key(|(pid, _)| pid.0);
+
         let symbolized_samples = handlers.par_iter().chunks(NUM_PROCESS_PER_THREAD).map(|chunk| -> Result<Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)>, SymbolizeError> {
         let mut symbolizer = Symbolizer::with_context(context)?;
         let symbolized_samples_per_thread: Result<Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)>, SymbolizeError> = chunk.into_iter().map(|(pid, handler):&(Pid, ProfilingRecordHandler)| -> Result<(Pid, Option<String>, Vec<SymbolizedRecord>), SymbolizeError> {
@@ -112,13 +164,16 @@ impl UnsymbolizedSamples {
 
                     // We use a hashmap to store the seen backtrace, to avoid symbolize the same backtrace multiple times.
                     let mut seen_bt: HashMap<BacktraceDetails, ResolvedAddress> = HashMap::new();
-                    for ModuleWithMmapDetails {module, mmaps} in handler.module_with_mmap_records.values() {
+                    let mut mod_entries: Vec<(&u16, &ModuleWithMmapDetails)> =
+                        handler.module_with_mmap_records.iter().collect();
+                    mod_entries.sort_by_key(|(id, _)| **id);
+                    for (_, ModuleWithMmapDetails {module, mmaps}) in mod_entries {
                         let build_id_bytes = hex::decode(&module.build_id)?;
                         let module_id = symbolizer
                             .add_module(&module.name, &build_id_bytes);
 
                         // Provide the unstripped host binary file path to the unwinder
-                        let debug_file = find_debug_file(&global_symbol_index, &module.build_id);
+                        let debug_file = find_debug_file(&global_symbol_index, &extra_build_id_dirs, &module.build_id);
                         let debug_path = debug_file.as_ref().and_then(|p| p.to_str());
 
                         let mut min_load_address = u64::MAX;
@@ -141,12 +196,12 @@ impl UnsymbolizedSamples {
                         let mut symbolized_record = SymbolizedRecord {
                             tid: *tid,
                             thread_name,
-                            call_stacks: Vec::new(),
+                            samples: Vec::new(),
                         };
 
-                        for call_stack in backtraces {
+                        for bt_sample in backtraces {
                             let mut current_call_stack = vec![];
-                            for backtrace in call_stack {
+                            for backtrace in &bt_sample.frames {
                                 let resolved_addr =
                                     seen_bt.entry(*backtrace).or_insert_with_key(|bt_key| {
                                         let resolved_locations = symbolizer
@@ -159,17 +214,17 @@ impl UnsymbolizedSamples {
                                     }).to_owned();
                                 current_call_stack.push(resolved_addr);
                             }
-                            symbolized_record.add_backtraces(current_call_stack);
+                            symbolized_record.add_sample(bt_sample.timestamp, current_call_stack);
                         }
                         res_per_pid.push(symbolized_record);
                     }
 
                     for (tid, samples) in &handler.raw_samples {
-                         let thread_name = self.thread_names.get(tid).cloned();
+                        let thread_name = self.thread_names.get(tid).cloned();
                         let mut symbolized_record = SymbolizedRecord {
                             tid: *tid,
                             thread_name,
-                            call_stacks: Vec::new(),
+                            samples: Vec::new(),
                         };
 
                         for sample in samples {
@@ -192,25 +247,68 @@ impl UnsymbolizedSamples {
                                     }).to_owned();
                                     current_call_stack.push(resolved_addr);
                                 }
-                                symbolized_record.add_backtraces(current_call_stack);
+                                symbolized_record.add_sample(sample.timestamp, current_call_stack);
                             }
                         }
-                        if !symbolized_record.call_stacks.is_empty() {
+                        if !symbolized_record.samples.is_empty() {
                             res_per_pid.push(symbolized_record);
                         }
                     }
 
+                    res_per_pid.sort_by_key(|r| r.tid.0);
                     symbolizer.reset();
                     Ok((*pid, handler.process_name.clone(), res_per_pid))
         })
         .collect::<Result<Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)>, SymbolizeError>>();
         symbolized_samples_per_thread
         }).collect::<Result<Vec<Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)>>, SymbolizeError>>()?;
-        let symbolized_samples = symbolized_samples.into_iter().flatten().collect();
+        let mut symbolized_samples: Vec<(Pid, Option<String>, Vec<SymbolizedRecord>)> =
+            symbolized_samples.into_iter().flatten().collect();
+        symbolized_samples.sort_by_key(|(pid, _, _)| pid.0);
+
+        // Map each executable build_id owned by a `.cm` component to that `.cm` name so
+        // dynamic child processes (e.g. `foo.cm:bar`) whose first module shares the same
+        // executable build_id can normalize back to `foo.cm`. Because `handlers` is sorted
+        // by ascending `Pid`, if multiple `.cm` components share the same binary, `or_insert`
+        // deterministically attributes ownership to whichever `.cm` process has the lowest PID.
+        let mut build_id_cm_owner: HashMap<&str, &str> = HashMap::new();
+        for (_pid, handler) in &handlers {
+            if let Some(pname) = handler.process_name.as_deref() {
+                if pname.ends_with(".cm") {
+                    for details in handler.module_with_mmap_records.values() {
+                        if !details.module.build_id.is_empty() {
+                            build_id_cm_owner
+                                .entry(details.module.build_id.as_str())
+                                .or_insert(pname);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut modules_by_pid: HashMap<Pid, Vec<ModuleWithMmapDetails>> = HashMap::new();
+        for (pid, handler) in &handlers {
+            let mut entries: Vec<(&u16, &ModuleWithMmapDetails)> =
+                handler.module_with_mmap_records.iter().collect();
+            entries.sort_by_key(|(id, _)| **id);
+            let mut mods = Vec::with_capacity(entries.len());
+            for (_, details) in entries {
+                let mut cloned = details.clone();
+                let effective_process_name = build_id_cm_owner
+                    .get(cloned.module.build_id.as_str())
+                    .copied()
+                    .or(handler.process_name.as_deref());
+                cloned.module.name =
+                    display_module_name(&cloned.module.name, effective_process_name);
+                mods.push(cloned);
+            }
+            modules_by_pid.insert(*pid, mods);
+        }
+
         if !pprof_conversion {
             std::fs::write(output, format!("{symbolized_samples:#?}\n"))?;
         }
-        Ok(SymbolizedRecords { records: symbolized_samples })
+        Ok(SymbolizedRecords { records: symbolized_samples, modules: modules_by_pid })
     }
 }
 
@@ -328,5 +426,26 @@ mod tests {
         assert_eq!(return_calls.load(Ordering::SeqCst), 1); // count remains 1
 
         assert_eq!(seen_bt.len(), 2);
+    }
+
+    #[test]
+    fn test_display_module_name_substitutes_process_name_for_anonymous_vmos() {
+        // Main executables arrive as anonymous VMO names; use the owning component name.
+        assert_eq!(
+            display_module_name("<VMO#12345=blob-deadbeef>", Some("my_service.cm")),
+            "my_service"
+        );
+        assert_eq!(display_module_name("blob-deadbeef", Some("netstack3.cm")), "netstack3");
+        assert_eq!(display_module_name("blob-deadbeef", Some("sh")), "sh");
+
+        // Shared libraries already carry real names; keep them.
+        assert_eq!(display_module_name("libcustom.so", Some("my_service.cm")), "libcustom.so");
+
+        // No usable process name: keep whatever the device reported.
+        assert_eq!(
+            display_module_name("<VMO#12345=blob-deadbeef>", None),
+            "<VMO#12345=blob-deadbeef>"
+        );
+        assert_eq!(display_module_name("blob-deadbeef", Some(".cm")), "blob-deadbeef");
     }
 }

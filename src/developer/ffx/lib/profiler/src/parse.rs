@@ -55,6 +55,12 @@ impl BacktraceDetails {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct BacktraceSample {
+    pub timestamp: u64,
+    pub frames: Vec<BacktraceDetails>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct RawSample {
     pub timestamp: u64,
     pub sample_memory: Vec<u8>,
@@ -64,7 +70,7 @@ pub struct RawSample {
 pub struct ProfilingRecordHandler {
     pub process_name: Option<String>,
     pub module_with_mmap_records: HashMap<u16, ModuleWithMmapDetails>,
-    pub backtrace_records: HashMap<Tid, Vec<Vec<BacktraceDetails>>>,
+    pub backtrace_records: HashMap<Tid, Vec<BacktraceSample>>,
     pub raw_samples: HashMap<Tid, Vec<RawSample>>,
 }
 

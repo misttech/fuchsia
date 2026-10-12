@@ -157,6 +157,14 @@ pub enum ProviderEvent {
 const MAGIC_NUMBER_TRACE_INFO_TYPE: u8 = 0;
 const MAGIC_NUMBER: u32 = 0x16547846;
 
+/// The 8-byte FXT magic number record (`0x0016547846040010` in little-endian).
+pub const FXT_MAGIC_BYTES: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00];
+
+/// Returns `true` if `bytes` begins with the 8-byte FXT magic number record.
+pub fn is_magic(bytes: &[u8]) -> bool {
+    bytes.starts_with(&FXT_MAGIC_BYTES)
+}
+
 #[derive(Debug, PartialEq)]
 pub(super) enum TraceInfoMetadataRecord {
     MagicNumber,
@@ -262,5 +270,14 @@ mod tests {
             )),
         );
         assert_eq!(trailing, [1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn is_magic_check() {
+        assert!(is_magic(&FXT_MAGIC_BYTES));
+        assert!(is_magic(&[0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00, 0xff]));
+        assert!(!is_magic(&FXT_MAGIC_BYTES[..7]));
+        assert!(!is_magic(b"NOT_FXT!"));
+        assert!(!is_magic(&[]));
     }
 }

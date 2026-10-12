@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::parse::{
-    BacktraceDetails, ModuleDetails, ModuleWithMmapDetails, Pid, RawSample, SymbolizeError, Tid,
-    UnsymbolizedSamples,
+    BacktraceDetails, BacktraceSample, ModuleDetails, ModuleWithMmapDetails, Pid, RawSample,
+    SymbolizeError, Tid, UnsymbolizedSamples,
 };
 use ffx_symbolize::{AddressType, MappingDetails, MappingFlags};
 use fxt::TraceRecord;
@@ -17,7 +17,13 @@ use std::path::Path;
 
 impl UnsymbolizedSamples {
     pub fn new_from_fxt_file(input: impl AsRef<Path>) -> Result<Self, SymbolizeError> {
-        let file = File::open(input.as_ref())?;
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = File::open(input.as_ref())?;
+        let mut magic = [0u8; 8];
+        if file.read_exact(&mut magic).is_err() || !fxt::is_magic(&magic) {
+            return Err(SymbolizeError::FxtParseError(fxt::ParseError::MissingMagicNumber));
+        }
+        file.seek(SeekFrom::Start(0))?;
         let reader = BufReader::new(file);
         let mut parser = SessionParser::new(reader);
         let mut unsymbolized = Self { handlers: HashMap::new(), thread_names: HashMap::new() };
@@ -62,7 +68,7 @@ impl UnsymbolizedSamples {
                         // The leaf frame (index 0) represents the precise execution point
                         // where the thread was sampled, whereas subsequent frames (indices > 0)
                         // are return addresses representing call sites.
-                        let details = backtrace
+                        let frames = backtrace
                             .data
                             .into_iter()
                             .enumerate()
@@ -72,7 +78,10 @@ impl UnsymbolizedSamples {
                                 BacktraceDetails::new(addr, address_type)
                             })
                             .collect();
-                        backtraces.push(details);
+                        backtraces.push(BacktraceSample {
+                            timestamp: backtrace.timestamp as u64,
+                            frames,
+                        });
                     }
                 },
                 TraceRecord::KernelObj(kernel_obj) => {
@@ -120,6 +129,7 @@ mod tests {
         let mut profiler_record = NamedTempFile::new().expect("Failed to create temp file");
         // --- FXT Record Construction Logic ---
 
+        const RECORD_TYPE_INIT: u64 = 1;
         const RECORD_TYPE_PROFILER: u64 = 10;
         const SUBTYPE_MODULE: u64 = 0;
         const SUBTYPE_MMAP: u64 = 1;
@@ -128,6 +138,24 @@ mod tests {
 
         // The 64-bit magic number for FXT files.
         const FXT_MAGIC_NUMBER: u64 = 0x0016547846040010;
+        const TICKS_PER_SECOND: u64 = 38_400_000;
+        const SAMPLE_TICKS_1: u64 = 9_903_928_169_907;
+        const SAMPLE_TICKS_2: u64 = 9_903_928_200_000;
+        const SAMPLE_TICKS_3: u64 = 9_903_928_300_000;
+        const SAMPLE_TICKS_4: u64 = 9_903_928_400_000;
+
+        const fn scale_ticks(ticks: u64) -> u64 {
+            ((ticks as u128 * 1_000_000_000) / TICKS_PER_SECOND as u128) as u64
+        }
+
+        /// Creates a 64-bit FXT Initialization Record (type 1, 2 words).
+        fn create_init_record(tps: u64) -> [u8; 16] {
+            let header = (RECORD_TYPE_INIT << 0) | (2u64 << 4);
+            let mut out = [0u8; 16];
+            out[..8].copy_from_slice(&header.to_le_bytes());
+            out[8..].copy_from_slice(&tps.to_le_bytes());
+            out
+        }
 
         /// Creates a 64-bit FXT Module Record header.
         fn create_module_header(
@@ -170,6 +198,7 @@ mod tests {
         let mut profiler_record_content = Vec::<u8>::new();
 
         profiler_record_content.extend_from_slice(&FXT_MAGIC_NUMBER.to_le_bytes());
+        profiler_record_content.extend_from_slice(&create_init_record(TICKS_PER_SECOND));
 
         // --- Process 1 (PID 1104) ---
 
@@ -220,8 +249,8 @@ mod tests {
 
         // Record 4: Backtrace Record
         profiler_record_content.extend_from_slice(&create_backtrace_header(6, 2));
+        profiler_record_content.extend_from_slice(&SAMPLE_TICKS_1.to_le_bytes());
         profiler_record_content.extend_from_slice(&[
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // Timestamp
             0x50, 0x4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // PID (1104)
             0x38, 0xa, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // TID (2616)
             0x10, 0x8e, 0x7f, 0x38, 0xdc, 0x43, 0x0, 0x0, // Frame 1: 0x43dc387f8e10
@@ -230,8 +259,8 @@ mod tests {
 
         // Record 5: Backtrace Record
         profiler_record_content.extend_from_slice(&create_backtrace_header(6, 2));
+        profiler_record_content.extend_from_slice(&SAMPLE_TICKS_2.to_le_bytes());
         profiler_record_content.extend_from_slice(&[
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // Timestamp
             0x50, 0x4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // PID (1104)
             0xca, 0x4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // TID (1226)
             0x10, 0x8e, 0x7f, 0x38, 0xdc, 0x43, 0x0, 0x0, // Frame 1: 0x43dc387f8e10
@@ -299,8 +328,8 @@ mod tests {
 
         // Record 10: Backtrace Record
         profiler_record_content.extend_from_slice(&create_backtrace_header(6, 2));
+        profiler_record_content.extend_from_slice(&SAMPLE_TICKS_3.to_le_bytes());
         profiler_record_content.extend_from_slice(&[
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // Timestamp
             0x6f, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // PID (4207)
             0x71, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // TID (4209)
             0xea, 0xdc, 0xd1, 0xc, 0x1c, 0x40, 0x0, 0x0, // Frame 1: 0x401c0cd1dcea
@@ -309,8 +338,8 @@ mod tests {
 
         // Record 11: Backtrace Record
         profiler_record_content.extend_from_slice(&create_backtrace_header(7, 3));
+        profiler_record_content.extend_from_slice(&SAMPLE_TICKS_4.to_le_bytes());
         profiler_record_content.extend_from_slice(&[
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // Timestamp
             0x6f, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // PID (4207)
             0x71, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // TID (4209)
             0xea, 0xdc, 0xd1, 0xc, 0x1c, 0x40, 0x0, 0x0, // Frame 1: 0x401c0cd1dcea
@@ -353,17 +382,23 @@ mod tests {
             backtrace_records: HashMap::from([
                 (
                     Tid(2616),
-                    vec![vec![
-                        BacktraceDetails::new(0x43dc387f8e10, AddressType::Exact),
-                        BacktraceDetails::new(0x2b069ffa16c, AddressType::Return),
-                    ]],
+                    vec![BacktraceSample {
+                        timestamp: scale_ticks(SAMPLE_TICKS_1),
+                        frames: vec![
+                            BacktraceDetails::new(0x43dc387f8e10, AddressType::Exact),
+                            BacktraceDetails::new(0x2b069ffa16c, AddressType::Return),
+                        ],
+                    }],
                 ),
                 (
                     Tid(1226),
-                    vec![vec![
-                        BacktraceDetails::new(0x43dc387f8e10, AddressType::Exact),
-                        BacktraceDetails::new(0x3a656c4c85e, AddressType::Return),
-                    ]],
+                    vec![BacktraceSample {
+                        timestamp: scale_ticks(SAMPLE_TICKS_2),
+                        frames: vec![
+                            BacktraceDetails::new(0x43dc387f8e10, AddressType::Exact),
+                            BacktraceDetails::new(0x3a656c4c85e, AddressType::Return),
+                        ],
+                    }],
                 ),
             ]),
             ..Default::default()
@@ -406,15 +441,21 @@ mod tests {
             backtrace_records: HashMap::from([(
                 Tid(4209),
                 vec![
-                    vec![
-                        BacktraceDetails::new(0x401c0cd1dcea, AddressType::Exact),
-                        BacktraceDetails::new(0x3bfd834db94, AddressType::Return),
-                    ],
-                    vec![
-                        BacktraceDetails::new(0x401c0cd1dcea, AddressType::Exact),
-                        BacktraceDetails::new(0x3bfd834db94, AddressType::Return),
-                        BacktraceDetails::new(0x3bfd834e80b, AddressType::Return),
-                    ],
+                    BacktraceSample {
+                        timestamp: scale_ticks(SAMPLE_TICKS_3),
+                        frames: vec![
+                            BacktraceDetails::new(0x401c0cd1dcea, AddressType::Exact),
+                            BacktraceDetails::new(0x3bfd834db94, AddressType::Return),
+                        ],
+                    },
+                    BacktraceSample {
+                        timestamp: scale_ticks(SAMPLE_TICKS_4),
+                        frames: vec![
+                            BacktraceDetails::new(0x401c0cd1dcea, AddressType::Exact),
+                            BacktraceDetails::new(0x3bfd834db94, AddressType::Return),
+                            BacktraceDetails::new(0x3bfd834e80b, AddressType::Return),
+                        ],
+                    },
                 ],
             )]),
             ..Default::default()
@@ -426,5 +467,29 @@ mod tests {
             UnsymbolizedSamples { handlers: expected_handlers, thread_names: HashMap::new() },
             handlers
         );
+    }
+
+    #[test]
+    fn test_fxt_parse_rejects_missing_or_invalid_magic_header() {
+        let payloads: &[&[u8]] = &[
+            b"",
+            b"FXT!",
+            b"NOT_FXT!\x21\x00\x00\x00\x00\x00\x00\x00\x00\x24\xf4\x02\x00\x00\x00\x00",
+        ];
+        for payload in payloads {
+            let mut f = NamedTempFile::new().expect("temp file");
+            f.write_all(payload).unwrap();
+            f.flush().unwrap();
+
+            let res = UnsymbolizedSamples::new_from_fxt_file(f.path());
+            assert!(
+                matches!(
+                    res,
+                    Err(SymbolizeError::FxtParseError(fxt::ParseError::MissingMagicNumber))
+                ),
+                "expected MissingMagicNumber for payload len {}, got {res:?}",
+                payload.len()
+            );
+        }
     }
 }

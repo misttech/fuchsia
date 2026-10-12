@@ -30,7 +30,7 @@ pub use blob::{BlobRecord, BlobType, LargeBlobMetadata, LargeBlobRecord};
 pub use error::{ParseError, ParseWarning};
 pub use event::{EventPayload, EventRecord, RawEventRecord, symbolize};
 pub use log::LogRecord;
-pub use metadata::{Provider, ProviderEvent};
+pub use metadata::{FXT_MAGIC_BYTES, Provider, ProviderEvent, is_magic};
 pub use objects::{KernelObjRecord, UserspaceObjRecord};
 pub use scheduling::{
     ContextSwitchEvent, LegacyContextSwitchEvent, SchedulingRecord, ThreadState, ThreadWakeupEvent,

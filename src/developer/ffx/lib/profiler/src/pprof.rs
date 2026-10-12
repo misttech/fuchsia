@@ -106,7 +106,7 @@ impl ProfileBuilder {
                     Some(name) => format!("thread: {} (tid: {})", name, record.tid.0),
                     None => format!("tid: {}", record.tid.0),
                 };
-                for call_stack in record.call_stacks {
+                for sample_entry in record.samples {
                     let mut sample = pproto::Sample::default();
                     let tid_label = Label {
                         key: TID_INTERN,
@@ -125,7 +125,7 @@ impl ProfileBuilder {
                             library_offset: 0,
                         }],
                     };
-                    for backtrace in call_stack {
+                    for backtrace in sample_entry.frames {
                         sample.location_id.push(self.build_location(backtrace));
                     }
                     sample.location_id.push(self.build_location(tid_addr));
@@ -205,7 +205,7 @@ pub fn samples_to_pprof(input: SymbolizedRecords, output: PathBuf) -> Result<(),
 mod tests {
     use super::*;
     use crate::parse::{Pid, Tid};
-    use crate::symbolize::SymbolizedRecord;
+    use crate::symbolize::{SymbolizedRecord, SymbolizedSample};
     use assert_matches::assert_matches;
     // Helper to create a ResolvedAddress for testing
     fn make_resolved_address(addr: u64, function: &str, file: &str, line: u64) -> ResolvedAddress {
@@ -286,11 +286,16 @@ mod tests {
         let symbolized_record_for_tid = SymbolizedRecord {
             tid,
             thread_name: None,
-            call_stacks: vec![call_stack_trace1, call_stack_trace2],
+            samples: vec![
+                SymbolizedSample { timestamp: 100, frames: call_stack_trace1 },
+                SymbolizedSample { timestamp: 200, frames: call_stack_trace2 },
+            ],
         };
 
-        let input =
-            SymbolizedRecords { records: vec![(pid, None, vec![symbolized_record_for_tid])] };
+        let input = SymbolizedRecords {
+            records: vec![(pid, None, vec![symbolized_record_for_tid])],
+            ..Default::default()
+        };
 
         let profile = builder.build_profile(input);
 
