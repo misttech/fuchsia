@@ -1,0 +1,80 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+load("//build/bazel/rules/testing:fx_unittest_package.bzl", "fx_unittest_package")
+
+package(default_applicable_licenses = ["//:license"])
+
+alias(
+    name = "rust",
+    actual = ":lib",
+    visibility = ["//visibility:public"],
+)
+
+rustc_library(
+    name = "lib",
+    srcs = [
+        "src/lib.rs",
+    ] + select({
+        "@platforms//os:fuchsia": ["src/logs_legacy.rs"],
+        "//conditions:default": [],
+    }),
+    crate_features = select({
+        "//build/bazel/platforms:is_host_os": ["json_schema"],
+        "//conditions:default": [],
+    }),
+    crate_name = "diagnostics_data",
+    edition = "2024",
+    lint_config = "//build/config/rust/lints:clippy_warn_all",
+    # @bazel2gn:skip
+    test_deps = [
+        "//src/lib/fuchsia",
+        "//third_party/rust_crates/vendor:pretty_assertions",
+        "//third_party/rust_crates/vendor:serde_json",
+        "//third_party/rust_crates/vendor:test-case",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
+        ],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    # @bazel2gn:skip
+    with_unit_tests = True,
+    deps = [
+        "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_common",
+        "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust_common",
+        "//src/lib/diagnostics/hierarchy/rust:diagnostics-hierarchy",  # @bazel2gn:path_overwrite://src/lib/diagnostics/hierarchy/rust
+        "//src/lib/diagnostics/log/types:types-serde",
+        "//src/lib/diagnostics/selectors",
+        "//src/sys/lib/moniker",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:chrono",
+        "//third_party/rust_crates/vendor:flyweights",
+        "//third_party/rust_crates/vendor:itertools",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:termion",
+        "//third_party/rust_crates/vendor:thiserror",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
+            "//sdk/rust/zx",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//build/bazel/platforms:is_host_os": [
+            "//third_party/rust_crates/vendor:schemars",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# @bazel2gn:skip
+fx_unittest_package(
+    name = "diagnostics-data-tests",
+    package_name = "diagnostics-data-tests",
+    unit_tests = [":lib_test"],
+    visibility = ["//visibility:public"],
+)
