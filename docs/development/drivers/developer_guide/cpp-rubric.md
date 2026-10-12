@@ -159,6 +159,15 @@ hardware are required to pin the BTI beforehand. After the hardware has
 finished accessing the memory, the driver is responsible for unpinning it.
 Under no circumstances should the BTI be unpinned within the destructor.
 
+Atomics (`std::memory_order_release`) order memory accesses between CPUs, not
+accesses by a device. Before notifying the device of a DMA descriptor (a
+doorbell register write, an ownership bit, an index update), know whether the
+buffer is cached, and, at the notification, comment how the descriptor write
+is ordered before it. Barriers order accesses;
+[cache operations][dma-cache-coherency] make data visible to the device; one
+does not replace the other. Do not add a barrier just in case: comment every
+explicit barrier with the two accesses it orders.
+
 ### Clocks
 
 Clocks are controlled via the [fuchsia.hardware.clock FIDL service][clock-fidl].
@@ -272,3 +281,4 @@ connection to the `DriverTestRealm` service, perform necessary configuration in
 [dtr]: /sdk/lib/driver_test_realm/
 [vmo-registration]: /docs/development/drivers/best_practices/vmo-registration-pattern.md
 [precondition-checks]: /docs/development/drivers/driver_guides/display/register-definitions.md#precondition_checks
+[dma-cache-coherency]: /docs/development/drivers/concepts/driver_development/dma.md#cache_coherency

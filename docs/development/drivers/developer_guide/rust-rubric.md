@@ -167,6 +167,10 @@ or used as a VMO index, and confirm that a client ID was registered by that
 client ([VMO registration][vmo-registration]). `mmio::register!` setters
 silently truncate out-of-range values.
 
+Atomics (`Ordering::Release`) order memory accesses between CPUs, not accesses
+by a device, and `MmioRegion` stores do not include a barrier: explicitly order
+a DMA descriptor write before the store that tells the device about it.
+
 ### Clocks
 
 Clocks are controlled via the [fuchsia.hardware.clock FIDL service][clock-fidl].
