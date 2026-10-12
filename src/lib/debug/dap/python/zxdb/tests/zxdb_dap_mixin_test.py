@@ -9,7 +9,7 @@ import unittest
 from typing import Any
 
 from pydantic import ValidationError
-from pydap.client import DapError
+from pydap.client import DapError, StreamWriterProtocol
 from zxdb_dap import (
     AsyncBacktraceUpdate,
     ThreadEvent,
@@ -26,7 +26,7 @@ from zxdb_dap import (
 )
 
 
-class MockWriter(asyncio.StreamWriter):
+class MockWriter(StreamWriterProtocol):
     def __init__(self) -> None:
         self.buffer = io.BytesIO()
         self.drained = asyncio.Event()

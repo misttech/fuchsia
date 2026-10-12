@@ -9,7 +9,7 @@ import unittest
 from typing import Any
 
 from pydantic import ValidationError
-from pydap.client import DapClient, DapError
+from pydap.client import DapClient, DapError, StreamWriterProtocol
 from pydap.dap_types import DataBreakpoint, Source, SourceBreakpoint
 from pydap.models import (
     AttachRequestArguments,
@@ -32,7 +32,7 @@ from pydap.models import (
 )
 
 
-class MockWriter:
+class MockWriter(StreamWriterProtocol):
     def __init__(self) -> None:
         self.buffer = io.BytesIO()
 
@@ -43,7 +43,7 @@ class MockWriter:
         pass
 
 
-class FailingWriter:
+class FailingWriter(StreamWriterProtocol):
     def write(self, data: bytes) -> None:
         raise OSError("Connection reset by peer")
 
