@@ -274,11 +274,13 @@ yield more detailed logs than `ffx log`.
 `fx run-boot-test` runs kernel boot tests and provides more control over the
 test environment than `fx test`. It is useful to run Zircon's core tests.
 
-Note that by default Zircon drops into a panic shell if the kernel panics, but
-this may be difficult for your shell command harness. Unless you explicitly
-intend to interact with the panic shell, consider passing
-`--cmdline kernel.halt-on-panic=true` to get a failing exit code if Zircon
-panics.
+By default (`kernel.halt-on-panic=false`) Zircon reboots on a kernel panic, and
+`fx run-boot-test` runs QEMU with `-no-reboot`, so a panic causes QEMU to exit
+and the command to return a failing exit code. Do **not** pass
+`kernel.halt-on-panic=true` when running boot tests from a shell command
+harness: it makes the kernel halt in the panic shell instead of rebooting, so
+QEMU never exits and the command hangs. Only use `kernel.halt-on-panic=true`
+when you explicitly intend to interact with the panic shell.
 
 #### Core tests
 
