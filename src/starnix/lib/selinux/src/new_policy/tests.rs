@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::traits::HasPolicyId as _;
 use super::*;
 use crate::InitialSid;
 use anyhow::Context as _;

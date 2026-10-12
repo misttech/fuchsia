@@ -41,7 +41,7 @@ pub use classes::{Class, ClassDefault, ClassDefaultRange, ClassId};
 pub use common_symbols::CommonSymbol;
 pub use compute::{FsUseLabelAndType, XpermsAccessDecision, XpermsKind};
 pub use context::{Context, MlsLevel, MlsRange};
-use error::{ParseError, SerializeError, ValidateError};
+pub use error::{ParseError, SerializeError, ValidateError};
 pub use filename_transitions::FilenameTransitions;
 pub use id_type::*;
 pub use indexed::IdAndNameIndexed;
@@ -51,7 +51,7 @@ pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX, PolicyVersion};
 pub use mls::{Category, RangeTransition, Sensitivity};
 pub use object_contexts::{FsUseType, GenfsCon, GenfsConPath, ObjectContexts};
 use parser::{Array, PolicyCursor};
-pub use parser::{PolicyWriter, SymbolArray};
+pub use parser::{PolicyData, PolicyWriter, SymbolArray};
 pub use permissions::PermissionId;
 pub use policy_cap::{PolicyCap, PolicyCapSet};
 pub use roles::{Role, RoleAllow, RoleId, RoleSet, RoleTransition};
@@ -60,10 +60,19 @@ pub use rules::{
     SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap,
 };
 pub use security_context::{SecurityContext, SecurityContextError};
+pub use traits::{HasName, HasPolicyId, PolicyId};
 use traits::{Serialize, Validate};
 pub use types::*;
 pub use u24_index::U24Index;
 pub use users::User;
+
+pub use NewPolicy as Policy;
+
+/// Maximum supported binary policy size in bytes (`U24Index` limit).
+///
+/// As of 2026-01-30, this is more than five times larger than any policy seen in production or
+/// tests.
+const MAXIMUM_POLICY_SIZE: usize = (1 << 24) - 1;
 
 /// Mandatory role name assigned to non-process/non-socket SELinux objects by default.
 pub(super) const OBJECT_R_ROLE_NAME: &[u8] = b"object_r";
@@ -128,6 +137,13 @@ pub struct NewPolicy {
 impl NewPolicy {
     /// Parses a [`NewPolicy`] from the raw binary data.
     pub fn parse(data: &[u8]) -> Result<Self, ParseError> {
+        let policy_size = data.len();
+        if policy_size > MAXIMUM_POLICY_SIZE {
+            return Err(ParseError::UnsupportedlyLarge {
+                observed: policy_size,
+                limit: MAXIMUM_POLICY_SIZE,
+            });
+        }
         let mut cursor = PolicyCursor::new(data);
         let policy = cursor.parse()?;
         if cursor.offset() < data.len() {

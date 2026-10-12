@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::new_policy::traits::HasPolicyId;
-use crate::policy::{Policy, TypeId};
+use crate::policy::{HasPolicyId as _, Policy, TypeId};
 use crate::{KernelClass, ObjectClass};
 
 use anyhow::{anyhow, bail};
@@ -173,8 +172,6 @@ fn object_class_by_name(name: &str) -> Option<KernelClass> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::parse_policy_by_value;
-    use std::sync::Arc;
 
     const TEST_POLICY: &[u8] =
         include_bytes!("../testdata/composite_policies/compiled/exceptions_config_policy");
@@ -203,7 +200,7 @@ mod tests {
     ];
 
     struct TestData {
-        policy: Arc<Policy>,
+        policy: Policy,
         defined_source: TypeId,
         defined_target: TypeId,
         unmatched_type: TypeId,
@@ -220,8 +217,8 @@ mod tests {
         }
     }
     fn test_data() -> TestData {
-        let parsed = parse_policy_by_value(TEST_POLICY.to_vec()).unwrap();
-        let policy = Arc::new(parsed.validate().unwrap());
+        let policy = Policy::parse(TEST_POLICY).unwrap();
+        policy.validate().unwrap();
         let defined_source = policy.types().get_by_name(EXCEPTION_SOURCE_TYPE).unwrap().id();
         let defined_target = policy.types().get_by_name(EXCEPTION_TARGET_TYPE).unwrap().id();
         let unmatched_type = policy.types().get_by_name(UNMATCHED_TYPE).unwrap().id();

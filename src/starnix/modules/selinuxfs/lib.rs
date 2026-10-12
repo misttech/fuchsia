@@ -6,8 +6,7 @@
 
 use seq_lock::{SeqLock, SeqLockable, WriteSize};
 
-use selinux::policy::parser::PolicyData;
-use selinux::policy::{AccessDecision, AccessVector, POLICYDB_VERSION_MAX, PolicyId};
+use selinux::policy::{AccessDecision, AccessVector, POLICYDB_VERSION_MAX, PolicyData, PolicyId};
 use selinux::{
     ClassId, InitialSid, PolicyCap, SeLinuxStatus, SeLinuxStatusPublisher, SecurityId,
     SecurityPermission, SecurityServer,

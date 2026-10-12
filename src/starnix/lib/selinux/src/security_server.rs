@@ -5,15 +5,13 @@
 use crate::exceptions_config::ExceptionsConfig;
 use crate::kernel::{
     AccessVectorCache, AccessVectorComputer, CacheStats, KernelAccessDecision,
-    KernelXpermsAccessDecision, Query,
+    KernelXpermsAccessDecision, PolicyIndex, Query,
 };
-use crate::new_policy::traits::{HasName, HasPolicyId};
-use crate::new_policy::{HandleUnknown, NewPolicy};
 use crate::permission_check::{PerThreadCache, PermissionCheck};
-use crate::policy::parser::PolicyData;
 use crate::policy::{
-    AccessDecision, AccessVector, ClassId, FsUseLabelAndType, FsUseType, PermissionId, Policy,
-    SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, XpermsBitmap, XpermsKind, parse_policy_by_value,
+    AccessDecision, AccessVector, ClassId, FsUseLabelAndType, FsUseType, HandleUnknown,
+    HasName as _, HasPolicyId as _, PermissionId, Policy, PolicyData, SELINUX_AVD_FLAGS_PERMISSIVE,
+    SecurityContext, XpermsBitmap, XpermsKind,
 };
 use crate::sid_table::SidTable;
 use crate::sync::{LockDepRwLock, SeLinuxSecurityServerStateLock};
@@ -32,7 +30,7 @@ const ROOT_PATH: &'static str = "/";
 
 struct ActivePolicy {
     /// Parsed policy structure.
-    parsed: Arc<Policy>,
+    parsed: PolicyIndex,
 
     /// Allocates and maintains the mapping between `SecurityId`s (SIDs) and Security Contexts.
     sid_table: SidTable,
@@ -257,31 +255,36 @@ impl SecurityServer {
     pub fn load_policy(&self, binary_policy: Vec<u8>) -> Result<(), anyhow::Error> {
         // Parse the supplied policy, and reject the load operation if it is
         // malformed or invalid.
-        let unvalidated_policy = parse_policy_by_value(binary_policy)?;
-        let parsed = Arc::new(unvalidated_policy.validate()?);
+        let policy = Policy::parse(&binary_policy)?;
+        policy.validate()?;
         if !self.allow_unimplemented {
-            validate_no_unsupported_policy_features_used(&parsed)?;
+            validate_no_unsupported_policy_features_used(&policy)?;
         }
 
         let exceptions = self.exceptions.iter().map(String::as_str).collect::<Vec<&str>>();
-        let exceptions = ExceptionsConfig::new(&parsed, &exceptions)?;
+        let exceptions = ExceptionsConfig::new(&policy, &exceptions)?;
+
+        let policy = Arc::new(policy);
+        let parsed = PolicyIndex::new(policy.clone())?;
 
         // Replace any existing policy and push update to `state.status_publisher`.
         self.with_mut_state_and_update_status(|state| {
             let sid_table = if let Some(previous_active_policy) = &state.active_policy {
-                SidTable::new_from_previous(parsed.clone(), &previous_active_policy.sid_table)
+                SidTable::new_from_previous(policy.clone(), &previous_active_policy.sid_table)
             } else {
-                SidTable::new(parsed.clone())
+                SidTable::new(policy.clone())
             };
 
             // TODO(b/324265752): Determine whether SELinux booleans need to be retained across
             // policy (re)loads.
             state.booleans.reset(
-                parsed
+                policy
                     .conditional_booleans()
                     .iter()
                     // TODO(b/324392507): Relax the UTF8 requirement on policy strings.
-                    .map(|(name, value)| (String::from_utf8((*name).to_vec()).unwrap(), *value))
+                    .map(|boolean| {
+                        (String::from_utf8(boolean.name().to_vec()).unwrap(), boolean.active())
+                    })
                     .collect(),
             );
 
@@ -301,7 +304,12 @@ impl SecurityServer {
     pub fn get_binary_policy(&self) -> Option<PolicyData> {
         let state = self.backend.state.read();
         let active_policy = state.active_policy.as_ref()?;
-        Some(active_policy.parsed.serialize())
+        let mut bytes = Vec::new();
+        active_policy
+            .parsed
+            .serialize(&mut bytes)
+            .expect("Serializing an ActivePolicy should not fail.");
+        Some(Arc::from(bytes))
     }
 
     /// Set to enforcing mode if `enforce` is true, permissive mode otherwise.
@@ -784,7 +792,7 @@ fn check_policy_feature_is_empty<T>(name: &'static str, items: &[T]) -> Result<(
     Ok(())
 }
 
-fn validate_no_unsupported_policy_features_used(policy: &NewPolicy) -> Result<(), anyhow::Error> {
+fn validate_no_unsupported_policy_features_used(policy: &Policy) -> Result<(), anyhow::Error> {
     let ocontexts = policy.object_contexts();
     check_policy_feature_is_empty("ports", ocontexts.ports())?;
     check_policy_feature_is_empty("network_interfaces", ocontexts.network_interfaces())?;

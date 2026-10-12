@@ -665,6 +665,28 @@ mod tests {
     }
 
     #[test]
+    fn test_id_set_multi_word() {
+        let bytes = [
+            64, 0, 0, 0, // map_item_size_bits = 64
+            128, 0, 0, 0, // high_bit = 128
+            2, 0, 0, 0, // count = 2
+            // Item 1
+            0, 0, 0, 0, // start_bit = 0
+            5, 0, 0, 0, 0, 0, 0, 0, // map = 5 (bits 0 and 2 set)
+            // Item 2
+            64, 0, 0, 0, // start_bit = 64
+            2, 0, 0, 0, 0, 0, 0, 0, // map = 2 (bit 65 set)
+        ];
+        let mut cursor = PolicyCursor::new(&bytes);
+        let id_set = IdSet::<TypeId, false>::parse(&mut cursor).unwrap();
+        assert_eq!(cursor.offset(), bytes.len());
+        assert!(id_set.contains(TypeId::from_u32(1).unwrap()));
+        assert!(!id_set.contains(TypeId::from_u32(2).unwrap()));
+        assert!(id_set.contains(TypeId::from_u32(3).unwrap()));
+        assert!(id_set.contains(TypeId::from_u32(66).unwrap()));
+    }
+
+    #[test]
     fn test_bitmap_compare() {
         let empty = ExtensibleBitmapBuilder::new().build();
 

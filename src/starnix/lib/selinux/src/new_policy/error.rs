@@ -56,6 +56,8 @@ pub enum ParseError {
     DuplicateName { name: BString },
     #[error("index out of range: {index} (maximum supported is {max})")]
     IndexOutOfRange { index: usize, max: usize },
+    #[error("observed size {observed} exceeds limit {limit}")]
+    UnsupportedlyLarge { observed: usize, limit: usize },
 }
 
 /// Errors that may be encountered validating a binary policy.

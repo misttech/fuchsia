@@ -5,6 +5,7 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::sync::Arc;
 
 use selinux_policy_derive::{Parse, Serialize, Validate};
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
@@ -13,6 +14,9 @@ use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::metadata::PolicyVersion;
 use super::traits::{Parse, Serialize, Validate};
+
+/// Binary policy data.
+pub type PolicyData = Arc<[u8]>;
 
 /// Cursor used to parse elements from the binary policy data.
 #[derive(Debug)]

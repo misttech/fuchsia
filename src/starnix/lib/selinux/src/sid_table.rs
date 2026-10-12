@@ -144,14 +144,13 @@ impl SidTable {
 mod tests {
     use super::*;
 
-    use crate::policy::parse_policy_by_value;
-
     const TESTS_BINARY_POLICY: &[u8] =
         include_bytes!("../testdata/micro_policies/security_server_tests_policy");
 
     fn test_policy() -> Arc<Policy> {
-        let unvalidated = parse_policy_by_value(TESTS_BINARY_POLICY.to_vec()).unwrap();
-        Arc::new(unvalidated.validate().unwrap())
+        let policy = Policy::parse(TESTS_BINARY_POLICY).unwrap();
+        policy.validate().unwrap();
+        Arc::new(policy)
     }
 
     #[test]

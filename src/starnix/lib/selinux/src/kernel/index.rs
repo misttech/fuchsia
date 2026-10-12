@@ -5,16 +5,15 @@
 use super::permissions::{ClassPermission as _, FileClass, KernelClass, KernelPermission};
 use super::{AccessVectorComputer, KernelAccessDecision, ObjectClass};
 use crate::NullessByteStr;
-use crate::new_policy::{
-    Class, HandleUnknown, PolicyCap, SELINUX_AVD_FLAGS_PERMISSIVE, XpermsAccessDecision, XpermsKind,
-};
-use crate::policy::parsed_policy::ParsedPolicy;
 use crate::policy::{
-    AccessDecision, AccessVector, ClassId, HasPolicyId as _, PermissionId, SecurityContext,
+    AccessDecision, AccessVector, Class, ClassId, HandleUnknown, HasPolicyId as _, PermissionId,
+    Policy, PolicyCap, SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, XpermsAccessDecision,
+    XpermsKind,
 };
 
 use std::collections::HashMap;
 use std::ops::Deref;
+use std::sync::Arc;
 use strum::VariantArray as _;
 
 /// Array of [`PermissionId`] values for each of a kernel security class' permissions.
@@ -35,7 +34,7 @@ pub struct PolicyIndex {
     /// Index mapping kernel class permissions to their policy-specific [`AccessVector`] bit index.
     permissions: [KernelPermissionIdsArray; KernelClass::VARIANTS.len()],
     /// Parsed binary policy.
-    parsed_policy: ParsedPolicy,
+    policy: Arc<Policy>,
 }
 
 impl PolicyIndex {
@@ -45,8 +44,8 @@ impl PolicyIndex {
     /// The policy's `handle_unknown()` configuration determines whether the policy can be loaded
     /// even if it omits classes or permissions expected by the kernel, and whether to allow or
     /// deny those permissions if so.
-    pub fn new(parsed_policy: ParsedPolicy) -> Result<Self, anyhow::Error> {
-        let policy_classes = parsed_policy.classes();
+    pub fn new(policy: Arc<Policy>) -> Result<Self, anyhow::Error> {
+        let policy_classes = policy.classes();
 
         let mut classes = HashMap::with_capacity(KernelClass::VARIANTS.len());
 
@@ -59,7 +58,7 @@ impl PolicyIndex {
                     classes.insert(*known_class, class.id());
                 }
                 None => {
-                    if parsed_policy.handle_unknown() == HandleUnknown::Reject {
+                    if policy.handle_unknown() == HandleUnknown::Reject {
                         return Err(anyhow::anyhow!("missing object class {:?}", known_class));
                     }
                 }
@@ -77,12 +76,12 @@ impl PolicyIndex {
             let kernel_class_name = kernel_permission.class().name();
             if let Some(class) = policy_classes.get_by_name(kernel_class_name.as_bytes()) {
                 if let Some(permission_id) =
-                    parsed_policy.find_permission_id_by_name(class, kernel_permission.name())
+                    policy.find_permission_id_by_name(class, kernel_permission.name())
                 {
                     let kernel_class_id = kernel_permission.class() as usize;
                     let kernel_permission_id = kernel_permission.id() as usize;
                     permissions[kernel_class_id][kernel_permission_id] = Some(permission_id);
-                } else if parsed_policy.handle_unknown() == HandleUnknown::Reject {
+                } else if policy.handle_unknown() == HandleUnknown::Reject {
                     return Err(anyhow::anyhow!(
                         "missing permission {:?}:{:?}",
                         kernel_class_name,
@@ -92,7 +91,7 @@ impl PolicyIndex {
             }
         }
 
-        Ok(Self { classes, permissions, parsed_policy })
+        Ok(Self { classes, permissions, policy })
     }
 
     /// Returns the policy entry for a class identified either by its well-known kernel object
@@ -101,9 +100,9 @@ impl PolicyIndex {
         match object_class {
             ObjectClass::Kernel(kernel_class) => {
                 let &class_id = self.classes.get(&kernel_class)?;
-                self.parsed_policy.classes().get_by_id(class_id)
+                self.policy.classes().get_by_id(class_id)
             }
-            ObjectClass::ClassId(class_id) => self.parsed_policy.classes().get_by_id(class_id),
+            ObjectClass::ClassId(class_id) => self.policy.classes().get_by_id(class_id),
         }
     }
 
@@ -132,12 +131,7 @@ impl PolicyIndex {
         // TODO: https://fxbug.dev/361552580 - For `KernelClass`es, apply the kernel's notion
         // of whether the class is "process", or socket-like when `target_class` is `None`?
         let target_class = self.class(object_class.into());
-        self.parsed_policy.compute_create_context(
-            source_context,
-            target_context,
-            target_class,
-            name,
-        )
+        self.policy.compute_create_context(source_context, target_context, target_class, name)
     }
 
     /// Computes the access decision for `source_context` and `target_context` on `object_class`.
@@ -148,10 +142,10 @@ impl PolicyIndex {
         object_class: impl Into<ObjectClass>,
     ) -> AccessDecision {
         if let Some(target_class) = self.class(object_class.into()) {
-            self.parsed_policy.compute_access_decision(source_context, target_context, target_class)
+            self.policy.compute_access_decision(source_context, target_context, target_class)
         } else {
             let mut decision = AccessDecision::allow(AccessVector::NONE);
-            if self.parsed_policy.is_permissive(source_context.type_()) {
+            if self.policy.is_permissive(source_context.type_()) {
                 decision.flags |= SELINUX_AVD_FLAGS_PERMISSIVE;
             }
             decision
@@ -169,7 +163,7 @@ impl PolicyIndex {
         xperms_prefix: u8,
     ) -> XpermsAccessDecision {
         if let Some(target_class) = self.class(object_class.into()) {
-            self.parsed_policy.compute_xperms_access_decision(
+            self.policy.compute_xperms_access_decision(
                 xperms_kind,
                 source_context,
                 target_context,
@@ -190,7 +184,7 @@ impl PolicyIndex {
         class: Option<KernelClass>,
     ) -> Option<SecurityContext> {
         let node_path = if class == Some(FileClass::LnkFile.into())
-            && !self.parsed_policy.has_policycap(PolicyCap::GenfsSeclabelSymlinks)
+            && !self.policy.has_policycap(PolicyCap::GenfsSeclabelSymlinks)
         {
             // Symlinks receive the filesystem root label by default, rather than a label dependent on
             // the `node_path`. Path based labels may be enabled with the "genfs_seclabel_symlinks"
@@ -201,7 +195,7 @@ impl PolicyIndex {
         };
 
         let class_id = class.and_then(|class| self.class(class.into())).map(|class| class.id());
-        self.parsed_policy.genfscon_label_for_fs_and_path(fs_type, node_path, class_id)
+        self.policy.genfscon_label_for_fs_and_path(fs_type, node_path, class_id)
     }
 }
 
@@ -215,7 +209,7 @@ impl AccessVectorComputer for PolicyIndex {
         let mut kernel_audit;
         // Set the default values of the bits as appropriate for the policy's handle_unknown value.
         // Bits corresponding to policy-known permissions will be overwritten.
-        if self.parsed_policy.handle_unknown() == HandleUnknown::Allow {
+        if self.policy.handle_unknown() == HandleUnknown::Allow {
             // If we allow unknown permissions, a bit will be by default allowed and not audited.
             kernel_allow = u32::MAX;
             kernel_audit = 0u32;
@@ -251,9 +245,9 @@ impl AccessVectorComputer for PolicyIndex {
 }
 
 impl Deref for PolicyIndex {
-    type Target = ParsedPolicy;
+    type Target = Policy;
 
     fn deref(&self) -> &Self::Target {
-        &self.parsed_policy
+        &self.policy
     }
 }
