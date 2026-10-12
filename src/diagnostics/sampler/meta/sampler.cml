@@ -17,6 +17,18 @@
     },
     use: [
         {
+            config: "fuchsia.diagnostics.sampler.MinimumSampleRateSec",
+            key: "minimum_sample_rate_sec",
+            availability: "optional",
+            type: "int64",
+            default: 300,
+        },
+
+        // Sampler project configurations in JSON. See:
+        // [`ProjectConfig`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/diagnostics/lib/sampler-config/src/runtime/mod.rs)
+        // for the schema.
+        // LINT.IfChange
+        {
             config: "fuchsia.diagnostics.sampler.ProjectConfigs",
             key: "project_configs",
             availability: "optional",
@@ -26,7 +38,10 @@
                 type: "string",
                 max_size: 100000,
             },
+            default: [],
         },
+
+        // LINT.ThenChange(//src/lib/assembly/platform_configuration/src/subsystems/diagnostics.rs)
         {
             protocol: [
                 "fuchsia.diagnostics.Sample",
@@ -41,22 +56,4 @@
             from: "framework",
         },
     ],
-    config: {
-        minimum_sample_rate_sec: { type: "int64" },
-
-        // Sampler project configurations in JSON. See:
-        // [`ProjectConfig`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/diagnostics/lib/sampler-config/src/runtime/mod.rs)
-        // for the schema.
-        // LINT.IfChange
-        project_configs: {
-            type: "vector",
-            max_count: 1024,
-            element: {
-                type: "string",
-                max_size: 100000,
-            },
-        },
-
-        // LINT.ThenChange(//src/lib/assembly/platform_configuration/src/subsystems/diagnostics.rs)
-    },
 }

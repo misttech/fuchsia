@@ -35,5 +35,14 @@
             as: "config-data",
             to: "#detect",
         },
+        {
+            config: [
+                "fuchsia.diagnostics.detect.CheckEvery",
+                "fuchsia.diagnostics.detect.TestOnly",
+            ],
+            from: "void",
+            to: "#detect",
+            availability: "optional",
+        },
     ],
 }

@@ -10,8 +10,12 @@ use component_events::events::{EventStream, Stopped};
 use component_events::matcher::EventMatcher;
 use fake_archive_accessor::FakeArchiveAccessor;
 use fidl::endpoints::{ClientEnd, create_endpoints};
+use fidl_fuchsia_diagnostics as diagnostics;
+use fidl_fuchsia_feedback as fcrash;
 use fidl_fuchsia_io::R_STAR_DIR;
 use fidl_server::*;
+use fidl_test_detect_factory as ftest;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
@@ -20,10 +24,6 @@ use futures::StreamExt;
 use futures::lock::Mutex;
 use log::{error, info};
 use std::sync::Arc;
-use {
-    fidl_fuchsia_diagnostics as diagnostics, fidl_fuchsia_feedback as fcrash,
-    fidl_test_detect_factory as ftest, fuchsia_async as fasync,
-};
 
 // Errors returned from this module.
 #[derive(Debug, thiserror::Error)]
@@ -64,6 +64,29 @@ impl RealmFactory {
         let builder = RealmBuilder::new().await?;
         // Instead of starting eagerly, we'll start with DetectBinder the way it's started in products.
         let detect = builder.add_child("detect", DETECT_URL, ChildOptions::new()).await?;
+
+        // Keep this the same as CHECK_PERIOD_SECONDS in integration_test.rs
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.diagnostics.detect.CheckEvery".parse()?,
+                value: "Seconds(5)".to_string().into(),
+            }))
+            .await?;
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.diagnostics.detect.TestOnly".parse()?,
+                value: true.into(),
+            }))
+            .await?;
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::configuration("fuchsia.diagnostics.detect.CheckEvery"))
+                    .capability(Capability::configuration("fuchsia.diagnostics.detect.TestOnly"))
+                    .from(Ref::self_())
+                    .to(&detect),
+            )
+            .await?;
 
         let options = RealmOptions::from(options);
         // This is necessary because add_local_child takes a Fn rather than FnOnce, so we cannot move

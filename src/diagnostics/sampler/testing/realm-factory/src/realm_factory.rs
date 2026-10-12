@@ -33,6 +33,7 @@ const SAMPLER_URL: &str = "#meta/sampler.cm";
 const ARCHIVIST_URL: &str = "#meta/archivist-for-embedding.cm";
 const SAMPLER_BINDER_ALIAS: &str = "fuchsia.component.SamplerBinder";
 const PROJECT_CONFIGS_CAPABILITY: &str = "fuchsia.diagnostics.sampler.ProjectConfigs";
+const MINIMUM_SAMPLE_RATE_SEC_CAPABILITY: &str = "fuchsia.diagnostics.sampler.MinimumSampleRateSec";
 
 fn load_configs(index: Index) -> Vec<String> {
     let mut project_configs = vec![
@@ -93,11 +94,18 @@ pub async fn create_realm(options: ftest::RealmOptions) -> Result<RealmInstance,
             )),
         }))
         .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: MINIMUM_SAMPLE_RATE_SEC_CAPABILITY.parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Int64(1)),
+        }))
+        .await?;
 
     builder
         .add_route(
             Route::new()
                 .capability(Capability::configuration(PROJECT_CONFIGS_CAPABILITY))
+                .capability(Capability::configuration(MINIMUM_SAMPLE_RATE_SEC_CAPABILITY))
                 .from(Ref::self_())
                 .to(&wrapper_realm),
         )
@@ -106,6 +114,7 @@ pub async fn create_realm(options: ftest::RealmOptions) -> Result<RealmInstance,
         .add_route(
             Route::new()
                 .capability(Capability::configuration(PROJECT_CONFIGS_CAPABILITY))
+                .capability(Capability::configuration(MINIMUM_SAMPLE_RATE_SEC_CAPABILITY))
                 .from(Ref::parent())
                 .to(&sampler),
         )

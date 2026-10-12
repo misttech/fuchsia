@@ -16,6 +16,12 @@
             to: "#sampler",
         },
         {
+            config: [ "fuchsia.diagnostics.sampler.MinimumSampleRateSec" ],
+            from: "void",
+            to: "#sampler",
+            availability: "optional",
+        },
+        {
             protocol: [ "fuchsia.diagnostics.Sample" ],
             from: "parent/diagnostics-accessors",
             to: [ "#sampler" ],

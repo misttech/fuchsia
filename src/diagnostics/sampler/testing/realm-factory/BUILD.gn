@@ -60,18 +60,11 @@ fuchsia_component("realm-factory-component") {
   deps = [ ":bin" ]
 }
 
-fuchsia_structured_config_values("sampler-test-config") {
-  values_source = "sampler-test-config.json5"
-  component_name = "sampler"
-  cm_label = "//src/diagnostics/sampler:sampler-manifest"
-}
-
 fuchsia_package("realm-factory") {
   package_name = "sampler-realm-factory"
   testonly = true
   deps = [
     ":realm-factory-component",
-    ":sampler-test-config",
     "//src/cobalt/bin/testing/fake_cobalt:component_v2",
     "//src/diagnostics/archivist:archivist-for-embedding-bundle",
     "//src/diagnostics/sampler:sampler-component",

@@ -24,6 +24,21 @@
             rights: [ "r*" ],
             path: "/config/data",
         },
+        {
+            config: "fuchsia.diagnostics.detect.CheckEvery",
+            key: "check_every",
+            type: "string",
+            max_size: 100,
+            availability: "optional",
+            default: "Minutes(8)",
+        },
+        {
+            config: "fuchsia.diagnostics.detect.TestOnly",
+            key: "test_only",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
     ],
     expose: [
         {
@@ -31,11 +46,4 @@
             from: "framework",
         },
     ],
-    config: {
-        check_every: {
-            type: "string",
-            max_size: 100,
-        },
-        test_only: { type: "bool" },
-    },
 }

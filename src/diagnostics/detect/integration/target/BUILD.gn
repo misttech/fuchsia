@@ -4,33 +4,15 @@
 
 import("//build/components.gni")
 
-fuchsia_component_manifest("manifest") {
-  manifest = "meta/target.cml"
-  component_name = "target"
-}
-
-fuchsia_structured_config_values("configs") {
-  testonly = true
-  cm_label = ":manifest"
-  values_source = "configs/integration-test.json5"
-}
-
-fuchsia_structured_config_rust_lib("config-lib") {
-  testonly = true
-  cm_label = ":manifest"
-}
-
 fuchsia_component("component") {
   testonly = true
-  cm_label = ":manifest"
+  component_name = "target"
+  manifest = "meta/target.cml"
   deps = [ "//src/diagnostics/launcher:bin_with_fake_time" ]
 }
 
 fuchsia_package("pkg") {
   testonly = true
   package_name = "diagnostics_detect_integration_target"
-  deps = [
-    ":component",
-    ":configs",
-  ]
+  deps = [ ":component" ]
 }

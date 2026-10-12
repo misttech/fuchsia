@@ -64,11 +64,6 @@ fuchsia_component_manifest("triage-detect-manifest") {
   component_name = "triage-detect"
 }
 
-fuchsia_structured_config_values("triage-detect-prod-config") {
-  cm_label = ":triage-detect-manifest"
-  values_source = "configs/default.json5"
-}
-
 fuchsia_structured_config_rust_lib("triage-detect-config") {
   cm_label = ":triage-detect-manifest"
 }
@@ -79,10 +74,7 @@ fuchsia_component("component") {
 }
 
 fuchsia_package("triage-detect") {
-  deps = [
-    ":component",
-    ":triage-detect-prod-config",
-  ]
+  deps = [ ":component" ]
 }
 
 fuchsia_unittest_package("triage-detect-tests") {

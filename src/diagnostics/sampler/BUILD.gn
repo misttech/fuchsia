@@ -85,24 +85,12 @@ fuchsia_component("sampler-component") {
   deps = [ "//src/diagnostics/launcher:bin" ]
 }
 
-fuchsia_structured_config_values("default-config-values") {
-  cm_label = ":sampler-manifest"
-
-  values = {
-    minimum_sample_rate_sec = 300
-    project_configs = []
-  }
-}
-
 fuchsia_structured_config_rust_lib("sampler-component-config") {
   cm_label = ":sampler-manifest"
 }
 
 fuchsia_package("sampler") {
-  deps = [
-    ":default-config-values",
-    ":sampler-component",
-  ]
+  deps = [ ":sampler-component" ]
 }
 
 group("tests") {
