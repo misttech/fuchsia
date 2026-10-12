@@ -208,6 +208,7 @@ std::optional<AcpiMadt::GicDescriptor> AcpiMadt::GetGicDriver() const {
   const AcpiMadtGicDistributor* gicd = nullptr;
   const AcpiGicMsi* gic_msi = nullptr;
   const AcpiMadtGicRedistributor* gicr = nullptr;
+  const AcpiMadtGicIts* gic_its = nullptr;
 
   for (const auto& controller : controllers()) {
     switch (controller.type) {
@@ -222,6 +223,9 @@ std::optional<AcpiMadt::GicDescriptor> AcpiMadt::GetGicDriver() const {
         break;
       case AcpiGicMsi::kType:
         gic_msi = GetInterruptController<AcpiGicMsi>(controller);
+        break;
+      case AcpiMadtGicIts::kType:
+        gic_its = GetInterruptController<AcpiMadtGicIts>(controller);
         break;
       default:
         printf("%s: unexpected interrupt controller type: 0x%x\n", __func__, controller.type);
@@ -267,6 +271,7 @@ std::optional<AcpiMadt::GicDescriptor> AcpiMadt::GetGicDriver() const {
                   .gicd_offset = gicd->physical_base_address - mmio_phys_addr,
                   .gicr_offset = gicr->discovery_range_base_address - mmio_phys_addr,
                   .gicr_stride = kGicv3rDefaultStride,
+                  .its_phys = gic_its ? gic_its->physical_base_address : 0,
                   .ipi_base = 0,
                   .optional = true,
               },

@@ -292,6 +292,17 @@ struct __attribute__((packed)) AcpiMadtGicRedistributor {
 };
 static_assert(sizeof(AcpiMadtGicRedistributor) == 16, "MADT GICR is the wrong size");
 
+struct __attribute__((packed)) AcpiMadtGicIts {
+  static constexpr uint8_t kType = 0xf;
+
+  InterruptControllerHeader hdr;
+  uint16_t reserved;
+  uint32_t gic_its_id;
+  uint64_t physical_base_address;
+  uint32_t reserved2;
+};
+static_assert(sizeof(AcpiMadtGicIts) == 20, "MADT GIC ITS is the wrong size");
+
 // Serial Port Console Redirection table
 struct __attribute__((packed)) AcpiSpcr {
   constexpr static AcpiTableSignature kSig = {'S', 'P', 'C', 'R'};

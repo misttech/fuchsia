@@ -386,6 +386,10 @@ TEST_F(AcpiTableTest, MadtItems) {
         .hdr = {.type = AcpiMadtGicRedistributor::kType,
                 .length = sizeof(AcpiMadtGicRedistributor)},
     };
+    AcpiMadtGicIts its = {
+        .hdr = {.type = AcpiMadtGicIts::kType, .length = sizeof(AcpiMadtGicIts)},
+        .physical_base_address = 0x08080000,
+    };
   } madt_and_controllers = {};
   madt_and_controllers.madt.hdr.length = static_cast<uint32_t>(sizeof(madt_and_controllers));
 
@@ -415,6 +419,9 @@ TEST_F(AcpiTableTest, MadtItems) {
 
   items = FindItems(buffer().data(), ZBI_TYPE_KERNEL_DRIVER);
   ASSERT_EQ(items.size(), 1ULL);
+  ASSERT_EQ(items[0].size(), sizeof(zbi_dcfg_arm_gic_v3_driver_t));
+  const auto *gic_v3 = reinterpret_cast<const zbi_dcfg_arm_gic_v3_driver_t *>(items[0].data());
+  EXPECT_EQ(gic_v3->its_phys, 0x08080000ULL);
 }
 
 TEST_F(BootZbiItemTest, PlatformIdTest) {
