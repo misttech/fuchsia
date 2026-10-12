@@ -14,6 +14,7 @@ from typing import Any, Literal, TypedDict, get_args, overload
 import fidl_fuchsia_wlan_internal as fidl_security
 import fuchsia_wlan_base_test
 import honeydew.affordances.connectivity.wlan.core as wlan_core
+import perf_publish.publish as publish
 from honeydew.affordances.connectivity.netstack.types import PortClass
 from honeydew.affordances.connectivity.wlan.utils.types import (
     KNOWN_COUNTRY_CODES,
@@ -47,6 +48,8 @@ from openwrt_access_point.lib.access_point_config_mapper import (
 logger = logging.getLogger(__name__)
 
 IPERF_DURATION: timedelta = timedelta(seconds=10)
+FUCHSIAPERF_SUITE_NAME: str = "fuchsia.wlan.throughput_test"
+EXPECTED_METRICS_FILENAME: str = "throughput_expected_metrics.txt"
 
 LinkMetricKey = Literal[
     "ap_rssi",
@@ -371,6 +374,9 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         self.html_file_path: str = os.path.join(
             self.log_path, "throughput.html"
         )
+        self.fuchsiaperf_file_path: str = os.path.join(
+            self.log_path, "throughput.fuchsiaperf.json"
+        )
         self.test_cases: list[TestCaseRecord] = []
 
     async def pre_run(self) -> None:
@@ -431,8 +437,11 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         await super().teardown_test()
 
     async def teardown_class(self) -> None:
-        self._update_html_report()
-        await super().teardown_class()
+        try:
+            self._update_html_report()
+            self._publish_fuchsiaperf_report()
+        finally:
+            await super().teardown_class()
 
     async def _measure_link_metrics(
         self, iface: wlan_core.ClientIface, dut_mac: MacAddress, band: Band
@@ -1093,6 +1102,77 @@ class ThroughputTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
 
         with open(self.html_file_path, "w", encoding="utf-8") as f:
             f.write("\n".join(html_lines))
+
+    @staticmethod
+    def _build_fuchsiaperf_data(
+        test_cases: list[TestCaseRecord],
+    ) -> list[dict[str, Any]]:
+        entries_by_label: dict[str, dict[str, Any]] = {}
+        for test_case in test_cases:
+            measurements = test_case["measurements"]
+            for proto, measurement in (
+                ("tcp", measurements["tcp_tx"]),
+                ("tcp", measurements["tcp_rx"]),
+                ("udp", measurements["udp_tx"]),
+                ("udp", measurements["udp_rx"]),
+            ):
+                label = (
+                    f"ch{test_case['channel']}_{test_case['channel_bandwidth']}mhz/"
+                    f"{proto}_{measurement['direction']}"
+                )
+                if label in entries_by_label:
+                    entries_by_label[label]["values"].append(
+                        measurement["throughput_mbps"]
+                    )
+                else:
+                    entries_by_label[label] = {
+                        "test_suite": FUCHSIAPERF_SUITE_NAME,
+                        "label": label,
+                        "values": [measurement["throughput_mbps"]],
+                        "unit": "unitless_biggerIsBetter",
+                    }
+        return list(entries_by_label.values())
+
+    def _publish_fuchsiaperf_report(self) -> None:
+        """Publishes throughput metrics in fuchsiaperf format for Chromeperf.
+
+        Metrics are scoped per device type by perf_publish's multi-device
+        naming on the builder, so the label only encodes the test permutation.
+        """
+        test_cases = self.test_cases
+        if not test_cases and os.path.exists(self.json_file_path):
+            with open(self.json_file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                test_cases = data.get("test_cases", [])
+
+        if not test_cases:
+            return
+
+        fuchsiaperf_data = self._build_fuchsiaperf_data(test_cases)
+        with open(self.fuchsiaperf_file_path, "w", encoding="utf-8") as f:
+            json.dump(fuchsiaperf_data, f, indent=2)
+            f.write("\n")
+
+        expected_metrics_path = os.path.join(
+            self.log_path, EXPECTED_METRICS_FILENAME
+        )
+        expected_lines = [
+            "[no-summarize-metrics]",
+            *sorted(
+                {
+                    f"{entry['test_suite']}: {entry['label']}"
+                    for entry in fuchsiaperf_data
+                }
+            ),
+        ]
+        with open(expected_metrics_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(expected_lines) + "\n")
+
+        publish.publish_fuchsiaperf(
+            [self.fuchsiaperf_file_path],
+            EXPECTED_METRICS_FILENAME,
+            runtime_deps_dir=self.log_path,
+        )
 
 
 if __name__ == "__main__":
