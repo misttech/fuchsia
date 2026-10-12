@@ -1794,6 +1794,7 @@ impl Journal {
                     // the _next_ time we flush the device since the super-block is not guaranteed
                     // to persist until then.
                     if compact_fut.is_none()
+                        && !inner.compaction_running
                         && !inner.terminate
                         && !inner.disable_compactions
                         && !inner.compactions_paused
@@ -1967,8 +1968,26 @@ impl Journal {
     /// This should generally NOT be called externally. It is public to allow use by FIDL service
     /// fxfs.Debug.
     pub async fn force_compact(&self) -> Result<(), Error> {
-        self.inner.lock().forced_compaction = true;
-        scopeguard::defer! { self.inner.lock().forced_compaction = false; }
+        loop {
+            debug_assert_not_too_long!({
+                let mut inner = self.inner.lock();
+                if !inner.compaction_running {
+                    inner.compaction_running = true;
+                    inner.forced_compaction = true;
+                    break;
+                }
+                self.reclaim_event.listen()
+            });
+        }
+        scopeguard::defer! {
+            let mut inner = self.inner.lock();
+            inner.compaction_running = false;
+            inner.forced_compaction = false;
+            if let Some(waker) = inner.flush_waker.take() {
+                waker.wake();
+            }
+            self.reclaim_event.notify(usize::MAX);
+        }
         self.compact().await
     }
 
