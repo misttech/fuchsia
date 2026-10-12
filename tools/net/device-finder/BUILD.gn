@@ -37,10 +37,6 @@ if (is_host) {
   go_library("lib") {
     sources = [
       "cmd/common.go",
-      "cmd/dnssderrors.go",
-      "cmd/dnssdfinder.go",
-      "cmd/dnssdfinder.h",
-      "cmd/dnssdfinder_c.c",
       "cmd/finders.go",
       "cmd/list.go",
       "cmd/main.go",

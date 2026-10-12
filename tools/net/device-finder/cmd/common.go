@@ -14,7 +14,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -134,12 +133,12 @@ const (
 func (cmd *devFinderCmd) SetCommonFlags(f *flag.FlagSet) {
 	cmd.flagSet = f
 	f.BoolVar(&cmd.json, "json", false, "Outputs in JSON format.")
-	f.StringVar(&cmd.mdnsAddrs, "addr", "224.0.0.251,ff02::fb", "[linux only] Comma separated list of addresses to issue mDNS queries to.")
-	f.StringVar(&cmd.mdnsPorts, "port", "5353", "[linux only] Comma separated list of ports to issue mDNS queries to.")
+	f.StringVar(&cmd.mdnsAddrs, "addr", "224.0.0.251,ff02::fb", "Comma separated list of addresses to issue mDNS queries to.")
+	f.StringVar(&cmd.mdnsPorts, "port", "5353", "Comma separated list of ports to issue mDNS queries to.")
 	f.DurationVar(&cmd.timeout, "timeout", 2*time.Second, "The duration before declaring a timeout.")
 	f.BoolVar(&cmd.localResolve, "local", false, "Returns the address of the interface to the host when doing service lookup/domain resolution.")
 	f.IntVar(&cmd.deviceLimit, "device-limit", 0, "Exits before the timeout at this many devices per resolution (zero means no limit).")
-	f.IntVar(&cmd.ttl, "ttl", -1, "[linux only] Sets the TTL for outgoing mcast messages. Primarily for debugging and testing. Setting this to zero limits messages to the localhost.")
+	f.IntVar(&cmd.ttl, "ttl", -1, "Sets the TTL for outgoing mcast messages. Primarily for debugging and testing. Setting this to zero limits messages to the localhost.")
 	f.BoolVar(&cmd.mdns, mdnsFlag, true, "Determines whether to use mDNS protocol")
 	f.BoolVar(&cmd.netboot, netbootFlag, false, "Determines whether to use netboot protocol")
 	f.BoolVar(&cmd.ipv6, "ipv6", true, "Set whether to query using IPv6. Disabling IPv6 will also disable netboot.")
@@ -305,11 +304,7 @@ func (cmd *devFinderCmd) deviceFinders() ([]deviceFinder, error) {
 			return nil, errors.New("only one of mdns and netboot may be specified")
 		}
 		if cmd.mdns {
-			if runtime.GOOS == "darwin" {
-				cmd.finders = append(cmd.finders, newDNSSDFinder(cmd))
-			} else {
-				cmd.finders = append(cmd.finders, &mdnsFinder{deviceFinderBase{cmd: cmd}})
-			}
+			cmd.finders = append(cmd.finders, &mdnsFinder{deviceFinderBase{cmd: cmd}})
 		}
 		if cmd.netboot && cmd.ipv6 {
 			cmd.finders = append(cmd.finders, &netbootFinder{deviceFinderBase{cmd: cmd}})

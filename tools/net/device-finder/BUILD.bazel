@@ -13,16 +13,11 @@ go_library(
     name = "lib",
     srcs = [
         "cmd/common.go",
-        "cmd/dnssderrors.go",
-        "cmd/dnssdfinder.go",
-        "cmd/dnssdfinder.h",
-        "cmd/dnssdfinder_c.c",
         "cmd/finders.go",
         "cmd/list.go",
         "cmd/main.go",
         "cmd/resolve.go",
     ],
-    cgo = True,
     target_compatible_with = HOST_OS_CONSTRAINTS,
     deps = [
         "//third_party/golibs:github.com/google/subcommands",
@@ -39,12 +34,6 @@ idk_go_binary_host_tool(
     category = "partner",
     embed = [":lib"],
     idk_name = "device-finder",
-    # Forces PIE mode, otherwise linking against CGO library would fail with `recompile with -fPIC`.
-    linkmode = "pie",  # @bazel2gn:skip
-    # We turn on pure mode globally for build consistency, see https://fxbug.dev/489925970.
-    #
-    # Here we need to turn it off because `lib` needs CGO support, and pure mode disables CGO.
-    pure = "off",  # @bazel2gn:skip
     target_compatible_with = HOST_OS_CONSTRAINTS,
 )
 
