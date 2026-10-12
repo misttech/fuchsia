@@ -10,7 +10,7 @@ pub use delivery_blob::compression::CompressionAlgorithm;
 use delivery_blob::compression::{ChunkedArchive, ChunkedArchiveOptions};
 use fuchsia_async as fasync;
 use fuchsia_merkle::{Hash, MerkleRootBuilder};
-use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _, try_join};
+use futures::{StreamExt as _, TryStreamExt as _};
 use fxfs::blob_metadata::{
     BlobFormat, BlobMetadata, BlobMetadataLeafHashCollector, FxfsBlobMetadataExt,
 };
@@ -26,9 +26,9 @@ use fxfs::object_store::{
     DataObjectHandle, DirectWriter, HandleOptions, NewChildStoreOptions, ObjectStore, StoreOptions,
 };
 use rayon::ThreadPoolBuilder;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sparse::unsparse;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufWriter, Read, Write};
 use std::path::PathBuf;
@@ -369,44 +369,80 @@ impl BlobToInstall {
 
 async fn install_blobs(
     fxblob: &FxBlobBuilder,
-    blobs: Vec<(Hash, PathBuf)>,
+    mut blobs: Vec<(Hash, PathBuf)>,
     compression_algorithm: Option<CompressionAlgorithm>,
 ) -> Result<BlobsJsonOutput, Error> {
     let num_blobs = blobs.len();
     let fs_block_size = fxblob.filesystem.block_size();
-    // We don't need any backpressure as the channel guarantees at least one slot per sender.
-    let (tx, rx) = futures::channel::mpsc::channel::<BlobToInstall>(0);
-    // Generate each blob in parallel using a thread pool.
+    // Sort primarily by source path (with hash as a tie-breaker) so that blobs whose contents and
+    // hashes change across builds (such as version-stamped `meta.far` files) remain in the same
+    // installation order and do not perturb allocator layout.
+    blobs.sort_unstable_by(|(h1, p1), (h2, p2)| p1.cmp(p2).then_with(|| h1.cmp(h2)));
+
+    // Generate blobs in parallel on a Rayon thread pool within a bounded sliding window
+    // `[next_idx .. next_idx + MAX_IN_FLIGHT_BLOBS)`. If a completed blob is the head blob
+    // (`idx == next_idx`), it skips buffering and writes directly to the image (followed by any
+    // contiguous ready blobs). Intra-blob chunk compression in `ChunkedArchive::new` also fans out
+    // across all `num_threads` workers on the shared pool.
+    const MAX_IN_FLIGHT_BLOBS: usize = 32;
     let num_threads: usize = std::thread::available_parallelism().unwrap().into();
     let thread_pool = ThreadPoolBuilder::new().num_threads(num_threads).build().unwrap();
-    let generate = fasync::unblock(move || {
-        thread_pool.install(|| {
-            blobs.par_iter().try_for_each(|(hash, path)| {
-                let blob = BlobToInstall::new_from_file(
-                    path.clone(),
-                    fs_block_size,
-                    compression_algorithm,
-                )?;
-                if &blob.hash != hash {
-                    let calculated_hash = &blob.hash;
-                    let path = path.display();
-                    return Err(anyhow!(
-                        "Hash mismatch for {path}: calculated={calculated_hash}, expected={hash}"
-                    ));
-                }
-                futures::executor::block_on(tx.clone().send(blob))
-                    .context("send blob to install task")
-            })
-        })?;
-        Ok(())
-    });
-    // We can buffer up to this many blobs after processing.
-    const MAX_INSTALL_CONCURRENCY: usize = 10;
-    let install = rx
-        .map(|blob| install_blob_with_json_output(fxblob, blob))
-        .buffer_unordered(MAX_INSTALL_CONCURRENCY)
-        .try_collect::<BlobsJsonOutput>();
-    let (installed_blobs, _) = try_join!(install, generate)?;
+    let (tx, mut rx) = futures::channel::mpsc::unbounded::<Result<(usize, BlobToInstall), Error>>();
+    let mut tx_opt = Some(tx);
+    let mut blobs_iter = blobs.into_iter().enumerate();
+    let mut spawn_next = || {
+        if let Some(tx_ref) = &tx_opt {
+            if let Some((idx, (hash, path))) = blobs_iter.next() {
+                let tx = tx_ref.clone();
+                thread_pool.spawn_fifo(move || {
+                    let res = (|| {
+                        let blob = BlobToInstall::new_from_file(
+                            path.clone(),
+                            fs_block_size,
+                            compression_algorithm,
+                        )?;
+                        if blob.hash != hash {
+                            let calculated_hash = &blob.hash;
+                            let path = path.display();
+                            return Err(anyhow!(
+                                "Hash mismatch for {path}: calculated={calculated_hash}, expected={hash}"
+                            ));
+                        }
+                        Ok((idx, blob))
+                    })();
+                    let _ = tx.unbounded_send(res);
+                });
+            } else {
+                tx_opt = None;
+            }
+        }
+    };
+
+    for _ in 0..MAX_IN_FLIGHT_BLOBS {
+        spawn_next();
+    }
+
+    let mut installed_blobs = Vec::with_capacity(num_blobs);
+    let mut next_idx = 0usize;
+    let mut pending = BTreeMap::new();
+
+    while let Some(res) = rx.next().await {
+        let (idx, blob) = res?;
+        if idx == next_idx {
+            next_idx += 1;
+            spawn_next();
+            installed_blobs.push(install_blob_with_json_output(fxblob, blob).await?);
+
+            while let Some(next_blob) = pending.remove(&next_idx) {
+                next_idx += 1;
+                spawn_next();
+                installed_blobs.push(install_blob_with_json_output(fxblob, next_blob).await?);
+            }
+        } else {
+            pending.insert(idx, blob);
+        }
+    }
+    assert!(pending.is_empty());
     assert_eq!(installed_blobs.len(), num_blobs);
     Ok(installed_blobs)
 }
@@ -1008,5 +1044,150 @@ mod tests {
         // Ensure the file was NOT created outside the output directory.
         let escaped_path = dir.join("prevent_escaped_write.txt");
         assert!(!escaped_path.exists());
+    }
+
+    #[fuchsia::test(threads = 10)]
+    async fn test_make_blob_image_deterministic_across_orders_and_version_stamp() {
+        let tmp = TempDir::new().unwrap();
+        let dir = tmp.path();
+
+        // Create a mix of small, medium, and multi-MiB incompressible blobs that span multiple
+        // 1 MiB DirectWriter chunks and 2 MiB BestFit allocator slabs (including 880 KiB + 1172 KiB
+        // combinations that pack 2 MiB slabs differently if reordered).
+        const META_FAR_SIZE: usize = 64 * 1024;
+        let mut blobs = Vec::new();
+        let sizes = [
+            880 * 1024usize,
+            880 * 1024,
+            (1024 + 148) * 1024,
+            1024,
+            4096,
+            64 * 1024,
+            65_537,
+            250 * 1024,
+            700 * 1024,
+            1300 * 1024,
+            2500 * 1024,
+            512 * 1024,
+            1750 * 1024,
+        ];
+        for (i, &size) in sizes.iter().enumerate() {
+            let path = dir.join(format!("blob_{i:02}.bin"));
+            let mut state = (i as u64 + 1).wrapping_mul(0x9e3779b97f4a7c15);
+            let mut data = vec![0u8; size];
+            for chunk in data.chunks_mut(8) {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                let bytes = state.to_le_bytes();
+                chunk.copy_from_slice(&bytes[..chunk.len()]);
+            }
+            std::fs::write(&path, &data).unwrap();
+            let hash = fuchsia_merkle::root_from_slice(&data);
+            blobs.push((hash, path));
+        }
+        let min_blob_hash = blobs.iter().map(|(h, _)| *h).min().unwrap();
+        let max_blob_hash = blobs.iter().map(|(h, _)| *h).max().unwrap();
+
+        // Include a 64 KiB FAR-like "meta.far" blob (mostly zero-padded, so it Zstd-compresses
+        // down to a single 4 KiB block on disk) whose build stamp (and Merkle hash) changes
+        // between builds while its path remains identical.
+        // Choose two build stamps such that `meta_hash_v1 < min_blob_hash` and
+        // `max_blob_hash < meta_hash_v2`, so that sorting by `hash` would shift `meta.far`'s
+        // installation position across the other blobs while sorting by `(path, hash)` preserves it.
+        let meta_path = dir.join("meta.far");
+        let mut meta_v1 = vec![0u8; META_FAR_SIZE];
+        meta_v1[..19].copy_from_slice(b"8668399462445543315");
+        let meta_hash_v1 = fuchsia_merkle::root_from_slice(&meta_v1);
+        assert!(
+            meta_hash_v1 < min_blob_hash,
+            "expected meta_hash_v1 ({meta_hash_v1}) < min_blob_hash ({min_blob_hash})"
+        );
+        std::fs::write(&meta_path, &meta_v1).unwrap();
+
+        let mut blobs_forward = blobs.clone();
+        blobs_forward.push((meta_hash_v1, meta_path.clone()));
+
+        let image1 = dir.join("fxfs_1.blk");
+        let sparse1 = dir.join("fxfs_1.sparse.blk");
+        let json1 = dir.join("blobs_1.json");
+        make_blob_image(
+            image1.to_str().unwrap(),
+            Some(sparse1.to_str().unwrap()),
+            blobs_forward,
+            json1.to_str().unwrap(),
+            None,
+            Some(CompressionAlgorithm::Zstd),
+        )
+        .await
+        .expect("make_blob_image 1 failed");
+
+        // Now update `meta.far` with a different build ID (changing its Merkle root so it sorts
+        // after `max_blob_hash`) and reverse the input blob order.
+        let mut meta_v2 = vec![0u8; META_FAR_SIZE];
+        meta_v2[..19].copy_from_slice(b"8668399462445543330");
+        let meta_hash_v2 = fuchsia_merkle::root_from_slice(&meta_v2);
+        assert!(
+            max_blob_hash < meta_hash_v2,
+            "expected max_blob_hash ({max_blob_hash}) < meta_hash_v2 ({meta_hash_v2})"
+        );
+        std::fs::write(&meta_path, &meta_v2).unwrap();
+
+        let mut blobs_reversed = blobs;
+        blobs_reversed.push((meta_hash_v2, meta_path.clone()));
+        blobs_reversed.reverse();
+
+        let image2 = dir.join("fxfs_2.blk");
+        let sparse2 = dir.join("fxfs_2.sparse.blk");
+        let json2 = dir.join("blobs_2.json");
+        make_blob_image(
+            image2.to_str().unwrap(),
+            Some(sparse2.to_str().unwrap()),
+            blobs_reversed,
+            json2.to_str().unwrap(),
+            None,
+            Some(CompressionAlgorithm::Zstd),
+        )
+        .await
+        .expect("make_blob_image 2 failed");
+
+        assert_eq!(
+            std::fs::metadata(&image1).unwrap().len(),
+            std::fs::metadata(&image2).unwrap().len(),
+            "Raw Fxfs image size should be deterministic"
+        );
+        assert_eq!(
+            std::fs::metadata(&sparse1).unwrap().len(),
+            std::fs::metadata(&sparse2).unwrap().len(),
+            "Sparse Fxfs image size should be deterministic"
+        );
+
+        let blobs_out_1: BlobsJsonOutput =
+            serde_json::from_reader(std::fs::File::open(&json1).unwrap()).unwrap();
+        let blobs_out_2: BlobsJsonOutput =
+            serde_json::from_reader(std::fs::File::open(&json2).unwrap()).unwrap();
+        assert_eq!(blobs_out_1.len(), blobs_out_2.len());
+
+        let meta_path_str = meta_path.to_str().unwrap();
+        let mut found_meta = false;
+        for (e1, e2) in blobs_out_1.iter().zip(blobs_out_2.iter()) {
+            assert_eq!(e1.source_path, e2.source_path);
+            assert_eq!(e1.bytes, e2.bytes);
+            assert_eq!(e1.size, e2.size);
+            assert_eq!(e1.file_size, e2.file_size);
+            assert_eq!(e1.compressed_file_size, e2.compressed_file_size);
+            assert_eq!(e1.merkle_tree_size, e2.merkle_tree_size);
+            assert_eq!(e1.used_space_in_blobfs, e2.used_space_in_blobfs);
+            if e1.source_path == meta_path_str {
+                found_meta = true;
+                assert_eq!(e1.bytes, META_FAR_SIZE);
+                assert_eq!(e1.used_space_in_blobfs, 8192);
+                assert_eq!(e1.merkle, meta_hash_v1.to_string());
+                assert_eq!(e2.merkle, meta_hash_v2.to_string());
+            } else {
+                assert_eq!(e1, e2);
+            }
+        }
+        assert!(found_meta, "meta.far entry should be present in blobs.json");
     }
 }

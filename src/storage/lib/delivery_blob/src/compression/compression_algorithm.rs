@@ -335,7 +335,10 @@ impl Compressor {
                 let buffer_len = zstd::zstd_safe::compress_bound(data.len());
                 let mut buffer = Vec::with_capacity(buffer_len);
                 match cctx.compress2(&mut buffer, data) {
-                    Ok(_) => Ok(buffer),
+                    Ok(_) => {
+                        buffer.shrink_to_fit();
+                        Ok(buffer)
+                    }
                     Err(code) => Err(ChunkedArchiveError::CompressionError {
                         index: chunk_index,
                         error: FormatError::Zstd(ZstdError(code)),
@@ -343,12 +346,14 @@ impl Compressor {
                 }
             }
             Self::Lz4 { compression_level } => {
-                lz4::compress_hc(data, *compression_level).map_err(|error| {
+                let mut buffer = lz4::compress_hc(data, *compression_level).map_err(|error| {
                     ChunkedArchiveError::CompressionError {
                         index: chunk_index,
                         error: FormatError::Lz4(error),
                     }
-                })
+                })?;
+                buffer.shrink_to_fit();
+                Ok(buffer)
             }
         }
     }
@@ -377,7 +382,10 @@ impl ThreadLocalCompressor {
                 let buffer_len = zstd::zstd_safe::compress_bound(data.len());
                 let mut buffer = Vec::with_capacity(buffer_len);
                 match cctx.compress2(&mut buffer, data) {
-                    Ok(_) => Ok(buffer),
+                    Ok(_) => {
+                        buffer.shrink_to_fit();
+                        Ok(buffer)
+                    }
                     Err(code) => Err(ChunkedArchiveError::CompressionError {
                         index: chunk_index,
                         error: FormatError::Zstd(ZstdError(code)),
@@ -385,12 +393,14 @@ impl ThreadLocalCompressor {
                 }
             }),
             Self::Lz4 { compression_level } => {
-                lz4::compress_hc(data, *compression_level).map_err(|error| {
+                let mut buffer = lz4::compress_hc(data, *compression_level).map_err(|error| {
                     ChunkedArchiveError::CompressionError {
                         index: chunk_index,
                         error: FormatError::Lz4(error),
                     }
-                })
+                })?;
+                buffer.shrink_to_fit();
+                Ok(buffer)
             }
         }
     }
