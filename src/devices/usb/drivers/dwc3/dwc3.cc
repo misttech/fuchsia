@@ -1412,6 +1412,47 @@ void Dwc3::Stop(fdf::StopCompleter completer) {
   completer(zx::ok());
 }
 
+void Dwc3::QuiesceCore() {
+  TRACE_DURATION("dwc3", "Dwc3::QuiesceCore");
+  CancelAllEndpointIdleCallbacks();
+
+  // Because `StopEvents()` (and power-off after DCI unconfigure) follows, an asynchronous
+  // `DEPEVT_CMD_CMPL` (`CMDIOC=1`, `TransferState::kCanceling`) would never be delivered on the
+  // event FIFO. Pass `force=true` (`CMDIOC=0`) so active endpoints synchronously wait for
+  // `DEPCMD.CMDACT` to clear, transition to `kIdle`, and immediately clear `DALEPENA` in
+  // `EpReset()` while the controller and PHY clocks are still active.
+  ResetEndpoints(/*force=*/true);
+
+  if (controller_started_) {
+    StopEvents();
+  } else {
+    ep0_.out.stale_starts_to_end = 0;
+    ep0_.in.stale_starts_to_end = 0;
+    for (UserEndpoint& uep : user_endpoints_) {
+      uep.ep.stale_starts_to_end = 0;
+      uep.ep.stale_cancels_to_ignore = 0;
+    }
+  }
+}
+
+void Dwc3::PowerDownCore() {
+  TRACE_DURATION("dwc3", "Dwc3::PowerDownCore");
+  if (!power_on_) {
+    connection_lease_.reset();
+    return;
+  }
+  if (platform_extension_) {
+    if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
+      fdf::error("platform_extension_->Suspend() failed: {}", result.status_string());
+      metrics_.RecordPlatformExtensionError();
+    }
+  }
+  power_on_ = false;
+  metrics_.RecordEvent("Power Off / Suspend (PHY Suspended)");
+  metrics_.RecordCorePowerDown();
+  connection_lease_.reset();
+}
+
 void Dwc3::NotifyPhyConnectStatus(bool connected) {
   if (!phy_.is_valid()) {
     return;
@@ -1928,67 +1969,66 @@ void Dwc3::OnConnectStatusChanged(
     return;
   }
 
-  link_connected_ = result->connected();
-  if (result->connected()) {
-    fdf::debug("OnConnectStatusChanged: now connected");
+  const bool connected = result->connected();
+  if (connected && wake_lease.is_valid()) {
+    zx_status_t status = wake_lease.duplicate(ZX_RIGHT_SAME_RIGHTS, &connection_lease_);
+    if (status != ZX_OK) {
+      fdf::error("Failed to duplicate wake lease: {}", zx_status_get_string(status));
+    }
+  }
+
+  ApplyConnectStatusChanged(connected);
+}
+
+void Dwc3::ApplyConnectStatusChanged(bool connected, fit::callback<void()> on_done) {
+  TRACE_DURATION("dwc3", "Dwc3::ApplyConnectStatusChanged");
+  link_connected_ = connected;
+
+  if (connected) {
+    fdf::debug("ApplyConnectStatusChanged: now connected");
 
     if (platform_extension_) {
       if (zx::result result = platform_extension_->Resume(); result.is_error()) {
+        metrics_.RecordPlatformExtensionError();
         link_connected_ = false;
+        PowerDownCore();
+        if (on_done) {
+          on_done();
+        }
         return;
       }
       if (zx::result result = platform_extension_->SetConnectionSpeed(fdescriptor::UsbSpeed::kHigh);
           result.is_error()) {
         fdf::warn("Failed to set provisional speed on connect: {}", result.status_string());
+        metrics_.RecordPlatformExtensionError();
       }
     }
     if (!power_on_) {
       if (!platform_extension_ || !platform_extension_->PowersDownCoreOnDisconnect()) {
-        // For platforms that do not power down the core via external reset controller,
-        // perform a software core reset (CSFTRST) when transitioning from powered-off to
-        // ensure the controller state machine and internal FIFOs start in a clean state.
         if (zx_status_t status = ResetHw(); status != ZX_OK) {
           fdf::error("Failed to reset hardware on connect: {}", zx_status_get_string(status));
+          link_connected_ = false;
+          power_on_ = true;
+          PowerDownCore();
+          if (on_done) {
+            on_done();
+          }
           return;
         }
       }
     }
     power_on_ = true;
     metrics_.RecordEvent("Power On / Resume (PHY Resumed)");
+    metrics_.RecordCorePowerUp();
 
     SetDeviceState(fpolicy::DeviceState::kPowered);
 
     if (is_active()) {
       StartPeripheralMode();
     }
-
-    if (wake_lease.is_valid()) {
-      zx_status_t status = wake_lease.duplicate(ZX_RIGHT_SAME_RIGHTS, &connection_lease_);
-      if (status != ZX_OK) {
-        fdf::error("Failed to duplicate wake lease: {}", zx_status_get_string(status));
-      }
-    }
   } else {
-    fdf::debug("OnConnectStatusChanged: now disconnected");
-
-    // Because `StopEvents()` and `power_on_ = false` immediately follow below, an asynchronous
-    // `DEPEVT_CMD_CMPL` (`CMDIOC=1`, `TransferState::kCanceling`) would never be delivered on the
-    // event FIFO. Pass `force=true` (`CMDIOC=0`) so active endpoints synchronously wait for
-    // `DEPCMD.CMDACT` to clear, transition to `kIdle`, and immediately clear `DALEPENA` in
-    // `EpReset()` while the controller and PHY clocks are still active.
-    CancelAllEndpointIdleCallbacks();
-    ResetEndpoints(/*force=*/true);
-
-    if (controller_started_) {
-      StopEvents();
-    } else {
-      ep0_.out.stale_starts_to_end = 0;
-      ep0_.in.stale_starts_to_end = 0;
-      for (UserEndpoint& uep : user_endpoints_) {
-        uep.ep.stale_starts_to_end = 0;
-        uep.ep.stale_cancels_to_ignore = 0;
-      }
-    }
+    fdf::debug("ApplyConnectStatusChanged: now disconnected");
+    QuiesceCore();
 
     if (power_on_ && (!platform_extension_ || !platform_extension_->PowersDownCoreOnDisconnect())) {
       // For platforms that do not power down the core via external reset controller,
@@ -2007,32 +2047,34 @@ void Dwc3::OnConnectStatusChanged(
       if (zx::result result = platform_extension_->SetConnectionSpeed(connection_speed_);
           result.is_error()) {
         fdf::warn("Failed to set connection speed on disconnect: {}", result.status_string());
+        metrics_.RecordPlatformExtensionError();
       }
     }
 
     if (power_on_) {
       if (platform_extension_) {
         if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
-          fdf::error("Failed to suspend PHY: {}", result.status_string());
+          fdf::error("platform_extension_->Suspend() failed: {}", result.status_string());
+          metrics_.RecordPlatformExtensionError();
         }
       }
       power_on_ = false;
       metrics_.RecordEvent("Power Off / Suspend (PHY Suspended)");
+      metrics_.RecordCorePowerDown();
     }
 
-    SetDeviceState(fpolicy::DeviceState::kNotAttached);
+    SetDeviceState(fpolicy::DeviceState::kNotAttached, 0);
   }
 
   const uint64_t connect_status_generation = ++connect_status_generation_;
   if (dci_intf_.is_valid()) {
-    const bool connected = result->connected();
     fidl::Arena arena;
     dci_intf_.buffer(arena)->SetConnected(connected).Then(
         [this, connected, connect_status_generation](
             fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::SetConnected>&
                 set_connected_result) {
           if (!set_connected_result.ok()) {
-            fdf::error("(framework) SetConnected() (OnConnectStatusChanged): {}",
+            fdf::error("(framework) SetConnected() (ApplyConnectStatusChanged): {}",
                        set_connected_result.FormatDescription());
           } else if (set_connected_result->is_error()) {
             fdf::error("SetConnected(): {}",
@@ -2045,7 +2087,10 @@ void Dwc3::OnConnectStatusChanged(
   } else if (!power_on_) {
     connection_lease_.reset();
   }
-  NotifyPhyConnectStatus(result->connected());
+  NotifyPhyConnectStatus(connected);
+  if (on_done) {
+    on_done();
+  }
 }
 
 void Dwc3::WatchDeviceState(WatchDeviceStateCompleter::Sync& completer) {

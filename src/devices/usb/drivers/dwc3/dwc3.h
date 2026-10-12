@@ -524,7 +524,10 @@ class Dwc3 : public fdf::DriverBase2,
   void StartPeripheralMode();
   void ResetConfiguration();
 
+  void QuiesceCore();
+  void PowerDownCore();
   void NotifyPhyConnectStatus(bool connected);
+  void ApplyConnectStatusChanged(bool connected, fit::callback<void()> on_done = {});
 
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                  const zx_packet_interrupt_t* interrupt);
