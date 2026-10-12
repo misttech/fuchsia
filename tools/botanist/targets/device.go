@@ -5,6 +5,7 @@
 package targets
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -365,6 +366,36 @@ func (t *Device) flash(ctx context.Context, productBundle, target string, tcpFla
 	return t.ffx.Flash(ctx, target, "", productBundle, tcpFlash)
 }
 
+type dmcHealthCheckResult struct {
+	Nodename      string `json:"nodename"`
+	State         string `json:"state"`
+	StatusMessage string `json:"status_message"`
+	DMSState      string `json:"dms_state"`
+}
+
+func checkDMCHealthCheckOutput(out []byte) error {
+	trimmed := bytes.TrimSpace(out)
+	if len(trimmed) == 0 {
+		return errors.New("dmc health-check produced empty output")
+	}
+	var results []dmcHealthCheckResult
+	if err := json.Unmarshal(trimmed, &results); err != nil {
+		return fmt.Errorf("failed to parse dmc health-check output %q: %w", string(trimmed), err)
+	}
+	if len(results) == 0 {
+		return errors.New("dmc health-check returned empty results")
+	}
+	for _, r := range results {
+		if r.State != "healthy" {
+			return fmt.Errorf("dmc health-check reported node %q state %q (status_message=%q, dms_state=%q)", r.Nodename, r.State, r.StatusMessage, r.DMSState)
+		}
+	}
+	return nil
+}
+
+// fastbootRetryBackoff is the backoff duration between dmc recovery attempts.
+var fastbootRetryBackoff = time.Second
+
 // placeInFastboot runs the dmc health-check command which attempts to recover
 // the device by placing it in fastboot.
 func (t *Device) placeInFastboot(ctx context.Context) error {
@@ -373,17 +404,12 @@ func (t *Device) placeInFastboot(ctx context.Context) error {
 		return fmt.Errorf("DMC_PATH environment variable is not set")
 	}
 	runner := subprocess.Runner{}
-	// First reset the cached device state in DMS so health-check does not assume
-	// the target is already healthy without performing physical recovery.
 	resetCmdline := []string{
 		dmcPath,
 		"reset-devices",
 		t.Nodename(),
 	}
-	if err := runner.Run(ctx, resetCmdline, subprocess.RunOptions{Setpgid: true}); err != nil {
-		logger.Warningf(ctx, "dmc reset-devices failed: %s; proceeding to health-check", err)
-	}
-
+	// dmc health-check always outputs a JSON array to stdout by default.
 	cmdline := []string{
 		dmcPath,
 		"health-check",
@@ -391,8 +417,21 @@ func (t *Device) placeInFastboot(ctx context.Context) error {
 	}
 	// Run the dmc invocation and wait for the subprocess call to complete.
 	// This usually takes ~20 seconds.
-	return retry.Retry(ctx, retry.WithMaxAttempts(retry.NewConstantBackoff(time.Second), 3), func() error {
-		return runner.Run(ctx, cmdline, subprocess.RunOptions{Setpgid: true})
+	return retry.Retry(ctx, retry.WithMaxAttempts(retry.NewConstantBackoff(fastbootRetryBackoff), 3), func() error {
+		// First reset the cached device state in DMS so health-check does not assume
+		// the target is already healthy without performing physical recovery.
+		if err := runner.Run(ctx, resetCmdline, subprocess.RunOptions{Setpgid: true}); err != nil {
+			logger.Warningf(ctx, "dmc reset-devices failed: %s; proceeding to health-check", err)
+		}
+		var stdoutBuf, stderrBuf bytes.Buffer
+		if err := runner.Run(ctx, cmdline, subprocess.RunOptions{
+			Stdout:  &stdoutBuf,
+			Stderr:  &stderrBuf,
+			Setpgid: true,
+		}); err != nil {
+			return fmt.Errorf("dmc health-check failed: %w (stdout: %q, stderr: %q)", err, stdoutBuf.String(), stderrBuf.String())
+		}
+		return checkDMCHealthCheckOutput(stdoutBuf.Bytes())
 	}, nil)
 }
 
