@@ -168,6 +168,12 @@ is ordered before it. Barriers order accesses;
 does not replace the other. Do not add a barrier just in case: comment every
 explicit barrier with the two accesses it orders.
 
+Unpin each `zx::pmt` when a transfer completes, fails, or is canceled, and at
+shutdown, but only after the device has stopped; if you cannot confirm that
+(for example, a disable timed out), leave it pinned. Destroying a `zx::pmt`
+without calling `unpin()` quarantines the pages until
+`zx_bti_release_quarantine()`.
+
 ### Clocks
 
 Clocks are controlled via the [fuchsia.hardware.clock FIDL service][clock-fidl].

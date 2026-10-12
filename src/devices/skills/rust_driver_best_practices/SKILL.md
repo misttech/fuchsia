@@ -312,6 +312,14 @@ which two accesses are ordered. Cache maintenance for non-coherent buffers is a
 separate step; see
 `docs/development/drivers/concepts/driver_development/dma.md`.
 
+### Pinning DMA Memory
+`Pmt::unpin()` is `unsafe`: unpinning memory the device can still reach can
+corrupt memory.
+* Do not unpin in `Drop`; unpin from a method the driver calls explicitly.
+* Unpin after the transfer completes, or on error, cancel, or shutdown once the
+  device has stopped; if you cannot confirm that, leave it pinned.
+* In the `// SAFETY:` comment, say why the device can no longer reach the pages.
+
 ### Using Macros for MMIO
 Never perform manual bitwise operations (e.g., `val |= 1 << 5;`) on raw integers
 when accessing MMIO registers. Instead, use the `mmio::register!` and

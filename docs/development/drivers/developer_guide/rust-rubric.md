@@ -171,6 +171,12 @@ Atomics (`Ordering::Release`) order memory accesses between CPUs, not accesses
 by a device, and `MmioRegion` stores do not include a barrier: explicitly order
 a DMA descriptor write before the store that tells the device about it.
 
+Call `Pmt::unpin()` when a transfer completes, fails, or is canceled, and at
+shutdown, only after the device has stopped; if you cannot confirm that, leave
+it pinned. Do not unpin in `Drop`, which cannot know whether the device has
+stopped. Dropping a `zx::Pmt` without unpinning quarantines the pages until
+`zx_bti_release_quarantine()`.
+
 ### Clocks
 
 Clocks are controlled via the [fuchsia.hardware.clock FIDL service][clock-fidl].
