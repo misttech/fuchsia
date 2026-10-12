@@ -524,6 +524,8 @@ class Dwc3 : public fdf::DriverBase2,
   void StartPeripheralMode();
   void ResetConfiguration();
 
+  void NotifyPhyConnectStatus(bool connected);
+
   void HandleIrq(async_dispatcher_t* dispatcher, async::IrqBase* irq, zx_status_t status,
                  const zx_packet_interrupt_t* interrupt);
 
@@ -568,7 +570,7 @@ class Dwc3 : public fdf::DriverBase2,
 
   std::unique_ptr<PlatformExtension> platform_extension_;
 
-  fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy> phy_;
+  fidl::Client<fuchsia_hardware_usb_phy::UsbPhy> phy_;
   fidl::Client<fuchsia_hardware_usb_phy::ConnectionWatcher> connection_watcher_;
   zx::eventpair connection_lease_;
   uint64_t connect_status_generation_{0};

@@ -580,7 +580,8 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
 
   auto phy_result = incoming()->Connect<fphy::Service::Device>("dwc3-phy");
   if (phy_result.is_ok()) {
-    phy_ = fidl::SyncClient<fuchsia_hardware_usb_phy::UsbPhy>(std::move(phy_result.value()));
+    phy_ =
+        fidl::Client<fuchsia_hardware_usb_phy::UsbPhy>(std::move(phy_result.value()), dispatcher());
   }
 
   // Set up Inspect data.
@@ -1239,12 +1240,7 @@ void Dwc3::ResetConfiguration() {
         });
   }
 
-  if (phy_.is_valid()) {
-    if (fidl::Result result = phy_->ConnectStatusChanged({{.connected = true, .wake_lease = {}}});
-        result.is_error()) {
-      fdf::warn("Call to ConnectStatusChanged on USB phy failed: {}", result.error_value());
-    }
-  }
+  NotifyPhyConnectStatus(true);
 }
 
 void Dwc3::HandleResetEvent() {
@@ -1385,12 +1381,7 @@ void Dwc3::HandleDisconnectedEvent() {
     }
   }
 
-  if (phy_.is_valid()) {
-    if (fidl::Result result = phy_->ConnectStatusChanged({{.connected = false, .wake_lease = {}}});
-        result.is_error()) {
-      fdf::warn("Call to ConnectStatusChanged on USB phy failed: {}", result.error_value());
-    }
-  }
+  NotifyPhyConnectStatus(false);
 }
 
 Dwc3::~Dwc3() {
@@ -1415,9 +1406,27 @@ void Dwc3::Stop(fdf::StopCompleter completer) {
   TRACE_DURATION("dwc3", "Dwc3::Stop");
   fdf::info("Dwc3::Stop called");
   dwc3_root_ = {};
+  phy_ = {};
   dci_bindings_.RemoveAll();
   policy_bindings_.RemoveAll();
   completer(zx::ok());
+}
+
+void Dwc3::NotifyPhyConnectStatus(bool connected) {
+  if (!phy_.is_valid()) {
+    return;
+  }
+  phy_->ConnectStatusChanged({{.connected = connected, .wake_lease = {}}})
+      .ThenExactlyOnce(
+          [this,
+           connected](fidl::Result<fuchsia_hardware_usb_phy::UsbPhy::ConnectStatusChanged>& res) {
+            if (res.is_error() && !(res.error_value().is_framework_error() &&
+                                    res.error_value().framework_error().is_dispatcher_shutdown())) {
+              fdf::warn("Failed to notify PHY of connect={}: {}", connected,
+                        res.error_value().FormatDescription());
+              metrics_.RecordPhyRpcError();
+            }
+          });
 }
 
 void Dwc3::ConnectToEndpoint(ConnectToEndpointRequest& request,
@@ -2036,6 +2045,7 @@ void Dwc3::OnConnectStatusChanged(
   } else if (!power_on_) {
     connection_lease_.reset();
   }
+  NotifyPhyConnectStatus(result->connected());
 }
 
 void Dwc3::WatchDeviceState(WatchDeviceStateCompleter::Sync& completer) {
