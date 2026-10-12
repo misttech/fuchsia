@@ -256,10 +256,30 @@ mod tests {
         value: u64,
     }
 
+    #[allow(dead_code)]
+    #[derive(TypeFingerprint)]
+    enum TestEnumWithTrailingSerdeSkip {
+        A(u64),
+        B,
+        #[serde(skip)]
+        C(u64),
+    }
+
+    #[allow(dead_code)]
+    #[derive(TypeFingerprint)]
+    enum TestEnumWithMiddleSerdeSkip {
+        A(u64),
+        #[serde(skip)]
+        B(u64),
+        C,
+    }
+
     #[test]
     fn test_serde_with() {
         assert_eq!(TestWithSerde::fingerprint(), "struct {value:custom_fingerprint}");
         assert_eq!(TestWithMultipleSerdeAttrs::fingerprint(), "struct {value:custom_fingerprint}");
         assert_eq!(TestWithListSerdeAttrs::fingerprint(), "struct {value:custom_fingerprint}");
+        assert_eq!(TestEnumWithTrailingSerdeSkip::fingerprint(), "enum {A(u64),B}");
+        assert_eq!(TestEnumWithMiddleSerdeSkip::fingerprint(), "enum {A(u64),<skipped>,C}");
     }
 }

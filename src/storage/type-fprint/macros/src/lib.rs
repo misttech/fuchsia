@@ -20,14 +20,16 @@ pub fn derive_type_fingerprint(input: proc_macro::TokenStream) -> proc_macro::To
     }
 }
 
-/// Parses and returns the path in `#[serde(with = "module")]` if present, ignoring other
-/// attributes.
-fn get_serde_with_attribute(attrs: &[syn::Attribute]) -> syn::Result<Option<syn::Path>> {
+/// Parses `#[serde(...)]` attributes, returning `(skip, with_module_path)`.
+fn parse_serde_attributes(attrs: &[syn::Attribute]) -> syn::Result<(bool, Option<syn::Path>)> {
+    let mut skip = false;
     let mut module_path = None;
     for attr in attrs {
         if attr.path().is_ident("serde") {
             let res = attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("with") {
+                if meta.path.is_ident("skip") {
+                    skip = true;
+                } else if meta.path.is_ident("with") {
                     let value = meta.value()?;
                     let s: syn::LitStr = value.parse()?;
                     let path = s.parse::<syn::Path>()?;
@@ -48,17 +50,20 @@ fn get_serde_with_attribute(attrs: &[syn::Attribute]) -> syn::Result<Option<syn:
             res?;
         }
     }
-    Ok(module_path)
+    Ok((skip, module_path))
 }
 
 /// Returns the fingerprint expression for a field, delegating to its `serde(with)` module if
-/// annotated.
-fn get_fingerprint_expr(field: &syn::Field) -> syn::Result<TokenStream> {
+/// annotated, or `None` if `#[serde(skip)]` is set.
+fn get_fingerprint_expr(field: &syn::Field) -> syn::Result<Option<TokenStream>> {
     let field_type = &field.ty;
-    if let Some(module_path) = get_serde_with_attribute(&field.attrs)? {
-        Ok(quote! { #module_path::fingerprint::<#field_type>() })
+    let (skip, module_path) = parse_serde_attributes(&field.attrs)?;
+    if skip {
+        Ok(None)
+    } else if let Some(module_path) = module_path {
+        Ok(Some(quote! { #module_path::fingerprint::<#field_type>() }))
     } else {
-        Ok(quote! { <#field_type as TypeFingerprint>::fingerprint() })
+        Ok(Some(quote! { <#field_type as TypeFingerprint>::fingerprint() }))
     }
 }
 
@@ -68,22 +73,26 @@ fn handle_fields(fields: &syn::Fields) -> syn::Result<Vec<TokenStream>> {
         Fields::Named(fields) => fields
             .named
             .iter()
-            .map(|field| {
-                let fingerprint_expr = get_fingerprint_expr(field)?;
-                if let Some(field_name) = &field.ident {
-                    let field_name = field_name.to_string();
-                    Ok(quote! { #field_name + ":" + &(#fingerprint_expr) })
-                } else {
-                    Ok(quote! { &(#fingerprint_expr) })
+            .filter_map(|field| match get_fingerprint_expr(field) {
+                Ok(Some(fingerprint_expr)) => {
+                    if let Some(field_name) = &field.ident {
+                        let field_name = field_name.to_string();
+                        Some(Ok(quote! { #field_name + ":" + &(#fingerprint_expr) }))
+                    } else {
+                        Some(Ok(quote! { &(#fingerprint_expr) }))
+                    }
                 }
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
             })
             .collect(),
         Fields::Unnamed(fields) => fields
             .unnamed
             .iter()
-            .map(|field| {
-                let fingerprint_expr = get_fingerprint_expr(field)?;
-                Ok(quote! { &(#fingerprint_expr) })
+            .filter_map(|field| match get_fingerprint_expr(field) {
+                Ok(Some(fingerprint_expr)) => Some(Ok(quote! { &(#fingerprint_expr) })),
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
             })
             .collect(),
     }
@@ -112,14 +121,18 @@ fn handle_struct(
 }
 
 fn handle_enum(ident: &Ident, _generics: &Generics, data: &DataEnum) -> syn::Result<TokenStream> {
-    let variants = data
+    let mut variants = data
         .variants
         .iter()
         .map(|variant| {
+            let (skip, _) = parse_serde_attributes(&variant.attrs)?;
+            if skip {
+                return Ok(None);
+            }
             let name = variant.ident.to_string();
             let fields = handle_fields(&variant.fields)?;
             if fields.is_empty() {
-                Ok(quote! { #name })
+                Ok(Some(quote! { #name }))
             } else {
                 let mut out = quote! { #name + "(" };
                 for (i, field) in fields.into_iter().enumerate() {
@@ -128,15 +141,24 @@ fn handle_enum(ident: &Ident, _generics: &Generics, data: &DataEnum) -> syn::Res
                     }
                     out = quote! { #out + #field }
                 }
-                Ok(quote! { #out + ")" })
+                Ok(Some(quote! { #out + ")" }))
             }
         })
         .collect::<syn::Result<Vec<_>>>()?;
+
+    // Trailing `#[serde(skip)]` variants do not affect the serialized variant indices of earlier
+    // variants, so they can be omitted from the fingerprint. Non-trailing `#[serde(skip)]`
+    // variants still occupy a variant index in serde, so they must remain in the fingerprint.
+    while matches!(variants.last(), Some(None)) {
+        variants.pop();
+    }
+
     let mut out = quote! { "" };
     for (i, variant) in variants.into_iter().enumerate() {
         if i != 0 {
             out = quote! { #out + "," }
         }
+        let variant = variant.unwrap_or_else(|| quote! { "<skipped>" });
         out = quote! { #out + #variant }
     }
     Ok(quote! {
