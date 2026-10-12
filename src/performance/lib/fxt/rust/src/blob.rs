@@ -4,6 +4,7 @@
 
 use crate::args::{Arg, RawArg};
 use crate::error::ParseWarning;
+use crate::fxt_builder::FxtBuilder;
 use crate::init::Ticks;
 use crate::session::ResolveCtx;
 use crate::string::StringRef;
@@ -101,6 +102,37 @@ trace_header! {
         u16, payload_len: 32, 46;
         u8, blob_format_type: 48, 55;
     }
+}
+
+/// Largest value of the 15-bit inline string length and blob payload length header fields.
+const MAX_15_BIT_LEN: usize = 0x7FFF;
+// A record that fits in `MAX_RECORD_SIZE_WORDS` keeps both lengths within their fields, so
+// `build_blob_record()` only needs to check the record size.
+const _: () = assert!((crate::MAX_RECORD_SIZE_WORDS - 1) * 8 <= MAX_15_BIT_LEN);
+
+/// Returns the size in words of the blob record that [`build_blob_record()`] builds for a
+/// `name_len`-byte name and a `payload_len`-byte payload: the header word, then the name and
+/// the payload, each padded to 8 bytes.
+fn blob_record_size_words(name_len: usize, payload_len: usize) -> usize {
+    1 + name_len.div_ceil(8) + payload_len.div_ceil(8)
+}
+
+/// Builds the words of a blob record of type `ty` named `name` that carries `payload`.
+///
+/// The name is written inline, so the record doesn't depend on a string record elsewhere in
+/// the trace.
+///
+/// Returns `None` if the record is longer than [`crate::MAX_RECORD_SIZE_WORDS`].
+pub fn build_blob_record(name: &str, ty: BlobType, payload: &[u8]) -> Option<Vec<u64>> {
+    if blob_record_size_words(name.len(), payload.len()) > crate::MAX_RECORD_SIZE_WORDS {
+        return None;
+    }
+    let mut header = BlobHeader::empty();
+    // Lossless: the size check above keeps both lengths within their 15-bit fields.
+    header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
+    header.set_payload_len(payload.len() as u16);
+    header.set_blob_format_type(ty.into());
+    Some(FxtBuilder::new(header).atom(name).atom(payload).build())
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -245,7 +277,6 @@ bitfield::bitfield! {
 mod tests {
     use super::*;
     use crate::RawTraceRecord;
-    use crate::fxt_builder::FxtBuilder;
     use std::num::{NonZeroU8, NonZeroU16};
 
     #[test]
@@ -309,6 +340,46 @@ mod tests {
                 bytes: payload,
             }),
         );
+    }
+
+    /// Checks that `build_blob_record()` builds a record of the size that
+    /// `blob_record_size_words()` reports, and that it parses back to its inputs.
+    fn check_built_blob_record(name: &str, ty: BlobType, payload: &[u8]) {
+        let words = build_blob_record(name, ty.clone(), payload).expect("record fits");
+        assert_eq!(words.len(), blob_record_size_words(name.len(), payload.len()));
+        assert_parses_to_record!(
+            words,
+            RawTraceRecord::Blob(RawBlobRecord {
+                name: StringRef::Inline(name),
+                ty,
+                bytes: payload
+            }),
+        );
+    }
+
+    #[test]
+    fn build_blob_record_pads_name_and_payload() {
+        // Neither length is a whole number of words.
+        check_built_blob_record("abc", BlobType::Perfetto, &[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    }
+
+    #[test]
+    fn build_blob_record_empty_payload() {
+        check_built_blob_record("foo_blob", BlobType::Data, &[]);
+    }
+
+    #[test]
+    fn build_blob_record_largest_record() {
+        let name = "foo_blob";
+        let payload = vec![0xEF; (crate::MAX_RECORD_SIZE_WORDS - 2) * 8];
+        assert_eq!(blob_record_size_words(name.len(), payload.len()), crate::MAX_RECORD_SIZE_WORDS);
+        check_built_blob_record(name, BlobType::Perfetto, &payload);
+    }
+
+    #[test]
+    fn build_blob_record_rejects_oversized_record() {
+        let payload = vec![0xEF; (crate::MAX_RECORD_SIZE_WORDS - 2) * 8 + 1];
+        assert_eq!(build_blob_record("foo_blob", BlobType::Perfetto, &payload), None);
     }
 
     #[test]

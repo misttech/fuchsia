@@ -33,7 +33,11 @@ impl<H: crate::header::TraceHeader> FxtBuilder<H> {
         let atom = atom.as_ref();
         let start = self.buf.len() * 8;
         let size_words = self.buf.len() + atom.len().div_ceil(8);
-        assert!(size_words * 8 < 32_768, "maximum record size is 32kb");
+        assert!(
+            size_words <= crate::MAX_RECORD_SIZE_WORDS,
+            "maximum record size is {} words",
+            crate::MAX_RECORD_SIZE_WORDS
+        );
         self.buf.resize(size_words, 0);
         self.buf.as_mut_slice().as_mut_bytes()[start..start + atom.len()].copy_from_slice(atom);
         self.header.set_size_words(

@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fxt::bitfields::StringRefHeader;
-use fxt::blob::{BlobHeader, BlobType};
+use fxt::blob::BlobType;
 use fxt::fxt_builder::FxtBuilder;
 use fxt::metadata::{ProviderInfoMetadataHeader, ProviderSectionMetadataHeader};
 use zerocopy::IntoBytes;
@@ -12,21 +11,17 @@ use zerocopy::IntoBytes;
 pub const PROFILER_PROVIDER_ID: u32 = 0xFFFF_0001;
 
 /// Maximum payload bytes per type-5 Perfetto blob record.
-/// FXT record size is capped at 4095 8-byte words (32,760 bytes including header and inline name);
-/// 32,000 bytes matches `TRACE_MAX_BLOB_SIZE` and leaves ample room for the header and name.
+/// 32,000 bytes matches `TRACE_MAX_BLOB_SIZE` and leaves room in an FXT record
+/// (`fxt::MAX_RECORD_SIZE_WORDS`) for the header and a provider name of up to 255 bytes.
 pub const MAX_BLOB_PAYLOAD_BYTES: usize = 32_000;
 
 const FXT_MAGIC_RECORD: [u8; 8] = [0x10, 0x00, 0x04, 0x46, 0x78, 0x54, 0x16, 0x00];
 const PROVIDER_INFO_METADATA_TYPE: u8 = 1;
 const PROVIDER_SECTION_METADATA_TYPE: u8 = 2;
 
-fn emit_blob_record(out: &mut Vec<u8>, name_bytes: &[u8], payload: &[u8]) {
-    let mut header = BlobHeader::empty();
-    header.set_name_ref(StringRefHeader::inline(name_bytes.len() as u16).bits());
-    header.set_payload_len(payload.len() as u16);
-    let blob_type: u8 = BlobType::Perfetto.into();
-    header.set_blob_format_type(blob_type);
-    let record = FxtBuilder::new(header).atom(name_bytes).atom(payload).build();
+fn emit_blob_record(out: &mut Vec<u8>, name: &str, payload: &[u8]) {
+    let record = fxt::blob::build_blob_record(name, BlobType::Perfetto, payload)
+        .expect("a MAX_BLOB_PAYLOAD_BYTES payload and a 255-byte name fit in one record");
     out.extend_from_slice(record.as_slice().as_bytes());
 }
 
@@ -35,7 +30,8 @@ fn emit_blob_record(out: &mut Vec<u8>, name_bytes: &[u8], payload: &[u8]) {
 /// `ffx trace` `.fxt` file. `packets` is split blindly into `MAX_BLOB_PAYLOAD_BYTES` chunks.
 pub fn wrap_perfetto_blobs(packets: &[u8], provider_name: &str) -> Vec<u8> {
     let max_len = provider_name.floor_char_boundary(u8::MAX as usize);
-    let name_bytes = &provider_name.as_bytes()[..max_len];
+    let name = &provider_name[..max_len];
+    let name_bytes = name.as_bytes();
     let num_blobs = packets.len().div_ceil(MAX_BLOB_PAYLOAD_BYTES);
     let per_blob_overhead = 8 + name_bytes.len().next_multiple_of(8) + 8;
     let mut out = Vec::with_capacity(packets.len() + 64 + num_blobs * per_blob_overhead);
@@ -65,7 +61,7 @@ pub fn wrap_perfetto_blobs(packets: &[u8], provider_name: &str) -> Vec<u8> {
     // boundaries need not align with `TracePacket` boundaries (Starnix's perfetto_consumer
     // chunks blindly the same way).
     for chunk in packets.chunks(MAX_BLOB_PAYLOAD_BYTES) {
-        emit_blob_record(&mut out, name_bytes, chunk);
+        emit_blob_record(&mut out, name, chunk);
     }
 
     out
@@ -83,7 +79,10 @@ mod tests {
         while offset < fxt_bytes.len() {
             let header = u64::from_le_bytes(fxt_bytes[offset..offset + 8].try_into().unwrap());
             let size_words = ((header >> 4) & 0xfff) as usize;
-            assert!(size_words > 0 && size_words <= 4095, "invalid size_words: {size_words}");
+            assert!(
+                size_words > 0 && size_words <= fxt::MAX_RECORD_SIZE_WORDS,
+                "invalid size_words: {size_words}"
+            );
             let record_len = size_words * 8;
             assert_eq!(record_len % 8, 0);
             assert!(offset + record_len <= fxt_bytes.len());
