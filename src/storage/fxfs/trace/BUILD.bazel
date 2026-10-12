@@ -1,0 +1,28 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "trace",
+    srcs = ["src/lib.rs"],
+    crate_name = "fxfs_trace",
+    edition = "2024",
+    proc_macro_deps = ["//src/storage/fxfs/trace/macros:fxfs_trace_macros"],
+    visibility = ["//src/storage/fxfs:__subpackages__"],
+    deps = ["//src/storage/lib/trace"],
+)
+
+rustc_test(
+    name = "fxfs-trace-tests",
+    srcs = ["tests/compile_tests.rs"],
+    crate_root = "tests/compile_tests.rs",
+    edition = "2024",
+    deps = [
+        ":trace",
+        "//src/lib/fuchsia",
+    ],
+)

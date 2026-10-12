@@ -1,0 +1,24 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "units",
+    srcs = ["src/lib.rs"] + select({
+        "@platforms//os:fuchsia": ["src/page.rs"],
+        "//conditions:default": [],
+    }),
+    crate_name = "storage_units",
+    edition = "2024",
+    test_deps = ["//src/lib/fuchsia"],
+    visibility = ["//src/storage/fxfs:__subpackages__"],
+    with_unit_tests = True,
+    deps = select({
+        "@platforms//os:fuchsia": ["//sdk/rust/zx"],
+        "//conditions:default": [],
+    }),
+)
