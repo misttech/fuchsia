@@ -589,7 +589,7 @@ def commit_msg_only_since_upload():
         return False
 
 
-COMMIT_MSG_CHECKS = {"confidentiality_check", "cq_reachability", "build_verification"}
+COMMIT_MSG_CHECKS = {"confidentiality_check", "cq_reachability", "commit_message_format", "build_verification"}
 commit_msg_only = not only and commit_msg_only_since_upload()
 if commit_msg_only:
     enabled = [s for s in enabled if s["name"] in COMMIT_MSG_CHECKS]

@@ -198,18 +198,42 @@ def bazel_test_suites_for(pkg):
     return result
 
 
+def refs_local(code, d, name):
+    prefix = f"(?://{re.escape(d)})?:" if d else ":"
+    return bool(re.search(r'"' + prefix + re.escape(name) + r'(?:\([^"]*\))?"', code))
+
+
+def refs_from_parent(parent_code, d, name):
+    if not parent_code or not d:
+        return False
+    base = os.path.basename(d)
+    pat = r'"(?://' + re.escape(d) + r"|" + re.escape(base) + r"):" + re.escape(name) + r'(?:\([^"]*\))?"'
+    return bool(re.search(pat, parent_code))
+
+
 def suite_is_wired(gn_rel, suite):
-    """Whether `group("tests")` next to the suite, or the parent BUILD.gn, references it."""
+    """Whether `group("tests")` next to the suite (directly or via intermediate groups), or the parent BUILD.gn, references it."""
     if suite == "tests":
         return True
     d = os.path.dirname(gn_rel)
-    refs = (f'":{suite}"', f'"//{d}:{suite}"')
-    if any(r in gn_block(read_gn(gn_rel), "group", "tests") for r in refs):
+    code = read_gn(gn_rel)
+    parent_code = read_gn(os.path.join(os.path.dirname(d), "BUILD.gn")) if d else ""
+    if refs_from_parent(parent_code, d, suite):
         return True
-    parent = os.path.join(os.path.dirname(d), "BUILD.gn") if d else ""
-    return bool(parent) and any(
-        r in read_gn(parent) for r in (f'"//{d}:{suite}"', f'"{os.path.basename(d)}:{suite}"')
-    )
+    groups = {}
+    for m in re.finditer(r'\bgroup\(\s*"([^"]+)"\s*\)\s*\{', code):
+        groups[m.group(1)] = groups.get(m.group(1), "") + "\n" + code[m.end() : closing(code, m.end() - 1)]
+    queue = [g for g in groups if g == "tests" or refs_from_parent(parent_code, d, g)]
+    seen = set(queue)
+    while queue:
+        body = groups[queue.pop(0)]
+        if refs_local(body, d, suite):
+            return True
+        for g in groups:
+            if g not in seen and refs_local(body, d, g):
+                seen.add(g)
+                queue.append(g)
+    return False
 
 
 def list_strings(node):

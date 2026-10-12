@@ -224,28 +224,39 @@ def recommend_visibility(rdep_pkgs, pkg_path):
         return recommend_area_rollup_visibility(pkgs, pkg_path)
     return narrow
 
-def get_preexisting_vis_strings(rel_path):
-    """Returns visibility strings already present in HEAD~1 of rel_path (unless rel_path is target_dir)."""
+def get_preexisting_vis_info(rel_path):
+    """Returns (vis_strings, no_vis_targets) already present in change_base/HEAD~1 of rel_path (unless rel_path is target_dir)."""
     if target_dir and rel_path == os.path.join(target_dir, "BUILD.bazel"):
-        return set()
-    try:
-        prev_src = subprocess.check_output(
-            ["git", "-C", workdir, "show", f"HEAD~1:{rel_path}"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        prev_tree = ast.parse(prev_src, filename=rel_path)
-        vis_vals = set()
-        for node in ast.walk(prev_tree):
-            if isinstance(node, ast.Call):
-                for kw in node.keywords:
-                    if kw.arg == "visibility" and isinstance(kw.value, ast.List):
-                        for elt in kw.value.elts:
-                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                                vis_vals.add(elt.value)
-        return vis_vals
-    except Exception:
-        return set()
+        return set(), set()
+    for ref in dict.fromkeys([change_base, "HEAD~1"]):
+        try:
+            prev_src = subprocess.check_output(
+                ["git", "-C", workdir, "show", f"{ref}:{rel_path}"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            prev_tree = ast.parse(prev_src, filename=rel_path)
+            vis_vals = set()
+            no_vis_targets = set()
+            for node in ast.walk(prev_tree):
+                if isinstance(node, ast.Call):
+                    tname = None
+                    has_vis = False
+                    for kw in node.keywords:
+                        if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                            tname = kw.value.value
+                        elif kw.arg == "visibility":
+                            has_vis = True
+                            if isinstance(kw.value, ast.List):
+                                for elt in kw.value.elts:
+                                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                        vis_vals.add(elt.value)
+                    if tname and not has_vis:
+                        no_vis_targets.add(tname)
+            return vis_vals, no_vis_targets
+        except Exception:
+            continue
+    return set(), set()
 
 # Batch-discover all files mentioning any candidate package in a single rg invocation
 pkg_paths = sorted({os.path.dirname(p).strip("/") for p in candidate_files})
@@ -281,6 +292,49 @@ for fpath in sorted(matched_files):
     except Exception:
         pass
 
+CONVERTIBLE_GN_TEMPLATES = {
+    "static_library",
+    "source_set",
+    "shared_library",
+    "executable",
+    "library_headers",
+    "rustc_library",
+    "rustc_binary",
+    "rustc_macro",
+    "rustc_test",
+    "go_library",
+    "go_binary",
+    "go_test",
+    "python_library",
+    "python_binary",
+    "fidl",
+    "sdk_source_set",
+    "sdk_static_library",
+    "sdk_shared_library",
+    "zx_library",
+    "fuchsia_package",
+    "fuchsia_package_with_single_component",
+    "fuchsia_component",
+    "fuchsia_component_manifest",
+    "resource",
+}
+
+BAZEL_NON_GN_SYNCED_RULES = {
+    "fx_component",
+    "fx_component_manifest",
+    "fx_packaged_binary",
+    "fx_test_component",
+    "fx_test",
+    "test_suite",
+    "rustc_test",
+    "host_rustc_test",
+    "host_go_test",
+    "host_py_test",
+    "host_test",
+    "wrap_host_rust_test",
+    "go_test",
+}
+
 def owning_bazel_target(sub, bazel_targets):
     """Maps a referenced label name to the Bazel target that defines or generates it.
 
@@ -296,19 +350,22 @@ def owning_bazel_target(sub, bazel_targets):
             best = t
     return best
 
-def compute_package_rdeps(pkg_path, bazel_targets, package_targets, alias_map):
+def compute_package_rdeps(pkg_path, bazel_targets, package_targets, non_gn_synced_targets, alias_map):
     default_target = os.path.basename(pkg_path)
     gn_file = os.path.join(workdir, pkg_path, "BUILD.gn")
     gn_only_targets = {"verify_bazel2gn", "tests", "benchmarks"}
+    gn_nonconvertible_targets = {"verify_bazel2gn", "tests", "benchmarks"}
     if os.path.isfile(gn_file):
         try:
             with open(gn_file, "r", encoding="utf-8", errors="ignore") as f:
                 gn_src = f.read()
             above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if "BAZEL2GN SENTINEL" in gn_src else gn_src
-            for m in re.finditer(r'^\s*[a-zA-Z0-9_]+\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
-                t = m.group(1)
+            for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
+                tmpl, t = m.group(1), m.group(2)
                 if t not in bazel_targets:
                     gn_only_targets.add(t)
+                if tmpl not in CONVERTIBLE_GN_TEMPLATES:
+                    gn_nonconvertible_targets.add(t)
         except Exception:
             pass
 
@@ -359,6 +416,9 @@ def compute_package_rdeps(pkg_path, bazel_targets, package_targets, alias_map):
         for m in dep_matches:
             sub = m.group(1) or default_target
             if sub in gn_only_targets and sub not in bazel_targets:
+                gn_only_ref_packages.add(caller_pkg)
+                continue
+            if rel.endswith((".gn", ".gni")) and (sub in non_gn_synced_targets or sub in gn_nonconvertible_targets):
                 gn_only_ref_packages.add(caller_pkg)
                 continue
             is_pkg_target = sub in package_targets or (
@@ -428,10 +488,11 @@ for rel_path in sorted(candidate_files):
     if re.search(r"^#\s*[@]generated\b", "\n".join(src.splitlines()[:10]), flags=re.MULTILINE):
         continue
 
-    preexisting_vis = get_preexisting_vis_strings(rel_path)
+    preexisting_vis, preexisting_no_vis_targets = get_preexisting_vis_info(rel_path)
     var_table = {}
     bazel_targets = []
     package_targets = set()
+    non_gn_synced_targets = set()
     alias_map = {}
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -457,11 +518,13 @@ for rel_path in sorted(candidate_files):
                 bazel_targets.append(tname)
                 if func in ("fx_package", "fuchsia_package"):
                     package_targets.add(tname)
+                if func in BAZEL_NON_GN_SYNCED_RULES:
+                    non_gn_synced_targets.add(tname)
                 if func == "alias" and actual and actual.startswith(":"):
                     alias_map[tname] = actual[1:]
 
     true_rdeps, per_target_rdeps, per_target_direct_rdeps, vis_only_pkgs, gn_only_pkgs, has_macro_injected_rdeps = compute_package_rdeps(
-        pkg_path, bazel_targets, package_targets, alias_map
+        pkg_path, bazel_targets, package_targets, non_gn_synced_targets, alias_map
     )
 
     has_pkg_default_vis = False
@@ -522,7 +585,7 @@ for rel_path in sorted(candidate_files):
         distinct_areas = get_distinct_areas(target_rdeps, pkg_path)
 
         if vis_kw is None:
-            if not has_pkg_default_vis and len(target_rdeps) > 0:
+            if not has_pkg_default_vis and len(target_rdeps) > 0 and target_name not in preexisting_no_vis_targets:
                 findings.append({
                     "source": "visibility_audit",
                     "category": "missing_target_visibility",

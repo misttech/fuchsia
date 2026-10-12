@@ -29,7 +29,7 @@ set -euo pipefail
 # 3. Flags drive-by edits to unrelated packages and shared Bazel rule/macro
 #    definitions (`build/bazel/rules/**`, `build/bazel/aspects/**`, etc.) outside
 #    PLANTER_TARGET_DIR / PLANTER_TARGET_DIRS (except centralized registration
-#    lists, direct parent BUILD.gn/BUILD.bazel test groups, and dependency
+#    lists, ancestor BUILD.gn/BUILD.bazel test groups/suites, and dependency
 #    packages the change migrates: a new BUILD.bazel referenced, transitively,
 #    from a target package's BUILD.bazel, and the in-tree build of
 #    third_party/rust_crates: its BUILD files, Cargo.toml/Cargo.lock and compat/
@@ -178,7 +178,7 @@ def is_allowed_scope(path: str) -> bool:
     for td in list(target_dirs) + sorted(dependency_dirs):
         if norm == td or norm.startswith(td + "/"):
             return True
-        if pkg_dir == os.path.dirname(td) and os.path.basename(norm) in ("BUILD.gn", "BUILD.bazel"):
+        if pkg_dir and td.startswith(pkg_dir + "/") and os.path.basename(norm) in ("BUILD.gn", "BUILD.bazel"):
             return True
     if is_shared_bazel_rule_file(norm):
         return False

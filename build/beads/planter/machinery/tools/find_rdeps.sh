@@ -43,7 +43,25 @@ gn_file = os.path.join(workdir, target_pkg, "BUILD.gn")
 
 bazel_targets = []
 package_targets = set()
+non_gn_synced_targets = set()
 alias_map = {}
+
+BAZEL_NON_GN_SYNCED_RULES = {
+    "fx_component",
+    "fx_component_manifest",
+    "fx_packaged_binary",
+    "fx_test_component",
+    "fx_test",
+    "test_suite",
+    "rustc_test",
+    "host_rustc_test",
+    "host_go_test",
+    "host_py_test",
+    "host_test",
+    "wrap_host_rust_test",
+    "go_test",
+}
+
 if os.path.isfile(bazel_file):
     try:
         with open(bazel_file, "r", encoding="utf-8") as f:
@@ -66,6 +84,8 @@ if os.path.isfile(bazel_file):
                     bazel_targets.append(tname)
                     if func in ("fx_package", "fuchsia_package"):
                         package_targets.add(tname)
+                    if func in BAZEL_NON_GN_SYNCED_RULES:
+                        non_gn_synced_targets.add(tname)
                     if func == "alias" and actual and actual.startswith(":"):
                         alias_map[tname] = actual[1:]
     except Exception:
@@ -104,6 +124,7 @@ GN_PACKAGE_TEMPLATES = {
 }
 
 gn_only_targets = {"verify_bazel2gn", "tests", "benchmarks"}
+gn_nonconvertible_targets = {"verify_bazel2gn", "tests", "benchmarks"}
 if os.path.isfile(gn_file):
     try:
         with open(gn_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -114,9 +135,11 @@ if os.path.isfile(gn_file):
         if bazel_targets:
             above_sentinel = gn_src.split("BAZEL2GN SENTINEL")[0] if "BAZEL2GN SENTINEL" in gn_src else gn_src
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', above_sentinel, flags=re.MULTILINE):
-                t = m.group(2)
+                tmpl, t = m.group(1), m.group(2)
                 if t not in bazel_targets:
                     gn_only_targets.add(t)
+                if tmpl not in CONVERTIBLE_GN_TEMPLATES:
+                    gn_nonconvertible_targets.add(t)
         else:
             for m in re.finditer(r'^\s*([a-zA-Z0-9_]+)\(\s*"([^"]+)"\s*\)', gn_src, flags=re.MULTILINE):
                 tmpl, t = m.group(1), m.group(2)
@@ -124,6 +147,7 @@ if os.path.isfile(gn_file):
                     bazel_targets.append(t)
                 elif tmpl not in CONVERTIBLE_GN_TEMPLATES and t not in bazel_targets:
                     gn_only_targets.add(t)
+                    gn_nonconvertible_targets.add(t)
     except Exception:
         pass
 
@@ -217,6 +241,9 @@ for fpath in sorted(set(files)):
     for m in dep_matches:
         sub = m.group(1) or default_target
         if sub in gn_only_targets and sub not in bazel_targets:
+            excluded_gn_only_references.add(f"//{pkg} (:{sub})")
+            continue
+        if rel.endswith((".gn", ".gni")) and (sub in non_gn_synced_targets or sub in gn_nonconvertible_targets):
             excluded_gn_only_references.add(f"//{pkg} (:{sub})")
             continue
         is_pkg_target = sub in package_targets or (

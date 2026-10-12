@@ -27,7 +27,10 @@ set -euo pipefail
 #      Exception: with `build/bazel/rules/testing/fx_test.bzl` in the checkout, a
 #      GN test package (or host test) may become a `bazel_test_suite` of the same
 #      name exporting its migrated Bazel tests (C++ and Rust alike: tests move to
-#      Bazel and bazel2gn does not translate them).
+#      Bazel and bazel2gn does not translate them). A GN host binary or
+#      `install_host_tools` target (`rustc_binary`, `go_binary`, `executable`,
+#      `install_host_tools`) may likewise become a `bazel_host_tool` (or a
+#      forwarding `group` in a `BUILD.gn` that defines a `bazel_host_tool`).
 # - If the GN target is gone (BUILD.gn deleted in a full removal, or the target
 #   removed) and BUILD.bazel defines a cc_library or fx_cc_library of the same
 #   name, its `alwayslink` must match the GN type:
@@ -67,6 +70,12 @@ GN_TEST_TEMPLATES = {
     "rustc_test",
     "go_test",
     "test",
+}
+GN_HOST_TOOL_TEMPLATES = {
+    "rustc_binary",
+    "go_binary",
+    "executable",
+    "install_host_tools",
 }
 
 
@@ -293,15 +302,22 @@ for pkg in sorted(candidate_dirs):
     new = gn_types(after) if after is not None else {}
     bazel_text = new_text(bazel_rel)
     cc_libs = bazel_cc_libraries(bazel_text) if bazel_text else {}
+    has_bazel_host_tool = any("bazel_host_tool" in t for t, _ in new.values())
     for name, (old_types, _) in sorted(old.items()):
         label = f"//{pkg}:{name}"
         if name in new:
             new_types, line = new[name]
-            if new_types != old_types and not (
+            is_test_suite_conversion = (
                 FX_TEST_AVAILABLE
                 and new_types == {"bazel_test_suite"}
                 and old_types <= GN_TEST_TEMPLATES
-            ):
+            )
+            is_host_tool_conversion = (
+                has_bazel_host_tool
+                and new_types <= {"bazel_host_tool", "group"}
+                and old_types <= GN_HOST_TOOL_TEMPLATES | {"group"}
+            )
+            if new_types != old_types and not (is_test_suite_conversion or is_host_tool_conversion):
                 findings.append(type_change_finding(label, name, pkg, gn_rel, line, old_types, new_types))
         elif name in cc_libs:
             rule, alwayslink, line = cc_libs[name]

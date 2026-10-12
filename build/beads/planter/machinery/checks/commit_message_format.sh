@@ -169,7 +169,7 @@ if head and base_rev and head != base_rev:
             "invent one: say in the summary that the developer must choose or define the `test_suite()` (possibly "
             "consulting the Build team).", severity="info")
     # Body: changes not specific to the migrated targets must be described.
-    body = "\n".join(l for l in lines[1:] if not re.match(r"^(Test|Bug|Fixed|Change-Id|Multiply|Cq-[\w-]+):", l))
+    body = "\n".join(l for l in lines[1:] if not re.match(r"^(Test|Bug|Fixed|Bazel-Migration-Target|TAG|Change-Id|Multiply|Cq-[\w-]+):", l))
     in_dirs = lambda f: any(f == d or f.startswith(d + "/") for d in dirs)
     for f in changed:
         if in_dirs(f) or not (f.endswith(".bzl") or f.rsplit("/", 1)[-1] == "MODULE.bazel"):
@@ -226,5 +226,108 @@ if head and base_rev and head != base_rev:
         add("test_footer_bazel2gn_not_last", b2g[-1],
             "The bazel2gn verification `Test:` line is not last.",
             "Group build/test commands together and put `Test: fx bazel2gn` last.")
+    # Bazel-Migration-Target: footers (required for every non-empty migration commit).
+    is_empty = not changed and not git("status", "--porcelain", "--ignore-submodules=all")
+    bmt_lines = [(i + 1, l) for i, l in enumerate(lines) if re.match(r"^Bazel-Migration-Target\s*:", l)]
+    migrated_targets = []
+    excluded_bmt = {}
+    helper_rules = {"package", "exports_files", "alias", "config_setting",
+                    "fx_packaged_binary", "fx_component_manifest", "fx_test_component"}
+    ut_re = r'^\s*(with_unit_tests\s*=\s*"(host|both|fuchsia)"|with_unit_tests\s*=\s*True|with_host_unit_tests\s*=\s*True)'
+    for d in dirs:
+        try:
+            with open(f"{workdir}/{d}/BUILD.bazel") as fh:
+                btxt = fh.read()
+        except OSError:
+            continue
+        base_btxt = git("show", f"{base_rev}:{d}/BUILD.bazel")
+        base_gtxt = git("show", f"{base_rev}:{d}/BUILD.gn")
+        base_bazel_names = set()
+        for m in re.finditer(r"^([A-Za-z_]\w*)\((.*?)^\)", base_btxt, re.M | re.S):
+            n = re.search(r'^\s*name\s*=\s*"([^"]+)"', m.group(2), re.M)
+            if n:
+                base_bazel_names.add(n.group(1))
+                if re.search(ut_re, m.group(2), re.M):
+                    base_bazel_names.add(f"{n.group(1)}_test")
+        base_gn_names = set(re.findall(r'^\s*[A-Za-z_]\w*\(\s*"([^"]+)"\s*\)', base_gtxt, re.M))
+        blocks = list(re.finditer(r"^([A-Za-z_]\w*)\((.*?)^\)", btxt, re.M | re.S))
+        explicit_names = set()
+        test_wrapped_pkgs = set()
+        wrapped_bins = set()
+        for m in blocks:
+            rule, blk = m.group(1), m.group(2)
+            n = re.search(r'^\s*name\s*=\s*"([^"]+)"', blk, re.M)
+            if n:
+                explicit_names.add(n.group(1))
+            if rule == "fx_test":
+                p = re.search(r'^\s*package\s*=\s*":([^"]+)"', blk, re.M)
+                if p:
+                    test_wrapped_pkgs.add(p.group(1))
+            if rule in ("host_test", "fx_packaged_binary"):
+                b = re.search(r'^\s*binary\s*=\s*":([^"]+)"', blk, re.M)
+                if b and b.group(1) not in base_gn_names:
+                    wrapped_bins.add(b.group(1))
+        all_dir_targets, new_dir_targets = [], []
+        for m in blocks:
+            rule, blk = m.group(1), m.group(2)
+            n = re.search(r'^\s*name\s*=\s*"([^"]+)"', blk, re.M)
+            if not n:
+                continue
+            tname = n.group(1)
+            lbl = f"//{d}:{tname}"
+            if rule in helper_rules or (rule == "fx_package" and tname in test_wrapped_pkgs) or tname in wrapped_bins:
+                excluded_bmt[lbl] = "is an internal Bazel packaging/test-wrapper helper target, not a migrated GN target"
+                continue
+            all_dir_targets.append(lbl)
+            if tname not in base_bazel_names:
+                new_dir_targets.append(lbl)
+            if re.search(ut_re, blk, re.M) and f"{tname}_test" not in explicit_names:
+                tlbl = f"//{d}:{tname}_test"
+                all_dir_targets.append(tlbl)
+                if f"{tname}_test" not in base_bazel_names:
+                    new_dir_targets.append(tlbl)
+        if new_dir_targets:
+            for lbl in all_dir_targets:
+                if lbl not in new_dir_targets:
+                    excluded_bmt[lbl] = "already existed in `BUILD.bazel` before this commit"
+            migrated_targets.extend(new_dir_targets)
+        else:
+            migrated_targets.extend(all_dir_targets)
+    if not is_empty:
+        footer_ln = test_lines[-1][0] if test_lines else max(1, len(lines))
+        example_bmt = ", ".join(f"`Bazel-Migration-Target: {t}`" for t in (migrated_targets or [f"//{first}:<target>"]))
+        if not bmt_lines:
+            add("missing_bazel_migration_target_footer", footer_ln,
+                "Commit message is missing `Bazel-Migration-Target:` footer(s) recording the migrated target label(s).",
+                "Add one `Bazel-Migration-Target: //<dir>:<target>` footer line per migrated target in the single "
+                "contiguous footer block at the bottom of the commit message (after `Test:` and before `TAG:`/"
+                f"`Change-Id:`, with no blank lines between footers and no line wrapping), e.g. {example_bmt}.")
+        for ln, l in bmt_lines:
+            val = l.split(":", 1)[1].strip()
+            canon_val = val if ":" in val else f"{val}:{val.rsplit('/', 1)[-1]}"
+            wrapped = ln < len(lines) and bool(lines[ln].strip()) and not re.match(r"^[A-Za-z0-9\-]+\s*:", lines[ln])
+            if not re.match(r"^//[\w./\-]+(:[\w.\-]+)?$", val) or wrapped:
+                add("bazel_migration_target_footer_format", ln,
+                    f"`Bazel-Migration-Target:` footer `{l}` must specify a single canonical `//<dir>:<target>` "
+                    "label on one unwrapped line (without a leading `@`).",
+                    f"Write one unwrapped line per migrated target, e.g. {example_bmt}.")
+            elif canon_val in excluded_bmt:
+                add("bazel_migration_target_not_migrated", ln,
+                    f"`Bazel-Migration-Target:` footer `{l}` names `{val}`, which {excluded_bmt[canon_val]}.",
+                    f"List only targets migrated from GN in this commit, e.g. {example_bmt}.")
+        nonempty_idxs = [i for i, l in enumerate(lines) if l.strip()]
+        if nonempty_idxs:
+            final_start = nonempty_idxs[-1]
+            while final_start > 0 and lines[final_start - 1].strip():
+                final_start -= 1
+            for ln, l in bmt_lines + test_lines:
+                if ln - 1 < final_start:
+                    add("footer_block_not_contiguous", ln,
+                        f"Footer `{l}` is separated from the final footer block by a blank line, so Gerrit will not "
+                        "index it as a commit footer (breaking `hasfooter:Bazel-Migration-Target` queries).",
+                        "Group all footers (`Bug:`/`Fixed:`, `Test:`, `Bazel-Migration-Target:`, `TAG:`, "
+                        "`Change-Id:`) into a single contiguous block at the very bottom of the commit message with "
+                        "no blank lines between them.")
+                    break
 print(json.dumps(findings, indent=2))
 PYEOF

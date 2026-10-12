@@ -27,9 +27,13 @@ set -uo pipefail
 #                              <changed dirs' BUILD.bazel/BUILD.gn>`, which fails
 #                              if a BUILD.gn has drifted from what `fx bazel2gn`
 #                              generates from BUILD.bazel.
-#   4. bazel_build_fuchsia:    `fx bazel build --config=fuchsia_platform //<dir>:all`
+#   4. bazel_build_fuchsia:    `fx bazel build --config=fuchsia_platform
+#                              --noexpand_test_suites //<dir>:all`
 #                              for every changed directory with a BUILD.bazel
-#                              (host-only targets are skipped as incompatible;
+#                              (host-only targets are skipped as incompatible,
+#                              and `--noexpand_test_suites` prevents `:all` from
+#                              expanding `test_suite` targets before checking
+#                              their `target_compatible_with`;
 #                              `_validate_json_action` targets such as
 #                              `<fidl>_validate_ir_json` are excluded from top-level
 #                              `:all` so `assert_no_deps_aspect` does not crash on
@@ -475,6 +479,29 @@ def validate_json_exclusions(d):
     return out
 
 
+def has_non_suite_bazel_targets(d):
+    """True when `d/BUILD.bazel` defines at least one rule/macro target other than `test_suite`,
+    `package`, `exports_files`, or `licenses` (so `bazel_build_fuchsia` does not build
+    `test_suite`-only ancestor aggregator packages under `--config=fuchsia_platform`)."""
+    text = read(f"{d}/BUILD.bazel")
+    if not text:
+        return False
+    non_build_calls = {"package", "exports_files", "licenses", "load", "test_suite"}
+    try:
+        tree = ast.parse(text)
+        for node in tree.body:
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+                fn = node.value.func.id if isinstance(node.value.func, ast.Name) else (
+                    node.value.func.attr if isinstance(node.value.func, ast.Attribute) else None
+                )
+                if fn and fn not in non_build_calls:
+                    return True
+        return False
+    except SyntaxError:
+        calls = set(re.findall(r"^\s*([A-Za-z_]\w*)\s*\(", gn_code(text), re.M))
+        return bool(calls - non_build_calls)
+
+
 def bazel_target_args(pkg_dirs):
     pos = [f"//{d}:all" for d in pkg_dirs]
     neg = [lbl for d in pkg_dirs for lbl in validate_json_exclusions(d)]
@@ -494,8 +521,13 @@ sync_files = [
 ]
 if sync_files:
     steps.append(("verify_bazel2gn", [fx, "host-tool", "shac", "check", "--only", "verify_bazel2gn"] + sync_files))
-if bazel_dirs:
-    steps.append(("bazel_build_fuchsia", [fx, "bazel", "build", "--config=fuchsia_platform"] + bazel_target_args(bazel_dirs)))
+fuchsia_bazel_dirs = [d for d in bazel_dirs if has_non_suite_bazel_targets(d)]
+if fuchsia_bazel_dirs:
+    steps.append((
+        "bazel_build_fuchsia",
+        [fx, "bazel", "build", "--config=fuchsia_platform", "--noexpand_test_suites"]
+        + bazel_target_args(fuchsia_bazel_dirs),
+    ))
 if host_dirs:
     steps.append(("bazel_build_host", [fx, "bazel", "build", "--config=host"] + bazel_target_args(host_dirs)))
 if exported_tests["host_tests"]:
@@ -567,6 +599,22 @@ worktree_dirty_vs_head = bool(
 )
 if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit_env or head_sha != uploaded_commit_env):
     toolchains_map, _ = load_toolchains()
+    tests_json_targets = None
+    build_dir_rel = (read(".fx-build-dir") or "").strip()
+    if build_dir_rel:
+        try:
+            with open(os.path.join(workdir, build_dir_rel, "tests.json")) as f:
+                tj_data = json.load(f)
+            if isinstance(tj_data, list):
+                tests_json_targets = set()
+                for entry in tj_data:
+                    t_obj = entry.get("test", {}) if isinstance(entry, dict) else {}
+                    for k in ("label", "source_label", "name", "package_url"):
+                        val = t_obj.get(k)
+                        if isinstance(val, str) and val.strip():
+                            tests_json_targets.add(re.sub(r"^@@?//", "//", val.strip()).split("(", 1)[0])
+        except (OSError, ValueError):
+            tests_json_targets = None
     commit_msg = "\n".join(git_lines(["log", "-1", "--format=%B", "HEAD"]))
     test_footer_lines = []
     for m_line in commit_msg.splitlines():
@@ -648,6 +696,41 @@ if change_base != "HEAD" and not worktree_dirty_vs_head and (not uploaded_commit
                         "Amend the commit message `Test:` footer (and only list commands in `CoderReport.tests_run`) to use "
                         "commands that actually succeed in the configured build (copy the exact shell-quoted commands from "
                         "`PLANTER_BUILD_DRY_RUN=1 run_checks.sh --only build_verification`)."
+                    ),
+                })
+        if tests_json_targets is not None and re.search(r"\bfx\s+(?:-t\s+\S+\s+)?test\b", test_cmd):
+            fx_test_lbls = [
+                re.sub(r"^@@?//", "//", lbl).split("(", 1)[0]
+                for lbl in re.findall(r"@?//[^\s,;\"'`]+", test_cmd)
+            ]
+            missing_fx_tests = []
+            if not tests_json_targets:
+                missing_fx_tests = fx_test_lbls or [test_cmd]
+            else:
+                for lbl in fx_test_lbls:
+                    pkg_prefix = lbl.split(":", 1)[0]
+                    if lbl not in tests_json_targets and not any(
+                        t == lbl or t.startswith(pkg_prefix + ":") for t in tests_json_targets
+                    ):
+                        missing_fx_tests.append(lbl)
+            if missing_fx_tests:
+                findings.append({
+                    "source": "build_verification",
+                    "category": "unconfigured_fx_test_footer_label",
+                    "severity": "ERROR",
+                    "file": "",
+                    "line": 0,
+                    "message": (
+                        f"Commit `Test:` footer `{m_line.strip()}` runs `fx test` on target(s) not present in "
+                        f"`<build dir>/tests.json`: {' '.join(missing_fx_tests)} "
+                        f"({len(tests_json_targets)} total tests in `<build dir>/tests.json`). "
+                        "Planter's `test_verifier` runs `fx test --dry` and fails when a test target is not in `tests.json`."
+                    ),
+                    "remediation": (
+                        "Replace `Test: fx test ...` in the commit message (and `CoderReport.tests_run`) with a Bazel "
+                        "command that runs or builds the migrated test directly, such as "
+                        "`Test: fx bazel test --config=host @//<dir>:<test>` (or the ancestor `test_suite()`) for host "
+                        "tests or `Test: fx bazel build --config=fuchsia_platform @//<dir>:<test>` for device tests."
                     ),
                 })
     if len(test_footer_lines) > 3:
