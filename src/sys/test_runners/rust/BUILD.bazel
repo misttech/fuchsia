@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//build/bazel/aspects:runner.bzl", "fx_runner_shard")
+
 package(default_applicable_licenses = ["//:license"])
 
 exports_files(
@@ -9,5 +11,11 @@ exports_files(
         "default.shard.cml",
         "next-vdso.shard.cml",
     ],
+    visibility = ["//visibility:public"],
+)
+
+fx_runner_shard(
+    name = "default",
+    shard = "default.shard.cml",
     visibility = ["//visibility:public"],
 )

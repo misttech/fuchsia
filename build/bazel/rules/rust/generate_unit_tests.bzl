@@ -4,7 +4,11 @@
 
 load("@rules_rust//rust:rust_test.bzl", "rust_test")
 load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "define_and_wrap_host_rust_test")
-load("//build/bazel/rules/rust:common.bzl", "with_fuchsia_rust_stdlib_link_deps")
+load(
+    "//build/bazel/rules/rust:common.bzl",
+    "with_fuchsia_rust_stdlib_link_deps",
+    "with_fuchsia_rust_test_aspect_hints",
+)
 
 def generate_unit_tests(
         *,
@@ -73,6 +77,7 @@ def generate_unit_tests(
         )
 
     if with_unit_tests:
+        kwargs["aspect_hints"] = with_fuchsia_rust_test_aspect_hints(kwargs.get("aspect_hints"))
         rust_test(
             name = "{}_test".format(name),
             crate = ":{}".format(name),

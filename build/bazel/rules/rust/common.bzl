@@ -24,3 +24,7 @@ def with_fuchsia_rust_stdlib_link_deps(link_deps):
         "@platforms//os:fuchsia": ["//build/bazel/rules/rust:fdio_for_rust_stdlib"],
         "//conditions:default": [],
     })
+
+def with_fuchsia_rust_test_aspect_hints(aspect_hints):
+    """Add the Fuchsia Rust test runner shard to aspect_hints."""
+    return (aspect_hints or []) + ["//src/sys/test_runners/rust:default"]

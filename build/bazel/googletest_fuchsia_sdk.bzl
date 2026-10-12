@@ -25,6 +25,9 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 cc_library(
     name = "syslog_noop",
+    # Propagate the gtest runner shard to any test binary that links against
+    # @com_google_googletest//:gtest (which depends on @fuchsia_sdk//pkg/syslog).
+    aspect_hints = ["@//src/sys/test_runners/gtest:default"],
 )
 
 alias(

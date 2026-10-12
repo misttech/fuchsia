@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load(":assert_no_deps_test.bzl", "assert_no_deps_test_suite")
+load(":runner_test.bzl", "runner_test_suite")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -13,9 +14,14 @@ assert_no_deps_test_suite(
     name = "assert_no_deps_test",
 )
 
+runner_test_suite(
+    name = "runner_test",
+)
+
 test_suite(
     name = "tests",
     tests = [
         ":assert_no_deps_test",
+        ":runner_test",
     ],
 )

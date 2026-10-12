@@ -5,6 +5,11 @@
 """Rules for verifying the outputs and providers of Bazel test rules."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
+load(
+    "//build/bazel/aspects:runner.bzl",
+    "FuchsiaRunnerShardInfo",
+    "collect_runner_shard_aspect",
+)
 load("//build/bazel/rules/testing:fx_test.bzl", "FuchsiaTestInfo")
 
 def _verify_file_path_impl(ctx):
@@ -102,6 +107,34 @@ verify_fx_test_realms = rule(
         ),
         "expected_realms": attr.string_dict(
             doc = "Map of `component_name` to expected `realm` moniker (or empty string if hermetic).",
+            mandatory = True,
+        ),
+    },
+)
+
+def _verify_runner_shard_impl(ctx):
+    shards = [
+        "//" + f.short_path
+        for f in ctx.attr.target[FuchsiaRunnerShardInfo].shards.to_list()
+    ]
+    if shards != [ctx.attr.expected_shard]:
+        fail(
+            "Expected runner shard [{}], got {}.".format(
+                ctx.attr.expected_shard,
+                shards,
+            ),
+        )
+    return []
+
+verify_runner_shard = rule(
+    doc = "Verifies that `target` propagates `expected_shard` in `FuchsiaRunnerShardInfo`.",
+    implementation = _verify_runner_shard_impl,
+    attrs = {
+        "target": attr.label(
+            aspects = [collect_runner_shard_aspect],
+            mandatory = True,
+        ),
+        "expected_shard": attr.string(
             mandatory = True,
         ),
     },

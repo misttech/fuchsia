@@ -13,10 +13,13 @@ load(
 )
 load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
 load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_test")
 load(
     "//build/bazel/rules/testing:defs.bzl",
+    "analysis_failure_test",
     "verify_fx_test_environments",
     "verify_fx_test_realms",
+    "verify_runner_shard",
 )
 load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
 load(
@@ -342,18 +345,25 @@ filegroup(
     name = "quick_build_only_tests",
     testonly = True,
     srcs = [
+        ":example_conflicting_runners_failure_test",
+        ":example_gtest_unittest_package",
         ":example_multi_component_test",
         ":example_multi_unittest_package",
+        ":example_rust_unittest_package",
         ":example_test",
         ":example_test_with_test_type",
         ":example_unittest_package",
         ":example_unittest_package_default_name",
+        ":example_zxtest_unittest_package",
+        ":verify_example_gtest_runner_shard",
         ":verify_example_multi_component_test_realms",
         ":verify_example_multi_unittest_package_realms",
+        ":verify_example_rust_runner_shard",
         ":verify_example_test_default_realm",
         ":verify_example_test_with_test_type",
         ":verify_example_unittest_package_default_name_realms",
         ":verify_example_unittest_package_realms",
+        ":verify_example_zxtest_runner_shard",
     ],
     visibility = ["//build/bazel/rules/tests:__pkg__"],
 )
@@ -363,6 +373,92 @@ fx_cc_binary(
     testonly = True,
     srcs = ["example_test.cc"],
     tags = ["manual"],
+)
+
+fx_cc_binary(
+    name = "example_gtest_bin",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    tags = ["manual"],
+    deps = ["@com_google_googletest//:gtest"],
+)
+
+verify_runner_shard(
+    name = "verify_example_gtest_runner_shard",
+    testonly = True,
+    expected_shard = "//src/sys/test_runners/gtest/default.shard.cml",
+    target = ":example_gtest_bin",
+)
+
+fx_unittest_package(
+    name = "example_gtest_unittest_package",
+    package_name = "fx-gtest-unittest-package-example",
+    unit_tests = [":example_gtest_bin"],
+)
+
+rustc_test(
+    name = "example_rust_test_bin",
+    srcs = ["example_test.rs"],
+    edition = "2024",
+    tags = ["manual"],
+)
+
+verify_runner_shard(
+    name = "verify_example_rust_runner_shard",
+    testonly = True,
+    expected_shard = "//src/sys/test_runners/rust/default.shard.cml",
+    target = ":example_rust_test_bin",
+)
+
+fx_unittest_package(
+    name = "example_rust_unittest_package",
+    package_name = "fx-rust-unittest-package-example",
+    unit_tests = [":example_rust_test_bin"],
+)
+
+fx_cc_binary(
+    name = "example_zxtest_bin",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    tags = ["manual"],
+    deps = ["//zircon/system/ulib/zxtest"],
+)
+
+verify_runner_shard(
+    name = "verify_example_zxtest_runner_shard",
+    testonly = True,
+    expected_shard = "//src/sys/test_runners/gtest/zxtest.shard.cml",
+    target = ":example_zxtest_bin",
+)
+
+fx_unittest_package(
+    name = "example_zxtest_unittest_package",
+    package_name = "fx-zxtest-unittest-package-example",
+    unit_tests = [":example_zxtest_bin"],
+)
+
+fx_cc_binary(
+    name = "example_conflicting_runners_bin",
+    testonly = True,
+    srcs = ["example_test.cc"],
+    tags = ["manual"],
+    deps = [
+        "//zircon/system/ulib/zxtest",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+fx_unittest_package(
+    name = "example_conflicting_runners_unittest_package",
+    package_name = "fx-conflicting-runners-unittest-package-example",
+    tags = ["manual"],
+    unit_tests = [":example_conflicting_runners_bin"],
+)
+
+analysis_failure_test(
+    name = "example_conflicting_runners_failure_test",
+    expected_message = "Multiple conflicting runner shards found in dependencies",
+    target_under_test = ":example_conflicting_runners_unittest_package",
 )
 
 # Tests `fx_unittest_package()` with a single unit test binary.

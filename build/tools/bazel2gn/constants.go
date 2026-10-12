@@ -140,6 +140,7 @@ var bazelRuleToGNTemplate = map[string]string{
 	"fx_component_manifest": noGNEquivalent,
 	"fx_package":            noGNEquivalent,
 	"fx_packaged_binary":    noGNEquivalent,
+	"fx_runner_shard":       noGNEquivalent,
 	"fx_test":               noGNEquivalent,
 	"fx_test_component":     noGNEquivalent,
 	"fx_unittest_component": noGNEquivalent,
@@ -194,8 +195,8 @@ var attrsToOmitByRules = map[string]map[string]bool{
 	// TODO(https://fxbug.dev/457605523): Support `includes` conversion to `configs` in GN.
 	// Currently the only use case is to set `includes = ["../.."]`, which is covered by
 	// `"//build/config:default_include_dirs"` in GN.
-	"cc_library":               {"includes": true},
-	"fx_cc_library":            {"includes": true},
+	"cc_library":               {"aspect_hints": true, "includes": true},
+	"fx_cc_library":            {"aspect_hints": true, "includes": true},
 	"idk_cc_source_library":    {"includes": true},
 	"idk_cc_shared_library_zx": {"version_script": true},
 	// We do not need to include the "stamp" destination in GN because it is implicitly created by

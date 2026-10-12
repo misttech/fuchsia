@@ -51,5 +51,11 @@ fx_cc_library = macro(
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],
         ),
+        # Bazel's `inherit_attrs` skips undocumented built-in `BaseRuleClasses`
+        # attributes such as `aspect_hints`, so it must be declared explicitly
+        # on symbolic macros that accept `aspect_hints` from callers.
+        "aspect_hints": attr.label_list(
+            doc = "Hints for aspects.",
+        ),
     } | BUILD_FLAGS_CC_ATTRS_KWARGS,
 )

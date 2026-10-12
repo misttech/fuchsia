@@ -4,17 +4,19 @@
 
 """Helper functions for Fuchsia specific aspects."""
 
-def get_target_deps_from_attributes(rule_attr):
+def get_target_deps_from_attributes(rule_attr, attr_names = None):
     """Return all dependencies from a given target context during analysis.
 
     Args:
         rule_attr: The ctx.attr value for the current target.
+        attr_names: Optional list of attribute names to inspect. If None, all
+            attributes on `rule_attr` are inspected.
     Returns:
         A list of Target values corresponding to the dependencies of the current
         target.
     """
     result = {}
-    for attr_name in dir(rule_attr):
+    for attr_name in (attr_names if attr_names != None else dir(rule_attr)):
         attr_value = getattr(rule_attr, attr_name, None)
         if not attr_value:
             continue

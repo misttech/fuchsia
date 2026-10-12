@@ -73,9 +73,7 @@ _ZXTEST_DEPS = [
     "//conditions:default": [],
 })
 
-# Makes the test manifests that GN generates use the zxtest runner. Bazel
-# doesn't have this mechanism yet, so Bazel tests that want the zxtest runner
-# must include the shard explicitly.
+# Makes the test manifests that GN generates use the zxtest runner.
 expect_includes(
     name = "zxtest_runner_shard",
     enforce = False,
@@ -87,6 +85,7 @@ fx_cc_library(
     name = "zxtest",
     srcs = _ZXTEST_SRCS,
     hdrs = _ZXTEST_HDRS,
+    aspect_hints = ["//src/sys/test_runners/gtest:zxtest"],
     # TODO(https://fxbug.dev/42085293): zxtest uses VLAs. GN suppresses the
     # warning for every dependent through a public config, but Bazel copts
     # don't propagate, so dependents that use the zxtest macros need this too.
@@ -105,6 +104,7 @@ fx_cc_library(
     name = "zxtest-streams",
     srcs = _ZXTEST_SRCS,
     hdrs = _ZXTEST_HDRS,
+    aspect_hints = ["//src/sys/test_runners/gtest:zxtest"],
     copts = ["-Wno-vla-cxx-extension"],
     defines = ["ZXTEST_USE_STREAMABLE_MACROS"],
     includes = ["include"],
