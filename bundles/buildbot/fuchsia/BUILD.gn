@@ -47,7 +47,12 @@ group("fuchsia") {
       ":workbench_eng.x64",
     ]
 
-    # Lacewing tests are only run with the balanced compilation mode.
+    # Lacewing tests only run in the debug compilation mode.
+    if (is_debug) {
+      deps += [ ":core.x64-lacewing" ]
+    }
+
+    # Lacewing tests only run with the balanced compilation mode.
     if (is_balanced) {
       deps += [ ":workbench_eng.x64-lacewing" ]
     }
@@ -147,6 +152,21 @@ if (target_cpu == "x64") {
     # requires AEMU), disable them only for that architecture
     build_only = true
     target_tests = [ "//src/ui:tests" ]
+  }
+
+  if (is_debug) {
+    product_bundle_test_group("core.x64-lacewing") {
+      product_bundle_name = "core.x64"
+      environments = [
+        aemu_env,
+        nuc11_env,
+      ]
+      override_test_environments = false
+      host_tests = [
+        "//src/testing/end_to_end:core_x64_stable_tests",
+        "//src/testing/end_to_end:core_x64_stable_sl4f_tests",
+      ]
+    }
   }
 }
 if (target_cpu == "riscv64") {
