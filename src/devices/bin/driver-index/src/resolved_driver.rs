@@ -5,7 +5,6 @@
 use anyhow::{Context, Error, anyhow};
 use bind::interpreter::decode_bind_rules::DecodedRules;
 use bind::interpreter::match_bind::{DeviceProperties, MatchBindData, match_bind};
-use cm_rust::FidlIntoNative;
 use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_resolution as fresolution;
 use fidl_fuchsia_driver_framework as fdf;
@@ -136,22 +135,20 @@ impl ResolvedDriver {
         })?;
         let proxy = package.into_proxy();
         let package_dir = PackageDirectory::from_proxy(proxy);
-        let package_hash = package_dir.merkle_root().await.map_err(|e| {
+        let (package_hash, driver) = futures::join!(
+            package_dir.merkle_root(),
+            load_driver(component_url, decl, package_dir.clone(), package_type, None),
+        );
+        let package_hash = package_hash.map_err(|e| {
             log::warn!("Failed to read package directory's hash: {}", e);
             zx::Status::INTERNAL
         })?;
-        load_driver(
-            component_url,
-            decl,
-            package_dir,
-            package_type,
-            Some(BlobId::from(package_hash)),
-        )
-        .map_err(|e| {
+        let mut driver = driver.map_err(|e| {
             log::warn!("Could not load driver: {}", e);
             zx::Status::INTERNAL
-        })
-        .await
+        })?;
+        driver.package_hash = Some(BlobId::from(package_hash));
+        Ok(driver)
     }
 
     pub fn matches(
@@ -211,38 +208,28 @@ pub async fn load_driver(
     package_type: DriverPackageType,
     package_hash: Option<BlobId>,
 ) -> Result<ResolvedDriver, Error> {
-    let component: cm_rust::ComponentDecl = component.fidl_into_native();
-
     let bind_path = get_rules_string_value(&component, "bind")
         .ok_or_else(|| anyhow!("{}: Missing bind path", component_url))?;
-    let bind = package_dir.read_file(&bind_path).await.with_context(|| {
+    let bind = package_dir.read_file(bind_path).await.with_context(|| {
         format!("{}: Failed to read bind file '{}'", component_url.as_str(), bind_path)
     })?;
-    let bind_rules = DecodedRules::new(bind.clone())
+    let bind_rules = DecodedRules::from_bytes(&bind)
         .with_context(|| format!("{}: Failed to parse bind", component_url.as_str()))?;
 
     let v1_driver_path = get_rules_string_value(&component, "compat");
-    let fallback = get_rules_string_value(&component, "fallback");
-    let fallback = match fallback {
-        Some(s) => s == "true",
-        None => false,
-    };
-    let colocate = get_rules_string_value(&component, "colocate");
-    let colocate = match colocate {
-        Some(s) => s == "true",
-        None => false,
-    };
+    let fallback = get_rules_string_value(&component, "fallback") == Some("true");
+    let colocate = get_rules_string_value(&component, "colocate") == Some("true");
 
     let device_categories = get_rules_device_categories_vec(&component).unwrap();
     let is_dfv2 = Some(v1_driver_path.is_none());
 
     Ok(ResolvedDriver {
-        component_url: component_url,
-        bind_rules: bind_rules,
+        component_url,
+        bind_rules,
         bind_bytecode: bind,
-        colocate: colocate,
-        device_categories: device_categories,
-        fallback: fallback,
+        colocate,
+        device_categories,
+        fallback,
         package_type,
         package_hash,
         is_dfv2,
@@ -250,12 +237,12 @@ pub async fn load_driver(
     })
 }
 
-fn get_rules_string_value(component: &cm_rust::ComponentDecl, key: &str) -> Option<String> {
-    for entry in component.program.as_ref()?.info.entries.as_ref()? {
+fn get_rules_string_value<'a>(component: &'a fdecl::Component, key: &str) -> Option<&'a str> {
+    for entry in component.program.as_ref()?.info.as_ref()?.entries.as_ref()? {
         if entry.key == key {
             match entry.value.as_ref()?.as_ref() {
                 fidl_fuchsia_data::DictionaryValue::Str(s) => {
-                    return Some(s.to_string());
+                    return Some(s.as_str());
                 }
                 _ => {
                     return None;
@@ -263,43 +250,36 @@ fn get_rules_string_value(component: &cm_rust::ComponentDecl, key: &str) -> Opti
             }
         }
     }
-    return None;
+    None
 }
 
-fn get_rules_device_categories_vec(
-    component: &cm_rust::ComponentDecl,
-) -> Option<Vec<DeviceCategoryDef>> {
-    let default_val = Some(vec![DeviceCategoryDef {
-        category: Some(DEFAULT_DEVICE_CATEGORY.to_string()),
-        subcategory: None,
-        ..Default::default()
-    }]);
-
-    for entry in component.program.as_ref()?.info.entries.as_ref()? {
+fn get_rules_device_categories_vec(component: &fdecl::Component) -> Option<Vec<DeviceCategoryDef>> {
+    for entry in component.program.as_ref()?.info.as_ref()?.entries.as_ref()? {
         if entry.key == "device_categories" {
-            match entry.value.as_ref()?.as_ref() {
-                fidl_fuchsia_data::DictionaryValue::ObjVec(dictionaries) => {
-                    return Some(get_device_categories_from_component_data(dictionaries));
-                }
-                _ => {
-                    return default_val;
-                }
+            if let Some(fidl_fuchsia_data::DictionaryValue::ObjVec(dictionaries)) =
+                entry.value.as_deref()
+            {
+                return Some(get_device_categories_from_component_data(dictionaries));
             }
+            break;
         }
     }
 
-    default_val
+    Some(vec![DeviceCategoryDef {
+        category: Some(DEFAULT_DEVICE_CATEGORY.to_string()),
+        subcategory: None,
+    }])
 }
 
 pub fn get_device_categories_from_component_data(
     dictionaries: &Vec<fidl_fuchsia_data::Dictionary>,
 ) -> Vec<DeviceCategoryDef> {
-    let mut categories = Vec::new();
+    let mut categories = Vec::with_capacity(dictionaries.len());
     for dictionary in dictionaries {
         if let Some(entries) = &dictionary.entries {
             let category = get_dictionary_string_value(entries, "category");
             let subcategory = get_dictionary_string_value(entries, "subcategory");
-            categories.push(DeviceCategoryDef { category, subcategory, ..Default::default() });
+            categories.push(DeviceCategoryDef { category, subcategory });
         }
     }
     categories

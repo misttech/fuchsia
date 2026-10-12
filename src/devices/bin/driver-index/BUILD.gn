@@ -65,7 +65,6 @@ rustc_binary("bin") {
     "//src/lib/fuchsia-runtime",
     "//src/lib/fuchsia-sync",
     "//src/lib/sandbox",
-    "//src/sys/lib/cm_rust",
     "//src/sys/lib/cm_types",
     "//src/sys/lib/fidl-fuchsia-pkg-ext",
     "//src/sys/lib/mem_util",

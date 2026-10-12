@@ -24,8 +24,8 @@ const DEBUG_FLAG_SZ: usize = 1;
 // and an optional debug section. Verify the bytecode header and the symbol table
 // header.
 fn get_symbol_table_and_instruction_debug_bytecode(
-    bytecode: Vec<u8>,
-) -> Result<(HashMap<u32, String>, Vec<u8>, Option<Vec<u8>>), BytecodeError> {
+    bytecode: &[u8],
+) -> Result<(HashMap<u32, String>, &[u8], Option<&[u8]>), BytecodeError> {
     if bytecode.len() < MINIMUM_BYTECODE_SZ {
         return Err(BytecodeError::UnexpectedEnd);
     }
@@ -41,32 +41,34 @@ fn get_symbol_table_and_instruction_debug_bytecode(
 
     // Remove the symbol table header and verify that the size is less than
     // the remaining bytecode.
-    let (symbol_table_sz, mut symbol_table_bytecode) =
+    let (symbol_table_sz, symbol_table_bytecode) =
         read_and_remove_header(bytecode, SYMB_MAGIC_NUM)?;
     if symbol_table_bytecode.len() < symbol_table_sz as usize + HEADER_SZ {
         return Err(BytecodeError::IncorrectSectionSize);
     }
 
     // Split the instruction bytecode from the symbol table bytecode.
-    let mut inst_bytecode = symbol_table_bytecode.split_off(symbol_table_sz as usize);
+    let (symbol_table_bytecode, inst_bytecode) =
+        symbol_table_bytecode.split_at(symbol_table_sz as usize);
 
     // Read in the instruction section size and verify that the size is correct.
-    let inst_bytecode_size = u32::from_le_bytes(get_u32_bytes(&inst_bytecode, 4)?);
+    let inst_bytecode_size = u32::from_le_bytes(get_u32_bytes(inst_bytecode, 4)?);
     if inst_bytecode.len() < inst_bytecode_size as usize + HEADER_SZ {
         return Err(BytecodeError::IncorrectSectionSize);
     }
 
     // Split the debug bytecode from the instruction bytecode if the debug flag
     // byte is true.
-    let debug_bytecode = if debug_flag_byte == BYTECODE_ENABLE_DEBUG {
-        let debug_result = inst_bytecode.split_off(inst_bytecode_size as usize + HEADER_SZ);
-        let (debug_sz, debug_result_vec) = read_and_remove_header(debug_result, DEBG_MAGIC_NUM)?;
-        if debug_result_vec.len() != debug_sz as usize {
+    let (inst_bytecode, debug_bytecode) = if debug_flag_byte == BYTECODE_ENABLE_DEBUG {
+        let (inst_bytecode, debug_result) =
+            inst_bytecode.split_at(inst_bytecode_size as usize + HEADER_SZ);
+        let (debug_sz, debug_result_slice) = read_and_remove_header(debug_result, DEBG_MAGIC_NUM)?;
+        if debug_result_slice.len() != debug_sz as usize {
             return Err(BytecodeError::IncorrectSectionSize);
         }
-        Some(debug_result_vec)
+        (inst_bytecode, Some(debug_result_slice))
     } else {
-        None
+        (inst_bytecode, None)
     };
 
     Ok((read_symbol_table(symbol_table_bytecode)?, inst_bytecode, debug_bytecode))
@@ -74,14 +76,14 @@ fn get_symbol_table_and_instruction_debug_bytecode(
 
 // Remove the instructions in the first node and return it along with the
 // remaining bytecode.
-fn split_off_parent(
-    mut bytecode: Vec<u8>,
+fn split_off_parent<'a>(
+    bytecode: &'a [u8],
     expect_primary: bool,
     symbol_table: &HashMap<u32, String>,
-) -> Result<(bool, Parent, Vec<u8>), BytecodeError> {
+) -> Result<(bool, Parent, &'a [u8]), BytecodeError> {
     // Verify the node type and retrieve the node section size.
     let (is_optional, node_id, node_inst_sz) =
-        verify_and_read_node_header(&bytecode, expect_primary)?;
+        verify_and_read_node_header(bytecode, expect_primary)?;
     if bytecode.len() < NODE_TYPE_HEADER_SZ + node_inst_sz as usize {
         return Err(BytecodeError::IncorrectParentSectionSize);
     }
@@ -90,17 +92,12 @@ fn split_off_parent(
         return Err(BytecodeError::MissingParentIdInSymbolTable);
     }
 
-    let mut node_instructions = bytecode.split_off(NODE_TYPE_HEADER_SZ);
-    let remaining_bytecode = node_instructions.split_off(node_inst_sz as usize);
-    let decoded_instructions =
-        InstructionDecoder::new(symbol_table, &node_instructions).decode()?;
+    let (_, remaining) = bytecode.split_at(NODE_TYPE_HEADER_SZ);
+    let (node_instructions, remaining_bytecode) = remaining.split_at(node_inst_sz as usize);
+    let decoded_instructions = InstructionDecoder::new(symbol_table, node_instructions).decode()?;
     Ok((
         is_optional,
-        Parent {
-            name_id: node_id,
-            instructions: node_instructions,
-            decoded_instructions: decoded_instructions,
-        },
+        Parent { name_id: node_id, instructions: node_instructions.to_vec(), decoded_instructions },
         remaining_bytecode,
     ))
 }
@@ -113,20 +110,24 @@ pub enum DecodedRules {
 
 impl DecodedRules {
     pub fn new(bytecode: Vec<u8>) -> Result<Self, BytecodeError> {
+        Self::from_bytes(&bytecode)
+    }
+
+    pub fn from_bytes(bytecode: &[u8]) -> Result<Self, BytecodeError> {
         let (symbol_table, inst_bytecode, debug_bytecode) =
             get_symbol_table_and_instruction_debug_bytecode(bytecode)?;
-        let parsed_magic_num = u32::from_be_bytes(get_u32_bytes(&inst_bytecode, 0)?);
+        let parsed_magic_num = u32::from_be_bytes(get_u32_bytes(inst_bytecode, 0)?);
         if parsed_magic_num == COMPOSITE_MAGIC_NUM {
-            return Ok(DecodedRules::Composite(DecodedCompositeBindRules::new(
+            return Ok(DecodedRules::Composite(DecodedCompositeBindRules::from_slice(
                 symbol_table,
                 inst_bytecode,
-                decode_debug_bytecode(debug_bytecode)?,
+                decode_debug_bytecode_slice(debug_bytecode)?,
             )?));
         }
-        Ok(DecodedRules::Normal(DecodedBindRules::new(
+        Ok(DecodedRules::Normal(DecodedBindRules::from_slice(
             symbol_table,
             inst_bytecode,
-            decode_debug_bytecode(debug_bytecode)?,
+            decode_debug_bytecode_slice(debug_bytecode)?,
         )?))
     }
 }
@@ -138,6 +139,10 @@ pub struct DecodedDebugInfo {
 
 impl DecodedDebugInfo {
     pub fn new(debug_bytecode: Vec<u8>) -> Result<Self, BytecodeError> {
+        Self::from_slice(&debug_bytecode)
+    }
+
+    fn from_slice(debug_bytecode: &[u8]) -> Result<Self, BytecodeError> {
         // Verify the debug symbol table header and size.
         let (debug_sz, debug_sym_bytecode) =
             read_and_remove_header(debug_bytecode, DBSY_MAGIC_NUM)?;
@@ -147,7 +152,7 @@ impl DecodedDebugInfo {
         // Read in the debug symbol table.
         let symbol_table = read_symbol_table(debug_sym_bytecode)?;
 
-        Ok(DecodedDebugInfo { symbol_table: symbol_table })
+        Ok(DecodedDebugInfo { symbol_table })
     }
 }
 
@@ -155,14 +160,16 @@ impl DecodedDebugInfo {
 pub fn decode_debug_bytecode(
     debug_bytecode: Option<Vec<u8>>,
 ) -> Result<Option<DecodedDebugInfo>, BytecodeError> {
-    if debug_bytecode.is_none() {
-        return Ok(None);
+    decode_debug_bytecode_slice(debug_bytecode.as_deref())
+}
+
+fn decode_debug_bytecode_slice(
+    debug_bytecode: Option<&[u8]>,
+) -> Result<Option<DecodedDebugInfo>, BytecodeError> {
+    match debug_bytecode {
+        Some(bytecode) if !bytecode.is_empty() => Ok(Some(DecodedDebugInfo::from_slice(bytecode)?)),
+        _ => Ok(None),
     }
-    let bytecode = debug_bytecode.unwrap();
-    if bytecode.is_empty() {
-        return Ok(None);
-    }
-    return Ok(Some(DecodedDebugInfo::new(bytecode)?));
 }
 
 // This struct decodes and unwraps the given bytecode into a symbol table
@@ -181,6 +188,14 @@ impl DecodedBindRules {
         inst_bytecode: Vec<u8>,
         debug_info: Option<DecodedDebugInfo>,
     ) -> Result<Self, BytecodeError> {
+        Self::from_slice(symbol_table, &inst_bytecode, debug_info)
+    }
+
+    fn from_slice(
+        symbol_table: HashMap<u32, String>,
+        inst_bytecode: &[u8],
+        debug_info: Option<DecodedDebugInfo>,
+    ) -> Result<Self, BytecodeError> {
         // Remove the INST header and check if the section size is correct.
         let (inst_sz, inst_bytecode) =
             read_and_remove_header(inst_bytecode, INSTRUCTION_MAGIC_NUM)?;
@@ -190,20 +205,24 @@ impl DecodedBindRules {
         }
 
         let decoded_instructions =
-            InstructionDecoder::new(&symbol_table, &inst_bytecode).decode()?;
+            InstructionDecoder::new(&symbol_table, inst_bytecode).decode()?;
 
         Ok(DecodedBindRules {
-            symbol_table: symbol_table,
-            instructions: inst_bytecode,
-            decoded_instructions: decoded_instructions,
-            debug_info: debug_info,
+            symbol_table,
+            instructions: inst_bytecode.to_vec(),
+            decoded_instructions,
+            debug_info,
         })
     }
 
     pub fn from_bytecode(bytecode: Vec<u8>) -> Result<Self, BytecodeError> {
         let (symbol_table, inst_bytecode, debug_bytecode) =
-            get_symbol_table_and_instruction_debug_bytecode(bytecode)?;
-        DecodedBindRules::new(symbol_table, inst_bytecode, decode_debug_bytecode(debug_bytecode)?)
+            get_symbol_table_and_instruction_debug_bytecode(&bytecode)?;
+        DecodedBindRules::from_slice(
+            symbol_table,
+            inst_bytecode,
+            decode_debug_bytecode_slice(debug_bytecode)?,
+        )
     }
 }
 
@@ -233,28 +252,37 @@ impl DecodedCompositeBindRules {
         composite_inst_bytecode: Vec<u8>,
         debug_info: Option<DecodedDebugInfo>,
     ) -> Result<Self, BytecodeError> {
+        Self::from_slice(symbol_table, &composite_inst_bytecode, debug_info)
+    }
+
+    fn from_slice(
+        symbol_table: HashMap<u32, String>,
+        composite_inst_bytecode: &[u8],
+        debug_info: Option<DecodedDebugInfo>,
+    ) -> Result<Self, BytecodeError> {
         // Separate the instruction bytecode out of the symbol table bytecode and verify
         // the magic number and length. Remove the composite instruction header.
-        let (composite_inst_sz, mut composite_inst_bytecode) =
+        let (composite_inst_sz, composite_inst_bytecode) =
             read_and_remove_header(composite_inst_bytecode, COMPOSITE_MAGIC_NUM)?;
         if composite_inst_bytecode.len() != composite_inst_sz as usize {
             return Err(BytecodeError::IncorrectSectionSize);
         }
 
         // Retrieve the device name ID and check if it's in the symbol table.
-        let device_name_id = u32::from_le_bytes(get_u32_bytes(&composite_inst_bytecode, 0)?);
+        let device_name_id = u32::from_le_bytes(get_u32_bytes(composite_inst_bytecode, 0)?);
         if !symbol_table.contains_key(&device_name_id) {
             return Err(BytecodeError::MissingDeviceNameInSymbolTable);
         }
 
         // Split off the device name ID.
-        let node_bytecode = composite_inst_bytecode.split_off(4);
+        let (_, node_bytecode) = composite_inst_bytecode.split_at(4);
 
         // Extract the primary node instructions.
         let (_, primary_parent, mut node_bytecode) =
             split_off_parent(node_bytecode, true, &symbol_table)?;
 
-        // Extract additional and optional nodes from the remaining bytecode until there's none left.
+        // Extract additional and optional nodes from the remaining bytecode until
+        // there's none left.
         let mut additional_parents: Vec<Parent> = vec![];
         let mut optional_parents: Vec<Parent> = vec![];
         while !node_bytecode.is_empty() {
@@ -269,27 +297,27 @@ impl DecodedCompositeBindRules {
         }
 
         Ok(DecodedCompositeBindRules {
-            symbol_table: symbol_table,
-            device_name_id: device_name_id,
-            primary_parent: primary_parent,
-            additional_parents: additional_parents,
-            optional_parents: optional_parents,
-            debug_info: debug_info,
+            symbol_table,
+            device_name_id,
+            primary_parent,
+            additional_parents,
+            optional_parents,
+            debug_info,
         })
     }
 
     pub fn from_bytecode(bytecode: Vec<u8>) -> Result<Self, BytecodeError> {
         let (symbol_table, inst_bytecode, debug_bytecode) =
-            get_symbol_table_and_instruction_debug_bytecode(bytecode)?;
-        DecodedCompositeBindRules::new(
+            get_symbol_table_and_instruction_debug_bytecode(&bytecode)?;
+        DecodedCompositeBindRules::from_slice(
             symbol_table,
             inst_bytecode,
-            decode_debug_bytecode(debug_bytecode)?,
+            decode_debug_bytecode_slice(debug_bytecode)?,
         )
     }
 }
 
-fn get_u32_bytes(bytecode: &Vec<u8>, idx: usize) -> Result<[u8; 4], BytecodeError> {
+fn get_u32_bytes(bytecode: &[u8], idx: usize) -> Result<[u8; 4], BytecodeError> {
     if idx + 4 > bytecode.len() {
         return Err(BytecodeError::UnexpectedEnd);
     }
@@ -300,31 +328,28 @@ fn get_u32_bytes(bytecode: &Vec<u8>, idx: usize) -> Result<[u8; 4], BytecodeErro
 }
 
 // Verify the header magic number. Return the value after the magic number and the following bytes.
-fn read_and_remove_header(
-    mut bytecode: Vec<u8>,
-    magic_num: u32,
-) -> Result<(u32, Vec<u8>), BytecodeError> {
-    let parsed_magic_num = u32::from_be_bytes(get_u32_bytes(&bytecode, 0)?);
+fn read_and_remove_header(bytecode: &[u8], magic_num: u32) -> Result<(u32, &[u8]), BytecodeError> {
+    let parsed_magic_num = u32::from_be_bytes(get_u32_bytes(bytecode, 0)?);
     if parsed_magic_num != magic_num {
         return Err(BytecodeError::InvalidHeader(magic_num, parsed_magic_num));
     }
 
-    let val = u32::from_le_bytes(get_u32_bytes(&bytecode, 4)?);
-    Ok((val, bytecode.split_off(HEADER_SZ)))
+    let val = u32::from_le_bytes(get_u32_bytes(bytecode, 4)?);
+    Ok((val, &bytecode[HEADER_SZ..]))
 }
 
 // Verify the enable_debug flag byte.
-fn read_and_remove_debug_flag(mut bytecode: Vec<u8>) -> Result<(u8, Vec<u8>), BytecodeError> {
-    let debug_flag_byte = bytecode[0];
+fn read_and_remove_debug_flag(bytecode: &[u8]) -> Result<(u8, &[u8]), BytecodeError> {
+    let debug_flag_byte = *bytecode.first().ok_or(BytecodeError::UnexpectedEnd)?;
     if debug_flag_byte != BYTECODE_DISABLE_DEBUG && debug_flag_byte != BYTECODE_ENABLE_DEBUG {
         return Err(BytecodeError::InvalidDebugFlag(debug_flag_byte));
     }
-    Ok((debug_flag_byte, bytecode.split_off(DEBUG_FLAG_SZ)))
+    Ok((debug_flag_byte, &bytecode[DEBUG_FLAG_SZ..]))
 }
 
 // Verify the node type and return the node ID and the number of bytes in the node instructions.
 fn verify_and_read_node_header(
-    bytecode: &Vec<u8>,
+    bytecode: &[u8],
     expect_primary: bool,
 ) -> Result<(bool, u32, u32), BytecodeError> {
     if bytecode.len() < NODE_TYPE_HEADER_SZ {
@@ -364,30 +389,29 @@ fn verify_and_read_node_header(
 }
 
 fn read_string(iter: &mut BytecodeIter) -> Result<String, BytecodeError> {
-    let mut str_bytes = vec![];
+    let slice = iter.as_slice();
+    let search_len = std::cmp::min(slice.len(), MAX_STRING_LENGTH + 1);
 
-    // Read in the bytes for the string until a zero terminator is reached.
-    // If the number of bytes exceed the maximum string length, return an error.
-    loop {
-        let byte = *next_u8(iter)?;
-        if byte == 0 {
-            break;
+    // Find the zero terminator within the maximum allowed string length.
+    match slice[..search_len].iter().position(|&b| b == 0) {
+        Some(0) => Err(BytecodeError::EmptyString),
+        Some(len) => {
+            *iter = slice[len + 1..].iter();
+            std::str::from_utf8(&slice[..len])
+                .map(|s| s.to_owned())
+                .map_err(|_| BytecodeError::Utf8ConversionFailure)
         }
-
-        str_bytes.push(byte);
-        if str_bytes.len() > MAX_STRING_LENGTH {
-            return Err(BytecodeError::InvalidStringLength);
+        None => {
+            if slice.len() > MAX_STRING_LENGTH {
+                Err(BytecodeError::InvalidStringLength)
+            } else {
+                Err(BytecodeError::UnexpectedEnd)
+            }
         }
     }
-
-    if str_bytes.is_empty() {
-        return Err(BytecodeError::EmptyString);
-    }
-
-    String::from_utf8(str_bytes).map_err(|_| BytecodeError::Utf8ConversionFailure)
 }
 
-fn read_symbol_table(bytecode: Vec<u8>) -> Result<HashMap<u32, String>, BytecodeError> {
+fn read_symbol_table(bytecode: &[u8]) -> Result<HashMap<u32, String>, BytecodeError> {
     let mut iter = bytecode.iter();
 
     let mut symbol_table = HashMap::new();
@@ -410,9 +434,12 @@ fn read_symbol_table(bytecode: Vec<u8>) -> Result<HashMap<u32, String>, Bytecode
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::compiler::Symbol;
+    use crate::compiler::{
+        CompiledBindRules, CompositeBindRules, CompositeParent, Symbol, SymbolicInstruction,
+        SymbolicInstructionInfo,
+    };
     use crate::interpreter::test_common::*;
-    use crate::parser::bind_library;
+    use crate::parser::bind_library::{self, ValueType};
 
     fn append_section_header(bytecode: &mut Vec<u8>, magic_num: u32, sz: u32) {
         bytecode.extend_from_slice(&magic_num.to_be_bytes());
@@ -1727,12 +1754,6 @@ mod test {
 
     #[test]
     fn test_composite_with_compiler() {
-        use crate::compiler::{
-            CompiledBindRules, CompositeBindRules, CompositeParent, Symbol, SymbolicInstruction,
-            SymbolicInstructionInfo,
-        };
-        use crate::parser::bind_library::ValueType;
-
         let primary_node_inst = vec![SymbolicInstructionInfo {
             location: None,
             instruction: SymbolicInstruction::UnconditionalAbort,
@@ -1819,12 +1840,6 @@ mod test {
 
     #[test]
     fn test_composite_optional_with_compiler() {
-        use crate::compiler::{
-            CompiledBindRules, CompositeBindRules, CompositeParent, Symbol, SymbolicInstruction,
-            SymbolicInstructionInfo,
-        };
-        use crate::parser::bind_library::ValueType;
-
         let primary_node_inst = vec![SymbolicInstructionInfo {
             location: None,
             instruction: SymbolicInstruction::UnconditionalAbort,

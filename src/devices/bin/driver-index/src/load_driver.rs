@@ -51,9 +51,11 @@ pub async fn load_base_drivers(
     .await
     .context("Error loading base packages")
     .map_err(log_error)?;
-    for resolved_driver in &resolved_drivers {
+    {
         let mut composite_node_spec_manager = indexer.composite_node_spec_manager.borrow_mut();
-        composite_node_spec_manager.new_driver_available(resolved_driver);
+        for resolved_driver in &resolved_drivers {
+            composite_node_spec_manager.new_driver_available(resolved_driver);
+        }
     }
     indexer.load_base_repo(resolved_drivers);
     Ok(())
@@ -75,16 +77,16 @@ pub async fn load_drivers(
                     return None;
                 }
             };
+            if disabled_drivers.contains(&url) {
+                log::info!("Skipping driver: {}", url);
+                return None;
+            }
             let resolve = ResolvedDriver::resolve(url, &resolver, package_type).await;
             if resolve.is_err() {
                 return None;
             }
 
             let mut resolved_driver = resolve.unwrap();
-            if disabled_drivers.contains(&resolved_driver.component_url) {
-                log::info!("Skipping driver: {}", resolved_driver.component_url);
-                return None;
-            }
             log::info!("Found driver: {}", resolved_driver.component_url);
             if eager_drivers.contains(&resolved_driver.component_url) {
                 resolved_driver.fallback = false;
@@ -101,7 +103,8 @@ pub async fn load_drivers(
 mod tests {
     use super::*;
     use crate::resolved_driver::load_driver;
-    use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
+    use fidl_fuchsia_component_decl as fdecl;
+    use fidl_fuchsia_io as fio;
 
     #[fuchsia::test]
     async fn test_load_fallback_driver() {

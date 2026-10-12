@@ -36,7 +36,7 @@ pub struct InstructionDecoder<'a> {
 impl<'a> InstructionDecoder<'a> {
     pub fn new(
         symbol_table: &'a HashMap<u32, String>,
-        instructions: &'a Vec<u8>,
+        instructions: &'a [u8],
     ) -> InstructionDecoder<'a> {
         InstructionDecoder { symbol_table: symbol_table, inst_iter: instructions.iter() }
     }
