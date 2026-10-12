@@ -602,19 +602,19 @@ impl DirEntry {
 
     /// Returns whether this entry is a descendant of |other|.
     pub fn is_descendant_of(self: &DirEntryHandle, other: &DirEntryHandle) -> bool {
-        let mut current = self.clone();
-        loop {
-            if Arc::ptr_eq(&current, other) {
+        if Arc::ptr_eq(self, other) {
+            return true;
+        }
+        let mut current = self.parent();
+        while let Some(entry) = current {
+            if Arc::ptr_eq(&entry, other) {
                 // We found |other|.
                 return true;
             }
-            if let Some(parent) = current.parent() {
-                current = parent;
-            } else {
-                // We reached the root of the file system.
-                return false;
-            }
+            current = entry.parent();
         }
+        // We reached the root of the file system.
+        false
     }
 
     /// Rename the file with old_basename in old_parent to new_basename in

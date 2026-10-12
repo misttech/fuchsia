@@ -23,8 +23,7 @@ use crate::vfs::{
 use fuchsia_rcu::{RcuArc, RcuBox, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
 use starnix_logging::log_warn;
-use starnix_rcu::RcuHashMap;
-use starnix_sync::{LockDepMutex, MountSubmountsLock, NamespaceFlagsLock};
+use starnix_sync::{LockDepMutex, MountSubmountsLock, Mutex, NamespaceFlagsLock};
 use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
@@ -638,13 +637,21 @@ impl Mount {
                 let scope = RcuReadScope::new();
                 self.relations
                     .iter_submounts(&scope)
-                    .filter_map(|(dir, submount)| Some((dir.0.upgrade()?, submount.upgrade()?)))
+                    .filter_map(|(dir, submount)| {
+                        let dir = dir.0.upgrade()?;
+                        if !dir.is_descendant_of(new_root) {
+                            return None;
+                        }
+                        Some((dir, submount.upgrade()?))
+                    })
                     .collect()
             };
-            let submounts = mounts_guard.defer_drop(submounts);
-            for (dir, submount) in &*submounts {
-                let submount = submount.clone_mount_recursive(mounts_guard);
-                clone.add_submount_internal(mounts_guard, dir, submount);
+            if !submounts.is_empty() {
+                let submounts = mounts_guard.defer_drop(submounts);
+                for (dir, submount) in &*submounts {
+                    let submount = submount.clone_mount_recursive(mounts_guard);
+                    clone.add_submount_internal_unchecked(mounts_guard, dir, submount);
+                }
             }
         }
 
@@ -788,19 +795,31 @@ impl Mount {
         dir: &DirEntryHandle,
         mount: MountHandle,
     ) {
-        let mount = guard.defer_drop(mount);
         if !dir.is_descendant_of(&self.root) {
+            guard.defer_drop(mount);
             return;
         }
+        self.add_submount_internal_unchecked(guard, dir, mount);
+    }
+
+    /// Caller must ensure `dir.is_descendant_of(&self.root)` holds.
+    fn add_submount_internal_unchecked(
+        self: &MountHandle,
+        guard: &MountsWriteToken,
+        dir: &DirEntryHandle,
+        mount: MountHandle,
+    ) {
+        debug_assert!(dir.is_descendant_of(&self.root));
+        let mount = guard.defer_drop(mount);
 
         let submount = mount.kernel().mounts.register_mount(dir, Arc::clone(&mount));
 
-        let old_mountpoint = {
+        let has_old_mountpoint = {
             let scope = RcuReadScope::new();
-            mount.relations.mountpoint(&scope).map(|x| x.clone())
+            mount.relations.mountpoint(&scope).is_some()
         };
         mount.relations.set_mountpoint(guard, Some((Arc::downgrade(self), Arc::downgrade(dir))));
-        assert!(old_mountpoint.is_none(), "add_submount can only take a newly created mount");
+        assert!(!has_old_mountpoint, "add_submount can only take a newly created mount");
 
         let old_mount = self.relations.insert_submount(
             guard,
@@ -808,9 +827,8 @@ impl Mount {
             Arc::downgrade(&mount),
             submount,
         );
-        let old_mount = guard.defer_drop(old_mount);
-
-        if let Some(old_mount) = &*old_mount {
+        if let Some(old_mount) = old_mount {
+            let old_mount = guard.defer_drop(old_mount);
             old_mount
                 .mount
                 .relations
@@ -2191,40 +2209,41 @@ impl Drop for FileMapping {
 
 /// Tracks all mounts, keyed by mount point.
 pub struct Mounts {
-    mounts: RcuHashMap<WeakKey<DirEntry>, Vec<WeakKey<Mount>>>,
+    mounts: Mutex<HashMap<PtrKey<DirEntry>, Vec<Weak<Mount>>>>,
 }
 
 impl Mounts {
     pub fn new() -> Self {
-        Mounts { mounts: RcuHashMap::default() }
+        Mounts { mounts: Mutex::default() }
     }
 
     /// Registers the mount in the global mounts map.
     fn register_mount(&self, dir_entry: &DirEntryHandle, mount: MountHandle) -> Submount {
         let mut mounts = self.mounts.lock();
-        let key = WeakKey::from(dir_entry);
-        let mut vec = mounts.get(&key).unwrap_or_else(|| {
+        if let Some(vec) = mounts.get_mut(&PtrKey::from(dir_entry)) {
+            vec.push(Arc::downgrade(&mount));
+        } else {
             dir_entry.set_has_mounts(true);
-            Vec::new()
-        });
-        vec.push(WeakKey::from(&mount));
-        mounts.insert(key, vec);
+            mounts.insert(PtrKey::from(dir_entry), vec![Arc::downgrade(&mount)]);
+        }
         Submount { dir: dir_entry.clone(), mount }
     }
 
     /// Unregisters the mount. This is called by `Submount::drop`.
     fn unregister_mount(&self, dir_entry: &DirEntryHandle, mount: &MountHandle) {
         let mut mounts = self.mounts.lock();
-        let key = WeakKey::from(dir_entry);
-        if let Some(mut vec) = mounts.get(&key) {
-            let index = vec.iter().position(|e| e == &WeakKey::from(mount)).unwrap();
-            if vec.len() == 1 {
-                mounts.remove(&key);
-                dir_entry.set_has_mounts(false);
-            } else {
-                vec.swap_remove(index);
-                mounts.insert(key, vec);
-            }
+        let key = PtrKey::from(dir_entry);
+        let mount_ptr = Arc::as_ptr(mount);
+        let remove_entry = if let Some(vec) = mounts.get_mut(&key) {
+            let index = vec.iter().position(|e| e.as_ptr() == mount_ptr).unwrap();
+            vec.swap_remove(index);
+            vec.is_empty()
+        } else {
+            false
+        };
+        if remove_entry {
+            mounts.remove(&key);
+            dir_entry.set_has_mounts(false);
         }
     }
 
@@ -2232,16 +2251,17 @@ impl Mounts {
     /// unlinked (which would normally result in EBUSY, but not if it isn't mounted in the local
     /// namespace).
     pub fn unmount(&self, dir_entry: &DirEntry) {
+        let Some(kernel) = dir_entry.node.fs().kernel.upgrade() else {
+            return;
+        };
+        let mounts_guard = kernel.mounts_lock();
         let mounts = self.mounts.lock().remove(&PtrKey::from(dir_entry));
         if let Some(mounts) = mounts {
-            let upgraded: Vec<_> = mounts.iter().filter_map(|m| m.0.upgrade()).collect();
-            if let Some(kernel) = upgraded.first().map(|m| m.kernel()) {
-                let mounts_guard = kernel.mounts_lock();
-                let mounts = mounts_guard.defer_drop(upgraded);
-                for mount in &*mounts {
-                    // Ignore errors.
-                    let _ = mount.unmount(&mounts_guard, UnmountFlags::DETACH);
-                }
+            let upgraded: Vec<_> = mounts.iter().filter_map(Weak::upgrade).collect();
+            let mounts = mounts_guard.defer_drop(upgraded);
+            for mount in &*mounts {
+                // Ignore errors.
+                let _ = mount.unmount(&mounts_guard, UnmountFlags::DETACH);
             }
         }
     }
@@ -2250,10 +2270,10 @@ impl Mounts {
     // TODO(https://fxbug.dev/295073633): Graceful shutdown should try to first unmount the mounts
     // and only force a FileSystem unmount on failure.
     pub fn clear(&self) {
-        let drained: Vec<_> = self.mounts.lock().drain().collect();
+        let drained = std::mem::take(&mut *self.mounts.lock());
         for (_dir_entry, mounts) in drained {
             for mount in mounts {
-                if let Some(mount) = mount.0.upgrade() {
+                if let Some(mount) = mount.upgrade() {
                     mount.fs.force_unmount_ops();
                 }
             }
@@ -2265,13 +2285,11 @@ impl Mounts {
     fn unique_filesystems(&self) -> HashSet<ArcKey<FileSystem>> {
         let mut filesystems = HashSet::new();
         let mut queue = Vec::new();
-        let scope = RcuReadScope::new();
-        for (_dir_entry, m_list) in self.mounts.iter(&scope) {
-            for m in m_list {
-                if let Some(mount) = m.0.upgrade() {
-                    if filesystems.insert(ArcKey(mount.fs.clone())) {
-                        queue.push(mount.fs.clone());
-                    }
+        let mounts: Vec<Weak<Mount>> = self.mounts.lock().values().flatten().cloned().collect();
+        for m in mounts {
+            if let Some(mount) = m.upgrade() {
+                if filesystems.insert(ArcKey(mount.fs.clone())) {
+                    queue.push(mount.fs.clone());
                 }
             }
         }
@@ -2369,7 +2387,9 @@ mod test {
         CallbackSymlinkNode, DirectoryMode, FsNodeInfo, LookupContext, MountInfo, Namespace,
         NamespaceNode, RenameFlags, SymlinkMode, SymlinkTarget, UnlinkKind, WhatToMount,
     };
+    use starnix_uapi::arc_key::PtrKey;
     use starnix_uapi::mount_flags::MountpointFlags;
+    use starnix_uapi::unmount_flags::UnmountFlags;
     use starnix_uapi::{errno, mode};
     use std::sync::Arc;
 
@@ -2753,6 +2773,84 @@ mod test {
 
             // The lookup resolution should have correctly followed the symlinks to the real_file node.
             assert!(node_symlink_resolution.entry.node.ino == real_file_node.entry.node.ino);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_mounts_registration_and_unmount_updates_has_mounts() {
+        spawn_kernel_and_run(async |current_task| {
+            let kernel = current_task.kernel();
+            let root_fs = TmpFs::new_fs(&kernel);
+            let ns1 = Namespace::new(root_fs.clone());
+            let _foo_node = root_fs.root().create_dir(&current_task, "foo".into()).unwrap();
+            let mut context = LookupContext::default();
+            let foo_dir =
+                ns1.root().lookup_child(&current_task, &mut context, "foo".into()).unwrap();
+            let mountpoint_entry = Arc::clone(&foo_dir.entry);
+            assert!(!mountpoint_entry.has_mounts());
+
+            let foofs = TmpFs::new_fs(&kernel);
+            foo_dir.mount(WhatToMount::Fs(foofs), MountpointFlags::empty()).unwrap();
+            assert!(mountpoint_entry.has_mounts());
+
+            // Cloning the namespace registers a second Submount on the same DirEntry.
+            let ns1_clone = ns1.clone_namespace(&kernel.mounts_lock());
+            assert!(mountpoint_entry.has_mounts());
+
+            // Dropping the cloned namespace unregisters its Submount, leaving ns1's Submount active.
+            drop(ns1_clone);
+            assert!(mountpoint_entry.has_mounts());
+
+            // Unmounting the remaining mount in ns1 calls `unregister_mount` for the last entry
+            // and clears `has_mounts` without destroying the DirEntry.
+            let mounted_foo = ns1
+                .root()
+                .lookup_child(&current_task, &mut LookupContext::default(), "foo".into())
+                .unwrap();
+            mounted_foo.unmount(UnmountFlags::empty()).unwrap();
+            assert!(!mountpoint_entry.has_mounts());
+
+            // Also verify recursive (`REC`) bind mount of a subdirectory skips sibling mounts
+            // outside the new root while cloning submounts under the subdirectory.
+            let _sub_node = root_fs.root().create_dir(&current_task, "sub".into()).unwrap();
+            let _dst_node = root_fs.root().create_dir(&current_task, "dst".into()).unwrap();
+            let sub_dir = ns1
+                .root()
+                .lookup_child(&current_task, &mut LookupContext::default(), "sub".into())
+                .unwrap();
+            let _inner_node = sub_dir.entry.create_dir(&current_task, "inner".into()).unwrap();
+            let inner_dir = sub_dir
+                .lookup_child(&current_task, &mut LookupContext::default(), "inner".into())
+                .unwrap();
+            let inner_fs = TmpFs::new_fs(&kernel);
+            let _inner_marker = inner_fs.root().create_dir(&current_task, "marker".into()).unwrap();
+            inner_dir.mount(WhatToMount::Fs(inner_fs), MountpointFlags::empty()).unwrap();
+
+            let sibling_fs = TmpFs::new_fs(&kernel);
+            foo_dir.mount(WhatToMount::Fs(sibling_fs), MountpointFlags::empty()).unwrap();
+
+            let dst_dir = ns1
+                .root()
+                .lookup_child(&current_task, &mut LookupContext::default(), "dst".into())
+                .unwrap();
+            dst_dir.mount(WhatToMount::Bind(sub_dir), MountpointFlags::REC).unwrap();
+
+            let dst_inner = ns1
+                .root()
+                .lookup_child(&current_task, &mut LookupContext::default(), "dst".into())
+                .unwrap()
+                .lookup_child(&current_task, &mut LookupContext::default(), "inner".into())
+                .unwrap();
+            assert!(
+                dst_inner
+                    .lookup_child(&current_task, &mut LookupContext::default(), "marker".into())
+                    .is_ok()
+            );
+            assert_eq!(
+                kernel.mounts.mounts.lock().get(&PtrKey::from(&foo_dir.entry)).unwrap().len(),
+                1
+            );
         })
         .await;
     }
