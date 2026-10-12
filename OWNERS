@@ -26,7 +26,6 @@ per-file **.gn,**.gni,**.bazel,**.bzl,fuchsia.code-workspace = file:/build/OWNER
 #
 # TODO(jayzhuang): Remove these patterns after the majority of migration is done.
 per-file **/BUILD.gn,**/BUILD.bazel = file:/build/bazel/BAZEL_MIGRATION_OWNERS
-per-file **/bazel2gn_verification_targets.gni = file:/build/bazel/BAZEL_MIGRATION_OWNERS
 
 # Allow members of the go/git-clone-fuchsia project to make rapid
 # progress on the build files. This can be removed when the project
