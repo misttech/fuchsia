@@ -32,6 +32,11 @@ if (is_host) {
       "test_utils.py",
     ]
   }
+
+  python_host_test("zbi_to_android_boot_image_test") {
+    main_source = "zbi_to_android_boot_image_test.py"
+    sources = [ "zbi_to_android_boot_image.py" ]
+  }
 }
 
 group("tests") {
@@ -40,5 +45,6 @@ group("tests") {
     ":android_boot_image_test($host_toolchain)",
     ":android_misc_info_test($host_toolchain)",
     ":cipd_utils_test($host_toolchain)",
+    ":zbi_to_android_boot_image_test($host_toolchain)",
   ]
 }
