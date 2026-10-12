@@ -85,6 +85,8 @@ unspecified_files=()
 
 function diff_json() {
   debug "diff_json $1 $2"
+  # Most files are identical, so skip spawning jq twice plus diff.
+  cmp -s "$1" "$2" && return 0
   json_format "$1" || { echo "Failed to format $1" ; return 1;}
   json_format "$2" || { echo "Failed to format $2" ; return 1;}
   diff -u "$1".formatted "$2".formatted
@@ -474,7 +476,14 @@ function diff_file_relpath() {
     # TODO(b/377967111): fix python hermetic test nondeterminism:
     rtc_conformance_test_bin) expect="diff"; diff_binary "$left" "$right" ;;
     *)
-      file_type="$(file "$left" | head -n 1 | cut -d: -f2-)"
+      # Most files that reach this case are text, so only spawn `file` if
+      # the magic bytes indicate a binary that the case below could match.
+      file_type=""
+      magic=""
+      LC_ALL=C read -r -N 4 magic < "$left"
+      if [[ "$magic" == $'\x7fELF' || "$magic" == $'\xca\xfe\xba'* ]]
+      then file_type="$(file -b "$left")"
+      fi
       case "$file_type" in
         # Binary examples:
         # ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV),... dynamically linked, interpreter ld.so.1, no section header
@@ -513,7 +522,9 @@ function diff_file_relpath() {
 function diff_select() {
   # $1 and $2 are two directories, e.g. "out/default"
   # $3 is the relative path down from $1 and $2, e.g. "subdir/" or "".
-  debug2 "$(printf "diff_select()\n   dir1=%s\n   dir2=%s\n  path=%s\n" "$1" "$2" "$3")"
+  # Avoid a $(printf) subshell per path unless verbose.
+  [[ "${DEBUG_LEVEL}" -ge 2 ]] &&
+    debug2 "$(printf "diff_select()\n   dir1=%s\n   dir2=%s\n  path=%s\n" "$1" "$2" "$3")"
   local relpath="$3"
   local fullpath="$1/$3"
   if test -d "$fullpath"
@@ -541,11 +552,6 @@ function diff_dir_recursive() {
     *) ;;  # continue
   esac
 
-  # Silence empty dirs.
-  if ! ls "$2/$sub"*
-  then return  # empty dir
-  fi > /dev/null 2>&1
-
   for f in "$2/$sub"*
   do
     filebase="${f##*/}"  # basename
@@ -553,6 +559,10 @@ function diff_dir_recursive() {
     diff_select "$1" "$2" "$relpath"
   done
 }
+
+# Make globs over empty dirs expand to nothing, so diff_dir_recursive()
+# doesn't need to spawn `ls` per directory to detect them.
+shopt -s nullglob
 
 ARGS=()
 while [[ "$#" -ne 0 ]]; do
