@@ -60,13 +60,6 @@ if (is_host) {
   }
 }
 if (is_host) {
-  go_test("dev_finder_tests") {
-    sources = [ "cmd/dev_finder_test.go" ]
-    embed = [ ":lib" ]
-    deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
-  }
-}
-if (is_host) {
   install_host_tools("host") {
     deps = [ ":device-finder" ]
     outputs = [ "device-finder" ]

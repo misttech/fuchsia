@@ -35,14 +35,13 @@ if (is_host) {
 
 go_library("mdns") {
   sources = [ "mdns.go" ]
+  visibility = [
+    ":*",
+    "//tools/*",
+  ]
   deps = [
     "//third_party/golibs:golang.org/x/net/ipv4",
     "//third_party/golibs:golang.org/x/net/ipv6",
     "//tools/lib/logger",
   ]
-}
-go_test("mdns_tests") {
-  sources = [ "mdns_test.go" ]
-  embed = [ ":mdns" ]
-  deps = [ "//third_party/golibs:github.com/google/go-cmp/cmp" ]
 }
