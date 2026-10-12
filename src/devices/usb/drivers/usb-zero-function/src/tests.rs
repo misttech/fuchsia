@@ -436,7 +436,7 @@ async fn test_vendor_requests() {
     let res_set_mode = proxy.control(&setup_set_mode_loopback, &[]).await.unwrap();
     assert_eq!(res_set_mode, Err(Status::NOT_SUPPORTED.into_raw()));
 
-    // Test VendorRequest::ControlLoopbackOut (0x5c) and ControlLoopbackIn (0x5b)
+    // Test VendorRequest::ControlLoopbackOut (0x5b) and ControlLoopbackIn (0x5c)
     let payload = vec![1, 2, 3, 4, 5];
     let setup_control_loopback_out = fusb_descriptor::UsbSetup {
         bm_request_type: USB_TYPE_VENDOR_OUT,
@@ -1573,10 +1573,12 @@ fn test_control_request_parsing_and_types() {
         ControlRequest::parse(type_vendor, VendorRequest::ControlLoopbackOut as u8),
         Ok(ControlRequest::Vendor(VendorRequest::ControlLoopbackOut))
     );
+    assert_eq!(VendorRequest::ControlLoopbackOut as u8, 0x5b);
     assert_eq!(
         ControlRequest::parse(type_vendor, VendorRequest::ControlLoopbackIn as u8),
         Ok(ControlRequest::Vendor(VendorRequest::ControlLoopbackIn))
     );
+    assert_eq!(VendorRequest::ControlLoopbackIn as u8, 0x5c);
     assert_eq!(ControlRequest::parse(type_vendor, 0x99), Err(Status::NOT_SUPPORTED));
     assert_eq!(ControlRequest::parse(0x20, 0), Err(Status::NOT_SUPPORTED));
     assert_eq!(ControlRequest::parse(0x60, 0), Err(Status::NOT_SUPPORTED));

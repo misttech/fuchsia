@@ -51,8 +51,11 @@ enum VendorRequest {
     ReadPayload = 0x57,
     SetTestMode = 0x58,
     GetTestMode = 0x59,
-    ControlLoopbackOut = 0x5c,
-    ControlLoopbackIn = 0x5b,
+    // Loopback control transfer requests matching the Linux usbtest runner
+    // (drivers/usb/misc/usbtest.c) and f_sourcesink gadget driver:
+    // 0x5b is control write (OUT), 0x5c is control read (IN).
+    ControlLoopbackOut = 0x5b,
+    ControlLoopbackIn = 0x5c,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
