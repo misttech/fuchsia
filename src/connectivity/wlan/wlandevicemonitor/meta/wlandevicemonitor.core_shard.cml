@@ -12,6 +12,15 @@
     ],
     offer: [
         {
+            config: [
+                "fuchsia.wlan.WepSupported",
+                "fuchsia.wlan.Wpa1Supported",
+            ],
+            from: "parent",
+            to: "#wlandevicemonitor",
+            availability: "optional",
+        },
+        {
             service: "fuchsia.wlan.phy.Service",
             from: "parent",
             to: "#wlandevicemonitor",

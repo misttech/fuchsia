@@ -1,0 +1,55 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Common configuration capabilities and default values used by hermetic
+// netstack3 test components. `availability: "transitional"` allows embedded
+// test components to fall back to their default values when parent test
+// manifests do not route these capabilities, while still allowing tests (e.g.
+// via netemul) to override them from parent.
+{
+    use: [
+        {
+            config: "fuchsia.netstack3.NumThreads",
+            key: "num_threads",
+            type: "uint8",
+            availability: "transitional",
+            default: 4,
+        },
+        {
+            config: "fuchsia.netstack3.SampledStatsEnabled",
+            key: "sampled_stats_enabled",
+            type: "bool",
+            availability: "transitional",
+            default: true,
+        },
+        {
+            config: "fuchsia.netstack3.MultiVmo",
+            key: "multi_vmo",
+            type: "bool",
+            availability: "transitional",
+            default: true,
+        },
+        {
+            config: "fuchsia.netstack3.MaxRollingCaptureBufferSize",
+            key: "max_rolling_capture_buffer_size",
+            type: "uint32",
+            availability: "transitional",
+            default: 16777216,
+        },
+        {
+            config: "fuchsia.netstack3.TcpGroEnabled",
+            key: "tcp_gro_enabled",
+            type: "bool",
+            availability: "transitional",
+            default: false,
+        },
+        {
+            config: "fuchsia.power.SuspendEnabled",
+            key: "suspend_enabled",
+            type: "bool",
+            availability: "transitional",
+            default: false,
+        },
+    ],
+}

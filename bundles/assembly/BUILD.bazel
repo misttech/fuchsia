@@ -3911,22 +3911,10 @@ assembly_input_bundle(
     ],
 )
 
-# WLAN support for WEP and WPA
+# WLAN core components
 # buildifier: leave-alone
 assembly_input_bundle(
-    name = "wlan_legacy_privacy_support",
-    base_packages = [
-        "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor-legacy-privacy",
-    ],
-    core_shards = [
-        "//src/connectivity/wlan/wlandevicemonitor:meta/wlandevicemonitor.core_shard.cml",
-    ],
-)
-
-# WLAN support for WPA2 and later
-# buildifier: leave-alone
-assembly_input_bundle(
-    name = "wlan_contemporary_privacy_only_support",
+    name = "wlan_core",
     base_packages = [
         "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor",
     ],

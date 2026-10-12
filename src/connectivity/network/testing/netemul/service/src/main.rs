@@ -77,6 +77,8 @@ enum CreateRealmError {
     DuplicateProtocolExposed(String, String),
     #[error("is_weak provided for capability that does not support it '{0}")]
     WeakBindingUnsupported(String),
+    #[error("configuration key '{0}' is not used by component '{1}'")]
+    UnknownConfigKey(String, String),
 }
 
 impl From<CreateRealmError> for zx::Status {
@@ -92,7 +94,10 @@ impl From<CreateRealmError> for zx::Status {
             | CreateRealmError::DevfsCapabilityNameNotProvided
             | CreateRealmError::InvalidDevfsSubdirectory(String { .. })
             | CreateRealmError::DuplicateProtocolExposed(String { .. }, String { .. })
-            | CreateRealmError::WeakBindingUnsupported(String { .. }) => zx::Status::INVALID_ARGS,
+            | CreateRealmError::WeakBindingUnsupported(String { .. })
+            | CreateRealmError::UnknownConfigKey(String { .. }, String { .. }) => {
+                zx::Status::INVALID_ARGS
+            }
             CreateRealmError::RealmBuilderError(error) => match error {
                 // The following types of errors from the realm builder library are likely due to
                 // client error (e.g. attempting to create a realm with an invalid configuration).
@@ -333,9 +338,34 @@ async fn create_realm_instance(
             .await?;
         let config_values = config_values.unwrap_or_default();
         if !config_values.is_empty() {
-            builder.init_mutable_config_from_package(&child_ref).await?;
+            let child_decl = builder.get_component_decl(&child_ref).await?;
             for fnetemul::ChildConfigValue { key, value } in config_values {
-                builder.set_config_value(&child_ref, &key, value.fidl_into_native()).await?;
+                let use_config = child_decl
+                    .uses
+                    .iter()
+                    .find_map(|u| match u {
+                        cm_rust::UseDecl::Config(c) => (c.target_name == key.as_str()).then_some(c),
+                        _ => None,
+                    })
+                    .ok_or_else(|| CreateRealmError::UnknownConfigKey(key, name.clone()))?;
+                let self_cap_name = format!("{}_{}", name, use_config.source_name);
+                builder
+                    .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                        name: self_cap_name.parse().expect("valid capability name"),
+                        value: value.fidl_into_native(),
+                    }))
+                    .await?;
+                builder
+                    .add_route(
+                        Route::new()
+                            .capability(
+                                Capability::configuration(self_cap_name)
+                                    .as_(use_config.source_name.as_str()),
+                            )
+                            .from(Ref::self_())
+                            .to(&child_ref),
+                    )
+                    .await?;
             }
         }
         children_with_uses.push((name, uses));
@@ -2470,6 +2500,19 @@ mod tests {
                         COUNTER_WITHOUT_PROGRAM_URL.to_string(),
                     )),
                     program_args: Some(vec![]),
+                    ..Default::default()
+                }],
+                epitaph: zx::Status::INVALID_ARGS,
+            },
+            TestCase {
+                name: "unknown configuration key for child",
+                children: vec![fnetemul::ChildDef {
+                    name: Some(COUNTER_COMPONENT_NAME.to_string()),
+                    source: Some(fnetemul::ChildSource::Component(COUNTER_URL.to_string())),
+                    config_values: Some(vec![fnetemul::ChildConfigValue {
+                        key: "nonexistent_config_key".to_string(),
+                        value: cm_rust::ConfigValue::from(0u32).native_into_fidl(),
+                    }]),
                     ..Default::default()
                 }],
                 epitaph: zx::Status::INVALID_ARGS,

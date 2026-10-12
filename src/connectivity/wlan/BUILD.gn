@@ -21,24 +21,11 @@ group("drivers") {
   ]
 }
 
-group("_packages_common") {
-  deps = [
-    "wlancfg",
-    "//src/connectivity/location/regulatory_region",
-  ]
-}
-
 group("packages") {
   deps = [
-    ":_packages_common",
+    "wlancfg",
     "wlandevicemonitor",
-  ]
-}
-
-group("packages-legacy-privacy") {
-  deps = [
-    ":_packages_common",
-    "wlandevicemonitor:wlandevicemonitor-legacy-privacy",
+    "//src/connectivity/location/regulatory_region",
   ]
 }
 

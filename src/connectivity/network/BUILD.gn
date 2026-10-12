@@ -47,9 +47,6 @@ network_unified_binary_regular_and_gub_packages("netstack3") {
     "netstack3:component",
   ]
 
-  # Handled by assembly.
-  validate_structured_config = false
-
   visibility = [
     ":*",
     "//bundles/assembly/*",

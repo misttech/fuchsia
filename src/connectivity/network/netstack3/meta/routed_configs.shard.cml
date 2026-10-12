@@ -2,11 +2,88 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Configuration capabilities used by netstack3. See
-// `config_schema_from_routed.shard.cml` for overriding this with structured
-// configuration in tests.
+// Configuration capabilities used by netstack3 in production. See
+// `test_common_configs.shard.cml` for test configuration defaults.
+//
+// `fuchsia.netstack3.*` capabilities are routed via the `netstack3-config`
+// dictionary with `availability: "transitional"` so that new rollout flags can
+// be added here with default values without requiring changes to intermediate
+// realms (`core.root_shard.cml`, `core.cml`, `network/meta/netstack3.shard.cml`)
+// until they are exposed to Assembly.
 {
     use: [
+        {
+            // Number of threads used by netstack3.
+            // 0 is an invalid value and causes the netstack to crash.
+            config: "fuchsia.netstack3.NumThreads",
+            from: "parent/netstack3-config",
+            key: "num_threads",
+            type: "uint8",
+            availability: "transitional",
+            default: 4,
+        },
+        {
+            // Whether to use debug logs. This overrides the common logging
+            // framework and uses DEBUG severity logs. Used in netstack tests when
+            // embedding a hermetic netstack.
+            config: "fuchsia.netstack3.DebugLogs",
+            from: "parent",
+            key: "debug_logs",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            // Whether to use opaque IIDs by default when generating stable SLAAC
+            // addresses. Note that this configuration can still be overridden on a
+            // per-interface basis.
+            config: "fuchsia.netstack3.OpaqueIids",
+            from: "parent",
+            key: "opaque_iids",
+            type: "bool",
+            availability: "optional",
+            default: true,
+        },
+        {
+            // Whether to enable the sampled statistics service.
+            config: "fuchsia.netstack3.SampledStatsEnabled",
+            from: "parent/netstack3-config",
+            key: "sampled_stats_enabled",
+            type: "bool",
+            availability: "transitional",
+            default: false,
+        },
+        {
+            // Whether to enable multi-VMO data path for network device sessions.
+            // TODO(https://fxbug.dev/438527741): Remove this flag when enabled by
+            // default.
+            config: "fuchsia.netstack3.MultiVmo",
+            from: "parent/netstack3-config",
+            key: "multi_vmo",
+            type: "bool",
+            availability: "transitional",
+            default: false,
+        },
+        {
+            // Maximum size of the rolling packet capture buffer in bytes.
+            config: "fuchsia.netstack3.MaxRollingCaptureBufferSize",
+            from: "parent/netstack3-config",
+            key: "max_rolling_capture_buffer_size",
+            type: "uint32",
+            availability: "transitional",
+            default: 16777216,
+        },
+        {
+            // Whether to enable TCP Generic Receive Offload (GRO).
+            // TODO(https://fxbug.dev/452980285): Remove this flag when enabled by
+            // default.
+            config: "fuchsia.netstack3.TcpGroEnabled",
+            from: "parent",
+            key: "tcp_gro_enabled",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
         {
             config: "fuchsia.power.SuspendEnabled",
             key: "suspend_enabled",

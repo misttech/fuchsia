@@ -52,10 +52,7 @@ fuchsia_component_manifest("counter_manifest") {
 fuchsia_component("counter") {
   testonly = true
   cm_label = ":counter_manifest"
-  deps = [
-    ":bin",
-    ":config_values",
-  ]
+  deps = [ ":bin" ]
 }
 
 fuchsia_component("counter-alternative") {
@@ -80,15 +77,6 @@ fuchsia_component("counter-with-shutdown") {
   testonly = true
   manifest = "meta/counter-with-shutdown.cml"
   deps = [ ":bin" ]
-}
-
-fuchsia_structured_config_values("config_values") {
-  cm_label = ":counter_manifest"
-  values = {
-    routed_config = false
-    starting_value = 0
-  }
-  visibility = [ ":*" ]
 }
 
 fuchsia_structured_config_rust_lib("config_lib") {

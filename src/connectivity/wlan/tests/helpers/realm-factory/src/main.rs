@@ -281,12 +281,30 @@ async fn create_wlan_components(
         )
         .await?;
 
-    builder.init_mutable_config_to_empty(&wlandevicemonitor).await?;
     builder
-        .set_config_value(&wlandevicemonitor, "wep_supported", use_legacy_privacy.into())
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.wlan.WepSupported".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(
+                use_legacy_privacy,
+            )),
+        }))
         .await?;
     builder
-        .set_config_value(&wlandevicemonitor, "wpa1_supported", use_legacy_privacy.into())
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.wlan.Wpa1Supported".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(
+                use_legacy_privacy,
+            )),
+        }))
+        .await?;
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::configuration("fuchsia.wlan.WepSupported"))
+                .capability(Capability::configuration("fuchsia.wlan.Wpa1Supported"))
+                .from(Ref::self_())
+                .to(&wlandevicemonitor),
+        )
         .await?;
 
     // Initialize list of tracing consumers that may be appended to if with_policy is true.

@@ -1326,11 +1326,7 @@ group("wlan_development") {
   deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/wlan/tools/wlantool:wlan-dev" ]
 }
 
-group("wlan_legacy_privacy_support") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor-legacy-privacy" ]
-}
-
-group("wlan_contemporary_privacy_only_support") {
+group("wlan_core") {
   deps = [
     "//bundles/assembly/bazel_inputs/src/connectivity/wlan/wlandevicemonitor",
   ]

@@ -150,6 +150,12 @@
             availability: "same_as_target",
         },
         {
+            dictionary: "netstack3-config",
+            from: "parent",
+            to: "#network",
+            availability: "same_as_target",
+        },
+        {
             protocol: "fuchsia.ui.activity.control.Control",
             from: "#activity",
             to: "self/toolbox",

@@ -12,6 +12,7 @@
     ],
     capabilities: [
         { dictionary: "bluetooth-le-config" },
+        { dictionary: "netstack3-config" },
     ],
     offer: [
         {
@@ -37,6 +38,23 @@
         },
         {
             dictionary: "bluetooth-le-config",
+            from: "self",
+            to: "#core",
+            availability: "same_as_target",
+        },
+        {
+            config: [
+                "fuchsia.netstack3.MaxRollingCaptureBufferSize",
+                "fuchsia.netstack3.MultiVmo",
+                "fuchsia.netstack3.NumThreads",
+                "fuchsia.netstack3.SampledStatsEnabled",
+            ],
+            from: "#config",
+            to: "self/netstack3-config",
+            availability: "same_as_target",
+        },
+        {
+            dictionary: "netstack3-config",
             from: "self",
             to: "#core",
             availability: "same_as_target",
@@ -134,6 +152,8 @@
                 "fuchsia.wlan.RecoveryEnabled",
                 "fuchsia.wlan.RecoveryProfile",
                 "fuchsia.wlan.RoamingPolicy",
+                "fuchsia.wlan.WepSupported",
+                "fuchsia.wlan.Wpa1Supported",
             ],
             from: "#config",
             to: "#core",

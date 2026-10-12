@@ -3,10 +3,26 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/connectivity/network/netstack3/meta/config_schema_from_routed.shard.cml",
         "//src/connectivity/network/netstack3/meta/netstack3.shard.cml",
+        "//src/connectivity/network/netstack3/meta/test_common_configs.shard.cml",
     ],
     program: {
         binary: "bin/netstack3",
     },
+    use: [
+        {
+            config: "fuchsia.netstack3.DebugLogs",
+            key: "debug_logs",
+            type: "bool",
+            availability: "transitional",
+            default: false,
+        },
+        {
+            config: "fuchsia.netstack3.OpaqueIids",
+            key: "opaque_iids",
+            type: "bool",
+            availability: "transitional",
+            default: true,
+        },
+    ],
 }

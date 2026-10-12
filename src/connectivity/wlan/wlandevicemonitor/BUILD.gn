@@ -96,39 +96,12 @@ fuchsia_component("wlandevicemonitor_component") {
   ]
 }
 
-fuchsia_structured_config_values("wlandevicemonitor-values") {
-  cm_label = ":wlandevicemonitor-manifest"
-  values = {
-    wep_supported = false
-    wpa1_supported = false
-  }
-}
-
-fuchsia_structured_config_values("wlandevicemonitor-legacy-privacy-values") {
-  cm_label = ":wlandevicemonitor-manifest"
-  values = {
-    wep_supported = true
-    wpa1_supported = true
-  }
-}
-
 fuchsia_structured_config_rust_lib("wlandevicemonitor_config") {
   cm_label = ":wlandevicemonitor-manifest"
 }
 
 fuchsia_package("wlandevicemonitor") {
-  deps = [
-    ":wlandevicemonitor-values",
-    ":wlandevicemonitor_component",
-  ]
-}
-
-fuchsia_package("wlandevicemonitor-legacy-privacy") {
-  package_name = "wlandevicemonitor"
-  deps = [
-    ":wlandevicemonitor-legacy-privacy-values",
-    ":wlandevicemonitor_component",
-  ]
+  deps = [ ":wlandevicemonitor_component" ]
 }
 
 fuchsia_unittest_package("wlandevicemonitor-tests") {

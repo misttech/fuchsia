@@ -179,32 +179,46 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
             builder.platform_bundle("netstack3")?;
             builder.platform_bundle(maybe_gub_bundle("netstack3_packages").as_ref())?;
 
-            // Define netstack3 structured configuration keys.
-            builder
-                .package("netstack3")
-                .component("meta/netstack3.cm")?
-                .field(
-                    "num_threads",
-                    connectivity_config.network.netstack_thread_count.unwrap_or_default().get(),
-                )?
-                .field("debug_logs", false)?
-                .field("opaque_iids", true)?
-                .field(
-                    "sampled_stats_enabled",
-                    matches!(context.build_type, BuildType::Eng | BuildType::UserDebug),
-                )?
-                .field("multi_vmo", connectivity_config.network.netstack_multi_vmo)?
-                .field(
-                    "max_rolling_capture_buffer_size",
-                    connectivity_config.network.max_rolling_capture_buffer_size.unwrap_or(16777216),
-                )?
-                .field("tcp_gro_enabled", false)?
-                // Routed from fuchsia.power.SuspendEnabled capability.
-                //
-                // TODO(https://fxbug.dev/368386068): This should not be
-                // necessary once we teach structured config and routed
-                // capabilities to coexist peacefully.
-                .field("suspend_enabled", false)?;
+            // Define netstack3 configuration capabilities.
+            // Non-configurable fields (debug_logs, opaque_iids, tcp_gro_enabled) use their .cml
+            // defaults.
+            builder.set_config_capability(
+                "fuchsia.netstack3.NumThreads",
+                Config::new(
+                    ConfigValueType::Uint8,
+                    connectivity_config
+                        .network
+                        .netstack_thread_count
+                        .unwrap_or_default()
+                        .get()
+                        .into(),
+                ),
+            )?;
+            builder.set_config_capability(
+                "fuchsia.netstack3.SampledStatsEnabled",
+                Config::new(
+                    ConfigValueType::Bool,
+                    matches!(context.build_type, BuildType::Eng | BuildType::UserDebug).into(),
+                ),
+            )?;
+            builder.set_config_capability(
+                "fuchsia.netstack3.MultiVmo",
+                Config::new(
+                    ConfigValueType::Bool,
+                    connectivity_config.network.netstack_multi_vmo.into(),
+                ),
+            )?;
+            if let Some(buffer_size) = connectivity_config.network.max_rolling_capture_buffer_size {
+                builder.set_config_capability(
+                    "fuchsia.netstack3.MaxRollingCaptureBufferSize",
+                    Config::new(ConfigValueType::Uint32, buffer_size.into()),
+                )?;
+            } else {
+                builder.set_config_capability(
+                    "fuchsia.netstack3.MaxRollingCaptureBufferSize",
+                    Config::new_void(),
+                )?;
+            }
 
             let has_fullmac = context.board_config.provides_feature(BoardFeature::WlanFullmac);
             let has_softmac = context.board_config.provides_feature(BoardFeature::WlanSoftmac);
@@ -319,11 +333,21 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
 
                 // Some products require legacy security types to be supported.
                 // Otherwise, they are disabled by default.
-                if connectivity_config.wlan.legacy_privacy_support {
-                    builder.platform_bundle("wlan_legacy_privacy_support")?;
-                } else {
-                    builder.platform_bundle("wlan_contemporary_privacy_only_support")?;
-                }
+                builder.set_config_capability(
+                    "fuchsia.wlan.WepSupported",
+                    Config::new(
+                        ConfigValueType::Bool,
+                        connectivity_config.wlan.legacy_privacy_support.into(),
+                    ),
+                )?;
+                builder.set_config_capability(
+                    "fuchsia.wlan.Wpa1Supported",
+                    Config::new(
+                        ConfigValueType::Bool,
+                        connectivity_config.wlan.legacy_privacy_support.into(),
+                    ),
+                )?;
+                builder.platform_bundle("wlan_core")?;
 
                 if has_fullmac {
                     builder.platform_bundle("wlan_fullmac_support")?;
@@ -431,8 +455,10 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
 mod tests {
     use super::*;
     use crate::subsystems::{ConfigurationBuilderImpl, ConfigurationContext, FeatureSetLevel};
-    use assembly_config_schema::BuildType;
-    use assembly_config_schema::platform_settings::connectivity_config::PlatformNetworkConfig;
+    use assembly_config_schema::platform_settings::connectivity_config::{
+        PlatformNetworkConfig, PlatformWlanConfig,
+    };
+    use assembly_config_schema::{BoardConfig, BuildType};
     use std::num::NonZeroU64;
 
     #[test]
@@ -459,5 +485,37 @@ mod tests {
                 "'http_client_tcp_receive_buffer_size' cannot be overridden on User builds"
             )
         );
+    }
+
+    #[test]
+    fn test_wlan_privacy_configuration() {
+        let mut board_config = BoardConfig::default();
+        board_config.provided_features.push("fuchsia::wlan_fullmac".into());
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::User,
+            board_config: &board_config,
+            ..ConfigurationContext::default_for_tests()
+        };
+
+        for legacy_privacy_support in [false, true] {
+            let config = PlatformConnectivityConfig {
+                wlan: PlatformWlanConfig { legacy_privacy_support, ..Default::default() },
+                ..Default::default()
+            };
+            let mut builder = ConfigurationBuilderImpl::default();
+            ConnectivitySubsystemConfig::define_configuration(&context, &config, &mut builder)
+                .unwrap();
+            let completed = builder.build();
+            assert!(completed.bundles.contains("wlan_core"));
+            assert_eq!(
+                completed.configuration_capabilities.get("fuchsia.wlan.WepSupported"),
+                Some(&Config::new(ConfigValueType::Bool, legacy_privacy_support.into())),
+            );
+            assert_eq!(
+                completed.configuration_capabilities.get("fuchsia.wlan.Wpa1Supported"),
+                Some(&Config::new(ConfigValueType::Bool, legacy_privacy_support.into())),
+            );
+        }
     }
 }

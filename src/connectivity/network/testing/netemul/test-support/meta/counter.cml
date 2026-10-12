@@ -43,6 +43,14 @@
             default: false,
         },
         {
+            // The value to start the counter at.
+            config: "fuchsia.netemul.test.StartingValue",
+            key: "starting_value",
+            availability: "transitional",
+            type: "uint32",
+            default: 0,
+        },
+        {
             service: "fuchsia.hardware.network.Service",
             from: "parent",
         },
@@ -63,8 +71,4 @@
             as: "fuchsia.netemul.test.CounterB",
         },
     ],
-    config: {
-        // The value to start the counter at.
-        starting_value: { type: "uint32" },
-    },
 }

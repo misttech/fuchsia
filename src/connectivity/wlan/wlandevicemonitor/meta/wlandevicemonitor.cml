@@ -17,6 +17,22 @@
     ],
     use: [
         { service: "fuchsia.wlan.phy.Service" },
+        {
+            config: "fuchsia.wlan.WepSupported",
+            from: "parent",
+            key: "wep_supported",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
+            config: "fuchsia.wlan.Wpa1Supported",
+            from: "parent",
+            key: "wpa1_supported",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
     ],
     expose: [
         {
@@ -24,8 +40,4 @@
             from: "self",
         },
     ],
-    config: {
-        wep_supported: { type: "bool" },
-        wpa1_supported: { type: "bool" },
-    },
 }

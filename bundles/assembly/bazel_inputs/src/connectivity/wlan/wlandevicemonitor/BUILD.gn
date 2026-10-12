@@ -7,7 +7,3 @@ import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 export_fuchsia_package_to_bazel("wlandevicemonitor") {
   package = "//src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor"
 }
-
-export_fuchsia_package_to_bazel("wlandevicemonitor-legacy-privacy") {
-  package = "//src/connectivity/wlan/wlandevicemonitor:wlandevicemonitor-legacy-privacy"
-}
