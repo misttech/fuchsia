@@ -47,6 +47,10 @@ constexpr uint32_t kFtdiUsb232rPid = 0x6001;
 constexpr uint32_t kFtdiUsb2232Pid = 0x6010;
 constexpr uint32_t kFtdiUsb232hPid = 0x6014;
 
+// Buffer and queue sizing.
+constexpr size_t kUsbBufSize = 2048;
+constexpr size_t kWriteReqCount = 4;
+
 // Reset the port.
 constexpr uint8_t kFtdiSioReset = 0;
 

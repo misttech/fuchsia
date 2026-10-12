@@ -30,6 +30,28 @@ fuchsia_unittest_package("ftdi-i2c-test-package") {
   }
 }
 
+test("ftdi-unittest") {
+  sources = [ "ftdi-unittest.cc" ]
+  include_dirs = [ ".." ]
+  deps = [
+    "//sdk/banjo/fuchsia.hardware.usb:fuchsia.hardware.usb_banjo_cpp",
+    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
+    "//sdk/lib/driver/testing/cpp",
+    "//src/devices/serial/drivers/ftdi:common",
+    "//src/devices/testing/mock-ddk",
+    "//src/devices/usb/lib/usb",
+    "//src/lib/ddk",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/lib/testing/predicates",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
+fuchsia_unittest_package("ftdi-unittest-package") {
+  package_name = "ftdi-unittest"
+  deps = [ ":ftdi-unittest" ]
+}
+
 test("ftdi-integration") {
   output_name = "ftdi-integration-test"
   sources = [ "ftdi-test.cc" ]

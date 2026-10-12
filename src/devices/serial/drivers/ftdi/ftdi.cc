@@ -33,9 +33,7 @@ namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 #define FTDI_RX_HEADER_SIZE 4
 
 #define READ_REQ_COUNT 8
-#define WRITE_REQ_COUNT 4
 #define INTR_REQ_COUNT 4
-#define USB_BUF_SIZE 2048
 #define INTR_REQ_SIZE 4
 
 #define FIFOSIZE 256
@@ -59,7 +57,7 @@ void FtdiDevice::ReadComplete(usb_request_t* request) {
     return;
   }
 
-  uint8_t buffer[USB_BUF_SIZE];
+  uint8_t buffer[kUsbBufSize];
   fuchsia_hardware_serialimpl::wire::DeviceReadResponse response;
   std::optional<ReadCompleter::Async> read_completer;
   bool signal_readable = false;
@@ -194,7 +192,7 @@ zx_status_t FtdiDevice::CalcDividers(uint32_t* baudrate, uint32_t clock, uint32_
 cpp20::span<const uint8_t> FtdiDevice::QueueWriteRequest(cpp20::span<const uint8_t> data,
                                                          usb::Request<> req) {
   const ssize_t actual = req.CopyTo(data.data(), data.size(), 0);
-  req.request()->header.length = data.size();
+  req.request()->header.length = actual;
 
   usb_request_complete_callback_t complete = {
       .callback =
@@ -578,16 +576,16 @@ zx_status_t FtdiDevice::Bind() {
   parent_req_size_ = usb_client_.GetRequestSize();
   for (int i = 0; i < READ_REQ_COUNT; i++) {
     std::optional<usb::Request<>> req;
-    status = usb::Request<>::Alloc(&req, USB_BUF_SIZE, bulk_in_addr, parent_req_size_);
+    status = usb::Request<>::Alloc(&req, kUsbBufSize, bulk_in_addr, parent_req_size_);
     if (status != ZX_OK) {
       zxlogf(ERROR, "FTDI allocating reads failed %d", status);
       return FtdiBindFail(status);
     }
     free_read_queue_.push(*std::move(req));
   }
-  for (int i = 0; i < WRITE_REQ_COUNT; i++) {
+  for (size_t i = 0; i < kWriteReqCount; i++) {
     std::optional<usb::Request<>> req;
-    status = usb::Request<>::Alloc(&req, USB_BUF_SIZE, bulk_out_addr, parent_req_size_);
+    status = usb::Request<>::Alloc(&req, kUsbBufSize, bulk_out_addr, parent_req_size_);
     if (status != ZX_OK) {
       zxlogf(ERROR, "FTDI allocating writes failed %d", status);
       return FtdiBindFail(status);
