@@ -111,12 +111,14 @@ fn acquire_and_drop_rand_lease_work_func(
     Ok(())
 }
 
+pub const LARGE_TOPOLOGY_ELEMENT_COUNTS: [usize; 7] = [1, 5, 10, 20, 50, 100, 200];
+
 pub(crate) fn prepare_large_topology(
     num_elements: usize,
 ) -> Arc<fpt::TopologyControlSynchronousProxy> {
     let topology_control = connect_to_protocol_sync::<fpt::TopologyControlMarker>().unwrap();
 
-    let mut elements = Vec::new();
+    let mut elements = Vec::with_capacity(num_elements);
 
     for i in 0..num_elements {
         let name = format!("element_{}", i);
@@ -144,7 +146,14 @@ pub(crate) fn prepare_large_topology(
         });
     }
 
-    let _ = topology_control.create(&elements, zx::MonotonicInstant::INFINITE).unwrap();
+    // Reverse elements so that root elements are at the back of the Vec.
+    // TopologyTestDaemon pops from the back, so parents/roots are created before children.
+    elements.reverse();
+
+    let _ = topology_control
+        .create(&elements, zx::MonotonicInstant::INFINITE)
+        .expect("FIDL create call should succeed")
+        .expect("Topology creation should succeed");
 
     Arc::new(topology_control)
 }

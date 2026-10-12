@@ -81,26 +81,40 @@ fn main() -> Result<()> {
         bench_toggle_lease(b, topology_control.clone(), status_channel.clone());
     });
 
-    let num_elements = 20;
-    let topology_control = daemon_work::prepare_large_topology(num_elements);
-    let _ = group.bench_function("LargeTopologyLease", move |b| {
-        let randomize = true;
-        b.iter(|| {
-            daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
+    for num_elements in daemon_work::LARGE_TOPOLOGY_ELEMENT_COUNTS {
+        let topology_control = daemon_work::prepare_large_topology(num_elements);
+        let _ = group.bench_function(format!("LargeTopologyLease/{num_elements}"), move |b| {
+            let randomize = false;
+            b.iter(|| {
+                daemon_work::execute_acquire_and_drop_lease(
+                    &topology_control,
+                    num_elements,
+                    randomize,
+                );
+            });
         });
-    });
+    }
 
     let num_background_leases = 15;
-    let topology_control = daemon_work::prepare_large_topology_with_background_leases(
-        num_elements,
-        num_background_leases,
-    );
-    let _ = group.bench_function("LargeTopologyWithBackgroundLeases", move |b| {
-        let randomize = false;
-        b.iter(|| {
-            daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
-        });
-    });
+    for num_elements in daemon_work::LARGE_TOPOLOGY_ELEMENT_COUNTS {
+        let topology_control = daemon_work::prepare_large_topology_with_background_leases(
+            num_elements,
+            num_background_leases,
+        );
+        let _ = group.bench_function(
+            format!("LargeTopologyWithBackgroundLeases/{num_elements}"),
+            move |b| {
+                let randomize = false;
+                b.iter(|| {
+                    daemon_work::execute_acquire_and_drop_lease(
+                        &topology_control,
+                        num_elements,
+                        randomize,
+                    );
+                });
+            },
+        );
+    }
 
     let topology_control = daemon_work::prepare_large_shared_topology();
     let _ = group.bench_function("LargeSharedTopology", move |b| {

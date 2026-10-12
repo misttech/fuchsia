@@ -33,10 +33,11 @@ Bypasses both the Power Broker transition overhead and the timer task creation
 (clean fast path).
 *   **`ToggleLease`**: Measures the lease toggling operation via the Topology
 Test Daemon.
-*   **`LargeTopologyLease`**: Measures lease acquisition and release in a large
-topology with multiple elements.
-*   **`LargeTopologyWithBackgroundLeases`**: Measures lease acquisition and
-release in a large topology where background leases are held.
+*   **`LargeTopologyLease/{1,5,10,20,50,100,200}`**: Measures lease acquisition
+and release across topologies of 1, 5, 10, 20, 50, 100, and 200 elements.
+*   **`LargeTopologyWithBackgroundLeases/{1,5,10,20,50,100,200}`**: Measures
+lease acquisition and release across topologies of 1, 5, 10, 20, 50, 100, and
+200 elements where background leases are held.
 *   **`LargeSharedTopology`**: Measures lease acquisition and release in a
 realistic large topology of 100 elements, where ~80% of elements (the shared
 infrastructure) are held active by initial leases, and individual leases under test

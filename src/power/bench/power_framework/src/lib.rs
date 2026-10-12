@@ -14,7 +14,7 @@ use diagnostics_hierarchy::DiagnosticsHierarchy;
 use diagnostics_reader::ArchiveReader;
 use fidl::endpoints::create_sync_proxy;
 use fidl_fuchsia_power_broker as fbroker;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(FromArgs, Debug)]
 /// Command line argument for the tests
@@ -53,14 +53,20 @@ async fn maybe_wait_for_memory_profiling(args: &Options) {
 /// Runs the given function `func` for `args.repeat` times or until `args.timeout_secs` is reached.
 /// Prints the power broker inspect stats every 1000 iterations.
 /// Returns the number of iterations performed.
-async fn iterate_until_timeout<F>(args: &Options, mut func: F) -> u32
+async fn iterate_until_timeout<F>(args: &Options, func: F) -> u32
 where
     F: FnMut(u32),
 {
-    let timeout = std::time::Duration::from_secs(args.timeout_secs);
+    iterate_with_timeout(args.repeat, Duration::from_secs(args.timeout_secs), func).await
+}
+
+async fn iterate_with_timeout<F>(repeat: u32, timeout: Duration, mut func: F) -> u32
+where
+    F: FnMut(u32),
+{
     let start = Instant::now();
     let mut iterations = 0;
-    while start.elapsed() < timeout && iterations < args.repeat {
+    while start.elapsed() < timeout && iterations < repeat {
         func(iterations);
         if iterations > 0 && iterations % 1000 == 0 {
             print_power_broker_inspect_stats(iterations).await;
@@ -149,72 +155,102 @@ async fn print_power_broker_inspect_stats(iteration: u32) {
     ()
 }
 
+const MEMORY_PROFILING_ELEMENT_COUNTS: [usize; 1] = [100];
+
 #[fuchsia::test]
 async fn test_large_topology_lease_benchmark() -> Result<()> {
-    // TODO(b/491223927): I'd like to get this to at least 100, but starting
-    // here, and we'll bump it up as we make improvements.
-    let num_elements = 20;
     let args: Options = argh::from_env::<Options>();
+    let element_counts: &[usize] = if args.wait_for_memory_profiling {
+        &MEMORY_PROFILING_ELEMENT_COUNTS
+    } else {
+        &daemon_work::LARGE_TOPOLOGY_ELEMENT_COUNTS
+    };
+    let step_timeout = Duration::from_secs(args.timeout_secs) / element_counts.len() as u32;
 
-    println!("Building large topology with {} elements...", num_elements);
-    let topology_control = daemon_work::prepare_large_topology(num_elements);
-    println!("Topology created.");
+    let mut last_topology_control = None;
+    for &num_elements in element_counts {
+        let _ = last_topology_control.take();
+        println!("Building large topology with {} elements...", num_elements);
+        let topology_control = daemon_work::prepare_large_topology(num_elements);
+        println!("Topology created.");
 
-    let start = Instant::now();
-    let randomize = false;
-    let iterations = iterate_until_timeout(&args, |_| {
-        daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
-    })
-    .await;
-    assert!(iterations > 0, "Test failed to complete at least 1 iteration");
-    let duration = start.elapsed();
-    println!("Total execution time over {} iterations: {:?}", iterations, duration);
-    println!(
-        "Average time for each execution ({} leases acquire/drop) is {:?}",
-        iterations,
-        duration / iterations
-    );
+        let start = Instant::now();
+        let randomize = false;
+        let iterations = iterate_with_timeout(args.repeat, step_timeout, |_| {
+            daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
+        })
+        .await;
+        assert!(iterations > 0, "Test failed to complete at least 1 iteration");
+        let duration = start.elapsed();
+        println!(
+            "[{} elements] Total execution time over {} iterations: {:?}",
+            num_elements, iterations, duration
+        );
+        println!(
+            "[{} elements] Average time for each execution ({} leases acquire/drop) is {:?}",
+            num_elements,
+            iterations,
+            duration / iterations
+        );
 
-    print_power_broker_inspect_stats(iterations).await;
+        print_power_broker_inspect_stats(iterations).await;
+        last_topology_control = Some(topology_control);
+    }
 
     maybe_wait_for_memory_profiling(&args).await;
+    drop(last_topology_control);
     Ok(())
 }
 
 #[fuchsia::test]
 async fn test_large_topology_with_background_leases_benchmark() -> Result<()> {
-    let num_elements = 20;
-    let num_background_leases = 15;
     let args: Options = argh::from_env::<Options>();
+    let element_counts: &[usize] = if args.wait_for_memory_profiling {
+        &MEMORY_PROFILING_ELEMENT_COUNTS
+    } else {
+        &daemon_work::LARGE_TOPOLOGY_ELEMENT_COUNTS
+    };
+    let step_timeout = Duration::from_secs(args.timeout_secs) / element_counts.len() as u32;
 
-    println!(
-        "Building large topology with {} elements and {} background leases...",
-        num_elements, num_background_leases
-    );
-    let topology_control = daemon_work::prepare_large_topology_with_background_leases(
-        num_elements,
-        num_background_leases,
-    );
-    println!("Topology and background leases created.");
+    let num_background_leases = 15;
+    let mut last_topology_control = None;
+    for &num_elements in element_counts {
+        let _ = last_topology_control.take();
+        println!(
+            "Building large topology with {} elements and {} background leases...",
+            num_elements, num_background_leases
+        );
+        let topology_control = daemon_work::prepare_large_topology_with_background_leases(
+            num_elements,
+            num_background_leases,
+        );
+        println!("Topology and background leases created.");
 
-    let start = Instant::now();
-    let randomize = false;
-    let iterations = iterate_until_timeout(&args, |_| {
-        daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
-    })
-    .await;
-    assert!(iterations > 0, "Test failed to complete at least 1 iteration");
-    let duration = start.elapsed();
-    println!("Total execution time over {} iterations: {:?}", iterations, duration);
-    println!(
-        "Average time for each execution (1 lease acquire/drop with {} background leases) is {:?}",
-        num_background_leases,
-        duration / iterations
-    );
+        let start = Instant::now();
+        let randomize = false;
+        let iterations = iterate_with_timeout(args.repeat, step_timeout, |_| {
+            daemon_work::execute_acquire_and_drop_lease(&topology_control, num_elements, randomize);
+        })
+        .await;
+        assert!(iterations > 0, "Test failed to complete at least 1 iteration");
+        let duration = start.elapsed();
+        println!(
+            "[{} elements] Total execution time over {} iterations: {:?}",
+            num_elements, iterations, duration
+        );
+        println!(
+            "[{} elements] Average time for each execution (1 lease acquire/drop with {} background leases) is {:?}",
+            num_elements,
+            num_background_leases,
+            duration / iterations
+        );
 
-    print_power_broker_inspect_stats(iterations).await;
+        print_power_broker_inspect_stats(iterations).await;
+        last_topology_control = Some(topology_control);
+    }
 
     maybe_wait_for_memory_profiling(&args).await;
+    drop(last_topology_control);
     Ok(())
 }
 
