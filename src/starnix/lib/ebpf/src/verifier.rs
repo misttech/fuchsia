@@ -129,7 +129,7 @@ impl MemoryId {
 }
 
 /// The type of a field in a struct pointed by `Type::PtrToStruct`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FieldType {
     /// Read-only scalar value.
     Scalar { size: usize },
@@ -153,7 +153,7 @@ pub enum FieldType {
 }
 
 /// Definition of a field in a `Type::PtrToStruct`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FieldDescriptor {
     /// The offset at which the field is located.
     pub offset: usize,
@@ -195,7 +195,7 @@ impl Field {
 }
 
 /// Defines field layout in a struct pointed by `Type::PtrToStruct`.
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct StructDescriptor {
     /// The list of fields.
     pub fields: Vec<FieldDescriptor>,
@@ -241,7 +241,7 @@ impl StructDescriptor {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MemoryParameterSize {
     /// The memory buffer have the given size.
     Value(u64),
@@ -264,7 +264,7 @@ impl MemoryParameterSize {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MapTypeFilter {
     AllowList(&'static [bpf_map_type]),
     DenyList(&'static [bpf_map_type]),
@@ -279,7 +279,7 @@ impl MapTypeFilter {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
     /// A number.
     ScalarValue(ScalarValueData),
@@ -365,27 +365,21 @@ pub enum Type {
 ///   `Type::ScalarValue(ScalarValueData({ unknown_mask: u64::MAX, .. }))` (an unknown scalar value).
 impl PartialOrd for Type {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        // If the values are equals, return the known result.
-        if self == other {
-            return Some(Ordering::Equal);
-        }
-
-        // If one value is not initialized, the types are ordered.
         // UNINITIALIZED is treated as the Top element (Greater than all other types).
         // If a path is proven safe when a register is UNINITIALIZED, it means the path
         // does not read that register. Consequently, it is safe to prune any state
         // that has a more specific type (like a pointer) in that register, because
         // the program will still not read it.
-        if self == &Type::UNINITIALIZED {
-            return Some(Ordering::Greater);
-        }
-        if other == &Type::UNINITIALIZED {
-            return Some(Ordering::Less);
-        }
-
-        // Otherwise, only scalars are comparables.
         match (self, other) {
             (Self::ScalarValue(data1), Self::ScalarValue(data2)) => data1.partial_cmp(data2),
+            (Self::ScalarValue(data), _) => {
+                (*data == ScalarValueData::UNINITIALIZED).then_some(Ordering::Greater)
+            }
+            (_, Self::ScalarValue(data)) => {
+                (*data == ScalarValueData::UNINITIALIZED).then_some(Ordering::Less)
+            }
+            // If the values are equal, return the known result.
+            _ if self == other => Some(Ordering::Equal),
             _ => None,
         }
     }
@@ -866,7 +860,7 @@ impl CallingContext {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StructAccess {
     pub pc: ProgramCounter,
 
@@ -1070,7 +1064,7 @@ const STACK_ELEMENT_SIZE: usize = std::mem::size_of::<u64>();
 
 /// An offset inside the stack. The offset is from the end of the stack.
 /// downward.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StackOffset(ScalarValueData);
 
 impl Default for StackOffset {
@@ -1114,7 +1108,7 @@ impl StackOffset {
 }
 
 /// The state of the stack
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Stack {
     data: BTreeMap<usize, Type>,
 }
@@ -1345,38 +1339,27 @@ impl PartialOrd for Stack {
         let mut data_iter1 = self.data.iter().peekable();
         let mut data_iter2 = other.data.iter().peekable();
         loop {
-            let (v1, v2) = match (data_iter1.peek(), data_iter2.peek()) {
+            match (data_iter1.peek(), data_iter2.peek()) {
                 (None, None) => return Some(result),
-                (Some((_, v1)), None) => {
-                    let v1 = *v1;
-                    data_iter1.next();
-                    (v1, &Type::UNINITIALIZED)
-                }
-                (None, Some((_, v2))) => {
-                    let v2 = *v2;
-                    data_iter2.next();
-                    (&Type::UNINITIALIZED, v2)
-                }
+                (Some(_), None) => return associate_orderings(result, Ordering::Less),
+                (None, Some(_)) => return associate_orderings(result, Ordering::Greater),
                 (Some((k1, v1)), Some((k2, v2))) => match k1.cmp(k2) {
                     Ordering::Less => {
-                        let v1 = *v1;
                         data_iter1.next();
-                        (v1, &Type::UNINITIALIZED)
+                        result = associate_orderings(result, Ordering::Less)?;
                     }
                     Ordering::Greater => {
-                        let v2 = *v2;
                         data_iter2.next();
-                        (&Type::UNINITIALIZED, v2)
+                        result = associate_orderings(result, Ordering::Greater)?;
                     }
                     Ordering::Equal => {
                         let (v1, v2) = (*v1, *v2);
                         data_iter1.next();
                         data_iter2.next();
-                        (v1, v2)
+                        result = associate_orderings(result, v1.partial_cmp(v2)?)?;
                     }
                 },
-            };
-            result = associate_orderings(result, v1.partial_cmp(v2)?)?;
+            }
         }
     }
 }
@@ -4973,5 +4956,104 @@ mod tests {
         );
         assert!(err.is_err());
         assert_eq!(err.unwrap_err(), "Resource already released for index 0");
+    }
+
+    #[test]
+    fn ptr_to_struct_ordering() {
+        let desc1 = Arc::new(StructDescriptor {
+            fields: vec![
+                FieldDescriptor { offset: 0, field_type: FieldType::Scalar { size: 4 } },
+                FieldDescriptor { offset: 4, field_type: FieldType::MutableScalar { size: 4 } },
+            ],
+        });
+        let desc1_same_contents = Arc::new(StructDescriptor {
+            fields: vec![
+                FieldDescriptor { offset: 0, field_type: FieldType::Scalar { size: 4 } },
+                FieldDescriptor { offset: 4, field_type: FieldType::MutableScalar { size: 4 } },
+            ],
+        });
+        let desc_other = Arc::new(StructDescriptor {
+            fields: vec![FieldDescriptor { offset: 0, field_type: FieldType::Scalar { size: 4 } }],
+        });
+
+        let id = MemoryId::from_raw(1);
+        let ptr_a =
+            Type::PtrToStruct { id: id.clone(), offset: 0.into(), descriptor: Arc::clone(&desc1) };
+        let ptr_b_shared_arc =
+            Type::PtrToStruct { id: id.clone(), offset: 0.into(), descriptor: Arc::clone(&desc1) };
+        let ptr_c_distinct_arc = Type::PtrToStruct {
+            id: id.clone(),
+            offset: 0.into(),
+            descriptor: Arc::clone(&desc1_same_contents),
+        };
+        let ptr_different_offset =
+            Type::PtrToStruct { id: id.clone(), offset: 4.into(), descriptor: Arc::clone(&desc1) };
+        let ptr_other_desc =
+            Type::PtrToStruct { id, offset: 0.into(), descriptor: Arc::clone(&desc_other) };
+
+        // Shared Arc (pointer-equal fast path) and distinct Arc with equal fields both compare
+        // Equal.
+        assert_eq!(ptr_a.partial_cmp(&ptr_b_shared_arc), Some(Ordering::Equal));
+        assert_eq!(ptr_a.partial_cmp(&ptr_c_distinct_arc), Some(Ordering::Equal));
+        assert_eq!(ptr_a.partial_cmp(&ptr_different_offset), None);
+        assert_eq!(ptr_a.partial_cmp(&ptr_other_desc), None);
+
+        // Non-scalars are strictly narrower than UNINITIALIZED and incomparable with initialized
+        // or narrowed uninitialized scalars.
+        let narrowed_uninit = Type::ScalarValue(ScalarValueData::UNINITIALIZED & 7.into());
+        assert_eq!(ptr_a.partial_cmp(&Type::UNINITIALIZED), Some(Ordering::Less));
+        assert_eq!(Type::UNINITIALIZED.partial_cmp(&ptr_a), Some(Ordering::Greater));
+        assert_eq!(ptr_a.partial_cmp(&Type::UNKNOWN_SCALAR), None);
+        assert_eq!(Type::UNKNOWN_SCALAR.partial_cmp(&ptr_a), None);
+        assert_eq!(ptr_a.partial_cmp(&narrowed_uninit), None);
+        assert_eq!(narrowed_uninit.partial_cmp(&ptr_a), None);
+
+        // Narrowed uninitialized scalar (`unwritten_mask == u64::MAX`, `urange == [0, 7]`) is
+        // strictly narrower than `Type::UNINITIALIZED`, broader than `5`, and incomparable with
+        // out-of-range `1000`.
+        assert_eq!(Type::UNINITIALIZED.partial_cmp(&narrowed_uninit), Some(Ordering::Greater));
+        assert_eq!(narrowed_uninit.partial_cmp(&Type::UNINITIALIZED), Some(Ordering::Less));
+        assert_eq!(narrowed_uninit.partial_cmp(&Type::from(5)), Some(Ordering::Greater));
+        assert_eq!(Type::from(5).partial_cmp(&narrowed_uninit), Some(Ordering::Less));
+        assert_eq!(narrowed_uninit.partial_cmp(&Type::from(1000)), None);
+        assert_eq!(Type::from(1000).partial_cmp(&narrowed_uninit), None);
+    }
+
+    #[test]
+    fn stack_ordering_disjoint_and_overlapping_keys() {
+        let mut s_broad = Stack::default();
+        let mut s_narrow = Stack::default();
+
+        // Populate s_narrow at keys 1, 3, 5; keep s_broad empty (all UNINITIALIZED).
+        s_narrow.set(1, Type::from(10));
+        s_narrow.set(3, Type::from(20));
+        s_narrow.set(5, Type::from(30));
+        assert_eq!(s_broad.partial_cmp(&s_narrow), Some(Ordering::Greater));
+        assert_eq!(s_narrow.partial_cmp(&s_broad), Some(Ordering::Less));
+
+        // Add middle key 3 to s_broad with a broader type (UNKNOWN_SCALAR > 20).
+        // s_narrow has an earlier key (1 < 3) and a later key (5 > 3), exercising both
+        // `Ordering::Greater` on `k1.cmp(k2)` and `(None, Some(_))` after `s_broad` is exhausted.
+        s_broad.set(3, Type::UNKNOWN_SCALAR);
+        assert_eq!(s_broad.partial_cmp(&s_narrow), Some(Ordering::Greater));
+        assert_eq!(s_narrow.partial_cmp(&s_broad), Some(Ordering::Less));
+
+        // Setting a slot to UNINITIALIZED removes it from the map and preserves the ordering,
+        // whereas a narrowed uninitialized scalar stays in the map and is strictly narrower than
+        // an empty (all UNINITIALIZED) stack.
+        s_broad.set(3, Type::UNINITIALIZED);
+        assert!(s_broad.data.is_empty());
+        assert_eq!(s_broad.partial_cmp(&s_narrow), Some(Ordering::Greater));
+        let mut s_narrowed_uninit = Stack::default();
+        s_narrowed_uninit.set(0, Type::ScalarValue(ScalarValueData::UNINITIALIZED & 7.into()));
+        assert_eq!(s_broad.partial_cmp(&s_narrowed_uninit), Some(Ordering::Greater));
+        assert_eq!(s_narrowed_uninit.partial_cmp(&s_broad), Some(Ordering::Less));
+
+        // Conflicting orderings at overlapping keys must return None.
+        s_broad.set(1, Type::from(10));
+        s_broad.set(3, Type::UNKNOWN_SCALAR);
+        s_broad.set(5, Type::from(99));
+        assert_eq!(s_broad.partial_cmp(&s_narrow), None);
+        assert_eq!(s_narrow.partial_cmp(&s_broad), None);
     }
 }

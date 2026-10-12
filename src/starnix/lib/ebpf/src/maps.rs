@@ -30,7 +30,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MapSchema {
     pub map_type: bpf_map_type,
     pub key_size: u32,

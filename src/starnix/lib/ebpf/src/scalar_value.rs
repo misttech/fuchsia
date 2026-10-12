@@ -279,7 +279,7 @@ impl std::ops::Shr for [< $t:upper Range>] {
 }
 
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct [< $t:upper ScalarValueData>] {
     /// The value. Its interpresentation depends on `unknown_mask` and `unwritten_mask`.
     pub value: [< $t >],
