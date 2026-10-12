@@ -139,6 +139,18 @@ To ensure safe access to register bitfields, it is recommended to use the
 [hwreg/bitfields library][bitfields]. This library is found at
 `zircon/system/ulib/hwreg/include/hwreg/bitfields.h`.
 
+`hwreg` setters do not clamp values to the field width: they `ZX_DEBUG_ASSERT`
+in debug builds and overwrite neighboring fields in release builds. Check
+lengths, offsets, indices, and counts from outside the driver (FIDL clients,
+bus hosts, metadata, firmware), and values computed from them, before using
+them in a register, a DMA transfer size, or a buffer index. Where the value
+enters the driver, return `ZX_ERR_INVALID_ARGS`, or clamp if the protocol
+allows a maximum value; compute bounds so they cannot overflow; confirm that a
+client-supplied ID was registered by that client
+([VMO registration][vmo-registration]). A comment naming what already
+guarantees the range can replace a check; see
+[Precondition checks][precondition-checks] for when to assert instead.
+
 The driver should take control of its BTI and stop any DMA which might be
 ongoing during initialization. Once that is complete, it should tell the BTI
 that it has regained control of the hardware by calling
@@ -258,3 +270,5 @@ connection to the `DriverTestRealm` service, perform necessary configuration in
 [fake-mmio-reg]: /sdk/lib/driver/fake-mmio-reg
 [mock-mmio]: /sdk/lib/driver/mock-mmio
 [dtr]: /sdk/lib/driver_test_realm/
+[vmo-registration]: /docs/development/drivers/best_practices/vmo-registration-pattern.md
+[precondition-checks]: /docs/development/drivers/driver_guides/display/register-definitions.md#precondition_checks

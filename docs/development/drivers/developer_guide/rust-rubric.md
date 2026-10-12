@@ -161,6 +161,12 @@ Drivers must never perform manual bitwise operations (for example,
 `val |= 1 << 5;`) on raw integers when accessing MMIO registers. Instead,
 they should use the `mmio::register!` and `mmio::register_block!` macros
 
+Check the range of lengths, offsets, indices, and IDs that come from outside
+the driver before they are written to a register, used as a DMA transfer size,
+or used as a VMO index, and confirm that a client ID was registered by that
+client ([VMO registration][vmo-registration]). `mmio::register!` setters
+silently truncate out-of-range values.
+
 ### Clocks
 
 Clocks are controlled via the [fuchsia.hardware.clock FIDL service][clock-fidl].
@@ -240,3 +246,4 @@ When testing drivers that use `MmioRegion`:
 [examples-drivers]: /examples/drivers
 [dtr-lib]: https://fuchsia-docs.firebaseapp.com/rust/fuchsia_driver_test/index.html
 [mock-memory-ops]: https://fuchsia-docs.firebaseapp.com/rust/mmio/mock/struct.MockMemoryOps.html
+[vmo-registration]: /docs/development/drivers/best_practices/vmo-registration-pattern.md

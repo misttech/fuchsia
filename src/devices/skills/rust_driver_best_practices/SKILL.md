@@ -323,6 +323,20 @@ These macros generate safe accessors for registers and fields. Update fields via
 register blocks, you may need to wrap `VmoMapping` in `MmioRegion<VmoMemory>` to
 satisfy trait bounds.
 
+### Validating External Values
+`register!` setters silently mask values to the field width. For values from
+outside the driver (FIDL, bus host, metadata, firmware):
+* Return `zx::Status::INVALID_ARGS` when a conversion fails, so bad input cannot
+  panic the driver; keep `try_from(...).unwrap()` for values the driver computes
+  itself.
+* Compute bounds with `checked_add` or `checked_sub` and compare against the
+  buffer size.
+* Check every field before writing any of them.
+
+```rust
+let value = u8::try_from(setup.w_value).map_err(|_| zx::Status::INVALID_ARGS)?;
+```
+
 ### Platform Device and MMIO Access
 When using the platform device protocol to access MMIO:
 - **Use `pdev` library**: Prefer using the `pdev` library
