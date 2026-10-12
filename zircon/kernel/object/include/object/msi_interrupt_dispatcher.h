@@ -130,7 +130,7 @@ class MsiInterruptDispatcherImpl : public MsiInterruptDispatcher {
                              bool has_cap_pvm, bool has_64bit, RegisterIntFn register_int_fn)
       : MsiInterruptDispatcher(ktl::move(alloc), ktl::move(mapping), base_irq_id, msi_id,
                                register_int_fn),
-        has_platform_pvm_(msi_supports_masking()),
+        has_platform_pvm_(register_int_fn == msi_register_handler && msi_supports_masking()),
         has_cap_pvm_(has_cap_pvm),
         has_64bit_(has_64bit),
         capability_(reinterpret_cast<MMIO_PTR volatile MsiCapability*>(this->mapping()->base() +

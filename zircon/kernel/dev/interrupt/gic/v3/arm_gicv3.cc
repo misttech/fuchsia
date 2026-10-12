@@ -5,29 +5,39 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <align.h>
 #include <assert.h>
 #include <bits.h>
 #include <inttypes.h>
 #include <lib/arch/intrin.h>
 #include <lib/ktrace.h>
+#include <lib/page/size.h>
+#include <lib/pow2_range_allocator.h>
 #include <lib/root_resource_filter.h>
 #include <lib/zbi-format/driver-config.h>
 #include <lib/zx/result.h>
+#include <pow2.h>
+#include <string.h>
 #include <trace.h>
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
 #include <arch/arm64/hypervisor/gic/gicv3.h>
+#include <arch/ops.h>
 #include <arch/regs.h>
 #include <dev/interrupt.h>
 #include <dev/interrupt/arm_gic_common.h>
 #include <dev/interrupt/arm_gic_hw_interface.h>
 #include <dev/interrupt/arm_gicv3_init.h>
 #include <kernel/cpu.h>
+#include <kernel/spinlock.h>
 #include <kernel/stats.h>
 #include <kernel/thread.h>
+#include <ktl/algorithm.h>
 #include <lk/init.h>
 #include <pdev/interrupt.h>
+#include <vm/physmap.h>
+#include <vm/pmm.h>
 #include <vm/vm.h>
 #include <vm/vm_aspace.h>
 
@@ -41,6 +51,7 @@
 // Base and stride of the mapped apertures, exported to other files in this driver.
 vaddr_t arm_gicv3_gicd_base = 0;
 vaddr_t arm_gicv3_gicr_base = 0;
+vaddr_t arm_gicv3_gits_base = 0;
 uint64_t arm_gicv3_gicr_stride = 0;
 
 namespace {
@@ -50,6 +61,37 @@ uint64_t gicr_offset = 0;
 uint64_t gic_mmio_phys = 0;
 uint32_t ipi_base = 0;
 uint32_t gic_max_int;
+
+constexpr uint32_t kLpiBase = 8192;
+constexpr uint32_t kMaxLpis = 256;
+constexpr uint32_t kMaxItsPciSlots = 32;
+constexpr size_t kItsTableSize = 0x10000;  // 64 KiB
+constexpr size_t kItsTablePages = kItsTableSize / kPageSize;
+constexpr uint8_t kItsTableAlignLog2 = 16;  // 64 KiB alignment
+
+constexpr uint8_t kLpiPropDefaultPrio = 0xa0;
+constexpr uint8_t kLpiPropGroup1 = (1u << 1);
+constexpr uint8_t kLpiPropEnabled = (1u << 0);
+
+constexpr uint8_t kGitsCmdSync = 0x05;
+constexpr uint8_t kGitsCmdMapd = 0x08;
+constexpr uint8_t kGitsCmdMapc = 0x09;
+constexpr uint8_t kGitsCmdMapti = 0x0a;
+constexpr uint8_t kGitsCmdInv = 0x0c;
+
+uint64_t gits_phys = 0;
+bool its_enabled = false;
+paddr_t lpi_prop_pa = 0;
+uint8_t* lpi_prop_va = nullptr;
+paddr_t lpi_pend_pa[SMP_MAX_CPUS] = {};
+uint8_t* its_cmdq_va = nullptr;
+uint64_t its_cmdq_cwriter = 0;
+uint64_t its_cpu0_rdbase = 0;
+bool lpi_mapped[kMaxLpis] = {};
+
+DECLARE_SINGLETON_SPINLOCK_WITH_TYPE(GicItsLock, MonitoredSpinLock);
+Pow2RangeAllocator g_lpi_alloc;
+interrupt_handler_t g_lpi_handlers[kMaxLpis] TA_GUARDED(GicItsLock::Get());
 
 bool gic_is_valid_interrupt(interrupt_vector_t vector, uint32_t flags) {
   return (vector < gic_max_int);
@@ -138,6 +180,55 @@ void gic_redistributor_sleep(bool sleep) {
   gic_wait_for_mask(GICR_WAKER(cpu), WAKER_CHILDREN_ASLEEP, val);
 }
 
+void gic_init_percpu_lpi(cpu_num_t cpu) {
+  if (!lpi_prop_va || cpu >= SMP_MAX_CPUS || !lpi_pend_pa[cpu] ||
+      !(arm_gicv3_read64(GICR_TYPER(cpu, 0)) & GICR_TYPER_PLPIS)) {
+    return;
+  }
+
+  // Ensure LPIs are disabled on this redistributor before programming PROPBASER/PENDBASER.
+  // Note: GICR_CTLR.EnableLPIs may be WI once set; if it does not clear (e.g. on resume when
+  // redistributor state was retained), keep the existing configuration.
+  uint32_t gicr_ctlr = arm_gicv3_read32(GICR_CTLR(cpu));
+  if (gicr_ctlr & GICR_CTLR_ENABLE_LPIS) {
+    arm_gicv3_write32(GICR_CTLR(cpu), gicr_ctlr & ~GICR_CTLR_ENABLE_LPIS);
+    gic_wait_for_mask(GICR_CTLR(cpu), GICR_CTLR_RWP, 0);
+    if (arm_gicv3_read32(GICR_CTLR(cpu)) & GICR_CTLR_ENABLE_LPIS) {
+      return;
+    }
+  }
+
+  // Ensure the pending table is zeroed in memory before setting GICR_PENDBASER_PTZ.
+  void* pend_va = paddr_to_physmap(lpi_pend_pa[cpu]);
+  memset(pend_va, 0, kItsTableSize);
+  arch_clean_cache_range(reinterpret_cast<vaddr_t>(pend_va), kItsTableSize);
+
+  // Program LPI Configuration Table (IDbits = 15 -> 16-bit INTIDs 0..65535).
+  uint64_t propbaser = (lpi_prop_pa & GICR_PROPBASER_ADDR_MASK) | GICR_PROPBASER_SHAREABILITY_ISH |
+                       GICR_PROPBASER_INNER_CACHE_WB | 15ULL;
+  arm_gicv3_write64(GICR_PROPBASER(cpu), propbaser);
+  if ((arm_gicv3_read64(GICR_PROPBASER(cpu)) & GICR_PROPBASER_SHAREABILITY_MASK) == 0) {
+    propbaser = (propbaser & ~(GICR_PROPBASER_SHAREABILITY_MASK | GICR_PROPBASER_INNER_CACHE_WB)) |
+                GICR_PROPBASER_INNER_CACHE_NC;
+    arm_gicv3_write64(GICR_PROPBASER(cpu), propbaser);
+  }
+
+  // Program LPI Pending Table with PTZ (Pending Table Zero) set.
+  uint64_t pendbaser = (lpi_pend_pa[cpu] & GICR_PENDBASER_ADDR_MASK) |
+                       GICR_PENDBASER_SHAREABILITY_ISH | GICR_PENDBASER_INNER_CACHE_WB |
+                       GICR_PENDBASER_PTZ;
+  arm_gicv3_write64(GICR_PENDBASER(cpu), pendbaser);
+  if ((arm_gicv3_read64(GICR_PENDBASER(cpu)) & GICR_PENDBASER_SHAREABILITY_MASK) == 0) {
+    pendbaser = (pendbaser & ~(GICR_PENDBASER_SHAREABILITY_MASK | GICR_PENDBASER_INNER_CACHE_WB)) |
+                GICR_PENDBASER_INNER_CACHE_NC;
+    arm_gicv3_write64(GICR_PENDBASER(cpu), pendbaser);
+  }
+
+  // Enable LPIs on this redistributor.
+  arm_gicv3_write32(GICR_CTLR(cpu), arm_gicv3_read32(GICR_CTLR(cpu)) | GICR_CTLR_ENABLE_LPIS);
+  arch::DeviceMemoryBarrier();
+}
+
 void gic_init_percpu_early() {
   cpu_num_t cpu = arch_curr_cpu_num();
 
@@ -154,7 +245,7 @@ void gic_init_percpu_early() {
   arm_gicv3_write32(GICR_ICPENDR0(cpu), ~0);
   gic_wait_for_rwp(GICR_CTLR(cpu));
 
-  // TODO lpi init
+  gic_init_percpu_lpi(cpu);
 
   // enable system register interface
   uint32_t sre = gic_read_sre();
@@ -175,6 +266,223 @@ void gic_init_percpu_early() {
     __arm_wsr64("ich_hcr_el2", 0);
     __isb(ARM_MB_SY);
   }
+}
+
+paddr_t gic_alloc_its_table(uint8_t fill = 0) {
+  VmPageDoublyLinkedList pages;
+  paddr_t pa = 0;
+  if (pmm_alloc_contiguous(kItsTablePages, 0, kItsTableAlignLog2, &pa, &pages) != ZX_OK) {
+    return 0;
+  }
+  while (!pages.is_empty()) {
+    pages.pop_front();
+  }
+  void* va = paddr_to_physmap(pa);
+  memset(va, fill, kItsTableSize);
+  arch_clean_cache_range(reinterpret_cast<vaddr_t>(va), kItsTableSize);
+  return pa;
+}
+
+bool gic_its_cmd(uint64_t dw0, uint64_t dw1, uint64_t dw2, bool sync = true) {
+  if (!its_cmdq_va) {
+    return false;
+  }
+  auto post = [](uint64_t d0, uint64_t d1, uint64_t d2) {
+    uint64_t* slot = reinterpret_cast<uint64_t*>(its_cmdq_va + its_cmdq_cwriter);
+    slot[0] = d0;
+    slot[1] = d1;
+    slot[2] = d2;
+    slot[3] = 0;
+    arch_clean_cache_range(reinterpret_cast<vaddr_t>(slot), 32);
+    its_cmdq_cwriter = (its_cmdq_cwriter + 32) % kItsTableSize;
+  };
+  post(dw0, dw1, dw2);
+  if (!sync) {
+    return true;
+  }
+  post(kGitsCmdSync, 0, its_cpu0_rdbase << 16);
+  arch::DeviceMemoryBarrier();
+  arm_gicv3_write64(GITS_CWRITER, its_cmdq_cwriter);
+  for (int count = 1000000; count > 0; --count) {
+    uint64_t creadr = arm_gicv3_read64(GITS_CREADR);
+    if (creadr & GITS_CREADR_STALLED) {
+      break;
+    }
+    if (creadr == its_cmdq_cwriter) {
+      return true;
+    }
+  }
+  dprintf(INFO, "GICv3 ITS: command queue timeout/stall (CWRITER=%#lx, CREADR=%#lx)\n",
+          its_cmdq_cwriter, arm_gicv3_read64(GITS_CREADR));
+  return false;
+}
+
+void gic_lpi_set_enable_locked(uint32_t idx, bool enable) TA_REQ(GicItsLock::Get()) {
+  if (!lpi_prop_va || idx >= kMaxLpis) {
+    return;
+  }
+  uint8_t val = kLpiPropDefaultPrio | kLpiPropGroup1 | (enable ? kLpiPropEnabled : 0);
+  if (lpi_prop_va[idx] == val) {
+    return;
+  }
+  lpi_prop_va[idx] = val;
+  arch_clean_cache_range(reinterpret_cast<vaddr_t>(&lpi_prop_va[idx]), 1);
+  arch::DeviceMemoryBarrier();
+
+  if (arm_gicv3_read64(GICR_TYPER(0, 0)) & GICR_TYPER_DIRECT_LPI) {
+    arm_gicv3_write64(GICR_INVLPIR(0), kLpiBase + idx);
+    gic_wait_for_mask(GICR_SYNCR(0), 1, 0);
+  }
+  if (its_enabled && lpi_mapped[idx]) {
+    gic_its_cmd(kGitsCmdInv, idx, 0);
+  }
+}
+
+template <typename MapFn>
+void gic_init_its(uint32_t gicd_typer, MapFn& map_region) {
+  if (!(gicd_typer & GICD_TYPER_LPIS) || gits_phys == 0) {
+    return;
+  }
+
+  auto result = map_region(gits_phys, GITS_REG_SIZE, "gits");
+  if (!result.is_ok()) {
+    dprintf(INFO, "GICv3: failed to map ITS registers at %#lx: %d\n", gits_phys,
+            result.error_value());
+    return;
+  }
+  arm_gicv3_gits_base = result.value();
+
+  uint64_t gits_typer = arm_gicv3_read64(GITS_TYPER);
+  if (!(gits_typer & GITS_TYPER_PLPIS)) {
+    dprintf(INFO, "GICv3: ITS at %#lx does not support physical LPIs (TYPER=%#lx)\n", gits_phys,
+            gits_typer);
+    return;
+  }
+
+  // Allocate the shared 64 KiB LPI configuration table and per-CPU LPI pending tables.
+  lpi_prop_pa = gic_alloc_its_table(kLpiPropDefaultPrio | kLpiPropGroup1);
+  if (!lpi_prop_pa) {
+    printf("GICv3: failed to allocate LPI configuration table\n");
+    return;
+  }
+  lpi_prop_va = static_cast<uint8_t*>(paddr_to_physmap(lpi_prop_pa));
+
+  uint max_cpus = ktl::min<uint>(arch_max_num_cpus(), SMP_MAX_CPUS);
+  for (uint cpu = 0; cpu < max_cpus; ++cpu) {
+    lpi_pend_pa[cpu] = gic_alloc_its_table();
+    if (!lpi_pend_pa[cpu]) {
+      printf("GICv3: failed to allocate LPI pending table for CPU %u\n", cpu);
+      return;
+    }
+  }
+  gic_init_percpu_lpi(0);
+
+  // Disable ITS before programming BASER and CBASER registers.
+  uint32_t gits_ctlr = arm_gicv3_read32(GITS_CTLR);
+  if (gits_ctlr & GITS_CTLR_ENABLE) {
+    arm_gicv3_write32(GITS_CTLR, gits_ctlr & ~GITS_CTLR_ENABLE);
+    gic_wait_for_mask(GITS_CTLR, GITS_CTLR_QUIESCENT, GITS_CTLR_QUIESCENT);
+  }
+
+  // Allocate and program GITS_BASER(0..7) tables (Device and Interrupt Collection tables).
+  for (uint n = 0; n < 8; ++n) {
+    uint64_t baser = arm_gicv3_read64(GITS_BASER(n));
+    if (((baser >> GITS_BASER_TYPE_SHIFT) & GITS_BASER_TYPE_MASK) == 0) {
+      continue;
+    }
+
+    paddr_t table_pa = gic_alloc_its_table();
+    if (!table_pa) {
+      printf("GICv3: failed to allocate GITS_BASER(%u) table\n", n);
+      return;
+    }
+
+    // Probe supported Page_Size (preferring 64K) and Shareability (WARL fields).
+    arm_gicv3_write64(GITS_BASER(n), GITS_BASER_PAGE_SIZE_64K | GITS_BASER_SHAREABILITY_ISH);
+    baser = arm_gicv3_read64(GITS_BASER(n));
+
+    uint64_t page_size_field = baser & GITS_BASER_PAGE_SIZE_MASK;
+    uint64_t num_pages = 16;
+    uint64_t pa_field = table_pa & GITS_BASER_ADDR_MASK_4K_16K;
+    if (page_size_field == GITS_BASER_PAGE_SIZE_64K) {
+      num_pages = 1;
+      pa_field = (table_pa & GITS_BASER_ADDR_MASK_64K) | ((table_pa >> 36) & 0xf000ULL);
+    } else if (page_size_field == GITS_BASER_PAGE_SIZE_16K) {
+      num_pages = 4;
+    }
+
+    uint64_t cache_share = GITS_BASER_INNER_CACHE_NC;
+    if (baser & GITS_BASER_SHAREABILITY_MASK) {
+      cache_share = GITS_BASER_SHAREABILITY_ISH | GITS_BASER_INNER_CACHE_WB;
+    }
+    arm_gicv3_write64(GITS_BASER(n), GITS_BASER_VALID | cache_share | page_size_field | pa_field |
+                                         (num_pages - 1));
+  }
+
+  // Allocate and program the 64 KiB ITS Command Queue (GITS_CBASER).
+  paddr_t cmdq_pa = gic_alloc_its_table();
+  if (!cmdq_pa) {
+    printf("GICv3: failed to allocate GITS command queue\n");
+    return;
+  }
+  its_cmdq_va = static_cast<uint8_t*>(paddr_to_physmap(cmdq_pa));
+  its_cmdq_cwriter = 0;
+
+  uint64_t cbaser = GITS_CBASER_VALID | GITS_CBASER_INNER_CACHE_WB | GITS_CBASER_SHAREABILITY_ISH |
+                    (cmdq_pa & GITS_CBASER_ADDR_MASK) | (kItsTablePages - 1);
+  arm_gicv3_write64(GITS_CBASER, cbaser);
+  if ((arm_gicv3_read64(GITS_CBASER) & GITS_CBASER_SHAREABILITY_MASK) == 0) {
+    cbaser = (cbaser & ~(GITS_CBASER_SHAREABILITY_MASK | GITS_CBASER_INNER_CACHE_WB)) |
+             GITS_CBASER_INNER_CACHE_NC;
+    arm_gicv3_write64(GITS_CBASER, cbaser);
+  }
+  arm_gicv3_write64(GITS_CWRITER, 0);
+
+  // Enable the ITS.
+  arm_gicv3_write32(GITS_CTLR, GITS_CTLR_ENABLE);
+  arch::DeviceMemoryBarrier();
+
+  its_cpu0_rdbase = (gits_typer & GITS_TYPER_PTA)
+                        ? ((gic_mmio_phys + gicr_offset) >> 16)
+                        : ((arm_gicv3_read64(GICR_TYPER(0, 0)) >> 8) & 0xffffULL);
+
+  // Map Collection 0 to CPU 0.
+  if (!gic_its_cmd(kGitsCmdMapc, 0, (its_cpu0_rdbase << 16) | BIT_64(63))) {
+    printf("GICv3: failed to map ITS collection 0\n");
+    return;
+  }
+
+  // Map PCI bus 0 slots 0..31 (8 event ID bits = 256 events per device).
+  size_t itt_entry_size =
+      ((gits_typer >> GITS_TYPER_ITT_ENTRY_SIZE_SHIFT) & GITS_TYPER_ITT_ENTRY_SIZE_MASK) + 1;
+  size_t itt_size = ROUNDUP(kMaxLpis * itt_entry_size, 256);
+  paddr_t itt_pa = 0;
+  size_t itt_rem = 0;
+  for (uint32_t slot = 0; slot < kMaxItsPciSlots; ++slot) {
+    if (itt_rem < itt_size) {
+      itt_pa = gic_alloc_its_table();
+      if (!itt_pa) {
+        printf("GICv3: failed to allocate ITS ITT pool\n");
+        return;
+      }
+      itt_rem = kItsTableSize;
+    }
+    if (!gic_its_cmd(kGitsCmdMapd | (uint64_t{slot << 3} << 32), 7,
+                     (itt_pa & 0x000fffffffffff00ULL) | BIT_64(63), slot + 1 == kMaxItsPciSlots)) {
+      printf("GICv3: failed to map ITS device %#x\n", slot << 3);
+      return;
+    }
+    itt_pa += itt_size;
+    itt_rem -= itt_size;
+  }
+
+  if (g_lpi_alloc.Init(kMaxLpis) != ZX_OK || g_lpi_alloc.AddRange(0, kMaxLpis) != ZX_OK) {
+    printf("GICv3: failed to init LPI range allocator\n");
+    return;
+  }
+
+  its_enabled = true;
+  printf("GICv3 ITS enabled at %#lx (TYPER %#lx, %u LPIs)\n", gits_phys, gits_typer, kMaxLpis);
 }
 
 zx_status_t gic_init() {
@@ -266,6 +574,8 @@ zx_status_t gic_init() {
   }
 
   gic_init_percpu_early();
+
+  gic_init_its(typer, map_region);
 
   arch::DeviceMemoryBarrier();
   __isb(ARM_MB_SY);
@@ -439,15 +749,20 @@ interrupt_vector_t gic_remap_interrupt(interrupt_vector_t vector) {
 
 // called from assembly
 void gic_handle_irq(iframe_t* frame) {
-  // get the current vector
+  // ICC_IAR1_EL1 returns a 24-bit INTID in bits [23:0]:
+  //   0..15:                SGIs
+  //   16..31:               PPIs
+  //   32..1019 (0x3fb):     SPIs
+  //   1020..1023 (0x3fc..0x3ff): Special / spurious INTIDs
+  //   8192+ (kLpiBase+):    LPIs
   uint32_t iar = gic_read_iar();
-  unsigned vector = iar & 0x3ff;
+  uint32_t vector = iar & 0xffffff;
 
   LTRACEF_LEVEL(2, "iar %#x, vector %u\n", iar, vector);
 
-  if (vector >= 0x3fe) {
-    // spurious
-    // TODO check this
+  // Ignore architectural special/spurious INTIDs (1020..1023) without masking
+  // out LPIs (INTID >= 8192). Special INTIDs must not be written to EOIR.
+  if (vector >= 0x3fc && vector <= 0x3ff) {
     return;
   }
 
@@ -461,8 +776,23 @@ void gic_handle_irq(iframe_t* frame) {
   LTRACEF_LEVEL(2, "iar 0x%x cpu %u currthread %p vector %u pc %#" PRIxPTR "\n", iar,
                 arch_curr_cpu_num(), Thread::Current::Get(), vector, (uintptr_t)IFRAME_PC(frame));
 
-  // deliver the interrupt
-  pdev_invoke_int_if_present(vector);
+  // Deliver LPIs (INTID >= 8192) via the ITS LPI handler table, and
+  // SGIs/PPIs/SPIs via the standard pdev interrupt table.
+  if (vector >= kLpiBase) {
+    uint32_t idx = vector - kLpiBase;
+    if (idx < kMaxLpis) {
+      interrupt_handler_t handler;
+      {
+        Guard<MonitoredSpinLock, NoIrqSave> guard{GicItsLock::Get(), SOURCE_TAG};
+        handler = g_lpi_handlers[idx];
+      }
+      if (handler) {
+        handler.fn(handler.cookie);
+      }
+    }
+  } else {
+    pdev_invoke_int_if_present(vector);
+  }
   gic_write_eoir(vector);
 
   LTRACEF_LEVEL(2, "cpu %u exit\n", arch_curr_cpu_num());
@@ -576,21 +906,103 @@ zx_status_t gic_resume_cpu() {
   return ZX_OK;
 }
 
-bool gic_msi_is_supported() { return false; }
+bool gic_msi_is_supported() { return its_enabled; }
 
-bool gic_msi_supports_masking() { return false; }
+bool gic_msi_supports_masking() { return its_enabled; }
 
-void gic_msi_mask_unmask(const msi_block_t* block, uint msi_id, bool mask) { PANIC_UNIMPLEMENTED; }
+void gic_msi_mask_unmask(const msi_block_t* block, uint msi_id, bool mask) {
+  DEBUG_ASSERT(block && block->allocated);
+  DEBUG_ASSERT(msi_id < block->num_irq);
+  uint32_t lpi_id = block->base_irq_id + msi_id;
+  DEBUG_ASSERT(lpi_id >= kLpiBase && lpi_id < kLpiBase + kMaxLpis);
+  uint32_t idx = lpi_id - kLpiBase;
+
+  Guard<MonitoredSpinLock, IrqSave> guard{GicItsLock::Get(), SOURCE_TAG};
+  gic_lpi_set_enable_locked(idx, !mask);
+}
 
 zx_status_t gic_msi_alloc_block(uint requested_irqs, bool can_target_64bit, bool is_msix,
                                 msi_block_t* out_block) {
-  PANIC_UNIMPLEMENTED;
+  if (!out_block) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  if (out_block->allocated) {
+    return ZX_ERR_BAD_STATE;
+  }
+  if (!its_enabled) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+  if (!requested_irqs || requested_irqs > MAX_MSI_IRQS) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  uint64_t doorbell = gits_phys + GITS_TRANSLATER_OFFSET;
+  bool is_32bit = (doorbell >> 32) == 0;
+  if (!can_target_64bit && !is_32bit) {
+    return ZX_ERR_NOT_SUPPORTED;
+  }
+
+  uint32_t alloc_size = 1u << log2_uint_ceil(requested_irqs);
+  uint32_t alloc_start = 0;
+  zx_status_t status = g_lpi_alloc.AllocateRange(alloc_size, &alloc_start);
+  if (status != ZX_OK) {
+    return status;
+  }
+
+  {
+    Guard<MonitoredSpinLock, IrqSave> guard{GicItsLock::Get(), SOURCE_TAG};
+    for (uint32_t i = 0; i < alloc_size; ++i) {
+      uint32_t idx = alloc_start + i;
+      if (!lpi_mapped[idx]) {
+        for (uint32_t slot = 0; slot < kMaxItsPciSlots; ++slot) {
+          gic_its_cmd(kGitsCmdMapti | (uint64_t{slot << 3} << 32),
+                      idx | (uint64_t{kLpiBase + idx} << 32), 0, false);
+        }
+        lpi_mapped[idx] = true;
+      }
+      gic_lpi_set_enable_locked(idx, true);
+    }
+  }
+
+  out_block->is_32bit = is_32bit;
+  out_block->base_irq_id = kLpiBase + alloc_start;
+  out_block->num_irq = alloc_size;
+  out_block->tgt_addr = doorbell;
+  out_block->tgt_data = alloc_start;
+  out_block->allocated = true;
+  return ZX_OK;
 }
 
-void gic_msi_free_block(msi_block_t* block) { PANIC_UNIMPLEMENTED; }
+void gic_msi_free_block(msi_block_t* block) {
+  DEBUG_ASSERT(block);
+  DEBUG_ASSERT(block->allocated);
+  DEBUG_ASSERT(block->base_irq_id >= kLpiBase &&
+               block->base_irq_id + block->num_irq <= kLpiBase + kMaxLpis);
+
+  uint32_t alloc_start = block->base_irq_id - kLpiBase;
+  {
+    Guard<MonitoredSpinLock, IrqSave> guard{GicItsLock::Get(), SOURCE_TAG};
+    for (uint32_t i = 0; i < block->num_irq; ++i) {
+      uint32_t idx = alloc_start + i;
+      g_lpi_handlers[idx] = nullptr;
+      gic_lpi_set_enable_locked(idx, false);
+    }
+  }
+
+  g_lpi_alloc.FreeRange(alloc_start, block->num_irq);
+  memset(block, 0, sizeof(*block));
+}
 
 void gic_msi_register_handler(const msi_block_t* block, uint msi_id, interrupt_handler_t handler) {
-  PANIC_UNIMPLEMENTED;
+  DEBUG_ASSERT(block && block->allocated);
+  DEBUG_ASSERT(msi_id < block->num_irq);
+  uint32_t lpi_id = block->base_irq_id + msi_id;
+  DEBUG_ASSERT(lpi_id >= kLpiBase && lpi_id < kLpiBase + kMaxLpis);
+  uint32_t idx = lpi_id - kLpiBase;
+
+  Guard<MonitoredSpinLock, IrqSave> guard{GicItsLock::Get(), SOURCE_TAG};
+  g_lpi_handlers[idx] = handler;
+  gic_lpi_set_enable_locked(idx, static_cast<bool>(handler));
 }
 
 zx_status_t gic_get_status(interrupt_vector_t vector, bool& out_pending, bool& out_enabled) {
@@ -651,6 +1063,11 @@ void ArmGicInitEarly(const zbi_dcfg_arm_gic_v3_driver_t& config) {
   gicr_offset = config.gicr_offset;
   arm_gicv3_gicr_stride = config.gicr_stride;
   ipi_base = config.ipi_base;
+  if (config.its_phys != 0) {
+    gits_phys = config.its_phys;
+  } else if (config.gicr_offset >= 0xa0000) {
+    gits_phys = config.mmio_phys + 0x80000;
+  }
 }
 
 void ArmGicInitPostVm(const zbi_dcfg_arm_gic_v3_driver_t& config) {
@@ -705,5 +1122,8 @@ void ArmGicInitLate(const zbi_dcfg_arm_gic_v3_driver_t& config) {
   for (cpu_num_t i = 0; i < arch_max_num_cpus(); i++) {
     root_resource_filter_add_deny_region(gic_mmio_phys + gicr_offset + (arm_gicv3_gicr_stride * i),
                                          arm_gicv3_gicr_stride, ZX_RSRC_KIND_MMIO);
+  }
+  if (arm_gicv3_gits_base != 0) {
+    root_resource_filter_add_deny_region(gits_phys, GITS_REG_SIZE, ZX_RSRC_KIND_MMIO);
   }
 }

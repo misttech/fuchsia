@@ -20,6 +20,7 @@
 // exported from arm_gicv3.cc
 extern vaddr_t arm_gicv3_gicd_base;
 extern vaddr_t arm_gicv3_gicr_base;
+extern vaddr_t arm_gicv3_gits_base;
 extern uint64_t arm_gicv3_gicr_stride;
 
 #define BIT_32(bit) (1u << (bit))
@@ -45,9 +46,11 @@ inline void arm_gicv3_write64(uint64_t reg, uint64_t value) {
 
 #define GICR_STRIDE arm_gicv3_gicr_stride
 #define GICD_REG_SIZE (0x10000)
+#define GITS_REG_SIZE (0x20000)
 
 #define GICD_BASE arm_gicv3_gicd_base
 #define GICR_BASE arm_gicv3_gicr_base
+#define GITS_BASE arm_gicv3_gits_base
 
 // CPU interface system registers.
 
@@ -95,6 +98,10 @@ inline void arm_gicv3_write64(uint64_t reg, uint64_t value) {
 #define CTLR_E1NWF BIT_32(7)
 #define GICD_CTLR_RWP BIT_32(31)
 
+// GICD_TYPER bit definitions.
+
+#define GICD_TYPER_LPIS BIT_32(17)
+
 // Peripheral identification registers.
 
 #define GICD_CIDR0 (GICD_BASE + 0xfff0)
@@ -128,6 +135,11 @@ inline void arm_gicv3_write64(uint64_t reg, uint64_t value) {
 #define GICR_TYPER(i, n) (GICR_RD_BASE + GICR_STRIDE * (i) + 0x0008 + (n) * 4)
 #define GICR_STATUSR(i) (GICR_RD_BASE + GICR_STRIDE * (i) + 0x0010)
 #define GICR_WAKER(i) (GICR_RD_BASE + GICR_STRIDE * (i) + 0x0014)
+#define GICR_PROPBASER(i) (GICR_RD_BASE + GICR_STRIDE * (i) + 0x0070)
+#define GICR_PENDBASER(i) (GICR_RD_BASE + GICR_STRIDE * (i) + 0x0078)
+#define GICR_INVLPIR(i) (GICR_RD_BASE + GICR_STRIDE * (i) + 0x00a0)
+#define GICR_INVALLR(i) (GICR_RD_BASE + GICR_STRIDE * (i) + 0x00b0)
+#define GICR_SYNCR(i) (GICR_RD_BASE + GICR_STRIDE * (i) + 0x00c0)
 #define GICR_IGROUPR0(i) (GICR_SGI_BASE + GICR_STRIDE * (i) + 0x0080)
 #define GICR_IGRPMOD0(i) (GICR_SGI_BASE + GICR_STRIDE * (i) + 0x0d00)
 #define GICR_ISENABLER0(i) (GICR_SGI_BASE + GICR_STRIDE * (i) + 0x0100)
@@ -140,6 +152,74 @@ inline void arm_gicv3_write64(uint64_t reg, uint64_t value) {
 #define GICR_ICFGR0(i) (GICR_SGI_BASE + GICR_STRIDE * (i) + 0x0c00)
 #define GICR_ICFGR1(i) (GICR_SGI_BASE + GICR_STRIDE * (i) + 0x0c04)
 #define GICR_NSACR(i) (GICR_SGI_BASE + GICR_STRIDE * (i) + 0x0e00)
+
+// GICR_CTLR, GICR_TYPER, and LPI table bit definitions.
+
+#define GICR_CTLR_ENABLE_LPIS BIT_32(0)
+#define GICR_CTLR_RWP BIT_32(3)
+
+#define GICR_TYPER_PLPIS BIT_64(0)
+#define GICR_TYPER_DIRECT_LPI BIT_64(3)
+
+#define GICR_PROPBASER_IDBITS_MASK 0x1fULL
+#define GICR_PROPBASER_INNER_CACHE_NC (1ULL << 7)
+#define GICR_PROPBASER_INNER_CACHE_WB (7ULL << 7)
+#define GICR_PROPBASER_SHAREABILITY_MASK (3ULL << 10)
+#define GICR_PROPBASER_SHAREABILITY_ISH (1ULL << 10)
+#define GICR_PROPBASER_ADDR_MASK 0x000ffffffffff000ULL
+
+#define GICR_PENDBASER_INNER_CACHE_NC (1ULL << 7)
+#define GICR_PENDBASER_INNER_CACHE_WB (7ULL << 7)
+#define GICR_PENDBASER_SHAREABILITY_MASK (3ULL << 10)
+#define GICR_PENDBASER_SHAREABILITY_ISH (1ULL << 10)
+#define GICR_PENDBASER_ADDR_MASK 0x000fffffffff0000ULL
+#define GICR_PENDBASER_PTZ BIT_64(62)
+
+// Interrupt Translation Service (ITS) registers.
+
+#define GITS_CTLR (GITS_BASE + 0x0000)
+#define GITS_IIDR (GITS_BASE + 0x0004)
+#define GITS_TYPER (GITS_BASE + 0x0008)
+#define GITS_CBASER (GITS_BASE + 0x0080)
+#define GITS_CWRITER (GITS_BASE + 0x0088)
+#define GITS_CREADR (GITS_BASE + 0x0090)
+#define GITS_BASER(n) (GITS_BASE + 0x0100 + (n) * 8)
+#define GITS_PIDR2 (GITS_BASE + 0xffe8)
+#define GITS_TRANSLATER_OFFSET 0x10040ULL
+
+#define GITS_CTLR_ENABLE BIT_32(0)
+#define GITS_CTLR_QUIESCENT BIT_32(31)
+
+#define GITS_TYPER_PLPIS BIT_64(0)
+#define GITS_TYPER_ITT_ENTRY_SIZE_SHIFT 4
+#define GITS_TYPER_ITT_ENTRY_SIZE_MASK 0xfULL
+#define GITS_TYPER_PTA BIT_64(19)
+
+#define GITS_CBASER_VALID BIT_64(63)
+#define GITS_CBASER_INNER_CACHE_NC (1ULL << 59)
+#define GITS_CBASER_INNER_CACHE_WB (7ULL << 59)
+#define GITS_CBASER_SHAREABILITY_MASK (3ULL << 10)
+#define GITS_CBASER_SHAREABILITY_ISH (1ULL << 10)
+#define GITS_CBASER_ADDR_MASK 0x000fffffffff0000ULL
+
+#define GITS_CREADR_STALLED BIT_64(0)
+
+#define GITS_BASER_VALID BIT_64(63)
+#define GITS_BASER_INDIRECT BIT_64(62)
+#define GITS_BASER_INNER_CACHE_NC (1ULL << 59)
+#define GITS_BASER_INNER_CACHE_WB (7ULL << 59)
+#define GITS_BASER_TYPE_SHIFT 56
+#define GITS_BASER_TYPE_MASK 0x7ULL
+#define GITS_BASER_ENTRY_SIZE_SHIFT 48
+#define GITS_BASER_ENTRY_SIZE_MASK 0x1fULL
+#define GITS_BASER_SHAREABILITY_MASK (3ULL << 10)
+#define GITS_BASER_SHAREABILITY_ISH (1ULL << 10)
+#define GITS_BASER_PAGE_SIZE_MASK (3ULL << 8)
+#define GITS_BASER_PAGE_SIZE_4K (0ULL << 8)
+#define GITS_BASER_PAGE_SIZE_16K (1ULL << 8)
+#define GITS_BASER_PAGE_SIZE_64K (2ULL << 8)
+#define GITS_BASER_ADDR_MASK_4K_16K 0x000fffffffff0000ULL
+#define GITS_BASER_ADDR_MASK_64K 0x0000ffffffff0000ULL
 
 static inline void gic_write_ctlr(uint32_t val) {
   __asm__ volatile("msr " ICC_CTLR_EL1 ", %0" ::"r"(static_cast<uint64_t>(val)));
