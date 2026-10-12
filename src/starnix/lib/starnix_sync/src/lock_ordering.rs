@@ -279,6 +279,7 @@ lock_ordering! {
     Terminal(CgroupDirectoryNodesLock),
     Terminal(ComponentControllerLock),
     Terminal(CoreDumpListLock),
+    Terminal(CpuC2ProxyCacheLock),
     Terminal(CpuFreqProxyCacheLock),
     Terminal(DynamicThreadSpawnerLock),
     Terminal(EbpfVerifierDependenciesLock),

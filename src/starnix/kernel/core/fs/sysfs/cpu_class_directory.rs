@@ -11,11 +11,12 @@ use crate::vfs::pseudo::simple_file::{
 use crate::vfs::pseudo::stub_empty_file::StubEmptyFile;
 use crate::vfs::{FsNodeOps, FsString};
 use fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl;
+use fidl_fuchsia_hardware_power_stats as fpowerstats;
 use fidl_fuchsia_power_cpu as fcpu;
 use fuchsia_component::client::connect_to_protocol_sync;
 use itertools::Itertools;
 use starnix_logging::{bug_ref, log_warn};
-use starnix_sync::{CpuFreqProxyCacheLock, LockDepMutex};
+use starnix_sync::{CpuC2ProxyCacheLock, CpuFreqProxyCacheLock, LockDepMutex};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
 use starnix_uapi::{errno, error, from_status_like_fdio};
@@ -68,15 +69,17 @@ pub fn register_cpu_devices(kernel: &Kernel) {
         });
 
     let cpu_bus = registry.objects.get_or_create_bus("cpu".into());
+    let c2_provider = Arc::new(CpuC2Provider::default());
     for (core_id, domain) in &core_to_domain_map {
         let name: FsString = format!("cpu{}", core_id).into();
+        let c2_provider = c2_provider.clone();
         registry.add_bus_device(
             name.as_ref(),
             Some(cpu_root.clone()),
             cpu_bus.clone(),
             |device, dir| {
                 build_device_directory(device, dir);
-                build_cpu_directory(dir, *core_id, domain);
+                build_cpu_directory(dir, *core_id, domain, c2_provider);
             },
         );
     }
@@ -256,7 +259,12 @@ fn format_freq_khz(khz: Option<u64>) -> String {
     format!("{}\n", khz.map(|f| f.to_string()).unwrap_or_default())
 }
 
-fn build_cpu_directory(dir: &SimpleDirectoryMutator, core_id: u64, domain: &Arc<CpuFreqDomain>) {
+fn build_cpu_directory(
+    dir: &SimpleDirectoryMutator,
+    core_id: u64,
+    domain: &Arc<CpuFreqDomain>,
+    c2_provider: Arc<CpuC2Provider>,
+) {
     let cluster_id = domain.domain_id;
 
     dir.entry(
@@ -265,7 +273,7 @@ fn build_cpu_directory(dir: &SimpleDirectoryMutator, core_id: u64, domain: &Arc<
         mode!(IFREG, 0o444),
     );
     dir.subdir("cpuidle", 0o755, |dir| {
-        build_cpuidle_directory(dir, core_id);
+        build_cpuidle_directory(dir, core_id, c2_provider);
     });
     dir.subdir("cpufreq", 0o755, |dir| {
         build_cpufreq_directory(dir, domain);
@@ -284,30 +292,55 @@ fn build_cpu_directory(dir: &SimpleDirectoryMutator, core_id: u64, domain: &Arc<
     });
 }
 
-fn build_cpuidle_directory(dir: &SimpleDirectoryMutator, core_id: u64) {
-    // TODO(https://fxbug.dev/560171700): `fuchsia.kernel.Stats` (`PerCpuStats`) currently
-    // reports a single aggregate `idle_time` per CPU core rather than per-C-state residencies.
-    // Until Zircon exposes differentiated C-state statistics, attribute all aggregate idle
-    // time to `state0` ("C1") and report 0 for `state1` ("C2") to avoid double-counting.
+fn build_cpuidle_directory(
+    dir: &SimpleDirectoryMutator,
+    core_id: u64,
+    c2_provider: Arc<CpuC2Provider>,
+) {
+    let state0_c2_provider = c2_provider.clone();
     dir.subdir("state0", 0o755, |dir| {
         dir.entry("name", BytesFile::new_node(b"C1\n".to_vec()), mode!(IFREG, 0o444));
         dir.entry("desc", BytesFile::new_node(b"idle\n".to_vec()), mode!(IFREG, 0o444));
         dir.entry(
             "time",
-            BytesFile::new_node(CpuIdleStatFile { core_id, stat_type: CpuIdleStatType::Time }),
+            BytesFile::new_node(CpuIdleStatFile {
+                core_id,
+                stat_type: CpuIdleStatType::Time,
+                c2_provider: state0_c2_provider.clone(),
+            }),
             mode!(IFREG, 0o444),
         );
         dir.entry(
             "usage",
-            BytesFile::new_node(CpuIdleStatFile { core_id, stat_type: CpuIdleStatType::Usage }),
+            BytesFile::new_node(CpuIdleStatFile {
+                core_id,
+                stat_type: CpuIdleStatType::Usage,
+                c2_provider: state0_c2_provider,
+            }),
             mode!(IFREG, 0o444),
         );
     });
     dir.subdir("state1", 0o755, |dir| {
         dir.entry("name", BytesFile::new_node(b"C2\n".to_vec()), mode!(IFREG, 0o444));
         dir.entry("desc", BytesFile::new_node(b"deep idle\n".to_vec()), mode!(IFREG, 0o444));
-        dir.entry("time", BytesFile::new_node(b"0\n".to_vec()), mode!(IFREG, 0o444));
-        dir.entry("usage", BytesFile::new_node(b"0\n".to_vec()), mode!(IFREG, 0o444));
+        dir.entry(
+            "time",
+            BytesFile::new_node(CpuIdleC2StatFile {
+                core_id,
+                stat_type: CpuIdleStatType::Time,
+                provider: c2_provider.clone(),
+            }),
+            mode!(IFREG, 0o444),
+        );
+        dir.entry(
+            "usage",
+            BytesFile::new_node(CpuIdleC2StatFile {
+                core_id,
+                stat_type: CpuIdleStatType::Usage,
+                provider: c2_provider,
+            }),
+            mode!(IFREG, 0o444),
+        );
     });
 }
 
@@ -804,13 +837,25 @@ enum CpuIdleStatType {
     Usage,
 }
 
+/// Computes C1 residency in microseconds from Zircon's aggregate `idle_time` (in nanoseconds)
+/// by subtracting C2 residency (reported in milliseconds) when available.
+fn c1_time_us(zircon_idle_ns: i64, c2_residency: Option<&fpowerstats::StateResidency>) -> u64 {
+    let total_idle_us = u64::try_from(zircon_idle_ns).unwrap_or(0) / 1000;
+    let c2_time_us = c2_residency.map_or(0, |state| state.total_time_ms.saturating_mul(1000));
+    total_idle_us.saturating_sub(c2_time_us)
+}
+
+/// Backing [`BytesFileOps`] implementation for `/sys/devices/system/cpu/cpuN/cpuidle/state0/time`
+/// and `state0/usage`, reporting per-core C1 residency (in microseconds) and reschedule count
+/// from Zircon's `PerCpuStats`, subtracting C2 residency when available.
 struct CpuIdleStatFile {
     core_id: u64,
     stat_type: CpuIdleStatType,
+    c2_provider: Arc<CpuC2Provider>,
 }
 
 impl BytesFileOps for CpuIdleStatFile {
-    fn read(&self, current_task: &CurrentTask) -> Result<std::borrow::Cow<'_, [u8]>, Errno> {
+    fn read(&self, current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
         let cpu_stats = current_task
             .kernel()
             .stats
@@ -821,11 +866,237 @@ impl BytesFileOps for CpuIdleStatFile {
         let per_cpu = per_cpu_stats.get(self.core_id as usize).ok_or_else(|| errno!(EINVAL))?;
         let value = match self.stat_type {
             CpuIdleStatType::Time => {
-                // Zircon idle_time is in nanoseconds. Linux cpuidle time is in microseconds.
-                per_cpu.idle_time.ok_or_else(|| errno!(EINVAL))? / 1000
+                let idle_ns = per_cpu.idle_time.ok_or_else(|| errno!(EINVAL))?;
+                let c2 = self.c2_provider.residency(self.core_id)?;
+                c1_time_us(idle_ns, c2.as_ref())
             }
-            CpuIdleStatType::Usage => per_cpu.reschedules.ok_or_else(|| errno!(EINVAL))? as i64,
+            CpuIdleStatType::Usage => per_cpu.reschedules.ok_or_else(|| errno!(EINVAL))?,
         };
         Ok(format!("{value}\n").into_bytes().into())
+    }
+}
+
+const POWER_STATS_SERVICE_DIRECTORY: &str = "/svc/fuchsia.hardware.power.stats.Service";
+const CPU_C2_ENTITY_NAME: &str = "cpu_c2";
+
+/// Maximum time to wait for a synchronous `fuchsia.hardware.power.stats.Device` call.
+const POWER_STATS_FIDL_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_seconds(2);
+
+/// Connection state of [`CpuC2Provider`] to the `fuchsia.hardware.power.stats.Service` instance
+/// that reports `"cpu_c2"`.
+#[derive(Default)]
+enum ProviderState {
+    /// No initial connection has been attempted yet.
+    #[default]
+    Unconnected,
+    /// Connected to a `fuchsia.hardware.power.stats.Service` instance that reports `"cpu_c2"`.
+    Connected(Arc<fpowerstats::DeviceSynchronousProxy>),
+    /// A previous connection failed with a transport error; subsequent reads attempt to reconnect
+    /// and fail with `EIO` until the service recovers, avoiding non-monotonic `0` counter drops.
+    Disconnected,
+    /// No `fuchsia.hardware.power.stats.Service` instance in `/svc` reported `"cpu_c2"` during
+    /// initial discovery, so C2 residency is unsupported on this platform and reads report `0`.
+    Unavailable,
+}
+
+/// Provides per-core CPU C2 ("deep idle") state residency from
+/// `fuchsia.hardware.power.stats.Service`.
+///
+/// A single `CpuC2Provider` instance is shared via `Arc` across all CPU cores and across the
+/// `state0/time`, `state1/time`, and `state1/usage` sysfs nodes.
+///
+/// # Caching and Recovery
+/// Connection discovery in `/svc/fuchsia.hardware.power.stats.Service` is performed lazily on
+/// the first read:
+/// - If an instance reporting the `"cpu_c2"` entity is found, its proxy is cached in
+///   [`ProviderState::Connected`].
+/// - If no such instance exists during initial discovery, [`ProviderState::Unavailable`] is cached
+///   so subsequent reads return `Ok(None)` (`0` residency) without repeatedly scanning `/svc`.
+/// - If a `GetStats` call fails after a connection was established, the state transitions to
+///   [`ProviderState::Disconnected`] and the read fails with `EIO` so userspace does not observe
+///   monotonic counters dropping to `0`. Subsequent reads attempt to reconnect without permanently
+///   disabling C2 reporting if the driver is still restarting.
+///
+/// # Concurrency
+/// `state` is locked only briefly to inspect or update [`ProviderState`] and clone the `Arc`
+/// wrapping the synchronous proxy. The lock is released before scanning `/svc` or issuing FIDL
+/// calls so concurrent sysfs reads across CPU cores do not serialize behind the mutex.
+#[derive(Default)]
+struct CpuC2Provider {
+    state: LockDepMutex<ProviderState, CpuC2ProxyCacheLock>,
+}
+
+impl CpuC2Provider {
+    fn connect() -> Option<fpowerstats::DeviceSynchronousProxy> {
+        let dir = std::fs::read_dir(POWER_STATS_SERVICE_DIRECTORY).ok()?;
+        dir.filter_map(|entry| entry.ok()).find_map(|entry| {
+            let path = entry.path().join("device").into_os_string().into_string().ok()?;
+            let (client, server) = zx::Channel::create();
+            fdio::service_connect(&path, server).ok()?;
+            let proxy = fpowerstats::DeviceSynchronousProxy::new(client);
+            let deadline = zx::MonotonicInstant::after(POWER_STATS_FIDL_TIMEOUT);
+            let entities = proxy.get_entities(deadline).ok()?;
+            entities.iter().any(|entity| entity.name == CPU_C2_ENTITY_NAME).then_some(proxy)
+        })
+    }
+
+    fn proxy(&self) -> Result<Option<Arc<fpowerstats::DeviceSynchronousProxy>>, Errno> {
+        if matches!(*self.state.lock(), ProviderState::Unconnected | ProviderState::Disconnected) {
+            let connected_proxy = Self::connect().map(Arc::new);
+            let mut state = self.state.lock();
+            match (&*state, connected_proxy) {
+                (ProviderState::Unconnected | ProviderState::Disconnected, Some(proxy)) => {
+                    *state = ProviderState::Connected(proxy);
+                }
+                (ProviderState::Unconnected, None) => {
+                    *state = ProviderState::Unavailable;
+                }
+                (ProviderState::Disconnected, None)
+                | (ProviderState::Connected(_) | ProviderState::Unavailable, _) => {}
+            }
+        }
+        match &*self.state.lock() {
+            ProviderState::Connected(proxy) => Ok(Some(proxy.clone())),
+            ProviderState::Unavailable | ProviderState::Unconnected => Ok(None),
+            ProviderState::Disconnected => error!(EIO),
+        }
+    }
+
+    fn residency(&self, core_id: u64) -> Result<Option<fpowerstats::StateResidency>, Errno> {
+        let core_id = i32::try_from(core_id).map_err(|_| errno!(EINVAL))?;
+        let Some(proxy) = self.proxy()? else {
+            return Ok(None);
+        };
+        let deadline = zx::MonotonicInstant::after(POWER_STATS_FIDL_TIMEOUT);
+        let reports = match proxy.get_stats(deadline) {
+            Ok(reports) => reports,
+            Err(e) => {
+                log_warn!("Failed to read power stats for {CPU_C2_ENTITY_NAME}: {e}");
+                let mut state = self.state.lock();
+                if matches!(
+                    &*state,
+                    ProviderState::Connected(current) if Arc::ptr_eq(current, &proxy)
+                ) {
+                    *state = ProviderState::Disconnected;
+                }
+                return error!(EIO);
+            }
+        };
+        Ok(reports
+            .into_iter()
+            .find(|stats| stats.entity == CPU_C2_ENTITY_NAME)
+            .and_then(|stats| stats.state_residency_data.into_iter().find(|s| s.id == core_id)))
+    }
+}
+
+/// Backing [`BytesFileOps`] implementation for `/sys/devices/system/cpu/cpuN/cpuidle/state1/time`
+/// and `state1/usage`, reporting per-core C2 residency (in microseconds) and entry count from
+/// [`CpuC2Provider`], or `0` when C2 residency is unsupported on the platform.
+struct CpuIdleC2StatFile {
+    core_id: u64,
+    stat_type: CpuIdleStatType,
+    provider: Arc<CpuC2Provider>,
+}
+
+impl BytesFileOps for CpuIdleC2StatFile {
+    fn read(&self, _current_task: &CurrentTask) -> Result<Cow<'_, [u8]>, Errno> {
+        let value =
+            self.provider.residency(self.core_id)?.map_or(0, |state| match self.stat_type {
+                CpuIdleStatType::Time => state.total_time_ms.saturating_mul(1000),
+                CpuIdleStatType::Usage => u64::from(state.entry_count),
+            });
+        Ok(format!("{value}\n").into_bytes().into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fidl::endpoints::RequestStream;
+    use futures::TryStreamExt;
+
+    #[::fuchsia::test]
+    fn cpu_c2_provider_reads_firmware_residencies() {
+        let (client, server) = zx::Channel::create();
+        let server_thread = std::thread::spawn(move || {
+            let mut executor = fuchsia_async::LocalExecutor::default();
+            executor.run_singlethreaded(async move {
+                let mut stream = fpowerstats::DeviceRequestStream::from_channel(
+                    fuchsia_async::Channel::from_channel(server),
+                );
+                if let Some(fpowerstats::DeviceRequest::GetStats { responder }) =
+                    stream.try_next().await.expect("failed to read request")
+                {
+                    let reports = vec![fpowerstats::Stats {
+                        entity: CPU_C2_ENTITY_NAME.to_string(),
+                        state_residency_data: vec![
+                            fpowerstats::StateResidency {
+                                id: 0,
+                                name: "C2_CPU0".to_string(),
+                                total_time_ms: 34,
+                                entry_count: 12,
+                                last_entry_timestamp_ms: 0,
+                            },
+                            fpowerstats::StateResidency {
+                                id: 1,
+                                name: "C2_CPU1".to_string(),
+                                total_time_ms: 78,
+                                entry_count: 56,
+                                last_entry_timestamp_ms: 0,
+                            },
+                        ],
+                    }];
+                    responder.send(&reports).expect("failed to send response");
+                }
+            });
+        });
+
+        let provider = CpuC2Provider {
+            state: LockDepMutex::new(ProviderState::Connected(Arc::new(
+                fpowerstats::DeviceSynchronousProxy::new(client),
+            ))),
+        };
+        let core1 = provider
+            .residency(/* core_id = */ 1)
+            .expect("residency call must succeed")
+            .expect("core 1 residency must be present");
+        assert_eq!(core1.entry_count, 56);
+        assert_eq!(core1.total_time_ms, 78);
+
+        server_thread.join().expect("server thread panicked");
+
+        // After the server closes the channel, reads return EIO and transition to Disconnected;
+        // subsequent reads while the service is still absent stay Disconnected (rather than
+        // permanently transitioning to Unavailable) and continue returning EIO.
+        assert_eq!(provider.residency(/* core_id = */ 0), error!(EIO));
+        assert!(matches!(*provider.state.lock(), ProviderState::Disconnected));
+        assert_eq!(provider.residency(/* core_id = */ 0), error!(EIO));
+        assert!(matches!(*provider.state.lock(), ProviderState::Disconnected));
+
+        // When no service is present on initial discovery, the provider transitions from
+        // Unconnected to Unavailable and returns Ok(None).
+        let unconfigured = CpuC2Provider::default();
+        assert_eq!(unconfigured.residency(/* core_id = */ 0), Ok(None));
+        assert!(matches!(*unconfigured.state.lock(), ProviderState::Unavailable));
+    }
+
+    #[::fuchsia::test]
+    fn c1_time_subtracts_c2_residency_and_saturates_at_zero() {
+        let c2 = fpowerstats::StateResidency {
+            id: 0,
+            name: "C2_CPU0".to_string(),
+            total_time_ms: 1_899,
+            entry_count: 1,
+            last_entry_timestamp_ms: 0,
+        };
+
+        // 5,000,000 us total idle - 1,899,000 us C2 = 3,101,000 us C1.
+        assert_eq!(c1_time_us(/* zircon_idle_ns = */ 5_000_000_000, Some(&c2)), 3_101_000);
+
+        // When C2 residency is unavailable, report aggregate idle time.
+        assert_eq!(c1_time_us(/* zircon_idle_ns = */ 5_000_000_000, None), 5_000_000);
+
+        // Saturate at 0 if C2 residency exceeds aggregate idle time due to sampling skew.
+        assert_eq!(c1_time_us(/* zircon_idle_ns = */ 1_000_000_000, Some(&c2)), 0);
     }
 }
