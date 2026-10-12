@@ -421,6 +421,8 @@ struct ClusterConfig {
     normperfs_per_ghz: f64,
     #[serde(default)]
     boost_opp: Option<usize>,
+    #[serde(default)]
+    boot_max_opp: Option<u64>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -1135,6 +1137,34 @@ impl Node for CpuManagerMain {
                 opps.len()
             );
 
+            if let Some(max_opp) = cluster_config.boot_max_opp {
+                anyhow::ensure!(
+                    (max_opp as usize) < opps.len(),
+                    "Cluster {} boot_max_opp ({}) must be less than number of OPPs ({})",
+                    cluster_config.name,
+                    max_opp,
+                    opps.len()
+                );
+                let state_0_opp = *thermal_state_configs
+                    .first()
+                    .and_then(|state| state.cluster_opps.get(cluster_config.cluster_index))
+                    .ok_or_else(|| {
+                        format_err!(
+                            "Missing thermal state 0 OPP for cluster {} (index {})",
+                            cluster_config.name,
+                            cluster_config.cluster_index
+                        )
+                    })?;
+                anyhow::ensure!(
+                    (max_opp as usize) >= state_0_opp,
+                    "Cluster {} boot_max_opp ({}) must be at least as restrictive as thermal \
+                    state 0 OPP ({})",
+                    cluster_config.name,
+                    max_opp,
+                    state_0_opp
+                );
+            }
+
             // The current opp will be set when CpuManagerMain's thermal state is initialized below,
             // so initialize it to a range of all possible values for now.
             let opp_range = Range { lower: 0, upper: opps.len() - 1 };
@@ -1148,7 +1178,7 @@ impl Node for CpuManagerMain {
                 performance_per_ghz: NormPerfs(cluster_config.normperfs_per_ghz),
                 opps,
                 current_opp,
-                max_frequency_limit_opp_index: None,
+                max_frequency_limit_opp_index: cluster_config.boot_max_opp,
                 boost_opp,
             });
         }
@@ -1378,6 +1408,7 @@ mod tests {
                 logical_cpu_numbers: BIG_CPU_NUMBERS[..].to_vec(),
                 normperfs_per_ghz: BIG_PERFORMANCE_PER_GHZ.0,
                 boost_opp: None,
+                boot_max_opp: None,
             },
             ClusterConfig {
                 name: "little_cluster".to_string(),
@@ -1386,6 +1417,7 @@ mod tests {
                 logical_cpu_numbers: LITTLE_CPU_NUMBERS[..].to_vec(),
                 normperfs_per_ghz: LITTLE_PERFORMANCE_PER_GHZ.0,
                 boost_opp: None,
+                boot_max_opp: None,
             },
         ]
     }
@@ -2468,5 +2500,96 @@ mod tests {
         handlers.expect_big_min_opp((BIG_OPPS.len() - 1) as u32);
         handlers.expect_little_min_opp((LITTLE_OPPS.len() - 1) as u32);
         node.handle_message(&Message::SetBoost(false, 0)).await.unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_boot_max_opp() {
+        // Expect init() to apply boot_max_opp ([1, 2]) even though thermal_states[0] is [0, 0].
+        let handlers = Handlers::new_with_highest_opp([1, 2]);
+
+        let mut cluster_configs = make_default_cluster_configs();
+        cluster_configs[0].boot_max_opp = Some(1);
+        cluster_configs[1].boot_max_opp = Some(2);
+
+        let thermal_state_configs = vec![ThermalStateConfig {
+            cluster_opps: vec![0, 0],
+            min_performance_normperfs: 0.0,
+            static_power_w: 2.0,
+            dynamic_power_per_normperf_w: 1.0,
+        }];
+
+        let node = handlers.builder(cluster_configs, thermal_state_configs).build_and_init().await;
+
+        // Verify GetMaxFrequency reports the boot_max_opp values.
+        assert_matches!(
+            node.handle_message(&Message::GetMaxFrequency(BIG_CLUSTER_INDEX as u64)).await,
+            Ok(MessageReturn::GetMaxFrequency(1))
+        );
+        assert_matches!(
+            node.handle_message(&Message::GetMaxFrequency(LITTLE_CLUSTER_INDEX as u64)).await,
+            Ok(MessageReturn::GetMaxFrequency(2))
+        );
+
+        // Setting an explicit max frequency limit (whether stricter or less restrictive than
+        // `boot_max_opp`) replaces `boot_max_opp` rather than being clamped to it.
+        handlers.expect_big_opp(2);
+        handlers.expect_little_opp(1);
+        node.handle_message(&Message::SetMaxFrequency(BIG_CLUSTER_INDEX as u64, Some(2)))
+            .await
+            .unwrap();
+        node.handle_message(&Message::SetMaxFrequency(LITTLE_CLUSTER_INDEX as u64, Some(1)))
+            .await
+            .unwrap();
+        assert_matches!(
+            node.handle_message(&Message::GetMaxFrequency(BIG_CLUSTER_INDEX as u64)).await,
+            Ok(MessageReturn::GetMaxFrequency(2))
+        );
+        assert_matches!(
+            node.handle_message(&Message::GetMaxFrequency(LITTLE_CLUSTER_INDEX as u64)).await,
+            Ok(MessageReturn::GetMaxFrequency(1))
+        );
+
+        // Clearing the max frequency limit on each cluster should release the cap to OPP 0.
+        handlers.expect_big_opp(0);
+        handlers.expect_little_opp(0);
+        node.handle_message(&Message::SetMaxFrequency(BIG_CLUSTER_INDEX as u64, None))
+            .await
+            .unwrap();
+        node.handle_message(&Message::SetMaxFrequency(LITTLE_CLUSTER_INDEX as u64, None))
+            .await
+            .unwrap();
+
+        assert_matches!(
+            node.handle_message(&Message::GetMaxFrequency(BIG_CLUSTER_INDEX as u64)).await,
+            Ok(MessageReturn::GetMaxFrequency(0))
+        );
+        assert_matches!(
+            node.handle_message(&Message::GetMaxFrequency(LITTLE_CLUSTER_INDEX as u64)).await,
+            Ok(MessageReturn::GetMaxFrequency(0))
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_boot_max_opp_validation() {
+        // Invalid cases on the last cluster (so both cluster handlers consume
+        // `GetCpuOperatingPoints` before validation fails):
+        // 1. `boot_max_opp` out of bounds (`LITTLE_OPPS.len()`).
+        // 2. `boot_max_opp` less restrictive (lower index) than thermal state 0 (`1 < 2`).
+        for (boot_max_opp, state_0_opp) in [(LITTLE_OPPS.len() as u64, 0), (1, 2)] {
+            let handlers = Handlers::new_base();
+
+            let mut cluster_configs = make_default_cluster_configs();
+            cluster_configs[1].boot_max_opp = Some(boot_max_opp);
+
+            let thermal_state_configs = vec![ThermalStateConfig {
+                cluster_opps: vec![0, state_0_opp],
+                min_performance_normperfs: 0.0,
+                static_power_w: 2.0,
+                dynamic_power_per_normperf_w: 1.0,
+            }];
+
+            let node = handlers.builder(cluster_configs, thermal_state_configs).build().unwrap();
+            assert!(node.init().await.is_err());
+        }
     }
 }

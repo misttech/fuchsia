@@ -193,6 +193,10 @@
                                         "boost_opp": {
                                             "type": "integer",
                                             "minimum": 0
+                                        },
+                                        "boot_max_opp": {
+                                            "type": "integer",
+                                            "minimum": 0
                                         }
                                     }
                                 },
