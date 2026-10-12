@@ -247,8 +247,14 @@ void trace_context::ResetBufferPointers() {
   rolling_buffer_.Reset();
   next_thread_index_.store(TRACE_ENCODED_THREAD_REF_MIN_INDEX, std::memory_order_relaxed);
   next_string_index_.store(TRACE_ENCODED_STRING_REF_MIN_INDEX, std::memory_order_relaxed);
-  std::scoped_lock lock(string_table_mutex_);
-  string_table_.clear();
+  {
+    std::scoped_lock lock(string_table_mutex_);
+    string_table_.clear();
+  }
+  {
+    std::scoped_lock lock(vthread_table_mutex_);
+    vthread_table_.clear();
+  }
 }
 
 void trace_context::InitBufferHeader() {

@@ -117,6 +117,20 @@ struct trace_context {
     return false;
   }
 
+  // Looks up |vthread_koid| in the process-wide virtual thread cache. If not found, invokes
+  // |register_vthread()| to write the thread records and caches the resulting thread reference.
+  template <typename RegisterFn>
+  trace_thread_ref_t LookupOrRegisterVThread(zx_koid_t vthread_koid,
+                                             RegisterFn&& register_vthread) {
+    std::scoped_lock lock(vthread_table_mutex_);
+    if (auto it = vthread_table_.find(vthread_koid); it != vthread_table_.end()) {
+      return it->second;
+    }
+    trace_thread_ref_t ref = register_vthread();
+    vthread_table_.emplace(vthread_koid, ref);
+    return ref;
+  }
+
   // This is called by the handler when it has been notified that a buffer
   // has been saved.
   // |wrapped_count| is the wrapped count at the time the buffer save request
@@ -215,6 +229,14 @@ struct trace_context {
   std::mutex string_table_mutex_;
   std::unordered_map<const unsigned char*, trace_string_index_t> string_table_
       __TA_GUARDED(string_table_mutex_);
+
+  // Process-wide cache of registered virtual threads keyed by artificial koid.
+  // Deduplicates virtual thread registrations across threads and when a single
+  // thread exceeds the 4-entry thread-local cache, avoiding repeated durable
+  // kKernelObject and kThread writes.
+  std::mutex vthread_table_mutex_;
+  std::unordered_map<zx_koid_t, trace_thread_ref_t> vthread_table_
+      __TA_GUARDED(vthread_table_mutex_);
 };
 
 #endif  // ZIRCON_SYSTEM_ULIB_TRACE_ENGINE_CONTEXT_IMPL_H_

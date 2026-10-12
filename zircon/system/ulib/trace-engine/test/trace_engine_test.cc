@@ -515,3 +515,99 @@ TEST(TraceEngineTest, RegisterStringAcrossThreadsDeduplicates) {
   trace_engine_terminate();
   loop.RunUntilIdle();
 }
+
+TEST(TraceEngineTest, RegisterVThreadDeduplicatesAcrossThreadsAndCacheOverflow) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  // With an 8192-byte buffer in CIRCULAR mode, ComputeBufferSizes() sets the durable buffer to
+  // 512 bytes (8064 / 16 = 504, rounded up by 8 for 16-byte alignment of the remaining rolling
+  // buffer space). Starting the engine and registering 6 virtual threads (> kMaxThreadEntries = 4)
+  // writes one 16-byte kInitialization record, one 16-byte kString("process"), 6 40-byte
+  // kKernelObject records, and 6 24-byte kThread records into the durable buffer (416 bytes
+  // total). Without process-wide vthread deduplication, re-registering vthreads 5 and 6 on the
+  // same thread (when entry == nullptr) would repeatedly call
+  // trace_context_write_thread_info_record (emitting kKernelObject) and degrade to inline thread
+  // refs, while registering them from additional threads would also call WriteThreadRecord
+  // (emitting both kKernelObject and kThread) and overflow the durable buffer.
+  alignas(uint64_t) char buffer[8192];
+  trace_handler_t handler{&ops};
+  zx_status_t init = trace_engine_initialize(loop.dispatcher(), &handler,
+                                             TRACE_BUFFERING_MODE_CIRCULAR, buffer, sizeof(buffer));
+  ASSERT_EQ(init, ZX_OK);
+  loop.RunUntilIdle();
+
+  zx_status_t start = trace_engine_start(TRACE_START_CLEAR_ENTIRE_BUFFER);
+  ASSERT_EQ(start, ZX_OK);
+  loop.RunUntilIdle();
+
+  constexpr size_t kNumVThreads = 6;
+  trace_thread_ref_t expected_refs[kNumVThreads];
+
+  trace_context_t* main_ctx = trace_acquire_context();
+  ASSERT_TRUE(main_ctx);
+  for (size_t i = 0; i < kNumVThreads; ++i) {
+    trace_context_register_vthread(main_ctx, ZX_KOID_INVALID, "vthread", i + 1, &expected_refs[i]);
+    EXPECT_TRUE(trace_is_indexed_thread_ref(&expected_refs[i]));
+  }
+
+  // Repeatedly registering all 6 vthreads on the same thread (where vthreads 5 and 6 exceed
+  // the 4-entry thread-local cache) must return the same indexed refs without writing new records.
+  for (size_t round = 0; round < 16; ++round) {
+    for (size_t i = 0; i < kNumVThreads; ++i) {
+      trace_thread_ref_t ref;
+      trace_context_register_vthread(main_ctx, ZX_KOID_INVALID, "vthread", i + 1, &ref);
+      EXPECT_EQ(ref.encoded_value, expected_refs[i].encoded_value);
+
+      trace_string_ref_t name_ref = trace_make_inline_c_string_ref("vthread");
+      trace_thread_ref_t by_ref;
+      trace_context_register_vthread_by_ref(main_ctx, ZX_KOID_INVALID, &name_ref, i + 1, &by_ref);
+      EXPECT_EQ(by_ref.encoded_value, expected_refs[i].encoded_value);
+    }
+  }
+  trace_release_context(main_ctx);
+
+  // Registering the same vthreads across worker threads must reuse the process-wide registrations.
+  constexpr size_t kNumThreads = 8;
+  for (size_t t_idx = 0; t_idx < kNumThreads; ++t_idx) {
+    std::thread t([&] {
+      trace_context_t* ctx = trace_acquire_context();
+      ASSERT_TRUE(ctx);
+      for (size_t i = 0; i < kNumVThreads; ++i) {
+        trace_thread_ref_t ref;
+        trace_context_register_vthread(ctx, ZX_KOID_INVALID, "vthread", i + 1, &ref);
+        EXPECT_EQ(ref.encoded_value, expected_refs[i].encoded_value);
+      }
+      trace_release_context(ctx);
+    });
+    t.join();
+  }
+
+  main_ctx = trace_acquire_context();
+  ASSERT_TRUE(main_ctx);
+  // Write an event to verify the durable buffer did not overflow and stop tracing.
+  trace_string_ref_t cat_ref = trace_make_inline_c_string_ref("enabled_cat");
+  trace_string_ref_t name_ref = trace_make_inline_c_string_ref("ev");
+  trace_context_write_instant_event_record(main_ctx, 100, &expected_refs[kNumVThreads - 1],
+                                           &cat_ref, &name_ref, TRACE_SCOPE_THREAD, nullptr, 0);
+  EXPECT_EQ(reinterpret_cast<trace_context*>(main_ctx)->num_records_dropped(), 0u);
+  trace_release_context(main_ctx);
+
+  trace_engine_stop(ZX_OK);
+  loop.RunUntilIdle();
+
+  // Restarting with TRACE_START_CLEAR_ENTIRE_BUFFER resets the vthread table and generation.
+  start = trace_engine_start(TRACE_START_CLEAR_ENTIRE_BUFFER);
+  ASSERT_EQ(start, ZX_OK);
+  loop.RunUntilIdle();
+
+  main_ctx = trace_acquire_context();
+  ASSERT_TRUE(main_ctx);
+  trace_thread_ref_t restarted_ref;
+  trace_context_register_vthread(main_ctx, ZX_KOID_INVALID, "vthread", kNumVThreads,
+                                 &restarted_ref);
+  EXPECT_EQ(restarted_ref.encoded_value, expected_refs[0].encoded_value);
+  trace_release_context(main_ctx);
+
+  trace_engine_stop(ZX_OK);
+  trace_engine_terminate();
+  loop.RunUntilIdle();
+}

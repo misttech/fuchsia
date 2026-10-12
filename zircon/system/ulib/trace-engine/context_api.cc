@@ -716,24 +716,24 @@ void RegisterVThread(trace_context_t* context, zx_koid_t process_koid,
   }
 
   auto [vthread_koid, entry] = needs_registration;
-  trace_context_write_thread_info_record(context, process_koid, vthread_koid, name_ref);
+  trace_thread_ref_t ref = context->LookupOrRegisterVThread(
+      vthread_koid, [context, process_koid, vthread_koid, name_ref] {
+        trace_context_write_thread_info_record(context, process_koid, vthread_koid, name_ref);
+        trace_thread_index_t index;
+        // If allocating an index succeeds but writing the record fails,
+        // toss the index and return an inline reference. The index is lost
+        // anyway, but the result won't be half-complete. The subsequent
+        // write of the inlined reference will likely also fail, but that's ok.
+        if (likely(context->AllocThreadIndex(&index) &&
+                   trace::WriteThreadRecord(context, index, process_koid, vthread_koid))) {
+          return trace_make_indexed_thread_ref(index);
+        }
+        return trace_make_inline_thread_ref(process_koid, vthread_koid);
+      });
   if (likely(entry)) {
-    trace_thread_index_t index;
-    // If allocating an index succeeds but writing the record fails,
-    // toss the index and return an inline reference. The index is lost
-    // anyway, but the result won't be half-complete. The subsequent
-    // write of the inlined reference will likely also fail, but that's ok.
-    if (likely(context->AllocThreadIndex(&index) &&
-               trace::WriteThreadRecord(context, index, process_koid, vthread_koid))) {
-      entry->thread_ref = trace_make_indexed_thread_ref(index);
-    } else {
-      entry->thread_ref = trace_make_inline_thread_ref(process_koid, vthread_koid);
-    }
-    *out_ref = entry->thread_ref;
-    return;
+    entry->thread_ref = ref;
   }
-
-  *out_ref = trace_make_inline_thread_ref(process_koid, needs_registration.vthread_koid);
+  *out_ref = ref;
 }
 
 }  // namespace
