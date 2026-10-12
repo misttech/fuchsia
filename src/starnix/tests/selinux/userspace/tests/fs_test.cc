@@ -7,6 +7,7 @@
 #include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <fbl/unique_fd.h>
@@ -179,15 +180,41 @@ TEST(FsTest, GetdentsOnFileFdWithoutPermissionsReturnsEnotdir) {
 
 TEST(FsTest, ReadWriteOnlyFileFdWithoutPermissionsReturnsEbadf) {
   auto src_file = ScopedTempFDWithLabel(kSendfileSrcLabel);
+  auto dst_file = ScopedTempFDWithLabel(kSendfileDstLabel);
   ASSERT_TRUE(src_file.is_valid());
-  fbl::unique_fd wronly_fd(open(src_file.name().c_str(), O_WRONLY));
-  ASSERT_THAT(wronly_fd.get(), SyscallSucceeds());
+  ASSERT_TRUE(dst_file.is_valid());
+  ASSERT_THAT(write(src_file.fd(), kPayload, kPayloadSize), SyscallSucceedsWithValue(kPayloadSize));
+  ASSERT_THAT(lseek(src_file.fd(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
+
+  fbl::unique_fd wronly_src_fd(open(src_file.name().c_str(), O_WRONLY));
+  ASSERT_THAT(wronly_src_fd.get(), SyscallSucceeds());
+  fbl::unique_fd rdonly_dst_fd(open(dst_file.name().c_str(), O_RDONLY));
+  ASSERT_THAT(rdonly_dst_fd.get(), SyscallSucceeds());
+
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  fbl::unique_fd pipe_in(pipe_fds[0]);
+  fbl::unique_fd pipe_out(pipe_fds[1]);
+  ASSERT_THAT(write(pipe_out.get(), kPayload, kPayloadSize),
+              SyscallSucceedsWithValue(kPayloadSize));
 
   auto enforcing = ScopedEnforcement::SetEnforcing();
 
   EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_fs_no_read_t:s0", [&]() {
     char buf[1024] = {};
-    EXPECT_THAT(read(wronly_fd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(EBADF));
+    EXPECT_THAT(read(wronly_src_fd.get(), buf, sizeof(buf)), SyscallFailsWithErrno(EBADF));
+    EXPECT_THAT(splice(wronly_src_fd.get(), nullptr, pipe_out.get(), nullptr, kPayloadSize, 0),
+                SyscallFailsWithErrno(EBADF));
+    EXPECT_THAT(splice(src_file.fd(), nullptr, pipe_in.get(), nullptr, kPayloadSize, 0),
+                SyscallFailsWithErrno(EBADF));
+  }));
+
+  EXPECT_TRUE(RunSubprocessAs("test_u:test_r:test_fs_no_write_t:s0", [&]() {
+    EXPECT_THAT(write(rdonly_dst_fd.get(), kPayload, kPayloadSize), SyscallFailsWithErrno(EBADF));
+    EXPECT_THAT(splice(pipe_in.get(), nullptr, rdonly_dst_fd.get(), nullptr, kPayloadSize, 0),
+                SyscallFailsWithErrno(EBADF));
+    EXPECT_THAT(splice(pipe_out.get(), nullptr, dst_file.fd(), nullptr, kPayloadSize, 0),
+                SyscallFailsWithErrno(EBADF));
   }));
 }
 
@@ -195,6 +222,26 @@ struct FsSecurityTestParams {
   const char* test_domain;
   bool src_readable;
   bool dst_writable;
+};
+
+struct ScopedFifoWithLabel {
+  test_helper::ScopedTempDir dir;
+  fbl::unique_fd read_fd;
+  fbl::unique_fd write_fd;
+
+  static ScopedFifoWithLabel Create(std::string_view label) {
+    ScopedFifoWithLabel fifo;
+    std::string fifo_path = fifo.dir.path() + "/fifo";
+    {
+      auto fscreate = ScopedTaskAttrResetter::SetTaskAttr("fscreate", label);
+      EXPECT_THAT(mkfifo(fifo_path.c_str(), 0600), SyscallSucceeds());
+    }
+    fifo.read_fd = fbl::unique_fd(open(fifo_path.c_str(), O_RDONLY | O_NONBLOCK));
+    EXPECT_TRUE(fifo.read_fd.is_valid());
+    fifo.write_fd = fbl::unique_fd(open(fifo_path.c_str(), O_WRONLY | O_NONBLOCK));
+    EXPECT_TRUE(fifo.write_fd.is_valid());
+    return fifo;
+  }
 };
 
 class FsSecurityTest : public ::testing::TestWithParam<FsSecurityTestParams> {};
@@ -275,6 +322,87 @@ TEST_P(FsSecurityTest, SpliceToDst) {
       EXPECT_THAT(splice(pipe_in.get(), nullptr, dst_file.fd(), nullptr, kPayloadSize, 0),
                   SyscallFailsWithErrno(EACCES));
     }
+  }));
+}
+
+// TODO(https://fxbug.dev/572276669): Verify whether pipe-to-pipe splice, tee, and vmsplice should
+// check SELinux read/write permissions on the pipe endpoints.
+TEST_P(FsSecurityTest, SplicePipeToPipe) {
+  const auto& params = GetParam();
+  auto src_fifo = ScopedFifoWithLabel::Create(kSendfileSrcLabel);
+  auto dst_fifo = ScopedFifoWithLabel::Create(kSendfileDstLabel);
+  ASSERT_TRUE(src_fifo.read_fd.is_valid() && src_fifo.write_fd.is_valid());
+  ASSERT_TRUE(dst_fifo.read_fd.is_valid() && dst_fifo.write_fd.is_valid());
+
+  ASSERT_THAT(write(src_fifo.write_fd.get(), kPayload, kPayloadSize),
+              SyscallSucceedsWithValue(kPayloadSize));
+
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+  std::string context = MakeTestSecurityContext(params.test_domain);
+
+  EXPECT_TRUE(RunSubprocessAs(context, [&]() {
+    EXPECT_THAT(
+        splice(src_fifo.read_fd.get(), nullptr, dst_fifo.write_fd.get(), nullptr, kPayloadSize, 0),
+        SyscallSucceedsWithValue(kPayloadSize));
+  }));
+}
+
+// Verify that tee does not check SELinux read/write permissions on the pipe endpoints.
+TEST_P(FsSecurityTest, Tee) {
+  const auto& params = GetParam();
+  auto src_fifo = ScopedFifoWithLabel::Create(kSendfileSrcLabel);
+  auto dst_fifo = ScopedFifoWithLabel::Create(kSendfileDstLabel);
+  ASSERT_TRUE(src_fifo.read_fd.is_valid() && src_fifo.write_fd.is_valid());
+  ASSERT_TRUE(dst_fifo.read_fd.is_valid() && dst_fifo.write_fd.is_valid());
+
+  ASSERT_THAT(write(src_fifo.write_fd.get(), kPayload, kPayloadSize),
+              SyscallSucceedsWithValue(kPayloadSize));
+
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+  std::string context = MakeTestSecurityContext(params.test_domain);
+
+  EXPECT_TRUE(RunSubprocessAs(context, [&]() {
+    EXPECT_THAT(tee(src_fifo.read_fd.get(), dst_fifo.write_fd.get(), kPayloadSize, 0),
+                SyscallSucceedsWithValue(kPayloadSize));
+  }));
+}
+
+// Verify that vmsplice writing into a pipe does not check SELinux write permission on the pipe.
+TEST_P(FsSecurityTest, VmspliceToPipe) {
+  const auto& params = GetParam();
+  auto dst_fifo = ScopedFifoWithLabel::Create(kSendfileDstLabel);
+  ASSERT_TRUE(dst_fifo.read_fd.is_valid() && dst_fifo.write_fd.is_valid());
+
+  char buf[] = "foo";
+  struct iovec iov = {.iov_base = buf, .iov_len = sizeof(buf) - 1};
+
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+  std::string context = MakeTestSecurityContext(params.test_domain);
+
+  EXPECT_TRUE(RunSubprocessAs(context, [&]() {
+    EXPECT_THAT(vmsplice(dst_fifo.write_fd.get(), &iov, 1, 0),
+                SyscallSucceedsWithValue(kPayloadSize));
+  }));
+}
+
+// Verify that vmsplice reading from a pipe does not check SELinux read permission on the pipe.
+TEST_P(FsSecurityTest, VmspliceFromPipe) {
+  const auto& params = GetParam();
+  auto src_fifo = ScopedFifoWithLabel::Create(kSendfileSrcLabel);
+  ASSERT_TRUE(src_fifo.read_fd.is_valid() && src_fifo.write_fd.is_valid());
+
+  ASSERT_THAT(write(src_fifo.write_fd.get(), kPayload, kPayloadSize),
+              SyscallSucceedsWithValue(kPayloadSize));
+
+  char buf[16] = {};
+  struct iovec iov = {.iov_base = buf, .iov_len = kPayloadSize};
+
+  auto enforcing = ScopedEnforcement::SetEnforcing();
+  std::string context = MakeTestSecurityContext(params.test_domain);
+
+  EXPECT_TRUE(RunSubprocessAs(context, [&]() {
+    EXPECT_THAT(vmsplice(src_fifo.read_fd.get(), &iov, 1, 0),
+                SyscallSucceedsWithValue(kPayloadSize));
   }));
 }
 

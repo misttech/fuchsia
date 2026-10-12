@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/poll.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <thread>
@@ -75,6 +76,111 @@ TEST(PipeTest, TeeFromEmptyPipe) {
   close(pipe_a[0]);
   close(pipe_b[0]);
   close(pipe_b[1]);
+}
+
+TEST(PipeTest, SpliceWrongDirection) {
+  char* tmp = getenv("TEST_TMPDIR");
+  std::string path = tmp == nullptr ? "/tmp/test_file" : std::string(tmp) + "/test_file";
+  fbl::unique_fd file_fd(open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0777));
+  ASSERT_TRUE(file_fd.is_valid());
+
+  int pipe_fds[2];
+  SAFE_SYSCALL(pipe2(pipe_fds, 0));
+  fbl::unique_fd pipe_in(pipe_fds[0]);
+  fbl::unique_fd pipe_out(pipe_fds[1]);
+
+  // Writing into pipe[0] (which is read-only) should fail with EBADF.
+  EXPECT_THAT(splice(file_fd.get(), nullptr, pipe_in.get(), nullptr, 5, 0),
+              SyscallFailsWithErrno(EBADF));
+
+  // Reading from pipe[1] (which is write-only) should fail with EBADF.
+  EXPECT_THAT(splice(pipe_out.get(), nullptr, file_fd.get(), nullptr, 5, 0),
+              SyscallFailsWithErrno(EBADF));
+
+  // Pipe-to-pipe with wrong endpoints.
+  int pipe_b_fds[2];
+  SAFE_SYSCALL(pipe2(pipe_b_fds, 0));
+  fbl::unique_fd pipe_b_in(pipe_b_fds[0]);
+  fbl::unique_fd pipe_b_out(pipe_b_fds[1]);
+
+  EXPECT_THAT(splice(pipe_out.get(), nullptr, pipe_b_out.get(), nullptr, 5, 0),
+              SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(splice(pipe_in.get(), nullptr, pipe_b_in.get(), nullptr, 5, 0),
+              SyscallFailsWithErrno(EBADF));
+}
+
+TEST(PipeTest, TeeWrongDirection) {
+  int pipe_a[2];
+  SAFE_SYSCALL(pipe2(pipe_a, 0));
+  fbl::unique_fd pipe_a_in(pipe_a[0]);
+  fbl::unique_fd pipe_a_out(pipe_a[1]);
+
+  int pipe_b[2];
+  SAFE_SYSCALL(pipe2(pipe_b, 0));
+  fbl::unique_fd pipe_b_in(pipe_b[0]);
+  fbl::unique_fd pipe_b_out(pipe_b[1]);
+
+  // tee input must be readable (e.g. pipe_a[0]), not write-only (pipe_a[1]).
+  EXPECT_THAT(tee(pipe_a_out.get(), pipe_b_out.get(), 5, 0), SyscallFailsWithErrno(EBADF));
+
+  // tee output must be writable (e.g. pipe_b[1]), not read-only (pipe_b[0]).
+  EXPECT_THAT(tee(pipe_a_in.get(), pipe_b_in.get(), 5, 0), SyscallFailsWithErrno(EBADF));
+
+  // Both wrong.
+  EXPECT_THAT(tee(pipe_a_out.get(), pipe_b_in.get(), 5, 0), SyscallFailsWithErrno(EBADF));
+}
+
+TEST(PipeTest, VmspliceInvalidFd) {
+  char buf[8] = "test";
+  struct iovec iov = {.iov_base = buf, .iov_len = sizeof(buf)};
+
+  // Invalid fd number.
+  EXPECT_THAT(vmsplice(-1, &iov, 1, 0), SyscallFailsWithErrno(EBADF));
+
+  // O_PATH fd of a pipe.
+  int pipe_fds[2];
+  SAFE_SYSCALL(pipe2(pipe_fds, 0));
+  fbl::unique_fd pipe_in(pipe_fds[0]);
+  fbl::unique_fd pipe_out(pipe_fds[1]);
+
+  std::string fd_path = "/proc/self/fd/" + std::to_string(pipe_in.get());
+  fbl::unique_fd path_fd(open(fd_path.c_str(), O_PATH));
+  EXPECT_THAT(vmsplice(path_fd.get(), &iov, 1, 0), SyscallFailsWithErrno(EBADF));
+}
+
+TEST(PipeTest, TeeZeroLength) {
+  int pipe_a[2];
+  SAFE_SYSCALL(pipe2(pipe_a, 0));
+  fbl::unique_fd pipe_a_in(pipe_a[0]);
+  fbl::unique_fd pipe_a_out(pipe_a[1]);
+
+  int pipe_b[2];
+  SAFE_SYSCALL(pipe2(pipe_b, 0));
+  fbl::unique_fd pipe_b_in(pipe_b[0]);
+  fbl::unique_fd pipe_b_out(pipe_b[1]);
+
+  EXPECT_EQ(tee(pipe_a_in.get(), pipe_b_out.get(), 0, 0), 0);
+}
+
+TEST(PipeTest, VmspliceRdwrFifoPrioritizesWrite) {
+  test_helper::ScopedTempDir dir;
+  std::string fifo_path = dir.path() + "/fifo";
+  SAFE_SYSCALL(mkfifo(fifo_path.c_str(), 0600));
+
+  fbl::unique_fd fifo(open(fifo_path.c_str(), O_RDWR | O_NONBLOCK));
+  ASSERT_TRUE(fifo.is_valid());
+
+  char write_buf[] = "payload";
+  struct iovec iov = {.iov_base = write_buf, .iov_len = sizeof(write_buf)};
+
+  // On an O_RDWR FIFO, vmsplice must prioritize writing into the FIFO per vmsplice(2).
+  ssize_t written = vmsplice(fifo.get(), &iov, 1, 0);
+  EXPECT_EQ(written, static_cast<ssize_t>(sizeof(write_buf)));
+
+  // Verify the payload is buffered in the FIFO and can now be read.
+  char read_buf[sizeof(write_buf)] = {};
+  EXPECT_EQ(read(fifo.get(), read_buf, sizeof(read_buf)), static_cast<ssize_t>(sizeof(write_buf)));
+  EXPECT_STREQ(read_buf, write_buf);
 }
 
 TEST(PipeTest, NotificationPipeUnsupported) {
