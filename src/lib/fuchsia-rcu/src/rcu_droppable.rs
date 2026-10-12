@@ -155,6 +155,10 @@ unsafe impl RcuDroppable for fuchsia_sync::Completion {}
 // phantom markers with no drop side-effects.
 unsafe impl<T: Send + 'static, U: Send + 'static> RcuDroppable for zx::Clock<T, U> {}
 
+// SAFETY: `zx::Instant` is a `Copy` wrapper around an integer, so it has no drop side-effects.
+// The timeline parameters `T` and `U` are phantom markers.
+unsafe impl<T: Send + 'static, U: Send + 'static> RcuDroppable for zx::Instant<T, U> {}
+
 // Tuples
 // SAFETY: 1-element tuple drops its constituent element, which is RcuDroppable.
 unsafe impl<A: RcuDroppable> RcuDroppable for (A,) {}

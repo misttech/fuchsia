@@ -274,6 +274,10 @@ impl TraceEventQueueList {
         self.tracing_enabled.load(Ordering::Acquire)
     }
 
+    /// Enables every queue. A queue that is already enabled is left alone, as Linux
+    /// `rb_simple_write()` does when `tracing_on` is set to its current state. Unlike Linux, which
+    /// keeps the buffer readable after `tracing_on` is cleared, `disable()` discards each queue's
+    /// contents, so enabling a disabled queue starts from empty.
     pub fn enable(&self) -> Result<(), Errno> {
         let mut first_error = None;
         for queue in &self.queues {

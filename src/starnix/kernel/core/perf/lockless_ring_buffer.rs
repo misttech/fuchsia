@@ -125,9 +125,10 @@ impl Node {
             return;
         }
 
-        // Relaxed: the Acquire half of the `fetch_or` above pairs with the Release `fetch_sub` of
-        // every writer that released before it, therefore, if we see 0 active writers, we are also
-        // guaranteed to see any writes to write_offset that they have written.
+        // Relaxed: the Acquire half of the `fetch_or` above synchronizes with the Release
+        // `fetch_sub` of every writer that released the page before it. Those writers' claims
+        // therefore happen before this load, so it returns an offset at least as large as each of
+        // them. Writers that are still registered may claim space after this load.
         let write_offset = self.write_offset.load(Ordering::Relaxed);
         let data_size = std::cmp::min(write_offset, (*PAGE_SIZE) as usize)
             - LocklessRingBuffer::PAGE_HEADER_SIZE;
@@ -220,7 +221,8 @@ pub struct LocklessRingBuffer {
     reader_active: std::sync::atomic::AtomicBool,
     // Mutex to serialize enable() and disable() calls to prevent racing. This should
     // never be accessed by other methods to avoid locking during reading and writing.
-    state_mutex: LockDepMutex<(), PerfRingBufferStateLock>,
+    // It holds the start time of the current session.
+    state_mutex: LockDepMutex<zx::BootInstant, PerfRingBufferStateLock>,
 }
 impl LocklessRingBuffer {
     // This is an Ftrace page header consisting of a u64 timestamp at offset 0 and a u64 data size at offset 8.
@@ -275,7 +277,8 @@ impl LocklessRingBuffer {
                 next: AtomicUsize::new(0),
                 prev: AtomicUsize::new(0),
                 write_offset: AtomicUsize::new(LocklessRingBuffer::PAGE_HEADER_SIZE),
-                // Initialize active_writers to PAGE_ACTIVE_BIT (1) since the page is active.
+                // Initialize active_writers to PAGE_ACTIVE_BIT, with no writers, since the page is
+                // active.
                 active_writers: AtomicUsize::new(PAGE_ACTIVE_BIT),
             });
         }
@@ -296,6 +299,7 @@ impl LocklessRingBuffer {
             .store(Node::make_val(circle_size - 1, FLAG_NORMAL), Ordering::Relaxed);
         // Initialize reader page size to 0
         nodes[pages - 1].page_data.write_at(8, &0u64.to_le_bytes());
+        let now = zx::BootInstant::get();
         let buffer = Self {
             vmo,
             mapping,
@@ -307,12 +311,10 @@ impl LocklessRingBuffer {
             ref_count: AtomicUsize::new(RING_ENABLED_BIT),
             overwrite,
             dropped_pages: std::sync::atomic::AtomicU64::new(0),
-            prev_timestamp: std::sync::atomic::AtomicU64::new(
-                zx::BootInstant::get().into_nanos() as u64
-            ),
+            prev_timestamp: std::sync::atomic::AtomicU64::new(now.into_nanos() as u64),
             write_event_async_id,
             reader_active: std::sync::atomic::AtomicBool::new(false),
-            state_mutex: Default::default(),
+            state_mutex: LockDepMutex::new(now),
         };
         Ok(buffer)
     }
@@ -965,8 +967,30 @@ impl LocklessRingBuffer {
         let dropped = self.dropped_pages.load(Ordering::Relaxed);
         Ok(dropped)
     }
+
+    /// If the ring is disabled, resets it to empty, enables it, and returns the time of the reset.
+    ///
+    /// If the ring is already enabled, does nothing, so in-flight writers and readers are
+    /// unaffected. In that case it returns the time of the last reset, by `new()` or by an earlier
+    /// `enable()`.
     pub fn enable(&self) -> Result<zx::BootInstant, Errno> {
-        let _lock = self.state_mutex.lock();
+        let mut last_reset_guard = self.state_mutex.lock();
+        // Only `enable()` and `disable()` change `RING_ENABLED_BIT` once the ring is shared, and
+        // both hold `state_mutex`, so the ring stays enabled until we return. The mutex, not the
+        // Acquire load in `is_enabled()`, is what makes this check reliable.
+        if self.is_enabled() {
+            return Ok(*last_reset_guard);
+        }
+        // The ring is disabled, so no reader or writer holds a reference, and none can take one
+        // until the Release store of `ref_count` at the end of this function:
+        // 1. `disable()` clears `RING_ENABLED_BIT` and drains `ref_count` to 0, holding
+        //    `state_mutex`.
+        // 2. `reserve()` and `read()` take a reference only with a CAS that fails while
+        //    `RING_ENABLED_BIT` is clear, and decrement only a reference they took.
+        // So the resets below, including the non-atomic page writes, race with nothing. A thread
+        // that takes a reference afterwards synchronizes with that Release store and sees them.
+        // Relaxed: `state_mutex` orders this load after the drain in `disable()`.
+        debug_assert_eq!(self.ref_count.load(Ordering::Relaxed), 0);
         let initial_pages = self.nodes.len() - 1;
         let capacity = self.nodes.len() * (*PAGE_SIZE) as usize;
         if let Err(e) = self.vmo.set_size(capacity as u64) {
@@ -982,6 +1006,7 @@ impl LocklessRingBuffer {
 
         self.dropped_pages.store(0, Ordering::Release);
         self.prev_timestamp.store(now.into_nanos() as u64, Ordering::Release);
+        *last_reset_guard = now;
 
         for i in 0..self.nodes.len() {
             // Relaxed: see `Node::write_offset`.
@@ -2049,5 +2074,143 @@ mod tests {
         // Before CAS fix, write_offset was 4116 (> page_size).
         // After CAS fix, write_offset is exactly expected_offset (4016).
         assert_eq!(buffer.nodes[0].write_offset.load(Ordering::Relaxed), expected_offset);
+    }
+
+    #[test]
+    fn test_enable_on_new_ring_returns_creation_time() {
+        let before_new = zx::BootInstant::get();
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, true, fuchsia_trace::Id::new())
+                .unwrap();
+        let after_new = zx::BootInstant::get();
+
+        // `new()` creates the ring enabled, so enable() is a no-op that returns the time of the
+        // reset done by `new()`.
+        let created_at = buffer.enable().unwrap();
+        assert!(before_new <= created_at && created_at <= after_new);
+    }
+
+    // Holds a reservation on the same thread in place of a writer racing on another thread, which
+    // is enough because the reservation holds its references until commit.
+    #[test]
+    fn test_enable_with_reservation_in_flight_is_noop() {
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, true, fuchsia_trace::Id::new())
+                .unwrap();
+
+        // Start from a reset, as production does, so the reset time is known.
+        buffer.disable().unwrap();
+        let enabled_at = buffer.enable().unwrap();
+
+        // Hold an in-flight reservation on node 0 while calling enable() on the enabled ring.
+        let (res, _, _) = buffer.reserve(100).unwrap();
+        assert_eq!(res.node_idx, 0);
+        let ref_before = buffer.ref_count.load(Ordering::Acquire);
+
+        // The no-op enable() returns the time of the last reset and leaves node 0 alone.
+        assert_eq!(buffer.enable(), Ok(enabled_at));
+        assert_eq!(buffer.ref_count.load(Ordering::Acquire), ref_before);
+        assert_eq!(
+            buffer.nodes[0].write_offset.load(Ordering::Relaxed),
+            LocklessRingBuffer::PAGE_HEADER_SIZE + 100
+        );
+
+        // Committing the in-flight reservation must not underflow active_writers or ref_count.
+        buffer.commit(res);
+        assert_eq!(buffer.ref_count.load(Ordering::Acquire), RING_ENABLED_BIT);
+        assert_eq!(buffer.nodes[0].active_writers.load(Ordering::Acquire) & ACTIVE_WRITERS_MASK, 0);
+    }
+
+    // `read()` takes its reference before it calls `available()`, so calling enable() from
+    // `available()` runs it, on the same thread, while the reader holds that reference.
+    #[test]
+    fn test_enable_with_read_in_flight_is_noop() {
+        struct EnablingOutputBuffer<'a> {
+            buffer: &'a LocklessRingBuffer,
+            enabled_at: zx::BootInstant,
+        }
+        impl std::fmt::Debug for EnablingOutputBuffer<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct("EnablingOutputBuffer").finish_non_exhaustive()
+            }
+        }
+        impl Buffer for EnablingOutputBuffer<'_> {
+            fn segments_count(&self) -> Result<usize, Errno> {
+                Ok(1)
+            }
+            fn peek_each_segment(
+                &mut self,
+                _callback: &mut PeekBufferSegmentsCallback<'_>,
+            ) -> Result<(), Errno> {
+                Ok(())
+            }
+        }
+        impl OutputBuffer for EnablingOutputBuffer<'_> {
+            fn write_each(
+                &mut self,
+                _callback: &mut OutputBufferCallback<'_>,
+            ) -> Result<usize, Errno> {
+                Ok(0)
+            }
+            fn available(&self) -> usize {
+                // The reader holds one reference. The no-op enable() must keep it.
+                assert_eq!(self.buffer.ref_count.load(Ordering::Acquire), RING_ENABLED_BIT | 1);
+                assert_eq!(self.buffer.enable(), Ok(self.enabled_at));
+                assert_eq!(self.buffer.ref_count.load(Ordering::Acquire), RING_ENABLED_BIT | 1);
+                (*PAGE_SIZE) as usize
+            }
+            fn bytes_written(&self) -> usize {
+                0
+            }
+            fn zero(&mut self) -> Result<usize, Errno> {
+                Ok(0)
+            }
+            unsafe fn advance(&mut self, _length: usize) -> Result<(), Errno> {
+                Ok(())
+            }
+        }
+
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, true, fuchsia_trace::Id::new())
+                .unwrap();
+        buffer.disable().unwrap();
+        let enabled_at = buffer.enable().unwrap();
+
+        // The ring is empty, so read() returns EAGAIN after `available()` runs.
+        let mut dest = EnablingOutputBuffer { buffer: &buffer, enabled_at };
+        assert_eq!(buffer.read(&mut dest), error!(EAGAIN));
+
+        // Dropping the reader's reference must not underflow ref_count.
+        assert_eq!(buffer.ref_count.load(Ordering::Acquire), RING_ENABLED_BIT);
+    }
+
+    #[test]
+    fn test_reenable_resets_ring() {
+        let buffer =
+            LocklessRingBuffer::new(3 * (*PAGE_SIZE) as usize, true, fuchsia_trace::Id::new())
+                .unwrap();
+        let max_payload = (*PAGE_SIZE) as usize - LocklessRingBuffer::PAGE_HEADER_SIZE;
+
+        // Move the tail to node 1, so that the reset below is observable.
+        let (res, _, _) = buffer.reserve(100).unwrap();
+        assert_eq!(res.node_idx, 0);
+        buffer.commit(res);
+        let (res, _, _) = buffer.reserve(max_payload).unwrap();
+        assert_eq!(res.node_idx, 1);
+        buffer.commit(res);
+        let tail_before = buffer.tail_page.load(Ordering::Acquire);
+        assert_eq!(tail_before, 1);
+
+        // Disabling and re-enabling resets the ring, and later no-op enables return the new time.
+        // Two clock reads can be equal, so the tail and offset checks, not the time, show that
+        // the ring was reset.
+        buffer.disable().unwrap();
+        let reenabled_at = buffer.enable().unwrap();
+        assert_eq!(buffer.tail_page.load(Ordering::Acquire), 0);
+        assert_eq!(
+            buffer.nodes[0].write_offset.load(Ordering::Relaxed),
+            LocklessRingBuffer::PAGE_HEADER_SIZE
+        );
+        assert_eq!(buffer.enable(), Ok(reenabled_at));
     }
 }
