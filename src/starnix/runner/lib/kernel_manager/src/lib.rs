@@ -20,13 +20,12 @@ use fidl_fuchsia_starnix_runner as fstarnixrunner;
 use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
 use fuchsia_inspect::{HistogramProperty, NumericProperty};
-use fuchsia_sync::Mutex;
 use futures::TryStreamExt;
 use kernels::Kernels;
 use log::warn;
 use proxy::ChannelProxy;
 use rand::RngExt as _;
-use starnix_sync::{LockDepMutex, WakeSourcesLock};
+use starnix_sync::{LockDepMutex, StarnixKernelWakeLeaseLock, WakeSourcesLock};
 use std::future::Future;
 use std::sync::Arc;
 use suspend::{
@@ -61,7 +60,7 @@ pub struct StarnixKernel {
     job: Arc<zx::Job>,
 
     /// The currently active wake lease for the container.
-    wake_lease: Mutex<Option<zx::EventPair>>,
+    wake_lease: LockDepMutex<Option<zx::EventPair>, StarnixKernelWakeLeaseLock>,
 }
 
 impl StarnixKernel {

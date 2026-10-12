@@ -342,6 +342,7 @@ lock_ordering! {
     Terminal(SeLinuxUpdateLock),
     Terminal(SignalActionsLock),
     Terminal(SocketStateLock),
+    Terminal(StarnixKernelWakeLeaseLock),
     Terminal(StubBytesFileStateLock),
     Terminal(SuspendResumeManagerInnerLock),
     Terminal(SyscallLogFiltersLock),
