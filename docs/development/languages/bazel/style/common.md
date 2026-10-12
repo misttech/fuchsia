@@ -1,4 +1,4 @@
-# Common Bazel style guide and best practices
+# Common style and best practices
 
 [TOC]
 
@@ -52,7 +52,7 @@ target is used within five immediate subdirectories of `//src`, consider using
 use is added. However, if, for example, the target should only be used by
 drivers, limit it to packages that implement drivers.
 
-### Use package groups for common non-trivial visibility definitions
+### Use package groups for common non-trivial visibility definitions {:#use-package-groups-for-common-non-trivial-visibility-definitions}
 
 If the `visibility` of multiple targets should be restricted to the same set of
 labels, consider representing that set with a

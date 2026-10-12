@@ -216,7 +216,7 @@ concise, idiomatic Bazel visibility expressions using these heuristics:
     ```
   - If several packages would repeat the same long visibility list, define a
     `package_group` once and reference it from each target instead. See
-    [Use package groups for common non-trivial visibility definitions](../../../../../docs/development/languages/bazel/style/common.md).
+    [Use package groups for common non-trivial visibility definitions](../../../../../docs/development/languages/bazel/style/common.md#use-package-groups-for-common-non-trivial-visibility-definitions).
 
 #### Case G: Widely Consumed Platform Libraries / Disparate Top-Level Trees
 - **Condition:** Consumers span 3 or 4 disparate top-level trees (e.g., `//src`, `//tools`,

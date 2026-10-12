@@ -1,4 +1,4 @@
-# BUILD.bazel files style guide and best practices
+# BUILD.bazel files
 
 [TOC]
 
@@ -14,7 +14,7 @@ This page is part of the
 
 ## Visibility
 
-### Avoid package default_visibility
+### Avoid package default_visibility {:#avoid-package-default-visibility}
 
 Prefer specifying visibility for each target that must be accessible outside
 the package rather than declaring package `default_visibility`. In general,
@@ -39,7 +39,7 @@ equivalent of putting `visibility = [...]` at the top of a `BUILD.gn` file. In
 both cases, you would then need to be sure to specify private `visibility` for
 each internal target.
 
-### Target visibility
+### Target visibility {:#target-visibility}
 
 #### Overview
 
@@ -116,7 +116,7 @@ Note: This exception does not apply to legacy macros where
 target except that they are public by default. Always specify `visibility` for
 these even though Bazel does not require it.
 
-## target_compatible_with
+## target_compatible_with {:#target-compatible-with}
 
 ### Host targets
 

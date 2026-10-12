@@ -45,7 +45,7 @@ There is additional guidance specific to:
 
 * [Defining rules, macros, and functions][rules-macros-guide]
 
-## Automated tooling
+## Automated tooling {:#automated-tooling}
 
 Format code locally using `fx format-code` before uploading for review.
 

@@ -1,4 +1,4 @@
-# Style guide and best practices for defining Bazel rules, macros, and functions
+# Defining Bazel rules, macros, and functions
 
 [TOC]
 

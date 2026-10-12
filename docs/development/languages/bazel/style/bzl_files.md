@@ -1,4 +1,4 @@
-# .bzl files style guide and best practices
+# .bzl files
 
 [TOC]
 
