@@ -274,6 +274,22 @@
                 ],
             },
             {
+                // pkgfs no longer contains package directories, but it is deprecated.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "pkgfs",
+                capability: "directory",
+                target_monikers: [
+                    // TODO(https://fxbug.dev/294908859): Use optional routing to remove this route
+                    // on user builds.
+                    "/bootstrap/console-launcher",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
                 // Provides access to executable package handles.
                 source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
@@ -302,6 +318,21 @@
                 // Gives access to executable package handles which can bypass VX security policy.
                 source_moniker: "/bootstrap/pkg-cache",
                 source: "component",
+                source_name: "fuchsia.pkg.PackageCache",
+                capability: "protocol",
+                target_monikers: [
+                    "/core/pkg-resolver",
+                    "/core/system-update/system-updater",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
+                // Gives access to executable package handles which can bypass VX security policy.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
                 source_name: "fuchsia.pkg.PackageResolver-full",
                 capability: "protocol",
                 target_monikers: [
@@ -317,6 +348,20 @@
                 capability: "protocol",
                 target_monikers: [
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap/pkg-cache",
+                ],
+            },
+            {
+                // Interferes with OTA.
+                source_moniker: "/bootstrap/pkg-cache",
+                source: "component",
+                source_name: "fuchsia.pkg.RetainedPackages",
+                capability: "protocol",
+                target_monikers: [
+                    "/core/system-update/system-updater",
+
+                    // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
+                    "/bootstrap",
                     "/bootstrap/pkg-cache",
                 ],
             },
@@ -378,14 +423,6 @@
                     // Use of this capability is controlled by kernel command line options
                     // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/bringup/bin/console-launcher/console_launcher.cc;l=53;drc=2abb92a67d8528b484e1c8ee49bdc8badeaec184
                     "/bootstrap/console-launcher",
-
-                    // TODO(https://fxbug.dev/42074079): Use optional routing to remove these routes
-                    // on non-eng builds.
-                    // Use of this capability is controlled by driver_index's structured config
-                    // flag enable_ephemeral_drivers, which is disabled on non-eng builds.
-                    // https://cs.opensource.google/fuchsia/fuchsia/+/main:src/lib/assembly/platform_configuration/src/subsystems/driver_framework.rs;l=30;drc=a6dbab2808229e37578e6dabdb6bae2a1c0130fe
-                    "/bootstrap/driver_index",
-                    "/bootstrap/driver_manager",
 
                     // TODO(https://fxbug.dev/303275551): Needed for use-from-expose.
                     "/core",

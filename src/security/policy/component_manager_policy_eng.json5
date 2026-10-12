@@ -360,7 +360,6 @@
                 source_name: "pkgfs",
                 capability: "directory",
                 target_monikers: [
-                    "/bootstrap/console-launcher",
                     "/toolbox",
                 ],
             },
@@ -394,8 +393,6 @@
                 source_name: "fuchsia.pkg.PackageCache",
                 capability: "protocol",
                 target_monikers: [
-                    "/core/pkg-resolver",
-                    "/core/system-update/system-updater",
                     "/toolbox",
                 ],
             },
@@ -407,15 +404,6 @@
                 target_monikers: [
                     "/core/debug-dash-launcher",
                     "/core/process_resolver",
-                ],
-            },
-            {
-                source_moniker: "/bootstrap/pkg-cache",
-                source: "component",
-                source_name: "fuchsia.pkg.RetainedPackages",
-                capability: "protocol",
-                target_monikers: [
-                    "/core/system-update/system-updater",
                 ],
             },
             {
@@ -433,12 +421,6 @@
                 source_name: "fuchsia.pkg.PackageResolver",
                 capability: "protocol",
                 target_monikers: [
-                    "/bootstrap",
-                    "/bootstrap/console-launcher",
-                    "/bootstrap/driver_index",
-                    "/bootstrap/driver_manager",
-                    "/bootstrap/full_resolver",
-                    "/bootstrap/netsvc",
                     "/core/debug-dash-launcher",
                     "/core/process_resolver",
                     "/core/test_manager",
