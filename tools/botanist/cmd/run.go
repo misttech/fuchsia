@@ -276,10 +276,12 @@ func (r *RunCommand) setupFFXUSBDriver(ctx context.Context, ffx *targets.FFXInst
 	if err := ffx.ConfigSet(ctx, "connectivity.usb_socket_path", socketPath); err != nil {
 		return cleanup, fmt.Errorf("failed to set connectivity.usb_socket_path to %s: %w", socketPath, err)
 	}
+	// LINT.IfChange(ffx_usb_driver_failed)
 	cleanup = botanist.WaitForProcess(ctx, func(processCtx context.Context) error {
 		logger.Debugf(ctx, "starting ffx usb driver")
 		return ffx.USBDriver(processCtx, serialNum, logDir)
 	}, "ffx usb-driver")
+	// LINT.ThenChange(/tools/testing/tefmocheck/check-configs.yaml:ffx_usb_driver_failed)
 	return func() {
 		cleanup()
 		if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {

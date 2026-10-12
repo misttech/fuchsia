@@ -901,6 +901,18 @@ failure_mode_checks:
   string: "mobly.signals.TestFailure: Details=Conne[57 chars]code=92, is_credential_rejected=False, is_reconnect=False)) != Conne[57 chars]code=<StatusCode.SUCCESS: 0>, is_credential_re[29 chars]lse)), Extras=None"
   log_types: ["swarmingOutputType"]
 
+# For https://fxbug.dev/565930479.
+# Keep near the end of Category 3 so more specific device, test, and timeout
+# checks above take precedence when ffx usb-driver exits as a side effect.
+# LINT.IfChange(ffx_usb_driver_failed)
+- kind: "string_in_log"
+  string: "botanist ERROR: ffx usb-driver process finished with err:"
+  log_types: ["swarmingOutputType"]
+  skip_passed_task: true
+  attribute_to_test: true
+  add_tag: true
+# LINT.ThenChange(/tools/botanist/common.go:process_finished_with_err, /tools/botanist/cmd/run.go:ffx_usb_driver_failed)
+
 # General ffx error check. Keep near the end of Category 3 so more specific
 # test, SSH, and FFX checks above take precedence.
 - kind: "string_in_log"
@@ -918,6 +930,17 @@ failure_mode_checks:
 - kind: "string_in_log"
   string: "botanist ERROR: failed to run snapshot over ssh"
   log_types: ["swarmingOutputType"]
+
+# For https://fxbug.dev/565930479.
+# Catch unhandled Go runtime panics in host tools (e.g. botanist or testrunner)
+# that exit before logging a top-level botanist failure message. Attribute to
+# the running test when a panic appears in test output.
+- kind: "string_in_log"
+  string: "panic: runtime error:"
+  log_types: ["swarmingOutputType"]
+  skip_passed_task: true
+  attribute_to_test: true
+  add_tag: true
 
 # ==============================================================================
 # CATEGORY 4: Catch-all Botanist Execution Failure

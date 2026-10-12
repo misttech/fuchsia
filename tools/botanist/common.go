@@ -58,7 +58,9 @@ func WaitForProcess(ctx context.Context, process func(context.Context) error, pr
 	go func() {
 		err := process(processCtx)
 		if err != nil && !errors.Is(err, context.Canceled) {
+			// LINT.IfChange(process_finished_with_err)
 			logger.Errorf(ctx, "%s process finished with err: %s", processName, err)
+			// LINT.ThenChange(/tools/testing/tefmocheck/check-configs.yaml:ffx_usb_driver_failed)
 		} else {
 			logger.Debugf(ctx, "%s process finished", processName)
 		}
