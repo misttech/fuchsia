@@ -46,6 +46,13 @@
             availability: "optional",
             default: false,
         },
+        {
+            config: "fuchsia.usb.dwc3.BypassPlatformExtension",
+            key: "bypass_platform_extension",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
         { service: "fuchsia.hardware.clock.Service" },
         {
             name: "usb-ddr",
@@ -175,7 +182,4 @@
             from: "self",
         },
     ],
-    config: {
-        bypass_platform_extension: { type: "bool" },
-    },
 }

@@ -113,19 +113,10 @@ fuchsia_structured_config_cpp_elf_lib("dwc3-config") {
   cm_label = ":dwc3-manifest"
 }
 
-fuchsia_structured_config_values("dwc3-values") {
-  cm_label = ":dwc3-manifest"
-  values = {
-    enable_suspend = false
-    bypass_platform_extension = false
-  }
-}
-
 fuchsia_driver_package("package") {
   package_name = "dwc3"
   export_to_bazel = true
   driver_components = [ ":dwc3" ]
-  deps = [ ":dwc3-values" ]
 }
 
 test("dwc3-test-bin") {

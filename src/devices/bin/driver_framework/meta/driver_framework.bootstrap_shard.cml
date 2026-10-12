@@ -139,6 +139,12 @@
             to: "#boot-drivers",
         },
         {
+            config: "fuchsia.usb.dwc3.BypassPlatformExtension",
+            from: "void",
+            to: "#boot-drivers",
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.tracing.provider.Registry",
             from: "parent",
             to: [

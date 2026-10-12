@@ -34,6 +34,13 @@
             default: false,
             availability: "optional",
         },
+        {
+            config: "fuchsia.usb.dwc3.BypassPlatformExtension",
+            key: "bypass_platform_extension",
+            type: "bool",
+            default: false,
+            availability: "optional",
+        },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
         { service: "fuchsia.boot.metadata.SerialNumberMetadata" },
         { service: "fuchsia.hardware.clock.Service" },
@@ -75,7 +82,4 @@
             from: "self",
         },
     ],
-    config: {
-        bypass_platform_extension: { type: "bool" },
-    },
 }
