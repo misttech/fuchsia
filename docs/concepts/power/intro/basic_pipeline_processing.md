@@ -20,10 +20,9 @@ One way to solve this problem is by passing a baton along with the event data.
 "Baton passing" alludes to the idea of a relay race where participants pass an
 object from one to another to complete the task (ie. race).
 
-Our baton could be [`LeaseToken`][lease_token] (which we talked about
-previously) or a [fuchsia.power.broker/LeaseControl][lease_control] channel.
-We'll use a `LeaseToken` because we've already talked about them and because
-they are easier to work with than `LeaseControl`.
+Our baton is a [`LeaseToken`][lease_token], such as the one returned by
+`ActivityGovernor.AcquireWakeLease` or
+[`fuchsia.power.broker/Topology.Lease`][broker_lease_token].
 
 When X receives an interrupt it:
 
@@ -109,6 +108,6 @@ timeouts based on the arrival of new interrupts. Use the helper by calling
 `AcquireWakeLease` instead of talking to the `ActivityGovernor` capability
 ourself.
 
-[lease_control]: https://cs.opensource.google/fuchsia/fuchsia/+/39b9a242c6e2b09731a426cdcf9f1353206fd034:sdk/fidl/fuchsia.power.broker/broker.fidl;l=272
+[broker_lease_token]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/fidl/fuchsia.power.broker/broker.fidl;l=182
 [lease_token]: https://cs.opensource.google/fuchsia/fuchsia/+/39b9a242c6e2b09731a426cdcf9f1353206fd034:sdk/fidl/fuchsia.power.system/system.fidl;l=72
 [wake_lease]: https://cs.opensource.google/fuchsia/fuchsia/+/39b9a242c6e2b09731a426cdcf9f1353206fd034:sdk/lib/driver/power/cpp/wake-lease.h

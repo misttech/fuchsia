@@ -6,12 +6,6 @@ In our previous sections we said things like "...the application asks power
 framework to prepare the system...". An "ask" in this context means the
 application requests a **lease**. A lease is for a power level.
 
-
-Note: Due to implementation details of power framework a lease must be taken on
-a power element that the lease requester owns. This requires the lease requester
-to run a power element that may not have any behavior attached to it beyond
-being the target of the lease.
-
 Power levels above "OFF" levels are only active when there are active leases in
 the system. If there are no active leases all power elements are at their
 lowest level.

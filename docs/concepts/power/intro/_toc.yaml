@@ -36,6 +36,3 @@ toc:
   - title: Running the DAG
     path: /docs/concepts/power/intro/running_the_dag.md
     step_group: powerframeworkintro
-  - title: Observing without impacting
-    path: /docs/concepts/power/intro/observing.md
-    step_group: powerframeworkintro
