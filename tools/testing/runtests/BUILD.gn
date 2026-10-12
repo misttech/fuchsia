@@ -3,14 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/go/go_library.gni")
-import("//build/go/go_test.gni")
-
-go_test("tests") {
-  embed = [ ":runtests" ]
-  output_name = "runtests_tests"
-
-  sources = [ "data_sinks_test.go" ]
-}
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #

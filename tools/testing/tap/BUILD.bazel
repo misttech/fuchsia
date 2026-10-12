@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -33,4 +34,18 @@ go_library(
     importpath = "go.fuchsia.dev/fuchsia/tools/testing/tap/tokenizer",
     target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = ["//:__subpackages__"],
+)
+
+host_go_test(
+    name = "tap_tests",
+    srcs = [
+        "parser_test.go",
+        "producer_test.go",
+    ],
+    embed = [":tap"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+    deps = [
+        "//third_party/golibs:gopkg.in/yaml.v2",
+    ],
 )

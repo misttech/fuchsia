@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/go/go_library.gni")
-import("//build/go/go_test.gni")
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #

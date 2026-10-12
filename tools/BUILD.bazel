@@ -63,6 +63,7 @@ test_suite(
         "//tools/testing/resultdb:resultdb_lib_tests",
         "//tools/testing/resultdb:resultdb_main_tests",
         "//tools/testing/runtests:runtests_tests",
+        "//tools/testing/tap:tap_tests",
         "//tools/testing/tefmocheck:tefmocheck_lib_tests",
         "//tools/testing/test_filterer:test_filterer_main_tests",
         "//tools/testing/testparser:testparser_cmd_test",
