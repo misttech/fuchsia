@@ -7,8 +7,10 @@ use async_trait::async_trait;
 use diagnostics_data::{BuilderArgs, LogsDataBuilder, LogsProperty, Severity};
 use error::LogError;
 use fdomain_client::fidl::Proxy;
-use fdomain_fuchsia_diagnostics::{LogSettingsMarker, LogSettingsProxy, StreamParameters};
-use fdomain_fuchsia_diagnostics_host::ArchiveAccessorMarker;
+use fdomain_fuchsia_diagnostics::{
+    ArchiveAccessorMarker, LogSettingsMarker, LogSettingsProxy, StreamParameters,
+};
+use fdomain_fuchsia_diagnostics_host as fhost;
 use fdomain_fuchsia_sys2::RealmQueryProxy;
 use ffx_config::EnvironmentContext;
 use ffx_log_args::LogCommand;
@@ -154,6 +156,46 @@ async fn connect_to_rcs(
     rcs_connector.try_connect_indefinitely(|_target, _err| Ok(())).await
 }
 
+trait ArchiveAccessorConnector: fdomain_client::fidl::DiscoverableProtocolMarker {
+    async fn stream_diagnostics(
+        proxy: &Self::Proxy,
+        params: &StreamParameters,
+        socket: fdomain_client::Socket,
+    ) -> Result<(), fidl::Error>;
+}
+
+impl ArchiveAccessorConnector for ArchiveAccessorMarker {
+    async fn stream_diagnostics(
+        proxy: &Self::Proxy,
+        params: &StreamParameters,
+        socket: fdomain_client::Socket,
+    ) -> Result<(), fidl::Error> {
+        proxy.stream_diagnostics_to_socket(params, socket).await
+    }
+}
+
+impl ArchiveAccessorConnector for fhost::ArchiveAccessorMarker {
+    async fn stream_diagnostics(
+        proxy: &Self::Proxy,
+        params: &StreamParameters,
+        socket: fdomain_client::Socket,
+    ) -> Result<(), fidl::Error> {
+        proxy.stream_diagnostics(params, socket).await
+    }
+}
+
+async fn connect_and_stream<P: ArchiveAccessorConnector>(
+    rcs_client: &RemoteControlProxyHolder,
+    params: &StreamParameters,
+) -> Result<fdomain_client::Socket, LogError> {
+    let diagnostics_client = rcs::toolbox::connect_with_timeout::<P>(rcs_client, TIMEOUT)
+        .await
+        .map_err(anyhow::Error::from)?;
+    let (local, remote) = rcs_client.domain().create_stream_socket();
+    P::stream_diagnostics(&diagnostics_client, params, remote).await?;
+    Ok(local)
+}
+
 // TODO(https://fxbug.dev/42080003): Remove this once Overnet
 // has support for reconnect handling.
 async fn connect_to_target(
@@ -185,32 +227,25 @@ async fn connect_to_target(
         }
         _ => false,
     };
-    // Connect to ArchiveAccessor
-    let diagnostics_client =
-        rcs::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(&rcs_client, TIMEOUT)
-            .await
-            .map_err(anyhow::Error::from)?;
     // Connect to LogSettings
     let log_settings_client =
         rcs::toolbox::connect_with_timeout::<LogSettingsMarker>(&rcs_client, TIMEOUT)
             .await
             .map_err(anyhow::Error::from)?;
     // Setup stream
-    let (local, remote) = rcs_client.domain().create_stream_socket();
-    diagnostics_client
-        .stream_diagnostics(
-            &StreamParameters {
-                data_type: Some(fdomain_fuchsia_diagnostics::DataType::Logs),
-                stream_mode: Some(*stream_mode),
-                format: Some(fdomain_fuchsia_diagnostics::Format::Json),
-                client_selector_configuration: Some(
-                    fdomain_fuchsia_diagnostics::ClientSelectorConfiguration::SelectAll(true),
-                ),
-                ..Default::default()
-            },
-            remote,
-        )
-        .await?;
+    let params = StreamParameters {
+        data_type: Some(fdomain_fuchsia_diagnostics::DataType::Logs),
+        stream_mode: Some(*stream_mode),
+        format: Some(fdomain_fuchsia_diagnostics::Format::Json),
+        client_selector_configuration: Some(
+            fdomain_fuchsia_diagnostics::ClientSelectorConfiguration::SelectAll(true),
+        ),
+        ..Default::default()
+    };
+    let local = match connect_and_stream::<ArchiveAccessorMarker>(&rcs_client, &params).await {
+        Ok(socket) => socket,
+        Err(_) => connect_and_stream::<fhost::ArchiveAccessorMarker>(&rcs_client, &params).await?,
+    };
     Ok(DeviceConnection {
         boot_timestamp,
         log_socket: local,
@@ -983,6 +1018,7 @@ ffx log --force-set-severity.
             // didn't have that field.
             boot_id: None,
             send_connected_event: true,
+            use_legacy_archive_accessor: true,
             ..Default::default()
         })
         .await;

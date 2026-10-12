@@ -9,8 +9,7 @@
 
 use anyhow::Error;
 use async_trait::async_trait;
-use fidl_fuchsia_diagnostics::{LogSettingsMarker, StreamParameters};
-use fidl_fuchsia_diagnostics_host::ArchiveAccessorMarker;
+use fidl_fuchsia_diagnostics::{ArchiveAccessorMarker, LogSettingsMarker, StreamParameters};
 use fidl_fuchsia_sys2::RealmQueryMarker;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use log_command as log_utils;
@@ -64,7 +63,7 @@ async fn main() -> Result<(), Error> {
         log_utils::LogEncoding::Fxt => fidl_fuchsia_diagnostics::Format::Fxt,
     };
     proxy
-        .stream_diagnostics(
+        .stream_diagnostics_to_socket(
             &StreamParameters {
                 data_type: Some(fidl_fuchsia_diagnostics::DataType::Logs),
                 stream_mode: Some(stream_mode),

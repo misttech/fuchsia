@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fidl/fuchsia.diagnostics.host/cpp/fidl.h>
+#include <fidl/fuchsia.diagnostics/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/default.h>
@@ -33,10 +33,13 @@
 
 static constexpr char kLogListenerPath[] = "/pkg/bin/log_listener";
 
-class MockArchiveAccessor : public fidl::Server<fuchsia_diagnostics_host::ArchiveAccessor> {
+class MockArchiveAccessor : public fidl::Server<fuchsia_diagnostics::ArchiveAccessor> {
  public:
   void StreamDiagnostics(StreamDiagnosticsRequest& request,
-                         StreamDiagnosticsCompleter::Sync& completer) override {
+                         StreamDiagnosticsCompleter::Sync& completer) override {}
+
+  void StreamDiagnosticsToSocket(StreamDiagnosticsToSocketRequest& request,
+                                 StreamDiagnosticsToSocketCompleter::Sync& completer) override {
     std::lock_guard<std::mutex> lock(mutex_);
     socket_ = std::move(request.stream());
     has_connection_ = true;
@@ -44,8 +47,10 @@ class MockArchiveAccessor : public fidl::Server<fuchsia_diagnostics_host::Archiv
     cv_.notify_all();
   }
 
+  void WaitForReady(WaitForReadyCompleter::Sync& completer) override { completer.Reply(); }
+
   void handle_unknown_method(
-      fidl::UnknownMethodMetadata<fuchsia_diagnostics_host::ArchiveAccessor> metadata,
+      fidl::UnknownMethodMetadata<fuchsia_diagnostics::ArchiveAccessor> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   void WaitForConnection() {
@@ -74,9 +79,8 @@ struct TestContext {
   }
 
   void Init(fidl::ServerEnd<fuchsia_io::Directory> server_end) {
-    zx::result<> status =
-        outgoing_dir->AddUnmanagedProtocol<fuchsia_diagnostics_host::ArchiveAccessor>(
-            bindings.CreateHandler(accessor.get(), dispatcher, fidl::kIgnoreBindingClosure));
+    zx::result<> status = outgoing_dir->AddUnmanagedProtocol<fuchsia_diagnostics::ArchiveAccessor>(
+        bindings.CreateHandler(accessor.get(), dispatcher, fidl::kIgnoreBindingClosure));
     ZX_ASSERT(status.is_ok());
     ZX_ASSERT(outgoing_dir->Serve(std::move(server_end)).is_ok());
   }
@@ -84,7 +88,7 @@ struct TestContext {
   async_dispatcher_t* dispatcher;
   std::unique_ptr<component::OutgoingDirectory> outgoing_dir;
   std::shared_ptr<MockArchiveAccessor> accessor;
-  fidl::ServerBindingGroup<fuchsia_diagnostics_host::ArchiveAccessor> bindings;
+  fidl::ServerBindingGroup<fuchsia_diagnostics::ArchiveAccessor> bindings;
 };
 
 TEST(LogListenerReturnCode, ReturnNonzeroOnBadArgs) {

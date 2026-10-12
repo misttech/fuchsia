@@ -12,12 +12,11 @@ use fidl_fuchsia_developer_remotecontrol::{
     RemoteControlRequest,
 };
 use fidl_fuchsia_diagnostics::{
-    LogInterestSelector, LogSettingsMarker, LogSettingsRequest, LogSettingsRequestStream,
-    StreamMode,
-};
-use fidl_fuchsia_diagnostics_host::{
     ArchiveAccessorMarker, ArchiveAccessorRequest, ArchiveAccessorRequestStream,
+    LogInterestSelector, LogSettingsMarker, LogSettingsRequest, LogSettingsRequestStream,
+    StreamMode, StreamParameters,
 };
+use fidl_fuchsia_diagnostics_host as fhost;
 use fidl_fuchsia_sys2 as fsys;
 use fuchsia_async as fasync;
 use futures::channel::{mpsc, oneshot};
@@ -43,6 +42,7 @@ pub struct TestEnvironmentConfig {
     pub show_initial_timestamp: bool,
     pub fail_device_connection: bool,
     pub hang_device_connection: bool,
+    pub use_legacy_archive_accessor: bool,
 }
 
 pub fn test_log_with_severity(timestamp: i64, severity: Severity) -> LogsData {
@@ -116,6 +116,7 @@ impl Default for TestEnvironmentConfig {
             show_initial_timestamp: false,
             fail_device_connection: false,
             hang_device_connection: false,
+            use_legacy_archive_accessor: false,
         }
     }
 }
@@ -241,6 +242,7 @@ struct State {
     messages: Vec<LogsData>,
     instances: Vec<Moniker>,
     send_connected_event: bool,
+    use_legacy_archive_accessor: bool,
     event_snd: mpsc::UnboundedSender<TestEvent>,
     mutable: RefCell<MutableState>,
 }
@@ -255,6 +257,7 @@ impl State {
             messages: config.messages,
             instances: config.instances,
             send_connected_event: config.send_connected_event,
+            use_legacy_archive_accessor: config.use_legacy_archive_accessor,
             event_snd: snd,
             mutable: RefCell::new(MutableState {
                 boot_timestamp: config.boot_timestamp,
@@ -320,15 +323,33 @@ async fn handle_remote_control_fidl(req: RemoteControlRequest, state: Rc<State>)
                 let _ = responder.send(Ok(()));
             }
             ArchiveAccessorMarker::PROTOCOL_NAME => {
-                let stream =
-                    fidl::endpoints::ServerEnd::<ArchiveAccessorMarker>::new(server_channel)
-                        .into_stream();
-                let state = state.clone();
-                fasync::Task::local(async move {
-                    handle_archive_accessor(stream, state).await;
-                })
-                .detach();
+                if !state.use_legacy_archive_accessor {
+                    let stream =
+                        fidl::endpoints::ServerEnd::<ArchiveAccessorMarker>::new(server_channel)
+                            .into_stream();
+                    let state = state.clone();
+                    fasync::Task::local(async move {
+                        handle_archive_accessor(stream, state).await;
+                    })
+                    .detach();
+                }
                 let _ = responder.send(Ok(()));
+            }
+            fhost::ArchiveAccessorMarker::PROTOCOL_NAME => {
+                if state.use_legacy_archive_accessor {
+                    let stream = fidl::endpoints::ServerEnd::<fhost::ArchiveAccessorMarker>::new(
+                        server_channel,
+                    )
+                    .into_stream();
+                    let state = state.clone();
+                    fasync::Task::local(async move {
+                        handle_archive_accessor(stream, state).await;
+                    })
+                    .detach();
+                    let _ = responder.send(Ok(()));
+                } else {
+                    let _ = responder.send(Err(ConnectCapabilityError::NoMatchingCapabilities));
+                }
             }
             LogSettingsMarker::PROTOCOL_NAME => {
                 let stream = fidl::endpoints::ServerEnd::<LogSettingsMarker>::new(server_channel)
@@ -401,19 +422,59 @@ fn serve_instance_iterator(
     client
 }
 
-async fn handle_archive_accessor(mut stream: ArchiveAccessorRequestStream, state: Rc<State>) {
-    while let Some(Ok(ArchiveAccessorRequest::StreamDiagnostics {
-        parameters,
-        stream,
-        responder,
-    })) = stream.next().await
-    {
+struct ArchiveIteratorRequest {
+    parameters: StreamParameters,
+    stream: fidl::Socket,
+}
+
+trait ArchiveAccessorTranslator {
+    async fn next(&mut self) -> Option<ArchiveIteratorRequest>;
+}
+
+impl ArchiveAccessorTranslator for fhost::ArchiveAccessorRequestStream {
+    async fn next(&mut self) -> Option<ArchiveIteratorRequest> {
+        match StreamExt::next(self).await {
+            Some(Ok(fhost::ArchiveAccessorRequest::StreamDiagnostics {
+                parameters,
+                stream,
+                responder,
+            })) => {
+                let _ = responder.send();
+                Some(ArchiveIteratorRequest { parameters, stream })
+            }
+            _ => None,
+        }
+    }
+}
+
+impl ArchiveAccessorTranslator for ArchiveAccessorRequestStream {
+    async fn next(&mut self) -> Option<ArchiveIteratorRequest> {
+        loop {
+            match StreamExt::next(self).await {
+                Some(Ok(ArchiveAccessorRequest::StreamDiagnosticsToSocket {
+                    stream_parameters,
+                    stream,
+                    responder,
+                })) => {
+                    let _ = responder.send();
+                    return Some(ArchiveIteratorRequest { parameters: stream_parameters, stream });
+                }
+                Some(Ok(ArchiveAccessorRequest::WaitForReady { responder })) => {
+                    let _ = responder.send();
+                }
+                _ => return None,
+            }
+        }
+    }
+}
+
+async fn handle_archive_accessor(mut stream: impl ArchiveAccessorTranslator, state: Rc<State>) {
+    while let Some(ArchiveIteratorRequest { parameters, stream }) = stream.next().await {
         if state.send_connected_event {
             let _ = state
                 .event_snd
                 .unbounded_send(TestEvent::Connected(parameters.stream_mode.unwrap()));
         }
-        let _ = responder.send();
         let mut socket = fidl::AsyncSocket::from_socket(stream);
         let _ = socket.write_all(serde_json::to_string(&state.messages).unwrap().as_bytes()).await;
 

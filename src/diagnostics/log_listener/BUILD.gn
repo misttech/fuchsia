@@ -21,7 +21,6 @@ rustc_binary("bin") {
 
   deps = [
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
-    "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
     "//sdk/rust/zx",
     "//src/developer/lib/writer:lib",
@@ -61,7 +60,7 @@ cc_test_executable("log_listener_return_code_test") {
   sources = [ "log_listener_return_code_test.cc" ]
 
   deps = [
-    "//sdk/fidl/fuchsia.diagnostics.host:fuchsia.diagnostics.host_cpp",
+    "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_cpp",
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",
