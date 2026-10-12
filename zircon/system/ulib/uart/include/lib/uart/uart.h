@@ -451,11 +451,24 @@ class DriverBase {
   // Prepare/Wake-up the UART hardware before going into, and after coming out
   // of a suspended state. Unlike other kernel API methods, these methods are
   // considered optional, and default to no-ops.
+  //
+  // Implementations must not wait for long (e.g. for queued output to drain),
+  // as they may be called with interrupts disabled and while holding a
+  // spinlock.  Callers which want queued output to be transmitted before
+  // suspending should first wait for TxDrained (below) to return true.
   template <typename IoProvider, typename IrqProvider>
   void PrepareForSuspend(IoProvider& io, IrqProvider& irq) {}
 
   template <typename IoProvider, typename IrqProvider>
   void WakeupFromSuspend(IoProvider& io, IrqProvider& irq) {}
+
+  // Return true if all previously written output has been transmitted (e.g.
+  // the TX FIFO and shift register are empty).  Optional; drivers which cannot
+  // tell report true.
+  template <typename IoProvider>
+  bool TxDrained(IoProvider& io) {
+    return true;
+  }
 };
 
 // The IoProvider is a template class parameterized by UartDriver::config_type,
@@ -682,6 +695,14 @@ class KernelDriver {
   void WakeupFromSuspend() {
     Guard<LockPolicy> lock(&lock_, SOURCE_TAG);
     uart_.WakeupFromSuspend(io_, irq_);
+  }
+
+  // See DriverBase::TxDrained.  This does not wait; callers which want to wait
+  // for output to drain should poll it.
+  template <typename LockPolicy = DefaultLockPolicy>
+  bool TxDrained() {
+    Guard<LockPolicy> lock(&lock_, SOURCE_TAG);
+    return uart_.TxDrained(io_);
   }
 
   template <typename Tx, typename Rx>

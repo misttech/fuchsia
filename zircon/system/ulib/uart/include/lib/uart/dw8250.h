@@ -32,6 +32,11 @@ constexpr uint8_t kFifoDepthDw8250Minimum = 16;
 // (e.g. at least several milliseconds), which is much longer than the time required
 // to transmit a single character at standard baud rates.
 constexpr size_t kWaitBusyLimit = 1'000'000;
+// The maximum number of attempts made when writing LCR (see Driver::WriteLcr).
+// Each attempt is only a handful of register accesses: either the UART is busy
+// and is forced idle, or LCR is written and read back.  This bounds the number
+// of register accesses rather than the elapsed time.
+constexpr size_t kLcrWriteAttempts = 1000;
 
 enum class InterruptType : uint8_t {
   kModemStatus = 0b0000,
@@ -301,6 +306,14 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
       fifo_stat_ = cpr.fifo_stat();
     }
 
+    // Whoever used the UART before us (e.g. a boot loader or a previous boot
+    // stage) may still have output queued.  Let it finish before resetting the
+    // FIFOs (which would discard it) and, more importantly, before touching
+    // LCR: writes to LCR while the UART is busy are at best ignored, and some
+    // implementations may reject them with a bus error.  Unlike the suspend
+    // hooks, Init is allowed to wait.
+    const bool tx_drained = WaitForTxDrained(io);
+
     // Disable all interrupts.
     auto ier = InterruptEnableRegister::Get().FromValue(0);
     ier.set_rx_available(false);
@@ -315,19 +328,26 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
     ier.WriteTo(io.io());
 
     // Clear and set up the FIFO
-    auto fcr = FifoControlRegister::Get().FromValue(0);
-    fcr.set_fifo_enable(true);
-    fcr.set_rx_fifo_reset(true);
-    fcr.set_tx_fifo_reset(true);
-    if (thre_mode_) {
-      fcr.set_transmit_trigger(FifoControlRegister::kTransmitTriggerLevel2Char);
-    }
-    fcr.set_receiver_trigger(FifoControlRegister::kReceiveTriggerLevel1Char);
-    fcr.WriteTo(io.io());
+    ResetAndEnableFifos(io);
 
     // Drive flow control bits high since we don't actively manage them.
     auto mcr = ModemControlRegister::Get().FromValue(0);
     mcr.set_data_terminal_ready(true).set_request_to_send(true).WriteTo(io.io());
+
+    // The baud rate divisor is typically programmed by the bootloader rather
+    // than by this driver.  Record it now so that it can be restored if the
+    // UART loses power while suspended (see WakeupFromSuspend).  This is the
+    // only place it is captured (other than SetLineControl, which programs
+    // it), since only here can we wait for the UART to go idle first.  Having
+    // waited for the transmitter to drain, also wait for any reception in
+    // progress to finish (which resetting the FIFOs does not stop), so that
+    // WriteLcr's retries need only cover the UART becoming busy again in the
+    // meantime.  If either wait times out, don't try.
+    if (tx_drained && WaitDuringBusy(io)) {
+      (void)CaptureDivisor(
+          io,
+          LineControlRegister::Get().ReadFrom(io.io()).set_divisor_latch_access(false).reg_value());
+    }
   }
 
   template <class IoProvider>
@@ -345,6 +365,14 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
 
     LineControlRegister::Get().FromValue(0).set_divisor_latch_access(true).WriteTo(io.io());
 
+    // The UART may have become busy again since the check above, in which
+    // case the write was ignored.  If so, don't touch the divisor latch, since
+    // the writes would land in THR and IER instead, and don't record a divisor
+    // that was never programmed.
+    if (!LineControlRegister::Get().ReadFrom(io.io()).divisor_latch_access()) {
+      return;
+    }
+
     DivisorLatchLowerRegister::Get()
         .FromValue(0)
         .set_data(static_cast<uint32_t>(kDivisor))
@@ -353,6 +381,8 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
         .FromValue(0)
         .set_data(static_cast<uint32_t>(kDivisor >> 8))
         .WriteTo(io.io());
+    saved_divisor_ = static_cast<uint16_t>(kDivisor);
+    has_saved_divisor_ = true;
 
     auto lcr = LineControlRegister::Get().FromValue(0).set_divisor_latch_access(false);
 
@@ -545,10 +575,207 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
     return false;
   }
 
+  // Returns true if all previously written output has been transmitted, i.e.
+  // both the TX FIFO and the transmit shift register are empty (LSR.TEMT).
+  template <class IoProvider>
+  bool TxDrained(IoProvider& io) {
+    return LineStatusRegister::Get().ReadFrom(io.io()).tx_empty();
+  }
+
+  // Prepare the UART for having its power and/or clocks removed.  All register
+  // state is assumed to be lost while suspended.
+  //
+  // Saves the register state needed to restore the UART's configuration and
+  // disables all UART interrupt sources.  This does not wait for queued output
+  // to be transmitted; callers which care should first wait for TxDrained() to
+  // return true.  Any output (and input) still queued when power is removed
+  // will be lost, and WakeupFromSuspend resets the FIFOs.
+  //
+  // This never waits for long: it performs a small, bounded number of register
+  // accesses, so it is suitable for calling with interrupts disabled.
+  template <typename IoProvider, typename IrqProvider>
+  void PrepareForSuspend(IoProvider& io, [[maybe_unused]] IrqProvider& irq) {
+    if (prepared_for_suspend_) {
+      return;
+    }
+
+    saved_ier_ = InterruptEnableRegister::Get().ReadFrom(io.io()).reg_value();
+    // Disable all UART interrupt sources so that nothing is asserted while
+    // the UART is powered down.
+    InterruptEnableRegister::Get().FromValue(0).WriteTo(io.io());
+
+    saved_mcr_ = ModemControlRegister::Get().ReadFrom(io.io()).reg_value();
+    saved_lcr_ =
+        LineControlRegister::Get().ReadFrom(io.io()).set_divisor_latch_access(false).reg_value();
+
+    // The divisor is recorded by Init (or SetLineControl).  Don't try to
+    // record it here if that failed: doing so requires writing LCR, which is
+    // only safe when the UART is idle, and we can't wait for that here.
+    // WakeupFromSuspend will leave the divisor alone instead.
+
+    prepared_for_suspend_ = true;
+  }
+
+  // Restore the UART's configuration after power and clocks have been
+  // restored, following a previous call to PrepareForSuspend.
+  //
+  // Like PrepareForSuspend, this performs a small, bounded number of register
+  // accesses.
+  template <typename IoProvider, typename IrqProvider>
+  void WakeupFromSuspend(IoProvider& io, [[maybe_unused]] IrqProvider& irq) {
+    if (!prepared_for_suspend_) {
+      return;
+    }
+
+    // Only touch the divisor latch if DLAB was actually set.  Otherwise the
+    // writes below would land in THR and IER instead.
+    if (has_saved_divisor_ && WriteLcr(io, LineControlRegister::Get()
+                                               .FromValue(saved_lcr_)
+                                               .set_divisor_latch_access(true)
+                                               .reg_value())) {
+      DivisorLatchLowerRegister::Get()
+          .FromValue(0)
+          .set_data(static_cast<uint32_t>(saved_divisor_ & 0xff))
+          .WriteTo(io.io());
+      DivisorLatchUpperRegister::Get()
+          .FromValue(0)
+          .set_data(static_cast<uint32_t>(saved_divisor_ >> 8))
+          .WriteTo(io.io());
+    }
+    const bool lcr_restored = WriteLcr(io, saved_lcr_);
+
+    // FCR is write-only, so it cannot be saved.  Reprogram it the same way
+    // Init does.  (FCR is not multiplexed by DLAB.)
+    ResetAndEnableFifos(io);
+
+    ModemControlRegister::Get().FromValue(saved_mcr_).WriteTo(io.io());
+
+    // Restore interrupt sources last, once everything else is configured.  If
+    // a writer was waiting on TX space when we suspended (possible only when
+    // called from a system suspend path which did not first wait for in-flight
+    // writes to finish), restoring the TX empty interrupt will wake it.
+    //
+    // If DLAB could not be cleared, this write would land in DLH instead, so
+    // leave the UART's interrupts disabled rather than corrupt the divisor.
+    if (lcr_restored) {
+      InterruptEnableRegister::Get().FromValue(saved_ier_).WriteTo(io.io());
+    }
+
+    prepared_for_suspend_ = false;
+  }
+
+ private:
+  template <class IoProvider>
+  void ResetAndEnableFifos(IoProvider& io) {
+    auto fcr = FifoControlRegister::Get().FromValue(0);
+    fcr.set_fifo_enable(true);
+    fcr.set_rx_fifo_reset(true);
+    fcr.set_tx_fifo_reset(true);
+    if (thre_mode_) {
+      fcr.set_transmit_trigger(FifoControlRegister::kTransmitTriggerLevel2Char);
+    }
+    fcr.set_receiver_trigger(FifoControlRegister::kReceiveTriggerLevel1Char);
+    fcr.WriteTo(io.io());
+  }
+
+  // Write |value| to LCR, verifying that the write took effect.
+  //
+  // LCR must not be written while the UART is busy (USR.BUSY): the write is at
+  // best ignored, and some implementations may reject it with a bus error.  So
+  // check USR.BUSY first, and if it is set, force the UART idle by resetting
+  // the FIFOs (discarding their contents) and draining RBR, then check again.
+  // The UART can still become busy between the check and the write (e.g. if RX
+  // data arrives), so also read LCR back afterwards and retry if the write was
+  // ignored.
+  //
+  // Returns false if the write did not take effect after kLcrWriteAttempts
+  // attempts.
+  template <class IoProvider>
+  bool WriteLcr(IoProvider& io, uint32_t value) {
+    constexpr uint32_t kLcrMask = 0xff;
+    value &= kLcrMask;
+    for (size_t i = 0; i < kLcrWriteAttempts; ++i) {
+      if (UartStatusRegister::Get().ReadFrom(io.io()).uart_busy()) {
+        ForceIdle(io);
+        // Resetting the FIFOs doesn't stop a character already being shifted
+        // in or out, so give it a little time.
+        arch::Yield();
+        continue;
+      }
+      LineControlRegister::Get().FromValue(value).WriteTo(io.io());
+      if ((LineControlRegister::Get().ReadFrom(io.io()).reg_value() & kLcrMask) == value) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Discard the contents of the FIFOs so that the UART is no longer busy (at
+  // least once any character currently being shifted out has been sent).
+  template <class IoProvider>
+  void ForceIdle(IoProvider& io) {
+    ResetAndEnableFifos(io);
+    // Note that if DLAB happens to be set, this reads DLL instead, which is
+    // harmless.
+    RxBufferRegister::Get().ReadFrom(io.io());
+  }
+
+  // Wait, up to a limit, for all queued output to be transmitted.  Returns
+  // false if it was not.
+  template <class IoProvider>
+  bool WaitForTxDrained(IoProvider& io) {
+    for (size_t i = 0; i < kWaitBusyLimit; ++i) {
+      if (TxDrained(io)) {
+        return true;
+      }
+      arch::Yield();
+    }
+    return false;
+  }
+
+  // Read and record the baud rate divisor.  |lcr| is the current value of LCR
+  // with DLAB clear, which is restored afterwards.  The UART should be idle
+  // (in particular, TX drained), since this may discard the contents of the
+  // FIFOs (see WriteLcr).
+  //
+  // Returns true and records the divisor only if DLAB was set and then
+  // successfully cleared again.  Otherwise leaves any previously recorded
+  // divisor in place and returns false.
+  template <class IoProvider>
+  bool CaptureDivisor(IoProvider& io, uint32_t lcr) {
+    if (!WriteLcr(
+            io,
+            LineControlRegister::Get().FromValue(lcr).set_divisor_latch_access(true).reg_value())) {
+      // The write did not take effect, so DLAB is still clear.
+      return false;
+    }
+    const uint32_t dll = DivisorLatchLowerRegister::Get().ReadFrom(io.io()).data();
+    const uint32_t dlh = DivisorLatchUpperRegister::Get().ReadFrom(io.io()).data();
+    if (!WriteLcr(io, lcr)) {
+      // DLAB is stuck set, so the UART is not usable.  There is nothing more
+      // we can do about that here, but at least don't claim success.
+      return false;
+    }
+    saved_divisor_ = static_cast<uint16_t>((dlh << 8) | dll);
+    has_saved_divisor_ = true;
+    return true;
+  }
+
  protected:
   uint32_t fifo_depth_ = kFifoDepthDw8250Minimum;
   bool thre_mode_ = false;  // Do we have programmable THRE mode?
   bool fifo_stat_ = false;  // Do we have a FIFO status register?
+
+  // State saved by PrepareForSuspend and restored by WakeupFromSuspend.
+  uint32_t saved_ier_ = 0;
+  uint32_t saved_mcr_ = 0;
+  uint32_t saved_lcr_ = 0;  // With DLAB clear.
+
+  // The baud rate divisor, recorded by Init (or SetLineControl, which programs
+  // it) and restored by WakeupFromSuspend.
+  uint16_t saved_divisor_ = 0;
+  bool has_saved_divisor_ = false;
+  bool prepared_for_suspend_ = false;
 };
 
 }  // namespace uart::dw8250
