@@ -10,7 +10,6 @@ ffx_plugin("ffx_test") {
   version = "0.1.0"
   edition = "2024"
   with_unit_tests = true
-  features = [ "fdomain" ]
   deps = [
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust_fdomain",

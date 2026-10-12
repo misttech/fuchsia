@@ -13,26 +13,12 @@ import("plugins.gni")
 #
 # Parameters
 #
-#   name
-#     Name of the crate as defined in its manifest file. If not specified, it is
-#     assumed to be the same as the target name. All dashes will be replaced
-#     with underscores in the library name: <name_underscored>. This
-#     target creates two libraries: one for the plugin callback method
-#     and one for the argh command struct needed for CLI params. The
-#     libraries creates will be <target>_lib and <target>_args_lib.
-#     If the `with_unit_tests` flag is used, additional test libraries
-#     will be created for a total of four libraries: <target>_lib,
-#     <target>_lib_test, <target>_args_lib, <target>_args_lib_test.
-#
 #   version
 #     Semver version of the crate as seen on crates.io.
 #
 #   edition (optional)
 #     Edition of the Rust language to be used.
 #     Options are "2015" and "2018". Defaults to "2018".
-#
-#   configs (optional)
-#     A list of config labels applying to this target.
 #
 #   deps (optional)
 #     List of rust_library GN targets on which this crate depends.
@@ -64,23 +50,11 @@ import("plugins.gni")
 #     If args_with_unit_tests is true then this is like test_deps but for
 #     args_source_root.
 #
-#   test_environments (optional)
-#     What environments unit tests, if provided, should target. Only used here
-#     for linux and mac tests, with a default value of a general linux/mac
-#     environment (as a function of $current_os).
-#     See environments parameter on //build/testing/test_spec.gni for more
-#     details.
-#
-#   source_root (optional)
-#     Location of the plugin root (e.g. `src/lib.rs`). This defaults to `./src/lib.rs`
-#     This should be the location of the method marked with the
-#     ffx_plugin attribute.
-#
 #   args_source_root (optional)
 #     Location of the plugin's argh command root (e.g. `src/args.rs`). This defaults
 #     to `./src/args.rs`. This should be the location of the struct marked with the
 #     ffx_command attribute. Due to internal dependencies this cannot
-#     be the same file as the source_root.
+#     be the same file as `src/lib.rs`.
 #
 #   original_target_name (optional)
 #     The name of the target as it appears in the BUILD file. Enables tooling
@@ -95,11 +69,7 @@ import("plugins.gni")
 #     Publication level of the plugin in SDKs. Defaults to not published.
 #     See //build/sdk/sdk_atom.gni.
 template("ffx_plugin") {
-  if (defined(invoker.name)) {
-    _crate_name = invoker.name
-  } else {
-    _crate_name = target_name
-  }
+  _crate_name = target_name
 
   tests_deps = []
   if (defined(invoker.test_deps)) {
@@ -117,11 +87,6 @@ template("ffx_plugin") {
       "args_test_deps",
       "args_with_unit_tests",
     ]
-
-    _extra_configs = []
-    if (defined(invoker.configs)) {
-      _extra_configs = invoker.configs
-    }
 
     # Ensure all FIDL dependencies meet the compatibility and stability
     # requirements.
@@ -197,13 +162,10 @@ template("ffx_plugin") {
         forward_variables_from(invoker,
                                "*",
                                _args_parameter_names + [
-                                     "configs",
-                                     "name",
                                      "edition",
                                      "deps",
                                      "config_data",
                                      "sdk_category",
-                                     "source_root",
                                      "sources",
                                      "enforce_source_listing",
                                      "target_name",
@@ -218,7 +180,6 @@ template("ffx_plugin") {
         # switch them to the larger RBE workers.
         _concurrent_jobs = concurrent_jobs.rust_highmem
         configs += _concurrent_jobs.configs
-        configs += _extra_configs
         forward_variables_from(_concurrent_jobs.vars, "*")
       }
 
@@ -280,12 +241,9 @@ template("ffx_plugin") {
       forward_variables_from(invoker,
                              "*",
                              _args_parameter_names + [
-                                   "name",
-                                   "configs",
                                    "config_data",
                                    "deps",
                                    "sdk_category",
-                                   "source_root",
                                    "sources",
                                    "target_name",
                                    "with_unit_tests",
@@ -295,7 +253,6 @@ template("ffx_plugin") {
                                  ])
       assert_no_deps = disallowed_category_markers
       deps += [ category_marker ]
-      configs += _extra_configs
 
       # As these are large libraries that are slow to compile on RBE workers,
       # switch them to the larger RBE workers.
@@ -307,22 +264,7 @@ template("ffx_plugin") {
       tests_deps += [ ":" + args_target_name + "_test" ]
     }
 
-    includes_execution = false
-    if (defined(invoker.sources)) {
-      if (defined(invoker.source_root)) {
-        plugin_source_root = invoker.source_root
-      } else {
-        plugin_source_root = "src/lib.rs"
-      }
-      foreach(i, invoker.sources) {
-        if (i == plugin_source_root) {
-          includes_execution = true
-        }
-      }
-    }
-    assert(
-        includes_execution || !defined(invoker.source_root),
-        "The path specified by `source_root` was not found in `sources`. Ensure it is included or do not specify `source_root`.")
+    includes_execution = defined(invoker.sources) && invoker.sources != []
 
     # Adding `_plugins_rs_deps` as public_deps would not make the libraries in
     # it available to the suite target, which depends on this library and
@@ -359,9 +301,7 @@ template("ffx_plugin") {
         forward_variables_from(invoker,
                                "*",
                                _args_parameter_names + [
-                                     "configs",
                                      "config_data",
-                                     "name",
                                      "original_target_name",
                                      "sdk_category",
                                      "target_name",
@@ -375,7 +315,6 @@ template("ffx_plugin") {
           category_marker,
         ]
         assert_no_deps = disallowed_category_markers
-        configs += _extra_configs
       }
 
       suite_target_additional_deps += [ ":${_crate_name}" ]
@@ -402,8 +341,6 @@ template("ffx_plugin") {
       forward_variables_from(invoker,
                              "*",
                              _args_parameter_names + [
-                                   "name",
-                                   "configs",
                                    "config_data",
                                    "deps",
                                    "edition",
