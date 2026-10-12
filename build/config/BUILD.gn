@@ -1351,15 +1351,19 @@ config("no_profile") {
   ]
 }
 
+# LINT.IfChange(icf)
 compiler_config("icf") {
   # This changes C/C++ semantics and might be incompatible with third-party
   # code that relies on function pointers comparison.
+  # TODO(https://fxbug.dev/572722205): Consider --icf=safe.
   if (is_pecoff) {
     linker_flags = [ "/opt:icf=all" ]
   } else if (linker == "gold" || linker == "lld") {
     linker_flags = [ "--icf=all" ]
   }
 }
+
+# LINT.ThenChange(BUILD.bazel:icf)
 
 # "_ALL_SOURCE" is used by some system headers to expose more features (say in
 # fcntl.h) beyond those strictly defined in standard.

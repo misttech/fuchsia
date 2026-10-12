@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 load("@fuchsia_rules_common//build_flags:build_flags.bzl", "build_flags")
+load("@fuchsia_rules_common//build_flags:compiler_build_flags.bzl", "compiler_build_flags")
 load("//build/bazel/config/derived:fuchsia_cxx_version.bzl", "fuchsia_cxx_version")
 load(":compress_debuginfo.bzl", "compress_debuginfo_build_flags")
 load(":dwarf_version.bzl", "dwarf_version_build_flags")
@@ -57,6 +58,18 @@ build_flags(
     visibility = ["//visibility:public"],
 )
 # LINT.ThenChange(//build/config/BUILD.gn:language)
+
+# LINT.IfChange(icf)
+compiler_build_flags(
+    name = "icf",
+    # This changes C/C++ semantics and might be incompatible with third-party
+    # code that relies on function pointers comparison.
+    # TODO(https://fxbug,dev/572722205): Consider --icf=safe.
+    # Assume GN condition 'is_pecoff == false && linker == "lld"' is always true in Bazel.
+    linker_flags = ["--icf=all"],
+    visibility = ["//visibility:public"],
+)
+# LINT.ThenChange(BUILD.gn:icf)
 
 # LINT.IfChange(libcpp_remove_transitive_includes)
 build_flags(
