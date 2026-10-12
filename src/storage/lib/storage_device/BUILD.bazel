@@ -1,0 +1,60 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:storage_device_test`) stay in BUILD.gn because they
+# depend on //sdk/lib/driver/fake-bti/rust, which has no Bazel build yet.
+rustc_library(
+    name = "storage_device",
+    srcs = [
+        "src/buffer.rs",
+        "src/buffer_allocator.rs",
+        "src/fake_device.rs",
+        "src/file_backed_device.rs",
+        "src/lib.rs",
+        "src/ranged_device.rs",
+        "src/splittable_buffer.rs",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "src/block_device.rs",
+            "src/pinned_buffer_allocator.rs",
+        ],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    visibility = [
+        "//src/devices/block/drivers/cqhci:__pkg__",
+        "//src/starnix/kernel/core:__pkg__",
+        "//src/storage/crypt/starnix:__pkg__",
+        "//src/storage/f2fs_reader:__subpackages__",
+        "//src/storage/fshost/integration:__pkg__",
+        "//src/storage/fxfs:__subpackages__",
+        "//src/storage/lib:__subpackages__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//src/lib/fuchsia-sync",
+        "//src/storage/lib/block_protocol",
+        "//src/storage/lib/ptr_slice",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:event-listener",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:num-traits",
+        "//third_party/rust_crates/vendor:rand",
+    ] + select({
+        "@platforms//os:fuchsia": [
+            "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+            "//sdk/rust/zx",
+            "//src/lib/fidl/rust/fidl",
+            "//src/lib/fuchsia-runtime",
+            "//src/storage/lib/block_client/rust:block-client",  # @bazel2gn:path_overwrite://src/storage/lib/block_client/rust
+        ],
+        "//conditions:default": [],
+    }),
+)

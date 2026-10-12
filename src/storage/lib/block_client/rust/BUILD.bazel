@@ -1,0 +1,58 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The unit tests (`:block-client_test`) stay in BUILD.gn because they
+# depend on //src/storage/lib/block_server and
+# //src/storage/lib/ramdevice_client, which have no Bazel build yet.
+rustc_library(
+    name = "block-client",
+    srcs = [
+        "src/cache.rs",
+        "src/lib.rs",
+    ],
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/storage/benchmarks/fuchsia:__pkg__",
+        "//src/storage/gpt/component:__pkg__",
+        "//src/storage/lib/storage_device:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-async",
+        "//src/lib/fuchsia-sync",
+        "//src/storage/lib/block_protocol",
+        "//src/storage/lib/trace",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:linked-hash-map",
+        "//third_party/rust_crates/vendor:log",
+    ],
+)
+
+rustc_library(
+    name = "fake-block-client",
+    srcs = ["src/fake_block_client.rs"],
+    crate_root = "src/fake_block_client.rs",
+    edition = "2024",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//src/storage/fvm:__pkg__",
+        "//src/storage/lib/storage_device:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        ":block-client",
+        "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
+        "//sdk/rust/zx",
+        "//src/lib/fuchsia-sync",
+    ],
+)
