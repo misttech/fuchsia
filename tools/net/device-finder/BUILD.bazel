@@ -2,9 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
-load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 load("//build/bazel/rules/idk:idk_host_tool.bzl", "idk_go_binary_host_tool")
 load("//build/tools/bazel2gn/bazel_rules:defs.bzl", "install_host_tools")
 
@@ -49,7 +48,7 @@ idk_go_binary_host_tool(
     target_compatible_with = HOST_OS_CONSTRAINTS,
 )
 
-host_go_test(
+go_test(
     name = "dev_finder_tests",
     srcs = [
         "cmd/dev_finder_test.go",
@@ -57,12 +56,7 @@ host_go_test(
     embed = [
         ":lib",
     ],
-    # Same as `device-finder` above: `lib` needs CGO, which requires PIE
-    # linking and is disabled by pure mode.
-    linkmode = "pie",
-    pure = "off",
     target_compatible_with = HOST_OS_CONSTRAINTS,
-    visibility = ["//tools:__pkg__"],
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
     ],

@@ -39,13 +39,16 @@ go_library("netboot") {
     "loglistener.go",
     "netboot.go",
   ]
-  visibility = [
-    ":*",
-    "//tools/*",
-  ]
   deps = [
     "//third_party/golibs:golang.org/x/net/ipv6",
     "//third_party/golibs:golang.org/x/sys/unix",
     "//tools/lib/logger",
   ]
+}
+go_test("netboot_tests") {
+  sources = [
+    "common_test.go",
+    "netboot_test.go",
+  ]
+  embed = [ ":netboot" ]
 }

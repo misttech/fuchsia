@@ -2,10 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_applicable_licenses = ["//:license"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//visibility:public"],
+)
 
 go_library(
     name = "mdns",
@@ -13,7 +15,6 @@ go_library(
         "mdns.go",
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/net/mdns",
-    visibility = ["//tools:__subpackages__"],
     deps = [
         "//third_party/golibs:golang.org/x/net/ipv4",
         "//third_party/golibs:golang.org/x/net/ipv6",
@@ -21,7 +22,7 @@ go_library(
     ],
 )
 
-host_go_test(
+go_test(
     name = "mdns_tests",
     srcs = [
         "mdns_test.go",
@@ -29,7 +30,6 @@ host_go_test(
     embed = [
         ":mdns",
     ],
-    visibility = ["//tools:__pkg__"],
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
     ],

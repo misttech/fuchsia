@@ -3,6 +3,18 @@
 # found in the LICENSE file.
 
 import("//build/go/go_library.gni")
+import("//build/go/go_test.gni")
+
+go_test("sshutil_tests") {
+  embed = [ ":sshutil" ]
+
+  sources = [
+    "client_test.go",
+    "conn_test.go",
+    "sshutil_test.go",
+    "testserver_test.go",
+  ]
+}
 
 ## BAZEL2GN SENTINEL - DO NOT EDIT BELOW THIS LINE ##
 #

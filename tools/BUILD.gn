@@ -113,6 +113,7 @@ group("tests_no_e2e") {
     "//tools/lib/serial:tests($host_toolchain)",
     "//tools/make-fuchsia-vol:tests",
     "//tools/mdlint:tests",
+    "//tools/net:tests($host_toolchain)",
     "//tools/pbtool:tests($host_toolchain)",
     "//tools/pkgstats:tests",
     "//tools/power_config:tests",
