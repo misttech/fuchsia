@@ -69,7 +69,7 @@ impl<S: Sender<<NetlinkRoute as ProtocolFamily>::Response>> UnifiedRequest<S> {
 pub(crate) enum UnifiedEvent {
     RoutesV4Event(fnet_routes_ext::Event<Ipv4>),
     RoutesV6Event(fnet_routes_ext::Event<Ipv6>),
-    InterfacesEvent(fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::AllInterest>),
+    InterfacesEvent(fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::DefaultInterest>),
     NeighborsEvent(fnet_neighbor_ext::Event),
 }
 

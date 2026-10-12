@@ -521,7 +521,7 @@ type InterfaceMap = BTreeMap<
     u64,
     fnet_interfaces_ext::PropertiesAndState<
         crate::interfaces::InterfaceState,
-        fnet_interfaces_ext::AllInterest,
+        fnet_interfaces_ext::DefaultInterest,
     >,
 >;
 

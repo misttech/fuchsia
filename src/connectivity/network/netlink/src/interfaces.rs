@@ -261,7 +261,10 @@ pub(crate) struct InterfacesWorkerState<H, S: Sender<<NetlinkRoute as ProtocolFa
     /// interfaces watcher.
     pub(crate) interface_properties: BTreeMap<
         u64,
-        fnet_interfaces_ext::PropertiesAndState<InterfaceState, fnet_interfaces_ext::AllInterest>,
+        fnet_interfaces_ext::PropertiesAndState<
+            InterfaceState,
+            fnet_interfaces_ext::DefaultInterest,
+        >,
     >,
     /// Corresponds to the `/proc/sys/net/ipv6/conf/default/accept_ra_rt_table`.
     /// It is the default sysctl value for the interfaces to be added.
@@ -504,7 +507,7 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>
         Self,
         impl futures::Stream<
             Item = Result<
-                fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::AllInterest>,
+                fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::DefaultInterest>,
                 fidl::Error,
             >,
         > + 'static,
@@ -568,7 +571,7 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>
     /// should use this to process stashed routes for this new table.
     pub(crate) async fn handle_interface_watcher_event(
         &mut self,
-        event: fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::AllInterest>,
+        event: fnet_interfaces_ext::EventWithInterest<fnet_interfaces_ext::DefaultInterest>,
         route_table_maps: Option<(&mut RouteTableMap<Ipv4>, &mut RouteTableMap<Ipv6>)>,
     ) -> Option<NetlinkRouteTableIndex> {
         let update = self
@@ -812,7 +815,10 @@ impl<H: InterfacesHandler, S: Sender<<NetlinkRoute as ProtocolFamily>::Response>
         &self,
         specifier: LinkSpecifier,
     ) -> Option<
-        &fnet_interfaces_ext::PropertiesAndState<InterfaceState, fnet_interfaces_ext::AllInterest>,
+        &fnet_interfaces_ext::PropertiesAndState<
+            InterfaceState,
+            fnet_interfaces_ext::DefaultInterest,
+        >,
     > {
         match specifier {
             LinkSpecifier::Index(id) => self.interface_properties.get(&id.get().into()),
@@ -1215,7 +1221,7 @@ pub(crate) struct NetlinkLinkMessage(LinkMessage);
 
 impl NetlinkLinkMessage {
     fn optionally_from(
-        properties: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest>,
+        properties: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::DefaultInterest>,
         link_address: &Option<Vec<u8>>,
     ) -> Option<Self> {
         match interface_properties_to_link_message(properties, link_address) {
@@ -1324,7 +1330,7 @@ fn interface_properties_to_link_message(
         has_default_ipv4_route: _,
         has_default_ipv6_route: _,
         port_identity_koid: _,
-    }: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest>,
+    }: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::DefaultInterest>,
     link_address: &Option<Vec<u8>>,
 ) -> Result<NetlinkLinkMessage, NetlinkLinkMessageConversionError> {
     let online = *online;
@@ -1444,7 +1450,7 @@ enum NetlinkAddressMessageConversionError {
 }
 
 fn addresses_optionally_from_interface_properties(
-    properties: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest>,
+    properties: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::DefaultInterest>,
 ) -> Option<BTreeMap<fnet::IpAddress, NetlinkAddressMessage>> {
     match interface_properties_to_address_messages(properties) {
         Ok(o) => Some(o),
@@ -1467,7 +1473,7 @@ fn interface_properties_to_address_messages(
         has_default_ipv4_route: _,
         has_default_ipv6_route: _,
         port_identity_koid: _,
-    }: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest>,
+    }: &fnet_interfaces_ext::Properties<fnet_interfaces_ext::DefaultInterest>,
 ) -> Result<BTreeMap<fnet::IpAddress, NetlinkAddressMessage>, NetlinkAddressMessageConversionError>
 {
     // We expect interface ids to safely fit in the range of the u32 values.
@@ -1846,11 +1852,10 @@ pub(crate) mod testutil {
         addr: fnet::Subnet,
         assignment_state: fnet_interfaces::AddressAssignmentState,
     ) -> fnet_interfaces::Address {
-        fnet_interfaces_ext::Address::<fnet_interfaces_ext::AllInterest> {
+        fnet_interfaces_ext::Address::<fnet_interfaces_ext::DefaultInterest> {
             addr,
-            valid_until: fnet_interfaces_ext::PositiveMonotonicInstant::INFINITE_FUTURE,
-            preferred_lifetime_info: fnet_interfaces_ext::PreferredLifetimeInfo::preferred_forever(
-            ),
+            valid_until: fnet_interfaces_ext::NoInterest,
+            preferred_lifetime_info: fnet_interfaces_ext::NoInterest,
             assignment_state,
         }
         .into()
@@ -1890,8 +1895,8 @@ mod tests {
         name: String,
         port_class: fnet_interfaces_ext::PortClass,
         online: bool,
-        addresses: Vec<fnet_interfaces_ext::Address<fnet_interfaces_ext::AllInterest>>,
-    ) -> fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest> {
+        addresses: Vec<fnet_interfaces_ext::Address<fnet_interfaces_ext::DefaultInterest>>,
+    ) -> fnet_interfaces_ext::Properties<fnet_interfaces_ext::DefaultInterest> {
         fnet_interfaces_ext::Properties {
             id: NonZeroU64::new(id).unwrap(),
             name,
@@ -1909,21 +1914,19 @@ mod tests {
         name: String,
         port_class: fnet_interfaces_ext::PortClass,
         online: bool,
-    ) -> fnet_interfaces_ext::Properties<fnet_interfaces_ext::AllInterest> {
+    ) -> fnet_interfaces_ext::Properties<fnet_interfaces_ext::DefaultInterest> {
         let addresses = vec![
             fnet_interfaces_ext::Address {
                 addr: TEST_V4_ADDR,
-                valid_until: fnet_interfaces_ext::PositiveMonotonicInstant::INFINITE_FUTURE,
+                valid_until: fnet_interfaces_ext::NoInterest,
                 assignment_state: AddressAssignmentState::Assigned,
-                preferred_lifetime_info:
-                    fnet_interfaces_ext::PreferredLifetimeInfo::preferred_forever(),
+                preferred_lifetime_info: fnet_interfaces_ext::NoInterest,
             },
             fnet_interfaces_ext::Address {
                 addr: TEST_V6_ADDR,
-                valid_until: fnet_interfaces_ext::PositiveMonotonicInstant::INFINITE_FUTURE,
+                valid_until: fnet_interfaces_ext::NoInterest,
                 assignment_state: AddressAssignmentState::Assigned,
-                preferred_lifetime_info:
-                    fnet_interfaces_ext::PreferredLifetimeInfo::preferred_forever(),
+                preferred_lifetime_info: fnet_interfaces_ext::NoInterest,
             },
         ];
         create_interface(id, name, port_class, online, addresses)
