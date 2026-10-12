@@ -76,6 +76,7 @@ rustc_library("starnix_sync") {
     "//src/starnix/kernel/runner:*",
     "//src/starnix/lib/*",
     "//src/starnix/modules/*",
+    "//src/starnix/psi_provider:*",
     "//src/starnix/runner/lib/kernel_manager:*",
   ]
   deps = [

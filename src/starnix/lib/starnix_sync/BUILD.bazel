@@ -37,6 +37,7 @@ rustc_library(
         "//src/starnix/kernel/runner:__pkg__",
         "//src/starnix/lib:__subpackages__",
         "//src/starnix/modules:__subpackages__",
+        "//src/starnix/psi_provider:__pkg__",
         "//src/starnix/runner/lib/kernel_manager:__pkg__",
     ],
     deps = [

@@ -3,17 +3,18 @@
 // found in the LICENSE file.
 
 use anyhow::Error;
+use fidl_fuchsia_kernel as fkernel;
 use fidl_fuchsia_starnix_psi::{
     PsiProviderGetMemoryPressureStatsResponse, PsiProviderRequest, PsiProviderRequestStream,
     PsiProviderWatchMemoryStallRequest, PsiProviderWatchMemoryStallResponse, PsiStats,
 };
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol_sync;
 use fuchsia_component::server::ServiceFs;
-use fuchsia_sync::Mutex;
 use futures::{StreamExt, TryStreamExt};
 use log::warn;
+use starnix_sync::{LockDepMutex, PsiProviderHistoryLock};
 use std::sync::{Arc, Weak};
-use {fidl_fuchsia_kernel as fkernel, fuchsia_async as fasync};
 
 mod history;
 use history::{History, SAMPLING_RATE};
@@ -53,7 +54,7 @@ impl DataSource for RealDataSource {
 
 struct PsiProvider {
     data_source: Box<dyn DataSource>,
-    history: Mutex<History>,
+    history: LockDepMutex<History, PsiProviderHistoryLock>,
     history_updater_task: Option<fasync::Task<()>>,
 }
 
@@ -74,7 +75,7 @@ impl PsiProvider {
             let history_updater_task = fasync::Task::spawn(history_updater(weak_ptr.clone()));
             PsiProvider {
                 data_source: Box::new(data_source),
-                history: Mutex::new(history),
+                history: LockDepMutex::new(history),
                 history_updater_task: Some(history_updater_task),
             }
         })
@@ -93,7 +94,7 @@ impl PsiProvider {
 
         Arc::new(PsiProvider {
             data_source: Box::new(data_source),
-            history: Mutex::new(history),
+            history: LockDepMutex::new(history),
             history_updater_task: None,
         })
     }
@@ -268,6 +269,7 @@ async fn main() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fuchsia_sync::Mutex;
 
     #[derive(Default)]
     struct FakeDataSource {
