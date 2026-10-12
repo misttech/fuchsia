@@ -341,16 +341,6 @@ Supported options:
 
 From //build/bazel/remote_services.gni:25
 
-### bazel_upload_build_events
-
-DEPRECATED: Configure bazel to stream build events and results to a service.
-This option is now deprecated and ignored. Use '--resultstore' or 'fx
-resultstore' instead.
-
-**Current value (from the default):** `""`
-
-From //build/bazel/remote_services.gni:37
-
 ### blobfs_num_pager_threads
 
 The number of pager threads to spawn for blobfs.
@@ -930,7 +920,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -5560,16 +5550,6 @@ subbuilds invoker from Bazel. For more details, read
 **Current value (from the default):** `["//:default"]`
 
 From //build/ninja_implicit_inputs/config.gni:11
-
-### ninja_upload_build_events
-
-DEPRECATED: Configure ninja to stream build events and results to a service.
-This option is now deprecated and ignored. Use '--resultstore' or 'fx
-resultstore' instead.
-
-**Current value (from the default):** `""`
-
-From //build/toolchain/resultstore.gni:9
 
 ### openthread_config_anycast_locator_enable
 
