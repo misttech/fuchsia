@@ -9,24 +9,10 @@
 
 set -euo pipefail
 
-# Resolve the Fuchsia checkout from this script's own location rather than
-# from the current working directory. `git rev-parse --show-toplevel` is
-# wrong here: Fuchsia is a jiri multi-repo checkout, so running from inside
-# a sub-project such as //vendor/google would resolve to that sub-project.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-FUCHSIA_DIR="$(cd -- "${SCRIPT_DIR}/../../../.." && pwd)"
-FX="${FUCHSIA_DIR}/scripts/fx"
+# shellcheck source=src/tests/end_to_end/usb/lib/desk_test_common.sh
+source "${SCRIPT_DIR}/lib/desk_test_common.sh"
 
-if [[ ! -x "${FX}" ]]; then
-  echo "ERROR: could not locate the Fuchsia checkout root." >&2
-  echo "  Derived FUCHSIA_DIR=${FUCHSIA_DIR}" >&2
-  echo "  but ${FX} is not executable." >&2
-  echo "  This script expects to live at //src/tests/end_to_end/usb/." >&2
-  exit 1
-fi
-
-# Always invoke fx by path. `fx` is only on PATH after sourcing
-# scripts/fx-env.sh, which not everyone has in their shell rc.
 cd "${FUCHSIA_DIR}"
 
 # ---------------------------------------------------------------------------
@@ -143,18 +129,6 @@ Performance (-p):
 EOF
 }
 
-# Rejects a missing value, and a value that looks like the next flag, so
-# that `-t -n` reports an error instead of sending "-n" to fx as a device.
-function require_value() {
-  local flag="$1"
-  local count="$2"
-  local value="${3-}"
-  if [[ "${count}" -lt 2 || "${value}" == -* ]]; then
-    echo "ERROR: ${flag} requires a value" >&2
-    exit 1
-  fi
-}
-
 RUN_FUNCTIONAL=false
 RUN_STRESS=false
 RUN_PHYSICAL=false
@@ -216,13 +190,13 @@ while [[ $# -gt 0 ]]; do
       exit 1
       ;;
     --test)
-      require_value "$1" "$#" "${2-}"
+      usb_desk_require_value "$1" "$#" "${2-}"
       EXPLICIT_TESTS+=("$2")
       EXPLICIT_SELECTION=true
       shift 2
       ;;
     -t|--device)
-      require_value "$1" "$#" "${2-}"
+      usb_desk_require_value "$1" "$#" "${2-}"
       DEVICE="$2"
       shift 2
       ;;
@@ -297,102 +271,7 @@ for candidate in "${TESTS_TO_RUN[@]}"; do
 done
 TESTS_TO_RUN=("${DEDUPED[@]}")
 
-FX_GLOBAL_ARGS=()
-if [[ -n "${DEVICE}" ]]; then
-  FX_GLOBAL_ARGS+=(-t "${DEVICE}")
-fi
-
-# ---------------------------------------------------------------------------
-# Build-configuration gate.
-#
-# `fx test --dry` resolves the selections against tests.json without running
-# anything. If a selection is missing from the build, fx emits a block per
-# unmatched name:
-#
-#     <name> (100.00% similar)
-#         fx add-test //path/to:target
-#
-# which we turn into actionable advice. Any other failure is reported
-# verbatim: we must never fall through to the real run after a failed gate.
-# ---------------------------------------------------------------------------
-echo "Checking build configuration..."
-if dry_run_out=$("${FX}" ${FX_GLOBAL_ARGS[@]+"${FX_GLOBAL_ARGS[@]}"} \
-    test --dry --e2e "${TESTS_TO_RUN[@]}" 2>&1); then
-  gate_ok=true
-else
-  gate_ok=false
-fi
-
-# Strip ANSI styling before matching. fx disables color when stdout is not
-# a TTY, which is the case here, but do not depend on that. Use $'\033'
-# rather than \x1b, which is a GNU sed extension.
-clean_out=$(printf '%s\n' "${dry_run_out}" \
-  | sed -e $'s/\033\\[[0-9;]*m//g')
-
-# `fx test --dry` returns exit status 0 as long as at least one test argument
-# matches, even when other arguments in the list do not match. Check the
-# output explicitly so partial matches still trigger the missing-test gate.
-if printf '%s\n' "${clean_out}" \
-    | grep -qF "Could not find any tests to run"; then
-  gate_ok=false
-fi
-
-if [[ "${gate_ok}" == false ]]; then
-
-  # Collect "<name>\t<suggestion>" for every 100.00% block. Matching the
-  # whole line and taking field 1 avoids a substring of one test name
-  # matching a different, longer suggested name.
-  parsed=$(printf '%s\n' "${clean_out}" | awk '
-    /^[[:space:]]*[^[:space:]]+ \(100\.00% similar\)[[:space:]]*$/ {
-      name = $1
-      suggestion = ""
-      if ((getline line) > 0) {
-        sub(/^[[:space:]]+/, "", line)
-        sub(/[[:space:]]+$/, "", line)
-        suggestion = line
-      }
-      print name "\t" suggestion
-    }')
-
-  MISSING_TESTS=()
-  SUGGESTED_COMMANDS=()
-  for candidate in "${TESTS_TO_RUN[@]}"; do
-    # -x for a whole-line match, -- so a name starting with "-" is not
-    # parsed as an option.
-    if ! printf '%s\n' "${parsed}" | cut -f1 \
-        | grep -qxF -- "${candidate}"; then
-      continue
-    fi
-    MISSING_TESTS+=("${candidate}")
-    suggestion=$(printf '%s\n' "${parsed}" \
-      | awk -F'\t' -v n="${candidate}" '$1 == n { print $2; exit }')
-    # The line after a match is not always a command: for a target already
-    # in the build it reads "Build includes: fuchsia-pkg://...". Only
-    # forward it if it really is something the user can run.
-    if [[ "${suggestion}" == fx\ * ]]; then
-      SUGGESTED_COMMANDS+=("${suggestion}")
-    fi
-  done
-
-  if [[ ${#MISSING_TESTS[@]} -gt 0 ]]; then
-    echo "ERROR: these tests are not in your build configuration:" >&2
-    printf '  - %s\n' "${MISSING_TESTS[@]}" >&2
-    echo "" >&2
-    if [[ ${#SUGGESTED_COMMANDS[@]} -gt 0 ]]; then
-      echo "To add them, run:" >&2
-      printf '%s\n' "${SUGGESTED_COMMANDS[@]}" | sort -u \
-        | sed -e 's/^/  /' >&2
-      echo "" >&2
-    fi
-    echo "Or add all E2E USB tests at once:" >&2
-    echo "  fx add-host-test //src/tests/end_to_end/usb:tests" >&2
-  else
-    echo "ERROR: 'fx test --dry' failed, but not because of a missing" >&2
-    echo "test. Output was:" >&2
-    printf '%s\n' "${dry_run_out}" >&2
-  fi
-  exit 1
-fi
+usb_desk_verify_tests_in_build "${DEVICE}" "${TESTS_TO_RUN[@]}"
 
 if [[ "${DRY_RUN}" == true ]]; then
   echo "Dry run only; the following tests resolved successfully:"
@@ -401,8 +280,6 @@ if [[ "${DRY_RUN}" == true ]]; then
 fi
 
 echo "Running tests: ${TESTS_TO_RUN[*]}"
-# -o streams test output as it happens. exec so that the exit status and
-# any signals belong to fx directly.
-exec "${FX}" ${FX_GLOBAL_ARGS[@]+"${FX_GLOBAL_ARGS[@]}"} \
-  test -o --e2e "${TESTS_TO_RUN[@]}" \
-  ${EXTRA_FX_ARGS[@]+"${EXTRA_FX_ARGS[@]}"}
+usb_desk_build_fx_test_cmd "${DEVICE}" "false" \
+  "${TESTS_TO_RUN[@]}" ${EXTRA_FX_ARGS[@]+"${EXTRA_FX_ARGS[@]}"}
+exec "${USB_DESK_TEST_CMD[@]}"

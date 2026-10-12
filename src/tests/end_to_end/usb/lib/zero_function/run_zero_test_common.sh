@@ -13,14 +13,11 @@ _ZERO_TEMP_PARAMS_YAML=""
 _ZERO_KEEP_DRIVER=false
 _ZERO_DRIVER_LOADED=false
 
+_ZERO_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+# shellcheck source=src/tests/end_to_end/usb/lib/desk_test_common.sh
+source "${_ZERO_SCRIPT_DIR}/../desk_test_common.sh"
+
 run_zero_desk_test() {
-    local script_dir
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-    local fuchsia_dir="${FUCHSIA_DIR:-}"
-    if [[ -z "${fuchsia_dir}" ]]; then
-        local root_rel="${script_dir}/../../../../../.."
-        fuchsia_dir="$(cd "${root_rel}" >/dev/null 2>&1 && pwd)"
-    fi
     local serial_socket="${FUCHSIA_SERIAL_SOCKET:-}"
     local keep_driver=false
     local dry_run=false
@@ -330,19 +327,8 @@ IP_PORT_EOF
     echo "[*]   ${serial_socket}"
 
     # 4. Run Mobly test via fx test
-    local -a test_cmd=(
-        "${fuchsia_dir}/.jiri_root/bin/fx"
-    )
     local fx_target="${target_addr:-${target_name}}"
-    if [[ -n "${fx_target}" ]]; then
-        test_cmd+=("-t" "${fx_target}")
-    fi
-    test_cmd+=(
-        test
-        -o
-        --e2e
-        --no-allow-temporary-emulator
-        "${test_target}"
+    local -a mobly_args=(
         --
         --config-yaml-path "${temp_yaml}"
     )
@@ -354,10 +340,11 @@ IP_PORT_EOF
 stress_duration_sec: ${stress_duration}
 PARAMS_EOF
         echo "[*] Configured stress duration per routine: ${stress_duration}s"
-        test_cmd+=(--params-yaml-path "${temp_params_yaml}")
+        mobly_args+=(--params-yaml-path "${temp_params_yaml}")
     fi
 
-    test_cmd+=("${additional_args[@]}")
+    mobly_args+=(${additional_args[@]+"${additional_args[@]}"})
+    usb_desk_build_fx_test_cmd "${fx_target}" "true" "${test_target}" "${mobly_args[@]}"
 
     if [[ "${dry_run}" == "true" ]]; then
         echo "[*] [DRY RUN] Generated Mobly YAML (${temp_yaml}):"
@@ -367,12 +354,15 @@ PARAMS_EOF
             cat "${temp_params_yaml}"
         fi
         echo "[*] [DRY RUN] Would execute command:"
-        echo "    ${test_cmd[*]}"
+        echo "    ${USB_DESK_TEST_CMD[*]}"
         return 0
     fi
 
+    usb_desk_ensure_test_in_build_graph \
+        "${test_target}" "//src/tests/end_to_end/usb:${test_name}"
+
     echo "[*] Executing ${test_name}..."
-    "${test_cmd[@]}"
+    "${USB_DESK_TEST_CMD[@]}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
