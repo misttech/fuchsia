@@ -1208,6 +1208,13 @@ impl<I: Instant, R: ReceiveBuffer> Recv<I, R> {
         WindowSizeCalculation { rcv_nxt, window_size, threshold }
     }
 
+    /// Returns the number of in-order bytes received since the last ACK was
+    /// sent.
+    fn unacked_bytes(&self) -> usize {
+        let (rcv_wup, _) = self.last_window_update;
+        usize::try_from(self.nxt() - rcv_wup).unwrap_or(0)
+    }
+
     /// Processes data being removed from the receive buffer. Returns a window
     /// update segment to be sent immediately if necessary.
     fn poll_receive_data_dequeued(&mut self, snd_max: SeqNum, now: I) -> Option<Segment<()>> {
@@ -3192,12 +3199,12 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                         RecvBufferState::Closed { nxt, .. } => *nxt = seg_seq + data.len(),
                     }
                 }
-                // Per RFC 5681 Section 4.2:
-                //  Out-of-order data segments SHOULD be acknowledged
-                //  immediately, ...  the receiver SHOULD send an
-                //  immediate ACK when it receives a data segment that
-                //  fills in all or part of a gap in the sequence space.
                 let immediate_ack = !*delayed_ack
+                    // Per RFC 5681 Section 4.2:
+                    //  Out-of-order data segments SHOULD be acknowledged
+                    //  immediately, ...  the receiver SHOULD send an
+                    //  immediate ACK when it receives a data segment that
+                    //  fills in all or part of a gap in the sequence space.
                     || had_out_of_order
                     || rcv.buffer.has_out_of_order()
                     // Always send immediate ACKS if we're in a quickack period.
@@ -3226,7 +3233,19 @@ impl<I: Instant + 'static, R: ReceiveBuffer, S: SendBuffer, ActiveOpen: Debug>
                     // the sender's perspective, we follow the simplified
                     // guidance from the RFC and always acknowledge every other
                     // segment, giving up on the timer if it is set.
-                    || rcv.timer.is_some();
+                    || rcv.timer.is_some()
+                    // GRO may coalesce multiple MSS worth of data into a single
+                    // segment. Delaying the ACK for such a segment stalls a
+                    // sender that is limited by its congestion window until the
+                    // delayed ACK timer fires.
+                    //
+                    // Like Linux (`__tcp_ack_snd_check`), ACK as soon as more
+                    // than one full MSS is unacknowledged rather than waiting
+                    // for 2*MSS. With full-sized segments this is equivalent to
+                    // acknowledging every other segment, and it also covers a
+                    // coalesced segment of one MSS plus a short tail (e.g. the
+                    // end of an application write).
+                    || rcv.unacked_bytes() > usize::from(rcv.mss);
 
                 if immediate_ack {
                     rcv.timer = None;
@@ -4042,6 +4061,12 @@ mod test {
     const RTT: Duration = Duration::from_millis(500);
 
     const DEVICE_MAXIMUM_SEGMENT_SIZE: Mss = Mss::new(1400).unwrap();
+    // The payload size of a full-sized segment given
+    // `DEVICE_MAXIMUM_SEGMENT_SIZE` and the timestamp option.
+    const DEVICE_EFFECTIVE_MSS: EffectiveMss = EffectiveMss::from_mss(
+        DEVICE_MAXIMUM_SEGMENT_SIZE,
+        MssSizeLimiters { timestamp_enabled: true },
+    );
 
     const TEST_MSS: EffectiveMss =
         EffectiveMss::from_mss(Mss::new(256).unwrap(), MssSizeLimiters { timestamp_enabled: true });
@@ -4122,10 +4147,7 @@ mod test {
     fn default_quickack_counter() -> usize {
         quickack_counter(
             BufferLimits { capacity: WindowSize::DEFAULT.into(), len: 0 },
-            EffectiveMss::from_mss(
-                DEVICE_MAXIMUM_SEGMENT_SIZE,
-                MssSizeLimiters { timestamp_enabled: true },
-            ),
+            DEVICE_EFFECTIVE_MSS,
         )
     }
 
@@ -4331,10 +4353,7 @@ mod test {
                 retrans_timer: RetransTimer::new(instant, Rto::DEFAULT, None, DEFAULT_MAX_RETRIES),
                 simultaneous_open: Some(()),
                 buffer_sizes: Default::default(),
-                smss: EffectiveMss::from_mss(
-                    DEVICE_MAXIMUM_SEGMENT_SIZE,
-                    MssSizeLimiters { timestamp_enabled: true },
-                ),
+                smss: DEVICE_EFFECTIVE_MSS,
                 rcv_wnd_scale: WindowScale::default(),
                 snd_wnd_scale: Some(WindowScale::default()),
                 sack_permitted: SACK_PERMITTED,
@@ -4364,10 +4383,7 @@ mod test {
                 rtt_estimator: Estimator::default(),
                 rtt_sampler: SamplingStrategy::default(),
                 timer: None,
-                congestion_control: CongestionControl::cubic_with_mss(EffectiveMss::from_mss(
-                    DEVICE_MAXIMUM_SEGMENT_SIZE,
-                    MssSizeLimiters { timestamp_enabled: true },
-                )),
+                congestion_control: CongestionControl::cubic_with_mss(DEVICE_EFFECTIVE_MSS),
                 wnd_scale: WindowScale::default(),
                 last_data_sent: None,
             }
@@ -4385,10 +4401,7 @@ mod test {
             Self {
                 buffer: RecvBufferState::Open { buffer, assembler: Assembler::new(seq) },
                 timer: None,
-                mss: EffectiveMss::from_mss(
-                    DEVICE_MAXIMUM_SEGMENT_SIZE,
-                    MssSizeLimiters { timestamp_enabled: true },
-                ),
+                mss: DEVICE_EFFECTIVE_MSS,
                 remaining_quickacks: 0,
                 last_segment_at: None,
                 wnd_scale: WindowScale::default(),
@@ -4698,9 +4711,7 @@ mod test {
                     remaining_quickacks: quickack_counter(BufferLimits {
                         capacity: WindowSize::DEFAULT.into(),
                         len: 0,
-                    }, EffectiveMss::from_mss(
-                        DEVICE_MAXIMUM_SEGMENT_SIZE, MssSizeLimiters { timestamp_enabled: true }
-                    )),
+                    }, DEVICE_EFFECTIVE_MSS),
                     ..Recv::default_for_test(RingBuffer::default())
                 }.into(),
             }
@@ -5230,10 +5241,7 @@ mod test {
             ),
             simultaneous_open: None,
             buffer_sizes: Default::default(),
-            smss: EffectiveMss::from_mss(
-                DEVICE_MAXIMUM_SEGMENT_SIZE,
-                MssSizeLimiters {timestamp_enabled: true}
-            ),
+            smss: DEVICE_EFFECTIVE_MSS,
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted,
@@ -5463,10 +5471,7 @@ mod test {
             ),
             simultaneous_open: Some(()),
             buffer_sizes: BufferSizes::default(),
-            smss: EffectiveMss::from_mss(
-                DEVICE_MAXIMUM_SEGMENT_SIZE,
-                MssSizeLimiters{timestamp_enabled: true}
-            ),
+            smss: DEVICE_EFFECTIVE_MSS,
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
@@ -5493,10 +5498,7 @@ mod test {
             ),
             simultaneous_open: Some(()),
             buffer_sizes: BufferSizes::default(),
-            smss: EffectiveMss::from_mss(
-                DEVICE_MAXIMUM_SEGMENT_SIZE,
-                MssSizeLimiters{timestamp_enabled: true}
-            ),
+            smss: DEVICE_EFFECTIVE_MSS,
             rcv_wnd_scale: WindowScale::default(),
             snd_wnd_scale: Some(WindowScale::default()),
             sack_permitted: SACK_PERMITTED,
@@ -7516,7 +7518,7 @@ mod test {
                 ..Send::default_for_test(RingBuffer::new(BUFFER_SIZE))
             }.into(),
             rcv: Recv::default_for_test(RingBuffer::new(
-                TEST_BYTES.len() + 2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE) as usize,
+                TEST_BYTES.len() + 2 * usize::from(DEVICE_EFFECTIVE_MSS),
             )).into(),
         }); "established")]
     #[test_case(
@@ -7529,14 +7531,14 @@ mod test {
                 ..Send::default_for_test(RingBuffer::new(BUFFER_SIZE))
             }.into(),
             rcv: Recv::default_for_test(RingBuffer::new(
-                TEST_BYTES.len() + 2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE) as usize,
+                TEST_BYTES.len() + 2 * usize::from(DEVICE_EFFECTIVE_MSS),
             )).into(),
         }); "fin_wait_1")]
     #[test_case(
         State::FinWait2(FinWait2 {
             last_seq: TEST_ISS + 1,
             rcv: Recv::default_for_test(RingBuffer::new(
-                TEST_BYTES.len() + 2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE) as usize,
+                TEST_BYTES.len() + 2 * usize::from(DEVICE_EFFECTIVE_MSS),
             )),
             timeout_at: None,
             snd_info: SendInfo::default(),
@@ -7575,16 +7577,15 @@ mod test {
             Ok(Segment::ack(
                 TEST_ISS + 1,
                 TEST_IRS + 1 + TEST_BYTES.len(),
-                UnscaledWindowSize::from_u32(2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE)),
+                UnscaledWindowSize::from_u32(2 * u32::from(DEVICE_EFFECTIVE_MSS.get())),
                 default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
             ))
         );
-        let full_segment_sized_payload =
-            vec![b'0'; u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE) as usize];
+        let full_segment_sized_payload = vec![b'0'; usize::from(DEVICE_EFFECTIVE_MSS)];
 
         let expect_last_window_update = (
             TEST_IRS + 1 + TEST_BYTES.len(),
-            WindowSize::from_u32(2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE)).unwrap(),
+            WindowSize::from_u32(2 * u32::from(DEVICE_EFFECTIVE_MSS.get())).unwrap(),
         );
         assert_eq!(state.recv_mut().unwrap().last_window_update, expect_last_window_update);
         // The first full sized segment should not trigger an immediate ACK,
@@ -7631,7 +7632,7 @@ mod test {
             (
                 Some(Segment::ack(
                     TEST_ISS + 1,
-                    TEST_IRS + 1 + TEST_BYTES.len() + 2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE),
+                    TEST_IRS + 1 + TEST_BYTES.len() + 2 * u32::from(DEVICE_EFFECTIVE_MSS.get()),
                     UnscaledWindowSize::from(0),
                     default_segment_options(timestamp_now(&clock), DEFAULT_TIMESTAMP),
                 )),
@@ -7644,11 +7645,54 @@ mod test {
         assert_eq!(
             state.recv_mut().unwrap().last_window_update,
             (
-                TEST_IRS + 1 + TEST_BYTES.len() + 2 * u32::from(DEVICE_MAXIMUM_SEGMENT_SIZE),
+                TEST_IRS + 1 + TEST_BYTES.len() + 2 * u32::from(DEVICE_EFFECTIVE_MSS.get()),
                 WindowSize::ZERO,
             )
         );
         assert_eq!(state.poll_send_at(), None);
+    }
+
+    #[test_case(1, 0, false; "one mss delayed")]
+    #[test_case(1, 1, true; "above one mss immediate")]
+    #[test_case(2, 0, true; "two mss immediate")]
+    fn delayed_ack_coalesced_segment(num_mss: usize, offset: usize, expect_immediate: bool) {
+        // A single segment may carry many MSS worth of data when received
+        // segments are coalesced (GRO). It must be acknowledged immediately if
+        // it carries more than one MSS worth of bytes, otherwise a sender
+        // limited by its congestion window stalls until the delayed ACK timer
+        // fires.
+        let clock = FakeInstantCtx::default();
+        let counters = FakeTcpCounters::default();
+        let socket_options =
+            SocketOptions { delayed_ack: true, ..SocketOptions::default_for_state_tests() };
+        let mss = usize::from(DEVICE_EFFECTIVE_MSS);
+        let mut state: State<_, _, _, ()> = State::Established(Established {
+            snd: Send::default_for_test(RingBuffer::new(BUFFER_SIZE)).into(),
+            rcv: Recv::default_for_test(RingBuffer::new(4 * mss)).into(),
+        });
+        let payload = vec![b'0'; num_mss * mss + offset];
+        let (ack, _, _, _) = state.on_segment::<_, ClientlessBufferProvider>(
+            &FakeStateMachineDebugId::default(),
+            &counters.refs(),
+            Segment::with_data(
+                TEST_IRS + 1,
+                TEST_ISS + 1,
+                UnscaledWindowSize::from(u16::MAX),
+                DEFAULT_SEGMENT_OPTIONS,
+                &payload[..],
+            ),
+            clock.now(),
+            &socket_options,
+            false, /* defunct */
+        );
+        if expect_immediate {
+            let ack = ack.expect("expected an immediate ACK");
+            assert_eq!(ack.header().ack, Some(TEST_IRS + 1 + payload.len()));
+            assert_eq!(state.poll_send_at(), None);
+        } else {
+            assert_eq!(ack, None);
+            assert_eq!(state.poll_send_at(), Some(clock.now().panicking_add(ACK_DELAY_THRESHOLD)));
+        }
     }
 
     #[test_case(true; "sack permitted")]
@@ -8893,7 +8937,7 @@ mod test {
         let socket_options = SocketOptions { delayed_ack: true, ..Default::default() };
         let clock = FakeInstantCtx::default();
         let counters = FakeTcpCounters::default();
-        let data = vec![0u8; usize::from(DEVICE_MAXIMUM_SEGMENT_SIZE)];
+        let data = vec![0u8; usize::from(DEVICE_EFFECTIVE_MSS)];
         while quickack != 0 {
             let seq = state.recv_mut().unwrap().nxt();
             let segment = Segment::new_assert_no_discard(
@@ -9319,10 +9363,7 @@ mod test {
 
     #[test]
     fn sack_recovery_rearms_rto() {
-        let mss = EffectiveMss::from_mss(
-            DEVICE_MAXIMUM_SEGMENT_SIZE,
-            MssSizeLimiters { timestamp_enabled: true },
-        );
+        let mss = DEVICE_EFFECTIVE_MSS;
         let una = TEST_ISS + 1;
         let nxt = una + (u32::from(DUP_ACK_THRESHOLD) + 1) * u32::from(mss);
 
@@ -9453,10 +9494,7 @@ mod test {
     fn congestion_window_limiting(theoretical_window: u32, sack_permitted: SackPermitted) {
         netstack3_base::testutil::set_logger_for_test();
 
-        let mss = EffectiveMss::from_mss(
-            DEVICE_MAXIMUM_SEGMENT_SIZE,
-            MssSizeLimiters { timestamp_enabled: true },
-        );
+        let mss = DEVICE_EFFECTIVE_MSS;
         let generate_sack = match sack_permitted {
             SackPermitted::Yes => true,
             SackPermitted::No => false,
@@ -9663,10 +9701,7 @@ mod test {
     #[test]
     fn out_of_order_ack_with_sack_blocks() {
         let send_segments = u32::from(DUP_ACK_THRESHOLD + 2);
-        let mss = EffectiveMss::from_mss(
-            DEVICE_MAXIMUM_SEGMENT_SIZE,
-            MssSizeLimiters { timestamp_enabled: true },
-        );
+        let mss = DEVICE_EFFECTIVE_MSS;
 
         let send_bytes = send_segments * u32::from(mss);
         // Ensure we're not going to ever be blocked by the receiver window.
@@ -9785,10 +9820,7 @@ mod test {
     #[test]
     fn push_segments() {
         let send_segments = 16;
-        let mss = EffectiveMss::from_mss(
-            DEVICE_MAXIMUM_SEGMENT_SIZE,
-            MssSizeLimiters { timestamp_enabled: true },
-        );
+        let mss = DEVICE_EFFECTIVE_MSS;
         let send_bytes = send_segments * usize::from(mss);
         // Use a receiver window that can take 4 Mss at a time, so we should set
         // the PSH bit every 2 MSS.
