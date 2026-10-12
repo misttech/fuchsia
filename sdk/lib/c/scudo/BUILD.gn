@@ -27,6 +27,11 @@ scudo_common_vars = {
   ]
 
   configs = [ ":common.config" ]
+  inputs = [
+    "custom_scudo_config.h",
+    "gwp_asan_platform_tls_slot.h",
+    "scudo_platform_tls_slot.h",
+  ]
   deps = [
     "//src/zircon/lib/zircon",
     "//zircon/system/ulib/sync",

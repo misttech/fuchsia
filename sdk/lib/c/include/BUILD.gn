@@ -118,6 +118,7 @@ if (current_toolchain == default_toolchain) {
 
         # Each `.yaml` in $sources produces the corresponding `.h` in $outputs.
         sources = rebase_path(set.yaml, ".", set.dir)
+        inputs = [ "fuchsia.yaml" ]
 
         # This is evaluated only in $default_toolchain, where $root_gen_dir is
         # the prefix of ${set.gen_dir} before the full source-relative path
@@ -287,6 +288,7 @@ if (current_toolchain == default_toolchain) {
 
         sources =
             rebase_path(filter_include(set.public, [ "*.yaml" ]), ".", set.dir)
+        inputs = [ "fuchsia.yaml" ]
         outputs = [ "$target_gen_dir/$target_name" ]
         depfile = "${outputs[0]}.d"
         args = [
