@@ -22,7 +22,9 @@ async fn main() {
     let builder = RealmBuilder::with_params(
         RealmBuilderParams::new()
             .realm_name("thermal_test")
-            .from_relative_url("#meta/container_with_thermal_client.cm"),
+            .from_relative_url("#meta/container_with_thermal_client.cm")
+            // Started manually below, after a cap is applied outside of Starnix.
+            .start(false),
     )
     .await
     .unwrap();
@@ -153,6 +155,16 @@ async fn main() {
 
     info!("starting realm");
     let instance = builder.build().await.unwrap();
+
+    // Cap domain 0 (`test-cluster0`, `policy0`) at intermediate OPP 1 (1512000 kHz) before
+    // Starnix starts, simulating a boot-time limit applied by cpu-manager (`boot_max_opp`).
+    // `thermal_client` checks that Starnix seeds this cap into `vote_manager/soft_max_freq`
+    // (leaving `cooling_device0/cur_state` at 0), restores it when a stricter runtime vote is
+    // cleared, and releases it when `soft_max_freq` is cleared.
+    let domain_controller =
+        instance.root.connect_to_protocol_at_exposed_dir::<fcpu::DomainControllerProxy>().unwrap();
+    domain_controller.set_max_frequency(0, 1).await.unwrap().unwrap();
+    instance.root.connect_to_binder().unwrap();
 
     let realm_moniker = format!("realm_builder:{}", instance.root.child_name());
     info!(realm_moniker:%; "started");

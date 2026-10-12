@@ -31,19 +31,7 @@ struct CpuFreqDomains(Arc<[Arc<CpuFreqDomain>]>);
 /// Returns the per-domain CPU frequency state shared across sysfs `cpufreq` nodes and thermal
 /// cooling devices for `kernel`.
 pub fn get_cpu_freq_domains(kernel: &Kernel) -> Arc<[Arc<CpuFreqDomain>]> {
-    kernel
-        .expando
-        .get_or_init(|| {
-            let DiscoveredCpuDomains { domains, has_domain_controller } = get_cpu_domains();
-            CpuFreqDomains(
-                domains
-                    .iter()
-                    .map(|domain| Arc::new(CpuFreqDomain::new(domain, has_domain_controller)))
-                    .collect(),
-            )
-        })
-        .0
-        .clone()
+    kernel.expando.get_or_init(|| CpuFreqDomains(get_cpu_domains().into())).0.clone()
 }
 
 /// Registers `/sys/devices/system/cpu` and the per-core `cpuN` bus devices beneath it.
@@ -125,11 +113,6 @@ fn build_cpu_subsystem_directory(
     });
 }
 
-struct DiscoveredCpuDomains {
-    domains: Vec<fcpu::DomainInfo>,
-    has_domain_controller: bool,
-}
-
 /// Retrieves CPU topology and domain information with a tiered fallback approach.
 ///
 /// 1. Get CPU domains from the `fuchsia.power.cpu.DomainController` FIDL protocol.
@@ -138,7 +121,7 @@ struct DiscoveredCpuDomains {
 /// 3. If that fails, get CPU information from the kernel directly. In this case, no CPU control
 ///    or topological information is available, so only a limited set of sysfs entries
 ///    will be populated.
-fn get_cpu_domains() -> DiscoveredCpuDomains {
+fn get_cpu_domains() -> Vec<Arc<CpuFreqDomain>> {
     // Tier 1: Try DomainController
     if let Ok(domain_controller) = connect_to_protocol_sync::<fcpu::DomainControllerMarker>() {
         if let Ok(mut domains) = domain_controller.list_domains(zx::MonotonicInstant::INFINITE) {
@@ -146,7 +129,10 @@ fn get_cpu_domains() -> DiscoveredCpuDomains {
             domains
                 .retain(|d| d.id.is_some() && d.core_ids.as_ref().map_or(false, |c| !c.is_empty()));
             if !domains.is_empty() {
-                return DiscoveredCpuDomains { domains, has_domain_controller: true };
+                return domains
+                    .iter()
+                    .map(|domain| Arc::new(CpuFreqDomain::new(domain, Some(&domain_controller))))
+                    .collect();
             }
         }
     }
@@ -222,7 +208,10 @@ fn get_cpu_domains() -> DiscoveredCpuDomains {
         }
 
         if !domains.is_empty() {
-            return DiscoveredCpuDomains { domains, has_domain_controller: false };
+            return domains
+                .iter()
+                .map(|domain| Arc::new(CpuFreqDomain::new(domain, None)))
+                .collect();
         }
     }
 
@@ -232,16 +221,16 @@ fn get_cpu_domains() -> DiscoveredCpuDomains {
 
     // Tier 3: Fallback to kernel CPU count
     let cpu_count = zx::system_get_num_cpus();
-    DiscoveredCpuDomains {
-        domains: vec![fcpu::DomainInfo {
+    vec![Arc::new(CpuFreqDomain::new(
+        &fcpu::DomainInfo {
             id: Some(0),
             core_ids: Some((0..cpu_count as u64).collect()),
             available_frequencies_hz: None,
             name: None,
             ..Default::default()
-        }],
-        has_domain_controller: false,
-    }
+        },
+        None,
+    ))]
 }
 
 fn hz_to_khz(hz: u64) -> u64 {
@@ -344,9 +333,11 @@ fn build_cpuidle_directory(
     });
 }
 
+const SOFT_MAX_FREQ_VOTER: &str = "soft_max_freq";
+
 /// Max-frequency voter nodes under `cpufreq/vote_manager/`.
 const VOTE_MANAGER_MAX_FREQ_NODES: &[&str] =
-    &["powerhint_max_freq", "thermal_max_freq", "soft_max_freq", "debug_max_freq"];
+    &["powerhint_max_freq", "thermal_max_freq", SOFT_MAX_FREQ_VOTER, "debug_max_freq"];
 
 /// Min-frequency voter nodes under `cpufreq/vote_manager/`.
 const VOTE_MANAGER_MIN_FREQ_NODES: &[&str] =
@@ -477,13 +468,15 @@ impl BytesFileOps for CpuFreqStatsResetFile {
     }
 }
 
+#[derive(Default)]
 struct CpuFreqDomainState {
     /// Active ceiling votes keyed by voter name (`voter -> opp_index`), aggregated using Linux
     /// `freq_qos` / `vote_manager` semantics (the lowest maximum frequency wins).
     votes: HashMap<&'static str, u64>,
 
     /// The effective ceiling (`Some(opp_index)` or `None` when uncapped) last applied to
-    /// `DomainController`, or `None` when invalidated by an error.
+    /// `DomainController`, or `None` when unknown, either because no vote has been applied yet
+    /// or because the last call failed.
     applied_opp: Option<Option<u64>>,
 
     /// Lazily established connection to the server, dropped if a call fails at the transport
@@ -491,9 +484,45 @@ struct CpuFreqDomainState {
     domain_controller: Option<fcpu::DomainControllerSynchronousProxy>,
 }
 
-impl Default for CpuFreqDomainState {
-    fn default() -> Self {
-        Self { votes: HashMap::new(), applied_opp: Some(None), domain_controller: None }
+impl CpuFreqDomainState {
+    /// Queries the domain's current ceiling on `domain_controller` and seeds any pre-existing cap
+    /// (such as a `boot_max_opp` limit configured in `cpu-manager`) into `soft_max_freq`, matching
+    /// how Linux `google_vote_manager` initializes `soft_max_freq` from the platform boot ceiling.
+    fn from_domain_controller(
+        domain_id: u64,
+        opps_hz: &[u64],
+        domain_controller: &fcpu::DomainControllerSynchronousProxy,
+    ) -> Self {
+        let max_hz = opps_hz.iter().max().copied();
+        match domain_controller.get_max_frequency(domain_id, zx::MonotonicInstant::INFINITE) {
+            Ok(Ok(opp_index)) => match opps_hz.get(opp_index as usize).copied() {
+                Some(hz) if Some(hz) == max_hz => {
+                    Self { applied_opp: Some(None), ..Self::default() }
+                }
+                Some(_) => {
+                    let mut votes = HashMap::new();
+                    votes.insert(SOFT_MAX_FREQ_VOTER, opp_index);
+                    Self { votes, applied_opp: Some(Some(opp_index)), ..Self::default() }
+                }
+                None => {
+                    log_warn!(
+                        "Initial max frequency index {} out of range for domain {} (len {})",
+                        opp_index,
+                        domain_id,
+                        opps_hz.len()
+                    );
+                    Self::default()
+                }
+            },
+            other => {
+                log_warn!(
+                    "Failed to query initial max frequency for domain {}: {:?}",
+                    domain_id,
+                    other
+                );
+                Self::default()
+            }
+        }
     }
 }
 
@@ -528,17 +557,27 @@ pub struct CpuFreqDomain {
 }
 
 impl CpuFreqDomain {
-    fn new(domain: &fcpu::DomainInfo, has_domain_controller: bool) -> Self {
+    fn new(
+        domain: &fcpu::DomainInfo,
+        domain_controller: Option<&fcpu::DomainControllerSynchronousProxy>,
+    ) -> Self {
+        let domain_id = domain.id.expect("id not available");
         let opps_hz = domain.available_frequencies_hz.clone().unwrap_or_default();
         let sorted_khz = opps_hz.iter().map(|hz| hz_to_khz(*hz)).sorted().dedup().collect();
+        let state = match domain_controller {
+            Some(dc) if !opps_hz.is_empty() => {
+                CpuFreqDomainState::from_domain_controller(domain_id, &opps_hz, dc)
+            }
+            _ => CpuFreqDomainState::default(),
+        };
         Self {
-            domain_id: domain.id.expect("id not available"),
+            domain_id,
             name: domain.name.clone(),
             core_ids: domain.core_ids.clone().expect("core_ids not available"),
             opps_hz,
             sorted_khz,
-            has_domain_controller,
-            state: LockDepMutex::default(),
+            has_domain_controller: domain_controller.is_some(),
+            state: LockDepMutex::new(state),
         }
     }
 

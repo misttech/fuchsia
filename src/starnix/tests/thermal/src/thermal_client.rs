@@ -23,6 +23,8 @@ const MIN_FREQUENCIES_HZ: [&'static str; 2] = ["1128000", "512000"];
 
 fn main() {
     println!("started");
+    check_soft_max_freq_releases_external_cap();
+
     check_thermal_zone_is_available();
     check_emul_temp();
 
@@ -92,6 +94,49 @@ fn check_emul_temp() {
     let real_temp_str = std::fs::read("/sys/class/thermal/thermal_zone0/temp").unwrap();
     let expected_real_temp = celsius_to_millicelsius(EXPECTED_TEMP_C) as u32;
     assert_eq!(&format!("{}\n", expected_real_temp), str::from_utf8(&real_temp_str).unwrap());
+}
+
+/// The test harness caps domain 0 (`policy0`, 4 OPPs) at intermediate OPP 1 (`1512000` kHz)
+/// through `DomainController` before Starnix starts, mirroring a boot-time limit (`boot_max_opp`)
+/// applied by cpu-manager. Starnix seeds that initial ceiling into `vote_manager/soft_max_freq`
+/// while leaving `cooling_device0` at state 0:
+/// - unvoted voters clearing their votes must not drop the boot cap;
+/// - a stricter runtime vote (`1256000` kHz) lowers `scaling_max_freq` further, and releasing that
+///   stricter runtime vote restores the `soft_max_freq` boot ceiling (`1512000` kHz) on
+///   `DomainController`;
+/// - clearing `soft_max_freq` releases the cap completely (`2024000` kHz).
+fn check_soft_max_freq_releases_external_cap() {
+    const COOLING0_STATE: &str = "/sys/class/thermal/cooling_device0/cur_state";
+    const POLICY0_MAX: &str = "/sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq";
+    const POLICY0_SOFT_MAX: &str =
+        "/sys/devices/system/cpu/cpufreq/policy0/vote_manager/soft_max_freq";
+    const POLICY0_POWERHINT_MAX: &str =
+        "/sys/devices/system/cpu/cpufreq/policy0/vote_manager/powerhint_max_freq";
+
+    assert_eq!("1512000\n", read_sysfs(POLICY0_MAX));
+    assert_eq!("1512000\n", read_sysfs(POLICY0_SOFT_MAX));
+    assert_eq!("2024000\n", read_sysfs(POLICY0_POWERHINT_MAX));
+    assert_eq!("0\n", read_sysfs(COOLING0_STATE));
+
+    // Uncapping an unvoted voter while `soft_max_freq` holds the boot cap keeps the cap.
+    std::fs::write(POLICY0_POWERHINT_MAX, "9999999").unwrap();
+    std::fs::write(COOLING0_STATE, "0").unwrap();
+    assert_eq!("1512000\n", read_sysfs(POLICY0_MAX));
+    assert_eq!("1512000\n", read_sysfs(POLICY0_SOFT_MAX));
+
+    // Applying a stricter runtime vote lowers `scaling_max_freq` below the boot cap, and releasing
+    // that vote restores the `soft_max_freq` boot ceiling on `DomainController`.
+    std::fs::write(POLICY0_POWERHINT_MAX, "1256000").unwrap();
+    assert_eq!("1256000\n", read_sysfs(POLICY0_MAX));
+    assert_eq!("1512000\n", read_sysfs(POLICY0_SOFT_MAX));
+    std::fs::write(POLICY0_POWERHINT_MAX, "9999999").unwrap();
+    assert_eq!("1512000\n", read_sysfs(POLICY0_MAX));
+    assert_eq!("1512000\n", read_sysfs(POLICY0_SOFT_MAX));
+
+    // Clearing `soft_max_freq` releases the boot cap completely.
+    std::fs::write(POLICY0_SOFT_MAX, "9999999").unwrap();
+    assert_eq!("2024000\n", read_sysfs(POLICY0_SOFT_MAX));
+    assert_eq!("2024000\n", read_sysfs(POLICY0_MAX));
 }
 
 fn check_cpu_cooling_device_is_available() {
