@@ -6,7 +6,7 @@
 # before making changes to this file, and add a member of the fuchsia.dev
 # team as reviewer.
 toc:
-- title: "Fuchsia Driver Framework (DFv1)"
+- title: "Fuchsia Driver Framework"
   path: /docs/development/drivers/concepts/fdf.md
 - title: "Device driver model"
   section:

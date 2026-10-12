@@ -2,7 +2,7 @@
 
 This guide explains how to write bind rules for a driver so that it binds to the devices it wants. It explains how to find the node properties and then write bind rules for it using the bind language.
 
-This guide assumes familiarity with [Driver Binding](/docs/development/drivers/concepts/device_driver_model/driver-binding.md).
+This guide assumes familiarity with [Driver Binding](/docs/concepts/drivers/driver_binding.md).
 
 ## Current state of node properties
 Currently, node properties are defined in bind libraries and C++ header files. In the past, node properties were integer-based key-value pairs described as a C++ struct. All properties were defined in C++ header files and the bind rules were part of the driver source code.
@@ -49,39 +49,17 @@ Driver   : None
 
 ### Driver properties in the driver source code
 
-When adding a child device, drivers can provide properties that the bind rules match to. As such, you can find the properties to bind to through the driver source code.
+When adding a child node, drivers can provide properties that the bind rules match to. As such, you can find the properties to bind to through the driver source code.
 
-In DFv1, the node properties in the source code are represented by “Properties” and “String Properties”. Properties contain integer-based keys and values. String properties however, contain string-based keys and values that can be integer, booleans, strings, or enums.
+Node properties are represented by a `NodeProperty2` struct in the [fuchsia.driver.framework FIDL library](/sdk/fidl/fuchsia.driver.framework/topology.fidl), containing string-based keys and values that can be integers, booleans, strings, or enums:
 
-Here is a snippet where a driver adds a device with a `BIND_PROTOCOL` property and “ENABLE_TEST” string property.
-
-```
-device_add_args_t args = {};
-args.version = DEVICE_ADD_ARGS_VERSION;
-args.name = "parent";
-args.ops = &dev_ops;
-
-zx_device_str_prop_t str_props[] = {
-      zx_device_str_prop_t{.key = "ENABLE_TEST",
-                           .property_value = str_prop_bool_val(true)}
+```cpp
+std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
+    fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_pci::BIND_PROTOCOL_DEVICE),
+    fdf::MakeProperty2("ENABLED_TEST", true),
 };
-args.str_props = str_props;
-args.str_prop_count = std::size(str_props);
 
-device_add(parent, &args, &dev);
-```
-
-In DFv2, node properties are represented by a `NodeProperty` struct in the [fuchsia.driver.framework FIDL library](/sdk/fidl/fuchsia.driver.framework/topology.fidl):
-
-```
-auto properties = fidl::VectorView<fdf::wire::NodeProperty>(arena, 2);
-properties[0] = fdf::MakeProperty(arena, BIND_PROTOCOL, ZX_PROTOCOL_PCI);
-properties[1] = fdf::MakeProperty(arena, "ENABLED_TEST", true);
-
-auto args = fdf::wire::NodeAddArgs::Builder(arena)
-                  .name(arena, "sample-child")
-                  .properties(properties)
-                  .Build();
+zx::result result = AddChild("sample-child", properties, {});
 ```
 
 ## Defining properties in bind libraries

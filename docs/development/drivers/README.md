@@ -105,7 +105,7 @@ section.
 
 ### DFv1 concepts
 
-- [Fuchsia Driver Framework (DFv1)][fuchsia-driver-framework]
+- [Fuchsia Driver Framework][fuchsia-driver-framework]
 - Device driver model
 
   - [Overview][device-driver-model-overview]

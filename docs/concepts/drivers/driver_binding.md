@@ -49,8 +49,7 @@ binds this new driver to the node, an instance of the driver is placed
 in a driver host, and the driver host starts serving the device’s capabilities
 to other Fuchsia components in the system.
 
-For more details on bind rules, see [Driver binding][driver-binding-dfv1], which
-was written previously for the driver framework version 1 (DFv1).
+For more details on bind rules, see the [Bind rules tutorial][bind-rules-tutorial].
 
 ## Board driver and USB devices
 
@@ -81,4 +80,4 @@ topology.
 [nodes]: drivers_and_nodes.md
 [node-properties]: drivers_and_nodes.md#node_attributes
 [node-capabilities]: drivers_and_nodes.md#node_capabilities
-[driver-binding-dfv1]: /docs/development/drivers/concepts/device_driver_model/driver-binding.md
+[bind-rules-tutorial]: /docs/development/drivers/tutorials/bind-rules-tutorial.md

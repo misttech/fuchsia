@@ -1,7 +1,4 @@
-# Fuchsia Driver Framework (DFv1)
-
-Caution: This page may contain information that is specific to the legacy
-version of the driver framework (DFv1).
+# Fuchsia Driver Framework
 
 ## Overview
 Fuchsia Driver Framework (FDF) is a collection of libraries, tools, metadata and images that enables
@@ -9,8 +6,8 @@ driver writers to develop, test and distribute drivers targeting Fuchsia. It aim
 stable ABI allowing driver developers to potentially write a driver once and use it on multiple
 versions of the Fuchsia kernel and platform.
 
-At the moment, the FDF is composed of a driver manager, driver host, core library (libdriver),
-FIDL interfaces, banjo interfaces and guidelines to develop drivers for Fuchsia.
+At the moment, the FDF is composed of a driver manager, driver host, driver index,
+driver runtime, FIDL interfaces, and guidelines to develop drivers for Fuchsia.
 FDF is constantly evolving and has yet to achieve ABI stability.
 
 ## Driver manager
