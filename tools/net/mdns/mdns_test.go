@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -59,10 +61,17 @@ func (f *fakeAddr) String() string {
 type fakePacketConn struct {
 	packetCh chan []byte
 	ifi      *net.Interface
+	ttl      int
+	closes   atomic.Int32
 }
 
 func (f *fakePacketConn) MulticastInterface() (*net.Interface, error) {
 	return f.ifi, nil
+}
+
+func (f *fakePacketConn) SetMulticastTTL(ttl int) error {
+	f.ttl = ttl
+	return nil
 }
 
 func (f *fakePacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
@@ -84,6 +93,7 @@ func (f *fakePacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 }
 
 func (f *fakePacketConn) Close() error {
+	f.closes.Add(1)
 	return nil
 }
 
@@ -113,7 +123,7 @@ func (f *fakeNetFactory) MakeUDPSocket(ifi *net.Interface, _ *net.UDPAddr, ttl i
 		return nil, fmt.Errorf("returning testing error for iface %q", ifi.Name)
 	}
 	f.ttlCh <- ttl
-	return &fakePacketConn{packetCh: f.packetCh, ifi: ifi}, nil
+	return &fakePacketConn{packetCh: f.packetCh, ifi: ifi, ttl: ttl}, nil
 }
 
 // Returns a fake mDNS connection, a multicast packet channel, a unicast
@@ -208,7 +218,12 @@ func TestCast6(t *testing.T) {
 		t.Errorf("ttl for senders incorrect (-want +got)\n%s", d)
 	}
 
-	c.SetMCastTTL(0)
+	if err := c.SetMCastTTL(0); err != nil {
+		t.Fatalf("SetMCastTTL(0) failed: %s", err)
+	}
+	if got := c.conns[0].(*fakePacketConn).ttl; got != 0 {
+		t.Errorf("existing conn ttl: want 0, got %d", got)
+	}
 	if err := c.JoinGroup(fakeIfaceMCastUp); err != nil {
 		t.Fatalf("Unable to connect to port: %s", err)
 	}
@@ -362,6 +377,40 @@ func TestSetAddress(t *testing.T) {
 		want = net.ParseIP("11:22::33:44")
 		if d := cmp.Diff(want, got); d != "" {
 			t.Errorf("IP mismatch (-want +got)\n%s", d)
+		}
+	}
+}
+
+func TestConcurrentClose(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		m := NewMDNS()
+		c4, _, _ := makeFakeMDNSConn(false)
+		c6, _, _ := makeFakeMDNSConn(true)
+		if err := c4.JoinGroup(fakeIfaceMCastUp); err != nil {
+			t.Fatalf("JoinGroup v4 failed: %s", err)
+		}
+		if err := c6.JoinGroup(fakeIfaceMCastUp); err != nil {
+			t.Fatalf("JoinGroup v6 failed: %s", err)
+		}
+		m.conn4 = &mDNSConn4{mDNSConnBase: c4}
+		m.conn6 = &mDNSConn6{mDNSConnBase: c6}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			m.Close()
+		}()
+		go func() {
+			defer wg.Done()
+			m.Close()
+		}()
+		wg.Wait()
+		if got := c4.conns[0].(*fakePacketConn).closes.Load(); got != 1 {
+			t.Fatalf("conn4 Close() count: want 1, got %d", got)
+		}
+		if got := c6.conns[0].(*fakePacketConn).closes.Load(); got != 1 {
+			t.Fatalf("conn6 Close() count: want 1, got %d", got)
 		}
 	}
 }

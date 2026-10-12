@@ -12,7 +12,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"unicode/utf8"
 
@@ -466,6 +468,7 @@ type MDNS interface {
 type packetConn interface {
 	net.PacketConn
 	MulticastInterface() (*net.Interface, error)
+	SetMulticastTTL(ttl int) error
 }
 
 type netConnectionFactory interface {
@@ -523,6 +526,10 @@ func (c *ipv6PacketConn) WriteTo(b []byte, dst net.Addr) (int, error) {
 	return c.PacketConn.WriteTo(b, nil, dst)
 }
 
+func (c *ipv6PacketConn) SetMulticastTTL(ttl int) error {
+	return c.PacketConn.SetMulticastHopLimit(ttl)
+}
+
 func (*defaultConnectionFactoryV6) MakeUDPSocket(ifi *net.Interface, group *net.UDPAddr, ttl int) (packetConn, error) {
 	conn, err := makeUDPSocket("udp6", ifi, group)
 	if err != nil {
@@ -552,6 +559,13 @@ func (c *mDNSConnBase) SetMCastTTL(ttl int) error {
 		return fmt.Errorf("TTL outside of valid range: %d", ttl)
 	}
 	c.ttl = ttl
+	if ttl >= 0 {
+		for _, conn := range c.conns {
+			if err := conn.SetMulticastTTL(ttl); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -686,9 +700,9 @@ func newMDNSConn6() *mDNSConn6 {
 }
 
 type mDNS struct {
+	mu        sync.Mutex
 	conn4     *mDNSConn4
 	conn6     *mDNSConn6
-	port      int
 	pHandlers []func(net.Addr, Packet)
 	wHandlers []func(net.Addr, error)
 	eHandlers []func(error)
@@ -705,29 +719,39 @@ func NewMDNS() *mDNS {
 }
 
 func (m *mDNS) EnableIPv4() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.conn4 == nil {
 		m.conn4 = newMDNSConn4()
 	}
 }
 
 func (m *mDNS) EnableIPv6() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.conn6 == nil {
 		m.conn6 = newMDNSConn6()
 	}
 }
 
 func (m *mDNS) Close() {
-	if m.conn4 != nil {
-		m.conn4.Close()
-		m.conn4 = nil
+	m.mu.Lock()
+	conn4 := m.conn4
+	conn6 := m.conn6
+	m.conn4 = nil
+	m.conn6 = nil
+	m.mu.Unlock()
+	if conn4 != nil {
+		conn4.Close()
 	}
-	if m.conn6 != nil {
-		m.conn6.Close()
-		m.conn6 = nil
+	if conn6 != nil {
+		conn6.Close()
 	}
 }
 
 func (m *mDNS) SetAddress(address string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	ip := net.ParseIP(address)
 	if ip4 := ip.To4(); ip4 != nil {
 		if m.conn4 == nil {
@@ -746,6 +770,8 @@ func (m *mDNS) SetAddress(address string) error {
 }
 
 func (m *mDNS) SetMCastTTL(ttl int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.conn4 != nil {
 		if err := m.conn4.SetMCastTTL(ttl); err != nil {
 			return err
@@ -761,11 +787,15 @@ func (m *mDNS) SetMCastTTL(ttl int) error {
 
 // AddHandler calls f on every Packet received.
 func (m *mDNS) AddHandler(f func(net.Addr, Packet)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.pHandlers = append(m.pHandlers, f)
 }
 
 // AddWarningHandler calls f on every non-fatal error.
 func (m *mDNS) AddWarningHandler(f func(net.Addr, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.wHandlers = append(m.wHandlers, f)
 }
 
@@ -773,6 +803,8 @@ func (m *mDNS) AddWarningHandler(f func(net.Addr, error)) {
 // all active handlers are called, m will stop listening and
 // close it's connection so this function will not be called twice.
 func (m *mDNS) AddErrorHandler(f func(error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.eHandlers = append(m.eHandlers, f)
 }
 
@@ -786,15 +818,19 @@ func (m *mDNS) SendTo(ctx context.Context, packet Packet, dst *net.UDPAddr) erro
 	if err := packet.serialize(&buf); err != nil {
 		return err
 	}
+	m.mu.Lock()
+	conn4 := m.conn4
+	conn6 := m.conn6
+	m.mu.Unlock()
 	if dst.IP.To4() != nil {
-		if m.conn4 != nil {
-			return m.conn4.SendTo(ctx, buf, dst)
+		if conn4 != nil {
+			return conn4.SendTo(ctx, buf, dst)
 		} else {
 			return fmt.Errorf("IPv4 was not enabled!")
 		}
 	} else {
-		if m.conn6 != nil {
-			return m.conn6.SendTo(ctx, buf, dst)
+		if conn6 != nil {
+			return conn6.SendTo(ctx, buf, dst)
 		} else {
 			return fmt.Errorf("IPv6 was not enabled!")
 		}
@@ -810,13 +846,25 @@ func (m *mDNS) Send(ctx context.Context, packet Packet) error {
 	if err := packet.serialize(&buf); err != nil {
 		return err
 	}
+	m.mu.Lock()
+	conn4 := m.conn4
+	var dst4 net.UDPAddr
+	if conn4 != nil {
+		dst4 = conn4.dst
+	}
+	conn6 := m.conn6
+	var dst6 net.UDPAddr
+	if conn6 != nil {
+		dst6 = conn6.dst
+	}
+	m.mu.Unlock()
 	var err4 error
-	if m.conn4 != nil {
-		err4 = m.conn4.Send(ctx, buf)
+	if conn4 != nil {
+		err4 = conn4.SendTo(ctx, buf, &dst4)
 	}
 	var err6 error
-	if m.conn6 != nil {
-		err6 = m.conn6.Send(ctx, buf)
+	if conn6 != nil {
+		err6 = conn6.SendTo(ctx, buf, &dst6)
 	}
 	if err4 != nil {
 		return err4
@@ -825,6 +873,8 @@ func (m *mDNS) Send(ctx context.Context, packet Packet) error {
 }
 
 func (m *mDNS) initMDNSConns(ctx context.Context, port int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.conn4 == nil && m.conn6 == nil {
 		return fmt.Errorf("no connections active")
 	}
@@ -877,11 +927,15 @@ func (m *mDNS) Start(ctx context.Context, port int) error {
 		var chan4 <-chan receivedPacketInfo
 		var chan6 <-chan receivedPacketInfo
 
-		if m.conn4 != nil {
-			chan4 = m.conn4.Listen(ctx)
+		m.mu.Lock()
+		conn4 := m.conn4
+		conn6 := m.conn6
+		m.mu.Unlock()
+		if conn4 != nil {
+			chan4 = conn4.Listen(ctx)
 		}
-		if m.conn6 != nil {
-			chan6 = m.conn6.Listen(ctx)
+		if conn6 != nil {
+			chan6 = conn6.Listen(ctx)
 		}
 		for {
 			var received receivedPacketInfo
@@ -896,7 +950,10 @@ func (m *mDNS) Start(ctx context.Context, port int) error {
 			}
 
 			if received.err != nil {
-				for _, e := range m.eHandlers {
+				m.mu.Lock()
+				eHandlers := slices.Clone(m.eHandlers)
+				m.mu.Unlock()
+				for _, e := range eHandlers {
 					go e(received.err)
 				}
 				return
@@ -904,13 +961,19 @@ func (m *mDNS) Start(ctx context.Context, port int) error {
 
 			var packet Packet
 			if err := packet.deserialize(received.data, bytes.NewBuffer(received.data)); err != nil {
-				for _, w := range m.wHandlers {
+				m.mu.Lock()
+				wHandlers := slices.Clone(m.wHandlers)
+				m.mu.Unlock()
+				for _, w := range wHandlers {
 					go w(received.src, err)
 				}
 				continue
 			}
 
-			for _, p := range m.pHandlers {
+			m.mu.Lock()
+			pHandlers := slices.Clone(m.pHandlers)
+			m.mu.Unlock()
+			for _, p := range pHandlers {
 				go p(received.src, packet)
 			}
 		}
