@@ -33,7 +33,7 @@ pub struct CommonSymbol {
 
 impl CommonSymbol {
     /// Returns the permissions associated with this common symbol.
-    pub fn permissions(&self) -> &[Permission] {
+    pub fn permissions(&self) -> &IdAndNameIndexed<Box<[Permission]>> {
         &self.permissions
     }
 }

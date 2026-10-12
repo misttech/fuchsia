@@ -9,8 +9,7 @@ use super::{AccessVectorComputer, KernelAccessDecision, ObjectClass};
 use crate::new_policy::rules::{HasRuleKey, RuleKind};
 use crate::new_policy::traits::{HasName, HasPolicyId};
 use crate::new_policy::{
-    CategorySet, Class, ClassDefault, ClassDefaultRange, CommonSymbol, FsUseType, GenfsConPath,
-    HandleUnknown, IdAndNameIndexed, SymbolArray,
+    CategorySet, Class, ClassDefault, ClassDefaultRange, FsUseType, GenfsConPath, HandleUnknown,
 };
 use crate::policy::parsed_policy::ParsedPolicy;
 use crate::policy::{
@@ -61,7 +60,6 @@ impl PolicyIndex {
     /// permissions if so.
     pub fn new(parsed_policy: ParsedPolicy) -> Result<Self, anyhow::Error> {
         let policy_classes = parsed_policy.classes();
-        let common_symbols = parsed_policy.common_symbols();
 
         let mut classes = HashMap::with_capacity(KernelClass::VARIANTS.len());
 
@@ -92,7 +90,7 @@ impl PolicyIndex {
             let kernel_class_name = kernel_permission.class().name();
             if let Some(class) = policy_classes.get_by_name(kernel_class_name.as_bytes()) {
                 if let Some(permission_id) =
-                    get_permission_id_by_name(common_symbols, class, kernel_permission.name())
+                    parsed_policy.find_permission_id_by_name(class, kernel_permission.name())
                 {
                     let kernel_class_id = kernel_permission.class() as usize;
                     let kernel_permission_id = kernel_permission.id() as usize;
@@ -489,26 +487,6 @@ impl PolicyIndex {
 
         None
     }
-}
-
-/// Returns the bit index of the specified permission for the specified security `class`, looking
-/// up the permission in the class' common symbol, if any.
-fn get_permission_id_by_name(
-    common_symbols: &IdAndNameIndexed<SymbolArray<CommonSymbol>>,
-    class: &Class,
-    name: &str,
-) -> Option<PermissionId> {
-    let name = name.as_bytes();
-    if let Some(permission) = class.permissions().iter().find(|p| p.name() == name) {
-        return Some(permission.id());
-    }
-    let common_name = class.common_name();
-    if !common_name.is_empty() {
-        let common_symbol = common_symbols.get_by_name(common_name)?;
-        let permission = common_symbol.permissions().iter().find(|p| p.name() == name)?;
-        return Some(permission.id());
-    }
-    None
 }
 
 /// Returns the set of categories present in both `left` and `right`.

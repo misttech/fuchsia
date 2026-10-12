@@ -128,11 +128,10 @@ impl Policy {
         let common_symbol_permissions =
             self.common_symbols().get_by_name(class.common_name()).ok_or(())?.permissions();
 
-        result.append(
-            &mut common_symbol_permissions
+        result.extend(
+            common_symbol_permissions
                 .iter()
-                .map(|permission| (permission.id(), permission.name().to_vec()))
-                .collect(),
+                .map(|permission| (permission.id(), permission.name().to_vec())),
         );
 
         Ok(result)
@@ -316,14 +315,9 @@ pub(super) mod tests {
     ) -> bool {
         let classes = policy.classes();
         let class = classes.get_by_name(target_class.as_bytes()).expect("class not found");
-        let class_permissions = policy
-            .find_class_permissions_by_name(target_class)
-            .expect("class permissions not found");
-        let (permission_id, _) = class_permissions
-            .iter()
-            .find(|(_, name)| permission.as_bytes() == name)
-            .expect("permission not found");
-        let permission_bit = AccessVector::from(*permission_id);
+        let permission_id =
+            policy.find_permission_id_by_name(class, permission).expect("permission not found");
+        let permission_bit = AccessVector::from(permission_id);
         let access_decision = policy.0.compute_explicitly_allowed(source_type, target_type, class);
         permission_bit == access_decision.allow & permission_bit
     }

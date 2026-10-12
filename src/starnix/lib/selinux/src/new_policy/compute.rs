@@ -4,7 +4,8 @@
 
 use super::traits::HasPolicyId;
 use super::{
-    NewPolicy, OBJECT_R_ROLE_NAME, PolicyCap, RoleId, SecurityContext, SecurityContextError,
+    Class, NewPolicy, OBJECT_R_ROLE_NAME, PermissionId, PolicyCap, RoleId, SecurityContext,
+    SecurityContextError,
 };
 use crate::{InitialSid, NullessByteStr};
 
@@ -12,6 +13,22 @@ impl NewPolicy {
     /// Returns true if the specified capability is in the policy's enabled capabilities set.
     pub fn has_policycap(&self, policy_cap: PolicyCap) -> bool {
         self.policy_capabilities().contains(policy_cap)
+    }
+
+    /// Returns the [`PermissionId`] of the specified permission for the specified security
+    /// [`Class`], looking up the permission in the class's common symbol, if any.
+    pub fn find_permission_id_by_name(&self, class: &Class, name: &str) -> Option<PermissionId> {
+        let name = name.as_bytes();
+        if let Some(permission) = class.permissions().get_by_name(name) {
+            return Some(permission.id());
+        }
+        let common_name = class.common_name();
+        if !common_name.is_empty() {
+            let common_symbol = self.common_symbols().get_by_name(common_name)?;
+            let permission = common_symbol.permissions().get_by_name(name)?;
+            return Some(permission.id());
+        }
+        None
     }
 
     /// Returns the [`RoleId`] of the `"object_r"` role within the policy, for use when validating
