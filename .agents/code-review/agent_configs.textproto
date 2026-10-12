@@ -1,0 +1,100 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Gerrit CL Review Agent configuration exposing Fuchsia in-tree skills via the
+# Code Review Agent Configuration Service (CRACS).
+#
+# Skills referenced without a "/" resolve under .agents/skills/<name>/SKILL.md.
+# Skills containing a "/" resolve relative to the fuchsia repository root.
+#
+# All entries must carry the "code-review-agent" tag and are currently scoped
+# to the vendor/google project while hosted agentic reviews are being evaluated.
+
+configs: {
+  id: "fuchsia-rust-best-practices"
+  display_name: "Fuchsia Rust Best Practices"
+  description: "Fuchsia Rust coding conventions, edition 2024 rules, and official Rust rubric."
+  tags: "code-review-agent"
+  skills: "rust_best_practices"
+  include_filters: {
+    project: "vendor/google"
+    path_regex: ".*\\.rs"
+  }
+}
+
+configs: {
+  id: "fuchsia-cpp-guidelines"
+  display_name: "Fuchsia C++ Guidelines"
+  description: "Fuchsia C++ safety, lifetime/nullability, concurrency, and Zircon container guidelines."
+  tags: "code-review-agent"
+  skills: "fuchsia-cpp-guidelines"
+  include_filters: {
+    project: "vendor/google"
+    path_regex: ".*\\.(c|cc|cpp|h|hpp)"
+  }
+}
+
+configs: {
+  id: "fuchsia-rust-driver-best-practices"
+  display_name: "Fuchsia Rust Driver Best Practices"
+  description: "Idiomatic patterns and standard libraries for Rust DFv2 drivers."
+  tags: "code-review-agent"
+  skills: "src/devices/skills/rust_driver_best_practices"
+  include_filters: {
+    project: "vendor/google"
+    path_regex: "(.*/)?drivers/.*\\.rs"
+  }
+}
+
+configs: {
+  id: "fuchsia-driver-bind-devicetree"
+  display_name: "Fuchsia Driver Bind & Devicetree"
+  description: "Driver .bind rules, devicetree node bindings, and devicetree schema conventions."
+  tags: "code-review-agent"
+  skills: "src/devices/skills/driver_bind_devicetree"
+  skills: "src/devices/skills/driver_bind_find_instance_name"
+  skills: "src/devices/skills/devicetree_schema"
+  include_filters: {
+    project: "vendor/google"
+    path_regex: ".*\\.bind"
+    path_regex: ".*\\.dtsi?"
+  }
+}
+
+configs: {
+  id: "fuchsia-driver-structure-and-suspend"
+  display_name: "Fuchsia Driver Structure & Suspend/Resume"
+  description: "DFv2 driver directory layout, manifest/build conventions, and suspend/resume integration."
+  tags: "code-review-agent"
+  skills: "src/devices/skills/driver_file_structure"
+  skills: "src/devices/skills/fuchsia-suspendable"
+  include_filters: {
+    project: "vendor/google"
+    path_regex: "(.*/)?drivers/.*\\.(rs|cc|h|cml)"
+  }
+}
+
+configs: {
+  id: "fuchsia-lacewing-e2e-tests"
+  display_name: "Fuchsia Lacewing E2E Test Guidelines"
+  description: "Timeouts, deadlines, cancellations, and exception handling in Lacewing end-to-end tests."
+  tags: "code-review-agent"
+  skills: "src/testing/end_to_end/.agents/skills/lacewing-timeouts-deadlines-cancellations"
+  include_filters: {
+    project: "vendor/google"
+    path_regex: "(tests/end_to_end|testing/lacewing)/.*\\.py"
+  }
+}
+
+configs: {
+  id: "fuchsia-doc-style"
+  display_name: "Fuchsia Documentation Style"
+  description: "Official Fuchsia documentation style guide and Markdown formatting standards."
+  tags: "code-review-agent"
+  skills: "docs/skills/edit-fuchsia-doc"
+  include_filters: {
+    project: "vendor/google"
+    path_regex: "docs/.*\\.md"
+  }
+}
