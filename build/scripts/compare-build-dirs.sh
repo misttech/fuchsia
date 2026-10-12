@@ -27,7 +27,8 @@ Example: Compare two clean builds with same output dir:
 
 Valid options:
   --help     Print this message.
-  --verbose  Increase verbosity.
+  --verbose  Increase verbosity: print debug messages, diffs for all
+             files, and full file lists. Repeat for more debug output.
 EOF
 }
 
@@ -48,15 +49,19 @@ readonly detail_diff_opts=(
   "-r=second"
 )
 
-DEBUG_LEVEL=1
+DEBUG_LEVEL=0
 
-# Print debug message if DEBUG is not empty.
+# Debug messages go to fd 3 (a copy of the original stderr) so they don't get
+# mixed into the captured diff output in diff_file_relpath().
+exec 3>&2
+
+# Print debug message if DEBUG_LEVEL is at least 1.
 function debug() {
-  [[ "${DEBUG_LEVEL}" -ge 1 ]] && echo >&2 "DEBUG: $*"
+  [[ "${DEBUG_LEVEL}" -ge 1 ]] && echo >&3 "DEBUG: $*"
 }
 
 function debug2() {
-  [[ "${DEBUG_LEVEL}" -ge 2 ]] && echo >&2 "DEBUG2: $*"
+  [[ "${DEBUG_LEVEL}" -ge 2 ]] && echo >&3 "DEBUG2: $*"
 }
 
 # json formatting (as pipe): jq . < stdin > stdout
@@ -82,6 +87,8 @@ skipped_files=()
 # Ignored files are unimportant will never be compared.
 ignored_files=()
 unspecified_files=()
+# These files exist in only one of the two dirs.
+missing_files=()
 
 function diff_json() {
   debug "diff_json $1 $2"
@@ -148,11 +155,13 @@ function diff_file_relpath() {
   # appear as filename entry differences.  Skip these.  Perhaps silently?
   # Testing -r also allows for symlinks.
   test -r "$left" || {
-    printf "%s does not exist\n" "$left"
+    debug "$left does not exist"
+    missing_files+=("$common_path")
     return
   }
   test -r "$right" || {
-    printf "%s does not exist\n" "$right"
+    debug "$right does not exist"
+    missing_files+=("$common_path")
     return
   }
 
@@ -168,6 +177,9 @@ function diff_file_relpath() {
   #
   # TODO(fangism): different expectations in clean-vs-clean /
   # clean-vs-incremental modes.
+  # Most diffs are expected, so the output of this case statement is
+  # captured (see the redirect on the closing `esac`) and only printed if the
+  # result is unexpected, to make the unexpected diffs easy to find.
   case "$filebase" in
     # The exit status of this case statement will be used to determine
     # whether or not the given file is an erroneous diff.
@@ -498,13 +510,21 @@ function diff_file_relpath() {
         # Assume non-binaries are text.
         *) expect="match"; diff_text "$left" "$right" ;;
       esac
-  esac
+  # Only printed below if the result is unexpected or --verbose was passed.
+  esac > "$diff_output_file" 2>&1
 
   # Record unexpected and unclassified differences/matches.
   diff_status="$?"
+  local show_diff_output=0
+  [[ "$DEBUG_LEVEL" -ge 1 ]] && show_diff_output=1
   case "$expect" in
     match)
-      test "$diff_status" = 0 || unexpected_diffs+=("$common_path") ;;
+      if test "$diff_status" != 0
+      then
+        unexpected_diffs+=("$common_path")
+        show_diff_output=1
+      fi
+      ;;
     diff)
       test "$diff_status" != 0 || unexpected_matches+=("$common_path") ;;
     unknown)
@@ -517,6 +537,13 @@ function diff_file_relpath() {
     skip) skipped_files+=("$common_path") ;;
     *) unspecified_files+=("$common_path") ;;
   esac
+
+  if [[ "$show_diff_output" == 1 && -s "$diff_output_file" ]]
+  then
+    echo "======== DIFF: $common_path ========"
+    cat "$diff_output_file"
+    echo
+  fi
 }
 
 function diff_select() {
@@ -559,6 +586,10 @@ function diff_dir_recursive() {
     diff_select "$1" "$2" "$relpath"
   done
 }
+
+diff_output_file="$(mktemp)"
+readonly diff_output_file
+trap 'rm -f "$diff_output_file"' EXIT
 
 # Make globs over empty dirs expand to nothing, so diff_dir_recursive()
 # doesn't need to spawn `ls` per directory to detect them.
@@ -656,30 +687,57 @@ then
   # Leave exit status as it were.
 fi
 
+function print_long_list() {
+  # $1 is the section title, $2 is the suggested action, and the rest of the
+  # args are the file paths.
+  local -r title="$1"
+  local -r action="$2"
+  shift 2
+  local count="$# files"
+  [[ "$#" == 1 ]] && count="1 file"
+  echo "$title: $count (action: $action)"
+  # These lists are long and rarely useful, so only print them if verbose.
+  if [[ "$DEBUG_LEVEL" -ge 1 ]]
+  then
+    for path in "$@"
+    do echo "  $path"
+    done
+    echo "end of $title"
+  else
+    hidden_lists=1
+  fi
+  echo
+}
+
+hidden_lists=0
+
 # This group matched, but we didn't know what to expect.
 if test "${#unclassified_matches[@]}" != 0
 then
-  echo "UNCLASSIFIED MATCHES: (action: classify them as expect=\"match\")"
-  for path in "${unclassified_matches[@]}"
-  do echo "  $path"
-  done
-  echo "end of UNCLASSIFIED MATCHES"
-  echo
-  # Leave exit status as it were.
+  print_long_list "UNCLASSIFIED MATCHES" 'classify them as expect="match"' \
+    "${unclassified_matches[@]}"
 fi
 
 if test "${#skipped_files[@]}" != 0
 then
-  echo "SKIPPED FILES: (action: compare these after all other differences have been resolved)"
-  for path in "${skipped_files[@]}"
-  do echo "  $path"
-  done
-  echo "end of SKIPPED FILES"
-  echo
-  # Leave exit status as it were.
+  print_long_list "SKIPPED FILES" \
+    "compare these after all other differences have been resolved" \
+    "${skipped_files[@]}"
+fi
+
+if test "${#missing_files[@]}" != 0
+then
+  print_long_list "FILES IN ONLY ONE DIR" \
+    "make sure the builds produce the same set of files" \
+    "${missing_files[@]}"
 fi
 
 # Don't bother reporting "${ignored_files[@]}", the list is long and not useful.
+
+if [[ "$hidden_lists" == 1 ]]
+then
+  echo "Rerun with --verbose to list all files and show all diffs."
+fi
 
 echo "Exiting with status $exit_status"
 exit "$exit_status"
