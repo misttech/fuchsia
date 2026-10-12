@@ -9,10 +9,8 @@ from __future__ import annotations
 import ipaddress
 import logging
 import platform
-import random
 import re
 import socket
-import string
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -34,19 +32,6 @@ FUCHSIA_MDNS_TYPE = "_fuchsia._udp.local."
 # Default max seconds it takes to Duplicate Address Detection to finish before
 # assigning an IPv6 address.
 DAD_TIMEOUT_SEC = 30
-
-
-def rand_hex_str(length: int) -> str:
-    """Generates a random string of specified length, composed of hex digits
-
-    Args:
-        length: The number of characters in the string.
-
-    Returns:
-        The random string generated.
-    """
-    letters = [random.choice(string.hexdigits) for i in range(length)]
-    return "".join(letters)
 
 
 def is_valid_ipv4_address(address: str) -> bool:

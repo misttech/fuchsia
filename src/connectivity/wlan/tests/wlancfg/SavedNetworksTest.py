@@ -8,7 +8,6 @@ import logging
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
-from antlion.utils import rand_hex_str
 from honeydew.affordances.connectivity.wlan.utils.errors import (
     HoneydewWlanError,
 )
@@ -193,7 +192,7 @@ class SavedNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         """
         ssid = AccessPointConfig.random_string(11)
         security_type = f_wlan_policy.SecurityType.WPA2
-        psk = rand_hex_str(PSK_LEN).lower()
+        psk = AccessPointConfig.random_hex_string(PSK_LEN).lower()
         test_network = f_wlan_policy.NetworkConfig(
             id_=f_wlan_policy.NetworkIdentifier(
                 ssid=list(ssid.encode("utf-8")),

@@ -3,16 +3,14 @@
 # found in the LICENSE file.
 
 
-from antlion import utils
 from legacy_access_point.ap_lib import hostapd_constants
 from legacy_access_point.ap_lib.hostapd_security import Security, SecurityMode
-from mobly import utils as mobly_utils
+from mobly import utils
 
 
 def generate_random_password(
     security_mode: SecurityMode = SecurityMode.OPEN,
     length: int | None = None,
-    hex: int | None = None,
 ) -> str:
     """Generates a random password. Defaults to an 8 character ASCII password.
 
@@ -21,19 +19,13 @@ def generate_random_password(
             (useful for generated tests to simply pass in security mode)
         length: Length of password to generate. Defaults to 8, unless
             security_mode is WEP, then 13
-        hex: If True, generates a hex string, else ascii
     """
-    if hex:
-        generator_func = utils.rand_hex_str
-    else:
-        generator_func = mobly_utils.rand_ascii_str
-
     if length:
-        return generator_func(length)
+        return utils.rand_ascii_str(length)
     if security_mode is SecurityMode.WEP:
-        return generator_func(hostapd_constants.WEP_DEFAULT_STR_LENGTH)
+        return utils.rand_ascii_str(hostapd_constants.WEP_DEFAULT_STR_LENGTH)
     else:
-        return generator_func(hostapd_constants.MIN_WPA_PSK_LENGTH)
+        return utils.rand_ascii_str(hostapd_constants.MIN_WPA_PSK_LENGTH)
 
 
 def verify_interface(interface: str, valid_interfaces: list[str]) -> None:
