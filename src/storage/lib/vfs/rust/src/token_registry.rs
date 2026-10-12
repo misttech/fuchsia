@@ -5,22 +5,47 @@
 //! Implementation of [`TokenRegistry`].
 
 use crate::directory::entry_container::MutableDirectory;
+use crate::node::Node;
 #[cfg(not(feature = "fdomain"))]
 use fidl::{Event, NullableHandle, Rights};
 use flex_fuchsia_io as fio;
 #[cfg(not(feature = "fdomain"))]
 use fuchsia_sync::Mutex;
 use pin_project::{pin_project, pinned_drop};
+use std::any::Any;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::sync::Arc;
 
+pub enum TokenTarget {
+    Node(Arc<dyn Node>),
+    Directory(Arc<dyn MutableDirectory>),
+}
+
+impl TokenTarget {
+    pub fn into_node(self) -> Arc<dyn Node> {
+        match self {
+            Self::Node(node) => node,
+            Self::Directory(dir) => dir,
+        }
+    }
+
+    pub fn into_mutable_directory(self) -> Option<Arc<dyn MutableDirectory>> {
+        match self {
+            Self::Node(_) => None,
+            Self::Directory(dir) => Some(dir),
+        }
+    }
+
+    pub fn into_any(self) -> Arc<dyn Any + Send + Sync + 'static> {
+        self.into_node().into_any()
+    }
+}
+
 pub trait TokenInterface: 'static {
     /// Returns the node that corresponds with this token.  This information is returned by the
-    /// `get_owner` method.  For now this always returns Arc<dyn MutableDirectory> but it should be
-    /// possible to change this so that files can be represented in future if and when the need
-    /// arises.
-    fn get_node(&self) -> Arc<dyn MutableDirectory>;
+    /// `get_owner` method.
+    fn get_node(&self) -> TokenTarget;
 
     /// Returns the rights of the connection this token is associated with.
     fn get_rights(&self) -> fio::Rights;
@@ -135,7 +160,7 @@ mod implementation {
         pub fn get_owner_and_rights(
             &self,
             token: NullableHandle,
-        ) -> Result<Option<(Arc<dyn MutableDirectory>, fio::Rights)>, Status> {
+        ) -> Result<Option<(TokenTarget, fio::Rights)>, Status> {
             let koid = token.koid()?;
             let this = self.inner.lock();
 
@@ -218,6 +243,7 @@ mod implementation {
                         .get_owner_and_rights(token.duplicate_handle(Rights::SAME_RIGHTS).unwrap())
                         .unwrap()
                         .unwrap();
+                    let res = res.into_node();
                     assert_eq!(Arc::as_ptr(&client.1) as *const (), Arc::as_ptr(&res) as *const ());
                     assert_eq!(rights, fio::Rights::READ_BYTES)
                 }
@@ -288,8 +314,8 @@ mod implementation {
             );
 
             impl TokenInterface for MockChannel {
-                fn get_node(&self) -> Arc<dyn MutableDirectory> {
-                    self.1.clone()
+                fn get_node(&self) -> TokenTarget {
+                    TokenTarget::Directory(self.1.clone())
                 }
 
                 fn get_rights(&self) -> fio::Rights {
@@ -404,7 +430,7 @@ mod implementation {
         pub fn get_owner_and_rights(
             &self,
             _token: NullableHandle,
-        ) -> Result<Option<(Arc<dyn MutableDirectory>, fio::Rights)>, Status> {
+        ) -> Result<Option<(TokenTarget, fio::Rights)>, Status> {
             Err(Status::NOT_SUPPORTED)
         }
 

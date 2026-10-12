@@ -521,6 +521,8 @@ impl<DirectoryType: Directory> BaseConnection<DirectoryType> {
             return Err(Status::BAD_HANDLE);
         }
 
+        let target_parent = target_parent.into_mutable_directory().ok_or(Status::INVALID_ARGS)?;
+
         target_parent.link(target_name, self.directory.clone().into_any(), source_name).await
     }
 

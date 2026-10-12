@@ -301,6 +301,8 @@ impl<T: Symlink> Connection<T> {
             return Err(Status::ACCESS_DENIED);
         }
 
+        let target_parent = target_parent.into_mutable_directory().ok_or(Status::INVALID_ARGS)?;
+
         self.symlink.clone().link_into(target_parent, target_name).await
     }
 

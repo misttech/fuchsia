@@ -13,7 +13,7 @@ use crate::node::OpenNode;
 use crate::object_request::ConnectionCreator;
 use crate::path::Path;
 use crate::request_handler::{RequestHandler, RequestListener};
-use crate::token_registry::{TokenInterface, TokenRegistry, Tokenizable};
+use crate::token_registry::{TokenInterface, TokenRegistry, TokenTarget, Tokenizable};
 use crate::{ObjectRequestRef, ProtocolsExt};
 
 use anyhow::Error;
@@ -210,6 +210,7 @@ impl<DirectoryType: MutableDirectory> MutableConnection<DirectoryType> {
             .token_registry()
             .get_owner_and_rights(dst_parent_token)?
             .ok_or(Status::NOT_FOUND)?;
+        let dst_parent = dst_parent.into_mutable_directory().ok_or(Status::INVALID_ARGS)?;
 
         if !dst_rights.contains(fio::Rights::MODIFY_DIRECTORY) {
             return Err(Status::ACCESS_DENIED);
@@ -262,8 +263,8 @@ impl<DirectoryType: MutableDirectory> RequestHandler
 }
 
 impl<DirectoryType: MutableDirectory> TokenInterface for MutableConnection<DirectoryType> {
-    fn get_node(&self) -> Arc<dyn MutableDirectory> {
-        self.base.directory.clone()
+    fn get_node(&self) -> TokenTarget {
+        TokenTarget::Directory(self.base.directory.clone())
     }
 
     fn get_rights(&self) -> fio::Rights {

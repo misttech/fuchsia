@@ -184,7 +184,10 @@ impl Node for FxSymlink {
         if self.to_be_purged() {
             return Err(zx::Status::NOT_FOUND);
         }
-        let dir = destination_dir.into_any().downcast::<FxDirectory>().unwrap();
+        let dir = destination_dir
+            .into_any()
+            .downcast::<FxDirectory>()
+            .map_err(|_| zx::Status::INVALID_ARGS)?;
         let store = self.handle.store();
         let transaction = store
             .new_transaction(

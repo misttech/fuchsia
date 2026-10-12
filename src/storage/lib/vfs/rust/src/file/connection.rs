@@ -1022,6 +1022,8 @@ impl<T: 'static + File, U: Deref<Target = OpenNode<T>> + DerefMut + IoOpHandler 
             return Err(Status::ACCESS_DENIED);
         }
 
+        let target_parent = target_parent.into_mutable_directory().ok_or(Status::INVALID_ARGS)?;
+
         self.file.clone().link_into(target_parent, target_name).await
     }
 
