@@ -14,6 +14,8 @@
 #include <type_traits>
 #include <variant>
 
+extern "C" std::atomic<uint64_t> concurrent_chainlock_transaction_token_generator;
+
 namespace concurrent {
 
 constexpr CapabilityToken chainlock_transaction_token;
@@ -125,7 +127,8 @@ class ChainLockTransactionCommon {
   ChainLockTransactionCommon() : token_{NextToken()} {}
 
   static Token NextToken() {
-    return Token{token_generator_.fetch_add(1, std::memory_order_relaxed)};
+    return Token{
+        concurrent_chainlock_transaction_token_generator.fetch_add(1, std::memory_order_relaxed)};
   }
 
   static Token ReservedToken(size_t reserved_index) {
@@ -157,7 +160,6 @@ class ChainLockTransactionCommon {
 
   Token token_;
   State state_{State::Started};
-  inline static std::atomic<uint64_t> token_generator_{kInitialTokenValue};
 };
 
 }  // namespace concurrent

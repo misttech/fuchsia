@@ -8,6 +8,9 @@ import("//build/rust/rustc_library.gni")
 rustc_library("concurrent") {
   edition = "2024"
   sources = [
+    "src/chainlock.rs",
+    "src/chainlock_guard.rs",
+    "src/chainlock_transaction.rs",
     "src/common.rs",
     "src/copy.rs",
     "src/lib.rs",
@@ -17,6 +20,7 @@ rustc_library("concurrent") {
   deps = [
     "//src/lib/zr",
     "//third_party/rust_crates:zerocopy",
+    "//zircon/system/ulib/concurrent",
   ]
   with_unit_tests = true
 

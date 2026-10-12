@@ -11,6 +11,9 @@ library_headers("headers") {
     "lib/concurrent/seqlock.h",
     "lib/concurrent/seqlock.inc.h",
     "lib/concurrent/chainlock.h",
+    "lib/concurrent/chainlock_guard.h",
+    "lib/concurrent/chainlock_transaction.h",
+    "lib/concurrent/chainlock_transaction_common.h",
     "lib/concurrent/capability_token.h",
   ]
 }
@@ -27,6 +30,7 @@ concurrent_base = {
 
 source_set("concurrent") {
   forward_variables_from(concurrent_base, "*")
+  sources += [ "chainlock_transaction_common.cc" ]
 
   if (is_fuchsia && !is_kernel) {
     sources += [ "seqlock_usermode_fuchsia.cc" ]
