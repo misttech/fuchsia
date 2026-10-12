@@ -1863,10 +1863,10 @@ bool pi_test_critical_active() {
 
 template <size_t NumPressureThreads, typename VerifyFn>
   requires(ktl::invocable<VerifyFn, TestThread&, const ktl::array<TestThread, NumPressureThreads>&>)
-bool pi_test_deadline_join_split_helper(const fbl::RefPtr<Profile>& active_profile,
-                                        const fbl::RefPtr<Profile>& pressure_profile,
-                                        zx_duration_mono_t spin_duration,
-                                        zx_duration_mono_t retry_duration, VerifyFn verify_fn) {
+bool pi_test_deadline_join_split_helper(
+    const fbl::RefPtr<Profile>& active_profile,
+    const ktl::array<fbl::RefPtr<Profile>, NumPressureThreads>& pressure_profiles,
+    zx_duration_mono_t spin_duration, zx_duration_mono_t retry_duration, VerifyFn verify_fn) {
   bool all_ok = true;
 
   const size_t kRetryWarningCount = 10000;
@@ -1927,8 +1927,8 @@ bool pi_test_deadline_join_split_helper(const fbl::RefPtr<Profile>& active_profi
     TestThread::ResetShutdownBarrier();
 
     ASSERT_TRUE(active_thread.Create(active_profile));
-    for (TestThread& t : pressure_threads) {
-      ASSERT_TRUE(t.Create(pressure_profile));
+    for (size_t i = 0; i < NumPressureThreads; ++i) {
+      ASSERT_TRUE(pressure_threads[i].Create(pressure_profiles[i]));
     }
 
     // All of the threads have been created, bound to their respective profiles,
@@ -1936,8 +1936,10 @@ bool pi_test_deadline_join_split_helper(const fbl::RefPtr<Profile>& active_profi
     // duration sufficient for all of the thread's periods to have expired, such
     // that each thread will receive a new activation. This makes it easier to
     // ensure the initial conditions are deterministic.
-    const zx_duration_mono_t max_period =
-        ktl::max(active_profile->Period(), pressure_profile->Period());
+    zx_duration_mono_t max_period = active_profile->Period();
+    for (const fbl::RefPtr<Profile>& p : pressure_profiles) {
+      max_period = ktl::max(max_period, p->Period());
+    }
     Thread::Current::SleepRelative(max_period);
 
     // Sample the time after the threads have been created and their initial
@@ -2029,6 +2031,20 @@ bool pi_test_deadline_join_split_helper(const fbl::RefPtr<Profile>& active_profi
   } while (retry_test);
 
   return all_ok;
+}
+
+template <size_t NumPressureThreads, typename VerifyFn>
+  requires(ktl::invocable<VerifyFn, TestThread&, const ktl::array<TestThread, NumPressureThreads>&>)
+bool pi_test_deadline_join_split_helper(const fbl::RefPtr<Profile>& active_profile,
+                                        const fbl::RefPtr<Profile>& pressure_profile,
+                                        zx_duration_mono_t spin_duration,
+                                        zx_duration_mono_t retry_duration, VerifyFn verify_fn) {
+  ktl::array<fbl::RefPtr<Profile>, NumPressureThreads> pressure_profiles;
+  for (fbl::RefPtr<Profile>& p : pressure_profiles) {
+    p = pressure_profile;
+  }
+  return pi_test_deadline_join_split_helper<NumPressureThreads>(
+      active_profile, pressure_profiles, spin_duration, retry_duration, ktl::move(verify_fn));
 }
 
 // Tests bandwidth distribution when a deadline thread blocks as upstream node
@@ -2203,6 +2219,75 @@ bool pi_test_deadline_to_deadline_join_split_multiple_waiters() {
   END_TEST;
 }
 
+// Tests bandwidth distribution and dynamic deadline parameter updates when
+// multiple deadline threads with different relative deadlines block on the same
+// waitqueue and are woken together (regression test for b/571995085).
+bool pi_test_deadline_to_deadline_join_split_multiple_waiters_different_periods() {
+  BEGIN_TEST;
+
+  const zx_duration_mono_t short_period = ZX_SEC(1);
+  const zx_duration_mono_t long_period = ZX_SEC(2);
+  const zx_duration_mono_t active_capacity = long_period / 2;
+  const zx_duration_mono_t short_pressure_capacity = short_period / 4;
+  const zx_duration_mono_t long_pressure_capacity = long_period / 4;
+  const zx_duration_mono_t spin_duration = short_period / 2;
+
+  // While joined, the effective period is short_period and total utilization is
+  // 50% (active) + 25% (short) + 25% (long) = 100%, so the combined remaining
+  // time slice after spinning for spin_duration is at most
+  // (short_period - spin_duration), distributed proportionally on split.
+  const zx_duration_mono_t max_expected_active_remaining_capacity =
+      (short_period - spin_duration) / 2;
+  const zx_duration_mono_t max_expected_pressure_remaining_capacity =
+      (short_period - spin_duration) / 4;
+  const zx_duration_mono_t retry_duration = long_period * 3;
+
+  const fbl::RefPtr<Profile> active_profile = DeadlineProfile::Create(active_capacity, long_period);
+  const fbl::RefPtr<Profile> short_pressure_profile =
+      DeadlineProfile::Create(short_pressure_capacity, short_period);
+  const fbl::RefPtr<Profile> long_pressure_profile =
+      DeadlineProfile::Create(long_pressure_capacity, long_period);
+
+  ASSERT_NONNULL(active_profile);
+  ASSERT_NONNULL(short_pressure_profile);
+  ASSERT_NONNULL(long_pressure_profile);
+
+  const ktl::array<fbl::RefPtr<Profile>, 2> pressure_profiles = {
+      short_pressure_profile,
+      long_pressure_profile,
+  };
+
+  auto verify_fn = [&all_ok, max_expected_active_remaining_capacity,
+                    max_expected_pressure_remaining_capacity, long_period, long_pressure_capacity](
+                       const TestThread& active_thread,
+                       const ktl::array<TestThread, 2>& pressure_threads) -> bool {
+    const SchedDuration active_remaining_time_slice = active_thread.remaining_time_slice();
+    const SchedDuration pressure1_remaining_time_slice = pressure_threads[0].remaining_time_slice();
+    const SchedDuration pressure2_remaining_time_slice = pressure_threads[1].remaining_time_slice();
+    const auto pressure2_snapshot = pressure_threads[1].snapshot();
+
+    EXPECT_GT(active_remaining_time_slice.raw_value(), 0);
+    EXPECT_LT(active_remaining_time_slice.raw_value(), max_expected_active_remaining_capacity);
+    EXPECT_GT(pressure1_remaining_time_slice.raw_value(), 0);
+    EXPECT_LT(pressure1_remaining_time_slice.raw_value(), max_expected_pressure_remaining_capacity);
+    EXPECT_GT(pressure2_remaining_time_slice.raw_value(), 0);
+    EXPECT_LT(pressure2_remaining_time_slice.raw_value(), max_expected_pressure_remaining_capacity);
+
+    // The long waiter should leave the split with its own relative deadline and
+    // capacity, not the short waiter's.
+    EXPECT_EQ(
+        pressure2_snapshot.finish_time.raw_value() - pressure2_snapshot.start_time.raw_value(),
+        long_period);
+    EXPECT_EQ(pressure2_snapshot.time_slice_ns.raw_value(), long_pressure_capacity);
+    return all_ok;
+  };
+
+  ASSERT_TRUE(pi_test_deadline_join_split_helper<2>(active_profile, pressure_profiles,
+                                                    spin_duration, retry_duration, verify_fn));
+
+  END_TEST;
+}
+
 }  // namespace
 
 UNITTEST_START_TESTCASE(pi_tests)
@@ -2222,4 +2307,6 @@ UNITTEST("deadline to deadline join and split uneven",
          pi_test_deadline_to_deadline_join_split_uneven)
 UNITTEST("deadline to deadline join and split multiple waiters",
          pi_test_deadline_to_deadline_join_split_multiple_waiters)
+UNITTEST("deadline to deadline join and split multiple waiters different periods",
+         pi_test_deadline_to_deadline_join_split_multiple_waiters_different_periods)
 UNITTEST_END_TESTCASE(pi_tests, "pi", "Priority inheritance tests for OwnedWaitQueues")

@@ -262,11 +262,11 @@ OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeThreadsLocked(
     // they need to maintain.
     wake_hooks.OnWakeOrRequeue(*t);
 
-    // Remove this thread's contributions to our IPVs, removing it from our
-    // collection in the process.
+    // Remove this thread from our collection, then remove its contributions to
+    // our IPVs.
     const SchedulerState::EffectiveProfile old_target_ep = GetEffectiveProfile();
-    BeginPropagate(*t, *this, RemoveSingleEdgeOp, force_inheritance, &old_target_ep);
     Dequeue(t, ZX_OK);
+    BeginPropagate(*t, *this, RemoveSingleEdgeOp, force_inheritance, &old_target_ep);
     UpdateSchedStateStorageThreadRemoved(*t);
 
     // If we still have blocked threads, and we are supposed to make this thread
@@ -437,7 +437,7 @@ void OwnedWaitQueue::ApplyIpvDeltaToOwq(const SchedulerState::InheritedProfileVa
     critical_delta -= old_ipv->critical_count;
   }
 
-  DEBUG_ASSERT(!owq.IsEmpty());
+  DEBUG_ASSERT(!owq.IsEmpty() || new_ipv == nullptr);
   DEBUG_ASSERT(owq.inherited_scheduler_state_storage_ != nullptr);
   SchedulerState::WaitQueueInheritedSchedulerState& iss = *owq.inherited_scheduler_state_storage_;
 
@@ -571,25 +571,6 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
                        thread_iter->wait_queue_state().blocking_wait_queue_,
                        static_cast<WaitQueueBase*>(owq_iter));
     }
-
-    if constexpr (OpType == PropagateOp::RemoveSingleEdge) {
-      // Are we starting from a thread during an edge remove operation?  If so,
-      // and if we were the last thread to leave our wait queue, then we don't
-      // need to bother to update its IPVs anymore (it cannot have any IPVs if it
-      // has no waiters), so we can just skip it an move on to its owner thread.
-      //
-      // Additionally, we know that it must have an owner thread at this point in
-      // time.  If if didn't, BeginPropagate would have already bailed out.
-      owq_iter->get_lock().AssertHeld();
-      if (owq_iter->IsEmpty()) {
-        thread_iter = owq_iter->owner_;
-        if (thread_iter == nullptr) {
-          return;
-        }
-        Propagate(upstream_node, *owq_iter, op, force_inheritance, old_target_ep);
-        skip_phase1 = true;
-      }
-    }
   } else {
     // Base profile changes should never start from OWQs.
     static_assert(OpType != PropagateOp::BaseProfileChanged);
@@ -602,10 +583,16 @@ void OwnedWaitQueue::FinishPropagate(UpstreamNodeType& upstream_node,
 
   while (true) {
     if (!skip_phase1) {
-      // We should not be here if this OWQ has no waiters, or if we have not
-      // found a place to store our ISS.  That special case was handled above.
+      // During a thread-initiated RemoveSingleEdge, the final departing thread
+      // has already been removed from the initial wait queue collection, so its
+      // Count() may be 0, while its inherited_scheduler_state_storage_ is
+      // retained until after BeginPropagate completes.
       owq_iter->get_lock().AssertHeld();
-      DEBUG_ASSERT(owq_iter->Count() > 0);
+      if constexpr (kStartingFromThread && OpType == PropagateOp::RemoveSingleEdge) {
+        DEBUG_ASSERT(owq_iter->Count() > 0 || owq_iter == &downstream_node);
+      } else {
+        DEBUG_ASSERT(owq_iter->Count() > 0);
+      }
       DEBUG_ASSERT(owq_iter->inherited_scheduler_state_storage_ != nullptr);
 
       // Record what our deadline pressure was before we accumulate the upstream
@@ -2157,10 +2144,11 @@ OwnedWaitQueue::WakeThreadsResult OwnedWaitQueue::WakeAndRequeueInternal(
     requeue_hooks.OnWakeOrRequeue(*t);
 
     // Actually move the thread from this to the requeue_target.
+    const SchedulerState::EffectiveProfile old_target_ep = this->GetEffectiveProfile();
     this->collection_.Remove(t);
     t->wait_queue_state().blocking_wait_queue_ = nullptr;
+    BeginPropagate(*t, *this, RemoveSingleEdgeOp, ForceInheritance::No, &old_target_ep);
     this->UpdateSchedStateStorageThreadRemoved(*t);
-    BeginPropagate(*t, *this, RemoveSingleEdgeOp);
 
     requeue_target.collection_.Insert(t);
     t->wait_queue_state().blocking_wait_queue_ = &requeue_target;
