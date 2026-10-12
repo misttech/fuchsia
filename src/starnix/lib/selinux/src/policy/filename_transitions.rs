@@ -13,7 +13,7 @@ use super::error::{ParseError, SerializeError, ValidateError};
 use super::metadata::PolicyVersion;
 use super::parser::{Array, ByteArray, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, Serialize, Validate};
-use super::{ClassId, NewPolicy, TypeId, U24Index};
+use super::{ClassId, Policy, TypeId, U24Index};
 
 /// Output type mapping for a set of source types in a filename transition (policy version >= 33).
 #[derive(Debug, PartialEq, Eq, Parse, Serialize, Validate)]
@@ -266,7 +266,7 @@ impl Serialize for FilenameTransitions {
 }
 
 impl Validate for FilenameTransitions {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         self.transitions.validate(policy)
     }
 }
@@ -375,22 +375,20 @@ mod tests {
 
     #[test]
     fn test_filename_transition_policy_elements() {
-        use crate::new_policy::traits::HasPolicyId;
+        use crate::policy::traits::HasPolicyId;
 
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/type_transition_policy");
-        let new_policy = NewPolicy::parse(policy_bytes).expect("parse type_transition policy");
-        new_policy.validate().expect("validate type_transition policy");
+        let policy = Policy::parse(policy_bytes).expect("parse type_transition policy");
+        policy.validate().expect("validate type_transition policy");
 
-        let transitions = new_policy.filename_transitions();
+        let transitions = policy.filename_transitions();
         assert_eq!(transitions.transitions.len(), 1);
 
-        let source_type =
-            new_policy.types().get_by_name(b"source_t").expect("look up source_t").id();
-        let target_type =
-            new_policy.types().get_by_name(b"target_t").expect("look up target_t").id();
-        let class = new_policy.classes().get_by_name(b"file").expect("look up file").id();
-        let special_transition = new_policy
+        let source_type = policy.types().get_by_name(b"source_t").expect("look up source_t").id();
+        let target_type = policy.types().get_by_name(b"target_t").expect("look up target_t").id();
+        let class = policy.classes().get_by_name(b"file").expect("look up file").id();
+        let special_transition = policy
             .types()
             .get_by_name(b"special_transition_t")
             .expect("look up special_transition_t")

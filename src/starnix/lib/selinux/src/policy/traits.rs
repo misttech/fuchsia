@@ -5,7 +5,7 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
-use super::NewPolicy;
+use super::Policy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{PolicyCursor, PolicyWriter};
 
@@ -21,7 +21,7 @@ pub trait Serialize {
 
 /// Trait for types that can be validated against the parsed policy.
 pub trait Validate {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError>;
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError>;
 }
 
 /// Trait for strongly-typed policy identifiers.
@@ -84,19 +84,19 @@ pub trait HasPolicyId {
 }
 
 impl<T: Validate> Validate for Box<T> {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         (**self).validate(policy)
     }
 }
 
 impl Validate for bool {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }
 
 impl<T: Validate> Validate for Option<T> {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         if let Some(value) = self {
             value.validate(policy)?;
         }

@@ -15,7 +15,7 @@ use super::id_type::IdType;
 use super::indexed::hash_name;
 use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{HasName, Parse, PolicyId, Serialize, Validate};
-use super::{NewPolicy, U24Index};
+use super::{Policy, U24Index};
 
 /// Tag type for type safety of policy type identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -31,7 +31,7 @@ pub type PermissiveTypeSet = IdSet<TypeId, true>;
 pub type TypeSet = IdSet<TypeId>;
 
 impl Validate for TypeId {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy
             .types()
             .get_by_id(*self)
@@ -168,7 +168,7 @@ impl Serialize for Types {
 }
 
 impl Validate for Types {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         self.ordered.validate(policy)
     }
 }
@@ -233,7 +233,7 @@ impl Parse for TypeAttributeMaps {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::metadata::PolicyVersion;
+    use crate::policy::metadata::PolicyVersion;
 
     #[test]
     fn test_types_lookup() {

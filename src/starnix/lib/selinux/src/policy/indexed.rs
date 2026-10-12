@@ -12,7 +12,7 @@ use hashbrown::hash_table::Entry;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{HasName, HasPolicyId, Parse, PolicyId, Serialize, Validate};
-use super::{NewPolicy, U24Index};
+use super::{Policy, U24Index};
 
 /// Helper to hash a byte slice name using the rapidhash hasher.
 pub(super) fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u64 {
@@ -123,7 +123,7 @@ impl<C: Serialize> Serialize for IdAndNameIndexed<C> {
 }
 
 impl<C: Validate> Validate for IdAndNameIndexed<C> {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         self.container.validate(policy)
     }
 }
@@ -131,8 +131,8 @@ impl<C: Validate> Validate for IdAndNameIndexed<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::id_type::IdType;
-    use crate::new_policy::traits::{HasName, HasPolicyId};
+    use crate::policy::id_type::IdType;
+    use crate::policy::traits::{HasName, HasPolicyId};
 
     #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
     struct TestTag;

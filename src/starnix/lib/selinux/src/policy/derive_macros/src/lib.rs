@@ -76,7 +76,7 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
     let generics =
-        add_trait_bounds(input.generics, syn::parse_quote!(crate::new_policy::traits::Parse));
+        add_trait_bounds(input.generics, syn::parse_quote!(crate::policy::traits::Parse));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let wire_type = match get_wire_type(&input.attrs) {
@@ -124,8 +124,8 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        impl #impl_generics crate::new_policy::traits::Parse for #name #ty_generics #where_clause {
-            fn parse(cursor: &mut crate::new_policy::parser::PolicyCursor<'_>) -> Result<Self, crate::new_policy::error::ParseError> {
+        impl #impl_generics crate::policy::traits::Parse for #name #ty_generics #where_clause {
+            fn parse(cursor: &mut crate::policy::parser::PolicyCursor<'_>) -> Result<Self, crate::policy::error::ParseError> {
                 #parse_impl
             }
         }
@@ -188,7 +188,7 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
     let generics =
-        add_trait_bounds(input.generics, syn::parse_quote!(crate::new_policy::traits::Serialize));
+        add_trait_bounds(input.generics, syn::parse_quote!(crate::policy::traits::Serialize));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let wire_type = match get_wire_type(&input.attrs) {
@@ -236,8 +236,8 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        impl #impl_generics crate::new_policy::traits::Serialize for #name #ty_generics #where_clause {
-            fn serialize(&self, writer: &mut crate::new_policy::parser::PolicyWriter<'_>) -> Result<(), crate::new_policy::error::SerializeError> {
+        impl #impl_generics crate::policy::traits::Serialize for #name #ty_generics #where_clause {
+            fn serialize(&self, writer: &mut crate::policy::parser::PolicyWriter<'_>) -> Result<(), crate::policy::error::SerializeError> {
                 #serialize_impl
                 Ok(())
             }
@@ -263,7 +263,7 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
 /// Generates:
 /// ```rust
 /// impl Validate for Point {
-///     fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+///     fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
 ///         Validate::validate(&self.x, policy)?;
 ///         Validate::validate(&self.y, policy)?;
 ///         Ok(())
@@ -289,7 +289,7 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
 /// Generates:
 /// ```rust
 /// impl Validate for Color {
-///     fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+///     fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
 ///         Ok(())
 ///     }
 /// }
@@ -299,7 +299,7 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
     let generics =
-        add_trait_bounds(input.generics, syn::parse_quote!(crate::new_policy::traits::Validate));
+        add_trait_bounds(input.generics, syn::parse_quote!(crate::policy::traits::Validate));
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let validate_impl = match &input.data {
@@ -322,8 +322,8 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        impl #impl_generics crate::new_policy::traits::Validate for #name #ty_generics #where_clause {
-            fn validate(&self, policy: &crate::new_policy::NewPolicy) -> Result<(), crate::new_policy::error::ValidateError> {
+        impl #impl_generics crate::policy::traits::Validate for #name #ty_generics #where_clause {
+            fn validate(&self, policy: &crate::policy::Policy) -> Result<(), crate::policy::error::ValidateError> {
                 #validate_impl
                 Ok(())
             }
@@ -361,7 +361,7 @@ pub fn derive_has_name(input: TokenStream) -> TokenStream {
     }
 
     let expanded = quote! {
-        impl #impl_generics crate::new_policy::traits::HasName for #name #ty_generics #where_clause {
+        impl #impl_generics crate::policy::traits::HasName for #name #ty_generics #where_clause {
             fn name(&self) -> &[u8] {
                 &self.name
             }
@@ -400,7 +400,7 @@ pub fn derive_has_policy_id(input: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        impl #impl_generics crate::new_policy::traits::HasPolicyId for #name #ty_generics #where_clause {
+        impl #impl_generics crate::policy::traits::HasPolicyId for #name #ty_generics #where_clause {
             type Id = #id_field_type;
             fn id(&self) -> Self::Id {
                 self.id
@@ -498,7 +498,7 @@ fn gen_struct_parse(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> 
         Fields::Named(_) => {
             let fields = map_struct_fields(data, |ty, member| {
                 quote! {
-                    #member: <#ty as crate::new_policy::traits::Parse>::parse(cursor)?,
+                    #member: <#ty as crate::policy::traits::Parse>::parse(cursor)?,
                 }
             });
             Ok(quote! {
@@ -510,7 +510,7 @@ fn gen_struct_parse(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> 
         Fields::Unnamed(_) => {
             let fields = map_struct_fields(data, |ty, _| {
                 quote! {
-                    <#ty as crate::new_policy::traits::Parse>::parse(cursor)?,
+                    <#ty as crate::policy::traits::Parse>::parse(cursor)?,
                 }
             });
             Ok(quote! {
@@ -539,10 +539,10 @@ fn gen_enum_parse(
     });
 
     Ok(quote! {
-        let value = <#wire_type as crate::new_policy::traits::Parse>::parse(cursor)?;
+        let value = <#wire_type as crate::policy::traits::Parse>::parse(cursor)?;
         match value {
             #(#match_arms)*
-            _ => Err(crate::new_policy::error::ParseError::InvalidEnumValue {
+            _ => Err(crate::policy::error::ParseError::InvalidEnumValue {
                 enum_name: stringify!(#name),
                 value: value as u64,
             }),
@@ -554,7 +554,7 @@ fn gen_enum_parse(
 fn gen_struct_serialize(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> {
     gen_struct_visitor_calls(
         data,
-        &quote!(crate::new_policy::traits::Serialize),
+        &quote!(crate::policy::traits::Serialize),
         &syn::parse_quote!(serialize),
         &quote!(writer),
     )
@@ -568,7 +568,7 @@ fn gen_enum_serialize(
     validate_wire_enum(data_enum)?;
     Ok(quote! {
         let value = *self as #wire_type;
-        crate::new_policy::traits::Serialize::serialize(&value, writer)?;
+        crate::policy::traits::Serialize::serialize(&value, writer)?;
     })
 }
 
@@ -576,7 +576,7 @@ fn gen_enum_serialize(
 fn gen_struct_validate(data: &syn::DataStruct) -> Result<proc_macro2::TokenStream> {
     gen_struct_visitor_calls(
         data,
-        &quote!(crate::new_policy::traits::Validate),
+        &quote!(crate::policy::traits::Validate),
         &syn::parse_quote!(validate),
         &quote!(policy),
     )

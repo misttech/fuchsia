@@ -66,8 +66,6 @@ pub use types::*;
 pub use u24_index::U24Index;
 pub use users::User;
 
-pub use NewPolicy as Policy;
-
 /// Maximum supported binary policy size in bytes (`U24Index` limit).
 ///
 /// As of 2026-01-30, this is more than five times larger than any policy seen in production or
@@ -104,9 +102,9 @@ pub type CategorySet = bitmap::IdSet<CategoryId>;
 /// Builder for constructing [`CategorySet`]s dynamically.
 pub type CategorySetBuilder = bitmap::IdSetBuilder<CategoryId>;
 
-/// Top-level [`NewPolicy`] structure representing a parsed SELinux binary policy.
+/// Top-level [`Policy`] structure representing a parsed SELinux binary policy.
 #[derive(Debug, Parse, Serialize, Validate)]
-pub struct NewPolicy {
+pub struct Policy {
     magic: Magic,
     signature: Signature,
     version: PolicyVersion,
@@ -134,8 +132,8 @@ pub struct NewPolicy {
     type_attribute_maps: TypeAttributeMaps,
 }
 
-impl NewPolicy {
-    /// Parses a [`NewPolicy`] from the raw binary data.
+impl Policy {
+    /// Parses a [`Policy`] from the raw binary data.
     pub fn parse(data: &[u8]) -> Result<Self, ParseError> {
         let policy_size = data.len();
         if policy_size > MAXIMUM_POLICY_SIZE {
@@ -297,7 +295,7 @@ impl NewPolicy {
 #[cfg(test)]
 mod parse_tests {
     use super::*;
-    use crate::new_policy::traits::{Parse, Serialize};
+    use crate::policy::traits::{Parse, Serialize};
 
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Parse, Serialize, Validate)]
     #[policy(wire_type = u32)]
@@ -331,7 +329,7 @@ mod parse_tests {
         assert_eq!(writer, vec![2, 0, 0, 0]);
 
         let policy_bytes = include_bytes!("../../testdata/policies/selinux_testsuite");
-        let policy = NewPolicy::parse(policy_bytes).unwrap();
+        let policy = Policy::parse(policy_bytes).unwrap();
         TestEnum::ValueOne.validate(&policy).unwrap();
     }
 
@@ -391,13 +389,13 @@ mod parse_tests {
     #[test]
     fn test_all_compiled_policies_roundtrip() {
         for (name, policy_bytes) in TEST_POLICIES {
-            let new_policy = NewPolicy::parse(policy_bytes)
+            let policy = Policy::parse(policy_bytes)
                 .unwrap_or_else(|e| panic!("Failed to parse {name}: {e:?}"));
-            new_policy.validate().unwrap_or_else(|e| panic!("Failed to validate {name}: {e:?}"));
+            policy.validate().unwrap_or_else(|e| panic!("Failed to validate {name}: {e:?}"));
 
-            if new_policy.version() >= PolicyVersion::V33 {
+            if policy.version() >= PolicyVersion::V33 {
                 let mut serialized = Vec::new();
-                new_policy
+                policy
                     .serialize(&mut serialized)
                     .unwrap_or_else(|e| panic!("Failed to serialize {name}: {e:?}"));
                 assert_bytes_eq(&serialized, policy_bytes);
@@ -409,21 +407,21 @@ mod parse_tests {
     fn test_initial_sids_policy_elements() {
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/minimal_policy");
-        let new_policy = NewPolicy::parse(policy_bytes).expect("parse minimal policy");
-        new_policy.validate().expect("validate minimal policy");
+        let policy = Policy::parse(policy_bytes).expect("parse minimal policy");
+        policy.validate().expect("validate minimal policy");
 
-        assert!(!new_policy.initial_sids().is_empty());
-        assert!(new_policy.initial_sids().len() >= crate::InitialSid::all_variants().len() - 1);
+        assert!(!policy.initial_sids().is_empty());
+        assert!(policy.initial_sids().len() >= crate::InitialSid::all_variants().len() - 1);
 
         let kernel_context =
-            new_policy.initial_sids().get_by_id(crate::InitialSid::Kernel as u32).unwrap();
-        assert!(new_policy.users().get_by_id(kernel_context.user()).is_some());
-        assert!(new_policy.roles().get_by_id(kernel_context.role()).is_some());
+            policy.initial_sids().get_by_id(crate::InitialSid::Kernel as u32).unwrap();
+        assert!(policy.users().get_by_id(kernel_context.user()).is_some());
+        assert!(policy.roles().get_by_id(kernel_context.role()).is_some());
 
         let unlabeled_context =
-            new_policy.initial_sids().get_by_id(crate::InitialSid::Unlabeled as u32).unwrap();
-        assert!(new_policy.users().get_by_id(unlabeled_context.user()).is_some());
-        assert!(new_policy.roles().get_by_id(unlabeled_context.role()).is_some());
+            policy.initial_sids().get_by_id(crate::InitialSid::Unlabeled as u32).unwrap();
+        assert!(policy.users().get_by_id(unlabeled_context.user()).is_some());
+        assert!(policy.roles().get_by_id(unlabeled_context.role()).is_some());
     }
 }
 

@@ -52,9 +52,9 @@ impl InitialSids {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::metadata::PolicyVersion;
-    use crate::new_policy::parser::{PolicyCursor, PolicyWriter};
-    use crate::new_policy::traits::{Parse, Serialize};
+    use crate::policy::metadata::PolicyVersion;
+    use crate::policy::parser::{PolicyCursor, PolicyWriter};
+    use crate::policy::traits::{Parse, Serialize};
 
     #[test]
     fn test_initial_sid_parse_and_serialize() {

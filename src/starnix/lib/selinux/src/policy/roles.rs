@@ -11,7 +11,7 @@ use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-use super::{ClassId, NewPolicy, TypeId, TypeSet};
+use super::{ClassId, Policy, TypeId, TypeSet};
 
 /// Tag type for type safety of policy role identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -76,7 +76,7 @@ impl Serialize for Role {
     }
 }
 impl Validate for RoleId {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy
             .roles()
             .get_by_id(*self)
@@ -132,9 +132,9 @@ impl RoleAllow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::metadata::PolicyVersion;
-    use crate::new_policy::parser::PolicyWriter;
-    use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
+    use crate::policy::metadata::PolicyVersion;
+    use crate::policy::parser::PolicyWriter;
+    use crate::policy::traits::{HasName, HasPolicyId, PolicyId};
 
     #[test]
     fn test_role_parse_and_serialize() {
@@ -208,10 +208,10 @@ mod tests {
     fn test_role_policy_elements() {
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/role_transition_policy");
-        let new_policy = NewPolicy::parse(policy_bytes).expect("parse role_transition policy");
-        new_policy.validate().expect("validate role_transition policy");
+        let policy = Policy::parse(policy_bytes).expect("parse role_transition policy");
+        policy.validate().expect("validate role_transition policy");
 
-        assert_eq!(new_policy.role_transitions().len(), 2);
-        assert_eq!(new_policy.role_allowlist().len(), 1);
+        assert_eq!(policy.role_transitions().len(), 2);
+        assert_eq!(policy.role_allowlist().len(), 1);
     }
 }

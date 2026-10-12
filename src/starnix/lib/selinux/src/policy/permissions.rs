@@ -6,7 +6,7 @@ use std::num::NonZeroU8;
 
 use selinux_policy_derive::{HasName, HasPolicyId, Validate};
 
-use super::NewPolicy;
+use super::Policy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::parser::{PolicyCursor, PolicyWriter};
@@ -54,7 +54,7 @@ impl Serialize for Permission {
 }
 
 impl Validate for PermissionId {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }

@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 
 use selinux_policy_derive::{Parse, Serialize};
 
-use super::NewPolicy;
+use super::Policy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
@@ -34,7 +34,7 @@ pub(super) struct BinaryMapItem {
 }
 
 impl Validate for BinaryMapItem {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         if self.map == 0 {
             return Err(ValidateError::InvalidExtensibleBitmapItem);
         }
@@ -307,7 +307,7 @@ impl ExtensibleBitmapBuilder {
 }
 
 impl Validate for ExtensibleBitmap {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         let mut min_start = 0;
         for item in self.items.iter() {
             item.validate(policy)?;
@@ -529,7 +529,7 @@ impl<T: PolicyId, const WITH_ID_ZERO: bool> IdSetBuilder<T, WITH_ID_ZERO> {
 }
 
 impl<T: PolicyId + Validate, const WITH_ID_ZERO: bool> Validate for IdSet<T, WITH_ID_ZERO> {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         self.bitmap.validate(policy)?;
         for index in self.bitmap.indices_of_set_bits() {
             let id = Self::index_to_id(index).ok_or(ValidateError::InvalidIdSetIndex { index })?;
@@ -584,10 +584,10 @@ impl<'a, T: PolicyId, const WITH_ID_ZERO: bool> Iterator for SpansIter<'a, T, WI
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::TypeId;
-    use crate::new_policy::error::ParseError;
-    use crate::new_policy::parser::PolicyCursor;
-    use crate::new_policy::traits::Parse;
+    use crate::policy::TypeId;
+    use crate::policy::error::ParseError;
+    use crate::policy::parser::PolicyCursor;
+    use crate::policy::traits::Parse;
 
     fn parse_bitmap(bytes: &[u8]) -> Result<ExtensibleBitmap, ParseError> {
         let mut cursor = PolicyCursor::new(bytes);

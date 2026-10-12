@@ -10,7 +10,7 @@ use super::bitmap::IdSet;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-use super::{AccessVector, MlsLevel, NewPolicy, RoleId, SecurityContext, TypeId, UserId};
+use super::{AccessVector, MlsLevel, Policy, RoleId, SecurityContext, TypeId, UserId};
 
 /// Set of identifiers (Users, Roles, or Types) with negative matching and flags used in constraints.
 /// Note that in practice this structure's fields are always empty for User and Role expressions,
@@ -101,7 +101,7 @@ impl ConstraintSubject {
 }
 
 impl Validate for ConstraintSubject {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }
@@ -357,7 +357,7 @@ impl Serialize for ConstraintTerm {
 }
 
 impl Validate for ConstraintTerm {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         match self {
             Self::UserNameOp(expr) => expr.validate(policy)?,
             Self::RoleNameOp(expr) => expr.validate(policy)?,
@@ -383,7 +383,7 @@ impl Deref for ConstraintNode {
 }
 
 impl Validate for ConstraintNode {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         self.terms.validate(policy)?;
         let mut stack_depth: usize = 0;
         for term in self.terms.iter() {
@@ -535,8 +535,8 @@ fn evaluate_levels(left: &MlsLevel, right: &MlsLevel, operator: MlsOperator) -> 
 #[cfg(test)]
 mod tests {
     use super::{PolicyCursor, *};
-    use crate::new_policy::metadata::PolicyVersion;
-    use crate::new_policy::parser::PolicyWriter;
+    use crate::policy::metadata::PolicyVersion;
+    use crate::policy::parser::PolicyWriter;
 
     #[test]
     fn test_minimal_constraint_parse_and_serialize() {
@@ -595,7 +595,7 @@ mod tests {
     #[test]
     fn test_constraint_node_validate_term_sequence() {
         let policy_bytes = include_bytes!("../../testdata/policies/selinux_testsuite");
-        let policy = NewPolicy::parse(policy_bytes).unwrap();
+        let policy = Policy::parse(policy_bytes).unwrap();
 
         // A valid single-term sequence
         let valid_data = [
@@ -623,7 +623,7 @@ mod tests {
     #[test]
     fn evaluate_constraint_expr() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
-        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
         policy.validate().expect("validate policy");
 
         let source = policy
@@ -702,7 +702,7 @@ mod tests {
     #[test]
     fn evaluate_mls_constraint_expr() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
-        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
         policy.validate().expect("validate policy");
 
         let source = policy

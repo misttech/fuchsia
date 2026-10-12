@@ -7,8 +7,8 @@ use crate::InitialSid;
 use anyhow::Context as _;
 use serde::Deserialize;
 
-fn parse_and_validate(policy_bytes: &[u8]) -> NewPolicy {
-    let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+fn parse_and_validate(policy_bytes: &[u8]) -> Policy {
+    let policy = Policy::parse(policy_bytes).expect("parse policy");
     policy.validate().expect("validate policy");
     policy
 }
@@ -18,11 +18,11 @@ fn parse_and_validate(policy_bytes: &[u8]) -> NewPolicy {
 ///
 /// # Panics
 ///
-/// If supplied with type Ids not previously obtained from the [`NewPolicy`] itself; validation
+/// If supplied with type Ids not previously obtained from the [`Policy`] itself; validation
 /// ensures that all such Ids have corresponding definitions.
 /// If either of `target_class` or `permission` cannot be resolved in the policy.
 fn is_explicitly_allowed(
-    policy: &NewPolicy,
+    policy: &Policy,
     source_type: TypeId,
     target_type: TypeId,
     target_class: &str,
@@ -94,7 +94,7 @@ fn known_policies() {
         ))
         .expect("deserialize expectations");
 
-        let policy = NewPolicy::parse(&policy_bytes).expect("parse policy");
+        let policy = Policy::parse(&policy_bytes).expect("parse policy");
         policy
             .validate()
             .with_context(|| {

@@ -6,7 +6,7 @@ use std::num::NonZeroU16;
 
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
-use super::NewPolicy;
+use super::Policy;
 use super::constraints::{Constraint, ConstraintTerm};
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
@@ -194,7 +194,7 @@ impl Serialize for Class {
 }
 
 impl Validate for Class {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         self.permissions.validate(policy)?;
         self.constraints.validate(policy)?;
         self.validate_transitions.validate(policy)?;
@@ -222,7 +222,7 @@ impl Validate for Class {
 }
 
 impl Validate for ClassId {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy
             .classes()
             .get_by_id(*self)
@@ -234,9 +234,9 @@ impl Validate for ClassId {
 #[cfg(test)]
 mod tests {
     use super::{PolicyCursor, *};
-    use crate::new_policy::metadata::PolicyVersion;
-    use crate::new_policy::parser::PolicyWriter;
-    use crate::new_policy::traits::{HasName, HasPolicyId};
+    use crate::policy::metadata::PolicyVersion;
+    use crate::policy::parser::PolicyWriter;
+    use crate::policy::traits::{HasName, HasPolicyId};
 
     #[test]
     fn test_class_defaults_parse_and_serialize() {

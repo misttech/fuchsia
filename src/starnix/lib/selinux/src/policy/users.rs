@@ -8,7 +8,7 @@ use super::context::{MlsLevel, MlsRange};
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-use super::{NewPolicy, RoleSet, UserId};
+use super::{Policy, RoleSet, UserId};
 
 /// Parsed SELinux user definition.
 #[derive(Debug, Validate, HasName, HasPolicyId)]
@@ -76,7 +76,7 @@ impl Serialize for User {
 }
 
 impl Validate for UserId {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy
             .users()
             .get_by_id(*self)
@@ -88,8 +88,8 @@ impl Validate for UserId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::metadata::PolicyVersion;
-    use crate::new_policy::traits::{HasName, HasPolicyId};
+    use crate::policy::metadata::PolicyVersion;
+    use crate::policy::traits::{HasName, HasPolicyId};
 
     #[test]
     fn test_user_parse_and_serialize() {

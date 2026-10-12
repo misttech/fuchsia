@@ -6,7 +6,7 @@ use std::num::NonZeroU16;
 
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize};
 
-use super::NewPolicy;
+use super::Policy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::indexed::IdAndNameIndexed;
@@ -83,7 +83,7 @@ impl Serialize for CommonSymbol {
 }
 
 impl Validate for CommonSymbol {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         self.permissions.validate(policy)?;
         if self.primary_names_count > self.permissions.len() as u32 {
             return Err(ValidateError::InvalidPrimaryNamesCount {
@@ -96,7 +96,7 @@ impl Validate for CommonSymbol {
 }
 
 impl Validate for CommonSymbolId {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy
             .common_symbols()
             .get_by_id(*self)

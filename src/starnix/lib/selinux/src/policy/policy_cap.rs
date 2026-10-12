@@ -7,7 +7,7 @@ use strum_macros::VariantArray;
 
 use super::error::ValidateError;
 use super::traits::{PolicyId, Validate};
-use super::{NewPolicy, bitmap};
+use super::{Policy, bitmap};
 
 /// Reference policy capability Ids.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, VariantArray)]
@@ -67,7 +67,7 @@ impl PolicyId for PolicyCap {
 }
 
 impl Validate for PolicyCap {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }

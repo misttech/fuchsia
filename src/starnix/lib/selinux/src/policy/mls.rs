@@ -63,7 +63,7 @@ impl Serialize for Sensitivity {
 }
 
 impl Validate for SensitivityId {
-    fn validate(&self, policy: &super::NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &super::Policy) -> Result<(), ValidateError> {
         policy
             .sensitivities()
             .get_by_id(*self)
@@ -119,7 +119,7 @@ impl Serialize for Category {
 }
 
 impl Validate for CategoryId {
-    fn validate(&self, policy: &super::NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &super::Policy) -> Result<(), ValidateError> {
         policy
             .categories()
             .get_by_id(*self)
@@ -162,10 +162,10 @@ impl RangeTransition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::CategorySet;
-    use crate::new_policy::metadata::PolicyVersion;
-    use crate::new_policy::parser::PolicyWriter;
-    use crate::new_policy::traits::{HasName, HasPolicyId};
+    use crate::policy::CategorySet;
+    use crate::policy::metadata::PolicyVersion;
+    use crate::policy::parser::PolicyWriter;
+    use crate::policy::traits::{HasName, HasPolicyId};
 
     #[test]
     fn test_category_parse_and_serialize() {

@@ -6,7 +6,7 @@ use std::num::NonZeroU32;
 
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
-use super::NewPolicy;
+use super::Policy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::parser::{PolicyCursor, PolicyWriter};
@@ -66,7 +66,7 @@ impl Serialize for ConditionalBoolean {
 }
 
 impl Validate for ConditionalBooleanId {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         policy.conditional_booleans().get_by_id(*self).map(|_| ()).ok_or_else(|| {
             ValidateError::UnknownId { kind: "conditional boolean", id: self.as_u32() }
         })
@@ -76,8 +76,8 @@ impl Validate for ConditionalBooleanId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::metadata::PolicyVersion;
-    use crate::new_policy::traits::{HasName, HasPolicyId};
+    use crate::policy::metadata::PolicyVersion;
+    use crate::policy::traits::{HasName, HasPolicyId};
 
     #[test]
     fn test_conditional_boolean_parse_and_serialize() {
@@ -104,10 +104,10 @@ mod tests {
     fn test_conditional_booleans() {
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/conditional_policy");
-        let new_policy = NewPolicy::parse(policy_bytes).expect("parse conditional policy");
-        new_policy.validate().expect("validate conditional policy");
+        let policy = Policy::parse(policy_bytes).expect("parse conditional policy");
+        policy.validate().expect("validate conditional policy");
 
-        let booleans = new_policy.conditional_booleans();
+        let booleans = policy.conditional_booleans();
         let first = booleans.get_by_name(b"test_cond_first").expect("test_cond_first");
         assert!(first.active());
 

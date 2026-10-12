@@ -51,7 +51,7 @@ pub(super) struct Magic {
 }
 
 impl Validate for Magic {
-    fn validate(&self, _policy: &super::NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &super::Policy) -> Result<(), ValidateError> {
         if self.value != SELINUX_MAGIC {
             return Err(ValidateError::InvalidMagic { found_magic: self.value });
         }
@@ -66,7 +66,7 @@ pub(super) struct Signature {
 }
 
 impl Validate for Signature {
-    fn validate(&self, _policy: &super::NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &super::Policy) -> Result<(), ValidateError> {
         let len = self.value.len() as u32;
         if len > POLICYDB_STRING_MAX_LENGTH {
             return Err(ValidateError::InvalidSignatureLength { found_length: len });
@@ -110,7 +110,7 @@ impl PolicyVersion {
 }
 
 impl Validate for PolicyVersion {
-    fn validate(&self, _policy: &super::NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &super::Policy) -> Result<(), ValidateError> {
         let version = self.value;
         if version < POLICYDB_VERSION_MIN || version > POLICYDB_VERSION_MAX {
             return Err(ValidateError::InvalidPolicyVersion { found_policy_version: version });
@@ -172,7 +172,7 @@ impl Serialize for Config {
 }
 
 impl Validate for Config {
-    fn validate(&self, _policy: &super::NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &super::Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }

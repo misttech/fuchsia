@@ -9,8 +9,8 @@ use super::rules::{
 use super::traits::{HasName, HasPolicyId};
 use super::{
     AccessDecision, AccessVector, CategorySet, Class, ClassDefault, ClassDefaultRange, ClassId,
-    FsUseType, GenfsConPath, MlsLevel, NewPolicy, OBJECT_R_ROLE_NAME, PermissionId, PolicyCap,
-    RoleId, SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, SecurityContextError, TypeId,
+    FsUseType, GenfsConPath, MlsLevel, OBJECT_R_ROLE_NAME, PermissionId, Policy, PolicyCap, RoleId,
+    SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, SecurityContextError, TypeId,
 };
 use crate::{InitialSid, NullessByteStr};
 
@@ -54,7 +54,7 @@ pub struct FsUseLabelAndType {
     pub use_type: FsUseType,
 }
 
-impl NewPolicy {
+impl Policy {
     /// Returns true if the specified capability is in the policy's enabled capabilities set.
     pub fn has_policycap(&self, policy_cap: PolicyCap) -> bool {
         self.policy_capabilities().contains(policy_cap)

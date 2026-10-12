@@ -14,7 +14,7 @@ pub use selinux_policy_derive::{Parse, Serialize, Validate};
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-use super::{AccessVector, ClassId, ConditionalBooleanId, NewPolicy, TypeId, U24Index};
+use super::{AccessVector, ClassId, ConditionalBooleanId, Policy, TypeId, U24Index};
 
 /// Flag bit for standard `allow` rules.
 pub const AV_ALLOW_RULE_FLAG: u16 = 0x1;
@@ -168,7 +168,7 @@ impl Not for XpermsBitmap {
 }
 
 impl Validate for XpermsBitmap {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }
@@ -182,7 +182,7 @@ pub struct ExtendedPermissions {
 }
 
 impl Validate for ExtendedPermissions {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         match self.xperms_type {
             XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES
             | XPERMS_TYPE_IOCTL_PREFIXES
@@ -295,7 +295,7 @@ impl From<RuleKind> for u16 {
 }
 
 impl Validate for RuleKind {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }
@@ -595,7 +595,7 @@ impl Serialize for AccessVectorRules {
 }
 
 impl Validate for AccessVectorRules {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         self.av_rules.validate(policy)?;
         self.type_rules.validate(policy)?;
         self.xperm_rules.validate(policy)?;
@@ -709,7 +709,7 @@ impl Serialize for IndexedAccessVectorRules {
 }
 
 impl Validate for IndexedAccessVectorRules {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         self.rules.validate(policy)
     }
 }
@@ -817,7 +817,7 @@ impl Serialize for ConditionalExpressionElement {
 }
 
 impl Validate for ConditionalExpressionElement {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         if let Self::Boolean(id) = self {
             id.validate(policy)?;
         }
@@ -846,10 +846,10 @@ struct BinaryAccessVectorRuleHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::NewPolicy;
-    use crate::new_policy::metadata::PolicyVersion;
-    use crate::new_policy::parser::PolicyWriter;
-    use crate::new_policy::traits::{HasPolicyId, PolicyId};
+    use crate::policy::Policy;
+    use crate::policy::metadata::PolicyVersion;
+    use crate::policy::parser::PolicyWriter;
+    use crate::policy::traits::{HasPolicyId, PolicyId};
 
     #[test]
     fn test_xperms_bitmap_ops_and_contains() {
@@ -1027,10 +1027,10 @@ mod tests {
     fn test_conditional_nodes() {
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/conditional_policy");
-        let new_policy = NewPolicy::parse(policy_bytes).expect("parse conditional policy");
-        new_policy.validate().expect("validate conditional policy");
+        let policy = Policy::parse(policy_bytes).expect("parse conditional policy");
+        policy.validate().expect("validate conditional policy");
 
-        let nodes = new_policy.conditional_nodes();
+        let nodes = policy.conditional_nodes();
         assert_eq!(nodes.len(), 4);
         assert_eq!(nodes[0].true_rules.av_rules().len(), 1);
         assert_eq!(nodes[0].false_rules.av_rules().len(), 0);
@@ -1045,7 +1045,7 @@ mod tests {
     #[test]
     fn parse_allowxperm_one_ioctl() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
-        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
         policy.validate().expect("validate policy");
 
         let class_id =
@@ -1068,7 +1068,7 @@ mod tests {
     #[test]
     fn parse_allowxperm_two_ioctls_same_range_coalesced() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
-        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
         policy.validate().expect("validate policy");
 
         let class_id = policy
@@ -1095,7 +1095,7 @@ mod tests {
     #[test]
     fn parse_allowxperm_one_driver_range() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
-        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
         policy.validate().expect("validate policy");
 
         let class_id = policy
@@ -1121,7 +1121,7 @@ mod tests {
     #[test]
     fn parse_allowxperm_two_ioctls_different_range() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
-        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
         policy.validate().expect("validate policy");
 
         let class_id = policy
@@ -1151,7 +1151,7 @@ mod tests {
     #[test]
     fn parse_allowxperm_one_nlmsg() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
-        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
         policy.validate().expect("validate policy");
 
         let class_id =
@@ -1176,7 +1176,7 @@ mod tests {
     #[test]
     fn parse_auditallowxperm_not_coalesced() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
-        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
         policy.validate().expect("validate policy");
 
         let class_id = policy
@@ -1209,7 +1209,7 @@ mod tests {
     #[test]
     fn parse_dontauditxperm() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/allowxperm_policy");
-        let policy = NewPolicy::parse(policy_bytes).expect("parse policy");
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
         policy.validate().expect("validate policy");
 
         let class_id = policy

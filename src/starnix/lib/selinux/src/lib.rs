@@ -6,13 +6,11 @@
 
 mod exceptions_config;
 mod kernel;
-pub mod new_policy;
 pub mod permission_check;
+pub mod policy;
 pub mod security_server;
 mod sid_table;
 mod sync;
-
-pub use new_policy as policy;
 
 pub use kernel::*;
 pub use policy::{ClassId, FsUseType, PolicyCap};

@@ -271,14 +271,14 @@ impl GenfsCon {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::traits::PolicyId;
-    use crate::new_policy::{NewPolicy, UserId};
+    use crate::policy::traits::PolicyId;
+    use crate::policy::{Policy, UserId};
 
     #[test]
     fn test_object_contexts_minimal_policy() {
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/minimal_policy");
-        let policy = NewPolicy::parse(policy_bytes).expect("parse minimal_policy");
+        let policy = Policy::parse(policy_bytes).expect("parse minimal_policy");
         policy.validate().expect("validate minimal_policy");
 
         let object_contexts = policy.object_contexts();

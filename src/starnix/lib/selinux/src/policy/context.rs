@@ -110,7 +110,7 @@ impl Serialize for MlsRange {
 }
 
 impl Validate for MlsRange {
-    fn validate(&self, policy: &super::NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &super::Policy) -> Result<(), ValidateError> {
         self.low.validate(policy)?;
         if let Some(ref high) = self.high {
             high.validate(policy)?;

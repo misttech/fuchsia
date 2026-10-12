@@ -10,7 +10,7 @@ use std::sync::Arc;
 use selinux_policy_derive::{Parse, Serialize, Validate};
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
-use super::NewPolicy;
+use super::Policy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::metadata::PolicyVersion;
 use super::traits::{Parse, Serialize, Validate};
@@ -143,7 +143,7 @@ impl Serialize for u8 {
 }
 
 impl Validate for u8 {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }
@@ -164,7 +164,7 @@ impl Serialize for u16 {
 }
 
 impl Validate for u16 {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }
@@ -185,7 +185,7 @@ impl Serialize for u32 {
 }
 
 impl Validate for u32 {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }
@@ -242,7 +242,7 @@ impl Serialize for u64 {
 }
 
 impl Validate for u64 {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }
@@ -267,7 +267,7 @@ impl<T: Serialize, const N: usize> Serialize for [T; N] {
 }
 
 impl<T: Validate, const N: usize> Validate for [T; N] {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         for item in self {
             item.validate(policy)?;
         }
@@ -285,7 +285,7 @@ impl<T: Serialize> Serialize for Box<[T]> {
 }
 
 impl<T: Validate> Validate for Box<[T]> {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         for item in self.iter() {
             item.validate(policy)?;
         }
@@ -306,7 +306,7 @@ impl<T> Serialize for PhantomData<T> {
 }
 
 impl<T> Validate for PhantomData<T> {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, _policy: &Policy) -> Result<(), ValidateError> {
         Ok(())
     }
 }
@@ -380,7 +380,7 @@ impl<T> Deref for SymbolArray<T> {
 }
 
 impl<T: Validate> Validate for SymbolArray<T> {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+    fn validate(&self, policy: &Policy) -> Result<(), ValidateError> {
         self.items.validate(policy)?;
         if self.primary_names_count > self.items.len() as u32 {
             return Err(ValidateError::InvalidPrimaryNamesCount {
@@ -395,7 +395,7 @@ impl<T: Validate> Validate for SymbolArray<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::metadata::PolicyVersion;
+    use crate::policy::metadata::PolicyVersion;
 
     #[test]
     fn test_policy_cursor_parse_u32() {

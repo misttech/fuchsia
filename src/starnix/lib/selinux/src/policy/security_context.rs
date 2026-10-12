@@ -4,7 +4,7 @@
 
 use super::traits::{HasName, HasPolicyId, PolicyId as _};
 use super::{
-    CategoryId, CategorySetBuilder, Context, IdSpan, MlsLevel, MlsRange, NewPolicy, RoleId, TypeId,
+    CategoryId, CategorySetBuilder, Context, IdSpan, MlsLevel, MlsRange, Policy, RoleId, TypeId,
     UserId,
 };
 use crate::NullessByteStr;
@@ -86,7 +86,7 @@ impl SecurityContext {
     /// Returns an error if the [`security_context`] is not a syntactically valid
     /// Security Context string, or the fields are not valid under the current policy.
     pub(super) fn from_string(
-        policy: &NewPolicy,
+        policy: &Policy,
         security_context: NullessByteStr<'_>,
     ) -> Result<Self, SecurityContextError> {
         let as_str = std::str::from_utf8(security_context.as_bytes())
@@ -138,7 +138,7 @@ impl SecurityContext {
     }
 
     /// Returns this [`SecurityContext`] serialized to a byte string.
-    pub(super) fn to_string(&self, policy: &NewPolicy) -> Vec<u8> {
+    pub(super) fn to_string(&self, policy: &Policy) -> Vec<u8> {
         let mut levels = self.low_level().to_string(policy);
         if let Some(high_level) = self.high_level() {
             levels.push(b'-');
@@ -156,7 +156,7 @@ impl SecurityContext {
 
     /// Validates that this [`SecurityContext`]'s fields are consistent with policy constraints
     /// (e.g. that the role is valid for the user).
-    pub(super) fn validate(&self, policy: &NewPolicy) -> Result<(), SecurityContextError> {
+    pub(super) fn validate(&self, policy: &Policy) -> Result<(), SecurityContextError> {
         let user = policy.users().get_by_id(self.user()).unwrap();
 
         // Check that the security context's levels are internally consistent: i.e., that the
@@ -222,10 +222,7 @@ impl SecurityContext {
 
 impl MlsLevel {
     /// Parses [`MlsLevel`] from the supplied string slice.
-    pub(super) fn from_string(
-        policy: &NewPolicy,
-        level: &str,
-    ) -> Result<Self, SecurityContextError> {
+    pub(super) fn from_string(policy: &Policy, level: &str) -> Result<Self, SecurityContextError> {
         if level.is_empty() {
             return Err(SecurityContextError::InvalidSyntax);
         }
@@ -266,7 +263,7 @@ impl MlsLevel {
     }
 
     fn category_id_by_name(
-        policy: &NewPolicy,
+        policy: &Policy,
         name: &str,
     ) -> Result<CategoryId, SecurityContextError> {
         Ok(policy
@@ -280,7 +277,7 @@ impl MlsLevel {
         self.categories().spans()
     }
 
-    pub fn to_string(&self, policy: &NewPolicy) -> Vec<u8> {
+    pub fn to_string(&self, policy: &Policy) -> Vec<u8> {
         let sensitivity = policy.sensitivities().get_by_id(self.sensitivity()).unwrap().name();
         let categories = self
             .category_spans()
@@ -303,7 +300,7 @@ pub type CategorySpan = IdSpan<CategoryId>;
 
 impl IdSpan<CategoryId> {
     /// Returns `Vec<u8>` describing the category, or category range.
-    fn to_string(&self, policy: &NewPolicy) -> Vec<u8> {
+    fn to_string(&self, policy: &Policy) -> Vec<u8> {
         let low = policy.categories().get_by_id(self.low()).unwrap().name();
         if self.low() == self.high() {
             return low.into();
@@ -348,10 +345,10 @@ mod tests {
     use super::*;
     use std::cmp::Ordering;
 
-    fn test_policy() -> NewPolicy {
+    fn test_policy() -> Policy {
         const TEST_POLICY: &[u8] =
             include_bytes!("../../testdata/micro_policies/security_context_tests_policy");
-        let policy = NewPolicy::parse(TEST_POLICY).unwrap();
+        let policy = Policy::parse(TEST_POLICY).unwrap();
         policy.validate().unwrap();
         policy
     }
@@ -363,27 +360,27 @@ mod tests {
         high: String,
     }
 
-    fn user_name(policy: &NewPolicy, id: UserId) -> &str {
+    fn user_name(policy: &Policy, id: UserId) -> &str {
         std::str::from_utf8(policy.users().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn role_name(policy: &NewPolicy, id: RoleId) -> &str {
+    fn role_name(policy: &Policy, id: RoleId) -> &str {
         std::str::from_utf8(policy.roles().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn type_name(policy: &NewPolicy, id: TypeId) -> &str {
+    fn type_name(policy: &Policy, id: TypeId) -> &str {
         std::str::from_utf8(policy.types().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn sensitivity_name(policy: &NewPolicy, id: SensitivityId) -> &str {
+    fn sensitivity_name(policy: &Policy, id: SensitivityId) -> &str {
         std::str::from_utf8(policy.sensitivities().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn category_name(policy: &NewPolicy, id: CategoryId) -> &str {
+    fn category_name(policy: &Policy, id: CategoryId) -> &str {
         std::str::from_utf8(policy.categories().get_by_id(id).unwrap().name()).unwrap()
     }
 
-    fn category_span(policy: &NewPolicy, category: &CategorySpan) -> CategoryItem {
+    fn category_span(policy: &Policy, category: &CategorySpan) -> CategoryItem {
         CategoryItem {
             low: category_name(policy, category.low()).into(),
             high: category_name(policy, category.high()).into(),
@@ -391,7 +388,7 @@ mod tests {
     }
 
     fn category_spans(
-        policy: &NewPolicy,
+        policy: &Policy,
         iter: impl Iterator<Item = CategorySpan>,
     ) -> Vec<CategoryItem> {
         iter.map(|x| category_span(policy, &x)).collect()
