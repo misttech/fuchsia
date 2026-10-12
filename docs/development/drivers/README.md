@@ -116,7 +116,6 @@ section.
   - [Device driver lifecycle][device-driver-lifecycle]
   - [Device power management][device-power-management]
   - [Protocols in drivers][protocols-in-drivers]
-  - [Composite devices][composite-devices]
 
 ### Driver-specific guides
 
@@ -200,7 +199,6 @@ section.
 [device-power-management]: concepts/device_driver_model/device-power.md
 [protocols-in-drivers]: concepts/device_driver_model/protocol.md
 [platform-bus]: concepts/device_driver_model/platform-bus.md
-[composite-devices]: concepts/device_driver_model/composite.md
 [device-firmware]: best_practices/firmware.md
 [driver-architectures-overview]: concepts/driver_architectures/README.md
 [fuchsia-input-drivers]: concepts/driver_architectures/input_drivers/input.md

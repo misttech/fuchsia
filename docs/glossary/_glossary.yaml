@@ -922,7 +922,7 @@
   binds to a fragment <a href=\"/docs/glossary#driver\">driver</a> which provides protocols and
   metadata to the composite node. Only used in Driver Framework v1."
   full_description: ""
-  see_also: ["<a href=\"/docs/development/drivers/concepts/device_driver_model/composite.md\">Composite devices</a>"]
+  see_also: ["<a href=\"/docs/development/drivers/developer_guide/create-a-composite-node.md\">Composite nodes</a>"]
   related_guides: [""]
   area: ["System", "Devices", "Drivers", "Driver SDK"]
 

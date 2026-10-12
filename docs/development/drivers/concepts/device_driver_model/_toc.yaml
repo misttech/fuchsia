@@ -22,5 +22,3 @@ toc:
   path: /docs/development/drivers/concepts/device_driver_model/device-power.md
 - title: "Protocols in drivers"
   path: /docs/development/drivers/concepts/device_driver_model/protocol.md
-- title: "Composite devices"
-  path: /docs/development/drivers/concepts/device_driver_model/composite.md

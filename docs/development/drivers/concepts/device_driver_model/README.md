@@ -8,4 +8,3 @@
 - [Power management](device-power.md)
 - [Device protocol](protocol.md)
 - [Platform bus](platform-bus.md)
-- [Composite devices](composite.md)
