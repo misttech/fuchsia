@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/config/derived:compilation_modes.bzl", "is_debug")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "crypto",
+    srcs = [
+        "src/cipher.rs",
+        "src/cipher/fscrypt_ino_lblk32.rs",
+        "src/cipher/fscrypt_ino_lblk64.rs",
+        "src/cipher/fscrypt_test_data.rs",
+        "src/cipher/fxfs.rs",
+        "src/ff1.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "fxfs_crypto",
+    edition = "2024",
+    proc_macro_deps = ["//third_party/rust_crates/vendor:async-trait"],
+    # Default optimizations are for size, but that has a noticeable impact on
+    # speed.
+    # TODO(https://fxbug.dev/571444250): Replace that with build_flags() labels.
+    rustc_flags = [] if is_debug else [
+        "-Copt-level=3",
+    ],  # @bazel2gn:raw_overwrite:[] if (!is_debug) { configs -= [ "//build/config:default_optimize" ] configs += [ "//build/config:optimize_speed", "//build/config/lto:lto-if-compatible" ] }
+    test_deps = [
+        "//third_party/rust_crates/vendor:hex",
+        "//third_party/rust_crates/vendor:rand",
+    ],
+    visibility = [
+        "//src/storage/crypt/fxfs:__subpackages__",
+        "//src/storage/f2fs_reader/migrate:__pkg__",
+        "//src/storage/fxfs:__subpackages__",
+        "//src/storage/lib/block_server/vmo_backed:__pkg__",
+        "//src/storage/lib/mapping:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    with_unit_tests = True,
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
+        "//sdk/rust/zx-status",
+        "//src/storage/fxfs/fidl/fuchsia.fxfs:fuchsia.fxfs_rust",
+        "//src/storage/fxfs/trace",
+        "//src/storage/lib/fscrypt",
+        "//src/storage/lib/ptr_slice",
+        "//src/storage/lib/storage_xts",
+        "//src/storage/type-fprint:fprint",
+        "//third_party/rust_crates/vendor:aes",
+        "//third_party/rust_crates/vendor:anyhow",
+        "//third_party/rust_crates/vendor:arbitrary",
+        "//third_party/rust_crates/vendor:byteorder",
+        "//third_party/rust_crates/vendor:cbc",
+        "//third_party/rust_crates/vendor:chacha20",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:log",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:siphasher",
+        "//third_party/rust_crates/vendor:zerocopy",
+    ],
+)
