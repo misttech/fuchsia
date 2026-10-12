@@ -9,17 +9,24 @@ use super::handle::KernelHandle;
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher_ffi::{
     cpp_sys_thread_legacy_yield, cpp_sys_thread_raise_exception, cpp_thread_dispatcher_create,
-    cpp_thread_dispatcher_exit_current, cpp_thread_dispatcher_get_current_message_waiter,
-    cpp_thread_dispatcher_get_exception_report, cpp_thread_dispatcher_get_info_for_userspace,
-    cpp_thread_dispatcher_get_runtime_stats, cpp_thread_dispatcher_get_stats_for_userspace,
-    cpp_thread_dispatcher_initialize, cpp_thread_dispatcher_is_current, cpp_thread_dispatcher_kill,
-    cpp_thread_dispatcher_kill_current, cpp_thread_dispatcher_read_state,
-    cpp_thread_dispatcher_restricted_kick, cpp_thread_dispatcher_resume,
-    cpp_thread_dispatcher_set_base_profile, cpp_thread_dispatcher_set_soft_affinity,
-    cpp_thread_dispatcher_start, cpp_thread_dispatcher_suspend, cpp_thread_dispatcher_write_state,
+    cpp_thread_dispatcher_current, cpp_thread_dispatcher_exit_current,
+    cpp_thread_dispatcher_get_current_message_waiter, cpp_thread_dispatcher_get_exception_report,
+    cpp_thread_dispatcher_get_info_for_userspace, cpp_thread_dispatcher_get_runtime_stats,
+    cpp_thread_dispatcher_get_stats_for_userspace, cpp_thread_dispatcher_has_started,
+    cpp_thread_dispatcher_initialize, cpp_thread_dispatcher_is_current,
+    cpp_thread_dispatcher_is_dying_or_dead, cpp_thread_dispatcher_kill,
+    cpp_thread_dispatcher_kill_current, cpp_thread_dispatcher_lock_acquire,
+    cpp_thread_dispatcher_lock_release, cpp_thread_dispatcher_read_state,
+    cpp_thread_dispatcher_release_core_thread_observation, cpp_thread_dispatcher_restricted_kick,
+    cpp_thread_dispatcher_resume, cpp_thread_dispatcher_set_base_profile,
+    cpp_thread_dispatcher_set_soft_affinity, cpp_thread_dispatcher_start,
+    cpp_thread_dispatcher_suspend, cpp_thread_dispatcher_write_state,
 };
 use crate::kernel::scheduler_state::SchedulerStateBaseProfile;
+use crate::kernel::thread::{Thread, ThreadPtr};
+use core::ffi::c_void;
 use core::mem::MaybeUninit;
+use ksync::LockToken;
 use zx_status::Status;
 use zx_types::{
     zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t, zx_info_thread_stats_t,
@@ -34,6 +41,28 @@ crate::object::dispatcher::impl_dispatcher_facade!(
 );
 
 zr::static_assert!(core::mem::size_of::<ThreadDispatcher>() == 0);
+
+/// A wrapper around a raw pointer to the current [`ThreadDispatcher`].
+///
+/// This type explicitly does not implement [`Send`] or [`Sync`], guaranteeing that it cannot be
+/// shared with or sent to other threads. Because the current user thread cannot be destroyed
+/// while it is executing, it is safe to dereference the raw pointer into a [`ThreadDispatcher`]
+/// reference.
+#[derive(Debug)]
+pub struct CurrentThreadDispatcher {
+    ptr: *const ThreadDispatcher,
+}
+
+impl core::ops::Deref for CurrentThreadDispatcher {
+    type Target = ThreadDispatcher;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: `CurrentThreadDispatcher` does not implement `Send` or `Sync`, and the current
+        // user thread cannot be destroyed while executing.
+        unsafe { &*self.ptr }
+    }
+}
 
 /// A wrapper around a raw pointer to the current thread's [`MessageWaiter`].
 ///
@@ -61,6 +90,16 @@ impl ThreadDispatcher {
     /// Returns default rights for a thread handle.
     pub const fn default_rights() -> zx_rights_t {
         zx_types::ZX_DEFAULT_THREAD_RIGHTS
+    }
+
+    /// Returns a wrapper that dereferences to the current [`ThreadDispatcher`].
+    #[inline]
+    pub fn get_current() -> CurrentThreadDispatcher {
+        // SAFETY: Calling `cpp_thread_dispatcher_current` is safe when executing in a valid user
+        // thread context.
+        let ptr = unsafe { cpp_thread_dispatcher_current() };
+        debug_assert!(!ptr.is_null());
+        CurrentThreadDispatcher { ptr }
     }
 
     /// Returns a wrapper that dereferences to the current thread's [`MessageWaiter`].
@@ -319,6 +358,145 @@ impl ThreadDispatcher {
                 self as *const _ as *mut _,
             )
         }
+    }
+
+    /// Returns true if the thread was ever started (even if it is dead now).
+    ///
+    /// Threads never return to an INITIAL state after starting, so once this is true it will
+    /// never flip back to false.
+    ///
+    /// The caller must not hold this thread's dispatcher lock.
+    #[inline]
+    pub fn has_started(&self) -> bool {
+        // SAFETY: `self` is a valid `ThreadDispatcher`.
+        unsafe { cpp_thread_dispatcher_has_started(self as *const _) }
+    }
+
+    /// Returns true if the thread is dying or dead.
+    ///
+    /// Threads never return to a previous state from dying/dead so once this is true it will
+    /// never flip back to false.
+    ///
+    /// The caller must not hold this thread's dispatcher lock.
+    #[inline]
+    pub fn is_dying_or_dead(&self) -> bool {
+        // SAFETY: `self` is a valid `ThreadDispatcher`.
+        unsafe { cpp_thread_dispatcher_is_dying_or_dead(self as *const _) }
+    }
+}
+
+/// Lock class tag for a [`ThreadDispatcher`]'s dispatcher lock (C++
+/// `ThreadDispatcher::get_lock()`).
+///
+/// A [`LockToken`] of this class is the Rust analogue of C++'s `TA_REQ(get_lock())`: it proves
+/// that *some* `ThreadDispatcher`'s dispatcher lock is held by the current thread. Because a
+/// `LockToken` is per lock class rather than per lock instance, it does not prove *which*
+/// `ThreadDispatcher`'s lock is held; methods taking such a token remain `unsafe` and require the
+/// caller to guarantee that the token came from the lock of the instance being operated on.
+#[derive(Debug, Default)]
+pub struct ThreadDispatcherLockClass;
+
+/// Optional RAII guard for a [`ThreadDispatcher`]'s critical mutex, mirroring C++
+/// `NullLockPolicy` / `Guard<CriticalMutex>::NullLock`.
+pub struct NullableThreadDispatcherGuard<'a> {
+    thread: Option<&'a ThreadDispatcher>,
+    should_clear: bool,
+}
+
+impl<'a> NullableThreadDispatcherGuard<'a> {
+    /// Acquires `thread`'s dispatcher lock if `thread` is `Some`.
+    #[inline]
+    pub fn new(thread: Option<&'a ThreadDispatcher>) -> Self {
+        let should_clear = if let Some(t) = thread {
+            // SAFETY: `t` is a valid `ThreadDispatcher` reference.
+            unsafe { cpp_thread_dispatcher_lock_acquire(t as *const _ as *mut _) }
+        } else {
+            false
+        };
+        Self { thread, should_clear }
+    }
+
+    /// Returns a [`LockToken`] proving that the guarded thread's dispatcher lock is held, or
+    /// `None` if this guard does not currently hold a lock (it was created with `None` or has
+    /// been released).
+    ///
+    /// The token borrows `self`, so the guard cannot be released while the token is alive. Note
+    /// that the token only identifies the lock class; callers passing it to `unsafe` methods on a
+    /// [`ThreadDispatcher`] must ensure that the `ThreadDispatcher` is the one this guard was
+    /// created for.
+    #[inline]
+    pub fn token(&self) -> Option<LockToken<'_, ThreadDispatcherLockClass>> {
+        // SAFETY: `self.thread` is `Some` exactly when `Self::new` acquired that thread's
+        // dispatcher lock and it has not yet been released by `Self::release`. The returned token
+        // borrows `self`, so it cannot outlive the lock hold (`release` needs `&mut self`).
+        self.thread.map(|_| unsafe { LockToken::new() })
+    }
+
+    /// Releases the dispatcher lock early if currently held.
+    #[inline]
+    pub fn release(&mut self) {
+        if let Some(t) = self.thread.take() {
+            // SAFETY: `t`'s lock was acquired by `Self::new` and has not yet been released.
+            unsafe {
+                cpp_thread_dispatcher_lock_release(t as *const _ as *mut _, self.should_clear);
+            }
+        }
+    }
+}
+
+impl Drop for NullableThreadDispatcherGuard<'_> {
+    #[inline]
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+/// RAII observation of a [`ThreadDispatcher`]'s `core_thread_` under `core_thread_lock_`,
+/// mirroring C++ `ThreadDispatcher::CoreThreadObservation`.
+#[repr(C)]
+pub struct CoreThreadObservation {
+    core_thread: *mut Thread,
+    lock: *mut c_void,
+}
+
+impl Default for CoreThreadObservation {
+    #[inline]
+    fn default() -> Self {
+        Self { core_thread: core::ptr::null_mut(), lock: core::ptr::null_mut() }
+    }
+}
+
+zr::static_assert!(
+    core::mem::size_of::<CoreThreadObservation>() == 2 * core::mem::size_of::<usize>()
+);
+zr::static_assert!(
+    core::mem::align_of::<CoreThreadObservation>() == core::mem::align_of::<usize>()
+);
+
+impl CoreThreadObservation {
+    /// Returns the observed [`ThreadPtr`], if any.
+    #[inline]
+    pub fn core_thread(&self) -> Option<ThreadPtr> {
+        // SAFETY: `self.core_thread` is either null or a valid `Thread*` observed under
+        // `core_thread_lock_`.
+        unsafe { ThreadPtr::from_raw(self.core_thread) }
+    }
+
+    /// Releases `core_thread_lock_` if an observation is active.
+    #[inline]
+    pub fn release(&mut self) {
+        // SAFETY: `self` is a valid `CoreThreadObservation` initialized by `Default` or
+        // `cpp_thread_dispatcher_observe_core_thread`.
+        unsafe {
+            cpp_thread_dispatcher_release_core_thread_observation(self as *mut Self);
+        }
+    }
+}
+
+impl Drop for CoreThreadObservation {
+    #[inline]
+    fn drop(&mut self) {
+        self.release();
     }
 }
 

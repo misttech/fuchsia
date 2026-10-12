@@ -4,19 +4,20 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use super::dispatcher::DispatcherOps;
+use super::dispatcher::{Dispatcher, DispatcherOps};
 use super::handle::{HandleOwner, HandleRef, HandleValue};
 use super::handle_table_ffi::{
-    cpp_handle_table_add_handle_locked, cpp_handle_table_get_handle_locked, cpp_handle_table_koid,
-    cpp_handle_table_lock, cpp_handle_table_map_handle_to_value,
-    cpp_handle_table_remove_handle_locked,
+    cpp_handle_table_add_handle_locked,
+    cpp_handle_table_get_dispatcher_with_rights_no_policy_check,
+    cpp_handle_table_get_handle_locked, cpp_handle_table_koid, cpp_handle_table_lock,
+    cpp_handle_table_map_handle_to_value, cpp_handle_table_remove_handle_locked,
 };
 use super::process_dispatcher::ProcessDispatcher;
 use crate::kernel::thread::AutoExpiringPreemptDisabler;
 use core::convert::Infallible;
 use core::ffi::c_void;
 use core::fmt::{self, Debug, Formatter};
-use core::mem::size_of;
+use core::mem::{MaybeUninit, size_of};
 use core::ptr::{self, NonNull};
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use ksync::{BrwLockPi, BrwLockPiReadGuard, BrwLockPiWriteGuard, LockClass, LockToken};
@@ -296,5 +297,39 @@ impl HandleTable {
         let (dispatcher, _actual_rights) =
             self.get_dispatcher_with_rights_and_actual::<T>(caller, handle_value, rights)?;
         Ok(dispatcher)
+    }
+
+    /// Resolves a handle to a dispatcher of type `T` with the required `rights` in this handle
+    /// table, without enforcing the `ZX_POL_BAD_HANDLE` job policy on lookup failure.
+    ///
+    /// Mirrors C++ `HandleTable::GetDispatcherWithRightsNoPolicyCheck`. As with
+    /// [`Self::get_dispatcher_with_rights`], `ZX_ERR_WRONG_TYPE` takes precedence over
+    /// `ZX_ERR_ACCESS_DENIED`.
+    #[inline]
+    pub fn get_dispatcher_with_rights_no_policy_check<T>(
+        &self,
+        handle_value: HandleValue,
+        rights: zx_rights_t,
+    ) -> Result<RefPtr<T>, Status>
+    where
+        T: DispatcherOps + HasRefCount + Recyclable,
+    {
+        const { assert!(T::TYPE != ZX_OBJ_TYPE_NONE) };
+        let mut dispatcher = MaybeUninit::<RefPtr<Dispatcher>>::uninit();
+        // SAFETY: `self` is a valid `HandleTable` whose lock is not held here, and `dispatcher`
+        // points to valid uninitialized memory that is initialized only on success.
+        let status = unsafe {
+            cpp_handle_table_get_dispatcher_with_rights_no_policy_check(
+                self.as_ffi_mut(),
+                handle_value.raw_value(),
+                T::TYPE,
+                rights,
+                &raw mut dispatcher,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: The call succeeded, so `dispatcher` was initialized, and C++ verified that its
+        // type matches `T::TYPE`, so it is safe to cast.
+        Ok(unsafe { dispatcher.assume_init().cast::<T>() })
     }
 }

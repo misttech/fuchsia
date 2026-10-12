@@ -24,6 +24,7 @@ class ThreadDispatcher;
 
 class FutexId {
  public:
+  explicit constexpr FutexId(uintptr_t id) : id_(id) {}
   // Shift for a better ID for hashing since the low bits are zero.
   FutexId(user_in_ptr<const zx_futex_t> value_ptr) : id_(GetFutexID(value_ptr.get()) >> 2) {}
   bool operator==(const FutexId& other) const { return id_ == other.id_; }

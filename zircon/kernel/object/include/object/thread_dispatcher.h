@@ -292,6 +292,45 @@ class ThreadDispatcher final : public SoloDispatcher<ThreadDispatcher, ZX_DEFAUL
     return CoreThreadObservation{core_thread_, &core_thread_lock_.lock()};
   }
 
+  // WARNING: The members below, through `get_lock`, are public *only* so that the Rust port of
+  // FutexContext (object/futex_context.rs) can reach them through FFI shims. In C++ they were
+  // private and accessed exclusively by FutexContext via `friend class FutexContext`.
+  //
+  // It is *not* generally correct to use any of them outside of FutexContext. In particular,
+  // holding the locks named in their thread-safety annotations (if any) is strictly insufficient
+  // for safe usage: callers must also follow FutexContext's synchronization protocol (holding the
+  // owning FutexContext's state lock, holding pending-operation references on the involved
+  // threads, and obeying its chain-lock ordering). Do not add new callers.
+  //
+  // TODO(https://fxbug.dev/565800859): Find a better way to hide these from everything other than
+  // FutexContext.
+
+  // Returns true if the thread is dying or dead. Same as `IsDyingOrDead`, but requires the caller
+  // to already hold `get_lock()`.
+  //
+  // Only intended for use by FutexContext; see the WARNING above.
+  bool IsDyingOrDeadLocked() const TA_REQ(get_lock());
+
+  // Returns `core_thread_`, the thread as understood by the lower kernel, or nullptr once the
+  // thread has transitioned to DEAD.
+  //
+  // Only intended for use by FutexContext; see the WARNING above.
+  Thread* core_thread_locked() const TA_REQ(get_lock()) { return core_thread_; }
+
+  // Accessors for `blocking_futex_id_`, the ID of the futex this thread is currently waiting on.
+  // These are guarded by FutexContext's own locking protocol, which cannot be expressed with
+  // static thread-safety annotations (see the comment on `blocking_futex_id_`).
+  //
+  // Only intended for use by FutexContext; see the WARNING above.
+  FutexId blocking_futex_id() const { return blocking_futex_id_; }
+  void set_blocking_futex_id(FutexId id) { blocking_futex_id_ = id; }
+
+  // Exposes this thread's dispatcher lock so that FutexContext can acquire it (as a "null-able"
+  // guard on a potential futex owner) through FFI shims.
+  //
+  // Only intended for use by FutexContext; see the WARNING above.
+  using SoloDispatcher::get_lock;
+
  private:
   ThreadDispatcher(fbl::RefPtr<ProcessDispatcher> process, uint32_t flags);
   ThreadDispatcher(const ThreadDispatcher&) = delete;
@@ -317,8 +356,6 @@ class ThreadDispatcher final : public SoloDispatcher<ThreadDispatcher, ZX_DEFAUL
 
   // change states of the object, do what is appropriate for the state transition
   void SetStateLocked(ThreadState::Lifecycle lifecycle) TA_REQ(get_lock());
-
-  bool IsDyingOrDeadLocked() const TA_REQ(get_lock());
 
   bool HasStartedLocked() const TA_REQ(get_lock());
 
@@ -406,7 +443,20 @@ class ThreadDispatcher final : public SoloDispatcher<ThreadDispatcher, ZX_DEFAUL
 };
 
 extern "C" {
+ThreadDispatcher* cpp_thread_dispatcher_current();
 bool cpp_thread_dispatcher_is_current(const ThreadDispatcher* thread);
+bool cpp_thread_dispatcher_has_started(const ThreadDispatcher* thread);
+bool cpp_thread_dispatcher_is_dying_or_dead(const ThreadDispatcher* thread);
+bool cpp_thread_dispatcher_is_dying_or_dead_locked(const ThreadDispatcher* thread);
+Thread* cpp_thread_dispatcher_core_thread_locked(const ThreadDispatcher* thread);
+uintptr_t cpp_thread_dispatcher_blocking_futex_id(const ThreadDispatcher* thread);
+void cpp_thread_dispatcher_set_blocking_futex_id(ThreadDispatcher* thread, uintptr_t id);
+bool cpp_thread_dispatcher_lock_acquire(ThreadDispatcher* thread);
+void cpp_thread_dispatcher_lock_release(ThreadDispatcher* thread, bool should_clear);
+void cpp_thread_dispatcher_observe_core_thread(
+    ThreadDispatcher* thread, ffi::Uninitialized<ThreadDispatcher::CoreThreadObservation>* out_obs);
+void cpp_thread_dispatcher_release_core_thread_observation(
+    ThreadDispatcher::CoreThreadObservation* obs);
 zx_status_t cpp_thread_dispatcher_create(
     ProcessDispatcher* process, uint32_t flags, const char* name_ptr, size_t name_len,
     ffi::Uninitialized<KernelHandle<ThreadDispatcher>>* out_handle,

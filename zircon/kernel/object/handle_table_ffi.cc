@@ -46,4 +46,28 @@ FFI_ALWAYS_INLINE Handle* cpp_handle_table_remove_handle_locked(
   return handle_table->RemoveHandleLocked(handle).release();
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_handle_table_get_dispatcher_with_rights_no_policy_check(
+    HandleTable* handle_table, zx_handle_t handle_value, zx_obj_type_t type, zx_rights_t rights,
+    ffi::Uninitialized<fbl::RefPtr<Dispatcher>>* out_disp) {
+  // Look up the handle without requesting any rights so that, matching
+  // `HandleTable::GetDispatcherWithRightsImpl`, ZX_ERR_WRONG_TYPE takes precedence over
+  // ZX_ERR_ACCESS_DENIED.
+  fbl::RefPtr<Dispatcher> disp;
+  zx_rights_t actual_rights;
+  zx_status_t status = handle_table->GetDispatcherWithRightsNoPolicyCheck(
+      handle_value, ZX_RIGHT_NONE, &disp, &actual_rights);
+  if (unlikely(status != ZX_OK)) {
+    return status;
+  }
+  if (unlikely(disp->get_type() != type)) {
+    return ZX_ERR_WRONG_TYPE;
+  }
+  if (unlikely((actual_rights & rights) != rights)) {
+    return ZX_ERR_ACCESS_DENIED;
+  }
+  out_disp->Initialize(ktl::move(disp));
+  return ZX_OK;
+}
+
 }  // extern "C"

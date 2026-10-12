@@ -7,7 +7,7 @@
 use super::channel_dispatcher::MessageWaiter;
 use super::handle::KernelHandle;
 use super::process_dispatcher::ProcessDispatcher;
-use super::thread_dispatcher::ThreadDispatcher;
+use super::thread_dispatcher::{CoreThreadObservation, ThreadDispatcher};
 use core::mem::MaybeUninit;
 use zx_types::{
     zx_exception_context_t, zx_excp_type_t, zx_info_task_runtime_t, zx_info_thread_stats_t,
@@ -15,12 +15,60 @@ use zx_types::{
 };
 
 unsafe extern "C" {
+    /// Returns a raw pointer to the current thread dispatcher.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called when executing within a valid user thread context.
+    pub(crate) fn cpp_thread_dispatcher_current() -> *mut ThreadDispatcher;
+
     /// Checks if the given ThreadDispatcher is the current thread.
     ///
     /// # Safety
     ///
     /// `thread` must point to a valid `ThreadDispatcher`.
     pub(crate) fn cpp_thread_dispatcher_is_current(thread: *const ThreadDispatcher) -> bool;
+
+    /// Returns whether `thread` has ever been started.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must point to a valid `ThreadDispatcher`.
+    pub(crate) fn cpp_thread_dispatcher_has_started(thread: *const ThreadDispatcher) -> bool;
+
+    /// Returns whether `thread` is dying or dead.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must point to a valid `ThreadDispatcher`.
+    pub(crate) fn cpp_thread_dispatcher_is_dying_or_dead(thread: *const ThreadDispatcher) -> bool;
+
+    /// Acquires `thread`'s critical mutex and returns whether the timeslice extension should be
+    /// cleared on release.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must point to a valid `ThreadDispatcher`.
+    pub(crate) fn cpp_thread_dispatcher_lock_acquire(thread: *mut ThreadDispatcher) -> bool;
+
+    /// Releases `thread`'s critical mutex.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must point to a valid `ThreadDispatcher` whose lock was acquired by the caller.
+    pub(crate) fn cpp_thread_dispatcher_lock_release(
+        thread: *mut ThreadDispatcher,
+        should_clear: bool,
+    );
+
+    /// Releases a `CoreThreadObservation` via `CoreThreadObservation::Release()`.
+    ///
+    /// # Safety
+    ///
+    /// `obs` must point to a valid `CoreThreadObservation`.
+    pub(crate) fn cpp_thread_dispatcher_release_core_thread_observation(
+        obs: *mut CoreThreadObservation,
+    );
 
     /// Creates a new ThreadDispatcher.
     ///

@@ -16,11 +16,79 @@
 
 KCOUNTER(thread_legacy_yield, "thread.legacy_yield")
 
+static_assert(sizeof(ThreadDispatcher::CoreThreadObservation) == 2 * sizeof(uintptr_t));
+static_assert(alignof(ThreadDispatcher::CoreThreadObservation) == alignof(uintptr_t));
+
 extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE ThreadDispatcher* cpp_thread_dispatcher_current() {
+  return ThreadDispatcher::GetCurrent();
+}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_thread_dispatcher_is_current(const ThreadDispatcher* thread) {
   return thread == ThreadDispatcher::GetCurrent();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_dispatcher_has_started(const ThreadDispatcher* thread) {
+  return thread->HasStarted();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_dispatcher_is_dying_or_dead(const ThreadDispatcher* thread) {
+  return thread->IsDyingOrDead();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_dispatcher_is_dying_or_dead_locked(const ThreadDispatcher* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return thread->IsDyingOrDeadLocked();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Thread* cpp_thread_dispatcher_core_thread_locked(const ThreadDispatcher* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return thread->core_thread_locked();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uintptr_t
+cpp_thread_dispatcher_blocking_futex_id(const ThreadDispatcher* thread) {
+  return thread->blocking_futex_id().get();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dispatcher_set_blocking_futex_id(ThreadDispatcher* thread,
+                                                                   uintptr_t id) {
+  thread->set_blocking_futex_id(FutexId(id));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_dispatcher_lock_acquire(ThreadDispatcher* thread)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  return thread->get_lock()->lock().Acquire() == CriticalMutex::ShouldClear::Yes;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dispatcher_lock_release(
+    ThreadDispatcher* thread, bool should_clear) TA_NO_THREAD_SAFETY_ANALYSIS {
+  thread->get_lock()->lock().Release(should_clear ? CriticalMutex::ShouldClear::Yes
+                                                  : CriticalMutex::ShouldClear::No);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dispatcher_observe_core_thread(
+    ThreadDispatcher* thread, ffi::Uninitialized<ThreadDispatcher::CoreThreadObservation>* out_obs)
+    TA_NO_THREAD_SAFETY_ANALYSIS {
+  out_obs->Initialize(thread->ObserveCoreThread());
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_dispatcher_release_core_thread_observation(
+    ThreadDispatcher::CoreThreadObservation* obs) TA_NO_THREAD_SAFETY_ANALYSIS {
+  obs->Release();
 }
 
 zx_status_t cpp_thread_dispatcher_create(

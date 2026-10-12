@@ -15,6 +15,7 @@
 #include <fbl/ref_ptr.h>
 #include <kernel/brwlock.h>
 #include <kernel/event.h>
+#include <kernel/ffi.h>
 #include <kernel/mutex.h>
 #include <kernel/task_runtime_stats.h>
 #include <kernel/thread.h>
@@ -363,6 +364,9 @@ Handle* cpp_handle_table_get_handle_locked(HandleTable* handle_table, ProcessDis
                                            zx_handle_t handle_value);
 void cpp_handle_table_add_handle_locked(HandleTable* handle_table, Handle* handle);
 Handle* cpp_handle_table_remove_handle_locked(HandleTable* handle_table, Handle* handle);
+zx_status_t cpp_handle_table_get_dispatcher_with_rights_no_policy_check(
+    HandleTable* handle_table, zx_handle_t handle_value, zx_obj_type_t type, zx_rights_t rights,
+    ffi::Uninitialized<fbl::RefPtr<Dispatcher>>* out_disp);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_HANDLE_TABLE_H_
