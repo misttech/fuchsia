@@ -1,0 +1,147 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load(
+    "//build/bazel/rules/components:fx_component.bzl",
+    "fx_component_manifest",
+    "fx_test_component",
+)
+load("//build/bazel/rules/host_tests:host_rustc_test.bzl", "host_rustc_test")
+load("//build/bazel/rules/packages:fx_package.bzl", "fx_package")
+load("//build/bazel/rules/packages:fx_packaged_binary.bzl", "fx_packaged_binary")
+load("//build/bazel/rules/rust:defs.bzl", "rustc_library", "rustc_test")
+load("//build/bazel/rules/testing:fx_test.bzl", "fx_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+rustc_library(
+    name = "fidl-fuchsia-pkg-rewrite-ext",
+    srcs = [
+        "src/errors.rs",
+        "src/lib.rs",
+        "src/rule.rs",
+        "src/transaction.rs",
+    ],
+    edition = "2024",
+    visibility = [
+        "//src/sys/pkg/bin/pkg-resolver:__pkg__",
+        "//src/sys/pkg/bin/pkgctl:__pkg__",
+        "//src/sys/pkg/tests/pkg-resolver:__pkg__",
+        "//src/sys/pkg/tests/pkgctl:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust_flex",
+        "//sdk/rust/zx-status",
+        "//src/lib/fdomain/client:flex_fidl",
+        "//src/lib/fuchsia-url",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+rustc_library(
+    name = "fidl-fuchsia-pkg-rewrite-ext_fdomain",
+    srcs = [
+        "src/errors.rs",
+        "src/lib.rs",
+        "src/rule.rs",
+        "src/transaction.rs",
+    ],
+    crate_features = ["fdomain"],
+    crate_name = "fdomain_fuchsia_pkg_rewrite_ext",
+    edition = "2024",
+    visibility = [
+        "//src/developer/ffx:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust_fdomain_flex",
+        "//sdk/rust/zx-status",
+        "//src/lib/fdomain/client:flex_fdomain",
+        "//src/lib/fidl/rust/fidl",
+        "//src/lib/fuchsia-url",
+        "//third_party/rust_crates/vendor:serde",
+        "//third_party/rust_crates/vendor:thiserror",
+    ],
+)
+
+# @bazel2gn:skip
+rustc_test(
+    name = "fidl-fuchsia-pkg-rewrite-ext_test",
+    crate = ":fidl-fuchsia-pkg-rewrite-ext",
+    edition = "2024",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+host_rustc_test(
+    name = "fidl-fuchsia-pkg-rewrite-ext_fdomain_test",
+    crate = ":fidl-fuchsia-pkg-rewrite-ext_fdomain",
+    crate_features = ["fdomain"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/lib/fdomain/local",
+        "//src/lib/fuchsia",
+        "//src/lib/fuchsia-async",
+        "//third_party/rust_crates/vendor:assert_matches",
+        "//third_party/rust_crates/vendor:futures",
+        "//third_party/rust_crates/vendor:serde_json",
+    ],
+)
+
+# @bazel2gn:skip
+fx_packaged_binary(
+    name = "fidl_fuchsia_pkg_rewrite_ext_test_packaged_bin",
+    testonly = True,
+    binary = ":fidl-fuchsia-pkg-rewrite-ext_test",
+    binary_name = "fidl_fuchsia_pkg_rewrite_ext_lib_test",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_component_manifest(
+    name = "fidl-fuchsia-pkg-rewrite-ext-tests-manifest",
+    testonly = True,
+    component_name = "fidl-fuchsia-pkg-rewrite-ext-tests",
+    includes = [
+        "//sdk/lib/syslog:use.shard.cml",
+        "//src/sys/test_runners/rust:default.shard.cml",
+    ],
+    manifest = "meta/fidl_fuchsia_pkg_rewrite_ext_tests.cml",
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test_component(
+    name = "fidl-fuchsia-pkg-rewrite-ext-tests-component",
+    compiled_manifest = ":fidl-fuchsia-pkg-rewrite-ext-tests-manifest",
+    component_name = "fidl-fuchsia-pkg-rewrite-ext-tests",
+    visibility = ["//visibility:private"],
+    deps = [
+        ":fidl_fuchsia_pkg_rewrite_ext_test_packaged_bin",
+    ],
+)
+
+# @bazel2gn:skip
+fx_package(
+    name = "fidl-fuchsia-pkg-rewrite-ext-tests-package",
+    package_name = "fidl-fuchsia-pkg-rewrite-ext-tests",
+    test_components = [
+        ":fidl-fuchsia-pkg-rewrite-ext-tests-component",
+    ],
+    visibility = ["//visibility:private"],
+)
+
+# @bazel2gn:skip
+fx_test(
+    name = "fidl-fuchsia-pkg-rewrite-ext-tests",
+    package = ":fidl-fuchsia-pkg-rewrite-ext-tests-package",
+    visibility = ["//visibility:public"],
+)
