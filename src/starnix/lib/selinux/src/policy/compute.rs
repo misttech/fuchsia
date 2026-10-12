@@ -40,6 +40,7 @@ impl XpermsAccessDecision {
         auditallow: XpermsBitmap::NONE,
         auditdeny: XpermsBitmap::ALL,
     };
+    #[cfg(test)]
     pub const ALLOW_ALL: Self = Self {
         allow: XpermsBitmap::ALL,
         auditallow: XpermsBitmap::NONE,
@@ -60,9 +61,9 @@ impl Policy {
         self.policy_capabilities().contains(policy_cap)
     }
 
-    /// Returns true if `bounded_type` is bounded by `parent_type` in the policy.
-    pub fn is_bounded_by(&self, bounded_type: TypeId, parent_type: TypeId) -> bool {
-        self.types().get_by_id(bounded_type).unwrap().bounded_by() == Some(parent_type)
+    /// Returns true if `bounded` is bounded by `parent` in the policy.
+    pub fn is_bounded_by(&self, bounded: TypeId, parent: TypeId) -> bool {
+        self.types().get_by_id(bounded).unwrap().bounded_by() == Some(parent)
     }
 
     /// Returns true if the policy has marked the type/domain for permissive checks.
@@ -76,7 +77,7 @@ impl Policy {
     /// # Panics
     ///
     /// Panics if [`Self::validate`] has not verified the presence of `"object_r"`.
-    pub(crate) fn object_role(&self) -> RoleId {
+    pub(super) fn object_role(&self) -> RoleId {
         self.roles()
             .get_by_name(OBJECT_R_ROLE_NAME)
             .expect("validated policy must contain object_r role")
@@ -156,11 +157,7 @@ impl Policy {
 
     /// Returns the [`PermissionId`] of the specified permission for the specified security
     /// [`Class`], looking up the permission in the class's common symbol, if any.
-    pub(crate) fn find_permission_id_by_name(
-        &self,
-        class: &Class,
-        name: &str,
-    ) -> Option<PermissionId> {
+    pub fn find_permission_id_by_name(&self, class: &Class, name: &str) -> Option<PermissionId> {
         let name = name.as_bytes();
         if let Some(permission) = class.permissions().get_by_name(name) {
             return Some(permission.id());
@@ -200,14 +197,14 @@ impl Policy {
     }
 
     /// If there is a `genfscon` statement for the given filesystem type, returns the associated
-    /// [`SecurityContext`], taking the `node_path` into account. `class_id` defines the type of
+    /// [`SecurityContext`], taking the `node_path` into account. `class` defines the type of
     /// the file in the given `node_path`. It can only be omitted when looking up the filesystem
     /// label.
     pub fn genfscon_label_for_fs_and_path(
         &self,
         fs_type: NullessByteStr<'_>,
         node_path: NullessByteStr<'_>,
-        class_id: Option<ClassId>,
+        class: Option<ClassId>,
     ) -> Option<SecurityContext> {
         // All contexts listed in the policy for the file system type.
         let fs_contexts = self.genfscon_find_all(fs_type.as_bytes());
@@ -248,11 +245,8 @@ impl Policy {
             }
 
             // Check if the class matches.
-            let class_matches = class_id.is_none()
-                || fs_context
-                    .class()
-                    .map(|other| other == class_id.unwrap().into())
-                    .unwrap_or(true);
+            let class_matches = class.is_none()
+                || fs_context.class().map(|other| other == class.unwrap()).unwrap_or(true);
             if !class_matches {
                 continue;
             }
@@ -286,63 +280,56 @@ impl Policy {
         Some(SecurityContext::from_policy_context(result?.context()))
     }
 
-    /// Returns the security context that should be applied to a newly created SELinux
-    /// object according to `source_context` and `target_context`, as well as the new object's
-    /// `target_class` and `name`.
+    /// Returns the [`SecurityContext`] that should be applied to a newly created SELinux object
+    /// according to `source` and `target`, as well as the new object's `class` and `name`.
     ///
     /// Computation follows the "create" algorithm for labeling newly created objects:
-    /// - user is taken from the `source_context`.
+    /// - user is taken from the `source` by default, or `target` if specified by policy.
     /// - role, type and range are taken from the matching transition rules, if any.
-    /// - role, type and range fall-back to the `source_context` or `target_context` values
-    ///   according to policy.
+    /// - role, type and range fall-back to the `source` or `target` values according to policy.
     ///
     /// Callers pass an empty slice (`&[]`) for `name` to express nameless transitions.
     /// When a non-empty `name` is provided, filename transition rules are checked first.
     /// If no transitions apply, and the policy does not explicitly specify defaults then the
-    /// role, type and range values have defaults chosen based on the `target_class`:
-    /// - For "process", and socket-like classes, role, type and range are taken from the
-    ///   `source_context`.
-    /// - Otherwise role is "object_r", type is taken from `target_context` and range is set to the
-    ///   low level of the `source_context` range.
+    /// role, type and range values have defaults chosen based on the `class`:
+    /// - For "process", and socket-like classes, role, type and range are taken from the `source`.
+    /// - Otherwise role is "object_r", type is taken from `target` and range is set to the low
+    ///   level of the `source` range.
     pub fn compute_create_context(
         &self,
-        source_context: &SecurityContext,
-        target_context: &SecurityContext,
-        target_class: Option<&Class>,
+        source: &SecurityContext,
+        target: &SecurityContext,
+        class: Option<&Class>,
         name: &[u8],
     ) -> SecurityContext {
         let override_type = if !name.is_empty() {
-            target_class.and_then(|policy_class| {
-                self.type_transition_new_type_with_name(
-                    source_context.type_(),
-                    target_context.type_(),
-                    policy_class,
+            class.and_then(|class| {
+                self.filename_transitions().compute_filename_transition(
+                    source.type_(),
+                    target.type_(),
+                    class.id(),
                     name,
                 )
             })
         } else {
             None
         };
-        self.new_security_context_internal(
-            source_context,
-            target_context,
-            target_class,
-            override_type,
-        )
+        self.compute_create_context_internal(source, target, class, override_type)
     }
 
-    /// Internal implementation used by [`Self::compute_create_context`] to implement the policy transition calculations.
-    /// If `override_type` is specified then the supplied value will be applied rather than a value
-    /// being calculated based on the policy; this is used by [`Self::compute_create_context`]
-    /// when a filename transition matches to shortcut the default `type_transition` lookup.
-    fn new_security_context_internal(
+    /// Internal implementation used by [`Self::compute_create_context`] to implement the policy
+    /// transition calculations. If `override_type` is specified then the supplied value will be
+    /// applied rather than a value being calculated based on the policy; this is used by
+    /// [`Self::compute_create_context`] when a filename transition matches to shortcut the default
+    /// `type_transition` lookup.
+    fn compute_create_context_internal(
         &self,
         source: &SecurityContext,
         target: &SecurityContext,
-        target_class: Option<&Class>,
+        class: Option<&Class>,
         override_type: Option<TypeId>,
     ) -> SecurityContext {
-        let Some(policy_class) = target_class else {
+        let Some(class) = class else {
             // If the class is not defined in the policy then there can be no transitions, nor
             // class-defined choice of defaults, so default to the non-process-or-socket behaviour.
             return SecurityContext::new(
@@ -354,26 +341,24 @@ impl Policy {
             );
         };
 
-        let is_process_or_socket =
-            policy_class.name() == b"process" || policy_class.common_name() == b"socket";
+        let is_process_or_socket = class.name() == b"process" || class.common_name() == b"socket";
         let (unspecified_role, unspecified_type, unspecified_low, unspecified_high) =
             if is_process_or_socket {
                 (source.role(), source.type_(), source.low_level(), source.high_level())
             } else {
                 (self.object_role(), target.type_(), source.low_level(), None)
             };
-        let class_defaults = policy_class.defaults();
+        let defaults = class.defaults();
 
-        let user = match class_defaults.user() {
+        let user = match defaults.user() {
             ClassDefault::Source => source.user(),
             ClassDefault::Target => target.user(),
             ClassDefault::Unspecified => source.user(),
         };
 
-        let role = match self.role_transition_new_role(source.role(), target.type_(), policy_class)
-        {
+        let role = match self.role_transition_new_role(source.role(), target.type_(), class) {
             Some(new_role) => new_role,
-            None => match class_defaults.role() {
+            None => match defaults.role() {
                 ClassDefault::Source => source.role(),
                 ClassDefault::Target => target.role(),
                 ClassDefault::Unspecified => unspecified_role,
@@ -383,12 +368,12 @@ impl Policy {
         let type_ = override_type.unwrap_or_else(|| {
             let transition = self
                 .access_vector_rules()
-                .find_type_rules(source.type_(), target.type_(), policy_class.id())
+                .find_type_rules(source.type_(), target.type_(), class.id())
                 .find(|rule| rule.kind() == RuleKind::TypeTransition)
                 .map(|rule| rule.new_type());
             match transition {
                 Some(new_type) => new_type,
-                None => match class_defaults.type_() {
+                None => match defaults.type_() {
                     ClassDefault::Source => source.type_(),
                     ClassDefault::Target => target.type_(),
                     ClassDefault::Unspecified => unspecified_type,
@@ -397,9 +382,9 @@ impl Policy {
         });
 
         let (low_level, high_level) =
-            match self.range_transition_new_range(source.type_(), target.type_(), policy_class) {
+            match self.range_transition_new_range(source.type_(), target.type_(), class) {
                 Some((low_level, high_level)) => (low_level, high_level),
-                None => match class_defaults.range() {
+                None => match defaults.range() {
                     ClassDefaultRange::SourceLow => (source.low_level().clone(), None),
                     ClassDefaultRange::SourceHigh => {
                         (source.high_level().unwrap_or_else(|| source.low_level()).clone(), None)
@@ -425,10 +410,10 @@ impl Policy {
         SecurityContext::new(user, role, type_, low_level, high_level)
     }
 
-    /// Computes the access granted to `source_context` on `target_context`, for the specified
-    /// `target_class`. The result is a set of access vectors with bits set for each
-    /// `target_class` permission, describing which permissions are allowed, and
-    /// which should have access checks audit-logged when denied, or allowed.
+    /// Computes the access granted to `source` on `target`, for the specified `class`. The result
+    /// is a set of access vectors with bits set for each `class` permission, describing which
+    /// permissions are allowed, and which should have access checks audit-logged when denied, or
+    /// allowed.
     ///
     /// An [`AccessDecision`] is accumulated, starting from no permissions to be granted,
     /// nor audit-logged if allowed, and all permissions to be audit-logged if denied.
@@ -438,34 +423,26 @@ impl Policy {
     /// transition is explicitly allowed by policy.
     pub fn compute_access_decision(
         &self,
-        source_context: &SecurityContext,
-        target_context: &SecurityContext,
-        target_class: &Class,
+        source: &SecurityContext,
+        target: &SecurityContext,
+        class: &Class,
     ) -> AccessDecision {
-        let mut access_decision = self.compute_explicitly_allowed(
-            source_context.type_(),
-            target_context.type_(),
-            target_class,
-        );
-        access_decision.allow -=
-            self.compute_denied_by_constraints(source_context, target_context, target_class);
+        let mut access_decision =
+            self.compute_explicitly_allowed(source.type_(), target.type_(), class);
+        access_decision.allow -= self.compute_denied_by_constraints(source, target, class);
 
         // Process domain transitions ("transition" and "dyntransition") across different roles
         // require explicit authorization in policy via a role allow rule ("allow old_role new_role;").
         if access_decision.allow != AccessVector::NONE
-            && source_context.role() != target_context.role()
-            && target_class.name() == b"process"
-            && !self
-                .role_transition_is_explicitly_allowed(source_context.role(), target_context.role())
+            && source.role() != target.role()
+            && class.name() == b"process"
+            && !self.role_transition_is_explicitly_allowed(source.role(), target.role())
         {
             let mut transition_permissions = AccessVector::NONE;
-            if let Some(permission_id) = self.find_permission_id_by_name(target_class, "transition")
-            {
+            if let Some(permission_id) = self.find_permission_id_by_name(class, "transition") {
                 transition_permissions |= AccessVector::from(permission_id);
             }
-            if let Some(permission_id) =
-                self.find_permission_id_by_name(target_class, "dyntransition")
-            {
+            if let Some(permission_id) = self.find_permission_id_by_name(class, "dyntransition") {
                 transition_permissions |= AccessVector::from(permission_id);
             }
             access_decision.allow -= transition_permissions;
@@ -474,30 +451,26 @@ impl Policy {
         access_decision
     }
 
-    /// Computes the access granted to `source_type` on `target_type`, for the specified
-    /// `target_class`. The result is a set of access vectors with bits set for each
-    /// `target_class` permission, describing which permissions are explicitly allowed,
-    /// and which should have access checks audit-logged when denied, or allowed.
-    pub(crate) fn compute_explicitly_allowed(
+    /// Computes the access granted to `source` on `target`, for the specified `class`. The result
+    /// is a set of access vectors with bits set for each `class` permission, describing which
+    /// permissions are explicitly allowed, and which should have access checks audit-logged when
+    /// denied, or allowed.
+    pub(super) fn compute_explicitly_allowed(
         &self,
-        source_type: TypeId,
-        target_type: TypeId,
-        target_class: &Class,
+        source: TypeId,
+        target: TypeId,
+        class: &Class,
     ) -> AccessDecision {
-        let target_class_id = target_class.id();
-
         let mut computed_access_vector = AccessVector::NONE;
         let mut computed_audit_allow = AccessVector::NONE;
         let mut computed_audit_deny = AccessVector::ALL;
 
-        let source_attribute_set = &self.type_attribute_maps()[source_type];
-        let target_attribute_set = &self.type_attribute_maps()[target_type];
+        let source_attributes = &self.type_attribute_maps()[source];
+        let target_attributes = &self.type_attribute_maps()[target];
 
-        for source_id in source_attribute_set.iter() {
-            for target_id in target_attribute_set.iter() {
-                for rule in
-                    self.access_vector_rules().find_av_rules(source_id, target_id, target_class_id)
-                {
+        for source in source_attributes.iter() {
+            for target in target_attributes.iter() {
+                for rule in self.access_vector_rules().find_av_rules(source, target, class.id()) {
                     match rule.kind() {
                         RuleKind::Allow => computed_access_vector |= rule.access_vector(),
                         RuleKind::AuditAllow => computed_audit_allow |= rule.access_vector(),
@@ -508,22 +481,22 @@ impl Policy {
             }
         }
 
-        // If the `source_type` is bounded by some `parent_type` then bound the allowed permissions
-        // to those available to the parent. Doing the calculation here ensures that type-bounds
-        // take into account bounding ancestors, if any.
-        if let Some(parent) = self.types().get_by_id(source_type).unwrap().bounded_by() {
-            // If `source_type`==`target_type` then this is a "self" permission check, which should
-            // be bounded to the parent domain's "self" permissions.
-            let access = if source_type == target_type {
-                self.compute_explicitly_allowed(parent, parent, target_class)
+        // If `source` is bounded by some `parent` then bound the allowed permissions to those
+        // available to the parent. Doing the calculation here ensures that type-bounds take into
+        // account bounding ancestors, if any.
+        if let Some(parent) = self.types().get_by_id(source).unwrap().bounded_by() {
+            // If `source == target` then this is a "self" permission check, which should be
+            // bounded to the parent domain's "self" permissions.
+            let access = if source == target {
+                self.compute_explicitly_allowed(parent, parent, class)
             } else {
-                self.compute_explicitly_allowed(parent, target_type, target_class)
+                self.compute_explicitly_allowed(parent, target, class)
             };
             computed_access_vector &= access.allow;
         }
 
         let mut flags = 0;
-        if self.permissive_map().contains(source_type) {
+        if self.permissive_map().contains(source) {
             flags |= SELINUX_AVD_FLAGS_PERMISSIVE;
         }
         AccessDecision {
@@ -538,69 +511,64 @@ impl Policy {
     /// Permissions are denied if they match at least one unsatisfied constraint.
     fn compute_denied_by_constraints(
         &self,
-        source_context: &SecurityContext,
-        target_context: &SecurityContext,
-        target_class: &Class,
+        source: &SecurityContext,
+        target: &SecurityContext,
+        class: &Class,
     ) -> AccessVector {
         let mut denied = AccessVector::NONE;
-        for constraint in target_class.constraints() {
-            if !constraint.evaluate(source_context, target_context) {
+        for constraint in class.constraints() {
+            if !constraint.evaluate(source, target) {
                 denied |= constraint.access_vector();
             }
         }
         denied
     }
 
-    /// Computes the access decision for a set of extended permissions of a given kind and with a
-    /// given prefix byte, for a particular source and target context and target class.
+    /// Computes the access decision for a set of extended permissions of a given `kind` and with a
+    /// given `prefix` byte, for a particular `source` and `target` context and `class`.
     pub fn compute_xperms_access_decision(
         &self,
-        xperms_kind: XpermsKind,
-        source_context: &SecurityContext,
-        target_context: &SecurityContext,
-        target_class: &Class,
-        xperms_prefix: u8,
+        kind: XpermsKind,
+        source: &SecurityContext,
+        target: &SecurityContext,
+        class: &Class,
+        prefix: u8,
     ) -> XpermsAccessDecision {
-        let target_class_id = target_class.id();
-
         let mut explicit_allow: Option<XpermsBitmap> = None;
         let mut auditallow = XpermsBitmap::NONE;
         let mut auditdeny = XpermsBitmap::ALL;
 
-        let xperms_types = match xperms_kind {
+        let xperms_types = match kind {
             XpermsKind::Ioctl => {
                 [XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES, XPERMS_TYPE_IOCTL_PREFIXES].as_slice()
             }
             XpermsKind::Nlmsg => [XPERMS_TYPE_NLMSG].as_slice(),
         };
-        let bitmap_if_prefix_matches =
-            |xperms_prefix: u8, xperms: &ExtendedPermissions| match xperms_kind {
-                XpermsKind::Ioctl => match xperms.xperms_type() {
-                    XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES => (xperms.xperms_optional_prefix()
-                        == xperms_prefix)
-                        .then_some(*xperms.xperms_bitmap()),
-                    XPERMS_TYPE_IOCTL_PREFIXES => {
-                        xperms.xperms_bitmap().contains(xperms_prefix).then_some(XpermsBitmap::ALL)
-                    }
-                    _ => None,
-                },
-                XpermsKind::Nlmsg => match xperms.xperms_type() {
-                    XPERMS_TYPE_NLMSG => (xperms.xperms_optional_prefix() == xperms_prefix)
-                        .then_some(*xperms.xperms_bitmap()),
-                    _ => None,
-                },
-            };
+        let bitmap_if_prefix_matches = |prefix: u8, xperms: &ExtendedPermissions| match kind {
+            XpermsKind::Ioctl => match xperms.xperms_type() {
+                XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES => {
+                    (xperms.xperms_optional_prefix() == prefix).then_some(*xperms.xperms_bitmap())
+                }
+                XPERMS_TYPE_IOCTL_PREFIXES => {
+                    xperms.xperms_bitmap().contains(prefix).then_some(XpermsBitmap::ALL)
+                }
+                _ => None,
+            },
+            XpermsKind::Nlmsg => match xperms.xperms_type() {
+                XPERMS_TYPE_NLMSG => {
+                    (xperms.xperms_optional_prefix() == prefix).then_some(*xperms.xperms_bitmap())
+                }
+                _ => None,
+            },
+        };
 
-        let source_attribute_set = &self.type_attribute_maps()[source_context.type_()];
-        let target_attribute_set = &self.type_attribute_maps()[target_context.type_()];
+        let source_attributes = &self.type_attribute_maps()[source.type_()];
+        let target_attributes = &self.type_attribute_maps()[target.type_()];
 
-        for source_id in source_attribute_set.iter() {
-            for target_id in target_attribute_set.iter() {
-                for rule in self.access_vector_rules().find_xperm_rules(
-                    source_id,
-                    target_id,
-                    target_class_id,
-                ) {
+        for source in source_attributes.iter() {
+            for target in target_attributes.iter() {
+                for rule in self.access_vector_rules().find_xperm_rules(source, target, class.id())
+                {
                     let xperms = rule.extended_permissions();
                     if rule.kind() == RuleKind::AllowXperm
                         && xperms_types.contains(&xperms.xperms_type())
@@ -608,7 +576,7 @@ impl Policy {
                         explicit_allow.get_or_insert(XpermsBitmap::NONE);
                     }
 
-                    if let Some(xperms_bitmap) = bitmap_if_prefix_matches(xperms_prefix, xperms) {
+                    if let Some(xperms_bitmap) = bitmap_if_prefix_matches(prefix, xperms) {
                         match rule.kind() {
                             RuleKind::AllowXperm => {
                                 (*explicit_allow.get_or_insert(XpermsBitmap::NONE)) |=
@@ -637,51 +605,26 @@ impl Policy {
             .find(|role_transition| {
                 role_transition.current_role() == current_role
                     && role_transition.type_() == type_
-                    && role_transition.class() == class.id().into()
+                    && role_transition.class() == class.id()
             })
             .map(|x| x.new_role())
     }
 
-    fn role_transition_is_explicitly_allowed(&self, source_role: RoleId, new_role: RoleId) -> bool {
-        self.role_allowlist().iter().any(|role_allow| {
-            role_allow.source_role() == source_role && role_allow.new_role() == new_role
-        })
-    }
-
-    fn type_transition_new_type_with_name(
-        &self,
-        source_type: TypeId,
-        target_type: TypeId,
-        class: &Class,
-        name: &[u8],
-    ) -> Option<TypeId> {
-        self.compute_filename_transition(source_type, target_type, class.id().into(), name)
-    }
-
-    pub(crate) fn compute_filename_transition(
-        &self,
-        source_type: TypeId,
-        target_type: TypeId,
-        class: ClassId,
-        name: &[u8],
-    ) -> Option<TypeId> {
-        self.filename_transitions().compute_filename_transition(
-            source_type,
-            target_type,
-            class,
-            name,
-        )
+    fn role_transition_is_explicitly_allowed(&self, source: RoleId, new: RoleId) -> bool {
+        self.role_allowlist()
+            .iter()
+            .any(|role_allow| role_allow.source_role() == source && role_allow.new_role() == new)
     }
 
     fn range_transition_new_range(
         &self,
-        source_type: TypeId,
-        target_type: TypeId,
+        source: TypeId,
+        target: TypeId,
         class: &Class,
     ) -> Option<(MlsLevel, Option<MlsLevel>)> {
         for range_transition in self.range_transitions() {
-            if range_transition.source_type() == source_type
-                && range_transition.target_type() == target_type
+            if range_transition.source_type() == source
+                && range_transition.target_type() == target
                 && range_transition.target_class() == class.id()
             {
                 let mls_range = range_transition.mls_range();

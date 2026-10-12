@@ -21,20 +21,21 @@ pub struct IdType<T, Tag> {
 
 impl<T, Tag> IdType<T, Tag> {
     /// Constructs a new [`IdType`] wrapping the specified `id` value.
-    pub fn new(id: T) -> Self {
+    #[cfg(test)]
+    pub(super) fn new(id: T) -> Self {
         Self { value: id, _phantom: PhantomData }
     }
 }
 
 impl<Tag> IdType<NonZeroU16, Tag> {
     /// Constructs an [`IdType`] directly from a 16-bit identifier value.
-    pub fn from_u16(value: u16) -> Option<Self> {
+    pub(super) fn from_u16(value: u16) -> Option<Self> {
         let value = NonZeroU16::new(value)?;
         Some(Self { value, _phantom: PhantomData })
     }
 
     /// Returns the wrapped 16-bit identifier value.
-    pub fn as_u16(&self) -> u16 {
+    pub(super) fn as_u16(&self) -> u16 {
         self.value.get()
     }
 }

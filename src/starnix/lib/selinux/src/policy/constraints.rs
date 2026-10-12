@@ -4,7 +4,7 @@
 
 use std::ops::Deref;
 
-pub use selinux_policy_derive::{Parse, Serialize, Validate};
+use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use super::bitmap::IdSet;
 use super::error::{ParseError, SerializeError, ValidateError};
@@ -17,19 +17,19 @@ use super::{AccessVector, MlsLevel, Policy, RoleId, SecurityContext, TypeId, Use
 /// and only set for Type expressions. Even if present for Type expressions, the contents are not
 /// currently used at run-time, only to userspace tooling to reconstruct the original statement.
 #[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
-pub struct ConstraintSets<T: PolicyId> {
+struct ConstraintSets<T: PolicyId> {
     include_set: IdSet<T>,
     exclude_set: IdSet<T>,
     flags: u32,
 }
 
 impl<T: PolicyId> ConstraintSets<T> {
-    pub fn empty() -> Self {
+    fn empty() -> Self {
         Self { include_set: IdSet::empty(), exclude_set: IdSet::empty(), flags: 0 }
     }
 
     /// Returns true if `include_set`, `exclude_set`, and `flags` are all empty or zero.
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.include_set.is_empty() && self.exclude_set.is_empty() && self.flags == 0
     }
 }
@@ -60,7 +60,7 @@ pub enum MlsOperands {
 }
 
 impl MlsOperands {
-    pub fn from_u32(val: u32) -> Option<Self> {
+    fn from_u32(val: u32) -> Option<Self> {
         match val {
             L1_L2 => Some(Self::L1L2),
             L1_H2 => Some(Self::L1H2),
@@ -72,7 +72,7 @@ impl MlsOperands {
         }
     }
 
-    pub fn as_u32(&self) -> u32 {
+    fn as_u32(&self) -> u32 {
         match self {
             Self::L1L2 => L1_L2,
             Self::L1H2 => L1_H2,
@@ -86,7 +86,7 @@ impl MlsOperands {
 
 /// Subject of a constraint operand (source or target).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConstraintSubject {
+enum ConstraintSubject {
     Source,
     Target,
 }
@@ -144,23 +144,23 @@ pub struct NameExpression<T: PolicyId> {
 
 impl<T: PolicyId> NameExpression<T> {
     /// Returns the subject ([`ConstraintSubject::Source`] or [`ConstraintSubject::Target`]) of the expression.
-    pub fn subject(&self) -> ConstraintSubject {
+    fn subject(&self) -> ConstraintSubject {
         self.subject
     }
 
     /// Returns the equality operator ([`ConstraintOperator::Eq`] or [`ConstraintOperator::Ne`]) of the expression.
-    pub fn operator(&self) -> ConstraintOperator {
+    fn operator(&self) -> ConstraintOperator {
         self.operator
     }
 
     /// Returns the set of names compared against.
-    pub fn names(&self) -> &IdSet<T> {
+    fn names(&self) -> &IdSet<T> {
         &self.names
     }
 }
 
 impl<T: PolicyId + Parse> NameExpression<T> {
-    pub fn parse(
+    fn parse(
         cursor: &mut PolicyCursor<'_>,
         subject: ConstraintSubject,
         expect_empty_constraint_sets: bool,
@@ -179,7 +179,7 @@ impl<T: PolicyId + Parse> NameExpression<T> {
 }
 
 impl<T: PolicyId + Serialize> NameExpression<T> {
-    pub fn serialize(
+    fn serialize(
         &self,
         writer: &mut PolicyWriter<'_>,
         operand_type: u32,
@@ -370,7 +370,7 @@ impl Validate for ConstraintTerm {
 
 /// Sequence of terms in a constraint expression tree, in postfix order.
 #[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize)]
-pub struct ConstraintNode {
+struct ConstraintNode {
     terms: Array<ConstraintTerm>,
 }
 
@@ -423,19 +423,24 @@ impl Constraint {
         self.access_vector
     }
 
-    pub fn constraint_expr(&self) -> &ConstraintNode {
+    #[cfg(test)]
+    fn constraint_expr(&self) -> &ConstraintNode {
         &self.constraint_expr
     }
 
-    pub(crate) fn evaluate(&self, source: &SecurityContext, target: &SecurityContext) -> bool {
+    /// Evaluates whether `source` and `target` satisfy this constraint.
+    ///
+    /// Assumes that the constraint expression terms were sequenced in postfix order and validated
+    /// at policy load time by [`ConstraintNode::validate`].
+    pub fn evaluate(&self, source: &SecurityContext, target: &SecurityContext) -> bool {
         evaluate_constraint(&self.constraint_expr, source, target)
     }
 }
 
-/// Evaluates constraint expression for the given source and target [`SecurityContext`]s.
+/// Evaluates a postfix constraint expression for `source` and `target`.
 ///
-/// Assumes that the terms of the constraint expression were sequenced in postfix
-/// order and validated at policy load time by [`ConstraintNode::validate`].
+/// Assumes that `constraint_expr` was validated at policy load time by
+/// [`ConstraintNode::validate`].
 fn evaluate_constraint(
     constraint_expr: &[ConstraintTerm],
     source: &SecurityContext,
@@ -445,17 +450,17 @@ fn evaluate_constraint(
     for term in constraint_expr {
         match term {
             ConstraintTerm::Not => {
-                let arg = stack.last_mut().expect("validated term sequence");
+                let arg = stack.last_mut().expect("validated constraint expression");
                 *arg = !*arg;
             }
             ConstraintTerm::And => {
-                let right = stack.pop().expect("validated term sequence");
-                let left = stack.last_mut().expect("validated term sequence");
+                let right = stack.pop().expect("validated constraint expression");
+                let left = stack.last_mut().expect("validated constraint expression");
                 *left = *left && right;
             }
             ConstraintTerm::Or => {
-                let right = stack.pop().expect("validated term sequence");
-                let left = stack.last_mut().expect("validated term sequence");
+                let right = stack.pop().expect("validated constraint expression");
+                let left = stack.last_mut().expect("validated constraint expression");
                 *left = *left || right;
             }
             ConstraintTerm::UserAttributeOp(operator) => {
@@ -467,8 +472,17 @@ fn evaluate_constraint(
             ConstraintTerm::TypeAttributeOp(operator) => {
                 stack.push(evaluate_simple(source.type_(), target.type_(), *operator));
             }
-            ConstraintTerm::MlsOp(operand, operator) => {
-                let (left_val, right_val) = match operand {
+            ConstraintTerm::UserNameOp(expr) => {
+                stack.push(evaluate_name_expr(expr, source.user(), target.user()));
+            }
+            ConstraintTerm::RoleNameOp(expr) => {
+                stack.push(evaluate_name_expr(expr, source.role(), target.role()));
+            }
+            ConstraintTerm::TypeNameOp(expr) => {
+                stack.push(evaluate_name_expr(expr, source.type_(), target.type_()));
+            }
+            ConstraintTerm::MlsOp(operands, operator) => {
+                let (left, right) = match operands {
                     MlsOperands::L1L2 => (source.low_level(), target.low_level()),
                     MlsOperands::L1H2 => (source.low_level(), target.effective_high_level()),
                     MlsOperands::H1L2 => (source.effective_high_level(), target.low_level()),
@@ -478,20 +492,11 @@ fn evaluate_constraint(
                     MlsOperands::L1H1 => (source.low_level(), source.effective_high_level()),
                     MlsOperands::L2H2 => (target.low_level(), target.effective_high_level()),
                 };
-                stack.push(evaluate_levels(left_val, right_val, *operator));
-            }
-            ConstraintTerm::UserNameOp(expr) => {
-                stack.push(evaluate_name_expr(expr, source.user(), target.user()))
-            }
-            ConstraintTerm::RoleNameOp(expr) => {
-                stack.push(evaluate_name_expr(expr, source.role(), target.role()))
-            }
-            ConstraintTerm::TypeNameOp(expr) => {
-                stack.push(evaluate_name_expr(expr, source.type_(), target.type_()))
+                stack.push(evaluate_mls(left, right, *operator));
             }
         }
     }
-    let result = stack.pop().expect("validated term sequence");
+    let result = stack.pop().expect("validated constraint expression");
     debug_assert!(stack.is_empty(), "validated term sequence leaves stack empty");
     result
 }
@@ -503,32 +508,21 @@ fn evaluate_simple<T: Eq>(left: T, right: T, operator: ConstraintOperator) -> bo
     }
 }
 
-fn evaluate_contains(contains: bool, operator: ConstraintOperator) -> bool {
-    match operator {
-        ConstraintOperator::Eq => contains,
-        ConstraintOperator::Ne => !contains,
-    }
-}
-
-fn evaluate_name_expr<T: Eq + Copy + PolicyId>(
-    expr: &NameExpression<T>,
-    source_val: T,
-    target_val: T,
-) -> bool {
+fn evaluate_name_expr<T: PolicyId>(expr: &NameExpression<T>, source: T, target: T) -> bool {
     let val = match expr.subject() {
-        ConstraintSubject::Source => source_val,
-        ConstraintSubject::Target => target_val,
+        ConstraintSubject::Source => source,
+        ConstraintSubject::Target => target,
     };
-    evaluate_contains(expr.names().contains(val), expr.operator())
+    evaluate_simple(expr.names().contains(val), /* right = */ true, expr.operator())
 }
 
-fn evaluate_levels(left: &MlsLevel, right: &MlsLevel, operator: MlsOperator) -> bool {
+fn evaluate_mls(left: &MlsLevel, right: &MlsLevel, operator: MlsOperator) -> bool {
     match operator {
         MlsOperator::Eq => left == right,
         MlsOperator::Ne => left != right,
         MlsOperator::Dom => left.dominates(right),
         MlsOperator::DomBy => right.dominates(left),
-        MlsOperator::Incomp => !left.dominates(right) && !right.dominates(left),
+        MlsOperator::Incomp => left.compare(right).is_none(),
     }
 }
 
@@ -537,6 +531,12 @@ mod tests {
     use super::{PolicyCursor, *};
     use crate::policy::metadata::PolicyVersion;
     use crate::policy::parser::PolicyWriter;
+
+    fn parse_and_validate(policy_bytes: &[u8]) -> Policy {
+        let policy = Policy::parse(policy_bytes).expect("parse policy");
+        policy.validate().expect("validate policy");
+        policy
+    }
 
     #[test]
     fn test_minimal_constraint_parse_and_serialize() {
@@ -623,8 +623,7 @@ mod tests {
     #[test]
     fn evaluate_constraint_expr() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
-        let policy = Policy::parse(policy_bytes).expect("parse policy");
-        policy.validate().expect("validate policy");
+        let policy = parse_and_validate(policy_bytes);
 
         let source = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -639,71 +638,62 @@ mod tests {
         let class_constraint_eq_constraints = class_constraint_eq.constraints();
         assert_eq!(class_constraint_eq_constraints.len(), 1);
         // ( u1 == u2 )
-        let constraint_eq = class_constraint_eq_constraints[0].constraint_expr();
-        assert_eq!(evaluate_constraint(constraint_eq, &source, &target), false);
+        assert!(!class_constraint_eq_constraints[0].evaluate(&source, &target));
 
         let class_constraint_with_and =
             classes.get_by_name(b"class_constraint_with_and").expect("look up class");
         let class_constraint_with_and_constraints = class_constraint_with_and.constraints();
         assert_eq!(class_constraint_with_and_constraints.len(), 1);
         // ( ( u1 == u2 ) and ( t1 == t2 ) )
-        let constraint_with_and = class_constraint_with_and_constraints[0].constraint_expr();
-        assert_eq!(evaluate_constraint(constraint_with_and, &source, &target), false);
+        assert!(!class_constraint_with_and_constraints[0].evaluate(&source, &target));
 
         let class_constraint_with_not =
             classes.get_by_name(b"class_constraint_with_not").expect("look up class");
         let class_constraint_with_not_constraints = class_constraint_with_not.constraints();
         assert_eq!(class_constraint_with_not_constraints.len(), 1);
         // ( not ( ( u1 == u2 ) and ( t1 == t2 ) )
-        let constraint_with_not = class_constraint_with_not_constraints[0].constraint_expr();
-        assert_eq!(evaluate_constraint(constraint_with_not, &source, &target), true);
+        assert!(class_constraint_with_not_constraints[0].evaluate(&source, &target));
 
         let class_constraint_with_names =
             classes.get_by_name(b"class_constraint_with_names").expect("look up class");
         let class_constraint_with_names_constraints = class_constraint_with_names.constraints();
         assert_eq!(class_constraint_with_names_constraints.len(), 1);
         // ( u1 != { user0 user1 })
-        let constraint_with_names = class_constraint_with_names_constraints[0].constraint_expr();
-        assert_eq!(evaluate_constraint(constraint_with_names, &source, &target), false);
+        assert!(!class_constraint_with_names_constraints[0].evaluate(&source, &target));
 
         let class_constraint_nested =
             classes.get_by_name(b"class_constraint_nested").expect("look up class");
         let class_constraint_nested_constraints = class_constraint_nested.constraints();
         assert_eq!(class_constraint_nested_constraints.len(), 1);
         // ( ( ( u2 == { user0 user1} ) and ( r1 == r2 ) ) or ( ( u1 == u2 ) and ( not (t1 == t2 ) ) ) )
-        let constraint_nested = class_constraint_nested_constraints[0].constraint_expr();
-        assert_eq!(evaluate_constraint(constraint_nested, &source, &target), true);
+        assert!(class_constraint_nested_constraints[0].evaluate(&source, &target));
 
         let class_constraint_role_names =
             classes.get_by_name(b"class_constraint_role_names").expect("look up class");
         let class_constraint_role_names_constraints = class_constraint_role_names.constraints();
         assert_eq!(class_constraint_role_names_constraints.len(), 1);
         // ( r1 == { object_r } ) where source is object_r
-        let constraint_role_names = class_constraint_role_names_constraints[0].constraint_expr();
-        assert_eq!(evaluate_constraint(constraint_role_names, &source, &target), true);
+        assert!(class_constraint_role_names_constraints[0].evaluate(&source, &target));
 
         let class_constraint_type_names =
             classes.get_by_name(b"class_constraint_type_names").expect("look up class");
         let class_constraint_type_names_constraints = class_constraint_type_names.constraints();
         assert_eq!(class_constraint_type_names_constraints.len(), 1);
         // ( t1 == { domain } ) where source type0 is in domain
-        let constraint_type_names = class_constraint_type_names_constraints[0].constraint_expr();
-        assert_eq!(evaluate_constraint(constraint_type_names, &source, &target), true);
+        assert!(class_constraint_type_names_constraints[0].evaluate(&source, &target));
 
         let class_constraint_type_list =
             classes.get_by_name(b"class_constraint_type_list").expect("look up class");
         let class_constraint_type_list_constraints = class_constraint_type_list.constraints();
         assert_eq!(class_constraint_type_list_constraints.len(), 1);
         // ( t1 == { type0 security_t } ) where source type is type0
-        let constraint_type_list = class_constraint_type_list_constraints[0].constraint_expr();
-        assert_eq!(evaluate_constraint(constraint_type_list, &source, &target), true);
+        assert!(class_constraint_type_list_constraints[0].evaluate(&source, &target));
     }
 
     #[test]
     fn evaluate_mls_constraint_expr() {
         let policy_bytes = include_bytes!("../../testdata/micro_policies/constraints_policy");
-        let policy = Policy::parse(policy_bytes).expect("parse policy");
-        policy.validate().expect("validate policy");
+        let policy = parse_and_validate(policy_bytes);
 
         let source = policy
             .parse_security_context(b"user0:object_r:type0:s0-s0".into())
@@ -716,7 +706,7 @@ mod tests {
         let class = classes.get_by_name(b"class_mls_constraints").expect("look up class");
         let constraints = class.constraints();
         // Constraints appear in reverse order in parsed policy.
-        let expected = vec![
+        let expected = [
             false, // l1 incomp h1
             false, // h1 incomp h2
             true,  // l1 domby h2
@@ -725,12 +715,7 @@ mod tests {
             false, // l1 == l2
         ];
         for (i, constraint) in constraints.iter().enumerate() {
-            assert_eq!(
-                evaluate_constraint(constraint.constraint_expr(), &source, &target),
-                expected[i],
-                "constraint {}",
-                i
-            );
+            assert_eq!(constraint.evaluate(&source, &target), expected[i], "constraint {i}");
         }
     }
 }

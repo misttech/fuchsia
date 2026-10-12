@@ -28,7 +28,7 @@ const fn node_bit_index(index: u32) -> u32 {
 
 /// Binary map item in the extensible bitmap.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Parse, Serialize)]
-pub(super) struct BinaryMapItem {
+struct BinaryMapItem {
     start_bit: u32,
     map: MapNode,
 }
@@ -61,7 +61,7 @@ struct BinaryExtensibleBitmapMetadata {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtensibleBitmap {
+struct ExtensibleBitmap {
     items: Array<BinaryMapItem>,
 }
 
@@ -101,12 +101,12 @@ impl Serialize for ExtensibleBitmap {
 impl ExtensibleBitmap {
     /// Returns the high bit limit of this bitmap (rounded up to the next node boundary).
     #[inline]
-    pub fn high_bit(&self) -> u32 {
+    fn high_bit(&self) -> u32 {
         self.items.last().map_or(0, |item| item.start_bit + MAP_NODE_BITS)
     }
 
     /// Returns `true` if the `index`'th bit in this bitmap is a 1-bit.
-    pub fn is_set(&self, index: u32) -> bool {
+    fn is_set(&self, index: u32) -> bool {
         if index >= self.high_bit() {
             return false;
         }
@@ -123,24 +123,24 @@ impl ExtensibleBitmap {
     }
 
     /// Returns `true` if this bitmap is empty (no bits set).
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
     /// Returns the number of set bits in this bitmap.
-    pub fn count(&self) -> usize {
+    fn count(&self) -> usize {
         self.items.iter().map(|item| item.map.count_ones() as usize).sum()
     }
 
     /// Returns an iterator that yields contiguous `(low, high)` ranges of set bit indices.
-    pub fn spans(&self) -> BitSpansIter<'_> {
+    fn spans(&self) -> BitSpansIter<'_> {
         let mut items = self.items.iter().peekable();
         let current = items.next().copied();
         BitSpansIter { items, current }
     }
 
     /// Returns an iterator that yields the indices of this bitmap's set bits.
-    pub fn indices_of_set_bits(&self) -> BitIter<'_> {
+    fn indices_of_set_bits(&self) -> BitIter<'_> {
         BitIter { spans: self.spans(), current: 1, high: 0 }
     }
 
@@ -149,7 +149,7 @@ impl ExtensibleBitmap {
     /// This dedicated subset check is more efficient than `compare()` when only testing
     /// inclusion (`self <= other`), as it aborts immediately upon finding any bit in `self`
     /// that is missing from `other` without scanning the remainder or tracking superset status.
-    pub fn is_subset(&self, other: &Self) -> bool {
+    fn is_subset(&self, other: &Self) -> bool {
         let mut other_iter = other.items.iter().peekable();
         for item in self.items.iter() {
             while let Some(o) = other_iter.peek() {
@@ -176,7 +176,7 @@ impl ExtensibleBitmap {
     /// This single-pass comparison is more efficient for general comparisons where ordering or
     /// equality is needed, as it tracks both subset and superset relationships simultaneously
     /// in one traversal over the sorted items and aborts early if both become false (`None`).
-    pub fn compare(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn compare(&self, other: &Self) -> Option<std::cmp::Ordering> {
         let mut self_iter = self.items.iter().peekable();
         let mut other_iter = other.items.iter().peekable();
 
@@ -232,18 +232,18 @@ impl ExtensibleBitmap {
 
 /// Builder for constructing [`ExtensibleBitmap`]s dynamically.
 #[derive(Debug, Clone, Default)]
-pub struct ExtensibleBitmapBuilder {
+struct ExtensibleBitmapBuilder {
     items: Vec<BinaryMapItem>,
 }
 
 impl ExtensibleBitmapBuilder {
     /// Returns a new empty builder.
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self::default()
     }
 
     /// Inserts a single bit index into the builder.
-    pub fn insert(&mut self, index: u32) {
+    fn insert(&mut self, index: u32) {
         let start_bit = node_start_bit(index);
         let bit_index = node_bit_index(index);
 
@@ -259,7 +259,7 @@ impl ExtensibleBitmapBuilder {
     }
 
     /// Sets a range of bits [low, high] (inclusive) in the builder.
-    pub fn set_range(&mut self, low: u32, high: u32) {
+    fn set_range(&mut self, low: u32, high: u32) {
         if low > high {
             return;
         }
@@ -301,7 +301,7 @@ impl ExtensibleBitmapBuilder {
     }
 
     /// Builds the immutable [`ExtensibleBitmap`].
-    pub fn build(self) -> ExtensibleBitmap {
+    fn build(self) -> ExtensibleBitmap {
         ExtensibleBitmap { items: Array::from(self.items) }
     }
 }
@@ -328,7 +328,7 @@ impl Validate for ExtensibleBitmap {
 
 /// Iterator over contiguous spans of set bit indices `(low_idx, high_idx)` in an [`ExtensibleBitmap`].
 #[derive(Clone)]
-pub struct BitSpansIter<'a> {
+struct BitSpansIter<'a> {
     items: std::iter::Peekable<std::slice::Iter<'a, BinaryMapItem>>,
     current: Option<BinaryMapItem>,
 }
@@ -378,7 +378,7 @@ impl<'a> Iterator for BitSpansIter<'a> {
 
 /// Iterator over the indices of bits set in [`ExtensibleBitmap`].
 #[derive(Clone)]
-pub struct BitIter<'a> {
+struct BitIter<'a> {
     spans: BitSpansIter<'a>,
     current: u32,
     high: u32,
@@ -415,11 +415,6 @@ impl<T: PolicyId, const WITH_ID_ZERO: bool> IdSet<T, WITH_ID_ZERO> {
         IdSetBuilder::new().build()
     }
 
-    /// Constructs an [`IdSet`] wrapping the supplied `bitmap`.
-    pub fn from_bitmap(bitmap: ExtensibleBitmap) -> Self {
-        Self { bitmap, _phantom: PhantomData }
-    }
-
     /// Constructs an [`IdSet`] from an iterator of IDs.
     pub fn from_ids<I: IntoIterator<Item = T>>(ids: I) -> Self {
         let mut builder = IdSetBuilder::new();
@@ -427,11 +422,6 @@ impl<T: PolicyId, const WITH_ID_ZERO: bool> IdSet<T, WITH_ID_ZERO> {
             builder.insert(id);
         }
         builder.build()
-    }
-
-    /// Returns `true` if `self` is a subset of `other` (all elements in `self` are in `other`).
-    pub fn is_subset(&self, other: &Self) -> bool {
-        self.bitmap.is_subset(&other.bitmap)
     }
 
     /// Returns `true` if `self` is a superset of `other` (all elements in `other` are in `self`).

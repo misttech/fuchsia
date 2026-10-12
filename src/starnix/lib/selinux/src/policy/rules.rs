@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::num::NonZeroU32;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Sub, SubAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
 use rapidhash::RapidBuildHasher;
-pub use selinux_policy_derive::{Parse, Serialize, Validate};
+use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{Array, PolicyCursor, PolicyWriter};
@@ -17,28 +18,28 @@ use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{AccessVector, ClassId, ConditionalBooleanId, Policy, TypeId, U24Index};
 
 /// Flag bit for standard `allow` rules.
-pub const AV_ALLOW_RULE_FLAG: u16 = 0x1;
+const AV_ALLOW_RULE_FLAG: u16 = 0x1;
 /// Flag bit for `auditallow` rules.
-pub const AV_AUDITALLOW_RULE_FLAG: u16 = 0x2;
+const AV_AUDITALLOW_RULE_FLAG: u16 = 0x2;
 /// Flag bit for `dontaudit` rules.
-pub const AV_DONTAUDIT_RULE_FLAG: u16 = 0x4;
+const AV_DONTAUDIT_RULE_FLAG: u16 = 0x4;
 
 /// Flag bit for `type_transition` rules.
-pub const AV_TYPE_TRANSITION_RULE_FLAG: u16 = 0x10;
+const AV_TYPE_TRANSITION_RULE_FLAG: u16 = 0x10;
 /// Flag bit for `type_member` rules.
-pub const AV_TYPE_MEMBER_RULE_FLAG: u16 = 0x20;
+const AV_TYPE_MEMBER_RULE_FLAG: u16 = 0x20;
 /// Flag bit for `type_change` rules.
-pub const AV_TYPE_CHANGE_RULE_FLAG: u16 = 0x40;
+const AV_TYPE_CHANGE_RULE_FLAG: u16 = 0x40;
 
 /// Flag bit for `allowxperm` extended permissions rules.
-pub const AV_ALLOWXPERM_RULE_FLAG: u16 = 0x100;
+const AV_ALLOWXPERM_RULE_FLAG: u16 = 0x100;
 /// Flag bit for `auditallowxperm` extended permissions rules.
-pub const AV_AUDITALLOWXPERM_RULE_FLAG: u16 = 0x200;
+const AV_AUDITALLOWXPERM_RULE_FLAG: u16 = 0x200;
 /// Flag bit for `dontauditxperm` extended permissions rules.
-pub const AV_DONTAUDITXPERM_RULE_FLAG: u16 = 0x400;
+const AV_DONTAUDITXPERM_RULE_FLAG: u16 = 0x400;
 
 /// Mask for high bit in rule type flags indicating whether rule is enabled.
-pub const AV_ENABLED_RULE_FLAG: u16 = 0x8000;
+const AV_ENABLED_RULE_FLAG: u16 = 0x8000;
 
 /// [`AccessDecision::flags`] value indicating that policy marks source domain permissive.
 pub const SELINUX_AVD_FLAGS_PERMISSIVE: u32 = 1;
@@ -51,7 +52,7 @@ pub const XPERMS_TYPE_IOCTL_PREFIXES: u8 = 2;
 pub const XPERMS_TYPE_NLMSG: u8 = 3;
 
 /// Number of 64-bit words in 256-bit [`XpermsBitmap`].
-pub const XPERMS_BITMAP_BLOCKS: usize = 4;
+const XPERMS_BITMAP_BLOCKS: usize = 4;
 
 /// 256-bit bitmap used for extended permissions (such as ioctls and netlink messages).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -87,6 +88,7 @@ impl XpermsBitmap {
     pub const NONE: Self = Self([0u64; Self::BITMAP_BLOCKS]);
 
     /// Constructs a new [`XpermsBitmap`] from an array of four 64-bit words.
+    #[cfg(test)]
     pub fn new(elements: [u64; Self::BITMAP_BLOCKS]) -> Self {
         Self(elements)
     }
@@ -314,12 +316,6 @@ impl AccessRule {
     pub fn access_vector(&self) -> AccessVector {
         self.access_vector
     }
-
-    /// Returns whether this rule is enabled.
-    #[cfg(test)]
-    pub fn enabled(&self) -> bool {
-        self.enabled
-    }
 }
 
 /// Type transition, change, or member rule.
@@ -335,12 +331,6 @@ impl TypeRule {
     /// Returns the target type ID for this rule transition.
     pub fn new_type(&self) -> TypeId {
         self.new_type
-    }
-
-    /// Returns whether this rule is enabled.
-    #[cfg(test)]
-    pub fn enabled(&self) -> bool {
-        self.enabled
     }
 }
 
@@ -358,12 +348,6 @@ impl XpermRule {
     pub fn extended_permissions(&self) -> &ExtendedPermissions {
         &self.extended_permissions
     }
-
-    /// Returns whether this rule is enabled.
-    #[cfg(test)]
-    pub fn enabled(&self) -> bool {
-        self.enabled
-    }
 }
 
 /// Lookup key for indexing and matching access vector rules by source domain, target domain, and class.
@@ -376,13 +360,12 @@ pub struct RuleKey {
 
 impl RuleKey {
     /// Constructs a [`RuleKey`] for the specified source domain, target domain, and security class.
-    pub fn new(source_type: TypeId, target_type: TypeId, class: ClassId) -> Self {
+    fn new(source_type: TypeId, target_type: TypeId, class: ClassId) -> Self {
         Self { source_type, target_type, class }
     }
 
     /// Hashes this [`RuleKey`] using `hasher`.
-    pub fn hash(&self, hasher: &RapidBuildHasher) -> u64 {
-        use std::hash::{BuildHasher, Hash, Hasher};
+    fn hash(&self, hasher: &RapidBuildHasher) -> u64 {
         let mut state = hasher.build_hasher();
         Hash::hash(self, &mut state);
         state.finish()
@@ -488,7 +471,7 @@ impl AccessDecision {
 /// key changes. This works because binary policies guarantee rules for the same key
 /// are contiguous.
 #[derive(Debug, Clone)]
-pub struct AccessVectorRules {
+struct AccessVectorRules {
     av_rules: Box<[AccessRule]>,
     type_rules: Box<[TypeRule]>,
     xperm_rules: Box<[XpermRule]>,
@@ -498,7 +481,7 @@ pub struct AccessVectorRules {
 impl AccessVectorRules {
     /// Returns the standard access vector rules.
     #[cfg(test)]
-    pub fn av_rules(&self) -> &[AccessRule] {
+    fn av_rules(&self) -> &[AccessRule] {
         &self.av_rules
     }
 }
@@ -621,18 +604,13 @@ impl IndexedAccessVectorRules {
     /// Builds an index over the specified access vector rules.
     ///
     /// Returns [`ParseError::DuplicateAccessVectorRule`] if non-contiguous rules share the same key.
-    pub fn new(rules: AccessVectorRules) -> Result<Self, ParseError> {
+    fn new(rules: AccessVectorRules) -> Result<Self, ParseError> {
         let hasher = RapidBuildHasher::default();
         let av_table = build_index(&rules.av_rules, &hasher)?;
         let type_transition_table = build_index(&rules.type_rules, &hasher)?;
         let xperms_table = build_index(&rules.xperm_rules, &hasher)?;
 
         Ok(Self { rules, av_table, type_transition_table, xperms_table, hasher })
-    }
-
-    /// Returns a reference to the underlying unindexed access vector rules.
-    pub fn rules(&self) -> &AccessVectorRules {
-        &self.rules
     }
 
     fn find_rules<'a, R: HasRuleKey>(
@@ -748,21 +726,21 @@ fn build_index<R: HasRuleKey>(
 }
 
 /// Expression element kind bit for boolean variable operands.
-pub const COND_EXPR_BOOL: u32 = 1;
+const COND_EXPR_BOOL: u32 = 1;
 /// Expression element kind bit for unary NOT operator.
-pub const COND_EXPR_NOT: u32 = 2;
+const COND_EXPR_NOT: u32 = 2;
 /// Expression element kind bit for binary OR operator.
-pub const COND_EXPR_OR: u32 = 3;
+const COND_EXPR_OR: u32 = 3;
 /// Expression element kind bit for binary AND operator.
-pub const COND_EXPR_AND: u32 = 4;
+const COND_EXPR_AND: u32 = 4;
 /// Expression element kind bit for binary EQUALS operator.
-pub const COND_EXPR_EQ: u32 = 5;
+const COND_EXPR_EQ: u32 = 5;
 /// Expression element kind bit for binary NOT-EQUALS operator.
-pub const COND_EXPR_NEQ: u32 = 6;
+const COND_EXPR_NEQ: u32 = 6;
 
 /// Individual element in a conditional boolean expression sequence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum ConditionalExpressionElement {
+enum ConditionalExpressionElement {
     /// Conditional boolean variable operand.
     Boolean(ConditionalBooleanId),
     /// Unary boolean NOT operator.
@@ -846,7 +824,6 @@ struct BinaryAccessVectorRuleHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::Policy;
     use crate::policy::metadata::PolicyVersion;
     use crate::policy::parser::PolicyWriter;
     use crate::policy::traits::{HasPolicyId, PolicyId};

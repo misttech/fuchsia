@@ -41,6 +41,7 @@ pub struct Role {
 }
 
 impl Role {
+    #[cfg(test)]
     pub fn bounds(&self) -> Option<RoleId> {
         self.bounds
     }

@@ -9,31 +9,31 @@ use super::parser::{ByteArray, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, Serialize, Validate};
 
 /// Magic number identifying a SELinux policy file.
-pub(super) const SELINUX_MAGIC: u32 = 0xf97cff8c;
+pub const SELINUX_MAGIC: u32 = 0xf97cff8c;
 
 /// Maximum allowed length for a signature in the policy database.
-pub(super) const POLICYDB_STRING_MAX_LENGTH: u32 = 32;
+pub const POLICYDB_STRING_MAX_LENGTH: u32 = 32;
 
 /// Expected signature prefix for a valid SELinux policy.
-pub(super) const POLICYDB_SIGNATURE: &[u8] = b"SE Linux";
+pub const POLICYDB_SIGNATURE: &[u8] = b"SE Linux";
 
 /// Minimum supported SELinux policy database version.
-pub(super) const POLICYDB_VERSION_MIN: u32 = 30;
+pub const POLICYDB_VERSION_MIN: u32 = 30;
 
 /// Maximum supported SELinux policy database version.
 pub const POLICYDB_VERSION_MAX: u32 = 33;
 
 /// Config flag indicating that MLS is enabled.
-pub(super) const CONFIG_MLS_FLAG: u32 = 1;
+pub const CONFIG_MLS_FLAG: u32 = 1;
 
 /// Config flag indicating that unknown permissions should be rejected.
-pub(super) const CONFIG_HANDLE_UNKNOWN_REJECT_FLAG: u32 = 1 << 1;
+const CONFIG_HANDLE_UNKNOWN_REJECT_FLAG: u32 = 1 << 1;
 
 /// Config flag indicating that unknown permissions should be allowed.
-pub(super) const CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG: u32 = 1 << 2;
+const CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG: u32 = 1 << 2;
 
 /// Mask for the handle-unknown configuration bits.
-pub(super) const CONFIG_HANDLE_UNKNOWN_MASK: u32 =
+const CONFIG_HANDLE_UNKNOWN_MASK: u32 =
     CONFIG_HANDLE_UNKNOWN_REJECT_FLAG | CONFIG_HANDLE_UNKNOWN_ALLOW_FLAG;
 
 /// Controls how "unknown" policy decisions are handled.
@@ -46,7 +46,7 @@ pub enum HandleUnknown {
 
 /// Magic number at the start of a SELinux policy binary.
 #[derive(Debug, Parse, Serialize)]
-pub(super) struct Magic {
+pub struct Magic {
     value: u32,
 }
 
@@ -61,7 +61,7 @@ impl Validate for Magic {
 
 /// Signature string that identifies the policy database.
 #[derive(Debug, Parse, Serialize)]
-pub(super) struct Signature {
+pub struct Signature {
     value: ByteArray,
 }
 
@@ -97,13 +97,13 @@ impl Parse for PolicyVersion {
 
 impl PolicyVersion {
     pub const V30: Self = Self { value: 30 };
-    pub const V31: Self = Self { value: 31 };
     pub const V33: Self = Self { value: 33 };
 
     /// Minimum policy version supporting InfiniBand partition keys and end ports.
     pub const MIN_INFINIBAND: Self = Self { value: 31 };
 
     /// Returns the raw policy version value.
+    #[cfg(test)]
     pub fn get(&self) -> u32 {
         self.value
     }
@@ -121,14 +121,14 @@ impl Validate for PolicyVersion {
 
 /// Configuration flags of the SELinux policy.
 #[derive(Debug)]
-pub(super) struct Config {
+pub struct Config {
     handle_unknown: HandleUnknown,
     raw_flags: u32,
 }
 
 impl Config {
     /// Returns the [`HandleUnknown`] configuration.
-    pub(super) fn handle_unknown(&self) -> HandleUnknown {
+    pub fn handle_unknown(&self) -> HandleUnknown {
         self.handle_unknown
     }
 }
@@ -180,7 +180,7 @@ impl Validate for Config {
 /// Contains various count fields representing the size of different registries
 /// and tables in the policy.
 #[derive(Debug, Parse, Serialize, Validate)]
-pub(super) struct Counts {
+pub struct Counts {
     /// Number of symbols in the symbol table.
     symbols_count: u32,
     /// Number of object contexts in the policy.

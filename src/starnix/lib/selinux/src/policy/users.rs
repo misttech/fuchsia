@@ -2,13 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::num::NonZeroU16;
+
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
 use super::context::{MlsLevel, MlsRange};
 use super::error::{ParseError, SerializeError, ValidateError};
+use super::id_type::IdType;
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-use super::{Policy, RoleSet, UserId};
+use super::{Policy, RoleSet};
+
+/// Tag type for type safety of policy user identifiers.
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub struct UserTag;
+
+/// Identifies a user within a policy.
+pub type UserId = IdType<NonZeroU16, UserTag>;
 
 /// Parsed SELinux user definition.
 #[derive(Debug, Validate, HasName, HasPolicyId)]
@@ -22,6 +32,7 @@ pub struct User {
 }
 
 impl User {
+    #[cfg(test)]
     pub fn bounds(&self) -> Option<UserId> {
         self.bounds
     }

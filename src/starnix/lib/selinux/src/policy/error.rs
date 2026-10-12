@@ -63,26 +63,12 @@ pub enum ParseError {
 /// Errors that may be encountered validating a binary policy.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum ValidateError {
-    #[error(
-        "expected extensible bitmap items to refer to bits in range [0, {found_high_bit}), but found item that ends at {found_items_end}"
-    )]
-    ExtensibleBitmapItemOverflow { found_items_end: u32, found_high_bit: u32 },
-    #[error("found extensible bitmap item count = 0, but high count != 0")]
-    ExtensibleBitmapNonZeroHighBitAndZeroCount,
     #[error("invalid sequence of terms in constraint expression")]
     InvalidConstraintTermSequence,
     #[error("invalid extended permissions type: {value}")]
     InvalidExtendedPermissionsType { value: u8 },
-    #[error(
-        "expected extensible bitmap item high bit to be at most items_count + items_size = {found_count} + {found_size}, but found {found_high_bit}"
-    )]
-    InvalidExtensibleBitmapHighBit { found_size: u32, found_high_bit: u32, found_count: u32 },
     #[error("expected extensible bitmap items to have at least one bit set")]
     InvalidExtensibleBitmapItem,
-    #[error(
-        "expected extensible bitmap item size to be exactly {MAP_NODE_BITS}, but found {found_size}"
-    )]
-    InvalidExtensibleBitmapItemSize { found_size: u32 },
     #[error("invalid ID index {index} in IdSet")]
     InvalidIdSetIndex { index: u32 },
     #[error("expected selinux magic value {SELINUX_MAGIC:#x}, but found {found_magic:#x}")]
@@ -101,10 +87,6 @@ pub enum ValidateError {
         "expected signature length in range [0, {POLICYDB_STRING_MAX_LENGTH}], but found {found_length}"
     )]
     InvalidSignatureLength { found_length: u32 },
-    #[error(
-        "expected extensible bitmap item high bit to be multiple of {found_size}, but found {found_high_bit}"
-    )]
-    MisalignedExtensibleBitmapHighBit { found_size: u32, found_high_bit: u32 },
     #[error(
         "expected extensible bitmap item start bit to be multiple of item size {found_size}, but found {found_start_bit}"
     )]

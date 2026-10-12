@@ -2,14 +2,38 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::num::NonZeroU16;
+
 use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
+use super::TypeId;
+use super::bitmap::{IdSet, IdSetBuilder};
 use super::classes::ClassId;
 use super::context::{MlsLevel, MlsRange};
 use super::error::{ParseError, SerializeError, ValidateError};
+use super::id_type::IdType;
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-use super::{CategoryId, SensitivityId, TypeId};
+
+/// Tag type for type safety of policy sensitivity identifiers.
+#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub struct SensitivityTag;
+
+/// Identifies a sensitivity level within a policy.
+pub type SensitivityId = IdType<NonZeroU16, SensitivityTag>;
+
+/// Tag type for type safety of policy category identifiers.
+#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CategoryTag;
+
+/// Identifies a security category within a policy.
+pub type CategoryId = IdType<NonZeroU16, CategoryTag>;
+
+/// Set of security categories.
+pub type CategorySet = IdSet<CategoryId>;
+
+/// Builder for constructing [`CategorySet`]s dynamically.
+pub type CategorySetBuilder = IdSetBuilder<CategoryId>;
 
 /// MLS sensitivity level definition in an SELinux policy.
 #[derive(Debug, Validate, HasName, HasPolicyId)]

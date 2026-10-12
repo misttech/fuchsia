@@ -157,7 +157,7 @@ impl ObjectContexts {
     }
 
     /// Returns the filesystem behavior labeling statements table.
-    pub fn fs_uses(&self) -> &[FsUse] {
+    pub(super) fn fs_uses(&self) -> &[FsUse] {
         &self.fs_uses
     }
 

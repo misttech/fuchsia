@@ -150,17 +150,22 @@ pub struct Context {
 
 impl Context {
     /// Constructs a new [`Context`].
-    pub fn new(user: UserId, role: RoleId, context_type: TypeId, mls_range: MlsRange) -> Self {
+    pub(super) fn new(
+        user: UserId,
+        role: RoleId,
+        context_type: TypeId,
+        mls_range: MlsRange,
+    ) -> Self {
         Self { user, role, context_type, mls_range }
     }
 
     /// Returns the user ID.
-    pub fn user(&self) -> UserId {
+    pub(super) fn user(&self) -> UserId {
         self.user
     }
 
     /// Returns the role ID.
-    pub fn role(&self) -> RoleId {
+    pub(super) fn role(&self) -> RoleId {
         self.role
     }
 
@@ -170,17 +175,17 @@ impl Context {
     }
 
     /// Returns the low security level.
-    pub fn low_level(&self) -> &MlsLevel {
+    pub(super) fn low_level(&self) -> &MlsLevel {
         &self.mls_range.low
     }
 
     /// Returns the high security level, if present.
-    pub fn high_level(&self) -> Option<&MlsLevel> {
+    pub(super) fn high_level(&self) -> Option<&MlsLevel> {
         self.mls_range.high.as_ref()
     }
 
     /// Returns the high level if distinct from the low level, or else returns the low level.
-    pub fn effective_high_level(&self) -> &MlsLevel {
+    pub(super) fn effective_high_level(&self) -> &MlsLevel {
         self.high_level().unwrap_or_else(|| self.low_level())
     }
 }

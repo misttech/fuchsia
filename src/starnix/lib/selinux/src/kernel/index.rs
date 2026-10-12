@@ -27,7 +27,7 @@ type KernelPermissionIdsArray = [Option<PermissionId>; 32];
 /// `policy_index.class(KernelClass::Process.into()).unwrap()` yields the [`Class`] entry in the
 /// policy's collection of classes without scanning by name.
 #[derive(Debug)]
-pub struct PolicyIndex {
+pub(crate) struct PolicyIndex {
     /// Map from [`KernelClass`]es to their corresponding [`ClassId`]s in the associated policy's
     /// classes collection.
     classes: HashMap<KernelClass, ClassId>,

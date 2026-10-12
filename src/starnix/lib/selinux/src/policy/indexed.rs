@@ -15,7 +15,7 @@ use super::traits::{HasName, HasPolicyId, Parse, PolicyId, Serialize, Validate};
 use super::{Policy, U24Index};
 
 /// Helper to hash a byte slice name using the rapidhash hasher.
-pub(super) fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u64 {
+pub fn hash_name(hasher: &rapidhash::RapidBuildHasher, name: &[u8]) -> u64 {
     let mut state = hasher.build_hasher();
     name.hash(&mut state);
     state.finish()
@@ -45,7 +45,7 @@ where
     /// Constructs a new [`IdAndNameIndexed`] wrapping the supplied `container`.
     ///
     /// Returns an error if `container` contains more than `U24Index::MAX` items.
-    pub fn new(container: C) -> Result<Self, ParseError> {
+    pub(super) fn new(container: C) -> Result<Self, ParseError> {
         let mut id_to_index = Vec::with_capacity(container.len() + 1);
         let hasher = rapidhash::RapidBuildHasher::default();
         let mut name_to_index = HashTable::with_capacity(container.len());

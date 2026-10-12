@@ -43,7 +43,7 @@ impl Validate for TypeId {
 /// Classification of a type symbol (alias, primary type, or attribute).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Parse, Serialize, Validate)]
 #[policy(wire_type = u32)]
-pub enum TypeKind {
+enum TypeKind {
     Alias = 0,
     Type = 1,
     Attribute = 3,
@@ -65,7 +65,7 @@ impl HasName for Type {
 }
 
 impl Type {
-    pub fn bounded_by(&self) -> Option<TypeId> {
+    pub(super) fn bounded_by(&self) -> Option<TypeId> {
         self.bounds
     }
 }
@@ -174,11 +174,7 @@ impl Validate for Types {
 }
 
 impl Types {
-    pub fn primary_names_count(&self) -> u32 {
-        self.primary_names_count
-    }
-
-    pub fn get_by_id(&self, id: TypeId) -> Option<&Type> {
+    pub(super) fn get_by_id(&self, id: TypeId) -> Option<&Type> {
         let index = self.by_id.get((id.as_u32() - 1) as usize)?.as_ref()?;
         Some(&self.ordered[*index])
     }
@@ -188,27 +184,12 @@ impl Types {
         let idx = self.by_name.find(hash, |&idx| self.ordered[idx].name.as_ref() == name)?;
         Some(&self.ordered[*idx])
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.ordered.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Type> {
-        self.ordered.iter()
-    }
 }
 
 /// Type-to-attribute mappings for each primary type in the policy.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Validate)]
 pub struct TypeAttributeMaps {
     maps: Box<[TypeSet]>,
-}
-
-impl TypeAttributeMaps {
-    /// Returns the attribute [`TypeSet`] for the specified `type_id`.
-    pub fn get(&self, type_id: TypeId) -> Option<&TypeSet> {
-        self.maps.get((type_id.as_u32() - 1) as usize)
-    }
 }
 
 impl Index<TypeId> for TypeAttributeMaps {

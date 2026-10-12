@@ -9,19 +9,19 @@ use super::parser::Array;
 
 /// Policy entry defining an initial security context for a well-known security ID.
 #[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]
-pub struct InitialSid {
+struct InitialSid {
     id: u32,
     context: Context,
 }
 
 impl InitialSid {
     /// Returns the raw numerical ID of this initial SID entry.
-    pub fn id(&self) -> u32 {
+    fn id(&self) -> u32 {
         self.id
     }
 
     /// Returns the initial security context defined by this entry.
-    pub fn context(&self) -> &Context {
+    fn context(&self) -> &Context {
         &self.context
     }
 }
@@ -39,11 +39,13 @@ impl InitialSids {
     }
 
     /// Returns the number of initial SID entries in the table.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Returns `true` if the initial SID table is empty.
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

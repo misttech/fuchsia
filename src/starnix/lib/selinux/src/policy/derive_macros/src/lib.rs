@@ -150,7 +150,7 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
 /// Generates:
 /// ```rust
 /// impl Serialize for Point {
-///     fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+///     fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
 ///         Serialize::serialize(&self.x, writer)?;
 ///         Serialize::serialize(&self.y, writer)?;
 ///         Ok(())
@@ -176,7 +176,7 @@ pub fn derive_parse(input: TokenStream) -> TokenStream {
 /// Generates:
 /// ```rust
 /// impl Serialize for Color {
-///     fn serialize(&self, writer: &mut Vec<u8>) -> Result<(), SerializeError> {
+///     fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
 ///         let value = *self as u32;
 ///         Serialize::serialize(&value, writer)?;
 ///         Ok(())
@@ -333,7 +333,7 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/// This macro generates an implementation of `HasName` which provides access to a field named `name` via the `name()` method.
+/// Derives `HasName` for a struct, providing access to its `name` field via `name()`.
 ///
 /// Requires the struct to have a field named `name`.
 #[proc_macro_derive(HasName)]
@@ -371,7 +371,7 @@ pub fn derive_has_name(input: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/// This macro generates an implementation of `HasPolicyId` which provides access to a field named `id` via the `id()` method.
+/// Derives `HasPolicyId` for a struct, providing access to its `id` field via `id()`.
 ///
 /// Requires the struct to have a field named `id`, and uses its type as the associated `Id` type.
 #[proc_macro_derive(HasPolicyId)]

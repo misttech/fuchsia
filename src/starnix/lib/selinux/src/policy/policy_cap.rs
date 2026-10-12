@@ -48,7 +48,8 @@ impl PolicyCap {
         }
     }
 
-    pub fn by_name(name: &str) -> Option<Self> {
+    #[cfg(test)]
+    fn by_name(name: &str) -> Option<Self> {
         Self::VARIANTS.iter().find(|x| x.name() == name).copied()
     }
 }

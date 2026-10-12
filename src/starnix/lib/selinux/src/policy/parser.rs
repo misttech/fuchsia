@@ -15,7 +15,7 @@ use super::error::{ParseError, SerializeError, ValidateError};
 use super::metadata::PolicyVersion;
 use super::traits::{Parse, Serialize, Validate};
 
-/// Binary policy data.
+/// Raw binary policy data buffer.
 pub type PolicyData = Arc<[u8]>;
 
 /// Cursor used to parse elements from the binary policy data.
@@ -64,10 +64,7 @@ impl<'a> PolicyCursor<'a> {
     }
 
     /// Parses `count` contiguous elements of type `T` from the cursor.
-    pub(super) fn parse_elements<T: Parse>(
-        &mut self,
-        count: usize,
-    ) -> Result<Box<[T]>, ParseError> {
+    fn parse_elements<T: Parse>(&mut self, count: usize) -> Result<Box<[T]>, ParseError> {
         let mut elements = Vec::with_capacity(count);
         for _ in 0..count {
             elements.push(self.parse()?);
@@ -91,7 +88,7 @@ impl<'a> PolicyCursor<'a> {
     }
 
     /// Reads a byte slice of `count` bytes from the cursor.
-    pub(super) fn read_bytes(&mut self, count: usize) -> Result<&'a [u8], ParseError> {
+    pub fn read_bytes(&mut self, count: usize) -> Result<&'a [u8], ParseError> {
         if self.offset + count > self.data.len() {
             return Err(ParseError::MissingData {
                 type_name: "bytes",

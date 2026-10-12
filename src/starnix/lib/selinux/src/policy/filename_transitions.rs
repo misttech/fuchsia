@@ -17,14 +17,14 @@ use super::{ClassId, Policy, TypeId, U24Index};
 
 /// Output type mapping for a set of source types in a filename transition (policy version >= 33).
 #[derive(Debug, PartialEq, Eq, Parse, Serialize, Validate)]
-pub struct FilenameTransitionItem {
+struct FilenameTransitionItem {
     stypes: IdSet<TypeId>,
     out_type: TypeId,
 }
 
 /// Filename transition rule grouping items by target type, target class, and filename (policy version >= 33).
 #[derive(Debug, PartialEq, Eq, Parse, Serialize, Validate)]
-pub struct FilenameTransition {
+struct FilenameTransition {
     filename: ByteArray,
     transition_type: TypeId,
     transition_class: ClassId,
@@ -76,7 +76,7 @@ pub struct FilenameTransitions {
 
 impl FilenameTransitions {
     /// Constructs a [`FilenameTransitions`] table and builds its lookup index and target type bitmap over `transitions`.
-    pub fn new(transitions: Array<FilenameTransition>) -> Result<Self, ParseError> {
+    fn new(transitions: Array<FilenameTransition>) -> Result<Self, ParseError> {
         let hasher = RapidBuildHasher::default();
         let mut index = HashTable::with_capacity(transitions.len());
         let mut target_types = Vec::with_capacity(transitions.len());
@@ -121,29 +121,24 @@ impl FilenameTransitions {
         Ok(Self { transitions, index, target_types: IdSet::from_ids(target_types), hasher })
     }
 
-    /// Returns `true` if any filename transitions are defined for `target_type`.
-    pub fn has_filename_transitions_for_target_type(&self, target_type: TypeId) -> bool {
-        self.target_types.contains(target_type)
-    }
-
-    /// Looks up the resulting output type for a file created by `source_type` in `target_type`
+    /// Looks up the resulting output type for a file created by `source` in `target`
     /// directory with object `class` and `name`.
     pub fn compute_filename_transition(
         &self,
-        source_type: TypeId,
-        target_type: TypeId,
+        source: TypeId,
+        target: TypeId,
         class: ClassId,
         name: &[u8],
     ) -> Option<TypeId> {
-        if !self.target_types.contains(target_type) {
+        if !self.target_types.contains(target) {
             return None;
         }
-        let hash = hash_key(&self.hasher, target_type, class, name);
-        let idx = self.index.find(hash, |&i| {
-            matches_key(&self.transitions[usize::from(i)], target_type, class, name)
-        })?;
+        let hash = hash_key(&self.hasher, target, class, name);
+        let idx = self
+            .index
+            .find(hash, |&i| matches_key(&self.transitions[usize::from(i)], target, class, name))?;
         let transition = &self.transitions[usize::from(*idx)];
-        let item = transition.items.iter().find(|item| item.stypes.contains(source_type))?;
+        let item = transition.items.iter().find(|item| item.stypes.contains(source))?;
         Some(item.out_type)
     }
 
@@ -273,6 +268,7 @@ impl Validate for FilenameTransitions {
 
 #[cfg(test)]
 mod tests {
+    use super::super::traits::HasPolicyId;
     use super::*;
     use std::num::NonZeroU16;
 
@@ -375,8 +371,6 @@ mod tests {
 
     #[test]
     fn test_filename_transition_policy_elements() {
-        use crate::policy::traits::HasPolicyId;
-
         let policy_bytes =
             include_bytes!("../../testdata/composite_policies/compiled/type_transition_policy");
         let policy = Policy::parse(policy_bytes).expect("parse type_transition policy");

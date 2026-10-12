@@ -105,24 +105,24 @@ impl Class {
     /// For example, `common file { common_file_perm }` and
     /// `class file inherits file { file_perm }` yields a `Class` object
     /// for `file` with `self.common_name() == b"file"`.
-    pub fn common_name(&self) -> &[u8] {
+    pub(super) fn common_name(&self) -> &[u8] {
         &self.common_name
     }
 
-    pub fn permissions(&self) -> &IdAndNameIndexed<Box<[Permission]>> {
+    pub(super) fn permissions(&self) -> &IdAndNameIndexed<Box<[Permission]>> {
         &self.permissions
     }
 
-    pub fn constraints(&self) -> &[Constraint] {
+    pub(super) fn constraints(&self) -> &[Constraint] {
         &self.constraints
     }
 
     #[cfg(test)]
-    pub fn validate_transitions(&self) -> &[ConstraintTerm] {
+    pub(super) fn validate_transitions(&self) -> &[ConstraintTerm] {
         &self.validate_transitions
     }
 
-    pub fn defaults(&self) -> &ClassDefaults {
+    pub(super) fn defaults(&self) -> &ClassDefaults {
         &self.defaults
     }
 }

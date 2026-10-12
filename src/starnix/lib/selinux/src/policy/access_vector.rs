@@ -21,10 +21,6 @@ impl AccessVector {
     pub const NONE: Self = Self(0);
     pub const ALL: Self = Self(u32::MAX);
 
-    pub fn from_class_permission_id(id: PermissionId) -> Self {
-        Self::from(id)
-    }
-
     /// Returns the raw access vector value.
     pub fn value(&self) -> u32 {
         self.0

@@ -2,69 +2,78 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-pub(super) mod access_vector;
-pub(super) mod bitmap;
-pub(super) mod booleans;
-pub(super) mod classes;
-pub(super) mod common_symbols;
-pub(super) mod compute;
-pub(super) mod constraints;
-pub(super) mod context;
-pub(super) mod error;
-pub(super) mod filename_transitions;
-pub(super) mod id_type;
-pub(super) mod indexed;
-pub(super) mod initial_sids;
-pub(super) mod metadata;
-pub(super) mod mls;
-pub(super) mod object_contexts;
-pub(super) mod parser;
-pub(super) mod permissions;
-pub(super) mod policy_cap;
-pub(super) mod roles;
-pub(super) mod rules;
-pub(super) mod security_context;
+mod access_vector;
+mod bitmap;
+mod booleans;
+mod classes;
+mod common_symbols;
+mod compute;
+mod constraints;
+mod context;
+mod error;
+mod filename_transitions;
+mod id_type;
+mod indexed;
+mod initial_sids;
+mod metadata;
+mod mls;
+mod object_contexts;
+mod parser;
+mod permissions;
+mod policy_cap;
+mod roles;
+mod rules;
+mod security_context;
 #[cfg(test)]
 mod tests;
-pub(super) mod traits;
-pub(super) mod types;
-pub(super) mod u24_index;
-pub(super) mod users;
+mod traits;
+mod types;
+mod u24_index;
+mod users;
 
 use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use crate::InitialSid;
 pub use access_vector::AccessVector;
-pub use bitmap::IdSpan;
-pub use booleans::{ConditionalBoolean, ConditionalBooleanId};
-pub use classes::{Class, ClassDefault, ClassDefaultRange, ClassId};
-pub use common_symbols::CommonSymbol;
-pub use compute::{FsUseLabelAndType, XpermsAccessDecision, XpermsKind};
-pub use context::{Context, MlsLevel, MlsRange};
-pub use error::{ParseError, SerializeError, ValidateError};
-pub use filename_transitions::FilenameTransitions;
-pub use id_type::*;
-pub use indexed::IdAndNameIndexed;
-pub use initial_sids::InitialSids;
-use metadata::{Config, Counts, Magic, Signature};
-pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX, PolicyVersion};
-pub use mls::{Category, RangeTransition, Sensitivity};
-pub use object_contexts::{FsUseType, GenfsCon, GenfsConPath, ObjectContexts};
-use parser::{Array, PolicyCursor};
-pub use parser::{PolicyData, PolicyWriter, SymbolArray};
-pub use permissions::PermissionId;
-pub use policy_cap::{PolicyCap, PolicyCapSet};
-pub use roles::{Role, RoleAllow, RoleId, RoleSet, RoleTransition};
-pub use rules::{
-    AccessDecision, AccessVectorRules, ConditionalNode, IndexedAccessVectorRules,
-    SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap,
+use bitmap::IdSpan;
+use booleans::{ConditionalBoolean, ConditionalBooleanId};
+pub(crate) use classes::Class;
+pub use classes::ClassId;
+use classes::{ClassDefault, ClassDefaultRange};
+use common_symbols::CommonSymbol;
+pub use compute::XpermsKind;
+pub(crate) use compute::{FsUseLabelAndType, XpermsAccessDecision};
+use context::{Context, MlsLevel, MlsRange};
+use error::{ParseError, SerializeError, ValidateError};
+use filename_transitions::FilenameTransitions;
+use indexed::IdAndNameIndexed;
+use initial_sids::InitialSids;
+pub(crate) use metadata::HandleUnknown;
+pub use metadata::POLICYDB_VERSION_MAX;
+use metadata::{Config, Counts, Magic, PolicyVersion, Signature};
+use mls::{
+    Category, CategoryId, CategorySet, CategorySetBuilder, RangeTransition, Sensitivity,
+    SensitivityId,
 };
-pub use security_context::{SecurityContext, SecurityContextError};
-pub use traits::{HasName, HasPolicyId, PolicyId};
+pub use object_contexts::FsUseType;
+use object_contexts::{GenfsCon, GenfsConPath, ObjectContexts};
+pub use parser::PolicyData;
+use parser::{Array, PolicyCursor, PolicyWriter, SymbolArray};
+pub use permissions::PermissionId;
+pub use policy_cap::PolicyCap;
+use policy_cap::PolicyCapSet;
+use roles::{Role, RoleAllow, RoleId, RoleSet, RoleTransition};
+pub use rules::AccessDecision;
+use rules::{ConditionalNode, IndexedAccessVectorRules};
+pub(crate) use rules::{SELINUX_AVD_FLAGS_PERMISSIVE, XpermsBitmap};
+pub(crate) use security_context::{SecurityContext, SecurityContextError};
+pub use traits::PolicyId;
+pub(crate) use traits::{HasName, HasPolicyId};
 use traits::{Serialize, Validate};
-pub use types::*;
-pub use u24_index::U24Index;
-pub use users::User;
+pub(crate) use types::TypeId;
+use types::{PermissiveTypeSet, TypeAttributeMaps, TypeSet, Types};
+use u24_index::U24Index;
+use users::{User, UserId};
 
 /// Maximum supported binary policy size in bytes (`U24Index` limit).
 ///
@@ -73,38 +82,11 @@ pub use users::User;
 const MAXIMUM_POLICY_SIZE: usize = (1 << 24) - 1;
 
 /// Mandatory role name assigned to non-process/non-socket SELinux objects by default.
-pub(super) const OBJECT_R_ROLE_NAME: &[u8] = b"object_r";
+const OBJECT_R_ROLE_NAME: &[u8] = b"object_r";
 
-/// Tag type for type safety of policy user identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub struct UserTag;
-
-/// Identifies a user within a policy.
-pub type UserId = IdType<std::num::NonZeroU16, UserTag>;
-
-/// Tag type for type safety of policy sensitivity identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct SensitivityTag;
-
-/// Identifies a sensitivity level within a policy.
-pub type SensitivityId = IdType<std::num::NonZeroU16, SensitivityTag>;
-
-/// Tag type for type safety of policy category identifiers.
-#[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
-pub struct CategoryTag;
-
-/// Identifies a security category within a policy.
-pub type CategoryId = IdType<std::num::NonZeroU16, CategoryTag>;
-
-/// Set of security categories.
-pub type CategorySet = bitmap::IdSet<CategoryId>;
-
-/// Builder for constructing [`CategorySet`]s dynamically.
-pub type CategorySetBuilder = bitmap::IdSetBuilder<CategoryId>;
-
-/// Top-level [`Policy`] structure representing a parsed SELinux binary policy.
+/// Top-level parsed SELinux binary policy.
 #[derive(Debug, Parse, Serialize, Validate)]
-pub struct Policy {
+pub(crate) struct Policy {
     magic: Magic,
     signature: Signature,
     version: PolicyVersion,
@@ -181,7 +163,8 @@ impl Policy {
     }
 
     /// Returns the policy version.
-    pub fn version(&self) -> PolicyVersion {
+    #[cfg(test)]
+    fn version(&self) -> PolicyVersion {
         self.version
     }
 
@@ -191,17 +174,17 @@ impl Policy {
     }
 
     /// Returns the policy capabilities set.
-    pub fn policy_capabilities(&self) -> &PolicyCapSet {
+    fn policy_capabilities(&self) -> &PolicyCapSet {
         &self.policy_capabilities
     }
 
     /// Returns the permissive types set.
-    pub fn permissive_map(&self) -> &PermissiveTypeSet {
+    fn permissive_map(&self) -> &PermissiveTypeSet {
         &self.permissive_map
     }
 
     /// Returns the common symbols table.
-    pub fn common_symbols(&self) -> &IdAndNameIndexed<SymbolArray<CommonSymbol>> {
+    fn common_symbols(&self) -> &IdAndNameIndexed<SymbolArray<CommonSymbol>> {
         &self.common_symbols
     }
 
@@ -211,7 +194,7 @@ impl Policy {
     }
 
     /// Returns the roles table.
-    pub fn roles(&self) -> &IdAndNameIndexed<SymbolArray<Role>> {
+    fn roles(&self) -> &IdAndNameIndexed<SymbolArray<Role>> {
         &self.roles
     }
 
@@ -221,7 +204,7 @@ impl Policy {
     }
 
     /// Returns the users table.
-    pub fn users(&self) -> &IdAndNameIndexed<SymbolArray<User>> {
+    fn users(&self) -> &IdAndNameIndexed<SymbolArray<User>> {
         &self.users
     }
 
@@ -231,43 +214,43 @@ impl Policy {
     }
 
     /// Returns the sensitivities table.
-    pub fn sensitivities(&self) -> &IdAndNameIndexed<SymbolArray<Sensitivity>> {
+    fn sensitivities(&self) -> &IdAndNameIndexed<SymbolArray<Sensitivity>> {
         &self.sensitivities
     }
 
     /// Returns the categories table.
-    pub fn categories(&self) -> &IdAndNameIndexed<SymbolArray<Category>> {
+    fn categories(&self) -> &IdAndNameIndexed<SymbolArray<Category>> {
         &self.categories
     }
 
     /// Returns the access vector rules table.
-    pub fn access_vector_rules(&self) -> &IndexedAccessVectorRules {
+    fn access_vector_rules(&self) -> &IndexedAccessVectorRules {
         &self.access_vector_rules
     }
 
     /// Returns the list of conditional nodes.
     #[cfg(test)]
-    pub(crate) fn conditional_nodes(&self) -> &[ConditionalNode] {
+    fn conditional_nodes(&self) -> &[ConditionalNode] {
         self.conditional_nodes.as_ref()
     }
 
     /// Returns the role transitions rules array.
-    pub(crate) fn role_transitions(&self) -> &[RoleTransition] {
+    fn role_transitions(&self) -> &[RoleTransition] {
         self.role_transitions.as_ref()
     }
 
     /// Returns the role allow rules array.
-    pub(crate) fn role_allowlist(&self) -> &[RoleAllow] {
+    fn role_allowlist(&self) -> &[RoleAllow] {
         self.role_allowlist.as_ref()
     }
 
     /// Returns the filename transitions table.
-    pub fn filename_transitions(&self) -> &FilenameTransitions {
+    fn filename_transitions(&self) -> &FilenameTransitions {
         &self.filename_transitions
     }
 
     /// Returns the initial SIDs table.
-    pub fn initial_sids(&self) -> &InitialSids {
+    fn initial_sids(&self) -> &InitialSids {
         &self.initial_sids
     }
 
@@ -277,17 +260,17 @@ impl Policy {
     }
 
     /// Returns generic filesystem labeling statements (`genfscon`).
-    pub(crate) fn generic_fs_contexts(&self) -> &[GenfsCon] {
+    fn generic_fs_contexts(&self) -> &[GenfsCon] {
         &self.generic_fs_contexts
     }
 
     /// Returns the MLS range transitions array.
-    pub(crate) fn range_transitions(&self) -> &[RangeTransition] {
+    fn range_transitions(&self) -> &[RangeTransition] {
         &self.range_transitions
     }
 
     /// Returns the type attribute maps table.
-    pub fn type_attribute_maps(&self) -> &TypeAttributeMaps {
+    fn type_attribute_maps(&self) -> &TypeAttributeMaps {
         &self.type_attribute_maps
     }
 }
@@ -426,7 +409,7 @@ mod parse_tests {
 }
 
 #[cfg(test)]
-pub(crate) fn assert_bytes_eq(left: &[u8], right: &[u8]) {
+fn assert_bytes_eq(left: &[u8], right: &[u8]) {
     if left != right {
         let min_len = std::cmp::min(left.len(), right.len());
         for i in 0..min_len {

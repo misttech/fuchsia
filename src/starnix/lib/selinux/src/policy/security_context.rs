@@ -24,11 +24,19 @@ pub struct SecurityContext {
     inner: Context,
 }
 
+impl std::ops::Deref for SecurityContext {
+    type Target = Context;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
 impl SecurityContext {
     /// Returns a new instance with the specified field values.
-    /// Fields are not validated against the policy until explicitly via `validate()`,
-    /// or implicitly via insertion into a [`SidTable`].
-    pub(crate) fn new(
+    /// Fields are not validated against the policy until explicitly via [`Self::validate`],
+    /// or implicitly via insertion into a [`crate::sid_table::SidTable`].
+    pub(super) fn new(
         user: UserId,
         role: RoleId,
         type_: TypeId,
@@ -43,22 +51,24 @@ impl SecurityContext {
         Self { inner }
     }
 
-    pub(crate) fn from_policy_context(context: &Context) -> SecurityContext {
-        SecurityContext { inner: context.clone() }
+    /// Constructs a [`SecurityContext`] from a policy [`Context`], normalizing equal low and high
+    /// MLS levels via [`Self::new`].
+    pub(super) fn from_policy_context(context: &Context) -> SecurityContext {
+        Self::new(
+            context.user(),
+            context.role(),
+            context.type_(),
+            context.low_level().clone(),
+            context.high_level().cloned(),
+        )
     }
-}
 
-impl std::ops::Deref for SecurityContext {
-    type Target = Context;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl SecurityContext {
-    /// Returns [`SecurityContext`] parsed from `security_context`, against the supplied
-    /// `policy`. The returned structure is guaranteed to be valid for this `policy`.
+    /// Parses a security context string into a [`SecurityContext`] structure, resolving user, role,
+    /// type, sensitivity, and category names against the supplied `policy`.
+    ///
+    /// Semantic consistency across the resolved fields (such as user-role and role-type
+    /// authorizations or MLS range validity) is not checked here; call [`Self::validate`] to
+    /// validate the resulting [`SecurityContext`] against the policy.
     ///
     /// Security Contexts in Multi-Level Security (MLS) and Multi-Category Security (MCS)
     /// policies take the form:
@@ -83,8 +93,8 @@ impl SecurityContext {
     /// e.g. "u:r:t:s0:c1-s1:c1,c2,c3" has a sensitivity range, with categories
     ///      associated with both low and high ends.
     ///
-    /// Returns an error if the [`security_context`] is not a syntactically valid
-    /// Security Context string, or the fields are not valid under the current policy.
+    /// Returns an error if `security_context` is not a syntactically valid
+    /// Security Context string, or if any field name is not defined in `policy`.
     pub(super) fn from_string(
         policy: &Policy,
         security_context: NullessByteStr<'_>,
@@ -222,7 +232,7 @@ impl SecurityContext {
 
 impl MlsLevel {
     /// Parses [`MlsLevel`] from the supplied string slice.
-    pub(super) fn from_string(policy: &Policy, level: &str) -> Result<Self, SecurityContextError> {
+    fn from_string(policy: &Policy, level: &str) -> Result<Self, SecurityContextError> {
         if level.is_empty() {
             return Err(SecurityContextError::InvalidSyntax);
         }
@@ -273,11 +283,11 @@ impl MlsLevel {
             .id())
     }
 
-    pub fn category_spans(&self) -> impl Iterator<Item = CategorySpan> + '_ {
+    fn category_spans(&self) -> impl Iterator<Item = CategorySpan> + '_ {
         self.categories().spans()
     }
 
-    pub fn to_string(&self, policy: &Policy) -> Vec<u8> {
+    fn to_string(&self, policy: &Policy) -> Vec<u8> {
         let sensitivity = policy.sensitivities().get_by_id(self.sensitivity()).unwrap().name();
         let categories = self
             .category_spans()
@@ -296,7 +306,7 @@ impl MlsLevel {
 /// Describes an entry in a category specification, which may be a single category
 /// (in which case `low` = `high`) or a span of consecutive categories. The bounds
 /// are included in the span.
-pub type CategorySpan = IdSpan<CategoryId>;
+type CategorySpan = IdSpan<CategoryId>;
 
 impl IdSpan<CategoryId> {
     /// Returns `Vec<u8>` describing the category, or category range.
