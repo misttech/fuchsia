@@ -1,10 +1,7 @@
 # Tracing the netstack
 
-If you are using Netstack2 as the system network stack (the current default for
-every product except those on RISC-V), you can enable tracing for the netstack
-by setting the `enable_netstack2_tracing` GN arg to `true`. If you are using
-Netstack3, you don't have to do anything to enable tracing: Netstack3 has
-tracing support compiled in by default.
+Netstack3 has tracing support compiled in by default, so you don't have to do
+anything to enable it.
 
 Ensure that your `fx set` includes `--with-base //bundles/tools`, otherwise
 Netstack will fail to connect to `trace_manager` at initialization time.

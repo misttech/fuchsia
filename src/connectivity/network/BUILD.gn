@@ -5,15 +5,6 @@
 import("//build/components.gni")
 import("//src/connectivity/network/unified_binary/network_unified_binary.gni")
 
-declare_args() {
-  enable_netstack2_tracing = false
-}
-
-_netstack2_component = "netstack:component"
-if (enable_netstack2_tracing) {
-  _netstack2_component = "netstack:component-with-tracing-dropin"
-}
-
 fuchsia_component("component") {
   component_name = "network"
   manifest = "meta/network-default.cml"
@@ -26,15 +17,6 @@ fuchsia_component("component") {
 fuchsia_component("component-basic") {
   component_name = "network"
   manifest = "meta/network-basic.cml"
-}
-
-fuchsia_package("netstack2") {
-  package_name = "netstack"
-  deps = [ _netstack2_component ]
-  visibility = [
-    ":*",
-    "//src/connectivity/network/tests/benchmarks/socket-loopback:*",
-  ]
 }
 
 network_unified_binary_regular_and_gub_packages("netstack3") {
