@@ -332,9 +332,6 @@ template("run_fuchsia_bazel_sdk_tests") {
       } else {
         not_needed([ "_remote_build_strategy" ])
       }
-      if (bazel_upload_build_events != "") {
-        args += [ "--bazel-config=" + bazel_upload_build_events ]
-      }
 
       args += [
         "--prebuilt-python-version-file",

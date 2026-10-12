@@ -30,13 +30,4 @@ declare_args() {
   # - 'toplevel' and 'minimal' can save significant download bandwidth
   # - 'all' is useful for debugging remote build issues
   bazel_rbe_download_outputs = rbe_settings.bazel_download_outputs
-
-  # DEPRECATED: Configure bazel to stream build events and results to a service.
-  # This option is now deprecated and ignored. Use '--resultstore' or 'fx
-  # resultstore' instead.
-  bazel_upload_build_events = ""
 }
-
-assert(
-    bazel_upload_build_events == "",
-    "The GN variable 'bazel_upload_build_events' has been deprecated. Please use the command-line flag '--resultstore' on 'fx build' or configure a persistent default using 'fx resultstore enable [--local]'.")

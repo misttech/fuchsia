@@ -29,8 +29,8 @@ https://fuchsia.dev/internal/intree/concepts/remote-builds""",
     """Set `NINJA_STATUS_MAX_COMMANDS=N` in your environment to show the N longest-running build actions.
 Set `NINJA_STATUS_REFRESH_MILLIS=t` to change the refresh rate.""",
     """Set `FX_BUILD_RBE_STATS=1` in your environment to remote execution statistics after each build.""",
-    """Publish build results to ResultStore (go/fxbtx) by setting in args.gn:
-  bazel_upload_build_events = \"resultstore\" """,
+    """Publish build results to ResultStore (go/fxbtx) by running:
+  fx resultstore enable""",
     # fx
     """Help with fx commands: fx help COMMAND""",
     """Build service authentication errors?  Troubleshoot with `fx rbe auth`.""",

@@ -165,7 +165,6 @@ esac
 readonly RESULTSTORE_invocation_id="$("${PREBUILT_PYTHON3}" -S -c 'import uuid; print(uuid.uuid4())')"
 
 # This is for ResultStore.
-# TODO: depend on GN arg bazel_upload_build_events = {"sponge", "resultstore"}
 readonly RESULTSTORE_URL="http://go/fxbtx"
 readonly RESULTSTORE_SUB_BUILDS_LINK="$RESULTSTORE_URL/?q=PARENT_BUILD_ID:$RESULTSTORE_invocation_id"
 
