@@ -1298,6 +1298,156 @@ with open(args.out_file, "wt") as f:
             debug_file = build_id_dir / build_id[0:2] / f"{build_id[2:]}.debug"
             self.assertTrue(debug_file.is_file())
 
+    def test_verify_elf_sizes_clean_pass_and_exemptions(self) -> None:
+        fuchsia_dir = self._root / "fuchsia"
+        build_dir = fuchsia_dir / "out" / "default"
+        build_dir.mkdir(parents=True)
+
+        elf_sizes_path = build_dir / "obj/products/core/elf_sizes.json"
+        write_json(
+            elf_sizes_path,
+            {
+                "files": [
+                    # Present source-built Fuchsia ELF (entry 0).
+                    {
+                        "build_id": "420000000000",
+                        "path": "bazel-out/fuchsia/blobs/merkle_source_fuchsia",
+                    },
+                    # Present Linux / Starnix ELF (entry 3, os="linux").
+                    {
+                        "build_id": "420000000003",
+                        "path": "bazel-out/fuchsia/blobs/merkle_source_linux",
+                    },
+                    # Exempted Bucket-2 prebuilt shared library (no .debug in prebuilt/.build-id).
+                    {
+                        "build_id": "bb2222222222",
+                        "path": "bazel-out/fuchsia/blobs/merkle_bucket2_libffmpeg",
+                    },
+                    # Exempted prebuilt toolchain runtime .so (in exempt_build_ids).
+                    {
+                        "build_id": "aa1111111111",
+                        "path": "bazel-out/fuchsia/blobs/merkle_toolchain_libcxx",
+                    },
+                ]
+            },
+        )
+
+        exporter = DebugSymbolExporter(
+            build_dir=build_dir,
+            log=self._log,
+            log_error=self._log_error,
+        )
+        exporter.parse_debug_symbols(self._manifest_entries[:4])
+        for entry in self._manifest_entries[:4]:
+            (build_dir / entry["debug"]).write_bytes(b"")
+
+        output_dir = build_dir / "exported_debug_symbols"
+        self.assertTrue(
+            exporter.export_debug_symbols(
+                output_dir,
+                elf_sizes_paths=[elf_sizes_path],
+                prebuilt_merkles={"merkle_bucket2_libffmpeg"},
+                exempt_build_ids={"aa1111111111"},
+                prebuilt_build_id_dir=fuchsia_dir / "prebuilt" / ".build-id",
+            )
+        )
+        self.assertListEqual(self._err_lines, [])
+
+    def test_verify_elf_sizes_fails_on_missing_source_built_elf(self) -> None:
+        build_dir = self._root / "out" / "default"
+        build_dir.mkdir(parents=True)
+
+        elf_sizes_path = build_dir / "obj/products/core/elf_sizes.json"
+        write_json(
+            elf_sizes_path,
+            {
+                "files": [
+                    {
+                        "build_id": "420000000000",
+                        "path": "bazel-out/fuchsia/blobs/merkle_present",
+                    },
+                    {
+                        "build_id": "deadbeef12345678",
+                        "path": "bazel-out/fuchsia/blobs/merkle_missing_source_elf",
+                    },
+                ]
+            },
+        )
+
+        exporter = DebugSymbolExporter(
+            build_dir=build_dir,
+            log=self._log,
+            log_error=self._log_error,
+        )
+        exporter.parse_debug_symbols(self._manifest_entries[:1])
+
+        output_dir = build_dir / "exported_debug_symbols"
+        self.assertFalse(
+            exporter.export_debug_symbols(
+                output_dir,
+                elf_sizes_paths=[elf_sizes_path],
+            )
+        )
+        self.assertEqual(len(self._err_lines), 1)
+        self.assertIn("deadbeef12345678", self._err_lines[0])
+        self.assertIn(
+            "bazel-out/fuchsia/blobs/merkle_missing_source_elf",
+            self._err_lines[0],
+        )
+        self.assertIn("source-built ELF", self._err_lines[0])
+
+    def test_verify_elf_sizes_fails_on_missing_bucket1_prebuilt_elf(
+        self,
+    ) -> None:
+        fuchsia_dir = self._root / "fuchsia"
+        build_dir = fuchsia_dir / "out" / "default"
+        build_dir.mkdir(parents=True)
+
+        # Create prebuilt .debug file in //prebuilt/.build-id ("Bucket 1").
+        prebuilt_build_id_dir = fuchsia_dir / "prebuilt" / ".build-id"
+        prebuilt_debug = prebuilt_build_id_dir / "ab/cdef0123456789.debug"
+        prebuilt_debug.parent.mkdir(parents=True, exist_ok=True)
+        prebuilt_debug.write_bytes(b"")
+
+        elf_sizes_path = build_dir / "obj/products/core/elf_sizes.json"
+        write_json(
+            elf_sizes_path,
+            {
+                "files": [
+                    {
+                        "build_id": "abcdef0123456789",
+                        "path": "bazel-out/fuchsia/blobs/merkle_bucket1_prebuilt",
+                    }
+                ]
+            },
+        )
+
+        exporter = DebugSymbolExporter(
+            build_dir=build_dir,
+            log=self._log,
+            log_error=self._log_error,
+        )
+        exporter.parse_debug_symbols([])
+
+        output_dir = build_dir / "exported_debug_symbols"
+        self.assertFalse(
+            exporter.export_debug_symbols(
+                output_dir,
+                elf_sizes_paths=[elf_sizes_path],
+                prebuilt_merkles={"merkle_bucket1_prebuilt"},
+                prebuilt_build_id_dir=prebuilt_build_id_dir,
+            )
+        )
+        self.assertEqual(len(self._err_lines), 1)
+        self.assertIn("abcdef0123456789", self._err_lines[0])
+        self.assertIn(
+            "bazel-out/fuchsia/blobs/merkle_bucket1_prebuilt",
+            self._err_lines[0],
+        )
+        self.assertIn(
+            "prebuilt/.build-id/ab/cdef0123456789.debug", self._err_lines[0]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -715,10 +715,97 @@ class DebugSymbolExporter(object):
             dst_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src_path, dst_path)
 
+    def verify_elf_sizes_debug_symbols(
+        self,
+        elf_sizes_paths: T.Sequence[Path] = (),
+        prebuilt_merkles: T.Container[str] = (),
+        exempt_build_ids: T.Container[str] = (),
+        prebuilt_build_id_dir: Path | None = None,
+    ) -> bool:
+        """Verify assembled target ELFs in elf_sizes.json have exported debug symbols.
+
+        Rules enforced:
+          1. Every source-built ELF in elf_sizes.json must be present in
+             exported debug symbols (self._build_ids_to_labels).
+          2. Every prebuilt ELF whose .debug file exists in prebuilt_build_id_dir
+             must be present in exported debug symbols.
+          3. Prebuilt ELFs without a .debug file in prebuilt_build_id_dir or
+             explicitly listed in exempt_build_ids (such as third-party vendor
+             binaries, OOT prebuilt package runtime libraries, local builds
+             without fetch-optional=debug-symbols, or prebuilt toolchain
+             multilib runtime libraries on sanitizer builds) are exempted.
+
+        Args:
+            elf_sizes_paths: Sequence of elf_sizes.json manifest paths to validate
+                against exported debug symbols.
+
+            prebuilt_merkles: Container of merkle roots belonging to prebuilt blobs.
+
+            exempt_build_ids: Container of GNU build-id hex strings exempted from
+                symbol verification (e.g. prebuilt toolchain runtime libraries).
+
+            prebuilt_build_id_dir: Optional path to //prebuilt/.build-id directory.
+
+        Returns:
+            True if all non-exempt assembled ELFs have exported debug symbols,
+            False otherwise.
+        """
+        if not elf_sizes_paths:
+            return True
+
+        missing_errors: list[str] = []
+
+        for elf_sizes_path in elf_sizes_paths:
+            with elf_sizes_path.open("rt") as f:
+                elf_sizes_json = json.load(f)
+
+            for entry in elf_sizes_json.get("files", []):
+                build_id: str = entry.get("build_id", "")
+                if (
+                    not build_id
+                    or os.path.basename(entry.get("path", ""))
+                    in _DEBUG_BINARY_DENYLIST
+                    or build_id in self._build_ids_to_labels
+                    or build_id in exempt_build_ids
+                ):
+                    continue
+
+                blob_path: str = entry.get("path", "<unknown>")
+                rel_debug = Path(build_id[:2]) / f"{build_id[2:]}.debug"
+
+                if os.path.basename(blob_path) in prebuilt_merkles:
+                    if (
+                        prebuilt_build_id_dir is not None
+                        and (prebuilt_build_id_dir / rel_debug).exists()
+                    ):
+                        missing_errors.append(
+                            f"  - build_id={build_id} path={blob_path} "
+                            f"(prebuilt ELF has symbol file at prebuilt/.build-id/{rel_debug})"
+                        )
+                    continue
+
+                missing_errors.append(
+                    f"  - build_id={build_id} path={blob_path} (source-built ELF)"
+                )
+
+        if missing_errors:
+            if self._log_error:
+                self._log_error(
+                    "Missing debug symbols in exported debug_symbols.json for assembled ELF binaries:\n"
+                    + "\n".join(missing_errors)
+                )
+            return False
+
+        return True
+
     def export_debug_symbols(
         self,
         output_dir: Path | str,
         depth: int = 0,
+        elf_sizes_paths: T.Sequence[Path] = (),
+        prebuilt_merkles: T.Container[str] = (),
+        exempt_build_ids: T.Container[str] = (),
+        prebuilt_build_id_dir: Path | None = None,
     ) -> bool:
         """Create a new output directory with symlinks to debug symbol files.
 
@@ -739,6 +826,16 @@ class DebugSymbolExporter(object):
 
             depth: Optional. Maximum number of concurrent dump_syms invocations to use.
                 Default is to use the number of available CPU cores.
+
+            elf_sizes_paths: Optional sequence of elf_sizes.json paths to validate against
+                exported debug symbols.
+
+            prebuilt_merkles: Optional container of merkle roots belonging to prebuilt blobs.
+
+            exempt_build_ids: Optional container of build IDs exempted from symbol verification
+                (such as prebuilt toolchain runtime shared libraries on sanitizer builds).
+
+            prebuilt_build_id_dir: Optional path to //prebuilt/.build-id directory.
 
         Returns:
             True on success, False on error.
@@ -766,7 +863,14 @@ class DebugSymbolExporter(object):
               installation path, and its optional breakpad file.
         """
         log = self._log
-        self._log_error
+
+        if not self.verify_elf_sizes_debug_symbols(
+            elf_sizes_paths=elf_sizes_paths,
+            prebuilt_merkles=prebuilt_merkles,
+            exempt_build_ids=exempt_build_ids,
+            prebuilt_build_id_dir=prebuilt_build_id_dir,
+        ):
+            return False
 
         output_dir = Path(output_dir)
 

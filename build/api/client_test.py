@@ -890,6 +890,49 @@ Done!
             expected_err,
         )
 
+        # Verify that if images.json points to an elf_sizes.json from the last build
+        # with an unexported source-built ELF, export_last_build_debug_symbols fails.
+        elf_sizes_rel = "obj/products/minimal/elf_sizes.json"
+        _write_json(
+            self._build_dir / elf_sizes_rel,
+            {
+                "files": [
+                    {
+                        "build_id": "missing_source_build_id",
+                        "path": "bazel-out/fuchsia_x64-opt/bin/blobs/merkle_missing",
+                    }
+                ]
+            },
+        )
+        with (self._build_dir / "build_api_client_info").open("at") as f:
+            f.write("\nimages=images.json\n")
+        _write_json(
+            self._build_dir / "images.json",
+            [{"name": "elf_sizes.json", "path": elf_sizes_rel}],
+        )
+        self._build_ninja_path.write_text(
+            f"""
+rule whatever
+  command = ignored
+
+build obj/src/foo/lib_shared/libfoo.so.unstripped obj/src/bar/binary.unstripped obj/src/zoo/binary.unstripped {elf_sizes_rel}: whatever ../../prebuilt/.build-id/aa/bbbbbbbbbbb.debug
+
+build $:default: phony obj/src/foo/lib_shared/libfoo.so.unstripped {elf_sizes_rel}
+"""
+        )
+        (self._build_dir / "last_ninja_artifacts.txt").unlink(missing_ok=True)
+        (self._build_dir / "last_ninja_inputs.txt").unlink(missing_ok=True)
+        self.assert_error(
+            [
+                "export_last_build_debug_symbols",
+                f"--output-dir={export_dir}",
+            ],
+            expected_err=(
+                "ERROR: Missing debug symbols in exported debug_symbols.json for assembled ELF binaries:\n"
+                "  - build_id=missing_source_build_id path=bazel-out/fuchsia_x64-opt/bin/blobs/merkle_missing (source-built ELF)\n"
+            ),
+        )
+
     def test_target_metadata(self) -> None:
         self.maxDiff = None
 
@@ -1384,6 +1427,191 @@ default $:default
             )
             + "\n",
         )
+
+    def test_export_debug_symbols_elf_sizes_verification(self) -> None:
+        self._build_ninja_path.write_text(
+            """
+rule whatever
+  command = ignored
+
+build obj/src/foo/lib_shared/libfoo.so.unstripped: whatever
+build obj/products/core/elf_sizes.json: whatever
+
+build $:default: phony obj/src/foo/lib_shared/libfoo.so.unstripped obj/products/core/elf_sizes.json
+"""
+        )
+        _write_file(
+            self._build_dir / "build_api_client_info",
+            "\n".join(
+                [
+                    "args=args.json",
+                    "build_info=build_info.json",
+                    "debug_symbols=debug_symbols.json",
+                    "images=images.json",
+                    "tests=tests.json",
+                ]
+            ),
+        )
+        (self._top_dir / ".jiri_manifest").write_text("")
+        (self._top_dir / "build/bazel/config").mkdir(
+            parents=True, exist_ok=True
+        )
+        (self._top_dir / "build/bazel/config/bazel_top_dir").write_text(
+            "gen/build/bazel\n"
+        )
+
+        # Create GN prebuilt package manifest in ninja_outputs.json and Bazel
+        # rebased_package_manifest.json in BazelPaths.execroot.
+        pkg_manifest_rel = "obj/src/media/codec/package_manifest.json"
+        ninja_outputs = dict(self._ninja_outputs)
+        ninja_outputs["//src/media/codec:pkg"] = [pkg_manifest_rel]
+        _write_json(self._build_dir / "ninja_outputs.json", ninja_outputs)
+        _write_json(
+            self._build_dir / pkg_manifest_rel,
+            {
+                "blobs": [
+                    {
+                        "merkle": "merkle_gn_bucket2",
+                        "path": "lib/libffmpeg.so",
+                        "source_path": "../../prebuilt/third_party/ffmpeg/libffmpeg.so",
+                    }
+                ]
+            },
+        )
+
+        bazel_execroot = (
+            self._build_dir / "gen/build/bazel/output_base/execroot/_main"
+        )
+        rebased_pm = (
+            bazel_execroot
+            / "bazel-out/aarch64-opt/bin/vendor/pkg/rebased_package_manifest.json"
+        )
+        _write_json(
+            rebased_pm,
+            {
+                "blobs": [
+                    {
+                        "merkle": "merkle_bazel_bucket2",
+                        "path": "bin/vendor_bin",
+                        "source_path": "content/blobs/merkle_bazel_bucket2",
+                    },
+                    {
+                        "merkle": "merkle_bazel_product_config_bucket2",
+                        "path": "bin/product_config_vendor_bin",
+                        "source_path": "content/blobs/merkle_bazel_product_config_bucket2",
+                    },
+                ]
+            },
+        )
+
+        # A GN source-built package imported into Bazel via @gn_targets also gets a
+        # rebased_package_manifest.json under bazel-out, but its merkle is recorded in
+        # gn_source_merkles from its GN package_manifest.json so it must never be treated
+        # as a prebuilt exemption.
+        gn_src_pm_rel = "obj/src/pkg/package_manifest.json"
+        _write_json(
+            self._build_dir / gn_src_pm_rel,
+            {
+                "blobs": [
+                    {
+                        "merkle": "merkle_missing_source",
+                        "path": "bin/source_elf",
+                        "source_path": "source_elf",
+                    }
+                ]
+            },
+        )
+        ninja_outputs["//src/pkg:pkg"] = [gn_src_pm_rel]
+        _write_json(self._build_dir / "ninja_outputs.json", ninja_outputs)
+        _write_json(
+            bazel_execroot
+            / "bazel-out/aarch64-opt/bin/src/pkg/pkg_expanded/rebased_package_manifest.json",
+            {
+                "blobs": [
+                    {
+                        "merkle": "merkle_missing_source",
+                        "path": "bin/source_elf",
+                        "source_path": "content/blobs/merkle_missing_source",
+                    }
+                ]
+            },
+        )
+
+        toolchain_debug = (
+            self._top_dir
+            / f"prebuilt/third_party/clang/{self._host_tag}/lib/debug/.build-id/aa/1111111111.debug"
+        )
+        toolchain_debug.parent.mkdir(parents=True, exist_ok=True)
+        toolchain_debug.write_bytes(b"")
+
+        elf_sizes_rel = "obj/products/core/elf_sizes.json"
+        _write_json(
+            self._build_dir / "images.json",
+            [{"name": "elf_sizes.json", "path": elf_sizes_rel}],
+        )
+        _write_json(
+            self._build_dir / elf_sizes_rel,
+            {
+                "files": [
+                    {
+                        "build_id": "00000000000000001",
+                        "path": "bazel-out/fuchsia/blobs/merkle_libfoo",
+                    },
+                    {
+                        "build_id": "bb2222222222",
+                        "path": "bazel-out/fuchsia/blobs/merkle_gn_bucket2",
+                    },
+                    {
+                        "build_id": "cc3333333333",
+                        "path": "bazel-out/aarch64-opt/bin/vendor/pkg/content/blobs/merkle_bazel_bucket2",
+                    },
+                    {
+                        "build_id": "dd4444444444",
+                        "path": "bazel-out/fuchsia_sdk_arm64-opt/bin/vendor/product/smart_product_config/blobs/merkle_bazel_product_config_bucket2",
+                    },
+                    {
+                        "build_id": "aa1111111111",
+                        "path": "bazel-out/fuchsia/blobs/merkle_toolchain_libcxx",
+                    },
+                ]
+            },
+        )
+
+        export_dir = self._build_dir / "exported_symbols"
+        self.assert_output(
+            [
+                "export_last_build_debug_symbols",
+                "--quiet",
+                "--output-dir",
+                export_dir,
+            ],
+            "",
+        )
+
+        # Adding an assembled source-built ELF missing from debug_symbols.json fails export,
+        # even if its merkle also appears inside a @gn_targets rebased_package_manifest.json.
+        _write_json(
+            self._build_dir / elf_sizes_rel,
+            {
+                "files": [
+                    {
+                        "build_id": "deadbeef99999999",
+                        "path": "bazel-out/fuchsia/blobs/merkle_missing_source",
+                    }
+                ]
+            },
+        )
+        ret = self.run_client(
+            [
+                "export_last_build_debug_symbols",
+                "--quiet",
+                "--output-dir",
+                export_dir,
+            ]
+        )
+        self.assertEqual(ret.returncode, 1)
+        self.assertIn("deadbeef99999999", ret.stderr)
+        self.assertIn("source-built ELF", ret.stderr)
 
 
 if __name__ == "__main__":
