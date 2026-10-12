@@ -30,6 +30,7 @@ idk_cc_source_library(
     # Widely used in GN, so GN visibility stays open via raw_overwrite; Bazel
     # visibility is limited to actual Bazel dependents.
     visibility = [
+        "//sdk/lib/sys/service/cpp:__pkg__",
         "//src/developer/build_info:__pkg__",
     ],  # @bazel2gn:raw_overwrite:[ "//*" ]
     deps = [

@@ -2,9 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-visibility(["//build/bazel/rules/idk/private"])
-
 """Lists of targets included in the Fuchsia IDK."""
+
+visibility(["//build/bazel/rules/idk/private"])
 
 STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     # buildifier: keep sorted
@@ -14,6 +14,7 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/async-loop:async-loop_idk",
     "//sdk/lib/async-loop-testing/cpp:cpp_idk",
     "//sdk/lib/async-testing:async-testing_idk",
+    "//sdk/lib/async_patterns/cpp:cpp_idk",
     "//sdk/lib/component/incoming/cpp:cpp_idk",
     "//sdk/lib/component/outgoing/cpp:cpp_idk",
     "//sdk/lib/fidl:fidl_idk",
@@ -28,9 +29,11 @@ STABLE_CC_SOURCE_LIBRARY_ATOMS = [
     "//sdk/lib/fidl_base:fidl_base_idk",
     "//sdk/lib/fit:fit_idk",
     "//sdk/lib/fit-promise:fit-promise_idk",
+    "//sdk/lib/images/cpp:cpp_idk",
     "//sdk/lib/magma_common:magma_common_idk",
     "//sdk/lib/media/cpp:no_converters_idk",
     "//sdk/lib/stdcompat:stdcompat_idk",
+    "//sdk/lib/sys/service/cpp:cpp_idk",
     "//sdk/lib/syslog/cpp:cpp_idk",
     "//sdk/lib/syslog/structured_backend:structured_backend_idk",
     "//sdk/lib/utf-utils:utf-utils_idk",

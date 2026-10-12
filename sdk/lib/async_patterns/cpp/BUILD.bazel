@@ -1,0 +1,64 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+idk_cc_source_library(
+    name = "cpp",
+    srcs = [
+        "internal/dispatcher_bound_storage.cc",
+        "internal/receiver_base.cc",
+        "internal/task_queue.cc",
+        "task_scope.cc",
+    ],
+    hdrs = [
+        "callback.h",
+        "dispatcher_bound.h",
+        "function.h",
+        "internal/dispatcher_bound_storage.h",
+        "internal/receiver_base.h",
+        "internal/sendable.h",
+        "internal/tag.h",
+        "internal/task_queue.h",
+        "pending_call.h",
+        "receiver.h",
+        "sendable.h",
+        "task_scope.h",
+    ],
+    api_area = "FIDL",
+    category = "partner",
+    idk_name = "async_patterns_cpp",
+    include_base = "//sdk",
+    public_configs = [
+        "//sdk/config",
+    ],
+    stable = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//sdk:__pkg__",
+        "//sdk/lib/async_patterns/cpp/tests:__pkg__",
+        "//sdk/lib/async_patterns/testing/cpp:__pkg__",
+        "//sdk/lib/driver/devicetree/manager:__pkg__",
+        "//src/developer/forensics/feedback_data/system_log_recorder:__pkg__",
+        "//src/devices/bin/driver_manager:__pkg__",
+        "//src/devices/securemem/drivers/aml-securemem:__pkg__",
+        "//src/devices/usb/drivers/dwc3:__pkg__",
+        "//src/firmware/lib/fastboot/test:__pkg__",
+        "//src/power/testing/system-integration:__subpackages__",
+        "//src/sysmem/server:__pkg__",
+        "//src/ui/scenic/bin:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/lib/async",
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/fit",
+        "//sdk/lib/fit-promise",
+        "//sdk/lib/stdcompat",
+        "//zircon/system/ulib/sync:sync-cpp",
+    ],
+)

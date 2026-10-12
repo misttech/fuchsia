@@ -1,0 +1,32 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+idk_cc_source_library(
+    name = "cpp",
+    srcs = [
+        "images.cc",
+    ],
+    hdrs = [
+        "images.h",
+    ],
+    api_area = "Graphics",
+    category = "partner",
+    idk_name = "images_cpp",
+    include_base = "//sdk",
+    public_configs = [
+        "//sdk/config",
+    ],
+    stable = True,
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//sdk/lib/ui/scenic/cpp:__pkg__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.images:fuchsia.images_hlcpp",
+    ],
+)

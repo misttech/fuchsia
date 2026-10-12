@@ -1,0 +1,48 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+load("//build/bazel/rules/idk:idk_cc_source_library.bzl", "idk_cc_source_library")
+
+package(default_applicable_licenses = ["//:license"])
+
+idk_cc_source_library(
+    name = "cpp",
+    srcs = [
+        "service.cc",
+        "service_aggregate.cc",
+        "service_handler.cc",
+    ],
+    hdrs = [
+        "service.h",
+        "service_aggregate.h",
+        "service_handler.h",
+    ],
+    api_area = "Component Framework",
+    category = "partner",
+    idk_name = "sys_service_cpp",
+    implementation_deps = [
+        "//sdk/lib/vfs/cpp",
+    ],
+    include_base = "//sdk",
+    public_configs = [
+        "//sdk/config",
+    ],
+    stable = True,
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    visibility = [
+        "//build/sdk:__pkg__",
+        "//sdk/lib/driver/power/cpp:__pkg__",
+        "//sdk/lib/sys/cpp:__pkg__",
+        "//src/devices/bus/drivers/platform/test/power-integration-test:__pkg__",
+        "//src/lib/intl/intl_property_provider_impl:__pkg__",
+        "//src/lib/intl/time_zone_info:__pkg__",
+        "//vendor/google:__subpackages__",
+    ],
+    deps = [
+        "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
+        "//sdk/lib/async:async-cpp",
+        "//sdk/lib/fdio",
+        "//zircon/system/ulib/zx",
+    ],
+)
