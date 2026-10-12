@@ -33,6 +33,7 @@ from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
 from mobly import logger, signals
+from mobly import utils as mobly_utils
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "IPerfServer"
 KILOBITS = 1024
@@ -664,7 +665,9 @@ class IPerfServerOverSsh(IPerfServerBase):
             path: Path to write logs to.
         """
         timestamp = logger.normalize_log_line_timestamp(
-            logger.epoch_to_log_line_timestamp(utils.get_current_epoch_time())
+            logger.epoch_to_log_line_timestamp(
+                mobly_utils.get_current_epoch_time()
+            )
         )
 
         # OpenWrt does not use systemd/journalctl; skip downloading when journalctl is unavailable

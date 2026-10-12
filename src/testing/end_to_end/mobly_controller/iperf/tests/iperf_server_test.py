@@ -487,7 +487,7 @@ class IPerfServerOverSshTest(unittest.TestCase):
 
     @mock.patch("builtins.open", new_callable=mock.mock_open)
     @mock.patch(
-        "iperf.iperf_server.utils.get_current_epoch_time",
+        "iperf.iperf_server.mobly_utils.get_current_epoch_time",
         return_value=1234567890000,
     )
     def test_download_logs_writes_file_when_journal_available(

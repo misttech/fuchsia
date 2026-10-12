@@ -36,15 +36,6 @@ FUCHSIA_MDNS_TYPE = "_fuchsia._udp.local."
 DAD_TIMEOUT_SEC = 30
 
 
-def get_current_epoch_time() -> int:
-    """Current epoch time in milliseconds.
-
-    Returns:
-        An integer representing the current epoch time in milliseconds.
-    """
-    return int(round(time.time() * 1000))
-
-
 def rand_hex_str(length: int) -> str:
     """Generates a random string of specified length, composed of hex digits
 

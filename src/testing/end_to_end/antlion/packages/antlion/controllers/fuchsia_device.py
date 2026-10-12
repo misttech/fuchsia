@@ -47,6 +47,7 @@ from honeydew.typing.custom_types import DeviceInfo, FidlEndpoint, IpPort
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
 from mobly import logger, signals
+from mobly import utils as mobly_utils
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "FuchsiaDevice"
 ACTS_CONTROLLER_REFERENCE_NAME = "fuchsia_devices"
@@ -710,7 +711,9 @@ class FuchsiaDevice:
         self.log.info(f"Taking snapshot of {self.name}")
 
         time_stamp = logger.sanitize_filename(
-            logger.epoch_to_log_line_timestamp(utils.get_current_epoch_time())
+            logger.epoch_to_log_line_timestamp(
+                mobly_utils.get_current_epoch_time()
+            )
         )
         out_dir = context.get_current_context().get_full_output_path()
         out_path = os.path.join(out_dir, f"{self.name}_{time_stamp}.zip")

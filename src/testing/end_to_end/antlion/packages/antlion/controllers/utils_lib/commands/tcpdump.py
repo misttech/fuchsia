@@ -10,9 +10,9 @@ from pathlib import Path
 from subprocess import Popen
 from types import TracebackType
 
-from antlion import utils
 from libs.commands.command import LinuxCommand
 from libs.proc.runner import Runner
+from mobly import utils
 from mobly.logger import (
     epoch_to_log_line_timestamp,
     normalize_log_line_timestamp,

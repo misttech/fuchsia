@@ -53,6 +53,7 @@ from libs.ssh import connection, settings
 from libs.types import ControllerConfig, Json
 from libs.validation import MapValidator
 from mobly import logger
+from mobly import utils as mobly_utils
 
 MOBLY_CONTROLLER_CONFIG_NAME: str = "AccessPoint"
 
@@ -511,7 +512,9 @@ class AccessPoint:
             path: Path to write logs to.
         """
         timestamp = logger.normalize_log_line_timestamp(
-            logger.epoch_to_log_line_timestamp(utils.get_current_epoch_time())
+            logger.epoch_to_log_line_timestamp(
+                mobly_utils.get_current_epoch_time()
+            )
         )
 
         dhcp_log = self.get_dhcp_logs()
