@@ -481,15 +481,11 @@ func (t *genericFuchsiaTarget) AddFFXPackageRepository(ctx context.Context, repo
 			if err != nil {
 				return err
 			}
-			var output struct {
-				Forwarding []struct {
-					Target map[string]string `json:"target"`
-				} `json:"forwarding"`
+			addr, err := parseFFXForwardTarget(line)
+			if err != nil {
+				return retry.Fatal(err)
 			}
-			if err := json.Unmarshal([]byte(line), &output); err != nil {
-				return err
-			}
-			overrideAddr = output.Forwarding[0].Target["Tcp"]
+			overrideAddr = addr
 			return nil
 		}, nil); err != nil {
 			return cleanup, err
@@ -502,6 +498,25 @@ func (t *genericFuchsiaTarget) AddFFXPackageRepository(ctx context.Context, repo
 	}
 	logger.Debugf(ctx, "added package repo to target %s", t.nodename)
 	return cleanup, nil
+}
+
+func parseFFXForwardTarget(line string) (string, error) {
+	var output struct {
+		Forwarding []struct {
+			Target map[string]string `json:"target"`
+		} `json:"forwarding"`
+	}
+	if err := json.Unmarshal([]byte(line), &output); err != nil {
+		return "", err
+	}
+	if len(output.Forwarding) == 0 {
+		return "", fmt.Errorf("no forwarding entries in ffx forward output: %s", strings.TrimSpace(line))
+	}
+	addr := output.Forwarding[0].Target["Tcp"]
+	if addr == "" {
+		return "", fmt.Errorf("missing Tcp target in ffx forward output: %s", strings.TrimSpace(line))
+	}
+	return addr, nil
 }
 
 // AddPackageRepository adds the given package repository to the target.

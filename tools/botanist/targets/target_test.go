@@ -173,3 +173,50 @@ func TestTestbedConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestParseFFXForwardTarget(t *testing.T) {
+	tests := []struct {
+		name    string
+		line    string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "valid forwarding output",
+			line: `{"forwarding":[{"host":{"Tcp":"127.0.0.1:8083"},"target":{"Tcp":"127.0.0.1:8083"}}]}` + "\n",
+			want: "127.0.0.1:8083",
+		},
+		{
+			name:    "ffx json error object",
+			line:    `{"type":"user","message":"Timeout attempting to reach target \"sorrel\"","code":1}` + "\n",
+			wantErr: true,
+		},
+		{
+			name:    "empty forwarding slice",
+			line:    `{"forwarding":[]}` + "\n",
+			wantErr: true,
+		},
+		{
+			name:    "missing Tcp target",
+			line:    `{"forwarding":[{"target":{}}]}` + "\n",
+			wantErr: true,
+		},
+		{
+			name:    "invalid json",
+			line:    `not json`,
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseFFXForwardTarget(test.line)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("parseFFXForwardTarget(%q) error = %v, wantErr %v", test.line, err, test.wantErr)
+			}
+			if got != test.want {
+				t.Errorf("parseFFXForwardTarget(%q) = %q, want %q", test.line, got, test.want)
+			}
+		})
+	}
+}
