@@ -64,6 +64,7 @@ _ARG_PREFIXES_TO_IGNORE = (
     "TMPDIR=",
     # RBE / Remote execution flags
     "--remote-flag=",
+    "--remote-worker-pool=",
     # Crash diagnostic / reproducers
     "-fcrash-diagnostics-dir=",
 )

@@ -13,6 +13,12 @@ import os
 import sys
 import tempfile
 import unittest
+
+# Ensure the fuchsia root is in sys.path so we can import the build packages hermetically
+_FUCHSIA_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+if _FUCHSIA_DIR not in sys.path:
+    sys.path.insert(0, _FUCHSIA_DIR)
+
 from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import Any
@@ -23,9 +29,21 @@ import fuchsia
 import output_leak_scanner
 import remote_action
 import remotetool
+from build.rbe import rbe_profile
 
 _temp_dir = None
 _orig_cwd = None
+_rbe_profile_patcher = None
+
+_FAKE_PROFILE = rbe_profile.fake(
+    rbe_instance="projects/fake-rbe-instance/instances/default",
+    remote_exec_root="/fake/exec/root",
+    worker_pools={
+        "default": "Pool=fake-default-pool",
+        "large": "Pool=fake-large-pool",
+    },
+    auth_type="fake-auth",
+)
 
 
 def setUpModule() -> None:
@@ -33,15 +51,22 @@ def setUpModule() -> None:
     # auxiliary '.inputs' files) would otherwise write to the build output directory
     # and violate GN action hermeticity.
     # To prevent this, we run all tests in this module inside a temporary directory.
-    global _temp_dir, _orig_cwd
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher
     _orig_cwd = os.getcwd()
     _temp_dir = tempfile.TemporaryDirectory()
     os.chdir(_temp_dir.name)
 
+    # Mock RBE profile load to prevent any disk reads of real profiles during test execution
+    _rbe_profile_patcher = mock.patch.object(rbe_profile, "load")
+    mock_rbe = _rbe_profile_patcher.start()
+    mock_rbe.return_value = _FAKE_PROFILE
+
 
 def tearDownModule() -> None:
     # Restore the original working directory and clean up the temporary directory.
-    global _temp_dir, _orig_cwd
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher
+    if _rbe_profile_patcher:
+        _rbe_profile_patcher.stop()
     if _orig_cwd:
         os.chdir(_orig_cwd)
     if _temp_dir:
@@ -1649,6 +1674,7 @@ class RemoteActionMainParserTests(unittest.TestCase):
         action = remote_action.RemoteAction(
             rewrapper=Path("/test-build/rewrapper"),
             command=["sleep", "1h"],
+            rbe_profile=_FAKE_PROFILE,
             options=["--canonicalize_working_dir=true"],
             exec_root=exec_root,
             working_dir=working_dir,
@@ -1683,6 +1709,7 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
         action = remote_action.RemoteAction(
             rewrapper=Path("/test-build/rewrapper"),
             command=["sleep", "1h"],
+            rbe_profile=_FAKE_PROFILE,
             options=["--canonicalize_working_dir=true"],
             exec_root=exec_root,
             working_dir=working_dir,
@@ -1717,6 +1744,7 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
         action = remote_action.RemoteAction(
             rewrapper=Path("/test-build/rewrapper"),
             command=["sleep", "1h"],
+            rbe_profile=_FAKE_PROFILE,
             options=["--canonicalize_working_dir=true"],
             exec_root=exec_root,
             working_dir=working_dir,
@@ -1750,6 +1778,7 @@ w|{remote_root}/set_by_reclient/a/a/obj/input.o
         action = remote_action.RemoteAction(
             rewrapper=Path("/test-build/rewrapper"),
             command=["sleep", "1h"],
+            rbe_profile=_FAKE_PROFILE,
             options=["--canonicalize_working_dir=true"],
             exec_root=exec_root,
             working_dir=working_dir,
@@ -2376,6 +2405,14 @@ class RemoteActionFlagParserTests(unittest.TestCase):
         self.assertEqual(unknown, [])
         self.assertEqual(other, [])
 
+    def test_remote_worker_pool_forwarding(self) -> None:
+        remote_args, unknown, other = self._forward_and_parse(
+            ["--remote-worker-pool=large", "clang++", "main.cc"]
+        )
+        self.assertEqual(remote_args.remote_worker_pool, "large")
+        self.assertEqual(unknown, [])
+        self.assertEqual(other, ["clang++", "main.cc"])
+
     def test_command_without_forwarding(self) -> None:
         command = [
             "clang++",
@@ -2493,6 +2530,7 @@ class RemoteActionConstructionTests(unittest.TestCase):
         self,
         rewrapper: Path | None = None,
         command: Sequence[str] | None = None,
+        rbe_profile: rbe_profile.RbeProfile | None = None,
         exec_root: Path | None = None,
         working_dir: Path | None = None,
         **kwargs: Any,  # RemoteAction params
@@ -2501,6 +2539,7 @@ class RemoteActionConstructionTests(unittest.TestCase):
         return remote_action.RemoteAction(
             rewrapper=rewrapper or self._rewrapper,
             command=command,  # type: ignore[arg-type]
+            rbe_profile=rbe_profile or _FAKE_PROFILE,
             exec_root=exec_root or self._PROJECT_ROOT,
             working_dir=working_dir or self._WORKING_DIR,
             **kwargs,
@@ -2541,6 +2580,7 @@ class RemoteActionConstructionTests(unittest.TestCase):
                 action = remote_action.RemoteAction(
                     rewrapper=self._rewrapper,
                     command=command,
+                    rbe_profile=_FAKE_PROFILE,
                 )
                 self.assertEqual(action.exec_root, fake_root)
                 self.assertEqual(action.exec_root_rel, Path("../.."))
@@ -2555,6 +2595,7 @@ class RemoteActionConstructionTests(unittest.TestCase):
             action = remote_action.RemoteAction(
                 rewrapper=self._rewrapper,
                 command=command,
+                rbe_profile=_FAKE_PROFILE,
                 exec_root=fake_root,
             )
             self.assertEqual(action.exec_root, fake_root)
@@ -2569,6 +2610,7 @@ class RemoteActionConstructionTests(unittest.TestCase):
         action = remote_action.RemoteAction(
             rewrapper=self._rewrapper,
             command=command,
+            rbe_profile=_FAKE_PROFILE,
             exec_root=fake_root,
             working_dir=fake_cwd,
         )
@@ -2580,7 +2622,7 @@ class RemoteActionConstructionTests(unittest.TestCase):
         self.assertEqual(action.remote_build_subdir, fake_builddir)
         self.assertEqual(
             action.remote_working_dir,
-            remote_action._REMOTE_PROJECT_ROOT / fake_builddir,
+            action.remote_exec_root / fake_builddir,
         )
 
     def test_path_setup_explicit_canonicalize_working_dir(self) -> None:
@@ -2592,6 +2634,7 @@ class RemoteActionConstructionTests(unittest.TestCase):
             rewrapper=self._rewrapper,
             options=["--canonicalize_working_dir=true"],
             command=command,
+            rbe_profile=_FAKE_PROFILE,
             exec_root=fake_root,
             working_dir=fake_cwd,
         )
@@ -2604,7 +2647,7 @@ class RemoteActionConstructionTests(unittest.TestCase):
         self.assertEqual(action.remote_build_subdir, remote_builddir)
         self.assertEqual(
             action.remote_working_dir,
-            remote_action._REMOTE_PROJECT_ROOT / remote_builddir,
+            action.remote_exec_root / remote_builddir,
         )
 
     def test_inputs_outputs(self) -> None:
@@ -2748,19 +2791,14 @@ class RemoteActionConstructionTests(unittest.TestCase):
         )
         self.assertEqual(
             action._relativize_remote_or_local_deps(
-                str(
-                    remote_action._REMOTE_PROJECT_ROOT
-                    / "project"
-                    / "include"
-                    / "foo.h"
-                )
+                str(action.remote_exec_root / "project" / "include" / "foo.h")
             ),
             "../../project/include/foo.h",
         )
         self.assertEqual(
             action._relativize_remote_or_local_deps(
                 str(
-                    remote_action._REMOTE_PROJECT_ROOT
+                    action.remote_exec_root
                     / "work"
                     / "out"
                     / "jen"
@@ -4027,6 +4065,7 @@ class RbeDiagnosticsTests(unittest.TestCase):
         return remote_action.RemoteAction(
             rewrapper=Path("/path/to/rewrapper"),
             command=command,
+            rbe_profile=_FAKE_PROFILE,
             exec_root=exec_root,
             working_dir=working_dir,
             **kwargs,
@@ -4264,16 +4303,20 @@ class MainTests(unittest.TestCase):
     def test_auto_relaunch_with_reproxy_not_needed_with_env(self) -> None:
         command = ["--", "echo", "hello"]
         exit_code = 9
-        with mock.patch.object(
-            os.environ, "get", return_value="/any/value/will/do"
-        ) as mock_env:
+        mock_env = {
+            "RBE_instance": "projects/test/instances/default",
+            "FX_BUILD_INTERNAL_RBE_REMOTE_EXEC_ROOT": "/fake/exec/root",
+            "FX_BUILD_INTERNAL_RBE_WORKER_POOLS": '{"default": "Pool=default"}',
+            "RBE_proxy_log_dir": "/fake/proxy/log/dir",
+            "RBE_log_dir": "/fake/log/dir",
+        }
+        with mock.patch.dict(os.environ, mock_env):
             with mock.patch.object(
                 remote_action.RemoteAction,
                 "run_with_main_args",
                 return_value=exit_code,
             ) as mock_run:
                 self.assertEqual(remote_action.main(command), exit_code)
-        mock_env.assert_called()
         mock_run.assert_called_once()
 
     def test_auto_relaunch_with_reproxy_needed(self) -> None:
@@ -4429,6 +4472,7 @@ class WriteOutputFileHashXattrsTests(unittest.TestCase):
             action = remote_action.RemoteAction(
                 rewrapper=Path("/path/to/rewrapper"),
                 command=["echo"],
+                rbe_profile=_FAKE_PROFILE,
                 exec_root=tdp,
                 working_dir=tdp,
                 use_xattr=True,
@@ -4474,6 +4518,7 @@ class WriteOutputFileHashXattrsTests(unittest.TestCase):
             action = remote_action.RemoteAction(
                 rewrapper=Path("/path/to/rewrapper"),
                 command=["echo"],
+                rbe_profile=_FAKE_PROFILE,
                 exec_root=tdp,
                 working_dir=tdp,
                 use_xattr=True,
@@ -4517,6 +4562,7 @@ class WriteOutputFileHashXattrsTests(unittest.TestCase):
             action = remote_action.RemoteAction(
                 rewrapper=Path("/path/to/rewrapper"),
                 command=["echo"],
+                rbe_profile=_FAKE_PROFILE,
                 exec_root=tdp,
                 working_dir=tdp,
                 use_xattr=True,

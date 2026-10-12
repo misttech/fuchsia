@@ -20,6 +20,7 @@ from typing import Any
 
 import cl_utils
 import fuchsia
+import rbe_profile
 
 _SCRIPT_BASENAME = Path(__file__).name
 _SCRIPT_DIR = Path(__file__).parent
@@ -390,9 +391,27 @@ class RemoteTool(object):
         return self.run(args, **final_kwargs)
 
 
-def configure_remotetool(cfg: Path) -> RemoteTool:
+def configure_remotetool(cfg: Path | None = None) -> RemoteTool:
+    """Configures a RemoteTool instance dynamically, prioritizing profiles."""
+    prof = rbe_profile.load(PROJECT_ROOT, os.environ)
+    service = "remotebuildexecution.googleapis.com:443"
+
+    if cfg is not None and cfg.is_file():
+        try:
+            cfg_lines = cfg.read_text().splitlines()
+            cfg_dict = cl_utils.read_config_file_lines(cfg_lines)
+            service = cfg_dict.get("service", service)
+        except OSError as e:
+            print(
+                f"Warning: Failed to read legacy configuration from {cfg}: {e}",
+                file=sys.stderr,
+            )
+
     return RemoteTool(
-        cl_utils.read_config_file_lines(cfg.read_text().splitlines())
+        {
+            "service": service,
+            "instance": prof.rbe_instance,
+        }
     )
 
 

@@ -21,9 +21,13 @@ import fuchsia
 import remote_action
 import rustc
 import rustc_remote_wrapper
+from build.rbe import rbe_profile
+from build.resultstore import rs_profile
 
 _temp_dir = None
 _orig_cwd = None
+_rbe_profile_patcher = None
+_rs_profile_patcher = None
 
 
 def setUpModule() -> None:
@@ -31,19 +35,46 @@ def setUpModule() -> None:
     # auxiliary '.inputs' files) would otherwise write to the build output directory
     # and violate GN action hermeticity.
     # To prevent this, we run all tests in this module inside a temporary directory.
-    global _temp_dir, _orig_cwd
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher
     _orig_cwd = os.getcwd()
     _temp_dir = tempfile.TemporaryDirectory()
     os.chdir(_temp_dir.name)
 
+    # Mock RBE and ResultStore profile load calls to prevent any disk reads during test execution
+    _rbe_profile_patcher = mock.patch.object(rbe_profile, "load")
+    mock_rbe = _rbe_profile_patcher.start()
+    mock_rbe.return_value = rbe_profile.fake(
+        rbe_instance="projects/fake-project/instances/fake-instance",
+        remote_exec_root=remote_action._REMOTE_PROJECT_ROOT,
+        worker_pools={
+            "default": "Pool=fake-default-pool",
+            "large": "Pool=fake-large-pool",
+        },
+        auth_type="fake-auth",
+    )
+
+    _rs_profile_patcher = mock.patch.object(rs_profile, "load")
+    mock_rs = _rs_profile_patcher.start()
+    mock_rs.return_value = rs_profile.fake(
+        rs_instance="projects/fake-project/instances/fake-instance",
+        cas_instance="projects/fake-project/instances/fake-cas",
+        results_url="http://fake-results-url",
+        auth_type="fake-auth",
+    )
+
 
 def tearDownModule() -> None:
     # Restore the original working directory and clean up the temporary directory.
-    global _temp_dir, _orig_cwd
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher
     if _orig_cwd:
         os.chdir(_orig_cwd)
     if _temp_dir:
         _temp_dir.cleanup()
+
+    if _rbe_profile_patcher:
+        _rbe_profile_patcher.stop()
+    if _rs_profile_patcher:
+        _rs_profile_patcher.stop()
 
 
 class ImmediateExit(Exception):
@@ -882,6 +913,38 @@ class RustRemoteActionPrepareTests(unittest.TestCase):
         # Position matters, not just presence.
         # Could override the set of standard options.
         self.assertEqual(r.remote_options[-1], remote_flag)
+
+    def test_prepare_remote_worker_pool_forwarding(self) -> None:
+        exec_root = Path("/home/project")
+        working_dir = exec_root / "build-here"
+        compiler = Path("../tools/bin/rustc")
+        shlib = Path("tools/lib/librusteze.so")
+        shlib_abs = exec_root / shlib
+        shlib_rel = cl_utils.relpath(shlib_abs, start=working_dir)
+        source = Path("../foo/src/lib.rs")
+        rlib = Path("obj/foo.rlib")
+        sources = [source, Path("../foo/src/other.rs")]
+        command = _strs(
+            [compiler, source, "-o", rlib, "--remote-worker-pool=large"]
+        )
+        r = rustc_remote_wrapper.RustRemoteAction(
+            ["--", *command],
+            exec_root=exec_root,
+            working_dir=working_dir,
+            auto_reproxy=False,
+        )
+
+        mocks = self.generate_prepare_mocks(
+            source_files_path_contents=sources,
+            compiler_shlibs=[shlib_rel],
+        )
+        with contextlib.ExitStack() as stack:
+            for m in mocks:
+                stack.enter_context(m)
+            prepare_status = r.prepare()
+
+        self.assertEqual(prepare_status, 0)
+        self.assertEqual(r.remote_action.platform, "Pool=fake-large-pool")
 
     def test_prepare_environment_names_input_file(self) -> None:
         exec_root = Path("/home/project")

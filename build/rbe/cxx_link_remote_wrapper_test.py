@@ -19,9 +19,13 @@ import cxx_link_remote_wrapper
 import fuchsia
 import linker
 import remote_action
+from build.rbe import rbe_profile
+from build.resultstore import rs_profile
 
 _temp_dir = None
 _orig_cwd = None
+_rbe_profile_patcher = None
+_rs_profile_patcher = None
 
 
 def setUpModule() -> None:
@@ -29,19 +33,46 @@ def setUpModule() -> None:
     # auxiliary '.inputs' files) would otherwise write to the build output directory
     # and violate GN action hermeticity.
     # To prevent this, we run all tests in this module inside a temporary directory.
-    global _temp_dir, _orig_cwd
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher
     _orig_cwd = os.getcwd()
     _temp_dir = tempfile.TemporaryDirectory()
     os.chdir(_temp_dir.name)
 
+    # Mock RBE and ResultStore profile load calls to prevent any disk reads during test execution
+    _rbe_profile_patcher = mock.patch.object(rbe_profile, "load")
+    mock_rbe = _rbe_profile_patcher.start()
+    mock_rbe.return_value = rbe_profile.fake(
+        rbe_instance="projects/fake-project/instances/fake-instance",
+        remote_exec_root=remote_action._REMOTE_PROJECT_ROOT,
+        worker_pools={
+            "default": "Pool=fake-default-pool",
+            "large": "Pool=fake-large-pool",
+        },
+        auth_type="fake-auth",
+    )
+
+    _rs_profile_patcher = mock.patch.object(rs_profile, "load")
+    mock_rs = _rs_profile_patcher.start()
+    mock_rs.return_value = rs_profile.fake(
+        rs_instance="projects/fake-project/instances/fake-instance",
+        cas_instance="projects/fake-project/instances/fake-cas",
+        results_url="http://fake-results-url",
+        auth_type="fake-auth",
+    )
+
 
 def tearDownModule() -> None:
     # Restore the original working directory and clean up the temporary directory.
-    global _temp_dir, _orig_cwd
+    global _temp_dir, _orig_cwd, _rbe_profile_patcher, _rs_profile_patcher
     if _orig_cwd:
         os.chdir(_orig_cwd)
     if _temp_dir:
         _temp_dir.cleanup()
+
+    if _rbe_profile_patcher:
+        _rbe_profile_patcher.stop()
+    if _rs_profile_patcher:
+        _rs_profile_patcher.stop()
 
 
 class ImmediateExit(Exception):
@@ -330,6 +361,31 @@ class CxxLinkRemoteActionTests(unittest.TestCase):
         )
         self.assertIn(flag, prefix)
         self.assertEqual(wrapped_command, filtered_command)
+
+    def test_remote_worker_pool_back_propagating(self) -> None:
+        compiler = Path("clang++")
+        source = Path("hello.o")
+        output = Path("hello")
+        command = _strs(
+            [
+                compiler,
+                "--target=riscv64-apple-darwin21",
+                "--remote-worker-pool=large",
+                source,
+                "-o",
+                output,
+            ]
+        )
+        c = cxx_link_remote_wrapper.CxxLinkRemoteAction(
+            ["--", *command],
+            host_platform=fuchsia.REMOTE_PLATFORM,
+            auto_reproxy=False,
+        )
+        with mock.patch.object(
+            fuchsia, "remote_clang_linker_toolchain_inputs", return_value=[]
+        ):
+            self.assertEqual(c.prepare(), 0)
+        self.assertEqual(c.remote_action.platform, "Pool=fake-large-pool")
 
     def test_gcc_cxx(self) -> None:
         fake_root = remote_action.PROJECT_ROOT

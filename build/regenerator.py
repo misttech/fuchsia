@@ -594,6 +594,7 @@ def main() -> int:
         extra_ninja_build_inputs |= (
             remote_services_utils.generate_remote_services_bazelrc(
                 fuchsia_dir=fuchsia_dir,
+                build_dir=build_dir,
                 output_path=remote_services_bazelrc_file,
                 download_outputs=remote_download_outputs,
             )

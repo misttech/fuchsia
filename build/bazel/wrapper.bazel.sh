@@ -164,8 +164,13 @@ esac
 # to sub-build invocations.
 readonly RESULTSTORE_invocation_id="$("${PREBUILT_PYTHON3}" -S -c 'import uuid; print(uuid.uuid4())')"
 
-# This is for ResultStore.
-readonly RESULTSTORE_URL="http://go/fxbtx"
+# main_build.py is already expected to set RS_results_url from the active
+# ResultStore profile into the build environment, but this fallback path
+# exists to make this wrapper usable standalone (outside of main_build.py).
+if [[ -z "${RS_results_url:-}" ]]; then
+  RS_results_url="$("${_SRCDIR}/../resultstore/rs_profile.py" run -- printenv RS_results_url 2>/dev/null || :)"
+fi
+readonly RESULTSTORE_URL="$RS_results_url"
 readonly RESULTSTORE_SUB_BUILDS_LINK="$RESULTSTORE_URL/?q=PARENT_BUILD_ID:$RESULTSTORE_invocation_id"
 
 # A list of extra Bazel arguments that must appear after the
@@ -385,7 +390,7 @@ _bazel_env=(
     RESULTSTORE_SIBLING_BUILDS_LINK="$RESULTSTORE_SUB_BUILDS_LINK"
     # LINT.ThenChange(
     #   //build/bazel/scripts/generate_invocation_bazelrc.py:related_invocations_env_vars,
-    #   //build/bazel/scripts/rsninja.sh:related_invocations_env_vars
+    #   //build/resultstore/rsninja.sh:related_invocations_env_vars
     # )
 )
 

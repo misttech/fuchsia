@@ -117,6 +117,7 @@ def _get_ignore_parser() -> ArgumentParser:
     parser.add_argument("--remote-outputs", nargs="*", help="ignored")
     parser.add_argument("--remote-output-dirs", nargs="*", help="ignored")
     parser.add_argument("--remote-flag", nargs="*", help="ignored")
+    parser.add_argument("--remote-worker-pool", help="ignored")
     # ignored from //build/rust/rustc_link_attribute.gni
     parser.add_argument("-l", help="ignored")
     return parser

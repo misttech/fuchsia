@@ -32,11 +32,18 @@ from typing import (
 )
 
 import cl_utils
+
+# Ensure the fuchsia root is in sys.path so we can import the build packages hermetically
+_FUCHSIA_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+if _FUCHSIA_DIR not in sys.path:
+    sys.path.insert(0, _FUCHSIA_DIR)
+
 import depfile
 import fuchsia
 import output_leak_scanner
 import remotetool
 import textpb
+from build.rbe import rbe_profile
 
 _SCRIPT_BASENAME = Path(__file__).name
 
@@ -1030,17 +1037,19 @@ class RemoteAction(object):
         self,
         rewrapper: Path,
         command: Sequence[str],
+        rbe_profile: rbe_profile.RbeProfile | None = None,
         local_only_command: Sequence[str] | None = None,
         options: Sequence[str] | None = None,
-        exec_root: Path | None | None = None,
-        working_dir: Path | None | None = None,
-        cfg: Path | None | None = None,
-        exec_strategy: str | None | None = None,
+        exec_root: Path | None = None,
+        working_dir: Path | None = None,
+        cfg: Path | None = None,
+        exec_strategy: str | None = None,
         inputs: Sequence[Path] | None = None,
         input_list_paths: Sequence[Path] | None = None,
         output_files: Sequence[Path] | None = None,
         output_dirs: Sequence[Path] | None = None,
         platform: str | None = None,
+        remote_worker_pool: str | None = None,
         disable: bool = False,
         verbose: bool = False,
         save_temps: bool = False,
@@ -1155,8 +1164,19 @@ class RemoteAction(object):
         # (which can be verified with --compare [compare_with_local]).
         self._local_only_command = local_only_command or command
 
-        # platform is handled by specially, by merging with cfg.
+        self._rbe_profile = rbe_profile
+        self._remote_worker_pool = remote_worker_pool
+
+        # platform is handled specially, by merging with cfg.
         self._platform = platform
+
+        if self._remote_worker_pool:
+            if self._remote_worker_pool not in self.worker_pools:
+                raise ValueError(
+                    f"Unknown worker pool class '{self._remote_worker_pool}' in active RBE profile. "
+                    f"Available pools are: {list(self.worker_pools.keys())}"
+                )
+            self.append_platform(self.worker_pools[self._remote_worker_pool])
 
         # Detect some known rewrapper options
         (
@@ -1483,13 +1503,34 @@ exec "${{cmd[@]}}"
     def working_dir(self) -> Path:  # absolute
         return self._working_dir
 
+    def append_platform(self, value: str) -> None:
+        """Appends platform parameters (comma-separated or single) to the platform variable."""
+        if not value:
+            return
+        if self._platform:
+            self._platform = f"{self._platform},{value}"
+        else:
+            self._platform = value
+
+    @property
+    def rbe_profile(self) -> rbe_profile.RbeProfile:
+        if self._rbe_profile is None:
+            raise ValueError(
+                "RBE profile is not loaded, and required environment variables (like FX_BUILD_INTERNAL_RBE_REMOTE_EXEC_ROOT) are missing."
+            )
+        return self._rbe_profile
+
+    @property
+    def worker_pools(self) -> dict[str, str]:
+        return self.rbe_profile.worker_pools
+
     @property
     def remote_exec_root(self) -> Path:  # absolute
-        return _REMOTE_PROJECT_ROOT
+        return Path(self.rbe_profile.remote_exec_root)
 
     @property
     def remote_working_dir(self) -> Path:  # absolute
-        return _REMOTE_PROJECT_ROOT / self.remote_build_subdir
+        return self.remote_exec_root / self.remote_build_subdir
 
     @property
     def remote_disable(self) -> bool:
@@ -2760,6 +2801,11 @@ def inherit_main_arg_parser_flags(
         description="Generic remote action options",
     )
     main_group.add_argument(
+        "--remote-worker-pool",
+        type=str,
+        help="Specify an abstract worker pool class (e.g. 'large'), which will be translated to a concrete pool platform constraint based on the active RBE profile.",
+    )
+    main_group.add_argument(
         "--bindir",
         type=Path,
         default=default_bindir,
@@ -2892,9 +2938,18 @@ def remote_action_from_args(
     input_list_paths: Sequence[Path] | None = None,
     output_files: Sequence[Path] | None = None,
     output_dirs: Sequence[Path] | None = None,
+    rbe_prof: rbe_profile.RbeProfile | None = None,
     **kwargs: Any,  # other RemoteAction __init__ params
 ) -> RemoteAction:
     """Construct a remote action based on argparse parameters."""
+    if rbe_prof is None:
+        rbe_prof = kwargs.pop("rbe_profile", None)
+    if rbe_prof is None:
+        try:
+            rbe_prof = rbe_profile.load(PROJECT_ROOT, os.environ)
+        except (ValueError, FileNotFoundError) as e:
+            raise ValueError(str(e))
+
     inputs = [
         *(inputs or []),
         *[Path(p) for p in cl_utils.flatten_comma_list(main_args.inputs)],
@@ -2921,6 +2976,7 @@ def remote_action_from_args(
         rewrapper=main_args.bindir / "rewrapper",
         options=(remote_options or []),
         command=command or main_args.command,
+        rbe_profile=rbe_prof,
         cfg=main_args.cfg,
         exec_strategy=main_args.exec_strategy,
         inputs=inputs,
@@ -2928,6 +2984,7 @@ def remote_action_from_args(
         output_files=output_files,
         output_dirs=output_dirs,
         platform=main_args.platform,
+        remote_worker_pool=main_args.remote_worker_pool,
         disable=main_args.local,
         verbose=main_args.verbose,
         label=main_args.label,
@@ -2968,6 +3025,11 @@ _FORWARDED_REMOTE_FLAGS = cl_utils.FlagForwarder(
             name="--remote-output-dirs",
             has_optarg=True,
             mapped_name="--output_directories",
+        ),
+        cl_utils.ForwardedFlag(
+            name="--remote-worker-pool",
+            has_optarg=True,
+            mapped_name="--remote-worker-pool",
         ),
         cl_utils.ForwardedFlag(
             name="--remote-flag",

@@ -222,6 +222,7 @@ do
     --remote-inputs | --remote-inputs=* | \
     --remote-outputs | --remote-outputs=* | \
     --remote-output-dirs | --remote-output-dirs=* | \
+    --remote-worker-pool | --remote-worker-pool=* | \
     --remote-flag | --remote-flag=* )
       use_py_wrapper=1
       ;;

@@ -23,6 +23,10 @@ BT_FILE_DEPS=(
     "build/rbe/rbe_profile.py"
     "build/resultstore/rs_profile.py"
     "build/python/modules/serialization/serialization.py"
+    # TODO(b/567721959): Migrate devshell build tests to Python to avoid manual file dependency tracking.
+    "build/scripts/service_profile.py"
+    "build/rbe/profiles/default.json"
+    "build/resultstore/profiles/default.json"
     "tools/devshell/lib/vars.sh"
     "tools/devshell/lib/is_invoked_by_agent.sh"
     "tools/devshell/lib/agents.txt"

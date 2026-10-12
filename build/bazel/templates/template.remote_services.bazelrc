@@ -44,8 +44,8 @@ build:nocache --noremote_accept_cached
 # Build event protocol (BEP) streaming
 build:_bes_common --google_auth_scopes=https://www.googleapis.com/auth/cloud-platform
 build:_bes_common --google_default_credentials=true
-build:_bes_common --bes_instance_name={rbe_project}
-build:_bes_common --bes_header=X-Goog-User-Project={rbe_project}
+build:_bes_common --bes_instance_name={rs_project}
+build:_bes_common --bes_header=X-Goog-User-Project={rs_project}
 build:_bes_common --bes_keywords=fuchsia
 
 # Start with a long retry delay to tolerate usage spikes that run into the (per-minute) quota.
@@ -72,9 +72,8 @@ build:sponge_infra --config=_sponge --config=_bes_infra
 # Setup ResultStore
 build:_resultstore --config=_bes_common
 build:_resultstore --bes_backend=buildeventservice.googleapis.com
-# note: go/fxbtx points to project=rbe-fuchsia-prod (and should match {rbe_project})
-build:_resultstore --bes_results_url=http://go/fxbtx/
-build:_resultstore --remote_instance_name=projects/{rbe_project}/instances/default
+build:_resultstore --bes_results_url={results_url}/
+build:_resultstore --remote_instance_name={rs_instance}
 
 # This variant is suitable for developers.
 build:resultstore --config=_resultstore --config=_bes_user

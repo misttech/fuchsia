@@ -15,7 +15,9 @@ if (is_host) {
       "//build/auth:gcloud",
       "//build/auth:gcloud_creds",
       "//build/rbe:build_summary",
+      "//build/rbe:rbe_profile",
       "//build/rbe:rbe_settings",
+      "//build/resultstore:rs_profile",
     ]
     data_deps = [ "//build/auth:select_auth_method" ]
   }

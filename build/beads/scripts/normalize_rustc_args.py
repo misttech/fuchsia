@@ -64,6 +64,7 @@ _ARGS_TO_IGNORE = (
     # TODO(https://fxbug.dev/478707341): Figure out how to make remote flags
     # consistent between GN and Bazel.
     "--remote-flag=",
+    "--remote-worker-pool=",
     # TODO(https://fxbug.dev/478707341): GN uses clang++ and Bazel uses clang.
     # Figure out where this discrepancy comes from and remove this.
     "-Clinker=",

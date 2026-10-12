@@ -123,6 +123,10 @@ if (is_host) {
 
   python_library("remote_services_utils") {
     sources = [ "remote_services_utils.py" ]
+    library_deps = [
+      "//build/rbe:rbe_profile",
+      "//build/resultstore:rs_profile",
+    ]
   }
 
   python_build_time_tests("remote_services_utils_test") {
@@ -182,6 +186,7 @@ if (is_host) {
     library_deps = [
       ":build_utils",
       ":remote_services_utils",
+      "//build/rbe:rbe_settings",
     ]
   }
 

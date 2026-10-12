@@ -108,8 +108,17 @@ fi
   metadata+=( SIBLING_BUILDS_LINK="$RESULTSTORE_SIBLING_BUILDS_LINK" )
 }
 
-readonly CFG="$SCRIPT_DIR/fuchsia-resultstore.cfg"
-readonly RESULTSTORE_URL="$(grep "^results_url=" "$CFG" | cut -d= -f2)"
+# main_build.py is already expected to set RS_results_url from the active
+# ResultStore profile into the build environment, but this fallback path
+# exists to make this wrapper usable standalone (outside of main_build.py).
+if [[ -z "${RS_results_url:-}" ]]; then
+  RS_results_url="$("${SCRIPT_DIR}/rs_profile.py" run -- printenv RS_results_url)"
+fi
+if [[ -z "${RS_results_url:-}" ]]; then
+  echo "Error: Unable to determine ResultStore results_url from active profile." >&2
+  exit 1
+fi
+readonly RESULTSTORE_URL="$RS_results_url"
 
 # If there are no sub-builds, this query will just return empty.
 readonly SUB_BUILDS_LINK="$RESULTSTORE_URL/?q=PARENT_BUILD_ID:$RESULTSTORE_invocation_id"
@@ -133,10 +142,7 @@ readonly ninja_env=(
   # To sub-builds: "Your siblings are..."
   RESULTSTORE_SIBLING_BUILDS_LINK="$SUB_BUILDS_LINK"
 )
-# LINT.ThenChange(
-#   //build/bazel/wrapper.bazel.sh:related_invocations_env_vars,
-#   //build/bazel/scripts/rsninja.sh:related_invocations_env_vars
-# )
+# LINT.ThenChange(//build/bazel/wrapper.bazel.sh:related_invocations_env_vars)
 
 readonly full_cmd=(
   env "${ninja_env[@]}"

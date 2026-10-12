@@ -43,7 +43,8 @@ if str(_FUCHSIA_ROOT) not in sys.path:
     sys.path.insert(0, str(_FUCHSIA_ROOT))
 
 from build.auth import gcloud
-from build.rbe import build_summary, rbe_settings
+from build.rbe import build_summary, rbe_profile, rbe_settings
+from build.resultstore import rs_profile
 
 _JSONPrimitive = str | int | float | bool | None
 JSONValue = _JSONPrimitive | dict[str, Any] | list[Any]
@@ -123,9 +124,6 @@ def _extract_project_id_from_instance(instance_val: str) -> str | None:
 
 GLOBAL_RESULTSTORE_CONFIG = pathlib.Path(".fx/config/resultstore")
 LOCAL_RESULTSTORE_CONFIG = pathlib.Path(".resultstore")
-DEFAULT_RBE_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
-DEFAULT_RESULTSTORE_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
-DEFAULT_CAS_INSTANCE = "projects/rbe-fuchsia-prod/instances/default"
 # LINT.IfChange(ninja_build_trace_filename)
 NINJA_BUILD_TRACE_GZ = "ninja_build_trace.json.gz"
 # LINT.ThenChange(/tools/integration/fint/fint_build.py:ninja_build_trace_filename)
@@ -851,16 +849,13 @@ class FuchsiaBuildContext(object):
         #   //build/bazel_sdk/tests/scripts/run_tests.py:bazel_socket_env_vars
         # )
 
-        # Forward ResultStore/CAS instance names unconditionally.
-        # These RS_ variables directly drive/influence the rsproxy daemon.
-        if self.resultstore_instance:
-            env["RS_rs_instance"] = self.resultstore_instance
-        if self.cas_instance:
-            env["RS_cas_instance"] = self.cas_instance
+        # Export instance configurations from active profiles (or CLI overrides),
+        # which directly drive/influence the reproxy and rsproxy daemons.
+        if self.config.resultstore != "none":
+            env.update(self.resultstore_profile.to_env_dict())
 
-        # Forward RBE instance name unconditionally.
-        if self.rbe_instance:
-            env["RBE_instance"] = self.rbe_instance
+        if self.rbe_enabled:
+            env.update(self.rbe_profile.to_env_dict())
 
         return env
 
@@ -899,29 +894,28 @@ class FuchsiaBuildContext(object):
         )
 
     @functools.cached_property
-    def resolved_rbe_instance(self) -> str:
-        """Finds the default RBE instance configured on disk."""
-        config_path = self.source_dir / "build/rbe/fuchsia-reproxy.cfg"
-        cfg = _parse_cfg_file(config_path)
-        return cfg.get("instance", DEFAULT_RBE_INSTANCE)
+    def rbe_profile(self) -> rbe_profile.RbeProfile:
+        try:
+            prof = rbe_profile.load(self.source_dir, self.env)
+            # Apply user CLI overrides if present
+            if self.config.rbe_instance:
+                prof.rbe_instance = self.config.rbe_instance
+            return prof
+        except (ValueError, FileNotFoundError) as e:
+            raise BuildConfigurationError(str(e))
 
     @functools.cached_property
-    def resolved_resultstore_instance(self) -> str:
-        """Finds the default ResultStore instance configured on disk."""
-        config_path = (
-            self.source_dir / "build/resultstore/fuchsia-resultstore.cfg"
-        )
-        cfg = _parse_cfg_file(config_path)
-        return cfg.get("rs_instance", DEFAULT_RESULTSTORE_INSTANCE)
-
-    @functools.cached_property
-    def resolved_cas_instance(self) -> str:
-        """Finds the default CAS instance configured on disk."""
-        config_path = (
-            self.source_dir / "build/resultstore/fuchsia-resultstore.cfg"
-        )
-        cfg = _parse_cfg_file(config_path)
-        return cfg.get("cas_instance", DEFAULT_CAS_INSTANCE)
+    def resultstore_profile(self) -> rs_profile.RsProfile:
+        try:
+            prof = rs_profile.load(self.source_dir, self.env)
+            # Apply user CLI overrides if present
+            if self.config.resultstore_instance:
+                prof.rs_instance = self.config.resultstore_instance
+            if self.config.cas_instance:
+                prof.cas_instance = self.config.cas_instance
+            return prof
+        except (ValueError, FileNotFoundError) as e:
+            raise BuildConfigurationError(str(e))
 
     @property
     def rbe_settings_file(self) -> pathlib.Path:
@@ -1141,10 +1135,16 @@ class FuchsiaBuildContext(object):
 
     @property
     def needs_auth(self) -> bool:
-        if self.config.resultstore != "none":
+        if (
+            self.config.resultstore != "none"
+            and self.resultstore_profile.auth_type != "none"
+        ):
             return True
 
-        return self._rbe_settings.needs_auth
+        if self.rbe_enabled and self.rbe_profile.auth_type != "none":
+            return self._rbe_settings.needs_auth
+
+        return False
 
     @property
     def concurrency(self) -> int:

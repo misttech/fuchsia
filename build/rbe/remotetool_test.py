@@ -12,6 +12,7 @@ from typing import Any
 from unittest import mock
 
 import cl_utils
+import rbe_profile
 import remotetool
 
 
@@ -231,15 +232,28 @@ _TEST_CFG = {
 
 
 class ConfigureRemotetoolTests(unittest.TestCase):
-    def test_configure(self) -> None:
-        with mock.patch.object(
-            Path,
-            "read_text",
-            return_value="".join([f"{k}={v}\n" for k, v in _TEST_CFG.items()]),
-        ) as mock_read:
-            tool = remotetool.configure_remotetool(Path("r.cfg"))
-        self.assertEqual(tool.config, _TEST_CFG)
-        mock_read.assert_called_once_with()
+    @mock.patch.object(rbe_profile, "load")
+    def test_configure(self, mock_load: mock.Mock) -> None:
+        mock_load.return_value = rbe_profile.fake(
+            rbe_instance="projects/test-project/instances/default",
+            remote_exec_root=Path("/test/root"),
+            worker_pools={},
+            auth_type="fake-auth",
+        )
+        with mock.patch.object(Path, "is_file", return_value=True):
+            with mock.patch.object(
+                Path,
+                "read_text",
+                return_value="service=test-service:443\n",
+            ) as mock_read:
+                tool = remotetool.configure_remotetool(Path("r.cfg"))
+        self.assertEqual(
+            tool.config,
+            {
+                "service": "test-service:443",
+                "instance": "projects/test-project/instances/default",
+            },
+        )
 
 
 class RemotetoolRunTests(unittest.TestCase):

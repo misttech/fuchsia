@@ -3,6 +3,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import sys
+from pathlib import Path
+
+# Dynamically resolve and insert the Fuchsia root directory into sys.path
+# to support standalone script package imports (e.g. from build.rbe).
+_FUCHSIA_DIR = Path(__file__).resolve().parent.parent.parent
+if str(_FUCHSIA_DIR) not in sys.path:
+    sys.path.insert(0, str(_FUCHSIA_DIR))
+
 import argparse
 import builtins
 import contextlib
@@ -26,7 +35,8 @@ from unittest import mock
 import main_build
 import signal_utils
 from build.auth import gcloud
-from build.rbe import build_summary, rbe_settings
+from build.rbe import build_summary, rbe_profile, rbe_settings
+from build.resultstore import rs_profile
 
 _FAKE_RBE_SETTINGS = rbe_settings.fake()
 
@@ -41,6 +51,29 @@ def default_args() -> argparse.Namespace:
 class MainBuildTestBase(unittest.TestCase):
     """Base class for main_build tests with shared helpers."""
 
+    def _get_fake_rbe_profile(
+        self, *args: Any, **kwargs: Any
+    ) -> rbe_profile.RbeProfile:
+        return rbe_profile.fake(
+            rbe_instance="projects/fake-rbe-instance/instances/default",
+            remote_exec_root=pathlib.Path("/fake/exec/root"),
+            worker_pools={
+                "default": "Pool=fake-default-pool",
+                "large": "Pool=fake-large-pool",
+            },
+            auth_type="fake-auth",
+        )
+
+    def _get_fake_rs_profile(
+        self, *args: Any, **kwargs: Any
+    ) -> rs_profile.RsProfile:
+        return rs_profile.fake(
+            rs_instance="projects/fake-rs-instance/instances/default",
+            cas_instance="projects/fake-cas-instance/instances/default",
+            results_url="http://fake-results-url",
+            auth_type="fake-auth",
+        )
+
     def setUp(self) -> None:
         # Default mock for read_json to avoid file system errors for rbe_settings.json etc.
         self.read_json_patcher = mock.patch.object(
@@ -48,6 +81,20 @@ class MainBuildTestBase(unittest.TestCase):
         )
         self.mock_read_json = self.read_json_patcher.start()
 
+        # Mock rbe_profile.load and rs_profile.load to return fresh fake test profiles
+        self.rbe_load_patcher = mock.patch.object(
+            rbe_profile,
+            "load",
+            return_value=self._get_fake_rbe_profile(),
+        )
+        self.mock_rbe_load = self.rbe_load_patcher.start()
+
+        self.rs_load_patcher = mock.patch.object(
+            rs_profile,
+            "load",
+            return_value=self._get_fake_rs_profile(),
+        )
+        self.mock_rs_load = self.rs_load_patcher.start()
         # Mock rbe_settings.load to avoid FileNotFoundError in tests
         self.rbe_settings_load_patcher = mock.patch.object(
             rbe_settings,
@@ -74,6 +121,8 @@ class MainBuildTestBase(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.read_json_patcher.stop()
+        self.rbe_load_patcher.stop()
+        self.rs_load_patcher.stop()
         self.rbe_settings_load_patcher.stop()
         self.isolate_creds_patcher.stop()
         self.run_select_patcher.stop()
@@ -240,6 +289,38 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
         ) as mock_run:
             self.assertEqual(context.auth_type, "loas")
             mock_run.assert_called_once()
+
+    def test_needs_auth_matrix(self) -> None:
+        """Verifies needs_auth across combinations of RBE, ResultStore, and auth_types."""
+        auth_settings = rbe_settings.fake(needs_reproxy=True, needs_auth=True)
+        test_cases = [
+            # (rbe, rs_mode, rbe_auth, rs_auth, expected_needs_auth)
+            (True, "none", "google", "none", True),
+            (True, "none", "none", "none", False),
+            (True, "all", "none", "google", True),
+            (True, "all", "none", "none", False),
+            (False, "all", "none", "google", True),
+            (False, "all", "none", "none", False),
+            (False, "none", "google", "google", False),
+        ]
+        with mock.patch.object(
+            rbe_settings, "load", return_value=auth_settings
+        ):
+            for rbe, rs_mode, rbe_auth, rs_auth, expected in test_cases:
+                with self.subTest(
+                    rbe=rbe, rs=rs_mode, rbe_auth=rbe_auth, rs_auth=rs_auth
+                ):
+                    with mock.patch.object(
+                        rbe_profile,
+                        "load",
+                        return_value=rbe_profile.fake(auth_type=rbe_auth),
+                    ), mock.patch.object(
+                        rs_profile,
+                        "load",
+                        return_value=rs_profile.fake(auth_type=rs_auth),
+                    ):
+                        ctx = self.create_context(rbe=rbe, resultstore=rs_mode)
+                        self.assertEqual(ctx.needs_auth, expected)
 
     def test_run_select_auth_script_success(self) -> None:
         self.run_select_patcher.stop()
@@ -1005,6 +1086,8 @@ class BuildInvocationTest(MainBuildTestBase):
 
     def test_get_build_env_forward_rs_variables(self) -> None:
         context = self.create_context(
+            rbe=True,
+            resultstore="all",
             resultstore_instance="projects/fuchsia-infra/instances/default_instance",
             cas_instance="projects/fuchsia-infra/instances/default_instance",
             rbe_instance="projects/fuchsia-infra/instances/default_instance",
@@ -1026,37 +1109,50 @@ class BuildInvocationTest(MainBuildTestBase):
                 "projects/fuchsia-infra/instances/default_instance",
             )
 
-    def test_get_build_env_unconditional_forward_even_when_matching_defaults(
-        self,
-    ) -> None:
-        context = self.create_context(
-            resultstore_instance=main_build.DEFAULT_RESULTSTORE_INSTANCE,
-            cas_instance=main_build.DEFAULT_CAS_INSTANCE,
-            rbe_instance=main_build.DEFAULT_RBE_INSTANCE,
-        )
+    def test_get_build_env_contains_active_profile_defaults(self) -> None:
+        context = self.create_context(rbe=True, resultstore="all")
         context.env = {"USER": "fuchsia-user"}
         with self.mock_invocation_context():
             invocation = main_build.BuildInvocation(context)
             env = invocation.get_build_env()
             self.assertEqual(
+                env["RBE_instance"],
+                "projects/fake-rbe-instance/instances/default",
+            )
+            self.assertEqual(
                 env["RS_rs_instance"],
-                main_build.DEFAULT_RESULTSTORE_INSTANCE,
+                "projects/fake-rs-instance/instances/default",
             )
             self.assertEqual(
                 env["RS_cas_instance"],
-                main_build.DEFAULT_CAS_INSTANCE,
-            )
-            self.assertEqual(
-                env["RBE_instance"],
-                main_build.DEFAULT_RBE_INSTANCE,
+                "projects/fake-cas-instance/instances/default",
             )
 
-    def test_build_service_env_empty_defaults(self) -> None:
-        context = self.create_context()
-        self.assertEqual(context.build_service_env, {})
+    def test_build_service_env_profile_defaults(self) -> None:
+        context = self.create_context(rbe=True, resultstore="all")
+        env = context.build_service_env
+        self.assertEqual(
+            env["RBE_instance"], "projects/fake-rbe-instance/instances/default"
+        )
+        self.assertEqual(
+            env["RS_rs_instance"], "projects/fake-rs-instance/instances/default"
+        )
+        self.assertEqual(
+            env["RS_cas_instance"],
+            "projects/fake-cas-instance/instances/default",
+        )
+        self.assertEqual(
+            env["FX_BUILD_INTERNAL_RBE_REMOTE_EXEC_ROOT"], "/fake/exec/root"
+        )
+        self.assertEqual(
+            env["FX_BUILD_INTERNAL_RBE_WORKER_POOLS"],
+            '{"default": "Pool=fake-default-pool", "large": "Pool=fake-large-pool"}',
+        )
 
     def test_build_service_env_custom_overrides(self) -> None:
         context = self.create_context(
+            rbe=True,
+            resultstore="all",
             resultstore_instance="projects/custom-rs/instances/default",
             cas_instance="projects/custom-cas/instances/default",
             rbe_instance="projects/custom-rbe/instances/default",

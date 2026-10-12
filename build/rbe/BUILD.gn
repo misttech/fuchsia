@@ -165,6 +165,7 @@ if (is_host) {
     library_deps = [
       ":cl_utils",
       ":fuchsia",
+      ":rbe_profile",
     ]
   }
 
@@ -193,6 +194,7 @@ if (is_host) {
       ":depfile",
       ":fuchsia",
       ":output_leak_scanner",
+      ":rbe_profile",
       ":remotetool",
       ":textpb",
     ]

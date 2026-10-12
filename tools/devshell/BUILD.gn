@@ -186,6 +186,12 @@ host_script_test_data("fx_bash_tests") {
         "//build/rbe/rbe_settings.py",
         "//build/resultstore/rs_profile.py",
         "//build/python/modules/serialization/serialization.py",
+
+        # TODO(b/567721959): Migrate devshell build tests to Python to avoid
+        # manual file dependency tracking.
+        "//build/scripts/service_profile.py",
+        "//build/rbe/profiles/default.json",
+        "//build/resultstore/profiles/default.json",
         "//build/resultstore/fuchsia-rsproxy-wrap.sh",
         "//build/tui/build-tui-wrap.sh",
       ]
