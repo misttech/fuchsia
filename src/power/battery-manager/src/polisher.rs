@@ -9,24 +9,32 @@ use log::{debug, info, warn};
 //  level, level status, time to full estimation and so on.
 ///
 /// Data flow:
-///                      Raw Data of Battery Level
-///                                  |
-///                                  V
-///                   Initial Scaler: 3-100% => 0-100%
+///                             Raw Battery Info
 ///                                  |
 ///                                  V
 ///                               Filters
 ///                                  |
-///                                  |=====> Time to Full
+///                                  V
+///             Optional Initial Scaler: offset - 100% => 0-100%
+///                                  |
+///             +--------------------+--------------------+
+///             |                                         |
+///             V                                         |
+///     Battery Spoofing                                  |
+///             |                                         |
+///             V                                         V
+///       Rate Limiter                      Time-to-Full (TTF) Calculation
+///             |                                         |
+///             V                                         |
+///      Output Rounding                                  |
+///             |                                         |
+///             +--------------------+--------------------+
 ///                                  |
 ///                                  V
-///                        Spoofing and Splicing
-///                                  |
-///                                  V
-///                           rate limiter
-///                                  |
-///                                  V
-///                  Reported to upper level, displayed
+///                        Polished Battery Info
+///
+/// All stages before Output Rounding work on fractional levels, and the internal state (rate
+/// limiter, curve splicing) is kept fractional. Only the level handed to clients is rounded.
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum TimeEstimatorError {
@@ -39,12 +47,21 @@ pub(crate) enum TimeEstimatorError {
 struct InitialScaler;
 
 impl InitialScaler {
+    /// Rescales the raw battery level so that `offset`% maps to 0% while 100% stays 100%, hiding
+    /// the capacity below the shutdown offset from the UI.
+    ///
+    /// When an offset is configured (`0 < offset < 100`), the rescaled level is rounded up so that
+    /// the UI never shows 0% while the battery is still above the shutdown offset. When no offset
+    /// is configured (`offset <= 0`), the level passes through unchanged and is not rounded here:
+    /// a fuel gauge reporting fractional percentages (e.g. 0.88%) must be able to reach 0% once it
+    /// drops below 0.5%, so that the final rounding in `Polisher::polish_info` reports a critical
+    /// battery before hardware cutoff.
     fn scale_level_with_offset(level: f32, offset: f32) -> f32 {
         if level >= 100.0 {
             return 100.0;
         }
         if offset <= 0.0 || offset >= 100.0 {
-            return level.ceil();
+            return level.max(0.0);
         }
         if level >= offset {
             let scaled = (level - offset) * 100.0 / (100.0 - offset);
@@ -505,7 +522,9 @@ impl CurveMapper {
                 new_curve = Self::DISCHARGE_CURVE_DEFAULT;
                 curve_changed = true;
 
-                let (new_midpoint, ui) = if current_ui_soc >= Self::SSOC_FULL {
+                let (new_midpoint, ui) = if Polisher::round_reported_level(current_ui_soc)
+                    >= Self::SSOC_FULL
+                {
                     let new_midpoint =
                         (scaled_real_soc.max(Self::SSOC_SPOOF) - ssoc_delta).max(0.0);
                     info!(
@@ -687,12 +706,12 @@ impl Polisher {
     ///
     /// # Arguments
     /// * `scaled_real_soc` - The current scaled real SoC.
-    /// * `rate_limited_soc` - The current rate-limited UI level (RL).
+    /// * `reported_soc` - The current reported (rounded) UI level.
     /// * `info` - The BatteryInfo to update with the TTF result.
     fn calculate_time_to_full(
         &mut self,
         scaled_real_soc: Option<f32>,
-        rate_limited_soc: Option<f32>,
+        reported_soc: Option<f32>,
         info: &mut fpower::BatteryInfo,
     ) {
         let Some(real_level) = scaled_real_soc else {
@@ -700,7 +719,7 @@ impl Polisher {
             info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
             return;
         };
-        let Some(current_ui_level) = rate_limited_soc else {
+        let Some(current_ui_level) = reported_soc else {
             warn!("Missing UI level for TTF");
             info.time_remaining = Some(fpower::TimeRemaining::Indeterminate(0));
             return;
@@ -876,11 +895,16 @@ impl Polisher {
         self.rate_limit_level(&mut info);
         let rate_limited_soc = info.level_percent; // RL
 
-        // 4. Time to Full Calculation (Uses scaled_real_soc for core, RL for "is full")
-        self.calculate_time_to_full(scaled_real_soc, rate_limited_soc, &mut info);
+        // 4. Round to the integer percent reported to clients. This is the only place a level is
+        //    rounded; everything above (and the state kept for the next cycle) stays fractional.
+        let reported_soc = rate_limited_soc.map(Self::round_reported_level);
+        info.level_percent = reported_soc;
 
-        // 5. Set Level Status (Uses rate_limited_soc / RL)
-        self.set_level_status(rate_limited_soc, &mut info);
+        // 5. Time to Full Calculation (Uses scaled_real_soc for core, reported level for "is full")
+        self.calculate_time_to_full(scaled_real_soc, reported_soc, &mut info);
+
+        // 6. Set Level Status (Uses the reported level so that it matches what is displayed)
+        self.set_level_status(reported_soc, &mut info);
 
         // Logging
         if self.last_original_level != original_level
@@ -888,8 +912,9 @@ impl Polisher {
             || self.last_rate_limited_level != rate_limited_soc
         {
             info!(
-                "Levels - original: {:?}, scaled: {:?}, post curve mapping: {:?}, rate limited: {:?}",
-                original_level, scaled_real_soc, post_curve, rate_limited_soc
+                "Levels - original: {:?}, scaled: {:?}, post curve mapping: {:?}, \
+                 rate limited: {:?}, reported: {:?}",
+                original_level, scaled_real_soc, post_curve, rate_limited_soc, reported_soc
             );
             self.last_original_level = original_level;
             self.last_rate_limited_level = rate_limited_soc; // Store current RL for next cycle
@@ -899,6 +924,15 @@ impl Polisher {
             self.last_is_plugged_in = Some(Self::is_plugged_in(&info));
         }
         info
+    }
+
+    /// Rounds the final (rate limited) level to the integer percent handed to clients.
+    ///
+    /// Rounds half up (0.5% -> 1%, 0.49% -> 0%, 99.5% -> 100%). Doing this once here, as the last
+    /// stage, lets clients that need an integer capacity use `level_percent` as is, and guarantees
+    /// that the level status and the level shown to the user agree.
+    fn round_reported_level(level: f32) -> f32 {
+        level.round().clamp(0.0, 100.0)
     }
 
     pub fn reset_rate_limiter(&mut self) {
@@ -928,21 +962,50 @@ mod tests {
 
     #[fuchsia::test]
     fn test_scale_level_with_offset_bounds() {
-        // Offset <= 0.0 or >= 100.0 should perform no scaling but apply ceil()
+        // Offset <= 0.0 or >= 100.0 should perform no scaling and no rounding: the fractional
+        // level is passed through so that the final output rounding can reach 0%.
         assert_eq!(InitialScaler::scale_level_with_offset(50.0, 0.0), 50.0);
-        assert_eq!(InitialScaler::scale_level_with_offset(50.5, 0.0), 51.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.5, 0.0), 50.5);
         assert_eq!(InitialScaler::scale_level_with_offset(50.0, -5.0), 50.0);
-        assert_eq!(InitialScaler::scale_level_with_offset(50.5, -5.0), 51.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.5, -5.0), 50.5);
         assert_eq!(InitialScaler::scale_level_with_offset(50.0, 100.0), 50.0);
-        assert_eq!(InitialScaler::scale_level_with_offset(50.5, 100.0), 51.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.5, 100.0), 50.5);
         assert_eq!(InitialScaler::scale_level_with_offset(50.0, 105.0), 50.0);
-        assert_eq!(InitialScaler::scale_level_with_offset(50.5, 105.0), 51.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(50.5, 105.0), 50.5);
+
+        // Fractional levels below 1% must not be rounded up to 1% when offset <= 0.0.
+        assert_eq!(InitialScaler::scale_level_with_offset(0.87890625, 0.0), 0.87890625);
+        assert_eq!(InitialScaler::scale_level_with_offset(0.25, 0.0), 0.25);
+        assert_eq!(InitialScaler::scale_level_with_offset(0.0, 0.0), 0.0);
+        // Negative levels are not meaningful and are clamped to 0.
+        assert_eq!(InitialScaler::scale_level_with_offset(-1.0, 0.0), 0.0);
 
         // Level >= 100.0 should be capped at 100.0 even when offset <= 0.0
         assert_eq!(InitialScaler::scale_level_with_offset(101.0, 0.0), 100.0);
 
-        // Valid offset (e.g. 3.0) scales normally
+        // Valid offset (e.g. 3.0) scales normally and still rounds up.
         assert_eq!(InitialScaler::scale_level_with_offset(51.0, 3.0), 50.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(4.0, 3.0), 2.0);
+        assert_eq!(InitialScaler::scale_level_with_offset(3.5, 3.0), 1.0);
+    }
+
+    #[fuchsia::test]
+    fn test_round_reported_level() {
+        // Round half up to the nearest integer percent.
+        assert_eq!(Polisher::round_reported_level(0.0), 0.0);
+        assert_eq!(Polisher::round_reported_level(0.25), 0.0);
+        assert_eq!(Polisher::round_reported_level(0.49), 0.0);
+        assert_eq!(Polisher::round_reported_level(0.5), 1.0);
+        assert_eq!(Polisher::round_reported_level(0.87890625), 1.0);
+        assert_eq!(Polisher::round_reported_level(1.0), 1.0);
+        assert_eq!(Polisher::round_reported_level(50.4), 50.0);
+        assert_eq!(Polisher::round_reported_level(50.5), 51.0);
+        assert_eq!(Polisher::round_reported_level(99.49), 99.0);
+        assert_eq!(Polisher::round_reported_level(99.5), 100.0);
+        assert_eq!(Polisher::round_reported_level(100.0), 100.0);
+        // Out of range values are clamped.
+        assert_eq!(Polisher::round_reported_level(100.7), 100.0);
+        assert_eq!(Polisher::round_reported_level(-0.3), 0.0);
     }
 
     #[fuchsia::test]
@@ -1789,9 +1852,16 @@ mod tests {
 
         // Drop to 90% (real)
         let info = polisher.polish_info(new_info(90.0, fpower::ChargeStatus::Discharging));
-        // It's below the midpoint 94, so interpolates between 15,15 and 94,100.
-        let expected_level = polisher.curve_mapper.ssoc_uicurve_map(90.0);
+        // It's below the midpoint 94, so interpolates between 15,15 and 94,100 (~95.7), and the
+        // reported level is rounded half up to an integer.
+        let curve_level = polisher.curve_mapper.ssoc_uicurve_map(90.0);
+        assert!(curve_level.fract() != 0.0, "expected a fractional curve level, got {curve_level}");
+        let expected_level = Polisher::round_reported_level(curve_level);
+        assert_eq!(expected_level, 96.0);
         assert_matches!(info.level_percent, Some(p) if (p - expected_level).abs() < f32::EPSILON);
+        // The state kept for the next cycle (used for curve splicing) is still the unrounded level.
+        assert_matches!(polisher.last_rate_limited_level,
+            Some(p) if (p - curve_level).abs() < f32::EPSILON);
 
         // Back to Unmodified behavior?
         // Map function naturally maps real=12.0 to ui=12.0 since it's below curve[0].real (15.0).
@@ -1859,6 +1929,154 @@ mod tests {
             Some(fpower::TimeRemaining::FullCharge(0)),
             "When level is 100%, time_remaining must be set to FullCharge(0)."
         );
+    }
+
+    /// b/570057072: with no shutdown offset, a fuel gauge that reports fractional percentages
+    /// must be able to reach 0% / Critical before the hardware cuts off, and the reported level
+    /// must be an integer so that clients don't have to round it themselves.
+    #[fuchsia::test]
+    fn test_polish_info_fractional_level_without_offset() {
+        let mut polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
+            shutdown_offset_percent: 0.0,
+            ..Default::default()
+        });
+        let mut timestamp: zx::sys::zx_time_t = 0;
+        let mut discharge = |polisher: &mut Polisher, level: f32| {
+            timestamp += 60 * NANOS_PER_SEC;
+            let mut info = new_info(level, fpower::ChargeStatus::Discharging);
+            info.timestamp = Some(timestamp);
+            polisher.polish_info(info)
+        };
+
+        // Levels are reported as integers, rounded half up.
+        let info = discharge(&mut polisher, 50.25);
+        assert_eq!(info.level_percent, Some(50.0));
+        assert_eq!(info.level_status, Some(fpower::LevelStatus::Warning));
+        let info = discharge(&mut polisher, 1.5);
+        assert_eq!(info.level_percent, Some(2.0));
+        assert_eq!(info.level_status, Some(fpower::LevelStatus::Low));
+
+        // 225/256 = 0.87890625%: reporting 1% for it is correct (nearest integer)...
+        let info = discharge(&mut polisher, 0.87890625);
+        assert_eq!(info.level_percent, Some(1.0));
+        assert_eq!(info.level_status, Some(fpower::LevelStatus::Low));
+
+        // ...but once the gauge drops below 0.5% the device must report 0% / Critical. The
+        // previous ceil() in the scaler made that impossible until the gauge reported exactly 0.
+        let info = discharge(&mut polisher, 0.49);
+        assert_eq!(info.level_percent, Some(0.0));
+        assert_eq!(info.level_status, Some(fpower::LevelStatus::Critical));
+        let info = discharge(&mut polisher, 0.0);
+        assert_eq!(info.level_percent, Some(0.0));
+        assert_eq!(info.level_status, Some(fpower::LevelStatus::Critical));
+    }
+
+    #[fuchsia::test]
+    fn test_polish_info_rounds_up_to_full_without_offset() {
+        let mut polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
+            shutdown_offset_percent: 0.0,
+            ..Default::default()
+        });
+        let mut info = new_info(99.5, fpower::ChargeStatus::Charging);
+        info.timestamp = Some(NANOS_PER_SEC);
+        let info = polisher.polish_info(info);
+        // 99.5% rounds up to 100%, which is reported as full.
+        assert_eq!(info.level_percent, Some(100.0));
+        assert_eq!(info.level_status, Some(fpower::LevelStatus::Ok));
+        assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::FullCharge(0)));
+    }
+
+    /// Edge case: when `rate_limited_soc` is in `[99.5, 100.0)` (e.g. 99.6%), `polish_info`
+    /// rounds `reported_soc` to 100.0% and reports `FullCharge(0)`. If the user unplugs at that
+    /// point, `CurveMapper::update_curve_state` must treat the UI as full and splice the discharge
+    /// curve at `(scaled_real_soc.max(95.0) - ssoc_delta, 100.0)` so 100% is held across
+    /// `ssoc_delta`.
+    #[fuchsia::test]
+    fn test_unplug_at_rounded_full_holds_100_across_ssoc_delta() {
+        let mut polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
+            shutdown_offset_percent: 0.0,
+            ssoc_delta: Some(2.0),
+            ..Default::default()
+        });
+
+        // 1. Charging at 99.6%: reported UI level is 100% and TTF is FullCharge(0).
+        let mut info = new_info(99.6, fpower::ChargeStatus::Charging);
+        info.timestamp = Some(NANOS_PER_SEC);
+        let info = polisher.polish_info(info);
+        assert_eq!(info.level_percent, Some(100.0));
+        assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::FullCharge(0)));
+
+        // 2. Unplug at 99.6%: because UI was 100%, the discharge curve should splice its midpoint
+        // at (99.6 - 2.0, 100.0) = (97.6, 100.0).
+        let mut info = new_info(99.6, fpower::ChargeStatus::Discharging);
+        info.timestamp = Some(2 * NANOS_PER_SEC);
+        let info = polisher.polish_info(info);
+        assert_eq!(info.level_percent, Some(100.0));
+
+        // 3. Discharge to 98.4% (1.2% drop, still above the 97.6% midpoint within ssoc_delta = 2%).
+        let mut info = new_info(98.4, fpower::ChargeStatus::Discharging);
+        info.timestamp = Some(60 * NANOS_PER_SEC);
+        let info = polisher.polish_info(info);
+        assert_eq!(
+            info.level_percent,
+            Some(100.0),
+            "UI was showing 100% on unplug at 99.6%; at 98.4% (within ssoc_delta = 2.0%) it should still hold 100%"
+        );
+    }
+
+    /// With `to_soc = 100.0`, at 99.49% (`reported_soc` = 99%) TTF integrates from 99.49% to
+    /// 100.0% (`0.51 * 92s = 46s`), and once `reported_soc` rounds to 100% at 99.50% it short-
+    /// circuits to `FullCharge(0)`.
+    #[fuchsia::test]
+    fn test_ttf_near_99_5_with_100_target() {
+        let mut polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
+            shutdown_offset_percent: 0.0,
+            ..crate::BatteryManagerConfig::default_for_test()
+        });
+
+        let mut info = new_info(99.49, fpower::ChargeStatus::Charging);
+        info.timestamp = Some(NANOS_PER_SEC);
+        info.present_charging_current_ua = Some(500_000);
+        let info = polisher.polish_info(info);
+        assert_eq!(info.level_percent, Some(99.0));
+        assert_eq!(
+            info.time_remaining,
+            Some(fpower::TimeRemaining::FullCharge(46 * NANOS_PER_SEC))
+        );
+
+        let mut info = new_info(99.5, fpower::ChargeStatus::Charging);
+        info.timestamp = Some(2 * NANOS_PER_SEC);
+        info.present_charging_current_ua = Some(500_000);
+        let info = polisher.polish_info(info);
+        assert_eq!(info.level_percent, Some(100.0));
+        assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::FullCharge(0)));
+    }
+
+    /// Because core TTF estimation uses `scaled_real_soc` (`real_level`) rather than
+    /// `rate_limited_soc`, when `scaled_real_soc` reaches 100.0% (`== to_soc`) while `RateLimiter`
+    /// still holds `reported_soc` at 92.0%, `time_to_full(100.0, 100.0)` returns `FullCharge(0)`.
+    #[fuchsia::test]
+    fn test_ttf_uses_real_soc_when_rate_limited_below_100() {
+        let mut polisher = Polisher::new_with_battery_manager_config(crate::BatteryManagerConfig {
+            shutdown_offset_percent: 0.0,
+            ..crate::BatteryManagerConfig::default_for_test()
+        });
+
+        // Start charging at 90% at t = 0.
+        let mut info = new_info(90.0, fpower::ChargeStatus::Charging);
+        info.timestamp = Some(0);
+        info.present_charging_current_ua = Some(500_000);
+        let info = polisher.polish_info(info);
+        assert_eq!(info.level_percent, Some(90.0));
+
+        // At t = 15s (max rate-limiter step = +2.0%), raw level jumps to 100.0%.
+        // Reported UI level is rate-limited to 92.0%, while TTF uses `real_level` (100.0%).
+        let mut info = new_info(100.0, fpower::ChargeStatus::Charging);
+        info.timestamp = Some(15 * NANOS_PER_SEC);
+        info.present_charging_current_ua = Some(500_000);
+        let info = polisher.polish_info(info);
+        assert_eq!(info.level_percent, Some(92.0));
+        assert_eq!(info.time_remaining, Some(fpower::TimeRemaining::FullCharge(0)));
     }
 
     #[fuchsia::test]

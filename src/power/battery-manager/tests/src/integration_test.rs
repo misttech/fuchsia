@@ -1859,3 +1859,90 @@ async fn test_charger_full_retains_wake_lease() -> Result<()> {
 
     Ok(())
 }
+
+#[fuchsia::test]
+async fn test_unplug_when_rounded_to_100_holds_full_for_ssoc_delta() -> Result<()> {
+    let (realm, _lease_events) = setup_realm(FidlRouteMode::NewOnly, false).await?;
+    let battery_mgr: fpower::BatteryManagerProxy =
+        realm.root.connect_to_protocol_at_exposed_dir()?;
+    let service = fuchsia_component::client::Service::open_from_dir(
+        realm.root.get_exposed_dir(),
+        ftest_battery::ServiceMarker,
+    )?;
+    let service_instance = service.watch_for_any().await?;
+    let control = service_instance.connect_to_control()?;
+    let (watcher_client, watcher_stream) =
+        fidl::endpoints::create_request_stream::<fpower::BatteryInfoWatcherMarker>();
+    battery_mgr.watch(watcher_client)?;
+    let fake_clock_control =
+        realm.root.connect_to_protocol_at_exposed_dir::<ftesting::FakeClockControlProxy>()?;
+    fake_clock_control.pause().await?;
+
+    // 1. Initial driver state is 98.7% raw -> 99.0% scaled/rate-limited while Charging.
+    let (info, mut watcher_stream) = wait_for_battery_info(watcher_stream).await?;
+    assert_eq!(info.level_percent, Some(99.0));
+    assert_eq!(info.charge_status, Some(fpower::ChargeStatus::Charging));
+
+    // 2. Advance clock by 6s. With `rl_max_delta_soc = 2.0` and `rl_max_time_s = 15.0`,
+    // the rate limiter allows a +0.8% step (99.0% -> 99.8% internal `rate_limited_soc`) when
+    // the raw level reaches 99.1% (100.0% scaled).
+    // `Polisher::round_reported_level(99.8)` rounds the published `level_percent` to 100.0%
+    // and `calculate_time_to_full` reports `FullCharge(0)`.
+    fake_clock_control
+        .advance(&ftesting::Increment::Determined(
+            zx::MonotonicDuration::from_seconds(6).into_nanos(),
+        ))
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
+    control
+        .set_battery_status(&fbattery::Status {
+            level_percent: Some(99.1),
+            current_ua: Some(250_000),
+            ..Default::default()
+        })
+        .await?;
+    let (full_ui_info, _) = wait_for_matching_battery_info(&mut watcher_stream, |info| {
+        info.level_percent == Some(100.0)
+    })
+    .await?;
+    assert_eq!(full_ui_info.charge_status, Some(fpower::ChargeStatus::Charging));
+    assert_eq!(full_ui_info.time_remaining, Some(fpower::TimeRemaining::FullCharge(0)));
+
+    // 3. Unplug the charger (negative current -> Discharging) at 98.0% raw (98.0% scaled).
+    // Because the UI was displaying 100% (`FullCharge(0)`), disconnecting should splice the
+    // discharge curve midpoint at `scaled_real_soc - ssoc_delta = 98.0 - 2.0 = 96.0` with
+    // `ui = 100.0`, holding the reported UI level at 100% down to 96.0% scaled.
+    fake_clock_control
+        .advance(&ftesting::Increment::Determined(
+            zx::MonotonicDuration::from_seconds(1000).into_nanos(),
+        ))
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
+    control
+        .set_battery_status(&fbattery::Status {
+            level_percent: Some(98.0),
+            current_ua: Some(-250_000),
+            ..Default::default()
+        })
+        .await?;
+    let (unplugged_info, _) = wait_for_matching_battery_info(&mut watcher_stream, |info| {
+        info.charge_status == Some(fpower::ChargeStatus::Discharging)
+    })
+    .await?;
+    assert_eq!(unplugged_info.level_percent, Some(100.0));
+
+    // 4. Discharge to 96.1% raw -> `((96.1 - 3.0) * 100.0 / 97.0).ceil() = 96.0%` scaled,
+    // which is still within the 2.0% `ssoc_delta` hold window `[96.0%, 98.0%]`.
+    // The reported UI level should remain at 100.0% (whereas if `update_curve_state` checks
+    // unrounded `99.8 >= 100.0`, it skips the `ssoc_delta` hold and drops to 98.0%).
+    update_and_check(
+        &control,
+        &fake_clock_control,
+        &mut watcher_stream,
+        zx::MonotonicDuration::from_seconds(1000),
+        96.1,
+        100.0,
+    )
+    .await?;
+    Ok(())
+}
