@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::permissions::{
-    ClassPermission as _, FileClass, KernelClass, KernelPermission, ProcessPermission,
-};
+use super::permissions::{ClassPermission as _, FileClass, KernelClass, KernelPermission};
 use super::{AccessVectorComputer, KernelAccessDecision, ObjectClass};
 use crate::new_policy::rules::{HasRuleKey, RuleKind};
 use crate::new_policy::traits::{HasName, HasPolicyId};
 use crate::new_policy::{
     CategorySet, Class, ClassDefault, ClassDefaultRange, FsUseType, GenfsConPath, HandleUnknown,
+    SELINUX_AVD_FLAGS_PERMISSIVE, XpermsAccessDecision, XpermsKind,
 };
 use crate::policy::parsed_policy::ParsedPolicy;
 use crate::policy::{
@@ -47,8 +46,6 @@ pub struct PolicyIndex {
     permissions: [KernelPermissionIdsArray; KernelClass::VARIANTS.len()],
     /// Parsed binary policy.
     parsed_policy: ParsedPolicy,
-    /// Cached [`ClassId`] for the "process" class, if defined by the policy.
-    cached_process_class: Option<ClassId>,
 }
 
 impl PolicyIndex {
@@ -105,11 +102,7 @@ impl PolicyIndex {
             }
         }
 
-        let cached_process_class = classes.get(&KernelClass::Process).copied();
-
-        let index = Self { classes, permissions, parsed_policy, cached_process_class };
-
-        Ok(index)
+        Ok(Self { classes, permissions, parsed_policy })
     }
 
     /// Returns the policy entry for a class identified either by its well-known kernel object class
@@ -277,51 +270,45 @@ impl PolicyIndex {
         SecurityContext::new(user, role, type_, low_level, high_level)
     }
 
-    /// Evaluates the access rights allowed, and whether an audit should be emitted for any allowed
-    /// or denied permissions, by `source_context` acting on `target_context` as `target_class`.
+    /// Computes the access decision for `source_context` and `target_context` on `object_class`.
     pub fn compute_access_decision(
         &self,
         source_context: &SecurityContext,
         target_context: &SecurityContext,
-        target_class: &Class,
+        object_class: impl Into<ObjectClass>,
     ) -> AccessDecision {
-        let mut access_decision = self.parsed_policy.compute_access_decision(
-            source_context,
-            target_context,
-            target_class,
-        );
-
-        // Process domain transitions ("transition" and "dyntransition") across different roles
-        // require explicit authorization in policy via a role allow rule ("allow old_role new_role;").
-        if source_context.role() != target_context.role()
-            && Some(target_class.id()) == self.cached_process_class
-        {
-            let process_trans_perms = self.process_trans_perms();
-            if (access_decision.allow & process_trans_perms) != AccessVector::NONE
-                && !self.role_transition_is_explicitly_allowed(
-                    source_context.role(),
-                    target_context.role(),
-                )
-            {
-                // The source is granted one or both of the "transition" permissions, but the role
-                // transition is not explicitly allowed, so remove those permissions from the
-                // returned decision.
-                access_decision.allow -= process_trans_perms;
+        if let Some(target_class) = self.class(object_class.into()) {
+            self.parsed_policy.compute_access_decision(source_context, target_context, target_class)
+        } else {
+            let mut decision = AccessDecision::allow(AccessVector::NONE);
+            if self.parsed_policy.is_permissive(source_context.type_()) {
+                decision.flags |= SELINUX_AVD_FLAGS_PERMISSIVE;
             }
+            decision
         }
-
-        access_decision
     }
 
-    /// Returns the combined permissions mask for process `transition` and `dyntransition`.
-    fn process_trans_perms(&self) -> AccessVector {
-        let mut perms = self
-            .kernel_permission_to_access_vector(ProcessPermission::Transition)
-            .unwrap_or(AccessVector::NONE);
-        perms |= self
-            .kernel_permission_to_access_vector(ProcessPermission::DynTransition)
-            .unwrap_or(AccessVector::NONE);
-        perms
+    /// Computes the extended permissions access decision for `source_context` and `target_context`
+    /// on `object_class` for the given `xperms_kind` and `xperms_prefix`.
+    pub fn compute_xperms_access_decision(
+        &self,
+        xperms_kind: XpermsKind,
+        source_context: &SecurityContext,
+        target_context: &SecurityContext,
+        object_class: impl Into<ObjectClass>,
+        xperms_prefix: u8,
+    ) -> XpermsAccessDecision {
+        if let Some(target_class) = self.class(object_class.into()) {
+            self.parsed_policy.compute_xperms_access_decision(
+                xperms_kind,
+                source_context,
+                target_context,
+                target_class,
+                xperms_prefix,
+            )
+        } else {
+            XpermsAccessDecision::DENY_ALL
+        }
     }
 
     /// If there is an fs_use statement for the given filesystem type, returns the associated
@@ -449,12 +436,6 @@ impl PolicyIndex {
                     && role_transition.class() == class.id().into()
             })
             .map(|x| x.new_role())
-    }
-
-    fn role_transition_is_explicitly_allowed(&self, source_role: RoleId, new_role: RoleId) -> bool {
-        self.role_allowlist().iter().any(|role_allow| {
-            role_allow.source_role() == source_role && role_allow.new_role() == new_role
-        })
     }
 
     fn type_transition_new_type_with_name(

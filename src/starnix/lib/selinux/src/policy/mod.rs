@@ -13,7 +13,7 @@ pub use crate::new_policy::{
     AccessDecision, AccessVector, AccessVectorRules, CategoryId, ClassId, FsUseType, HandleUnknown,
     IndexedAccessVectorRules, MlsLevel, MlsRange, POLICYDB_VERSION_MAX, PermissionId, RoleId,
     SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, SecurityContextError, SensitivityId, TypeId,
-    User, UserId, XpermsBitmap,
+    User, UserId, XpermsAccessDecision, XpermsBitmap, XpermsKind,
 };
 use crate::{KernelClass, NullessByteStr, ObjectClass};
 use parsed_policy::ParsedPolicy;
@@ -26,41 +26,6 @@ use std::ops::Deref;
 
 use std::sync::Arc;
 use zerocopy::little_endian as le;
-
-/// Encapsulates the result of a permissions calculation, between
-/// source & target domains, for a specific class. Decisions describe
-
-/// A kind of extended permission, corresponding to the base permission that should trigger a check
-/// of an extended permission.
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub enum XpermsKind {
-    Ioctl,
-    Nlmsg,
-}
-
-/// Encapsulates the result of an extended permissions calculation, between source & target
-/// domains, for a specific class, a specific kind of extended permissions, and for a specific
-/// xperm prefix byte. Decisions describe which 16-bit xperms are allowed, and whether xperms
-/// should be audit-logged when allowed, and when denied.
-#[derive(Debug, Clone, PartialEq)]
-pub struct XpermsAccessDecision {
-    pub allow: XpermsBitmap,
-    pub auditallow: XpermsBitmap,
-    pub auditdeny: XpermsBitmap,
-}
-
-impl XpermsAccessDecision {
-    pub const DENY_ALL: Self = Self {
-        allow: XpermsBitmap::NONE,
-        auditallow: XpermsBitmap::NONE,
-        auditdeny: XpermsBitmap::ALL,
-    };
-    pub const ALLOW_ALL: Self = Self {
-        allow: XpermsBitmap::ALL,
-        auditallow: XpermsBitmap::NONE,
-        auditdeny: XpermsBitmap::ALL,
-    };
-}
 
 /// Parses `binary_policy` by value; that is, copies underlying binary data out in addition to
 /// building up parser output structures. This function returns
@@ -101,40 +66,6 @@ impl Policy {
             .iter()
             .map(|boolean| (boolean.name(), boolean.active()))
             .collect()
-    }
-
-    /// Returns the set of permissions for the given class, including both the
-    /// explicitly owned permissions and the inherited ones from common symbols.
-    /// Each permission is a tuple of the permission identifier (in the scope of
-    /// the given class) and the permission name.
-    pub fn find_class_permissions_by_name(
-        &self,
-        class_name: &str,
-    ) -> Result<Vec<(PermissionId, Vec<u8>)>, ()> {
-        let classes = self.classes();
-        let class = classes.get_by_name(class_name.as_bytes()).ok_or(())?;
-        let owned_permissions = class.permissions();
-
-        let mut result: Vec<_> = owned_permissions
-            .iter()
-            .map(|permission| (permission.id(), permission.name().to_vec()))
-            .collect();
-
-        // common_name() is empty when the class doesn't inherit from a CommonSymbol.
-        if class.common_name().is_empty() {
-            return Ok(result);
-        }
-
-        let common_symbol_permissions =
-            self.common_symbols().get_by_name(class.common_name()).ok_or(())?.permissions();
-
-        result.extend(
-            common_symbol_permissions
-                .iter()
-                .map(|permission| (permission.id(), permission.name().to_vec())),
-        );
-
-        Ok(result)
     }
 
     /// If there is an fs_use statement for the given filesystem type, returns the associated
@@ -181,65 +112,6 @@ impl Policy {
         name: &[u8],
     ) -> SecurityContext {
         self.0.compute_create_context(source, target, class.into(), name)
-    }
-
-    /// Computes the access vector that associates type `source_type_name` and
-    /// `target_type_name` via an explicit `allow [...];` statement in the
-    /// binary policy, subject to any matching constraint statements. Computes
-    /// `AccessVector::NONE` if no such statement exists.
-    ///
-    /// Access decisions are currently based on explicit "allow" rules and
-    /// "constrain" or "mlsconstrain" statements. A permission is allowed if
-    /// it is allowed by an explicit "allow", and if in addition, all matching
-    /// constraints are satisfied.
-    pub fn compute_access_decision(
-        &self,
-        source_context: &SecurityContext,
-        target_context: &SecurityContext,
-        object_class: impl Into<ObjectClass>,
-    ) -> AccessDecision {
-        if let Some(target_class) = self.0.class(object_class.into()) {
-            self.0.compute_access_decision(source_context, target_context, &target_class)
-        } else {
-            let mut decision = AccessDecision::allow(AccessVector::NONE);
-            if self.is_permissive(source_context.type_()) {
-                decision.flags |= SELINUX_AVD_FLAGS_PERMISSIVE;
-            }
-            decision
-        }
-    }
-
-    /// Computes the extended permissions that should be allowed, audited when allowed, and audited
-    /// when denied, for a given kind of extended permissions (`ioctl` or `nlmsg`), source context,
-    /// target context, target class, and xperms prefix byte.
-    pub fn compute_xperms_access_decision(
-        &self,
-        xperms_kind: XpermsKind,
-        source_context: &SecurityContext,
-        target_context: &SecurityContext,
-        object_class: impl Into<ObjectClass>,
-        xperms_prefix: u8,
-    ) -> XpermsAccessDecision {
-        if let Some(target_class) = self.0.class(object_class.into()) {
-            self.0.compute_xperms_access_decision(
-                xperms_kind,
-                source_context,
-                target_context,
-                &target_class,
-                xperms_prefix,
-            )
-        } else {
-            XpermsAccessDecision::DENY_ALL
-        }
-    }
-
-    pub fn is_bounded_by(&self, bounded_type: TypeId, parent_type: TypeId) -> bool {
-        self.0.types().get_by_id(bounded_type).unwrap().bounded_by() == Some(parent_type)
-    }
-
-    /// Returns true if the policy has the marked the type/domain for permissive checks.
-    pub fn is_permissive(&self, type_: TypeId) -> bool {
-        self.0.permissive_map().contains(type_)
     }
 }
 
