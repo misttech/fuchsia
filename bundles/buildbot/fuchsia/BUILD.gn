@@ -160,7 +160,7 @@ if (target_cpu == "riscv64") {
       build_only = true
     }
 
-    target_tests = minimal_target_tests - [ "//src/connectivity/network:tests" ]
+    target_tests = minimal_target_tests + [ "//src/ui:tests" ]
   }
 }
 
