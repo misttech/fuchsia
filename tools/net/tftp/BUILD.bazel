@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//build/bazel/platforms:constraints.bzl", "HOST_OS_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -17,4 +18,14 @@ go_library(
     importpath = "go.fuchsia.dev/fuchsia/tools/net/tftp",
     target_compatible_with = HOST_OS_CONSTRAINTS,
     visibility = ["//:__subpackages__"],
+)
+
+host_go_test(
+    name = "tftp_tests",
+    srcs = [
+        "transfer_test.go",
+    ],
+    embed = [":tftp"],
+    target_compatible_with = HOST_OS_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
 )
