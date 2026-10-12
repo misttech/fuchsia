@@ -958,3 +958,56 @@ func TestCanAccessRbe(t *testing.T) {
 		})
 	}
 }
+
+func TestIsNudgeOn(t *testing.T) {
+	checkoutDir := t.TempDir()
+	scriptsDir := filepath.Join(checkoutDir, "scripts")
+	if err := os.Mkdir(scriptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fxPath := filepath.Join(scriptsDir, "fx")
+
+	testCases := []struct {
+		name          string
+		nudge         string
+		scriptContent string
+		want          bool
+		expectErr     bool
+	}{
+		{
+			name:          "nudge is true",
+			nudge:         "cpu_cores",
+			scriptContent: "#!/bin/bash\nif [[ \"$*\" == \"host-tool --no-build ffx config get ffx.ui.nudges.cpu_cores\" ]]; then echo true; else exit 1; fi\n",
+			want:          true,
+		},
+		{
+			name:          "nudge is false",
+			nudge:         "balanced",
+			scriptContent: "#!/bin/bash\nif [[ \"$*\" == \"host-tool --no-build ffx config get ffx.ui.nudges.balanced\" ]]; then echo false; else exit 1; fi\n",
+			want:          false,
+		},
+		{
+			name:          "fx fails",
+			nudge:         "cpu_cores",
+			scriptContent: "#!/bin/bash\nexit 1\n",
+			want:          true,
+			expectErr:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(fxPath, []byte(tc.scriptContent), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			env := map[string]string{checkoutDirEnvVar: checkoutDir}
+			got, err := isNudgeOn(env, tc.nudge)
+			if (err != nil) != tc.expectErr {
+				t.Fatalf("isNudgeOn() error = %v, expectErr = %v", err, tc.expectErr)
+			}
+			if got != tc.want {
+				t.Errorf("isNudgeOn() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

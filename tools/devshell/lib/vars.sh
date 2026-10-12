@@ -704,7 +704,16 @@ function is-valid-device {
 export _FX_REMOTE_WORKFLOW_DEVICE_ADDR='[::1]:8022'
 
 function is-remote-workflow-device {
-  [[ $(get-device-raw 2>/dev/null) == "${_FX_REMOTE_WORKFLOW_DEVICE_ADDR}" ]]
+  local target=""
+  if ! _is-ffx-built; then
+    target="${FUCHSIA_DEVICE_ADDR:-${FUCHSIA_NODENAME:-}}"
+    if [[ -z "${target}" ]] && fx-build-dir-if-present && [[ -f "${FUCHSIA_BUILD_DIR}.device" ]]; then
+      target="$(<"${FUCHSIA_BUILD_DIR}.device")"
+    fi
+  else
+    target="$(get-device-raw 2>/dev/null)"
+  fi
+  [[ "${target}" == "${_FX_REMOTE_WORKFLOW_DEVICE_ADDR}" ]]
 }
 
 # fx-export-device-address is "public API" to commands that wish to
@@ -862,7 +871,7 @@ function ffx {
 }
 
 function _is-ffx-built {
-  fx-build-dir-if-present && [[ -x "${FUCHSIA_BUILD_DIR}/host-tools/ffx" ]]
+  fx-build-dir-if-present && [[ -x "${FUCHSIA_BUILD_DIR}/host-tools/ffx" || -x "${HOST_OUT_DIR:-${FUCHSIA_BUILD_DIR}/host_x64}/ffx" ]]
 }
 
 # Prints path to the default SSH key. These credentials are created

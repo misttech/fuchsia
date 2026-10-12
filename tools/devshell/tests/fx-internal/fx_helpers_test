@@ -130,6 +130,17 @@ TEST_is-remote-workflow-device() {
   echo "${_FX_REMOTE_WORKFLOW_DEVICE_ADDR}" > "${EXPECT_BUILD_DIR}.device"
   BT_EXPECT_EQ "${_FX_REMOTE_WORKFLOW_DEVICE_ADDR}" "$(get-device-raw)"
   BT_EXPECT is-remote-workflow-device
+
+  # Test with ffx unbuilt
+  mv "${ffx}" "${ffx}_unbuilt"
+
+  echo "foo" > "${EXPECT_BUILD_DIR}.device"
+  BT_EXPECT_FAIL is-remote-workflow-device
+
+  echo "${_FX_REMOTE_WORKFLOW_DEVICE_ADDR}" > "${EXPECT_BUILD_DIR}.device"
+  BT_EXPECT is-remote-workflow-device
+
+  mv "${ffx}_unbuilt" "${ffx}"
 }
 
 BT_RUN_TESTS "$@"

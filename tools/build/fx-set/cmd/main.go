@@ -765,12 +765,17 @@ func resolveProductBundleName(checkoutDir, buildDir, name string) (string, error
 
 func isNudgeOn(env map[string]string, nudge string) (bool, error) {
 	nudge_string := "ffx.ui.nudges." + nudge
-	cmd := exec.Command("ffx", "config", "get", nudge_string)
+	fxPath := filepath.Join(env[checkoutDirEnvVar], "scripts", "fx")
+	cmd := exec.Command(fxPath, "host-tool", "--no-build", "ffx", "config", "get", nudge_string)
 	cmd.Dir = env[checkoutDirEnvVar]
 	out, err := cmd.Output()
 	if err == nil {
 		return strconv.ParseBool(strings.TrimSpace(string(out)))
 	} else {
+		// When ffx is not yet built (--no-build exits with status 2), or when
+		// the nudge config key is unset (ffx config get exits with status 2),
+		// err != nil. We intentionally return true so nudges default to enabled
+		// without building ffx.
 		return true, err
 	}
 }
