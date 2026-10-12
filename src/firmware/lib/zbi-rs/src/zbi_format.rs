@@ -355,7 +355,7 @@ pub struct zbi_dcfg_arm_gic_v3_driver_t {
     pub gicd_offset: u64,
     pub gicr_offset: u64,
     pub gicr_stride: u64,
-    pub reserved0: u64,
+    pub its_phys: u64,
     pub ipi_base: u32,
     pub optional: u8,
     pub reserved1: [u8; 3usize],
@@ -374,8 +374,8 @@ const _: () = {
         [::core::mem::offset_of!(zbi_dcfg_arm_gic_v3_driver_t, gicr_offset) - 16usize];
     ["Offset of field: zbi_dcfg_arm_gic_v3_driver_t::gicr_stride"]
         [::core::mem::offset_of!(zbi_dcfg_arm_gic_v3_driver_t, gicr_stride) - 24usize];
-    ["Offset of field: zbi_dcfg_arm_gic_v3_driver_t::reserved0"]
-        [::core::mem::offset_of!(zbi_dcfg_arm_gic_v3_driver_t, reserved0) - 32usize];
+    ["Offset of field: zbi_dcfg_arm_gic_v3_driver_t::its_phys"]
+        [::core::mem::offset_of!(zbi_dcfg_arm_gic_v3_driver_t, its_phys) - 32usize];
     ["Offset of field: zbi_dcfg_arm_gic_v3_driver_t::ipi_base"]
         [::core::mem::offset_of!(zbi_dcfg_arm_gic_v3_driver_t, ipi_base) - 40usize];
     ["Offset of field: zbi_dcfg_arm_gic_v3_driver_t::optional"]

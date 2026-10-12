@@ -165,7 +165,7 @@ typedef struct {
   uint64_t gicd_offset;
   uint64_t gicr_offset;
   uint64_t gicr_stride;
-  uint64_t reserved0;
+  uint64_t its_phys;
   uint32_t ipi_base;
   uint8_t optional;
   uint8_t reserved1[3];

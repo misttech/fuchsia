@@ -606,7 +606,7 @@ VALIDATE_FIELD_OFFSET_SIZE(zbi_dcfg_arm_gic_v3_driver_t, mmio_phys, 0, 8);
 VALIDATE_FIELD_OFFSET_SIZE(zbi_dcfg_arm_gic_v3_driver_t, gicd_offset, 8, 8);
 VALIDATE_FIELD_OFFSET_SIZE(zbi_dcfg_arm_gic_v3_driver_t, gicr_offset, 16, 8);
 VALIDATE_FIELD_OFFSET_SIZE(zbi_dcfg_arm_gic_v3_driver_t, gicr_stride, 24, 8);
-VALIDATE_FIELD_OFFSET_SIZE(zbi_dcfg_arm_gic_v3_driver_t, reserved0, 32, 8);
+VALIDATE_FIELD_OFFSET_SIZE(zbi_dcfg_arm_gic_v3_driver_t, its_phys, 32, 8);
 VALIDATE_FIELD_OFFSET_SIZE(zbi_dcfg_arm_gic_v3_driver_t, ipi_base, 40, 4);
 VALIDATE_FIELD_OFFSET_SIZE(zbi_dcfg_arm_gic_v3_driver_t, optional, 44, 1);
 VALIDATE_FIELD_OFFSET_SIZE(zbi_dcfg_arm_gic_v3_driver_t, reserved1, 45, 3);

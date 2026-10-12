@@ -156,7 +156,7 @@ type DcfgArmGicV3Driver = struct {
     gicd_offset uint64;
     gicr_offset uint64;
     gicr_stride uint64;
-    reserved0 uint64;
+    its_phys uint64;
     ipi_base uint32;
     optional uint8;
     reserved1 array<uint8, 3>;
