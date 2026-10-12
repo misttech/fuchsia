@@ -94,8 +94,10 @@ std::unique_ptr<PlatformBuffer> ZirconPlatformBusMapper::CreateContiguousBuffer(
   zx::vmo vmo;
   zx_status_t status = zx_vmo_create_contiguous(bus_transaction_initiator_->get(), size,
                                                 alignment_log2, vmo.reset_and_get_address());
-  if (status != ZX_OK)
-    DRETP(nullptr, "Failed to create contiguous vmo: %d", status);
+  if (status != ZX_OK) {
+    return DRETP(nullptr, "Failed to create contiguous vmo: %d", status);
+  }
+
   vmo.set_property(ZX_PROP_NAME, name, strlen(name));
   return PlatformBuffer::Import(vmo.release());
 }
