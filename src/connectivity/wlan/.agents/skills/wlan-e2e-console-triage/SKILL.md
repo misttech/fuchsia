@@ -35,7 +35,9 @@ description: >
 Present a concise report and ask the user which actions to execute:
 
 1. **Builder Coverage & Associated Failures**:
-   * Summarize active builders, `WARNING` lines, and associated bug groups.
+   * Summarize active builders and `WARNING` lines.
+   * Print a list of the bugs associated with existing failures, including each
+     bug's ID (`b/<id>`), priority, assignee, and affected suite(s)/boards.
    * Flag (for human awareness) any associated bug whose `Rule` only matches
      `test` without constraining `reason`, or where multiple distinct `Reason:`
      lines are masked under one bug.

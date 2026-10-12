@@ -232,8 +232,46 @@ def fetch_wlan_failures_for_build(
     return list(grouped_in_build.values())
 
 
+def _fetch_bug_metadata(bug_ids: list[str]) -> dict[str, dict[str, str]]:
+    """Queries issues-cli batch-get for priority and assignee of associated bugs."""
+    if not bug_ids:
+        return {}
+    try:
+        res = subprocess.run(
+            [
+                ISSUES_BIN,
+                "readonly",
+                "batch-get",
+                "--issue_ids",
+                ",".join(bug_ids),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except Exception as e:
+        print(
+            f"Warning: Failed to fetch bug metadata via issues-cli ({e}).",
+            file=sys.stderr,
+        )
+        return {}
+
+    meta: dict[str, dict[str, str]] = {}
+    for line in res.stdout.splitlines():
+        if m := re.match(
+            r"^- Issue (\d+): .*\(Priority:\s*([^,)]*),\s*Assignee:\s*([^)]*)\)\s*$",
+            line,
+        ):
+            bug_id, priority, assignee = m.groups()
+            meta[bug_id] = {
+                "priority": priority.strip() or "unknown",
+                "assignee": assignee.strip() or "unassigned",
+            }
+    return meta
+
+
 def populate_cluster_bugs(failures: list[dict[str, Any]]) -> None:
-    """Queries LUCI Analysis Clusters.Cluster and Rules.Get to find associated bugs for each failure."""
+    """Queries LUCI Analysis Clusters.Cluster, Rules.Get, and issues-cli to find associated bugs for each failure."""
     if not failures:
         return
 
@@ -281,6 +319,9 @@ def populate_cluster_bugs(failures: list[dict[str, Any]]) -> None:
         for clist in clustered_by_idx.values()
         for c in clist
     )
+    matched_bug_ids = _dedup(
+        c["bug"]["id"] for clist in clustered_by_idx.values() for c in clist
+    )
 
     def _fetch_rule(rid: str) -> tuple[str, str]:
         try:
@@ -298,7 +339,9 @@ def populate_cluster_bugs(failures: list[dict[str, Any]]) -> None:
             return rid, ""
 
     with ThreadPoolExecutor(max_workers=8) as executor:
+        bug_meta_future = executor.submit(_fetch_bug_metadata, matched_bug_ids)
         rule_defs = dict(executor.map(_fetch_rule, matched_rule_ids))
+        bug_meta = bug_meta_future.result()
 
     for i, f in enumerate(failures):
         f["associated_bugs"] = list(
@@ -307,6 +350,12 @@ def populate_cluster_bugs(failures: list[dict[str, Any]]) -> None:
                     "bug_id": c["bug"]["id"],
                     "link_text": c["bug"].get(
                         "linkText", f"b/{c['bug']['id']}"
+                    ),
+                    "priority": bug_meta.get(c["bug"]["id"], {}).get(
+                        "priority", "unknown"
+                    ),
+                    "assignee": bug_meta.get(c["bug"]["id"], {}).get(
+                        "assignee", "unknown"
                     ),
                     "rule_definition": rule_defs.get(c["clusterId"]["id"], ""),
                 }
@@ -424,7 +473,10 @@ def handle_scan(_args: argparse.Namespace) -> None:
     else:
         for occs in assoc_grouped_map.values():
             bugs = occs[0]["associated_bugs"]
-            bug_parts = [b["link_text"] for b in bugs]
+            bug_parts = [
+                f"{b['link_text']} (Priority: {b['priority']}, Assignee: {b['assignee']})"
+                for b in bugs
+            ]
             suites = sorted(
                 {o["base_sh_prefix"].rsplit("/", 1)[-1] for o in occs}
             )
