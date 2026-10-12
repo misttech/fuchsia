@@ -130,25 +130,29 @@ impl<'a> Project<'a> {
             self.logger.log_metric_events(&metric_events).await??;
             self.stats.map(|stats| stats.cobalt_logs_sent.add(metric_events.len() as u64));
 
-            let mut original_metrics = vec![];
-
-            std::mem::swap(&mut original_metrics, &mut data_set.metrics);
-            let (upload_once_values_for_data_set, filtered_metrics) =
-                original_metrics.into_iter().partition(|metric| {
-                    metric.upload_once
-                        && metric_events.iter().any(|me| {
-                            me.metric_id == *metric.metric_id
-                                && me
-                                    .event_codes
-                                    .iter()
-                                    .copied()
-                                    .map(EventCode)
-                                    .eq(metric.event_codes.iter().copied())
-                        })
-                });
-
-            data_set.metrics = filtered_metrics;
-            upload_once_values.extend(upload_once_values_for_data_set);
+            data_set.metrics.retain_mut(|metric| {
+                if metric.upload_once
+                    && metric_events.iter().any(|me| {
+                        me.metric_id == *metric.metric_id
+                            && me
+                                .event_codes
+                                .iter()
+                                .copied()
+                                .map(EventCode)
+                                .eq(metric.event_codes.iter().copied())
+                    })
+                {
+                    upload_once_values.push(MetricConfig {
+                        selectors: std::mem::take(&mut metric.selectors),
+                        event_codes: std::mem::take(&mut metric.event_codes),
+                        ..*metric
+                    });
+                    false
+                } else {
+                    true
+                }
+            });
+            data_set.metrics.shrink_to_fit();
         }
 
         Ok(upload_once_values)

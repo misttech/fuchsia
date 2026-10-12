@@ -86,6 +86,7 @@ where
         if out.is_empty() {
             Err(de::Error::invalid_length(0, &"expected at least one string"))
         } else {
+            out.shrink_to_fit();
             Ok(out)
         }
     }
