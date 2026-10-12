@@ -117,6 +117,19 @@ implement the `std::format`.
 Follow the [Fuchsia logging guidelines][logging-guidelines] by using `warning`
 or `error` log levels when documenting failures such as FIDL errors.
 
+## Error handling
+
+Return [`zx::result<T>`][zx-result] from fallible functions instead of `void`
+or a `zx_status_t` plus an out-parameter, so the caller can handle the error.
+Use `fit::result<E, T>` for your own error types. Mark functions whose
+signature must return `zx_status_t` (C ABI, legacy interfaces) `[[nodiscard]]`.
+
+Never report success after a failure. Pass errors to completers that accept
+them (such as `fdf::StartCompleter`) with `take_error()` or
+`zx::make_result(status)`. If the completer cannot report an error
+(`fdf_power::ResumeCompleter`), leave the driver's state showing the failure.
+Log or comment any place that continues after a failure on purpose.
+
 ## Zircon resources
 
 ### Interrupts
@@ -288,3 +301,4 @@ connection to the `DriverTestRealm` service, perform necessary configuration in
 [vmo-registration]: /docs/development/drivers/best_practices/vmo-registration-pattern.md
 [precondition-checks]: /docs/development/drivers/driver_guides/display/register-definitions.md#precondition_checks
 [dma-cache-coherency]: /docs/development/drivers/concepts/driver_development/dma.md#cache_coherency
+[zx-result]: /zircon/system/ulib/zx/include/lib/zx/result.h
