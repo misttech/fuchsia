@@ -14,21 +14,13 @@
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
-FFI_ALWAYS_INLINE fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_address_region_get_ref_counted(
-    VmAddressRegion* vmar) {
-  return vmar;
-}
 FFI_ALWAYS_INLINE void cpp_vm_address_region_free(VmAddressRegion* vmar) { delete vmar; }
+FFI_ALWAYS_INLINE void* cpp_vm_address_region_or_mapping_state(
+    VmAddressRegionOrMapping* region_or_mapping) {
+  return &region_or_mapping->opaque_storage_;
+}
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar) {
   return vmar->Destroy();
-}
-FFI_ALWAYS_INLINE const fbl::RefPtr<VmAspace>* cpp_vm_address_region_aspace(VmAddressRegion* vmar) {
-  return &vmar->aspace();
-}
-FFI_ALWAYS_INLINE vaddr_t cpp_vm_address_region_base(VmAddressRegion* vmar) { return vmar->base(); }
-FFI_ALWAYS_INLINE size_t cpp_vm_address_region_size(VmAddressRegion* vmar) { return vmar->size(); }
-FFI_ALWAYS_INLINE uint32_t cpp_vm_address_region_flags(VmAddressRegion* vmar) {
-  return vmar->flags();
 }
 FFI_ALWAYS_INLINE const char* cpp_vm_address_region_name(VmAddressRegion* vmar) {
   return vmar->name();

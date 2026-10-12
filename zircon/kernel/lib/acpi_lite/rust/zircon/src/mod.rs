@@ -75,12 +75,12 @@ impl PhysMemReader for ZirconPhysmemReader {
         for mapping_node in fields.mappings.iter() {
             let mapping = &mapping_node.mapping;
             let (map_paddr, _mmu_flags) = {
-                let res = arch_aspace.query(mapping.base())?;
+                let res = arch_aspace.query(mapping.base().0)?;
                 (res.0.0, res.1)
             };
             if map_paddr <= paddr_base && paddr_base + size <= map_paddr + mapping.size() {
                 let offset = phys - map_paddr;
-                let ptr = core::ptr::with_exposed_provenance::<u8>(mapping.base() + offset);
+                let ptr = core::ptr::with_exposed_provenance::<u8>(mapping.base().0 + offset);
                 let slice = unsafe { core::slice::from_raw_parts(ptr, length) };
                 return Ok(slice);
             }

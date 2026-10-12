@@ -58,7 +58,7 @@ VmAddressRegion::VmAddressRegion(VmAspace& aspace, vaddr_t base, size_t size, ui
 
 VmAddressRegion::VmAddressRegion(VmAddressRegion& parent, vaddr_t base, size_t size,
                                  uint32_t vmar_flags, const char* name)
-    : VmAddressRegionOrMapping(base, size, vmar_flags, parent.aspace_.get(), &parent, false) {
+    : VmAddressRegionOrMapping(base, size, vmar_flags, parent.aspace().get(), &parent, false) {
   strlcpy(const_cast<char*>(name_), name, sizeof(name_));
   LTRACEF("%p '%s'\n", this, name_);
 }
@@ -67,7 +67,7 @@ VmAddressRegion::VmAddressRegion(VmAspace& kernel_aspace)
     : VmAddressRegion(kernel_aspace, kernel_aspace.base(), kernel_aspace.size(),
                       VMAR_FLAG_CAN_MAP_SPECIFIC) {
   // Activate the kernel root aspace immediately
-  state_ = LifeCycleState::ALIVE;
+  set_state_locked(LifeCycleState::ALIVE);
 }
 
 zx_status_t VmAddressRegion::CreateRootLocked(VmAspace& aspace, uint32_t vmar_flags,
@@ -83,7 +83,7 @@ zx_status_t VmAddressRegion::CreateRootLocked(VmAspace& aspace, uint32_t vmar_fl
   AssertHeld(vmar->lock_ref());
   AssertHeld(vmar->region_lock_ref());
 
-  vmar->state_ = LifeCycleState::ALIVE;
+  vmar->set_state_locked(LifeCycleState::ALIVE);
   *out = fbl::AdoptRef(vmar);
   return ZX_OK;
 }
@@ -141,7 +141,7 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
 
     // Check if there are any RWX privileges that the child would have that the
     // parent does not.
-    if (vmar_flags & ~flags_ & VMAR_CAN_RWX_FLAGS) {
+    if (vmar_flags & ~flags() & VMAR_CAN_RWX_FLAGS) {
       return ZX_ERR_ACCESS_DENIED;
     }
 
@@ -164,21 +164,22 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
 
     // Check that we have the required privileges if we want a SPECIFIC or
     // UPPER_LIMIT mapping.
-    if ((is_specific || is_upper_bound) && !(flags_ & VMAR_FLAG_CAN_MAP_SPECIFIC)) {
+    if ((is_specific || is_upper_bound) && !(flags() & VMAR_FLAG_CAN_MAP_SPECIFIC)) {
       return ZX_ERR_ACCESS_DENIED;
     }
 
-    if (!is_upper_bound && (offset >= size_ || size > size_ - offset)) {
+    if (!is_upper_bound && (offset >= this->size() || size > this->size() - offset)) {
       return ZX_ERR_INVALID_ARGS;
     }
-    if (is_upper_bound && (offset > size_ || size > size_ || size > offset)) {
+    if (is_upper_bound && (offset > this->size() || size > this->size() || size > offset)) {
       return ZX_ERR_INVALID_ARGS;
     }
 
     vaddr_t new_base = ktl::numeric_limits<vaddr_t>::max();
     if (is_specific) {
-      // This would not overflow because offset <= size_ - 1, base_ + offset <= base_ + size_ - 1.
-      new_base = base_ + offset;
+      // This would not overflow because offset <= size() - 1,
+      // base() + offset <= base() + size() - 1.
+      new_base = base() + offset;
       if (align_pow2 > 0 && (new_base & ((1ULL << align_pow2) - 1))) {
         return ZX_ERR_INVALID_ARGS;
       }
@@ -194,7 +195,7 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
     } else {
       // If we're not mapping to a specific place, search for an opening.
       const vaddr_t upper_bound =
-          is_upper_bound ? base_ + offset : ktl::numeric_limits<vaddr_t>::max();
+          is_upper_bound ? base() + offset : ktl::numeric_limits<vaddr_t>::max();
       zx_status_t status =
           AllocSpotLockedRegion(size, align_pow2, arch_mmu_flags, &new_base, upper_bound);
       if (status != ZX_OK) {
@@ -211,7 +212,7 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
     if (vmo) {
       // Check that VMOs that back kernel mappings start of with their pages pinned, unless the
       // dynamic flag has been set to opt out of this specific check.
-      DEBUG_ASSERT(aspace_->is_user() || aspace_->is_guest_physical() ||
+      DEBUG_ASSERT(aspace()->is_user() || aspace()->is_guest_physical() ||
                    vmar_flags & VMAR_FLAG_DEBUG_DYNAMIC_KERNEL_MAPPING ||
                    vmo->DebugIsRangePinned(vmo_offset, size));
       vmar = fbl::AdoptRef<VmAddressRegionOrMapping>(new (&ac) VmMapping(
@@ -230,10 +231,10 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
     if (is_vdso_code) {
       // For an executable mapping of the vDSO, allow only one per process
       // and only for the valid range of the image.
-      if (aspace_->vdso_code_mapping_ || !VDso::valid_code_mapping(vmo_offset, size)) {
+      if (aspace()->vdso_code_mapping_ || !VDso::valid_code_mapping(vmo_offset, size)) {
         return ZX_ERR_ACCESS_DENIED;
       }
-      aspace_->vdso_code_mapping_ = fbl::RefPtr<VmMapping>::Downcast(vmar);
+      aspace()->vdso_code_mapping_ = fbl::RefPtr<VmMapping>::Downcast(vmar);
     }
 
     // These locked actions on the vmar are done inside a lambda as otherwise the AssertHeld, which
@@ -251,12 +252,12 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
       if (VmMapping* downcast_mapping = vmar->as_vm_mapping_ptr(); downcast_mapping) {
         DEBUG_ASSERT(downcast_mapping);
         AssertHeld(downcast_mapping->lock_ref());
-        downcast_mapping->SetMemoryPriorityLocked(memory_priority_);
+        downcast_mapping->SetMemoryPriorityLocked(memory_priority_locked());
       } else {
         VmAddressRegion* downcast_vmar = vmar->as_vm_address_region_ptr();
         DEBUG_ASSERT(downcast_vmar);
         AssertHeld(downcast_vmar->lock_ref());
-        status = downcast_vmar->SetMemoryPriorityLocked(memory_priority_);
+        status = downcast_vmar->SetMemoryPriorityLocked(memory_priority_locked());
         DEBUG_ASSERT_MSG(status == ZX_OK, "status: %d", status);
       }
       return ZX_OK;
@@ -265,7 +266,7 @@ zx_status_t VmAddressRegion::CreateSubVmarInner(size_t offset, size_t size, uint
       return status;
     }
 
-    memory_priority = memory_priority_;
+    memory_priority = memory_priority_locked();
     *base_out = new_base;
   }
 
@@ -401,7 +402,7 @@ zx_status_t VmAddressRegion::OverwriteVmMappingLocked(
 
   // Propagate any memory priority settings. This should only fail if not alive, but we hold the
   // lock and just made it alive, so that cannot happen.
-  vmar->SetMemoryPriorityLocked(memory_priority_);
+  vmar->SetMemoryPriorityLocked(memory_priority_locked());
 
   *out = fbl::RefPtr<VmAddressRegionOrMapping>(vmar.get());
   return ZX_OK;
@@ -445,14 +446,14 @@ zx_status_t VmAddressRegion::DestroyLockedImpl() {
       cur = child_region;
     } else {
       // All children are destroyed, so now destroy the current node.
-      if (cur->parent_) {
-        AssertHeld(cur->parent_->lock_ref());
-        AssertHeld(cur->parent_->region_lock_ref());
-        cur->parent_->subregions_.RemoveRegion(cur.get());
+      if (cur->parent_locked()) {
+        AssertHeld(cur->parent_locked()->lock_ref());
+        AssertHeld(cur->parent_locked()->region_lock_ref());
+        cur->parent_locked()->subregions_.RemoveRegion(cur.get());
       }
-      cur->state_ = LifeCycleState::DEAD;
-      VmAddressRegion* cur_parent = cur->parent_;
-      cur->parent_ = nullptr;
+      cur->set_state_locked(LifeCycleState::DEAD);
+      VmAddressRegion* cur_parent = cur->parent_locked();
+      cur->set_parent_locked(nullptr);
 
       // If we destroyed the original node, stop. Otherwise traverse
       // up the tree and keep destroying.
@@ -481,7 +482,7 @@ fbl::RefPtr<VmAddressRegionOrMapping> VmAddressRegion::FindRegionLocked(vaddr_t 
 VmObject::AttributionCounts VmAddressRegion::GetAttributedMemory() const {
   canary_.Assert();
 
-  Guard<CriticalMutex> guard{aspace_->lock()};
+  Guard<CriticalMutex> guard{aspace()->lock()};
   if (!IsAliveLocked()) {
     return AttributionCounts{};
   }
@@ -541,7 +542,7 @@ ktl::optional<vaddr_t> VmAddressRegion::CheckGapLockedRegion(const VmAddressRegi
       return ktl::nullopt;
     }
   } else {
-    gap_beg = base_;
+    gap_beg = base();
   }
 
   // compute the ending address of the gap
@@ -553,10 +554,10 @@ ktl::optional<vaddr_t> VmAddressRegion::CheckGapLockedRegion(const VmAddressRegi
       return ktl::nullopt;
     }
   } else {
-    if (gap_beg - base_ == size_) {
+    if (gap_beg - base() == size()) {
       return ktl::nullopt;  // no gap at the end of address space.
     }
-    if (add_overflow(base_, size_ - 1, &gap_end)) {
+    if (add_overflow(base(), size() - 1, &gap_end)) {
       return ktl::nullopt;
     }
   }
@@ -577,7 +578,7 @@ ktl::optional<vaddr_t> VmAddressRegion::CheckGapLockedRegion(const VmAddressRegi
                 search_base, gap_beg, gap_end);
 
   vaddr_t va =
-      aspace_->arch_aspace().PickSpot(gap_beg, gap_end, align, region_size, arch_mmu_flags);
+      aspace()->arch_aspace().PickSpot(gap_beg, gap_end, align, region_size, arch_mmu_flags);
 
   if (va < gap_beg) {
     return ktl::nullopt;  // address wrapped around
@@ -632,7 +633,7 @@ zx_status_t VmAddressRegion::EnumerateChildren(VmEnumerator* ve) {
 
 bool VmAddressRegion::has_parent() const {
   Guard<CriticalMutex> guard{lock()};
-  return parent_ != nullptr;
+  return parent_locked() != nullptr;
 }
 
 void VmAddressRegion::DumpLockedImpl(uint depth, bool verbose) const {
@@ -641,7 +642,7 @@ void VmAddressRegion::DumpLockedImpl(uint depth, bool verbose) const {
     printf("  ");
   }
   printf("vmar %p [%#" PRIxPTR " %#" PRIxPTR "] sz %#zx ref %d state %d '%s' subregions %zu\n",
-         this, base_, base_ + (size_ - 1), size_, ref_count_debug(), (int)state_, name_,
+         this, base(), base() + (size() - 1), size(), ref_count_debug(), (int)state_locked(), name_,
          subregions_.size_slow());
   for (const auto& child : subregions_) {
     AssertHeld(child.second->lock_ref());
@@ -651,28 +652,28 @@ void VmAddressRegion::DumpLockedImpl(uint depth, bool verbose) const {
 }
 
 zx_status_t VmAddressRegion::ActivateImpl() {
-  DEBUG_ASSERT(state_ == LifeCycleState::NOT_READY);
+  DEBUG_ASSERT(state_locked() == LifeCycleState::NOT_READY);
 
-  AssertHeld(parent_->lock_ref());
-  AssertHeld(parent_->region_lock_ref());
+  AssertHeld(parent_locked()->lock_ref());
+  AssertHeld(parent_locked()->region_lock_ref());
 
   // Validate we are a correct child of our parent.
-  DEBUG_ASSERT(parent_->is_in_range(base_, size_));
+  DEBUG_ASSERT(parent_locked()->is_in_range(base(), this->size()));
 
   // Look for a region in the parent starting from our desired base. If any region is found, make
   // sure we do not intersect with it.
-  auto candidate = parent_->subregions_.IncludeOrHigher(base_);
-  if (candidate != parent_->subregions_.end()) {
+  auto candidate = parent_locked()->subregions_.IncludeOrHigher(base());
+  if (candidate != parent_locked()->subregions_.end()) {
     AssertHeld((*candidate).second->lock_ref());
-    ASSERT((*candidate).second->base() >= base_ + size_);
+    ASSERT((*candidate).second->base() >= base() + this->size());
   }
 
   zx_status_t status =
-      parent_->subregions_.InsertRegion(fbl::RefPtr<VmAddressRegionOrMapping>(this));
+      parent_locked()->subregions_.InsertRegion(fbl::RefPtr<VmAddressRegionOrMapping>(this));
   if (status != ZX_OK) {
     return status;
   }
-  state_ = LifeCycleState::ALIVE;
+  set_state_locked(LifeCycleState::ALIVE);
   return ZX_OK;
 }
 
@@ -702,7 +703,7 @@ zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
     }
 
     // Don't allow any operations on the vDSO code mapping.
-    if (aspace_->IntersectsVdsoCodeLocked(base, len)) {
+    if (aspace()->IntersectsVdsoCodeLocked(base, len)) {
       return ZX_ERR_ACCESS_DENIED;
     }
     return ZX_OK;
@@ -753,7 +754,7 @@ zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
     // whether op_children is otherwise allowed.
     if ((op == RangeOpType::Commit || op == RangeOpType::Decommit || op == RangeOpType::Prefetch ||
          op_children == VmAddressRegionOpChildren::No) &&
-        mapping->parent_ != this) {
+        mapping->parent_locked() != this) {
       return ZX_ERR_INVALID_ARGS;
     }
 
@@ -762,7 +763,7 @@ zx_status_t VmAddressRegion::RangeOp(RangeOpType op, vaddr_t base, size_t len,
       // being less than the end of the mapping. User synchronisation is required for the observable
       // result to be defined, as the stream size is a user managed property & not guaranteed atomic
       // to the VMO.
-      if (mapping->flags_ & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE) {
+      if (mapping->flags() & VMAR_FLAG_FAULT_BEYOND_STREAM_SIZE) {
         VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(vmo.get());
         DEBUG_ASSERT(paged);
         {
@@ -868,7 +869,7 @@ zx_status_t VmAddressRegion::Unmap(vaddr_t base, size_t size,
 
   Guard<CriticalMutex> region_guard{region_lock()};
   Guard<CriticalMutex> guard{lock()};
-  if (state_ != LifeCycleState::ALIVE) {
+  if (state_locked() != LifeCycleState::ALIVE) {
     return ZX_ERR_BAD_STATE;
   }
 
@@ -887,7 +888,7 @@ zx_status_t VmAddressRegion::UnmapInternalLocked(vaddr_t base, size_t size,
   }
 
   // Any unmap spanning the vDSO code mapping is verboten.
-  if (aspace_->IntersectsVdsoCodeLocked(base, size)) {
+  if (aspace()->IntersectsVdsoCodeLocked(base, size)) {
     return ZX_ERR_ACCESS_DENIED;
   }
 
@@ -1004,11 +1005,11 @@ zx_status_t VmAddressRegion::Protect(vaddr_t base, size_t size, arch_mmu_flags_t
       if (!mapping->is_valid_mapping_flags(new_arch_mmu_flags)) {
         return ZX_ERR_ACCESS_DENIED;
       }
-      if (mapping == aspace_->vdso_code_mapping_.get()) {
+      if (mapping == aspace()->vdso_code_mapping_.get()) {
         return ZX_ERR_ACCESS_DENIED;
       }
       AssertHeld(mapping->lock_ref());
-      if (mapping->parent_ != this) {
+      if (mapping->parent_locked() != this) {
         if (op_children == VmAddressRegionOpChildren::No) {
           return ZX_ERR_INVALID_ARGS;
         }
@@ -1096,15 +1097,15 @@ zx_status_t VmAddressRegion::AllocSpotLockedRegion(size_t size, uint8_t align_po
   align_pow2 = ktl::max(align_pow2, static_cast<uint8_t>(kPageShift));
   const vaddr_t align = 1UL << align_pow2;
   // Ensure our candidate calculation shift will not overflow.
-  const uint8_t entropy = aspace_->AslrEntropyBits(flags_ & VMAR_FLAG_COMPACT);
+  const uint8_t entropy = aspace()->AslrEntropyBits(flags() & VMAR_FLAG_COMPACT);
   vaddr_t alloc_spot = 0;
   crypto::Prng* prng = nullptr;
-  if (aspace_->is_aslr_enabled()) {
-    prng = &aspace_->AslrPrng();
+  if (aspace()->is_aslr_enabled()) {
+    prng = &aspace()->AslrPrng();
   }
 
   zx_status_t status = subregions_locked_region().GetAllocSpot(
-      &alloc_spot, align_pow2, entropy, size, base_, size_, prng, upper_limit);
+      &alloc_spot, align_pow2, entropy, size, base(), this->size(), prng, upper_limit);
 
   if (status != ZX_OK) {
     return status;
@@ -1191,7 +1192,7 @@ zx_status_t VmAddressRegion::ReserveSpace(const char* name, vaddr_t base, size_t
   // mappings. If the desired protection flags is "no permissions" then we need to use unmap instead
   // of protect since a mapping with no permissions is not valid on most architectures.
   if ((arch_mmu_flags & ARCH_MMU_FLAG_PERM_RWX_MASK) == 0) {
-    return aspace_->arch_aspace().Unmap(base, size / kPageSize, ArchUnmapOptions::None);
+    return aspace()->arch_aspace().Unmap(base, size / kPageSize, ArchUnmapOptions::None);
   } else {
     // This method should only be called during early system init prior to the bringup of other
     // CPUs. In this case it is safe to allow the Protect operations to temporarily enlarge.
@@ -1199,8 +1200,8 @@ zx_status_t VmAddressRegion::ReserveSpace(const char* name, vaddr_t base, size_t
     const cpu_num_t curr = arch_curr_cpu_num();
     DEBUG_ASSERT_MSG((online & ~cpu_num_to_mask(curr)) == 0,
                      "Online mask %u has more than current cpu %u", online, curr);
-    return aspace_->arch_aspace().Protect(base, size / kPageSize, arch_mmu_flags,
-                                          ArchUnmapOptions::Enlarge);
+    return aspace()->arch_aspace().Protect(base, size / kPageSize, arch_mmu_flags,
+                                           ArchUnmapOptions::Enlarge);
   }
 }
 
@@ -1226,18 +1227,18 @@ zx_status_t VmAddressRegion::SetMemoryPriority(MemoryPriority priority) {
 
 zx_status_t VmAddressRegion::SetMemoryPriorityLocked(MemoryPriority priority) {
   if (state_locked() != LifeCycleState::ALIVE) {
-    DEBUG_ASSERT(memory_priority_ == MemoryPriority::DEFAULT);
+    DEBUG_ASSERT(memory_priority_locked() == MemoryPriority::DEFAULT);
     return ZX_ERR_BAD_STATE;
   }
 
   auto set_region_priority = [priority](VmAddressRegion* region) {
     AssertHeld(region->lock_ref());
-    if (priority == region->memory_priority_) {
+    if (priority == region->memory_priority_locked()) {
       return;
     }
-    region->memory_priority_ = priority;
+    region->set_memory_priority_locked(priority);
     // As a region we only need to inform the VmAspace of the change.
-    region->aspace_->ChangeHighPriorityCountLocked(priority == MemoryPriority::HIGH ? 1 : -1);
+    region->aspace()->ChangeHighPriorityCountLocked(priority == MemoryPriority::HIGH ? 1 : -1);
   };
 
   // Do our own priority change.
@@ -1268,7 +1269,7 @@ void VmAddressRegion::CommitHighMemoryPriorityImpl() {
       return false;
     }
 
-    if (memory_priority_ != MemoryPriority::HIGH) {
+    if (memory_priority_locked() != MemoryPriority::HIGH) {
       return false;
     }
 

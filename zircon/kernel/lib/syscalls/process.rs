@@ -244,11 +244,12 @@ pub fn sys_process_read_memory(
 
     let vmo = vm_mapping.vmo().ok_or(Status::NOT_FOUND)?;
 
-    let offset = (vaddr - vm_mapping.base()) as u64 + vm_mapping.object_offset();
+    let offset = (vaddr - vm_mapping.base().0) as u64 + vm_mapping.object_offset();
     // TODO(https://fxbug.dev/42106495): While this limits reading to the mapped address space of
     // this VMO, it should be reading from multiple VMOs, not a single one.
     // Additionally, it is racy with the mapping going away.
-    let buffer_size = core::cmp::min(buffer_size, vm_mapping.size() - (vaddr - vm_mapping.base()));
+    let buffer_size =
+        core::cmp::min(buffer_size, vm_mapping.size() - (vaddr - vm_mapping.base().0));
 
     let (res, out_actual) =
         vmo.read_user(buffer, offset, buffer_size, VmObjectReadWriteOptions::TRIM_LENGTH);
@@ -305,11 +306,12 @@ pub fn sys_process_write_memory(
         return Err(Status::ACCESS_DENIED);
     }
 
-    let offset = (vaddr - vm_mapping.base()) as u64 + vm_mapping.object_offset();
+    let offset = (vaddr - vm_mapping.base().0) as u64 + vm_mapping.object_offset();
     // TODO(https://fxbug.dev/42106495): While this limits writing to the mapped address space of
     // this VMO, it should be reading from multiple VMOs, not a single one.
     // Additionally, it is racy with the mapping going away.
-    let buffer_size = core::cmp::min(buffer_size, vm_mapping.size() - (vaddr - vm_mapping.base()));
+    let buffer_size =
+        core::cmp::min(buffer_size, vm_mapping.size() - (vaddr - vm_mapping.base().0));
 
     let (res, out_actual) =
         vmo.write_user(buffer, offset, buffer_size, VmObjectReadWriteOptions::TRIM_LENGTH);

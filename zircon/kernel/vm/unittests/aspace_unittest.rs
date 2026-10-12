@@ -1039,7 +1039,7 @@ mod aspace_rs {
         let vmo2 = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE));
 
         let _mapping_result = unwrap_ok!(vmar.create_vm_mapping(
-            mapping.base() - vmar.base().0,
+            mapping.base().0 - vmar.base().0,
             mapping.size(),
             0,
             vmar::flag::SPECIFIC_OVERWRITE,

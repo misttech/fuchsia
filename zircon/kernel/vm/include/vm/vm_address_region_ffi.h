@@ -15,13 +15,9 @@
 
 __BEGIN_CDECLS
 
-fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_address_region_get_ref_counted(
-    VmAddressRegion* vmar);
 void cpp_vm_address_region_free(VmAddressRegion* vmar);
+void* cpp_vm_address_region_or_mapping_state(VmAddressRegionOrMapping* region_or_mapping);
 zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar);
-vaddr_t cpp_vm_address_region_base(VmAddressRegion* vmar);
-size_t cpp_vm_address_region_size(VmAddressRegion* vmar);
-uint32_t cpp_vm_address_region_flags(VmAddressRegion* vmar);
 const char* cpp_vm_address_region_name(VmAddressRegion* vmar);
 bool cpp_vm_address_region_has_parent(VmAddressRegion* vmar);
 zx_status_t cpp_vm_address_region_set_memory_priority(VmAddressRegion* vmar,
@@ -46,15 +42,9 @@ VmMapping* cpp_vm_address_region_create_vm_mapping(
     VmAddressRegion* vmar, size_t mapping_offset, size_t size, uint8_t align_pow2,
     uint32_t vmar_flags, const VmObject* vmo, uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
     const char* name, vaddr_t* out_base, zx_status_t* out_status);
-const fbl::RefPtr<VmAspace>* cpp_vm_address_region_aspace(VmAddressRegion* vmar);
 
-fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_mapping_get_ref_counted(VmMapping* mapping);
 void cpp_vm_mapping_free(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_destroy(VmMapping* mapping);
-const fbl::RefPtr<VmAspace>* cpp_vm_mapping_aspace(VmMapping* mapping);
-vaddr_t cpp_vm_mapping_base(VmMapping* mapping);
-size_t cpp_vm_mapping_size(VmMapping* mapping);
-uint32_t cpp_vm_mapping_flags(VmMapping* mapping);
 uint64_t cpp_vm_mapping_object_offset(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_decommit_range(VmMapping* mapping, size_t offset, size_t len);
 zx_status_t cpp_vm_mapping_map_range(VmMapping* mapping, size_t offset, size_t len, bool commit,

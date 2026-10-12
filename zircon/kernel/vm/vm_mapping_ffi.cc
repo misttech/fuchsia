@@ -14,20 +14,10 @@
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
-FFI_ALWAYS_INLINE fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_mapping_get_ref_counted(
-    VmMapping* mapping) {
-  return mapping;
-}
 FFI_ALWAYS_INLINE void cpp_vm_mapping_free(VmMapping* mapping) { delete mapping; }
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_mapping_destroy(VmMapping* mapping) {
   return mapping->Destroy();
 }
-FFI_ALWAYS_INLINE const fbl::RefPtr<VmAspace>* cpp_vm_mapping_aspace(VmMapping* mapping) {
-  return &mapping->aspace();
-}
-FFI_ALWAYS_INLINE vaddr_t cpp_vm_mapping_base(VmMapping* mapping) { return mapping->base(); }
-FFI_ALWAYS_INLINE size_t cpp_vm_mapping_size(VmMapping* mapping) { return mapping->size(); }
-FFI_ALWAYS_INLINE uint32_t cpp_vm_mapping_flags(VmMapping* mapping) { return mapping->flags(); }
 FFI_ALWAYS_INLINE uint64_t cpp_vm_mapping_object_offset(VmMapping* mapping) {
   return mapping->object_offset();
 }

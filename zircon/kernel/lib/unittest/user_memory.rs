@@ -129,7 +129,7 @@ impl UserMemory {
 
     pub fn base(&self) -> usize {
         #[cfg_attr(not(target_arch = "aarch64"), expect(unused_mut))]
-        let mut base = self.mapping.base();
+        let mut base = self.mapping.base().0;
         #[cfg(target_arch = "aarch64")]
         {
             base |= usize::from(self.tag) << arch_arm64_vm_bindings::kTbiBit;
@@ -199,7 +199,7 @@ impl UserMemory {
     pub fn protect(&self, flags: ArchMmuFlags, offset: usize) -> Result<(), Status> {
         assert!(offset < self.mapping.size());
         self.mapping.debug_protect(
-            self.mapping.base() + offset,
+            self.mapping.base().0 + offset,
             self.mapping.size() - offset,
             ARCH_MMU_FLAG_PERM_USER | flags,
         )

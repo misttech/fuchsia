@@ -86,7 +86,7 @@ class VmAddressRegionEnumerator {
       auto curr = itr_++;
       AssertHeld((*curr).second->lock_ref());
       DEBUG_ASSERT((*curr).second->IsAliveLocked());
-      maybe_const<VmAddressRegion>* up = (*curr).second->parent_;
+      maybe_const<VmAddressRegion>* up = (*curr).second->parent_locked();
 
       if (auto* mapping = (*curr).second->as_vm_mapping_ptr(); mapping) {
         DEBUG_ASSERT(mapping != nullptr);
@@ -143,7 +143,7 @@ class VmAddressRegionEnumerator {
           if (itr_.IsValid()) {
             break;
           }
-          up = up->parent_;
+          up = up->parent_locked();
         } while (depth_-- != kStartDepth);
         if (!itr_.IsValid()) {
           // If we have reached the end after ascending all the way up,
@@ -196,9 +196,9 @@ class VmAddressRegionEnumerator {
         itr_ = vmar_.subregions_locked().IncludeOrHigher(min_addr_);
         depth_ = kStartDepth;
       } else {
-        ASSERT(state_.region_or_mapping_->parent_);
-        AssertHeld(state_.region_or_mapping_->parent_->lock_ref());
-        itr_ = state_.region_or_mapping_->parent_->subregions_locked().IncludeOrHigher(
+        ASSERT(state_.region_or_mapping_->parent_locked());
+        AssertHeld(state_.region_or_mapping_->parent_locked()->lock_ref());
+        itr_ = state_.region_or_mapping_->parent_locked()->subregions_locked().IncludeOrHigher(
             state_.region_or_mapping_->base());
         DEBUG_ASSERT((*itr_).second == state_.region_or_mapping_.get());
       }

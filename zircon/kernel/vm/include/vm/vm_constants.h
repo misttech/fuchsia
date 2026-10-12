@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_VM_CONSTANTS_H_
 
 #include <stddef.h>
+#include <zircon/assert.h>
 #include <zircon/types.h>
 
 // Size and alignment constants for Rust VM states stored in C++ OpaqueStorage.
@@ -42,6 +43,14 @@ constexpr size_t kVmObjectPhysicalStateOffset = 152;
 #else
 constexpr size_t kVmObjectPhysicalStateOffset = 136;
 #endif
+
+// Size and alignment for VmAddressRegionOrMapping state stored in C++ OpaqueStorage.
+constexpr size_t kVmAddressRegionOrMappingStateSize = 48;
+constexpr size_t kVmAddressRegionOrMappingStateAlign = 8;
+
+// Whether fbl::RefCounted starts at its pre-adopt sentinel and validates adoption. The Rust
+// fbl::RefCounted in VmAddressRegionOrMapping's state must make the same choice.
+constexpr bool kRefCountedAdoptionValidator = ZX_DEBUG_ASSERT_IMPLEMENTED;
 
 // Size and alignment for VmDebugCompressor state stored in C++ OpaqueStorage.
 #if WITH_LOCK_DEP

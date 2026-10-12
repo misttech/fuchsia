@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 #include <assert.h>
 #include <inttypes.h>
+#include <stddef.h>
 #include <string.h>
 #include <trace.h>
 #include <zircon/errors.h>
@@ -12,6 +13,7 @@
 
 #include <vm/vm.h>
 #include <vm/vm_aspace.h>
+#include <vm/vm_constants.h>
 
 #include "vm/vm_address_region.h"
 #include "vm_priv.h"
@@ -20,23 +22,17 @@
 
 VmAddressRegionOrMapping::VmAddressRegionOrMapping(vaddr_t base, size_t size, uint32_t flags,
                                                    VmAspace* aspace, VmAddressRegion* parent,
-                                                   bool is_mapping)
-    : is_mapping_(is_mapping),
-      state_(LifeCycleState::NOT_READY),
-      flags_(flags),
-      base_(base),
-      size_(size),
-      aspace_(aspace),
-      parent_(parent) {
+                                                   bool is_mapping) {
+  rust_vm_address_region_or_mapping_state_init(&opaque_storage_, base, size, flags, aspace, parent,
+                                               is_mapping);
   LTRACEF("%p\n", this);
 }
 
 zx_status_t VmAddressRegionOrMapping::Destroy() {
-  canary_.Assert();
-
-  Guard<CriticalMutex> region_guard{aspace_->region_lock()};
-  Guard<CriticalMutex> guard{aspace_->lock()};
-  if (state_ != LifeCycleState::ALIVE) {
+  AssertRegionOrMappingCanary();
+  Guard<CriticalMutex> region_guard{aspace()->region_lock()};
+  Guard<CriticalMutex> guard{aspace()->lock()};
+  if (state_locked() != LifeCycleState::ALIVE) {
     return ZX_ERR_BAD_STATE;
   }
 
@@ -46,27 +42,31 @@ zx_status_t VmAddressRegionOrMapping::Destroy() {
 VmAddressRegionOrMapping::~VmAddressRegionOrMapping() {
   LTRACEF("%p\n", this);
 
-  ASSERT(state_ != LifeCycleState::ALIVE);
+  ASSERT([&]() TA_NO_THREAD_SAFETY_ANALYSIS { return state_locked() != LifeCycleState::ALIVE; }());
 
-  DEBUG_ASSERT(memory_priority_ == MemoryPriority::DEFAULT);
+  DEBUG_ASSERT([&]() TA_NO_THREAD_SAFETY_ANALYSIS {
+    return memory_priority_locked() == MemoryPriority::DEFAULT;
+  }());
+
+  rust_vm_address_region_or_mapping_destruct(&opaque_storage_);
 }
 
 zx_status_t VmAddressRegionOrMapping::DestroyLocked() {
-  if (is_mapping_) {
+  if (is_mapping()) {
     return static_cast<VmMapping*>(this)->DestroyLockedImpl();
   }
   return static_cast<VmAddressRegion*>(this)->DestroyLockedImpl();
 }
 
 zx_status_t VmAddressRegionOrMapping::Activate() {
-  if (is_mapping_) {
+  if (is_mapping()) {
     return static_cast<VmMapping*>(this)->ActivateImpl();
   }
   return static_cast<VmAddressRegion*>(this)->ActivateImpl();
 }
 
 void VmAddressRegionOrMapping::DumpLocked(uint depth, bool verbose) const {
-  if (is_mapping_) {
+  if (is_mapping()) {
     static_cast<const VmMapping*>(this)->DumpLockedImpl(depth, verbose);
   } else {
     static_cast<const VmAddressRegion*>(this)->DumpLockedImpl(depth, verbose);
@@ -74,7 +74,7 @@ void VmAddressRegionOrMapping::DumpLocked(uint depth, bool verbose) const {
 }
 
 void VmAddressRegionOrMapping::CommitHighMemoryPriority() {
-  if (is_mapping_) {
+  if (is_mapping()) {
     static_cast<VmMapping*>(this)->CommitHighMemoryPriorityImpl();
   } else {
     static_cast<VmAddressRegion*>(this)->CommitHighMemoryPriorityImpl();
@@ -82,7 +82,7 @@ void VmAddressRegionOrMapping::CommitHighMemoryPriority() {
 }
 
 void VmAddressRegionOrMapping::fbl_recycle() {
-  if (is_mapping_) {
+  if (is_mapping()) {
     delete static_cast<VmMapping*>(this);
   } else {
     delete static_cast<VmAddressRegion*>(this);

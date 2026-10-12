@@ -5,27 +5,25 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::ArchMmuFlags;
-use super::vm_aspace::VmAspace;
+use super::vm_address_region::VmAddressRegionOrMapping;
 use super::vm_object::VmObject;
+use core::ops::Deref;
 use core::ptr::NonNull;
-use fbl::{HasRefCount, OpaqueRefCountedFacade, Recyclable, RefCounted, RefPtr};
+use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr};
 use vm_address_region_bindings as bindings;
-use zr::ToMutPtr;
+use zr::Opaque;
 use zx_status::Status;
 
 /// A representation of the mapping of a VMO into the address space
-#[repr(C)]
+#[repr(transparent)]
 pub struct VmMapping {
-    _facade: OpaqueRefCountedFacade,
+    raw: Opaque<bindings::VmMapping>,
 }
 
 impl HasRefCount for VmMapping {
     #[inline]
     fn ref_count(&self) -> &RefCounted {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
-        let raw = unsafe { bindings::cpp_vm_mapping_get_ref_counted(self.as_ffi_ptr()) };
-        // SAFETY: `raw` points to the `fbl::RefCounted` subobject of `self`.
-        unsafe { &*raw.cast::<RefCounted>() }
+        (**self).ref_count()
     }
 }
 
@@ -33,14 +31,30 @@ impl HasRefCount for VmMapping {
 unsafe impl Recyclable for VmMapping {
     #[inline]
     unsafe fn recycle(ptr: NonNull<Self>) {
-        // SAFETY: `ptr` is the last reference to a live `VmMapping`.
+        // SAFETY: `ptr` points to a live `VmMapping` to which no reference remains.
         unsafe { bindings::cpp_vm_mapping_free(ptr.as_ptr().cast()) }
     }
 }
 
+impl Deref for VmMapping {
+    type Target = VmAddressRegionOrMapping;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: `VmAddressRegionOrMapping` is the first base of `VmMapping`.
+        unsafe { &*core::ptr::from_ref(self).cast() }
+    }
+}
+
+// SAFETY: `VmMapping` is not tied to the thread that created it.
+unsafe impl Send for VmMapping {}
+// SAFETY: Mutable state of `VmMapping` is only accessed with the aspace lock or the object lock
+// held, or atomically.
+unsafe impl Sync for VmMapping {}
+
 impl VmMapping {
     fn as_ffi_ptr(&self) -> *mut bindings::VmMapping {
-        self.to_mut_ptr().cast()
+        self.raw.get()
     }
 
     /// Marks a mapping as eligible for merging with adjacent compatible mappings.
@@ -55,30 +69,6 @@ impl VmMapping {
     pub fn destroy(&self) -> Result<(), Status> {
         // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
         Status::ok(unsafe { bindings::cpp_vm_mapping_destroy(self.as_ffi_ptr()) })
-    }
-
-    /// Returns a reference to the address space this mapping belongs to.
-    pub fn aspace(&self) -> &RefPtr<VmAspace> {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
-        unsafe { &*(bindings::cpp_vm_mapping_aspace(self.as_ffi_ptr()).cast()) }
-    }
-
-    /// Returns the base virtual address of this mapping.
-    pub fn base(&self) -> usize {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
-        unsafe { bindings::cpp_vm_mapping_base(self.as_ffi_ptr()) }
-    }
-
-    /// Returns the size in bytes of this mapping.
-    pub fn size(&self) -> usize {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
-        unsafe { bindings::cpp_vm_mapping_size(self.as_ffi_ptr()) }
-    }
-
-    /// Returns the creation flags of this mapping.
-    pub fn flags(&self) -> u32 {
-        // SAFETY: `self.as_ffi_ptr()` points to a live `VmMapping`.
-        unsafe { bindings::cpp_vm_mapping_flags(self.as_ffi_ptr()) }
     }
 
     /// Returns the offset into the underlying VMO for this mapping.

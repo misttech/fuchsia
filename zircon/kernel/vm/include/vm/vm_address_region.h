@@ -24,8 +24,10 @@
 #include <ffl/saturating_arithmetic.h>
 #include <ktl/limits.h>
 #include <ktl/optional.h>
+#include <object/opaque_storage.h>
 #include <vm/vm_address_region_observer.h>
 #include <vm/vm_aspace.h>
+#include <vm/vm_constants.h>
 #include <vm/vm_cow_pages.h>
 #include <vm/vm_object.h>
 #include <vm/vm_page_list.h>
@@ -76,12 +78,17 @@ enum class VmAddressRegionOpChildren : bool {
 };
 
 // forward declarations
+class VmAddressRegionOrMapping;
 class VmAddressRegion;
 class VmMapping;
 class VmEnumerator;
 enum class VmAddressRegionEnumeratorType : bool;
 template <VmAddressRegionEnumeratorType, typename>
 class VmAddressRegionEnumerator;
+
+extern "C" {
+void* cpp_vm_address_region_or_mapping_state(VmAddressRegionOrMapping* region_or_mapping);
+}
 
 class MultiPageRequest;
 
@@ -99,9 +106,13 @@ class MultiPageRequest;
 // DEAD, then the VmAddressRegion is invalid and has no meaning.
 //
 // All VmAddressRegion and VmMapping state is protected by the aspace lock.
-class VmAddressRegionOrMapping : public fbl::RefCounted<VmAddressRegionOrMapping>,
-                                 public fbl::Recyclable<VmAddressRegionOrMapping> {
+class VmAddressRegionOrMapping : public fbl::Recyclable<VmAddressRegionOrMapping> {
  public:
+  void AddRef() const;
+  bool Release() const;
+  void Adopt() const;
+  int32_t ref_count_debug() const;
+
   // If a VMO-mapping, unmap all pages and remove dependency on vm object it has a ref to.
   // Otherwise recursively destroy child VMARs and transition to the DEAD state.
   //
@@ -110,13 +121,14 @@ class VmAddressRegionOrMapping : public fbl::RefCounted<VmAddressRegionOrMapping
   zx_status_t Destroy();
 
   // accessors
-  vaddr_t base() const { return base_; }
-  size_t size() const { return size_; }
-  uint32_t flags() const { return flags_; }
-  const fbl::RefPtr<VmAspace>& aspace() const { return aspace_; }
+  vaddr_t base() const;
+  size_t size() const;
+  uint32_t flags() const;
+  const fbl::RefPtr<VmAspace>& aspace() const;
 
   // Subtype information and safe down-casting
-  bool is_mapping() const { return is_mapping_; }
+  bool is_mapping() const;
+  void AssertRegionOrMappingCanary() const;
   fbl::RefPtr<VmAddressRegion> as_vm_address_region();
   fbl::RefPtr<VmMapping> as_vm_mapping();
   VmAddressRegion* as_vm_address_region_ptr();
@@ -132,18 +144,20 @@ class VmAddressRegionOrMapping : public fbl::RefCounted<VmAddressRegionOrMapping
   void DumpLocked(uint depth, bool verbose) const TA_REQ(region_lock()) TA_REQ(lock());
 
   // Expose our backing lock for annotation purposes.
-  Lock<CriticalMutex>* lock() const TA_RET_CAP(aspace_->lock()) { return aspace_->lock(); }
-  Lock<CriticalMutex>& lock_ref() const TA_RET_CAP(aspace_->lock()) { return aspace_->lock_ref(); }
-  Lock<CriticalMutex>* region_lock() const TA_RET_CAP(aspace_->region_lock_) {
-    return aspace_->region_lock();
+  Lock<CriticalMutex>* lock() const TA_RET_CAP(aspace()->lock()) { return aspace()->lock(); }
+  Lock<CriticalMutex>& lock_ref() const TA_RET_CAP(aspace()->lock()) {
+    return aspace()->lock_ref();
   }
-  Lock<CriticalMutex>& region_lock_ref() const TA_RET_CAP(aspace_->region_lock_) {
-    return aspace_->region_lock_ref();
+  Lock<CriticalMutex>* region_lock() const TA_RET_CAP(aspace()->region_lock_) {
+    return aspace()->region_lock();
+  }
+  Lock<CriticalMutex>& region_lock_ref() const TA_RET_CAP(aspace()->region_lock_) {
+    return aspace()->region_lock_ref();
   }
 
   bool is_in_range(vaddr_t base, size_t size) const {
-    const size_t offset = base - base_;
-    return base >= base_ && offset < size_ && size_ - offset >= size;
+    const size_t offset = base - this->base();
+    return base >= this->base() && offset < this->size() && this->size() - offset >= size;
   }
 
   // Memory priorities that can be applied to VMARs and mappings to propagate to VMOs and page
@@ -155,19 +169,27 @@ class VmAddressRegionOrMapping : public fbl::RefCounted<VmAddressRegionOrMapping
     HIGH,
   };
 
+  enum class LifeCycleState : uint8_t {
+    // Initial state: not yet in the address space layout, so no Destroy() is needed
+    NOT_READY,
+    // Usual state: information is representative of the address space layout. Must be destroyed
+    // before the last reference is dropped.
+    ALIVE,
+    // Object is invalid
+    DEAD
+  };
+
   // Returns true if the instance is alive and reporting information that
   // reflects the address space layout. |aspace()->lock()| must be held.
-  bool IsAliveLocked() const TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    canary_.Assert();
-    return state_ == LifeCycleState::ALIVE;
+  bool IsAliveLocked() const TA_REQ(lock()) {
+    AssertRegionOrMappingCanary();
+    return state_locked() == LifeCycleState::ALIVE;
   }
 
  private:
   friend class fbl::Recyclable<VmAddressRegionOrMapping>;
+  friend void* ::cpp_vm_address_region_or_mapping_state(VmAddressRegionOrMapping*);
   void fbl_recycle();
-
-  fbl::Canary<fbl::magic("VMRM")> canary_;
-  const bool is_mapping_;
 
  protected:
   // friend VmAddressRegion so it can access DestroyLocked
@@ -179,26 +201,19 @@ class VmAddressRegionOrMapping : public fbl::RefCounted<VmAddressRegionOrMapping
   ~VmAddressRegionOrMapping();
   friend fbl::RefPtr<VmAddressRegionOrMapping>;
 
-  enum class LifeCycleState : uint8_t {
-    // Initial state: not yet in the address space layout, so no Destroy() is needed
-    NOT_READY,
-    // Usual state: information is representative of the address space layout. Must be destroyed
-    // before the last reference is dropped.
-    ALIVE,
-    // Object is invalid
-    DEAD
-  };
-
-  LifeCycleState state_locked() const TA_REQ(lock()) TA_NO_THREAD_SAFETY_ANALYSIS { return state_; }
-  LifeCycleState state_locked_region() const TA_REQ(region_lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return state_;
-  }
+  LifeCycleState state_locked() const TA_REQ(lock());
+  LifeCycleState state_locked_region() const TA_REQ(region_lock());
+  void set_state_locked(LifeCycleState state) TA_REQ(lock()) TA_REQ(region_lock());
+  MemoryPriority memory_priority_locked() const TA_REQ(lock());
+  void set_memory_priority_locked(MemoryPriority priority) TA_REQ(lock());
+  VmAddressRegion* parent_locked() const TA_REQ(lock());
+  void set_parent_locked(VmAddressRegion* parent) TA_REQ(lock());
 
   VmAddressRegionOrMapping(vaddr_t base, size_t size, uint32_t flags, VmAspace* aspace,
                            VmAddressRegion* parent, bool is_mapping);
 
   // Check if the given *arch_mmu_flags* are allowed under this
-  // regions *flags_*
+  // region's *flags()*
   bool is_valid_mapping_flags(arch_mmu_flags_t arch_mmu_flags) {
     // Work out what flags we must support for these arch_mmu_flags
     uint32_t needed = 0;
@@ -213,7 +228,7 @@ class VmAddressRegionOrMapping : public fbl::RefCounted<VmAddressRegionOrMapping
     }
     // Mask out the actual relevant mappings flags we have.
     const uint32_t actual =
-        flags_ & (VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE | VMAR_FLAG_CAN_MAP_EXECUTE);
+        flags() & (VMAR_FLAG_CAN_MAP_READ | VMAR_FLAG_CAN_MAP_WRITE | VMAR_FLAG_CAN_MAP_EXECUTE);
     // Validate that every |needed| occurs in |actual|
     return (needed & actual) == needed;
   }
@@ -240,28 +255,98 @@ class VmAddressRegionOrMapping : public fbl::RefCounted<VmAddressRegionOrMapping
   // On error no state is changed and no references are added.
   zx_status_t Activate() TA_REQ(region_lock()) TA_REQ(lock());
 
-  // current state of the VMAR.  If LifeCycleState::DEAD, then all other
-  // fields are invalid.
-  LifeCycleState state_ TA_GUARDED(region_lock()) TA_GUARDED(lock()) = LifeCycleState::ALIVE;
-
-  // Priority of the VMAR. This starts at DEFAULT and must be reset back to default as part of the
-  // destroy path to ensure any propagation is undone correctly.
-  MemoryPriority memory_priority_ TA_GUARDED(lock()) = MemoryPriority::DEFAULT;
-
-  // flags from VMAR creation time
-  const uint32_t flags_;
-
-  // address/size within the container address space
-  const vaddr_t base_;
-  const size_t size_;
-
-  // pointer back to our member address space.  The aspace's lock is used
-  // to serialize all modifications.
-  const fbl::RefPtr<VmAspace> aspace_;
-
-  // pointer back to our parent region (nullptr if root or destroyed)
-  VmAddressRegion* parent_ TA_GUARDED(lock());
+  OpaqueStorage<kVmAddressRegionOrMappingStateSize, kVmAddressRegionOrMappingStateAlign>
+      opaque_storage_;
 };
+
+extern "C" {
+void rust_vm_address_region_or_mapping_state_init(void* storage, vaddr_t base, size_t size,
+                                                  uint32_t flags, VmAspace* aspace,
+                                                  VmAddressRegion* parent, bool is_mapping);
+void rust_vm_address_region_or_mapping_destruct(void* storage);
+vaddr_t rust_vm_address_region_or_mapping_base(const VmAddressRegionOrMapping* region_or_mapping);
+size_t rust_vm_address_region_or_mapping_size(const VmAddressRegionOrMapping* region_or_mapping);
+uint32_t rust_vm_address_region_or_mapping_flags(const VmAddressRegionOrMapping* region_or_mapping);
+const fbl::RefPtr<VmAspace>* rust_vm_address_region_or_mapping_aspace(
+    const VmAddressRegionOrMapping* region_or_mapping);
+void rust_vm_address_region_or_mapping_assert_canary(
+    const VmAddressRegionOrMapping* region_or_mapping);
+bool rust_vm_address_region_or_mapping_is_mapping(
+    const VmAddressRegionOrMapping* region_or_mapping);
+VmAddressRegionOrMapping::LifeCycleState rust_vm_address_region_or_mapping_state_locked(
+    const VmAddressRegionOrMapping* region_or_mapping);
+VmAddressRegionOrMapping::LifeCycleState rust_vm_address_region_or_mapping_state_locked_object(
+    const VmAddressRegionOrMapping* region_or_mapping);
+VmAddressRegionOrMapping::LifeCycleState rust_vm_address_region_or_mapping_state_locked_region(
+    const VmAddressRegionOrMapping* region_or_mapping);
+void rust_vm_address_region_or_mapping_set_state_locked(
+    VmAddressRegionOrMapping* region_or_mapping, VmAddressRegionOrMapping::LifeCycleState state);
+VmAddressRegionOrMapping::MemoryPriority rust_vm_address_region_or_mapping_memory_priority_locked(
+    const VmAddressRegionOrMapping* region_or_mapping);
+void rust_vm_address_region_or_mapping_set_memory_priority_locked(
+    VmAddressRegionOrMapping* region_or_mapping, VmAddressRegionOrMapping::MemoryPriority priority);
+VmAddressRegion* rust_vm_address_region_or_mapping_parent_locked(
+    const VmAddressRegionOrMapping* region_or_mapping);
+void rust_vm_address_region_or_mapping_set_parent_locked(
+    VmAddressRegionOrMapping* region_or_mapping, VmAddressRegion* parent);
+fbl::RefCounted<VmAddressRegionOrMapping>* rust_vm_address_region_or_mapping_ref_counted(
+    const VmAddressRegionOrMapping* region_or_mapping);
+}
+
+inline void VmAddressRegionOrMapping::AddRef() const {
+  rust_vm_address_region_or_mapping_ref_counted(this)->AddRef();
+}
+inline bool VmAddressRegionOrMapping::Release() const {
+  return rust_vm_address_region_or_mapping_ref_counted(this)->Release();
+}
+inline void VmAddressRegionOrMapping::Adopt() const {
+  rust_vm_address_region_or_mapping_ref_counted(this)->Adopt();
+}
+inline int32_t VmAddressRegionOrMapping::ref_count_debug() const {
+  return rust_vm_address_region_or_mapping_ref_counted(this)->ref_count_debug();
+}
+
+inline vaddr_t VmAddressRegionOrMapping::base() const {
+  return rust_vm_address_region_or_mapping_base(this);
+}
+inline size_t VmAddressRegionOrMapping::size() const {
+  return rust_vm_address_region_or_mapping_size(this);
+}
+inline uint32_t VmAddressRegionOrMapping::flags() const {
+  return rust_vm_address_region_or_mapping_flags(this);
+}
+inline const fbl::RefPtr<VmAspace>& VmAddressRegionOrMapping::aspace() const {
+  return *rust_vm_address_region_or_mapping_aspace(this);
+}
+inline bool VmAddressRegionOrMapping::is_mapping() const {
+  return rust_vm_address_region_or_mapping_is_mapping(this);
+}
+inline void VmAddressRegionOrMapping::AssertRegionOrMappingCanary() const {
+  rust_vm_address_region_or_mapping_assert_canary(this);
+}
+inline VmAddressRegionOrMapping::LifeCycleState VmAddressRegionOrMapping::state_locked() const {
+  return rust_vm_address_region_or_mapping_state_locked(this);
+}
+inline VmAddressRegionOrMapping::LifeCycleState VmAddressRegionOrMapping::state_locked_region()
+    const {
+  return rust_vm_address_region_or_mapping_state_locked_region(this);
+}
+inline void VmAddressRegionOrMapping::set_state_locked(LifeCycleState state) {
+  rust_vm_address_region_or_mapping_set_state_locked(this, state);
+}
+inline VmAddressRegionOrMapping::MemoryPriority VmAddressRegionOrMapping::memory_priority_locked()
+    const {
+  return rust_vm_address_region_or_mapping_memory_priority_locked(this);
+}
+inline void VmAddressRegionOrMapping::set_memory_priority_locked(MemoryPriority priority) {
+  rust_vm_address_region_or_mapping_set_memory_priority_locked(this, priority);
+}
+inline VmAddressRegion* VmAddressRegionOrMapping::parent_locked() const {
+  return rust_vm_address_region_or_mapping_parent_locked(this);
+}
+inline void VmAddressRegionOrMapping::set_parent_locked(VmAddressRegion* parent) {
+  rust_vm_address_region_or_mapping_set_parent_locked(this, parent);
+}
 
 // A list of regions ordered by virtual address. Templated to allow for test code to avoid needing
 // to instantiate 'real' VmAddressRegionOrMapping instances.
@@ -676,7 +761,7 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
   fbl::RefPtr<VmAddressRegionOrMapping> FindRegionLocked(vaddr_t addr) TA_REQ(lock());
 
   // Applies the given memory priority to this VMAR, which may or may not result in a change. Up to
-  // the derived type to know how to apply and update the |memory_priority_| field.
+  // the derived type to know how to apply and update the memory priority.
   zx_status_t SetMemoryPriorityLocked(MemoryPriority priority) TA_REQ(lock());
 
   enum class RangeOpType {
@@ -734,8 +819,8 @@ class VmAddressRegion final : public VmAddressRegionOrMapping {
                   const char* name);
 
   bool is_in_range(vaddr_t base, size_t size) const {
-    const size_t offset = base - base_;
-    return base >= base_ && offset < size_ && size_ - offset >= size;
+    const size_t offset = base - this->base();
+    return base >= this->base() && offset < this->size() && this->size() - offset >= size;
   }
 
   // Traverses this vmar (and any sub-vmars) starting at this node, in depth-first pre-order. See
@@ -860,7 +945,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
     return object_->lock_ref();
   }
 
-  // Intended to be used from VmEnumerator callbacks where the aspace_->lock() will be held.
+  // Intended to be used from VmEnumerator callbacks where the aspace()->lock() will be held.
   fbl::RefPtr<VmObject> vmo_locked() const TA_REQ(lock()) { return object_; }
   fbl::RefPtr<VmObject> vmo() const TA_EXCL(lock());
 
@@ -965,7 +1050,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
   static void MarkMergeable(fbl::RefPtr<VmMapping> mapping);
 
   // Enumerates any different protection ranges that exist inside this mapping. The virtual range
-  // specified by range_base and range_size must be within this mappings base_ and size_. The
+  // specified by range_base and range_size must be within this mappings base() and size(). The
   // provided callback is called in virtual address order for each protection type. ZX_ERR_NEXT
   // and ZX_ERR_STOP can be used to control iteration, with any other status becoming the return
   // value of this method.
@@ -1027,12 +1112,12 @@ class VmMapping final : public VmAddressRegionOrMapping {
 
   FlagsRange FlagsRangeAtAddrLocked(vaddr_t va) const TA_REQ(lock()) TA_REQ(object_->lock()) {
     if (rest_protection_ranges_.is_empty()) {
-      return FlagsRange{first_region_arch_mmu_flags_, base_ + size_};
+      return FlagsRange{first_region_arch_mmu_flags_, base() + size()};
     }
     // Find the first transition strictly after 'va'.
     auto it = rest_protection_ranges_.upper_bound(va);
     // |it| represents the end of the range that includes |va|
-    vaddr_t top = it ? (*it).first : base_ + size_;
+    vaddr_t top = it ? (*it).first : base() + size();
     // Now go backwards to find the start of the range that includes |va|, which tells us the flags.
     it--;
     arch_mmu_flags_t flags = it ? (*it).second : first_region_arch_mmu_flags_;
@@ -1129,7 +1214,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
                                     arch_mmu_flags_t new_arch_mmu_flags);
 
   // Copies protection ranges for the given sub-range into |out_first_flags| and |out_ranges|.
-  // The sub-range [base, base + size) must be within [base_, base_ + size_).
+  // The sub-range [base, base + size) must be within [base(), base() + size()).
   zx_status_t CopyProtectionRangesLocked(vaddr_t base, size_t size,
                                          arch_mmu_flags_t* out_first_flags,
                                          btree::BTree<vaddr_t, arch_mmu_flags_t>* out_ranges) const
@@ -1202,7 +1287,7 @@ class VmMapping final : public VmAddressRegionOrMapping {
   }
 
   // Takes a range relative to the vmo object_ and converts it into a virtual address range relative
-  // to aspace_. Returns true if a non zero sized intersection was found, false otherwise. If false
+  // to aspace(). Returns true if a non zero sized intersection was found, false otherwise. If false
   // is returned |base| and |virtual_len| hold undefined contents.
   bool ObjectRangeToVaddrRange(uint64_t offset, uint64_t len, vaddr_t* base,
                                uint64_t* virtual_len) const TA_REQ(object_->lock());
@@ -1221,11 +1306,10 @@ class VmMapping final : public VmAddressRegionOrMapping {
   fbl::RefPtr<VmMapping> TryMergeRightNeighborLocked(VmMapping* right_candidate)
       TA_REQ(region_lock()) TA_REQ(lock());
 
-  // For a VmMapping |state_| is only modified either with the object_ lock held, or if there is no
+  // For a VmMapping state is only modified either with the object_ lock held, or if there is no
   // |object_|. Therefore it is safe to read state if just the object lock is held.
-  LifeCycleState get_state_locked_object() const
-      TA_REQ(object_->lock()) TA_NO_THREAD_SAFETY_ANALYSIS {
-    return state_;
+  LifeCycleState get_state_locked_object() const TA_REQ(object_->lock()) {
+    return rust_vm_address_region_or_mapping_state_locked_object(this);
   }
 
   // Returns the minimum of the requested map length, the size of the VMO or, if
@@ -1261,18 +1345,18 @@ class VmMapping final : public VmAddressRegionOrMapping {
   RelaxedAtomic<bool> object_reset_ = false;
 
   // The protection flags of this mapping are tracked as a series of contiguous
-  // virtual address ranges. Since the base address of the mapping is known (`base_`),
+  // virtual address ranges. Since the base address of the mapping is known (`base()`),
   // we only need to store the flags for the first range, and then the start address
   // and flags for any subsequent ranges where the protections change.
   //
   // `first_region_arch_mmu_flags_` holds the MMU flags for the interval starting
-  // exactly at `base_`. If `protection_ranges_` is empty, these flags apply to the
-  // entire mapping: [base_, base_ + size_).
+  // exactly at `base()`. If `protection_ranges_` is empty, these flags apply to the
+  // entire mapping: [base(), base() + size()).
   //
   // `protection_ranges_` is a B-Tree that records any transitions in protection.
   // Each entry consists of a `vaddr_t` key and an `arch_mmu_flags_t` value.
   // A node (addr, flags) means that the range starting at `addr` has the protections
-  // `flags`, up until the address of the next node in the tree, or `base_ + size_`
+  // `flags`, up until the address of the next node in the tree, or `base() + size()`
   // if it is the last node.
   //
   // This can be read with either lock held, but requires both locks to write it.
@@ -1324,7 +1408,7 @@ class VmEnumerator {
 // Now that all the sub-classes are defined finish declaring some inline VmAddressRegionOrMapping
 // methods.
 inline fbl::RefPtr<VmAddressRegion> VmAddressRegionOrMapping::as_vm_address_region() {
-  canary_.Assert();
+  AssertRegionOrMappingCanary();
   if (is_mapping()) {
     return nullptr;
   }
@@ -1332,7 +1416,7 @@ inline fbl::RefPtr<VmAddressRegion> VmAddressRegionOrMapping::as_vm_address_regi
 }
 
 inline VmAddressRegion* VmAddressRegionOrMapping::as_vm_address_region_ptr() {
-  canary_.Assert();
+  AssertRegionOrMappingCanary();
   if (unlikely(is_mapping())) {
     return nullptr;
   }
@@ -1340,7 +1424,7 @@ inline VmAddressRegion* VmAddressRegionOrMapping::as_vm_address_region_ptr() {
 }
 
 inline const VmAddressRegion* VmAddressRegionOrMapping::as_vm_address_region_ptr() const {
-  canary_.Assert();
+  AssertRegionOrMappingCanary();
   if (unlikely(is_mapping())) {
     return nullptr;
   }
@@ -1357,7 +1441,7 @@ inline fbl::RefPtr<VmAddressRegion> VmAddressRegionOrMapping::downcast_as_vm_add
 }
 
 inline fbl::RefPtr<VmMapping> VmAddressRegionOrMapping::as_vm_mapping() {
-  canary_.Assert();
+  AssertRegionOrMappingCanary();
   if (!is_mapping()) {
     return nullptr;
   }
@@ -1365,7 +1449,7 @@ inline fbl::RefPtr<VmMapping> VmAddressRegionOrMapping::as_vm_mapping() {
 }
 
 inline VmMapping* VmAddressRegionOrMapping::as_vm_mapping_ptr() {
-  canary_.Assert();
+  AssertRegionOrMappingCanary();
   if (unlikely(!is_mapping())) {
     return nullptr;
   }
@@ -1373,7 +1457,7 @@ inline VmMapping* VmAddressRegionOrMapping::as_vm_mapping_ptr() {
 }
 
 inline const VmMapping* VmAddressRegionOrMapping::as_vm_mapping_ptr() const {
-  canary_.Assert();
+  AssertRegionOrMappingCanary();
   if (unlikely(!is_mapping())) {
     return nullptr;
   }
