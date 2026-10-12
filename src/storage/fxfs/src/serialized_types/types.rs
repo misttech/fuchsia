@@ -15,7 +15,7 @@ use crate::object_store::journal::super_block::{
     SuperBlockRecordV59,
 };
 use crate::object_store::journal::{
-    JournalRecord, JournalRecordV56, JournalRecordV57, JournalRecordV59,
+    JournalRecord, JournalRecordV56, JournalRecordV57, JournalRecordV59, JournalRecordV60,
 };
 use crate::object_store::object_record::{
     FsverityMetadata, FsverityMetadataV50, ObjectKey, ObjectKeyV54, ObjectValue, ObjectValueV56,
@@ -38,7 +38,7 @@ use std::collections::BTreeMap;
 ///
 /// IMPORTANT: When changing this (major or minor), update the list of possible versions at
 /// https://cs.opensource.google/fuchsia/fuchsia/+/main:third_party/cobalt_config/fuchsia/local_storage/versions.txt.
-pub const LATEST_VERSION: Version = Version { major: 59, minor: 0 };
+pub const LATEST_VERSION: Version = Version { major: 60, minor: 0 };
 
 /// The last version of the filesystem where keys in layer files used the old serialization format
 /// (prior to SerializeKey and delta encoding).
@@ -134,6 +134,7 @@ versioned_types! {
         50.. => FsverityMetadataV50,
     }
     JournalRecord {
+        60.. => JournalRecordV60,
         59.. => JournalRecordV59,
         57.. => JournalRecordV57,
         56.. => JournalRecordV56,

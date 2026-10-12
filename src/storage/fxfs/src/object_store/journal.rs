@@ -116,12 +116,12 @@ pub struct JournalCheckpointV32 {
     pub version: Version,
 }
 
-pub type JournalRecord = JournalRecordV59;
+pub type JournalRecord = JournalRecordV60;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
 #[cfg_attr(fuzz, derive(arbitrary::Arbitrary))]
-pub enum JournalRecordV59 {
+pub enum JournalRecordV60 {
     EndBlock,
     Mutation {
         object_id: u64,
@@ -141,14 +141,48 @@ pub enum JournalRecordV59 {
     /// to defensively flush the device before replaying the journal (if possible, i.e. not
     /// read-only) in case the block device connection was reused.
     DidFlushDevice(u64),
-    /// Checksums for a data range written by this transaction. A transaction is only valid if these
-    /// checksums are right. The range is the device offset the checksums are for.
+    /// Checksums for a data range written by this transaction, for a particular store identified by
+    /// the u64 object id. A transaction is only valid if these checksums are right. The range is
+    /// the device offset the checksums are for.
     ///
     /// A boolean indicates whether this range is being written to for the first time. For overwrite
     /// extents, we only check the checksums for a block if it has been written to for the first
     /// time since the last flush, because otherwise we can't roll it back anyway so it doesn't
     /// matter. For copy-on-write extents, the bool is always true.
+    DataChecksums(u64, Range<u64>, crate::checksum::ChecksumsV38, bool),
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, Serialize, Deserialize, TypeFingerprint, Versioned)]
+pub enum JournalRecordV59 {
+    EndBlock,
+    Mutation { object_id: u64, mutation: MutationV59 },
+    Commit,
+    Discard(u64),
+    DidFlushDevice(u64),
     DataChecksums(Range<u64>, crate::checksum::ChecksumsV38, bool),
+}
+
+impl From<JournalRecordV59> for JournalRecordV60 {
+    fn from(record: JournalRecordV59) -> Self {
+        match record {
+            JournalRecordV59::EndBlock => Self::EndBlock,
+            JournalRecordV59::Mutation { object_id, mutation } => {
+                Self::Mutation { object_id, mutation }
+            }
+            JournalRecordV59::Commit => Self::Commit,
+            JournalRecordV59::Discard(offset) => Self::Discard(offset),
+            JournalRecordV59::DidFlushDevice(offset) => Self::DidFlushDevice(offset),
+            JournalRecordV59::DataChecksums(range, checksums, first_write) => {
+                // `JournalRecordV59::DataChecksums` did not record the owning store ID, so we map
+                // it to `INVALID_OBJECT_ID`. During replay, `read_transactions` only permits
+                // `INVALID_OBJECT_ID` when `checkpoint.version.major < 60` (rejecting it in V60+
+                // records), and `ChecksumList::push` allows an existing `INVALID_OBJECT_ID` entry
+                // to be overlapped by a subsequent write (adopting the new `owner_object_id`).
+                Self::DataChecksums(INVALID_OBJECT_ID, range, checksums, first_write)
+            }
+        }
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -346,6 +380,7 @@ const VOLUME_DELETED: u64 = u64::MAX;
 
 #[derive(Debug)]
 pub struct JournaledChecksums {
+    pub owner_object_id: u64,
     pub device_range: Range<u64>,
     pub checksums: Checksums,
     pub first_write: bool,
@@ -549,6 +584,9 @@ impl Journal {
             Mutation::Allocator(AllocatorMutation::Deallocate { device_range, .. }) => {
                 checksum_list.mark_deallocated(journal_offset, device_range.clone().into());
             }
+            Mutation::Allocator(AllocatorMutation::MarkForDeletion(owner_object_id)) => {
+                checksum_list.mark_for_deletion(journal_offset, *owner_object_id);
+            }
             _ => {}
         }
         Ok(())
@@ -663,10 +701,13 @@ impl Journal {
             ..
         } in &transactions
         {
-            for JournaledChecksums { device_range, checksums, first_write } in checksums {
+            for JournaledChecksums { owner_object_id, device_range, checksums, first_write } in
+                checksums
+            {
                 checksum_list
                     .push(
                         checkpoint.file_offset,
+                        *owner_object_id,
                         device_range.clone(),
                         checksums.maybe_as_ref().context("Malformed checksums")?,
                         *first_write,
@@ -993,7 +1034,24 @@ impl Journal {
                                 }
                             }
                         }
-                        JournalRecord::DataChecksums(device_range, checksums, first_write) => {
+                        JournalRecord::DataChecksums(
+                            owner_object_id,
+                            device_range,
+                            checksums,
+                            first_write,
+                        ) => {
+                            ensure!(
+                                checkpoint.version.major < 60
+                                    || owner_object_id != INVALID_OBJECT_ID,
+                                anyhow!(FxfsError::Inconsistent)
+                                    .context("Invalid owner_object_id in DataChecksums")
+                            );
+                            if stores_deleted.contains(&owner_object_id) {
+                                bail!(
+                                    anyhow!(FxfsError::Inconsistent)
+                                        .context("Encountered DataChecksums for deleted store")
+                                );
+                            }
                             let current_transaction = match current_transaction.as_mut() {
                                 None => {
                                     transactions.push(JournaledTransaction::new(checkpoint));
@@ -1003,6 +1061,7 @@ impl Journal {
                                 Some(transaction) => transaction,
                             };
                             current_transaction.checksums.push(JournaledChecksums {
+                                owner_object_id,
                                 device_range,
                                 checksums,
                                 first_write,
@@ -1673,12 +1732,13 @@ impl Journal {
                         .write_record(&JournalRecord::Mutation { object_id: 0, mutation })
                         .unwrap();
                 }
-                for (device_range, checksums, first_write) in
+                for (owner_object_id, device_range, checksums, first_write) in
                     transaction.take_checksums().into_iter()
                 {
                     inner
                         .writer
                         .write_record(&JournalRecord::DataChecksums(
+                            owner_object_id,
                             device_range,
                             Checksums::fletcher(checksums),
                             first_write,
@@ -2085,16 +2145,19 @@ pub use yielder::*;
 
 #[cfg(test)]
 mod tests {
-    use super::SuperBlockInstance;
+    use super::{JournalRecord, JournalRecordV59, SuperBlockInstance};
+    use crate::checksum::Checksums;
+    use crate::errors::FxfsError;
     use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
     use crate::fsck::fsck;
-    use crate::object_handle::{ObjectHandle, WriteObjectHandle};
+    use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::Directory;
-    use crate::object_store::transaction::Options;
+    use crate::object_store::transaction::{Mutation, Options};
     use crate::object_store::volume::root_volume;
     use crate::object_store::{
         HandleOptions, LockKey, NewChildStoreOptions, ObjectStore, StoreOptions, lock_keys,
     };
+    use crate::serialized_types::Version;
     #[cfg(target_os = "fuchsia")]
     use fuchsia_async::TestExecutor;
     use fuchsia_async::{self as fasync, MonotonicDuration};
@@ -2886,6 +2949,195 @@ mod tests {
             fs.close().await.expect("Close failed");
         });
         assert!(executor.run_until_stalled(&mut fut).is_ready());
+    }
+
+    #[fuchsia::test]
+    async fn test_data_checksums_validation() {
+        // 1. A < V60 DataChecksums record (which migrates with `owner_object_id =
+        //    INVALID_OBJECT_ID`) is accepted during replay.
+        {
+            let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+            let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+            fs.close().await.expect("close failed");
+            let device = fs.take_device().await;
+            device.reopen(false);
+
+            let fs = FxFilesystem::open(device).await.expect("open failed");
+            let _ = fs
+                .root_store()
+                .new_transaction(lock_keys![], Options::default())
+                .await
+                .expect("new_transaction failed");
+            {
+                let mut inner = fs.journal().inner.lock();
+                assert!(std::mem::take(&mut inner.output_reset_version));
+                Version { major: 59, minor: 0 }.serialize_into(&mut inner.writer).unwrap();
+                inner
+                    .writer
+                    .write_record(&JournalRecordV59::DataChecksums(
+                        512..1024,
+                        Checksums::fletcher(vec![0]),
+                        false,
+                    ))
+                    .unwrap();
+                inner.writer.write_record(&JournalRecordV59::Commit).unwrap();
+            }
+            fs.close().await.expect("close failed");
+            let device = fs.take_device().await;
+            device.reopen(false);
+
+            let fs = FxFilesystem::open(device).await.expect("open V59 DataChecksums failed");
+            fs.close().await.expect("close failed");
+        }
+
+        // 2. A >= V60 DataChecksums record with `owner_object_id == INVALID_OBJECT_ID` is rejected.
+        {
+            let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+            let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+            {
+                let mut inner = fs.journal().inner.lock();
+                inner
+                    .writer
+                    .write_record(&JournalRecord::DataChecksums(
+                        INVALID_OBJECT_ID,
+                        512..1024,
+                        Checksums::fletcher(vec![0]),
+                        false,
+                    ))
+                    .unwrap();
+                inner.writer.write_record(&JournalRecord::Commit).unwrap();
+            }
+            fs.close().await.expect("close failed");
+            let device = fs.take_device().await;
+            device.reopen(false);
+
+            let err = FxFilesystem::open(device)
+                .await
+                .err()
+                .expect("expected INVALID_OBJECT_ID in V60+ DataChecksums to fail");
+            assert!(FxfsError::Inconsistent.matches(&err), "unexpected error: {err:?}");
+        }
+
+        // 3. A DataChecksums record for a deleted store is rejected.
+        {
+            let device = DeviceHolder::new(FakeDevice::new(8192, TEST_DEVICE_BLOCK_SIZE));
+            let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+            {
+                let mut inner = fs.journal().inner.lock();
+                inner
+                    .writer
+                    .write_record(&JournalRecord::Mutation {
+                        object_id: 99,
+                        mutation: Mutation::DeleteVolume,
+                    })
+                    .unwrap();
+                inner.writer.write_record(&JournalRecord::Commit).unwrap();
+                inner
+                    .writer
+                    .write_record(&JournalRecord::DataChecksums(
+                        99,
+                        512..1024,
+                        Checksums::fletcher(vec![0]),
+                        false,
+                    ))
+                    .unwrap();
+                inner.writer.write_record(&JournalRecord::Commit).unwrap();
+            }
+            fs.close().await.expect("close failed");
+            let device = fs.take_device().await;
+            device.reopen(false);
+
+            let err = FxFilesystem::open(device)
+                .await
+                .err()
+                .expect("expected DataChecksums for deleted store to fail");
+            assert!(FxfsError::Inconsistent.matches(&err), "unexpected error: {err:?}");
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_delete_volume_reused_extents_before_did_flush_device() {
+        let device = DeviceHolder::new(FakeDevice::new(4096, TEST_DEVICE_BLOCK_SIZE));
+        let fs = FxFilesystem::new_empty(device).await.expect("new_empty failed");
+        let root_vol = root_volume(fs.clone()).await.expect("root_volume failed");
+
+        // Create "vol1" and "vol2" (with an empty file "bar" in "vol2") up front so no metadata
+        // allocations occur between deleting "vol1" and writing to "bar".
+        let vol1 =
+            root_vol.new_volume("vol1", NewChildStoreOptions::default()).await.expect("new_volume");
+        let vol2 =
+            root_vol.new_volume("vol2", NewChildStoreOptions::default()).await.expect("new_volume");
+        let vol2_root =
+            Directory::open(&vol2, vol2.root_directory_object_id()).await.expect("open failed");
+        let mut transaction = fs
+            .root_store()
+            .new_transaction(
+                lock_keys![LockKey::object(
+                    vol2.store_object_id(),
+                    vol2.root_directory_object_id()
+                )],
+                Options::default(),
+            )
+            .await
+            .expect("new_transaction failed");
+        let bar =
+            vol2_root.create_child_file(&mut transaction, "bar").await.expect("create_child_file");
+        transaction.commit().await.expect("commit failed");
+
+        // Write 64 KiB to a file in "vol1", emitting `DataChecksums` owned by "vol1".
+        {
+            let vol1_root =
+                Directory::open(&vol1, vol1.root_directory_object_id()).await.expect("open failed");
+            let mut transaction = fs
+                .root_store()
+                .new_transaction(
+                    lock_keys![LockKey::object(
+                        vol1.store_object_id(),
+                        vol1.root_directory_object_id()
+                    )],
+                    Options::default(),
+                )
+                .await
+                .expect("new_transaction failed");
+            let file = vol1_root
+                .create_child_file(&mut transaction, "file")
+                .await
+                .expect("create_child_file");
+            transaction.commit().await.expect("commit failed");
+            let mut buf = file.allocate_buffer(65536).await;
+            buf.fill(0xaa);
+            file.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+        }
+        drop(vol1);
+
+        // Delete "vol1", which emits `MarkForDeletion` for "vol1".
+        let (_, transaction) = root_vol
+            .acquire_transaction_for_remove_volume("vol1", [], false, Options::default())
+            .await
+            .expect("acquire_transaction_for_remove_volume failed");
+        root_vol.delete_volume("vol1", transaction, || {}).await.expect("delete_volume failed");
+
+        // Write 64 KiB to "bar" in "vol2". Allocating in "vol2" sees `volumes_deleted_pending_sync`,
+        // syncs the journal and flushes the device (queuing `DidFlushDevice` for the next journal
+        // write), and frees "vol1"'s 64 KiB extent. Writing to "bar" reuses and overwrites those
+        // exact disk blocks with `0xbb`, while the `DidFlushDevice` record remains buffered in
+        // memory in `JournalWriter`.
+        let mut buf = bar.allocate_buffer(65536).await;
+        buf.fill(0xbb);
+        bar.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+
+        // Simulate power loss before `DidFlushDevice` is flushed to the journal on disk.
+        let snapshot = fs.device().snapshot().expect("snapshot failed");
+        let fs2 = FxFilesystem::open(snapshot).await.expect("open snapshot failed");
+        fsck(fs2.clone()).await.expect("fsck failed");
+        let root_vol2 = root_volume(fs2.clone()).await.expect("root_volume failed");
+        root_vol2
+            .volume("vol1", StoreOptions::default())
+            .await
+            .err()
+            .expect("vol1 should remain deleted");
+        fs2.close().await.expect("close failed");
+        fs.close().await.expect("close failed");
     }
 }
 

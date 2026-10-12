@@ -1515,7 +1515,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         // Only store checksums in the journal if barriers are not enabled.
         if !store.filesystem().options().barriers_enabled {
             for (r, c) in checksums {
-                transaction.add_checksum(r, c, true);
+                transaction.add_checksum(store_id, r, c, true);
             }
         }
         Ok((allocated, deallocated))
@@ -1749,7 +1749,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         // Only store checksums in the journal if barriers are not enabled.
         if !store.filesystem().options().barriers_enabled {
             for (r, c, first_write) in checksums.into_iter().flatten() {
-                transaction.add_checksum(r, c, first_write);
+                transaction.add_checksum(store_id, r, c, first_write);
             }
         }
 

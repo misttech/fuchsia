@@ -4,6 +4,7 @@
 
 use crate::checksum::{Checksum, fletcher64_ptr};
 use crate::errors::FxfsError;
+use crate::object_handle::INVALID_OBJECT_ID;
 use crate::range::RangeExt;
 use anyhow::{Error, anyhow, ensure};
 use std::collections::BTreeMap;
@@ -27,6 +28,7 @@ impl ChecksumState {
 struct ChecksumEntry {
     // |start| is the journal_offset at which this range was written.
     start_journal_offset: u64,
+    owner_object_id: u64,
     device_range: Range<u64>,
     // Holds checksums that cover |device_range| that should hold valid from
     // start_journal_offset..end_journal_offset.
@@ -62,6 +64,7 @@ impl ChecksumList {
     pub fn push(
         &mut self,
         journal_offset: u64,
+        owner_object_id: u64,
         mut device_range: Range<u64>,
         mut checksums: &[u64],
         first_write: bool,
@@ -113,6 +116,14 @@ impl ChecksumList {
                 anyhow!(FxfsError::Inconsistent)
                     .context("Wrong number of checksums for device range"),
             );
+            if entry.owner_object_id == INVALID_OBJECT_ID {
+                entry.owner_object_id = owner_object_id;
+            } else {
+                ensure!(
+                    entry.owner_object_id == owner_object_id,
+                    anyhow!(FxfsError::Inconsistent).context("Wrong owner object for device range"),
+                );
+            }
 
             let overlap = std::cmp::max(device_range.start, entry.device_range.start)
                 ..std::cmp::min(device_range.end, entry.device_range.end);
@@ -133,6 +144,7 @@ impl ChecksumList {
                 gap_entries.push((gap.end, self.checksum_entries.len()));
                 self.checksum_entries.push(ChecksumEntry {
                     start_journal_offset: journal_offset,
+                    owner_object_id,
                     device_range: gap,
                     checksums: gap_checksums
                         .iter()
@@ -155,6 +167,7 @@ impl ChecksumList {
                 .insert(device_range.end, self.checksum_entries.len());
             self.checksum_entries.push(ChecksumEntry {
                 start_journal_offset: journal_offset,
+                owner_object_id,
                 device_range,
                 checksums: checksums
                     .iter()
@@ -193,11 +206,30 @@ impl ChecksumList {
                 // This entry covers the remainder.
                 entry.checksums[checksum_index_start..checksum_index_end]
                     .iter_mut()
-                    .for_each(|c| c.1 = journal_offset);
+                    .for_each(|c| c.1 = std::cmp::min(c.1, journal_offset));
                 break;
             }
-            entry.checksums[checksum_index_start..].iter_mut().for_each(|c| c.1 = journal_offset);
+            entry.checksums[checksum_index_start..]
+                .iter_mut()
+                .for_each(|c| c.1 = std::cmp::min(c.1, journal_offset));
             device_range.start = entry.device_range.end;
+        }
+    }
+
+    /// Marks all extents belonging to `owner_object_id` as deallocated at `journal_offset`.
+    /// If this journal-offset ends up being replayed, it means that we can skip previously queued
+    /// checksums for this owner.
+    pub fn mark_for_deletion(&mut self, journal_offset: u64, owner_object_id: u64) {
+        assert_ne!(owner_object_id, INVALID_OBJECT_ID);
+        if journal_offset < self.flushed_offset {
+            return;
+        }
+        for entry in &mut self.checksum_entries {
+            if entry.owner_object_id == owner_object_id {
+                for (_, end_journal_offset) in &mut entry.checksums {
+                    *end_journal_offset = std::cmp::min(*end_journal_offset, journal_offset);
+                }
+            }
         }
     }
 
@@ -255,7 +287,7 @@ impl ChecksumList {
 
 #[cfg(test)]
 mod tests {
-    use super::ChecksumList;
+    use super::{ChecksumList, INVALID_OBJECT_ID};
     use crate::checksum::fletcher64;
     use storage_device::Device;
     use storage_device::fake_device::FakeDevice;
@@ -272,6 +304,7 @@ mod tests {
         buffer.as_mut().subslice_mut(1536..2048).copy_from_slice(&[4; 512]);
         device.write(512, buffer.as_ref()).await.expect("write failed");
         list.push(
+            1,
             1,
             512..2048,
             &[fletcher64(&[1; 512], 0), fletcher64(&[2; 512], 0), fletcher64(&[3; 512], 0)],
@@ -294,7 +327,7 @@ mod tests {
         assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 10);
 
         // Add another entry followed by a deallocation.
-        list.push(3, 2048..2560, &[fletcher64(&[4; 512], 0)], true).unwrap();
+        list.push(3, 1, 2048..2560, &[fletcher64(&[4; 512], 0)], true).unwrap();
         list.mark_deallocated(4, 1536..2048);
 
         // All entries should validate.
@@ -328,9 +361,9 @@ mod tests {
 
         // This entry has the wrong checksum will fail, but it should be ignored anyway because it
         // is prior to the flushed offset.
-        list.push(1, 512..1024, &[fletcher64(&[2; 512], 0)], true).unwrap();
+        list.push(1, 1, 512..1024, &[fletcher64(&[2; 512], 0)], true).unwrap();
 
-        list.push(2, 1024..1536, &[fletcher64(&[2; 512], 0)], true).unwrap();
+        list.push(2, 1, 1024..1536, &[fletcher64(&[2; 512], 0)], true).unwrap();
 
         assert_eq!(list.verify(&device, 10).await.expect("verify failed"), 10);
     }
@@ -344,9 +377,9 @@ mod tests {
         buffer.copy_from_slice(&[2; 512]);
         device.write(2560, buffer.as_ref()).await.expect("write failed");
 
-        list.push(2, 512..1024, &[fletcher64(&[1; 512], 0)], true).unwrap();
+        list.push(2, 1, 512..1024, &[fletcher64(&[1; 512], 0)], true).unwrap();
         list.mark_deallocated(3, 0..1024);
-        list.push(4, 2048..3072, &[fletcher64(&[2; 512], 0); 2], true).unwrap();
+        list.push(4, 1, 2048..3072, &[fletcher64(&[2; 512], 0); 2], true).unwrap();
         list.mark_deallocated(5, 1536..2560);
 
         assert_eq!(list.verify(&device, 10).await.expect("verify failed"), 10);
@@ -364,11 +397,27 @@ mod tests {
         let c0 = fletcher64(&[0; 512], 0);
         let c2 = fletcher64(&[2; 512], 0);
 
-        list.push(1, 1024..2048, &[c2, c2], true).unwrap();
+        list.push(1, 1, 1024..2048, &[c2, c2], true).unwrap();
 
-        list.push(2, 1024..2048, &[c0], false)
+        list.push(2, 1, 1024..2048, &[c0], false)
             .expect_err("Expected failure due to different chunk size");
+
+        // Different owner object.
+        list.push(3, 2, 1024..2048, &[c2, c2], false)
+            .expect_err("Expected failure due to different owner object");
+        list.push(3, INVALID_OBJECT_ID, 1024..2048, &[c2, c2], false)
+            .expect_err("Expected failure due to INVALID_OBJECT_ID after valid owner");
+
         assert_eq!(list.verify(&device, 2).await.expect("verify failed"), 2);
+
+        // An entry pushed with INVALID_OBJECT_ID (migrated from V59) can be overlapped by a V59
+        // or V60 entry, which adopts the new owner_object_id.
+        let mut list = ChecksumList::new(1);
+        list.push(1, INVALID_OBJECT_ID, 1024..2048, &[c2, c2], true).unwrap();
+        list.push(2, INVALID_OBJECT_ID, 1024..2048, &[c2, c2], false).unwrap();
+        list.push(3, 1, 1024..2048, &[c2, c2], false).unwrap();
+        list.push(4, 2, 1024..2048, &[c2, c2], false)
+            .expect_err("Expected failure due to different owner object");
     }
 
     #[fuchsia::test]
@@ -383,8 +432,8 @@ mod tests {
         let c1 = fletcher64(&[1; 512], 0);
         let c2 = fletcher64(&[2; 512], 0);
 
-        list.push(1, 1024..2048, &[c2, c2], true).unwrap();
-        list.push(2, 0..1024, &[c2, c1], false).unwrap();
+        list.push(1, 1, 1024..2048, &[c2, c2], true).unwrap();
+        list.push(2, 1, 0..1024, &[c2, c1], false).unwrap();
         assert_eq!(list.verify(&device, 2).await.expect("verify failed"), 2);
     }
 
@@ -400,14 +449,45 @@ mod tests {
         let c1 = fletcher64(&[1; 512], 0);
         let c2 = fletcher64(&[2; 512], 0);
 
-        list.push(1, 1024..2048, &[c2, c2], true).unwrap();
+        list.push(1, 1, 1024..2048, &[c2, c2], true).unwrap();
 
-        list.push(2, 512..2560, &[c1, c1, c1, c1], false).unwrap();
+        list.push(2, 1, 512..2560, &[c1, c1, c1, c1], false).unwrap();
         assert_eq!(list.verify(&device, 2).await.expect("verify failed"), 2);
 
         // Changing the data to ones should be fine now because the other checksums will match.
         buffer.copy_from_slice(&[1; 1024]);
         device.write(1024, buffer.as_ref()).await.expect("write failed");
         assert_eq!(list.verify(&device, 4).await.expect("verify failed"), 4);
+    }
+
+    #[fuchsia::test]
+    async fn test_mark_for_deletion() {
+        let device = FakeDevice::new(2048, 512);
+        let mut buffer = device.allocate_buffer(1024).await;
+        let mut list = ChecksumList::new(1);
+
+        buffer.copy_from_slice(&[1; 1024]);
+        device.write(512, buffer.as_ref()).await.expect("write failed");
+
+        let c1 = fletcher64(&[1; 512], 0);
+        list.push(2, 10, 512..1024, &[c1], true).unwrap();
+        list.push(3, 20, 1024..1536, &[c1], true).unwrap();
+
+        // Overwrite owner 10's block on disk (simulating reuse after a flush + MarkForDeletion).
+        buffer.as_mut().subslice_mut(0..512).copy_from_slice(&[9; 512]);
+        device.write(512, buffer.as_ref()).await.expect("write failed");
+
+        // Without mark_for_deletion, verification stops at offset 2.
+        assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 2);
+
+        // Once owner 10 is marked for deletion at offset 4, replay up to 10 succeeds.
+        list.mark_for_deletion(4, 10);
+        assert_eq!(list.clone().verify(&device, 10).await.expect("verify failed"), 10);
+
+        // If a later entry (owner 20 at offset 3) fails verification, journal_offset rolls back to
+        // 3 (< 4), so owner 10's deletion at 4 is not replayed and verification rolls back to 2.
+        buffer.as_mut().subslice_mut(512..1024).copy_from_slice(&[9; 512]);
+        device.write(512, buffer.as_ref()).await.expect("write failed");
+        assert_eq!(list.verify(&device, 10).await.expect("verify failed"), 2);
     }
 }

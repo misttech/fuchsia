@@ -4932,7 +4932,7 @@ mod tests {
                 // block we wrote to disk.
                 let mut checksummed_range_length = 0;
                 let mut num_checksums = 0;
-                for (device_range, checksums, _) in transaction.checksums() {
+                for (_, device_range, checksums, _) in transaction.checksums() {
                     let range_len = device_range.end - device_range.start;
                     let checksums_len = checksums.len() as u64;
                     assert_eq!(range_len / checksums_len, block_size);

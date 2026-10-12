@@ -738,7 +738,7 @@ pub struct Transaction<'a> {
     new_objects: BTreeSet<(u64, u64)>,
 
     /// Any data checksums which should be evaluated when replaying this transaction.
-    checksums: Vec<(Range<u64>, Vec<Checksum>, bool)>,
+    checksums: Vec<(u64, Range<u64>, Vec<Checksum>, bool)>,
 
     /// Set if this transaction contains data (i.e. includes any extent mutations).
     includes_write: bool,
@@ -953,19 +953,25 @@ impl<'a> Transaction<'a> {
         old
     }
 
-    pub fn add_checksum(&mut self, range: Range<u64>, checksums: Vec<Checksum>, first_write: bool) {
-        self.checksums.push((range, checksums, first_write));
+    pub fn add_checksum(
+        &mut self,
+        owner_object_id: u64,
+        range: Range<u64>,
+        checksums: Vec<Checksum>,
+        first_write: bool,
+    ) {
+        self.checksums.push((owner_object_id, range, checksums, first_write));
     }
 
     pub fn includes_write(&self) -> bool {
         self.includes_write
     }
 
-    pub fn checksums(&self) -> &[(Range<u64>, Vec<Checksum>, bool)] {
+    pub fn checksums(&self) -> &[(u64, Range<u64>, Vec<Checksum>, bool)] {
         &self.checksums
     }
 
-    pub fn take_checksums(&mut self) -> Vec<(Range<u64>, Vec<Checksum>, bool)> {
+    pub fn take_checksums(&mut self) -> Vec<(u64, Range<u64>, Vec<Checksum>, bool)> {
         std::mem::replace(&mut self.checksums, Vec::new())
     }
 
@@ -2536,7 +2542,7 @@ mod tests {
                 ObjectValue::Extent(ExtentValue::deleted_extent()),
             ),
         );
-        transaction.add_checksum(0..4096, vec![0], true);
+        transaction.add_checksum(store.store_object_id(), 0..4096, vec![0], true);
         assert!(transaction.includes_write());
         assert!(!transaction.checksums().is_empty());
 
