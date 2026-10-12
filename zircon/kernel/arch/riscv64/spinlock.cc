@@ -7,12 +7,12 @@
 #include <arch/ops.h>
 #include <arch/spinlock.h>
 #include <kernel/ffi.h>
-#include <kernel/spin_tracing.h>
 #include <ktl/atomic.h>
 
 extern "C" {
 
 void rust_arch_spin_lock_non_instrumented(uint32_t* lock);
+void rust_arch_spin_lock_trace_instrumented(uint32_t* lock, uint64_t encoded_lock_id);
 bool rust_arch_spin_trylock(uint32_t* lock);
 void rust_arch_spin_unlock(uint32_t* lock);
 
@@ -29,14 +29,8 @@ FFI_ALWAYS_INLINE void arch_spin_lock_non_instrumented(arch_spin_lock_t* lock) {
 
 FFI_ALWAYS_INLINE void arch_spin_lock_trace_instrumented(
     arch_spin_lock_t* lock, spin_tracing::EncodedLockId encoded_lock_id) {
-  if (rust_arch_spin_trylock(reinterpret_cast<uint32_t*>(&lock->value))) {
-    on_lock_acquired(lock);
-    return;
-  }
-
-  spin_tracing::Tracer<true> spin_tracer;
-  rust_arch_spin_lock_non_instrumented(reinterpret_cast<uint32_t*>(&lock->value));
-  spin_tracer.Finish(spin_tracing::FinishType::kLockAcquired, encoded_lock_id);
+  rust_arch_spin_lock_trace_instrumented(reinterpret_cast<uint32_t*>(&lock->value),
+                                         encoded_lock_id.value());
   on_lock_acquired(lock);
 }
 

@@ -11,6 +11,7 @@
 
 use super::arch::arch_yield;
 use super::mp::{percpu_dec_num_spinlocks, percpu_inc_num_spinlocks};
+use crate::kernel::spin_tracing::{EncodedLockId, FinishType, Tracer};
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Acquire a spinlock without lock trace instrumentation.
@@ -23,6 +24,17 @@ fn arch_spin_lock_non_instrumented(lock: &AtomicU32) {
         arch_yield();
     }
     percpu_inc_num_spinlocks();
+}
+
+/// Acquire a spinlock with lock trace instrumentation.
+fn arch_spin_lock_trace_instrumented(lock: &AtomicU32, encoded_lock_id: EncodedLockId) {
+    if arch_spin_trylock(lock) {
+        return;
+    }
+
+    let spin_tracer = Tracer::<true>::new();
+    arch_spin_lock_non_instrumented(lock);
+    spin_tracer.finish(FinishType::LockAcquired, encoded_lock_id);
 }
 
 /// Try to acquire a spinlock without blocking.
@@ -54,6 +66,14 @@ fn arch_spin_unlock(lock: &AtomicU32) {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_arch_spin_lock_non_instrumented(lock: &AtomicU32) {
     arch_spin_lock_non_instrumented(lock);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_arch_spin_lock_trace_instrumented(
+    lock: &AtomicU32,
+    encoded_lock_id: EncodedLockId,
+) {
+    arch_spin_lock_trace_instrumented(lock, encoded_lock_id);
 }
 
 #[unsafe(no_mangle)]
