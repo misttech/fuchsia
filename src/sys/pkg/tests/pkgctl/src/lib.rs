@@ -8,9 +8,8 @@ use anyhow::Error;
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg::{
-    self as fpkg, PackageCacheRequest, PackageCacheRequestStream, PackageResolverRequest,
-    PackageResolverRequestStream, RepositoryIteratorRequest, RepositoryManagerRequest,
-    RepositoryManagerRequestStream, ResolveError,
+    self as fpkg, PackageResolverRequest, PackageResolverRequestStream, RepositoryIteratorRequest,
+    RepositoryManagerRequest, RepositoryManagerRequestStream, ResolveError,
 };
 use fidl_fuchsia_pkg_ext::{
     MirrorConfig, MirrorConfigBuilder, RepositoryConfig, RepositoryConfigBuilder, RepositoryKey,
@@ -42,7 +41,6 @@ const BINARY_PATH: &str = "/pkg/bin/pkgctl";
 struct TestEnv {
     engine: Arc<MockEngineService>,
     repository_manager: Arc<MockRepositoryManagerService>,
-    package_cache: Arc<MockPackageCacheService>,
     package_resolver: Arc<MockPackageResolverService>,
     space_manager: Arc<MockSpaceManagerService>,
     _test_dir: TempDir,
@@ -63,18 +61,6 @@ impl TestEnv {
                 package_resolver_clone
                     .run_service(stream)
                     .unwrap_or_else(|e| panic!("error running resolver service: {e:?}")),
-            )
-            .detach()
-        });
-
-        let package_cache = Arc::new(MockPackageCacheService::new());
-        let package_cache_clone = package_cache.clone();
-        fs.add_fidl_service(move |stream: PackageCacheRequestStream| {
-            let package_cache_clone = package_cache_clone.clone();
-            fasync::Task::spawn(
-                package_cache_clone
-                    .run_service(stream)
-                    .unwrap_or_else(|e| panic!("error running cache service: {e:?}")),
             )
             .detach()
         });
@@ -129,7 +115,6 @@ impl TestEnv {
         Self {
             engine,
             repository_manager,
-            package_cache,
             package_resolver,
             space_manager,
             _test_dir,
@@ -161,7 +146,6 @@ impl TestEnv {
         &self,
         expected_args: Vec<CapturedRepositoryManagerRequest>,
     ) {
-        assert_eq!(self.package_cache.captured_args.lock().len(), 0);
         assert_eq!(self.package_resolver.captured_args.lock().len(), 0);
         assert_eq!(self.engine.captured_args.lock().len(), 0);
         assert_eq!(*self.repository_manager.captured_args.lock(), expected_args);
@@ -173,7 +157,6 @@ impl TestEnv {
     }
 
     fn assert_only_engine_called_with(&self, expected_args: Vec<CapturedEngineRequest>) {
-        assert_eq!(self.package_cache.captured_args.lock().len(), 0);
         assert_eq!(self.package_resolver.captured_args.lock().len(), 0);
         assert_eq!(*self.engine.captured_args.lock(), expected_args);
         assert_eq!(self.repository_manager.captured_args.lock().len(), 0);
@@ -181,7 +164,6 @@ impl TestEnv {
     }
 
     fn assert_only_space_manager_called(&self) {
-        assert_eq!(self.package_cache.captured_args.lock().len(), 0);
         assert_eq!(self.package_resolver.captured_args.lock().len(), 0);
         assert_eq!(self.engine.captured_args.lock().len(), 0);
         assert_eq!(self.repository_manager.captured_args.lock().len(), 0);
@@ -189,23 +171,10 @@ impl TestEnv {
     }
 
     fn assert_only_package_resolver_called_with(&self, reqs: Vec<CapturedPackageResolverRequest>) {
-        assert_eq!(self.package_cache.captured_args.lock().len(), 0);
         assert_eq!(self.engine.captured_args.lock().len(), 0);
         assert_eq!(self.repository_manager.captured_args.lock().len(), 0);
         assert_eq!(*self.space_manager.call_count.lock(), 0);
         assert_eq!(*self.package_resolver.captured_args.lock(), reqs);
-    }
-
-    fn assert_only_package_resolver_and_package_cache_called_with(
-        &self,
-        resolver_reqs: Vec<CapturedPackageResolverRequest>,
-        cache_reqs: Vec<CapturedPackageCacheRequest>,
-    ) {
-        assert_eq!(*self.package_cache.captured_args.lock(), cache_reqs);
-        assert_eq!(self.engine.captured_args.lock().len(), 0);
-        assert_eq!(self.repository_manager.captured_args.lock().len(), 0);
-        assert_eq!(*self.space_manager.call_count.lock(), 0);
-        assert_eq!(*self.package_resolver.captured_args.lock(), resolver_reqs);
     }
 }
 
@@ -404,101 +373,6 @@ impl MockPackageResolverService {
             }
         }
         Ok(())
-    }
-}
-
-#[derive(PartialEq, Debug, Eq)]
-enum CapturedPackageCacheRequest {
-    Get { meta_far_blob_id: fpkg::BlobInfo },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GetBehavior {
-    AlreadyCached,
-    NotCached,
-    ImmediateClose,
-}
-
-struct MockPackageCacheService {
-    captured_args: Mutex<Vec<CapturedPackageCacheRequest>>,
-    get_behavior: Mutex<GetBehavior>,
-}
-
-impl MockPackageCacheService {
-    fn new() -> Self {
-        Self {
-            captured_args: Mutex::new(vec![]),
-            get_behavior: Mutex::new(GetBehavior::ImmediateClose),
-        }
-    }
-    async fn run_service(
-        self: Arc<Self>,
-        mut stream: PackageCacheRequestStream,
-    ) -> Result<(), Error> {
-        while let Some(req) = stream.try_next().await? {
-            match req {
-                PackageCacheRequest::Get {
-                    meta_far_blob,
-                    gc_protection,
-                    needed_blobs,
-                    dir,
-                    responder,
-                } => {
-                    assert_eq!(gc_protection, fpkg::GcProtection::OpenPackageTracking);
-                    self.captured_args
-                        .lock()
-                        .push(CapturedPackageCacheRequest::Get { meta_far_blob_id: meta_far_blob });
-                    let () = self.handle_get(meta_far_blob, needed_blobs, dir, responder).await;
-                }
-                PackageCacheRequest::GetSubpackage { .. } => {
-                    panic!("should only support Get requests, received GetSubpackage")
-                }
-                PackageCacheRequest::BasePackageIndex { .. } => {
-                    panic!("should only support Get requests, received BasePackageIndex")
-                }
-                PackageCacheRequest::CachePackageIndex { .. } => {
-                    panic!("should only support Get requests, received CachePackageIndex")
-                }
-                PackageCacheRequest::Sync { .. } => {
-                    panic!("should only support Get requests, received Sync")
-                }
-                PackageCacheRequest::SetUpgradableUrls { .. } => {
-                    panic!("should only support Get requests, received SetUpgradableUrls")
-                }
-                PackageCacheRequest::WriteBlobs { .. } => {
-                    panic!("should only support Get requests, received WriteBlobs")
-                }
-                PackageCacheRequest::_UnknownMethod { .. } => {
-                    panic!("should only support Get requests, received UnknownMethod")
-                }
-            }
-        }
-        Ok(())
-    }
-    async fn handle_get(
-        &self,
-        _meta_far: fpkg::BlobInfo,
-        needed_blobs: ServerEnd<fpkg::NeededBlobsMarker>,
-        _dir: ServerEnd<fio::DirectoryMarker>,
-        get_responder: fpkg::PackageCacheGetResponder,
-    ) {
-        let behavior = *self.get_behavior.lock();
-        match behavior {
-            GetBehavior::AlreadyCached => {
-                let (_, control) = needed_blobs.into_stream_and_control_handle();
-                let () = control.shutdown_with_epitaph(Ok(()));
-                let () = get_responder.send(Ok(())).unwrap();
-            }
-            GetBehavior::NotCached => {
-                let mut stream = needed_blobs.into_stream();
-                let req = stream.next().await.unwrap().unwrap();
-                let fpkg::NeededBlobsRequest::OpenMetaBlob { responder, .. } = req else {
-                    panic!("unexpected NeededBlobsRequest: {req:?}");
-                };
-                let () = responder.send(Ok(Some(fidl::endpoints::create_endpoints().0))).unwrap();
-            }
-            GetBehavior::ImmediateClose => {}
-        }
     }
 }
 
@@ -805,83 +679,6 @@ async fn test_get_hash_failure() {
     let output = env.run_pkgctl(vec!["get-hash", "the-url"]).await;
 
     assert_stderr(&output, "Error: Failed to get package hash with error: UNAVAILABLE\n");
-    env.assert_only_package_resolver_called_with(vec![CapturedPackageResolverRequest::GetHash {
-        package_url: "the-url".into(),
-    }]);
-}
-
-// TODO(https://fxbug.dev/552675412): Delete the pkg-status subcommand.
-#[ignore]
-#[fuchsia::test]
-async fn test_pkg_status_success() {
-    let hash: fidl_fuchsia_pkg::BlobId =
-        "0000000000000000000000000000000000000000000000000000000000000000"
-            .parse::<fidl_fuchsia_pkg_ext::BlobId>()
-            .unwrap()
-            .into();
-    let env = TestEnv::new();
-    env.package_resolver.get_hash_response.lock().replace(Ok(hash));
-    *env.package_cache.get_behavior.lock() = GetBehavior::AlreadyCached;
-
-    let output = env.run_pkgctl(vec!["pkg-status", "the-url"]).await;
-
-    assert_stdout(
-        &output,
-        "Package in registered TUF repo: yes (merkle=0000000000000000000000000000000000000000000000000000000000000000)\n\
-      Package on disk: yes\n",
-    );
-    env.assert_only_package_resolver_and_package_cache_called_with(
-        vec![CapturedPackageResolverRequest::GetHash { package_url: "the-url".into() }],
-        vec![CapturedPackageCacheRequest::Get {
-            meta_far_blob_id: fpkg::BlobInfo { blob_id: hash, length: 0 },
-        }],
-    );
-}
-
-// TODO(https://fxbug.dev/552675412): Delete the pkg-status subcommand.
-#[ignore]
-#[fuchsia::test]
-async fn test_pkg_status_fail_pkg_in_tuf_repo_but_not_on_disk() {
-    let hash: fidl_fuchsia_pkg::BlobId =
-        "0000000000000000000000000000000000000000000000000000000000000000"
-            .parse::<fidl_fuchsia_pkg_ext::BlobId>()
-            .unwrap()
-            .into();
-    let env = TestEnv::new();
-    env.package_resolver.get_hash_response.lock().replace(Ok(hash));
-    *env.package_cache.get_behavior.lock() = GetBehavior::NotCached;
-
-    let output = env.run_pkgctl(vec!["pkg-status", "the-url"]).await;
-
-    assert_stdout_disregard_errors(
-        &output,
-        "Package in registered TUF repo: yes (merkle=0000000000000000000000000000000000000000000000000000000000000000)\n\
-      Package on disk: no\n",
-    );
-    assert_eq!(output.return_code(), 2);
-    env.assert_only_package_resolver_and_package_cache_called_with(
-        vec![CapturedPackageResolverRequest::GetHash { package_url: "the-url".into() }],
-        vec![CapturedPackageCacheRequest::Get {
-            meta_far_blob_id: fpkg::BlobInfo { blob_id: hash, length: 0 },
-        }],
-    );
-}
-
-// TODO(https://fxbug.dev/552675412): Delete the pkg-status subcommand.
-#[ignore]
-#[fuchsia::test]
-async fn test_pkg_status_fail_pkg_not_in_tuf_repo() {
-    let env = TestEnv::new();
-    env.package_resolver.get_hash_response.lock().replace(Err(Status::NOT_FOUND));
-
-    let output = env.run_pkgctl(vec!["pkg-status", "the-url"]).await;
-
-    assert_stdout_disregard_errors(
-        &output,
-        "Package in registered TUF repo: no\n\
-        Package on disk: unknown (did not check since not in tuf repo)\n",
-    );
-    assert_eq!(output.return_code(), 3);
     env.assert_only_package_resolver_called_with(vec![CapturedPackageResolverRequest::GetHash {
         package_url: "the-url".into(),
     }]);

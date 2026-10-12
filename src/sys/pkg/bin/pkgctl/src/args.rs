@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use argh::FromArgs;
-use fidl_fuchsia_pkg_ext::BlobId;
 use fidl_fuchsia_pkg_rewrite_ext::RuleConfig;
 use std::path::PathBuf;
 
@@ -18,12 +17,10 @@ pub struct Args {
 #[argh(subcommand)]
 pub enum Command {
     Resolve(ResolveCommand),
-    Open(OpenCommand),
     Repo(RepoCommand),
     Rule(RuleCommand),
     Gc(GcCommand),
     GetHash(GetHashCommand),
-    PkgStatus(PkgStatusCommand),
 }
 
 #[derive(FromArgs, Debug, PartialEq)]
@@ -36,14 +33,6 @@ pub struct ResolveCommand {
     /// prints the contents of the resolved package, which can be slow for large packages.
     #[argh(switch, short = 'v')]
     pub verbose: bool,
-}
-
-#[derive(FromArgs, Debug, PartialEq)]
-#[argh(subcommand, name = "open")]
-/// Open a package by merkle root.
-pub struct OpenCommand {
-    #[argh(positional)]
-    pub meta_far_blob_id: BlobId,
 }
 
 #[derive(FromArgs, Debug, PartialEq)]
@@ -217,22 +206,6 @@ pub struct GetHashCommand {
     pub pkg_url: String,
 }
 
-#[derive(FromArgs, Debug, PartialEq)]
-#[argh(
-    subcommand,
-    name = "pkg-status",
-    note = "Exit codes:",
-    note = "    0 - pkg in tuf repo and on disk",
-    note = "    2 - pkg in tuf repo but not on disk",
-    note = "    3 - pkg not in tuf repo",
-    note = "    1 - any other misc application error"
-)]
-/// Determine if a pkg is in a registered tuf repo and/or on disk.
-pub struct PkgStatusCommand {
-    #[argh(positional)]
-    pub pkg_url: String,
-}
-
 fn parse_rule_config(config: &str) -> Result<RuleConfig, String> {
     serde_json::from_str(config).map_err(|e| e.to_string())
 }
@@ -265,33 +238,6 @@ mod tests {
         check(&["resolve", url], url, false);
         check(&["resolve", "--verbose", url], url, true);
         check(&["resolve", "-v", url], url, true);
-    }
-
-    #[test]
-    fn open() {
-        fn check(args: &[&str], expected_blob_id: &str) {
-            assert_eq!(
-                Args::from_args(CMD_NAME, args),
-                Ok(Args {
-                    command: Command::Open(OpenCommand {
-                        meta_far_blob_id: expected_blob_id.parse().unwrap(),
-                    })
-                })
-            )
-        }
-
-        let blob_id = "1111111111111111111111111111111111111111111111111111111111111111";
-        check(&["open", blob_id], blob_id);
-
-        check(&["open", blob_id], blob_id);
-    }
-
-    #[test]
-    fn open_reject_malformed_blobs() {
-        match Args::from_args(CMD_NAME, &["open", "bad_id"]) {
-            Err(argh::EarlyExit { output: _, status: _ }) => {}
-            result => panic!("unexpected result {result:?}"),
-        }
     }
 
     #[test]
@@ -470,16 +416,6 @@ mod tests {
         let url = "fuchsia-pkg://fuchsia.com/foo/bar";
         match Args::from_args(CMD_NAME, &["get-hash", url]).unwrap() {
             Args { command: Command::GetHash(GetHashCommand { pkg_url }) } if pkg_url == url => {}
-            result => panic!("unexpected result {result:?}"),
-        }
-    }
-
-    #[test]
-    fn pkg_status() {
-        let url = "fuchsia-pkg://fuchsia.com/foo/bar";
-        match Args::from_args(CMD_NAME, &["pkg-status", url]).unwrap() {
-            Args { command: Command::PkgStatus(PkgStatusCommand { pkg_url }) }
-                if pkg_url == url => {}
             result => panic!("unexpected result {result:?}"),
         }
     }

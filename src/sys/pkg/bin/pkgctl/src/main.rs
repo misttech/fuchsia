@@ -5,11 +5,11 @@
 #![allow(clippy::let_unit_value)]
 
 use crate::args::{
-    Args, Command, GcCommand, GetHashCommand, OpenCommand, PkgStatusCommand, RepoAddCommand,
-    RepoAddFileCommand, RepoAddSubCommand, RepoAddUrlCommand, RepoCommand, RepoRemoveCommand,
-    RepoShowCommand, RepoSubCommand, ResolveCommand, RuleClearCommand, RuleCommand,
-    RuleDumpDynamicCommand, RuleListCommand, RuleReplaceCommand, RuleReplaceFileCommand,
-    RuleReplaceJsonCommand, RuleReplaceSubCommand, RuleSubCommand,
+    Args, Command, GcCommand, GetHashCommand, RepoAddCommand, RepoAddFileCommand,
+    RepoAddSubCommand, RepoAddUrlCommand, RepoCommand, RepoRemoveCommand, RepoShowCommand,
+    RepoSubCommand, ResolveCommand, RuleClearCommand, RuleCommand, RuleDumpDynamicCommand,
+    RuleListCommand, RuleReplaceCommand, RuleReplaceFileCommand, RuleReplaceJsonCommand,
+    RuleReplaceSubCommand, RuleSubCommand,
 };
 use anyhow::{Context as _, format_err};
 use fetch_url::fetch_url;
@@ -72,12 +72,6 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
                 })?;
             println!("{}", pkg::BlobId::from(blob_id));
             Ok(0)
-        }
-        Command::PkgStatus(PkgStatusCommand { pkg_url: _ }) => {
-            anyhow::bail!("`pkgctl pkg-status` is being deleted, https://fxbug.dev/552675412");
-        }
-        Command::Open(OpenCommand { meta_far_blob_id: _ }) => {
-            anyhow::bail!("`pkgctl open` is being deleted, https://fxbug.dev/552670958");
         }
         Command::Repo(RepoCommand { verbose, subcommand }) => {
             let repo_manager = connect_to_protocol::<fpkg::RepositoryManagerMarker>()
