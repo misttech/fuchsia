@@ -11,6 +11,7 @@ library_headers("headers") {
     "lib/boot-shim/acpi.h",
     "lib/boot-shim/boot-properties.h",
     "lib/boot-shim/boot-shim.h",
+    "lib/boot-shim/bootloader-file.h",
     "lib/boot-shim/debugdata.h",
     "lib/boot-shim/devicetree.h",
     "lib/boot-shim/devicetree-boot-shim.h",

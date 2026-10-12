@@ -5,12 +5,17 @@
 // https://opensource.org/licenses/MIT
 
 #include <lib/boot-shim/boot-shim.h>
+#include <lib/boot-shim/bootloader-file.h>
 #include <lib/boot-shim/item-base.h>
+#include <lib/zbitl/image.h>
 
+#include <array>
+#include <span>
 #include <string>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <zxtest/zxtest.h>
 
@@ -60,6 +65,43 @@ TEST(BootShimTests, OnInvocableItems) {
     EXPECT_TRUE(saw_bool);
     EXPECT_TRUE(saw_string);
   }
+}
+
+TEST(BootShimTests, BootloaderFileItem) {
+  constexpr std::string_view kFile1Content = "hello world";
+  constexpr std::string_view kFile2Content = "second file payload";
+
+  // Include an unset slot to verify it contributes 0 bytes and is not appended.
+  boot_shim::BootloaderFileItems<3> items;
+  items.emplace_back(zbitl::BootloaderFile{
+      .name = "first.txt",
+      .contents = std::as_bytes(std::span{kFile1Content}),
+  });
+  items.emplace_back(zbitl::BootloaderFile{
+      .name = "fuchsia.zbi",
+      .contents = std::as_bytes(std::span{kFile2Content}),
+  });
+
+  alignas(ZBI_ALIGNMENT) std::array<std::byte, 512> buffer{};
+  zbitl::Image<std::span<std::byte>> image(buffer);
+  ASSERT_TRUE(image.clear().is_ok());
+  ASSERT_TRUE(
+      image.Append(zbi_header_t{.type = ZBI_TYPE_CMDLINE}, std::as_bytes(std::span{"foo=bar"}))
+          .is_ok());
+  ASSERT_TRUE(items.AppendItems(image).is_ok());
+
+  std::vector<std::pair<std::string_view, std::string_view>> files;
+  for (auto [name, contents] : zbitl::BootloaderFiles(image)) {
+    files.emplace_back(name, std::string_view{reinterpret_cast<const char*>(contents.data()),
+                                              contents.size_bytes()});
+  }
+  image.ignore_error();
+
+  ASSERT_EQ(files.size(), 2u);
+  EXPECT_EQ(files[0].first, "first.txt");
+  EXPECT_EQ(files[0].second, kFile1Content);
+  EXPECT_EQ(files[1].first, "fuchsia.zbi");
+  EXPECT_EQ(files[1].second, kFile2Content);
 }
 
 }  // namespace

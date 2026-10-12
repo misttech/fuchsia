@@ -366,11 +366,11 @@ class View {
     }
 
     // Iterator traits.
-    using iterator_category = std::input_iterator_tag;
+    using iterator_category = std::forward_iterator_tag;
     using reference = View::value_type&;
     using value_type = View::value_type;
     using pointer = View::value_type*;
-    using difference_type = size_t;
+    using difference_type = ptrdiff_t;
 
    private:
     // Private fields accessed by Image<Storage>::Append().

@@ -138,6 +138,8 @@ if (toolchain_environment == "kernel.phys") {
     deps = [
       "//zircon/kernel/arch/$zircon_cpu/phys:linuxboot",
       "//zircon/kernel/lib/arch",
+      "//zircon/kernel/phys:linuxboot-embed",
+      "//zircon/kernel/phys/lib/linux-initramfs",
       "//zircon/system/ulib/uart",
     ]
   }

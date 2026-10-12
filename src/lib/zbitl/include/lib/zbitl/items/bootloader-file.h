@@ -44,13 +44,13 @@ struct BootloaderFile {
 
 // This takes the value_type of any zbitl::View whose payload is convertible to
 // zbitl::ByteView.
-constexpr BootloaderFile ItemToBootLoaderFile(auto&& item) {
+inline constexpr auto ItemToBootLoaderFile = [](auto&& item) constexpr -> BootloaderFile {
   const auto& [header, payload] = item;
   if (header->type == ZBI_TYPE_BOOTLOADER_FILE) {
     return BootloaderFile::FromPayload(payload);
   }
   return {};
-}
+};
 
 template <std::ranges::forward_range Zbi>
 constexpr std::ranges::forward_range auto BootloaderFiles(Zbi&& zbi) {

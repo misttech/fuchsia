@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
-#include <charconv>
 
 namespace linux_initramfs {
 namespace {
@@ -60,14 +59,28 @@ constexpr bool IsTrailer(const Member& member) {
   return member.contents.empty() && member.name == kTrailer;
 }
 
+// Extracts the n-th 8-byte hex field from the header.
+// The input data must be valid ASCII hex digits (e.g. ValidHeader() returns
+// true on this data).
 constexpr uint32_t GetField(std::string_view contents, FieldIndex n) {
   std::string_view field = contents.substr(kMagic.size() + (n * 8), 8);
   assert(field.size() == 8);
-  uint32_t value;
-  [[maybe_unused]] std::from_chars_result result =
-      std::from_chars(field.data(), field.data() + field.size(), value, 16);
-  assert(result.ec == std::errc{});
-  assert(result.ptr == field.data() + field.size());
+  // Avoid std::from_chars(..., 16) here because libc++'s non-base-10
+  // implementation uses float arithmetic, which emits soft-float runtime library
+  // calls in kernel.phys (-mgeneral-regs-only) builds when not constant-folded.
+  uint32_t value = 0;
+  for (char c : field) {
+    value <<= 4;
+    if (c >= '0' && c <= '9') {
+      value |= static_cast<uint32_t>(c - '0');
+    } else if (c >= 'a' && c <= 'f') {
+      value |= static_cast<uint32_t>(c - 'a' + 10);
+    } else if (c >= 'A' && c <= 'F') {
+      value |= static_cast<uint32_t>(c - 'A' + 10);
+    } else {
+      assert(false);
+    }
+  }
   return value;
 }
 

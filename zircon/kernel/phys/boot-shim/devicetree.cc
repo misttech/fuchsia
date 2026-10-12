@@ -11,7 +11,10 @@
 #include <lib/devicetree/devicetree.h>
 #include <lib/devicetree/matcher.h>
 #include <lib/linux-boot-config/linux-boot-config.h>
+#include <lib/linux-initramfs/initramfs.h>
 #include <lib/memalloc/range.h>
+#include <lib/zbitl/error-stdio.h>
+#include <lib/zbitl/items/bootloader-file.h>
 #include <zircon/assert.h>
 
 #include <cstddef>
@@ -24,6 +27,7 @@
 #include <phys/address-space.h>
 #include <phys/allocation.h>
 #include <phys/boot-options.h>
+#include <phys/linuxboot-embed.h>
 #include <phys/main.h>
 #include <phys/uart.h>
 
@@ -104,11 +108,10 @@ void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* 
   // populated.
   //
   uint64_t phys_start = reinterpret_cast<uint64_t>(PHYS_LOAD_ADDRESS);
-  uint64_t phys_end = reinterpret_cast<uint64_t>(_end);
   ktl::array<memalloc::Range, 4> special_range_storage = {
       memalloc::Range{
           .addr = phys_start,
-          .size = phys_end - phys_start,
+          .size = GetLinuxbootHeaderMemorySize(),
           .type = memalloc::Type::kPhysKernel,
       },
       {
@@ -199,4 +202,84 @@ void InitMemory(const void* dtb, ktl::optional<EarlyBootZbi> zbi, AddressSpace* 
       .fdt = fdt,
       .nvram = memory.nvram(),
   };
+}
+
+BootZbi::InputZbi GetDevicetreeBootZbi(const char* shim_name, ktl::string_view zbi_boot) {
+  if (zbi_boot.empty()) {
+    return BootZbi::InputZbi(gDevicetreeBoot.ramdisk);
+  }
+
+  constexpr ktl::string_view kEmbedPrefix = "embed:";
+  constexpr ktl::string_view kRamdiskPrefix = "ramdisk:";
+
+  zbitl::ByteView container;
+  ktl::string_view path;
+  if (zbi_boot.starts_with(kEmbedPrefix)) {
+    path = zbi_boot.substr(kEmbedPrefix.size());
+    ktl::span embedded = GetLinuxbootEmbeddedImage();
+    container = zbitl::ByteView(embedded.data(), embedded.size_bytes());
+  } else if (zbi_boot.starts_with(kRamdiskPrefix)) {
+    path = zbi_boot.substr(kRamdiskPrefix.size());
+    container = gDevicetreeBoot.ramdisk;
+  } else {
+    printf("%s: Invalid zbi.boot syntax '%.*s' (expected 'embed:<path>' or 'ramdisk:<path>').\n",
+           shim_name, static_cast<int>(zbi_boot.size()), zbi_boot.data());
+    return {};
+  }
+
+  if (path.empty()) {
+    printf("%s: Empty path in zbi.boot '%.*s'.\n", shim_name, static_cast<int>(zbi_boot.size()),
+           zbi_boot.data());
+    return {};
+  }
+
+  // The container may be in either Linux initramfs (cpio) or ZBI format, so
+  // check both. In either format, if multiple entries match the path, the last
+  // match wins.
+  zbitl::ByteView found;
+  bool is_initramfs = false;
+  for (auto [name, contents] : linux_initramfs::Initramfs(container)) {
+    is_initramfs = true;
+    if (name == path) {
+      found = contents;
+    }
+  }
+  if (!is_initramfs) {
+    BootZbi::InputZbi container_zbi(container);
+    for (auto [name, contents] : zbitl::BootloaderFiles(container_zbi)) {
+      if (name == path) {
+        found = contents;
+      }
+    }
+    if (auto result = container_zbi.take_error(); result.is_error()) {
+      printf("%s: Failed to parse ZBI at '%.*s': ", shim_name, static_cast<int>(zbi_boot.size()),
+             zbi_boot.data());
+      zbitl::PrintViewError(result.error_value());
+      return {};
+    }
+  }
+
+  if (found.empty()) {
+    printf("%s: Failed to find zbi.boot '%.*s' in %zu-byte container.\n", shim_name,
+           static_cast<int>(zbi_boot.size()), zbi_boot.data(), container.size_bytes());
+    return {};
+  }
+
+  // Always allocate and copy rather than attempting to use `found` in-place:
+  // 1. The extracted ZBI payload will almost never be page-aligned as required
+  //    by BootZbi::Init().
+  // 2. Even if it were aligned, BootZbi::Load() later needs to extend the ZBI,
+  //    and the memory following `found` is likely already reserved (e.g. for a
+  //    cpio trailer or subsequent container items), so it would have to
+  //    re-allocate and copy anyway.
+  fbl::AllocChecker ac;
+  Allocation zbi_alloc =
+      Allocation::New(ac, memalloc::Type::kDataZbi, found.size_bytes(), Allocation::PageSize());
+  if (!ac.check()) {
+    printf("%s: Failed to allocate %zu bytes for zbi.boot '%.*s'.\n", shim_name, found.size_bytes(),
+           static_cast<int>(zbi_boot.size()), zbi_boot.data());
+    return {};
+  }
+  memcpy(zbi_alloc.get(), found.data(), found.size_bytes());
+  return BootZbi::InputZbi(zbi_alloc.release());
 }

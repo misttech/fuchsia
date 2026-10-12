@@ -128,6 +128,16 @@ struct MaybeAddressSpace<false> {
   constexpr AddressSpace* Get() { return nullptr; }
 };
 
+// Selects the input ZBI to boot based on the `zbi.boot` property (or override).
+// If `zbi_boot` is empty, uses `gDevicetreeBoot.ramdisk` directly.
+// Otherwise `zbi_boot` must be `"embed:<path>"` or `"ramdisk:<path>"`, which
+// extracts `<path>` from a Linux initramfs (cpio) or ZBI_TYPE_BOOTLOADER_FILE
+// container in the linuxboot embedded image or ramdisk respectively.
+//
+// On error (invalid syntax, missing file, or allocation failure), logs an
+// error message and returns an empty `BootZbi::InputZbi`.
+BootZbi::InputZbi GetDevicetreeBootZbi(const char* shim_name, ktl::string_view zbi_boot);
+
 // Helper class that drives `PhysMain` on different boot shims.
 //
 // This provides a mechanism for external users to fork a shim, inject custom code and still benefit
@@ -191,9 +201,7 @@ class BootShimHelper {
           ArchSetUpCpu();
           // Will initialize `gDevicetreeBoot`.
           InitMemory(boot_payload, {}, maybe_aspace_.Get());
-          void* zbi =
-              reinterpret_cast<void*>(const_cast<std::byte*>(gDevicetreeBoot.ramdisk.data()));
-          EarlyBootZbiBytes early_zbi_bytes{zbi};
+          EarlyBootZbiBytes early_zbi_bytes{gDevicetreeBoot.ramdisk};
           EarlyBootZbi early_zbi{&early_zbi_bytes};
           ArchSetUpZbi(early_zbi);
           return devicetree::Devicetree(devicetree::ByteView(
@@ -201,6 +209,9 @@ class BootShimHelper {
         }()) {
     shim_.set_cmdline(gDevicetreeBoot.cmdline);
     shim_.set_linux_boot_config(gDevicetreeBoot.linux_boot_config);
+    if (auto zbi_boot = shim_.legacy_boot_properties().GetProperty("zbi.boot"); zbi_boot.is_ok()) {
+      zbi_boot_ = *zbi_boot;
+    }
     shim_.set_allocator([](size_t size, size_t align, fbl::AllocChecker& ac) -> void* {
       return new (ktl::align_val_t{align}, gPhysNew<memalloc::Type::kPhysScratch>, ac)
           uint8_t[size];
@@ -236,7 +247,7 @@ class BootShimHelper {
 
   [[noreturn]] void Boot() {
     // Finally we can boot into the kernel image.
-    BootZbi::InputZbi zbi_view(gDevicetreeBoot.ramdisk);
+    BootZbi::InputZbi zbi_view = GetDevicetreeBootZbi(shim_.shim_name(), zbi_boot_);
     BootZbi boot;
 
     if (shim_.Check("Not a bootable ZBI", boot.Init(zbi_view))) {
@@ -253,6 +264,12 @@ class BootShimHelper {
   }
 
   Shim& shim() { return shim_; }
+
+  // The `zbi.boot` property value read from `legacy_boot_properties()` (or
+  // empty if unset). Shims may call `set_zbi_boot()` before `Boot()` to
+  // override where `GetDevicetreeBootZbi()` locates the boot ZBI.
+  ktl::string_view zbi_boot() const { return zbi_boot_; }
+  void set_zbi_boot(ktl::string_view zbi_boot) { zbi_boot_ = zbi_boot; }
 
  private:
   void BootPostInit() {
@@ -288,6 +305,7 @@ class BootShimHelper {
   MaybeAddressSpace<options.enable_mmu> maybe_aspace_;
   MainSymbolize symbolize_;
   Shim shim_;
+  ktl::string_view zbi_boot_;
 };
 
 #endif  // ZIRCON_KERNEL_PHYS_BOOT_SHIM_INCLUDE_PHYS_BOOT_SHIM_DEVICETREE_H_
