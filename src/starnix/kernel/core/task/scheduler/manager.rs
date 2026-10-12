@@ -8,7 +8,7 @@ use fidl_fuchsia_scheduler::{
     RoleManagerSynchronousProxy, RoleName, RoleTarget, RoleType,
 };
 use fuchsia_component::client::connect_to_protocol_sync;
-use starnix_logging::{impossible_error, log_debug, log_error, log_warn, track_stub};
+use starnix_logging::{impossible_error, log_debug, log_warn, track_stub};
 use starnix_sync::{LockDepMutex, ProfileHandleCacheLock};
 use starnix_task_command::TaskCommand;
 use starnix_uapi::errors::Errno;
@@ -31,7 +31,7 @@ impl SchedulerManager {
         let profile_handle_cache = Default::default();
         let role_manager = fuchsia_runtime::with_thread_self(|thread| {
             let role_manager = connect_to_protocol_sync::<RoleManagerMarker>().unwrap();
-            if let Err(e) = Self::set_thread_role_inner(
+            if let Err(e) = Self::set_zx_thread_role(
                 &role_manager,
                 thread,
                 SchedulerState::default().role_name(),
@@ -140,7 +140,7 @@ impl SchedulerManager {
             };
             zircon_thread.clone()
         };
-        Self::set_thread_role_inner(
+        Self::set_zx_thread_role(
             role_manager,
             &zircon_thread.thread,
             role_name,
@@ -150,21 +150,34 @@ impl SchedulerManager {
         Ok(())
     }
 
-    fn set_thread_role_inner(
+    fn set_zx_thread_role(
         role_manager: &RoleManagerSynchronousProxy,
         thread: &zx::Thread,
         role_name: &str,
         cache: &LockDepMutex<HashMap<String, zx::Profile>, ProfileHandleCacheLock>,
+    ) -> Result<(), Errno> {
+        Self::set_zx_thread_role_with_profile_setter(
+            role_manager,
+            thread,
+            role_name,
+            cache,
+            |profile| thread.set_profile(profile, 0),
+        )
+    }
+
+    fn set_zx_thread_role_with_profile_setter(
+        role_manager: &RoleManagerSynchronousProxy,
+        thread: &zx::Thread,
+        role_name: &str,
+        cache: &LockDepMutex<HashMap<String, zx::Profile>, ProfileHandleCacheLock>,
+        set_profile: impl FnOnce(&zx::Profile) -> Result<(), zx::Status>,
     ) -> Result<(), Errno> {
         log_debug!(role_name; "setting thread role");
 
         {
             let params = cache.lock();
             if let Some(profile) = params.get(role_name) {
-                match thread.set_profile(&profile, 0) {
-                    Ok(_) => return Ok(()),
-                    Err(e) => log_error!("Failed to set role profile {:?}", e),
-                }
+                return Self::set_zx_thread_profile(role_name, profile, set_profile);
             }
         }
 
@@ -180,25 +193,55 @@ impl SchedulerManager {
                     return error!(EINVAL);
                 };
 
-                if let Err(e) = thread.set_profile(&profile, 0) {
-                    log_warn!(e:%; "Failed to set thread profile from handle");
-                    return error!(EINVAL);
-                }
-                cache.lock().insert(role_name.to_string(), profile);
-                Ok(())
+                let mut params = cache.lock();
+                let profile = params.entry(role_name.to_string()).or_insert(profile);
+                Self::set_zx_thread_profile(role_name, profile, set_profile)
             }
             Ok(Err(e)) => {
                 log_warn!(e:%; "GetRole returned error");
-                Self::set_thread_role_legacy(role_manager, thread, role_name)
+                Self::set_zx_thread_role_legacy(role_manager, thread, role_name)
             }
             Err(e) => {
                 log_warn!(e:%; "GetRole FIDL call failed");
-                Self::set_thread_role_legacy(role_manager, thread, role_name)
+                Self::set_zx_thread_role_legacy(role_manager, thread, role_name)
             }
         }
     }
 
-    fn set_thread_role_legacy(
+    /// Applies `profile` to the target thread via `set_profile`.
+    ///
+    /// Returns:
+    /// - `Ok(())` if the profile was applied to the thread, or if the thread was in
+    ///   `zx::Status::BAD_STATE` (`INITIAL`, `DYING`, or `DEAD`). For a `zx::Thread`, Zircon only
+    ///   returns `BAD_STATE` due to the thread's lifecycle state; profile parameters are validated
+    ///   when the `zx::Profile` is created.
+    /// - `Err(EINVAL)` if `profile` is invalid (`BAD_HANDLE`, `WRONG_TYPE`, `ACCESS_DENIED`) or
+    ///   another error occurred.
+    fn set_zx_thread_profile(
+        role_name: &str,
+        profile: &zx::Profile,
+        set_profile: impl FnOnce(&zx::Profile) -> Result<(), zx::Status>,
+    ) -> Result<(), Errno> {
+        match set_profile(profile) {
+            Ok(()) => Ok(()),
+            // A task's underlying Zircon thread can transition to DYING or DEAD concurrently
+            // after we snapshot its handle from `task.running_state()`. Ignore `BAD_STATE` just
+            // as `set_thread_role` ignores tasks whose live state has already been cleared.
+            Err(zx::Status::BAD_STATE) => {
+                log_debug!(
+                    role_name;
+                    "thread role update requested for dead or dying thread, skipping"
+                );
+                Ok(())
+            }
+            Err(e) => {
+                log_warn!(role_name, e:%; "Failed to set thread profile from handle");
+                error!(EINVAL)
+            }
+        }
+    }
+
+    fn set_zx_thread_role_legacy(
         role_manager: &RoleManagerSynchronousProxy,
         thread: &zx::Thread,
         role_name: &str,
@@ -878,5 +921,127 @@ mod tests {
             assert_eq!(role, "overridden_role");
         })
         .await;
+    }
+
+    /// Creates a `zx::Profile` wrapping a `zx::Socket` handle.
+    ///
+    /// Creating a real `zx::Profile` requires the root `ProfileResource`, which is not available in
+    /// unit tests. When passed to the real `zx::Thread::set_profile` syscall, Zircon rejects this
+    /// handle with `zx::Status::WRONG_TYPE`, exercising the invalid-profile error path; tests for
+    /// `Ok(())` and `zx::Status::BAD_STATE` use `set_zx_thread_role_with_profile_setter`.
+    fn invalid_profile_for_test() -> zx::Profile {
+        let (client, _server) = zx::Socket::create_stream();
+        zx::Profile::from(zx::NullableHandle::from(client))
+    }
+
+    #[fuchsia::test]
+    fn set_zx_thread_role_cached_profile_ok() {
+        let (role_manager, server_end) = fidl::endpoints::create_sync_proxy::<RoleManagerMarker>();
+        // Drop the server endpoint so any fallback FIDL call would fail with PEER_CLOSED.
+        drop(server_end);
+
+        let cache = LockDepMutex::new(HashMap::from([(
+            "fuchsia.starnix.fair.16".to_string(),
+            invalid_profile_for_test(),
+        )]));
+
+        fuchsia_runtime::with_thread_self(|thread| {
+            let mut called = false;
+            let result = SchedulerManager::set_zx_thread_role_with_profile_setter(
+                &role_manager,
+                thread,
+                "fuchsia.starnix.fair.16",
+                &cache,
+                |_| {
+                    called = true;
+                    Ok(())
+                },
+            );
+            assert_eq!(result, Ok(()));
+            assert!(called);
+        });
+    }
+
+    #[fuchsia::test]
+    fn set_zx_thread_role_cached_profile_bad_state_is_ignored() {
+        let (role_manager, server_end) = fidl::endpoints::create_sync_proxy::<RoleManagerMarker>();
+        // Drop the server endpoint so any fallback FIDL call to RoleManager would fail.
+        drop(server_end);
+
+        let cache = LockDepMutex::new(HashMap::from([(
+            "fuchsia.starnix.fair.16".to_string(),
+            invalid_profile_for_test(),
+        )]));
+
+        fuchsia_runtime::with_thread_self(|thread| {
+            let result = SchedulerManager::set_zx_thread_role_with_profile_setter(
+                &role_manager,
+                thread,
+                "fuchsia.starnix.fair.16",
+                &cache,
+                |_| Err(zx::Status::BAD_STATE),
+            );
+            assert_eq!(result, Ok(()));
+        });
+    }
+
+    #[fuchsia::test]
+    fn set_zx_thread_role_cached_invalid_profile_does_not_call_role_manager() {
+        let (role_manager, server_end) = fidl::endpoints::create_sync_proxy::<RoleManagerMarker>();
+        let server_channel = server_end.into_channel();
+        let watcher = std::thread::spawn(move || {
+            let signals = server_channel
+                .wait_one(
+                    zx::Signals::CHANNEL_READABLE | zx::Signals::CHANNEL_PEER_CLOSED,
+                    zx::MonotonicInstant::INFINITE,
+                )
+                .to_result()
+                .expect("wait_one");
+            signals.contains(zx::Signals::CHANNEL_READABLE)
+        });
+
+        let cache = LockDepMutex::new(HashMap::from([(
+            "fuchsia.starnix.fair.16".to_string(),
+            invalid_profile_for_test(),
+        )]));
+
+        fuchsia_runtime::with_thread_self(|thread| {
+            let result = SchedulerManager::set_zx_thread_role(
+                &role_manager,
+                thread,
+                "fuchsia.starnix.fair.16",
+                &cache,
+            );
+            assert_eq!(result, error!(EINVAL));
+        });
+
+        drop(role_manager);
+        let received_fidl_request = watcher.join().expect("watcher thread");
+        assert!(!received_fidl_request);
+    }
+
+    #[fuchsia::test]
+    fn set_zx_thread_profile_handles_outcomes() {
+        let profile = invalid_profile_for_test();
+        assert_eq!(
+            SchedulerManager::set_zx_thread_profile(
+                "fuchsia.starnix.fair.16",
+                &profile,
+                |_| Ok(())
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            SchedulerManager::set_zx_thread_profile("fuchsia.starnix.fair.16", &profile, |_| Err(
+                zx::Status::BAD_STATE
+            )),
+            Ok(())
+        );
+        assert_eq!(
+            SchedulerManager::set_zx_thread_profile("fuchsia.starnix.fair.16", &profile, |_| Err(
+                zx::Status::WRONG_TYPE
+            )),
+            error!(EINVAL)
+        );
     }
 }
