@@ -4,13 +4,11 @@
 
 use super::error::ParseError;
 use super::parser::PolicyData;
-use super::{ClassId, TypeId};
-use crate::new_policy::{GenfsConPath, NewPolicy};
+use crate::new_policy::NewPolicy;
 use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use std::iter::Iterator;
 
 // As of 2026-01-30, more than five times larger than any policy seen in production or tests.
 const MAXIMUM_POLICY_SIZE: usize = 1 << 24;
@@ -26,33 +24,6 @@ impl Deref for ParsedPolicy {
     type Target = NewPolicy;
     fn deref(&self) -> &Self::Target {
         &self.new_policy
-    }
-}
-
-impl ParsedPolicy {
-    pub(crate) fn genfscon_find_all<'a>(
-        &'a self,
-        fs_type: &'a [u8],
-    ) -> impl Iterator<Item = &'a GenfsConPath> {
-        self.generic_fs_contexts()
-            .iter()
-            .filter(move |entry| entry.fs_type() == fs_type)
-            .flat_map(|entry| entry.paths().iter())
-    }
-
-    pub(crate) fn compute_filename_transition(
-        &self,
-        source_type: TypeId,
-        target_type: TypeId,
-        class: ClassId,
-        name: &[u8],
-    ) -> Option<TypeId> {
-        self.new_policy.filename_transitions().compute_filename_transition(
-            source_type,
-            target_type,
-            class,
-            name,
-        )
     }
 }
 
@@ -84,8 +55,8 @@ impl ParsedPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::new_policy::TypeSet;
     use crate::new_policy::traits::PolicyId;
+    use crate::new_policy::{TypeId, TypeSet};
     use crate::policy::Parse;
     use crate::policy::parser::PolicyCursor;
     use std::sync::Arc;

@@ -37,7 +37,7 @@ pub use bitmap::IdSpan;
 pub use booleans::{ConditionalBoolean, ConditionalBooleanId};
 pub use classes::{Class, ClassDefault, ClassDefaultRange, ClassId};
 pub use common_symbols::CommonSymbol;
-pub use compute::{XpermsAccessDecision, XpermsKind};
+pub use compute::{FsUseLabelAndType, XpermsAccessDecision, XpermsKind};
 pub use context::{Context, MlsLevel, MlsRange};
 use error::{ParseError, SerializeError, ValidateError};
 pub use filename_transitions::FilenameTransitions;

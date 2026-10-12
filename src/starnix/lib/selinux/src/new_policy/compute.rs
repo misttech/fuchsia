@@ -8,7 +8,8 @@ use super::rules::{
 };
 use super::traits::{HasName, HasPolicyId};
 use super::{
-    AccessDecision, AccessVector, Class, NewPolicy, OBJECT_R_ROLE_NAME, PermissionId, PolicyCap,
+    AccessDecision, AccessVector, CategorySet, Class, ClassDefault, ClassDefaultRange, ClassId,
+    FsUseType, GenfsConPath, MlsLevel, NewPolicy, OBJECT_R_ROLE_NAME, PermissionId, PolicyCap,
     RoleId, SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, SecurityContextError, TypeId,
 };
 use crate::{InitialSid, NullessByteStr};
@@ -44,6 +45,13 @@ impl XpermsAccessDecision {
         auditallow: XpermsBitmap::NONE,
         auditdeny: XpermsBitmap::ALL,
     };
+}
+
+/// [`SecurityContext`] and [`FsUseType`] derived from an `fs_use_*` line of the policy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FsUseLabelAndType {
+    pub context: SecurityContext,
+    pub use_type: FsUseType,
 }
 
 impl NewPolicy {
@@ -160,6 +168,257 @@ impl NewPolicy {
             return Some(permission.id());
         }
         None
+    }
+
+    /// If there is an `fs_use` statement for the given filesystem type, returns the associated
+    /// [`SecurityContext`] and [`FsUseType`].
+    pub fn fs_use_label_and_type(&self, fs_type: NullessByteStr<'_>) -> Option<FsUseLabelAndType> {
+        self.object_contexts()
+            .fs_uses()
+            .iter()
+            .find(|fs_use| fs_use.fs_type() == fs_type.as_bytes())
+            .map(|fs_use| FsUseLabelAndType {
+                context: SecurityContext::from_policy_context(fs_use.context()),
+                use_type: fs_use.behavior(),
+            })
+    }
+
+    /// Returns an iterator over all `genfscon` [`GenfsConPath`] entries for the given filesystem
+    /// type.
+    fn genfscon_find_all<'a>(
+        &'a self,
+        fs_type: &'a [u8],
+    ) -> impl Iterator<Item = &'a GenfsConPath> {
+        self.generic_fs_contexts()
+            .iter()
+            .filter(move |entry| entry.fs_type() == fs_type)
+            .flat_map(|entry| entry.paths().iter())
+    }
+
+    /// If there is a `genfscon` statement for the given filesystem type, returns the associated
+    /// [`SecurityContext`], taking the `node_path` into account. `class_id` defines the type of
+    /// the file in the given `node_path`. It can only be omitted when looking up the filesystem
+    /// label.
+    pub fn genfscon_label_for_fs_and_path(
+        &self,
+        fs_type: NullessByteStr<'_>,
+        node_path: NullessByteStr<'_>,
+        class_id: Option<ClassId>,
+    ) -> Option<SecurityContext> {
+        // All contexts listed in the policy for the file system type.
+        let fs_contexts = self.genfscon_find_all(fs_type.as_bytes());
+
+        #[derive(PartialEq)]
+        enum OrderType {
+            Alphabetic,
+            ByLength,
+            Unknown,
+        }
+        // The correct match is the closest parent among the ones given in the policy file.
+        // E.g. if in the policy we have
+        //     genfscon foofs "/" label1
+        //     genfscon foofs "/abc/" label2
+        //     genfscon foofs "/abc/def" label3
+        //
+        // The correct label for a file "/abc/def/g/h/i" is label3, as "/abc/def" is the closest parent
+        // among those defined.
+        //
+        // Partial paths are prefix-matched, so that "/abc/default" would also be assigned label3.
+        //
+        // TODO(372212126): Optimize the algorithm.
+        let mut result: Option<&GenfsConPath> = None;
+        let mut order_type = OrderType::Unknown;
+        let mut prev_path_bytes: Option<Vec<u8>> = None;
+        for fs_context in fs_contexts {
+            // Determine the order type based on the first entries.
+            let path = fs_context.partial_path();
+            if order_type == OrderType::Unknown {
+                if let Some(prev) = &prev_path_bytes {
+                    if path.len() > prev.len() {
+                        order_type = OrderType::Alphabetic;
+                    } else if path < prev.as_slice() {
+                        order_type = OrderType::ByLength;
+                    }
+                }
+                prev_path_bytes = Some(path.to_vec());
+            }
+
+            // Check if the class matches.
+            let class_matches = class_id.is_none()
+                || fs_context
+                    .class()
+                    .map(|other| other == class_id.unwrap().into())
+                    .unwrap_or(true);
+            if !class_matches {
+                continue;
+            }
+
+            if order_type == OrderType::Alphabetic
+                && fs_context.partial_path() > node_path.as_bytes()
+            {
+                // We know that:
+                // - We have alphabetic order,
+                // - The current path is lexicographically greater than our target path.
+                // We can infer that we have passed any potential prefixes in alphabetical order.
+                break;
+            }
+
+            if node_path.as_bytes().starts_with(fs_context.partial_path()) {
+                if result
+                    .as_ref()
+                    .map_or(true, |c| c.partial_path().len() < fs_context.partial_path().len())
+                {
+                    // The path matches, and it's the closest parent so far.
+                    result = Some(fs_context);
+                    if order_type == OrderType::ByLength {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // The returned SecurityContext must be valid with respect to the policy, since otherwise
+        // we'd have rejected the policy load.
+        Some(SecurityContext::from_policy_context(result?.context()))
+    }
+
+    /// Returns the security context that should be applied to a newly created SELinux
+    /// object according to `source_context` and `target_context`, as well as the new object's
+    /// `target_class` and `name`.
+    ///
+    /// Computation follows the "create" algorithm for labeling newly created objects:
+    /// - user is taken from the `source_context`.
+    /// - role, type and range are taken from the matching transition rules, if any.
+    /// - role, type and range fall-back to the `source_context` or `target_context` values
+    ///   according to policy.
+    ///
+    /// Callers pass an empty slice (`&[]`) for `name` to express nameless transitions.
+    /// When a non-empty `name` is provided, filename transition rules are checked first.
+    /// If no transitions apply, and the policy does not explicitly specify defaults then the
+    /// role, type and range values have defaults chosen based on the `target_class`:
+    /// - For "process", and socket-like classes, role, type and range are taken from the
+    ///   `source_context`.
+    /// - Otherwise role is "object_r", type is taken from `target_context` and range is set to the
+    ///   low level of the `source_context` range.
+    pub fn compute_create_context(
+        &self,
+        source_context: &SecurityContext,
+        target_context: &SecurityContext,
+        target_class: Option<&Class>,
+        name: &[u8],
+    ) -> SecurityContext {
+        let override_type = if !name.is_empty() {
+            target_class.and_then(|policy_class| {
+                self.type_transition_new_type_with_name(
+                    source_context.type_(),
+                    target_context.type_(),
+                    policy_class,
+                    name,
+                )
+            })
+        } else {
+            None
+        };
+        self.new_security_context_internal(
+            source_context,
+            target_context,
+            target_class,
+            override_type,
+        )
+    }
+
+    /// Internal implementation used by [`Self::compute_create_context`] to implement the policy transition calculations.
+    /// If `override_type` is specified then the supplied value will be applied rather than a value
+    /// being calculated based on the policy; this is used by [`Self::compute_create_context`]
+    /// when a filename transition matches to shortcut the default `type_transition` lookup.
+    fn new_security_context_internal(
+        &self,
+        source: &SecurityContext,
+        target: &SecurityContext,
+        target_class: Option<&Class>,
+        override_type: Option<TypeId>,
+    ) -> SecurityContext {
+        let Some(policy_class) = target_class else {
+            // If the class is not defined in the policy then there can be no transitions, nor
+            // class-defined choice of defaults, so default to the non-process-or-socket behaviour.
+            return SecurityContext::new(
+                source.user(),
+                self.object_role(),
+                target.type_(),
+                source.low_level().clone(),
+                None,
+            );
+        };
+
+        let is_process_or_socket =
+            policy_class.name() == b"process" || policy_class.common_name() == b"socket";
+        let (unspecified_role, unspecified_type, unspecified_low, unspecified_high) =
+            if is_process_or_socket {
+                (source.role(), source.type_(), source.low_level(), source.high_level())
+            } else {
+                (self.object_role(), target.type_(), source.low_level(), None)
+            };
+        let class_defaults = policy_class.defaults();
+
+        let user = match class_defaults.user() {
+            ClassDefault::Source => source.user(),
+            ClassDefault::Target => target.user(),
+            ClassDefault::Unspecified => source.user(),
+        };
+
+        let role = match self.role_transition_new_role(source.role(), target.type_(), policy_class)
+        {
+            Some(new_role) => new_role,
+            None => match class_defaults.role() {
+                ClassDefault::Source => source.role(),
+                ClassDefault::Target => target.role(),
+                ClassDefault::Unspecified => unspecified_role,
+            },
+        };
+
+        let type_ = override_type.unwrap_or_else(|| {
+            let transition = self
+                .access_vector_rules()
+                .find_type_rules(source.type_(), target.type_(), policy_class.id())
+                .find(|rule| rule.kind() == RuleKind::TypeTransition)
+                .map(|rule| rule.new_type());
+            match transition {
+                Some(new_type) => new_type,
+                None => match class_defaults.type_() {
+                    ClassDefault::Source => source.type_(),
+                    ClassDefault::Target => target.type_(),
+                    ClassDefault::Unspecified => unspecified_type,
+                },
+            }
+        });
+
+        let (low_level, high_level) =
+            match self.range_transition_new_range(source.type_(), target.type_(), policy_class) {
+                Some((low_level, high_level)) => (low_level, high_level),
+                None => match class_defaults.range() {
+                    ClassDefaultRange::SourceLow => (source.low_level().clone(), None),
+                    ClassDefaultRange::SourceHigh => {
+                        (source.high_level().unwrap_or_else(|| source.low_level()).clone(), None)
+                    }
+                    ClassDefaultRange::SourceLowHigh => {
+                        (source.low_level().clone(), source.high_level().cloned())
+                    }
+                    ClassDefaultRange::TargetLow => (target.low_level().clone(), None),
+                    ClassDefaultRange::TargetHigh => {
+                        (target.high_level().unwrap_or_else(|| target.low_level()).clone(), None)
+                    }
+                    ClassDefaultRange::TargetLowHigh => {
+                        (target.low_level().clone(), target.high_level().cloned())
+                    }
+                    ClassDefaultRange::Unspecified => {
+                        (unspecified_low.clone(), unspecified_high.cloned())
+                    }
+                    ClassDefaultRange::Glblub => glblub_range(source, target),
+                },
+            };
+
+        // TODO(http://b/334968228): Validate domain & role transitions are allowed?
+        SecurityContext::new(user, role, type_, low_level, high_level)
     }
 
     /// Computes the access granted to `source_context` on `target_context`, for the specified
@@ -363,9 +622,102 @@ impl NewPolicy {
         XpermsAccessDecision { allow, auditallow, auditdeny }
     }
 
+    fn role_transition_new_role(
+        &self,
+        current_role: RoleId,
+        type_: TypeId,
+        class: &Class,
+    ) -> Option<RoleId> {
+        self.role_transitions()
+            .iter()
+            .find(|role_transition| {
+                role_transition.current_role() == current_role
+                    && role_transition.type_() == type_
+                    && role_transition.class() == class.id().into()
+            })
+            .map(|x| x.new_role())
+    }
+
     fn role_transition_is_explicitly_allowed(&self, source_role: RoleId, new_role: RoleId) -> bool {
         self.role_allowlist().iter().any(|role_allow| {
             role_allow.source_role() == source_role && role_allow.new_role() == new_role
         })
     }
+
+    fn type_transition_new_type_with_name(
+        &self,
+        source_type: TypeId,
+        target_type: TypeId,
+        class: &Class,
+        name: &[u8],
+    ) -> Option<TypeId> {
+        self.compute_filename_transition(source_type, target_type, class.id().into(), name)
+    }
+
+    pub(crate) fn compute_filename_transition(
+        &self,
+        source_type: TypeId,
+        target_type: TypeId,
+        class: ClassId,
+        name: &[u8],
+    ) -> Option<TypeId> {
+        self.filename_transitions().compute_filename_transition(
+            source_type,
+            target_type,
+            class,
+            name,
+        )
+    }
+
+    fn range_transition_new_range(
+        &self,
+        source_type: TypeId,
+        target_type: TypeId,
+        class: &Class,
+    ) -> Option<(MlsLevel, Option<MlsLevel>)> {
+        for range_transition in self.range_transitions() {
+            if range_transition.source_type() == source_type
+                && range_transition.target_type() == target_type
+                && range_transition.target_class() == class.id()
+            {
+                let mls_range = range_transition.mls_range();
+                let low_level = mls_range.low().clone();
+                let high_level = mls_range.high().clone();
+                return Some((low_level, high_level));
+            }
+        }
+
+        None
+    }
+}
+
+/// Returns the set of categories present in both `left` and `right`.
+fn intersect_categories(left: &MlsLevel, right: &MlsLevel) -> CategorySet {
+    let right_categories = right.categories();
+    CategorySet::from_ids(left.category_ids().filter(|id| right_categories.contains(*id)))
+}
+
+/// Returns the intersection of the `source` and `target` ranges.
+///
+/// If the two ranges do not overlap then the intersection is empty, and the returned range is
+/// mis-ordered, i.e. its high level does not dominate its low level. Such a range is rejected
+/// when the resulting Security Context is validated.
+fn glblub_range(
+    source: &SecurityContext,
+    target: &SecurityContext,
+) -> (MlsLevel, Option<MlsLevel>) {
+    let source_low = source.low_level();
+    let source_high = source.effective_high_level();
+    let target_low = target.low_level();
+    let target_high = target.effective_high_level();
+
+    let low_level = MlsLevel::new(
+        std::cmp::max(source_low.sensitivity(), target_low.sensitivity()),
+        intersect_categories(source_low, target_low),
+    );
+    let high_level = MlsLevel::new(
+        std::cmp::min(source_high.sensitivity(), target_high.sensitivity()),
+        intersect_categories(source_high, target_high),
+    );
+    (low_level, Some(high_level))
 }

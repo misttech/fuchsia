@@ -14,7 +14,6 @@ pub use avc::{
     PerThreadCache, QueryCacheCapacity,
 };
 pub(crate) use avc::{AccessVectorCache, Query};
-pub use index::FsUseLabelAndType;
 pub(crate) use index::PolicyIndex;
 pub use permissions::*;
 

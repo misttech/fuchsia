@@ -4,7 +4,7 @@
 
 use crate::exceptions_config::ExceptionsConfig;
 use crate::kernel::{
-    AccessVectorCache, AccessVectorComputer, CacheStats, FsUseLabelAndType, KernelAccessDecision,
+    AccessVectorCache, AccessVectorComputer, CacheStats, KernelAccessDecision,
     KernelXpermsAccessDecision, Query,
 };
 use crate::new_policy::traits::{HasName, HasPolicyId};
@@ -12,7 +12,7 @@ use crate::new_policy::{HandleUnknown, NewPolicy};
 use crate::permission_check::{PerThreadCache, PermissionCheck};
 use crate::policy::parser::PolicyData;
 use crate::policy::{
-    AccessDecision, AccessVector, ClassId, FsUseType, PermissionId, Policy,
+    AccessDecision, AccessVector, ClassId, FsUseLabelAndType, FsUseType, PermissionId, Policy,
     SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, XpermsBitmap, XpermsKind, parse_policy_by_value,
 };
 use crate::sid_table::SidTable;

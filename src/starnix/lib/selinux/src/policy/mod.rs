@@ -6,16 +6,14 @@ pub mod error;
 pub mod parsed_policy;
 pub mod parser;
 
-pub use crate::kernel::FsUseLabelAndType;
 use crate::kernel::PolicyIndex;
 pub use crate::new_policy::traits::{HasName, HasPolicyId, PolicyId};
 pub use crate::new_policy::{
-    AccessDecision, AccessVector, AccessVectorRules, CategoryId, ClassId, FsUseType, HandleUnknown,
-    IndexedAccessVectorRules, MlsLevel, MlsRange, POLICYDB_VERSION_MAX, PermissionId, RoleId,
-    SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, SecurityContextError, SensitivityId, TypeId,
-    User, UserId, XpermsAccessDecision, XpermsBitmap, XpermsKind,
+    AccessDecision, AccessVector, AccessVectorRules, CategoryId, ClassId, FsUseLabelAndType,
+    FsUseType, HandleUnknown, IndexedAccessVectorRules, MlsLevel, MlsRange, POLICYDB_VERSION_MAX,
+    PermissionId, RoleId, SELINUX_AVD_FLAGS_PERMISSIVE, SecurityContext, SecurityContextError,
+    SensitivityId, TypeId, User, UserId, XpermsAccessDecision, XpermsBitmap, XpermsKind,
 };
-use crate::{KernelClass, NullessByteStr, ObjectClass};
 use parsed_policy::ParsedPolicy;
 pub use parser::PolicyCursor;
 use parser::PolicyData;
@@ -66,52 +64,6 @@ impl Policy {
             .iter()
             .map(|boolean| (boolean.name(), boolean.active()))
             .collect()
-    }
-
-    /// If there is an fs_use statement for the given filesystem type, returns the associated
-    /// [`SecurityContext`] and [`FsUseType`].
-    pub fn fs_use_label_and_type(&self, fs_type: NullessByteStr<'_>) -> Option<FsUseLabelAndType> {
-        self.0.fs_use_label_and_type(fs_type)
-    }
-
-    /// If there is a genfscon statement for the given filesystem type, returns the associated
-    /// [`SecurityContext`].
-    pub fn genfscon_label_for_fs_and_path(
-        &self,
-        fs_type: NullessByteStr<'_>,
-        node_path: NullessByteStr<'_>,
-        class_id: Option<KernelClass>,
-    ) -> Option<SecurityContext> {
-        self.0.genfscon_label_for_fs_and_path(fs_type, node_path, class_id)
-    }
-
-    /// Returns the security context that should be applied to a newly created SELinux
-    /// object according to `source` and `target` security contexts, as well as the new object's
-    /// `class` and `name`.
-    ///
-    /// Computation follows the "create" algorithm for labeling newly created objects:
-    /// - user is taken from the `source` by default, or `target` if specified by policy.
-    /// - role, type and range are taken from the matching transition rules, if any.
-    /// - role, type and range fall-back to the `source` or `target` values according to policy.
-    ///
-    /// Callers pass an empty slice (`&[]`) for `name` to express nameless transitions.
-    /// When a non-empty `name` is provided, filename transition rules are checked first.
-    /// If no transitions apply, and the policy does not explicitly specify defaults then the
-    /// role, type and range values have defaults chosen based on the `class`:
-    /// - For "process", and socket-like classes, role, type and range are taken from the `source`.
-    /// - Otherwise role is "object_r", type is taken from `target` and range is set to the
-    ///   low level of the `source` range.
-    ///
-    /// Returns an error if the Security Context for such an object is not valid under this
-    /// [`Policy`] (e.g. if the type is not permitted for the chosen role, etc).
-    pub fn compute_create_context(
-        &self,
-        source: &SecurityContext,
-        target: &SecurityContext,
-        class: impl Into<ObjectClass>,
-        name: &[u8],
-    ) -> SecurityContext {
-        self.0.compute_create_context(source, target, class.into(), name)
     }
 }
 
