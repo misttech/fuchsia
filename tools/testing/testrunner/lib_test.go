@@ -404,6 +404,10 @@ func TestRunAndOutputTests(t *testing.T) {
 		hang bool
 		// Whether the test should emit a fatal error.
 		fatal bool
+		// Whether the test should fail and also emit a fatal post-test error.
+		failAndFatal bool
+		// Whether the test should return a result with an empty status and no error.
+		emptyStatus bool
 		// Whether the test should return a connection error.
 		connErr bool
 		// Whether the tester should fail to reconnect.
@@ -939,6 +943,47 @@ func TestRunAndOutputTests(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "tester returns empty status",
+			tests: []testsharder.Test{
+				{
+					Test:         build.Test{Name: "foo"},
+					RunAlgorithm: testsharder.StopOnFailure,
+					Runs:         1,
+				},
+			},
+			behavior: map[string]testBehavior{
+				"foo/0": {emptyStatus: true},
+			},
+			expectedResults: []runtests.TestDetails{},
+			wantErr:         true,
+		},
+		{
+			name: "test fails with fatal post-test error",
+			tests: []testsharder.Test{
+				{
+					Test:         build.Test{Name: "foo"},
+					RunAlgorithm: testsharder.StopOnFailure,
+					Runs:         1,
+				},
+				{
+					Test:         build.Test{Name: "bar"},
+					RunAlgorithm: testsharder.StopOnFailure,
+					Runs:         1,
+				},
+			},
+			behavior: map[string]testBehavior{
+				"foo/0": {failAndFatal: true},
+			},
+			// When a test completes with a failure and a post-test recovery
+			// action (e.g., power cycling on exit code 40) returns a fatal
+			// error, the failed test result should still be recorded before
+			// stopping further tests.
+			expectedResults: []runtests.TestDetails{
+				failedTest("foo", 0, defaultDuration),
+			},
+			wantErr: true,
+		},
+		{
 			name: "collects stdio",
 			tests: []testsharder.Test{
 				{
@@ -1090,8 +1135,13 @@ func TestRunAndOutputTests(t *testing.T) {
 						result.Status = runtests.TestAborted
 						return result, nil
 					} else if behavior.fatal {
+						return nil, fmt.Errorf("fatal error")
+					} else if behavior.emptyStatus {
 						result.Status = ""
-						return result, fmt.Errorf("fatal error")
+						return result, nil
+					} else if behavior.failAndFatal {
+						result.Status = runtests.TestFailure
+						return result, fmt.Errorf("fatal error after test failure")
 					} else if behavior.fail {
 						result.Status = runtests.TestFailure
 						return result, nil

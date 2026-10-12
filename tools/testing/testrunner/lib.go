@@ -576,6 +576,12 @@ func runAndOutputTests(
 			test.totalDuration += result.Duration()
 			return testErr
 		}); err != nil {
+			if result != nil && !isConnectionError(err) {
+				if recordErr := outputs.Record(ctx, *result); recordErr != nil {
+					logger.Errorf(ctx, "failed to record %v: %s", result, recordErr)
+				}
+				*sinks = append(*sinks, result.DataSinks)
+			}
 			return cleanup, err
 		}
 
@@ -800,12 +806,12 @@ func runTestOnce(
 		cancelTest()
 	}
 
-	if err != nil && !isConnectionError(err) {
-		// The tester encountered a fatal condition and cannot run any more
-		// tests.
-		return nil, err
-	}
-	if result == nil {
+	if result == nil || result.Status == "" {
+		// The tester encountered a fatal condition before completing the test
+		// and cannot run any more tests.
+		if err == nil {
+			err = fmt.Errorf("tester returned empty test result for %s", test.Name)
+		}
 		return nil, err
 	}
 	if !result.Passed() && ctx.Err() != nil {
@@ -843,7 +849,7 @@ func runTestOnce(
 			tc.Tags = append(tc.Tags, multipliedTag)
 			result.Cases[i] = tc
 		}
-		return result, nil
+		return result, err
 	}
 	// Record the test details in the summary.
 	result.Stdio = stdio.buf.Bytes()

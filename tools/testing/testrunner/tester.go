@@ -518,6 +518,7 @@ func (t *SubprocessTester) Test(ctx context.Context, test testsharder.Test, stdo
 	} else if errors.Is(err, context.DeadlineExceeded) {
 		testResult.Status = runtests.TestAborted
 	} else {
+		testResult.Status = runtests.TestFailure
 		testResult.FailureReason = runtests.FailureReasonFromMessage(err.Error())
 	}
 
