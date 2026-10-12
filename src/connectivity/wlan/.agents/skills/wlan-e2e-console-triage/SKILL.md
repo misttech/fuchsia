@@ -65,7 +65,8 @@ Present a concise report and ask the user which actions to execute:
    * For each proposed action, show the group index(es), suite(s), board(s),
      builder(s), failure reason, sample build link, candidate bugs, proposed
      `--rule`, and recommendation (**Associate** with `b/<id>` or **Create New
-     Bug** titled `[wlan] <suite_or_scope> failing: <reason>`).
+     Bug** titled `[<board>] <suite_or_scope> failing: <reason>`, omitting
+     `[<board>]` if board-agnostic.
 
 ### Step 3: Execute Approved Actions
 
