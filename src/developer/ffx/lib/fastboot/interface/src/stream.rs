@@ -83,10 +83,10 @@ impl TryFrom<sparse::Chunk> for Chunk {
 
     fn try_from(val: sparse::Chunk) -> Result<Self, Self::Error> {
         match val {
-            sparse::Chunk::Raw { start, size } => {
+            sparse::Chunk::Raw { start, size } if size > 0 => {
                 Ok(Self { range: Range { start, end: start + size }, payload: Payload::Flash })
             }
-            sparse::Chunk::Fill { start, size, value } => Ok(Self {
+            sparse::Chunk::Fill { start, size, value } if size > 0 => Ok(Self {
                 range: Range { start, end: start + size },
                 payload: Payload::Fill(value),
             }),
@@ -298,6 +298,9 @@ pub fn generate_command_list(
     segment_size_bytes: u64,
     partition_start_byte: u64,
 ) -> Vec<StreamCommand> {
+    if data.is_empty() {
+        return vec![];
+    }
     let data = Bytes::from_owner(BytesBox(data));
     let prefix_bytes =
         partition_start_byte.next_multiple_of(segment_size_bytes) - partition_start_byte;
@@ -642,5 +645,17 @@ mod test {
                 StreamCommand::from_data(Bytes::from_owner(short_data), 81920),
             ]
         );
+    }
+
+    #[fuchsia::test]
+    fn test_stream_command_generation_empty_image() {
+        let command_list = generate_command_list(Box::new([]), 1 << 32, 4096, 0);
+        assert!(command_list.is_empty());
+    }
+
+    #[fuchsia::test]
+    fn test_sparse_zero_size_chunk_filtered() {
+        assert!(Chunk::try_from(sparse::Chunk::Raw { start: 0, size: 0 }).is_err());
+        assert!(Chunk::try_from(sparse::Chunk::Fill { start: 0, size: 0, value: 0 }).is_err());
     }
 }

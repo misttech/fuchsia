@@ -252,7 +252,6 @@ async fn upload_data<T: AsyncRead + AsyncWrite + Unpin>(
     progress_listener: &ProgressListener<'_>,
     timeout: Duration,
 ) -> Result<(), fastboot::FastbootError> {
-    let _lock = ctx.lock_transfer().await;
     let expected = data.len().try_into().unwrap();
     let reply =
         send_with_timeout(ctx.clone(), Command::Download(expected), interface, timeout).await?;
@@ -661,6 +660,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
                 length_bytes
             }
             StreamOp::Flash { data, crc32 } => {
+                let _lock = ctx.lock_transfer().await;
                 upload_data(&ctx, &data, interface, &progress_listener, timeout).await?;
                 let finishing_cmd =
                     Command::StreamFlash { partition: name.to_owned(), offset_bytes, crc32 };

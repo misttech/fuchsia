@@ -354,7 +354,9 @@ macro_rules! from_hex_str_impl {
     ($int_type:ty) => {
         impl FromHexStr for $int_type {
             fn from_hex_str(val: &str) -> std::result::Result<Self, ParseIntError> {
-                Self::from_str_radix(val.trim_start_matches("0x"), 16)
+                let stripped =
+                    val.strip_prefix("0x").or_else(|| val.strip_prefix("0X")).unwrap_or(val);
+                Self::from_str_radix(stripped, 16)
             }
         }
     };
@@ -397,7 +399,7 @@ fn create_streaming_iter(
         max_download_bytes as f64 / (1024.0 * 1024.0)
     );
 
-    if max_download_bytes % U32_SIZE != 0 {
+    if max_download_bytes > u64::from(u32::MAX) || max_download_bytes % U32_SIZE != 0 {
         return Err(streaming_err_helper(format!("Bad max download size: {max_download_bytes}")));
     }
 
@@ -592,12 +594,16 @@ async fn streaming_flash_impl<T: FastbootInterface>(
     partition_start_byte: u64,
     partition_size_bytes: u64,
     timeout: Duration,
+    override_max_download_size: Option<NonZeroU64>,
 ) -> Result<()> {
-    let max_download_bytes: u64 = NonZeroU64::new(
-        get_hex_int::<u32>(MAX_DOWNLOAD_SIZE_VAR, fastboot_interface).await?.into(),
-    )
-    .ok_or_else(|| streaming_err_helper(format!("Max download size of 0")))?
-    .into();
+    let max_download_bytes: u64 = match override_max_download_size {
+        Some(omds) => omds.into(),
+        None => NonZeroU64::new(
+            get_hex_int::<u32>(MAX_DOWNLOAD_SIZE_VAR, fastboot_interface).await?.into(),
+        )
+        .ok_or_else(|| streaming_err_helper(format!("Max download size of 0")))?
+        .into(),
+    };
 
     // Offload both Streamer::create (disk read + command list generation) and command iteration
     // (disk I/O + CRC32 hashing) to a blocking thread so neither stalls the async runtime.
@@ -641,6 +647,7 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
                 partition_start,
                 partition_size,
                 Duration::seconds(min_timeout_secs.try_into().unwrap()),
+                override_max_download_size,
             )
             .await
             .inspect_err(|e| log::error!("Streaming flash error: {e}"))
@@ -932,6 +939,12 @@ pub async fn flash_partitions_stream<F: FileResolver + Sync, P: Partition, T: Fa
     stream_segment_size: u64,
     min_timeout_secs: u64,
 ) -> Result<()> {
+    let resolved_partitions =
+        resolve_partitions(partitions, file_resolver, fastboot_interface).await?;
+    if resolved_partitions.is_empty() {
+        return Ok(());
+    }
+
     let max_download_bytes: u64 = NonZeroU64::new(
         get_hex_int::<u32>(MAX_DOWNLOAD_SIZE_VAR, fastboot_interface).await?.into(),
     )
@@ -940,8 +953,6 @@ pub async fn flash_partitions_stream<F: FileResolver + Sync, P: Partition, T: Fa
     let timeout = Duration::seconds(min_timeout_secs.try_into().unwrap());
 
     let mut streamers = Vec::new();
-    let resolved_partitions =
-        resolve_partitions(partitions, file_resolver, fastboot_interface).await?;
     for (name, file_to_upload) in resolved_partitions {
         let partition_size = get_hex_int::<u64>(
             parameterized_var(PARTITION_SIZE, name).as_str(),
@@ -1720,6 +1731,7 @@ mod test {
             0x2000,
             0x1000000,
             Duration::seconds(360),
+            None,
         )
         .await;
         drop(var_client);
@@ -1846,6 +1858,95 @@ mod test {
             },
         ];
         assert_eq!(events, expected);
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_from_hex_str() {
+        assert_eq!(u32::from_hex_str("0x1000"), Ok(0x1000));
+        assert_eq!(u32::from_hex_str("0X1000"), Ok(0x1000));
+        assert_eq!(u64::from_hex_str("1000"), Ok(0x1000));
+        assert!(u32::from_hex_str("0x0x1000").is_err());
+        assert!(u64::from_hex_str("0X0x1000").is_err());
+    }
+
+    #[fuchsia::test]
+    async fn test_stream_flash_respects_override_max_download_size() -> Result<()> {
+        let buf = (0u8..=255).cycle().take(0x4000).collect::<Vec<_>>();
+        let (mut file, tmp_path) = NamedTempFile::new().unwrap().into_parts();
+        file.write_all(&buf).unwrap();
+        file.flush().unwrap();
+
+        assert!(
+            create_streaming_iter(
+                tmp_path.to_str().unwrap(),
+                (u64::from(u32::MAX) + 1).next_multiple_of(U32_SIZE),
+                0x1000,
+                0,
+                0x1000000,
+            )
+            .is_err()
+        );
+
+        let mut test_transport = TestTransport::new();
+        test_transport.extend([
+            Reply::Data(0x2000),        // Download request (chunk 1)
+            Reply::Okay("".to_owned()), // Download
+            Reply::Okay("".to_owned()), // Stream flash
+            Reply::Data(0x2000),        // Download request (chunk 2)
+            Reply::Okay("".to_owned()), // Download
+            Reply::Okay("".to_owned()), // Stream flash
+        ]);
+
+        let mut fastboot_client = FastbootProxy::<TestTransport>::new(
+            "stream".to_string(),
+            test_transport,
+            TestTransportFactory {},
+        );
+
+        let (var_client, mut var_server): (Sender<Event>, Receiver<Event>) = mpsc::channel(10);
+        streaming_flash_impl(
+            &var_client,
+            "zircon_a",
+            tmp_path.to_str().unwrap(),
+            &mut fastboot_client,
+            0x1000,
+            0x2000,
+            0x1000000,
+            Duration::seconds(360),
+            NonZeroU64::new(0x2000),
+        )
+        .await?;
+        drop(var_client);
+
+        let mut progress_chunks = vec![];
+        while let Some(m) = var_server.recv().await {
+            if let Event::Upload(UploadProgress::OnProgress { bytes_written }) = m {
+                progress_chunks.push(bytes_written);
+            }
+        }
+        assert_eq!(progress_chunks, vec![0x2000, 0x2000]);
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_flash_partitions_stream_empty_partitions() -> Result<()> {
+        let (state, mut mock) = setup();
+        let (var_client, _var_server): (Sender<Event>, Receiver<Event>) = mpsc::channel(10);
+        let mut resolver = TestResolver::new();
+        let empty_partitions: Vec<ffx_flash_manifest::v1::Partition> = vec![];
+
+        flash_partitions_stream(
+            &var_client,
+            &mut resolver,
+            &empty_partitions,
+            &mut mock,
+            4096,
+            360,
+        )
+        .await?;
+
+        assert_eq!(state.lock().unwrap().get_var_call_count(MAX_DOWNLOAD_SIZE_VAR), (false, 0));
         Ok(())
     }
 }
