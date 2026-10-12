@@ -130,6 +130,21 @@ them (such as `fdf::StartCompleter`) with `take_error()` or
 (`fdf_power::ResumeCompleter`), leave the driver's state showing the failure.
 Log or comment any place that continues after a failure on purpose.
 
+## Threading and synchronization
+
+Know which dispatcher runs the code before adding a lock. State accessed only
+from one [synchronized dispatcher][dispatcher-threads], such as the default one
+from `Start()`, needs no mutex. State accessed from an unsynchronized
+dispatcher, from several dispatchers, or from a thread the driver runtime does
+not manage (a dedicated interrupt thread, `std::thread`) does. Document this
+where the state is declared, or check `fdf::Dispatcher::GetCurrent()`.
+
+Do not hold a lock while calling anything that can re-enter the driver or wait
+on the same lock: update the state, release the lock, then make the call.
+Comment any lock held across a call on purpose. Do not release and re-acquire
+the lock around each call, or add a getter that takes the lock and returns a
+copy; both cause TOCTOU races.
+
 ## Zircon resources
 
 ### Interrupts
@@ -302,3 +317,4 @@ connection to the `DriverTestRealm` service, perform necessary configuration in
 [precondition-checks]: /docs/development/drivers/driver_guides/display/register-definitions.md#precondition_checks
 [dma-cache-coherency]: /docs/development/drivers/concepts/driver_development/dma.md#cache_coherency
 [zx-result]: /zircon/system/ulib/zx/include/lib/zx/result.h
+[dispatcher-threads]: /docs/concepts/drivers/driver-dispatcher-and-threads.md#synchronized-and-unsynchronized
